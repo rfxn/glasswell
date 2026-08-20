@@ -34,7 +34,10 @@ TILE_LAYERS: tuple[TileLayer, ...] = (
     TileLayer(
         name="nd_laterals",
         source="marts.nd_laterals_tile",
-        geometry_type="LINESTRING",
+        # Migration 017 widened the column to hold a multi-part centreline, so this is what
+        # `geometry_columns` reports and therefore what martin discovers. MVT encodes a
+        # multi-part line as LINESTRING either way.
+        geometry_type="GEOMETRY",
         properties=(
             ("api10", "text"),
             ("linekey", "text"),
@@ -65,7 +68,7 @@ TILE_LAYERS: tuple[TileLayer, ...] = (
             ("spacing_unit_id", "text"),
             ("label", "text"),
             ("formation_reported", "text"),
-            ("ds_size_acres", "numeric"),
+            ("ds_size_acres", "float8"),
             ("derivation_id", "text"),
         ),
     ),

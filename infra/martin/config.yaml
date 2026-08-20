@@ -9,7 +9,7 @@ postgres:
       table: nd_laterals_tile
       srid: 4326
       geometry_column: geom
-      geometry_type: LINESTRING
+      geometry_type: GEOMETRY
       properties:
         api10: text
         linekey: text
@@ -40,5 +40,5 @@ postgres:
         spacing_unit_id: text
         label: text
         formation_reported: text
-        ds_size_acres: numeric
+        ds_size_acres: float8
         derivation_id: text
