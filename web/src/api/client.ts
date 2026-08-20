@@ -28,15 +28,21 @@ export class ApiError extends Error {
 }
 
 const KEY_STORAGE = "glasswell.key";
+const KEY_PARAM = "key";
 const BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
 
-/** `?key=` once, then localStorage; a build-time key is the fallback for a kiosk build. */
+/**
+ * `#key=` once, then localStorage; a build-time key is the fallback for a kiosk build.
+ * The fragment, never the query string: a query string reaches the server's access log.
+ */
 export function apiKey(): string | null {
-  const fromUrl = new URLSearchParams(window.location.search).get("key");
+  const fragment = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const fromUrl = fragment.get(KEY_PARAM);
   if (fromUrl) {
     window.localStorage.setItem(KEY_STORAGE, fromUrl);
+    fragment.delete(KEY_PARAM);
     const url = new URL(window.location.href);
-    url.searchParams.delete("key");
+    url.hash = fragment.toString();
     window.history.replaceState(null, "", url.toString());
     return fromUrl;
   }

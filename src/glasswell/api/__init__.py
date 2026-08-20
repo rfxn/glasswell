@@ -15,8 +15,10 @@ from fastapi import Depends, FastAPI, Request
 from starlette.responses import Response
 from starlette.staticfiles import StaticFiles
 
+from glasswell.api.access_log import install_access_log_redaction
 from glasswell.api.deps import WEB_ROOT_ENV, require_key
-from glasswell.api.errors import install_handlers
+from glasswell.api.errors import install_handlers, problem_response
+from glasswell.api.examples import KEY_HEADER
 from glasswell.api.routers import (
     conformance,
     glossary,
@@ -33,6 +35,7 @@ from glasswell.lineage.ids import new_ulid
 API_TITLE = "glasswell"
 API_VERSION = "0.1.0"
 REQUEST_ID_HEADER = "X-Request-Id"
+KEY_QUERY_PARAM = "key"
 
 DESCRIPTION = """
 Glass-box upstream analytics on public data. Every number this API serves carries a
@@ -60,6 +63,30 @@ def create_app() -> FastAPI:
         redoc_url=None,
     )
     install_handlers(app)
+    install_access_log_redaction()
+
+    # Registered first, so the request-id middleware wraps it and the refusal carries an id.
+    @app.middleware("http")
+    async def _refuse_key_in_query(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        if KEY_QUERY_PARAM in request.query_params:
+            return problem_response(
+                request,
+                "validation_failed",
+                detail=(
+                    "the owner key is not accepted in the query string: open the app once with"
+                    f" #key=<owner key>, or send the key in {KEY_HEADER}"
+                ),
+                errors=[
+                    {
+                        "pointer": f"/query/{KEY_QUERY_PARAM}",
+                        "code": "credential_in_query",
+                        "detail": "a query string is written to the access log verbatim",
+                    }
+                ],
+            )
+        return await call_next(request)
 
     @app.middleware("http")
     async def _request_id(

@@ -205,7 +205,7 @@ export function errorPanel(error: unknown, callbacks: { onClose(): void }): HTML
     body.textContent = error.problem.detail ?? "";
     if (error.problem.status === 403) {
       body.textContent =
-        "The API needs the owner key. Open this page with ?key=<GLASSWELL_OWNER_KEY> once and it is remembered.";
+        "The API needs the owner key. Open this page with #key=<GLASSWELL_OWNER_KEY> once and it is remembered.";
     }
     const link = document.createElement("a");
     link.href = error.problem.type;

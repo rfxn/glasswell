@@ -84,7 +84,7 @@ async function boot(): Promise<void> {
   } catch (error) {
     statusLine.textContent =
       error instanceof ApiError && error.problem.status === 403
-        ? "The API needs the owner key: open this page once with ?key=<GLASSWELL_OWNER_KEY>."
+        ? "The API needs the owner key: open this page once with #key=<GLASSWELL_OWNER_KEY>."
         : `Glossary unavailable: ${String(error)}`;
   }
 

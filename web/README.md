@@ -26,7 +26,7 @@ are routed before the mount. There is no separate web server in this slice.
 
 | Input | Effect |
 |---|---|
-| `?key=<owner key>` | Stored in `localStorage` and stripped from the URL; sent as `X-Glasswell-Key` on every `/v1` request, tiles included |
+| `#key=<owner key>` | Stored in `localStorage` and stripped from the fragment; sent as `X-Glasswell-Key` on every `/v1` request, tiles included. A fragment is never sent to the server, so the key cannot reach the access log; the API refuses `?key=` outright |
 | `VITE_GLASSWELL_KEY` | Build-time fallback key, for a kiosk build where no one types a URL |
 | `VITE_API_BASE` | Base for API requests when the bundle is not served from the API's origin |
 | `?laterals=` · `?wells=` | Tile source ids, when martin publishes them under names other than `nd_laterals` and `nd_wells` |
