@@ -35,6 +35,19 @@ export function absoluteTileUrl(template: string, origin?: string): string {
   return `${base}${template}`;
 }
 
+/**
+ * The lowest zoom any layer draws this source at. A source that fetches below it pays for
+ * tiles nothing can render: the spacing units start at z8, and their z7 tile is 568 KB
+ * (work-output/tileperf-client-handoff.md item 1). Derived rather than tabulated, so a layer
+ * added at a lower zoom pulls its source down with it instead of rendering nothing.
+ */
+function lowestDrawnZoom(source: string): number {
+  const drawn = dataLayers({ labels: true })
+    .filter((layer) => "source" in layer && layer.source === source)
+    .map((layer) => layer.minzoom ?? 0);
+  return drawn.length > 0 ? Math.min(...drawn) : 0;
+}
+
 export function sourceSpecs(origin?: string): Record<string, SourceSpecification> {
   const specs: Record<string, SourceSpecification> = {};
   for (const [parameter, fallback] of [
@@ -46,7 +59,7 @@ export function sourceSpecs(origin?: string): Record<string, SourceSpecification
     specs[name] = {
       type: "vector",
       tiles: [absoluteTileUrl(tileUrl(name), origin)],
-      minzoom: 0,
+      minzoom: lowestDrawnZoom(name),
       maxzoom: 14,
       // API-10 is a string, so MapLibre cannot use it as a feature id without promoteId,
       // and without a feature id there is no feature-state and no selection without a

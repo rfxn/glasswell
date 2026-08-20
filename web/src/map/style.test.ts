@@ -5,6 +5,7 @@ import type { BasemapVariant } from "./basemap.ts";
 import { variantStyle } from "./variant-style.ts";
 import {
   LATERALS_SOURCE,
+  SPACING_SOURCE,
   WELLS_SOURCE,
   dataLayers,
   sourceSpecs,
@@ -91,6 +92,26 @@ describe("the data layers", () => {
     const rendered = new Set(ids());
     for (const id of ["wells", "wells-struck", "laterals", "spacing-units-fill", "spacing-units-line"]) {
       expect(rendered.has(id), `${id} missing from the style`).toBe(true);
+    }
+  });
+
+  it("fetches no tile below the zoom its own layers start drawing at", () => {
+    // Track T measured the z7 spacing tile at 568 KB against a layer that starts at z8, and
+    // z7 alone is 31% of tile traffic. The source floor follows the layers, not a hand list.
+    const specs = sourceSpecs();
+    const floor = (source: string): unknown => {
+      const spec = specs[source];
+      return spec && "minzoom" in spec ? spec.minzoom : undefined;
+    };
+    expect(floor(SPACING_SOURCE)).toBe(8);
+    expect(floor(WELLS_SOURCE)).toBe(4);
+    // Laterals draw from z0, so their source still has to serve z0 — no free win there.
+    expect(floor(LATERALS_SOURCE)).toBe(0);
+    for (const layer of dataLayers({ labels: true })) {
+      const source = "source" in layer ? String(layer.source) : "";
+      expect(Number(floor(source)), `${layer.id} draws below its source floor`).toBeLessThanOrEqual(
+        layer.minzoom ?? 0,
+      );
     }
   });
 
