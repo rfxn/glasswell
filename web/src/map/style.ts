@@ -22,10 +22,22 @@ export const SPACING_SOURCE = "nd_spacing_units";
 const INK = "#0B1014";
 const SPACING_LABEL_SIZE = 10;
 
-/** martin publishes one source id per table and the MVT layer inside carries that id. */
-function published(parameter: string, fallback: string): string {
-  if (typeof window === "undefined") return fallback;
-  return new URLSearchParams(window.location.search).get(parameter) ?? fallback;
+/**
+ * The shape martin publishes a source id in — a Postgres table name, which is what the
+ * override is choosing between. Anchored with no `m` flag, so a trailing newline is refused.
+ */
+export const SOURCE_ID = /^[a-z][a-z0-9_]{0,63}$/;
+
+/**
+ * N-5. The id is interpolated into the tile path, the MVT `source-layer` and the `promoteId`
+ * key, so an unvalidated one leaves the `/v1/tiles/` namespace entirely: Track O reproduced
+ * `?wells=..%2F..%2Fetc%2Fpasswd` fetching `/etc/passwd/{z}/{x}/{y}.pbf`. Anything that is
+ * not a published id falls back rather than failing, so a bad link still renders the map.
+ */
+export function publishedSource(parameter: string, fallback: string, search?: string): string {
+  const query = search ?? (typeof window === "undefined" ? "" : window.location.search);
+  const requested = new URLSearchParams(query).get(parameter);
+  return requested !== null && SOURCE_ID.test(requested) ? requested : fallback;
 }
 
 /** Same-origin by default. Not `new URL()`: it percent-encodes MapLibre's {z}/{x}/{y}. */
@@ -41,25 +53,25 @@ export function absoluteTileUrl(template: string, origin?: string): string {
  * (work-output/tileperf-client-handoff.md item 1). Derived rather than tabulated, so a layer
  * added at a lower zoom pulls its source down with it instead of rendering nothing.
  */
-function lowestDrawnZoom(source: string): number {
-  const drawn = dataLayers({ labels: true })
+function lowestDrawnZoom(source: string, search?: string): number {
+  const drawn = dataLayers({ labels: true, ...(search === undefined ? {} : { search }) })
     .filter((layer) => "source" in layer && layer.source === source)
     .map((layer) => layer.minzoom ?? 0);
   return drawn.length > 0 ? Math.min(...drawn) : 0;
 }
 
-export function sourceSpecs(origin?: string): Record<string, SourceSpecification> {
+export function sourceSpecs(origin?: string, search?: string): Record<string, SourceSpecification> {
   const specs: Record<string, SourceSpecification> = {};
   for (const [parameter, fallback] of [
     ["wells", WELLS_SOURCE],
     ["laterals", LATERALS_SOURCE],
     ["spacing", SPACING_SOURCE],
   ] as const) {
-    const name = published(parameter, fallback);
+    const name = publishedSource(parameter, fallback, search);
     specs[name] = {
       type: "vector",
       tiles: [absoluteTileUrl(tileUrl(name), origin)],
-      minzoom: lowestDrawnZoom(name),
+      minzoom: lowestDrawnZoom(name, search),
       maxzoom: 14,
       // API-10 is a string, so MapLibre cannot use it as a feature id without promoteId,
       // and without a feature id there is no feature-state and no selection without a
@@ -131,15 +143,17 @@ export interface DataLayerOptions {
   hollowFill?: string;
   /** The basemap under the data, which is what its labels and outlines are coloured against. */
   variant?: BasemapVariant;
+  /** Query string the source overrides are read from; the window's own when absent. */
+  search?: string;
 }
 
 export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[] {
   const hollow = options.hollowFill ?? INK;
   const variant = options.variant ?? "dark";
   const tokens = variantStyle(variant);
-  const wells = published("wells", WELLS_SOURCE);
-  const laterals = published("laterals", LATERALS_SOURCE);
-  const spacing = published("spacing", SPACING_SOURCE);
+  const wells = publishedSource("wells", WELLS_SOURCE, options.search);
+  const laterals = publishedSource("laterals", LATERALS_SOURCE, options.search);
+  const spacing = publishedSource("spacing", SPACING_SOURCE, options.search);
 
   const built: LayerSpecification[] = [
     {

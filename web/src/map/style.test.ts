@@ -5,9 +5,11 @@ import type { BasemapVariant } from "./basemap.ts";
 import { variantStyle } from "./variant-style.ts";
 import {
   LATERALS_SOURCE,
+  SOURCE_ID,
   SPACING_SOURCE,
   WELLS_SOURCE,
   dataLayers,
+  publishedSource,
   sourceSpecs,
   statusFilter,
   visibleStatusesAt,
@@ -146,5 +148,83 @@ describe("the data layers", () => {
         expect(value, `${layer.id}.${key} is undefined`).toBeDefined();
       }
     }
+  });
+});
+
+describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
+  const named = (search: string, parameter = "wells"): string =>
+    publishedSource(parameter, WELLS_SOURCE, search);
+
+  it("takes a martin source id that matches the published shape", () => {
+    expect(named("?wells=nd_wells_v2")).toBe("nd_wells_v2");
+    expect(named("?laterals=a", "laterals")).toBe("a");
+    expect(named(`?wells=${"a".repeat(64)}`)).toBe("a".repeat(64));
+  });
+
+  it("refuses a value that would leave the /v1/tiles/ namespace", () => {
+    // Track O reproduced this in a browser: `?wells=..%2F..%2Fetc%2Fpasswd` made the app
+    // request GET /etc/passwd/{z}/{x}/{y}.pbf. It 404s only because there is no SPA
+    // fallback, and DR-57 would turn that 404 into index.html served to a tile parser.
+    for (const hostile of [
+      "../../etc/passwd",
+      "..%2F..%2Fetc%2Fpasswd",
+      "/etc/passwd",
+      "nd_wells/../../etc/passwd",
+      "http://evil.example/x",
+      "//evil.example/x",
+      "nd_wells?x=1",
+      "nd_wells#frag",
+    ]) {
+      const search = `?wells=${encodeURIComponent(hostile)}`;
+      expect(named(search), `${hostile} reached the source id`).toBe(WELLS_SOURCE);
+      expect(sourceSpecs("https://gw.example", search)[WELLS_SOURCE]).toBeDefined();
+    }
+  });
+
+  it("refuses a value that stays in the namespace but is not a published id", () => {
+    for (const hostile of [
+      "",
+      " ",
+      "gw-evil-layer",
+      "ND_WELLS",
+      "1nd_wells",
+      "_nd_wells",
+      "nd wells",
+      "nd_wells\n",
+      "nd_wells\nevil",
+      "nd_wells;drop",
+      "nd_wells'",
+      '"nd_wells"',
+      "a".repeat(65),
+      " nd_wells",
+      "nd_wells‮",
+      "ndـwells",
+    ]) {
+      expect(named(`?wells=${encodeURIComponent(hostile)}`), `${hostile} accepted`).toBe(
+        WELLS_SOURCE,
+      );
+    }
+  });
+
+  it("carries the refusal into every place the id is interpolated, not just the url", () => {
+    // The id is the tile path, the MVT `source-layer`, and the promoteId key. A validator
+    // that only guarded the url would still hand the other two an attacker's string.
+    const search = "?wells=..%2F..%2Fetc%2Fpasswd&laterals=gw-evil-layer&spacing=%2Fetc%2Fpasswd";
+    const specs = sourceSpecs("https://gw.example", search);
+    expect(Object.keys(specs).sort()).toEqual(
+      [WELLS_SOURCE, LATERALS_SOURCE, SPACING_SOURCE].sort(),
+    );
+    const serialised = JSON.stringify(specs);
+    expect(serialised).not.toContain("etc/passwd");
+    expect(serialised).not.toContain("gw-evil-layer");
+    for (const layer of dataLayers({ labels: true, search })) {
+      const source = "source" in layer ? String(layer.source) : "";
+      expect(SOURCE_ID.test(source), `${layer.id} draws from ${source}`).toBe(true);
+      expect(specs[source], `${layer.id} draws from an undeclared source`).toBeDefined();
+    }
+  });
+
+  it("falls back rather than throwing when there is no window to read", () => {
+    expect(publishedSource("wells", WELLS_SOURCE)).toBe(WELLS_SOURCE);
   });
 });
