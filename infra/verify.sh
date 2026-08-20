@@ -3,10 +3,12 @@
 # Reads the owner key from /etc/glasswell/app.env and never prints it.
 set -uo pipefail
 
+INFRA_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 API=http://127.0.0.1:8000
 MARTIN=http://127.0.0.1:3000
 WEB_ROOT=/opt/glasswell/web
 LAN_ADDRESS=192.168.2.111
+PG_TUNING="$INFRA_DIR/postgres/postgresql.conf.d/glasswell.conf"
 PSQL=(sudo -u postgres psql -d glasswell -tAc)
 
 passed=0
@@ -128,6 +130,18 @@ assert_true "api listens on the LAN" "not bound to 0.0.0.0:8000" listening_on '0
 assert_false "postgres is not on the LAN" "listening on $LAN_ADDRESS:5432" \
     listening_on "$LAN_ADDRESS:5432"
 assert_true "ufw active" "inactive" systemctl is-active --quiet ufw
+
+# Driven by the shipped drop-in so the check cannot drift from the file it verifies.
+# Red until the deployer runs install.sh --with-postgres and restarts PostgreSQL (DR-20).
+printf 'postgres tuning\n'
+if [[ -r $PG_TUNING ]]; then
+    while IFS= read -r line; do
+        setting="${line%% =*}"
+        assert "$setting" "${line##*= }" "$("${PSQL[@]}" "show $setting")"
+    done < <(grep -E '^[a-z_]+ = ' "$PG_TUNING")
+else
+    bad "postgres tuning" "$PG_TUNING is missing, so nothing was checked"
+fi
 
 printf 'secrets and sandbox\n'
 assert "app.env ownership and mode" "root:root 600" "$(stat -c '%U:%G %a' /etc/glasswell/app.env)"
