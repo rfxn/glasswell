@@ -27,8 +27,8 @@ LOADERS = {"wells": load_wells, "laterals": load_laterals, "spacing_units": load
 LATERAL_SEGMENTS = 233
 LATERAL_WELLS = 180
 MULTI_LATERAL_WELLS = 42
-NON_LATERAL_SEGMENTS = 65
-UNSTORABLE_GEOMETRIES = 2
+NON_LATERAL_SEGMENTS = 67
+MULTIPART_GEOMETRIES = 2
 WELL_RECORDS = 300
 SPACING_UNITS = 300
 
@@ -193,21 +193,15 @@ def test_laterals_are_keyed_by_linekey_and_only_lateral_segments_are_promoted(
         " and geom_key not like %s",
         ("%\\_LAT%",),
     ) == 0
-    assert scalar(
-        seeded,
-        "select count(*) from canonical.well_spatial where geom_type = 'lateral'"
-        " and ST_GeometryType(geom) <> 'ST_LineString'",
-    ) == 0
     assert result.quarantined["segment_not_promoted"] == NON_LATERAL_SEGMENTS
-    # Two _VERT records are disjoint multi-part lines: staging.geom is geometry(LineString),
-    # so they stage without geometry and are measured rather than dropped.
-    assert result.quarantined["parse_error"] == UNSTORABLE_GEOMETRIES
+    # Two _VERT records are disjoint multi-part lines. They parse, so they stage with their
+    # geometry and are held back for their segment, not filed as a parse failure (A5-F8).
+    assert result.quarantined["parse_error"] == 0
     assert scalar(
         seeded,
-        "select count(*) from lineage.quarantine_rows where reason_code = 'parse_error'"
-        " and row_payload ->> 'detail' like %s",
-        ("MultiLineString%",),
-    ) == UNSTORABLE_GEOMETRIES
+        "select count(*) from staging.nd_gis_laterals"
+        " where ST_GeometryType(geom) = 'ST_MultiLineString'",
+    ) == MULTIPART_GEOMETRIES
 
 
 def test_a_multi_lateral_well_keeps_every_centreline_and_raises_one_quarantine_row(

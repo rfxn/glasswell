@@ -90,7 +90,8 @@ LAYERS: Mapping[str, LayerSpec] = {
         staging_table="staging.nd_gis_laterals",
         canonical_table="canonical.well_spatial",
         columns=("linekey", "fileno", "shape_leng"),
-        geometry_type="LineString",
+        # The layer ships multi-part centrelines; the staging column holds any geometry (017).
+        geometry_type="Geometry",
         reason_codes=(
             "parse_error", "segment_not_promoted", "multi_wellbore_policy", "orphan_fk",
         ),
@@ -399,7 +400,9 @@ def _unstorable(record: ShapefileRecord, declared: str) -> str | None:
     if record.is_empty:
         return "the source record carries no geometry"
     shape = record.geometry.geom_type
-    if shape == declared or (declared.startswith("Multi") and f"Multi{shape}" == declared):
+    if declared == "Geometry" or shape == declared:
+        return None
+    if declared.startswith("Multi") and f"Multi{shape}" == declared:
         return None
     return f"{shape} does not fit the declared {declared} column"
 
