@@ -23,6 +23,8 @@ __pycache__/
 venv/
 .pytest_cache/
 .ruff_cache/
+.coverage
+htmlcov/
 .mypy_cache/
 
 # Node / map UI

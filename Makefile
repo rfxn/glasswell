@@ -1,7 +1,7 @@
 VENV ?= .venv
 PY   := $(VENV)/bin/python
 
-.PHONY: help venv install test test-unit test-integration test-contract lint fmt clean
+.PHONY: help venv install test test-unit test-integration lint fmt clean
 
 help:
 	@echo "venv              create $(VENV)"
@@ -27,9 +27,6 @@ test-unit:
 
 test-integration:
 	$(PY) -m pytest tests -q -m integration
-
-test-contract:
-	$(PY) -m pytest tests -q -m contract
 
 lint:
 	$(PY) -m ruff check .
