@@ -7,6 +7,51 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-20 — wave 1
+
+- [New] `scripts/smoke.sh`: nineteen read-only assertions over a deployed instance —
+      both refusals, the key refused in a query string, the card's unit and derivation
+      handle, per-point production lineage, the chain that ends at a 64-hex sha256 and a
+      `dmr.nd.gov` url, every conformance rule's rationale and evidence url, a tile
+      derived from the well's own surface point, staging refused through the proxy, and
+      every committed OpenAPI path present on the instance
+- [New] `tests/e2e/`: twelve browser assertions and `make test-e2e` — the app boots and
+      draws, a deep link resolves to the well it names, a handle reaches a checksum and a
+      regulator url on screen, a hostile query string puts the page outside neither the
+      tile allowlist nor this origin, and a visitor with no key is refused honestly. Its
+      own npm project, so `playwright-core` never enters the web bundle's lockfile
+- [New] `tests/integration/test_tile_wire_types.py` audits every published tile
+      declaration against the relation it reads — property types, geometry type and srid
+      against `geometry_columns`, and the attributes read back out of the protobuf
+- [New] `make prune-test-volumes`, run by `make test`, and a labelled named volume the
+      PostGIS fixture removes itself; `tests/integration/test_harness_hygiene.py` asserts
+      every mount the harness attaches carries the sweep label
+- [New] CI gained a shell job (`bash -n` and `shellcheck` over every tracked `.sh`) and a
+      named step asserting martin's configured source list equals the tile allowlist
+- [New] `install.sh` creates `/data/staging` and `/data/scratch`, SB-07 §2.3's zones under
+      the volume that exists; `verify.sh` asserts all three roots, asserts the deploy root
+      carries no git-excluded working file, and checks all three published layers rather
+      than two
+- [Fix] `ds_size_acres` was published as `numeric`, so `ST_AsMVT` put the acreage on the
+      wire as the string `"640"` and a MapLibre expression compared it lexicographically —
+      the defect migration 015 fixed for `lateral_length_ft`, one layer over. The same
+      audit found the martin declaration still calling `nd_laterals` a `LINESTRING` after
+      migration 017 widened the column
+- [Fix] `create on schema marts` existed only because it was typed on the deployed host
+      during P7; it is held by a migration now, with the spacing-unit view granted to the
+      API role that migration 009's blanket grant could not reach
+- [Fix] The pmtiles install hint and the basemap runbook told every operator to write the
+      same `/tmp` path; both use `mktemp -d` now
+- [Change] `infra/martin/config.yaml` is reference-only until it matches the installed
+         binary: martin 1.14.0 resolves no source from it and fails before it connects,
+         measured against VM 111. The same run settles the view-under-`tables:` question —
+         martin resolves the spacing-unit view as `source.kind="view"` without complaint
+- [Change] SMOKE.md re-read against the instance that ran migrations 014-019: the hero
+         lateral is 15,065.44 ft, there are 17 conformance rules, the quarantine ledger is
+         292,972 rows with `unknown_vocab` and `out_of_range_date` at zero, and "292,394
+         rejected rows" is corrected — 98.7 % of the ledger is deliberate non-promotion
+         and true source-row rejection is 0.79 %
+
 ### 2026-08-20 — fix cycle: data truth, guardrails, panels and map
 
 - [New] The well card discloses what the map cannot show and the ingest held back:
