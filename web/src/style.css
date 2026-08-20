@@ -389,9 +389,12 @@ body {
   min-width: 0;
 }
 
+/* Centred, not baseline-aligned: the row's strut is the 12 px mono face and the eyebrow inside
+   it is 10.56 px display, so meeting their baselines offset the smaller box by 1 px and made
+   the row 21 px in a band that budgets 20 (gate-v M-1). */
 .gw-asof {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.35em;
   margin: 0;
   max-width: 100%;
@@ -419,13 +422,16 @@ body {
   text-overflow: ellipsis;
 }
 
+/* The rule is drawn inside the box: a border on an auto-height inline-block adds to the border
+   box, so the 16 px line box became an 18 px signal row and the slot sheared the bottom stroke
+   off the pill and the chip beside it (gate-v M-1). An inset ring is the same pixel, unpriced. */
 .gw-status.gw-degraded {
   display: inline-block;
   max-width: 100%;
   padding: 0 var(--gw-space-2);
   border-radius: var(--gw-radius-pill);
   color: var(--amber-text);
-  border: 1px solid var(--amber);
+  box-shadow: inset 0 0 0 1px var(--amber);
   font-weight: 700;
 }
 

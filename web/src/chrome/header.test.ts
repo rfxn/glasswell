@@ -87,6 +87,14 @@ describe("the theme control", () => {
     expect(document.documentElement.dataset.theme).toBe("dark");
   });
 
+  it("ships hidden, so the flag-off build never paints it before the wiring runs", () => {
+    // gate-v m-3: the module script is deferred, so an unhidden button is painted and inert
+    // for the pre-hydration window and then vanishes. The flag-on branch unhides it.
+    const attributes = /<button\s+id="gw-theme-btn"([^>]*)>/.exec(MARKUP)?.[1] ?? "";
+
+    expect(attributes).toMatch(/\bhidden\b/);
+  });
+
   describe("with the flag on", () => {
     beforeEach(() => {
       vi.stubEnv("VITE_GW_THEME_TOGGLE", "1");
@@ -97,6 +105,10 @@ describe("the theme control", () => {
     it("lives in the action group and starts on the brand default", () => {
       expect(element("gw-theme-btn").closest(".gw-tools-act")).toBeTruthy();
       expect(document.documentElement.dataset.theme).toBe("dark");
+    });
+
+    it("is unhidden by the wiring, since the markup ships it hidden", () => {
+      expect(element("gw-theme-btn").hidden).toBe(false);
     });
 
     it("flips the document theme when clicked", () => {

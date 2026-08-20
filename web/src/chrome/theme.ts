@@ -78,6 +78,9 @@ export function mountThemeToggle(button: HTMLElement): void {
     if (label) label.textContent = COPY[theme].label;
   }
 
+  // The markup ships it hidden so the flag-off build never paints a control it then removes.
+  button.hidden = false;
+
   const initial = storedTheme() ?? "dark";
   document.documentElement.dataset.theme = initial;
   render(initial);

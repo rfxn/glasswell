@@ -7,6 +7,22 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-20 — wave 1 merge train: the pre-train batch fix
+
+- [Fix] The read slot stops shearing the bottom rule off the key chip and the
+      degraded pill (gate-v M-1). The slot budgets a 20 px line, a 4 px gap and a
+      16 px signal line; the layout came to 21 + 4 + 18, so 1.5 px fell off each end
+      at 1600 and 1024 and the amber pill read as an open bracket. Two mechanisms,
+      neither of them the `line-height` the finding named — that was already 16 px:
+      the as_of row baseline-aligned a 10.56 px eyebrow inside a 12 px mono strut,
+      and the pill's 1 px border added to an auto-height inline-block. The row is
+      centred and the pill's rule is an inset ring; measured 20 + 4 + 16 = 40 px with
+      zero overflow at 1600, 1024 and 390
+- [Fix] The theme control ships `hidden` and the wiring unhides it when
+      `VITE_GW_THEME_TOGGLE` is on (gate-v m-3). The module script is deferred, so
+      the flag-off build painted an inert control for the pre-hydration window and
+      then removed it
+
 ### 2026-08-20 — wave 1 fix round: the rail holds still
 
 - [Fix] The rail's find and act groups no longer move when state changes. The read
@@ -82,6 +98,35 @@ its own version in its header, and its history is summarised in §3.1.
 - [Remove] The `.gw-legend` rules, dead since the legend moved to `map.css` under
       `.gw-lg*`. `.gw-swatch` stays — the chart legend still uses it
 
+### 2026-08-20 — wave 1: map legibility and the client's half of the tile contract
+
+- [Fix] Every text-bearing layer and context line is coloured for the basemap under
+      it rather than for the dark one it was drawn against: the spacing-unit label
+      measured 2.04:1 on light and 1.58:1 on imagery (VF-5). 34 styled layers across
+      the four variants and 127 measured cells, each against its WCAG floor, with
+      the one sub-floor reading disclosed as a harness artifact — satellite z9, a
+      cell where the label's own `minzoom: 11` means it cannot draw
+- [New] The active basemap variant is published as `data-basemap` on the root and on
+      the map container, so the styling pass and the stylesheet key on the same fact
+      rather than each deciding it
+- [New] `?legend=0` closes the legend for a screenshot or a shared link
+- [Fix] A source id from `?wells=`, `?laterals=` or `?spacing=` is matched against
+      `/^[a-z][a-z0-9_]{0,63}$/` before it becomes a tile path, an MVT
+      `source-layer` and a `promoteId` key, and falls back on anything else; 24
+      hostile values are pinned, including the traversal Track O reproduced (N-5)
+- [Change] Each vector source declares the lowest zoom any of its own layers draws
+         at, so the spacing source stops fetching the z0-z7 tiles nothing could
+         render — the 568 KB z7 one included. The rest of the z7 cliff needs the
+         PLSS-township substitute and is an owner decision, not a client one
+- [New] The tile request is held to the cache contract the server now offers: the
+      url is byte-identical on a repeat fetch, no `cache` or `credentials` flag is
+      set, no explicit `Accept-Encoding` is sent, and the tile stays same-origin so
+      the key does not turn every tile into a preflight. `maxzoom: 14` is pinned to
+      `TILE_MAX_ZOOM` with the coupling named, so the two move together or not at all
+- [Change] Map identifiers take `--gw-font-mono` rather than a literal stack, so the
+         hover card and the layer readouts are set in the same face as identifiers
+         everywhere else
+
 ### 2026-08-20 — tile serving: the zoom cost, measured and cut
 
 - [New] The laterals function source thins its geometry in proportion to the zoom it
@@ -115,17 +160,17 @@ its own version in its header, and its history is summarised in §3.1.
 ### 2026-08-20 — Wave 1: the pre-P3 gate
 
 - [Change] The blueprint is **v0.6-rc2**: the twenty amendments of the pre-P3 gate
-           are applied, nine of them change-controlled with their rationale in the
-           commit that landed them, plus G-13. Section 11 stays open — amendment 35
-           is owner-gated and G-13 added a row to the table rather than removing one
+         are applied, nine of them change-controlled with their rationale in the
+         commit that landed them, plus G-13. Section 11 stays open — amendment 35
+         is owner-gated and G-13 added a row to the table rather than removing one
 - [Change] Eight constants stopped being assumptions and became measurements against
-           the live ND data: `PAD_RADIUS_M` and `PAD_WINDOW_DAYS` ratified at 150 m /
-           180 days with `pad_group_max_share` at 0.0008 against a 0.02 guard;
-           `TC_MIN_N` at 20 with 89.3% of subjects on rung 1 and 2.5% with no control;
-           the lateral-length buckets **moved** to {<8000, 8000-10000, 10000-10500,
-           >10500} ft because the old cuts held 6.2% and 58.5% of wells in two of
-           four; and `FORMATION_GROUP_MIN_COUNT` at 100, where nine ND groups cover
-           97.15% of wells
+         the live ND data: `PAD_RADIUS_M` and `PAD_WINDOW_DAYS` ratified at 150 m /
+         180 days with `pad_group_max_share` at 0.0008 against a 0.02 guard;
+         `TC_MIN_N` at 20 with 89.3% of subjects on rung 1 and 2.5% with no control;
+         the lateral-length buckets **moved** to {<8000, 8000-10000, 10000-10500,
+         >10500} ft because the old cuts held 6.2% and 58.5% of wells in two of
+         four; and `FORMATION_GROUP_MIN_COUNT` at 100, where nine ND groups cover
+         97.15% of wells
 - [New] `formation_group` becomes conformed data (G-13): a LOOKUP rule per reported
       pool, a canonical column on `canonical.well_completions`, and a feature
       registry row. The peer group, the Mondrian calibration taxonomy and the analog

@@ -51,6 +51,30 @@ describe("the rail's read slot is a fixed column", () => {
   });
 });
 
+/**
+ * gate-v M-1: the slot clipped the bottom border off the key chip and the degraded pill at
+ * 1600 and 1024. The CSS comment on `.gw-meta` states the band as 20 + 4 + 16 = 40 px; the
+ * layout came to 21 + 4 + 18. Both deltas are here, and neither is the `line-height` the
+ * finding named — that was already 16 px. Measured: work-output/train-railprobe.mjs.
+ */
+describe("the read slot's two rows add up to the band the slot declares", () => {
+  it("does not baseline-align the as_of row, which grew it to 21px", () => {
+    // The row's strut is 12px mono; the eyebrow inside it is 10.56px display. Baseline
+    // alignment offsets the smaller box to make the baselines meet, and the offset is height
+    // the row does not have. Centring two 20px line boxes cannot exceed 20px.
+    expect(block(".gw-asof")).not.toMatch(/align-items:\s*baseline/);
+  });
+
+  it("draws the degraded pill's rule inside its box rather than around it", () => {
+    // A border on an auto-height inline-block adds to the border box — 16px of line box plus
+    // two 1px rules is the 18px signal row. An inset ring is the same pixel, off the layout.
+    const pill = block(".gw-status.gw-degraded");
+
+    expect(pill).not.toMatch(/border:\s*\d/);
+    expect(pill).toMatch(/box-shadow:\s*inset/);
+  });
+});
+
 describe("the act group holds only the controls whose width never changes", () => {
   it("puts the key chip in the read group, not beside the theme and help buttons", () => {
     // The chip is a status readout that happens to be pressable. Left in the act group it
