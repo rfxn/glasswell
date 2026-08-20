@@ -8,8 +8,26 @@ let vintage: HTMLElement;
 let toasts: HTMLElement;
 let keyState: HTMLButtonElement;
 
+// A hand-rolled MediaQueryList: the rail's brief copy is chosen by a media query, and the
+// test has to be able to cross that boundary in both directions.
+const listeners: ((event: MediaQueryListEvent) => void)[] = [];
+const media = {
+  matches: false,
+  addEventListener: (_: string, handler: (event: MediaQueryListEvent) => void) =>
+    listeners.push(handler),
+  removeEventListener: () => {},
+};
+
+function narrow(value: boolean): void {
+  media.matches = value;
+  for (const handler of [...listeners]) handler({ matches: value } as MediaQueryListEvent);
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
+  listeners.length = 0;
+  media.matches = false;
+  vi.stubGlobal("matchMedia", () => media);
   document.body.innerHTML = "";
   status = document.createElement("p");
   vintage = document.createElement("p");
@@ -21,6 +39,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe("the four status channels are not interchangeable (harvest item 10)", () => {
@@ -42,6 +61,37 @@ describe("the four status channels are not interchangeable (harvest item 10)", (
 
     setStatus("ready");
     expect(status.classList.contains("gw-degraded")).toBe(false);
+  });
+
+  it("says something shorter on a phone rather than truncating to a stub", () => {
+    // gate-v MINOR-1: at 390 the healthy line ellipsised to "Click any ⌾ to…", which spends
+    // rail width to convey nothing. The slot is a fixed column now, so the copy has to fit
+    // it — the brief form is a sentence, not the long one with its end cut off.
+    narrow(true);
+
+    setStatus("Click any ⌾ to see where a number came from.", undefined, { brief: "⌾ traces it" });
+
+    expect(status.textContent).toBe("⌾ traces it");
+    expect(status.title).toBe("Click any ⌾ to see where a number came from.");
+  });
+
+  it("swaps back to the long form when the rail is wide enough for it", () => {
+    narrow(true);
+    setStatus("Glossary unavailable", undefined, { brief: "glossary down", degraded: true });
+    expect(status.textContent).toBe("glossary down");
+
+    narrow(false);
+
+    expect(status.textContent).toBe("Glossary unavailable");
+    expect(status.classList.contains("gw-degraded")).toBe(true);
+  });
+
+  it("falls back to the one string it was given when no brief form exists", () => {
+    narrow(true);
+
+    setStatus("43,102 wells in this slice");
+
+    expect(status.textContent).toBe("43,102 wells in this slice");
   });
 
   it("never lets a transient failure erase the freshness slot", () => {

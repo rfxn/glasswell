@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { readFileSync } from "node:fs";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { HEADER_IDS, wireHeader } from "./header.ts";
 
@@ -23,10 +23,15 @@ beforeEach(() => {
   wireHeader({ search, onKeyPanel });
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("the header is a control surface, not a paragraph", () => {
   it("carries every id the wiring depends on", () => {
-    // The fixture is the shipped index.html, so a renamed id fails here, not in a browser.
-    for (const id of HEADER_IDS) expect(document.getElementById(id), id).toBeTruthy();
+    // Asserted against the shipped markup, not the wired DOM, so a renamed id fails here
+    // rather than in a browser — and so a control the flag removes after wiring still counts.
+    for (const id of HEADER_IDS) expect(MARKUP, id).toContain(`id="${id}"`);
   });
 
   it("sets the wordmark as live text, so it is legible at whatever size the rail gives it", () => {
@@ -75,15 +80,30 @@ describe("the header is a control surface, not a paragraph", () => {
 });
 
 describe("the theme control", () => {
-  it("lives in the action group and starts on the brand default", () => {
-    expect(element("gw-theme-btn").closest(".gw-tools-act")).toBeTruthy();
+  it("is not in the shipped rail at all, because the flag defaults off", () => {
+    // gate-v BLOCKER-2: reachable and broken over an unthemed map. wireHeader still wires it,
+    // so the day Track M lands basemap theming the flag is the only thing that moves.
+    expect(element("gw-theme-btn")).toBeNull();
     expect(document.documentElement.dataset.theme).toBe("dark");
   });
 
-  it("flips the document theme when clicked", () => {
-    element("gw-theme-btn").click();
+  describe("with the flag on", () => {
+    beforeEach(() => {
+      vi.stubEnv("VITE_GW_THEME_TOGGLE", "1");
+      document.body.innerHTML = `${MARKUP}<div id="gw-toasts"></div>`;
+      wireHeader({ search, onKeyPanel });
+    });
 
-    expect(document.documentElement.dataset.theme).toBe("light");
+    it("lives in the action group and starts on the brand default", () => {
+      expect(element("gw-theme-btn").closest(".gw-tools-act")).toBeTruthy();
+      expect(document.documentElement.dataset.theme).toBe("dark");
+    });
+
+    it("flips the document theme when clicked", () => {
+      element("gw-theme-btn").click();
+
+      expect(document.documentElement.dataset.theme).toBe("light");
+    });
   });
 });
 

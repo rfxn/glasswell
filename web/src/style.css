@@ -69,6 +69,9 @@
   --gw-rail-pad-y: 8px;
   --gw-rail-pad-x: 16px;
   --gw-control-h: 32px;
+  /* The read slot's width is a per-breakpoint constant, re-declared in the media queries
+     below and nowhere else. Anything that varies it by state reopens BLOCKER-1. */
+  --gw-meta-w: 240px;
 
   --gw-radius-xs: 4px;
   --gw-radius-sm: 6px;
@@ -236,8 +239,10 @@ body {
   text-overflow: ellipsis;
 }
 
+/* The text-safe cousin, not the swatch: at 390 the wordmark is 18.4 px, under WCAG's large-
+   text threshold, so the accent owes 4.5:1 and the swatch cyan measures 3.25 on light. */
 .gw-wordmark-well {
-  color: var(--cyan);
+  color: var(--cyan-text);
 }
 
 /* VF-2: the strap is a designed element, not a leftover string. The cyan rule in front of it
@@ -335,11 +340,18 @@ body {
   display: inline;
 }
 
-/* Not news when it is fine, and a warning the moment it is not. */
-.gw-key-chip {
+/* Not news when it is fine, and a warning the moment it is not. It reads on the read slot's
+   16 px signal line, not as a 32 px control: at control height the two-line slot came to
+   56 px and `overflow: hidden` sheared the date off the top and the chip off the bottom. */
+.gw-controls .gw-key-chip {
+  height: 16px;
+  padding: 0 var(--gw-space-2);
+  border-radius: var(--gw-radius-pill);
   color: var(--amber-text) !important;
   border-color: var(--amber) !important;
+  font-size: var(--gw-fs-micro);
   font-weight: 700;
+  line-height: 16px;
   white-space: nowrap;
 }
 
@@ -347,19 +359,34 @@ body {
   display: none;
 }
 
-/* Width-capped on purpose: it is the last item in a nowrap header, and a long message
-   would otherwise inflate it and crush the brand to zero. Two lines of 20 px and 16 px
-   plus the 4 px gap make exactly the 40 px band the controls beside it stand in. */
+/* A fixed column, not a capped one. A cap bounds how far the slot can grow; it does not fix
+   where it starts, so under a right-packed row every word the status gained pushed search and
+   the buttons left — 117 px between idle and a degraded source (gate-v BLOCKER-1). Fixing the
+   width makes the read slot a column the find and act groups can stand against, and hands the
+   truncation job to the ellipsis that was already here. Two lines of 20 px and 16 px plus the
+   4 px gap make exactly the 40 px band the controls beside it stand in. */
 .gw-meta {
-  flex: 0 1 auto;
+  flex: 0 0 var(--gw-meta-w);
+  width: var(--gw-meta-w);
   flex-direction: column;
   align-items: flex-end;
   justify-content: center;
   gap: var(--gw-space-1);
   min-width: 0;
-  max-width: 240px;
   overflow: hidden;
   text-align: right;
+}
+
+/* The key chip reads as status and lives with it. In the act group its ~100 px arrival on a
+   rejected key widened that group and shoved search sideways; here it is spent from the read
+   slot's own fixed width instead. */
+.gw-meta-signal {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--gw-space-1);
+  width: 100%;
+  min-width: 0;
 }
 
 .gw-asof {
@@ -1163,11 +1190,11 @@ a {
   }
 }
 
-/* The cap exists so a long status cannot crush the brand, not to truncate for its own sake;
-   above 1280 px there is room to say the whole thing. */
+/* The slot is narrow so a long status cannot crush the brand, not to truncate for its own
+   sake; above 1280 px there is room to say the whole thing. */
 @media (min-width: 1280px) {
-  .gw-meta {
-    max-width: 340px;
+  :root {
+    --gw-meta-w: 340px;
   }
 }
 
@@ -1223,8 +1250,8 @@ a {
     width: min(14rem, 34vw);
   }
 
-  .gw-meta {
-    max-width: 150px;
+  :root {
+    --gw-meta-w: 150px;
   }
 }
 
@@ -1313,26 +1340,11 @@ a {
     display: none;
   }
 
-  /* Two states outrank freshness at this width, and each one takes the room from it: a
-     rejected key means there is no data to be fresh about, and a degraded warning is the
-     thing the reader has to be able to read in full. */
-  #gw-header:has(.gw-key-chip:not([hidden])) .gw-meta {
-    display: none;
-  }
-
-  #gw-header:has(.gw-degraded) .gw-asof {
-    display: none;
-  }
-
-  #gw-header:has(.gw-degraded) .gw-meta {
-    max-width: 150px;
-  }
-
-  /* The width the warning takes comes out of the wordmark, not out of the middle of it —
-     a clipped "glasswe" is worse than the mark carrying the brand on its own. */
-  #gw-header:has(.gw-degraded) .gw-wordmark {
-    display: none;
-  }
+  /* The three rules that used to live here reallocated width between the brand and the read
+     slot whenever a key went bad or a source degraded. That is the phone face of BLOCKER-1:
+     the slot grew, the wordmark vanished, and the buttons moved under the reader's thumb.
+     The brief copy in chrome/status.ts is what makes them unnecessary — the message is
+     written to fit the column rather than the column stretched to fit the message. */
 
   /* Anchored to the field, the 26rem panel hung 79 px off the left edge of a 390 px viewport
      and clipped every operator name. At this width it belongs to the viewport, not the box. */
@@ -1348,7 +1360,7 @@ a {
     display: none;
   }
 
-  .gw-meta {
-    max-width: 84px;
+  :root {
+    --gw-meta-w: 104px;
   }
 }

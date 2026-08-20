@@ -21,19 +21,52 @@ const KEY_COPY: Record<KeyState, string> = {
   rejected: "key rejected",
 };
 
+// Matches the ≤520 posture in style.css, where the read slot is 104 px wide. Below that the
+// long forms do not shrink, they truncate, and a truncated sentence spends rail width to say
+// nothing (gate-v MINOR-1).
+const NARROW_QUERY = "(max-width: 520px)";
+
+/**
+ * The brief forms for the strings main.ts sets. They live here rather than at the call site
+ * because main.ts is frozen — which is also what makes keying on its literals safe: they
+ * cannot drift without the freeze being lifted. An unrecognised string keeps its long form.
+ */
+const BRIEF: Record<string, string> = {
+  "Click any ⌾ to see where a number came from.": "tap ⌾ for source",
+  "Glossary unavailable": "glossary down",
+};
+
 let hosts: StatusHosts | null = null;
+let narrow: MediaQueryList | null = null;
+let current = { long: "", brief: "" };
 
 export function mountStatus(elements: StatusHosts): void {
   hosts = elements;
+  // Rebound rather than bound once: a second mount must not leave the first mount's query
+  // still driving the slot, and must not stack a second listener on the same one.
+  narrow?.removeEventListener("change", renderStatus);
+  narrow = window.matchMedia(NARROW_QUERY);
+  narrow.addEventListener("change", renderStatus);
   setVintage(null);
   setKeyState("ok");
 }
 
-export function setStatus(short: string, detail?: string, options?: { degraded?: boolean }): void {
+export function setStatus(
+  short: string,
+  detail?: string,
+  options?: { degraded?: boolean; brief?: string },
+): void {
   if (!hosts) return;
-  hosts.status.textContent = short;
-  hosts.status.title = detail ?? "";
+  current = { long: short, brief: options?.brief ?? BRIEF[short] ?? short };
+  renderStatus();
+  // The long form is always the tooltip, so the brief form never costs the reader detail.
+  hosts.status.title = detail ?? (current.brief === current.long ? "" : current.long);
   hosts.status.classList.toggle("gw-degraded", options?.degraded === true);
+}
+
+function renderStatus(): void {
+  if (!hosts) return;
+  hosts.status.textContent = narrow?.matches ? current.brief : current.long;
 }
 
 export function setVintage(resolved: string | null): void {

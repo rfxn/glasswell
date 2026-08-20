@@ -7,6 +7,30 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-20 — wave 1 fix round: the rail holds still
+
+- [Fix] The rail's find and act groups no longer move when state changes. The read
+      slot was `max-width`-capped inside a right-packed row, so every word the
+      status gained shoved search and the buttons sideways — 117 px at 1600 between
+      idle and a degraded source, 100 px on a rejected key, which landed on the
+      first thing a new reader does. The slot is a fixed column per breakpoint now
+      and the key chip moved into it, so the two groups have one position in every
+      state; measured spread across all four states at 1600, 1024 and 390, both
+      themes, is 0.00 px
+- [Change] The theme toggle is behind `VITE_GW_THEME_TOGGLE`, off by default, until
+         the map can follow the theme: `map.css` hardcodes a dark overlay surface
+         while taking `color: var(--paper)`, so light rendered the legend and the
+         tile-failure toast black-on-black, and the basemap has no light variant
+         wired at all. The theme, its tests and `applyTheme` all stay; only the way
+         in is closed, and dark is forced past a preference stored before the flag
+- [Fix] The wordmark accent takes the text-safe cyan rather than the swatch cyan: at
+      390 the wordmark is 18.4 px, under WCAG's large-text threshold, where the
+      swatch measured 3.25:1 on light against a 4.5 floor. Now 4.82:1
+- [Fix] The phone rail says "tap ⌾ for source" instead of truncating "Click any ⌾ to
+      see where a number came from." to a stub that spent width to say nothing; the
+      long form stays as the tooltip. The brief vocabulary lives in `chrome/status.ts`
+      beside the slot it has to fit
+
 ### 2026-08-20 — wave 1: visual chrome and brand
 
 - [New] The brand faces are self-hosted and same-origin: Inter 4.1 and JetBrains

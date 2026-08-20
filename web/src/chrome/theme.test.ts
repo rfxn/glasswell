@@ -4,9 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   THEME_EVENT,
   THEME_STORAGE_KEY,
+  applyTheme,
   currentTheme,
   mountThemeToggle,
   storedTheme,
+  themeToggleEnabled,
 } from "./theme.ts";
 
 let button: HTMLButtonElement;
@@ -22,10 +24,50 @@ beforeEach(() => {
   window.localStorage.clear();
   document.documentElement.removeAttribute("data-theme");
   document.body.innerHTML = "";
+  // The theme itself is finished; what is gated is reaching it from the rail. Everything
+  // below this line describes the flag-on surface, so it says so rather than inheriting it.
+  vi.stubEnv("VITE_GW_THEME_TOGGLE", "1");
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
+
+/**
+ * gate-v BLOCKER-2: the theme is reachable from the rail and breaks where the chrome meets
+ * the map — map.css hardcodes a dark overlay surface while taking `color: var(--paper)`,
+ * which the light theme inverts. That file belongs to Track M, so the fix here is to make
+ * the surface unreachable rather than to cross the boundary. The theme and its tests stay.
+ */
+describe("with the toggle flag off, which is the shipped default", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_GW_THEME_TOGGLE", "");
+  });
+
+  it("leaves no toggle in the rail to press", () => {
+    mount();
+
+    expect(document.body.contains(button)).toBe(false);
+    expect(themeToggleEnabled()).toBe(false);
+  });
+
+  it("holds the document on dark even for a reader who stored light before the flag", () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, "light");
+
+    mount();
+
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(currentTheme()).toBe("dark");
+  });
+
+  it("keeps applyTheme working, so un-flagging needs no second change", () => {
+    mount();
+
+    applyTheme("light");
+
+    expect(document.documentElement.dataset.theme).toBe("light");
+  });
 });
 
 describe("the theme the reader gets", () => {
