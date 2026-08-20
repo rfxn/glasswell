@@ -38,10 +38,10 @@ afterEach(() => {
 describe("well card", () => {
   it("renders the header the operator would recognise", async () => {
     await renderWellCard(host, API10, callbacks);
-    expect(host.querySelector("h2")?.textContent).toBe("SPOTTED HORSE 14-23H");
+    expect(host.querySelector("h2")?.textContent).toBe("Mandaree 50-2008H");
     const text = host.textContent ?? "";
-    expect(text).toContain("CONTINENTAL RESOURCES");
-    expect(text).toContain("150N-96W-14");
+    expect(text).toContain("EOG RESOURCES, INC.");
+    expect(text).toContain("149N-94W-20");
   });
 
   it("renders lateral length through gw-figure, with its unit and its handle", async () => {
@@ -49,7 +49,7 @@ describe("well card", () => {
     const figure = host.querySelector("gw-figure");
     expect(figure?.getAttribute("unit")).toBe("ft");
     expect(figure?.getAttribute("handle")).toBe(LENGTH_HANDLE);
-    expect(figure?.textContent).toContain("9,853.24 ft");
+    expect(figure?.textContent).toContain("15,073.98 ft");
   });
 
   it("opens the drawer from the figure's handle affordance", async () => {
@@ -77,8 +77,10 @@ describe("well card", () => {
     ]);
     expect(chart.columns[0]?.handle).toBe(OIL_HANDLE);
     expect(chart.columns[0]?.unit).toBe("bbl");
-    expect(chart.columns[0]?.nullSemantics).toEqual(["reported", "withheld"]);
-    expect(chart.columns[2]?.values).toEqual([800, 0]);
+    // Every recorded month is `reported`; the other three states are covered against
+    // constructed series in chart/series.test.ts and card/format.test.ts.
+    expect(chart.columns[0]?.nullSemantics).toEqual(Array(6).fill("reported"));
+    expect(chart.columns[2]?.values).toEqual([47601, 45428, 24918, 30985, 24753, 22452]);
   });
 
   it("says so when the API refuses the request instead of rendering an empty card", async () => {

@@ -30,7 +30,7 @@ describe("lineage drawer", () => {
     expect(requested).toContain("depth=full");
 
     const nodes = host.querySelectorAll(".gw-chain-node");
-    expect(nodes).toHaveLength(2);
+    expect(nodes).toHaveLength(3);
     expect(host.querySelector(".gw-chain-manifest")).not.toBeNull();
     // S9: the checksum is on screen after the first interaction, without expanding anything.
     expect(host.querySelector(".gw-sha256")?.textContent).toBe(SHA256);
@@ -41,7 +41,7 @@ describe("lineage drawer", () => {
     vi.stubGlobal("fetch", vi.fn(stubFetch({ "/v1/explain": explainEnvelope })));
     await renderLineageDrawer(host, OIL_HANDLE, noop);
     expect(host.querySelector("a")?.getAttribute("href")).toBe(
-      "https://www.dmr.nd.gov/oilgas/mpr/2026_01.xlsx",
+      "https://www.dmr.nd.gov/oilgas/mpr/2025_10.xlsx",
     );
   });
 
