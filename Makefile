@@ -5,7 +5,7 @@ DOCKER ?= docker
 # can find them without touching anything else on the host.
 TEST_LABEL ?= glasswell.test
 
-.PHONY: help venv install test test-unit test-integration lint fmt clean prune-test-volumes
+.PHONY: help venv install test test-unit test-integration test-e2e lint fmt clean prune-test-volumes
 
 help:
 	@echo "venv              create $(VENV)"
@@ -13,6 +13,7 @@ help:
 	@echo "test              full suite (unit + integration; integration needs docker)"
 	@echo "test-unit         pure-function tier, no docker required"
 	@echo "test-integration  ephemeral PostGIS tier"
+	@echo "test-e2e          browser path against a deployed instance (needs a key)"
 	@echo "prune-test-volumes  reclaim volumes a killed test session left behind"
 	@echo "lint              ruff"
 	@echo "fmt               ruff --fix"
@@ -37,6 +38,11 @@ test-integration: prune-test-volumes
 # Two agents filled /home to 100% this way in one day, so the reclaim is not a manual step.
 prune-test-volumes:
 	-@$(DOCKER) volume prune -af --filter label=$(TEST_LABEL) 2>/dev/null | tail -1  # no docker is not a test failure
+
+# Its own npm project on purpose: playwright-core must not enter the web bundle's lockfile.
+test-e2e:
+	@[ -d tests/e2e/node_modules ] || npm --prefix tests/e2e ci --no-audit --no-fund
+	node tests/e2e/smoke.mjs
 
 lint:
 	$(PY) -m ruff check .

@@ -1,0 +1,13 @@
+{
+  "name": "glasswell-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Browser-path regression tier. Deliberately its own project: it must not add a dependency to the web bundle's lockfile.",
+  "scripts": {
+    "test": "node smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.62.1"
+  }
+}
