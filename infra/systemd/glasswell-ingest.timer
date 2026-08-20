@@ -1,0 +1,13 @@
+[Unit]
+Description=Monthly glasswell ND ingest
+Documentation=file:/opt/glasswell/src/infra/README.md
+OnFailure=glasswell-alert@%n.service
+
+[Timer]
+OnCalendar=*-*-05 04:30:00 UTC
+RandomizedDelaySec=1800
+Persistent=true
+Unit=glasswell-ingest.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,39 @@
+[Unit]
+Description=glasswell ND ingest (GIS layers, monthly production, tile marts)
+Documentation=file:/opt/glasswell/src/infra/README.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+OnFailure=glasswell-alert@%n.service
+
+[Service]
+Type=oneshot
+User=glasswell
+Group=glasswell
+EnvironmentFile=/etc/glasswell/app.env
+# Peer auth over the socket: no password reaches the process table.
+Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql
+# NDIC publishes a production month roughly two months in arrears; three is the safe lag.
+Environment=GLASSWELL_MPR_LAG_MONTHS=3
+ExecStart=/opt/glasswell/venv/bin/python -m glasswell.ingest.nd_gis --layer all --dsn ${GLASSWELL_DSN}
+ExecStart=/bin/bash -c '/opt/glasswell/venv/bin/python -m glasswell.ingest.nd_mpr --month "$(date -u -d "-$GLASSWELL_MPR_LAG_MONTHS months" +%%Y-%%m)" --dsn "$GLASSWELL_DSN"'
+ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.nd_wells --dsn ${GLASSWELL_DSN}
+TimeoutStartSec=3600
+MemoryMax=6G
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+StateDirectory=glasswell
+ReadWritePaths=/var/lib/glasswell /data/raw /data/staging
+
+[Install]
+WantedBy=multi-user.target

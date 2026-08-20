@@ -1,0 +1,17 @@
+[Unit]
+Description=Record the failure of %i
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/logger -t glasswell-alert -p daemon.err "unit %i entered a failed state"
+ExecStart=/bin/bash -c 'printf "%%s %%s failed\\n" "$(date -uIs)" "%i" >> /var/lib/glasswell/health-events'
+User=glasswell
+Group=glasswell
+StateDirectory=glasswell
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+CapabilityBoundingSet=
+ReadWritePaths=/var/lib/glasswell

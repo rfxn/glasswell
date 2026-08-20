@@ -1,0 +1,35 @@
+[Unit]
+Description=glasswell API and map UI (uvicorn)
+Documentation=file:/opt/glasswell/src/infra/README.md
+After=network-online.target postgresql.service martin.service
+Wants=network-online.target
+OnFailure=glasswell-alert@%n.service
+
+[Service]
+Type=exec
+User=glasswell
+Group=glasswell
+EnvironmentFile=/etc/glasswell/db.env
+EnvironmentFile=/etc/glasswell/app.env
+ExecStart=/opt/glasswell/venv/bin/uvicorn glasswell.api:app --host 0.0.0.0 --port 8000 --workers 2
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+StateDirectory=glasswell
+# The raw zone is deliberately absent: only glasswell-ingest may write /data/raw.
+ReadWritePaths=/var/lib/glasswell
+
+[Install]
+WantedBy=multi-user.target
