@@ -11,7 +11,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/status-pre--build-B57A18?style=flat-square" alt="Status: pre-build">
   <img src="https://img.shields.io/badge/blueprint-v0.5-2A9BB5?style=flat-square" alt="Blueprint v0.5">
-  <a href="https://www.gnu.org/licenses/old-licenses/gpl-2.0.html"><img src="https://img.shields.io/badge/license-GPL_v2-3FA55E?style=flat-square" alt="License: GPL v2"></a>
+  <img src="https://img.shields.io/badge/license-proprietary-7C8B96?style=flat-square" alt="License: proprietary">
   <img src="https://img.shields.io/badge/data-public_only-3FA55E?style=flat-square" alt="Public data only">
   <img src="https://img.shields.io/badge/basins-ND_%C2%B7_Permian-2A9BB5?style=flat-square" alt="Basins: North Dakota and Permian">
 </p>
@@ -29,7 +29,7 @@ derivation handle back to a checksummed regulator file, or it does not ship.
   complete self-describing API
 </p>
 
-> Copyright (C) 2026 [R-fx Networks](https://www.rfxn.com) &lt;proj@rfxn.com&gt; &#183; Ryan MacDonald &#183; Licensed under [GNU GPL v2](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html)
+> Copyright (C) 2026 Ryan MacDonald &lt;ryan@rfxn.com&gt; &#183; All rights reserved
 
 > [!IMPORTANT]
 > **Pre-build, private, and not a product.** This repository currently holds the
@@ -266,14 +266,16 @@ Stated plainly, because the failure mode of a system like this is confident nons
 
 ## License
 
-GNU General Public License v2 — see [LICENSE](LICENSE).
+Proprietary. Copyright (C) 2026 Ryan MacDonald, all rights reserved — see
+[LICENSE](LICENSE). Access to this repository does not convey any right to its
+contents.
 
-Public regulator data carries its own terms. Attribute the agency that publishes
-the file, not glasswell.
+Public regulator data carries its own terms, set by the agencies that publish it.
+Attribute the agency that publishes a file, not glasswell.
 
 ## Support
 
-Ryan MacDonald &lt;ryan@rfxn.com&gt; · R-fx Networks &lt;proj@rfxn.com&gt;
+Ryan MacDonald &lt;ryan@rfxn.com&gt;
 
 Change control: edits to the protocols, the design philosophy, the canonical model
 thesis, or rules R1–R8 require a written rationale in the commit. Everything else

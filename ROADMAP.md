@@ -89,4 +89,4 @@ Items 1–7 from blueprint v0.4 §8.3 also remain open.
 
 ---
 
-> Copyright (C) 2026 R-fx Networks &lt;proj@rfxn.com&gt; &#183; Ryan MacDonald &#183; Licensed under GNU GPL v2
+> Copyright (C) 2026 Ryan MacDonald &lt;ryan@rfxn.com&gt; &#183; All rights reserved

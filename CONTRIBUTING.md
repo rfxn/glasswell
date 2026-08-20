@@ -77,5 +77,7 @@ PNG derivatives per [BRAND.md](BRAND.md) when a mark changes.
 
 ## License
 
-By contributing you agree that your contributions are licensed under the GNU GPL
-v2, consistent with the rest of the project.
+glasswell is proprietary — Copyright (C) 2026 Ryan MacDonald, all rights reserved.
+By contributing you assign copyright in your contribution to Ryan MacDonald and
+agree it is covered by the same terms as the rest of the project. See
+[LICENSE](LICENSE).

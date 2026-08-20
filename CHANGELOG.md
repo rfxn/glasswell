@@ -16,9 +16,12 @@ its own version in its header, and its history is summarised in §3.1.
 - [New] Architecture collateral: layer diagram, glass-box lineage chain,
       forecast-to-dollars pipeline with its control group, and the phase roadmap —
       all hand-authored SVG
-- [New] Repository hygiene: GPL v2 license, .gitattributes export-ignore rules,
-      .gitignore, contributing guide, security policy, code of conduct, GitHub
-      issue and pull-request templates, and a collateral CI check
+- [New] Repository hygiene: proprietary license, .gitattributes export-ignore
+      rules, .gitignore, contributing guide, security policy, code of conduct,
+      GitHub issue and pull-request templates, and a collateral CI check
+- [Change] Licensing and attribution: proprietary, all rights reserved, attributed
+      directly to Ryan MacDonald. glasswell does not carry the GNU GPL v2 and the
+      R-fx Networks org attribution that the rest of the rfxn workspace uses
 - [New] llms.txt orientation file for agent consumers
 
 No application code yet. P0 (scaffold) has not started — see [ROADMAP.md](ROADMAP.md).

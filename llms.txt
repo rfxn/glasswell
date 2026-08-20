@@ -4,7 +4,8 @@
 > forecasts with calibrated bands, DCF economics, scenarios, analogs and inventory
 > across North Dakota and the Permian, built from public regulator files by a
 > single operator. Every served figure carries a derivation handle back to a
-> checksummed source file. Licensed GNU GPL v2.
+> checksummed source file. Proprietary — copyright Ryan MacDonald, all rights
+> reserved.
 
 **Status: pre-build.** No application code exists yet and no API is running. This
 repository currently holds the product and engineering blueprint plus the
@@ -74,8 +75,9 @@ rather than smoothed away.
 ## Project
 
 - Source: <https://github.com/rfxn/glasswell>
-- Built and maintained by Ryan MacDonald for R-fx Networks, `proj@rfxn.com`
-- Licensed GNU GPL v2
+- Built and maintained by Ryan MacDonald, `ryan@rfxn.com`
+- Proprietary. Copyright (C) 2026 Ryan MacDonald, all rights reserved. Access to
+  the repository conveys no right to its contents.
 
 ## Optional
 

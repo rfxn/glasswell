@@ -69,5 +69,5 @@
 
   <text x="84" y="592" font-family="ui-monospace, 'Cascadia Code', Consolas, monospace" font-size="14" fill="#5FD3E8">GET /wells/{api10}/forecast?explain=true</text>
   <text x="1116" y="592" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
-        font-size="14" fill="#6E808D" text-anchor="end">R-fx Networks &#183; Ryan MacDonald &#183; GNU GPL v2</text>
+        font-size="14" fill="#6E808D" text-anchor="end">Ryan MacDonald &#183; all rights reserved</text>
 </svg>
