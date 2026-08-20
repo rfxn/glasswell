@@ -20,6 +20,19 @@ its own version in its header, and its history is summarised in §3.1.
       once for the aggregate — because the planner flattened the subquery. The
       function sources materialise it, which is 5–40% off every layer at every zoom
       measured on the live ND slice, most of it where the tiles are largest
+- [Fix] The tile proxy asked martin to gzip every tile, because that is what the
+      default `Accept-Encoding` of any HTTP client says. martin obliges: 140 ms of
+      tile-server CPU on the hottest tile in the access log, to save 48 KB over
+      zstd's 19 ms — after which the proxy decoded the result and shipped the 2 MB
+      form anyway. It now asks for `zstd` when the caller can take it and
+      `identity` otherwise, and passes the body through in whatever encoding martin
+      chose rather than decoding it
+- [Fix] Tiles carried no cache class at all, so a browser re-fetched every one:
+      5,903 tile requests over 1,050 distinct tiles in 24 hours, one z7 tile 109
+      times. Responses now carry martin's strong `ETag`, `Cache-Control: private,
+      no-cache` and `Vary: Accept-Encoding`, and `If-None-Match` is forwarded, so a
+      repeat costs martin's 0.7 ms `304` and no body; an empty `204` tile is
+      cacheable on the same terms
 
 ### 2026-08-20 — fix cycle: data truth, guardrails, panels and map
 

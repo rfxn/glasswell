@@ -303,11 +303,15 @@ def seeded(db: psycopg.Connection) -> psycopg.Connection:
 
 
 def _tile_transport(request: httpx.Request) -> httpx.Response:
-    """Stands in for martin: a body for the seeded tile, 204 for anything else."""
+    """Stands in for martin: a body for the seeded tile, 204 for anything else.
+
+    The body is an iterator so the double presents an unconsumed stream, which is what the
+    proxy reads: bytes content would arrive already consumed and no transport does that.
+    """
     if request.url.path.endswith("/0/0/0"):
         return httpx.Response(204)
     return httpx.Response(
-        200, content=TILE_BODY, headers={"content-type": "application/x-protobuf"}
+        200, content=iter([TILE_BODY]), headers={"content-type": "application/x-protobuf"}
     )
 
 
