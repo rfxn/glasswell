@@ -7,6 +7,50 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-20 — Map canvas: basemap, layers, legend, interaction
+
+- [New] Self-hosted basemap: a Protomaps PMTiles extract served from this origin at
+      `/basemap` with a manifest carrying its vintage, region, maxzoom and sha256;
+      `scripts/basemap-build.sh` builds it (ND measures 48 MB at z0–13, ND+TX 336 MB) and
+      `infra/basemap/README.md` is the deployer runbook
+- [New] Basemap switcher with four keyless options — brand-tuned dark, a grayscale light
+      variant, USGS imagery and the graticule — reachable by `?base=`, remembered through a
+      guarded lookup, with a collapsed attribution pill and a banner naming any source whose
+      tiles fail and what was substituted
+- [New] Layer registry drives the panel, the pills, the legend, the reset and the persisted
+      `{on, known}` set from one table; wells, laterals and spacing units are registered,
+      and EIA play outlines and USGS assessment units are registered as stubs stating that
+      no ingest recipe exists yet
+- [New] Layer panel with per-layer opacity, a search filter, provenance badges, the
+      epistemic subtitle in the row, the geometry `derivation_id` read back out of the tile,
+      and out-of-scale rows disabled with the zoom that brings them back
+- [New] Legend rows are filter controls with live counts taken from what is rendered,
+      collapsed to a title pill by default, patched in place, showing an em dash rather than
+      a zero for a count the viewport cannot supply
+- [New] Active-layer pill strip, scale bar, rotation disabled, and a hover card that
+      identifies a well from the tile's own fields without a request
+- [Fix] Well status symbology matches the data: the nine classes of `cr_nd_status_vocab_1`,
+      each labelled, `producing` (which matched no well) removed, dry, expired and
+      temporarily_abandoned added — 12,339 of 43,817 wells that rendered as an unlabelled
+      grey — a struck-through modifier for the terminal classes per the ND DMR legend, an
+      unmapped class in quarantine amber, and glass cyan reserved for selection
+- [Fix] Wells render from zoom 4 rather than zoom 9, so the basin is visible at the app's
+      own default viewport; culling is per status rather than a blanket minzoom, so active
+      wells and drilling show statewide and the terminal classes arrive at zoom 9
+- [Fix] Clicks hit-test a ±6 px box through one priority-sorted dispatcher instead of one
+      exact-pixel handler per layer: measured on the same 195-point grid, 6.2 per cent of
+      clicks selected a well before and 42.6 per cent after, wells outrank laterals, and the
+      pointer cursor and hover card follow the same query
+- [Change] Selection is `promoteId` plus `feature-state` rather than a duplicate
+         `*-selected` filter layer per source, and data layers are inserted beneath the
+         basemap's labels so town and county names stay readable over dense wells
+- [Fix] Lateral width interpolates over `lateral_length_ft` coerced to a number: martin
+      serves a Postgres `numeric` as an MVT string, so the ramp silently held its base value
+- [New] The assembled style is validated against the official style spec in a test. MapLibre
+      drops a layer that fails validation and reports it on the `error` event, which an
+      `error` listener then swallows — an invalid paint expression reads as "the well layers
+      do not appear" over a clean console, which is how it shipped during this phase
+
 ### 2026-08-20 — North Dakota spine and map slice
 
 - [New] Lineage and reproducibility spine: content-addressed raw zone with sealed

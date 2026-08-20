@@ -1,30 +1,35 @@
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
-import { authHeaders, tileUrl } from "../api/client.ts";
+import "../map.css";
+import { authHeaders } from "../api/client.ts";
 import type { Viewport } from "../app/state.ts";
+import {
+  BASEMAP_SOURCE,
+  PMTILES_PATH,
+  basemapDef,
+  chooseBasemap,
+  firstLabelLayerId,
+  graticuleStyle,
+  openFreeMapStyle,
+  rasterStyle,
+  rememberBasemap,
+  vectorStyle,
+} from "./basemap.ts";
+import { installClickRouter } from "./click-router.ts";
+import { createHoverCard } from "./hover-card.ts";
+import { createLayerPanel } from "./layer-panel.ts";
+import { createLegend } from "./legend.ts";
+import { registerMapBus, setUrlParam } from "./map-bus.ts";
+import { readLayerSet, restoreLayerSet, writeLayerSet } from "./persist.ts";
+import { createPillStrip } from "./pills.ts";
+import { LAYERS, defaultLayerSet, layerDef, layerIds } from "./registry.ts";
+import { UNMAPPED_STATUS, statusClass, statusIds } from "./status.ts";
+import { dataLayers, sourceSpecs, statusFilter, strikeGlyph } from "./style.ts";
+import { createTileBanner } from "./tile-banner.ts";
 
-// martin publishes one source id per table and the MVT layer inside carries that id. The
-// running service auto-publishes, so the ids are overridable without a rebuild.
-const LATERALS = new URLSearchParams(window.location.search).get("laterals") ?? "nd_laterals";
-const WELLS = new URLSearchParams(window.location.search).get("wells") ?? "nd_wells";
-
-const STATUS_COLOURS: [string, string][] = [
-  ["active", "#3FA55E"],
-  ["producing", "#3FA55E"],
-  ["inactive", "#E4A33C"],
-  ["plugged", "#D9534F"],
-  ["permitted", "#5FD3E8"],
-  ["drilling", "#5FD3E8"],
-  ["confidential", "#9FB0BC"],
-];
-
-const STATUS_EXPRESSION = [
-  "match",
-  ["downcase", ["coalesce", ["get", "status_canonical"], "unknown"]],
-  ...STATUS_COLOURS.flat(),
-  "#7C8B96",
-];
+export { absoluteTileUrl } from "./style.ts";
+export { graticuleStyle as baseStyle } from "./basemap.ts";
 
 export interface MapCallbacks {
   onSelect(api10: string): void;
@@ -36,6 +41,86 @@ export interface MapHandle {
   flyTo(point: { lon: number; lat: number }): void;
 }
 
+interface BasemapManifest {
+  archive: string;
+  labels: boolean;
+  vintage?: string;
+  sha256?: string;
+}
+
+const MANIFEST_PATH = "/basemap/manifest.json";
+const OPACITY_PROPERTY: Readonly<Record<string, string>> = {
+  circle: "circle-opacity",
+  line: "line-opacity",
+  fill: "fill-opacity",
+  symbol: "icon-opacity",
+};
+
+let protocolRegistered = false;
+
+async function registerPmtilesProtocol(): Promise<void> {
+  if (protocolRegistered) return;
+  const { Protocol } = await import("pmtiles");
+  maplibregl.addProtocol("pmtiles", new Protocol().tile);
+  protocolRegistered = true;
+}
+
+/**
+ * PMTiles is read with HTTP range requests; a server that answers a ranged GET with a whole
+ * 200 would make every tile read pull the entire archive. Requiring the 206 is how the
+ * serving mechanism is verified at runtime rather than assumed from the deploy notes.
+ */
+async function archiveServesRanges(path: string): Promise<boolean> {
+  try {
+    const response = await fetch(path, { headers: { Range: "bytes=0-15" } });
+    return response.status === 206;
+  } catch {
+    return false; // A network failure and a missing archive lead to the same fallback.
+  }
+}
+
+async function readManifest(): Promise<BasemapManifest | null> {
+  try {
+    const response = await fetch(MANIFEST_PATH, { headers: { Accept: "application/json" } });
+    if (!response.ok) return null;
+    const parsed = (await response.json()) as Partial<BasemapManifest>;
+    if (typeof parsed.archive !== "string") return null;
+    return { archive: parsed.archive, labels: parsed.labels === true, ...parsed };
+  } catch {
+    return null; // No manifest is a normal state before the basemap is deployed.
+  }
+}
+
+interface ResolvedStyle {
+  style: maplibregl.StyleSpecification | string;
+  failure?: { source: string; fallback: string };
+  vintage?: string;
+}
+
+async function resolveStyle(id: string): Promise<ResolvedStyle> {
+  const base = basemapDef(id) ?? basemapDef("none")!;
+  if (base.kind === "graticule") return { style: graticuleStyle() };
+  if (base.kind === "raster") return { style: rasterStyle(base) };
+
+  const manifest = await readManifest();
+  const archive = manifest?.archive ?? PMTILES_PATH;
+  if (await archiveServesRanges(archive)) {
+    await registerPmtilesProtocol();
+    const style = vectorStyle(base, { labels: manifest?.labels === true });
+    const source = style.sources[BASEMAP_SOURCE];
+    if (source && "url" in source) source.url = `pmtiles://${archive}`;
+    const result: ResolvedStyle = { style };
+    if (manifest?.vintage) result.vintage = manifest.vintage;
+    return result;
+  }
+
+  const hosted = base.fallback === "openfreemap" ? openFreeMapStyle(id) : null;
+  if (hosted) {
+    return { style: hosted, failure: { source: archive, fallback: "OpenFreeMap" } };
+  }
+  return { style: graticuleStyle(), failure: { source: archive, fallback: "the graticule" } };
+}
+
 export function createMap(
   container: HTMLElement,
   viewport: Viewport,
@@ -43,10 +128,11 @@ export function createMap(
 ): MapHandle {
   const map = new maplibregl.Map({
     container,
-    style: baseStyle(),
+    style: graticuleStyle(),
     center: [viewport.lon, viewport.lat],
     zoom: viewport.zoom,
     attributionControl: false,
+    maxZoom: 18,
     transformRequest: (url, resourceType) => {
       if (resourceType === "Tile" && url.includes("/v1/tiles/")) {
         return { url, headers: authHeaders() };
@@ -55,84 +141,237 @@ export function createMap(
     },
   });
 
+  // An analytic map has an up. Rotation costs orientation and buys nothing here.
+  map.dragRotate.disable();
+  map.touchZoomRotate.disableRotation();
+  map.keyboard.disableRotation();
+
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-  map.addControl(
-    new maplibregl.AttributionControl({
-      customAttribution: "Geometry: ND DMR GIS · no basemap (SB-05 §2.1 graticule view)",
-    }),
-    "bottom-right",
-  );
+  map.addControl(new maplibregl.ScaleControl({ maxWidth: 120, unit: "imperial" }), "bottom-left");
+  map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
+
+  const chrome = document.createElement("div");
+  chrome.className = "gw-map-chrome";
+  container.appendChild(chrome);
+
+  const banner = createTileBanner();
+  const hover = createHoverCard();
+  chrome.append(banner.element, hover.element);
+
+  let basemap = chooseBasemap();
+  let on = restoreLayerSet(readLayerSet(), layerIds(), defaultLayerSet());
+  let statuses = new Set(statusIds());
+  const opacities = new Map(LAYERS.map((layer) => [layer.id, layer.opacity]));
+  let selected: string | null = null;
+
+  const legend = createLegend({
+    onFilter: (next) => {
+      statuses = next;
+      applyStatusFilter();
+      refreshCounts();
+    },
+  });
+
+  const panel = createLayerPanel({
+    on,
+    basemap,
+    onToggle: (id, next) => setLayer(id, next),
+    onOpacity: (id, value) => setOpacity(id, value),
+    onBasemap: (id) => setBasemap(id),
+    onReset: (next) => {
+      on = next;
+      applyVisibility();
+      persist();
+    },
+  });
+
+  const pills = createPillStrip({
+    onRemove: (id) => setLayer(id, !on.has(id)),
+    onOpen: () => panel.open(),
+  });
+
+  chrome.append(pills.element, legend.element, panel.element);
+  map.addControl(new LayerButton(() => panel.toggle()), "top-right");
+
+  function persist(): void {
+    writeLayerSet(on, layerIds());
+    const extras = layerIds().filter((id) => on.has(id) !== Boolean(layerDef(id)?.defaultOn));
+    setUrlParam("layers", extras.length > 0 ? extras.join(",") : null);
+  }
+
+  function setLayer(id: string, next: boolean): void {
+    if (next) on.add(id);
+    else on.delete(id);
+    applyVisibility();
+    persist();
+  }
+
+  function setOpacity(id: string, value: number): void {
+    opacities.set(id, value);
+    applyOpacity(id);
+  }
+
+  function applyVisibility(): void {
+    for (const layer of LAYERS) {
+      for (const styleLayer of layer.styleLayers) {
+        if (map.getLayer(styleLayer)) {
+          map.setLayoutProperty(styleLayer, "visibility", on.has(layer.id) ? "visible" : "none");
+        }
+      }
+    }
+    panel.setOn(on);
+    pills.setOn(on);
+    refreshCounts();
+  }
+
+  function applyOpacity(id: string): void {
+    const layer = layerDef(id);
+    if (!layer) return;
+    for (const styleLayer of layer.styleLayers) {
+      const spec = map.getLayer(styleLayer);
+      const property = spec && OPACITY_PROPERTY[spec.type];
+      if (property) map.setPaintProperty(styleLayer, property, opacities.get(id) ?? 1);
+    }
+  }
+
+  function applyStatusFilter(): void {
+    const filter = statusFilter(map.getZoom(), statuses);
+    for (const id of ["wells", "laterals"]) {
+      if (map.getLayer(id)) map.setFilter(id, filter as maplibregl.FilterSpecification);
+    }
+  }
+
+  let countTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function scheduleCounts(): void {
+    clearTimeout(countTimer);
+    countTimer = setTimeout(refreshCounts, 250);
+  }
+
+  function refreshCounts(): void {
+    const zoom = map.getZoom();
+    panel.setZoom(zoom);
+    if (!map.getLayer("wells") || !on.has("wells")) {
+      legend.setCounts({}, zoom);
+      return;
+    }
+    const counts: Record<string, number> = {};
+    let derivation: string | undefined;
+    for (const feature of map.queryRenderedFeatures({ layers: ["wells"] })) {
+      const id = statusClass(feature.properties["status_canonical"] as string).id;
+      counts[id] = (counts[id] ?? 0) + 1;
+      if (!derivation && typeof feature.properties["derivation_id"] === "string") {
+        derivation = feature.properties["derivation_id"];
+      }
+    }
+    // Absent, not zero: a class the viewport does not contain has no count to report.
+    if (counts[UNMAPPED_STATUS.id] === undefined) delete counts[UNMAPPED_STATUS.id];
+    legend.setCounts(counts, zoom);
+    if (derivation) panel.setProvenance("wells", derivation);
+  }
+
+  /**
+   * The well layers are folded into the incoming style rather than added after it loads.
+   * Adding them on a style event is a race — `isStyleLoaded()` stays false while a vector
+   * source is still streaming tiles — and `transformStyle` is the one point where the new
+   * style exists and nothing has been rendered from it yet.
+   */
+  function withDataLayers(next: maplibregl.StyleSpecification): maplibregl.StyleSpecification {
+    const background = next.layers.find((layer) => layer.type === "background");
+    const hollowFill =
+      (background && "paint" in background && background.paint?.["background-color"]) || undefined;
+    const built = dataLayers({
+      labels: Boolean(next.glyphs),
+      ...(typeof hollowFill === "string" ? { hollowFill } : {}),
+    }).map((layer) => {
+      const owner = LAYERS.find((candidate) => candidate.styleLayers.includes(layer.id));
+      if (owner && !on.has(owner.id)) {
+        layer.layout = { ...layer.layout, visibility: "none" } as typeof layer.layout;
+      }
+      if (owner) {
+        const property = OPACITY_PROPERTY[layer.type];
+        const opacity = opacities.get(owner.id);
+        if (property && opacity !== undefined) {
+          layer.paint = { ...layer.paint, [property]: opacity } as typeof layer.paint;
+        }
+      }
+      if (layer.id === "wells" || layer.id === "laterals") {
+        // Both are circle/line layers, which the spec allows a filter on; the union type
+        // includes `background`, which does not, so the narrowing has to be written out.
+        (layer as { filter?: maplibregl.FilterSpecification }).filter = statusFilter(
+          map.getZoom(),
+          statuses,
+        ) as maplibregl.FilterSpecification;
+      }
+      return layer;
+    });
+
+    // Under the basemap's own labels, so town and county names stay readable over wells.
+    const layers = [...next.layers];
+    const labelIndex = layers.findIndex((layer) => layer.id === firstLabelLayerId(next));
+    layers.splice(labelIndex < 0 ? layers.length : labelIndex, 0, ...built);
+    return { ...next, sources: { ...next.sources, ...sourceSpecs() }, layers };
+  }
+
+  function installStrikeGlyph(): void {
+    if (map.hasImage("gw-strike")) return;
+    const image = strikeGlyph();
+    if (image) map.addImage("gw-strike", image);
+  }
+
+  function featureRefs(api10: string): { source: string; sourceLayer: string; id: string }[] {
+    return Object.keys(sourceSpecs()).map((source) => ({ source, sourceLayer: source, id: api10 }));
+  }
+
+  function applySelection(api10: string | null): void {
+    for (const previous of selected ? featureRefs(selected) : []) {
+      if (map.getSource(previous.source)) map.removeFeatureState(previous, "selected");
+    }
+    selected = api10;
+    if (!api10) return;
+    for (const reference of featureRefs(api10)) {
+      if (map.getSource(reference.source)) map.setFeatureState(reference, { selected: true });
+    }
+  }
+
+  async function setBasemap(id: string): Promise<void> {
+    basemap = id;
+    rememberBasemap(id);
+    setUrlParam("base", id === "dark" ? null : id);
+    panel.setBasemap(id);
+    const resolved = await resolveStyle(id);
+    if (resolved.failure) banner.report(resolved.failure.source, resolved.failure.fallback);
+    map.setStyle(resolved.style as maplibregl.StyleSpecification, {
+      diff: false,
+      transformStyle: (_previous, next) => withDataLayers(next),
+    });
+    installStrikeGlyph();
+    applyVisibility();
+    if (selected) applySelection(selected);
+  }
 
   map.on("load", () => {
-    map.addSource("nd_laterals", {
-      type: "vector",
-      tiles: [absoluteTileUrl(tileUrl(LATERALS))],
-      minzoom: 0,
-      maxzoom: 14,
-    });
-    map.addSource("nd_wells", {
-      type: "vector",
-      tiles: [absoluteTileUrl(tileUrl(WELLS))],
-      minzoom: 0,
-      maxzoom: 14,
-    });
-
-    map.addLayer({
-      id: "laterals",
-      type: "line",
-      source: "nd_laterals",
-      "source-layer": LATERALS,
-      paint: {
-        "line-color": STATUS_EXPRESSION as maplibregl.DataDrivenPropertyValueSpecification<string>,
-        "line-width": ["interpolate", ["linear"], ["zoom"], 6, 0.6, 10, 1.8, 14, 3],
+    void setBasemap(basemap);
+    installClickRouter(map, {
+      onClick: (api10) => callbacks.onSelect(api10),
+      onHover: (hit, event) => {
+        if (hit) hover.show(hit.properties, event.point);
+        else hover.hide();
       },
     });
-    map.addLayer({
-      id: "laterals-selected",
-      type: "line",
-      source: "nd_laterals",
-      "source-layer": LATERALS,
-      filter: ["==", ["get", "api10"], ""],
-      paint: { "line-color": "#5FD3E8", "line-width": 4, "line-opacity": 0.9 },
+    // `idle` alone misses the case where the last tile of a pan lands after it fired, which
+    // leaves the legend showing an em dash over a map full of wells.
+    map.on("idle", scheduleCounts);
+    map.on("moveend", scheduleCounts);
+    map.on("sourcedata", (event) => {
+      if (event.isSourceLoaded) scheduleCounts();
     });
-    map.addLayer({
-      id: "wells",
-      type: "circle",
-      source: "nd_wells",
-      "source-layer": WELLS,
-      minzoom: 9,
-      paint: {
-        "circle-color": STATUS_EXPRESSION as maplibregl.DataDrivenPropertyValueSpecification<string>,
-        "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 2, 14, 6],
-        "circle-stroke-color": "#0B1014",
-        "circle-stroke-width": 0.5,
-      },
+    map.on("zoom", applyStatusFilter);
+    map.on("styleimagemissing", (event) => {
+      if (event.id === "gw-strike") installStrikeGlyph();
     });
-    map.addLayer({
-      id: "wells-selected",
-      type: "circle",
-      source: "nd_wells",
-      "source-layer": WELLS,
-      minzoom: 9,
-      filter: ["==", ["get", "api10"], ""],
-      paint: {
-        "circle-color": "#5FD3E8",
-        "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 4, 14, 9],
-      },
-    });
-
-    for (const layer of ["laterals", "wells"]) {
-      map.on("click", layer, (event) => {
-        const api10 = event.features?.[0]?.properties?.["api10"];
-        if (typeof api10 === "string" && api10 !== "") callbacks.onSelect(api10);
-      });
-      map.on("mouseenter", layer, () => {
-        map.getCanvas().style.cursor = "pointer";
-      });
-      map.on("mouseleave", layer, () => {
-        map.getCanvas().style.cursor = "";
-      });
-    }
+    panel.setZoom(map.getZoom());
+    pills.setOn(on);
   });
 
   map.on("moveend", () => {
@@ -140,82 +379,55 @@ export function createMap(
     callbacks.onViewport({ zoom: map.getZoom(), lat: centre.lat, lon: centre.lng });
   });
 
-  return {
-    select(api10: string | null) {
-      const filter: maplibregl.FilterSpecification = ["==", ["get", "api10"], api10 ?? ""];
-      for (const layer of ["laterals-selected", "wells-selected"]) {
-        if (map.getLayer(layer)) map.setFilter(layer, filter);
-      }
+  map.on("error", (event) => {
+    const source = (event as unknown as { sourceId?: string }).sourceId;
+    if (source) banner.report(source);
+    // MapLibre logs errors itself only when nothing is listening. Having a listener and
+    // dropping the ones it cannot attribute to a source is how a style-validation failure
+    // becomes an empty map over a clean console.
+    else console.error("map error", event.error ?? event);
+  });
+
+  const handle: MapHandle = {
+    select(api10) {
+      applySelection(api10);
     },
     flyTo(point) {
-      map.flyTo({ center: [point.lon, point.lat], zoom: Math.max(map.getZoom(), 11) });
+      // Land the well in the strip the card does not cover, not under it.
+      const padding = { top: 0, bottom: 0, left: 0, right: Math.min(520, container.clientWidth / 2) };
+      const target = { center: [point.lon, point.lat] as [number, number], zoom: Math.max(map.getZoom(), 11), padding };
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) map.jumpTo(target);
+      else map.easeTo({ ...target, duration: 600 });
     },
   };
+  registerMapBus({ selectWell: (api10) => handle.select(api10), flyTo: handle.flyTo });
+  return handle;
 }
 
-/** M12: no third-party basemap. A graticule and the well geometry are the whole reference. */
-export function baseStyle(): maplibregl.StyleSpecification {
-  // No `glyphs` key at all: MapLibre validates any property that is present, and an
-  // undefined one fails validation, so the style — and every layer with it — never loads.
-  return {
-    version: 8,
-    sources: {
-      graticule: { type: "geojson", data: graticule() },
-    },
-    layers: [
-      { id: "canvas", type: "background", paint: { "background-color": "#0B1014" } },
-      {
-        id: "graticule",
-        type: "line",
-        source: "graticule",
-        paint: { "line-color": "#1d2a33", "line-width": 1 },
-      },
-    ],
-  };
-}
+/** Opens the layer panel from the map's own control cluster, not from the app header. */
+class LayerButton implements maplibregl.IControl {
+  private readonly onClick: () => void;
+  private container: HTMLElement | undefined;
 
-function graticule(): GeoJSON.FeatureCollection {
-  const lines: GeoJSON.Feature[] = [];
-  for (let lon = -112; lon <= -92; lon += 1) {
-    lines.push(line([[lon, 40], [lon, 52]]));
+  constructor(onClick: () => void) {
+    this.onClick = onClick;
   }
-  for (let lat = 40; lat <= 52; lat += 1) {
-    lines.push(line([[-112, lat], [-92, lat]]));
+
+  onAdd(): HTMLElement {
+    const container = document.createElement("div");
+    container.className = "maplibregl-ctrl maplibregl-ctrl-group";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "gw-layers-button";
+    button.textContent = "Layers";
+    button.setAttribute("aria-label", "Layers");
+    button.addEventListener("click", this.onClick);
+    container.appendChild(button);
+    this.container = container;
+    return container;
   }
-  return { type: "FeatureCollection", features: lines };
-}
 
-function line(coordinates: [number, number][]): GeoJSON.Feature {
-  return {
-    type: "Feature",
-    properties: {},
-    geometry: { type: "LineString", coordinates },
-  };
-}
-
-/** Same-origin by default. Not `new URL()`: it percent-encodes MapLibre's {z}/{x}/{y}. */
-export function absoluteTileUrl(template: string): string {
-  return /^https?:\/\//i.test(template) ? template : `${window.location.origin}${template}`;
-}
-
-export function layerLegend(): HTMLElement {
-  const element = document.createElement("div");
-  element.className = "gw-legend";
-  const heading = document.createElement("h4");
-  heading.textContent = "Status";
-  element.appendChild(heading);
-  for (const [status, colour] of STATUS_COLOURS) {
-    const row = document.createElement("p");
-    const swatch = document.createElement("span");
-    swatch.className = "gw-swatch";
-    swatch.style.background = colour;
-    row.appendChild(swatch);
-    row.appendChild(document.createTextNode(status));
-    element.appendChild(row);
+  onRemove(): void {
+    this.container?.remove();
   }
-  const note = document.createElement("p");
-  note.className = "gw-legend-note";
-  note.textContent = "No basemap: the graticule and the well geometry are the reference.";
-  element.appendChild(note);
-  return element;
 }

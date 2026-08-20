@@ -9,8 +9,9 @@ import { highlight } from "./glossary/index.ts";
 import { loadGlossary, termIndex } from "./glossary/store.ts";
 import "./glossary/gw-term.ts";
 import { renderLineageDrawer } from "./lineage/drawer.ts";
-import { createMap, layerLegend } from "./map/map.ts";
+import { createMap } from "./map/map.ts";
 import type { MapHandle } from "./map/map.ts";
+import { onUrlParam } from "./map/map-bus.ts";
 
 const mapHost = required("gw-map");
 const cardHost = required("gw-card");
@@ -70,7 +71,14 @@ window.addEventListener("popstate", () => {
 });
 
 async function boot(): Promise<void> {
-  mapHost.appendChild(layerLegend());
+  // The map writes its own share parameters; mirror them so a later viewport commit,
+  // which serialises the snapshot taken at boot, does not drop them.
+  onUrlParam((key, value) => {
+    const extra = { ...state.extra };
+    if (value === null) delete extra[key];
+    else extra[key] = value;
+    state = { ...state, extra };
+  });
   map = createMap(mapHost, state.map, {
     onSelect: (api10) => selectWell(api10),
     onViewport: (viewport) => commit({ map: viewport }, "replace"),
