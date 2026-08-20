@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from glasswell.api.errors import TYPE_BASE
 from glasswell.api.pagination import DEFAULT_LIMIT, SPINE_LIMIT_CAP, WELLS_LIMIT_CAP
 
-SPINE_COLLECTIONS = ("/v1/manifests", "/v1/glossary")
+SPINE_COLLECTIONS = ("/v1/manifests", "/v1/quarantine", "/v1/conformance", "/v1/glossary")
 
 
 def decode(cursor: str) -> dict:

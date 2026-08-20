@@ -18,11 +18,13 @@ from starlette.staticfiles import StaticFiles
 from glasswell.api.deps import WEB_ROOT_ENV, require_key
 from glasswell.api.errors import install_handlers
 from glasswell.api.routers import (
+    conformance,
     glossary,
     health,
     index,
     lineage,
     production,
+    quarantine,
     tiles,
     wells,
 )
@@ -43,7 +45,8 @@ whose `type` resolves at `/v1/errors/{code}`; and `as_of` selects knowledge time
 the resolved vintage reported back in `meta.as_of`.
 
 This deployment is the North Dakota slice: wells, geometry, monthly production, the
-lineage spine and the glossary. Forecasts, economics and other basins are not served.
+lineage spine, the conformance registry, quarantine and the glossary. Forecasts,
+economics and other basins are not served.
 """.strip()
 
 
@@ -75,6 +78,8 @@ def create_app() -> FastAPI:
         production.router,
         tiles.router,
         lineage.router,
+        conformance.router,
+        quarantine.router,
         glossary.router,
     ):
         app.include_router(router, prefix="/v1", dependencies=[Depends(require_key)])

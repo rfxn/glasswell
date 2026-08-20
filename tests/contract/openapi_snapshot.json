@@ -1,6 +1,59 @@
 {
   "components": {
     "schemas": {
+      "AppliedBy": {
+        "properties": {
+          "applied_rows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Rows the rule touched in that derivation.",
+            "title": "Applied Rows"
+          },
+          "created_vintage": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Knowledge time of that derivation.",
+            "title": "Created Vintage"
+          },
+          "derivation_id": {
+            "description": "Derivation that cited this rule.",
+            "title": "Derivation Id",
+            "type": "string"
+          },
+          "operation": {
+            "description": "Operation of the citing derivation.",
+            "title": "Operation",
+            "type": "string"
+          },
+          "output_dataset": {
+            "description": "Dataset the citing derivation produced.",
+            "title": "Output Dataset",
+            "type": "string"
+          }
+        },
+        "required": [
+          "derivation_id",
+          "applied_rows",
+          "operation",
+          "output_dataset",
+          "created_vintage"
+        ],
+        "title": "AppliedBy",
+        "type": "object"
+      },
       "AsOfModel": {
         "properties": {
           "requested": {
@@ -214,6 +267,301 @@
           "chains"
         ],
         "title": "Chains",
+        "type": "object"
+      },
+      "ConformanceRule": {
+        "properties": {
+          "applies_to_fields": {
+            "description": "Fields the rule governs.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Applies To Fields",
+            "type": "array"
+          },
+          "code_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Symbol implementing the rule, for code_ref kinds.",
+            "title": "Code Ref"
+          },
+          "effective_from": {
+            "description": "First day the rule applies.",
+            "format": "date",
+            "title": "Effective From",
+            "type": "string"
+          },
+          "effective_to": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last day it applied, if superseded.",
+            "title": "Effective To"
+          },
+          "evidence_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Hash of the evidence artifact, if taken.",
+            "title": "Evidence Sha256"
+          },
+          "evidence_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the upstream evidence lives.",
+            "title": "Evidence Url"
+          },
+          "rationale": {
+            "description": "Why this decision was taken, in the author's words.",
+            "title": "Rationale",
+            "type": "string"
+          },
+          "rule": {
+            "description": "The rule stated in one sentence.",
+            "title": "Rule",
+            "type": "string"
+          },
+          "rule_family": {
+            "description": "Family the rule versions belong to.",
+            "title": "Rule Family",
+            "type": "string"
+          },
+          "rule_id": {
+            "description": "Registry id of the rule.",
+            "title": "Rule Id",
+            "type": "string",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "rule_kind": {
+            "description": "Executor kind, or code_ref for a policy declaration.",
+            "title": "Rule Kind",
+            "type": "string"
+          },
+          "source_id": {
+            "description": "Source the rule applies to.",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "spec": {
+            "additionalProperties": true,
+            "description": "Executable specification, served verbatim.",
+            "title": "Spec",
+            "type": "object"
+          },
+          "stage": {
+            "description": "parse, validate, conform or join.",
+            "title": "Stage",
+            "type": "string"
+          },
+          "supersedes_rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Rule version this one replaced.",
+            "title": "Supersedes Rule Id"
+          }
+        },
+        "required": [
+          "rule_id",
+          "rule_family",
+          "supersedes_rule_id",
+          "source_id",
+          "stage",
+          "applies_to_fields",
+          "rule_kind",
+          "spec",
+          "rule",
+          "rationale",
+          "evidence_url",
+          "evidence_sha256",
+          "effective_from",
+          "effective_to",
+          "code_ref"
+        ],
+        "title": "ConformanceRule",
+        "type": "object"
+      },
+      "ConformanceRuleDetail": {
+        "properties": {
+          "applied_by": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AppliedBy"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present when include=applied_by.",
+            "title": "Applied By"
+          },
+          "applies_to_fields": {
+            "description": "Fields the rule governs.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Applies To Fields",
+            "type": "array"
+          },
+          "code_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Symbol implementing the rule, for code_ref kinds.",
+            "title": "Code Ref"
+          },
+          "effective_from": {
+            "description": "First day the rule applies.",
+            "format": "date",
+            "title": "Effective From",
+            "type": "string"
+          },
+          "effective_to": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last day it applied, if superseded.",
+            "title": "Effective To"
+          },
+          "evidence_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Hash of the evidence artifact, if taken.",
+            "title": "Evidence Sha256"
+          },
+          "evidence_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the upstream evidence lives.",
+            "title": "Evidence Url"
+          },
+          "rationale": {
+            "description": "Why this decision was taken, in the author's words.",
+            "title": "Rationale",
+            "type": "string"
+          },
+          "rule": {
+            "description": "The rule stated in one sentence.",
+            "title": "Rule",
+            "type": "string"
+          },
+          "rule_family": {
+            "description": "Family the rule versions belong to.",
+            "title": "Rule Family",
+            "type": "string"
+          },
+          "rule_id": {
+            "description": "Registry id of the rule.",
+            "title": "Rule Id",
+            "type": "string",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "rule_kind": {
+            "description": "Executor kind, or code_ref for a policy declaration.",
+            "title": "Rule Kind",
+            "type": "string"
+          },
+          "source_id": {
+            "description": "Source the rule applies to.",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "spec": {
+            "additionalProperties": true,
+            "description": "Executable specification, served verbatim.",
+            "title": "Spec",
+            "type": "object"
+          },
+          "stage": {
+            "description": "parse, validate, conform or join.",
+            "title": "Stage",
+            "type": "string"
+          },
+          "supersedes_rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Rule version this one replaced.",
+            "title": "Supersedes Rule Id"
+          }
+        },
+        "required": [
+          "rule_id",
+          "rule_family",
+          "supersedes_rule_id",
+          "source_id",
+          "stage",
+          "applies_to_fields",
+          "rule_kind",
+          "spec",
+          "rule",
+          "rationale",
+          "evidence_url",
+          "evidence_sha256",
+          "effective_from",
+          "effective_to",
+          "code_ref"
+        ],
+        "title": "ConformanceRuleDetail",
         "type": "object"
       },
       "Derivation": {
@@ -566,6 +914,26 @@
         "title": "EnvelopeModel[Chains]",
         "type": "object"
       },
+      "EnvelopeModel_ConformanceRuleDetail_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ConformanceRuleDetail"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[ConformanceRuleDetail]",
+        "type": "object"
+      },
       "EnvelopeModel_Derivation_": {
         "properties": {
           "data": {
@@ -706,6 +1074,46 @@
         "title": "EnvelopeModel[Production]",
         "type": "object"
       },
+      "EnvelopeModel_QuarantineDetail_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/QuarantineDetail"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[QuarantineDetail]",
+        "type": "object"
+      },
+      "EnvelopeModel_QuarantineSummary_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/QuarantineSummary"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[QuarantineSummary]",
+        "type": "object"
+      },
       "EnvelopeModel_ServiceIndex_": {
         "properties": {
           "data": {
@@ -744,6 +1152,30 @@
           "links"
         ],
         "title": "EnvelopeModel[WellDetail]",
+        "type": "object"
+      },
+      "EnvelopeModel_list_ConformanceRule__": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ConformanceRule"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[list[ConformanceRule]]",
         "type": "object"
       },
       "EnvelopeModel_list_GlossaryTerm__": {
@@ -792,6 +1224,30 @@
           "links"
         ],
         "title": "EnvelopeModel[list[Manifest]]",
+        "type": "object"
+      },
+      "EnvelopeModel_list_QuarantineRow__": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/QuarantineRow"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[list[QuarantineRow]]",
         "type": "object"
       },
       "EnvelopeModel_list_WellSummary__": {
@@ -1913,6 +2369,340 @@
         "title": "PublishedVintage",
         "type": "object"
       },
+      "QuarantineDetail": {
+        "properties": {
+          "first_seen_at": {
+            "description": "When it was first rejected.",
+            "format": "date-time",
+            "title": "First Seen At",
+            "type": "string"
+          },
+          "first_seen_manifest_id": {
+            "description": "Manifest it was first seen in.",
+            "title": "First Seen Manifest Id",
+            "type": "string"
+          },
+          "last_seen_at": {
+            "description": "When it was last re-presented.",
+            "format": "date-time",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "last_seen_manifest_id": {
+            "description": "Manifest it was last seen in.",
+            "title": "Last Seen Manifest Id",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Operator note, where one was left.",
+            "title": "Notes"
+          },
+          "occurrence_count": {
+            "description": "How many fetches have re-presented it.",
+            "title": "Occurrence Count",
+            "type": "integer"
+          },
+          "quarantine_id": {
+            "description": "Stable id of the quarantined row.",
+            "title": "Quarantine Id",
+            "type": "string"
+          },
+          "reason_code": {
+            "description": "Why it was rejected (SB-07 \u00a78.2).",
+            "title": "Reason Code",
+            "type": "string",
+            "x-glasswell-glossary": "gt_quarantine"
+          },
+          "release_derivation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Derivation that released it.",
+            "title": "Release Derivation Id"
+          },
+          "released_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it was released.",
+            "title": "Released At"
+          },
+          "released_by_rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Rule that released it, if any.",
+            "title": "Released By Rule Id"
+          },
+          "row_fingerprint": {
+            "description": "Fingerprint that dedupes it across re-pulls.",
+            "title": "Row Fingerprint",
+            "type": "string"
+          },
+          "row_payload": {
+            "additionalProperties": true,
+            "description": "The rejected source row, verbatim. It is evidence, not a served figure.",
+            "title": "Row Payload",
+            "type": "object"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Conformance rule that rejected it.",
+            "title": "Rule Id"
+          },
+          "source_id": {
+            "description": "Source the row came from.",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "stage": {
+            "description": "Pipeline stage that rejected it.",
+            "title": "Stage",
+            "type": "string"
+          },
+          "staging_table": {
+            "description": "Staging table it was read from.",
+            "title": "Staging Table",
+            "type": "string"
+          },
+          "state": {
+            "description": "open, released, accepted_loss or superseded.",
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "quarantine_id",
+          "row_fingerprint",
+          "source_id",
+          "staging_table",
+          "stage",
+          "reason_code",
+          "rule_id",
+          "first_seen_at",
+          "first_seen_manifest_id",
+          "last_seen_at",
+          "last_seen_manifest_id",
+          "occurrence_count",
+          "state",
+          "released_by_rule_id",
+          "released_at",
+          "release_derivation_id",
+          "notes",
+          "row_payload"
+        ],
+        "title": "QuarantineDetail",
+        "type": "object"
+      },
+      "QuarantineRow": {
+        "properties": {
+          "first_seen_at": {
+            "description": "When it was first rejected.",
+            "format": "date-time",
+            "title": "First Seen At",
+            "type": "string"
+          },
+          "first_seen_manifest_id": {
+            "description": "Manifest it was first seen in.",
+            "title": "First Seen Manifest Id",
+            "type": "string"
+          },
+          "last_seen_at": {
+            "description": "When it was last re-presented.",
+            "format": "date-time",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "last_seen_manifest_id": {
+            "description": "Manifest it was last seen in.",
+            "title": "Last Seen Manifest Id",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Operator note, where one was left.",
+            "title": "Notes"
+          },
+          "occurrence_count": {
+            "description": "How many fetches have re-presented it.",
+            "title": "Occurrence Count",
+            "type": "integer"
+          },
+          "quarantine_id": {
+            "description": "Stable id of the quarantined row.",
+            "title": "Quarantine Id",
+            "type": "string"
+          },
+          "reason_code": {
+            "description": "Why it was rejected (SB-07 \u00a78.2).",
+            "title": "Reason Code",
+            "type": "string",
+            "x-glasswell-glossary": "gt_quarantine"
+          },
+          "release_derivation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Derivation that released it.",
+            "title": "Release Derivation Id"
+          },
+          "released_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it was released.",
+            "title": "Released At"
+          },
+          "released_by_rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Rule that released it, if any.",
+            "title": "Released By Rule Id"
+          },
+          "row_fingerprint": {
+            "description": "Fingerprint that dedupes it across re-pulls.",
+            "title": "Row Fingerprint",
+            "type": "string"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Conformance rule that rejected it.",
+            "title": "Rule Id"
+          },
+          "source_id": {
+            "description": "Source the row came from.",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "stage": {
+            "description": "Pipeline stage that rejected it.",
+            "title": "Stage",
+            "type": "string"
+          },
+          "staging_table": {
+            "description": "Staging table it was read from.",
+            "title": "Staging Table",
+            "type": "string"
+          },
+          "state": {
+            "description": "open, released, accepted_loss or superseded.",
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "quarantine_id",
+          "row_fingerprint",
+          "source_id",
+          "staging_table",
+          "stage",
+          "reason_code",
+          "rule_id",
+          "first_seen_at",
+          "first_seen_manifest_id",
+          "last_seen_at",
+          "last_seen_manifest_id",
+          "occurrence_count",
+          "state",
+          "released_by_rule_id",
+          "released_at",
+          "release_derivation_id",
+          "notes"
+        ],
+        "title": "QuarantineRow",
+        "type": "object"
+      },
+      "QuarantineSummary": {
+        "properties": {
+          "group_by": {
+            "description": "Dimension the shares are computed over.",
+            "title": "Group By",
+            "type": "string"
+          },
+          "groups": {
+            "description": "One row per group, largest first.",
+            "items": {
+              "$ref": "#/components/schemas/SummaryGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "total": {
+            "description": "Rows matching the filters.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "group_by",
+          "groups"
+        ],
+        "title": "QuarantineSummary",
+        "type": "object"
+      },
       "ServiceIndex": {
         "properties": {
           "api_version": {
@@ -2024,6 +2814,32 @@
           "manifest_count"
         ],
         "title": "SourceHealth",
+        "type": "object"
+      },
+      "SummaryGroup": {
+        "properties": {
+          "count": {
+            "description": "Rows in this group.",
+            "title": "Count",
+            "type": "integer"
+          },
+          "key": {
+            "description": "Group key: a reason code or a stage.",
+            "title": "Key",
+            "type": "string"
+          },
+          "share": {
+            "description": "Group count over the filtered total.",
+            "title": "Share",
+            "type": "number"
+          }
+        },
+        "required": [
+          "key",
+          "count",
+          "share"
+        ],
+        "title": "SummaryGroup",
         "type": "object"
       },
       "SurfacePoint": {
@@ -2493,7 +3309,7 @@
     }
   },
   "info": {
-    "description": "Glass-box upstream analytics on public data. Every number this API serves carries a\nderivation handle in band, and `GET /v1/explain` walks that handle back to the\nchecksummed government file it came from.\n\nConventions that hold everywhere: responses are `data` / `meta` / `links`; collections\nare cursor-paginated with no offset parameter; failures are RFC 9457 problem documents\nwhose `type` resolves at `/v1/errors/{code}`; and `as_of` selects knowledge time, with\nthe resolved vintage reported back in `meta.as_of`.\n\nThis deployment is the North Dakota slice: wells, geometry, monthly production, the\nlineage spine and the glossary. Forecasts, economics and other basins are not served.",
+    "description": "Glass-box upstream analytics on public data. Every number this API serves carries a\nderivation handle in band, and `GET /v1/explain` walks that handle back to the\nchecksummed government file it came from.\n\nConventions that hold everywhere: responses are `data` / `meta` / `links`; collections\nare cursor-paginated with no offset parameter; failures are RFC 9457 problem documents\nwhose `type` resolves at `/v1/errors/{code}`; and `as_of` selects knowledge time, with\nthe resolved vintage reported back in `meta.as_of`.\n\nThis deployment is the North Dakota slice: wells, geometry, monthly production, the\nlineage spine, the conformance registry, quarantine and the glossary. Forecasts,\neconomics and other basins are not served.",
     "title": "glasswell",
     "version": "0.1.0"
   },
@@ -2603,6 +3419,395 @@
         "x-glasswell-request-example": {
           "path": {},
           "query": {}
+        }
+      }
+    },
+    "/v1/conformance": {
+      "get": {
+        "description": "Every mapping, unit, datum and validity decision the pipeline applies, each with the rationale for taking it and a URL to the upstream evidence. Newest effective date first. Rules are append-only: a correction is a new rule that supersedes the old one, so a past decision stays readable.",
+        "operationId": "list_conformance_rules",
+        "parameters": [
+          {
+            "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size, 100 by default, 200 at most (SB-07 \u00a79.5 caps the spine collections lower than the data ones).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Page size, 100 by default, 200 at most (SB-07 \u00a79.5 caps the spine collections lower than the data ones).",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter to one source.",
+            "in": "query",
+            "name": "source_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one source.",
+              "title": "Source Id"
+            }
+          },
+          {
+            "description": "Filter to one rule kind.",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one rule kind.",
+              "title": "Kind"
+            }
+          },
+          {
+            "description": "Filter to one rule family.",
+            "in": "query",
+            "name": "family",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one rule family.",
+              "title": "Family"
+            }
+          },
+          {
+            "description": "Filter to one pipeline stage.",
+            "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one pipeline stage.",
+              "title": "Stage"
+            }
+          },
+          {
+            "description": "Rules governing this field.",
+            "in": "query",
+            "name": "field",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rules governing this field.",
+              "title": "Field"
+            }
+          },
+          {
+            "description": "Rules in force on this date.",
+            "in": "query",
+            "name": "effective_at",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rules in force on this date.",
+              "title": "Effective At"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_list_ConformanceRule__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "cursor_malformed": {
+                    "summary": "Cursor malformed",
+                    "value": {
+                      "detail": "The cursor did not decode to the four declared fields.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor malformed",
+                      "type": "https://glasswell.rpx.sh/v1/errors/cursor_malformed"
+                    }
+                  },
+                  "cursor_query_mismatch": {
+                    "summary": "Cursor does not match this query",
+                    "value": {
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor does not match this query",
+                      "type": "https://glasswell.rpx.sh/v1/errors/cursor_query_mismatch"
+                    }
+                  },
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "https://glasswell.rpx.sh/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "List conformance rules",
+        "tags": [
+          "quality"
+        ],
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {
+            "limit": 5
+          }
+        }
+      }
+    },
+    "/v1/conformance/{rule_id}": {
+      "get": {
+        "description": "The rule, its executable spec, why it exists and the evidence behind it. Ask for `include=applied_by` to get the reverse index: which derivations cited this rule and how many rows each applied it to. Rules are immutable once written.",
+        "operationId": "get_conformance_rule",
+        "parameters": [
+          {
+            "description": "Conformance rule id.",
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "description": "Conformance rule id.",
+              "title": "Rule Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Set to applied_by for the reverse index.",
+            "in": "query",
+            "name": "include",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Set to applied_by for the reverse index.",
+              "title": "Include"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_ConformanceRuleDetail_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "https://glasswell.rpx.sh/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "https://glasswell.rpx.sh/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "One conformance rule",
+        "tags": [
+          "quality"
+        ],
+        "x-glasswell-request-example": {
+          "path": {
+            "rule_id": "cr_nd_stream_vocab_1"
+          },
+          "query": {
+            "include": "applied_by"
+          }
         }
       }
     },
@@ -3739,6 +4944,490 @@
         "x-glasswell-request-example": {
           "path": {
             "manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          },
+          "query": {}
+        }
+      }
+    },
+    "/v1/quarantine": {
+      "get": {
+        "description": "Rows a conformance rule rejected, with the reason, the rule, how many fetches have re-presented them and their lifecycle state. Nothing is dropped silently: an empty quarantine means the rules are not firing, not that the data is clean.",
+        "operationId": "list_quarantine",
+        "parameters": [
+          {
+            "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size, 100 by default, 200 at most (SB-07 \u00a79.5 caps the spine collections lower than the data ones).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Page size, 100 by default, 200 at most (SB-07 \u00a79.5 caps the spine collections lower than the data ones).",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter to one source.",
+            "in": "query",
+            "name": "source_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one source.",
+              "title": "Source Id"
+            }
+          },
+          {
+            "description": "Filter to one reason code.",
+            "in": "query",
+            "name": "reason_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one reason code.",
+              "title": "Reason Code"
+            }
+          },
+          {
+            "description": "Filter to one rejecting rule.",
+            "in": "query",
+            "name": "rule_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one rejecting rule.",
+              "title": "Rule Id"
+            }
+          },
+          {
+            "description": "Filter to one lifecycle state.",
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "open",
+                    "released",
+                    "accepted_loss",
+                    "superseded"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one lifecycle state.",
+              "title": "State"
+            }
+          },
+          {
+            "description": "Filter to one pipeline stage.",
+            "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "parse",
+                    "validate",
+                    "conform",
+                    "join"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one pipeline stage.",
+              "title": "Stage"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_list_QuarantineRow__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "cursor_malformed": {
+                    "summary": "Cursor malformed",
+                    "value": {
+                      "detail": "The cursor did not decode to the four declared fields.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor malformed",
+                      "type": "https://glasswell.rpx.sh/v1/errors/cursor_malformed"
+                    }
+                  },
+                  "cursor_query_mismatch": {
+                    "summary": "Cursor does not match this query",
+                    "value": {
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor does not match this query",
+                      "type": "https://glasswell.rpx.sh/v1/errors/cursor_query_mismatch"
+                    }
+                  },
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "https://glasswell.rpx.sh/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "List quarantined rows",
+        "tags": [
+          "quality"
+        ],
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {
+            "limit": 5
+          }
+        }
+      }
+    },
+    "/v1/quarantine/summary": {
+      "get": {
+        "description": "Counts and shares by reason code or by stage \u2014 the scorecard view of what the rules are rejecting. Declared before /quarantine/{quarantine_id} so `summary` is not matched as an id.",
+        "operationId": "get_quarantine_summary",
+        "parameters": [
+          {
+            "description": "Dimension to group by.",
+            "in": "query",
+            "name": "group_by",
+            "required": false,
+            "schema": {
+              "default": "reason_code",
+              "description": "Dimension to group by.",
+              "enum": [
+                "reason_code",
+                "stage"
+              ],
+              "title": "Group By",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter to one source.",
+            "in": "query",
+            "name": "source_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one source.",
+              "title": "Source Id"
+            }
+          },
+          {
+            "description": "Filter to one lifecycle state.",
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one lifecycle state.",
+              "title": "State"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_QuarantineSummary_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "https://glasswell.rpx.sh/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Quarantine shares",
+        "tags": [
+          "quality"
+        ],
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {
+            "group_by": "reason_code"
+          }
+        }
+      }
+    },
+    "/v1/quarantine/{quarantine_id}": {
+      "get": {
+        "description": "The rejected row itself, served verbatim alongside the rule that rejected it and the manifests it was first and last seen in. Re-processing always re-reads the manifest, never this payload, so the payload is evidence rather than input.",
+        "operationId": "get_quarantine_row",
+        "parameters": [
+          {
+            "description": "Quarantined row id.",
+            "in": "path",
+            "name": "quarantine_id",
+            "required": true,
+            "schema": {
+              "description": "Quarantined row id.",
+              "title": "Quarantine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_QuarantineDetail_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "https://glasswell.rpx.sh/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "One quarantined row",
+        "tags": [
+          "quality"
+        ],
+        "x-glasswell-request-example": {
+          "path": {
+            "quarantine_id": "qr_01contract0001"
           },
           "query": {}
         }

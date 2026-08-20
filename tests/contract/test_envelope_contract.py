@@ -8,13 +8,15 @@ from fastapi.testclient import TestClient
 from glasswell.api.examples import EXAMPLE_API10
 from glasswell.lineage.envelope import ENVELOPE_META_KEYS
 
-COLLECTIONS = ("/v1/wells", "/v1/manifests", "/v1/glossary")
+COLLECTIONS = ("/v1/wells", "/v1/manifests", "/v1/conformance", "/v1/quarantine", "/v1/glossary")
 ENVELOPED = (
     "/v1",
     "/v1/health",
     "/v1/wells",
     f"/v1/wells/{EXAMPLE_API10}",
     f"/v1/wells/{EXAMPLE_API10}/production",
+    "/v1/conformance",
+    "/v1/quarantine",
     "/v1/glossary",
 )
 

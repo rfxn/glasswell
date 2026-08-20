@@ -7,8 +7,7 @@ from fastapi.testclient import TestClient
 
 from glasswell.api.examples import REQUEST_EXAMPLE_KEY
 
-# The never-cut surface. The quality endpoints raise this to the plan's floor of 17.
-MINIMUM_PATHS = 15
+MINIMUM_PATHS = 17
 
 
 def operations(document: dict) -> list[tuple[str, str, dict]]:

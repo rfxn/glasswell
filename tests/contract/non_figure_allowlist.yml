@@ -35,6 +35,16 @@
 # --- counts and shares -------------------------------------------------------
 - pointer: /lateral_count
   reason: A count of geometry rows, not a measured quantity.
+- pointer: /total
+  reason: Row count of the quarantine population being summarised.
+- pointer: /groups/*/count
+  reason: Row count per group.
+- pointer: /groups/*/share
+  reason: Count divided by count; it carries no unit and no vintage.
+- pointer: /occurrence_count
+  reason: How many fetches re-presented this rejected row (SB-07 §8.1).
+- pointer: /*/occurrence_count
+  reason: Occurrence counter, in a collection item.
 - pointer: /sources/*/manifest_count
   reason: Count of registered manifests per source on the health page.
 - pointer: /published_vintages/*/rows_examined
@@ -63,7 +73,21 @@
   reason: Ordinal position of a derivation input.
 - pointer: /rules/*/applied_rows
   reason: How many rows a conformance rule touched during that derivation.
+- pointer: /applied_by/*/applied_rows
+  reason: Reverse index of rows touched, per citing derivation.
 - pointer: /bytes
   reason: Byte length of the fetched artifact, recorded on the manifest.
 - pointer: /*/bytes
   reason: Byte length, in a manifest collection item.
+
+# --- verbatim registry and rejected input ------------------------------------
+- pointer: /spec/**
+  reason: >-
+    Conformance-rule spec, served verbatim from the registry. Its numbers are rule
+    parameters (scales, factors, bounds), not served figures.
+- pointer: /*/spec/**
+  reason: Conformance-rule spec, in a collection item.
+- pointer: /row_payload/**
+  reason: >-
+    The rejected source row, served verbatim as evidence (SB-07 §8). It is the input
+    that failed a rule, not a number the system stands behind.
