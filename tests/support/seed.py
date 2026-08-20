@@ -231,10 +231,26 @@ def seed_conformance_rule(
     return rule_id
 
 
+# cr_nd_units_1's declared units. A fixture that stamps bbl on a gas row makes the unit
+# column untestable and hid DR-46 for four phases.
+STREAM_UNITS = {"oil": "bbl", "gas": "mcf", "water": "bbl", "condensate": "bbl"}
+
+_INSERT_PRODUCTION = (
+    "insert into canonical.production_monthly (entity_type, entity_key, reporting_level,"
+    " well_completion_pool, aggregation, api10, production_month, stream, source_id,"
+    " report_vintage, volume, unit, days_produced, granularity, value_hash, source_manifest_id,"
+    " derivation_id, null_semantics)"
+    " values (%(entity_type)s, %(entity_key)s, %(reporting_level)s, %(well_completion_pool)s,"
+    " %(aggregation)s, %(api10)s, %(production_month)s, %(stream)s, %(source_id)s,"
+    " %(report_vintage)s, %(volume)s, %(unit)s, %(days_produced)s, %(granularity)s,"
+    " %(value_hash)s, %(manifest_id)s, %(derivation_id)s, %(null_semantics)s)"
+)
+
+
 def seed_production(
     connection: psycopg.Connection,
     *,
-    api10: str,
+    api10: str | None,
     production_month: date,
     report_vintage: date,
     volume: Decimal,
@@ -244,26 +260,38 @@ def seed_production(
     source_id: str = "nd_mpr_xlsx",
     granularity: str = "well_observed",
     null_semantics: str = "reported",
+    unit: str | None = None,
+    days_produced: int | None = 30,
+    value_hash: str | None = None,
+    entity_type: str = "well",
+    entity_key: str | None = None,
+    reporting_level: str = "well",
+    well_completion_pool: str | None = None,
+    aggregation: str | None = None,
 ) -> None:
+    resolved_unit = unit or STREAM_UNITS[stream]
     with connection.cursor() as cursor:
         cursor.execute(
-            "insert into canonical.production_monthly (api10, production_month, stream, source_id,"
-            " report_vintage, volume, unit, days_produced, granularity, value_hash,"
-            " source_manifest_id, derivation_id, null_semantics)"
-            " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (
-                api10,
-                production_month,
-                stream,
-                source_id,
-                report_vintage,
-                volume,
-                "bbl",
-                30,
-                granularity,
-                hash_payload({"volume": volume, "unit": "bbl"}),
-                manifest_id,
-                derivation_id,
-                null_semantics,
-            ),
+            _INSERT_PRODUCTION,
+            {
+                "entity_type": entity_type,
+                "entity_key": entity_key if entity_key is not None else api10,
+                "reporting_level": reporting_level,
+                "well_completion_pool": well_completion_pool,
+                "aggregation": aggregation,
+                "api10": api10,
+                "production_month": production_month,
+                "stream": stream,
+                "source_id": source_id,
+                "report_vintage": report_vintage,
+                "volume": volume,
+                "unit": resolved_unit,
+                "days_produced": days_produced,
+                "granularity": granularity,
+                "value_hash": value_hash
+                or hash_payload({"volume": volume, "unit": resolved_unit}),
+                "manifest_id": manifest_id,
+                "derivation_id": derivation_id,
+                "null_semantics": null_semantics,
+            },
         )
