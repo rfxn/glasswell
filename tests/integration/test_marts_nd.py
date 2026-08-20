@@ -20,6 +20,7 @@ from glasswell.lineage.explain import resolve_chain
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts import TILE_LAYERS, refresh_all
 from glasswell.marts.nd_wells import main
+from glasswell.marts.tiles import simplify_tolerance
 from glasswell.seed import seed_all
 from glasswell.units import METRES_PER_FOOT
 
@@ -316,6 +317,91 @@ def test_the_cli_pins_the_lockfile_the_ingest_unit_exports(canonical_nd, monkeyp
         " where d.derivation_id = %s",
         (report["derivation_id"],),
     ) == "7c" * 32
+
+
+def _function_bodies(connection: psycopg.Connection) -> dict[str, str]:
+    return {
+        name: definition.lower()
+        for name, definition in rows(
+            connection,
+            "select p.proname, pg_get_functiondef(p.oid) from pg_proc p"
+            "  join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'marts'",
+        )
+    }
+
+
+def test_only_the_line_layer_is_thinned(canonical_nd, refreshed):
+    """Points have nothing to thin, and topology-safe polygon simplification measured 171%
+    slower for 3% fewer bytes, so applying it there would be a cost with no return."""
+    bodies = _function_bodies(canonical_nd)
+
+    assert "st_simplify(" in bodies["nd_laterals"]
+    for name in ("nd_wells", "nd_spacing_units"):
+        assert "st_simplify(" not in bodies[name], f"{name} pays for simplification it cannot use"
+
+
+def test_the_geometry_expression_is_evaluated_once_per_row(canonical_nd, refreshed):
+    """Inlined, the planner evaluates ST_AsMVTGeom for the null test and again for the
+    aggregate: 246 ms against 134 ms on the live z4 laterals tile."""
+    for name, body in _function_bodies(canonical_nd).items():
+        assert "as materialized" in body, f"{name} would evaluate ST_AsMVTGeom twice per row"
+        assert body.count("st_asmvtgeom") == 1
+
+
+@pytest.mark.parametrize("zoom", [4, 9, 13])
+def test_a_thinned_lateral_stays_within_the_tolerance_its_zoom_allows(
+    canonical_nd, refreshed, zoom
+):
+    """Every vertex the simplifier drops is within the tolerance of the line that replaces
+    it, so the deviation is bounded by a quarter of a rendered pixel at every zoom."""
+    tolerance = simplify_tolerance(zoom)
+    worst = scalar(
+        canonical_nd,
+        "select max(ST_Distance(vertex.geom, thinned))"
+        "  from (select ST_Transform(geom, 3857) as full,"
+        "               ST_Simplify(ST_Transform(geom, 3857), %s, true) as thinned"
+        "          from marts.nd_laterals_tile) shape,"
+        "       lateral ST_DumpPoints(shape.full) vertex",
+        (tolerance,),
+    )
+
+    assert worst is not None, "the fixture carries no lateral geometry to bound"
+    assert worst <= tolerance
+
+
+@pytest.mark.parametrize("zoom", [4, 9, 13])
+def test_thinning_never_drops_a_lateral(canonical_nd, refreshed, zoom):
+    """preserveCollapsed: a feature count that varies with zoom would make a tile a lie
+    about how many laterals are there."""
+    kept = scalar(
+        canonical_nd,
+        "select count(*) from marts.nd_laterals_tile"
+        " where ST_Simplify(ST_Transform(geom, 3857), %s, true) is not null",
+        (simplify_tolerance(zoom),),
+    )
+
+    assert kept == scalar(canonical_nd, "select count(*) from marts.nd_laterals_tile")
+
+
+def test_a_whole_basin_tile_is_smaller_than_it_was_unthinned(canonical_nd, refreshed):
+    """The regression bound: the low-zoom tile the fix targets must not grow back."""
+    zoom, x, y = covering_tile(extent_of(canonical_nd, "marts.nd_laterals_tile"))
+    thinned = scalar(canonical_nd, "select marts.nd_laterals(%s, %s, %s, null)", (zoom, x, y))
+    columns = ", ".join(f"t.{column}" for column in TILE_LAYERS[0].columns)
+    unthinned = scalar(
+        canonical_nd,
+        "with feature as materialized ("
+        "  select ST_AsMVTGeom(ST_Transform(t.geom, 3857), ST_TileEnvelope(%(z)s, %(x)s, %(y)s),"
+        "                      4096, 64, true) as geom,"
+        f"        {columns}"
+        "    from marts.nd_laterals_tile t"
+        "   where t.geom && ST_Transform(ST_TileEnvelope(%(z)s, %(x)s, %(y)s), 4326))"
+        " select ST_AsMVT(feature, 'nd_laterals', 4096, 'geom') from feature"
+        "  where feature.geom is not null",
+        {"z": zoom, "x": x, "y": y},
+    )
+
+    assert len(bytes(thinned)) < len(bytes(unthinned))
 
 
 def test_the_module_runs_as_the_command_p7_documents():

@@ -12,7 +12,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from glasswell.api import create_app
+from glasswell.api import BASEMAP_CACHE, SHELL_CACHE, create_app
 from glasswell.api.deps import ALLOW_ANON_ENV, BASEMAP_ROOT_ENV
 
 pytestmark = pytest.mark.unit
@@ -71,6 +71,21 @@ def test_no_basemap_is_mounted_when_the_directory_is_not_configured(monkeypatch)
 def test_the_mount_does_not_shadow_the_api(basemap_root):
     with TestClient(create_app()) as client:
         assert client.get("/healthz").status_code == 200
+
+
+def test_a_ranged_read_is_cacheable_for_the_life_of_the_vintage(basemap_root):
+    """PMTiles reads the archive in hundreds of ranges; with no cache class each pan pays."""
+    with TestClient(create_app()) as client:
+        response = client.get("/basemap/basemap.pmtiles", headers={"Range": "bytes=0-15"})
+    assert response.status_code == 206
+    assert response.headers["cache-control"] == BASEMAP_CACHE
+
+
+def test_the_manifest_is_never_cached_so_a_vintage_swap_is_seen(basemap_root):
+    """The manifest is how the client learns the archive changed; caching it hides the swap."""
+    with TestClient(create_app()) as client:
+        response = client.get("/basemap/manifest.json")
+    assert response.headers["cache-control"] == SHELL_CACHE
 
 
 def test_the_archive_path_cannot_escape_the_basemap_directory(basemap_root, tmp_path):

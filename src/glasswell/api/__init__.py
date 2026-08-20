@@ -39,8 +39,14 @@ API_VERSION = "0.1.0"
 REQUEST_ID_HEADER = "X-Request-Id"
 KEY_QUERY_PARAM = "key"
 ASSET_PREFIX = "/assets/"
+BASEMAP_PREFIX = "/basemap/"
+BASEMAP_MANIFEST = "/basemap/manifest.json"
 IMMUTABLE_CACHE = "public, max-age=31536000, immutable"
 SHELL_CACHE = "no-cache"
+# The archive is immutable for the life of a vintage but its name is not, so a day is the
+# lifetime a swap has to outlive rather than a year (infra/basemap/README.md § Refresh
+# cadence). The manifest stays on SHELL_CACHE: it is how the client notices the swap.
+BASEMAP_CACHE = "public, max-age=86400"
 # Compressing a 2 MB vector tile at level 9 on every request is a map-performance
 # trade-off, not a transport default; the tile path decides for itself.
 TILE_CONTENT_TYPES = ("application/x-protobuf", "application/vnd.mapbox-vector-tile")
@@ -109,6 +115,10 @@ def create_app() -> FastAPI:
         path = request.url.path
         if path.startswith(ASSET_PREFIX):
             response.headers.setdefault("Cache-Control", IMMUTABLE_CACHE)
+        elif path == BASEMAP_MANIFEST:
+            response.headers.setdefault("Cache-Control", SHELL_CACHE)
+        elif path.startswith(BASEMAP_PREFIX):
+            response.headers.setdefault("Cache-Control", BASEMAP_CACHE)
         elif path == "/" or path.endswith(".html"):
             response.headers.setdefault("Cache-Control", SHELL_CACHE)
         return response

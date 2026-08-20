@@ -82,6 +82,36 @@ its own version in its header, and its history is summarised in §3.1.
 - [Remove] The `.gw-legend` rules, dead since the legend moved to `map.css` under
       `.gw-lg*`. `.gw-swatch` stays — the chart legend still uses it
 
+### 2026-08-20 — tile serving: the zoom cost, measured and cut
+
+- [New] The laterals function source thins its geometry in proportion to the zoom it
+      is building for, four MVT units of tile extent, so the discarded detail stays
+      a quarter of a rendered pixel: 12.8% fewer bytes at z7, 20.6% at z9, 28.2% at
+      z11. Points and the spacing-unit polygons are left alone, where the same
+      change measured as a cost with no return (SB-05 §2.4.1 pins a fixed metre
+      ladder and marks it for tuning against measured tile bytes; this is the tuned
+      form)
+- [New] `/basemap/*` is served `public, max-age=86400` — the archive is immutable
+      for the life of a vintage — with `manifest.json` held at `no-cache`, since it
+      is how the client notices a swap
+- [Fix] Every tile evaluated `ST_AsMVTGeom` twice per row — once for the null test,
+      once for the aggregate — because the planner flattened the subquery. The
+      function sources materialise it, which is 5–40% off every layer at every zoom
+      measured on the live ND slice, most of it where the tiles are largest
+- [Fix] The tile proxy asked martin to gzip every tile, because that is what the
+      default `Accept-Encoding` of any HTTP client says. martin obliges: 140 ms of
+      tile-server CPU on the hottest tile in the access log, to save 48 KB over
+      zstd's 19 ms — after which the proxy decoded the result and shipped the 2 MB
+      form anyway. It now asks for `zstd` when the caller can take it and
+      `identity` otherwise, and passes the body through in whatever encoding martin
+      chose rather than decoding it
+- [Fix] Tiles carried no cache class at all, so a browser re-fetched every one:
+      5,903 tile requests over 1,050 distinct tiles in 24 hours, one z7 tile 109
+      times. Responses now carry martin's strong `ETag`, `Cache-Control: private,
+      no-cache` and `Vary: Accept-Encoding`, and `If-None-Match` is forwarded, so a
+      repeat costs martin's 0.7 ms `304` and no body; an empty `204` tile is
+      cacheable on the same terms
+
 ### 2026-08-20 — Wave 1: the pre-P3 gate
 
 - [Change] The blueprint is **v0.6-rc2**: the twenty amendments of the pre-P3 gate
