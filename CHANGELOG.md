@@ -42,6 +42,19 @@ its own version in its header, and its history is summarised in §3.1.
 - [Change] The OpenAPI snapshot is regenerated over the three data tracks at once —
          28 paths, the union of the freeze's 27 and the pool breakdown. A2's own
          differ classifies the delta as thirteen changes, all additive
+- [Change] `infra/martin/config.yaml` publishes the three tile *functions* rather than the
+         three views they read. Adopting it as table sources would have turned auto-publish
+         off at the cost of the tile work landed hours earlier: a table source has no `z` to
+         key a simplify tolerance on and cannot carry the materialised CTE. Measured on the
+         deployed instance, table sources cost +21% bytes at z7, +35% at z9 and +42% at z11
+         on `nd_laterals`. The privilege boundary is untouched — a `language sql` function
+         runs with the caller's rights, so the `martin` role still reaches exactly the three
+         `marts.tile_*` views, which is also why those views had to become what the functions
+         read (DR-05, N-2)
+- [Change] The deploy runbook reinstalls the tile functions when `marts/tiles.py` moves, and
+         clears `.claude`/`.rdf` with the other working files. martin resolves the function
+         signatures at startup, so a stale body is now a stale tile source rather than an
+         unused one
 
 
 ### 2026-08-20 — wave 1: the S-E production key

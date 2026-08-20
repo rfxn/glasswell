@@ -421,22 +421,18 @@ def test_the_marts_read_canonical_and_never_staging():
 
 
 def test_the_martin_config_declares_the_same_layers_the_proxy_admits():
-    """The config is reference-only until the unit adopts it (PLAN rev 2 B7); the proxy's
-    allowlist is tonight's control, so the two must not drift apart. S-C's fuller hardening
-    — CI asserting martin's own source list equals the allowlist — lands with the tunnel."""
+    """The config is what the adopted unit publishes; the proxy's allowlist is what it will
+    answer for. The two must not drift apart."""
     config = yaml.safe_load(MARTIN_CONFIG.read_text())
     postgres = config["postgres"]
 
     assert config["listen_addresses"] == "127.0.0.1:3000"
-    assert set(postgres["tables"]) == PUBLISHED_LAYERS == {layer.name for layer in TILE_LAYERS}
+    assert set(postgres["functions"]) == PUBLISHED_LAYERS == {layer.name for layer in TILE_LAYERS}
     for layer in TILE_LAYERS:
-        source = postgres["tables"][layer.name]
+        source = postgres["functions"][layer.name]
         assert source["schema"] == "marts"
-        assert source["srid"] == 4326
-        assert f"marts.{source['table']}" == layer.source
-        assert source["geometry_type"] == layer.geometry_type
-        assert source["properties"] == dict(layer.properties)
-        assert "derivation_id" in source["properties"], f"{layer.name} serves an unhandled figure"
-    # Publishing the same ids twice — once as tables, once as the functions auto-publish
-    # discovers — is a martin id collision. The config path replaces the function path.
-    assert "functions" not in postgres
+        assert source["function"] == layer.name
+        assert "derivation_id" in layer.columns, f"{layer.name} serves an unhandled figure"
+    # Publishing the same ids twice — once as functions, once as the tables they read — is a
+    # martin id collision, so the config carries exactly one mechanism.
+    assert "tables" not in postgres

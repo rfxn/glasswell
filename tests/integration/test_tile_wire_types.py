@@ -278,27 +278,28 @@ def test_every_numeric_attribute_rides_the_wire_as_a_number(
         assert kinds <= set(VALUE_TYPES.values())
 
 
-def test_the_martin_config_and_the_allowlist_declare_the_same_property_types():
-    """The config is what martin publishes; TILE_LAYERS is what the proxy admits (DR-05)."""
+def test_the_martin_config_publishes_the_functions_the_allowlist_names():
+    """The config is what martin publishes; TILE_LAYERS is what the proxy admits (DR-05).
+
+    The sources are the tile functions, so the property list martin serves *is* the function's
+    own select list — there is no second declaration of types to drift out of step with the
+    relation, which is the N-2 class removed rather than re-guarded."""
     config = yaml.safe_load(MARTIN_CONFIG.read_text())["postgres"]
     assert config["auto_publish"] is False
-    assert set(config["tables"]) == {layer.name for layer in TILE_LAYERS}
+    assert set(config["functions"]) == {layer.name for layer in TILE_LAYERS}
     for layer in TILE_LAYERS:
-        declared = config["tables"][layer.name]
-        assert declared["properties"] == dict(layer.properties)
-        assert declared["geometry_type"] == layer.geometry_type
-        assert f"{declared['schema']}.{declared['table']}" == layer.source
+        declared = config["functions"][layer.name]
+        assert declared["schema"] == "marts"
+        assert declared["function"] == layer.name
 
 
 def test_the_martin_config_can_publish_nothing_outside_marts():
     """DR-05's point: `auto_publish` off with explicit sources is what stops martin serving
-    `staging.*`. Today it publishes eleven sources, three of them staging relations, and the
-    proxy allowlist is the only control holding blueprint §3.0.1."""
+    `staging.*`. Auto-published, it offers eleven sources, three of them staging relations,
+    and the proxy allowlist is the only control holding blueprint §3.0.1."""
     config = yaml.safe_load(MARTIN_CONFIG.read_text())["postgres"]
 
     assert config["auto_publish"] is False, "auto_publish would discover staging and canonical"
-    assert "functions" not in config, "two publication mechanisms, one set of ids, is a collision"
-    for name, source in config["tables"].items():
+    assert "tables" not in config, "two publication mechanisms, one set of ids, is a collision"
+    for name, source in config["functions"].items():
         assert source["schema"] == "marts", f"{name} publishes out of {source['schema']}"
-        # An undeclared property is a column martin serves that nobody chose to serve.
-        assert source.get("properties"), f"{name} declares no properties"

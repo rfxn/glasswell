@@ -1,50 +1,25 @@
 # The DSN deliberately names no user: pg_hba maps a socket connection to the role named for
 # the OS user, martin.service runs `User=martin`, and migration 026 creates that role with
-# select on the marts.tile_* views these sources name — table-level, because geometry_columns
-# filters on has_table_privilege and a column grant leaves martin unable to start at all.
-# Adopting this file turns auto_publish off; the grant is what makes staging unreachable
-# either way (README.md, DR-05).
+# select on the marts.tile_* views. Adopting this file turns auto_publish off; the grant is
+# what makes staging unreachable either way (README.md, DR-05).
+#
+# The sources are the tile *functions*, not the views beneath them. The functions read those
+# same views, so the publication boundary is unchanged — and they carry the materialised CTE
+# and the zoom-proportional ST_Simplify, which a table source cannot: it has no z to key a
+# tolerance on. Measured on VM 111, table sources cost +21% bytes at z7 and +42% at z11 on
+# nd_laterals. One mechanism at a time: `tables:` here would collide on these same ids.
 listen_addresses: "127.0.0.1:3000"
 postgres:
   connection_string: "postgresql:///glasswell?host=/var/run/postgresql"
   pool_size: 10
   auto_publish: false
-  tables:
+  functions:
     nd_laterals:
       schema: marts
-      table: tile_nd_laterals
-      srid: 4326
-      geometry_column: geom
-      geometry_type: GEOMETRY
-      properties:
-        api10: text
-        linekey: text
-        operator_name: text
-        status_canonical: text
-        spud_year: int4
-        lateral_length_ft: float8
-        derivation_id: text
+      function: nd_laterals
     nd_wells:
       schema: marts
-      table: tile_nd_wells
-      srid: 4326
-      geometry_column: geom
-      geometry_type: POINT
-      properties:
-        api10: text
-        operator_name: text
-        status_canonical: text
-        spud_year: int4
-        derivation_id: text
+      function: nd_wells
     nd_spacing_units:
       schema: marts
-      table: tile_nd_spacing_units
-      srid: 4326
-      geometry_column: geom
-      geometry_type: MULTIPOLYGON
-      properties:
-        spacing_unit_id: text
-        label: text
-        formation_reported: text
-        ds_size_acres: float8
-        derivation_id: text
+      function: nd_spacing_units

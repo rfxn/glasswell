@@ -49,9 +49,10 @@ its source catalogue at startup, so a **restart** is required after `marts.refre
 creates the `marts.nd_*(z, x, y, query)` functions — that is a catalogue refresh, not a
 reconfiguration. `infra/martin/config.yaml` is the documented target and adopting it is runbook step 9:
 it turns auto-publish off, which is what stops the tile server publishing `staging` and
-`canonical` relations. It needs the PG role `martin` that migration 026 creates — its DSN
-peer-authenticates as the unit's OS user — and it must not be enabled alongside the
-function sources, which publish the same ids.
+`canonical` relations. It declares the same three function sources auto-publish would have
+found, so the ids do not move; what it must not carry is a second `tables:` block naming the
+views those functions read, which would collide on the same ids. It needs the PG role
+`martin` that migration 026 creates — its DSN peer-authenticates as the unit's OS user.
 
 **`/data`, not `/srv/glasswell`.** The 1 TB volume is mounted at `/data`; `/srv/glasswell` is
 an empty directory on the 145 GB root disk. Every path in these units follows the mount that
@@ -107,8 +108,16 @@ cd /opt/glasswell/src/infra && ./install.sh
 sudo -u postgres /opt/glasswell/venv/bin/glasswell-migrate \
     --dsn "postgresql:///glasswell?host=/var/run/postgresql"
 
-# 4. restart and check
-systemctl restart glasswell-api && ./verify.sh
+# 4. reinstall the tile functions if src/glasswell/marts/tiles.py moved, then restart and
+#    check. Create-or-replace on the three function bodies; it rewrites no row, which is
+#    what separates it from `python -m glasswell.marts.nd_wells` (that mints a mart.refresh
+#    derivation for what may be a code-only change). martin publishes these functions, so a
+#    stale body is a stale tile source.
+systemd-run --uid=glasswell --pipe --wait --quiet /opt/glasswell/venv/bin/python \
+    -c 'import psycopg, glasswell.marts.tiles as t
+c = psycopg.connect("postgresql:///glasswell?host=/var/run/postgresql")
+print(t.install_tile_functions(c)); c.commit()'
+systemctl restart glasswell-api && systemctl restart martin && ./verify.sh
 
 # 5. ONE-TIME — apply the Postgres tuning (DR-20). Needs a restart; martin reconnects.
 ./install.sh --with-postgres
@@ -130,7 +139,8 @@ ss -ltn | grep 3000                 # still 127.0.0.1:3000 — the rule was neve
 #    `git archive HEAD | ssh tar -x`, which cannot carry a git-excluded file, so these are
 #    stale. docs/product-*.md are IP carve-out material (blueprint 8.2) and should not sit
 #    on a LAN-reachable host at all.
-cd /opt/glasswell/src && rm -rf CLAUDE.md PLAN.md AUDIT.md MEMORY.md docs work-output
+cd /opt/glasswell/src && rm -rf CLAUDE.md PLAN.md AUDIT.md MEMORY.md docs work-output \
+    .claude .rdf                    # the set verify.sh's deploy-hygiene check enumerates
 ./verify.sh                         # the "deploy hygiene" and "zones" checks must now be ok
 ```
 
@@ -139,7 +149,8 @@ cd /opt/glasswell/src && rm -rf CLAUDE.md PLAN.md AUDIT.md MEMORY.md docs work-o
 #    Migration 026 first, without exception: the config's DSN peer-auths as the OS user
 #    martin, and both that role and the three marts.tile_* views it may read are created
 #    there. martin.service carries Restart=on-failure, so adopting the config against a
-#    database that lacks them is a crash loop, not a failed start.
+#    database that lacks them is a crash loop, not a failed start. The tile functions the
+#    config publishes must also be installed from the code being deployed (step 4).
 ./install.sh --with-martin-config
 systemctl restart martin
 curl -s 127.0.0.1:3000/catalog | python3 -m json.tool   # expect exactly three ids

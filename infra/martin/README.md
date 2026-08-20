@@ -17,30 +17,28 @@ centrelines — the declaration follows `geometry_columns`, which is where marti
 Every layer carries `derivation_id` as a feature property. A tile is a served figure, and
 "no naked numbers" has no exception for tiles.
 
-## Two publication mechanisms, one set of ids — never both at once
+## One set of ids, published once — the functions, declared
 
-**Function sources (what runs tonight).** `refresh_all` creates
-`marts.nd_laterals(z, x, y, query json)` and its two siblings. martin's default
-`auto_publish` discovers a function source under the function's own name, so the ids above
-appear with **no config file and no unit change** (B7: `martin.service` is already running
-and is not reconfigured). The MVT layer name inside each tile equals the id, which is what
-MapLibre binds `source-layer` to.
+`refresh_all` and `install_tile_functions` create `marts.nd_laterals(z, x, y, query json)`
+and its two siblings; each reads the `marts.tile_*` view of its layer. The MVT layer name
+inside each tile equals the id, which is what MapLibre binds `source-layer` to.
 
-`auto_publish` also discovers every *table* with a geometry column, so martin's catalogue
-carries `staging` and `canonical` relations that are not published layers. They are not
-reachable: `glasswell.api.routers.tiles.PUBLISHED_LAYERS` is the entitlement, derived from
-`TILE_LAYERS`, and the proxy answers `not_found` for anything outside it before a request
-reaches martin. S-C's fuller condition — CI asserting martin's own source list equals the
-allowlist — needs the config path below and lands with the tunnel.
+**Unconfigured, martin finds them by itself — and finds far too much else.** Default
+`auto_publish` discovers function sources under the function's own name, so the ids above
+appear with no config file at all. It also discovers every *table* with a geometry column,
+so the catalogue carries `staging` and `canonical` relations: eleven sources, three of them
+`staging`. Nothing outside `glasswell.api.routers.tiles.PUBLISHED_LAYERS` is reachable
+through the proxy, but the tile server is offering them.
 
-**Table sources (`config.yaml`, the documented target).** Pointing martin at this file
-turns `auto_publish` off — which is the point: auto-publish exposes every geometry table in
-`staging` and `canonical` as a tile source, and **staging never serves** (blueprint
-§3.0.1). The ids and properties are identical to the function sources, so no URL changes.
+**`config.yaml` is the adopted target.** It turns `auto_publish` off and declares the three
+function sources explicitly, so the catalogue *is* the allowlist. The ids do not change, so
+no URL changes.
 
-Do not enable both. `config.yaml` publishes ids `nd_laterals`/`nd_wells`/`nd_spacing_units`
-as tables; the functions publish the same ids. Running with the config and an added
-`functions:` block would collide.
+Do not declare the same ids twice. A `tables:` block naming the `marts.tile_*` views would
+collide with the functions that read them — and it would give up everything the next section
+measures, because a table source has no `z` to key a simplify tolerance on. Measured on
+VM 111 with the shipped views, publishing them as tables instead costs **+21% bytes at z7,
++35% at z9 and +42% at z11** on `nd_laterals` (1,777,155 → 2,151,024 B at `7/27/44`).
 
 ## What the function sources do that a table source cannot
 
@@ -63,8 +61,9 @@ on VM 111 against the live ND slice (`work-output/track-t-status.md`):
   Points have nothing to thin and the topology-safe polygon variant measured 171% slower
   for 3% fewer bytes, so neither of the other two layers is simplified.
 
-Adopting `config.yaml` gives up both. Before switching, re-measure the low-zoom tiles: table
-sources have no `z` to key a tolerance on.
+`config.yaml` keeps both, because it publishes the functions rather than the views they
+read. The privilege boundary is unchanged either way: the functions run with the caller's
+rights, so the `martin` role reaches exactly the three `tile_*` views and nothing else.
 
 ## Compression: ask for zstd or ask for nothing
 
@@ -127,6 +126,13 @@ geometry column"* and exits — and `Restart=on-failure` makes that a crash loop
 down. That was Gate-O B-3, found by running the binary as the role rather than reading the
 grant, which is why the test now does exactly that.
 
+Publishing the functions rather than the views does not soften that. A `language sql` function
+runs with the caller's rights, so the role still needs `select` on what the function reads:
+pointed at the old `marts.nd_laterals_tile`, the same binary answers
+`permission denied for table nd_laterals_tile` on every tile while starting cleanly, which is
+a worse failure than not starting. The views are what the functions read, and that is what
+makes the two halves compose.
+
 ### Adopting it (deployer, one time)
 
 `./install.sh --with-martin-config` places the file at `/etc/martin/config.yaml` and a
@@ -139,7 +145,9 @@ curl -s 127.0.0.1:3000/catalog | python3 -m json.tool   # expect exactly three i
 ./verify.sh                                             # the martin catalogue check goes ok
 ```
 
-Migration 026 must be applied first, or martin cannot connect at all. Do not put a
+Migration 026 must be applied first, or martin cannot connect at all, and the tile functions
+must have been installed from the code being deployed (`install_tile_functions`), because the
+config resolves their signatures at startup and each one names the view it reads. Do not put a
 `connection_string` naming a different user into the unit's environment: `DATABASE_URL` in
 `/etc/glasswell/db.env` is the `glasswell` login, which can read everything, and the config's
 DSN exists precisely to avoid using it.

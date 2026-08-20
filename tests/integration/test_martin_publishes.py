@@ -25,6 +25,7 @@ import psycopg.sql
 import pytest
 import yaml
 
+from glasswell.marts.tiles import install_tile_functions
 from tests.conftest import REQUIRE_DOCKER_ENV, TEST_LABEL, docker_environment
 
 # Pinned: `latest` resolves to 1.14.0 today and would move under this test silently, leaving
@@ -107,6 +108,11 @@ def martin_ready(db: psycopg.Connection, tmp_path: Path) -> dict:
                         pytrace=False)
         pytest.skip(f"{MARTIN_IMAGE} unavailable")
 
+    # The published sources are the tile functions, so they have to resolve before martin
+    # starts. `install_tile_functions` is create-or-replace and touches no row.
+    install_tile_functions(db)
+    db.commit()
+
     # The deployed unit authenticates over a socket by peer; a container has to use TCP, so the
     # role needs a password here. Nothing else about the connection changes: it is still the
     # `martin` role, which is what the privileges under test hang on.
@@ -181,7 +187,7 @@ def test_the_config_under_test_differs_from_the_shipped_one_only_where_it_must(m
     shipped = martin_ready["config"]
     adapted = _adapted(martin_ready)
 
-    assert adapted["postgres"]["tables"] == shipped["postgres"]["tables"]
+    assert adapted["postgres"]["functions"] == shipped["postgres"]["functions"]
     assert adapted["postgres"]["auto_publish"] == shipped["postgres"]["auto_publish"] is False
     differing = {
         key for key in adapted if key != "postgres" and adapted[key] != shipped.get(key)
