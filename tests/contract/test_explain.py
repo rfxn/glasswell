@@ -130,3 +130,14 @@ def test_the_manifest_collection_orders_newest_first(client: TestClient) -> None
 
 def test_an_unknown_manifest_is_not_found(client: TestClient) -> None:
     assert client.get("/v1/manifests/man_nothing").status_code == 404
+
+
+def test_the_prebuilt_explain_link_is_callable_verbatim(client: TestClient) -> None:
+    """A cell handle carries `#`; unencoded, the rest is a fragment the server never receives."""
+    body = client.get(f"/v1/wells/{EXAMPLE_API10}/production").json()
+    link = body["links"]["explain"]
+
+    assert "#" not in link
+    chains = client.get(link).json()["data"]["chains"]
+    assert {chain["handle"] for chain in chains} == set(body["data"]["_lineage"].values())
+    assert all(chain["truncated"] is False for chain in chains)

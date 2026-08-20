@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 from typing import Any
+from urllib.parse import quote
 
 import pytest
 
@@ -155,9 +156,11 @@ def test_an_object_without_a_series_gets_no_sidecar_keys():
 
 def test_the_explain_link_is_prebuilt_from_the_handles_in_the_response():
     envelope = envelope_of({"well": {"cum12_oil": oil_figure()}, "rows": [oil_figure()]})
-    assert envelope["links"]["explain"] == (
-        f"/v1/explain?h={DERIVATION}%23{SELECTOR}&depth=full".replace("%23", "#")
-    )
+    handle = quote(f"{DERIVATION}#{SELECTOR}", safe="")
+
+    assert envelope["links"]["explain"] == f"/v1/explain?h={handle}&depth=full"
+    # The `#` a cell handle carries must not survive into the link as a fragment separator.
+    assert "#" not in envelope["links"]["explain"]
 
 
 def test_an_explicit_explain_link_is_never_overwritten():
