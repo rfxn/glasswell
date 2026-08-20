@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 
-import { createLegend } from "./legend.ts";
+import { createLegend, legendEnabled } from "./legend.ts";
 import { MEASURED_WELL_COUNTS, STATUS_CLASSES } from "./status.ts";
 
 const rows = (root: HTMLElement): HTMLElement[] => [...root.querySelectorAll<HTMLElement>(".gw-lg-row")];
@@ -87,5 +87,30 @@ describe("the legend", () => {
     const legend = createLegend({ onFilter: () => {} });
     expect(legend.element.textContent).toMatch(/not a directional survey trace/i);
     expect(legend.element.textContent).toContain("cr_nd_status_vocab_1");
+  });
+});
+
+describe("?legend=0", () => {
+  it("suppresses the legend on exactly that value", () => {
+    expect(legendEnabled("?legend=0")).toBe(false);
+    expect(legendEnabled("?base=satellite&legend=0&map=9/47/-102")).toBe(false);
+  });
+
+  it("keeps the legend when the parameter is absent", () => {
+    expect(legendEnabled("")).toBe(true);
+    expect(legendEnabled("?base=light")).toBe(true);
+  });
+
+  it("keeps the legend on a value it was not given, rather than guessing at intent", () => {
+    // The key is the map's own; a reader who typed something else asked for nothing, and the
+    // safe failure for a panel that carries the status vocabulary is to still be there.
+    for (const value of ["", "1", "false", "off", "no", "00", " 0", "0 ", "O", "%00", "0,0"]) {
+      expect(legendEnabled(`?legend=${encodeURIComponent(value)}`), `legend=${value}`).toBe(true);
+    }
+  });
+
+  it("is not satisfied by the substring of another parameter", () => {
+    expect(legendEnabled("?notlegend=0")).toBe(true);
+    expect(legendEnabled("?legendary=0")).toBe(true);
   });
 });

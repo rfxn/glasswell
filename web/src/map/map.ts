@@ -23,7 +23,7 @@ import {
 import { installClickRouter } from "./click-router.ts";
 import { createHoverCard } from "./hover-card.ts";
 import { createLayerPanel } from "./layer-panel.ts";
-import { createLegend } from "./legend.ts";
+import { createLegend, legendEnabled } from "./legend.ts";
 import { readLayerSet, restoreLayerSet, writeLayerSet } from "./persist.ts";
 import { createPillStrip } from "./pills.ts";
 import { LAYERS, defaultLayerSet, layerDef, layerIds } from "./registry.ts";
@@ -201,7 +201,10 @@ export function createMap(
     onOpen: () => panel.open(),
   });
 
-  chrome.append(pills.element, legend.element, panel.element);
+  // The handle stays live either way: refreshCounts() writes to a detached legend without
+  // knowing it is off-canvas, so nothing has to test for the suppressed case at every call.
+  const showLegend = legendEnabled(window.location.search);
+  chrome.append(...(showLegend ? [pills.element, legend.element] : [pills.element]), panel.element);
   map.addControl(new LayerButton(() => panel.toggle()), "top-right");
 
   function persist(): void {
