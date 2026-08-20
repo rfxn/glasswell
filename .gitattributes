@@ -1,0 +1,54 @@
+# Export-ignore rules: paths excluded from `git archive` and GitHub download
+# tarballs. Shipped content (README, LICENSE, source, and the assets the docs
+# reference) is not listed here.
+#
+# Each directory uses two patterns: the trailing-slash form drops the directory
+# entry itself, the /** form drops every path inside it.
+
+# Development-time docs, plans and specs
+docs/                       export-ignore
+docs/**                     export-ignore
+
+# Test infrastructure
+tests/                      export-ignore
+tests/**                    export-ignore
+
+# Packaging scaffolding
+pkg/                        export-ignore
+pkg/**                      export-ignore
+
+# CI configuration and issue templates
+.github/                    export-ignore
+.github/**                  export-ignore
+
+# Audit and agent working output
+audit-output/               export-ignore
+audit-output/**             export-ignore
+work-output/                export-ignore
+work-output/**              export-ignore
+
+# Per-project RDF governance state
+.rdf/                       export-ignore
+.rdf/**                     export-ignore
+
+# Claude Code working files
+.claude/                    export-ignore
+.claude/**                  export-ignore
+
+# Working files (excluded from tracking via .git/info/exclude; repeated here as a
+# parallel defence for archive consumers)
+CLAUDE.md                   export-ignore
+PLAN.md                     export-ignore
+PLAN-*.md                   export-ignore
+MEMORY.md                   export-ignore
+AUDIT.md                    export-ignore
+INTERNAL-NOTES.md           export-ignore
+.gitattributes              export-ignore
+
+# Hand-authored diagram sources ship; the rendered PNG derivatives do not need to
+# travel in a source archive
+assets/brand/               export-ignore
+assets/brand/**             export-ignore
+
+# Treat SVG as text so diffs are reviewable
+*.svg  text eol=lf diff

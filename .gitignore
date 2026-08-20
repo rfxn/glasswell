@@ -1,0 +1,36 @@
+# Local data — never committed. The raw zone is rebuilt by replaying the manifest,
+# and everything downstream of it is derived.
+data/raw/
+data/staging/
+data/canonical/
+data/marts/
+*.duckdb
+*.duckdb.wal
+*.parquet
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node / map UI
+node_modules/
+dist/
+.vite/
+
+# Editor and OS noise
+.DS_Store
+*.swp
+nohup.out
+*.log
