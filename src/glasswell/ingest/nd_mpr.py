@@ -44,6 +44,8 @@ FORMAT_RULE = "cr_nd_mpr_format_1"
 IDENTITY_RULE = "cr_nd_api_identity_1"
 MONTH_RULE = "cr_nd_month_convention_1"
 UNITS_RULE = "cr_nd_units_1"
+# Parse rules whose spec this module consumes per row, rather than only at the header.
+TYPING_RULES = (FORMAT_RULE, IDENTITY_RULE, MONTH_RULE)
 
 # The reason vocabulary is read from the CHECK (migration 011), never hardcoded. A rule naming
 # a code the CHECK does not admit still degrades rather than raising, keeping its rule_id.
@@ -427,7 +429,14 @@ def ingest_month(
                 connection, parsed.frame, manifest_id=manifest.manifest_id
             )
             for rule_id in parsed.applied_rule_ids:
-                parsing.add_rule(rule_id, applied_rows=staged_rows)
+                # A parse_directive executor only checks the header; the specs this module
+                # reads per row (the sheet, the api10 slice, the month epoch) shaped every
+                # staged row and say so, and the rest stamp what they touched: nothing.
+                shaped = rule_id in TYPING_RULES
+                parsing.add_rule(
+                    rule_id,
+                    applied_rows=staged_rows if shaped else parsed.applied_rows[rule_id],
+                )
             parsing.set_rows(staged_rows)
             parsing.set_output_hash(hash_payload(parsed.frame.rows()))
             emit(
@@ -511,8 +520,9 @@ def ingest_month(
                 month_key = record["production_month"].isoformat()
                 restatement[month_key] = restatement.get(month_key, 0) + 1
 
-        for rule_id in (*validated.applied_rule_ids, *conformed.applied_rule_ids):
-            promotion.add_rule(rule_id, applied_rows=len(records))
+        for application in (validated, conformed):
+            for rule_id in application.applied_rule_ids:
+                promotion.add_rule(rule_id, applied_rows=application.applied_rows[rule_id])
         promotion.set_rows(len(appended))
         promotion.set_output_hash(hash_payload([record["value_hash"] for record in appended]))
 

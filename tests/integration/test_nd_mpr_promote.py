@@ -228,3 +228,35 @@ def test_a_served_production_number_resolves_back_to_the_verified_bytes(db, prom
 
     assert on_disk == manifest_nodes[0].attributes["sha256"]
     assert api10 == "3303300190"
+
+
+def test_a_rule_the_parse_did_not_apply_stamps_no_rows(db, promoted):
+    """D4: cr_nd_land_unit_1's executor checks column names; MPR staging has no land unit."""
+    stamped = dict(
+        query(
+            db,
+            "select r.rule_id, r.applied_rows from lineage.derivation_rules r"
+            "  join lineage.derivations d on d.derivation_id = r.derivation_id"
+            " where d.operation = 'stage.parse'",
+        )
+    )
+
+    assert stamped["cr_nd_land_unit_1"] == 0
+    assert stamped["cr_nd_api_identity_1"] == DATA_ROWS
+    assert stamped["cr_nd_month_convention_1"] == DATA_ROWS
+
+
+def test_the_promote_stage_stamps_what_each_rule_judged(db, promoted):
+    stamped = dict(
+        query(
+            db,
+            "select r.rule_id, r.applied_rows from lineage.derivation_rules r"
+            "  join lineage.derivations d on d.derivation_id = r.derivation_id"
+            " where d.operation = 'canonical.promote'",
+        )
+    )
+
+    # The validate stage sees one row per source row; the conform stage sees one per stream.
+    assert stamped["cr_nd_confidential_1"] == DATA_ROWS
+    assert stamped["cr_nd_days_range_1"] == CLEAN_ROWS
+    assert stamped["cr_nd_stream_vocab_1"] == CLEAN_ROWS * 5

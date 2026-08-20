@@ -51,6 +51,9 @@ class RuleApplication:
     frame: pl.DataFrame
     applied_rule_ids: list[str]
     quarantined: list[QuarantineBatch]
+    # Rows each rule touched. A rule cited with a row count it never touched is an overclaim
+    # in the ledger the product sells as its evidence (fp-audit D4).
+    applied_rows: dict[str, int]
 
 
 Executor = Callable[[pl.DataFrame, ConformanceRule], tuple[pl.DataFrame, list[QuarantineBatch]]]
@@ -440,12 +443,19 @@ def rule_for_family(rules: Sequence[ConformanceRule], family: str) -> Conformanc
 def apply_rules(frame: pl.DataFrame, rules: Sequence[ConformanceRule]) -> RuleApplication:
     """Execute loaded rules in registry order. Rejected rows leave the frame with a reason."""
     applied: list[str] = []
+    touched: dict[str, int] = {}
     quarantined: list[QuarantineBatch] = []
     for rule in rules:
+        handed = frame
         frame, batches = executor_for(rule.rule_kind)(frame, rule)
         applied.append(rule.rule_id)
+        # An executor that hands back the frame it was given and rejects nothing — a
+        # parse_directive validating a header — read no rows and stamps none.
+        touched[rule.rule_id] = 0 if frame is handed and not batches else handed.height
         quarantined.extend(batches)
-    return RuleApplication(frame=frame, applied_rule_ids=applied, quarantined=quarantined)
+    return RuleApplication(
+        frame=frame, applied_rule_ids=applied, quarantined=quarantined, applied_rows=touched
+    )
 
 
 _LOAD_RULES = """
