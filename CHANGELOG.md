@@ -7,6 +7,81 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-20 — wave 1 fix round: the rail holds still
+
+- [Fix] The rail's find and act groups no longer move when state changes. The read
+      slot was `max-width`-capped inside a right-packed row, so every word the
+      status gained shoved search and the buttons sideways — 117 px at 1600 between
+      idle and a degraded source, 100 px on a rejected key, which landed on the
+      first thing a new reader does. The slot is a fixed column per breakpoint now
+      and the key chip moved into it, so the two groups have one position in every
+      state; measured spread across all four states at 1600, 1024 and 390, both
+      themes, is 0.00 px
+- [Change] The theme toggle is behind `VITE_GW_THEME_TOGGLE`, off by default, until
+         the map can follow the theme: `map.css` hardcodes a dark overlay surface
+         while taking `color: var(--paper)`, so light rendered the legend and the
+         tile-failure toast black-on-black, and the basemap has no light variant
+         wired at all. The theme, its tests and `applyTheme` all stay; only the way
+         in is closed, and dark is forced past a preference stored before the flag
+- [Fix] The wordmark accent takes the text-safe cyan rather than the swatch cyan: at
+      390 the wordmark is 18.4 px, under WCAG's large-text threshold, where the
+      swatch measured 3.25:1 on light against a 4.5 floor. Now 4.82:1
+- [Fix] The phone rail says "tap ⌾ for source" instead of truncating "Click any ⌾ to
+      see where a number came from." to a stub that spent width to say nothing; the
+      long form stays as the tooltip. The brief vocabulary lives in `chrome/status.ts`
+      beside the slot it has to fit
+
+### 2026-08-20 — wave 1: visual chrome and brand
+
+- [New] The brand faces are self-hosted and same-origin: Inter 4.1 and JetBrains
+      Mono 2.304, subset to latin as variable WOFF2 (73 KB / 20 KB) under
+      `web/public/fonts/`, plus a 1 KB two-codepoint face carrying `U+233E ⌾` and
+      `U+2715 ✕`, which Inter does not have. Both upstreams are SIL OFL 1.1 with no
+      Reserved Font Name and both licences ship beside the files. No font CDN: a
+      `gstatic` request would publish a page view past Access to an origin the
+      reader never agreed to
+- [New] `web/public/fonts/README.md` records the substitution the faces represent
+      and parks it for owner sign-off: BRAND.md §Typography specifies `system-ui`
+      and `ui-monospace` and forbids font loading, VF-4 asks the app for a loaded
+      brand face, and the two are reconciled by scope — collateral keeps the
+      generic stacks, the served app pins Inter and JetBrains Mono. BRAND.md is
+      not edited; until sign-off it remains the contract and the README is the
+      recorded divergence
+- [New] A light theme built from BRAND.md's light column, with a control in the
+      rail's action group; the choice persists per reader. Dark stays the default
+      because the default basemap is dark. Every text colour that is also a data
+      colour gained a text-safe cousin, so a sentence clears AA where the swatch
+      beside it does not have to
+- [New] Type tokens — `--gw-font-display`, `--gw-font-body`, `--gw-font-mono`, a
+      size and weight scale, `--gw-radius-*`, a spacing scale and a seven-rung
+      z-index ladder — all in `:root` and consumed everywhere; `map.css` takes the
+      same tokens and declares no face of its own
+- [Change] The header is a designed rail rather than an image and a control row:
+         the wordmark is live text at 24 px with `well` in the accent, the lockup
+         SVG that was being drawn at 32 px tall is gone, the strap is a brand
+         element with a perforation-tick rule, and the right cluster is three
+         labelled groups — find, act, read — on one 40 px band, hairline-separated
+         (VF-1, VF-2, VF-3)
+- [Change] The brand face flows through panel titles, drawer headers, the glossary
+         popover, the well card's API-10, chart axis labels and the null-semantics
+         key; identifiers, hashes and figures are set in the mono face with tabular
+         figures, and `cv05`/`cv08` disambiguate `l`, `I` and `1` in operator names
+         (VF-4)
+- [Change] The production plot reads the theme's palette instead of a hard-coded
+         dark grid, and repaints when the theme changes — a canvas inherits no CSS
+- [Change] The chart's title moved into the card's frame, outside the element the
+         plot replaces, so the placeholder and the error state keep it; it was also
+         being rendered twice
+- [Fix] The search results panel was anchored to the field and hung 79 px off the
+      left edge of a 390 px viewport, clipping every operator name; at that width
+      it now belongs to the viewport
+- [Fix] Glossary terms are announced as buttons and activate on Enter and Space,
+      but pointed with `cursor: help`; they now point like the control they are
+- [Fix] One `:focus-visible` rule for the whole app, and a quieter dashed ring for
+      the `tabindex="-1"` headings that are focus landing spots rather than controls
+- [Remove] The `.gw-legend` rules, dead since the legend moved to `map.css` under
+      `.gw-lg*`. `.gw-swatch` stays — the chart legend still uses it
+
 ### 2026-08-20 — Wave 1: the pre-P3 gate
 
 - [Change] The blueprint is **v0.6-rc2**: the twenty amendments of the pre-P3 gate

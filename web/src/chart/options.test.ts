@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 
 import { chartOptions } from "./options.ts";
@@ -54,6 +55,19 @@ describe("the uPlot options", () => {
   it("keeps the stream colours and the redundant dash encoding", () => {
     expect(options.series[1]).toMatchObject({ stroke: "#3FA55E", dash: [] });
     expect(options.series[2]).toMatchObject({ stroke: "#D9534F", dash: [6, 3] });
+  });
+
+  it("takes its palette from the theme tokens when the document has them", () => {
+    // The plot is a canvas. Hard-coding the dark grid put near-black gridlines on the light
+    // theme's white card, which is the same class of defect as VF-5 on the map.
+    document.documentElement.style.setProperty("--oil", "#2F8A4B");
+    document.documentElement.style.setProperty("--hairline", "#d8e1e8");
+
+    const themed = chartOptions(chart, 640);
+
+    expect(themed.series[1]).toMatchObject({ stroke: "#2F8A4B" });
+    expect(themed.axes?.[0]?.grid).toMatchObject({ stroke: "#d8e1e8" });
+    document.documentElement.removeAttribute("style");
   });
 
   it("takes the width it is given, so a re-measure can rebuild at a new size", () => {

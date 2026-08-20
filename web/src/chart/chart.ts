@@ -8,9 +8,10 @@ import {
   nullSemantics,
   pointMark,
 } from "../card/format.ts";
+import { THEME_EVENT } from "../chrome/theme.ts";
 import { labelElement } from "../glossary/gw-term.ts";
 import { axisLabels } from "./axes.ts";
-import { chartOptions, STREAM_STROKE } from "./options.ts";
+import { chartOptions, streamStroke } from "./options.ts";
 import { handleAt } from "./series.ts";
 import type { ChartSeries, SeriesColumn } from "./series.ts";
 
@@ -30,10 +31,8 @@ export function renderChart(
   container.replaceChildren();
   container.classList.add("gw-chart");
 
-  const title = document.createElement("h3");
-  title.appendChild(labelElement("Monthly production", callbacks.labelTermFor("/series")));
-  container.appendChild(title);
-
+  // The title belongs to the frame in card.ts, outside the element this call replaces —
+  // rendering it here as well put "Monthly production" on the card twice.
   container.appendChild(legend(chart, callbacks));
   container.appendChild(yAxisLabels(chart));
 
@@ -51,6 +50,13 @@ export function renderChart(
   trackWidth(plot, container, instance);
 
   container.appendChild(stateStrip(chart, callbacks));
+
+  // A repaint, not a reflow: uPlot fixes its axis and series colours at construction, so the
+  // only way the plot follows the theme is to build it again. `once` keeps exactly one
+  // listener alive per rendered chart.
+  document.addEventListener(THEME_EVENT, () => renderChart(container, chart, callbacks), {
+    once: true,
+  });
 }
 
 function measure(plot: HTMLElement, container: HTMLElement): number {
@@ -91,7 +97,7 @@ function legend(chart: ChartSeries, callbacks: ChartCallbacks): HTMLElement {
     const item = document.createElement("li");
     const swatch = document.createElement("span");
     swatch.className = "gw-swatch";
-    swatch.style.background = STREAM_STROKE[column.stream] ?? "#5FD3E8";
+    swatch.style.background = streamStroke(column.stream);
     item.appendChild(swatch);
     item.appendChild(
       labelElement(
