@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon-32.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>glasswell — ND slice</title>
+  </head>
+  <body>
+    <div id="app">
+      <header id="gw-header">
+        <h1>glasswell</h1>
+        <p id="gw-strap">
+          North Dakota laterals and well points. Every number carries its derivation
+          handle; click one to walk it back to a checksummed file.
+        </p>
+        <p id="gw-status" role="status"></p>
+      </header>
+      <main>
+        <div id="gw-map" aria-label="Map of North Dakota laterals and well points"></div>
+        <aside id="gw-card" hidden></aside>
+        <aside id="gw-drawer" hidden></aside>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
