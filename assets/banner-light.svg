@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 340" width="1200" height="340" role="img" aria-label="glasswell — glass-box upstream analytics on public data; three-stream decline forecast with a P10 to P90 band">
+  <defs>
+    <linearGradient id="gwbl-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FBFDFE"/>
+      <stop offset="100%" stop-color="#EDF2F6"/>
+    </linearGradient>
+    <clipPath id="gwbl-panel">
+      <rect x="96" y="96" width="320" height="320" rx="30"/>
+    </clipPath>
+  </defs>
+
+  <rect x="0.5" y="0.5" width="1199" height="339" rx="12" fill="url(#gwbl-bg)" stroke="#D8E1E8"/>
+
+  <g transform="translate(40,36) scale(0.22)">
+    <rect width="512" height="512" rx="96" fill="#0B1014"/>
+    <rect x="96" y="96" width="320" height="320" rx="30" fill="#5FD3E8" fill-opacity="0.07"/>
+    <g clip-path="url(#gwbl-panel)">
+      <polygon points="96,416 236,96 316,96 176,416" fill="#FFFFFF" fill-opacity="0.055"/>
+    </g>
+    <rect x="96" y="96" width="320" height="320" rx="30" fill="none" stroke="#5FD3E8" stroke-width="13"/>
+    <line x1="132" y1="270" x2="380" y2="270" stroke="#5FD3E8" stroke-width="6"
+          stroke-dasharray="16,14" stroke-linecap="round" opacity="0.42"/>
+    <circle cx="176" cy="142" r="18" fill="#5FD3E8"/>
+    <path d="M176 154 L176 262 Q176 338 252 338 L380 338"
+          fill="none" stroke="#E4A33C" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
+    <g stroke="#5FD3E8" stroke-width="9" stroke-linecap="round">
+      <line x1="278" y1="316" x2="278" y2="360"/>
+      <line x1="312" y1="316" x2="312" y2="360"/>
+      <line x1="346" y1="316" x2="346" y2="360"/>
+    </g>
+  </g>
+
+  <text x="180" y="100" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="58" font-weight="700" letter-spacing="-1.6" fill="#0B1014">glass<tspan fill="#2A9BB5">well</tspan></text>
+  <text x="183" y="131" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="17" fill="#55666F">Glass-box upstream analytics on public data</text>
+  <text x="183" y="154" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="12.5" letter-spacing="0.2" fill="#7C8B96">API-first &#183; map-first &#183; agent-ready &#183; multi-basin &#183; fully self-explaining</text>
+
+  <g font-family="ui-monospace, 'Cascadia Code', Consolas, monospace" text-anchor="end">
+    <text x="1160" y="90" font-size="14" fill="#1F7E96">GET /wells/{api10}/forecast?explain=true</text>
+    <text x="1160" y="114" font-size="11.5" fill="#55666F">&#8594; derivation &#8594; conformance rules &#8594; manifest &#8594; sha256</text>
+    <text x="1160" y="136" font-size="11.5" fill="#7C8B96">no naked numbers. untraceable equals wrong.</text>
+  </g>
+
+  <line x1="40" y1="178" x2="1160" y2="178" stroke="#0B1014" stroke-width="1" opacity="0.10"/>
+
+  <g font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="10.5" fill="#55666F">
+    <rect x="54" y="192" width="9" height="9" rx="2" fill="#2F8A4B"/><text x="69" y="200">oil</text>
+    <rect x="98" y="192" width="9" height="9" rx="2" fill="#C0392B"/><text x="113" y="200">gas</text>
+    <rect x="146" y="192" width="9" height="9" rx="2" fill="#2C74B8"/><text x="161" y="200">water</text>
+    <text x="212" y="200">P50 with P10&#8211;P90 conformal band &#183; oil is the headline, all three ship together</text>
+  </g>
+
+  <g>
+    <line x1="54" y1="310" x2="1110" y2="310" stroke="#0B1014" stroke-width="1" opacity="0.12"/>
+
+    <polygon points="430,287 520,285 640,284 780,283 920,283 1080,283 1080,301 920,300 780,299 640,296 520,292"
+             fill="#2F8A4B" fill-opacity="0.18"/>
+
+    <polyline points="60,228 78,252 100,268 130,280 175,289 240,295 330,299 430,303"
+              fill="none" stroke="#2C74B8" stroke-width="1.8" stroke-linejoin="round"/>
+    <polyline points="430,303 560,305 720,306 900,307 1080,307"
+              fill="none" stroke="#2C74B8" stroke-width="1.6" stroke-dasharray="5,4" stroke-linejoin="round"/>
+
+    <polyline points="60,240 80,256 105,268 140,276 190,281 260,285 340,288 430,290"
+              fill="none" stroke="#C0392B" stroke-width="1.8" stroke-linejoin="round"/>
+    <polyline points="430,290 560,293 720,295 900,296 1080,296"
+              fill="none" stroke="#C0392B" stroke-width="1.6" stroke-dasharray="5,4" stroke-linejoin="round"/>
+
+    <polyline points="60,212 76,234 96,251 122,263 156,272 200,278 262,282 340,285 430,287"
+              fill="none" stroke="#2F8A4B" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="430,287 520,289 640,290 780,291 920,292 1080,293"
+              fill="none" stroke="#2F8A4B" stroke-width="2.2" stroke-dasharray="6,4" stroke-linejoin="round"/>
+
+    <line x1="430" y1="230" x2="430" y2="310" stroke="#0B1014" stroke-width="1" stroke-dasharray="2,3" opacity="0.35"/>
+    <circle cx="430" cy="287" r="3.4" fill="#2F8A4B"/>
+    <g font-family="ui-monospace, 'Cascadia Code', Consolas, monospace" font-size="9.5" fill="#55666F">
+      <text x="430" y="220" text-anchor="middle">NOW</text>
+      <text x="200" y="220" fill="#7C8B96">reported history</text>
+      <text x="700" y="220" fill="#7C8B96">forecast</text>
+    </g>
+  </g>
+
+  <text x="54" y="332" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="10" fill="#7C8B96">North Dakota DMR &#183; Texas RRC &#183; New Mexico OCD &#183; FracFocus &#8212; public files only, checksummed at ingest, replayable from the manifest</text>
+</svg>

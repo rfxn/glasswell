@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="glasswell mark: a horizontal wellbore traced inside a glass panel">
+  <defs>
+    <clipPath id="gw-panel">
+      <rect x="96" y="96" width="320" height="320" rx="30"/>
+    </clipPath>
+  </defs>
+
+  <rect width="512" height="512" rx="96" fill="#0B1014"/>
+
+  <!-- the glass: panel, faint fill, single sheen -->
+  <rect x="96" y="96" width="320" height="320" rx="30" fill="#5FD3E8" fill-opacity="0.07"/>
+  <g clip-path="url(#gw-panel)">
+    <polygon points="96,416 236,96 316,96 176,416" fill="#FFFFFF" fill-opacity="0.055"/>
+  </g>
+  <rect x="96" y="96" width="320" height="320" rx="30" fill="none" stroke="#5FD3E8" stroke-width="13"/>
+
+  <!-- target formation top -->
+  <line x1="132" y1="270" x2="380" y2="270" stroke="#5FD3E8" stroke-width="6"
+        stroke-dasharray="16,14" stroke-linecap="round" opacity="0.42"/>
+
+  <!-- the well: surface location, vertical section, kickoff, lateral -->
+  <circle cx="176" cy="142" r="18" fill="#5FD3E8"/>
+  <path d="M176 154 L176 262 Q176 338 252 338 L380 338"
+        fill="none" stroke="#E4A33C" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- perforation clusters -->
+  <g stroke="#5FD3E8" stroke-width="9" stroke-linecap="round">
+    <line x1="278" y1="316" x2="278" y2="360"/>
+    <line x1="312" y1="316" x2="312" y2="360"/>
+    <line x1="346" y1="316" x2="346" y2="360"/>
+  </g>
+</svg>

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="glasswell mark: a horizontal wellbore traced inside a glass panel">
+  <defs>
+    <clipPath id="gwi-panel">
+      <rect x="56" y="56" width="400" height="400" rx="38"/>
+    </clipPath>
+  </defs>
+
+  <rect x="56" y="56" width="400" height="400" rx="38" fill="#5FD3E8" fill-opacity="0.07"/>
+  <g clip-path="url(#gwi-panel)">
+    <polygon points="56,456 231,56 331,56 156,456" fill="#FFFFFF" fill-opacity="0.06"/>
+  </g>
+  <rect x="56" y="56" width="400" height="400" rx="38" fill="none" stroke="#5FD3E8" stroke-width="16"/>
+
+  <line x1="101" y1="273" x2="411" y2="273" stroke="#5FD3E8" stroke-width="7"
+        stroke-dasharray="20,17" stroke-linecap="round" opacity="0.42"/>
+
+  <circle cx="156" cy="114" r="22" fill="#5FD3E8"/>
+  <path d="M156 129 L156 264 Q156 359 251 359 L411 359"
+        fill="none" stroke="#E4A33C" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g stroke="#5FD3E8" stroke-width="11" stroke-linecap="round">
+    <line x1="283" y1="332" x2="283" y2="387"/>
+    <line x1="325" y1="332" x2="325" y2="387"/>
+    <line x1="367" y1="332" x2="367" y2="387"/>
+  </g>
+</svg>

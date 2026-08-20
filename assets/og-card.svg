@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="glasswell — glass-box upstream analytics on public data">
+  <defs>
+    <linearGradient id="gwo-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#16212A"/>
+      <stop offset="60%" stop-color="#0D141A"/>
+      <stop offset="100%" stop-color="#0B1014"/>
+    </linearGradient>
+    <clipPath id="gwo-panel">
+      <rect x="96" y="96" width="320" height="320" rx="30"/>
+    </clipPath>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#gwo-bg)"/>
+
+  <g transform="translate(84,84) scale(0.34)">
+    <rect width="512" height="512" rx="96" fill="#0B1014"/>
+    <rect x="96" y="96" width="320" height="320" rx="30" fill="#5FD3E8" fill-opacity="0.07"/>
+    <g clip-path="url(#gwo-panel)">
+      <polygon points="96,416 236,96 316,96 176,416" fill="#FFFFFF" fill-opacity="0.055"/>
+    </g>
+    <rect x="96" y="96" width="320" height="320" rx="30" fill="none" stroke="#5FD3E8" stroke-width="13"/>
+    <line x1="132" y1="270" x2="380" y2="270" stroke="#5FD3E8" stroke-width="6"
+          stroke-dasharray="16,14" stroke-linecap="round" opacity="0.42"/>
+    <circle cx="176" cy="142" r="18" fill="#5FD3E8"/>
+    <path d="M176 154 L176 262 Q176 338 252 338 L380 338"
+          fill="none" stroke="#E4A33C" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
+    <g stroke="#5FD3E8" stroke-width="9" stroke-linecap="round">
+      <line x1="278" y1="316" x2="278" y2="360"/>
+      <line x1="312" y1="316" x2="312" y2="360"/>
+      <line x1="346" y1="316" x2="346" y2="360"/>
+    </g>
+  </g>
+
+  <text x="296" y="192" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="86" font-weight="700" letter-spacing="-2.6" fill="#E6EDF3">glass<tspan fill="#5FD3E8">well</tspan></text>
+  <text x="300" y="238" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="25" fill="#9FB0BC">Glass-box upstream analytics on public data</text>
+  <text x="300" y="272" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="16" letter-spacing="0.3" fill="#6E808D">North Dakota &#183; Permian &#8212; well-level production, forecasts, economics</text>
+
+  <line x1="84" y1="330" x2="1116" y2="330" stroke="#FFFFFF" stroke-width="1" opacity="0.09"/>
+
+  <g font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16">
+    <rect x="84"  y="356" width="300" height="44" rx="22" fill="#5FD3E8" fill-opacity="0.10" stroke="#5FD3E8" stroke-opacity="0.45"/>
+    <text x="234" y="384" text-anchor="middle" fill="#9EE4F2">no naked numbers</text>
+    <rect x="400" y="356" width="380" height="44" rx="22" fill="#3FA55E" fill-opacity="0.10" stroke="#3FA55E" stroke-opacity="0.45"/>
+    <text x="590" y="384" text-anchor="middle" fill="#8FD3A6">three-stream forecasts to dollars</text>
+    <rect x="796" y="356" width="320" height="44" rx="22" fill="#E4A33C" fill-opacity="0.10" stroke="#E4A33C" stroke-opacity="0.45"/>
+    <text x="956" y="384" text-anchor="middle" fill="#EEC589">API-first &#183; agent-ready</text>
+  </g>
+
+  <!-- decline with a calibrated band -->
+  <g>
+    <line x1="84" y1="546" x2="1116" y2="546" stroke="#FFFFFF" stroke-width="1" opacity="0.10"/>
+    <polygon points="600,528 700,524 820,522 950,521 1080,520 1080,543 950,542 820,540 700,536"
+             fill="#3FA55E" fill-opacity="0.20"/>
+    <polyline points="90,440 112,470 140,490 176,503 224,512 300,519 400,523 500,526 600,528"
+              fill="none" stroke="#3FA55E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="600,528 700,530 820,532 950,533 1080,534"
+              fill="none" stroke="#3FA55E" stroke-width="2.6" stroke-dasharray="7,5" stroke-linejoin="round"/>
+    <polyline points="90,462 118,490 152,505 200,514 270,521 360,526 470,530 600,533"
+              fill="none" stroke="#D9534F" stroke-width="2" stroke-linejoin="round" opacity="0.85"/>
+    <polyline points="90,452 116,494 150,514 200,527 280,535 400,540 600,542"
+              fill="none" stroke="#3D8BD4" stroke-width="2" stroke-linejoin="round" opacity="0.85"/>
+    <line x1="600" y1="424" x2="600" y2="546" stroke="#E6EDF3" stroke-width="1" stroke-dasharray="2,4" opacity="0.4"/>
+    <circle cx="600" cy="528" r="4" fill="#3FA55E"/>
+    <text x="600" y="418" font-family="ui-monospace, Consolas, monospace" font-size="12" fill="#9FB0BC" text-anchor="middle">NOW</text>
+  </g>
+
+  <text x="84" y="592" font-family="ui-monospace, 'Cascadia Code', Consolas, monospace" font-size="14" fill="#5FD3E8">GET /wells/{api10}/forecast?explain=true</text>
+  <text x="1116" y="592" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="14" fill="#6E808D" text-anchor="end">R-fx Networks &#183; Ryan MacDonald &#183; GNU GPL v2</text>
+</svg>

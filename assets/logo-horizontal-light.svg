@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 168" width="660" height="168" role="img" aria-label="glasswell — glass-box upstream analytics on public data">
+  <defs>
+    <clipPath id="gwl-panel">
+      <rect x="96" y="96" width="320" height="320" rx="30"/>
+    </clipPath>
+  </defs>
+
+  <g transform="translate(20,20) scale(0.25)">
+    <rect width="512" height="512" rx="96" fill="#0B1014"/>
+    <rect x="96" y="96" width="320" height="320" rx="30" fill="#5FD3E8" fill-opacity="0.07"/>
+    <g clip-path="url(#gwl-panel)">
+      <polygon points="96,416 236,96 316,96 176,416" fill="#FFFFFF" fill-opacity="0.055"/>
+    </g>
+    <rect x="96" y="96" width="320" height="320" rx="30" fill="none" stroke="#5FD3E8" stroke-width="13"/>
+    <line x1="132" y1="270" x2="380" y2="270" stroke="#5FD3E8" stroke-width="6"
+          stroke-dasharray="16,14" stroke-linecap="round" opacity="0.42"/>
+    <circle cx="176" cy="142" r="18" fill="#5FD3E8"/>
+    <path d="M176 154 L176 262 Q176 338 252 338 L380 338"
+          fill="none" stroke="#E4A33C" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
+    <g stroke="#5FD3E8" stroke-width="9" stroke-linecap="round">
+      <line x1="278" y1="316" x2="278" y2="360"/>
+      <line x1="312" y1="316" x2="312" y2="360"/>
+      <line x1="346" y1="316" x2="346" y2="360"/>
+    </g>
+  </g>
+
+  <text x="176" y="88" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="54" font-weight="700" letter-spacing="-1.4" fill="#0B1014">glass<tspan fill="#2A9BB5">well</tspan></text>
+  <text x="179" y="117" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="15.5" fill="#55666F">Glass-box upstream analytics on public data</text>
+  <text x="179" y="139" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="11.5" letter-spacing="0.2" fill="#7C8B96">no naked numbers &#183; every figure traces to a checksummed regulator file</text>
+</svg>
