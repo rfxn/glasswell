@@ -1,0 +1,132 @@
+import { describe, expect, it } from "vitest";
+
+import { pointHandle, toChartSeries } from "./series.ts";
+import type { ProductionData } from "./series.ts";
+
+const production: ProductionData = {
+  api10: "3305301234",
+  source_id: "nd_dmr_mpr",
+  granularity: "well_observed",
+  streams: ["oil", "gas", "water"],
+  series: {
+    pm: ["2026-01", "2026-02", "2026-03"],
+    oil_bbl: ["1000.000", "0.000", null],
+    oil_bbl_report_vintage: ["2026-08-01", "2026-08-01", null],
+    oil_bbl_null_semantics: ["reported", "reported_zero", "no_report"],
+    gas_mcf: ["2500.000", null, "2400.000"],
+    gas_mcf_report_vintage: ["2026-08-01", null, "2026-08-01"],
+    gas_mcf_null_semantics: ["reported", "withheld", "reported"],
+    water_bbl: ["800.000", "810.000", "820.000"],
+    water_bbl_report_vintage: ["2026-08-01", "2026-08-01", "2026-08-01"],
+    water_bbl_null_semantics: ["reported", "reported", "reported"],
+  },
+  _lineage: {
+    "series.oil_bbl": "drv_oil1#api10=3305301234&col=oil_bbl",
+    "series.gas_mcf": "drv_gas1#api10=3305301234&col=gas_mcf",
+    "series.water_bbl": "drv_wat1#api10=3305301234&col=water_bbl",
+  },
+  _units: { "series.oil_bbl": "bbl", "series.gas_mcf": "mcf", "series.water_bbl": "bbl" },
+  _basis: { "series.oil_bbl": "oil+condensate", "series.water_bbl": "water" },
+};
+
+describe("toChartSeries", () => {
+  const chart = toChartSeries(production);
+
+  it("keeps the shared month axis in order", () => {
+    expect(chart.months).toEqual(["2026-01", "2026-02", "2026-03"]);
+  });
+
+  it("produces uPlot column-major aligned data, x first", () => {
+    expect(chart.data).toHaveLength(4);
+    expect(chart.data[0]).toEqual(chart.x);
+    expect(chart.data[0]).toHaveLength(3);
+    expect(chart.data[1]).toEqual([1000, 0, null]);
+  });
+
+  it("carries the unit from _units, never inferred from the column name", () => {
+    expect(chart.columns.map((column) => [column.key, column.unit])).toEqual([
+      ["oil_bbl", "bbl"],
+      ["gas_mcf", "mcf"],
+      ["water_bbl", "bbl"],
+    ]);
+  });
+
+  it("carries the liquids basis where the API states one", () => {
+    expect(chart.columns[0]?.basis).toBe("oil+condensate");
+    expect(chart.columns[1]?.basis).toBeNull();
+  });
+
+  it("carries the in-band derivation handle for each column", () => {
+    expect(chart.columns[1]?.handle).toBe("drv_gas1#api10=3305301234&col=gas_mcf");
+  });
+
+  it("preserves per-point report_vintage", () => {
+    expect(chart.columns[0]?.vintages).toEqual(["2026-08-01", "2026-08-01", null]);
+  });
+
+  it("preserves per-point null_semantics — the states the card must distinguish", () => {
+    expect(chart.columns[0]?.nullSemantics).toEqual(["reported", "reported_zero", "no_report"]);
+    expect(chart.columns[1]?.nullSemantics).toEqual(["reported", "withheld", "reported"]);
+  });
+
+  it("keeps reported_zero as a plotted zero and no_report as a gap", () => {
+    expect(chart.columns[0]?.values).toEqual([1000, 0, null]);
+  });
+
+  it("keeps the raw decimal strings alongside the plotted floats", () => {
+    expect(chart.columns[0]?.raw).toEqual(["1000.000", "0.000", null]);
+  });
+
+  it("reports the single report vintage of a series, or null when they differ", () => {
+    expect(chart.columns[2]?.vintage).toBe("2026-08-01");
+  });
+
+  it("flags a series that mixes report vintages rather than smoothing it", () => {
+    const mixed = toChartSeries({
+      ...production,
+      series: {
+        ...production.series,
+        water_bbl_report_vintage: ["2026-08-01", "2026-07-01", "2026-08-01"],
+      },
+    });
+    expect(mixed.columns[2]?.vintage).toBeNull();
+    expect(mixed.columns[2]?.mixedVintages).toBe(true);
+  });
+
+  it("skips a stream the response did not carry", () => {
+    const oilOnly = toChartSeries({
+      ...production,
+      streams: ["oil"],
+      series: {
+        pm: ["2026-01", "2026-02", "2026-03"],
+        oil_bbl: ["1000.000", "0.000", null],
+        oil_bbl_report_vintage: ["2026-08-01", "2026-08-01", null],
+        oil_bbl_null_semantics: ["reported", "reported_zero", "no_report"],
+      },
+    });
+    expect(oilOnly.columns).toHaveLength(1);
+    expect(oilOnly.data).toHaveLength(2);
+  });
+
+  it("groups columns by unit so bbl and mcf never share one scale", () => {
+    expect(chart.scales).toEqual(["bbl", "mcf"]);
+  });
+});
+
+describe("pointHandle", () => {
+  it("adds the point's production month to the series handle (SB-07 selector grammar)", () => {
+    expect(pointHandle("drv_oil1#api10=3305301234&col=oil_bbl", "2026-02")).toBe(
+      "drv_oil1#api10=3305301234&col=oil_bbl&pm=2026-02",
+    );
+  });
+
+  it("does not add pm twice", () => {
+    expect(pointHandle("drv_oil1#api10=1&col=oil_bbl&pm=2026-01", "2026-02")).toBe(
+      "drv_oil1#api10=1&col=oil_bbl&pm=2026-01",
+    );
+  });
+
+  it("adds a selector to a bare derivation id", () => {
+    expect(pointHandle("drv_oil1", "2026-02")).toBe("drv_oil1#pm=2026-02");
+  });
+});
