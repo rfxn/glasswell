@@ -29,6 +29,14 @@ jobs:
       - name: ruff
         run: python -m ruff check .
 
+      # DR-05: the tile allowlist the proxy enforces and the source list martin is configured
+      # to publish must be the same set, with the same property types. Needs no database, so
+      # it fails fast and it fails even when the docker tier cannot start.
+      - name: martin config equals the tile allowlist
+        run: >
+          python -m pytest -q
+          tests/integration/test_tile_wire_types.py::test_the_martin_config_and_the_allowlist_declare_the_same_property_types
+
       # The integration and contract tiers start their own PostGIS container through the
       # docker CLI and reach it on the bridge IP, so no `services:` block applies here.
       # GLASSWELL_REQUIRE_DOCKER turns a missing daemon into a failure, not a silent skip.
@@ -65,6 +73,26 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  shell:
+    name: Shell — bash -n and shellcheck on everything that ships
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      # infra/ and scripts/ run on the deploy host. A syntax error in verify.sh is found at
+      # 2am otherwise, which is the hour it is always found at.
+      - name: bash -n and shellcheck
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(git ls-files '*.sh')
+          printf 'checking %d shell files\n' "${#files[@]}"
+          bash -n "${files[@]}"
+          shellcheck "${files[@]}"
 
   collateral:
     name: Collateral checks
