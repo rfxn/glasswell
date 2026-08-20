@@ -161,6 +161,10 @@ its own version in its header, and its history is summarised in §3.1.
       derivations explains each point to its own month's workbook instead of
       reading `null`; the recorded web fixtures carry the percent-encoded explain
       links the API now emits
+- [Fix] The pipeline role may clear a staging table, so `--restage` runs on the
+      deployed database: migration 009 granted select and insert only, and the
+      restage path added with migration 017 failed with `permission denied` on the
+      VM while passing in a test tier whose connection owns every table
 - [Change] Lateral length is measured geodesically on the WGS84 ellipsoid under
          `cr_nd_compute_crs_2`, which supersedes the UTM 14N rule rather than
          editing it. 97.6 % of ND laterals lie outside zone 14N, which overstated

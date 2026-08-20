@@ -200,7 +200,12 @@ def test_a_mart_is_rebuildable_because_marts_are_not_append_only(db):
         ("glasswell_api", "marts.nd_wells_tile", "select", True),
         ("glasswell_api", "canonical.wells", "insert", False),
         ("glasswell_pipeline", "staging.nd_mpr_oil", "insert", True),
+        # --restage clears a manifest's staged rows and re-parses them from the raw bytes;
+        # staging is the parser's own scratch layer, so the delete belongs to the pipeline.
+        ("glasswell_pipeline", "staging.nd_gis_laterals", "delete", True),
+        ("glasswell_pipeline", "staging.nd_mpr_oil", "delete", True),
         ("glasswell_pipeline", "canonical.wells", "insert", True),
+        # Canonical stays append-only whatever staging may do.
         ("glasswell_pipeline", "canonical.wells", "delete", False),
         ("glasswell_pipeline", "marts.nd_wells_tile", "delete", True),
         ("glasswell_pipeline", "marts.nd_wells_tile", "truncate", True),
