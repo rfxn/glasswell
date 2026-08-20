@@ -188,6 +188,10 @@ its own version in its header, and its history is summarised in §3.1.
          `bus.ts` itself, so the header search and the map cannot hold different
          ideas of what is selected, and a search that asks for zoom 12 gets it
          rather than the map's hardcoded floor
+- [Change] The web fixtures are re-recorded from the migrated instance: the card's
+         lateral length reads 15,065.44 ft where the projected rule said 15,073.98,
+         the oil column carries a handle per month, and `compute_crs` reports the
+         CRS the length is defined on beside the new `length_method`
 
 ### 2026-08-20 — North Dakota spine and map slice
 

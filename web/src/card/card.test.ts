@@ -49,7 +49,7 @@ describe("well card", () => {
     const figure = host.querySelector("gw-figure");
     expect(figure?.getAttribute("unit")).toBe("ft");
     expect(figure?.getAttribute("handle")).toBe(LENGTH_HANDLE);
-    expect(figure?.textContent).toContain("15,073.98 ft");
+    expect(figure?.textContent).toContain("15,065.44 ft");
   });
 
   it("opens the drawer from the figure's handle affordance", async () => {

@@ -6,10 +6,12 @@
 //   curl -K <keyfile> .../v1/glossary/index   and   .../v1/glossary?limit=200
 // The owner key travels in the X-Glasswell-Key header and appears in no response body.
 // The glossary payloads are the recorded envelopes filtered to the terms these tests use.
+// The oil column spans six monthly promotions, so `_lineage` keys a handle per point
+// (`series.oil_bbl.0`) and OIL_HANDLE is the first of them (SB-07 §9.3).
 
 export const API10 = "3305310451";
 export const LENGTH_HANDLE = "drv_ga3f2mao5zgyb5xcniwq#api10=3305310451&col=lateral_length_ft";
-export const OIL_HANDLE = "drv_xwfwmpqifwfcsspnyjqq#api10=3305310451&col=oil_bbl";
+export const OIL_HANDLE = "drv_xwfwmpqifwfcsspnyjqq#api10=3305310451&col=oil_bbl&pm=2025-10";
 export const SHA256 = "a5cbbe40fe0e49b116e279079996c4ecfda6757450c6f43b14fff66bc160b7b5";
 
 export const wellEnvelope = {
@@ -17,7 +19,7 @@ export const wellEnvelope = {
     "api10": "3305310451",
     "api14": "33053104510000",
     "basin": null,
-    "compute_crs": "EPSG:32614",
+    "compute_crs": "EPSG:4326",
     "confidential_flag": false,
     "county_code_at_permit": "053",
     "effective_from": "2026-08-20",
@@ -38,8 +40,9 @@ export const wellEnvelope = {
     "lateral_length_ft": {
       "d": "drv_ga3f2mao5zgyb5xcniwq#api10=3305310451&col=lateral_length_ft",
       "unit": "ft",
-      "value": "15073.98"
+      "value": "15065.44"
     },
+    "length_method": "geodesic",
     "links": {
       "production": "/v1/wells/3305310451/production",
       "self": "/v1/wells/3305310451"
@@ -77,9 +80,15 @@ export const wellEnvelope = {
       "/lateral_length_ft": "gt_wellbore"
     },
     "next_cursor": null,
-    "request_id": "01M0F5Z2R1RAD7MMWM6Y3YSGRZ",
+    "request_id": "01M0FWZNVS88J142QCKY0XT2C0",
     "source_freshness": {},
-    "warnings": []
+    "warnings": [
+      {
+        "code": "geometry_not_promoted",
+        "detail": "1 horizontal geometry rows for this well (VERT) were not promoted: segment_not_promoted under cr_nd_segment_vocab_1. They are in /v1/quarantine with their payloads.",
+        "pointer": "/geometry"
+      }
+    ]
   }
 };
 
@@ -90,9 +99,24 @@ export const productionEnvelope = {
       "series.water_bbl": "water"
     },
     "_lineage": {
-      "series.gas_mcf": "drv_xwfwmpqifwfcsspnyjqq#api10=3305310451&col=gas_mcf",
-      "series.oil_bbl": "drv_xwfwmpqifwfcsspnyjqq#api10=3305310451&col=oil_bbl",
-      "series.water_bbl": "drv_xwfwmpqifwfcsspnyjqq#api10=3305310451&col=water_bbl"
+      "series.gas_mcf.0": "drv_xwfwmpqifwfcsspnyjqq#api10=3305310451&col=gas_mcf&pm=2025-10",
+      "series.gas_mcf.1": "drv_dgnvicc2znev6vip7u4q#api10=3305310451&col=gas_mcf&pm=2025-11",
+      "series.gas_mcf.2": "drv_f4qsx42ni5srjjefyvfa#api10=3305310451&col=gas_mcf&pm=2025-12",
+      "series.gas_mcf.3": "drv_k2jviajgphaxa6mbu6fq#api10=3305310451&col=gas_mcf&pm=2026-01",
+      "series.gas_mcf.4": "drv_rwmstnuow7qs2r67l37a#api10=3305310451&col=gas_mcf&pm=2026-02",
+      "series.gas_mcf.5": "drv_6xj33kv4kjbzpbjeh76q#api10=3305310451&col=gas_mcf&pm=2026-03",
+      "series.oil_bbl.0": "drv_xwfwmpqifwfcsspnyjqq#api10=3305310451&col=oil_bbl&pm=2025-10",
+      "series.oil_bbl.1": "drv_dgnvicc2znev6vip7u4q#api10=3305310451&col=oil_bbl&pm=2025-11",
+      "series.oil_bbl.2": "drv_f4qsx42ni5srjjefyvfa#api10=3305310451&col=oil_bbl&pm=2025-12",
+      "series.oil_bbl.3": "drv_k2jviajgphaxa6mbu6fq#api10=3305310451&col=oil_bbl&pm=2026-01",
+      "series.oil_bbl.4": "drv_rwmstnuow7qs2r67l37a#api10=3305310451&col=oil_bbl&pm=2026-02",
+      "series.oil_bbl.5": "drv_6xj33kv4kjbzpbjeh76q#api10=3305310451&col=oil_bbl&pm=2026-03",
+      "series.water_bbl.0": "drv_xwfwmpqifwfcsspnyjqq#api10=3305310451&col=water_bbl&pm=2025-10",
+      "series.water_bbl.1": "drv_dgnvicc2znev6vip7u4q#api10=3305310451&col=water_bbl&pm=2025-11",
+      "series.water_bbl.2": "drv_f4qsx42ni5srjjefyvfa#api10=3305310451&col=water_bbl&pm=2025-12",
+      "series.water_bbl.3": "drv_k2jviajgphaxa6mbu6fq#api10=3305310451&col=water_bbl&pm=2026-01",
+      "series.water_bbl.4": "drv_rwmstnuow7qs2r67l37a#api10=3305310451&col=water_bbl&pm=2026-02",
+      "series.water_bbl.5": "drv_6xj33kv4kjbzpbjeh76q#api10=3305310451&col=water_bbl&pm=2026-03"
     },
     "_units": {
       "series.gas_mcf": "mcf",
@@ -191,7 +215,7 @@ export const productionEnvelope = {
     ]
   },
   "links": {
-    "explain": "/v1/explain?h=drv_xwfwmpqifwfcsspnyjqq%23api10%3D3305310451%26col%3Doil_bbl&h=drv_xwfwmpqifwfcsspnyjqq%23api10%3D3305310451%26col%3Dgas_mcf&h=drv_xwfwmpqifwfcsspnyjqq%23api10%3D3305310451%26col%3Dwater_bbl&depth=full",
+    "explain": "/v1/explain?h=drv_xwfwmpqifwfcsspnyjqq%23api10%3D3305310451%26col%3Doil_bbl%26pm%3D2025-10&h=drv_dgnvicc2znev6vip7u4q%23api10%3D3305310451%26col%3Doil_bbl%26pm%3D2025-11&h=drv_f4qsx42ni5srjjefyvfa%23api10%3D3305310451%26col%3Doil_bbl%26pm%3D2025-12&h=drv_k2jviajgphaxa6mbu6fq%23api10%3D3305310451%26col%3Doil_bbl%26pm%3D2026-01&h=drv_rwmstnuow7qs2r67l37a%23api10%3D3305310451%26col%3Doil_bbl%26pm%3D2026-02&h=drv_6xj33kv4kjbzpbjeh76q%23api10%3D3305310451%26col%3Doil_bbl%26pm%3D2026-03&h=drv_xwfwmpqifwfcsspnyjqq%23api10%3D3305310451%26col%3Dgas_mcf%26pm%3D2025-10&h=drv_dgnvicc2znev6vip7u4q%23api10%3D3305310451%26col%3Dgas_mcf%26pm%3D2025-11&h=drv_f4qsx42ni5srjjefyvfa%23api10%3D3305310451%26col%3Dgas_mcf%26pm%3D2025-12&h=drv_k2jviajgphaxa6mbu6fq%23api10%3D3305310451%26col%3Dgas_mcf%26pm%3D2026-01&h=drv_rwmstnuow7qs2r67l37a%23api10%3D3305310451%26col%3Dgas_mcf%26pm%3D2026-02&h=drv_6xj33kv4kjbzpbjeh76q%23api10%3D3305310451%26col%3Dgas_mcf%26pm%3D2026-03&h=drv_xwfwmpqifwfcsspnyjqq%23api10%3D3305310451%26col%3Dwater_bbl%26pm%3D2025-10&h=drv_dgnvicc2znev6vip7u4q%23api10%3D3305310451%26col%3Dwater_bbl%26pm%3D2025-11&h=drv_f4qsx42ni5srjjefyvfa%23api10%3D3305310451%26col%3Dwater_bbl%26pm%3D2025-12&h=drv_k2jviajgphaxa6mbu6fq%23api10%3D3305310451%26col%3Dwater_bbl%26pm%3D2026-01&h=drv_rwmstnuow7qs2r67l37a%23api10%3D3305310451%26col%3Dwater_bbl%26pm%3D2026-02&h=drv_6xj33kv4kjbzpbjeh76q%23api10%3D3305310451%26col%3Dwater_bbl%26pm%3D2026-03&depth=full",
     "next": null,
     "self": "/v1/wells/3305310451/production",
     "well": "/v1/wells/3305310451"
@@ -216,7 +240,7 @@ export const productionEnvelope = {
       "/series/water_bbl_report_vintage": "gt_report_vintage"
     },
     "next_cursor": null,
-    "request_id": "01M0F5Z2TBMDX9S3CKVGJM3EPQ",
+    "request_id": "01M0FWZP769264Z7EQ2SFP734D",
     "source_freshness": {
       "nd_mpr_xlsx": {
         "declared_vintage": "2026-08-20",
@@ -227,17 +251,17 @@ export const productionEnvelope = {
     "warnings": [
       {
         "code": "series_spans_derivations",
-        "detail": "6 derivations contributed to this column",
+        "detail": "6 derivations contributed to this column; _lineage carries one handle per point",
         "pointer": "/series/oil_bbl"
       },
       {
         "code": "series_spans_derivations",
-        "detail": "6 derivations contributed to this column",
+        "detail": "6 derivations contributed to this column; _lineage carries one handle per point",
         "pointer": "/series/gas_mcf"
       },
       {
         "code": "series_spans_derivations",
-        "detail": "6 derivations contributed to this column",
+        "detail": "6 derivations contributed to this column; _lineage carries one handle per point",
         "pointer": "/series/water_bbl"
       }
     ]
@@ -270,7 +294,7 @@ export const explainEnvelope = {
             "to": "man_a5cbbe40fe0e49b116e279079996c4ec"
           }
         ],
-        "handle": "drv_xwfwmpqifwfcsspnyjqq#api10=3305310451&col=oil_bbl",
+        "handle": "drv_xwfwmpqifwfcsspnyjqq#api10=3305310451&col=oil_bbl&pm=2025-10",
         "nodes": [
           {
             "code_version": "pkg:0.1.0",
@@ -401,7 +425,7 @@ export const explainEnvelope = {
     "deprecations": [],
     "labels": {},
     "next_cursor": null,
-    "request_id": "01M0F5ZG1EBMD6N2FE7J9C99NA",
+    "request_id": "01M0FWZPH9ACVH23HKPC6KQ05Q",
     "source_freshness": {},
     "warnings": []
   }
