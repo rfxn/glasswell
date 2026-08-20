@@ -19,6 +19,8 @@ FETCHED_AT = datetime(2026, 8, 1, 5, 2, 11, tzinfo=UTC)
 EFFECTIVE_FROM = date(2026, 8, 1)
 LATERAL_WKT = "LINESTRING(-103.5803 47.9075, -103.5401 47.9081)"
 SURFACE_WKT = "POINT(-103.5803 47.9075)"
+# An empty params dict is not what the pipeline records, and it hid /params from the walker.
+DEFAULT_PROMOTE_PARAMS = {"source_key": "2024_03.xlsx", "liquids_basis": "oil+condensate"}
 
 FIXTURE_ENV = DeriveEnvironment(
     code_version="git:0000test",
@@ -66,7 +68,7 @@ def seed_derivation(
             dataset="canonical.production_monthly",
             partition=partition or {"source_id": "nd_mpr_xlsx"},
         ),
-        params=params or {},
+        params=params if params is not None else dict(DEFAULT_PROMOTE_PARAMS),
     ) as context:
         context.set_output_hash("0" * 64)
     return context.derivation_id
