@@ -55,6 +55,11 @@ its own version in its header, and its history is summarised in §3.1.
          clears `.claude`/`.rdf` with the other working files. martin resolves the function
          signatures at startup, so a stale body is now a stale tile source rather than an
          unused one
+- [Fix] `smoke.sh`'s per-point lineage assertion skips the `*_aggregation` columns.
+      They are disclosure labels rather than figures and carry no handle, so the
+      check demanded a handle that should not exist and read FAIL against a correct
+      response — the same shape as the auth-matrix gap, one track's check meeting
+      another track's new field
 
 
 ### 2026-08-20 — wave 1: the S-E production key

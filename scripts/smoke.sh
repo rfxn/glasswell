@@ -123,7 +123,8 @@ series, lineage = data["series"], data["_lineage"]
 points = len(series["pm"])
 volumes = [
     column for column in series
-    if column != "pm" and not column.endswith(("_null_semantics", "_report_vintage"))
+    if column != "pm"
+    and not column.endswith(("_null_semantics", "_report_vintage", "_aggregation"))
 ]
 expected = {f"series.{column}.{index}" for column in volumes for index in range(points)}
 sys.exit(0 if points and expected <= set(lineage) else 1)
