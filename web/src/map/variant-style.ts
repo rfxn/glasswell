@@ -105,10 +105,6 @@ export function variantStyle(variant: BasemapVariant): VariantStyle {
   return VARIANT_STYLES[variant];
 }
 
-export function labelSize(base: number, variant: BasemapVariant, role: LabelRole = "primary"): number {
-  return base + variantStyle(variant)[role].sizeDelta;
-}
-
 export function textLayers(layers: readonly LayerSpecification[]): LayerSpecification[] {
   return layers.filter(
     (layer) =>
@@ -124,6 +120,28 @@ export function labelRole(
 ): LabelRole {
   const source = "source" in layer ? layer.source : undefined;
   return typeof source === "string" && dataSources.has(source) ? "primary" : "context";
+}
+
+/** Where the base size is memoised, so a second pass bumps the base and not the bumped size. */
+const BASE_TEXT_SIZE = "gw:base-text-size";
+
+/**
+ * A zoom expression is legal only at the top of a property, so `["+", <interpolate>, 1]` is a
+ * style MapLibre rejects whole. Only a plain numeric size can be bumped; an undeclared one is
+ * left to the spec default rather than pinned to it here.
+ */
+function sizedFor(layer: LayerSpecification, label: LabelTokens): Partial<LayerSpecification> {
+  const layout = (("layout" in layer ? layer.layout : undefined) ?? {}) as Record<string, unknown>;
+  const metadata = ((layer.metadata as Record<string, unknown> | undefined) ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const base = metadata[BASE_TEXT_SIZE] ?? layout["text-size"];
+  if (typeof base !== "number") return {};
+  return {
+    metadata: { ...metadata, [BASE_TEXT_SIZE]: base },
+    layout: { ...layout, "text-size": base + label.sizeDelta },
+  } as Partial<LayerSpecification>;
 }
 
 /**
@@ -143,6 +161,7 @@ export function applyVariantStyling(
       const label = tokens[labelRole(layer, dataSources)];
       return {
         ...layer,
+        ...sizedFor(layer, label),
         paint: {
           ...("paint" in layer ? layer.paint : {}),
           "text-color": label.colour,

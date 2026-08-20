@@ -13,7 +13,7 @@ import {
   statusFillExpression,
   statusProperty,
 } from "./status.ts";
-import { labelSize, rgba, variantStyle } from "./variant-style.ts";
+import { rgba, variantStyle } from "./variant-style.ts";
 
 export const WELLS_SOURCE = "nd_wells";
 export const LATERALS_SOURCE = "nd_laterals";
@@ -238,7 +238,9 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       layout: {
         "text-field": ["coalesce", ["get", "label"], ""],
         "text-font": ["Noto Sans Regular"],
-        "text-size": labelSize(SPACING_LABEL_SIZE, variant),
+        // The base size; applyVariantStyling owns the per-variant bump, for this label and
+        // the basemap's alike, so the two cannot compound into a size neither declares.
+        "text-size": SPACING_LABEL_SIZE,
         "symbol-placement": "point",
       },
       paint: {

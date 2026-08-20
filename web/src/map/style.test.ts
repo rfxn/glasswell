@@ -128,8 +128,10 @@ describe("the data layers", () => {
         "text-halo-width": tokens.primary.haloWidth,
       });
     }
-    // VF-5 asks for the size bump where the substrate is imagery, and only there.
-    expect(layoutOf(label("satellite"))["text-size"]).toBe(11);
+    // VF-5's size bump is applyVariantStyling's to apply — to this label and the basemap's
+    // alike — so what is built here is the base size in every variant. variant-style.test.ts
+    // holds the bump itself: 11 on satellite, 10 elsewhere, applied once.
+    expect(layoutOf(label("satellite"))["text-size"]).toBe(10);
     expect(layoutOf(label("dark"))["text-size"]).toBe(10);
   });
 

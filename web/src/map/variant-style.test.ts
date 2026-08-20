@@ -32,6 +32,13 @@ function styleFor(variant: BasemapVariant): LayerSpecification[] {
 const paintOf = (layer: LayerSpecification): Record<string, unknown> =>
   ("paint" in layer && layer.paint ? layer.paint : {}) as Record<string, unknown>;
 
+const sizeOf = (layers: readonly LayerSpecification[], id: string): unknown => {
+  const layer = layers.find((candidate) => candidate.id === id);
+  return layer && "layout" in layer
+    ? (layer.layout as Record<string, unknown> | undefined)?.["text-size"]
+    : undefined;
+};
+
 describe("the variant token table", () => {
   it("names one token set per basemap variant, and no orphan", () => {
     expect(Object.keys(VARIANT_STYLES).sort()).toEqual([...BASEMAP_VARIANTS].sort());
@@ -168,15 +175,36 @@ describe("the variant styling pass", () => {
     // A zoom expression is only legal at the top of a property; ["+", <interpolate>, 1] puts
     // it one level down and MapLibre rejects the whole style, so those sizes are not bumped.
     const styled = applyVariantStyling(styleFor("satellite"), "satellite", DATA_SOURCES);
-    const label = styled.find((layer) => layer.id === "spacing-units-label");
-    const size = label && "layout" in label ? (label.layout as Record<string, unknown>) : {};
-    expect(size["text-size"]).toBe(11);
+    expect(sizeOf(styled, "spacing-units-label")).toBe(11);
 
-    const zoomDriven = applyVariantStyling(styleFor("dark"), "dark", DATA_SOURCES).find(
-      (layer) => layer.id === "places_locality",
+    const zoomDriven = applyVariantStyling(styleFor("dark"), "dark", DATA_SOURCES);
+    expect(Array.isArray(sizeOf(zoomDriven, "places_locality"))).toBe(true);
+  });
+
+  it("is the only owner of the bump, so the layer it is handed carries the base size", () => {
+    // Two owners would compound: dataLayers() adding the delta and the pass adding it again
+    // renders the satellite label at 12, which is neither variant's declared size.
+    expect(sizeOf(dataLayers({ labels: true, variant: "satellite" }), "spacing-units-label")).toBe(
+      10,
     );
-    const layout = zoomDriven && "layout" in zoomDriven ? (zoomDriven.layout as Record<string, unknown>) : {};
-    expect(Array.isArray(layout["text-size"])).toBe(true);
+    expect(sizeOf(dataLayers({ labels: true, variant: "dark" }), "spacing-units-label")).toBe(10);
+  });
+
+  it("bumps a context label too, not only this app's own", () => {
+    // Six of the thirteen Protomaps label layers carry a plain numeric size, so the context
+    // delta is a live contract even though today's satellite basemap is raster and ships none.
+    const basemapLabel: LayerSpecification = {
+      id: "roads_labels_major",
+      type: "symbol",
+      source: "protomaps",
+      "source-layer": "roads",
+      layout: { "text-field": ["get", "name"], "text-size": 12 },
+    };
+    const styled = applyVariantStyling([basemapLabel], "satellite", DATA_SOURCES);
+    expect(labelRole(styled[0]!, DATA_SOURCES)).toBe("context");
+    expect(sizeOf(styled, "roads_labels_major")).toBe(12 + variantStyle("satellite").context.sizeDelta);
+    expect(sizeOf(applyVariantStyling([basemapLabel], "light", DATA_SOURCES), "roads_labels_major"))
+      .toBe(12);
   });
 
   it("leaves an icon-only symbol layer alone, so a data mark is not painted as a label", () => {

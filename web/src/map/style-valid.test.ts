@@ -2,9 +2,11 @@ import { validateStyleMin } from "@maplibre/maplibre-gl-style-spec";
 import type { StyleSpecification } from "maplibre-gl";
 import { describe, expect, it } from "vitest";
 
-import { basemapDef, graticuleStyle, rasterStyle, vectorStyle } from "./basemap.ts";
+import { BASEMAP_VARIANTS, basemapDef, graticuleStyle, rasterStyle, vectorStyle } from "./basemap.ts";
+import type { BasemapVariant } from "./basemap.ts";
 import { dataLayers, sourceSpecs, statusFilter } from "./style.ts";
 import { statusIds } from "./status.ts";
+import { applyVariantStyling } from "./variant-style.ts";
 
 /**
  * MapLibre drops a layer that fails style validation and reports it on the `error` event.
@@ -50,4 +52,29 @@ describe("the assembled style", () => {
     } as never);
     expect(errors.map((error) => `${error.message}`)).toEqual([]);
   });
+
+  // The variant pass is the last thing to touch a layer before MapLibre reads it, so the
+  // style the validator was seeing was not the style that renders. A recoloured paint or a
+  // bumped text-size that the spec rejects drops the layer silently, which is VF-5's own
+  // failure mode arriving through the fix for it.
+  for (const variant of BASEMAP_VARIANTS) {
+    it(`validates what transformStyle actually hands MapLibre on ${variant}`, () => {
+      const base = (
+        {
+          dark: () => vectorStyle(basemapDef("dark")!, { labels: true }),
+          light: () => vectorStyle(basemapDef("light")!, { labels: true }),
+          satellite: () => rasterStyle(basemapDef("satellite")!),
+          none: () => graticuleStyle(),
+        } as Record<BasemapVariant, () => StyleSpecification>
+      )[variant]();
+      const merged = assembled(base);
+      const data = new Set(Object.keys(sourceSpecs("https://glasswell.example")));
+      const styled = {
+        ...merged,
+        layers: applyVariantStyling(merged.layers, variant, data),
+      } as StyleSpecification;
+      const errors = validateStyleMin(styled as never);
+      expect(errors.map((error) => `${variant}: ${error.message}`)).toEqual([]);
+    });
+  }
 });
