@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { LayerSpecification } from "maplibre-gl";
 
+import type { BasemapVariant } from "./basemap.ts";
+import { variantStyle } from "./variant-style.ts";
 import {
   LATERALS_SOURCE,
   WELLS_SOURCE,
@@ -11,6 +14,11 @@ import {
 import { SELECTION_COLOUR, STATUS_CLASSES } from "./status.ts";
 
 const ids = (): string[] => dataLayers().map((layer) => layer.id);
+
+const paintOf = (layer?: LayerSpecification): Record<string, unknown> =>
+  ((layer && "paint" in layer && layer.paint) || {}) as Record<string, unknown>;
+const layoutOf = (layer?: LayerSpecification): Record<string, unknown> =>
+  ((layer && "layout" in layer && layer.layout) || {}) as Record<string, unknown>;
 
 describe("the data layers", () => {
   it("no longer ships a duplicate *-selected layer per source", () => {
@@ -84,6 +92,31 @@ describe("the data layers", () => {
     for (const id of ["wells", "wells-struck", "laterals", "spacing-units-fill", "spacing-units-line"]) {
       expect(rendered.has(id), `${id} missing from the style`).toBe(true);
     }
+  });
+
+  it("paints its own label for the basemap under it, not for the dark one only", () => {
+    const label = (variant: BasemapVariant): LayerSpecification | undefined =>
+      dataLayers({ labels: true, variant }).find((layer) => layer.id === "spacing-units-label");
+    for (const variant of ["dark", "light", "satellite", "none"] as const) {
+      const tokens = variantStyle(variant);
+      expect(paintOf(label(variant))).toMatchObject({
+        "text-color": tokens.primary.colour,
+        "text-halo-color": tokens.primary.halo,
+        "text-halo-width": tokens.primary.haloWidth,
+      });
+    }
+    // VF-5 asks for the size bump where the substrate is imagery, and only there.
+    expect(layoutOf(label("satellite"))["text-size"]).toBe(11);
+    expect(layoutOf(label("dark"))["text-size"]).toBe(10);
+  });
+
+  it("keeps the selection branch over the variant colour on the spacing-unit outline", () => {
+    // The variant keys the resting colour; feature-state still wins over it when selected.
+    const line = dataLayers({ variant: "light" }).find((layer) => layer.id === "spacing-units-line");
+    const colour = JSON.stringify(paintOf(line)["line-color"]);
+    expect(colour).toContain("feature-state");
+    expect(colour).toContain(SELECTION_COLOUR);
+    expect(colour).toContain(variantStyle("light").spacing);
   });
 
   it("declares no layer property with an undefined value", () => {

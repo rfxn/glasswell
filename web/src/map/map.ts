@@ -8,6 +8,7 @@ import type { FlyTarget } from "../bus.ts";
 import type { Viewport } from "../app/state.ts";
 import {
   BASEMAP_SOURCE,
+  GLYPHS_URL,
   PMTILES_PATH,
   applyBasemapVariant,
   basemapDef,
@@ -29,6 +30,7 @@ import { LAYERS, defaultLayerSet, layerDef, layerIds } from "./registry.ts";
 import { UNMAPPED_STATUS, statusClass, statusIds } from "./status.ts";
 import { dataLayers, sourceSpecs, statusFilter, strikeGlyph } from "./style.ts";
 import { createTileBanner } from "./tile-banner.ts";
+import { applyVariantStyling } from "./variant-style.ts";
 
 export { absoluteTileUrl } from "./style.ts";
 export { graticuleStyle as baseStyle } from "./basemap.ts";
@@ -100,8 +102,15 @@ interface ResolvedStyle {
 
 async function resolveStyle(id: string): Promise<ResolvedStyle> {
   const base = basemapDef(id) ?? basemapDef("none")!;
-  if (base.kind === "graticule") return { style: graticuleStyle() };
-  if (base.kind === "raster") return { style: rasterStyle(base) };
+  if (base.kind !== "vector") {
+    const assets = await readManifest();
+    const style = base.kind === "raster" ? rasterStyle(base) : graticuleStyle();
+    // Glyphs are served from this origin whatever the basemap is, and without the url every
+    // symbol layer is dropped — which is why the spacing-unit label did not exist at all on
+    // satellite or on none, the two variants VF-5 calls hardest to read.
+    if (assets?.labels === true) style.glyphs = GLYPHS_URL;
+    return { style };
+  }
 
   const manifest = await readManifest();
   const archive = manifest?.archive ?? PMTILES_PATH;
@@ -160,7 +169,7 @@ export function createMap(
   chrome.append(banner.element, hover.element);
 
   let basemap = chooseBasemap();
-  applyBasemapVariant(basemap, container);
+  let variant = applyBasemapVariant(basemap, container);
   let on = restoreLayerSet(readLayerSet(), layerIds(), defaultLayerSet());
   let statuses = new Set(statusIds());
   const opacities = new Map(LAYERS.map((layer) => [layer.id, layer.opacity]));
@@ -284,6 +293,7 @@ export function createMap(
       (background && "paint" in background && background.paint?.["background-color"]) || undefined;
     const built = dataLayers({
       labels: Boolean(next.glyphs),
+      variant,
       ...(typeof hollowFill === "string" ? { hollowFill } : {}),
     }).map((layer) => {
       const owner = LAYERS.find((candidate) => candidate.styleLayers.includes(layer.id));
@@ -312,7 +322,14 @@ export function createMap(
     const layers = [...next.layers];
     const labelIndex = layers.findIndex((layer) => layer.id === firstLabelLayerId(next));
     layers.splice(labelIndex < 0 ? layers.length : labelIndex, 0, ...built);
-    return { ...next, sources: { ...next.sources, ...sourceSpecs() }, layers };
+    const data = sourceSpecs();
+    // The variant pass runs over the merged list — the basemap's labels and lines as well as
+    // this app's — so nothing text-bearing reaches the canvas unkeyed to the substrate.
+    return {
+      ...next,
+      sources: { ...next.sources, ...data },
+      layers: applyVariantStyling(layers, variant, new Set(Object.keys(data))),
+    };
   }
 
   function installStrikeGlyph(): void {
@@ -338,7 +355,7 @@ export function createMap(
 
   async function setBasemap(id: string): Promise<void> {
     basemap = id;
-    applyBasemapVariant(id, container);
+    variant = applyBasemapVariant(id, container);
     rememberBasemap(id);
     setUrlParam("base", id === "dark" ? null : id);
     panel.setBasemap(id);

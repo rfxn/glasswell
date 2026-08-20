@@ -1,6 +1,7 @@
 import type { LayerSpecification, SourceSpecification } from "maplibre-gl";
 
 import { tileUrl } from "../api/client.ts";
+import type { BasemapVariant } from "./basemap.ts";
 import { coalesce, featureState, get, inSet, interpolate, step, toNumber, when, zoom } from "./expr.ts";
 import type { Expr } from "./expr.ts";
 import {
@@ -12,13 +13,14 @@ import {
   statusFillExpression,
   statusProperty,
 } from "./status.ts";
+import { labelSize, rgba, variantStyle } from "./variant-style.ts";
 
 export const WELLS_SOURCE = "nd_wells";
 export const LATERALS_SOURCE = "nd_laterals";
 export const SPACING_SOURCE = "nd_spacing_units";
 
 const INK = "#0B1014";
-const SPACING_LINE = "#4B6472";
+const SPACING_LABEL_SIZE = 10;
 
 /** martin publishes one source id per table and the MVT layer inside carries that id. */
 function published(parameter: string, fallback: string): string {
@@ -114,10 +116,14 @@ export interface DataLayerOptions {
   labels?: boolean;
   /** Hollow glyphs are a ring over the substrate, so the fill follows the basemap. */
   hollowFill?: string;
+  /** The basemap under the data, which is what its labels and outlines are coloured against. */
+  variant?: BasemapVariant;
 }
 
 export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[] {
   const hollow = options.hollowFill ?? INK;
+  const variant = options.variant ?? "dark";
+  const tokens = variantStyle(variant);
   const wells = published("wells", WELLS_SOURCE);
   const laterals = published("laterals", LATERALS_SOURCE);
   const spacing = published("spacing", SPACING_SOURCE);
@@ -129,7 +135,8 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       source: spacing,
       "source-layer": spacing,
       minzoom: 8,
-      paint: { "fill-color": SPACING_LINE, "fill-opacity": 0.08 },
+      // No `fill-opacity`: the layer panel's slider writes that one, and would replace it.
+      paint: { "fill-color": rgba(tokens.spacingFill, tokens.spacingFillAlpha) },
     },
     {
       id: "spacing-units-line",
@@ -138,7 +145,7 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       "source-layer": spacing,
       minzoom: 8,
       paint: {
-        "line-color": selectable(SELECTION_COLOUR, SPACING_LINE),
+        "line-color": selectable(SELECTION_COLOUR, tokens.spacing),
         "line-width": interpolate(zoom, [
           [8, 0.4],
           [13, 1.2],
@@ -204,10 +211,14 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       layout: {
         "text-field": ["coalesce", ["get", "label"], ""],
         "text-font": ["Noto Sans Regular"],
-        "text-size": 10,
+        "text-size": labelSize(SPACING_LABEL_SIZE, variant),
         "symbol-placement": "point",
       },
-      paint: { "text-color": "#9FB0BC", "text-halo-color": INK, "text-halo-width": 1 },
+      paint: {
+        "text-color": tokens.primary.colour,
+        "text-halo-color": tokens.primary.halo,
+        "text-halo-width": tokens.primary.haloWidth,
+      },
     });
   }
   return built;

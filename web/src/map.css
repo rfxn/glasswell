@@ -482,6 +482,44 @@
   cursor: pointer;
 }
 
+/* ── variant-keyed chrome ────────────────────────────────────────────────────
+   The map chrome keeps the product's dark surface on every basemap — inverting it
+   over a light substrate would leave it fighting the dark app shell around the
+   canvas. What the variant keys is separation: over a light or satellite
+   substrate the panels stop letting the map through, and gain an edge. The
+   attribute is set by map/basemap.ts on every variant change and at boot. */
+
+[data-basemap="light"] .gw-lg,
+[data-basemap="satellite"] .gw-lg,
+[data-basemap="light"] .gw-banner,
+[data-basemap="satellite"] .gw-banner {
+  background: var(--panel);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 35%);
+}
+
+[data-basemap="light"] .gw-layers,
+[data-basemap="satellite"] .gw-layers {
+  background: var(--panel);
+}
+
+[data-basemap="light"] .gw-hover,
+[data-basemap="satellite"] .gw-hover {
+  background: var(--ink);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 40%);
+}
+
+[data-basemap="light"] .gw-pill,
+[data-basemap="satellite"] .gw-pill {
+  box-shadow: 0 1px 4px rgb(0 0 0 / 55%);
+}
+
+/* The stock scale bar is 75% white, so on imagery the substrate reads through the
+   one control whose whole job is to be read against it. */
+[data-basemap="satellite"] .maplibregl-ctrl-scale,
+[data-basemap="light"] .maplibregl-ctrl-scale {
+  background-color: #fff;
+}
+
 /* ── map controls ────────────────────────────────────────────────────────── */
 
 /* The stock control button is a 29 px icon square; this one carries a word. */
