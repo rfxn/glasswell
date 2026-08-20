@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # DR-19: the machine-checkable twin of SMOKE.md — every assertion is a claim that file makes
-# in prose, plus the three this cycle added (per-point lineage, a hostile layer id, and the
+# in prose, plus the four this cycle added (per-point lineage, two hostile layer ids, and the
 # committed contract against the served one). Read-only: GET, and nothing else.
 # The owner key is read from the environment, a file, or /etc/glasswell/app.env, never printed.
 set -uo pipefail
@@ -83,7 +83,7 @@ keyed_status() { status -H "X-Glasswell-Key: $owner_key" "$@"; }
 body() { keyed "$base$1" > "$work_dir/body.json"; }
 pointer_of() {
     python3 -c 'import json,sys; print(json.load(sys.stdin)["errors"][0]["pointer"])' \
-        < "$work_dir/body.json" 2>/dev/null
+        < "$work_dir/body.json" 2>/dev/null  # a response that is not a problem+json has no pointer; the assert prints what it got
 }
 
 printf 'smoke: %s (well %s)\n' "$base" "$api10"
@@ -207,9 +207,12 @@ assert_true "a tile over the well's own surface point carries bytes" \
 # Blueprint 3.0.1: staging never serves, and the proxy allowlist is the control that holds it.
 assert "a staging layer through the proxy is refused" 404 \
     "$(keyed_status "$base/v1/tiles/nd_gis_wells/8/54/89.pbf")"
-# N-5: a layer id is interpolated into a path, so a hostile one must not reach martin.
-assert_true "a hostile layer id is refused, not proxied" "a traversal reached the proxy" \
-    test "$(keyed_status "$base/v1/tiles/..%2f..%2fetc%2fpasswd/8/54/89.pbf")" != 200
+# N-5: a layer id is interpolated into a path, so a hostile one must not reach martin. The
+# exact code matters — `!= 200` would read a 500 from a proxy that tried as "refused".
+assert "a traversal-shaped layer id is refused" 404 \
+    "$(keyed_status "$base/v1/tiles/..%2f..%2fetc%2fpasswd/8/54/89.pbf")"
+assert "a well-formed layer id outside the allowlist is refused" 422 \
+    "$(keyed_status "$base/v1/tiles/gw-evil-layer/8/54/89.pbf")"
 assert_true "every path in the committed OpenAPI snapshot exists on this instance" \
     "the published contract and the served one disagree" \
     python3 -c '

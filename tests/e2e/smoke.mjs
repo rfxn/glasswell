@@ -138,6 +138,15 @@ const handle = page.locator("#gw-card button.gw-handle, #gw-card [data-gw-explai
 if (await handle.count()) {
   await handle.click();
   await page.waitForSelector("#gw-drawer", { state: "visible", timeout: 30000 }).catch(() => {});
+  // The drawer is visible ~250 ms before /v1/explain has answered, so reading innerText on
+  // `visible` reads the header alone. Wait for the content, not for the element.
+  await page
+    .waitForFunction(
+      () => (document.querySelector("#gw-drawer")?.innerText ?? "").length > 300,
+      null,
+      { timeout: 30000 },
+    )
+    .catch(() => {});
   const drawer = page.locator("#gw-drawer");
   const body = (await drawer.count()) ? await drawer.innerText() : "";
   assert(/[0-9a-f]{64}/.test(body), "the drawer shows a 64-hex checksum", "no sha256 on screen");
@@ -148,21 +157,40 @@ if (await handle.count()) {
   bad("the drawer names the regulator file", "the card offered no derivation handle");
 }
 
-// 9-11 — N-5: a hostile query string must not put the page outside the tile allowlist, off
-// this origin, or into an unhandled exception.
+// 9-12 — N-5: a hostile query string must not put the page outside the tile allowlist, off
+// this origin, or into an unhandled exception — and whatever it does ask for must be refused.
 const hostile = "..%2F..%2Fetc%2Fpasswd";
 await visit(
   `?wells=${hostile}&laterals=${hostile}&base=%22%3E%3Cscript%3E&map=1e309/999/999`,
   { settle: 7000 },
 );
-const escaped = tileResponses().filter(
+// Every .pbf the page asked for, not just the ones that stayed inside /v1/tiles/: with
+// `?wells=..%2F..%2Fetc%2Fpasswd` the browser normalises the path and asks for
+// `/etc/passwd/{z}/{x}/{y}.pbf`, which carries no tiles prefix at all. Filtering on that
+// prefix made this assertion vacuous for exactly the case it exists to catch (Gate-O M-2).
+const pbfResponses = journal.responses.filter(([, url]) => /\.pbf(\?|$)/.test(url));
+const escaped = pbfResponses.filter(
   ([status, url]) =>
-    status < 400 && !ALLOWED_TILE_LAYERS.some((layer) => tilePath(url).startsWith(`/v1/tiles/${layer}/`)),
+    status < 400 &&
+    !ALLOWED_TILE_LAYERS.some((layer) => tilePath(url).startsWith(`/v1/tiles/${layer}/`)) &&
+    !tilePath(url).startsWith("/basemap/"),
 );
 assert(
   escaped.length === 0,
-  "no tile outside the allowlist is served",
-  escaped.slice(0, 2).map(([, url]) => url).join(" | "),
+  "no .pbf outside the allowlist is served",
+  escaped.slice(0, 2).map(([status, url]) => `${status} ${tilePath(url)}`).join(" | "),
+);
+const offAllowlist = pbfResponses.filter(
+  ([, url]) =>
+    !ALLOWED_TILE_LAYERS.some((layer) => tilePath(url).startsWith(`/v1/tiles/${layer}/`)) &&
+    !tilePath(url).startsWith("/basemap/"),
+);
+console.log(`  note   escaped .pbf requests observed: ${offAllowlist.length}`);
+assert(
+  offAllowlist.every(([status]) => status === 404),
+  "an escaped tile request is refused 404",
+  offAllowlist.map(([status, url]) => `${status} ${tilePath(url)}`).slice(0, 2).join(" | ") ||
+    "(the page asked for none — the client guard may have landed)",
 );
 assert(
   offOrigin().length === 0,
@@ -173,7 +201,7 @@ assert(journal.errors.length === 0, "a hostile parameter does not break the page
   journal.errors.join(" | "));
 await shoot("e2e-04-hostile");
 
-// 12 — no key at all, in a context that never had one: refuse honestly, do not look empty.
+// 13 — no key at all, in a context that never had one: refuse honestly, do not look empty.
 const anonymous = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
 const anonymousPage = await anonymous.newPage();
 await anonymousPage.goto(`${BASE}/?well=${WELL}`, { waitUntil: "load", timeout: 60000 });
