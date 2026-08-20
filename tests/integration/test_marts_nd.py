@@ -4,6 +4,7 @@ import json
 import math
 import subprocess
 import sys
+from decimal import Decimal
 from pathlib import Path
 
 import httpx
@@ -170,6 +171,36 @@ def test_lateral_length_is_the_projected_length_in_feet(canonical_nd, refreshed)
         assert float(stored) == pytest.approx(expected, abs=0.01)
     # SHAPE_Leng is degrees (~1.5e-2); a mart that read it would never clear one foot.
     assert min(float(stored) for stored, _ in measured) > 1.0
+
+
+def test_the_card_figure_equals_the_length_the_tile_carries(canonical_nd, refreshed, api_client):
+    """M-2: the handle on the card claims to explain the number the tile renders. One number.
+
+    The policy is round-final: both paths convert with `glasswell.units`, the mart stores the
+    conversion unrounded, and the only quantize step is the serving edge.
+    """
+    multilateral = rows(
+        canonical_nd,
+        "select api10, sum(lateral_length_ft) from marts.nd_laterals_tile"
+        " group by api10 having count(*) > 1 order by api10",
+    )
+    assert multilateral, "the GIS fixture holds no multi-lateral well, so M-2 cannot regress here"
+
+    for api10, tiled in multilateral:
+        served = api_client.get(f"/v1/wells/{api10}").json()["data"]["lateral_length_ft"]
+        assert served["unit"] == "ft"
+        assert Decimal(served["value"]) == tiled.quantize(Decimal("0.01")), api10
+
+
+def test_the_tile_mart_stores_the_length_unrounded(canonical_nd, refreshed):
+    """A mart that rounds per lateral cannot be summed back to the served figure."""
+    stored = [
+        row[0]
+        for row in rows(canonical_nd, "select lateral_length_ft from marts.nd_laterals_tile")
+    ]
+
+    assert stored
+    assert any(value != value.quantize(Decimal("0.01")) for value in stored)
 
 
 def test_every_tile_row_carries_a_handle_that_resolves_to_a_manifest(canonical_nd, refreshed):

@@ -23,12 +23,11 @@ from glasswell.api.pagination import (
 )
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, iso
 from glasswell.lineage.envelope import figure
+from glasswell.units import metres_to_feet
 
 router = APIRouter(tags=["wells"])
 
 BBOX_DEGREE_CAP = 4.0
-# 1 ft is 0.3048 m by definition, so this factor is exact and is not a source convention.
-FEET_PER_METRE = Decimal("3.280839895013123")
 API10_PATTERN = r"^\d{10}$"
 
 WELL_LABELS = {
@@ -326,8 +325,9 @@ def get_well(
                     "pointer": "/lateral_length_ft",
                 }
             )
+        # Round-final: the sum is converted once, and the serving edge is the only quantize.
         length_figure = figure(
-            str((metres * FEET_PER_METRE).quantize(Decimal("0.01"))),
+            str(metres_to_feet(metres).quantize(Decimal("0.01"))),
             unit="ft",
             derivation=sorted(derivations)[-1],
             selector=f"api10={api10}&col=lateral_length_ft",

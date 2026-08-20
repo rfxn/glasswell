@@ -38,9 +38,9 @@ from glasswell.lineage import (
     quarantine,
 )
 from glasswell.lineage.serialization import hash_payload, json_ready
+from glasswell.units import METRES_PER_FOOT
 
 BASE_URL = "https://gis.dmr.nd.gov/downloads/oilgas/shapefile"
-FEET_PER_METRE = 0.3048
 DATUM_RULE_SOURCE = "nd_gis_wells"
 LAND_UNIT_RULE_ID = "cr_nd_land_unit_1"
 _LINEKEY = re.compile(r"\A(?P<api14>\d{14})_(?P<segment>[A-Za-z]+)(?P<ordinal>\d*)\Z")
@@ -801,7 +801,7 @@ def _length_stats(
             "  from (select ST_Length(ST_Transform(geom, %s)) / %s as feet"
             "          from canonical.well_spatial"
             "         where derivation_id = %s and geom_type = 'lateral') lengths",
-            (compute_epsg, FEET_PER_METRE, derivation_id),
+            (compute_epsg, float(METRES_PER_FOOT), derivation_id),
         )
         minimum, median, maximum, rows = cursor.fetchone()
     if not rows:

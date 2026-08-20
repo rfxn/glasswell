@@ -21,11 +21,11 @@ from glasswell.lineage.models import DeriveEnvironment, InputRef, OutputSpec
 from glasswell.lineage.serialization import hash_payload
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts.tiles import TILE_LAYERS, install_tile_functions
+from glasswell.units import METRES_PER_FOOT
 
 COMPUTE_CRS_RULE = "cr_nd_compute_crs_1"
 COMPUTE_CRS_SOURCE = "nd_gis_horizontals_line"
 DATUM_RULE = "cr_nd_datum_1"
-FEET_PER_METRE = 0.3048
 
 _WELLS_AS_OF = """
 with wells_as_of as (
@@ -45,8 +45,8 @@ select s.api10,
        w.operator_name_reported as operator_name,
        w.status_canonical,
        extract(year from w.spud_date)::int as spud_year,
-       round((ST_Length(ST_Transform(s.geom, %(compute_epsg)s))
-              / %(feet_per_metre)s)::numeric, 2) as lateral_length_ft,
+       ST_Length(ST_Transform(s.geom, %(compute_epsg)s))::numeric
+           / %(metres_per_foot)s as lateral_length_ft,
        s.geom
   from canonical.well_spatial s
   left join wells_as_of w on w.api10 = s.api10
@@ -133,7 +133,7 @@ def refresh_all(connection: psycopg.Connection, *, as_of: date | None = None) ->
     parameters: dict[str, object] = {
         "as_of": as_of,
         "compute_epsg": compute_epsg,
-        "feet_per_metre": FEET_PER_METRE,
+        "metres_per_foot": METRES_PER_FOOT,
     }
     with connection.cursor() as cursor:
         cursor.execute(_SPACING_UNITS_VIEW)
