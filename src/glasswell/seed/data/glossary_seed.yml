@@ -1,0 +1,503 @@
+# Seed set for canonical.glossary_terms (DIR-8, E18, R9). Transcribed from blueprint-v0.6 §9,
+# plus the ten lineage terms SB-07 §12 hands back as undefined. Two entries are deliberately
+# not verbatim: Audit stream drops the hash-chain claim (M8), and Training support carries the
+# retirement of the "support score" name.
+
+- term: API-10 / API-12 / API-14
+  aliases: ["API-10", "API-12", "API-14", "API number"]
+  short_definition: >-
+    The American Petroleum Institute well number; API-10 is glasswell's identity spine.
+  expanded_definition: >-
+    Digits 1-2 are the state (ND 33, TX 42, NM 30 - API codes, not FIPS), 3-5 the county at
+    time of permitting, 6-10 the unique well. Digits 11-12 identify the sidetrack; 13-14 are
+    convention rather than standard, which is why glasswell slices them off rather than
+    trusting them. The free ND monthly report carries API-14, so API-10 is its first ten digits.
+  domain_tags: [identity, data-model]
+  related_terms: ["Spine", "Wellbore"]
+  source_refs: ["blueprint-v0.6 §9", "blueprint-v0.6 §3.0.4", "DIR-9"]
+
+- term: Allocation / allocation v0
+  aliases: ["Allocation", "Allocated"]
+  short_definition: >-
+    Estimating well-level volumes from a lease-level report by splitting the lease total
+    across its wells.
+  expanded_definition: >-
+    Necessary only in Texas, where production is reported by lease rather than by well. An
+    allocated figure is always labelled allocated and never observed, and it carries the id
+    of the allocation model that produced it.
+  domain_tags: [production, data-model]
+  related_terms: ["Granularity", "Naked number"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: Analog
+  highlightable: false
+  short_definition: >-
+    A well near another in feature space - rock, design, location - rather than in physical
+    space.
+  expanded_definition: >-
+    A neighbour is near in metres; an analog is near in the variables that drive performance.
+    Confusing the two is how a comparison set ends up full of wells that share a section and
+    nothing else.
+  domain_tags: [modeling]
+  related_terms: ["Type curve", "Training support"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: Audit stream
+  short_definition: >-
+    The system's single append-only event log: restatements, promotions, model publications
+    and key uses are events in it.
+  expanded_definition: >-
+    Append-only is enforced twice and structurally: the runtime roles hold insert and select
+    but no update or delete, and a before-update-or-delete trigger raises on any attempt.
+    There is no tamper-evident chain over the events, and glasswell does not claim one.
+  domain_tags: [lineage, governance]
+  related_terms: ["Quarantine", "Restatement"]
+  source_refs: ["blueprint-v0.6 §9", "SB-07 §5.1", "SB-04 §10 E-22"]
+
+- term: Band
+  highlightable: false
+  short_definition: >-
+    The P10-P90 interval around a forecast or type curve.
+  expanded_definition: >-
+    A curve without a band is not shipped, because a single line implies a precision the
+    underlying data does not support.
+  domain_tags: [modeling]
+  related_terms: ["Type curve"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: Bitemporal
+  aliases: ["Bitemporality"]
+  short_definition: >-
+    Carrying two time axes: when something happened (the production month) and when it was
+    reported (the report vintage).
+  expanded_definition: >-
+    The mechanism that makes restatement survivable. glasswell never updates a production row;
+    a regulator revision arrives as a new row at a later report vintage, and every read states
+    which vintage it resolved to.
+  domain_tags: [lineage, time, data-model]
+  related_terms: ["Report vintage", "Valid time", "Knowledge time", "Restatement"]
+  source_refs: ["blueprint-v0.6 §9", "DIR-2"]
+
+- term: Canonical
+  short_definition: >-
+    The conformed layer: one schema for the domain, every mapping decision recorded,
+    observations at native granularity.
+  expanded_definition: >-
+    Canonical never estimates. A value here is something a regulator reported, mapped through
+    a recorded conformance rule, and stamped with the manifest and derivation that produced it.
+  domain_tags: [data-model, lineage]
+  related_terms: ["Staging", "Marts", "Conformance rule"]
+  source_refs: ["blueprint-v0.6 §9", "blueprint-v0.6 §3.4"]
+
+- term: Condensate
+  short_definition: >-
+    Light liquid hydrocarbon produced with gas, classified differently by different states.
+  expanded_definition: >-
+    Because the classification is not portable, glasswell states a liquids policy rather than
+    silently choosing one, and preserves the regulator's own classification in staging.
+  domain_tags: [production]
+  related_terms: ["Liquids policy", "Stream"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: Confidential well
+  short_definition: >-
+    A well whose production a regulator withholds for a statutory period.
+  expanded_definition: >-
+    Withheld is a distinct state from missing and is never collapsed into it. In North Dakota
+    the confidential state arrives as a well status of its own, which is why the canonical
+    well record carries a confidential flag alongside the mapped status.
+  domain_tags: [production, quality]
+  related_terms: ["Withheld", "Granularity"]
+  source_refs: ["blueprint-v0.6 §9", "blueprint-v0.6 §3.0.3"]
+
+- term: Conformance rule
+  short_definition: >-
+    A recorded cross-source mapping decision with its rationale, evidence and effective dates.
+  expanded_definition: >-
+    Rules are served as data, not buried in code: a mapping that exists only in a parser fails
+    review. Each rule declares the stage it runs at, the kind of transform it is, and what
+    happens to a row it cannot resolve.
+  domain_tags: [lineage, data-model, governance]
+  related_terms: ["Quarantine", "Effective date", "Canonical"]
+  source_refs: ["blueprint-v0.6 §9", "SB-07 §6"]
+
+- term: CRS / compute CRS
+  aliases: ["CRS", "Compute CRS"]
+  short_definition: >-
+    Coordinate reference system. Storage is always EPSG:4326; every distance, area and spacing
+    calculation runs in the basin's projected metre-based CRS.
+  expanded_definition: >-
+    North Dakota computes in UTM 14N (EPSG:32614), the Permian in UTM 13N. Distance maths in
+    degrees is a defect, not an approximation - which is why a shapefile's own length field,
+    shipped in degrees, is never served as a length.
+  domain_tags: [geospatial]
+  related_terms: ["Datum", "Spacing / spacing unit"]
+  source_refs: ["blueprint-v0.6 §9", "blueprint-v0.6 §3.0.3"]
+
+- term: Cum12 / cum24
+  aliases: ["Cum12", "Cum24"]
+  short_definition: >-
+    Cumulative production over the first 12 or 24 producing months.
+  expanded_definition: >-
+    Reported both absolute and per 1,000 ft of lateral, because a longer well producing more
+    oil is not the same claim as a better well.
+  domain_tags: [production, modeling]
+  related_terms: ["First production"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: Datum
+  short_definition: >-
+    The geodetic reference frame a coordinate is expressed in - NAD27, NAD83 or WGS84.
+  expanded_definition: >-
+    North Dakota's GIS ships NAD83 (EPSG:4269), which is not literally WGS84. Legacy Texas
+    coordinates are NAD27, and using them untransformed shifts a well by up to about 100 m,
+    silently corrupting spacing. No coordinate reaches storage untransformed and unrecorded.
+  domain_tags: [geospatial, quality]
+  related_terms: ["CRS / compute CRS", "Conformance rule"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: Derivation handle
+  short_definition: >-
+    The reference attached to every served figure that resolves to the graph of transforms
+    that produced it.
+  expanded_definition: >-
+    Resolved through /v1/explain, a handle walks back through each derivation to the
+    checksummed source manifests it terminates in. A figure without one is a naked number.
+  domain_tags: [lineage, serving]
+  related_terms: ["Manifest", "Naked number", "Recipe"]
+  source_refs: ["blueprint-v0.6 §9", "SB-07 §12"]
+
+- term: Determinism class
+  short_definition: >-
+    Whether an artifact's recipe reproduces it byte-for-byte, to a stated numeric tolerance,
+    or only by way of its manifests.
+  expanded_definition: >-
+    Declared per derivation as D1, D2 or D3. Stating the weaker guarantee is the honest move;
+    claiming byte-exactness for a pipeline that cannot deliver it is the failure this class
+    exists to prevent.
+  domain_tags: [lineage, governance]
+  related_terms: ["Recipe", "Manifest"]
+  source_refs: ["blueprint-v0.6 §9", "SB-07 §12"]
+
+- term: Effective date
+  short_definition: >-
+    The date from which a rule, alias or reference record applies.
+  expanded_definition: >-
+    Reference data is effective-dated so that a past number can be re-derived under the rules
+    that were in force when it was produced, rather than under today's.
+  domain_tags: [lineage, time, governance]
+  related_terms: ["Conformance rule", "Knowledge time"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: First production
+  short_definition: >-
+    The first month a well reports a non-zero volume.
+  expanded_definition: >-
+    The anchor for well vintage, for censoring in model training, and for the drilled-but-
+    uncompleted proxy. A month reported as zero and a month never reported are not the same
+    anchor, which is why the null meaning is carried on every row.
+  domain_tags: [production, time]
+  related_terms: ["Vintage (well vintage)", "Withheld", "Cum12 / cum24"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: GOR
+  aliases: ["Gas-oil ratio"]
+  short_definition: >-
+    Gas-oil ratio: gas volume per barrel of oil.
+  expanded_definition: >-
+    A derived surface, never a model target. It is computed from two streams that may have
+    different null meanings in the same month, so it is only shown where both are reported.
+  domain_tags: [production]
+  related_terms: ["Stream", "Water cut"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: Granularity
+  short_definition: >-
+    What kind of number this is: observed, allocated, modelled or assumed.
+  expanded_definition: >-
+    Carried on every served figure. The distinction is the product: a modelled number
+    presented as an observation is the single most expensive error this system can make.
+  domain_tags: [serving, quality]
+  related_terms: ["Allocation / allocation v0", "Naked number"]
+  source_refs: ["blueprint-v0.6 §9", "SB-07 §9.1"]
+
+- term: Knowledge time
+  short_definition: >-
+    When the system learned a fact, as distinct from when the fact happened.
+  expanded_definition: >-
+    In glasswell the knowledge-time axis is the report vintage, taken from the manifest that
+    the bytes arrived in. A restatement moves a value forward in knowledge time while leaving
+    its valid time untouched.
+  domain_tags: [lineage, time]
+  related_terms: ["Valid time", "Report vintage", "Bitemporal"]
+  source_refs: ["SB-07 §12", "DIR-2"]
+
+- term: Land unit
+  short_definition: >-
+    The canonical container for a legal land subdivision: a PLSS section or township in ND and
+    NM, a survey or abstract in TX.
+  expanded_definition: >-
+    The abstraction that keeps Texas from being a schema migration. North Dakota reports bare
+    township and range numbers with no direction letters; the state lies wholly north and west
+    of the fifth principal meridian, so the letters are supplied by a recorded rule.
+  domain_tags: [geospatial, data-model]
+  related_terms: ["PLSS", "Spacing / spacing unit"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: Liquids policy
+  short_definition: >-
+    The stated rule for what counts as the modelling liquid.
+  expanded_definition: >-
+    glasswell's is oil plus condensate, with the regulator's own classification preserved in
+    staging. Stating it is what makes a liquids figure comparable across states that classify
+    the same barrel differently.
+  domain_tags: [production, governance]
+  related_terms: ["Condensate", "Stream", "Conformance rule"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: Manifest
+  short_definition: >-
+    The record of one retrieved raw artifact: source URL, retrieval timestamp, vintages, byte
+    length and SHA-256.
+  expanded_definition: >-
+    The terminal node of every lineage chain. Two fetches of identical bytes reconcile to one
+    manifest; changed bytes open a new one that supersedes the last, which is how a restatement
+    becomes visible instead of overwriting history.
+  domain_tags: [lineage]
+  related_terms: ["Raw zone", "Derivation handle", "Report vintage"]
+  source_refs: ["blueprint-v0.6 §9", "SB-07 §2"]
+
+- term: Marts
+  short_definition: >-
+    The serving layer: features, forecasts, valuations, tiles and rollups, all derived from
+    canonical only.
+  expanded_definition: >-
+    Marts never ingest. They are rebuilt rather than appended to, which is why the append-only
+    guarantee that covers canonical observations deliberately does not cover them.
+  domain_tags: [data-model, serving]
+  related_terms: ["Canonical", "Staging"]
+  source_refs: ["blueprint-v0.6 §9", "blueprint-v0.6 §3.5"]
+
+- term: Mcf
+  aliases: ["MCF"]
+  short_definition: >-
+    Thousand cubic feet of gas, at the regulator's stated conditions.
+  expanded_definition: >-
+    glasswell records the conditions rather than silently normalizing them, because the
+    normalization factor differs by state and an unstated one turns a unit into an assumption.
+  domain_tags: [production, quality]
+  related_terms: ["Stream", "Conformance rule"]
+  source_refs: ["blueprint-v0.6 §9", "blueprint-v0.6 §3.0.3"]
+
+- term: Naked number
+  short_definition: >-
+    A served figure with no derivation handle.
+  expanded_definition: >-
+    Treated as a defect and detected by a CI check rather than by review, because a rule that
+    depends on a reviewer noticing is a rule that erodes.
+  domain_tags: [serving, governance]
+  related_terms: ["Derivation handle", "Granularity"]
+  source_refs: ["blueprint-v0.6 §9", "SB-07 §12"]
+
+- term: PLSS
+  aliases: ["Public Land Survey System"]
+  short_definition: >-
+    The township, range and section grid used in North Dakota and New Mexico.
+  expanded_definition: >-
+    Texas has none, which is why inventory work is scoped to PLSS states first and why the
+    land unit is an abstraction rather than a section number.
+  domain_tags: [geospatial]
+  related_terms: ["Land unit"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: Quarantine
+  short_definition: >-
+    The table of rows that failed promotion, with the reason code, the rule that rejected them,
+    the raw payload and a lifecycle state.
+  expanded_definition: >-
+    It has an endpoint, because the kitchen is the product. A zero quarantine rate is read as
+    evidence that the checks are not running, not as evidence that the data is clean.
+  domain_tags: [quality, lineage]
+  related_terms: ["Conformance rule", "Audit stream"]
+  source_refs: ["blueprint-v0.6 §9", "SB-07 §12"]
+
+- term: Raw zone
+  short_definition: >-
+    The immutable, content-addressed store of source bytes exactly as retrieved.
+  expanded_definition: >-
+    Never modified, never deleted; the payload and its directory are sealed read-only once the
+    manifest is written. It is the only irreplaceable asset in the system, because a regulator
+    can and does replace a file upstream.
+  domain_tags: [lineage]
+  related_terms: ["Manifest", "Restatement"]
+  source_refs: ["blueprint-v0.6 §9", "SB-07 §2.3"]
+
+- term: Recipe
+  short_definition: >-
+    The pinned instructions that regenerate an artifact: code revision, lockfile hash, entry
+    point, parameters, input ids, seed and determinism class.
+  expanded_definition: >-
+    A recipe is what turns "we can explain this number" into "we can produce it again". It is
+    recorded at derivation time, not reconstructed afterwards from whatever the tree looks like
+    later.
+  domain_tags: [lineage, governance]
+  related_terms: ["Determinism class", "Derivation handle"]
+  source_refs: ["blueprint-v0.6 §9", "SB-07 §12"]
+
+- term: Report vintage
+  short_definition: >-
+    When a value was reported, as distinct from the month it describes.
+  expanded_definition: >-
+    A restatement is a new vintage, never an edit. The vintage is taken from the manifest that
+    carried the bytes, so it is a property of the retrieval rather than of the clock the
+    pipeline happened to run on.
+  domain_tags: [lineage, time]
+  related_terms: ["Knowledge time", "Bitemporal", "Restatement", "Vintage (well vintage)"]
+  source_refs: ["blueprint-v0.6 §9", "DIR-2"]
+
+- term: Restatement
+  short_definition: >-
+    A regulator revising previously published production.
+  expanded_definition: >-
+    Universal, not exceptional. Texas states there is no point beyond which corrections may not
+    be filed; North Dakota's spreadsheet and PDF of the same month disagree because of
+    amendments; New Mexico's amendments destructively replace the prior file upstream.
+  domain_tags: [lineage, time, quality]
+  related_terms: ["Report vintage", "Bitemporal", "Raw zone"]
+  source_refs: ["blueprint-v0.6 §9", "DIR-2"]
+
+- term: Slot
+  highlightable: false
+  short_definition: >-
+    A geometrically admissible undrilled lateral position at an assumed spacing.
+  expanded_definition: >-
+    Never a reserve, a resource, or a booked location. A slot ships only with its training
+    support stated, because geometry alone cannot say whether a position is worth drilling.
+  domain_tags: [modeling]
+  related_terms: ["Spacing / spacing unit", "Training support"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: Spacing / spacing unit
+  aliases: ["Spacing", "Spacing unit"]
+  short_definition: >-
+    The distance between parallel laterals, and the regulator-defined area within which wells
+    producing from a pool are allocated.
+  expanded_definition: >-
+    Both are computed in the projected CRS. Computing either in degrees produces a number that
+    looks plausible and is wrong by a factor that varies with latitude.
+  domain_tags: [geospatial]
+  related_terms: ["CRS / compute CRS", "Land unit"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: Spine
+  highlightable: false
+  short_definition: >-
+    The identity backbone a schema joins on; glasswell's is API-10.
+  expanded_definition: >-
+    Every table that describes a well keys on it, which is why the identity question - does a
+    source carry API-10 at all - is answered before any of that source's data is promoted.
+  domain_tags: [identity, data-model]
+  related_terms: ["API-10 / API-12 / API-14", "Wellbore"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: Staging
+  short_definition: >-
+    The source-faithful layer: one schema per regulator file type, no opinions, rejects to
+    quarantine.
+  expanded_definition: >-
+    Every column is text, because coercing a value is already an interpretation and staging
+    exists to hold what arrived. Staging never serves.
+  domain_tags: [data-model]
+  related_terms: ["Canonical", "Quarantine", "Marts"]
+  source_refs: ["blueprint-v0.6 §9", "blueprint-v0.6 §3.4.2"]
+
+- term: Stream
+  highlightable: false
+  short_definition: >-
+    Oil, gas, water or condensate - the substance a volume measures.
+  expanded_definition: >-
+    North Dakota's monthly report also carries gas sold and gas flared. Those are dispositions
+    of produced gas rather than streams, so they are recorded and measured but not promoted as
+    production.
+  domain_tags: [production, data-model]
+  related_terms: ["Condensate", "Mcf", "Liquids policy"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: Training support
+  short_definition: >-
+    How densely the training data covers the point being predicted, on a stated 0-1 scale with
+    its k and metric declared.
+  expanded_definition: >-
+    A gate: no slot and no scenario ships without it. The earlier name for this measure is
+    retired, so that a single number is not reported under two names with two meanings.
+  domain_tags: [modeling, quality]
+  related_terms: ["Slot", "Analog", "Band"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: Type curve
+  short_definition: >-
+    An aggregate production profile for a group of comparable wells.
+  expanded_definition: >-
+    The industry-standard baseline, and glasswell's mandatory control group for every accuracy
+    claim a model makes. A model that cannot beat it does not ship on the strength of being a
+    model.
+  domain_tags: [modeling]
+  related_terms: ["Band", "Analog"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: Valid time
+  short_definition: >-
+    When a fact was true in the world, as distinct from when the system learned it.
+  expanded_definition: >-
+    For production, valid time is the production month the regulator reported against. It never
+    changes; a correction changes what is known about that month, not which month it was.
+  domain_tags: [lineage, time]
+  related_terms: ["Knowledge time", "Bitemporal", "Report vintage"]
+  source_refs: ["SB-07 §12", "DIR-2"]
+
+- term: Vintage (well vintage)
+  aliases: ["Well vintage", "Vintage"]
+  highlightable: false
+  short_definition: >-
+    The year or period a well was completed.
+  expanded_definition: >-
+    Distinct from report vintage; both appear in this system and the glossary keeps them apart
+    deliberately, because a chart that mixes them looks like a trend and is an artefact.
+  domain_tags: [production, time]
+  related_terms: ["Report vintage", "First production"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: Water cut
+  highlightable: false
+  short_definition: >-
+    Water as a share of gross produced liquids.
+  expanded_definition: >-
+    A derived surface, never a model target. Like the gas-oil ratio it is only shown where both
+    of its inputs were actually reported.
+  domain_tags: [production]
+  related_terms: ["GOR", "Stream"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: Wellbore
+  highlightable: false
+  short_definition: >-
+    The physical hole. One API-10 may have several - an original plus sidetracks, or several
+    laterals.
+  expanded_definition: >-
+    glasswell assumes one producing wellbore per API-10 and quarantines the exceptions rather
+    than mis-joining them. In North Dakota a multi-lateral well is normal, so the geometry of
+    every lateral is kept and the rate of exceptions is measured rather than assumed.
+  domain_tags: [identity, geospatial]
+  related_terms: ["API-10 / API-12 / API-14", "Quarantine", "Spine"]
+  source_refs: ["blueprint-v0.6 §9", "blueprint-v0.6 §3.0.5"]
+
+- term: Withheld
+  highlightable: false
+  short_definition: >-
+    Data a source deliberately does not publish, such as a confidential well's production.
+  expanded_definition: >-
+    A distinct state from not reported and from zero. Collapsing the three biases every quality
+    metric computed over them, because withholding is not missing at random.
+  domain_tags: [quality, production]
+  related_terms: ["Confidential well", "First production"]
+  source_refs: ["blueprint-v0.6 §9", "blueprint-v0.6 §3.0.3"]
