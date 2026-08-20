@@ -60,6 +60,11 @@ its own version in its header, and its history is summarised in §3.1.
       check demanded a handle that should not exist and read FAIL against a correct
       response — the same shape as the auth-matrix gap, one track's check meeting
       another track's new field
+- [Change] SMOKE.md is re-read against the deployed instance after this train: the
+         martin catalogue, the unsimplified-tile and the deploy-root-hygiene gaps are
+         closed, the basemap is no longer described as absent, and a new entry states
+         that the S-E re-promotion is armed on a timer rather than run, with the counts
+         either side of it
 
 
 ### 2026-08-20 — wave 1: the S-E production key

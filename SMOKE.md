@@ -219,15 +219,13 @@ curl -sS "$B/openapi.json" | python3 -c 'import json,sys; print(len(json.load(sy
    pipeline and the API group roles, so the API's connection is structurally capable
    of writing canonical rows. Real separation needs two login identities. Do not
    claim write-separation until it is split.
-3. **martin auto-publishes `staging` and `canonical`**, so its catalogue on
-   `127.0.0.1:3000` still lists eleven sources, eight of which are not published layers —
-   three of them `staging` relations. The `/v1/tiles` proxy refuses everything outside
-   `nd_laterals`, `nd_wells` and `nd_spacing_units` with a `404`, so "staging never serves"
-   is a control on the one path a caller can reach, and `verify.sh` asserts it. It is one
-   control, not two. `infra/martin/config.yaml` closes it at the source and it works: what
-   was missing is the PG role `martin` its DSN peer-authenticates as. Migration 026 creates
-   that role with select on the published columns and nothing else, and
-   `install.sh --with-martin-config` places the file and the unit drop-in.
+3. **~~martin auto-publishes `staging` and `canonical`~~ — closed.** The config is
+   adopted: `127.0.0.1:3000/catalog` now lists exactly `nd_laterals`, `nd_wells` and
+   `nd_spacing_units`, where it listed eleven sources with three `staging` relations
+   among them. "Staging never serves" is held by three controls rather than one — the
+   `/v1/tiles` proxy allowlist, `auto_publish: false`, and the PG role `martin`, which
+   holds select on three `marts.tile_*` views and cannot read the `staging` schema at
+   all. The published sources are the tile *functions*, which read those same views.
 4. **~~One `marts` grant is hand-applied~~ — closed.** `create on schema marts` is held
    by a migration now (DR-21), so a database built from migrations alone survives its
    first `refresh_all`. The deployed host already had the privilege; the migration is what
@@ -235,8 +233,10 @@ curl -sS "$B/openapi.json" | python3 -c 'import json,sys; print(len(json.load(sy
 5. **Six months of production only** (2025-10 → 2026-03), one knowledge vintage per
    source. The full back-load is a loop of real fetches against a public regulator.
 6. **No GOR, no water cut, no forecasts, no economics** — out of scope by design.
-7. **Tiles are unsimplified.** The z7 laterals tile is ~2 MB. Fine on a LAN, wrong
-   for anything with latency; zoom-dependent simplification is unbuilt.
+7. **~~Tiles are unsimplified~~ — closed.** The laterals layer is thinned at four MVT
+   units of the tile being built, so the discarded detail stays a quarter of a rendered
+   pixel at any zoom. The z7 tile is 1,777,155 bytes uncompressed and 582,220 on the
+   wire, against ~2 MB and no compression before; a repeat fetch is a `304` and no body.
 8. **No connection pool** — one PostgreSQL connection per request.
 9. **`marts.nd_well_card` is empty by design**; the card reads canonical directly.
 10. **Glossary hover coverage is partial.** 44 terms / 50 surface forms are served
@@ -257,19 +257,26 @@ curl -sS "$B/openapi.json" | python3 -c 'import json,sys; print(len(json.load(sy
     instance, and `tests/e2e/` runs twelve more through a real browser
     (`make test-e2e`). Together with `infra/verify.sh` they are the regression net this
     walkthrough used to be.
-15. **The VM's `/opt/glasswell/src` copy carries working files** (`PLAN.md`,
-    `CLAUDE.md`, `work-output/`, and the six `docs/product-*.md` deep-dives, which are IP
-    carve-out material). They are rsync-era residue — the deploy is
-    `git archive HEAD | ssh tar -x` and cannot produce them. `verify.sh` now fails while
-    they are there; runbook step 8 removes them.
+15. **~~The VM's `/opt/glasswell/src` copy carries working files~~ — closed.**
+    `PLAN.md`, `CLAUDE.md`, `.rdf/`, `work-output/` and the eight `docs/product-*.md`
+    deep-dives (IP carve-out material) were rsync-era residue and are removed; the deploy
+    is `git archive HEAD | ssh tar -x` and cannot recreate them. `verify.sh` asserts it.
 16. **~~The GIS `_VERT`/`_STK` segments quarantine as `unknown_vocab`~~ — closed.**
     Migration 016 gave them `cr_nd_segment_vocab_1` and the reason code
     `segment_not_promoted`; `unknown_vocab` is 0 and 25,449 rows now say what they are.
     The relabel was not a guess after all: every row carried the segment its own parser
     had read (fp-audit A5-F6).
-17. **Not a gap, so it does not surprise you:** no basemap (deliberate), `204` on a
-    tile means healthy-but-empty, and the `series_spans_derivations` warning is
-    correct.
+17. **Not a gap, so it does not surprise you:** `204` on a tile means
+    healthy-but-empty, and the `series_spans_derivations` warning is correct.
+18. **The S-E re-promotion is armed, not yet run.** The correction that gives 78
+    multi-pool wells their filed volumes back appends a new knowledge vintage, and the
+    runner refuses to open one that already answers — `report_vintage` is a calendar day
+    and 2026-08-20 is taken. `glasswell-repromote.timer` runs it once at
+    **00:30 UTC on 2026-08-21**, logging to `/var/log/glasswell/repromote-2026-08-21.log`,
+    which also records the reconciliation counts. Until it does, well `3305302532` serves
+    `null` with a `multi_pool_pending` warning, `canonical.production_monthly` holds
+    394,278 rows and the collision ledger holds 1,401 open rows. Afterwards: 398,403 rows,
+    0 open collisions, and 17,247 bbl of oil over six months on that well.
 
 Three defects were found by driving the real UI tonight and fixed before this file
 was written: the map style declared `glyphs` as undefined and MapLibre therefore
@@ -282,10 +289,10 @@ six-figure axis labels. Each has a regression test.
 1. **Cloudflare Tunnel + Access + a real certificate.** Needs your dashboard. This
    retires gap 1 and is the only thing standing between this and being reachable
    from outside the LAN.
-2. **Split the login roles** to restore pipeline/API write separation (gap 2), and
-   **adopt `infra/martin/config.yaml`** so martin's own source list equals the proxy
-   allowlist (gap 3): migration 026, then `./install.sh --with-martin-config`, then
-   `systemctl restart martin`. Never run both publishing mechanisms at once.
+2. **Split the login roles** to restore pipeline/API write separation (gap 2).
+   ~~Adopt `infra/martin/config.yaml`~~ (gap 3) — done; the catalogue is the allowlist.
+   Never run both publishing mechanisms at once: the config publishes the functions, so
+   a `tables:` block naming the views they read would collide on the same ids.
 3. ~~**Fold the hand-applied `marts` grant into a migration**~~ (gap 4) — done.
 4. **Full production back-load** beyond six months, then re-check the quarantine
    shares.
