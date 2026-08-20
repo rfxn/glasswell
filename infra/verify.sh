@@ -71,12 +71,21 @@ else
     assert "GET /v1/health with the owner key" 200 \
         "$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
             -H "X-Glasswell-Key: $owner_key" "$API/v1/health")"
+    # B-1: a query string reaches the access log verbatim, so a key is refused there.
+    assert "a key in the query string is refused" 422 \
+        "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+            --get --data-urlencode "key=$owner_key" "$API/v1/health")"
+    assert_false "the owner key is absent from the journal" "found in glasswell-api's journal" \
+        journalctl -u glasswell-api --no-pager -q --grep "$owner_key"
 fi
 
 printf 'frontend\n'
 assert_true "index.html present" "missing" test -f "$WEB_ROOT/index.html"
 assert_true "hashed bundle present" "no assets/index-*.js" \
     glob_matches "$WEB_ROOT/assets/index-*.js"
+# M-6: the source is proprietary and StaticFiles serves whatever is in the webroot.
+assert_false "no source map is deployed" "assets/*.js.map is published" \
+    glob_matches "$WEB_ROOT/assets/*.map"
 assert "GET / serves the app" 200 "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/")"
 
 printf 'tiles\n'
@@ -106,6 +115,12 @@ else
     assert "tile $zoom/$tile_x/$tile_y status" 200 "$tile_status"
     assert_true "tile carries $tile_bytes bytes" "zero bytes" test "${tile_bytes:-0}" -gt 0
 fi
+
+# M-1: martin auto-publishes staging, so the proxy's allowlist is the control that holds
+# "staging never serves". The catalogue still lists the layer; the product API must not serve it.
+assert "a staging layer through the proxy is refused" 404 \
+    "$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+        -H "X-Glasswell-Key: $owner_key" "$API/v1/tiles/nd_gis_wells/8/54/89.pbf")"
 
 printf 'exposure\n'
 assert_true "martin is loopback-only" "not bound to 127.0.0.1:3000" listening_on '127.0.0.1:3000'

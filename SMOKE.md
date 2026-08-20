@@ -28,8 +28,13 @@ targets), daily production, ownership, and the agent gateway.
 ## 2. How to reach it
 
 ```
-http://glasswell.lab.rpx.sh:8000/?key=<GLASSWELL_OWNER_KEY>
+http://glasswell.lab.rpx.sh:8000/#key=<GLASSWELL_OWNER_KEY>
 ```
+
+The key rides in the **fragment**, after the `#`. A fragment is never sent to the server,
+so it cannot reach uvicorn's access log or journald. `?key=` is refused with a `422` —
+the query form was live long enough to write the old key into the journal, so that key was
+rotated and the journal vacuumed.
 
 Plain **HTTP on port 8000**, firewalled to `192.168.2.0/24`. There is no
 certificate, no certificate warning, no HTTPS, no tunnel and no Access tonight —
@@ -43,8 +48,8 @@ this repository. Read it on the VM:
 ssh root@glasswell.lab.rpx.sh 'sed -n "s/^GLASSWELL_OWNER_KEY=//p" /etc/glasswell/app.env'
 ```
 
-Paste it into the `?key=` link once. The app stores it in `localStorage`, strips it
-from the URL, and plain `http://glasswell.lab.rpx.sh:8000/` works in that browser
+Paste it into the `#key=` link once. The app stores it in `localStorage`, strips it
+from the fragment, and plain `http://glasswell.lab.rpx.sh:8000/` works in that browser
 from then on.
 
 For the API steps in §5, put the key in a curl config file so it never reaches your
@@ -141,10 +146,14 @@ Screenshot: `05-glossary-popover.png`.
 - **A well that does not exist:** `?well=9999999999` → the card renders
   `Not found (not_found) · no well 9999999999 at this vintage`, not an empty panel.
   Screenshot: `09-well-not-found.png`.
-- **No key at all:** open the app in a private window without `?key=`. The header
-  says `The API needs the owner key: open this page once with ?key=…` and the card
+- **No key at all:** open the app in a private window without `#key=`. The header
+  says `The API needs the owner key: open this page once with #key=…` and the card
   shows `API key required (key_required)`. It refuses honestly instead of looking
   empty. Screenshot: `06-no-key-403.png`.
+- **The key in the query string:** `?key=<GLASSWELL_OWNER_KEY>` → `422
+  validation_failed` pointing at `/query/key`, on every path including `/`. A query
+  string is written to the access log verbatim, so the API will not take a credential
+  there at all.
 - **A bad handle:** `?explain=drv_doesnotexist` → the drawer opens and reads
   `Lineage could not be resolved (lineage_unresolved) · last resolved nothing ·
   stopped because unknown_id`. A broken chain renders as a broken chain.
@@ -173,11 +182,20 @@ curl -sS "$B/openapi.json" | python3 -c 'import json,sys; print(len(json.load(sy
   is in this list. A mapping that exists only in code is the defect this endpoint
   exists to make visible.
 - **`/v1/quarantine/summary`** — **292,394 rejected rows**, grouped:
-  `unknown_vocab` 288,658 · `key_collision` 1,401 · `out_of_range_date` 1,055 ·
-  `multi_wellbore_policy` 694 · `parse_error` 585 · `duplicate_row` 1. A zero here
-  would mean the checks were not running. Each row is kept with its payload and its
-  reason code — nothing is silently dropped. Note `multi_wellbore_policy` at 3.1 %,
-  above the 2 % ND revisit trigger: that is a real signal to act on, not noise.
+  `stream_not_promoted` 263,786 · `unknown_vocab` 24,872 · `key_collision` 1,401 ·
+  `out_of_range_date` 1,055 · `multi_wellbore_policy` 694 · `parse_error` 585 ·
+  `duplicate_row` 1. A zero here would mean the checks were not running. Each row is
+  kept with its payload and its reason code — nothing is silently dropped.
+  `stream_not_promoted` is the dominant fact and it is a **decision, not a failure**:
+  `GasSold` and `Flared` are dispositions of produced gas, enumerated in
+  `lineage.nd_stream_map` with `promoted = false`, so conflict C7's claim is measured
+  rather than asserted. Migration 007's reason vocabulary had no such code and every
+  one of these rows read `unknown_vocab` until migration 011 admitted it and relabelled
+  them — bounded by `rule_id = cr_nd_stream_vocab_1`, which is what proves the reason,
+  and recorded as a `quarantine.relabelled` audit event. The remaining `unknown_vocab`
+  are the GIS layer's `_VERT`/`_STK` segments, which carry no rule id (see gap 16).
+  Note `multi_wellbore_policy` at 3.1 %, above the 2 % ND revisit trigger: that is a
+  real signal to act on, not noise.
 - **`/v1/health`** — four sources, all `current`, with the manifest count per source
   (six for the monthly production file, one per GIS layer).
 
@@ -188,9 +206,12 @@ curl -sS "$B/openapi.json" | python3 -c 'import json,sys; print(len(json.load(sy
    pipeline and the API group roles, so the API's connection is structurally capable
    of writing canonical rows. Real separation needs two login identities. Do not
    claim write-separation until it is split.
-3. **martin auto-publishes `staging` and `canonical`, and the tile proxy has no
-   layer allowlist.** An authenticated caller can pull a staging tile. "Staging
-   never serves" is a convention tonight, not a control.
+3. **martin auto-publishes `staging` and `canonical`**, so its catalogue on
+   `127.0.0.1:3000` still lists relations that are not published layers. The
+   `/v1/tiles` proxy now refuses everything outside `nd_laterals`, `nd_wells` and
+   `nd_spacing_units` with a `404`, so "staging never serves" is a control on the one
+   path a caller can reach. Making martin's own source list equal that allowlist
+   (S-C) needs `infra/martin/config.yaml` adopted — morning-queue item 2.
 4. **One `marts` grant is hand-applied**, not in a migration — exactly the drift
    migrations exist to prevent. Fold it into a migration before the next rebuild.
 5. **Six months of production only** (2025-10 → 2026-03), one knowledge vintage per
@@ -206,17 +227,24 @@ curl -sS "$B/openapi.json" | python3 -c 'import json,sys; print(len(json.load(sy
 11. **Two small envelope honesty gaps:** `basin` is `null` on the well record, and
     `meta.source_freshness` is empty on `/v1/wells/{api10}` while populated on the
     production endpoint.
-12. **GIS and marts derivations are stamped `env_cli`**, whose lockfile hash is
-    null; only the production path is lockfile-pinned. The environment is recorded
-    but not pinned for those two paths.
-13. **The frontend is one 1.14 MB chunk** plus a 2.7 MB source map. No code
-    splitting.
+12. **~~GIS and marts derivations are stamped `env_cli`~~ — closed.** All three ingest
+    paths call `glasswell.ingest.base.resolve_environment`, so every derivation from
+    here on carries the lockfile hash the unit exports. The ten historical `env_cli`
+    derivations keep their unpinned environment row: that is what the run recorded,
+    and rewriting it would be falsification. Re-run the pipeline to repin them.
+13. **The frontend is one 1.14 MB chunk.** No code splitting. The source map is no
+    longer built or deployed (the project is proprietary and `StaticFiles` served it).
 14. **No repeatable end-to-end smoke script in the repo.** Tonight's gate was a
-    browser drive plus the 23 checks in `infra/verify.sh` on the VM; a committed
+    browser drive plus the 27 checks in `infra/verify.sh` on the VM; a committed
     `scripts/smoke.sh` covering the sixteen API assertions is unwritten.
 15. **The VM's `/opt/glasswell/src` copy carries working files** (`PLAN.md`,
     `CLAUDE.md`) that are excluded from git. Harmless on a LAN box, worth tidying.
-16. **Not a gap, so it does not surprise you:** no basemap (deliberate), `204` on a
+16. **The GIS `_VERT`/`_STK` segments still quarantine as `unknown_vocab`** — 24,875
+    rows. They are not unknown either: a vertical hole is not a centreline, and the
+    promotion measures them deliberately. Unlike the stream case there is no rule id
+    on those rows, so nothing in the ledger proves the truer reason and the relabel
+    would have been a guess. It needs a conformance rule, not a migration.
+17. **Not a gap, so it does not surprise you:** no basemap (deliberate), `204` on a
     tile means healthy-but-empty, and the `series_spans_derivations` warning is
     correct.
 
@@ -232,7 +260,8 @@ six-figure axis labels. Each has a regression test.
    retires gap 1 and is the only thing standing between this and being reachable
    from outside the LAN.
 2. **Split the login roles** to restore pipeline/API write separation (gap 2), and
-   adopt `infra/martin/config.yaml` with `auto_publish: false` to close gap 3 —
+   adopt `infra/martin/config.yaml` with `auto_publish: false` so martin's own
+   source list equals the proxy allowlist (gap 3, S-C hardening condition 2) —
    never run both publishing mechanisms at once.
 3. **Fold the hand-applied `marts` grant into a migration** (gap 4).
 4. **Full production back-load** beyond six months, then re-check the quarantine

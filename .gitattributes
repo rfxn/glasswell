@@ -12,6 +12,14 @@ docs/**                     export-ignore
 # Test infrastructure
 tests/                      export-ignore
 tests/**                    export-ignore
+web/src/test/               export-ignore
+web/src/test/**             export-ignore
+web/src/**/*.test.ts        export-ignore
+
+# Internal sub-blueprints: SB-07 is the contract the spine implements, and it is
+# committed; it is not release-archive content
+blueprints/                 export-ignore
+blueprints/**               export-ignore
 
 # Packaging scaffolding
 pkg/                        export-ignore

@@ -32,7 +32,7 @@ its own version in its header, and its history is summarised in §3.1.
       well card, monthly production chart, lineage drawer that reaches a SHA-256 in
       one `/v1/explain` call, and glossary hover over highlighted terms
 - [New] Single-VM deployment: systemd units for the API, ingest timer and failure
-      alerts, an idempotent installer, and a 23-check `verify.sh`
+      alerts, an idempotent installer, and a 27-check `verify.sh`
 - [New] SMOKE.md: the first-pass walkthrough from URL to SHA-256, with the known
       gaps and the morning queue stated plainly
 - [Fix] `fetch_raw` reads the run's clock instead of the wall clock, so an injected
@@ -45,11 +45,36 @@ its own version in its header, and its history is summarised in §3.1.
       instead of percent-encoding them, which made every tile request 422
 - [Fix] Production chart reserves room for six-figure axis labels instead of
       clipping them
+- [Fix] The owner key rides in the URL fragment, never the query string: a query
+      string is written to uvicorn's access log verbatim and reached journald in
+      cleartext, so the API now refuses a `key` query parameter on every path and
+      redacts the pattern from the access logger; the live key was rotated and the
+      journal vacuumed
+- [Fix] The tile proxy serves the published mart layers only; martin runs with
+      `auto_publish` on, so its catalogue is every relation with a geometry column
+      and the proxy's allowlist is what holds "staging never serves"
+- [Fix] One length conversion in `glasswell.units`, imported by the API, the tile
+      marts and the GIS load: the served figure and the tile mart disagreed at
+      6731.12 against 6731.13 ft because one path rounded per lateral before
+      summing and the two constants were reciprocals sharing a name; rounding is
+      round-final at the serving edge and the mart stores the conversion unrounded
+- [Fix] Quarantine reason vocabulary admits `stream_not_promoted` and
+      `unknown_status`, and the rows whose `rule_id` proves the reason are
+      relabelled: 98.7 % of the ledger read `unknown_vocab` for a deliberate
+      not-promoted decision, recorded as a `quarantine.relabelled` audit event
+- [Fix] All three ingest paths resolve the environment through one helper, so the
+      GIS load and the mart refresh carry the lockfile hash the unit exports
+      instead of stamping an unpinned `env_cli`
+- [Fix] `granularity` is one vocabulary at the store and at the wire: the CHECK
+      admitted a value the only sanctioned serializer refused, which would have
+      been an unhandled 500 on the first lease-level row
+- [Fix] The production build ships no source map; `StaticFiles` was serving 2.7 MB
+      of readable proprietary TypeScript
 - [Change] Frontend test fixtures are recorded from the deployed API rather than
-           derived from the router source, so a response-shape drift fails a test
-           instead of the first click
+      derived from the router source, so a response-shape drift fails a test
+      instead of the first click
 - [Change] README describes a repository that runs rather than one that is
-           pre-build, and points at SMOKE.md
+      pre-build, and points at SMOKE.md
 
 ### 2026-08-19 — repository bootstrap
 
