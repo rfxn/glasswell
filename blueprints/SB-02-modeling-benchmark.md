@@ -257,10 +257,47 @@ neither is safe alone.**
 
 | Feature | Availability reality |
 |---|---|
-| `landing_tvd_ft` | ND: `NDOGD_Surveys` — station-level MD/INC/AZI content is **UNVERIFIED** (`ad:97`); a P3 gate, not an assumption. TX: free Formation Data segment (`ad:209`) |
+| `landing_tvd_ft` | ND: `NDOGD_Surveys` — **station-level, confirmed** (see below). TX: free Formation Data segment (`ad:209`) |
 | `depth_below_formation_top_ft` | Requires tops. **ND bulk tops are Premium-only, $500/yr** (`ad:119`, v0.6 §8.1 D-21). Not on the critical path |
 | `formation_thickness_ft` | Two tops. Same constraint |
 | `structural_residual_ft` | `landing_tvd_ft` minus an IDW-smoothed regional TVD surface fitted on **other wells' geometry** (not outcomes), leave-one-well-out, as-of anchor. Safe: TVD is geometry, not performance |
+
+**ND ships station-level directional surveys — measured, not assumed.** The archive had never
+been opened, which is why v0.6 made it a P3 gate. It is now open: probed 2026-08-20 by ranged
+reads over the remote geodatabase (201 KB pulled against a 321,052,648-byte archive, no
+download — `scripts/experiments/e9-survey-probe.py`, re-runnable), `NDOGD_Surveys.gdb.zip`
+carries two point feature classes with identical field lists — **5,470,017 survey stations**
+and **52,579 surveyed wellbores** — and both carry `measdpth`, `inclination`, `azimuth` and
+**`tvd`** as float64, alongside `wl_permit`, `api_wellno`, `api_format`, `well_sub`, `long`,
+`lat`, `coordns`/`coordew` and `surveytype`.
+
+Consequences, pinned:
+
+- `landing_tvd_ft` and `structural_residual_ft` are **in scope for ND at P3**, keyed on
+  `api_wellno[:10]` = API-10 with `well_sub` discriminating wellbores — the same
+  multi-wellbore distinction v0.6 §3.0.5 already quarantines on.
+- `tvd` is carried directly, so landing TVD is a **selection over observations**, not a
+  reconstruction: `landing_tvd_ft` = `tvd` at the **first station with `inclination` ≥ 88°**,
+  `granularity = observed`, citing the selection rule. Minimum-curvature reconstruction from
+  `measdpth`/`inclination`/`azimuth` is retained as a **validator**; disagreement beyond 25 ft
+  quarantines as `crosswalk_disagreement`. Computing what the regulator already publishes
+  would be an estimate posing as an observation (DIR-3).
+- `structural_residual_ft` — landing TVD minus a fitted structural surface — stays
+  `granularity = modelled`, `method = structural_fit`, and is never served without its band.
+- Canonical stores the **per-wellbore reduction**, one row per `(api10, well_sub)`, not
+  5.47 M stations. The stations live in the raw zone under R1 and are re-derivable; the
+  feature is one number per well and a 771 MB table has no place in the serving path.
+- **Two riders.** (i) **Units are UNVERIFIED** — the layer declares none, so E-9's units check
+  ships as a `conformance_rules` row with evidence: median `landing_tvd_ft` over Bakken
+  horizontals must fall in [8,000, 12,000] ft, and a median in [2,400, 3,700] means metres and
+  **rejects the parse rather than converting it silently**. (ii) The layer is **NAD83
+  geographic** — `GEOGCS["GCS_North_American_1983", DATUM["D_North_American_1983", …]]`, read
+  out of the same probe — while storage is EPSG:4326; the datum answer is recorded as a
+  `parse_directive` rule, not inherited by convention. Depth features are unaffected by it.
+- Identity and monotonicity are conformance rules too: `api_wellno[:10]` must join
+  `canonical.wells` for ≥ 99% of surveyed wellbores (the rest quarantine as `orphan_fk`), and
+  `measdpth` must be non-decreasing within `(api10, well_sub)` (violations quarantine as
+  `unreliable_numeric`).
 
 **The honest position on geology (OQ-2):** ND v0 ships the **design-plus-location** tier
 plus survey-derived `landing_tvd_ft` and `structural_residual_ft`. Tops-based features are
