@@ -79,7 +79,7 @@ def open_ingest_run(
     clock: Clock | None = None,
     correlation_id: str | None = None,
 ) -> Iterator[IngestRun]:
-    """Open the lineage session an ingest runs under; `as_of` is read from that session's clock."""
+    """Open the lineage session an ingest runs under; `as_of` is the session's pinned vintage."""
     with connection.cursor() as cursor:
         cursor.execute("select 1 from lineage.sources where source_id = %s", (source_id,))
         if cursor.fetchone() is None:
@@ -95,6 +95,6 @@ def open_ingest_run(
         yield IngestRun(
             connection=connection,
             session=session,
-            as_of=session.clock.now().date(),
+            as_of=session.vintage,
             raw_root=resolve_raw_root(raw_root),
         )

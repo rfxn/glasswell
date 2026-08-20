@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import stat
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import httpx
@@ -190,6 +190,28 @@ def test_the_run_as_of_and_the_manifest_fetch_vintage_converge(db, raw_root, lin
     db.commit()
 
     assert result.manifest.fetch_vintage == run.as_of
+
+
+def test_the_vintage_holds_when_the_fetch_crosses_utc_midnight(db, raw_root, lineage_env):
+    """DR-31: a run opened at 23:59:30Z lands its bytes on the next day. It stamps one vintage."""
+    clock = FixedClock(start=datetime(2026, 5, 14, 23, 59, 30, tzinfo=UTC), step_ms=30_000)
+    with open_ingest_run(
+        db,
+        source_id=SOURCE_ID,
+        raw_root=raw_root,
+        environment=lineage_env,
+        clock=clock,
+        correlation_id="run_midnight",
+    ) as run, client_for(PAYLOAD) as client:
+        result = fetch_raw(
+            run.connection, SOURCE_ID, SOURCE_KEY, url=URL, raw_root=run.raw_root, client=client
+        )
+    db.commit()
+
+    assert run.as_of == date(2026, 5, 14)
+    assert result.manifest.fetched_at.date() == date(2026, 5, 15), "the boundary was not crossed"
+    assert result.manifest.fetch_vintage == run.as_of
+    assert result.payload_path.parent.name.startswith("2026-05-14T")
 
 
 def test_a_failed_fetch_leaves_no_manifest_and_records_the_attempt(db, raw_root, lineage_env):
