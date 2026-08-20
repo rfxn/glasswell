@@ -1,0 +1,93 @@
+# Numeric leaves of `data` that are exempt from carrying a derivation handle
+# (SB-07 §10 check 2c). `*` matches one JSON Pointer segment, `**` matches any
+# number of them. Pointers are relative to `data`. Every entry states why the
+# number is not a figure; a hostile reviewer should be able to read this file and
+# see exactly what was exempted.
+#
+# Not present, deliberately: page-size and request-parameter echoes. This slice
+# does not echo request parameters into `data`, so no pattern exempts them — if
+# one is ever added it fails the walker until it is exempted here on purpose.
+
+# --- identifiers -------------------------------------------------------------
+- pointer: /api10
+  reason: Identifier. A 10-digit API number is an identity string, not a measurement.
+- pointer: /*/api10
+  reason: Identifier, in a collection item.
+- pointer: /api14
+  reason: Identifier. The completion-level API number.
+- pointer: /state_code
+  reason: FIPS-style state code carried as reported; an identifier, not a quantity.
+- pointer: /county_code_at_permit
+  reason: County code as reported at permit; an identifier, not a quantity.
+- pointer: /*/county_code_at_permit
+  reason: County code, in a collection item.
+- pointer: /ndic_file_no
+  reason: The NDIC file number is the regulator's identifier for the well.
+- pointer: /*/ndic_file_no
+  reason: The NDIC file number, in a collection item.
+
+# --- coordinates -------------------------------------------------------------
+- pointer: /surface_point/lon
+  reason: Geometry, not a figure. Storage CRS is EPSG:4326 and is stated alongside.
+- pointer: /surface_point/lat
+  reason: Geometry, not a figure. Storage CRS is EPSG:4326 and is stated alongside.
+
+# --- counts and shares -------------------------------------------------------
+- pointer: /lateral_count
+  reason: A count of geometry rows, not a measured quantity.
+- pointer: /total
+  reason: Row count of the quarantine population being summarised.
+- pointer: /groups/*/count
+  reason: Row count per group.
+- pointer: /groups/*/share
+  reason: Count divided by count; it carries no unit and no vintage.
+- pointer: /occurrence_count
+  reason: How many fetches re-presented this rejected row (SB-07 §8.1).
+- pointer: /*/occurrence_count
+  reason: Occurrence counter, in a collection item.
+- pointer: /sources/*/manifest_count
+  reason: Count of registered manifests per source on the health page.
+- pointer: /published_vintages/*/rows_examined
+  reason: Promotion bookkeeping from lineage.vintages, not a served observation.
+- pointer: /published_vintages/*/rows_appended
+  reason: Promotion bookkeeping from lineage.vintages, not a served observation.
+- pointer: /entries/*/n_words
+  reason: Token count the highlighter uses to build its trie (SB-04 §6.2).
+
+# --- spine metadata ----------------------------------------------------------
+- pointer: /error_codes/*/status
+  reason: An HTTP status code in the error index.
+- pointer: /status
+  reason: An HTTP status code on the error-type description.
+- pointer: /chains/*/depth
+  reason: Graph depth of the resolved chain, not data.
+- pointer: /chains/*/nodes/*/output/rows
+  reason: Row count a derivation recorded when it wrote its output.
+- pointer: /chains/*/nodes/*/bytes
+  reason: Byte length of the fetched artifact, recorded on the manifest.
+- pointer: /output/rows
+  reason: Row count a derivation recorded when it wrote its output.
+- pointer: /duration_ms
+  reason: Wall-clock cost of the recorded derivation.
+- pointer: /inputs/*/ord
+  reason: Ordinal position of a derivation input.
+- pointer: /rules/*/applied_rows
+  reason: How many rows a conformance rule touched during that derivation.
+- pointer: /applied_by/*/applied_rows
+  reason: Reverse index of rows touched, per citing derivation.
+- pointer: /bytes
+  reason: Byte length of the fetched artifact, recorded on the manifest.
+- pointer: /*/bytes
+  reason: Byte length, in a manifest collection item.
+
+# --- verbatim registry and rejected input ------------------------------------
+- pointer: /spec/**
+  reason: >-
+    Conformance-rule spec, served verbatim from the registry. Its numbers are rule
+    parameters (scales, factors, bounds), not served figures.
+- pointer: /*/spec/**
+  reason: Conformance-rule spec, in a collection item.
+- pointer: /row_payload/**
+  reason: >-
+    The rejected source row, served verbatim as evidence (SB-07 §8). It is the input
+    that failed a rule, not a number the system stands behind.

@@ -10,7 +10,11 @@ from uuid import uuid4
 
 import psycopg
 import pytest
+from fastapi.testclient import TestClient
 
+from glasswell.api import create_app
+from glasswell.api.deps import ALLOW_ANON_ENV, OWNER_KEY_ENV, get_connection
+from glasswell.api.examples import KEY_HEADER
 from glasswell.db.migrate import migrate
 from glasswell.lineage.fetch import RAW_ROOT_ENV
 from glasswell.lineage.models import DeriveEnvironment
@@ -22,6 +26,7 @@ READY_TIMEOUT_SECONDS = 90
 FIXTURE_ENV_ID = "env_test"
 LINEAGE_FIXTURE_ENV_ID = "env_lineage_fixture"
 FIXTURE_SOURCES = ("nd_mpr_xlsx", "tx_pdq_dsv", "nm_ocd_wcproduction")
+CONTRACT_OWNER_KEY = "contract-tier-owner-key"
 
 _docker_environment: dict[str, str] | None = None
 _docker_probe_error = ""
@@ -228,5 +233,11 @@ def lineage_env(db: psycopg.Connection) -> DeriveEnvironment:
 
 
 @pytest.fixture
-def api_client(db: psycopg.Connection) -> None:
-    pytest.skip("glasswell.api does not exist yet; P4 replaces this fixture body")
+def api_client(db: psycopg.Connection, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    """The real app, with its connection dependency bound to this test's database."""
+    monkeypatch.setenv(OWNER_KEY_ENV, CONTRACT_OWNER_KEY)
+    monkeypatch.delenv(ALLOW_ANON_ENV, raising=False)
+    application = create_app()
+    application.dependency_overrides[get_connection] = lambda: db
+    with TestClient(application, headers={KEY_HEADER: CONTRACT_OWNER_KEY}) as client:
+        yield client
