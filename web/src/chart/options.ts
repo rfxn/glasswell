@@ -12,10 +12,19 @@ export const STREAM_STROKE: Record<string, string> = {
 
 export const STREAM_DASH: Record<string, number[]> = { oil: [], gas: [6, 3], water: [2, 3] };
 
-const AXIS_STROKE = "#9FB0BC";
-const GRID = "#1d2a33";
+/** A canvas inherits no CSS, so the plot reads the theme's tokens itself at build time. */
+function token(name: string, fallback: string): string {
+  if (typeof document === "undefined") return fallback;
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+}
+
+export function streamStroke(stream: string): string {
+  return token(`--${stream}`, STREAM_STROKE[stream] ?? "#5FD3E8");
+}
 
 export function chartOptions(chart: ChartSeries, width: number): uPlot.Options {
+  const axisStroke = token("--slate", "#9FB0BC");
+  const grid = { stroke: token("--hairline", "#1d2a33") };
   return {
     width,
     height: 260,
@@ -25,9 +34,9 @@ export function chartOptions(chart: ChartSeries, width: number): uPlot.Options {
     scales: { x: { time: true } },
     axes: [
       {
-        stroke: AXIS_STROKE,
-        grid: { stroke: GRID },
-        ticks: { stroke: GRID },
+        stroke: axisStroke,
+        grid,
+        ticks: grid,
         values: (_: unknown, splits: number[]) =>
           splits.map((split) => formatMonth(epochToMonth(split))),
       },
@@ -36,9 +45,9 @@ export function chartOptions(chart: ChartSeries, width: number): uPlot.Options {
         scale: unit,
         side: position === 0 ? (3 as const) : (1 as const),
         size: 62,
-        stroke: AXIS_STROKE,
-        grid: { stroke: GRID },
-        ticks: { stroke: GRID },
+        stroke: axisStroke,
+        grid,
+        ticks: grid,
         values: (_: unknown, splits: number[]) =>
           splits.map((split) => formatValue(String(split))),
       })),
@@ -48,7 +57,7 @@ export function chartOptions(chart: ChartSeries, width: number): uPlot.Options {
       ...chart.columns.map((column) => ({
         label: column.label,
         scale: column.unit,
-        stroke: STREAM_STROKE[column.stream] ?? "#5FD3E8",
+        stroke: streamStroke(column.stream),
         dash: STREAM_DASH[column.stream] ?? [],
         width: 2,
         // Never true on production data: a spanned gap is production that did not happen.

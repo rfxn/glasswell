@@ -149,10 +149,18 @@ export async function renderWellCard(
 
   for (const panel of warningPanels(well.meta.warnings)) body.appendChild(panel);
 
-  const chartHost = document.createElement("section");
-  chartHost.className = "gw-card-chart";
+  // Title outside the swappable body: the placeholder, the plot and an error all land in
+  // .gw-frame-body, so none of them can take the frame's label down with them.
+  const chartFrame = document.createElement("section");
+  chartFrame.className = "gw-card-chart";
+  const chartTitle = document.createElement("h3");
+  chartTitle.className = "gw-frame-title";
+  chartTitle.textContent = "Monthly production";
+  const chartHost = document.createElement("div");
+  chartHost.className = "gw-frame-body";
   chartHost.appendChild(placeholder("Loading production…"));
-  body.appendChild(chartHost);
+  chartFrame.append(chartTitle, chartHost);
+  body.appendChild(chartFrame);
 
   container.replaceChildren(card);
   highlight(card, termIndex());
@@ -165,6 +173,9 @@ export async function renderWellCard(
       chartHost.replaceChildren(placeholder("No production has been reported for this well."));
       return;
     }
+    chartTitle.replaceChildren(
+      labelElement("Monthly production", labelFor(production, "/series")),
+    );
     renderChart(chartHost, toChartSeries(data), {
       onExplain: callbacks.onExplain,
       labelTermFor: (pointer) => labelFor(production, pointer),

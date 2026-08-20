@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 
 // vitest roots at web/, so these are the shipped files, not a fixture of them.
 const CSS = readFileSync("src/style.css", "utf8");
-const FACES = [...CSS.matchAll(/@font-face\s*\{([^}]*)\}/g)].map((match) => match[1]);
-const SOURCES = [...CSS.matchAll(/url\(["']?([^"')]+)["']?\)/g)].map((match) => match[1]);
+const FACES = [...CSS.matchAll(/@font-face\s*\{([^}]*)\}/g)].map((match) => match[1] ?? "");
+const SOURCES = [...CSS.matchAll(/url\(["']?([^"')]+)["']?\)/g)].map((match) => match[1] ?? "");
 
 describe("the brand faces are self-hosted", () => {
   it("declares at least one face, or the tokens below are decoration", () => {
@@ -49,7 +49,7 @@ describe("the type tokens are the single source of truth", () => {
   it("names a declared family first in every token, then a system fallback", () => {
     for (const token of ["--gw-font-display", "--gw-font-body", "--gw-font-mono"]) {
       const value = new RegExp(`${token}:([^;]+);`).exec(root)?.[1] ?? "";
-      const first = value.trim().split(",")[0].replace(/["']/g, "").trim();
+      const first = (value.trim().split(",")[0] ?? "").replace(/["']/g, "").trim();
 
       expect(FACES.some((face) => face.includes(`"${first}"`)), `${token} → ${first}`).toBe(true);
       expect(value.split(",").length, `${token} has no fallback`).toBeGreaterThan(1);

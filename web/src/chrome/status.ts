@@ -39,7 +39,13 @@ export function setStatus(short: string, detail?: string, options?: { degraded?:
 export function setVintage(resolved: string | null): void {
   if (!hosts) return;
   hosts.vintage.replaceChildren();
-  hosts.vintage.appendChild(document.createTextNode("as_of "));
+  // The label is its own element so the rail can set it as an eyebrow beside a mono figure;
+  // the slot's text still reads "as_of <date>" to anything that reads text.
+  const label = document.createElement("span");
+  label.className = "gw-asof-label";
+  label.setAttribute("data-no-glossary", "");
+  label.textContent = "as_of";
+  hosts.vintage.append(label, document.createTextNode(" "));
   if (!resolved) {
     hosts.vintage.appendChild(document.createTextNode("—"));
     return;

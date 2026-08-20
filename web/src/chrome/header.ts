@@ -1,9 +1,11 @@
 import { registerOverlay } from "./overlays.ts";
 import { mountStatus } from "./status.ts";
+import { mountThemeToggle } from "./theme.ts";
 
 export const HEADER_IDS = [
   "gw-search-slot",
   "gw-key-btn",
+  "gw-theme-btn",
   "gw-help-btn",
   "gw-help-panel",
   "gw-asof",
@@ -31,6 +33,7 @@ export function wireHeader(options: HeaderOptions): void {
   });
 
   hosts["gw-key-btn"].addEventListener("click", () => options.onKeyPanel());
+  mountThemeToggle(hosts["gw-theme-btn"]);
 
   const help = hosts["gw-help-panel"];
   const helpButton = hosts["gw-help-btn"];

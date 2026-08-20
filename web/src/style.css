@@ -41,9 +41,55 @@
     Roboto, sans-serif;
   --gw-font-mono: "JetBrains Mono", "GW Symbols", ui-monospace, SFMono-Regular, Menlo, monospace;
 
+  /* Type roles. Sizes and weights live here so a panel title, a legend header and a drawer
+     header cannot drift apart — every rule below consumes these, none re-states them. */
+  --gw-fs-display: 1.5rem;
+  --gw-fw-display: 700;
+  --gw-ls-display: -0.02em;
+  --gw-fs-title: 0.95rem;
+  --gw-fw-title: 600;
+  --gw-ls-title: -0.01em;
+  --gw-fs-eyebrow: 0.66rem;
+  --gw-fw-eyebrow: 650;
+  --gw-ls-eyebrow: 0.14em;
+  --gw-fs-body: 0.85rem;
+  --gw-fs-micro: 0.72rem;
+  --gw-fs-mono: 0.75rem;
+  /* l/I/1 collide in operator names and API-10s; cv05 tails the l, cv08 serifs the I. */
+  --gw-features: "cv05" 1, "cv08" 1;
+
+  /* Rhythm. The rail is one 40 px content band inside 8 px of padding: mark, controls and
+     the two metadata lines are all 40 px tall, so nothing sits off the baseline. */
+  --gw-space-1: 4px;
+  --gw-space-2: 8px;
+  --gw-space-3: 12px;
+  --gw-space-4: 16px;
+  --gw-space-5: 24px;
+  --gw-rail-band: 40px;
+  --gw-rail-pad-y: 8px;
+  --gw-rail-pad-x: 16px;
+  --gw-control-h: 32px;
+
+  --gw-radius-xs: 4px;
+  --gw-radius-sm: 6px;
+  --gw-radius-md: 8px;
+  --gw-radius-lg: 14px;
+  --gw-radius-pill: 999px;
+
+  /* z-index ladder. Every layer in the app is one of these seven; map.css owns 5 and takes
+     it from here. A raw z-index anywhere else is a bug, not a tuning knob. */
+  --gw-z-map-chrome: 5;
+  --gw-z-panel: 10;
+  --gw-z-drawer: 12;
+  --gw-z-rail-pop: 30;
+  --gw-z-modal: 40;
+  --gw-z-popover: 50;
+  --gw-z-toast: 60;
+
   --ink: #0b1014;
   --panel: #121a21;
   --hairline: #1d2a33;
+  --hairline-strong: #2c3d49;
   --paper: #e6edf3;
   --slate: #9fb0bc;
   --muted: #7c8b96;
@@ -52,8 +98,43 @@
   --oil: #3fa55e;
   --gas: #d9534f;
   --water: #3d8bd4;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Text-safe cousins of the two data colours that also get used as words. BRAND's #d9534f
+     measures 4.43:1 on the panel — a data colour does not have to clear AA, a sentence does. */
+  --cyan-text: var(--cyan);
+  --amber-text: var(--amber);
+  --gas-text: #e0645f;
+  --tint-accent: rgb(95 211 232 / 12%);
+  --shadow-panel: 0 10px 32px rgb(0 0 0 / 50%);
+  --shadow-pop: 0 6px 20px rgb(0 0 0 / 45%);
+
+  font-family: var(--gw-font-body);
+  font-feature-settings: var(--gw-features);
   color-scheme: dark;
+}
+
+/* BRAND.md's light column, applied as an override rather than through prefers-color-scheme:
+   the default basemap is dark, and the rail should not disagree with the map underneath it. */
+:root[data-theme="light"] {
+  --ink: #eef3f7;
+  --panel: #ffffff;
+  --hairline: #d8e1e8;
+  --hairline-strong: #b7c6d1;
+  --paper: #0b1014;
+  --slate: #55666f;
+  --muted: #5f7079;
+  --cyan: #2a9bb5;
+  --amber: #b57a18;
+  --oil: #2f8a4b;
+  --gas: #c0392b;
+  --water: #2c74b8;
+  --cyan-text: #1f7c92;
+  --amber-text: #8f5e10;
+  --gas-text: var(--gas);
+  --tint-accent: rgb(42 155 181 / 10%);
+  --shadow-panel: 0 10px 32px rgb(11 16 20 / 16%);
+  --shadow-pop: 0 6px 20px rgb(11 16 20 / 14%);
+
+  color-scheme: light;
 }
 
 * {
@@ -66,6 +147,33 @@ body {
   color: var(--paper);
 }
 
+/* One ring, one place. Everything focusable inherited a browser default before this. */
+:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+/* A tabindex="-1" element is a landing spot for programmatic focus, not a control: it says
+   "focus is here now" without borrowing the treatment a real control uses. */
+[tabindex="-1"]:focus-visible {
+  outline: 1px dashed var(--cyan);
+  outline-offset: 3px;
+}
+
+/* The eyebrow: straps, axis labels, the null-semantics key, popover metadata. One treatment,
+   so the small uppercase type in the app reads as one voice rather than five near-misses. */
+.gw-strap,
+.gw-axis-label,
+.gw-state-key,
+.gw-popover-tags,
+.gw-asof-label {
+  font-family: var(--gw-font-display);
+  font-size: var(--gw-fs-eyebrow);
+  font-weight: var(--gw-fw-eyebrow);
+  letter-spacing: var(--gw-ls-eyebrow);
+  text-transform: uppercase;
+}
+
 #app {
   display: flex;
   flex-direction: column;
@@ -74,89 +182,165 @@ body {
 }
 
 /* One row at every width: brand left, one control cluster right. Wrapping puts the header
-   on two rows in tablet portrait, which matches neither layout. */
+   on two rows in tablet portrait, which matches neither layout. The whole rail is a single
+   40 px band (--gw-rail-band) inside symmetrical padding, and every child is that tall. */
 #gw-header {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--gw-space-4);
   flex-wrap: nowrap;
-  padding: 0.35rem 0.9rem;
+  padding: var(--gw-rail-pad-y) var(--gw-rail-pad-x);
   background: var(--panel);
   border-bottom: 1px solid var(--hairline);
 }
 
 .gw-brand {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 1px;
+  align-items: center;
+  gap: var(--gw-space-3);
+  height: var(--gw-rail-band);
   min-width: 0;
   text-decoration: none;
   color: inherit;
 }
 
-/* object-fit lets the lockup shrink inside a squeezed header instead of overflowing it. */
-.gw-lockup {
-  display: block;
-  height: 32px;
-  width: auto;
-  max-width: 100%;
-  object-fit: contain;
-  object-position: left center;
-}
-
 .gw-mark {
-  display: none;
-  height: 28px;
-  width: auto;
+  display: block;
+  height: var(--gw-rail-band);
+  width: var(--gw-rail-band);
+  border-radius: var(--gw-radius-md);
+  flex: none;
 }
 
+.gw-brand-text {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* VF-1: the wordmark is live text at the size the rail can actually afford, not a 660x168
+   lockup squeezed to 32 px tall. BRAND.md sets the split — `well` is the accent, and it is
+   the thesis of the mark, so it is never allowed to go monochrome. */
+.gw-wordmark {
+  font-family: var(--gw-font-display);
+  font-size: var(--gw-fs-display);
+  font-weight: var(--gw-fw-display);
+  letter-spacing: var(--gw-ls-display);
+  line-height: 24px;
+  color: var(--paper);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gw-wordmark-well {
+  color: var(--cyan);
+}
+
+/* VF-2: the strap is a designed element, not a leftover string. The cyan rule in front of it
+   is one perforation tick from the mark — BRAND.md's own unit of clear space. */
 .gw-strap {
-  font-size: 0.7rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: var(--gw-space-2);
+  line-height: 14px;
+  color: var(--slate);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
 }
 
+.gw-strap::before {
+  content: "";
+  flex: none;
+  width: 10px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--cyan);
+}
+
 .gw-controls {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--gw-space-4);
   margin-left: auto;
   flex: 0 1 auto;
   min-width: 0;
+  height: var(--gw-rail-band);
+}
+
+/* Three groups, one rhythm: find, act, read. The hairline is what makes them read as groups
+   instead of as eight loose controls, which is what VF-3 called clugy. */
+.gw-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--gw-space-2);
+  height: 100%;
+  min-width: 0;
+}
+
+.gw-tools + .gw-tools {
+  padding-left: var(--gw-space-4);
+  border-left: 1px solid var(--hairline-strong);
 }
 
 .gw-controls button {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  min-height: 32px;
-  padding: 0.25rem 0.6rem;
-  font: inherit;
-  font-size: 0.78rem;
-  color: var(--paper);
+  justify-content: center;
+  gap: var(--gw-space-1);
+  height: var(--gw-control-h);
+  padding: 0 var(--gw-space-3);
+  font-family: var(--gw-font-body);
+  font-size: var(--gw-fs-micro);
+  font-weight: 500;
+  color: var(--slate);
   background: transparent;
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-radius: var(--gw-radius-sm);
   cursor: pointer;
 }
 
 .gw-controls button:hover,
 .gw-controls button[aria-expanded="true"] {
+  color: var(--paper);
   border-color: var(--cyan);
 }
 
+.gw-icon-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.gw-icon-btn .gw-i-fill {
+  fill: currentcolor;
+  stroke: none;
+}
+
+.gw-i-light,
+:root[data-theme="light"] .gw-i-dark {
+  display: none;
+}
+
+:root[data-theme="light"] .gw-i-light {
+  display: inline;
+}
+
+/* Not news when it is fine, and a warning the moment it is not. */
 .gw-key-chip {
-  color: var(--amber) !important;
+  color: var(--amber-text) !important;
   border-color: var(--amber) !important;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .gw-key-chip[hidden] {
@@ -164,26 +348,44 @@ body {
 }
 
 /* Width-capped on purpose: it is the last item in a nowrap header, and a long message
-   would otherwise inflate it and crush the brand to zero. */
+   would otherwise inflate it and crush the brand to zero. Two lines of 20 px and 16 px
+   plus the 4 px gap make exactly the 40 px band the controls beside it stand in. */
 .gw-meta {
   flex: 0 1 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: var(--gw-space-1);
   min-width: 0;
-  max-width: 220px;
+  max-width: 240px;
   overflow: hidden;
   text-align: right;
-  line-height: 1.3;
 }
 
 .gw-asof {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35em;
   margin: 0;
-  font-size: 0.72rem;
-  color: var(--slate);
+  max-width: 100%;
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-fs-mono);
+  line-height: 20px;
+  color: var(--paper);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gw-asof-label {
+  color: var(--muted);
+  line-height: 20px;
 }
 
 .gw-status {
   margin: 0;
-  font-size: 0.68rem;
+  max-width: 100%;
+  font-size: var(--gw-fs-micro);
+  line-height: 16px;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -193,31 +395,43 @@ body {
 .gw-status.gw-degraded {
   display: inline-block;
   max-width: 100%;
-  padding: 0.1rem 0.45rem;
-  border-radius: 12px;
-  color: var(--amber);
+  padding: 0 var(--gw-space-2);
+  border-radius: var(--gw-radius-pill);
+  color: var(--amber-text);
   border: 1px solid var(--amber);
   font-weight: 700;
 }
 
 .gw-help-panel {
   position: absolute;
-  top: calc(100% + 6px);
-  right: 0.9rem;
-  z-index: 30;
-  width: min(94vw, 22rem);
+  top: calc(100% + var(--gw-space-2));
+  right: var(--gw-rail-pad-x);
+  z-index: var(--gw-z-rail-pop);
+  width: min(94vw, 23rem);
   max-height: min(60vh, 420px);
   display: flex;
   flex-direction: column;
   background: var(--panel);
   border: 1px solid var(--hairline);
-  border-radius: 8px;
-  box-shadow: 0 6px 20px rgb(0 0 0 / 45%);
-  font-size: 0.8rem;
+  border-radius: var(--gw-radius-md);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--gw-fs-body);
 }
 
 .gw-help-panel[hidden] {
   display: none;
+}
+
+/* The four-word rail strap in full, and the only place the whole strapline is set. */
+.gw-help-strap {
+  margin: 0 0 var(--gw-space-3);
+  padding-left: var(--gw-space-3);
+  border-left: 2px solid var(--cyan);
+  font-family: var(--gw-font-display);
+  font-size: var(--gw-fs-micro);
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--slate);
 }
 
 .gw-help-keys {
@@ -227,8 +441,13 @@ body {
   margin: 0.6rem 0 0;
 }
 
+.gw-help-glyph {
+  font-size: 1rem;
+  line-height: 1;
+}
+
 .gw-help-keys dt {
-  color: var(--cyan);
+  color: var(--cyan-text);
 }
 
 .gw-help-keys dd {
@@ -237,45 +456,69 @@ body {
 }
 
 kbd {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--gw-font-mono);
   border: 1px solid var(--hairline);
-  border-radius: 3px;
+  border-radius: var(--gw-radius-xs);
   padding: 0 0.25rem;
 }
 
 .gw-search {
   position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* The glyph is inside the field, so the field is the whole control: one 32 px box on the
+   rail's band, not an icon button that happens to sit next to an input. */
+.gw-search-icon {
+  position: absolute;
+  left: var(--gw-space-2);
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  pointer-events: none;
 }
 
 .gw-search-input {
-  min-height: 32px;
+  height: var(--gw-control-h);
   width: min(22rem, 26vw);
-  padding: 0.25rem 0.5rem;
-  font: inherit;
-  font-size: 0.78rem;
+  padding: 0 var(--gw-space-2) 0 calc(var(--gw-space-4) + var(--gw-space-3));
+  font-family: var(--gw-font-body);
+  font-size: var(--gw-fs-micro);
   color: var(--paper);
   background: var(--ink);
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-radius: var(--gw-radius-sm);
+}
+
+.gw-search-input::placeholder {
+  color: var(--muted);
 }
 
 .gw-search-input:focus-visible {
   border-color: var(--cyan);
 }
 
+.gw-search:focus-within .gw-search-icon {
+  stroke: var(--cyan);
+}
+
 .gw-search-panel {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + var(--gw-space-1));
   right: 0;
-  z-index: 30;
+  z-index: var(--gw-z-rail-pop);
   width: min(92vw, 26rem);
   max-height: min(60vh, 420px);
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--panel);
   border: 1px solid var(--hairline);
-  border-radius: 6px;
-  box-shadow: 0 6px 20px rgb(0 0 0 / 45%);
+  border-radius: var(--gw-radius-sm);
+  box-shadow: var(--shadow-pop);
 }
 
 .gw-search-panel[hidden] {
@@ -303,29 +546,30 @@ kbd {
 
 .gw-search-option.is-active,
 .gw-search-option:hover {
-  background: rgb(95 211 232 / 12%);
+  background: var(--tint-accent);
 }
 
 .gw-search-name {
-  font-size: 0.82rem;
+  font-size: var(--gw-fs-body);
 }
 
 .gw-search-api {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.75rem;
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-fs-mono);
   color: var(--slate);
+  font-variant-numeric: tabular-nums;
 }
 
 .gw-search-operator {
   grid-column: 1 / -1;
-  font-size: 0.7rem;
+  font-size: var(--gw-fs-micro);
   color: var(--muted);
 }
 
 .gw-search-note {
   margin: 0;
   padding: 0.5rem 0.6rem;
-  font-size: 0.78rem;
+  font-size: var(--gw-fs-body);
   color: var(--slate);
 }
 
@@ -357,10 +601,10 @@ main {
   flex-direction: column;
   background: var(--panel);
   border: 1px solid var(--hairline);
-  border-radius: 8px;
-  box-shadow: 0 10px 32px rgb(0 0 0 / 50%);
-  font-size: 0.85rem;
-  z-index: 10;
+  border-radius: var(--gw-radius-md);
+  box-shadow: var(--shadow-panel);
+  font-size: var(--gw-fs-body);
+  z-index: var(--gw-z-panel);
 }
 
 #gw-card {
@@ -377,7 +621,7 @@ main[data-drawer="open"] #gw-card {
 #gw-drawer {
   right: 0.75rem;
   width: min(40vw, 480px);
-  z-index: 12;
+  z-index: var(--gw-z-drawer);
 }
 
 .gw-key-panel {
@@ -388,7 +632,7 @@ main[data-drawer="open"] #gw-card {
   width: min(92vw, 30rem);
   max-height: min(80vh, 32rem);
   border-color: var(--amber);
-  z-index: 40;
+  z-index: var(--gw-z-modal);
 }
 
 #gw-key-host[hidden],
@@ -400,8 +644,8 @@ main[data-drawer="open"] #gw-card {
 .gw-panel-head {
   position: relative;
   flex: 0 0 auto;
-  padding: 0.7rem 0.9rem;
-  padding-right: 2.2rem;
+  padding: var(--gw-space-3) var(--gw-space-4);
+  padding-right: calc(var(--gw-space-5) + var(--gw-space-3));
   border-bottom: 1px solid var(--hairline);
 }
 
@@ -410,14 +654,36 @@ main[data-drawer="open"] #gw-card {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0.7rem 0.9rem;
+  padding: var(--gw-space-3) var(--gw-space-4);
+  font-size: var(--gw-fs-body);
+}
+
+/* Every framed block in a panel — the production chart today, anything with a heading and a
+   swappable body tomorrow — reads with the same title treatment as the panel above it. */
+.gw-card-chart {
+  margin-top: var(--gw-space-4);
+  padding-top: var(--gw-space-3);
+  border-top: 1px solid var(--hairline);
+}
+
+.gw-frame-title {
+  margin: 0 0 var(--gw-space-2);
+  color: var(--slate);
+  font-size: var(--gw-fs-eyebrow);
+  font-weight: var(--gw-fw-eyebrow);
+  letter-spacing: var(--gw-ls-eyebrow);
+  text-transform: uppercase;
 }
 
 h2,
 h3,
 h4 {
   margin: 0 0 0.4rem;
-  font-size: 0.95rem;
+  font-family: var(--gw-font-display);
+  font-size: var(--gw-fs-title);
+  font-weight: var(--gw-fw-title);
+  letter-spacing: var(--gw-ls-title);
+  line-height: 1.3;
 }
 
 .gw-panel-head h2 {
@@ -431,15 +697,18 @@ h4 {
 }
 
 .gw-card-api {
-  margin: 0.25rem 0 0;
+  margin: var(--gw-space-1) 0 0;
   color: var(--slate);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-fs-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .gw-close {
   position: absolute;
-  top: 0.45rem;
-  right: 0.45rem;
+  top: var(--gw-space-2);
+  right: var(--gw-space-2);
+  border-radius: var(--gw-radius-xs);
   min-width: 24px;
   min-height: 24px;
   background: none;
@@ -473,6 +742,7 @@ gw-figure {
 
 .gw-figure-value {
   font-variant-numeric: tabular-nums;
+  font-feature-settings: var(--gw-features), "tnum" 1;
 }
 
 .gw-figure-label {
@@ -480,17 +750,17 @@ gw-figure {
 }
 
 .gw-naked {
-  color: var(--gas);
+  color: var(--gas-text);
   font-weight: 700;
 }
 
 .gw-handle {
   background: none;
   border: 1px solid var(--hairline);
-  border-radius: 999px;
-  color: var(--cyan);
+  border-radius: var(--gw-radius-pill);
+  color: var(--cyan-text);
   cursor: pointer;
-  font-size: 0.7rem;
+  font-size: var(--gw-fs-micro);
   line-height: 1;
   padding: 0.15rem 0.35rem;
 }
@@ -502,18 +772,19 @@ gw-figure {
 
 .gw-chip {
   border: 1px solid var(--hairline);
-  border-radius: 3px;
+  border-radius: var(--gw-radius-xs);
   color: var(--slate);
-  font-size: 0.7rem;
+  font-size: var(--gw-fs-eyebrow);
+  letter-spacing: 0.02em;
   padding: 0.05rem 0.3rem;
 }
 
 .gw-chip-vintage {
-  color: var(--amber);
+  color: var(--amber-text);
 }
 
 .gw-chip-warn {
-  color: var(--gas);
+  color: var(--gas-text);
   border-color: var(--gas);
 }
 
@@ -549,8 +820,6 @@ gw-figure {
 
 .gw-axis-label {
   color: var(--slate);
-  font-size: 0.7rem;
-  letter-spacing: 0.04em;
 }
 
 .gw-axis-right {
@@ -560,7 +829,7 @@ gw-figure {
 .gw-chart-axis {
   margin: 0.2rem 0 0.6rem;
   color: var(--slate);
-  font-size: 0.75rem;
+  font-size: var(--gw-fs-micro);
   text-align: center;
 }
 
@@ -575,7 +844,6 @@ gw-figure {
   flex-wrap: wrap;
   gap: 0.5rem;
   margin: 0 0 0.2rem;
-  font-size: 0.7rem;
   color: var(--slate);
 }
 
@@ -594,7 +862,7 @@ gw-figure {
 .gw-state-name {
   width: 3.5rem;
   color: var(--slate);
-  font-size: 0.7rem;
+  font-size: var(--gw-fs-eyebrow);
 }
 
 .gw-state-mark {
@@ -635,8 +903,8 @@ gw-figure {
 .gw-handle-text,
 .gw-node-id,
 .gw-sha256 {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.75rem;
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-fs-mono);
   color: var(--slate);
   overflow-wrap: anywhere;
 }
@@ -695,7 +963,7 @@ gw-figure {
 }
 
 .gw-sha256 {
-  color: var(--amber);
+  color: var(--amber-text);
   user-select: all;
 }
 
@@ -707,53 +975,58 @@ gw-figure {
 }
 
 a {
-  color: var(--cyan);
+  color: var(--cyan-text);
   overflow-wrap: anywhere;
 }
 
+/* The element is announced as a button and is activated by Enter and Space, so it points
+   like one; the dotted rule is what says a definition is behind it. */
 .gw-term {
   border-bottom: 1px dotted var(--slate);
-  cursor: help;
+  cursor: pointer;
 }
 
-.gw-term:focus-visible {
-  outline: 1px solid var(--cyan);
+.gw-term:hover {
+  border-bottom-color: var(--cyan);
 }
 
 .gw-popover {
   position: absolute;
-  z-index: 50;
+  z-index: var(--gw-z-popover);
   max-width: 22rem;
-  padding: 0.6rem 0.7rem;
+  padding: var(--gw-space-3) var(--gw-space-3);
+  font-size: var(--gw-fs-body);
   background: var(--panel);
   border: 1px solid var(--cyan);
-  border-radius: 4px;
-  font-size: 0.8rem;
-  box-shadow: 0 6px 24px rgb(0 0 0 / 50%);
+  border-radius: var(--gw-radius-sm);
+  box-shadow: var(--shadow-pop);
 }
 
 .gw-popover h4 {
   margin: 0 0 0.25rem;
-  color: var(--cyan);
+  color: var(--cyan-text);
 }
 
 .gw-popover p {
   margin: 0 0 0.35rem;
 }
 
-.gw-popover-tags,
 .gw-popover-where {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-popover-tags {
+  color: var(--muted);
 }
 
 .gw-popover-expand {
   background: none;
   border: 1px solid var(--hairline);
-  border-radius: 3px;
-  color: var(--cyan);
+  border-radius: var(--gw-radius-xs);
+  color: var(--cyan-text);
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: var(--gw-fs-micro);
   padding: 0.1rem 0.35rem;
 }
 
@@ -761,37 +1034,6 @@ a {
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
-}
-
-.gw-legend {
-  position: absolute;
-  left: 0.6rem;
-  bottom: 0.6rem;
-  z-index: 5;
-  background: rgb(18 26 33 / 92%);
-  border: 1px solid var(--hairline);
-  border-radius: 4px;
-  padding: 0.5rem 0.6rem;
-  font-size: 0.75rem;
-  max-width: 17rem;
-}
-
-.gw-legend h4 {
-  margin: 0 0 0.3rem;
-}
-
-.gw-legend p {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  margin: 0.1rem 0;
-  color: var(--slate);
-}
-
-.gw-legend-note {
-  color: var(--muted);
-  display: block;
-  margin-top: 0.4rem;
 }
 
 .gw-placeholder,
@@ -803,18 +1045,18 @@ a {
 .gw-warning {
   border-left: 2px solid var(--amber);
   padding-left: 0.5rem;
-  font-size: 0.78rem;
+  font-size: var(--gw-fs-micro);
 }
 
 .gw-error {
   position: relative;
   border: 1px solid var(--gas);
-  border-radius: 4px;
+  border-radius: var(--gw-radius-xs);
   padding: 0.6rem;
 }
 
 .gw-error h3 {
-  color: var(--gas);
+  color: var(--gas-text);
 }
 
 .gw-error-key {
@@ -822,11 +1064,11 @@ a {
   margin: 0.3rem 0;
   padding: 0.25rem 0.6rem;
   font: inherit;
-  font-size: 0.78rem;
-  color: var(--amber);
+  font-size: var(--gw-fs-micro);
+  color: var(--amber-text);
   background: none;
   border: 1px solid var(--amber);
-  border-radius: 6px;
+  border-radius: var(--gw-radius-sm);
   cursor: pointer;
 }
 
@@ -844,43 +1086,43 @@ a {
 
 .gw-key-input {
   flex: 1 1 14rem;
-  min-height: 32px;
+  min-height: var(--gw-control-h);
   padding: 0.25rem 0.5rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--gw-font-mono);
   color: var(--paper);
   background: var(--ink);
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-radius: var(--gw-radius-sm);
 }
 
 .gw-key-use,
 .gw-key-clear {
-  min-height: 32px;
+  min-height: var(--gw-control-h);
   padding: 0.25rem 0.6rem;
-  font: inherit;
-  font-size: 0.78rem;
+  font-family: var(--gw-font-body);
+  font-size: var(--gw-fs-micro);
   color: var(--paper);
   background: none;
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-radius: var(--gw-radius-sm);
   cursor: pointer;
 }
 
 .gw-key-use {
-  color: var(--cyan);
+  color: var(--cyan-text);
   border-color: var(--cyan);
 }
 
 .gw-key-note {
   margin: 0.3rem 0;
   color: var(--slate);
-  font-size: 0.78rem;
+  font-size: var(--gw-fs-body);
 }
 
 .gw-key-hint {
   margin: 0.6rem 0 0;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--gw-fs-micro);
 }
 
 /* Transient gesture feedback, deliberately its own surface: routing it through the status
@@ -889,7 +1131,7 @@ a {
   position: fixed;
   right: 0.75rem;
   bottom: 0.75rem;
-  z-index: 60;
+  z-index: var(--gw-z-toast);
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -898,13 +1140,13 @@ a {
 
 .gw-toast {
   margin: 0;
-  padding: 0.4rem 0.7rem;
-  font-size: 0.78rem;
+  padding: var(--gw-space-2) var(--gw-space-3);
+  font-size: var(--gw-fs-micro);
   color: var(--paper);
   background: var(--panel);
   border: 1px solid var(--amber);
-  border-radius: 6px;
-  box-shadow: 0 6px 20px rgb(0 0 0 / 45%);
+  border-radius: var(--gw-radius-sm);
+  box-shadow: var(--shadow-pop);
 }
 
 /* Paper text on the control's white-ish background measured 1.18:1 — unreadable, and
@@ -921,6 +1163,14 @@ a {
   }
 }
 
+/* The cap exists so a long status cannot crush the brand, not to truncate for its own sake;
+   above 1280 px there is room to say the whole thing. */
+@media (min-width: 1280px) {
+  .gw-meta {
+    max-width: 340px;
+  }
+}
+
 /* The stylesheet had no media query at all: below 940 px the card left the viewport and at
    390 px it sat at x -550, so tapping a lateral appeared to do nothing. */
 @media (max-width: 900px) {
@@ -934,7 +1184,7 @@ a {
     width: auto;
     max-height: 78vh;
     max-height: 78dvh;
-    border-radius: 14px 14px 0 0;
+    border-radius: var(--gw-radius-lg) var(--gw-radius-lg) 0 0;
     border-left: 0;
     border-right: 0;
     border-bottom: 0;
@@ -944,26 +1194,37 @@ a {
   /* Both open at this width: the drawer's higher stacking context covers the card, which
      is the topmost-layer rule the Escape handler already follows. */
 
+  #gw-header {
+    gap: var(--gw-space-3);
+    --gw-rail-pad-x: 12px;
+  }
+
+  .gw-controls {
+    gap: var(--gw-space-3);
+  }
+
+  .gw-tools + .gw-tools {
+    padding-left: var(--gw-space-3);
+  }
+
   .gw-controls .gw-ctl-lbl {
     display: none;
   }
 
+  /* 44 px targets inside the same 40 px band: the button grows past the band rather than
+     pushing the rail taller, so the baseline the brand sits on does not move. */
   .gw-controls button {
-    min-height: 44px;
+    height: 44px;
     min-width: 44px;
-    padding: 0.25rem 0.45rem;
+    padding: 0 var(--gw-space-2);
   }
 
   .gw-search-input {
-    width: min(14rem, 40vw);
+    width: min(14rem, 34vw);
   }
 
   .gw-meta {
-    max-width: 140px;
-  }
-
-  .gw-legend {
-    max-width: calc(100vw - 20px);
+    max-width: 150px;
   }
 }
 
@@ -972,12 +1233,122 @@ a {
     grid-template-columns: 7.5rem 1fr;
   }
 
-  .gw-lockup,
   .gw-strap {
     display: none;
   }
 
+  .gw-wordmark {
+    font-size: 1.25rem;
+  }
+
+  .gw-brand {
+    gap: var(--gw-space-2);
+  }
+}
+
+/* Phone posture. Everything below buys width for the wordmark, because a rail that cannot
+   say the product's name is the VF-1 defect wearing a different size. Search pays: it sits
+   as its own glyph until it is asked for, and takes the rail while it is being used. */
+@media (max-width: 520px) {
+  #gw-header {
+    --gw-rail-pad-x: 10px;
+
+    gap: var(--gw-space-2);
+  }
+
+  .gw-controls {
+    gap: var(--gw-space-2);
+  }
+
+  /* Four controls do not need to be told they are three groups, and at this width the two
+     dividers cost 18 px the wordmark needs. */
+  .gw-tools + .gw-tools {
+    padding-left: 0;
+    border-left: none;
+  }
+
+  /* Identity does not absorb the overflow: with the brand fixed, the squeeze lands on the
+     metadata, which ellipsises honestly, instead of on the middle of the product's name. */
+  .gw-brand {
+    flex: none;
+  }
+
+  .gw-wordmark {
+    font-size: 1.15rem;
+    line-height: 20px;
+  }
+
   .gw-mark {
-    display: block;
+    height: 36px;
+    width: 36px;
+  }
+
+  .gw-controls button {
+    min-width: 40px;
+    padding: 0 var(--gw-space-1);
+  }
+
+  /* :placeholder-shown is what makes this safe — a field holding a query never collapses, so
+     the text is never hidden behind an icon. */
+  .gw-search-input {
+    width: 40px;
+    padding-right: 0;
+  }
+
+  .gw-search-input::placeholder {
+    color: transparent;
+  }
+
+  .gw-search-input:focus,
+  .gw-search-input:not(:placeholder-shown) {
+    width: min(15rem, 46vw);
+    padding-right: var(--gw-space-2);
+  }
+
+  /* The two things search borrows from while it is open, and gives back on blur. */
+  #gw-header:has(.gw-search-input:focus) .gw-wordmark,
+  #gw-header:has(.gw-search-input:not(:placeholder-shown)) .gw-wordmark,
+  #gw-header:has(.gw-search-input:focus) .gw-meta,
+  #gw-header:has(.gw-search-input:not(:placeholder-shown)) .gw-meta {
+    display: none;
+  }
+
+  /* Two states outrank freshness at this width, and each one takes the room from it: a
+     rejected key means there is no data to be fresh about, and a degraded warning is the
+     thing the reader has to be able to read in full. */
+  #gw-header:has(.gw-key-chip:not([hidden])) .gw-meta {
+    display: none;
+  }
+
+  #gw-header:has(.gw-degraded) .gw-asof {
+    display: none;
+  }
+
+  #gw-header:has(.gw-degraded) .gw-meta {
+    max-width: 150px;
+  }
+
+  /* The width the warning takes comes out of the wordmark, not out of the middle of it —
+     a clipped "glasswe" is worse than the mark carrying the brand on its own. */
+  #gw-header:has(.gw-degraded) .gw-wordmark {
+    display: none;
+  }
+
+  /* Anchored to the field, the 26rem panel hung 79 px off the left edge of a 390 px viewport
+     and clipped every operator name. At this width it belongs to the viewport, not the box. */
+  .gw-search-panel {
+    position: fixed;
+    top: calc(var(--gw-rail-band) + 2 * var(--gw-rail-pad-y) + 1px);
+    right: var(--gw-space-2);
+    left: var(--gw-space-2);
+    width: auto;
+  }
+
+  .gw-asof-label {
+    display: none;
+  }
+
+  .gw-meta {
+    max-width: 84px;
   }
 }

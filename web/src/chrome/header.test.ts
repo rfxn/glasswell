@@ -29,22 +29,61 @@ describe("the header is a control surface, not a paragraph", () => {
     for (const id of HEADER_IDS) expect(document.getElementById(id), id).toBeTruthy();
   });
 
-  it("shows the brand lockup and the small mark from web/public/brand", () => {
-    const sources = [...document.querySelectorAll("img")].map((image) => image.getAttribute("src"));
+  it("sets the wordmark as live text, so it is legible at whatever size the rail gives it", () => {
+    // VF-1: the 660x168 lockup SVG was drawn at height:32px, which put the wordmark at
+    // roughly 10px and unreadable. Live text scales with the type tokens instead.
+    const wordmark = document.querySelector(".gw-wordmark");
 
-    expect(sources).toContain("/brand/logo-horizontal-dark.svg");
-    expect(sources).toContain("/brand/logo-mark-small.svg");
+    expect(wordmark?.textContent).toBe("glasswell");
+    expect(wordmark?.querySelector(".gw-wordmark-well")?.textContent).toBe("well");
+    expect(document.querySelector(".gw-lockup")).toBeNull();
+  });
+
+  it("keeps the mark as the rail's only image, labelled once by the link around it", () => {
+    const images = [...document.querySelectorAll("img")];
+
+    expect(images.map((image) => image.getAttribute("src"))).toEqual([
+      "/brand/logo-mark-small.svg",
+    ]);
+    expect(images[0]?.getAttribute("alt")).toBe("");
+    expect(document.querySelector(".gw-brand")?.getAttribute("aria-label")).toContain("glasswell");
   });
 
   it("keeps the strap to a micro-line and moves the sentence into Help", () => {
-    const strap = document.querySelector(".gw-strap")?.textContent?.trim() ?? "";
+    const strap = document.querySelector(".gw-strap") as HTMLElement;
 
-    expect(strap.split(/\s+/)).toHaveLength(3);
+    expect(strap.textContent?.trim().split(/\s+/)).toHaveLength(3);
+    expect(strap.title).toContain("checksummed regulator file");
     expect(element("gw-help-panel").textContent).toContain("derivation");
   });
 
   it("mounts the search box into the header's control cluster", () => {
     expect(element("gw-search-slot").querySelector("input")).toBeTruthy();
+  });
+
+  it("composes the right cluster as find, then act, then read — one rhythm, three groups", () => {
+    // VF-3: the cluster read as bolted-on because search, a chip, a button and two lines of
+    // metadata sat in one undifferentiated flex row.
+    const groups = [...document.querySelectorAll(".gw-controls > .gw-tools")];
+
+    expect(groups.map((group) => group.className.split(/\s+/)[1])).toEqual([
+      "gw-tools-find",
+      "gw-tools-act",
+      "gw-meta",
+    ]);
+  });
+});
+
+describe("the theme control", () => {
+  it("lives in the action group and starts on the brand default", () => {
+    expect(element("gw-theme-btn").closest(".gw-tools-act")).toBeTruthy();
+    expect(document.documentElement.dataset.theme).toBe("dark");
+  });
+
+  it("flips the document theme when clicked", () => {
+    element("gw-theme-btn").click();
+
+    expect(document.documentElement.dataset.theme).toBe("light");
   });
 });
 

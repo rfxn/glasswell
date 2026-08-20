@@ -15,6 +15,15 @@ export function createSearch(callbacks: SearchCallbacks): HTMLElement {
   const host = document.createElement("div");
   host.className = "gw-search";
 
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("class", "gw-search-icon");
+  icon.setAttribute("viewBox", "0 0 16 16");
+  icon.setAttribute("aria-hidden", "true");
+  icon.setAttribute("focusable", "false");
+  const glass = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  glass.setAttribute("d", "M7.1 11.4a4.3 4.3 0 1 0 0-8.6 4.3 4.3 0 0 0 0 8.6ZM10.3 10.3 14 14");
+  icon.appendChild(glass);
+
   const input = document.createElement("input");
   input.type = "search";
   input.id = "gw-search-input";
@@ -43,7 +52,7 @@ export function createSearch(callbacks: SearchCallbacks): HTMLElement {
   note.hidden = true;
 
   panel.append(list, note);
-  host.append(input, panel);
+  host.append(icon, input, panel);
 
   let results: SearchResult[] = [];
   let active = -1;

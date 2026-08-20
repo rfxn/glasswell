@@ -80,6 +80,14 @@ describe("the search box", () => {
     expect(input.getAttribute("aria-label")).toBeTruthy();
   });
 
+  it("carries its glyph inside the field, and the glyph says nothing to a screen reader", () => {
+    const icon = host.querySelector(".gw-search-icon");
+
+    expect(icon).toBeTruthy();
+    expect(icon?.getAttribute("aria-hidden")).toBe("true");
+    expect(host.querySelectorAll("[aria-label]")).toHaveLength(2); // the input and the list
+  });
+
   it("debounces to one request per burst of typing", async () => {
     input.value = "man";
     input.dispatchEvent(new Event("input"));

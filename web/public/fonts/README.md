@@ -22,6 +22,13 @@ back to whatever the reader's system supplies.
 
 `U+FF0B ＋` (`web/src/map/pills.ts`) is in neither face and still falls back.
 
+## Deploying (N-7)
+
+`vite build` copies this directory to `dist/fonts/`, alongside `dist/brand/`. A deploy that
+rsyncs only `dist/assets/` ships neither: the app then falls back to the system sans and the
+header mark 404s. Sync `dist/` as a whole, or include `dist/fonts/` and `dist/brand/`
+explicitly.
+
 ## Regenerating
 
 ```bash

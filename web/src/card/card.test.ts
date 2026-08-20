@@ -83,6 +83,16 @@ describe("well card", () => {
     expect(chart.columns[2]?.values).toEqual([47601, 45428, 24918, 30985, 24753, 22452]);
   });
 
+  it("frames the chart with a title the plot cannot overwrite when it arrives", async () => {
+    // The section went straight from a facts list to an unlabelled plot, and every state of
+    // it — placeholder, chart, error — used to replaceChildren() the whole frame.
+    await renderWellCard(host, API10, callbacks);
+
+    const frame = host.querySelector(".gw-card-chart") as HTMLElement;
+    expect(frame.querySelector(".gw-frame-title")?.textContent).toBe("Monthly production");
+    expect(renderChart.mock.calls[0]?.[0]).toBe(frame.querySelector(".gw-frame-body"));
+  });
+
   it("splits into a fixed head and a scrolling body, so a long card cannot overrun", async () => {
     await renderWellCard(host, API10, callbacks);
 
