@@ -27,8 +27,8 @@ LOADERS = {"wells": load_wells, "laterals": load_laterals, "spacing_units": load
 LATERAL_SEGMENTS = 233
 LATERAL_WELLS = 180
 MULTI_LATERAL_WELLS = 42
-NON_LATERAL_SEGMENTS = 65
-UNSTORABLE_GEOMETRIES = 2
+NON_LATERAL_SEGMENTS = 67
+MULTIPART_GEOMETRIES = 2
 WELL_RECORDS = 300
 SPACING_UNITS = 300
 
@@ -193,21 +193,15 @@ def test_laterals_are_keyed_by_linekey_and_only_lateral_segments_are_promoted(
         " and geom_key not like %s",
         ("%\\_LAT%",),
     ) == 0
+    assert result.quarantined["segment_not_promoted"] == NON_LATERAL_SEGMENTS
+    # Two _VERT records are disjoint multi-part lines. They parse, so they stage with their
+    # geometry and are held back for their segment, not filed as a parse failure (A5-F8).
+    assert result.quarantined["parse_error"] == 0
     assert scalar(
         seeded,
-        "select count(*) from canonical.well_spatial where geom_type = 'lateral'"
-        " and ST_GeometryType(geom) <> 'ST_LineString'",
-    ) == 0
-    assert result.quarantined["unknown_vocab"] == NON_LATERAL_SEGMENTS
-    # Two _VERT records are disjoint multi-part lines: staging.geom is geometry(LineString),
-    # so they stage without geometry and are measured rather than dropped.
-    assert result.quarantined["parse_error"] == UNSTORABLE_GEOMETRIES
-    assert scalar(
-        seeded,
-        "select count(*) from lineage.quarantine_rows where reason_code = 'parse_error'"
-        " and row_payload ->> 'detail' like %s",
-        ("MultiLineString%",),
-    ) == UNSTORABLE_GEOMETRIES
+        "select count(*) from staging.nd_gis_laterals"
+        " where ST_GeometryType(geom) = 'ST_MultiLineString'",
+    ) == MULTIPART_GEOMETRIES
 
 
 def test_a_multi_lateral_well_keeps_every_centreline_and_raises_one_quarantine_row(
@@ -241,25 +235,25 @@ def test_a_multi_lateral_well_keeps_every_centreline_and_raises_one_quarantine_r
     assert result.multi_lateral_rate == pytest.approx(MULTI_LATERAL_WELLS / LATERAL_WELLS)
 
 
-def test_lateral_length_comes_from_the_projected_crs_and_not_from_shape_leng(
+def test_lateral_length_comes_from_the_geodesic_measure_and_not_from_shape_leng(
     wells_loaded, seeded, raw_root, lineage_env
 ):
     result = load(seeded, raw_root, lineage_env, "laterals")
-    projected = rows(
+    measured = rows(
         seeded,
         "select s.geom_key,"
-        "       ST_Length(ST_Transform(s.geom, 32614)) / 0.3048 as feet,"
+        "       ST_Length(s.geom::geography) / 0.3048 as feet,"
         "       g.shape_leng::double precision"
         "  from canonical.well_spatial s"
         "  join staging.nd_gis_laterals g on g.linekey = s.geom_key"
         " where s.geom_type = 'lateral'",
     )
-    assert len(projected) == LATERAL_SEGMENTS
-    feet = sorted(row[1] for row in projected)
+    assert len(measured) == LATERAL_SEGMENTS
+    feet = sorted(row[1] for row in measured)
     median = feet[len(feet) // 2]
     assert 500 <= median <= 25000
-    # SHAPE_Leng is degrees: the projected length is five orders of magnitude larger.
-    for _, computed, shape_leng in projected:
+    # SHAPE_Leng is degrees: the measured length is five orders of magnitude larger.
+    for _, computed, shape_leng in measured:
         assert shape_leng < 1
         assert computed / shape_leng > 10_000
 
@@ -340,7 +334,8 @@ def test_the_compute_crs_directive_is_read_from_the_registry_not_hard_coded(
     wells_loaded, seeded, raw_root, lineage_env
 ):
     result = load(seeded, raw_root, lineage_env, "laterals")
-    assert result.compute_epsg == 32614
+    # A3-F1: the active rule measures geodesically, so no zone is pinned anywhere in code.
+    assert (result.length_rule_id, result.compute_epsg) == ("cr_nd_compute_crs_2", None)
     applied = [
         row[0]
         for row in rows(
@@ -350,4 +345,9 @@ def test_the_compute_crs_directive_is_read_from_the_registry_not_hard_coded(
             (result.promote_derivation_id,),
         )
     ]
-    assert applied == ["cr_nd_compute_crs_1", "cr_nd_datum_1", "cr_nd_multilateral_1"]
+    assert applied == [
+        "cr_nd_compute_crs_2",
+        "cr_nd_datum_1",
+        "cr_nd_multilateral_1",
+        "cr_nd_segment_vocab_1",
+    ]

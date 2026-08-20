@@ -7,6 +7,46 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-20 — data-truth fixes from the false-positive audit
+
+- [Fix] A production point cites the derivation that promoted its own month.
+      `sorted(derivations)[-1]` put one handle on a whole column, and ND publishes
+      one workbook a month, so 327,924 of 394,278 served numbers explained to a
+      regulator file that does not contain them; `_lineage` now keys a handle per
+      point once a column's months disagree (audit D3)
+- [Change] Lateral length is measured geodesically on the WGS84 ellipsoid under
+      `cr_nd_compute_crs_2`, which supersedes the UTM 14N rule rather than editing
+      it. 97.6 % of ND laterals lie outside zone 14N, which overstated the fleet by
+      144,378.78 ft (+0.0709 %); the new method agrees with an independent pyproj
+      geodesic to 8e-8 ft over a 100-lateral sample spanning the state (audit A3-F1)
+- [Fix] The tile ships `lateral_length_ft` as a double rounded to the cent instead
+      of a twenty-digit protobuf string a MapLibre expression compared
+      lexicographically; the exact conversion stays in `lateral_length_ft_exact`
+      (audit A3-F4)
+- [Fix] A month NDIC pools as CONFIDENTIAL is quarantined as
+      `confidential_withheld` instead of `out_of_range_date`, and rides the series
+      axis with a null value and `withheld` semantics rather than vanishing:
+      1,055 well-months, relabelled from their own payload (audit D2 / A5-F7)
+- [Fix] The horizontals segment vocabulary is a rule and a reference table, not a
+      literal in the loader; its 24,872 held-back rows carry
+      `segment_not_promoted` and the rule that decided them instead of
+      `unknown_vocab`, which claimed the ingest could not read a segment it had
+      parsed itself (audit A5-F6)
+- [Fix] Multi-part centrelines are stored as published rather than filed as
+      `parse_error` with a NULL geometry; six real laterals were dropped by a
+      staging column that declared LineString (audit A5-F8)
+- [Fix] A month whose API-10 filed in more than one pool is withdrawn as
+      `multi_pool_pending` with the ledger's own numbers in `meta.warnings`,
+      instead of serving one pool's row as `well_observed` and `reported_zero`:
+      78 wells, 454 well-months, 139,644 bbl (audit D1, interim guard)
+- [Fix] `applied_rows` counts the rows a rule touched. `cr_nd_land_unit_1` was
+      recorded as applied to 22,223 production rows by an executor that only
+      checks three column names (audit D4)
+- [New] The well card discloses what the map cannot show and the ingest held back:
+      `below_tile_resolution` for laterals no zoom can render, and
+      `geometry_not_promoted` for a well whose only horizontal trace is a
+      sidetrack (audit A3-F5, A3-F3)
+
 ### 2026-08-20 — North Dakota spine and map slice
 
 - [New] Lineage and reproducibility spine: content-addressed raw zone with sealed

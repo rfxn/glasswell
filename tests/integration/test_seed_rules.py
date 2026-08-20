@@ -7,16 +7,24 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
+from glasswell.lengths import resolve_length_method
 from glasswell.lineage.conformance import RULE_KINDS, apply_registry_rules, apply_rules, load_rules
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_nd import ND_RULES
 
-MINIMUM_RULES = 14
+MINIMUM_RULES = 17
 MINIMUM_TERMS = 30
 MEASURED_ND_STATUSES = 19
 POLICY_RULES = ("cr_nd_liquids_policy_1", "cr_nd_null_semantics_1")
 
-EXECUTABLE_RULE_IDS = [rule["rule_id"] for rule in ND_RULES if rule["rule_kind"] != "code_ref"]
+SUPERSEDED_RULE_IDS = {rule["supersedes_rule_id"] for rule in ND_RULES if rule.get(
+    "supersedes_rule_id")}
+# A superseded row stays in the registry and stops being loaded, so it is not probed here.
+EXECUTABLE_RULE_IDS = [
+    rule["rule_id"]
+    for rule in ND_RULES
+    if rule["rule_kind"] != "code_ref" and rule["rule_id"] not in SUPERSEDED_RULE_IDS
+]
 
 VOLUMES = {"oil": [Decimal("259.000")], "wtr": [Decimal("845.000")], "gas": [Decimal("1885.000")]}
 VOLUME_SCHEMA = dict.fromkeys(VOLUMES, pl.Decimal(18, 3))
@@ -31,14 +39,16 @@ PROBE_FRAMES: dict[str, pl.DataFrame] = {
         {"township": ["151"], "range": ["101"], "section": ["11"]}
     ),
     "cr_nd_volume_range_1": pl.DataFrame(VOLUMES, schema=VOLUME_SCHEMA),
+    "cr_nd_confidential_1": pl.DataFrame({"pool": ["BAKKEN"]}),
     "cr_nd_days_range_1": pl.DataFrame({"days": [31]}),
     "cr_nd_stream_vocab_1": pl.DataFrame({"api10": ["3305303901"], "stream_raw": ["Oil"]}),
     "cr_nd_units_1": pl.DataFrame(VOLUMES, schema=VOLUME_SCHEMA),
     "cr_nd_status_vocab_1": pl.DataFrame({"api": ["33043000020000"], "status": ["A"]}),
     "cr_nd_datum_1": pl.DataFrame({"latitude": [47.9075079], "longitude": [-103.5803537]}),
-    "cr_nd_compute_crs_1": pl.DataFrame(
+    "cr_nd_compute_crs_2": pl.DataFrame(
         {"linekey": ["33011003910000_LAT1"], "geom": ["LINESTRING(-103.5 47.9,-103.4 47.9)"]}
     ),
+    "cr_nd_segment_vocab_1": pl.DataFrame({"segment": ["LAT"]}),
     "cr_nd_multilateral_1": pl.DataFrame(
         {"linekey": ["33011003910000_LAT1"], "lateral_ordinal": [1]}
     ),
@@ -55,7 +65,8 @@ def seeded(db: psycopg.Connection) -> dict[str, int]:
 def registry_rows(connection: psycopg.Connection) -> list[dict]:
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(
-            "select rule_id, rule_kind, stage, rationale, evidence_url, spec, source_id"
+            "select rule_id, rule_kind, stage, rationale, evidence_url, spec, source_id,"
+            "       supersedes_rule_id, effective_from"
             " from lineage.conformance_rules order by rule_id"
         )
         return cursor.fetchall()
@@ -144,8 +155,9 @@ def test_the_mpr_validate_stage_routes_an_impossible_volume_to_quarantine(db, se
             "wtr": [Decimal("845.000"), Decimal("1.000")],
             "gas": [Decimal("1885.000"), Decimal("2.000")],
             "days": [31, 31],
+            "pool": ["BAKKEN", "BAKKEN"],
         },
-        schema={**VOLUME_SCHEMA, "days": pl.Int64},
+        schema={**VOLUME_SCHEMA, "days": pl.Int64, "pool": pl.String},
     )
     application = apply_registry_rules(db, frame, source_id="nd_mpr_xlsx", stage="validate")
     assert application.frame.height == 1
@@ -235,3 +247,35 @@ def test_seeding_a_database_that_is_already_seeded_changes_nothing(db, seeded):
     with db.cursor() as cursor:
         cursor.execute(" union all ".join(f"select count(*) from {t}" for t in tables))
         assert cursor.fetchall() == before
+
+
+def test_the_compute_crs_rule_was_superseded_and_the_old_row_was_not_edited(db, seeded):
+    """R8: the UTM-14N row stays in the registry exactly as written (fp-audit A3-F1)."""
+    registry = {row["rule_id"]: row for row in registry_rows(db)}
+
+    assert registry["cr_nd_compute_crs_1"]["spec"]["compute_epsg"] == 32614
+    successor = registry["cr_nd_compute_crs_2"]
+    assert successor["supersedes_rule_id"] == "cr_nd_compute_crs_1"
+    assert successor["spec"]["length_method"] == "geodesic"
+    assert successor["effective_from"] > registry["cr_nd_compute_crs_1"]["effective_from"]
+    assert "A3-F1" in successor["rationale"]
+
+
+def test_only_the_superseding_rule_is_loaded_for_the_laterals_source(db, seeded):
+    loaded = [
+        rule.rule_id
+        for rule in load_rules(db, source_id="nd_gis_horizontals_line")
+        if rule.rule_family == "cr_nd_compute_crs"
+    ]
+
+    assert loaded == ["cr_nd_compute_crs_2"]
+
+
+def test_the_active_length_method_is_zone_free(db, seeded):
+    method = resolve_length_method(db)
+
+    assert (method.rule_id, method.method, method.compute_epsg) == (
+        "cr_nd_compute_crs_2",
+        "geodesic",
+        None,
+    )

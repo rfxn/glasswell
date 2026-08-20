@@ -98,7 +98,7 @@ def test_rules_not_yet_effective_are_not_loaded(db, registry):
     assert load_rules(db, source_id="nd_mpr_xlsx", as_of=date(2025, 12, 31)) == []
 
 
-def test_a_superseded_rule_stops_loading_after_its_effective_to(db, registry):
+def test_a_superseded_rule_stops_loading_once_its_successor_exists(db, registry):
     with db.cursor() as cursor:
         cursor.execute(
             "insert into lineage.conformance_rules (rule_id, rule_family, supersedes_rule_id,"
@@ -111,7 +111,13 @@ def test_a_superseded_rule_stops_loading_after_its_effective_to(db, registry):
     db.commit()
 
     loaded = load_rules(db, source_id="nd_mpr_xlsx", stage="conform", as_of=date(2026, 10, 1))
-    assert [rule.rule_id for rule in loaded] == ["cr_nd_well_status_1", "cr_nd_well_status_2"]
+    assert [rule.rule_id for rule in loaded] == ["cr_nd_well_status_2"]
+    # R8: retired, not erased. effective_to cannot carry this — the row is append-only.
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select count(*) from lineage.conformance_rules where rule_id = 'cr_nd_well_status_1'"
+        )
+        assert cursor.fetchone()[0] == 1
 
 
 def test_registry_rules_conform_the_frame_and_report_their_ids(db, registry):

@@ -49,8 +49,9 @@ CRS_ROWS: tuple[dict[str, object], ...] = (
         "storage_epsg": 4326,
         "effective_from": date(2026, 1, 1),
         "note": (
-            "UTM 14N; every ND distance, area and spacing computation runs projected, never in"
-            " degrees"
+            "UTM 14N for area and spacing work only. The Williston basin spans zones 13N and"
+            " 14N, so lateral length is measured geodesically under cr_nd_compute_crs_2 rather"
+            " than projected into either (fp-audit A3-F1)."
         ),
     },
 )

@@ -22,6 +22,7 @@ from psycopg.rows import dict_row
 
 from glasswell.ingest.base import resolve_environment
 from glasswell.ingest.shapefile import ShapefileRecord, ZippedShapefile
+from glasswell.lengths import LengthMethod, compute_crs_rule, length_method
 from glasswell.lineage import (
     ConformanceRule,
     InputRef,
@@ -36,12 +37,14 @@ from glasswell.lineage import (
     open_vintage,
     quarantine,
 )
+from glasswell.lineage.conformance import rule_for_family
 from glasswell.lineage.serialization import hash_payload, json_ready
 from glasswell.units import METRES_PER_FOOT
 
 BASE_URL = "https://gis.dmr.nd.gov/downloads/oilgas/shapefile"
 DATUM_RULE_SOURCE = "nd_gis_wells"
 LAND_UNIT_RULE_ID = "cr_nd_land_unit_1"
+SEGMENT_FAMILY = "cr_nd_segment_vocab"
 _LINEKEY = re.compile(r"\A(?P<api14>\d{14})_(?P<segment>[A-Za-z]+)(?P<ordinal>\d*)\Z")
 
 
@@ -87,8 +90,11 @@ LAYERS: Mapping[str, LayerSpec] = {
         staging_table="staging.nd_gis_laterals",
         canonical_table="canonical.well_spatial",
         columns=("linekey", "fileno", "shape_leng"),
-        geometry_type="LineString",
-        reason_codes=("parse_error", "unknown_vocab", "multi_wellbore_policy", "orphan_fk"),
+        # The layer ships multi-part centrelines; the staging column holds any geometry (017).
+        geometry_type="Geometry",
+        reason_codes=(
+            "parse_error", "segment_not_promoted", "multi_wellbore_policy", "orphan_fk",
+        ),
     ),
     "spacing_units": LayerSpec(
         layer="spacing_units",
@@ -135,6 +141,7 @@ class LoadResult:
     quarantined: Mapping[str, int]
     unchanged: bool = False
     compute_epsg: int | None = None
+    length_rule_id: str | None = None
     length_stats: Mapping[str, float] = field(default_factory=dict)
     multi_lateral_rate: float | None = None
 
@@ -183,9 +190,12 @@ def load_laterals(
     url: str | None = None,
     raw_root: Path | str | None = None,
     client: httpx.Client | None = None,
+    restage: bool = False,
 ) -> LoadResult:
     """Fetch OGD_Horizontals_Line, stage it, and promote lateral centrelines."""
-    return _load(connection, LAYERS["laterals"], url=url, raw_root=raw_root, client=client)
+    return _load(
+        connection, LAYERS["laterals"], url=url, raw_root=raw_root, client=client, restage=restage
+    )
 
 
 def load_spacing_units(
@@ -210,6 +220,7 @@ def _load(
     url: str | None = None,
     raw_root: Path | str | None = None,
     client: httpx.Client | None = None,
+    restage: bool = False,
 ) -> LoadResult:
     datum = _datum_rule(connection)
     source_epsg = int(datum.spec["source_epsg"])
@@ -225,7 +236,11 @@ def _load(
         media_type="application/zip",
     )
     manifest = fetched.manifest
-    if _already_promoted(connection, spec, manifest.manifest_id):
+    if restage:
+        # Re-derivation after a rule or schema change: staging is rebuildable from the raw
+        # bytes, and the insert is conflict-skipping, so the old rows have to go first.
+        _clear_staging(connection, spec, manifest.manifest_id)
+    elif _already_promoted(connection, spec, manifest.manifest_id):
         parse_id, promote_id = _existing_derivations(connection, manifest.manifest_id)
         return LoadResult(
             layer=spec.layer,
@@ -284,6 +299,12 @@ def _already_promoted(connection: psycopg.Connection, spec: LayerSpec, manifest_
             (manifest_id,),
         )
         return cursor.fetchone() is not None
+
+
+def _clear_staging(connection: psycopg.Connection, spec: LayerSpec, manifest_id: str) -> int:
+    with connection.cursor() as cursor:
+        cursor.execute(f"delete from {spec.staging_table} where manifest_id = %s", (manifest_id,))
+        return cursor.rowcount
 
 
 def _existing_derivations(connection: psycopg.Connection, manifest_id: str) -> tuple[str, str]:
@@ -393,7 +414,9 @@ def _unstorable(record: ShapefileRecord, declared: str) -> str | None:
     if record.is_empty:
         return "the source record carries no geometry"
     shape = record.geometry.geom_type
-    if shape == declared or (declared.startswith("Multi") and f"Multi{shape}" == declared):
+    if declared == "Geometry" or shape == declared:
+        return None
+    if declared.startswith("Multi") and f"Multi{shape}" == declared:
         return None
     return f"{shape} does not fit the declared {declared} column"
 
@@ -626,6 +649,14 @@ _LATERALS_SCHEMA = {
     "fileno": pl.String,
 }
 
+# parse_linekey's output, declared so an empty layer still presents the columns the rule maps.
+_PARSED_SCHEMA = {
+    **_LATERALS_SCHEMA,
+    "api10": pl.String,
+    "segment": pl.String,
+    "lateral_ordinal": pl.Int64,
+}
+
 _INSERT_LATERAL = """
 insert into canonical.well_spatial (
     api10, geom_type, geom_key, geom, source_datum, transform_rule_id, source_manifest_id,
@@ -648,9 +679,10 @@ def _promote_laterals(
     staged_rows: int,
     datum: ConformanceRule,
 ) -> LoadResult:
-    directive = _rule(connection, spec.source_id, "cr_nd_compute_crs_1")
+    # The family, not a pinned id: a supersession changes the id and must not be missed.
+    directive = compute_crs_rule(load_rules(connection, source_id=spec.source_id))
     multilateral = _rule(connection, spec.source_id, "cr_nd_multilateral_1")
-    compute_epsg = int(directive.spec["compute_epsg"])
+    method = length_method(directive)
     forbidden = str(directive.spec.get("forbidden_field", "")).lower()
 
     frame = _staging_frame(connection, _LATERALS_SELECT, manifest_id, _LATERALS_SCHEMA)
@@ -678,18 +710,23 @@ def _promote_laterals(
         stage="parse",
     )
 
-    laterals = [row for row in parsed if row["segment"] == "LAT"]
-    others = [row for row in parsed if row["segment"] != "LAT"]
-    # The layer also ships vertical holes and sidetracks; they stay in staging, and the
-    # promotion measures them rather than promoting a vertical segment as a centreline.
-    counts["unknown_vocab"] += _quarantine(
-        connection,
-        pl.DataFrame(others),
-        spec,
-        manifest_id=manifest_id,
-        reason_code="unknown_vocab",
-        stage="conform",
+    # The layer also ships vertical holes and sidetracks. Which of the three is a producing
+    # centreline is a vocabulary, so it is a rule row, not a literal in this function.
+    segment_rule = rule_for_family(
+        load_rules(connection, source_id=spec.source_id, stage="conform"), SEGMENT_FAMILY
     )
+    selected = apply_rules(pl.DataFrame(parsed, schema=_PARSED_SCHEMA), [segment_rule])
+    laterals = selected.frame.to_dicts()
+    for batch in selected.quarantined:
+        counts[batch.reason_code] = counts.get(batch.reason_code, 0) + _quarantine(
+            connection,
+            batch.frame,
+            spec,
+            manifest_id=manifest_id,
+            reason_code=batch.reason_code,
+            stage="conform",
+            rule_id=batch.rule_id,
+        )
 
     per_well: dict[str, list[str]] = {}
     for row in laterals:
@@ -730,14 +767,15 @@ def _promote_laterals(
         output=output,
         params={
             "layer": spec.layer,
-            "compute_epsg": compute_epsg,
+            "length_method": method.method,
+            "compute_epsg": method.compute_epsg,
             "length_expression": directive.spec.get("length_expression"),
         },
         inputs=[
             InputRef(kind="derivation", ref_id=parse_derivation_id),
             InputRef(kind="manifest", ref_id=manifest_id, as_of_vintage=vintage),
         ],
-        rules=[directive.rule_id, datum.rule_id, multilateral.rule_id],
+        rules=[directive.rule_id, datum.rule_id, multilateral.rule_id, segment_rule.rule_id],
     ) as context:
         context.set_rows(len(kept))
         context.set_output_hash(
@@ -773,8 +811,9 @@ def _promote_laterals(
         staged_rows=staged_rows,
         promoted_rows=len(kept),
         quarantined=counts,
-        compute_epsg=compute_epsg,
-        length_stats=_length_stats(connection, derivation_id, compute_epsg),
+        compute_epsg=method.compute_epsg,
+        length_rule_id=method.rule_id,
+        length_stats=_length_stats(connection, derivation_id, method),
         multi_lateral_rate=len(multi) / len(per_well) if per_well else None,
     )
 
@@ -791,16 +830,16 @@ def _known_api10s(connection: psycopg.Connection, wanted: Iterable[str]) -> set[
 
 
 def _length_stats(
-    connection: psycopg.Connection, derivation_id: str, compute_epsg: int
+    connection: psycopg.Connection, derivation_id: str, method: LengthMethod
 ) -> dict[str, float]:
     with connection.cursor() as cursor:
         cursor.execute(
             "select min(feet), percentile_cont(0.5) within group (order by feet), max(feet),"
             "       count(*)"
-            "  from (select ST_Length(ST_Transform(geom, %s)) / %s as feet"
+            f"  from (select {method.metres_sql()} / %s as feet"
             "          from canonical.well_spatial"
             "         where derivation_id = %s and geom_type = 'lateral') lengths",
-            (compute_epsg, float(METRES_PER_FOOT), derivation_id),
+            (float(METRES_PER_FOOT), derivation_id),
         )
         minimum, median, maximum, rows = cursor.fetchone()
     if not rows:
@@ -945,6 +984,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--raw-root", default=None)
     parser.add_argument("--env-id", default=None, help="override the fingerprinted env id")
     parser.add_argument("--code-version", default=None)
+    parser.add_argument(
+        "--restage",
+        action="store_true",
+        help="re-parse and re-promote from the stored bytes after a rule or schema change",
+    )
     arguments = parser.parse_args(argv)
 
     # Wells first: a lateral whose api10 has no well row quarantines as orphan_fk.
@@ -956,7 +1000,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         with lineage_session(recorder=PostgresRecorder(connection), environment=environment):
             for layer in layers:
                 result = load_layer(
-                    connection, layer, url=arguments.url, raw_root=arguments.raw_root
+                    connection,
+                    layer,
+                    url=arguments.url,
+                    raw_root=arguments.raw_root,
+                    restage=arguments.restage,
                 )
                 connection.commit()
                 print(json.dumps(result.to_dict(), sort_keys=True))

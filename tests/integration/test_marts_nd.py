@@ -21,6 +21,7 @@ from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts import TILE_LAYERS, refresh_all
 from glasswell.marts.nd_wells import main
 from glasswell.seed import seed_all
+from glasswell.units import METRES_PER_FOOT
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "nd_gis"
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -37,8 +38,6 @@ LOADERS = {
     "spacing_units": load_spacing_units,
 }
 
-COMPUTE_EPSG = 32614
-FEET_PER_METRE_RECIPROCAL = 3.28084
 MAX_PROBE_ZOOM = 14
 PROJECTED_MARTS = ("nd_laterals_tile", "nd_wells_tile")
 
@@ -158,18 +157,19 @@ def test_the_well_card_mart_is_deliberately_empty(canonical_nd, refreshed):
     assert "nd_well_card" not in refreshed.row_counts
 
 
-def test_lateral_length_is_the_projected_length_in_feet(canonical_nd, refreshed):
+def test_lateral_length_is_the_measured_length_in_feet(canonical_nd, refreshed):
+    """The reciprocal is the module's own Decimal, not a literal: A3-F7 made 3.28084 unable
+    to fail this at abs=0.01, so the comparison is exact against glasswell.units."""
     measured = rows(
         canonical_nd,
-        "select t.lateral_length_ft,"
-        f"       ST_Length(ST_Transform(s.geom, {COMPUTE_EPSG})) * {FEET_PER_METRE_RECIPROCAL}"
+        "select t.lateral_length_ft_exact, ST_Length(s.geom::geography)"
         "  from marts.nd_laterals_tile t"
         "  join canonical.well_spatial s"
         "    on s.api10 = t.api10 and s.geom_key = t.linekey and s.geom_type = 'lateral'",
     )
     assert measured
-    for stored, expected in measured:
-        assert float(stored) == pytest.approx(expected, abs=0.01)
+    for stored, metres in measured:
+        assert stored == pytest.approx(Decimal(repr(metres)) / METRES_PER_FOOT, abs=Decimal("1e-9"))
     # SHAPE_Leng is degrees (~1.5e-2); a mart that read it would never clear one foot.
     assert min(float(stored) for stored, _ in measured) > 1.0
 
@@ -182,7 +182,7 @@ def test_the_card_figure_equals_the_length_the_tile_carries(canonical_nd, refres
     """
     multilateral = rows(
         canonical_nd,
-        "select api10, sum(lateral_length_ft) from marts.nd_laterals_tile"
+        "select api10, sum(lateral_length_ft_exact) from marts.nd_laterals_tile"
         " group by api10 having count(*) > 1 order by api10",
     )
     assert multilateral, "the GIS fixture holds no multi-lateral well, so M-2 cannot regress here"
@@ -197,7 +197,7 @@ def test_the_tile_mart_stores_the_length_unrounded(canonical_nd, refreshed):
     """A mart that rounds per lateral cannot be summed back to the served figure."""
     stored = [
         row[0]
-        for row in rows(canonical_nd, "select lateral_length_ft from marts.nd_laterals_tile")
+        for row in rows(canonical_nd, "select lateral_length_ft_exact from marts.nd_laterals_tile")
     ]
 
     assert stored

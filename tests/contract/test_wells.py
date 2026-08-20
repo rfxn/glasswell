@@ -75,11 +75,13 @@ def test_lateral_length_is_computed_live_from_geometry(client: TestClient) -> No
     assert 9000 < float(figure["value"]) < 12000
 
 
-def test_the_detail_names_its_geometry_and_its_compute_crs(client: TestClient) -> None:
+def test_the_detail_names_its_geometry_and_how_length_was_measured(client: TestClient) -> None:
     data = client.get(f"/v1/wells/{EXAMPLE_API10}").json()["data"]
 
     assert {item["geom_type"] for item in data["geometry"]} == {"lateral", "surface"}
-    assert data["compute_crs"] == "EPSG:32614"
+    # A3-F1: no zone is chosen, so the computation is defined on the storage CRS itself.
+    assert data["length_method"] == "geodesic"
+    assert data["compute_crs"] == "EPSG:4326"
     assert data["storage_crs"] == "EPSG:4326"
 
 

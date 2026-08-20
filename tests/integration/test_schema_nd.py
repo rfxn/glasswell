@@ -25,11 +25,12 @@ ND_TABLES = [
 
 GEOMETRY_COLUMNS = [
     ("staging", "nd_gis_wells", "POINT"),
-    ("staging", "nd_gis_laterals", "LINESTRING"),
+    # The layer ships multi-part centrelines; refusing them dropped six laterals (A5-F8).
+    ("staging", "nd_gis_laterals", "GEOMETRY"),
     ("staging", "nd_gis_spacing_units", "MULTIPOLYGON"),
     ("canonical", "well_spatial", "GEOMETRY"),
     ("canonical", "spacing_units", "MULTIPOLYGON"),
-    ("marts", "nd_laterals_tile", "LINESTRING"),
+    ("marts", "nd_laterals_tile", "GEOMETRY"),
     ("marts", "nd_wells_tile", "POINT"),
 ]
 

@@ -9,22 +9,21 @@ from __future__ import annotations
 import argparse
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 import psycopg
 
 from glasswell.ingest.base import resolve_environment
-from glasswell.lineage.capture import derive, lineage_session
-from glasswell.lineage.conformance import load_rules
+from glasswell.lengths import LengthMethod, resolve_length_method
+from glasswell.lineage.audit import emit
+from glasswell.lineage.capture import current_session, derive, lineage_session
 from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.serialization import hash_payload
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts.tiles import TILE_LAYERS, install_tile_functions
 from glasswell.units import METRES_PER_FOOT
 
-COMPUTE_CRS_RULE = "cr_nd_compute_crs_1"
-COMPUTE_CRS_SOURCE = "nd_gis_horizontals_line"
 DATUM_RULE = "cr_nd_datum_1"
 
 _WELLS_AS_OF = """
@@ -45,8 +44,8 @@ select s.api10,
        w.operator_name_reported as operator_name,
        w.status_canonical,
        extract(year from w.spud_date)::int as spud_year,
-       ST_Length(ST_Transform(s.geom, %(compute_epsg)s))::numeric
-           / %(metres_per_foot)s as lateral_length_ft,
+       {length_metres}::numeric / %(metres_per_foot)s as lateral_length_ft_exact,
+       round({length_metres}::numeric / %(metres_per_foot)s, 2)::float8 as lateral_length_ft,
        s.geom
   from canonical.well_spatial s
   left join wells_as_of w on w.api10 = s.api10
@@ -100,6 +99,7 @@ _PROJECTIONS: tuple[_Projection, ...] = (
             "operator_name",
             "status_canonical",
             "spud_year",
+            "lateral_length_ft_exact",
             "lateral_length_ft",
             "geom",
         ),
@@ -129,15 +129,12 @@ class MartRefresh:
 
 def refresh_all(connection: psycopg.Connection, *, as_of: date | None = None) -> MartRefresh:
     """Rebuild every ND tile mart from canonical under one content-addressed derivation."""
-    compute_epsg = _compute_epsg(connection)
-    parameters: dict[str, object] = {
-        "as_of": as_of,
-        "compute_epsg": compute_epsg,
-        "metres_per_foot": METRES_PER_FOOT,
-    }
+    method = resolve_length_method(connection)
+    projections = _projections(method)
+    parameters: dict[str, object] = {"as_of": as_of, "metres_per_foot": METRES_PER_FOOT}
     with connection.cursor() as cursor:
         cursor.execute(_SPACING_UNITS_VIEW)
-    measured = {p.table: _measure(connection, p, parameters) for p in _PROJECTIONS}
+    measured = {p.table: _measure(connection, p, parameters) for p in projections}
 
     with derive(
         "mart.refresh",
@@ -146,21 +143,36 @@ def refresh_all(connection: psycopg.Connection, *, as_of: date | None = None) ->
         ),
         params={
             "as_of": as_of.isoformat() if as_of else None,
-            "compute_epsg": compute_epsg,
+            "length_method": method.method,
+            "compute_epsg": method.compute_epsg,
             "layers": [layer.name for layer in TILE_LAYERS],
         },
         inputs=_canonical_inputs(connection),
-        rules=[COMPUTE_CRS_RULE, DATUM_RULE],
+        rules=[method.rule_id, DATUM_RULE],
     ) as context:
         context.set_rows(sum(rows for rows, _ in measured.values()))
         context.set_output_hash(hash_payload({table: d for table, (_, d) in measured.items()}))
 
     # The id is content-addressed and only exists once the block closes, so the rows carrying it
     # are written after it — one transaction, the same shape as the ingest promotions.
-    for projection in _PROJECTIONS:
+    for projection in projections:
         _rewrite(connection, projection, {**parameters, "derivation_id": context.derivation_id})
     install_tile_functions(connection)
 
+    session = current_session()
+    emit(
+        connection,
+        "mart.refreshed",
+        subject_type="derivation",
+        subject_id=context.derivation_id,
+        payload={
+            "row_counts": {table: rows for table, (rows, _) in measured.items()},
+            "length_method": method.method,
+            "length_rule_id": method.rule_id,
+        },
+        correlation_id=session.correlation_id,
+        occurred_at=session.clock.now(),
+    )
     return MartRefresh(
         derivation_id=context.derivation_id,
         row_counts={table: rows for table, (rows, _) in measured.items()},
@@ -168,11 +180,15 @@ def refresh_all(connection: psycopg.Connection, *, as_of: date | None = None) ->
     )
 
 
-def _compute_epsg(connection: psycopg.Connection) -> int:
-    for rule in load_rules(connection, source_id=COMPUTE_CRS_SOURCE):
-        if rule.rule_id == COMPUTE_CRS_RULE:
-            return int(rule.spec["compute_epsg"])
-    raise LookupError(f"{COMPUTE_CRS_RULE} is not seeded, so the compute CRS is not knowable")
+def _projections(method: LengthMethod) -> tuple[_Projection, ...]:
+    """The length expression is the active rule's, resolved once per refresh."""
+    metres = method.metres_sql("s.geom")
+    return tuple(
+        replace(projection, select=projection.select.format(length_metres=metres))
+        if "{length_metres}" in projection.select
+        else projection
+        for projection in _PROJECTIONS
+    )
 
 
 def _measure(

@@ -22,7 +22,9 @@ from glasswell.api.pagination import (
     query_fingerprint,
 )
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, iso
+from glasswell.lengths import STORAGE_EPSG, resolve_length_method
 from glasswell.lineage.envelope import figure
+from glasswell.marts.tiles import TILE_BUFFER, TILE_EXTENT, TILE_MAX_ZOOM, WEB_MERCATOR
 from glasswell.units import metres_to_feet
 
 router = APIRouter(tags=["wells"])
@@ -54,22 +56,46 @@ select {_COLUMNS}
  where rn = 1
 """
 
-_SPATIAL = """
+# `tiled` asks the tile pipeline's own question of the deepest published zoom: a geometry that
+# ST_AsMVTGeom drops there is on no tile at any zoom, while the card still serves its length.
+_SPATIAL = f"""
 select geom_type, geom_key, derivation_id, source_datum, source_manifest_id,
-       st_length(st_transform(geom, %(epsg)s)) as length_m,
+       {{length_metres}} as length_m,
        case when st_geometrytype(geom) = 'ST_Point' then st_x(geom) end as lon,
-       case when st_geometrytype(geom) = 'ST_Point' then st_y(geom) end as lat
+       case when st_geometrytype(geom) = 'ST_Point' then st_y(geom) end as lat,
+       st_asmvtgeom(
+           st_transform(geom, {WEB_MERCATOR}),
+           st_tileenvelope(
+               {TILE_MAX_ZOOM},
+               floor((st_x(st_centroid(geom)) + 180) / 360 * (2 ^ {TILE_MAX_ZOOM}))::int,
+               floor((1 - asinh(tan(radians(st_y(st_centroid(geom)))))
+                        / pi()) / 2 * (2 ^ {TILE_MAX_ZOOM}))::int),
+           {TILE_EXTENT}, {TILE_BUFFER}, true) is not null as tiled
   from canonical.well_spatial
  where api10 = %(api10)s
  order by geom_type, geom_key
 """
 
-_CRS = """
-select compute_epsg, storage_epsg
+_STORAGE_CRS = """
+select storage_epsg
   from lineage.crs_registry
  where basin = %(basin)s
  order by effective_from desc
  limit 1
+"""
+
+# A3-F3: a well whose only horizontal trace was held back reads as a well with no lateral at
+# all unless the card says otherwise. Indexed on (source_id, row_payload->>'api10') in 016.
+_HELD_BACK_GEOMETRY = """
+select reason_code, rule_id, count(*) as rows,
+       string_agg(distinct row_payload ->> 'segment', ', ' order by row_payload ->> 'segment')
+           as segments
+  from lineage.quarantine_rows
+ where source_id = 'nd_gis_horizontals_line'
+   and row_payload ->> 'api10' = %(api10)s
+   and state = 'open'
+ group by reason_code, rule_id
+ order by reason_code
 """
 
 
@@ -114,8 +140,20 @@ class WellDetail(WellSummary):
         description="Total lateral length, projected into the basin compute CRS.",
         json_schema_extra={GLOSSARY_KEY: "gt_wellbore"},
     )
-    compute_crs: str | None = Field(description="CRS every projected length here was computed in.",
-                                    json_schema_extra={GLOSSARY_KEY: "gt_crs_compute_crs"})
+    compute_crs: str | None = Field(
+        description=(
+            "CRS the length computation is defined on. Zone-free while length_method is"
+            " geodesic, which is why it reads as the storage CRS."
+        ),
+        json_schema_extra={GLOSSARY_KEY: "gt_crs_compute_crs"},
+    )
+    length_method: str = Field(
+        description=(
+            "How lateral length was measured, from the active cr_nd_compute_crs rule:"
+            " geodesic on the WGS84 ellipsoid, or projected into a named CRS."
+        ),
+        json_schema_extra={GLOSSARY_KEY: "gt_crs_compute_crs"},
+    )
     storage_crs: str = Field(description="CRS geometry is stored in; always EPSG:4326.")
     geometry: list[Geometry] = Field(description="Geometry rows held for this well.")
     surface_point: SurfacePoint | None = Field(description="Surface hole location, if recorded.")
@@ -137,6 +175,25 @@ def _summary(row: dict[str, Any]) -> dict[str, Any]:
             "production": f"/v1/wells/{row['api10']}/production",
         },
     }
+
+
+def _held_back_geometry(connection, api10: str) -> list[dict[str, Any]]:
+    """Say what the horizontals layer held back for this well, and under which rule."""
+    warnings = []
+    for row in rows(connection, _HELD_BACK_GEOMETRY, {"api10": api10}):
+        segments = f" ({row['segments']})" if row["segments"] else ""
+        warnings.append(
+            {
+                "code": "geometry_not_promoted",
+                "detail": (
+                    f"{row['rows']} horizontal geometry rows for this well{segments} were not"
+                    f" promoted: {row['reason_code']} under {row['rule_id']}."
+                    " They are in /v1/quarantine with their payloads."
+                ),
+                "pointer": "/geometry",
+            }
+        )
+    return warnings
 
 
 def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
@@ -294,25 +351,31 @@ def get_well(
         raise ProblemError("not_found", detail=f"no well {api10} at this vintage")
     row = found[0]
 
-    crs = rows(connection, _CRS, {"basin": row["basin"] or "williston"})
-    compute_epsg = crs[0]["compute_epsg"] if crs else None
-    storage_epsg = crs[0]["storage_epsg"] if crs else 4326
+    crs = rows(connection, _STORAGE_CRS, {"basin": row["basin"] or "williston"})
+    storage_epsg = crs[0]["storage_epsg"] if crs else STORAGE_EPSG
+    method = resolve_length_method(connection)
     warnings: list[dict[str, Any]] = []
-    geometry = (
-        rows(connection, _SPATIAL, {"api10": api10, "epsg": compute_epsg})
-        if compute_epsg is not None
-        else []
+    geometry = rows(
+        connection,
+        _SPATIAL.format(length_metres=method.metres_sql()),
+        {"api10": api10},
     )
-    if compute_epsg is None:
+
+    warnings.extend(_held_back_geometry(connection, api10))
+    laterals = [item for item in geometry if item["geom_type"] == "lateral"]
+    untiled = [item["geom_key"] for item in laterals if not item["tiled"]]
+    if untiled:
         warnings.append(
             {
-                "code": "crs_unregistered",
-                "detail": "no compute CRS registered for this basin; length is not served",
-                "pointer": "/lateral_length_ft",
+                "code": "below_tile_resolution",
+                "detail": (
+                    f"{len(untiled)} lateral geometries are below the resolution of the"
+                    f" deepest published zoom (z{TILE_MAX_ZOOM}) and render on no tile;"
+                    " their length is still served here"
+                ),
+                "pointer": "/geometry",
             }
         )
-
-    laterals = [item for item in geometry if item["geom_type"] == "lateral"]
     length_figure = None
     if laterals:
         metres = sum(Decimal(str(item["length_m"])) for item in laterals)
@@ -343,7 +406,8 @@ def get_well(
         "basin": row["basin"],
         "lateral_count": len(laterals),
         "lateral_length_ft": length_figure,
-        "compute_crs": f"EPSG:{compute_epsg}" if compute_epsg else None,
+        "compute_crs": method.compute_crs,
+        "length_method": method.method,
         "storage_crs": f"EPSG:{storage_epsg}",
         "geometry": [
             {

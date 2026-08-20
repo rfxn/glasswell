@@ -13,6 +13,8 @@ GIS_WELLS_URL = "https://gis.dmr.nd.gov/downloads/oilgas/shapefile/OGD_Wells.zip
 GIS_LATERALS_URL = "https://gis.dmr.nd.gov/downloads/oilgas/shapefile/OGD_Horizontals_Line.zip"
 
 EFFECTIVE_FROM = date(2026, 1, 1)
+# A superseding row carries the date its evidence was established, never the seed epoch.
+SUPERSESSION_FROM = date(2026, 8, 20)
 
 ND_RULES: tuple[dict[str, object], ...] = (
     {
@@ -118,6 +120,35 @@ ND_RULES: tuple[dict[str, object], ...] = (
             "Negative volumes are physically impossible, so they are quarantined with a reason"
             " and never dropped. A zero quarantine rate is read as evidence that the checks are"
             " not running, which is the blueprint's own P1 exit criterion."
+        ),
+        "evidence_url": MPR_FILE_URL,
+    },
+    {
+        "rule_id": "cr_nd_confidential_1",
+        "effective_from": SUPERSESSION_FROM,
+        "source_id": "nd_mpr_xlsx",
+        "stage": "validate",
+        "rule_kind": "validity_filter",
+        "applies_to_fields": ["pool"],
+        "spec": {
+            "predicate_ast": {
+                "or": [
+                    {"is_null": {"col": "pool"}},
+                    {"not": {"cmp": [{"col": "pool"}, "==", {"lit": "CONFIDENTIAL"}]}},
+                ]
+            },
+            "on_fail": "quarantine",
+            "reason_code": "confidential_withheld",
+        },
+        "rule": "A month NDIC pools as CONFIDENTIAL is withheld, not missing and not invalid.",
+        "rationale": (
+            "ND publishes a confidential well's month with the literal string NULL in Oil, Wtr,"
+            " Gas and Days and Pool = CONFIDENTIAL. cr_nd_days_range_1 compiles to"
+            " between(days, 0, 31), which cannot judge a row that has no days, so the row fell"
+            " out under out_of_range_date - a code asserting that a value exists and is wrong,"
+            " for a value the regulator withheld (fp-audit D2 / A5-F7, 1,055 well-months)."
+            " This rule runs first, by rule_id order, and gives the withholding its own name."
+            " Confidential is a status, and withheld is a distinct state from missing (§3.0.3)."
         ),
         "evidence_url": MPR_FILE_URL,
     },
@@ -306,6 +337,68 @@ ND_RULES: tuple[dict[str, object], ...] = (
         "evidence_url": GIS_LATERALS_URL,
     },
     {
+        "rule_id": "cr_nd_compute_crs_2",
+        "supersedes_rule_id": "cr_nd_compute_crs_1",
+        "effective_from": SUPERSESSION_FROM,
+        "source_id": "nd_gis_horizontals_line",
+        "stage": "conform",
+        "rule_kind": "parse_directive",
+        "applies_to_fields": ["geom"],
+        "spec": {
+            "storage_epsg": 4326,
+            "length_method": "geodesic",
+            "ellipsoid": "WGS84",
+            "purpose": "length_computation",
+            "length_expression": "ST_Length(geom::geography)",
+            "forbidden_field": "SHAPE_Leng",
+        },
+        "rule": "Measure lateral length geodesically on the WGS84 ellipsoid; never project it"
+        " into a UTM zone and never read the shapefile's own length field.",
+        "rationale": (
+            "Supersedes cr_nd_compute_crs_1 on the evidence in fp-audit A3-F1: 22,661 of 23,228"
+            " ND laterals (97.6 percent) lie west of 102W, outside EPSG:32614's band, which"
+            " overstated the fleet by 144,378.78 ft (+0.0709 percent) and 3,030 laterals by more"
+            " than ten feet. The Williston basin spans UTM 13N and 14N, so a basin-keyed compute"
+            " CRS cannot be correct for both halves of it and the schema cannot express the right"
+            " answer. A geodesic length chooses no zone. Measured against an independent pyproj"
+            " Geod(ellps=WGS84) traverse over a 100-lateral sample spanning 104.01W to 100.97W,"
+            " ST_Length(geom::geography) agrees to 2.4e-8 m (8e-8 ft, 1.1e-7 percent), while the"
+            " superseded EPSG:32614 differs by up to 6.632 ft (0.145 percent) and the best"
+            " projected alternative - per-feature UTM zone chosen by centroid longitude - by up"
+            " to 1.460 ft (0.033 percent). SHAPE_Leng stays forbidden for the reason"
+            " cr_nd_compute_crs_1 gave: it is published in degrees."
+        ),
+        "evidence_url": GIS_LATERALS_URL,
+    },
+    {
+        "rule_id": "cr_nd_segment_vocab_1",
+        "effective_from": SUPERSESSION_FROM,
+        "source_id": "nd_gis_horizontals_line",
+        "stage": "conform",
+        "rule_kind": "vocab_map",
+        "applies_to_fields": ["segment"],
+        "spec": {
+            "mapping_table": "nd_segment_promoted_map",
+            "key_col": "segment",
+            "value_col": "geom_type",
+            "unmapped_action": "quarantine",
+            "reason_code": "segment_not_promoted",
+        },
+        "rule": "Promote the LAT centreline; hold the vertical hole and the sidetrack as a"
+        " disposition.",
+        "rationale": (
+            "OGD_Horizontals_Line ships three segment kinds in linekey: LAT (23,234 rows), VERT"
+            " (21,302) and STK (4,147). Only the lateral is a producing centreline, so promoting"
+            " a vertical segment as one would be wrong - but the other two are not unknown"
+            " vocabulary, which is what the loader's literal made the ledger say for 24,872 rows"
+            " whose own payload carried the segment the loader had parsed (fp-audit A5-F6). The"
+            " choice is a vocabulary, so it is a table, and the rows it holds back say what they"
+            " are. 68 wells have a sidetrack and no lateral; their card discloses the held-back"
+            " trace rather than reading as a well with no horizontal at all (fp-audit A3-F3)."
+        ),
+        "evidence_url": GIS_LATERALS_URL,
+    },
+    {
         "rule_id": "cr_nd_multilateral_1",
         "source_id": "nd_gis_horizontals_line",
         "stage": "validate",
@@ -331,11 +424,11 @@ ND_RULES: tuple[dict[str, object], ...] = (
 
 _INSERT = """
 insert into lineage.conformance_rules
-    (rule_id, rule_family, source_id, stage, applies_to_fields, rule_kind, spec, rule,
-     rationale, evidence_url, code_ref, effective_from)
-values (%(rule_id)s, %(rule_family)s, %(source_id)s, %(stage)s, %(applies_to_fields)s,
-        %(rule_kind)s, %(spec)s, %(rule)s, %(rationale)s, %(evidence_url)s, %(code_ref)s,
-        %(effective_from)s)
+    (rule_id, rule_family, supersedes_rule_id, source_id, stage, applies_to_fields, rule_kind,
+     spec, rule, rationale, evidence_url, code_ref, effective_from)
+values (%(rule_id)s, %(rule_family)s, %(supersedes_rule_id)s, %(source_id)s, %(stage)s,
+        %(applies_to_fields)s, %(rule_kind)s, %(spec)s, %(rule)s, %(rationale)s,
+        %(evidence_url)s, %(code_ref)s, %(effective_from)s)
 on conflict do nothing
 """
 
@@ -347,7 +440,8 @@ def _row(rule: dict[str, object]) -> dict[str, object]:
         "rule_family": rule_id.rsplit("_", 1)[0],
         "spec": Jsonb(rule["spec"]),
         "code_ref": rule.get("code_ref"),
-        "effective_from": EFFECTIVE_FROM,
+        "supersedes_rule_id": rule.get("supersedes_rule_id"),
+        "effective_from": rule.get("effective_from", EFFECTIVE_FROM),
     }
 
 

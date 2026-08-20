@@ -205,7 +205,7 @@ def test_datum_transform_can_project_for_a_compute_crs():
     assert 5_000_000 < frame["latitude"][0] < 5_500_000
 
     inverse = rule(
-        "cr_nd_compute_crs_2",
+        "cr_nd_inverse_projection_1",
         "datum_transform",
         {
             "source_epsg": 32614,

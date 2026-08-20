@@ -241,13 +241,14 @@ def seed_production(
     stream: str = "oil",
     source_id: str = "nd_mpr_xlsx",
     granularity: str = "well_observed",
+    null_semantics: str = "reported",
 ) -> None:
     with connection.cursor() as cursor:
         cursor.execute(
             "insert into canonical.production_monthly (api10, production_month, stream, source_id,"
             " report_vintage, volume, unit, days_produced, granularity, value_hash,"
-            " source_manifest_id, derivation_id)"
-            " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            " source_manifest_id, derivation_id, null_semantics)"
+            " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 api10,
                 production_month,
@@ -261,5 +262,6 @@ def seed_production(
                 hash_payload({"volume": volume, "unit": "bbl"}),
                 manifest_id,
                 derivation_id,
+                null_semantics,
             ),
         )

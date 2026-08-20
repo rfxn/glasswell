@@ -51,6 +51,9 @@ class RuleApplication:
     frame: pl.DataFrame
     applied_rule_ids: list[str]
     quarantined: list[QuarantineBatch]
+    # Rows each rule touched. A rule cited with a row count it never touched is an overclaim
+    # in the ledger the product sells as its evidence (fp-audit D4).
+    applied_rows: dict[str, int]
 
 
 Executor = Callable[[pl.DataFrame, ConformanceRule], tuple[pl.DataFrame, list[QuarantineBatch]]]
@@ -423,15 +426,36 @@ def executor_for(kind: str) -> Executor:
         ) from None
 
 
+def active_rules(rules: Sequence[ConformanceRule]) -> list[ConformanceRule]:
+    """R8 supersession: rows are immutable, so a successor row is what retires its ancestor."""
+    superseded = {rule.supersedes_rule_id for rule in rules if rule.supersedes_rule_id}
+    return [rule for rule in rules if rule.rule_id not in superseded]
+
+
+def rule_for_family(rules: Sequence[ConformanceRule], family: str) -> ConformanceRule:
+    """Pin a family, never a version: a supersession changes the id and must not be missed."""
+    for rule in rules:
+        if rule.rule_family == family:
+            return rule
+    raise LookupError(f"no active rule in family {family}")
+
+
 def apply_rules(frame: pl.DataFrame, rules: Sequence[ConformanceRule]) -> RuleApplication:
     """Execute loaded rules in registry order. Rejected rows leave the frame with a reason."""
     applied: list[str] = []
+    touched: dict[str, int] = {}
     quarantined: list[QuarantineBatch] = []
     for rule in rules:
+        handed = frame
         frame, batches = executor_for(rule.rule_kind)(frame, rule)
         applied.append(rule.rule_id)
+        # An executor that hands back the frame it was given and rejects nothing — a
+        # parse_directive validating a header — read no rows and stamps none.
+        touched[rule.rule_id] = 0 if frame is handed and not batches else handed.height
         quarantined.extend(batches)
-    return RuleApplication(frame=frame, applied_rule_ids=applied, quarantined=quarantined)
+    return RuleApplication(
+        frame=frame, applied_rule_ids=applied, quarantined=quarantined, applied_rows=touched
+    )
 
 
 _LOAD_RULES = """
@@ -463,7 +487,8 @@ def load_rules(
             {"source_id": source_id, "stage": stage, "as_of": as_of or date.today()},
         )
         rows = cursor.fetchall()
-    return [_hydrate(connection, ConformanceRule(**row)) for row in rows]
+    loaded = active_rules([ConformanceRule(**row) for row in rows])
+    return [_hydrate(connection, rule) for rule in loaded]
 
 
 def _hydrate(connection: psycopg.Connection, rule: ConformanceRule) -> ConformanceRule:
