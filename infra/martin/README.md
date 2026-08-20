@@ -42,39 +42,59 @@ Do not enable both. `config.yaml` publishes ids `nd_laterals`/`nd_wells`/`nd_spa
 as tables; the functions publish the same ids. Running with the config and an added
 `functions:` block would collide.
 
-### Adoption is blocked on the file, not on the deployer (DR-05)
+### Adoption: one missing role, not a broken file (DR-05)
 
-`config.yaml` was written against martin 0.x. **The installed binary is martin 1.14.0 and it
-publishes nothing from this file** — measured, not assumed, against VM 111's own database:
-
-```
-$ martin --config config.yaml --listen-addresses 127.0.0.1:3999
-ERROR martin: No tile sources found. Set sources by giving a database connection string
-              on command line, env variable, or a config file.
-```
-
-It fails before it connects, so it is the file martin rejects, not the database. Dropping
-the stray top-level `pool_size` does not change it. Point the same binary at a bare
-connection string and it resolves eleven sources happily, so the binary and the database are
-both fine.
-
-The reference for the shape martin 1.14 does accept is martin's own resolved config:
+`config.yaml` works. Run against VM 111's own database it publishes all three sources and
+nothing else:
 
 ```
-martin --save-config - "postgresql:///glasswell?host=/var/run/postgresql" 2>/dev/null
+$ martin --config config.yaml --listen-addresses 127.0.0.1:3999     # as OS user glasswell
+INFO Published source source.id=nd_laterals       source.kind="table"
+INFO Published source source.id=nd_spacing_units  source.kind="view"
+INFO Published source source.id=nd_wells          source.kind="table"
+$ curl -s 127.0.0.1:3999/catalog
+{"tiles":{"nd_laterals":{...},"nd_spacing_units":{...},"nd_wells":{...}}}
 ```
 
-which emits `postgres.tables.<id>` entries carrying `schema`, `table`, `srid`,
-`geometry_column`, `bounds`, `geometry_type` and `properties`, and — worth noting for
-DR-35 — resolves `marts.nd_spacing_units_tile` as `source.kind="view"` without complaint.
-A view under `tables:` is not the defect; PostGIS lists it in `geometry_columns` and martin
-discovers it there.
+The whole defect is the DSN. `postgresql:///glasswell?host=/var/run/postgresql` names no
+user, `pg_hba.conf` has `local all all peer`, and so the connection authenticates as the PG
+role named for the invoking OS user. `martin.service` runs `User=martin`:
 
-**Until the file is reconciled with the installed binary, do not point the unit at it.** The
-`/v1/tiles` proxy allowlist remains the control that holds "staging never serves", and
-`infra/verify.sh` asserts a staging layer is refused through the proxy. Adoption also needs
-one thing this file cannot carry: the running unit takes `DATABASE_URL` from
-`/etc/glasswell/db.env`, and a `connection_string` here would override it.
+```
+$ sudo -u martin martin --config config.yaml
+ERROR Failed to create postgres pool: FATAL: role "martin" does not exist
+```
+
+**Migration 020 creates it**, with the least a tile server can work with: `usage` on `marts`
+and `select` on **exactly the columns each layer publishes** — no `staging`, no `canonical`,
+no `lineage`, and not `marts.nd_laterals_tile.lateral_length_ft_exact`, which is `numeric`
+and would ride an auto-published tile as a 19-digit string. The spacing-unit view reads
+canonical with its owner's rights, so martin needs nothing there.
+
+That column list is the control, not the config: `auto_publish: true` could be set back on
+tomorrow and martin still could not read a staging table.
+
+### Adopting it (deployer, one time)
+
+`./install.sh --with-martin-config` places the file at `/etc/glasswell/martin.yaml` and a
+drop-in that adds `--config` to the pre-existing `martin.service` — a drop-in, because that
+unit belongs to the host and not to this directory. Then:
+
+```bash
+systemctl restart martin
+curl -s 127.0.0.1:3000/catalog | python3 -m json.tool   # expect exactly three ids
+./verify.sh                                             # the martin catalogue check goes ok
+```
+
+Migration 020 must be applied first, or martin cannot connect at all. Do not put a
+`connection_string` naming a different user into the unit's environment: `DATABASE_URL` in
+`/etc/glasswell/db.env` is the `glasswell` login, which can read everything, and the config's
+DSN exists precisely to avoid using it.
+
+The eleven-source catalogue is what auto-publish produces today — `nd_gis_laterals`,
+`nd_gis_spacing_units` and `nd_gis_wells` are `staging` relations published by the tile
+server. "Staging never serves" (blueprint §3.0.1) is held only by the `/v1/tiles` proxy
+allowlist until this is adopted, and by the grant afterwards.
 
 ## Operational notes
 

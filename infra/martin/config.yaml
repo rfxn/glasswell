@@ -1,10 +1,11 @@
-# Reference only — see README.md "Adoption is blocked on the file". martin 1.14.0, the
-# installed binary, resolves no source from this file; the ids and property types below are
-# still the contract the proxy allowlist and the test tier hold each other to.
+# The DSN deliberately names no user: pg_hba maps a socket connection to the role named for
+# the OS user, martin.service runs `User=martin`, and migration 020 creates that role with
+# select on exactly the columns declared below. Adopting this file turns auto_publish off,
+# which is what stops martin serving staging and canonical (README.md, DR-05).
 listen_addresses: "127.0.0.1:3000"
-pool_size: 10
 postgres:
   connection_string: "postgresql:///glasswell?host=/var/run/postgresql"
+  pool_size: 10
   auto_publish: false
   tables:
     nd_laterals:

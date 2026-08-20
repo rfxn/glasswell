@@ -1,10 +1,15 @@
-"""N-2 as a class: every tile declaration is audited against the relation it reads.
+"""N-2 as a class: every column martin can serve is audited, not every column we declared.
 
 Migration 015 fixed one column. The defect it fixed is structural — `ST_AsMVT` has no
 `numeric` encoding, so a numeric column arrives as a protobuf *string* and a MapLibre
-expression then compares `'9000' > '22727'` — and the same declaration set carries a
-geometry type, a srid and a column list that can drift from the database the same way.
-This file audits all of it, for every layer, so the next drift fails here first.
+expression then compares `'9000' > '22727'`.
+
+The first version of this file parametrised over `TILE_LAYERS` and therefore audited the
+declarations rather than the database. It missed `lateral_length_ft_exact`, a `numeric`
+column of a relation martin auto-publishes, which rode the live wire as
+`('string', '255.9982469701856955')` across 8,611 features (Gate-O MAJOR-1). Columns are
+now enumerated from the catalog, and an unencodable one is only allowed to exist if the
+`martin` role cannot read it — a privilege, not a declaration, is what keeps it off the wire.
 """
 
 from __future__ import annotations
@@ -38,6 +43,18 @@ LAYER_PROPERTIES = [
     for layer in TILE_LAYERS
     for column, declared in layer.properties
 ]
+
+# The role martin.service authenticates as. Everything outside `marts` is off-limits to it, and
+# `staging` is the one blueprint §3.0.1 names.
+MARTIN_ROLE = "martin"
+OFF_LIMITS_RELATIONS = (
+    "staging.nd_gis_wells",
+    "staging.nd_gis_laterals",
+    "staging.nd_gis_spacing_units",
+    "canonical.well_spatial",
+    "canonical.spacing_units",
+    "lineage.derivations",
+)
 
 
 def _packed_varints(data: bytes) -> list[int]:
@@ -86,6 +103,21 @@ def column_types(connection: psycopg.Connection, relation: str) -> dict[str, str
     }
 
 
+def martin_readable_columns(connection: psycopg.Connection, relation: str) -> set[str]:
+    """Every column the tile server's own role may select — the grant, read back."""
+    return {
+        name
+        for (name,) in rows(
+            connection,
+            "select a.attname"
+            "  from pg_attribute a"
+            " where a.attrelid = %s::regclass and a.attnum > 0 and not a.attisdropped"
+            "   and has_column_privilege(%s, a.attrelid, a.attname, 'select')",
+            (relation, MARTIN_ROLE),
+        )
+    }
+
+
 def tile_of_layer(connection: psycopg.Connection, layer) -> bytes:
     zoom, x, y = covering_tile(extent_of(connection, layer.source))
     tile = scalar(connection, f"select marts.{layer.name}(%s, %s, %s, null)", (zoom, x, y))
@@ -120,6 +152,47 @@ def test_no_published_property_is_a_type_the_wire_cannot_encode(
     """The class statement. A5/A3-F4 was one instance of it; this is the rule."""
     assert declared not in UNENCODABLE_TYPES
     assert column_types(canonical_nd, layer.source)[column] not in UNENCODABLE_TYPES
+
+
+@pytest.mark.parametrize("layer", TILE_LAYERS, ids=lambda layer: layer.name)
+def test_every_column_of_a_served_relation_is_encodable_or_unreadable_by_martin(
+    canonical_nd, refreshed, layer  # noqa: F811
+):
+    """The class, widened past the declarations.
+
+    A relation martin can publish carries columns no declaration mentions, and auto-publish
+    serves all of them. So the audit is over the catalog, and the escape hatch is a privilege:
+    an unencodable column may exist only where the tile server cannot read it.
+    """
+    readable = martin_readable_columns(canonical_nd, layer.source)
+    offenders = {
+        column: type_name
+        for column, type_name in column_types(canonical_nd, layer.source).items()
+        if type_name in UNENCODABLE_TYPES and column in readable
+    }
+    assert not offenders, (
+        f"{layer.source} lets the martin role read {sorted(offenders)} —"
+        f" ST_AsMVT would put {sorted(offenders.values())} on the wire as a string"
+    )
+
+
+@pytest.mark.parametrize("layer", TILE_LAYERS, ids=lambda layer: layer.name)
+def test_martin_reads_the_published_columns_and_no_others(
+    canonical_nd, refreshed, layer  # noqa: F811
+):
+    """Auto-publish serves whatever the role can select, so the grant is the real allowlist."""
+    expected = {*layer.columns, "geom"}
+    assert martin_readable_columns(canonical_nd, layer.source) == expected
+
+
+@pytest.mark.parametrize("relation", OFF_LIMITS_RELATIONS)
+def test_the_martin_role_cannot_read_outside_marts(canonical_nd, refreshed, relation):  # noqa: F811
+    """Blueprint §3.0.1 held by a privilege, so `auto_publish: true` could not undo it."""
+    with canonical_nd.cursor() as cursor:
+        cursor.execute("set local role martin")
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            cursor.execute(f"select 1 from {relation} limit 1")
+    canonical_nd.rollback()
 
 
 @pytest.mark.parametrize("layer", TILE_LAYERS, ids=lambda layer: layer.name)
@@ -178,3 +251,17 @@ def test_the_martin_config_and_the_allowlist_declare_the_same_property_types():
         assert declared["properties"] == dict(layer.properties)
         assert declared["geometry_type"] == layer.geometry_type
         assert f"{declared['schema']}.{declared['table']}" == layer.source
+
+
+def test_the_martin_config_can_publish_nothing_outside_marts():
+    """DR-05's point: `auto_publish` off with explicit sources is what stops martin serving
+    `staging.*`. Today it publishes eleven sources, three of them staging relations, and the
+    proxy allowlist is the only control holding blueprint §3.0.1."""
+    config = yaml.safe_load(MARTIN_CONFIG.read_text())["postgres"]
+
+    assert config["auto_publish"] is False, "auto_publish would discover staging and canonical"
+    assert "functions" not in config, "two publication mechanisms, one set of ids, is a collision"
+    for name, source in config["tables"].items():
+        assert source["schema"] == "marts", f"{name} publishes out of {source['schema']}"
+        # An undeclared property is a column martin serves that nobody chose to serve.
+        assert source.get("properties"), f"{name} declares no properties"

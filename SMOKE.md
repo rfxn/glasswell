@@ -220,13 +220,14 @@ curl -sS "$B/openapi.json" | python3 -c 'import json,sys; print(len(json.load(sy
    of writing canonical rows. Real separation needs two login identities. Do not
    claim write-separation until it is split.
 3. **martin auto-publishes `staging` and `canonical`**, so its catalogue on
-   `127.0.0.1:3000` still lists eleven sources, eight of which are not published layers.
-   The `/v1/tiles` proxy refuses everything outside `nd_laterals`, `nd_wells` and
-   `nd_spacing_units` with a `404`, so "staging never serves" is a control on the one path
-   a caller can reach, and `verify.sh` asserts it. Making martin's own source list equal
-   that allowlist needs `infra/martin/config.yaml` adopted, and **that file does not work
-   with the installed martin**: 1.14.0 resolves no source from it at all. See
-   `infra/martin/README.md`; the file is reference-only until it is reconciled.
+   `127.0.0.1:3000` still lists eleven sources, eight of which are not published layers —
+   three of them `staging` relations. The `/v1/tiles` proxy refuses everything outside
+   `nd_laterals`, `nd_wells` and `nd_spacing_units` with a `404`, so "staging never serves"
+   is a control on the one path a caller can reach, and `verify.sh` asserts it. It is one
+   control, not two. `infra/martin/config.yaml` closes it at the source and it works: what
+   was missing is the PG role `martin` its DSN peer-authenticates as. Migration 020 creates
+   that role with select on the published columns and nothing else, and
+   `install.sh --with-martin-config` places the file and the unit drop-in.
 4. **~~One `marts` grant is hand-applied~~ — closed.** `create on schema marts` is held
    by a migration now (DR-21), so a database built from migrations alone survives its
    first `refresh_all`. The deployed host already had the privilege; the migration is what
@@ -281,10 +282,10 @@ six-figure axis labels. Each has a regression test.
 1. **Cloudflare Tunnel + Access + a real certificate.** Needs your dashboard. This
    retires gap 1 and is the only thing standing between this and being reachable
    from outside the LAN.
-2. **Split the login roles** to restore pipeline/API write separation (gap 2).
-   Adopting `infra/martin/config.yaml` is *not* next to it any more: the file does not
-   work with martin 1.14.0 and must be reconciled with the installed binary first
-   (gap 3). Never run both publishing mechanisms at once.
+2. **Split the login roles** to restore pipeline/API write separation (gap 2), and
+   **adopt `infra/martin/config.yaml`** so martin's own source list equals the proxy
+   allowlist (gap 3): migration 020, then `./install.sh --with-martin-config`, then
+   `systemctl restart martin`. Never run both publishing mechanisms at once.
 3. ~~**Fold the hand-applied `marts` grant into a migration**~~ (gap 4) — done.
 4. **Full production back-load** beyond six months, then re-check the quarantine
    shares.

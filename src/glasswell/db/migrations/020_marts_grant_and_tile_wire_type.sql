@@ -1,4 +1,4 @@
--- Two pieces of database state that only ever existed by hand.
+-- Three pieces of database state that only ever existed by hand, or not at all.
 --
 -- The grant (DR-21). `marts.refresh_all` issues `create or replace function` and `create or
 -- replace view` in schema `marts`, which needs `create` there; migration 009 grants `usage`
@@ -31,3 +31,35 @@ grant select on marts.nd_spacing_units_tile to glasswell_api;
 comment on column canonical.spacing_units.ds_size_acres is
     'Double precision, not numeric: this column is published as a tile attribute and
      ST_AsMVT has no numeric encoding (N-2, the class migration 015 opened).';
+
+-- The tile server's own role (DR-05). `pg_hba` maps a socket connection to the role named for
+-- the OS user (`local all all peer`), `martin.service` runs `User=martin`, and no role `martin`
+-- existed — which is the whole of why infra/martin/config.yaml had never been adopted. The
+-- name is not a choice: peer auth requires it to equal the OS user.
+--
+-- It gets the least a tile server can work with, and the column list is the point. martin is
+-- given select on exactly the columns each layer publishes, so the privilege — not a
+-- declaration in a config file — is what keeps everything else off the wire: `staging` (R:
+-- staging never serves, blueprint 3.0.1), `canonical`, `lineage`, and
+-- `lateral_length_ft_exact`, which is `numeric` and would ride an auto-published tile as a
+-- 19-digit string. The spacing-unit view reads canonical with its owner's rights, so martin
+-- needs no grant there at all.
+do $$
+begin
+    if not exists (select 1 from pg_roles where rolname = 'martin') then
+        create role martin login;
+    end if;
+end
+$$;
+
+grant usage on schema marts to martin;
+
+grant select (api10, linekey, operator_name, status_canonical, spud_year, lateral_length_ft,
+              derivation_id, geom)
+    on marts.nd_laterals_tile to martin;
+
+grant select (api10, operator_name, status_canonical, spud_year, derivation_id, geom)
+    on marts.nd_wells_tile to martin;
+
+grant select (spacing_unit_id, label, formation_reported, ds_size_acres, derivation_id, geom)
+    on marts.nd_spacing_units_tile to martin;

@@ -24,7 +24,7 @@ restricted `authorized_keys` `from=` clause and every probe in this repo use `.1
 | `glasswell-ingest.service` + `.timer` | `glasswell` | Monthly ND pull: GIS layers, one production month, tile marts. Installed **disabled**; `install.sh --enable-ingest` arms it |
 | `glasswell-alert@.service` | `glasswell` | `OnFailure=` target: logs to the journal and appends to `/var/lib/glasswell/health-events` |
 | `glasswell-backup.service` + `.timer` | `root` | Nightly `pg_dump` plus an rsync of the raw zone to forge, via `/usr/local/sbin/glasswell-backup.sh`. Installed **disabled**; `install.sh --enable-backup` arms it. **VM 111 has it enabled already** — the units here were adopted from that host byte-for-byte |
-| `martin.service` | `martin` | **Pre-existing, not owned by this directory.** Runs with `auto_publish` on, so its catalogue is every relation with a geometry column — `staging` and `canonical` included — on `127.0.0.1:3000`. The `/v1/tiles` proxy's allowlist, not martin, is what keeps staging off the wire |
+| `martin.service` | `martin` | **Pre-existing, not owned by this directory** — configured through a drop-in. Runs with `auto_publish` on until runbook step 9, so its catalogue is every relation with a geometry column, `staging` and `canonical` included, on `127.0.0.1:3000`. Adopting `martin/config.yaml` cuts it to the three published layers; migration 020's `martin` role is what makes the rest unreadable to it either way |
 | `postgresql@16-main` | `postgres` | Distro unit. `listen_addresses = 'localhost'`, socket peer auth |
 
 `backup/glasswell-backup.sh` and `backup/glasswell-restore-drill.sh` are placed in
@@ -47,9 +47,11 @@ and becomes a real exposure the moment the bind address changes. Removing it fro
 VM is a deployer step (see "Deploy runbook"). A second unit cannot bind `:3000`. martin reads
 its source catalogue at startup, so a **restart** is required after `marts.refresh_all` first
 creates the `marts.nd_*(z, x, y, query)` functions — that is a catalogue refresh, not a
-reconfiguration. `infra/martin/config.yaml` is the documented morning target and must not be
-enabled while auto-publish is on: it publishes the same ids as table sources and would
-collide.
+reconfiguration. `infra/martin/config.yaml` is the documented target and adopting it is runbook step 9:
+it turns auto-publish off, which is what stops the tile server publishing `staging` and
+`canonical` relations. It needs the PG role `martin` that migration 020 creates — its DSN
+peer-authenticates as the unit's OS user — and it must not be enabled alongside the
+function sources, which publish the same ids.
 
 **`/data`, not `/srv/glasswell`.** The 1 TB volume is mounted at `/data`; `/srv/glasswell` is
 an empty directory on the 145 GB root disk. Every path in these units follows the mount that
@@ -132,8 +134,19 @@ cd /opt/glasswell/src && rm -rf CLAUDE.md PLAN.md AUDIT.md MEMORY.md docs work-o
 ./verify.sh                         # the "deploy hygiene" and "zones" checks must now be ok
 ```
 
-Steps 7 and 8 are what the two `zones`/`deploy hygiene` failures in `verify.sh` are pointing
-at. Everything else in the file passes today.
+```bash
+# 9. ONE-TIME — adopt the martin config so the tile server stops publishing staging (DR-05).
+#    Migration 020 first: the config's DSN peer-auths as the OS user martin, and that role
+#    does not exist until the migration creates it.
+./install.sh --with-martin-config
+systemctl restart martin
+curl -s 127.0.0.1:3000/catalog | python3 -m json.tool   # expect exactly three ids
+./verify.sh                                             # the martin catalogue check goes ok
+```
+
+Steps 7, 8 and 9 are what the three `zones` / `deploy hygiene` / `martin publishes the
+allowlist and nothing else` failures in `verify.sh` are pointing at. Everything else in the
+file passes today.
 
 `verify.sh` derives its tuning expectations from the shipped drop-in, so the check cannot
 drift from the file. Step 6 has no counterpart in `verify.sh`: `ufw status` needs root and

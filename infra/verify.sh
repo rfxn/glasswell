@@ -101,6 +101,14 @@ for layer in nd_laterals nd_wells nd_spacing_units; do
         grep -q "\"$layer\"" <<<"$catalog"
 done
 
+# DR-05: with the config adopted the catalogue is exactly the allowlist. Until then martin
+# auto-publishes eleven sources, three of them staging relations, and this reads FAIL — the
+# same honest signal the tuning block gave before deployer step 5.
+published="$(python3 -c 'import json,sys; print(" ".join(sorted(json.load(sys.stdin)["tiles"])))' \
+    <<<"$catalog" 2>/dev/null)"  # a martin that answered nothing parses to nothing, and the assert below says so
+assert "martin publishes the allowlist and nothing else" \
+    "nd_laterals nd_spacing_units nd_wells" "$published"
+
 # The tile is derived from a real feature, never hard-coded: a bounding-box corner tile can
 # legitimately be empty, and martin answers 204 for that (PLAN.md B9 / P5's correction).
 read -r zoom tile_x tile_y < <("${PSQL[@]}" "
