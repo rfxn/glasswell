@@ -2,7 +2,15 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import "./gw-figure.ts";
-import { formatFigure, formatValue, nullSemantics, pointMark } from "./format.ts";
+import {
+  NULL_SEMANTICS_STATES,
+  formatFigure,
+  formatMonth,
+  formatValue,
+  formatVolume,
+  nullSemantics,
+  pointMark,
+} from "./format.ts";
 
 beforeEach(() => {
   document.body.innerHTML = "";
@@ -99,6 +107,23 @@ describe("<gw-figure>", () => {
     expect(() => document.body.appendChild(figure)).toThrow(/handle/i);
   });
 
+  it("can carry a label for assistive tech without printing it twice", () => {
+    // Inside a <dt>/<dd> pair the label is already the <dt>: the card read
+    // "Lateral length | lateral length 15,073.98 ft".
+    const figure = document.createElement("gw-figure");
+    figure.setAttribute("value", "12");
+    figure.setAttribute("unit", "bbl");
+    figure.setAttribute("handle", "drv_x");
+    figure.setAttribute("label", "lateral length");
+    figure.setAttribute("label-hidden", "");
+    document.body.appendChild(figure);
+
+    expect(figure.querySelector(".gw-figure-label")).toBeNull();
+    expect(figure.querySelector("button")?.getAttribute("aria-label")).toBe(
+      "Lineage for lateral length",
+    );
+  });
+
   it("labels the value for the glossary path", () => {
     const figure = document.createElement("gw-figure");
     figure.setAttribute("value", "12");
@@ -107,5 +132,56 @@ describe("<gw-figure>", () => {
     figure.setAttribute("label", "oil");
     document.body.appendChild(figure);
     expect(figure.querySelector(".gw-figure-label")?.textContent).toBe("oil");
+  });
+});
+
+describe("formatMonth", () => {
+  it("renders a production month the way a reader reads it, not the way the wire sends it", () => {
+    expect(formatMonth("2025-10")).toBe("Oct 2025");
+    expect(formatMonth("2026-01")).toBe("Jan 2026");
+  });
+
+  it("passes anything that is not a month through untouched", () => {
+    expect(formatMonth("latest")).toBe("latest");
+    expect(formatMonth("2025-13")).toBe("2025-13");
+  });
+});
+
+describe("formatVolume", () => {
+  it("rounds a monthly volume to whole units — three decimals on a month is noise", () => {
+    expect(formatVolume("70965.000")).toBe("70,965");
+    expect(formatVolume("70965.500")).toBe("70,966");
+    expect(formatVolume("70965.499")).toBe("70,965");
+  });
+
+  it("keeps a zero a zero, because reported_zero is a fact, not a gap", () => {
+    expect(formatVolume("0.000")).toBe("0");
+  });
+
+  it("does not go through a float, so a long decimal cannot drift", () => {
+    expect(formatVolume("123456789012345678901.4")).toBe("123,456,789,012,345,678,901");
+  });
+
+  it("passes a non-numeric string through", () => {
+    expect(formatVolume("n/a")).toBe("n/a");
+  });
+});
+
+describe("the null-semantics key", () => {
+  it("names the four states the API can emit, in the order the strip renders them", () => {
+    expect([...NULL_SEMANTICS_STATES]).toEqual([
+      "reported",
+      "reported_zero",
+      "withheld",
+      "no_report",
+    ]);
+  });
+
+  it("gives each state its own swatch and its own words, so 18 squares can be decoded", () => {
+    const marks = NULL_SEMANTICS_STATES.map((state) => nullSemantics(state));
+
+    expect(new Set(marks.map((mark) => mark.className)).size).toBe(4);
+    expect(marks.every((mark) => mark.label.length > 0 && mark.title.length > 0)).toBe(true);
+    expect(marks.every((mark) => mark.className !== "gw-state-unknown")).toBe(true);
   });
 });

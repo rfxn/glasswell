@@ -1,0 +1,62 @@
+import { describe, expect, it } from "vitest";
+
+import { chartOptions } from "./options.ts";
+import { toChartSeries } from "./series.ts";
+import type { ProductionData } from "./series.ts";
+
+const production: ProductionData = {
+  api10: "3305301234",
+  source_id: "nd_dmr_mpr",
+  granularity: "well_observed",
+  streams: ["oil", "gas"],
+  series: {
+    pm: ["2025-10", "2025-11"],
+    oil_bbl: ["70965.000", "73959.000"],
+    oil_bbl_null_semantics: ["reported", "reported"],
+    gas_mcf: ["76126.000", "85063.000"],
+    gas_mcf_null_semantics: ["reported", "reported"],
+  },
+  _lineage: {},
+  _units: { "series.oil_bbl": "bbl", "series.gas_mcf": "mcf" },
+  _basis: {},
+};
+
+const chart = toChartSeries(production);
+const options = chartOptions(chart, 640);
+
+describe("the uPlot options", () => {
+  it("never spans a gap: an unreported month must not be drawn through", () => {
+    // Interpolating across downtime invents production that did not happen.
+    for (const series of options.series.slice(1)) {
+      expect((series as { spanGaps?: boolean }).spanGaps).toBe(false);
+    }
+  });
+
+  it("gives every scale its own axis, left then right", () => {
+    expect(options.axes?.[1]).toMatchObject({ scale: "bbl", side: 3 });
+    expect(options.axes?.[2]).toMatchObject({ scale: "mcf", side: 1 });
+  });
+
+  it("renders six-figure tick labels with thousands separators", () => {
+    const axis = options.axes?.[1] as { values?: unknown };
+    const values = axis.values as (u: unknown, splits: number[]) => string[];
+
+    expect(values(null, [0, 70965, 150000])).toEqual(["0", "70,965", "150,000"]);
+  });
+
+  it("renders month ticks as months, not as raw timestamps", () => {
+    const axis = options.axes?.[0] as { values?: unknown };
+    const values = axis.values as (u: unknown, splits: number[]) => string[];
+
+    expect(values(null, [Date.UTC(2025, 9, 1) / 1000])).toEqual(["Oct 2025"]);
+  });
+
+  it("keeps the stream colours and the redundant dash encoding", () => {
+    expect(options.series[1]).toMatchObject({ stroke: "#3FA55E", dash: [] });
+    expect(options.series[2]).toMatchObject({ stroke: "#D9534F", dash: [6, 3] });
+  });
+
+  it("takes the width it is given, so a re-measure can rebuild at a new size", () => {
+    expect(chartOptions(chart, 420).width).toBe(420);
+  });
+});

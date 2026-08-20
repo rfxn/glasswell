@@ -73,6 +73,27 @@ describe("toChartSeries", () => {
     expect(chart.columns[0]?.values).toEqual([1000, 0, null]);
   });
 
+  it("refuses to plot a withheld month, even when the wire carries a number for it", () => {
+    // A withheld volume is not a measurement. Drawing the stored 0 would put a dip in the
+    // curve that the regulator never reported, and the state strip already tells the truth.
+    const withheld = toChartSeries({
+      ...production,
+      series: { ...production.series, gas_mcf: ["2500.000", "0.000", "2400.000"] },
+    });
+
+    expect(withheld.columns[1]?.values).toEqual([2500, null, 2400]);
+    expect(withheld.columns[1]?.raw[1]).toBe("0.000");
+  });
+
+  it("refuses to plot a month with no report, even when the wire carries a number", () => {
+    const absent = toChartSeries({
+      ...production,
+      series: { ...production.series, oil_bbl: ["1000.000", "0.000", "0.000"] },
+    });
+
+    expect(absent.columns[0]?.values).toEqual([1000, 0, null]);
+  });
+
   it("keeps the raw decimal strings alongside the plotted floats", () => {
     expect(chart.columns[0]?.raw).toEqual(["1000.000", "0.000", null]);
   });
