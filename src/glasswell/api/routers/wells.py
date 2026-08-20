@@ -24,6 +24,7 @@ from glasswell.api.pagination import (
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, iso
 from glasswell.lengths import STORAGE_EPSG, resolve_length_method
 from glasswell.lineage.envelope import figure
+from glasswell.marts.tiles import TILE_BUFFER, TILE_EXTENT, TILE_MAX_ZOOM, WEB_MERCATOR
 from glasswell.units import metres_to_feet
 
 router = APIRouter(tags=["wells"])
@@ -55,11 +56,21 @@ select {_COLUMNS}
  where rn = 1
 """
 
-_SPATIAL = """
+# `tiled` asks the tile pipeline's own question of the deepest published zoom: a geometry that
+# ST_AsMVTGeom drops there is on no tile at any zoom, while the card still serves its length.
+_SPATIAL = f"""
 select geom_type, geom_key, derivation_id, source_datum, source_manifest_id,
-       {length_metres} as length_m,
+       {{length_metres}} as length_m,
        case when st_geometrytype(geom) = 'ST_Point' then st_x(geom) end as lon,
-       case when st_geometrytype(geom) = 'ST_Point' then st_y(geom) end as lat
+       case when st_geometrytype(geom) = 'ST_Point' then st_y(geom) end as lat,
+       st_asmvtgeom(
+           st_transform(geom, {WEB_MERCATOR}),
+           st_tileenvelope(
+               {TILE_MAX_ZOOM},
+               floor((st_x(st_centroid(geom)) + 180) / 360 * (2 ^ {TILE_MAX_ZOOM}))::int,
+               floor((1 - asinh(tan(radians(st_y(st_centroid(geom)))))
+                        / pi()) / 2 * (2 ^ {TILE_MAX_ZOOM}))::int),
+           {TILE_EXTENT}, {TILE_BUFFER}, true) is not null as tiled
   from canonical.well_spatial
  where api10 = %(api10)s
  order by geom_type, geom_key
@@ -318,6 +329,19 @@ def get_well(
     )
 
     laterals = [item for item in geometry if item["geom_type"] == "lateral"]
+    untiled = [item["geom_key"] for item in laterals if not item["tiled"]]
+    if untiled:
+        warnings.append(
+            {
+                "code": "below_tile_resolution",
+                "detail": (
+                    f"{len(untiled)} lateral geometries are below the resolution of the"
+                    f" deepest published zoom (z{TILE_MAX_ZOOM}) and render on no tile;"
+                    " their length is still served here"
+                ),
+                "pointer": "/geometry",
+            }
+        )
     length_figure = None
     if laterals:
         metres = sum(Decimal(str(item["length_m"])) for item in laterals)

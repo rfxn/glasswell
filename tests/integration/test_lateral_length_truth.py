@@ -66,7 +66,7 @@ def test_the_active_rule_is_what_the_mart_measured_with(laterals_loaded):
 def test_the_mart_length_is_the_geodesic_length_not_a_projected_one(laterals_loaded):
     measured = rows(
         laterals_loaded,
-        "select t.lateral_length_ft,"
+        "select t.lateral_length_ft_exact,"
         "       ST_Length(s.geom::geography) / %s,"
         f"       ST_Length(ST_Transform(s.geom, {SUPERSEDED_EPSG})) / %s"
         "  from marts.nd_laterals_tile t"
@@ -84,7 +84,7 @@ def test_the_mart_length_is_the_geodesic_length_not_a_projected_one(laterals_loa
 def test_an_independent_geodesic_agrees_within_the_bound_the_rule_states(laterals_loaded):
     measured = rows(
         laterals_loaded,
-        "select t.lateral_length_ft, ST_AsGeoJSON(s.geom, 15)"
+        "select t.lateral_length_ft_exact, ST_AsGeoJSON(s.geom, 15)"
         "  from marts.nd_laterals_tile t"
         "  join canonical.well_spatial s"
         "    on s.api10 = t.api10 and s.geom_key = t.linekey and s.geom_type = 'lateral'",
@@ -120,7 +120,7 @@ def test_the_card_and_the_tile_still_agree_after_the_supersession(laterals_loade
     """M-2 holds under the new method: one conversion, one quantize, two paths."""
     multilateral = rows(
         laterals_loaded,
-        "select api10, sum(lateral_length_ft) from marts.nd_laterals_tile"
+        "select api10, sum(lateral_length_ft_exact) from marts.nd_laterals_tile"
         " group by api10 having count(*) > 1 order by api10",
     )
     assert multilateral

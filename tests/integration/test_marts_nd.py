@@ -162,7 +162,7 @@ def test_lateral_length_is_the_measured_length_in_feet(canonical_nd, refreshed):
     to fail this at abs=0.01, so the comparison is exact against glasswell.units."""
     measured = rows(
         canonical_nd,
-        "select t.lateral_length_ft, ST_Length(s.geom::geography)"
+        "select t.lateral_length_ft_exact, ST_Length(s.geom::geography)"
         "  from marts.nd_laterals_tile t"
         "  join canonical.well_spatial s"
         "    on s.api10 = t.api10 and s.geom_key = t.linekey and s.geom_type = 'lateral'",
@@ -182,7 +182,7 @@ def test_the_card_figure_equals_the_length_the_tile_carries(canonical_nd, refres
     """
     multilateral = rows(
         canonical_nd,
-        "select api10, sum(lateral_length_ft) from marts.nd_laterals_tile"
+        "select api10, sum(lateral_length_ft_exact) from marts.nd_laterals_tile"
         " group by api10 having count(*) > 1 order by api10",
     )
     assert multilateral, "the GIS fixture holds no multi-lateral well, so M-2 cannot regress here"
@@ -197,7 +197,7 @@ def test_the_tile_mart_stores_the_length_unrounded(canonical_nd, refreshed):
     """A mart that rounds per lateral cannot be summed back to the served figure."""
     stored = [
         row[0]
-        for row in rows(canonical_nd, "select lateral_length_ft from marts.nd_laterals_tile")
+        for row in rows(canonical_nd, "select lateral_length_ft_exact from marts.nd_laterals_tile")
     ]
 
     assert stored

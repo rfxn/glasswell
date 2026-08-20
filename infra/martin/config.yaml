@@ -16,7 +16,7 @@ postgres:
         operator_name: text
         status_canonical: text
         spud_year: int4
-        lateral_length_ft: numeric
+        lateral_length_ft: float8
         derivation_id: text
     nd_wells:
       schema: marts

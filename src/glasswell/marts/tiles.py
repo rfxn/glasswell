@@ -13,6 +13,9 @@ import psycopg
 TILE_EXTENT = 4096
 TILE_BUFFER = 64
 WEB_MERCATOR = 3857
+# The deepest zoom the map source publishes (web/src/map/map.ts). Below the resolution it
+# implies, ST_AsMVTGeom returns NULL and the feature is on no tile at any zoom (A3-F5).
+TILE_MAX_ZOOM = 14
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,7 +41,7 @@ TILE_LAYERS: tuple[TileLayer, ...] = (
             ("operator_name", "text"),
             ("status_canonical", "text"),
             ("spud_year", "int4"),
-            ("lateral_length_ft", "numeric"),
+            ("lateral_length_ft", "float8"),
             ("derivation_id", "text"),
         ),
     ),

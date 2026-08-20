@@ -44,7 +44,8 @@ select s.api10,
        w.operator_name_reported as operator_name,
        w.status_canonical,
        extract(year from w.spud_date)::int as spud_year,
-       {length_metres}::numeric / %(metres_per_foot)s as lateral_length_ft,
+       {length_metres}::numeric / %(metres_per_foot)s as lateral_length_ft_exact,
+       round({length_metres}::numeric / %(metres_per_foot)s, 2)::float8 as lateral_length_ft,
        s.geom
   from canonical.well_spatial s
   left join wells_as_of w on w.api10 = s.api10
@@ -98,6 +99,7 @@ _PROJECTIONS: tuple[_Projection, ...] = (
             "operator_name",
             "status_canonical",
             "spud_year",
+            "lateral_length_ft_exact",
             "lateral_length_ft",
             "geom",
         ),
