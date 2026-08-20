@@ -1,0 +1,158 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 566" width="1080" height="566" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" role="img" aria-label="glasswell build phases P0 through P7 with exit criteria, cut order and never-cut items">
+  <rect x="1" y="1" width="1078" height="564" rx="14" fill="#FFFFFF" stroke="#D8E1E8" stroke-width="1"/>
+
+  <text x="32" y="42" font-size="22" font-weight="700" fill="#0B1014">Build Phases &#8212; P0 through P7</text>
+  <text x="32" y="64" font-size="12.5" fill="#55666F">Every phase exits on a stated criterion, not on a feeling. The cut order under compression is pre-committed, and some things are never cut.</text>
+
+  <g font-size="11" fill="#55666F">
+    <rect x="32"  y="76" width="12" height="12" rx="2" fill="#EEF3F6" stroke="#9DAEB9"/><text x="50"  y="86">foundation</text>
+    <rect x="164" y="76" width="12" height="12" rx="2" fill="#E4F5F9" stroke="#2A9BB5"/><text x="182" y="86">modeling</text>
+    <rect x="288" y="76" width="12" height="12" rx="2" fill="#EDF6F0" stroke="#3FA55E"/><text x="306" y="86">product surface</text>
+    <rect x="444" y="76" width="12" height="12" rx="2" fill="#FBF2E1" stroke="#B57A18"/><text x="462" y="86">expansion</text>
+  </g>
+
+  <!-- ===== Row 1 ===== -->
+  <g>
+    <rect x="44" y="100" width="239" height="160" rx="9" fill="#EEF3F6" stroke="#9DAEB9"/>
+    <rect x="56" y="112" width="40" height="20" rx="5" fill="#7C8B96"/><text x="76" y="126" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">P0</text>
+    <text x="106" y="127" font-size="13" font-weight="700" fill="#3B4A55">Scaffold</text>
+    <g font-size="9.5" fill="#55666F">
+      <text x="58" y="154">repo layout: staging / canonical / marts</text>
+      <text x="58" y="171">audit stream and derivation plumbing</text>
+      <text x="58" y="188">conformance_rules + crs_registry schema</text>
+    </g>
+    <line x1="58" y1="200" x2="269" y2="200" stroke="#C7D2DA"/>
+    <text x="58" y="216" font-size="9.5" font-weight="700" fill="#3B4A55">EXIT</text>
+    <text x="58" y="230" font-size="9.5" fill="#55666F">audit stream live; first conformance rows</text>
+    <text x="58" y="242" font-size="9.5" fill="#55666F">committed: datum, CRS, liquids policy</text>
+  </g>
+
+  <g>
+    <rect x="295" y="100" width="239" height="160" rx="9" fill="#EEF3F6" stroke="#9DAEB9"/>
+    <rect x="307" y="112" width="40" height="20" rx="5" fill="#7C8B96"/><text x="327" y="126" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">P1</text>
+    <text x="357" y="127" font-size="13" font-weight="700" fill="#3B4A55">ND spine &amp; map</text>
+    <g font-size="9.5" fill="#55666F">
+      <text x="309" y="154">parsers write staging, never canonical</text>
+      <text x="309" y="171">promotion step emits conformance refs</text>
+      <text x="309" y="188">vector-tile map over 20k+ laterals</text>
+    </g>
+    <line x1="309" y1="200" x2="520" y2="200" stroke="#C7D2DA"/>
+    <text x="309" y="216" font-size="9.5" font-weight="700" fill="#3B4A55">EXIT</text>
+    <text x="309" y="230" font-size="9.5" fill="#55666F">every production row explains to a</text>
+    <text x="309" y="242" font-size="9.5" fill="#55666F">manifest and cites the rules applied</text>
+  </g>
+
+  <g>
+    <rect x="546" y="100" width="239" height="160" rx="9" fill="#E4F5F9" stroke="#2A9BB5"/>
+    <rect x="558" y="112" width="40" height="20" rx="5" fill="#2A9BB5"/><text x="578" y="126" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">P2</text>
+    <text x="608" y="127" font-size="13" font-weight="700" fill="#17607A">Forecasts &amp; benchmark</text>
+    <g font-size="9.5" fill="#1F7E96">
+      <text x="560" y="154">quantile model + conformal calibration</text>
+      <text x="560" y="171">three-stream targets; analog index</text>
+      <text x="560" y="188">type curve as the control group</text>
+    </g>
+    <line x1="560" y1="200" x2="771" y2="200" stroke="#9FD6E4"/>
+    <text x="560" y="216" font-size="9.5" font-weight="700" fill="#17607A">EXIT</text>
+    <text x="560" y="230" font-size="9.5" fill="#1F7E96">benchmark green for ND: calibration</text>
+    <text x="560" y="242" font-size="9.5" fill="#1F7E96">holds, analog check passes</text>
+  </g>
+
+  <g>
+    <rect x="797" y="100" width="239" height="160" rx="9" fill="#E4F5F9" stroke="#2A9BB5"/>
+    <rect x="809" y="112" width="40" height="20" rx="5" fill="#2A9BB5"/><text x="829" y="126" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">P3</text>
+    <text x="859" y="127" font-size="13" font-weight="700" fill="#17607A">Dollars &amp; scenarios</text>
+    <g font-size="9.5" fill="#1F7E96">
+      <text x="811" y="154">DCF economics at a named deck</text>
+      <text x="811" y="171">tornado sensitivities; analog panel</text>
+      <text x="811" y="188">type-curve builder in the UI</text>
+    </g>
+    <line x1="811" y1="200" x2="1022" y2="200" stroke="#9FD6E4"/>
+    <text x="811" y="216" font-size="9.5" font-weight="700" fill="#17607A">EXIT</text>
+    <text x="811" y="230" font-size="9.5" fill="#1F7E96">scenario returns forecast + NPV in</text>
+    <text x="811" y="242" font-size="9.5" fill="#1F7E96">under three seconds</text>
+  </g>
+
+  <!-- ===== Row 2 ===== -->
+  <g>
+    <rect x="44" y="280" width="239" height="160" rx="9" fill="#EDF6F0" stroke="#3FA55E"/>
+    <rect x="56" y="292" width="40" height="20" rx="5" fill="#3FA55E"/><text x="76" y="306" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">P4</text>
+    <text x="106" y="307" font-size="13" font-weight="700" fill="#2C6E43">Intelligence &amp; agents</text>
+    <g font-size="9.5" fill="#2C6E43">
+      <text x="58" y="334">operator league table; AOI alerts</text>
+      <text x="58" y="351">agent gateway over curated tools</text>
+      <text x="58" y="368">forecast ledger starts writing</text>
+    </g>
+    <line x1="58" y1="380" x2="269" y2="380" stroke="#A8D6B7"/>
+    <text x="58" y="396" font-size="9.5" font-weight="700" fill="#2C6E43">EXIT</text>
+    <text x="58" y="410" font-size="9.5" fill="#2C6E43">agent passes the ten-question suite,</text>
+    <text x="58" y="422" font-size="9.5" fill="#2C6E43">every figure traceable</text>
+  </g>
+
+  <g>
+    <rect x="295" y="280" width="239" height="160" rx="9" fill="#EDF6F0" stroke="#3FA55E"/>
+    <rect x="307" y="292" width="40" height="20" rx="5" fill="#3FA55E"/><text x="327" y="306" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">P5</text>
+    <text x="357" y="307" font-size="13" font-weight="700" fill="#2C6E43">Hardening</text>
+    <g font-size="9.5" fill="#2C6E43">
+      <text x="309" y="334">naked-number CI over every endpoint</text>
+      <text x="309" y="351">/conformance inside that CI scope</text>
+      <text x="309" y="368">interactive frame rates on one VM</text>
+    </g>
+    <line x1="309" y1="380" x2="520" y2="380" stroke="#A8D6B7"/>
+    <text x="309" y="396" font-size="9.5" font-weight="700" fill="#2C6E43">EXIT</text>
+    <text x="309" y="410" font-size="9.5" fill="#2C6E43">a stranger with the OpenAPI doc and a</text>
+    <text x="309" y="422" font-size="9.5" fill="#2C6E43">key reproduces every number in the UI</text>
+  </g>
+
+  <g>
+    <rect x="546" y="280" width="239" height="160" rx="9" fill="#FBF2E1" stroke="#B57A18"/>
+    <rect x="558" y="292" width="40" height="20" rx="5" fill="#B57A18"/><text x="578" y="306" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">P6</text>
+    <text x="608" y="307" font-size="13" font-weight="700" fill="#8A5D10">Permian</text>
+    <g font-size="9.5" fill="#6B4A0C">
+      <text x="560" y="334">TX RRC lease production; NM OCD spine</text>
+      <text x="560" y="351">allocation v0 with two validators</text>
+      <text x="560" y="368">datum transforms recorded as derivations</text>
+    </g>
+    <line x1="560" y1="380" x2="771" y2="380" stroke="#DDBB77"/>
+    <text x="560" y="396" font-size="9.5" font-weight="700" fill="#8A5D10">EXIT</text>
+    <text x="560" y="410" font-size="9.5" fill="#6B4A0C">allocation error bounds measured; a TX</text>
+    <text x="560" y="422" font-size="9.5" fill="#6B4A0C">spacing value explains through its datum</text>
+  </g>
+
+  <g>
+    <rect x="797" y="280" width="239" height="160" rx="9" fill="#FBF2E1" stroke="#B57A18"/>
+    <rect x="809" y="292" width="40" height="20" rx="5" fill="#B57A18"/><text x="829" y="306" font-size="11" font-weight="700" fill="#FFFFFF" text-anchor="middle">P7</text>
+    <text x="859" y="307" font-size="13" font-weight="700" fill="#8A5D10">Living systems</text>
+    <g font-size="9.5" fill="#6B4A0C">
+      <text x="811" y="334">one graded forecast-ledger cycle</text>
+      <text x="811" y="351">inventory v0: slots, forecasts, NPV</text>
+      <text x="811" y="368">capability matrix with evidence links</text>
+    </g>
+    <line x1="811" y1="380" x2="1022" y2="380" stroke="#DDBB77"/>
+    <text x="811" y="396" font-size="9.5" font-weight="700" fill="#8A5D10">EXIT</text>
+    <text x="811" y="410" font-size="9.5" fill="#6B4A0C">township inventory demo recorded;</text>
+    <text x="811" y="422" font-size="9.5" fill="#6B4A0C">honest gaps stated and tagged</text>
+  </g>
+
+  <!-- ===== cut order / never cut ===== -->
+  <rect x="44" y="458" width="500" height="76" rx="8" fill="#F7FAFC" stroke="#D8E1E8"/>
+  <text x="58" y="478" font-size="11.5" font-weight="700" fill="#3B4A55">CUT ORDER UNDER COMPRESSION</text>
+  <g font-size="9.5" fill="#55666F">
+    <rect x="58"  y="486" width="72" height="20" rx="10" fill="#FFFFFF" stroke="#B8C6D0"/><text x="94"  y="500" text-anchor="middle">transfer</text>
+    <rect x="136" y="486" width="72" height="20" rx="10" fill="#FFFFFF" stroke="#B8C6D0"/><text x="172" y="500" text-anchor="middle">inventory</text>
+    <rect x="214" y="486" width="72" height="20" rx="10" fill="#FFFFFF" stroke="#B8C6D0"/><text x="250" y="500" text-anchor="middle">alerts</text>
+    <rect x="292" y="486" width="86" height="20" rx="10" fill="#FFFFFF" stroke="#B8C6D0"/><text x="335" y="500" text-anchor="middle">league table</text>
+    <rect x="384" y="486" width="72" height="20" rx="10" fill="#FFFFFF" stroke="#B8C6D0"/><text x="420" y="500" text-anchor="middle">activity</text>
+    <rect x="462" y="486" width="68" height="20" rx="10" fill="#FFFFFF" stroke="#B8C6D0"/><text x="496" y="500" text-anchor="middle">UI polish</text>
+  </g>
+  <text x="58" y="524" font-size="9.5" fill="#7C8B96">First cut on the left. Deciding this in advance stops a slip from quietly eating the load-bearing work.</text>
+
+  <rect x="556" y="458" width="480" height="76" rx="8" fill="#FDF6F5" stroke="#E0A9A5"/>
+  <text x="570" y="478" font-size="11.5" font-weight="700" fill="#A03B33">NEVER CUT</text>
+  <g font-size="9.5" fill="#8C3830">
+    <rect x="570" y="486" width="88" height="20" rx="10" fill="#FFFFFF" stroke="#E0A9A5"/><text x="614" y="500" text-anchor="middle">economics</text>
+    <rect x="664" y="486" width="88" height="20" rx="10" fill="#FFFFFF" stroke="#E0A9A5"/><text x="708" y="500" text-anchor="middle">quality scorecard</text>
+    <rect x="758" y="486" width="112" height="20" rx="10" fill="#FFFFFF" stroke="#E0A9A5"/><text x="814" y="500" text-anchor="middle">allocation validators</text>
+    <rect x="876" y="486" width="148" height="20" rx="10" fill="#FFFFFF" stroke="#E0A9A5"/><text x="950" y="500" text-anchor="middle" font-size="9">derivations + conformance</text>
+  </g>
+  <text x="570" y="524" font-size="9.5" fill="#B05A52">The registry is cheap and load-bearing: without it, no cross-source number can cite the rules that shaped it.</text>
+</svg>

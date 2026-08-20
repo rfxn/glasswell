@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 668" width="1080" height="668" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" role="img" aria-label="glasswell glass-box lineage chain: a number on screen resolves through explain, derivation, conformance rules and the ingest manifest down to the original checksummed regulator file">
+  <rect x="1" y="1" width="1078" height="666" rx="14" fill="#FFFFFF" stroke="#D8E1E8" stroke-width="1"/>
+
+  <text x="32" y="42" font-size="22" font-weight="700" fill="#0B1014">The Glass Box &#8212; every number, all the way down</text>
+  <text x="32" y="64" font-size="12.5" fill="#55666F">No naked numbers. Untraceable equals wrong. Any figure on any surface resolves to raw bytes in three interactions and one <tspan font-family="ui-monospace, Consolas, monospace">/explain</tspan> call.</text>
+
+  <!-- 1. the number -->
+  <rect x="32" y="100" width="248" height="64" rx="9" fill="#E4F5F9" stroke="#2A9BB5" stroke-width="1.6"/>
+  <circle cx="58" cy="126" r="11" fill="#2A9BB5"/><text x="58" y="130" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">1</text>
+  <text x="78" y="124" font-size="13" font-weight="700" fill="#17607A">A NUMBER ON SCREEN</text>
+  <text x="78" y="142" font-size="10.5" fill="#1F7E96">well card &#183; map layer &#183; rollup &#183; export</text>
+  <rect x="296" y="100" width="752" height="64" rx="9" fill="#F7FAFC" stroke="#B8C6D0"/>
+  <text x="314" y="124" font-size="12" fill="#3B4A55" font-family="ui-monospace, Consolas, monospace">NPV10 = $4.81 MM<tspan fill="#7C8B96" font-size="10.5" dx="18">&#8212; API-10 33053&#8226;07321, deck 2026-Q3, model gbm-q v14</tspan></text>
+  <text x="314" y="144" font-size="10.5" fill="#55666F">Every served figure carries a derivation handle. If it cannot be traced, it does not ship &#8212; that rule has no exception for charts, tiles, or exports.</text>
+  <line x1="156" y1="166" x2="156" y2="180" stroke="#2A9BB5" stroke-width="1.6"/>
+  <polygon points="152,179 160,179 156,186" fill="#2A9BB5"/>
+
+  <!-- 2. explain -->
+  <rect x="32" y="184" width="248" height="64" rx="9" fill="#F1F5F8" stroke="#2A9BB5" stroke-width="1.4"/>
+  <circle cx="58" cy="210" r="11" fill="#2A9BB5"/><text x="58" y="214" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">2</text>
+  <text x="78" y="208" font-size="13" font-weight="700" fill="#17607A">EXPLAIN</text>
+  <text x="78" y="226" font-size="10.5" fill="#1F7E96">quiet by default, verbose on request</text>
+  <rect x="296" y="184" width="752" height="64" rx="9" fill="#F7FAFC" stroke="#B8C6D0"/>
+  <text x="314" y="208" font-size="11.5" fill="#3B4A55" font-family="ui-monospace, Consolas, monospace">GET /valuations/v_8f31?explain=true</text>
+  <text x="314" y="228" font-size="10.5" fill="#55666F">Responses stay lean until asked. The flag inlines the lineage block; the UI drawer renders the same chain from the same call &#8212; no private endpoint.</text>
+  <line x1="156" y1="250" x2="156" y2="264" stroke="#2A9BB5" stroke-width="1.6"/>
+  <polygon points="152,263 160,263 156,270" fill="#2A9BB5"/>
+
+  <!-- 3. derivation -->
+  <rect x="32" y="268" width="248" height="64" rx="9" fill="#F1F5F8" stroke="#2A9BB5" stroke-width="1.4"/>
+  <circle cx="58" cy="294" r="11" fill="#2A9BB5"/><text x="58" y="298" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">3</text>
+  <text x="78" y="292" font-size="13" font-weight="700" fill="#17607A">DERIVATION</text>
+  <text x="78" y="310" font-size="10.5" fill="#1F7E96">what produced this, exactly</text>
+  <rect x="296" y="268" width="752" height="64" rx="9" fill="#F7FAFC" stroke="#B8C6D0"/>
+  <text x="314" y="291" font-size="10.5" fill="#3B4A55" font-family="ui-monospace, Consolas, monospace">forecast_id &#183; model_id &#183; feature_version &#183; deck_id &#183; code_version &#183; run_id &#183; input row keys</text>
+  <text x="314" y="312" font-size="10.5" fill="#55666F">Named inputs, not a description of the method. The recipe attached to the artifact regenerates it byte-for-byte on a clean checkout.</text>
+  <line x1="156" y1="334" x2="156" y2="348" stroke="#2A9BB5" stroke-width="1.6"/>
+  <polygon points="152,347 160,347 156,354" fill="#2A9BB5"/>
+
+  <!-- 4. conformance -->
+  <rect x="32" y="352" width="248" height="64" rx="9" fill="#E4F5F9" stroke="#2A9BB5" stroke-width="1.6"/>
+  <circle cx="58" cy="378" r="11" fill="#2A9BB5"/><text x="58" y="382" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">4</text>
+  <text x="78" y="376" font-size="13" font-weight="700" fill="#17607A">CONFORMANCE RULES</text>
+  <text x="78" y="394" font-size="10.5" fill="#1F7E96">the cross-source decisions, as data</text>
+  <rect x="296" y="352" width="752" height="64" rx="9" fill="#F7FAFC" stroke="#B8C6D0"/>
+  <g font-size="10" font-family="ui-monospace, Consolas, monospace">
+    <rect x="314" y="362" width="228" height="20" rx="4" fill="#E4F5F9" stroke="#7FC5D8"/><text x="428" y="376" fill="#17607A" text-anchor="middle">R-0007 NAD27 &#8594; EPSG:4326</text>
+    <rect x="550" y="362" width="228" height="20" rx="4" fill="#E4F5F9" stroke="#7FC5D8"/><text x="664" y="376" fill="#17607A" text-anchor="middle">R-0012 oil + condensate</text>
+    <rect x="786" y="362" width="244" height="20" rx="4" fill="#E4F5F9" stroke="#7FC5D8"/><text x="908" y="376" fill="#17607A" text-anchor="middle">R-0021 production-month basis</text>
+  </g>
+  <text x="314" y="400" font-size="10.5" fill="#55666F">Every rule is a row with a rationale and an effective date, served at <tspan font-family="ui-monospace, Consolas, monospace">/conformance</tspan> &#8212; and cited by the derivations it shaped.</text>
+  <line x1="156" y1="418" x2="156" y2="432" stroke="#B57A18" stroke-width="1.6"/>
+  <polygon points="152,431 160,431 156,438" fill="#B57A18"/>
+
+  <!-- 5. manifest -->
+  <rect x="32" y="436" width="248" height="64" rx="9" fill="#FBF2E1" stroke="#B57A18" stroke-width="1.4"/>
+  <circle cx="58" cy="462" r="11" fill="#B57A18"/><text x="58" y="466" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">5</text>
+  <text x="78" y="460" font-size="13" font-weight="700" fill="#8A5D10">INGEST MANIFEST</text>
+  <text x="78" y="478" font-size="10.5" fill="#6B4A0C">which file, which vintage, which parser</text>
+  <rect x="296" y="436" width="752" height="64" rx="9" fill="#FEFBF4" stroke="#DDBB77"/>
+  <text x="314" y="459" font-size="10.5" fill="#6B4A0C" font-family="ui-monospace, Consolas, monospace">source_url &#183; fetched_at &#183; vintage=2026-06 &#183; parser_version=3 &#183; sha256=9f2c1ab8&#8230;</text>
+  <text x="314" y="480" font-size="10.5" fill="#55666F">Manifest-level lineage, not row-level: the unit of custody is the file. Cheap to keep, sufficient to prove, and it never rots into a second database.</text>
+  <line x1="156" y1="502" x2="156" y2="516" stroke="#B57A18" stroke-width="1.6"/>
+  <polygon points="152,515 160,515 156,522" fill="#B57A18"/>
+
+  <!-- 6. raw -->
+  <rect x="32" y="520" width="248" height="64" rx="9" fill="#FBF2E1" stroke="#B57A18" stroke-width="1.6"/>
+  <circle cx="58" cy="546" r="11" fill="#B57A18"/><text x="58" y="550" font-size="12" font-weight="700" fill="#FFFFFF" text-anchor="middle">6</text>
+  <text x="78" y="544" font-size="13" font-weight="700" fill="#8A5D10">RAW REGULATOR FILE</text>
+  <text x="78" y="562" font-size="10.5" fill="#6B4A0C">the original bytes, unedited</text>
+  <rect x="296" y="520" width="752" height="64" rx="9" fill="#FEFBF4" stroke="#DDBB77"/>
+  <text x="314" y="543" font-size="10.5" fill="#6B4A0C">Re-download the file, re-hash it, replay the recipe &#8212; and land on the same number, or find out the state restated its data.</text>
+  <text x="314" y="564" font-size="10.5" fill="#55666F">Restatements are new events appended to the audit stream. Nothing upstream is ever edited in place, so a number from last quarter stays reproducible.</text>
+
+  <!-- footer band -->
+  <rect x="32" y="604" width="1016" height="44" rx="8" fill="#F7FAFC" stroke="#D8E1E8"/>
+  <g font-size="10.5" fill="#3B4A55">
+    <text x="46" y="622" font-weight="700" fill="#17607A">The kitchen is the product.</text>
+    <text x="46" y="638" fill="#55666F">Rejected rows, cleaning decisions and conformance rules are queryable surfaces, not internals &#8212; the quarantine table has an endpoint.</text>
+  </g>
+  <g font-family="ui-monospace, Consolas, monospace" font-size="10" text-anchor="end">
+    <text x="1034" y="622" fill="#17607A">/explain &#183; /conformance &#183; /recipes</text>
+    <text x="1034" y="638" fill="#7C8B96">/quality/scorecard &#183; /quality/quarantine &#183; /audit</text>
+  </g>
+</svg>
