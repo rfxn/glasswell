@@ -13,6 +13,7 @@ import pytest
 import yaml
 
 from glasswell.api.routers.tiles import PUBLISHED_LAYERS
+from glasswell.ingest.base import LOCKFILE_SHA256_ENV
 from glasswell.ingest.nd_gis import load_laterals, load_spacing_units, load_wells
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.explain import resolve_chain
@@ -297,6 +298,24 @@ def test_the_cli_refreshes_the_database_p7_points_it_at(canonical_nd, monkeypatc
     assert scalar(canonical_nd, "select derivation_id from marts.nd_laterals_tile limit 1") == (
         report["derivation_id"]
     )
+
+
+def test_the_cli_pins_the_lockfile_the_ingest_unit_exports(canonical_nd, monkeypatch, capsys):
+    """M-4: the refresh is one of the two paths that used to stamp an unpinned `env_cli`."""
+    monkeypatch.setenv("PGPASSWORD", "glasswell")
+    monkeypatch.setenv(LOCKFILE_SHA256_ENV, "7c" * 32)
+
+    assert main(["--dsn", canonical_nd.info.dsn]) == 0
+    report = json.loads(capsys.readouterr().out)
+
+    canonical_nd.rollback()
+    assert scalar(
+        canonical_nd,
+        "select e.lockfile_sha256 from lineage.derivations d"
+        "  join lineage.environments e on e.env_id = d.env_id"
+        " where d.derivation_id = %s",
+        (report["derivation_id"],),
+    ) == "7c" * 32
 
 
 def test_the_module_runs_as_the_command_p7_documents():

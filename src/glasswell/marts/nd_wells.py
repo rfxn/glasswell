@@ -8,16 +8,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import platform
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 
 import psycopg
 
+from glasswell.ingest.base import resolve_environment
 from glasswell.lineage.capture import derive, lineage_session
 from glasswell.lineage.conformance import load_rules
-from glasswell.lineage.models import DeriveEnvironment, InputRef, OutputSpec
+from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.serialization import hash_payload
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts.tiles import TILE_LAYERS, install_tile_functions
@@ -210,28 +210,18 @@ def _rewrite(
         )
 
 
-def _ensure_environment(connection: psycopg.Connection, env_id: str) -> None:
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "insert into lineage.environments (env_id, python_version, threads)"
-            " values (%s, %s, 1) on conflict (env_id) do nothing",
-            (env_id, platform.python_version()),
-        )
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Refresh the ND tile marts from canonical.")
     parser.add_argument("--dsn", required=True)
     parser.add_argument("--as-of", default=None, help="knowledge-time cut, YYYY-MM-DD")
-    parser.add_argument("--env-id", default="env_cli")
-    parser.add_argument("--code-version", default="glasswell:cli")
+    parser.add_argument("--env-id", default=None, help="override the fingerprinted env id")
+    parser.add_argument("--code-version", default=None)
     arguments = parser.parse_args(argv)
     as_of = date.fromisoformat(arguments.as_of) if arguments.as_of else None
 
     with psycopg.connect(arguments.dsn) as connection:
-        _ensure_environment(connection, arguments.env_id)
-        environment = DeriveEnvironment(
-            code_version=arguments.code_version, code_dirty=False, env_id=arguments.env_id
+        environment = resolve_environment(
+            connection, env_id=arguments.env_id, code_version=arguments.code_version
         )
         with lineage_session(recorder=PostgresRecorder(connection), environment=environment):
             report = refresh_all(connection, as_of=as_of)

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import platform
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -21,10 +20,10 @@ import polars as pl
 import psycopg
 from psycopg.rows import dict_row
 
+from glasswell.ingest.base import resolve_environment
 from glasswell.ingest.shapefile import ShapefileRecord, ZippedShapefile
 from glasswell.lineage import (
     ConformanceRule,
-    DeriveEnvironment,
     InputRef,
     OutputSpec,
     PostgresRecorder,
@@ -938,31 +937,21 @@ def _open_vintage(
     )
 
 
-def _ensure_environment(connection: psycopg.Connection, env_id: str) -> None:
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "insert into lineage.environments (env_id, python_version, threads)"
-            " values (%s, %s, 1) on conflict (env_id) do nothing",
-            (env_id, platform.python_version()),
-        )
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Load an ND DMR GIS layer into PostGIS.")
     parser.add_argument("--layer", choices=[*LAYERS, "all"], required=True)
     parser.add_argument("--dsn", required=True)
     parser.add_argument("--url", default=None, help="override the upstream URL (testing only)")
     parser.add_argument("--raw-root", default=None)
-    parser.add_argument("--env-id", default="env_cli")
-    parser.add_argument("--code-version", default="glasswell:cli")
+    parser.add_argument("--env-id", default=None, help="override the fingerprinted env id")
+    parser.add_argument("--code-version", default=None)
     arguments = parser.parse_args(argv)
 
     # Wells first: a lateral whose api10 has no well row quarantines as orphan_fk.
     layers = list(LAYERS) if arguments.layer == "all" else [arguments.layer]
     with psycopg.connect(arguments.dsn) as connection:
-        _ensure_environment(connection, arguments.env_id)
-        environment = DeriveEnvironment(
-            code_version=arguments.code_version, code_dirty=False, env_id=arguments.env_id
+        environment = resolve_environment(
+            connection, env_id=arguments.env_id, code_version=arguments.code_version
         )
         with lineage_session(recorder=PostgresRecorder(connection), environment=environment):
             for layer in layers:

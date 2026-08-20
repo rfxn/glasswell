@@ -42,19 +42,31 @@ def _code_version() -> str:
         return "pkg:unknown"
 
 
-def resolve_environment(connection: psycopg.Connection) -> DeriveEnvironment:
-    """Upsert the pinned build identity derive() stamps on every node (SB-07 §4.1)."""
+def resolve_environment(
+    connection: psycopg.Connection,
+    *,
+    env_id: str | None = None,
+    code_version: str | None = None,
+) -> DeriveEnvironment:
+    """Upsert the pinned build identity derive() stamps on every node (SB-07 §4.1).
+
+    `env_id` names the row instead of fingerprinting it, and the pin is recorded on the way in,
+    so a CLI override is no longer the reason a derivation lands unpinned (M-4). An env_id that
+    already exists keeps what it recorded: derivations already point at it.
+    """
     python_version = platform.python_version()
     lockfile_sha256 = os.environ.get(LOCKFILE_SHA256_ENV)
     fingerprint = hashlib.sha256(f"{python_version}|{lockfile_sha256}".encode()).hexdigest()
-    env_id = f"env_{fingerprint[:16]}"
+    resolved = env_id or f"env_{fingerprint[:16]}"
     with connection.cursor() as cursor:
         cursor.execute(
             "insert into lineage.environments (env_id, python_version, lockfile_sha256, threads)"
             " values (%s, %s, %s, 1) on conflict (env_id) do nothing",
-            (env_id, python_version, lockfile_sha256),
+            (resolved, python_version, lockfile_sha256),
         )
-    return DeriveEnvironment(code_version=_code_version(), code_dirty=False, env_id=env_id)
+    return DeriveEnvironment(
+        code_version=code_version or _code_version(), code_dirty=False, env_id=resolved
+    )
 
 
 @contextmanager
