@@ -1014,8 +1014,8 @@ This section is the **seed set for `glossary_terms`** (DIR-8, E18, R9), not a do
 **Determinism class** — Which of three reproduction guarantees an artifact's recipe carries: **D1** byte-identical in any pinned environment (data artifacts), **D2** environment-pinned byte-identical and prediction-equivalent within a recorded tolerance across environments (model artifacts and calibrators), **D3** semantically identical after a declared normalization (API responses, tiles). A fetch is not a classed artifact; its manifest is the mechanism.
 **DUC / DUC proxy** — Drilled but uncompleted well. glasswell's proxy: permitted or spudded, not yet reporting production, within a stated age window. A proxy, labelled as one.
 **Economic limit** — The month at which a well's revenue no longer covers its operating cost, ending the cashflow. A royalty interest inherits the working interest's economic limit, because a royalty owner does not decide when to plug.
-**EUR** — Estimated ultimate recovery: total expected lifetime production. An extrapolation, not an observation; not a model target here.
 **Effective date** — The date from which a rule, alias or record applies. Reference data is effective-dated so that a past number can be re-derived under the rules in force at the time.
+**EUR** — Estimated ultimate recovery: total expected lifetime production. An extrapolation, not an observation; not a model target here.
 **Extrapolation share** — The fraction of a served cumulative that comes from the extrapolated tail rather than from the trained horizon. Reported so that an EUR-shaped number cannot pass as an in-horizon forecast.
 **Figure chip** — The in-band object a scalar is served as: value, unit, basis, granularity, report vintage and derivation handle together. A number and its provenance are one object, never two parallel maps that can disagree.
 **First production** — The first month a well reports non-zero volume. The anchor for vintage, censoring and DUC logic.
@@ -1075,19 +1075,19 @@ This section is the **seed set for `glossary_terms`** (DIR-8, E18, R9), not a do
 **Staging** — The source-faithful layer: one schema per regulator file type, no opinions, rejects to quarantine. Staging never serves.
 **Station survey** — A directional survey reported as a sequence of measured stations — measured depth, inclination, azimuth, true vertical depth — rather than as a single wellbore header. ND publishes 5.47 M of them; Texas publishes none in free parseable form.
 **Stream** — Oil, gas, water, or condensate — the substance a volume measures.
-**Tile layer allowlist** — The checked-in list of tables martin may publish as tile layers. CI asserts martin's configured sources equal it, which is what stops a private table from becoming a public tile layer by accident.
 **Structural residual** — Landing TVD minus a structural surface fitted from other wells' geometry. A modelled number with `method = structural_fit`, never served without its band, and never confused with the observed TVD it is computed from.
 **Three-stream** — Forecasting oil, gas and water together under identical split, censoring and control rules, rather than oil alone.
+**Tile layer allowlist** — The checked-in list of tables martin may publish as tile layers. CI asserts martin's configured sources equal it, which is what stops a private table from becoming a public tile layer by accident.
 **Tornado** — A single-parameter sensitivity chart around a base case, bars ranked by absolute effect on NPV.
 **Training support** — How densely the training data covers the point being predicted: `clip(1 − d̄/d_ref, 0, 1)` over k = 25 nearest training wells, Euclidean on standardized features weighted so that `design`, `location`, `geology` and `spacing` contribute equally, with `d_ref` the 90th percentile of the training set's leave-one-out mean k-distance. Operator and vintage are excluded from the space: support is a statement about rock, not about familiarity. k, metric and `d_ref` are declared on every prediction, and every prediction also carries **`low_support`** — true below the 10th percentile of the same index's TRAIN self-support distribution. A gate: no slot and no scenario ships without it. (Formerly also called "support score"; that name is retired.)
 **Type curve** — An aggregate production profile for a group of comparable wells, used as the industry-standard baseline and as glasswell's mandatory control group for every ML accuracy claim.
 **Valid time** — When a fact was true in the world (the production month), as distinct from when it was reported. The first axis of the bitemporal model.
-**Vintage (well vintage)** — The year or period a well was completed. Distinct from report vintage; both appear in this system and the glossary keeps them apart deliberately.
 **Viewport** — The map's current visible extent and zoom. It selects what is *drawn*; it never selects what a served figure is computed from, because a number that changes when you pan is not reproducible.
+**Vintage (well vintage)** — The year or period a well was completed. Distinct from report vintage; both appear in this system and the glossary keeps them apart deliberately.
 **Water cut** — Water as a share of gross produced liquids. A derived surface, never a model target.
 **Wellbore** — The physical hole. One API-10 may have several (original plus sidetracks); glasswell assumes one producing wellbore per API-10 and quarantines the exceptions rather than mis-joining them.
-**Working interest** — A share of the costs of drilling and operating, and of the revenue after royalty burdens. `wi` scales the cost lines; `nri` scales the revenue lines (4B.3).
 **Withheld** — Data a source deliberately does not publish (a confidential well's production, a trade-secret frac ingredient). A distinct state from "not reported" and from "zero".
+**Working interest** — A share of the costs of drilling and operating, and of the revenue after royalty burdens. `wi` scales the cost lines; `nri` scales the revenue lines (4B.3).
 
 ---
 

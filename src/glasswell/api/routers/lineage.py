@@ -24,6 +24,7 @@ from glasswell.api.examples import (
     EXAMPLE_DERIVATION_ID,
     EXAMPLE_MANIFEST_ID,
     EXAMPLE_VINTAGE_ID,
+    VINTAGE_ID_NOTE,
     request_example,
 )
 from glasswell.api.pagination import (
@@ -674,6 +675,7 @@ def list_vintages(
     description=(
         "The promotion record `as_of` resolves to, including the manifests it read and its"
         " restatement summary. Vintages are append-only: a correction opens a new one."
+        + VINTAGE_ID_NOTE
     ),
     response_model=EnvelopeModel[Vintage],
     openapi_extra=request_example(path={"vintage_id": EXAMPLE_VINTAGE_ID}),
@@ -709,6 +711,7 @@ def get_vintage(
         " exact acquisition URL let them re-fetch from the regulator and hash it"
         " themselves, which is the stronger audit. `404` when this host does not hold the"
         " bytes; the record at `/v1/manifests/{manifest_id}` still resolves."
+        + CONTENT_ADDRESS_NOTE
     ),
     response_class=Response,
     openapi_extra=request_example(path={"manifest_id": EXAMPLE_MANIFEST_ID}),

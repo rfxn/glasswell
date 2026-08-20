@@ -7,6 +7,43 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-20 — wave 1 merge train: the data-train batch fix
+
+- [Fix] The anonymous read break-glass can no longer mint a credential. With
+      `GLASSWELL_ALLOW_ANON=1` a caller presenting nothing resolved to owner *scope*,
+      which satisfied the mutation guard, so the flag could leave durable owner keys
+      behind that keep working after it is turned off. `check_scope` now refuses
+      `kind = anonymous` for the mutation scopes; the read break-glass is unchanged
+      (gate-a2-qa m-7)
+- [Fix] Four published examples that could not resolve on a deployment now say so
+      where a reader meets them: a vintage id is composed from a source and a
+      knowledge date rather than content-addressed, a manifest's bytes carry the
+      content-address note its sibling record already had, and the two key
+      operations name a key the contract fixture seeds instead of a fabricated
+      ULID (gate-a2-qa M-3)
+- [Fix] The auth matrix covers `GET /v1/wells/{api10}/production/pools`. The
+      endpoint arrived with one track and the matrix with another, and the
+      coverage check that exists for exactly that caught it on the merge commit
+- [Change] `e3-length-buckets.sh` computes the snapped bucket cuts in SQL and prints
+         them in its verdict, instead of carrying the quartiles measured once as
+         literals. `run-all.sh` can re-decide `LENGTH_BUCKETS_FT` after the E-0
+         back-load without an agent editing the script (gate-bgate M-1)
+- [Fix] `g13-formation-pools.sh` emits the two `VERDICT|` lines `run-all.sh` greps
+      for — the `FORMATION_GROUP_MIN_COUNT` measurement at the threshold and the
+      registry precondition — both read out of the measurement. The grep is
+      `|| true`, so their absence was silent (gate-bgate m-4)
+- [Fix] The glossary is alphabetical again: four adjacent pairs were transposed
+      (`Effective date`/`EUR`, `Structural residual`/`Tile layer allowlist`,
+      `Viewport`/`Vintage`, `Withheld`/`Working interest`). It is the seed set for
+      `glossary_terms`, so its order is data (gate-bgate m-6)
+- [Fix] The martin binary the tile-publication test starts is pinned to `1.14.0`,
+      the version VM 111 runs; `latest` resolves there today and would move the
+      test's subject silently (gate-o m-6)
+- [Change] The OpenAPI snapshot is regenerated over the three data tracks at once —
+         28 paths, the union of the freeze's 27 and the pool breakdown. A2's own
+         differ classifies the delta as thirteen changes, all additive
+
+
 ### 2026-08-20 — wave 1: the S-E production key
 
 - [New] The S-E production key: `canonical.production_monthly` is keyed by
@@ -109,9 +146,9 @@ its own version in its header, and its history is summarised in §3.1.
       anonymous, invalid, revoked, guest, agent and owner, with a coverage check that
       fails when an endpoint arrives without an entry
 - [Remove] `/v1/explain?ref=` is refused with `parameter_removed` instead of being
-      accepted and ignored, and `storage_uri` is absent from every manifest response
-      below owner scope. Both are removals, so both had to happen before the S1
-      freeze published the surface (S-A, S-K, DR-02, DR-33)
+         accepted and ignored, and `storage_uri` is absent from every manifest response
+         below owner scope. Both are removals, so both had to happen before the S1
+         freeze published the surface (S-A, S-K, DR-02, DR-33)
 - [Change] `problem.type` is origin-relative, so it resolves on the LAN name, the
          tunnel name and localhost alike; the previous absolute host answered on
          only one of the three and was a dead link from the other two (N-9)
@@ -266,7 +303,7 @@ its own version in its header, and its history is summarised in §3.1.
 - [Fix] One `:focus-visible` rule for the whole app, and a quieter dashed ring for
       the `tabindex="-1"` headings that are focus landing spots rather than controls
 - [Remove] The `.gw-legend` rules, dead since the legend moved to `map.css` under
-      `.gw-lg*`. `.gw-swatch` stays — the chart legend still uses it
+         `.gw-lg*`. `.gw-swatch` stays — the chart legend still uses it
 
 ### 2026-08-20 — wave 1: map legibility and the client's half of the tile contract
 

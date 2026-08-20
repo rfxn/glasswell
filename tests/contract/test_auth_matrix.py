@@ -41,6 +41,7 @@ MATRIX: tuple[tuple[str, str, str], ...] = (
     ("GET", "/v1/wells", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production", READ),
+    ("GET", f"/v1/wells/{EXAMPLE_API10}/production/pools", READ),
     ("GET", f"/v1/explain?h={EXAMPLE_DERIVATION_ID}", READ),
     ("GET", "/v1/derivations", READ),
     ("GET", f"/v1/derivations/{EXAMPLE_DERIVATION_ID}", READ),

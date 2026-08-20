@@ -22,6 +22,11 @@ CONTENT_ADDRESS_NOTE = (
     " addresses over bytes and run parameters, so they differ per deployment by construction"
     " — take a live one from the `d` handle on any served figure, or from `/v1/manifests`."
 )
+VINTAGE_ID_NOTE = (
+    " The example id is the contract fixture's. A vintage id is `vin_<source_id>_<date>`,"
+    " where the date is a knowledge date this deployment actually promoted — it is composed,"
+    " not addressed, so list `/v1/vintages` and take one rather than building it."
+)
 EXAMPLE_RULE_ID = "cr_nd_stream_vocab_1"
 EXAMPLE_SOURCE_ID = "nd_mpr_xlsx"
 EXAMPLE_VINTAGE_ID = "vin_nd_mpr_xlsx_2026-08-01"

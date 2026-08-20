@@ -163,6 +163,10 @@ def resolve_principal(
 def check_scope(principal: Principal, allowed: Sequence[Scope]) -> Principal:
     if principal.scope not in allowed:
         raise ProblemError("forbidden", detail=f"this operation is {' or '.join(allowed)} scope")
+    # GLASSWELL_ALLOW_ANON resolves to owner scope with no credential presented, so a mutation
+    # reached that way mints durable state that outlives the flag. It stays a read break-glass.
+    if principal.kind == "anonymous" and tuple(allowed) == MUTATION_POST_SCOPES:
+        raise ProblemError("forbidden", detail="this operation needs a credential, not a flag")
     return principal
 
 

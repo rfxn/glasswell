@@ -27,7 +27,8 @@ from glasswell.api.examples import (
     EXAMPLE_QUARANTINE_ID,
     KEY_HEADER,
 )
-from glasswell.api.principal import ConnectionKeyStore
+from glasswell.api.principal import ConnectionKeyStore, fingerprint, mint_secret
+from glasswell.api.routers.keys import EXAMPLE_KEY_ID
 from glasswell.lineage.capture import derive, lineage_session
 from glasswell.lineage.fetch import RAW_ROOT_ENV
 from glasswell.lineage.models import InputRef, OutputSpec
@@ -316,6 +317,7 @@ def seeded(db: psycopg.Connection, raw_zone: Path) -> psycopg.Connection:
     )
     _seed_production(db, mpr_manifest, promotion)
     _seed_quarantine(db, mpr_manifest)
+    _seed_example_key(db)
     open_vintage(
         db,
         source_id="nd_mpr_xlsx",
@@ -328,6 +330,26 @@ def seeded(db: psycopg.Connection, raw_zone: Path) -> psycopg.Connection:
         months_touched=[month.isoformat() for month in PRODUCTION_MONTHS],
     )
     return db
+
+
+def _seed_example_key(connection: psycopg.Connection) -> None:
+    """The key id `revoke_key` and `rotate_key` publish, as a row rather than as a fiction.
+
+    Its cleartext is minted here and dropped on the floor: what the examples need is an id
+    that resolves, not a credential (gate-a2-qa M-3).
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.api_keys (key_id, sha256, label, scope, created_at,"
+            " created_by) values (%s, %s, %s, 'guest', %s, 'owner')"
+            " on conflict (key_id) do nothing",
+            (
+                EXAMPLE_KEY_ID,
+                fingerprint(mint_secret()),
+                "the documented example key",
+                datetime(2026, 8, 1, 5, 2, 11, tzinfo=UTC),
+            ),
+        )
 
 
 def _tile_transport(request: httpx.Request) -> httpx.Response:

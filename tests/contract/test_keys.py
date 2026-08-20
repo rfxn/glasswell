@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from glasswell.api.access_log import ACCESS_LOGGER, install_access_log_redaction
+from glasswell.api.deps import ALLOW_ANON_ENV
 from glasswell.api.principal import fingerprint
 from tests.contract.conftest import as_principal, issue_key
 
@@ -203,3 +204,24 @@ def test_no_key_surface_is_reachable_without_a_credential(
 
     assert anonymous.get(path).status_code == 403
     assert anonymous.post(path, json={"label": "qa-anon-2026", "scope": "guest"}).status_code == 403
+
+
+def test_the_anonymous_break_glass_cannot_mint_a_key(
+    client: TestClient, seeded: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """gate-a2-qa m-7: `GLASSWELL_ALLOW_ANON=1` resolves to owner *scope* with no credential
+    presented, so before this guard the read break-glass reached the credential-minting
+    surface and could leave durable owner keys behind that outlive the flag."""
+    monkeypatch.setenv(ALLOW_ANON_ENV, "1")
+    anonymous = as_principal(client, None)
+    before = _live_rows(seeded, "select key_id from lineage.api_keys")
+
+    assert anonymous.get("/v1/health").status_code == 200, "the read break-glass still reads"
+
+    minted = anonymous.post("/v1/keys", json={"label": "qa-breakglass-2026", "scope": "owner"})
+    revoked = anonymous.delete("/v1/keys/key_that_need_not_exist")
+
+    assert minted.status_code == 403
+    assert minted.json()["type"].endswith("/forbidden")
+    assert revoked.status_code == 403
+    assert _live_rows(seeded, "select key_id from lineage.api_keys") == before

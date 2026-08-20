@@ -27,7 +27,9 @@ import yaml
 
 from tests.conftest import REQUIRE_DOCKER_ENV, TEST_LABEL, docker_environment
 
-MARTIN_IMAGE = "ghcr.io/maplibre/martin:latest"  # 1.14.0, the version VM 111 runs
+# Pinned: `latest` resolves to 1.14.0 today and would move under this test silently, leaving
+# it verifying a binary the VM does not run (gate-o m-6). `v1.14.0` is not a published tag.
+MARTIN_IMAGE = "ghcr.io/maplibre/martin:1.14.0"  # the version VM 111 runs
 MARTIN_CONFIG = Path(__file__).resolve().parents[2] / "infra" / "martin" / "config.yaml"
 MARTIN_ROLE = "martin"
 MARTIN_PASSWORD = "martin-test-only"

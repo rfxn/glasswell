@@ -1204,6 +1204,26 @@
         "title": "EnvelopeModel[Manifest]",
         "type": "object"
       },
+      "EnvelopeModel_ProductionPools_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ProductionPools"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[ProductionPools]",
+        "type": "object"
+      },
       "EnvelopeModel_Production_": {
         "properties": {
           "data": {
@@ -2495,6 +2515,40 @@
         "title": "MetaModel",
         "type": "object"
       },
+      "PoolProduction": {
+        "properties": {
+          "entity_key": {
+            "description": "S-E entity key of this completion: api10:pool.",
+            "title": "Entity Key",
+            "type": "string"
+          },
+          "series": {
+            "$ref": "#/components/schemas/ProductionSeries",
+            "description": "The parallel arrays for this pool alone."
+          },
+          "streams": {
+            "description": "Streams present for this pool.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Streams",
+            "type": "array"
+          },
+          "well_completion_pool": {
+            "description": "Pool the operator filed this series under.",
+            "title": "Well Completion Pool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "well_completion_pool",
+          "entity_key",
+          "streams",
+          "series"
+        ],
+        "title": "PoolProduction",
+        "type": "object"
+      },
       "Problem": {
         "additionalProperties": true,
         "description": "The wire shape of every failure (RFC 9457).",
@@ -2600,6 +2654,12 @@
             "type": "string",
             "x-glasswell-glossary": "gt_granularity"
           },
+          "reporting_level": {
+            "description": "The level the source reported at: well, or well_completion_pool where the well filed in more than one pool and the series is their disclosed sum.",
+            "title": "Reporting Level",
+            "type": "string",
+            "x-glasswell-glossary": "gt_granularity"
+          },
           "series": {
             "$ref": "#/components/schemas/ProductionSeries",
             "description": "The parallel arrays the chart consumes."
@@ -2629,6 +2689,7 @@
           "api10",
           "source_id",
           "granularity",
+          "reporting_level",
           "streams",
           "series",
           "_lineage",
@@ -2636,6 +2697,69 @@
           "_basis"
         ],
         "title": "Production",
+        "type": "object"
+      },
+      "ProductionPools": {
+        "properties": {
+          "_basis": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Dotted column path to liquids basis, where one applies.",
+            "title": "Basis",
+            "type": "object"
+          },
+          "_lineage": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Dotted path to derivation handle (SB-07 \u00a79.1b).",
+            "title": "Lineage",
+            "type": "object"
+          },
+          "_units": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Dotted column path to unit.",
+            "title": "Units",
+            "type": "object"
+          },
+          "api10": {
+            "description": "Ten-digit API well number.",
+            "title": "Api10",
+            "type": "string"
+          },
+          "granularity": {
+            "description": "well_observed; a pool filing is an observation, not an allocation.",
+            "title": "Granularity",
+            "type": "string",
+            "x-glasswell-glossary": "gt_granularity"
+          },
+          "pools": {
+            "description": "One entry per pool the well filed in.",
+            "items": {
+              "$ref": "#/components/schemas/PoolProduction"
+            },
+            "title": "Pools",
+            "type": "array"
+          },
+          "reporting_level": {
+            "description": "well_completion_pool for every row here.",
+            "title": "Reporting Level",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api10",
+          "granularity",
+          "reporting_level",
+          "pools",
+          "_lineage",
+          "_units",
+          "_basis"
+        ],
+        "title": "ProductionPools",
         "type": "object"
       },
       "ProductionSeries": {
@@ -2663,6 +2787,28 @@
             ],
             "description": "Gas volumes in mcf.",
             "title": "Gas Mcf"
+          },
+          "gas_mcf_aggregation": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Aggregation per gas point; same vocabulary as oil.",
+            "title": "Gas Mcf Aggregation"
           },
           "gas_mcf_null_semantics": {
             "anyOf": [
@@ -2723,6 +2869,28 @@
             "description": "Oil volumes in bbl as decimal strings; null where no report.",
             "title": "Oil Bbl"
           },
+          "oil_bbl_aggregation": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sum_over_pools where the point is the exact sum of the well's pool rows under cr_nd_pool_rollup_1; null where the month is a single filing.",
+            "title": "Oil Bbl Aggregation"
+          },
           "oil_bbl_null_semantics": {
             "anyOf": [
               {
@@ -2735,7 +2903,7 @@
                 "type": "null"
               }
             ],
-            "description": "reported, reported_zero, no_report or withheld per point, plus multi_pool_pending where the well filed in more than one pool and no single row is its production.",
+            "description": "reported, reported_zero, no_report or withheld per point, plus multi_pool_pending where two filings share one pool label and no single row is the well's production.",
             "title": "Oil Bbl Null Semantics"
           },
           "oil_bbl_report_vintage": {
@@ -2789,6 +2957,28 @@
             ],
             "description": "Water volumes in bbl.",
             "title": "Water Bbl"
+          },
+          "water_bbl_aggregation": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Aggregation per water point; same vocabulary as oil.",
+            "title": "Water Bbl Aggregation"
           },
           "water_bbl_null_semantics": {
             "anyOf": [
@@ -5664,7 +5854,7 @@
     },
     "/v1/keys/{key_id}": {
       "delete": {
-        "description": "Takes the key out of service immediately and records `key.revoked`. Revoking an already-revoked key returns the same record and writes no second event, so a retry after a timeout is safe.",
+        "description": "Takes the key out of service immediately and records `key.revoked`. Revoking an already-revoked key returns the same record and writes no second event, so a retry after a timeout is safe. The example id is the contract fixture's. Key ids are minted by `POST /v1/keys` and exist only on the deployment that issued them, so read one off `GET /v1/keys` rather than replaying this one.",
         "operationId": "revoke_key",
         "parameters": [
           {
@@ -5795,7 +5985,7 @@
     },
     "/v1/keys/{key_id}/rotate": {
       "post": {
-        "description": "Issues a replacement under the same label and scope and revokes the old key in the same call, which is what makes rotation a single step a consumer cannot half-do. The cleartext key is returned by this call and by nothing else, ever: only its sha256 is stored. A key that has been lost is rotated, not recovered.",
+        "description": "Issues a replacement under the same label and scope and revokes the old key in the same call, which is what makes rotation a single step a consumer cannot half-do. The cleartext key is returned by this call and by nothing else, ever: only its sha256 is stored. A key that has been lost is rotated, not recovered. The example id is the contract fixture's. Key ids are minted by `POST /v1/keys` and exist only on the deployment that issued them, so read one off `GET /v1/keys` rather than replaying this one.",
         "operationId": "rotate_key",
         "parameters": [
           {
@@ -6315,7 +6505,7 @@
     },
     "/v1/manifests/{manifest_id}/bytes": {
       "get": {
-        "description": "The archived copy of the fetched artifact, byte-identical to what was hashed. Owner scope, unless the source's terms mark the artifact redistributable (SB-07 \u00a79.6) \u2014 an auditor does not need our copy, because the checksum and the exact acquisition URL let them re-fetch from the regulator and hash it themselves, which is the stronger audit. `404` when this host does not hold the bytes; the record at `/v1/manifests/{manifest_id}` still resolves.",
+        "description": "The archived copy of the fetched artifact, byte-identical to what was hashed. Owner scope, unless the source's terms mark the artifact redistributable (SB-07 \u00a79.6) \u2014 an auditor does not need our copy, because the checksum and the exact acquisition URL let them re-fetch from the regulator and hash it themselves, which is the stronger audit. `404` when this host does not hold the bytes; the record at `/v1/manifests/{manifest_id}` still resolves. The example id is the contract fixture's. `drv_`, `man_` and `qr_` ids are content addresses over bytes and run parameters, so they differ per deployment by construction \u2014 take a live one from the `d` handle on any served figure, or from `/v1/manifests`.",
         "operationId": "get_manifest_bytes",
         "parameters": [
           {
@@ -7204,7 +7394,7 @@
     },
     "/v1/vintages/{vintage_id}": {
       "get": {
-        "description": "The promotion record `as_of` resolves to, including the manifests it read and its restatement summary. Vintages are append-only: a correction opens a new one.",
+        "description": "The promotion record `as_of` resolves to, including the manifests it read and its restatement summary. Vintages are append-only: a correction opens a new one. The example id is the contract fixture's. A vintage id is `vin_<source_id>_<date>`, where the date is a knowledge date this deployment actually promoted \u2014 it is composed, not addressed, so list `/v1/vintages` and take one rather than building it.",
         "operationId": "get_vintage",
         "parameters": [
           {
@@ -7699,7 +7889,7 @@
     },
     "/v1/wells/{api10}/production": {
       "get": {
-        "description": "Monthly produced volumes for one well, in the SB-07 \u00a79.1(b) sidecar form: derivation handles in `_lineage`, units in `_units`, the liquids basis in `_basis`, and per-point `report_vintage` and `null_semantics` arrays. ND publishes one workbook a month, so a month is promoted by its own derivation: `_lineage` keys a handle per point (`series.oil_bbl.0`) whenever the points of a column disagree, and each handle explains to the file that carries that month. In North Dakota these are well-level regulator reports, so `granularity` is `well_observed` \u2014 nothing here is allocated. A series never silently mixes vintages: `as_of` selects the greatest report vintage at or before the date and every point says which one it used. `null_semantics` keeps a reported zero, an absent report and a withheld value apart; they are never collapsed into a gap. A month the regulator withheld rides the axis with a null value, and a month whose API-10 filed in more than one pool is withdrawn as multi_pool_pending rather than served as if one pool's row were the well. meta.warnings names both, with the rule that recorded them. GOR and water cut are deliberately not served in this slice.",
+        "description": "Monthly produced volumes for one well, in the SB-07 \u00a79.1(b) sidecar form: derivation handles in `_lineage`, units in `_units`, the liquids basis in `_basis`, and per-point `report_vintage` and `null_semantics` arrays. ND publishes one workbook a month, so a month is promoted by its own derivation: `_lineage` keys a handle per point (`series.oil_bbl.0`) whenever the points of a column disagree, and each handle explains to the file that carries that month. In North Dakota these are well-level regulator reports, so `granularity` is `well_observed` \u2014 nothing here is allocated. A series never silently mixes vintages: `as_of` selects the greatest report vintage at or before the date and every point says which one it used. `null_semantics` keeps a reported zero, an absent report and a withheld value apart; they are never collapsed into a gap. A month the regulator withheld rides the axis with a null value. A well that filed in more than one pool is served the exact sum of its pool rows, never a serve-time sum: the point's handle resolves to the aggregation derivation over those rows, `*_aggregation` reads `sum_over_pools`, `reporting_level` reads `well_completion_pool`, and `links.pools` carries the per-pool breakdown. Where two filings share one pool label the rule cannot say which is the well, so that point is withdrawn as multi_pool_pending instead. meta.warnings names every case with the rule that decided it. GOR and water cut are deliberately not served in this slice.",
         "operationId": "get_well_production",
         "parameters": [
           {
@@ -7914,6 +8104,184 @@
               "oil"
             ]
           }
+        }
+      }
+    },
+    "/v1/wells/{api10}/production/pools": {
+      "get": {
+        "description": "The pool rows behind a well series. A well completed in two pools files one row per pool per month, and each is a first-class `well_completion_pool` entity under the S-E key; `/v1/wells/{api10}/production` serves their sum with the aggregation disclosed, and this sub-resource serves the rows that sum was taken over. A well that filed in exactly one pool has no breakdown to give and returns an empty list \u2014 its own series already is the pool's.",
+        "operationId": "get_well_production_pools",
+        "parameters": [
+          {
+            "description": "Ten-digit API well number.",
+            "in": "path",
+            "name": "api10",
+            "required": true,
+            "schema": {
+              "description": "Ten-digit API well number.",
+              "pattern": "^\\d{10}$",
+              "title": "Api10",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+              "title": "As Of"
+            }
+          },
+          {
+            "description": "Stream to include; repeatable. Defaults to oil, gas and water.",
+            "in": "query",
+            "name": "stream",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "oil",
+                      "gas",
+                      "water"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Stream to include; repeatable. Defaults to oil, gas and water.",
+              "title": "Stream"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_ProductionPools_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "as_of_out_of_range": {
+                    "summary": "as_of precedes the captured history",
+                    "value": {
+                      "detail": "`as_of` is earlier than the earliest captured vintage for every contributing source. An empty result would be indistinguishable from nothing happening.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "as_of precedes the captured history",
+                      "type": "/v1/errors/as_of_out_of_range"
+                    }
+                  },
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Per-pool production for one well",
+        "tags": [
+          "wells"
+        ],
+        "x-glasswell-request-example": {
+          "path": {
+            "api10": "3305310451"
+          },
+          "query": {}
         }
       }
     }

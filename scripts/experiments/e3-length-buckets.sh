@@ -35,23 +35,41 @@ select 'pinned_bucket',
              when len_ft < 11000 then 3 else 4 end),
        count(*), round(100.0 * count(*) / sum(count(*)) over (), 2)
   from t group by 2 order by 2;
+-- The measured cuts are the quartiles snapped to the nearest 500 ft, computed here rather
+-- than typed in: run-all.sh has to be able to re-decide LENGTH_BUCKETS_FT after the E-0
+-- back-load without an agent editing this file (gate-bgate M-1).
 with t as (
   select api10, sum(lateral_length_ft_exact) as len_ft from marts.nd_laterals_tile group by api10
+), c as (
+  select round(percentile_cont(0.25) within group (order by len_ft)::numeric / 500) * 500 as c1,
+         round(percentile_cont(0.50) within group (order by len_ft)::numeric / 500) * 500 as c2,
+         round(percentile_cont(0.75) within group (order by len_ft)::numeric / 500) * 500 as c3
+    from t
+)
+select 'measured_cuts', c1::bigint, c2::bigint, c3::bigint from c;
+with t as (
+  select api10, sum(lateral_length_ft_exact) as len_ft from marts.nd_laterals_tile group by api10
+), c as (
+  select round(percentile_cont(0.25) within group (order by len_ft)::numeric / 500) * 500 as c1,
+         round(percentile_cont(0.50) within group (order by len_ft)::numeric / 500) * 500 as c2,
+         round(percentile_cont(0.75) within group (order by len_ft)::numeric / 500) * 500 as c3
+    from t
 )
 select 'measured_bucket',
-       (case when len_ft < 8000 then 1 when len_ft < 10000 then 2
-             when len_ft < 10500 then 3 else 4 end),
+       (case when len_ft < c1 then 1 when len_ft < c2 then 2
+             when len_ft < c3 then 3 else 4 end),
        count(*), round(100.0 * count(*) / sum(count(*)) over (), 2)
-  from t group by 2 order by 2;
+  from t, c group by 2 order by 2;
 SQL
 
 cat "$rows"
 awk -F'|' -v floor="${GW_BUCKET_MIN_SHARE_PCT:-15}" '
     $1 == "pinned_bucket"   { pinned++;   if ($4 + 0 < floor) pinned_fail++ }
+    $1 == "measured_cuts"   { cuts = $2 "," $3 "," $4 }
     $1 == "measured_bucket" { measured++; if ($4 + 0 < floor) measured_fail++ }
     END {
         printf "VERDICT|LENGTH_BUCKETS pinned {7500,9500,11000}|%s %d of %d buckets under %d%%\n",
                (pinned_fail ? "FAIL" : "PASS"), pinned_fail + 0, pinned, floor;
-        printf "VERDICT|LENGTH_BUCKETS measured {8000,10000,10500}|%s %d of %d buckets under %d%%\n",
-               (measured_fail ? "FAIL" : "PASS"), measured_fail + 0, measured, floor;
+        printf "VERDICT|LENGTH_BUCKETS measured {%s}|%s %d of %d buckets under %d%%\n",
+               cuts, (measured_fail ? "FAIL" : "PASS"), measured_fail + 0, measured, floor;
     }' "$rows"

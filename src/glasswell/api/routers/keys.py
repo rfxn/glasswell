@@ -41,6 +41,11 @@ from glasswell.lineage.ids import new_ulid
 router = APIRouter(tags=["keys"], dependencies=[Depends(require_scope(*MUTATION_POST_SCOPES))])
 
 EXAMPLE_KEY_ID = "key_01JBQ7M0Z8K2V4N6X8R0T2Y4W6"
+KEY_ID_NOTE = (
+    " The example id is the contract fixture's. Key ids are minted by `POST /v1/keys` and"
+    " exist only on the deployment that issued them, so read one off `GET /v1/keys` rather"
+    " than replaying this one."
+)
 SHOWN_ONCE_NOTE = (
     " The cleartext key is returned by this call and by nothing else, ever: only its sha256"
     " is stored. A key that has been lost is rotated, not recovered."
@@ -304,6 +309,7 @@ def list_keys(
         "Takes the key out of service immediately and records `key.revoked`. Revoking an"
         " already-revoked key returns the same record and writes no second event, so a"
         " retry after a timeout is safe."
+        + KEY_ID_NOTE
     ),
     response_model=EnvelopeModel[KeyRecordModel],
     openapi_extra=request_example(path={"key_id": EXAMPLE_KEY_ID}),
@@ -329,6 +335,7 @@ def revoke_key(
         "Issues a replacement under the same label and scope and revokes the old key in the"
         " same call, which is what makes rotation a single step a consumer cannot half-do."
         + SHOWN_ONCE_NOTE
+        + KEY_ID_NOTE
     ),
     response_model=EnvelopeModel[IssuedKey],
     status_code=201,
