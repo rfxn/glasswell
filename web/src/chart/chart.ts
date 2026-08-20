@@ -11,7 +11,7 @@ import {
 import { labelElement } from "../glossary/gw-term.ts";
 import { axisLabels } from "./axes.ts";
 import { chartOptions, STREAM_STROKE } from "./options.ts";
-import { pointHandle } from "./series.ts";
+import { handleAt } from "./series.ts";
 import type { ChartSeries, SeriesColumn } from "./series.ts";
 
 const PLOT_HEIGHT = 260;
@@ -193,8 +193,8 @@ function mark(
     (column.vintages[index] ? ` · vintage ${column.vintages[index]}` : "") +
     `\n${described.title}`;
   button.setAttribute("aria-label", button.title);
-  if (column.handle) {
-    const handle = pointHandle(column.handle, month);
+  const handle = handleAt(column, index, month);
+  if (handle) {
     button.setAttribute("data-handle", handle);
     button.addEventListener("click", () => callbacks.onExplain(handle));
   }

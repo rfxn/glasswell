@@ -158,8 +158,10 @@ def test_points_that_disagree_carry_a_handle_each():
         "series.oil_bbl.1": "drv_other01#pm=2026-01",
     }
     assert envelope["data"]["_units"] == {"series.oil_bbl": "bbl"}
+    # Percent-encoded, per MINOR-5: a `#` sent raw makes the rest of the link a fragment the
+    # server never sees, so every point handle would resolve to a bare derivation.
     assert envelope["links"]["explain"] == (
-        f"/v1/explain?h={DERIVATION}#pm=2025-12&h=drv_other01#pm=2026-01&depth=full"
+        f"/v1/explain?h={DERIVATION}%23pm%3D2025-12&h=drv_other01%23pm%3D2026-01&depth=full"
     )
 
 

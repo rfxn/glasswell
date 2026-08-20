@@ -157,6 +157,10 @@ its own version in its header, and its history is summarised in §3.1.
 - [Fix] Lateral width interpolates over `lateral_length_ft` coerced to a number:
       martin serves a Postgres `numeric` as an MVT string, so the ramp silently
       held its base value
+- [Fix] The chart reads a handle per point, so a column whose months span promote
+      derivations explains each point to its own month's workbook instead of
+      reading `null`; the recorded web fixtures carry the percent-encoded explain
+      links the API now emits
 - [Change] Lateral length is measured geodesically on the WGS84 ellipsoid under
          `cr_nd_compute_crs_2`, which supersedes the UTM 14N rule rather than
          editing it. 97.6 % of ND laterals lie outside zone 14N, which overstated
@@ -176,6 +180,10 @@ its own version in its header, and its history is summarised in §3.1.
          `*-selected` filter layer per source, and data layers are inserted beneath
          the basemap's labels so town and county names stay readable over dense
          wells
+- [Change] One selection bus: `map-bus.ts` is gone and the map subscribes to
+         `bus.ts` itself, so the header search and the map cannot hold different
+         ideas of what is selected, and a search that asks for zoom 12 gets it
+         rather than the map's hardcoded floor
 
 ### 2026-08-20 — North Dakota spine and map slice
 

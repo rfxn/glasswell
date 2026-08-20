@@ -59,7 +59,7 @@ export const wellEnvelope = {
     "well_type_reported": "OG"
   },
   "links": {
-    "explain": "/v1/explain?h=drv_ga3f2mao5zgyb5xcniwq#api10=3305310451&col=lateral_length_ft&depth=full",
+    "explain": "/v1/explain?h=drv_ga3f2mao5zgyb5xcniwq%23api10%3D3305310451%26col%3Dlateral_length_ft&depth=full",
     "next": null,
     "production": "/v1/wells/3305310451/production",
     "self": "/v1/wells/3305310451"
@@ -191,7 +191,7 @@ export const productionEnvelope = {
     ]
   },
   "links": {
-    "explain": "/v1/explain?h=drv_xwfwmpqifwfcsspnyjqq#api10=3305310451&col=oil_bbl&h=drv_xwfwmpqifwfcsspnyjqq#api10=3305310451&col=gas_mcf&h=drv_xwfwmpqifwfcsspnyjqq#api10=3305310451&col=water_bbl&depth=full",
+    "explain": "/v1/explain?h=drv_xwfwmpqifwfcsspnyjqq%23api10%3D3305310451%26col%3Doil_bbl&h=drv_xwfwmpqifwfcsspnyjqq%23api10%3D3305310451%26col%3Dgas_mcf&h=drv_xwfwmpqifwfcsspnyjqq%23api10%3D3305310451%26col%3Dwater_bbl&depth=full",
     "next": null,
     "self": "/v1/wells/3305310451/production",
     "well": "/v1/wells/3305310451"

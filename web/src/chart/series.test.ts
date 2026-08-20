@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { pointHandle, toChartSeries } from "./series.ts";
+import { handleAt, pointHandle, toChartSeries } from "./series.ts";
 import type { ProductionData } from "./series.ts";
 
 const production: ProductionData = {
@@ -131,6 +131,70 @@ describe("toChartSeries", () => {
 
   it("groups columns by unit so bbl and mcf never share one scale", () => {
     expect(chart.scales).toEqual(["bbl", "mcf"]);
+  });
+});
+
+describe("per-point lineage (SB-07 §9.3)", () => {
+  // ND publishes one workbook a month, so a column whose months span promote derivations
+  // carries `series.<col>.<index>` entries and no column entry at all. Reading only the
+  // column key left every handle on the chart null.
+  const perPoint: ProductionData = {
+    ...production,
+    _lineage: {
+      "series.oil_bbl.0": "drv_jan#api10=3305301234&col=oil_bbl&pm=2026-01",
+      "series.oil_bbl.1": "drv_feb#api10=3305301234&col=oil_bbl&pm=2026-02",
+      "series.gas_mcf": "drv_gas1#api10=3305301234&col=gas_mcf",
+      "series.water_bbl": "drv_wat1#api10=3305301234&col=water_bbl",
+    },
+  };
+
+  it("resolves a handle per point when the column's months disagree", () => {
+    const chart = toChartSeries(perPoint);
+    expect(chart.columns[0]?.handles).toEqual([
+      "drv_jan#api10=3305301234&col=oil_bbl&pm=2026-01",
+      "drv_feb#api10=3305301234&col=oil_bbl&pm=2026-02",
+      null,
+    ]);
+  });
+
+  it("falls back to the first point's handle for the column-level control", () => {
+    expect(toChartSeries(perPoint).columns[0]?.handle).toBe(
+      "drv_jan#api10=3305301234&col=oil_bbl&pm=2026-01",
+    );
+  });
+
+  it("repeats the column handle per point when one derivation produced the column", () => {
+    const chart = toChartSeries(production);
+    expect(chart.columns[1]?.handles).toEqual([
+      "drv_gas1#api10=3305301234&col=gas_mcf",
+      "drv_gas1#api10=3305301234&col=gas_mcf",
+      "drv_gas1#api10=3305301234&col=gas_mcf",
+    ]);
+  });
+
+  it("carries no handle for a column the response never explained", () => {
+    const bare = toChartSeries({ ...production, _lineage: {} });
+    expect(bare.columns[0]?.handle).toBeNull();
+    expect(bare.columns[0]?.handles).toEqual([null, null, null]);
+  });
+
+  it("explains a point through its own month's derivation, not the column's first", () => {
+    const column = toChartSeries(perPoint).columns[0];
+    expect(column && handleAt(column, 1, "2026-02")).toBe(
+      "drv_feb#api10=3305301234&col=oil_bbl&pm=2026-02",
+    );
+  });
+
+  it("still adds the month to a shared column handle", () => {
+    const column = toChartSeries(production).columns[0];
+    expect(column && handleAt(column, 1, "2026-02")).toBe(
+      "drv_oil1#api10=3305301234&col=oil_bbl&pm=2026-02",
+    );
+  });
+
+  it("has nothing to explain when the point carries no handle", () => {
+    const column = toChartSeries({ ...production, _lineage: {} }).columns[0];
+    expect(column && handleAt(column, 1, "2026-02")).toBeNull();
   });
 });
 

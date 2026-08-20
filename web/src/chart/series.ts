@@ -23,6 +23,7 @@ export interface SeriesColumn {
   unit: string;
   basis: string | null;
   handle: string | null;
+  handles: (string | null)[];
   values: (number | null)[];
   raw: (string | null)[];
   vintages: (string | null)[];
@@ -64,13 +65,15 @@ export function toChartSeries(production: ProductionData): ChartSeries {
     const present = vintages.filter((vintage): vintage is string => vintage !== null);
     const distinct = new Set(present);
     const states = semantics.map((state) => state ?? "");
+    const handles = pointHandles(production._lineage, key, months.length);
     columns.push({
       key,
       stream,
       label: STREAM_LABELS[stream] ?? stream,
       unit: production._units[`series.${key}`] ?? "",
       basis: production._basis[`series.${key}`] ?? null,
-      handle: production._lineage[`series.${key}`] ?? null,
+      handle: handles.find((handle) => handle !== null) ?? null,
+      handles,
       values: raw.map((value, index) => plotted(value, states[index] ?? "")),
       raw,
       vintages,
@@ -92,6 +95,20 @@ export function toChartSeries(production: ProductionData): ChartSeries {
 }
 
 /**
+ * SB-07 §9.3: a column whose months were promoted by different derivations carries one
+ * `series.<col>.<index>` entry per point and no column entry, so reading the column key
+ * alone leaves every handle on the chart null.
+ */
+function pointHandles(
+  lineage: Record<string, string>,
+  key: string,
+  length: number,
+): (string | null)[] {
+  const shared = lineage[`series.${key}`] ?? null;
+  return Array.from({ length }, (_, index) => lineage[`series.${key}.${index}`] ?? shared);
+}
+
+/**
  * A withheld or unreported month is not a measurement, so it is a gap in the line whatever
  * number the wire carries for it. The state strip still renders which of the four it was;
  * a gap is never left ambiguous (SB-05 §3.2).
@@ -101,6 +118,12 @@ const NOT_MEASURED = new Set(["withheld", "no_report"]);
 function plotted(value: string | null, state: string): number | null {
   if (value === null || NOT_MEASURED.has(state)) return null;
   return Number(value);
+}
+
+/** The handle that explains one plotted point: the point's own if the wire carried one. */
+export function handleAt(column: SeriesColumn, index: number, month: string): string | null {
+  const handle = column.handles[index] ?? column.handle;
+  return handle === null ? null : pointHandle(handle, month);
 }
 
 /** SB-05 §3.9.6: one handle on the wire, point-level explain built from the key columns. */

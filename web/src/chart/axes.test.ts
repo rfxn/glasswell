@@ -11,6 +11,7 @@ function column(label: string, unit: string): SeriesColumn {
     unit,
     basis: null,
     handle: null,
+    handles: [],
     values: [],
     raw: [],
     vintages: [],

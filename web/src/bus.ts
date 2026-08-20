@@ -76,4 +76,44 @@ export function resetBus(): void {
   requested.clear();
   committed.clear();
   camera.clear();
+  urlMirror = undefined;
+}
+
+/** What the map offers the rest of the app. Structural, so the bus imports no map code. */
+export interface MapTarget {
+  select(api10: string | null): void;
+  flyTo(target: FlyTarget): void;
+}
+
+/** The map's end of the seam: it subscribes here instead of keeping a registry of its own. */
+export function connectMap(target: MapTarget): () => void {
+  const offSelection = onWellSelected((api10) => target.select(api10));
+  const offCamera = onFlyTo((point) => target.flyTo(point));
+  return () => {
+    offSelection();
+    offCamera();
+  };
+}
+
+let urlMirror: ((key: string, value: string | null) => void) | undefined;
+
+/**
+ * Layer and basemap choices belong in the URL so a shared link reproduces the reader's map.
+ * `replaceState`, because a pan is not a navigation.
+ */
+export function setUrlParam(key: string, value: string | null): void {
+  const url = new URL(window.location.href);
+  if (value === null) url.searchParams.delete(key);
+  else url.searchParams.set(key, value);
+  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  urlMirror?.(key, value);
+}
+
+/**
+ * Lets the app owner of `AppState.extra` keep its copy in step with what the map writes:
+ * `main.ts` reads the query string once at boot, so a later commit would serialise the
+ * snapshot it took then and drop these parameters from a shared link.
+ */
+export function onUrlParam(mirror: (key: string, value: string | null) => void): void {
+  urlMirror = mirror;
 }

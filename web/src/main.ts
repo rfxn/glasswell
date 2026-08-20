@@ -4,7 +4,7 @@ import { ApiError, apiKey, getEnvelope } from "./api/client.ts";
 import { DEFAULT_STATE, readState, serializeState, writeState } from "./app/state.ts";
 import type { AppState } from "./app/state.ts";
 import { keyPanel } from "./auth/key-panel.ts";
-import { flyTo, onFlyTo, onSelectWell, onWellSelected, selectWell, wellSelected } from "./bus.ts";
+import { flyTo, onSelectWell, onUrlParam, selectWell, wellSelected } from "./bus.ts";
 import type { SelectSource } from "./bus.ts";
 import { renderWellCard } from "./card/card.ts";
 import { EXPLAIN_EVENT } from "./card/gw-figure.ts";
@@ -16,8 +16,6 @@ import { loadGlossary, termIndex } from "./glossary/store.ts";
 import "./glossary/gw-term.ts";
 import { renderLineageDrawer } from "./lineage/drawer.ts";
 import { createMap } from "./map/map.ts";
-import type { MapHandle } from "./map/map.ts";
-import { onUrlParam } from "./map/map-bus.ts";
 import { createSearch } from "./search/search.ts";
 
 const mapHost = required("gw-map");
@@ -27,7 +25,6 @@ const keyHost = required("gw-key-host");
 const shell = required("gw-main");
 
 let state: AppState = readState();
-let map: MapHandle | null = null;
 let pendingSource: SelectSource = "url";
 
 function required(id: string): HTMLElement {
@@ -101,9 +98,6 @@ onSelectWell(({ api10, source }) => {
   pendingSource = source;
   showWell(api10);
 });
-
-onWellSelected((api10) => map?.select(api10));
-onFlyTo((target) => map?.flyTo(target));
 
 document.addEventListener(EXPLAIN_EVENT, (event) => {
   const handle = (event as CustomEvent<{ handle: string }>).detail.handle;
@@ -179,11 +173,10 @@ function start(): void {
     state = { ...state, extra };
   });
 
-  map = createMap(mapHost, state.map, {
-    onSelect: (api10) => selectWell(api10, "map"),
+  // The map subscribes itself to the bus in createMap; the app only owns the viewport.
+  createMap(mapHost, state.map, {
     onViewport: (viewport) => commit({ map: viewport }, "replace"),
   });
-  map.select(state.well);
 
   if (state.well) showWell(state.well, "replace");
   if (state.explain) openExplain(state.explain, "replace");

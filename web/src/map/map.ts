@@ -3,6 +3,8 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 import "../map.css";
 import { authHeaders } from "../api/client.ts";
+import { connectMap, selectWell, setUrlParam } from "../bus.ts";
+import type { FlyTarget } from "../bus.ts";
 import type { Viewport } from "../app/state.ts";
 import {
   BASEMAP_SOURCE,
@@ -20,7 +22,6 @@ import { installClickRouter } from "./click-router.ts";
 import { createHoverCard } from "./hover-card.ts";
 import { createLayerPanel } from "./layer-panel.ts";
 import { createLegend } from "./legend.ts";
-import { registerMapBus, setUrlParam } from "./map-bus.ts";
 import { readLayerSet, restoreLayerSet, writeLayerSet } from "./persist.ts";
 import { createPillStrip } from "./pills.ts";
 import { LAYERS, defaultLayerSet, layerDef, layerIds } from "./registry.ts";
@@ -32,13 +33,12 @@ export { absoluteTileUrl } from "./style.ts";
 export { graticuleStyle as baseStyle } from "./basemap.ts";
 
 export interface MapCallbacks {
-  onSelect(api10: string): void;
   onViewport(viewport: Viewport): void;
 }
 
 export interface MapHandle {
   select(api10: string | null): void;
-  flyTo(point: { lon: number; lat: number }): void;
+  flyTo(target: FlyTarget): void;
 }
 
 interface BasemapManifest {
@@ -353,7 +353,7 @@ export function createMap(
   map.on("load", () => {
     void setBasemap(basemap);
     installClickRouter(map, {
-      onClick: (api10) => callbacks.onSelect(api10),
+      onClick: (api10) => selectWell(api10, "map"),
       onHover: (hit, event) => {
         if (hit) hover.show(hit.properties, event.point);
         else hover.hide();
@@ -395,12 +395,14 @@ export function createMap(
     flyTo(point) {
       // Land the well in the strip the card does not cover, not under it.
       const padding = { top: 0, bottom: 0, left: 0, right: Math.min(520, container.clientWidth / 2) };
-      const target = { center: [point.lon, point.lat] as [number, number], zoom: Math.max(map.getZoom(), 11), padding };
+      // The caller's zoom is a floor: a search from the basin pulls in, a search at z14 stays.
+      const zoom = Math.max(map.getZoom(), point.zoom ?? 11);
+      const target = { center: [point.lon, point.lat] as [number, number], zoom, padding };
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) map.jumpTo(target);
       else map.easeTo({ ...target, duration: 600 });
     },
   };
-  registerMapBus({ selectWell: (api10) => handle.select(api10), flyTo: handle.flyTo });
+  connectMap(handle);
   return handle;
 }
 
