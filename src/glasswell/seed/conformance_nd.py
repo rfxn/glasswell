@@ -342,6 +342,34 @@ ND_RULES: tuple[dict[str, object], ...] = (
         "evidence_url": GIS_LATERALS_URL,
     },
     {
+        "rule_id": "cr_nd_segment_vocab_1",
+        "effective_from": SUPERSESSION_FROM,
+        "source_id": "nd_gis_horizontals_line",
+        "stage": "conform",
+        "rule_kind": "vocab_map",
+        "applies_to_fields": ["segment"],
+        "spec": {
+            "mapping_table": "nd_segment_promoted_map",
+            "key_col": "segment",
+            "value_col": "geom_type",
+            "unmapped_action": "quarantine",
+            "reason_code": "segment_not_promoted",
+        },
+        "rule": "Promote the LAT centreline; hold the vertical hole and the sidetrack as a"
+        " disposition.",
+        "rationale": (
+            "OGD_Horizontals_Line ships three segment kinds in linekey: LAT (23,234 rows), VERT"
+            " (21,302) and STK (4,147). Only the lateral is a producing centreline, so promoting"
+            " a vertical segment as one would be wrong - but the other two are not unknown"
+            " vocabulary, which is what the loader's literal made the ledger say for 24,872 rows"
+            " whose own payload carried the segment the loader had parsed (fp-audit A5-F6). The"
+            " choice is a vocabulary, so it is a table, and the rows it holds back say what they"
+            " are. 68 wells have a sidetrack and no lateral; their card discloses the held-back"
+            " trace rather than reading as a well with no horizontal at all (fp-audit A3-F3)."
+        ),
+        "evidence_url": GIS_LATERALS_URL,
+    },
+    {
         "rule_id": "cr_nd_multilateral_1",
         "source_id": "nd_gis_horizontals_line",
         "stage": "validate",

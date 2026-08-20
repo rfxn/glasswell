@@ -198,7 +198,7 @@ def test_laterals_are_keyed_by_linekey_and_only_lateral_segments_are_promoted(
         "select count(*) from canonical.well_spatial where geom_type = 'lateral'"
         " and ST_GeometryType(geom) <> 'ST_LineString'",
     ) == 0
-    assert result.quarantined["unknown_vocab"] == NON_LATERAL_SEGMENTS
+    assert result.quarantined["segment_not_promoted"] == NON_LATERAL_SEGMENTS
     # Two _VERT records are disjoint multi-part lines: staging.geom is geometry(LineString),
     # so they stage without geometry and are measured rather than dropped.
     assert result.quarantined["parse_error"] == UNSTORABLE_GEOMETRIES
@@ -351,4 +351,9 @@ def test_the_compute_crs_directive_is_read_from_the_registry_not_hard_coded(
             (result.promote_derivation_id,),
         )
     ]
-    assert applied == ["cr_nd_compute_crs_2", "cr_nd_datum_1", "cr_nd_multilateral_1"]
+    assert applied == [
+        "cr_nd_compute_crs_2",
+        "cr_nd_datum_1",
+        "cr_nd_multilateral_1",
+        "cr_nd_segment_vocab_1",
+    ]

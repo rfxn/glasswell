@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import psycopg
 
-from glasswell.lineage.conformance import load_rules
+from glasswell.lineage.conformance import load_rules, rule_for_family
 from glasswell.lineage.errors import RuleSpecError
 from glasswell.lineage.models import ConformanceRule
 
@@ -58,10 +58,7 @@ def length_method(rule: ConformanceRule) -> LengthMethod:
 
 
 def compute_crs_rule(rules: Sequence[ConformanceRule]) -> ConformanceRule:
-    for rule in rules:
-        if rule.rule_family == COMPUTE_CRS_FAMILY:
-            return rule
-    raise LookupError(f"no active {COMPUTE_CRS_FAMILY} rule; the length method is not knowable")
+    return rule_for_family(rules, COMPUTE_CRS_FAMILY)
 
 
 def resolve_length_method(connection: psycopg.Connection) -> LengthMethod:

@@ -84,6 +84,20 @@ select storage_epsg
  limit 1
 """
 
+# A3-F3: a well whose only horizontal trace was held back reads as a well with no lateral at
+# all unless the card says otherwise. Indexed on (source_id, row_payload->>'api10') in 016.
+_HELD_BACK_GEOMETRY = """
+select reason_code, rule_id, count(*) as rows,
+       string_agg(distinct row_payload ->> 'segment', ', ' order by row_payload ->> 'segment')
+           as segments
+  from lineage.quarantine_rows
+ where source_id = 'nd_gis_horizontals_line'
+   and row_payload ->> 'api10' = %(api10)s
+   and state = 'open'
+ group by reason_code, rule_id
+ order by reason_code
+"""
+
 
 class WellSummary(BaseModel):
     api10: str = Field(description="Ten-digit API well number.", json_schema_extra={
@@ -161,6 +175,25 @@ def _summary(row: dict[str, Any]) -> dict[str, Any]:
             "production": f"/v1/wells/{row['api10']}/production",
         },
     }
+
+
+def _held_back_geometry(connection, api10: str) -> list[dict[str, Any]]:
+    """Say what the horizontals layer held back for this well, and under which rule."""
+    warnings = []
+    for row in rows(connection, _HELD_BACK_GEOMETRY, {"api10": api10}):
+        segments = f" ({row['segments']})" if row["segments"] else ""
+        warnings.append(
+            {
+                "code": "geometry_not_promoted",
+                "detail": (
+                    f"{row['rows']} horizontal geometry rows for this well{segments} were not"
+                    f" promoted: {row['reason_code']} under {row['rule_id']}."
+                    " They are in /v1/quarantine with their payloads."
+                ),
+                "pointer": "/geometry",
+            }
+        )
+    return warnings
 
 
 def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
@@ -328,6 +361,7 @@ def get_well(
         {"api10": api10},
     )
 
+    warnings.extend(_held_back_geometry(connection, api10))
     laterals = [item for item in geometry if item["geom_type"] == "lateral"]
     untiled = [item["geom_key"] for item in laterals if not item["tiled"]]
     if untiled:

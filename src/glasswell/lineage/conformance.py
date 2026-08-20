@@ -429,6 +429,14 @@ def active_rules(rules: Sequence[ConformanceRule]) -> list[ConformanceRule]:
     return [rule for rule in rules if rule.rule_id not in superseded]
 
 
+def rule_for_family(rules: Sequence[ConformanceRule], family: str) -> ConformanceRule:
+    """Pin a family, never a version: a supersession changes the id and must not be missed."""
+    for rule in rules:
+        if rule.rule_family == family:
+            return rule
+    raise LookupError(f"no active rule in family {family}")
+
+
 def apply_rules(frame: pl.DataFrame, rules: Sequence[ConformanceRule]) -> RuleApplication:
     """Execute loaded rules in registry order. Rejected rows leave the frame with a reason."""
     applied: list[str] = []

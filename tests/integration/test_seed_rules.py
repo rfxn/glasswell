@@ -12,7 +12,7 @@ from glasswell.lineage.conformance import RULE_KINDS, apply_registry_rules, appl
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_nd import ND_RULES
 
-MINIMUM_RULES = 15
+MINIMUM_RULES = 16
 MINIMUM_TERMS = 30
 MEASURED_ND_STATUSES = 19
 POLICY_RULES = ("cr_nd_liquids_policy_1", "cr_nd_null_semantics_1")
@@ -47,6 +47,7 @@ PROBE_FRAMES: dict[str, pl.DataFrame] = {
     "cr_nd_compute_crs_2": pl.DataFrame(
         {"linekey": ["33011003910000_LAT1"], "geom": ["LINESTRING(-103.5 47.9,-103.4 47.9)"]}
     ),
+    "cr_nd_segment_vocab_1": pl.DataFrame({"segment": ["LAT"]}),
     "cr_nd_multilateral_1": pl.DataFrame(
         {"linekey": ["33011003910000_LAT1"], "lateral_ordinal": [1]}
     ),

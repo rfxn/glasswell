@@ -37,12 +37,14 @@ from glasswell.lineage import (
     open_vintage,
     quarantine,
 )
+from glasswell.lineage.conformance import rule_for_family
 from glasswell.lineage.serialization import hash_payload, json_ready
 from glasswell.units import METRES_PER_FOOT
 
 BASE_URL = "https://gis.dmr.nd.gov/downloads/oilgas/shapefile"
 DATUM_RULE_SOURCE = "nd_gis_wells"
 LAND_UNIT_RULE_ID = "cr_nd_land_unit_1"
+SEGMENT_FAMILY = "cr_nd_segment_vocab"
 _LINEKEY = re.compile(r"\A(?P<api14>\d{14})_(?P<segment>[A-Za-z]+)(?P<ordinal>\d*)\Z")
 
 
@@ -89,7 +91,9 @@ LAYERS: Mapping[str, LayerSpec] = {
         canonical_table="canonical.well_spatial",
         columns=("linekey", "fileno", "shape_leng"),
         geometry_type="LineString",
-        reason_codes=("parse_error", "unknown_vocab", "multi_wellbore_policy", "orphan_fk"),
+        reason_codes=(
+            "parse_error", "segment_not_promoted", "multi_wellbore_policy", "orphan_fk",
+        ),
     ),
     "spacing_units": LayerSpec(
         layer="spacing_units",
@@ -628,6 +632,14 @@ _LATERALS_SCHEMA = {
     "fileno": pl.String,
 }
 
+# parse_linekey's output, declared so an empty layer still presents the columns the rule maps.
+_PARSED_SCHEMA = {
+    **_LATERALS_SCHEMA,
+    "api10": pl.String,
+    "segment": pl.String,
+    "lateral_ordinal": pl.Int64,
+}
+
 _INSERT_LATERAL = """
 insert into canonical.well_spatial (
     api10, geom_type, geom_key, geom, source_datum, transform_rule_id, source_manifest_id,
@@ -681,18 +693,23 @@ def _promote_laterals(
         stage="parse",
     )
 
-    laterals = [row for row in parsed if row["segment"] == "LAT"]
-    others = [row for row in parsed if row["segment"] != "LAT"]
-    # The layer also ships vertical holes and sidetracks; they stay in staging, and the
-    # promotion measures them rather than promoting a vertical segment as a centreline.
-    counts["unknown_vocab"] += _quarantine(
-        connection,
-        pl.DataFrame(others),
-        spec,
-        manifest_id=manifest_id,
-        reason_code="unknown_vocab",
-        stage="conform",
+    # The layer also ships vertical holes and sidetracks. Which of the three is a producing
+    # centreline is a vocabulary, so it is a rule row, not a literal in this function.
+    segment_rule = rule_for_family(
+        load_rules(connection, source_id=spec.source_id, stage="conform"), SEGMENT_FAMILY
     )
+    selected = apply_rules(pl.DataFrame(parsed, schema=_PARSED_SCHEMA), [segment_rule])
+    laterals = selected.frame.to_dicts()
+    for batch in selected.quarantined:
+        counts[batch.reason_code] = counts.get(batch.reason_code, 0) + _quarantine(
+            connection,
+            batch.frame,
+            spec,
+            manifest_id=manifest_id,
+            reason_code=batch.reason_code,
+            stage="conform",
+            rule_id=batch.rule_id,
+        )
 
     per_well: dict[str, list[str]] = {}
     for row in laterals:
@@ -741,7 +758,7 @@ def _promote_laterals(
             InputRef(kind="derivation", ref_id=parse_derivation_id),
             InputRef(kind="manifest", ref_id=manifest_id, as_of_vintage=vintage),
         ],
-        rules=[directive.rule_id, datum.rule_id, multilateral.rule_id],
+        rules=[directive.rule_id, datum.rule_id, multilateral.rule_id, segment_rule.rule_id],
     ) as context:
         context.set_rows(len(kept))
         context.set_output_hash(
