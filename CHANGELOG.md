@@ -239,6 +239,37 @@ its own version in its header, and its history is summarised in §3.1.
       any entity level; a fixture that made every gas row read `bbl` is a fixture that
       made the unit column untestable (DR-46)
 
+- [Fix] A re-promotion at a vintage that already answers is refused rather than swallowed.
+      `report_vintage` is the wall-clock day, so running the correction on the day the fleet
+      was last promoted put every well aggregate on the primary key of the row it corrects;
+      `on conflict do nothing` discarded them all while the collision ledger closed anyway,
+      restoring the zero-producer defect with its only disclosure deleted. A repeat run that
+      computes what is already recorded is still a no-op, as the derivation store's
+      reconcile() is (SB-07 §1.3)
+- [Fix] A well row that becomes a disclosed sum is appended even when its value did not move.
+      The change key is `value_hash` plus `reporting_level` and `aggregation`; `value_hash`
+      itself keeps migration 008's definition, so an unaffected well still appends nothing,
+      but a well whose sibling pool contributed no volume no longer keeps an undisclosed head
+      row and serves a cross-pool sum as a single-pool observation
+- [Fix] A released ledger row carries `released_at_vintage`, and the withdrawal and
+      withholding queries read it as of the vintage being asked for. An as-of replay of a
+      date before the release disclosed nothing and answered with an affirmative regulator
+      zero; it now answers what that date answered (DIR-2)
+- [Fix] Collisions are superseded only for the well-months whose aggregate actually landed,
+      and `RepromotionReport.rows_appended` counts rows that landed rather than rows that
+      were computed
+- [Fix] A no-op re-run no longer overwrites the vintage ledger row with zeroes, and two
+      staged manifests for one workbook are refused up front rather than resolved by
+      insertion order half-way through a run
+- [Remove] The `derivation_id` tiebreak on the serving window, and the test that grepped the
+         view DDL for it. The primary key holds every column the window partitions and orders
+         on, so a report-vintage tie inside a partition is unrepresentable; believing
+         otherwise is what made a same-vintage re-promotion look safe. What replaces it is a
+         test that the key refuses the tie
+- [Change] `entity_type` and `reporting_level` are checked against each other, so a lease row
+         can no longer assert it was observed at the well. Latent today — every row is
+         consistent — and load-bearing when the lease and pool writers arrive at P7a/P7b
+
 ### 2026-08-20 — North Dakota spine and map slice
 
 - [New] Lineage and reproducibility spine: content-addressed raw zone with sealed

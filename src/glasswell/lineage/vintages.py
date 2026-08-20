@@ -14,9 +14,10 @@ from glasswell.lineage.models import VintageRecord
 from glasswell.lineage.serialization import json_ready
 
 # S-E: the window partitions on the entity key, so a well's two pool filings are two heads and
-# not one row shadowing the other. The tiebreak after report_vintage is derivation_id, not
-# created_at: wall-clock is not replay-stable and silently breaks R7 for a re-promotion at the
-# same vintage (SB-01 H2).
+# not one row shadowing the other. There is no tiebreak after report_vintage because there
+# cannot be one: the primary key holds every column this window partitions and orders on, so a
+# tie inside a partition is unrepresentable. A same-vintage re-promotion does not produce two
+# rows to order - it is refused (VintageAlreadyPromoted).
 _SELECT_PRODUCTION = """
 select entity_type, entity_key, reporting_level, well_completion_pool, aggregation, api10,
        production_month, stream, source_id, report_vintage, volume, unit, days_produced,
@@ -24,7 +25,7 @@ select entity_type, entity_key, reporting_level, well_completion_pool, aggregati
   from (select p.*,
                row_number() over (
                    partition by entity_type, entity_key, production_month, stream, source_id
-                   order by report_vintage desc, derivation_id desc) as vintage_rank
+                   order by report_vintage desc) as vintage_rank
           from canonical.production_monthly p
          where (%(as_of)s::date is null or p.report_vintage <= %(as_of)s::date)
            and (%(api10)s::text is null or p.api10 = %(api10)s)

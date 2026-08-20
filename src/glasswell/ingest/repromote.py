@@ -20,6 +20,7 @@ from psycopg.rows import dict_row
 from glasswell.ingest.base import IngestRun, open_ingest_run
 from glasswell.ingest.nd_mpr import SOURCE_ID, STAGING_TABLE, promote_manifest
 from glasswell.lineage.audit import emit
+from glasswell.lineage.errors import VintageAlreadyPromoted
 from glasswell.lineage.vintages import open_vintage
 
 
@@ -64,11 +65,31 @@ def staged_manifests(
     return [manifest for manifest in manifests if manifest.source_key in wanted]
 
 
+def _refuse_duplicate_months(manifests: Sequence[StagedManifest]) -> None:
+    """Two staged manifests for one workbook are two answers for one month at one vintage.
+
+    Only reachable after a `--restage` that left the superseded manifest's rows behind. It is
+    the operator's call which one is the month, so it is refused here rather than resolved by
+    insertion order half-way through the run.
+    """
+    seen: dict[str, str] = {}
+    collisions = []
+    for manifest in manifests:
+        first = seen.setdefault(manifest.source_key, manifest.manifest_id)
+        if first != manifest.manifest_id:
+            collisions.append(f"{manifest.source_key}: {first} and {manifest.manifest_id}")
+    if collisions:
+        raise VintageAlreadyPromoted(
+            STAGING_TABLE, "this run", len(collisions), collisions[0]
+        )
+
+
 def repromote(
     run: IngestRun, *, source_keys: Sequence[str] | None = None
 ) -> RepromotionReport:
     """Re-promote every staged manifest at the run's vintage, in source-key order."""
     manifests = staged_manifests(run.connection, source_keys=source_keys)
+    _refuse_duplicate_months(manifests)
     examined = appended = aggregated = superseded = 0
     months: set[str] = set()
     restatement: dict[str, int] = {}
@@ -95,7 +116,9 @@ def repromote(
             quarantined[reason] = quarantined.get(reason, 0) + count
 
     manifest_ids = [manifest.manifest_id for manifest in manifests]
-    if manifests:
+    # open_vintage upserts, so a re-run that appended nothing would overwrite the record of what
+    # the first pass did with a row of zeroes. A no-op run leaves the ledger alone.
+    if manifests and (appended or not _vintage_exists(run.connection, run.as_of)):
         open_vintage(
             run.connection,
             source_id=SOURCE_ID,
@@ -138,6 +161,15 @@ def repromote(
     )
 
 
+def _vintage_exists(connection: psycopg.Connection, vintage_date: date) -> bool:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select 1 from lineage.vintages where source_id = %s and vintage_date = %s",
+            (SOURCE_ID, vintage_date),
+        )
+        return cursor.fetchone() is not None
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Re-promote staged ND production under the S-E entity key."
@@ -151,8 +183,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
 
     with psycopg.connect(arguments.dsn) as connection:
-        with open_ingest_run(connection, source_id=SOURCE_ID) as run:
-            report = repromote(run, source_keys=arguments.source_key)
+        try:
+            with open_ingest_run(connection, source_id=SOURCE_ID) as run:
+                report = repromote(run, source_keys=arguments.source_key)
+        except VintageAlreadyPromoted as refused:
+            connection.rollback()
+            print(f"refused: {refused}")
+            return 2
         connection.commit()
     print(
         f"vintage {report.report_vintage}: {len(report.manifest_ids)} manifests,"

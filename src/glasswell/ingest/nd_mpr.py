@@ -24,6 +24,7 @@ from glasswell.ingest.base import IngestRun, open_ingest_run
 from glasswell.lineage.audit import emit
 from glasswell.lineage.capture import derive
 from glasswell.lineage.conformance import QuarantineBatch, apply_rules, load_rules
+from glasswell.lineage.errors import VintageAlreadyPromoted
 from glasswell.lineage.fetch import fetch_raw
 from glasswell.lineage.models import ConformanceRule, InputRef, OutputSpec
 from glasswell.lineage.quarantine import quarantine
@@ -442,31 +443,92 @@ def pool_promotion_records(frame: pl.DataFrame) -> PoolPromotion:
     )
 
 
-def _current_heads(connection: psycopg.Connection) -> dict[tuple[str, str, date, str], str]:
+def _head_key(record: Mapping[str, Any]) -> tuple[str, str, date, str]:
+    return (
+        record["entity_type"],
+        record["entity_key"],
+        record["production_month"],
+        record["stream"],
+    )
+
+
+def _change_key(record: Mapping[str, Any]) -> tuple[str, str | None, str | None]:
+    """What has to differ before a row is worth appending.
+
+    `value_hash` alone is not enough. A well-month whose pool filings happen to sum to what the
+    first-by-ordinal row already said hashes identically, and dropping it would leave the old
+    undisclosed row as the head: the number would be right and the response would still call a
+    cross-pool sum a single-pool observation (DIR-3). `value_hash` itself stays exactly as
+    migration 008 defined it, so an unaffected well still appends nothing.
+    """
+    return (record["value_hash"], record["reporting_level"], record["aggregation"])
+
+
+def _current_heads(
+    connection: psycopg.Connection,
+) -> dict[tuple[str, str, date, str], tuple[str, str | None, str | None]]:
     with connection.cursor() as cursor:
         cursor.execute(
-            "select entity_type, entity_key, production_month, stream, value_hash"
+            "select entity_type, entity_key, production_month, stream, value_hash,"
+            "       reporting_level, aggregation"
             " from canonical.production_monthly_latest where source_id = %s",
             (SOURCE_ID,),
         )
-        return {(row[0], row[1], row[2], row[3]): row[4] for row in cursor.fetchall()}
+        return {(r[0], r[1], r[2], r[3]): (r[4], r[5], r[6]) for r in cursor.fetchall()}
 
 
-def _unchanged(records: Sequence[Mapping[str, Any]], heads: Mapping[tuple, str]) -> list[dict]:
+def _unchanged(records: Sequence[Mapping[str, Any]], heads: Mapping[tuple, tuple]) -> list[dict]:
     """Change-only append (SB-07 §3.2): the PK carries the vintage, so the head check is here."""
     return [
-        dict(record)
-        for record in records
-        if heads.get(
-            (
-                record["entity_type"],
-                record["entity_key"],
-                record["production_month"],
-                record["stream"],
-            )
-        )
-        != record["value_hash"]
+        dict(record) for record in records if heads.get(_head_key(record)) != _change_key(record)
     ]
+
+
+_ROWS_AT_VINTAGE = """
+select entity_type, entity_key, production_month, stream, value_hash, reporting_level,
+       aggregation
+  from canonical.production_monthly
+ where source_id = %(source_id)s and report_vintage = %(report_vintage)s
+"""
+
+
+def reject_same_vintage_divergence(
+    connection: psycopg.Connection,
+    records: Sequence[Mapping[str, Any]],
+    *,
+    report_vintage: date,
+) -> list[dict[str, Any]]:
+    """Return the rows that can land at this vintage; raise if any would have to overwrite one.
+
+    Mirrors the derivation store's reconcile() one layer up (SB-07 §1.3): a repeat run that
+    computes what is already recorded is a no-op, and one that computes something else is an
+    error rather than a silent `on conflict do nothing`. Without this a re-promotion on the same
+    calendar day as the vintage it is correcting drops every aggregate and says it wrote them.
+    """
+    if not records:
+        return []
+    with connection.cursor() as cursor:
+        cursor.execute(
+            _ROWS_AT_VINTAGE, {"source_id": SOURCE_ID, "report_vintage": report_vintage}
+        )
+        occupied = {(r[0], r[1], r[2], r[3]): (r[4], r[5], r[6]) for r in cursor.fetchall()}
+
+    landable: list[dict[str, Any]] = []
+    divergent: list[str] = []
+    for record in records:
+        existing = occupied.get(_head_key(record))
+        if existing is None:
+            landable.append(dict(record))
+        elif existing != _change_key(record):
+            divergent.append(
+                f"{record['entity_type']} {record['entity_key']} {record['production_month']}"
+                f" {record['stream']}: recorded {existing}, computed {_change_key(record)}"
+            )
+    if divergent:
+        raise VintageAlreadyPromoted(
+            "canonical.production_monthly", report_vintage, len(divergent), divergent[0]
+        )
+    return landable
 
 
 _INSERT_CANONICAL = """
@@ -478,7 +540,6 @@ values (%(entity_type)s, %(entity_key)s, %(reporting_level)s, %(well_completion_
         %(aggregation)s, %(api10)s, %(production_month)s, %(stream)s, %(source_id)s,
         %(report_vintage)s, %(volume)s, %(unit)s, %(days_produced)s, %(granularity)s,
         %(value_hash)s, %(source_manifest_id)s, %(derivation_id)s, %(null_semantics)s)
-on conflict do nothing
 """
 
 _INSERT_COMPLETION = """
@@ -730,17 +791,18 @@ def promote_manifest(
                 counts=quarantined,
             )
         heads = _current_heads(connection)
-        appended = _unchanged(promoted.records, heads)
-        aggregates = _unchanged(promoted.aggregates, heads)
+        # Two filters, in this order. The head check decides what is worth appending; the
+        # vintage check decides what this vintage is still allowed to say, and refuses rather
+        # than letting a conflicting row be swallowed on insert.
+        appended = reject_same_vintage_divergence(
+            connection, _unchanged(promoted.records, heads), report_vintage=run.as_of
+        )
+        aggregates = reject_same_vintage_divergence(
+            connection, _unchanged(promoted.aggregates, heads), report_vintage=run.as_of
+        )
         restatement: dict[str, int] = {}
         for record in appended + aggregates:
-            key = (
-                record["entity_type"],
-                record["entity_key"],
-                record["production_month"],
-                record["stream"],
-            )
-            if key in heads:
+            if _head_key(record) in heads:
                 month_key = record["production_month"].isoformat()
                 restatement[month_key] = restatement.get(month_key, 0) + 1
 
@@ -776,6 +838,8 @@ def promote_manifest(
         derivation_id=promotion.derivation_id,
         report_vintage=run.as_of,
     )
+
+    landed_keys = {_head_key(record) for record in appended + aggregates}
 
     aggregate_derivation_id = None
     if aggregates:
@@ -818,12 +882,16 @@ def promote_manifest(
             report_vintage=run.as_of,
         )
 
+    # Driven off the aggregates that landed, never off the ones that were computed: closing a
+    # collision whose replacement row was not written is how the ledger loses the only
+    # disclosure a wrong figure had (gate-a1b Defect A).
+    disclosed = {
+        (record["api10"], record["production_month"])
+        for record in promoted.aggregates
+        if _head_key(record) in landed_keys or heads.get(_head_key(record)) == _change_key(record)
+    }
     superseded = supersede_pool_collisions(
-        run,
-        pairs=sorted(
-            {(record["api10"], record["production_month"]) for record in promoted.aggregates}
-        ),
-        derivation_id=aggregate_derivation_id,
+        run, pairs=sorted(disclosed), derivation_id=aggregate_derivation_id
     )
 
     payload = {
@@ -882,8 +950,8 @@ def supersede_pool_collisions(
         cursor.execute(
             "update lineage.quarantine_rows"
             "   set state = 'superseded', released_by_rule_id = %(rule_id)s,"
-            "       released_at = %(resolved_at)s, release_derivation_id = %(derivation_id)s,"
-            "       notes = %(note)s"
+            "       released_at = %(resolved_at)s, released_at_vintage = %(vintage)s,"
+            "       release_derivation_id = %(derivation_id)s, notes = %(note)s"
             " where source_id = %(source_id)s and reason_code = %(reason_code)s"
             "   and state = 'open'"
             "   and (row_payload ->> 'api10', (row_payload ->> 'production_month')::date)"
@@ -891,6 +959,7 @@ def supersede_pool_collisions(
             {
                 "rule_id": ROLLUP_RULE,
                 "resolved_at": run.session.clock.now(),
+                "vintage": run.as_of,
                 "derivation_id": derivation_id,
                 "note": (
                     "The pool filings this row held now promote as well_completion_pool rows"

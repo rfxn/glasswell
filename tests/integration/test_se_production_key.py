@@ -279,13 +279,70 @@ def test_the_serving_view_partitions_by_the_entity_key(widened):
     }
 
 
-def test_the_vintage_tiebreak_is_the_derivation_not_the_wall_clock(widened):
-    """S-E / SB-01 H2: created_at is not replay-stable, so it cannot order a re-promotion."""
+def test_the_serving_window_can_never_need_a_tiebreak(widened):
+    """SB-01 H2 asks which row wins a report-vintage tie. The key makes a tie unrepresentable.
+
+    The primary key holds every column the `_latest` window partitions and orders on, so two
+    rows cannot share one. This replaces a test that grepped the view DDL for the string
+    `derivation_id DESC` — which proved the text was there and nothing about the behaviour
+    (gate-a1b §5a). Believing the tiebreak made a same-vintage re-promotion safe is what let
+    `on conflict do nothing` swallow every aggregate.
+    """
+    with pytest.raises(psycopg.errors.UniqueViolation, match="production_monthly_pkey"):
+        seed_row(widened, value_hash="z" * 64, volume=Decimal("999.000"))
+    widened.rollback()
+
     with widened.cursor() as cursor:
         cursor.execute("select pg_get_viewdef('canonical.production_monthly_latest'::regclass)")
-        definition = cursor.fetchone()[0]
-    assert "derivation_id DESC" in definition
-    assert "created_at DESC" not in definition
+        assert "derivation_id DESC" not in cursor.fetchone()[0]
+
+
+@pytest.mark.parametrize(
+    ("entity_type", "reporting_level", "granularity"),
+    [
+        ("lease", "well", "well_observed"),
+        ("well_completion_pool", "lease", "lease_reported"),
+        ("well", "lease", "lease_reported"),
+    ],
+)
+def test_an_entity_cannot_claim_a_level_that_is_not_its_own(
+    widened, entity_type, reporting_level, granularity
+):
+    """A lease row asserting a well observation was admitted; nothing writes one, yet."""
+    with pytest.raises(psycopg.errors.CheckViolation, match="entity_level"):
+        with widened.cursor() as cursor:
+            cursor.execute(
+                "insert into canonical.production_monthly (entity_type, entity_key,"
+                " reporting_level, well_completion_pool, production_month, stream, source_id,"
+                " report_vintage, volume, unit, granularity, value_hash, source_manifest_id,"
+                " derivation_id)"
+                " values (%s, 'k', %s, 'BAKKEN', %s, 'oil', 'nd_mpr_xlsx', %s, 1, 'bbl', %s,"
+                " 'j', 'man_se', 'drv_se')",
+                (entity_type, reporting_level, MONTH, VINTAGE, granularity),
+            )
+    widened.rollback()
+
+
+def test_a_well_row_that_sums_its_pools_is_still_an_admissible_pairing(widened):
+    with widened.cursor() as cursor:
+        cursor.execute(
+            "insert into canonical.production_monthly (entity_type, entity_key,"
+            " reporting_level, aggregation, api10, production_month, stream, source_id,"
+            " report_vintage, volume, unit, granularity, value_hash, source_manifest_id,"
+            " derivation_id)"
+            " values ('well', %s, 'well_completion_pool', 'sum_over_pools', %s, %s, 'gas',"
+            " 'nd_mpr_xlsx', %s, 1, 'mcf', 'well_observed', 'k', 'man_se', 'drv_se')",
+            (API10, API10, MONTH, date(2026, 8, 21)),
+        )
+        cursor.execute(
+            "select count(*) from canonical.production_monthly where aggregation is not null"
+        )
+        assert cursor.fetchone()[0] == 1
+    widened.rollback()
+
+
+def test_a_released_ledger_row_records_the_vintage_it_was_released_at(widened):
+    assert "released_at_vintage" in columns(widened, "lineage", "quarantine_rows")
 
 
 def test_a_well_level_insert_that_names_no_entity_columns_still_keys_itself(widened):

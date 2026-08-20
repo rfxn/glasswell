@@ -42,6 +42,15 @@ select min(report_vintage) as earliest, max(report_vintage) as latest
  where api10 = %(api10)s
 """
 
+# A released row is not gone, it is released at a knowledge time. An as-of read from before
+# that time has to see it the way that date saw it, or the replay manufactures a fact (DIR-2).
+_OPEN_AS_OF = """
+   and (state = 'open'
+        or (released_at_vintage is not null
+            and %(as_of)s::date is not null
+            and released_at_vintage > %(as_of)s::date))
+"""
+
 # D2: a month the regulator withheld is not a gap. It has no canonical row to serve, so the
 # ledger is where the axis learns it exists at all.
 _WITHHELD_MONTHS = """
@@ -49,14 +58,13 @@ select distinct (row_payload ->> 'production_month')::date as production_month, 
   from lineage.quarantine_rows
  where source_id = 'nd_mpr_xlsx'
    and reason_code = 'confidential_withheld'
-   and state = 'open'
    and row_payload ->> 'api10' = %(api10)s
    and row_payload ->> 'production_month' is not null
-"""
+""" + _OPEN_AS_OF
 
-# D1: an API-10 that filed in more than one pool has one row promoted by spreadsheet ordinal
-# and the rest in the ledger. Until the canonical key widens, the promoted row is not the
-# well's production and is not served as if it were.
+# D1 residue: a well-month whose pool filings the rule could not decompose, or one that has
+# not been re-promoted at the as_of being read. The promoted row is not the well's production
+# and is not served as if it were.
 _MULTI_POOL_PENDING = """
 select (row_payload ->> 'production_month')::date as production_month,
        row_payload ->> 'stream_canonical' as stream,
@@ -67,9 +75,9 @@ select (row_payload ->> 'production_month')::date as production_month,
   from lineage.quarantine_rows
  where source_id = 'nd_mpr_xlsx'
    and reason_code = 'key_collision'
-   and state = 'open'
    and row_payload ->> 'api10' = %(api10)s
    and row_payload ->> 'production_month' is not null
+""" + _OPEN_AS_OF + """
  group by 1, 2
 """
 
@@ -260,8 +268,8 @@ def get_well_production(
         window=window,
     )
 
-    withheld = _withheld_months(connection, api10, window)
-    pending = _multi_pool_pending(connection, api10, window)
+    withheld = _withheld_months(connection, api10, window, as_of)
+    pending = _multi_pool_pending(connection, api10, window, as_of)
     months = sorted({row["production_month"] for row in observed} | set(withheld))
     payload: dict[str, Any] = {"pm": [month_label(month) for month in months]}
     warnings: list[dict[str, Any]] = _withheld_warning(withheld)
@@ -575,11 +583,14 @@ def _pending_warning(held: dict[date, dict[str, Any]], column: str) -> list[dict
 
 
 def _multi_pool_pending(
-    connection: psycopg.Connection, api10: str, window: tuple[date | None, date | None]
+    connection: psycopg.Connection,
+    api10: str,
+    window: tuple[date | None, date | None],
+    as_of: date | None,
 ) -> dict[tuple[date, str], dict[str, Any]]:
     return {
         (row["production_month"], row["stream"]): row
-        for row in rows(connection, _MULTI_POOL_PENDING, {"api10": api10})
+        for row in rows(connection, _MULTI_POOL_PENDING, {"api10": api10, "as_of": as_of})
         if (window[0] is None or row["production_month"] >= window[0])
         and (window[1] is None or row["production_month"] <= window[1])
     }
@@ -604,12 +615,15 @@ def _withheld_warning(withheld: dict[date, str]) -> list[dict[str, Any]]:
 
 
 def _withheld_months(
-    connection: psycopg.Connection, api10: str, window: tuple[date | None, date | None]
+    connection: psycopg.Connection,
+    api10: str,
+    window: tuple[date | None, date | None],
+    as_of: date | None,
 ) -> dict[date, str]:
     """Months the ledger holds as withheld, mapped to the rule that recorded the withholding."""
     return {
         row["production_month"]: row["rule_id"] or "an unattributed rule"
-        for row in rows(connection, _WITHHELD_MONTHS, {"api10": api10})
+        for row in rows(connection, _WITHHELD_MONTHS, {"api10": api10, "as_of": as_of})
         if (window[0] is None or row["production_month"] >= window[0])
         and (window[1] is None or row["production_month"] <= window[1])
     }
