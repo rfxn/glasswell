@@ -4,23 +4,76 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/favicon-32.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b1014" />
+    <meta
+      name="description"
+      content="glasswell — glass-box upstream analytics on public data. Every number carries its derivation handle."
+    />
     <title>glasswell — ND slice</title>
   </head>
   <body>
     <div id="app">
       <header id="gw-header">
-        <h1>glasswell</h1>
-        <p id="gw-strap">
-          North Dakota laterals and well points. Every number carries its derivation
-          handle; click one to walk it back to a checksummed file.
-        </p>
-        <p id="gw-status" role="status"></p>
+        <a class="gw-brand" href="?" aria-label="glasswell — reset the view">
+          <img
+            class="gw-lockup"
+            src="/brand/logo-horizontal-dark.svg"
+            alt="glasswell"
+            width="660"
+            height="168"
+          />
+          <img
+            class="gw-mark"
+            src="/brand/logo-mark-small.svg"
+            alt="glasswell"
+            width="512"
+            height="512"
+          />
+          <span class="gw-strap">no naked numbers</span>
+        </a>
+        <div class="gw-controls">
+          <div id="gw-search-slot"></div>
+          <button id="gw-key-btn" type="button" class="gw-key-chip" hidden>key ok</button>
+          <button
+            id="gw-help-btn"
+            type="button"
+            aria-expanded="false"
+            aria-controls="gw-help-panel"
+          >
+            ?<span class="gw-ctl-lbl">Help</span>
+          </button>
+          <div class="gw-meta">
+            <p id="gw-asof" class="gw-asof"></p>
+            <p id="gw-status" class="gw-status" role="status"></p>
+          </div>
+        </div>
+        <div id="gw-help-panel" class="gw-help-panel" role="dialog" aria-labelledby="gw-help-title" hidden>
+          <div class="gw-panel-head">
+            <h2 id="gw-help-title" tabindex="-1">About this app</h2>
+          </div>
+          <div class="gw-panel-body">
+            <p>
+              North Dakota laterals and well points. Every number carries its derivation
+              handle; click one to walk it back to a checksummed file.
+            </p>
+            <dl class="gw-help-keys">
+              <dt><kbd>/</kbd></dt>
+              <dd>Find a well by name or API-10</dd>
+              <dt><kbd>Esc</kbd></dt>
+              <dd>Close the topmost panel</dd>
+              <dt>⌾</dt>
+              <dd>Open the lineage of the number beside it</dd>
+            </dl>
+          </div>
+        </div>
       </header>
-      <main>
+      <main id="gw-main">
         <div id="gw-map" aria-label="Map of North Dakota laterals and well points"></div>
-        <aside id="gw-card" hidden></aside>
-        <aside id="gw-drawer" hidden></aside>
+        <aside id="gw-card" aria-label="Well card" hidden></aside>
+        <aside id="gw-drawer" aria-label="Lineage" hidden></aside>
+        <div id="gw-key-host" hidden></div>
       </main>
+      <div id="gw-toasts" class="gw-toasts" aria-live="polite"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -29,7 +29,25 @@ export class ApiError extends Error {
 
 const KEY_STORAGE = "glasswell.key";
 const KEY_PARAM = "key";
+const KEY_SHAPE = /^[0-9a-f]{64}$/i;
 const BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
+
+export function storedKey(): string | null {
+  return window.localStorage.getItem(KEY_STORAGE);
+}
+
+export function saveKey(key: string): void {
+  window.localStorage.setItem(KEY_STORAGE, key.trim());
+}
+
+/** A wrong key is worse than none: it fails every request with no way back but devtools. */
+export function clearKey(): void {
+  window.localStorage.removeItem(KEY_STORAGE);
+}
+
+export function isKeyShaped(key: string): boolean {
+  return KEY_SHAPE.test(key.trim());
+}
 
 /**
  * `#key=` once, then localStorage; a build-time key is the fallback for a kiosk build.
