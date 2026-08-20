@@ -6,6 +6,11 @@ set -uo pipefail
 INFRA_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 API=http://127.0.0.1:8000
 MARTIN=http://127.0.0.1:3000
+SITE_HOST=glasswell.lab.rpx.sh
+SITE="https://$SITE_HOST"
+CADDY_BIN=/usr/local/bin/caddy
+CADDY_LOG=/var/log/caddy/access.log
+CERT_MIN_DAYS=20
 WEB_ROOT=/opt/glasswell/web
 DEPLOY_SRC=/opt/glasswell/src
 DATA_ROOT=/data
@@ -52,7 +57,7 @@ listening_on() { ss -ltn | grep -q "$1"; }
 glob_matches() { compgen -G "$1" >/dev/null; }
 
 printf 'services\n'
-for unit in glasswell-api martin postgresql; do
+for unit in glasswell-api martin postgresql caddy; do
     assert "$unit active" active "$(systemctl is-active "$unit")"
 done
 
@@ -134,6 +139,91 @@ assert "a staging layer through the proxy is refused" 404 \
     "$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
         -H "X-Glasswell-Key: $owner_key" "$API/v1/tiles/nd_gis_wells/8/54/89.pbf")"
 
+# DIR-13. The edge is checked through the name a browser uses, pinned to this host so a
+# resolver answering something else reads as a failure rather than as a pass elsewhere.
+printf 'tls\n'
+resolve=(--resolve "$SITE_HOST:443:127.0.0.1" --resolve "$SITE_HOST:80:127.0.0.1")
+
+if [[ -x $CADDY_BIN ]]; then
+    assert_true "caddy carries the cloudflare DNS module" "DNS-01 renewal cannot work without it" \
+        grep -qx 'dns.providers.cloudflare' <<<"$("$CADDY_BIN" list-modules)"
+else
+    bad "caddy binary at $CADDY_BIN" "missing — see infra/caddy/README.md"
+fi
+
+# No -k anywhere here: a certificate curl will not accept is the failure this section exists for.
+assert "GET $SITE serves the app" 200 \
+    "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${resolve[@]}" "$SITE/")"
+assert "http://$SITE_HOST/ redirects" 308 \
+    "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${resolve[@]}" "http://$SITE_HOST/")"
+assert "the redirect target is the https origin" "$SITE/" \
+    "$(curl -s -o /dev/null -w '%{redirect_url}' --max-time 10 "${resolve[@]}" "http://$SITE_HOST/")"
+
+served_cert="$(openssl s_client -connect 127.0.0.1:443 -servername "$SITE_HOST" </dev/null 2>/dev/null | openssl x509 2>/dev/null)"  # a handshake that fails prints its reason to stderr and no PEM; the empty check below is the report
+if [[ -z $served_cert ]]; then
+    bad "the endpoint serves a certificate" "no PEM came back from 127.0.0.1:443"
+else
+    ok "the endpoint serves a certificate"
+    issuer="$(openssl x509 -noout -issuer <<<"$served_cert")"
+    assert_true "issued by Let's Encrypt" "issuer is ${issuer#issuer=}" \
+        grep -q "Let's Encrypt" <<<"$issuer"
+    assert_true "the certificate names $SITE_HOST" "it is not in subjectAltName" \
+        grep -q "DNS:$SITE_HOST" <<<"$(openssl x509 -noout -ext subjectAltName <<<"$served_cert")"
+    not_after="$(openssl x509 -noout -enddate <<<"$served_cert")"
+    remaining=$(( ($(date -d "${not_after#*=}" +%s) - $(date +%s)) / 86400 ))
+    # Caddy renews at 30 days remaining, so anything under 20 means renewal has been failing
+    # for over a week — the alarm DIR-13 asks for, ten days before a browser would notice.
+    assert_true "over $CERT_MIN_DAYS days of certificate left ($remaining)" \
+        "renewal is failing; check journalctl -u caddy for the ACME error" \
+        test "$remaining" -gt "$CERT_MIN_DAYS"
+fi
+
+edge_headers="$(curl -s -D - -o /dev/null --max-time 15 "${resolve[@]}" "$SITE/" | tr -d '\r')"
+# N-6 plus DIR-13: the origin owns these, so a `header` directive in the Caddyfile would add a
+# second value rather than replace the first. Two copies is the defect this counts.
+for header in x-content-type-options x-frame-options referrer-policy x-robots-tag \
+              content-security-policy; do
+    assert "exactly one $header through the edge" 1 "$(grep -ci "^$header:" <<<"$edge_headers")"
+done
+assert_true "the origin sees the request as https" \
+    "no upgrade-insecure-requests in the CSP: X-Forwarded-Proto is not reaching uvicorn" \
+    grep -qi 'content-security-policy:.*upgrade-insecure-requests' <<<"$edge_headers"
+
+encoding_of() {
+    curl -s -D - -o /dev/null --max-time 30 "${resolve[@]}" \
+        -H 'Accept-Encoding: gzip, zstd' -H "X-Glasswell-Key: $owner_key" "$1" \
+        | tr -d '\r' | sed -n 's/^[Cc]ontent-[Ee]ncoding: //p' | paste -sd, -
+}
+bundle="$(compgen -G "$WEB_ROOT/assets/index-*.js" | head -1)"
+if [[ -n $bundle ]]; then
+    assert "the bundle through the edge is gzipped once" gzip "$(encoding_of "$SITE/assets/${bundle##*/}")"
+fi
+if [[ -n ${tile_url:-} ]]; then
+    # martin's zstd rides through the proxy untouched; Caddy re-encoding it would show two.
+    assert "a tile through the edge carries martin's encoding and no other" zstd \
+        "$(encoding_of "${tile_url/#$API/$SITE}")"
+fi
+
+assert_true "caddy's admin api is loopback-only" "not bound to 127.0.0.1:2019" \
+    listening_on '127.0.0.1:2019'
+if [[ -n $owner_key ]]; then
+    # Send both shapes a key can take before reading the log back, so this cannot pass for
+    # want of traffic: the header the API accepts, and the query string it refuses and an
+    # edge would otherwise write down verbatim.
+    assert "a key in the query string is refused at the edge" 422 \
+        "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${resolve[@]}" \
+            --get --data-urlencode "key=$owner_key" "$SITE/v1/health")"
+    assert "a keyed request through the edge is served" 200 \
+        "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${resolve[@]}" \
+            -H "X-Glasswell-Key: $owner_key" "$SITE/v1/health")"
+    if [[ -r $CADDY_LOG ]]; then
+        assert_false "the owner key is absent from caddy's access log" "found in $CADDY_LOG" \
+            grep -q -- "$owner_key" "$CADDY_LOG"
+    else
+        bad "caddy's access log is readable" "$CADDY_LOG — run this as root"
+    fi
+fi
+
 # DR-06: SB-07 2.3's zones under the volume that exists. install.sh creates them.
 printf 'zones\n'
 for zone in raw staging scratch; do
@@ -151,7 +241,10 @@ assert "no git-excluded working file on the deploy root" "" "${stray% }"
 
 printf 'exposure\n'
 assert_true "martin is loopback-only" "not bound to 127.0.0.1:3000" listening_on '127.0.0.1:3000'
-assert_true "api listens on the LAN" "not bound to 0.0.0.0:8000" listening_on '0.0.0.0:8000'
+assert_true "api is loopback-only" "not bound to 127.0.0.1:8000" listening_on '127.0.0.1:8000'
+assert_false "api is not on the LAN" "still bound to 0.0.0.0:8000 — the pre-DIR-13 bind" \
+    listening_on '0.0.0.0:8000'
+assert_true "caddy listens on the LAN" "nothing is bound to :443" listening_on ':443'
 assert_false "postgres is not on the LAN" "listening on $LAN_ADDRESS:5432" \
     listening_on "$LAN_ADDRESS:5432"
 assert_true "ufw active" "inactive" systemctl is-active --quiet ufw

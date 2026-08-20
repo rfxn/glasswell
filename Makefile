@@ -13,7 +13,7 @@ help:
 	@echo "test              full suite (unit + integration; integration needs docker)"
 	@echo "test-unit         pure-function tier, no docker required"
 	@echo "test-integration  ephemeral PostGIS tier"
-	@echo "test-e2e          browser path against a deployed instance (needs a key)"
+	@echo "test-e2e          browser path against \$$GLASSWELL_BASE_URL (needs a key)"
 	@echo "prune-test-volumes  reclaim volumes a killed test session left behind"
 	@echo "lint              ruff"
 	@echo "fmt               ruff --fix"

@@ -25,7 +25,8 @@ Four things are **not** here, so do not go looking for them:
 - **No forecasts.** No decline curves, no EUR, no type curve, no ML.
 - **No dollars.** No economics, no NPV, no scenarios, no inventory.
 - **No Permian, no Texas, no New Mexico.** North Dakota only.
-- **No tunnel and no HTTPS.** LAN-only plain HTTP tonight — see §2.
+- **No tunnel and no Access.** HTTPS is up on the LAN name (DIR-13); reaching it from
+  outside the LAN is not — see §2.
 
 Also absent by design: GOR and water cut (derived surfaces, never served as
 targets), daily production, ownership, and the agent gateway.
@@ -33,17 +34,20 @@ targets), daily production, ownership, and the agent gateway.
 ## 2. How to reach it
 
 ```
-http://glasswell.lab.rpx.sh:8000/#key=<GLASSWELL_OWNER_KEY>
+https://glasswell.lab.rpx.sh/#key=<GLASSWELL_OWNER_KEY>
 ```
 
 The key rides in the **fragment**, after the `#`. A fragment is never sent to the server,
-so it cannot reach uvicorn's access log or journald. `?key=` is refused with a `422` —
+so it cannot reach an access log or journald. `?key=` is refused with a `422` —
 the query form was live long enough to write the old key into the journal, so that key was
 rotated and the journal vacuumed.
 
-Plain **HTTP on port 8000**, firewalled to `192.168.2.0/24`. There is no
-certificate, no certificate warning, no HTTPS, no tunnel and no Access tonight —
-that is a deliberate trade, and it is first in the morning queue (§7).
+**HTTPS, no port, no certificate warning.** Caddy terminates TLS with a Let's Encrypt
+host certificate obtained over the DNS-01 challenge — the name resolves to `192.168.2.111`,
+which no ACME server can reach, and DNS-01 does not care. It reverse-proxies uvicorn on
+`127.0.0.1:8000`; port 8000 no longer answers from the LAN and `http://` on `:80` redirects.
+The firewall is unchanged in spirit: `443` and `80` from `192.168.2.0/24` and nothing else.
+Still no tunnel and no Access, so this is reachable from the LAN only (§7).
 
 The key is 64 hex characters, generated on the VM and written only to
 `/etc/glasswell/app.env` (`root:root`, mode 0600). It is in no log and no file in
@@ -54,7 +58,7 @@ ssh root@glasswell.lab.rpx.sh 'sed -n "s/^GLASSWELL_OWNER_KEY=//p" /etc/glasswel
 ```
 
 Paste it into the `#key=` link once. The app stores it in `localStorage`, strips it
-from the fragment, and plain `http://glasswell.lab.rpx.sh:8000/` works in that browser
+from the fragment, and plain `https://glasswell.lab.rpx.sh/` works in that browser
 from then on.
 
 For the API steps in §5, put the key in a curl config file so it never reaches your
@@ -63,7 +67,7 @@ shell history or the process table:
 ```bash
 CFG=$(mktemp); chmod 600 "$CFG"
 ssh root@glasswell.lab.rpx.sh 'sed -n "s/^GLASSWELL_OWNER_KEY=/header = \"X-Glasswell-Key: /p" /etc/glasswell/app.env | sed "s/$/\"/"' > "$CFG"
-curl -sS -K "$CFG" http://glasswell.lab.rpx.sh:8000/v1/health
+curl -sS -K "$CFG" https://glasswell.lab.rpx.sh/v1/health
 # rm -f "$CFG" when you are done
 ```
 
@@ -86,7 +90,7 @@ not a failure.
 land on a known-good one, use the deep link:
 
 ```
-http://glasswell.lab.rpx.sh:8000/?map=12.00/47.71074/-102.74821&well=3305310451
+https://glasswell.lab.rpx.sh/?map=12.00/47.71074/-102.74821&well=3305310451
 ```
 
 Expect **Mandaree 50-2008H**, API-10 `3305310451`, operator `EOG RESOURCES, INC.`,
@@ -164,7 +168,7 @@ Screenshot: `05-glossary-popover.png`.
   `Lineage could not be resolved (lineage_unresolved) · last resolved nothing ·
   stopped because unknown_id`. A broken chain renders as a broken chain.
   Screenshot: `10-bad-handle.png`.
-- **A path that is not `/`:** `http://glasswell.lab.rpx.sh:8000/wells/3305310451`
+- **A path that is not `/`:** `https://glasswell.lab.rpx.sh/wells/3305310451`
   **404s** — there is no SPA fallback tonight. Deep links use the query form
   (`?map=…&well=…&explain=…`).
 - **A huge page:** `/v1/wells?limit=5000` → `422 validation_failed` pointing at
@@ -176,7 +180,7 @@ Screenshot: `05-glossary-popover.png`.
 The API is the same surface the UI uses. With `$CFG` from §2:
 
 ```bash
-B=http://glasswell.lab.rpx.sh:8000
+B=https://glasswell.lab.rpx.sh
 curl -sS -K "$CFG" "$B/v1/conformance" | python3 -m json.tool | head -40
 curl -sS -K "$CFG" "$B/v1/quarantine/summary" | python3 -m json.tool
 curl -sS -K "$CFG" "$B/v1/health" | python3 -m json.tool
@@ -214,7 +218,10 @@ curl -sS "$B/openapi.json" | python3 -c 'import json,sys; print(len(json.load(sy
 
 ## 6. Known gaps, stated plainly
 
-1. **No TLS, no tunnel, no Access.** Plain HTTP, one static owner key, LAN only.
+1. **~~No TLS~~ — closed; no tunnel, no Access.** HTTPS on `glasswell.lab.rpx.sh` with a
+   Let's Encrypt host certificate, renewed by Caddy over DNS-01, and `verify.sh` fails
+   when under 20 days remain (DIR-13). What is still open is reachability: one static
+   owner key, LAN only, no tunnel and no Access in front of it.
 2. **Role separation is collapsed.** The `glasswell` login is a member of both the
    pipeline and the API group roles, so the API's connection is structurally capable
    of writing canonical rows. Real separation needs two login identities. Do not
@@ -253,8 +260,8 @@ curl -sS "$B/openapi.json" | python3 -c 'import json,sys; print(len(json.load(sy
 13. **The frontend is one 1.14 MB chunk.** No code splitting. The source map is no
     longer built or deployed (the project is proprietary and `StaticFiles` served it).
 14. **~~No repeatable end-to-end smoke script in the repo~~ — closed.**
-    `scripts/smoke.sh` runs nineteen read-only API assertions against a deployed
-    instance, and `tests/e2e/` runs twelve more through a real browser
+    `scripts/smoke.sh` runs twenty read-only API assertions against a deployed
+    instance, and `tests/e2e/` runs thirteen more through a real browser
     (`make test-e2e`). Together with `infra/verify.sh` they are the regression net this
     walkthrough used to be.
 15. **~~The VM's `/opt/glasswell/src` copy carries working files~~ — closed.**
@@ -286,9 +293,10 @@ six-figure axis labels. Each has a regression test.
 
 ## 7. Morning queue, in priority order
 
-1. **Cloudflare Tunnel + Access + a real certificate.** Needs your dashboard. This
-   retires gap 1 and is the only thing standing between this and being reachable
-   from outside the LAN.
+1. **Cloudflare Tunnel + Access.** Needs your dashboard. ~~A real certificate~~ is done
+   (DIR-13): Caddy fronts the LAN name with a Let's Encrypt certificate and uvicorn is
+   loopback-only. The tunnel points at the same origin and is the only thing standing
+   between this and being reachable from outside the LAN.
 2. **Split the login roles** to restore pipeline/API write separation (gap 2).
    ~~Adopt `infra/martin/config.yaml`~~ (gap 3) — done; the catalogue is the allowlist.
    Never run both publishing mechanisms at once: the config publishes the functions, so

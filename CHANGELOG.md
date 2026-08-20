@@ -7,6 +7,40 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-20 — DIR-13: TLS on the LAN endpoint
+
+- [New] Caddy terminates `https://glasswell.lab.rpx.sh` on VM 111 and reverse-proxies
+      uvicorn on `127.0.0.1:8000`. The certificate is a Let's Encrypt host certificate
+      obtained over the Cloudflare DNS-01 challenge — the only challenge that can be
+      solved for a name resolving to RFC1918 — and `infra/caddy/` carries the Caddyfile,
+      the unit and the argument for a download.caddyserver.com custom build over the
+      distro package and over xcaddy (DIR-13)
+- [Change] uvicorn binds `127.0.0.1:8000` rather than `0.0.0.0:8000` and runs with
+         `--proxy-headers`, so the origin sees the request as https and its CSP carries
+         `upgrade-insecure-requests`; `ufw` opens 80 and 443 to `192.168.2.0/24`, plus
+         443/udp because Caddy advertises HTTP/3 in `alt-svc`, and the 8000 rule is gone.
+         martin is untouched
+- [New] `install.sh --with-caddy` places the Caddyfile and `caddy.service` and refuses to
+      proceed on a binary without the cloudflare DNS module, a missing token file or one
+      wider than `root:root 0600`; it validates the config before enabling the unit, and
+      re-owns the access log the validation creates as root
+- [New] `verify.sh` grows a `tls` block — issuer, subject, days remaining (a failure at 20,
+      ten days after Caddy should have renewed, which is DIR-13's renewal alarm), the `:80`
+      redirect, exactly one copy of each security header through the edge, one
+      content-encoding on the bundle and on a tile, and a loopback-only admin API.
+      `caddy.service` carries the `OnFailure=glasswell-alert@` hook the other units use
+- [New] Caddy's access log filters both shapes the owner key can take: the
+      `X-Glasswell-Key` header, and the `?key=` parameter the API refuses with a 422 but
+      which an edge writes down verbatim — the way a key reached a log here once before.
+      `verify.sh` sends both through the edge before reading the log back, so the check
+      cannot pass for want of keyed traffic
+- [Change] `scripts/smoke.sh` and `tests/e2e/smoke.mjs` read `$GLASSWELL_BASE_URL` and
+         default to `https://glasswell.lab.rpx.sh`; `GW_BASE` survives as the retired
+         alias so an old invocation targets what it names instead of the default
+- [Change] SMOKE.md, `infra/README.md` and the e2e README are re-pointed at the https URL
+         with no port, and the two stale suite counts (nineteen API assertions, twelve
+         browser ones) are the twenty and thirteen the suites actually run
+
 ### 2026-08-20 — wave 1 merge train: the data-train batch fix
 
 - [Fix] The anonymous read break-glass can no longer mint a credential. With

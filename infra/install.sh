@@ -18,20 +18,26 @@ PG_CONF_DIR=/etc/postgresql/16/main/conf.d
 # Not under /etc/glasswell: that directory is 0700 root and martin runs as `martin`. The
 # tile config carries no secret — its DSN has no password — so it does not belong there.
 MARTIN_CONF_DIR=/etc/martin
+CADDY_CONF_DIR=/etc/caddy
+CADDY_BIN=/usr/local/bin/caddy
+CADDY_ENV="$CADDY_CONF_DIR/cloudflare.env"
+CADDY_USER=caddy
 RUN_USER=glasswell
 
 with_postgres=0
 with_martin_config=0
+with_caddy=0
 enable_ingest=0
 enable_backup=0
 for argument in "$@"; do
     case "$argument" in
         --with-postgres) with_postgres=1 ;;
         --with-martin-config) with_martin_config=1 ;;
+        --with-caddy) with_caddy=1 ;;
         --enable-ingest) enable_ingest=1 ;;
         --enable-backup) enable_backup=1 ;;
         -h|--help)
-            printf 'usage: %s [--with-postgres] [--with-martin-config] [--enable-ingest] [--enable-backup]\n' "${0##*/}"
+            printf 'usage: %s [--with-postgres] [--with-martin-config] [--with-caddy] [--enable-ingest] [--enable-backup]\n' "${0##*/}"
             exit 0
             ;;
         *)
@@ -107,8 +113,59 @@ if [[ $with_martin_config -eq 1 ]]; then
     printf 'martin will fail to connect until migration 026 has created the PG role martin\n'
 fi
 
+if [[ $with_caddy -eq 1 ]]; then
+    [[ -x $CADDY_BIN ]] || {
+        printf '%s is missing — fetch the custom build first (infra/caddy/README.md)\n' \
+            "$CADDY_BIN" >&2
+        exit 1
+    }
+    "$CADDY_BIN" list-modules | grep -qx 'dns.providers.cloudflare' || {
+        printf '%s carries no cloudflare DNS module — DNS-01 renewal cannot work\n' \
+            "$CADDY_BIN" >&2
+        exit 1
+    }
+    [[ -f $CADDY_ENV ]] || {
+        printf '%s is missing — it holds CF_API_TOKEN and is never in the repository\n' \
+            "$CADDY_ENV" >&2
+        exit 1
+    }
+    env_mode="$(stat -c '%U:%G %a' "$CADDY_ENV")"
+    [[ $env_mode == 'root:root 600' ]] || {
+        printf '%s is %s, expected root:root 600\n' "$CADDY_ENV" "$env_mode" >&2
+        exit 1
+    }
+
+    id "$CADDY_USER" >/dev/null 2>&1 || {  # the check is the condition; a missing user is the branch
+        useradd --system --home-dir /var/lib/caddy --shell /usr/sbin/nologin "$CADDY_USER"
+        printf 'created system user %s\n' "$CADDY_USER"
+    }
+    install -d -o root -g root -m 0755 "$CADDY_CONF_DIR"
+    install -d -o "$CADDY_USER" -g "$CADDY_USER" -m 0700 /var/lib/caddy
+    install -d -o "$CADDY_USER" -g "$CADDY_USER" -m 0750 /var/log/caddy
+    install -o root -g root -m 0644 "$INFRA_DIR/caddy/Caddyfile" "$CADDY_CONF_DIR/Caddyfile"
+    install -o root -g root -m 0644 "$INFRA_DIR/systemd/caddy.service" "$UNIT_DIR/caddy.service"
+
+    # Validated with the token in the environment, because the tls block reads it.
+    (
+        set -a
+        # shellcheck disable=SC1090
+        . "$CADDY_ENV"
+        set +a
+        "$CADDY_BIN" validate --config "$CADDY_CONF_DIR/Caddyfile"
+    ) || { printf 'the Caddyfile does not validate; nothing was reloaded\n' >&2; exit 1; }
+    # validate provisions the file logger as root, which leaves an access.log the service
+    # user cannot open. Ownership, not truncation: the log is evidence.
+    chown -R "$CADDY_USER:$CADDY_USER" /var/log/caddy
+    printf 'placed %s/Caddyfile and caddy.service — validated\n' "$CADDY_CONF_DIR"
+fi
+
 systemctl daemon-reload
 systemctl enable glasswell-api.service
+
+if [[ $with_caddy -eq 1 ]]; then
+    systemctl enable caddy.service
+    printf 'enabled caddy.service — start or reload it to serve https://glasswell.lab.rpx.sh\n'
+fi
 
 if [[ $enable_ingest -eq 1 ]]; then
     systemctl enable glasswell-ingest.timer

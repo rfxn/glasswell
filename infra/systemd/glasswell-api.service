@@ -3,6 +3,7 @@ Description=glasswell API and map UI (uvicorn)
 Documentation=file:/opt/glasswell/src/infra/README.md
 After=network-online.target postgresql.service martin.service
 Wants=network-online.target
+Before=caddy.service
 OnFailure=glasswell-alert@%n.service
 
 [Service]
@@ -11,7 +12,10 @@ User=glasswell
 Group=glasswell
 EnvironmentFile=/etc/glasswell/db.env
 EnvironmentFile=/etc/glasswell/app.env
-ExecStart=/opt/glasswell/venv/bin/uvicorn glasswell.api:app --host 0.0.0.0 --port 8000 --workers 2
+# Loopback only: Caddy fronts this (DIR-13). --proxy-headers is what makes the request scheme
+# https behind it, which is what puts upgrade-insecure-requests in the CSP.
+ExecStart=/opt/glasswell/venv/bin/uvicorn glasswell.api:app --host 127.0.0.1 --port 8000 \
+    --workers 2 --proxy-headers --forwarded-allow-ips 127.0.0.1
 Restart=on-failure
 RestartSec=5
 

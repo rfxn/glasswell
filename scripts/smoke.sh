@@ -9,7 +9,7 @@ REPO_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 SNAPSHOT="$REPO_DIR/tests/contract/openapi_snapshot.json"
 APP_ENV=/etc/glasswell/app.env
 
-base=http://127.0.0.1:8000
+base="${GLASSWELL_BASE_URL:-https://glasswell.lab.rpx.sh}"
 api10=3305310451
 key_file=""
 
@@ -17,10 +17,11 @@ usage() {
     cat <<'EOF'
 usage: smoke.sh [options]
 
-  --base URL        API root (default http://127.0.0.1:8000)
+  --base URL        API root; $GLASSWELL_BASE_URL, else https://glasswell.lab.rpx.sh
   --api10 API10     the well every well-level assertion reads (default 3305310451)
   --key-file FILE   read GLASSWELL_OWNER_KEY=... from FILE (default /etc/glasswell/app.env)
 
+$GLASSWELL_BASE_URL is the one name every tier reads: this script, tests/e2e and the docs.
 The key may also arrive in $GLASSWELL_OWNER_KEY. It is never echoed and never placed in a
 query string: a query string reaches the access log verbatim.
 EOF

@@ -1,6 +1,6 @@
 // Recorded from the deployed instance on 2026-08-20, not hand-written from the router
 // source, so a shape drift in the API fails a web test rather than the owner's first click:
-//   curl -K <keyfile> http://glasswell.lab.rpx.sh:8000/v1/wells/3305310451
+//   curl -K <keyfile> https://glasswell.lab.rpx.sh/v1/wells/3305310451
 //   curl -K <keyfile> .../v1/wells/3305310451/production
 //   curl -K <keyfile> -G .../v1/explain --data-urlencode "h=<oil handle>" --data-urlencode depth=full
 //   curl -K <keyfile> .../v1/glossary/index   and   .../v1/glossary?limit=200

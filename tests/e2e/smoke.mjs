@@ -7,7 +7,10 @@
 // The key rides the fragment, is never logged, and is redacted out of every url printed.
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 
-const BASE = (process.env.GW_BASE ?? "http://127.0.0.1:8000").replace(/\/$/, "");
+// GW_BASE is the retired name, still read so an old invocation targets what it names rather
+// than silently running against the default.
+const BASE = (process.env.GLASSWELL_BASE_URL ?? process.env.GW_BASE ?? "https://glasswell.lab.rpx.sh")
+  .replace(/\/$/, "");
 const KEY = (process.env.GLASSWELL_OWNER_KEY ?? process.env.GW_KEY ?? "").trim();
 const WELL = process.env.GW_WELL ?? "3305310451";
 const SHOTS = process.env.GW_SHOTS ?? "";

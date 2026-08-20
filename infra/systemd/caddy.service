@@ -1,0 +1,44 @@
+[Unit]
+Description=glasswell TLS front door (Caddy)
+Documentation=file:/opt/glasswell/src/infra/caddy/README.md
+After=network-online.target
+Wants=network-online.target
+OnFailure=glasswell-alert@%n.service
+
+[Service]
+Type=notify
+User=caddy
+Group=caddy
+# Upstream's unit runs `caddy run --environ`, which prints CF_API_TOKEN to the journal.
+ExecStart=/usr/local/bin/caddy run --config /etc/caddy/Caddyfile
+ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --force
+EnvironmentFile=/etc/caddy/cloudflare.env
+# Certificates and the ACME account key live at /var/lib/caddy, not under the user's home.
+Environment=XDG_DATA_HOME=/var/lib
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=5s
+LimitNOFILE=1048576
+
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=yes
+LockPersonality=yes
+StateDirectory=caddy
+# 0700: the ACME account key and the certificate keys live here. Without this systemd
+# widens the directory install.sh created to 0755 on every start.
+StateDirectoryMode=0700
+LogsDirectory=caddy
+LogsDirectoryMode=0750
+
+[Install]
+WantedBy=multi-user.target

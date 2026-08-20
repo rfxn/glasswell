@@ -1,0 +1,41 @@
+# glasswell's TLS front door. Placed at /etc/caddy/Caddyfile by `install.sh --with-caddy`;
+# the binary, the ACME token file and the upgrade path are in infra/caddy/README.md.
+{
+	email ryan@rfxn.com
+}
+
+glasswell.lab.rpx.sh {
+	# DNS-01, not HTTP-01: the name resolves to an RFC1918 address, so Let's Encrypt has
+	# no route to a challenge on this host. CF_API_TOKEN comes from /etc/caddy/cloudflare.env.
+	tls {
+		dns cloudflare {env.CF_API_TOKEN}
+		resolvers 1.1.1.1 1.0.0.1
+	}
+
+	reverse_proxy 127.0.0.1:8000
+
+	# No `encode`: the origin owns compression. It gzips text over 1 KiB, passes martin's
+	# zstd tiles through, and leaves basemap.pmtiles identity so range reads work.
+	# No `header`: the origin emits the security headers (N-6). Setting them here too would
+	# append a second value, not replace the first.
+
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 16MiB
+			roll_keep 5
+		}
+		format filter {
+			wrap console
+			fields {
+				# The owner key rides this header. The API is built so it reaches no log.
+				request>headers>X-Glasswell-Key delete
+				request>headers>Cookie delete
+				# The API refuses ?key= with a 422, but an edge logs the URI verbatim —
+				# which is how a key reached a log here once before and had to be rotated.
+				request>uri query {
+					delete key
+				}
+			}
+		}
+	}
+}

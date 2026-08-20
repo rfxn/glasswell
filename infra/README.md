@@ -9,7 +9,7 @@ copies under `/etc` on the VM are placed by `install.sh` and are not edited in p
 |---|---|
 | Host | `glasswell.lab.rpx.sh` → **192.168.2.111**, Proxmox VM 111 on forge |
 | OS | Ubuntu 24.04.4 LTS, Python 3.12.3, Node 18.19.1 |
-| Exposure | LAN only. `ufw` default-deny with 22 and 8000 open to `192.168.2.0/24` |
+| Exposure | LAN only. `ufw` default-deny with 22, 80 and 443 open to `192.168.2.0/24`; 8000 is loopback and closed at the firewall (DIR-13) |
 | Deploy root | `/opt/glasswell` — `venv/`, `src/` (rsynced repo), `web/` (built frontend) |
 | Bulk volume | `/data` (1007 G): `raw/`, `staging/`, `scratch/`, `parquet/`, `backups/`, `basemap/` |
 
@@ -20,7 +20,8 @@ restricted `authorized_keys` `from=` clause and every probe in this repo use `.1
 
 | Unit | Runs as | Does |
 |---|---|---|
-| `glasswell-api.service` | `glasswell` | `uvicorn glasswell.api:app --host 0.0.0.0 --port 8000 --workers 2` — serves `/v1`, the `/v1/tiles` proxy, and the built frontend at `/` |
+| `caddy.service` | `caddy` | TLS front door: `https://glasswell.lab.rpx.sh` → `127.0.0.1:8000`, certificate from Let's Encrypt over Cloudflare DNS-01. Config `caddy/Caddyfile`, binary and token are host state — see `caddy/README.md` |
+| `glasswell-api.service` | `glasswell` | `uvicorn glasswell.api:app --host 127.0.0.1 --port 8000 --workers 2 --proxy-headers` — serves `/v1`, the `/v1/tiles` proxy, and the built frontend at `/`, behind Caddy |
 | `glasswell-ingest.service` + `.timer` | `glasswell` | Monthly ND pull: GIS layers, one production month, tile marts. Installed **disabled**; `install.sh --enable-ingest` arms it |
 | `glasswell-alert@.service` | `glasswell` | `OnFailure=` target: logs to the journal and appends to `/var/lib/glasswell/health-events` |
 | `glasswell-backup.service` + `.timer` | `root` | Nightly `pg_dump` plus an rsync of the raw zone to forge, via `/usr/local/sbin/glasswell-backup.sh`. Installed **disabled**; `install.sh --enable-backup` arms it. **VM 111 has it enabled already** — the units here were adopted from that host byte-for-byte |
@@ -32,13 +33,20 @@ restricted `authorized_keys` `from=` clause and every probe in this repo use `.1
 `authorized_keys` entry on forge, which `install.sh` does not create. The forge-side vzdump
 job is provisioning-owned and is not in this directory.
 
-## Three decisions that differ from SB-06
+## The TLS front door (DIR-13)
 
-**No Caddy, no TLS, no tunnel (C12).** Caddy is not installed on the VM, `ufw` closes 443,
-and `8000/tcp` from the LAN is already open. uvicorn binds `0.0.0.0:8000` and serves the
-frontend alongside `/v1`, so the LAN-only slice needs no firewall change and no certificate
-warning in the owner's browser. The exposure is the firewall's job, which is where SB-06 put
-it anyway. Caddy and the tunnel return when the deployment leaves the LAN.
+Caddy is in, which re-converges with SB-06 §4.5 and closes P7's C12 ("no Caddy, no TLS"):
+uvicorn binds `127.0.0.1:8000`, Caddy terminates `https://glasswell.lab.rpx.sh` on `:443`,
+redirects `:80`, and the LAN reaches the app through the name with no port and no certificate
+warning. Still no tunnel and no Access — that is the next step, and it points a `cloudflared`
+at the same origin.
+
+`caddy/README.md` carries the three decisions worth arguing about: why the binary is a
+download.caddyserver.com custom build rather than the distro package or an xcaddy build, why
+neither compression nor security headers are configured at the edge (the origin owns both,
+and a second `header` would append rather than replace), and how renewal is watched.
+
+## Two decisions that differ from SB-06
 
 **No `glasswell-martin.service`.** `martin.service` already exists, is enabled, runs as user
 `martin` and reads `/etc/glasswell/db.env`. martin binds `127.0.0.1:3000`, so no firewall
@@ -157,19 +165,38 @@ curl -s 127.0.0.1:3000/catalog | python3 -m json.tool   # expect exactly three i
 ./verify.sh                                             # the martin catalogue check goes ok
 ```
 
+```bash
+# 10. ONE-TIME — the TLS front door (DIR-13). The binary and the token file are host state;
+#     the Caddyfile and the unit come from this directory. Order matters: Caddy must be
+#     serving before uvicorn drops its LAN bind, or the app is unreachable in between.
+curl -fsSL -o /usr/local/bin/caddy \
+  'https://caddyserver.com/api/download?os=linux&arch=amd64&p=github.com/caddy-dns/cloudflare'
+chmod 0755 /usr/local/bin/caddy && caddy list-modules | grep dns.providers.cloudflare
+install -m 0600 /dev/null /etc/caddy/cloudflare.env   # then write CF_API_TOKEN=... into it
+./install.sh --with-caddy && systemctl start caddy
+curl -sI https://glasswell.lab.rpx.sh/ | head -1      # 200 before anything else moves
+systemctl restart glasswell-api                       # now the bind drops to loopback
+ufw allow proto tcp from 192.168.2.0/24 to any port 80,443
+ufw delete allow from 192.168.2.0/24 to any port 8000
+./verify.sh                                           # the `tls` block must be all ok
+```
+
 Steps 7, 8 and 9 are what the three `zones` / `deploy hygiene` / `martin publishes the
 allowlist and nothing else` failures in `verify.sh` are pointing at. Everything else in the
 file passes today.
 
 `verify.sh` derives its tuning expectations from the shipped drop-in, so the check cannot
 drift from the file. Step 6 has no counterpart in `verify.sh`: `ufw status` needs root and
-the script is written to run unprivileged.
+the script is written to run unprivileged. The whole `tls` block is red until step 10 runs,
+and its certificate check stays honest afterwards — it fails at 20 days remaining, ten days
+after Caddy should have renewed.
 
 ## Usage
 
 ```bash
 ./install.sh                     # place config, generate the owner key, enable glasswell-api
 ./install.sh --with-postgres     # additionally place the tuning drop-in (needs a PG restart)
+./install.sh --with-caddy        # additionally place the Caddyfile and caddy.service, validated
 ./install.sh --enable-ingest     # additionally arm the monthly NDIC pull
 ./install.sh --enable-backup     # additionally arm the nightly backup (needs the forge key)
 systemctl start glasswell-api

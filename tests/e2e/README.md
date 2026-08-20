@@ -1,6 +1,6 @@
 # tests/e2e — the browser path
 
-Twelve assertions a browser can make and `scripts/smoke.sh` cannot: that the app boots and
+Thirteen assertions a browser can make and `scripts/smoke.sh` cannot: that the app boots and
 draws, that a deep link is a shareable state, that a figure's derivation handle reaches a
 64-hex checksum and a `dmr.nd.gov` url **on screen**, that a hostile query string cannot put
 the page outside the tile allowlist or off this origin, and that a visitor with no key is
@@ -12,14 +12,14 @@ Read-only: it navigates and reads. It never writes through the API.
 
 ```bash
 export GLASSWELL_OWNER_KEY=...        # read it on the VM; it is never logged
-make test-e2e                         # against http://127.0.0.1:8000
-GW_BASE=http://glasswell.lab.rpx.sh:8000 make test-e2e
+make test-e2e                         # against https://glasswell.lab.rpx.sh
+GLASSWELL_BASE_URL=http://127.0.0.1:8000 make test-e2e    # on the VM, against the origin
 ```
 
 | variable | meaning |
 |---|---|
 | `GLASSWELL_OWNER_KEY` | the key, adopted through the `#key=` fragment exactly as SMOKE.md §2 tells the owner to |
-| `GW_BASE` | API root (default `http://127.0.0.1:8000`) |
+| `GLASSWELL_BASE_URL` | API root (default `https://glasswell.lab.rpx.sh`). The same name `scripts/smoke.sh` reads; `GW_BASE` is the retired alias |
 | `GW_WELL` | the well every well-level assertion reads (default `3305310451`) |
 | `GW_CHROME` | chromium executable; otherwise the newest build under `/root/.cache/ms-playwright` |
 | `GW_SHOTS` | a directory to write screenshots to; unset writes none |
