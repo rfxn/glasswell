@@ -102,8 +102,8 @@ def test_a_negative_oil_volume_is_flagged_with_a_reason_not_dropped_silently():
     assert result.quarantined[0].frame["api10"].to_list() == ["3305303899"]
 
 
-def test_a_well_reporting_two_pools_collides_on_the_canonical_key_and_is_not_dropped():
-    """Measured on the real 2026-03 file: 75 api10s file one row per pool, 77 extra rows."""
+def _pool_frame(entity_keys: list[str | None] | None = None) -> pl.DataFrame:
+    """The real 2026-03 shape: 3303300241 files in two pools, 3303300213 in one."""
     frame = pl.DataFrame(
         {
             "source_row_ordinal": [2589, 2603, 2597],
@@ -111,13 +111,43 @@ def test_a_well_reporting_two_pools_collides_on_the_canonical_key_and_is_not_dro
             "production_month": [date(2026, 3, 1)] * 3,
             "stream_canonical": ["oil", "oil", "oil"],
             "pool": ["BIRDBEAR", "RED RIVER", "BIRDBEAR"],
+            "volume": [Decimal("120.000"), Decimal("3585.000"), Decimal("40.000")],
+            "unit": ["bbl", "bbl", "bbl"],
+            "days": [30, 31, 28],
         }
     )
+    if entity_keys is None:
+        return frame
+    return frame.with_columns(pl.Series("entity_key", entity_keys, dtype=pl.String))
 
-    kept, collided = nd_mpr.split_key_collisions(frame)
 
-    assert kept["source_row_ordinal"].to_list() == [2589, 2597]
-    assert collided["pool"].to_list() == ["RED RIVER"]
+def test_a_well_reporting_two_pools_promotes_both_and_a_well_row_that_sums_them():
+    promoted = nd_mpr.pool_promotion_records(
+        _pool_frame(["3303300241:BIRDBEAR", "3303300241:RED RIVER", "3303300213:BIRDBEAR"])
+    )
+
+    assert [(r["entity_type"], r["entity_key"], r["volume"]) for r in promoted.records] == [
+        ("well_completion_pool", "3303300241:BIRDBEAR", Decimal("120.000")),
+        ("well_completion_pool", "3303300241:RED RIVER", Decimal("3585.000")),
+        ("well", "3303300213", Decimal("40.000")),
+    ]
+    assert [(r["entity_key"], r["volume"], r["aggregation"]) for r in promoted.aggregates] == [
+        ("3303300241", Decimal("3705.000"), "sum_over_pools")
+    ]
+    assert promoted.aggregates[0]["days_produced"] == 31
+    assert promoted.collided.is_empty()
+
+
+def test_without_the_key_rule_in_force_the_pipeline_behaves_as_it_did_before_it():
+    """R7: replaying a vintage that predates cr_nd_entity_key_1 reproduces that vintage."""
+    promoted = nd_mpr.pool_promotion_records(_pool_frame())
+
+    assert [(r["entity_type"], r["entity_key"]) for r in promoted.records] == [
+        ("well", "3303300241"),
+        ("well", "3303300213"),
+    ]
+    assert promoted.aggregates == []
+    assert promoted.collided["pool"].to_list() == ["RED RIVER"]
 
 
 def test_the_null_semantics_classifier_separates_zero_from_absent():
