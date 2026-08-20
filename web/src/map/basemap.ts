@@ -116,6 +116,27 @@ export const BASEMAPS: readonly BasemapDef[] = [
 
 export const DEFAULT_BASEMAP = "dark";
 
+/** The four substrates a label, a line or a chrome surface has to stay legible against. */
+export const BASEMAP_VARIANTS = ["dark", "light", "satellite", "none"] as const;
+
+export type BasemapVariant = (typeof BASEMAP_VARIANTS)[number];
+
+export function basemapVariant(id: string | undefined): BasemapVariant {
+  return BASEMAP_VARIANTS.find((variant) => variant === id) ?? DEFAULT_BASEMAP;
+}
+
+/**
+ * The seam the rest of the styling hangs off: the active variant is published as
+ * `data-basemap` on the document element, so a stylesheet that owns no map code can key on
+ * it. Mirrored onto the map container because map.css scopes to the container, not the root.
+ */
+export function applyBasemapVariant(id: string, container?: HTMLElement): BasemapVariant {
+  const variant = basemapVariant(id);
+  if (typeof document !== "undefined") document.documentElement.dataset["basemap"] = variant;
+  if (container) container.dataset["basemap"] = variant;
+  return variant;
+}
+
 export const OPENFREEMAP_STYLES: Readonly<Record<string, string>> = {
   dark: "https://tiles.openfreemap.org/styles/dark",
   light: "https://tiles.openfreemap.org/styles/positron",

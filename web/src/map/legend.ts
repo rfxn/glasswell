@@ -8,6 +8,15 @@ export interface LegendOptions {
   onFilter(on: Set<string>): void;
 }
 
+/**
+ * `?legend=0` takes the key off the canvas for an embed or a screenshot. Only that exact
+ * value suppresses it: the panel carries the status vocabulary and the geometry-provenance
+ * line, so a value nobody defined leaves it standing rather than guessing at intent.
+ */
+export function legendEnabled(search: string): boolean {
+  return new URLSearchParams(search).get("legend") !== "0";
+}
+
 export interface LegendHandle {
   element: HTMLElement;
   /** Counts come from what is actually drawn, so the key can never describe an absent class. */
