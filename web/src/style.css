@@ -1,5 +1,46 @@
+/* Self-hosted, same-origin: see web/public/fonts/README.md for provenance and licences.
+   A font CDN would publish a page view past Access to an origin the reader never agreed to. */
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/inter-var-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0100-017F, U+2000-206F, U+2122, U+2190-2193, U+2212, U+2260,
+    U+2264-2265, U+25A0-25CF;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/jetbrains-mono-var-latin.woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+2000-206F, U+2212;
+}
+
+/* Inter carries no ⌾ (U+233E) or ✕ (U+2715). Declaring them here, under both stacks, keeps
+   the explain affordance on a brand face instead of the reader's system font. */
+@font-face {
+  font-family: "GW Symbols";
+  src: url("/fonts/gw-symbols.woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+233E, U+2715;
+}
+
 /* Palette is BRAND.md; stream colours are data colours, never severity colours. */
 :root {
+  /* Seam 1 (CADENCE §2.3): map.css consumes these and never declares a face of its own.
+     Display and body are one family at two optical grades — Inter's opsz axis does that
+     work, so a 24 px wordmark is not an 11 px label scaled up. */
+  --gw-font-display: "Inter", "GW Symbols", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, sans-serif;
+  --gw-font-body: "Inter", "GW Symbols", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, sans-serif;
+  --gw-font-mono: "JetBrains Mono", "GW Symbols", ui-monospace, SFMono-Regular, Menlo, monospace;
+
   --ink: #0b1014;
   --panel: #121a21;
   --hairline: #1d2a33;
