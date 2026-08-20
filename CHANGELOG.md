@@ -7,6 +7,39 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-20 — Wave 1: the pre-P3 gate
+
+- [Change] The blueprint is **v0.6-rc2**: the twenty amendments of the pre-P3 gate
+           are applied, nine of them change-controlled with their rationale in the
+           commit that landed them, plus G-13. Section 11 stays open — amendment 35
+           is owner-gated and G-13 added a row to the table rather than removing one
+- [Change] Eight constants stopped being assumptions and became measurements against
+           the live ND data: `PAD_RADIUS_M` and `PAD_WINDOW_DAYS` ratified at 150 m /
+           180 days with `pad_group_max_share` at 0.0008 against a 0.02 guard;
+           `TC_MIN_N` at 20 with 89.3% of subjects on rung 1 and 2.5% with no control;
+           the lateral-length buckets **moved** to {<8000, 8000-10000, 10000-10500,
+           >10500} ft because the old cuts held 6.2% and 58.5% of wells in two of
+           four; and `FORMATION_GROUP_MIN_COUNT` at 100, where nine ND groups cover
+           97.15% of wells
+- [New] `formation_group` becomes conformed data (G-13): a LOOKUP rule per reported
+      pool, a canonical column on `canonical.well_completions`, and a feature
+      registry row. The peer group, the Mondrian calibration taxonomy and the analog
+      space all keyed on a column that existed in no table in the database
+- [New] G-12 is answered with evidence rather than deferred: a 206 KB ranged read of
+      the 321 MB ND survey archive found 5,470,017 stations carrying MD, inclination,
+      azimuth and TVD, so ND keeps `landing_tvd_ft` and `structural_residual_ft`, with
+      units and datum shipped as conformance rules rather than assumptions
+- [New] A `modelled` figure gets a wire token. R5's composition table is complete over
+      all four granularity values, 3.6.2 defines the forecast figure and a closed list
+      of qualifier blocks, and the registry, calibrator and forecast DDL are reconciled
+      against the tables that actually ship
+- [New] P3 states its entry gate — the ND MPR back-load — instead of discovering it.
+      Six production months are loaded and a cum12 label needs twelve after a rolling
+      origin, so every origin measures zero test wells today
+- [New] `scripts/experiments/` ships seven runnable, read-only experiments, each
+      carrying its decision rule and printing a verdict, so the four provisional
+      constants refresh mechanically when the back-load lands
+
 ### 2026-08-20 — fix cycle: data truth, guardrails, panels and map
 
 - [New] The well card discloses what the map cannot show and the ingest held back:
