@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.middleware.gzip import GZipMiddleware
+from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES
 from starlette.responses import Response
 from starlette.staticfiles import StaticFiles
 
@@ -36,6 +38,12 @@ API_TITLE = "glasswell"
 API_VERSION = "0.1.0"
 REQUEST_ID_HEADER = "X-Request-Id"
 KEY_QUERY_PARAM = "key"
+ASSET_PREFIX = "/assets/"
+IMMUTABLE_CACHE = "public, max-age=31536000, immutable"
+SHELL_CACHE = "no-cache"
+# Compressing a 2 MB vector tile at level 9 on every request is a map-performance
+# trade-off, not a transport default; the tile path decides for itself.
+TILE_CONTENT_TYPES = ("application/x-protobuf", "application/vnd.mapbox-vector-tile")
 
 DESCRIPTION = """
 Glass-box upstream analytics on public data. Every number this API serves carries a
@@ -64,6 +72,11 @@ def create_app() -> FastAPI:
     )
     install_handlers(app)
     install_access_log_redaction()
+    app.add_middleware(
+        GZipMiddleware,
+        minimum_size=1024,
+        exclude_content_types=(*DEFAULT_EXCLUDED_CONTENT_TYPES, *TILE_CONTENT_TYPES),
+    )
 
     # Registered first, so the request-id middleware wraps it and the refusal carries an id.
     @app.middleware("http")
@@ -87,6 +100,18 @@ def create_app() -> FastAPI:
                 ],
             )
         return await call_next(request)
+
+    @app.middleware("http")
+    async def _static_cache_class(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        response = await call_next(request)
+        path = request.url.path
+        if path.startswith(ASSET_PREFIX):
+            response.headers.setdefault("Cache-Control", IMMUTABLE_CACHE)
+        elif path == "/" or path.endswith(".html"):
+            response.headers.setdefault("Cache-Control", SHELL_CACHE)
+        return response
 
     @app.middleware("http")
     async def _request_id(

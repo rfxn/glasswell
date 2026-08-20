@@ -29,6 +29,14 @@ const MARKS: Record<string, NullSemanticsMark> = {
   },
 };
 
+/** The four states the API distinguishes; they are never collapsed into one another. */
+export const NULL_SEMANTICS_STATES = [
+  "reported",
+  "reported_zero",
+  "withheld",
+  "no_report",
+] as const;
+
 /** Thousands separators without ever parsing the decimal as a float (SB-07 §4.4). */
 export function formatValue(value: string): string {
   const match = /^(-?)(\d+)(\.\d+)?$/.exec(value);
@@ -58,8 +66,34 @@ export function pointMark(
   return { ...nullSemantics(state), plotted: value !== null };
 }
 
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
 export function formatMonth(month: string): string {
-  return month;
+  const match = /^(\d{4})-(\d{2})$/.exec(month);
+  const name = match ? MONTH_NAMES[Number(match[2]) - 1] : undefined;
+  return name ? `${name} ${match?.[1]}` : month;
+}
+
+/** A monthly volume is not measured to a thousandth of a barrel; tooltips said `70965.000`. */
+export function formatVolume(value: string): string {
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value.trim());
+  if (!match) return value;
+  const [, sign = "", whole = "0", fraction = ""] = match;
+  const rounded = Number(fraction[0] ?? "0") >= 5 ? (BigInt(whole) + 1n).toString() : whole;
+  return sign + formatValue(rounded);
 }
 
 export function formatVintage(vintage: string | null): string {

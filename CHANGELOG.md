@@ -7,7 +7,7 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
-### 2026-08-20 — fix cycle: data truth and guardrails
+### 2026-08-20 — fix cycle: data truth, guardrails and panels
 
 - [New] The well card discloses what the map cannot show and the ingest held back:
       `below_tile_resolution` for laterals no zoom can render, and
@@ -35,6 +35,27 @@ its own version in its header, and its history is summarised in §3.1.
 - [New] `verify.sh` checks the shipped Postgres tuning against the running server,
       driven by the drop-in itself so the check cannot drift from the file it
       verifies
+- [New] Well search in the header over the `q` filter the API has always answered:
+      250 ms debounce, one request in flight, `/` focuses it, rows read name ·
+      API-10 · operator · status, and a pick opens the card and flies the map to
+      the well. There was previously no text input anywhere in the application
+- [New] In-app key recovery: a rejected or missing owner key raises a prompt with
+      a key field and a "clear stored key" button, and every 403 routes to it. A
+      wrong stored key used to fail every request with devtools as the only way
+      back
+- [New] Header rebuilt as a control surface: brand lockup, uppercase micro-strap,
+      right-hand control cluster and a width-capped meta slot, with four status
+      channels that never overwrite one another — resolved vintage, persistent
+      status, transient toast and key state
+- [New] Centralized focus management: one MutationObserver drives focus-in,
+      focus-restore and `inert` for every panel, and Escape closes the topmost
+      layer — drawer, then card, then the key prompt
+- [New] The stylesheet's first media queries: below 900 px the card and drawer
+      become full-width bottom sheets and the controls take a 44 px tap target;
+      below 620 px the lockup becomes the square mark
+- [New] The bundle is gzipped on the wire (1,153,996 to 322,718 bytes) and hashed
+      assets carry `Cache-Control: public, max-age=31536000, immutable`, with
+      `no-cache` on the shell that names them
 - [Fix] A production point cites the derivation that promoted its own month.
       `sorted(derivations)[-1]` put one handle on a whole column, and ND publishes
       one workbook a month, so 327,924 of 394,278 served numbers explained to a
@@ -79,6 +100,21 @@ its own version in its header, and its history is summarised in §3.1.
       description that they are the fixture's ids and where to obtain a live one
 - [Fix] SMOKE.md gap 16 said 24,875 `unknown_vocab` rows where §5 and the database
       say 24,872
+- [Fix] Panels are capped flex columns with a fixed head and a scrolling body, and
+      the card is positioned off the drawer's actual state: it sat at `right:
+      480px` whether or not the drawer was open, clipped below 940 px, and was
+      entirely off-screen at 390 px, so tapping a lateral on a phone appeared to
+      do nothing
+- [Fix] Chart y axes carry their unit and the series on them, month ticks read
+      `Oct 2025`, volumes carry thousands separators and are rounded to whole
+      units; a withheld or unreported month is a gap in the line rather than the
+      number the wire carried for it, and the state strip gained its key
+- [Fix] Error panels link to `/v1/errors/{code}` on this deployment:
+      `problem.type` is absolute at `glasswell.rpx.sh`, which does not resolve,
+      and it was both the href and the link text
+- [Fix] Repeated warnings collapse to one panel with a count, and the lineage
+      drawer's acquisition link opens in a new tab instead of navigating the app
+      away to download a 3 MB XLSX
 - [Change] Lateral length is measured geodesically on the WGS84 ellipsoid under
          `cr_nd_compute_crs_2`, which supersedes the UTM 14N rule rather than
          editing it. 97.6 % of ND laterals lie outside zone 14N, which overstated
@@ -92,6 +128,8 @@ its own version in its header, and its history is summarised in §3.1.
          steps that are still outstanding: applying the Postgres tuning, and
          dropping the `3000/tcp` LAN rule that sits in front of a loopback-only
          martin
+- [Change] `web/src/bus.ts` is the seam between the map module and the rest of
+         the app: selection requests in, committed selection and camera moves out
 
 ### 2026-08-20 — North Dakota spine and map slice
 

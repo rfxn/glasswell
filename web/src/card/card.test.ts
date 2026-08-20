@@ -83,6 +83,24 @@ describe("well card", () => {
     expect(chart.columns[2]?.values).toEqual([47601, 45428, 24918, 30985, 24753, 22452]);
   });
 
+  it("splits into a fixed head and a scrolling body, so a long card cannot overrun", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    const card = host.querySelector(".gw-card") as HTMLElement;
+    expect(card.children).toHaveLength(2);
+    expect(card.children[0]?.className).toContain("gw-panel-head");
+    expect(card.children[1]?.className).toContain("gw-panel-body");
+    // Everything that grows — facts, warnings, chart — belongs to the scroller.
+    expect(card.querySelector(".gw-panel-body .gw-facts")).toBeTruthy();
+    expect(card.querySelector(".gw-panel-body .gw-card-chart")).toBeTruthy();
+  });
+
+  it("keeps the close button in the head, where it stays reachable while the body scrolls", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector(".gw-panel-head .gw-close")).toBeTruthy();
+  });
+
   it("says so when the API refuses the request instead of rendering an empty card", async () => {
     vi.stubGlobal(
       "fetch",
@@ -102,4 +120,37 @@ describe("well card", () => {
     await renderWellCard(host, API10, callbacks);
     expect(host.textContent).toContain("owner key");
   });
+
+  it("offers a way to fix a rejected key rather than a dead end", async () => {
+    const onFixKey = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(problem(403, "unauthenticated"))));
+
+    await renderWellCard(host, API10, { ...callbacks, onFixKey });
+    host.querySelector<HTMLButtonElement>(".gw-error-key")?.click();
+
+    expect(onFixKey).toHaveBeenCalledOnce();
+  });
+
+  it("links errors to a path that resolves on this deployment, not to a dead host", async () => {
+    // problem.type is https://glasswell.rpx.sh/v1/errors/{code}; that host does not resolve.
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(problem(404, "not_found"))));
+
+    await renderWellCard(host, API10, callbacks);
+    const link = host.querySelector("a") as HTMLAnchorElement;
+
+    expect(link.getAttribute("href")).toBe("/v1/errors/not_found");
+    expect(link.textContent).toContain("not_found");
+    expect(link.textContent).not.toContain("https://");
+  });
 });
+
+function problem(status: number, code: string): Response {
+  return new Response(
+    JSON.stringify({
+      type: `https://glasswell.rpx.sh/v1/errors/${code}`,
+      title: code === "not_found" ? "Not found" : "Not authenticated",
+      status,
+    }),
+    { status, headers: { "content-type": "application/problem+json" } },
+  );
+}

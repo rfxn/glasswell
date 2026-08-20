@@ -1,18 +1,20 @@
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
-import { pointMark } from "../card/format.ts";
+import {
+  NULL_SEMANTICS_STATES,
+  formatMonth,
+  formatVolume,
+  nullSemantics,
+  pointMark,
+} from "../card/format.ts";
 import { labelElement } from "../glossary/gw-term.ts";
+import { axisLabels } from "./axes.ts";
+import { chartOptions, STREAM_STROKE } from "./options.ts";
 import { pointHandle } from "./series.ts";
 import type { ChartSeries, SeriesColumn } from "./series.ts";
 
-const STREAM_STROKE: Record<string, string> = {
-  oil: "#3FA55E",
-  gas: "#D9534F",
-  water: "#3D8BD4",
-};
-
-const STREAM_DASH: Record<string, number[]> = { oil: [], gas: [6, 3], water: [2, 3] };
+const PLOT_HEIGHT = 260;
 
 export interface ChartCallbacks {
   onExplain(handle: string): void;
@@ -33,6 +35,7 @@ export function renderChart(
   container.appendChild(title);
 
   container.appendChild(legend(chart, callbacks));
+  container.appendChild(yAxisLabels(chart));
 
   const plot = document.createElement("div");
   plot.className = "gw-chart-plot";
@@ -43,42 +46,42 @@ export function renderChart(
   axis.appendChild(labelElement("Production month", callbacks.labelTermFor("/series/pm")));
   container.appendChild(axis);
 
-  const width = Math.max(320, plot.clientWidth || container.clientWidth || 640);
-  const options: uPlot.Options = {
-    width,
-    height: 260,
-    padding: [8, 8, 0, 0],
-    legend: { show: false },
-    cursor: { drag: { x: false, y: false } },
-    scales: { x: { time: true } },
-    axes: [
-      { stroke: "#9FB0BC", grid: { stroke: "#1d2a33" }, ticks: { stroke: "#1d2a33" } },
-      // uPlot's default axis size (50 px) clips a six-figure monthly volume.
-      ...chart.scales.map((unit, position) => ({
-        scale: unit,
-        side: position === 0 ? (3 as const) : (1 as const),
-        size: 62,
-        stroke: "#9FB0BC",
-        grid: { stroke: "#1d2a33" },
-        ticks: { stroke: "#1d2a33" },
-      })),
-    ],
-    series: [
-      { label: "pm" },
-      ...chart.columns.map((column) => ({
-        label: column.label,
-        scale: column.unit,
-        stroke: STREAM_STROKE[column.stream] ?? "#5FD3E8",
-        dash: STREAM_DASH[column.stream] ?? [],
-        width: 2,
-        spanGaps: false,
-        points: { show: true, size: 4 },
-      })),
-    ],
-  };
-  new uPlot(options, chart.data as uPlot.AlignedData, plot);
+  const width = measure(plot, container);
+  const instance = new uPlot(chartOptions(chart, width), chart.data as uPlot.AlignedData, plot);
+  trackWidth(plot, container, instance);
 
   container.appendChild(stateStrip(chart, callbacks));
+}
+
+function measure(plot: HTMLElement, container: HTMLElement): number {
+  return Math.max(320, plot.clientWidth || container.clientWidth || 640);
+}
+
+/** The plot was measured once and never again, so a resized window left it at its old width. */
+function trackWidth(plot: HTMLElement, container: HTMLElement, instance: uPlot): void {
+  if (typeof ResizeObserver === "undefined") return;
+  let last = measure(plot, container);
+  const observer = new ResizeObserver(() => {
+    const width = measure(plot, container);
+    if (Math.abs(width - last) < 8) return;
+    last = width;
+    instance.setSize({ width, height: PLOT_HEIGHT });
+  });
+  observer.observe(container);
+}
+
+/** UX P1-4: two axes, three orders of magnitude apart, and neither said what it measured. */
+function yAxisLabels(chart: ChartSeries): HTMLElement {
+  const wrapper = document.createElement("p");
+  wrapper.className = "gw-chart-yaxes";
+  for (const label of axisLabels(chart)) {
+    const side = document.createElement("span");
+    side.className = `gw-axis-label gw-axis-${label.side}`;
+    side.setAttribute("data-no-glossary", "");
+    side.textContent = `${label.unit} · ${label.streams.join(", ")}`;
+    wrapper.appendChild(side);
+  }
+  return wrapper;
 }
 
 function legend(chart: ChartSeries, callbacks: ChartCallbacks): HTMLElement {
@@ -125,16 +128,37 @@ function handleButton(handle: string, label: string, callbacks: ChartCallbacks):
   button.className = "gw-handle";
   button.setAttribute("data-handle", handle);
   button.setAttribute("aria-label", `Lineage for ${label}`);
-  button.title = handle;
+  // The same sentence <gw-figure> uses: the raw handle string taught nobody what ⌾ does.
+  button.title = `Show where this number came from: ${handle}`;
   button.textContent = "⌾";
   button.addEventListener("click", () => callbacks.onExplain(handle));
   return button;
+}
+
+/** Without a key the strip is 18 coloured squares, and the gap it explains stays ambiguous. */
+function stateKey(chart: ChartSeries, callbacks: ChartCallbacks): HTMLElement {
+  const wrapper = document.createElement("p");
+  wrapper.className = "gw-state-key";
+  const pointer = chart.columns[0] ? `/series/${chart.columns[0].key}_null_semantics` : "";
+  for (const state of NULL_SEMANTICS_STATES) {
+    const described = nullSemantics(state);
+    const item = document.createElement("span");
+    item.className = "gw-state-key-item";
+    const swatch = document.createElement("span");
+    swatch.className = `gw-state-mark ${described.className}`;
+    swatch.title = described.title;
+    item.appendChild(swatch);
+    item.appendChild(labelElement(described.label, callbacks.labelTermFor(pointer)));
+    wrapper.appendChild(item);
+  }
+  return wrapper;
 }
 
 /** The four null-semantics states as DOM marks: a gap in a chart could mean any of them. */
 function stateStrip(chart: ChartSeries, callbacks: ChartCallbacks): HTMLElement {
   const wrapper = document.createElement("div");
   wrapper.className = "gw-state-strip";
+  wrapper.appendChild(stateKey(chart, callbacks));
   for (const column of chart.columns) {
     const row = document.createElement("div");
     row.className = "gw-state-row";
@@ -158,13 +182,14 @@ function mark(
 ): HTMLElement {
   const state = column.nullSemantics[index] ?? "";
   const described = pointMark(column.values[index] ?? null, state);
+  const raw = column.raw[index];
   const button = document.createElement("button");
   button.type = "button";
   button.className = `gw-state-mark ${described.className}`;
   button.setAttribute("data-no-glossary", "");
   button.title =
-    `${month} · ${column.label} · ${described.label}` +
-    (column.raw[index] ? ` · ${column.raw[index]} ${column.unit}` : "") +
+    `${formatMonth(month)} · ${column.label} · ${described.label}` +
+    (raw ? ` · ${formatVolume(raw)} ${column.unit}` : "") +
     (column.vintages[index] ? ` · vintage ${column.vintages[index]}` : "") +
     `\n${described.title}`;
   button.setAttribute("aria-label", button.title);

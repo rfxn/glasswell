@@ -1,0 +1,78 @@
+import { describe, expect, it } from "vitest";
+
+import { searchRequest, toResults } from "./query.ts";
+import { wellEnvelope } from "../test/fixtures.ts";
+
+const listEnvelope = {
+  data: [
+    {
+      api10: "3302501169",
+      well_name: "MANDAREE 30-31H",
+      operator_name_reported: "MARATHON OIL COMPANY",
+      status_canonical: "active",
+      county_code_at_permit: "025",
+    },
+  ],
+  meta: {},
+  links: {},
+};
+
+describe("searchRequest", () => {
+  it("routes a ten-digit term to the well itself, not to a name substring", () => {
+    // A name search for "3305310451" returns nothing: `q` matches well_name only.
+    expect(searchRequest("3305310451")).toEqual({ path: "/v1/wells/3305310451", query: {} });
+  });
+
+  it("routes any other term to the q filter with a bounded page", () => {
+    expect(searchRequest("mandaree")).toEqual({
+      path: "/v1/wells",
+      query: { q: "mandaree", limit: "20" },
+    });
+  });
+
+  it("trims the term before deciding, so a pasted api10 still resolves", () => {
+    expect(searchRequest("  3305310451 ")).toEqual({ path: "/v1/wells/3305310451", query: {} });
+  });
+
+  it("refuses an empty or whitespace term rather than listing every well", () => {
+    expect(searchRequest("   ")).toBeNull();
+  });
+
+  it("treats an eleven-digit term as a name substring, not an api10", () => {
+    expect(searchRequest("33053104510")).toEqual({
+      path: "/v1/wells",
+      query: { q: "33053104510", limit: "20" },
+    });
+  });
+});
+
+describe("toResults", () => {
+  it("reads the list shape", () => {
+    expect(toResults(listEnvelope)).toEqual([
+      {
+        api10: "3302501169",
+        name: "MANDAREE 30-31H",
+        operator: "MARATHON OIL COMPANY",
+        status: "active",
+      },
+    ]);
+  });
+
+  it("reads the single-well shape as a one-row list", () => {
+    const results = toResults(wellEnvelope);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.api10).toBe("3305310451");
+    expect(results[0]?.name).toBe("Mandaree 50-2008H");
+  });
+
+  it("falls back to the api10 when a well has no name", () => {
+    const anonymous = { data: [{ api10: "3305310451", well_name: null }], meta: {}, links: {} };
+
+    expect(toResults(anonymous)[0]?.name).toBe("3305310451");
+  });
+
+  it("returns nothing for an envelope with no data", () => {
+    expect(toResults({ data: [] })).toEqual([]);
+  });
+});

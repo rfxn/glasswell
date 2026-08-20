@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from "vitest";
 
-const { apiKey, authHeaders } = await import("./client.ts");
+const { apiKey, authHeaders, clearKey, isKeyShaped, saveKey, storedKey } = await import(
+  "./client.ts"
+);
 
 const KEY = "a".repeat(64);
 
@@ -58,5 +60,37 @@ describe("the owner key never travels in a place the server logs", () => {
   it("sends no header at all when no key has been seen", () => {
     expect(apiKey()).toBeNull();
     expect(authHeaders()).toEqual({});
+  });
+});
+
+describe("a stored key can be replaced without devtools (UX P1-6)", () => {
+  it("stores a key the UI collected", () => {
+    saveKey(KEY);
+
+    expect(storedKey()).toBe(KEY);
+    expect(authHeaders()).toEqual({ "X-Glasswell-Key": KEY });
+  });
+
+  it("forgets a wrong key, so the next load is the honest no-key state", () => {
+    saveKey(KEY);
+
+    clearKey();
+
+    expect(storedKey()).toBeNull();
+    expect(authHeaders()).toEqual({});
+  });
+
+  it("recognises the 64-hex shape in either case, and nothing else", () => {
+    expect(isKeyShaped(KEY)).toBe(true);
+    expect(isKeyShaped("A".repeat(64))).toBe(true);
+    expect(isKeyShaped("a".repeat(63))).toBe(false);
+    expect(isKeyShaped(`${"a".repeat(63)}z`)).toBe(false);
+    expect(isKeyShaped("")).toBe(false);
+  });
+
+  it("trims a pasted key rather than storing the whitespace with it", () => {
+    saveKey(`  ${KEY}\n`);
+
+    expect(storedKey()).toBe(KEY);
   });
 });

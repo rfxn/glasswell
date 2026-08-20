@@ -16,6 +16,9 @@ npm run dev         # dev server, proxying /v1 to http://127.0.0.1:8000
 Node 20.19 or newer is required by this toolchain. `dist/` is git-ignored: it is a build
 artifact, shipped by rsync, never committed.
 
+`public/brand/` holds copies of the hand-authored SVGs in the repository's `assets/`;
+refresh them by copying, never by editing the copy (BRAND.md is the source of truth).
+
 ## Serving
 
 The API serves the built bundle itself. Point `GLASSWELL_WEB_ROOT` at a directory holding

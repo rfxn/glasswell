@@ -1,4 +1,5 @@
 import { ApiError, getEnvelope } from "../api/client.ts";
+import { focusPanel } from "../chrome/overlays.ts";
 import { unwrap } from "../api/envelope.ts";
 import { highlight } from "../glossary/index.ts";
 import { termIndex } from "../glossary/store.ts";
@@ -44,7 +45,7 @@ export async function renderLineageDrawer(
   callbacks: DrawerCallbacks,
 ): Promise<void> {
   container.hidden = false;
-  container.replaceChildren(header(handle, callbacks), loading());
+  container.replaceChildren(header(handle, callbacks), panelBody(loading()));
 
   try {
     const envelope = await getEnvelope<{ chains: Chain[] }>("/v1/explain", {
@@ -53,24 +54,33 @@ export async function renderLineageDrawer(
     });
     const chain = unwrap(envelope).chains[0];
     if (!chain) {
-      container.replaceChildren(header(handle, callbacks), message("No chain came back."));
+      container.replaceChildren(
+        header(handle, callbacks),
+        panelBody(message("No chain came back.")),
+      );
       return;
     }
-    const body = document.createElement("div");
-    body.className = "gw-drawer-body";
-    body.appendChild(summary(chain));
-    body.appendChild(nodeList(chain));
+    const body = panelBody(summary(chain), nodeList(chain));
     container.replaceChildren(header(handle, callbacks), body);
     highlight(body, termIndex());
+    focusPanel(container);
   } catch (error) {
-    container.replaceChildren(header(handle, callbacks), unresolved(error));
+    container.replaceChildren(header(handle, callbacks), panelBody(unresolved(error)));
   }
+}
+
+function panelBody(...children: HTMLElement[]): HTMLElement {
+  const element = document.createElement("div");
+  element.className = "gw-panel-body gw-drawer-body";
+  element.append(...children);
+  return element;
 }
 
 function header(handle: string, callbacks: DrawerCallbacks): HTMLElement {
   const element = document.createElement("header");
-  element.className = "gw-drawer-header";
+  element.className = "gw-panel-head gw-drawer-header";
   const heading = document.createElement("h2");
+  heading.tabIndex = -1;
   heading.textContent = "Lineage";
   const code = document.createElement("code");
   code.className = "gw-handle-text";
@@ -139,7 +149,9 @@ function manifestFacts(node: ChainNode): HTMLElement {
     const value = document.createElement("dd");
     const link = document.createElement("a");
     link.href = node.acquisition_url;
-    link.rel = "noreferrer";
+    // Same-tab navigation to a 3 MB XLSX destroys the app state the receipt belongs to.
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
     link.textContent = node.acquisition_url;
     value.appendChild(link);
     facts.appendChild(value);

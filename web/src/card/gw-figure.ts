@@ -8,7 +8,15 @@ const STRICT = import.meta.env.MODE === "test";
 export const EXPLAIN_EVENT = "gw-explain";
 
 export class GwFigure extends HTMLElement {
-  static observedAttributes = ["value", "unit", "handle", "label", "granularity", "vintage"];
+  static observedAttributes = [
+    "value",
+    "unit",
+    "handle",
+    "label",
+    "label-hidden",
+    "granularity",
+    "vintage",
+  ];
 
   connectedCallback(): void {
     this.render();
@@ -37,7 +45,7 @@ export class GwFigure extends HTMLElement {
     const document_ = this.ownerDocument;
     const parts: Node[] = [];
     const label = this.getAttribute("label");
-    if (label) {
+    if (label && !this.hasAttribute("label-hidden")) {
       const element = document_.createElement("span");
       element.className = "gw-figure-label";
       element.textContent = label;

@@ -63,6 +63,7 @@ export function toChartSeries(production: ProductionData): ChartSeries {
     const semantics = column(production.series, `${key}_null_semantics`) ?? months.map(() => "");
     const present = vintages.filter((vintage): vintage is string => vintage !== null);
     const distinct = new Set(present);
+    const states = semantics.map((state) => state ?? "");
     columns.push({
       key,
       stream,
@@ -70,10 +71,10 @@ export function toChartSeries(production: ProductionData): ChartSeries {
       unit: production._units[`series.${key}`] ?? "",
       basis: production._basis[`series.${key}`] ?? null,
       handle: production._lineage[`series.${key}`] ?? null,
-      values: raw.map((value) => (value === null ? null : Number(value))),
+      values: raw.map((value, index) => plotted(value, states[index] ?? "")),
       raw,
       vintages,
-      nullSemantics: semantics.map((state) => state ?? ""),
+      nullSemantics: states,
       vintage: distinct.size === 1 ? (present[0] ?? null) : null,
       mixedVintages: distinct.size > 1,
     });
@@ -88,6 +89,18 @@ export function toChartSeries(production: ProductionData): ChartSeries {
     columns,
     scales: [...new Set(columns.map((entry) => entry.unit))],
   };
+}
+
+/**
+ * A withheld or unreported month is not a measurement, so it is a gap in the line whatever
+ * number the wire carries for it. The state strip still renders which of the four it was;
+ * a gap is never left ambiguous (SB-05 §3.2).
+ */
+const NOT_MEASURED = new Set(["withheld", "no_report"]);
+
+function plotted(value: string | null, state: string): number | null {
+  if (value === null || NOT_MEASURED.has(state)) return null;
+  return Number(value);
 }
 
 /** SB-05 §3.9.6: one handle on the wire, point-level explain built from the key columns. */
