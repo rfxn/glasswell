@@ -9,20 +9,21 @@ its own version in its header, and its history is summarised in §3.1.
 
 ### 2026-08-20 — wave 1
 
-- [New] `scripts/smoke.sh`: nineteen read-only assertions over a deployed instance —
+- [New] `scripts/smoke.sh`: twenty read-only assertions over a deployed instance —
       both refusals, the key refused in a query string, the card's unit and derivation
       handle, per-point production lineage, the chain that ends at a 64-hex sha256 and a
       `dmr.nd.gov` url, every conformance rule's rationale and evidence url, a tile
       derived from the well's own surface point, staging refused through the proxy, and
       every committed OpenAPI path present on the instance
-- [New] `tests/e2e/`: twelve browser assertions and `make test-e2e` — the app boots and
+- [New] `tests/e2e/`: thirteen browser assertions and `make test-e2e` — the app boots and
       draws, a deep link resolves to the well it names, a handle reaches a checksum and a
       regulator url on screen, a hostile query string puts the page outside neither the
       tile allowlist nor this origin, and a visitor with no key is refused honestly. Its
       own npm project, so `playwright-core` never enters the web bundle's lockfile
-- [New] `tests/integration/test_tile_wire_types.py` audits every published tile
-      declaration against the relation it reads — property types, geometry type and srid
-      against `geometry_columns`, and the attributes read back out of the protobuf
+- [New] `tests/integration/test_tile_wire_types.py` audits every column of every served
+      relation, enumerated from the catalog rather than from the declarations — property
+      types, geometry type and srid against `geometry_columns`, the attributes read back
+      out of the protobuf, and the tile role's own column grants
 - [New] `make prune-test-volumes`, run by `make test`, and a labelled named volume the
       PostGIS fixture removes itself; `tests/integration/test_harness_hygiene.py` asserts
       every mount the harness attaches carries the sweep label
@@ -36,16 +37,25 @@ its own version in its header, and its history is summarised in §3.1.
       wire as the string `"640"` and a MapLibre expression compared it lexicographically —
       the defect migration 015 fixed for `lateral_length_ft`, one layer over. The same
       audit found the martin declaration still calling `nd_laterals` a `LINESTRING` after
-      migration 017 widened the column
+      migration 017 widened the column, and `lateral_length_ft_exact` riding an
+      auto-published tile as a 19-digit string across 8,611 features
 - [Fix] `create on schema marts` existed only because it was typed on the deployed host
       during P7; it is held by a migration now, with the spacing-unit view granted to the
       API role that migration 009's blanket grant could not reach
 - [Fix] The pmtiles install hint and the basemap runbook told every operator to write the
       same `/tmp` path; both use `mktemp -d` now
-- [Change] `infra/martin/config.yaml` is reference-only until it matches the installed
-         binary: martin 1.14.0 resolves no source from it and fails before it connects,
-         measured against VM 111. The same run settles the view-under-`tables:` question —
-         martin resolves the spacing-unit view as `source.kind="view"` without complaint
+- [Fix] DR-05: `infra/martin/config.yaml` had never been adopted because its DSN names no
+      user and `martin.service` runs `User=martin`, for which no PostgreSQL role existed.
+      Migration 020 creates it with `usage` on `marts` and select on **exactly the columns
+      each layer publishes** — so `staging`, `canonical` and the `numeric`
+      `lateral_length_ft_exact` are off the wire by privilege rather than by declaration —
+      and `install.sh --with-martin-config` places the file and a `martin.service` drop-in.
+      Adopted, martin publishes three sources where auto-publish published eleven, three of
+      them `staging` relations
+- [Change] The martin config declares `pool_size` under `postgres:`, where 1.14.0 reads it;
+         at the top level it was silently ignored. The same run settles the
+         view-under-`tables:` question — martin resolves the spacing-unit view as
+         `source.kind="view"` without complaint
 - [Change] SMOKE.md re-read against the instance that ran migrations 014-019: the hero
          lateral is 15,065.44 ft, there are 17 conformance rules, the quarantine ledger is
          292,972 rows with `unknown_vocab` and `out_of_range_date` at zero, and "292,394
