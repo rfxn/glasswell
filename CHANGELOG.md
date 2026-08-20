@@ -7,6 +7,20 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-20 — tile serving: the zoom cost, measured and cut
+
+- [New] The laterals function source thins its geometry in proportion to the zoom it
+      is building for, four MVT units of tile extent, so the discarded detail stays
+      a quarter of a rendered pixel: 12.8% fewer bytes at z7, 20.6% at z9, 28.2% at
+      z11. Points and the spacing-unit polygons are left alone, where the same
+      change measured as a cost with no return (SB-05 §2.4.1 pins a fixed metre
+      ladder and marks it for tuning against measured tile bytes; this is the tuned
+      form)
+- [Fix] Every tile evaluated `ST_AsMVTGeom` twice per row — once for the null test,
+      once for the aggregate — because the planner flattened the subquery. The
+      function sources materialise it, which is 5–40% off every layer at every zoom
+      measured on the live ND slice, most of it where the tiles are largest
+
 ### 2026-08-20 — fix cycle: data truth, guardrails, panels and map
 
 - [New] The well card discloses what the map cannot show and the ingest held back:

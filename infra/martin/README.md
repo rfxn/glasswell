@@ -37,6 +37,44 @@ Do not enable both. `config.yaml` publishes ids `nd_laterals`/`nd_wells`/`nd_spa
 as tables; the functions publish the same ids. Running with the config and an added
 `functions:` block would collide.
 
+## What the function sources do that a table source cannot
+
+Two things the tile functions carry that `config.yaml`'s table sources do not, both measured
+on VM 111 against the live ND slice (`work-output/track-t-status.md`):
+
+- **One `ST_AsMVTGeom` per row.** The body wraps the projection in `with … as materialized`.
+  Inlined, the planner evaluates the geometry twice — once for the `is not null` test and
+  again for the aggregate — which cost 246 ms against 134 ms on the z4 laterals tile and
+  518 ms against 158 ms on z4 wells.
+- **Zoom-proportional thinning of the line layer.** `ST_Simplify` at four MVT units of the
+  tile being built, so the discarded detail is a quarter of a rendered pixel at any zoom.
+  At z7 that is 12.7% fewer bytes and 30% less time; at z9, 19.8% fewer bytes at no cost.
+  Points have nothing to thin and the topology-safe polygon variant measured 171% slower
+  for 3% fewer bytes, so neither of the other two layers is simplified.
+
+Adopting `config.yaml` gives up both. Before switching, re-measure the low-zoom tiles: table
+sources have no `z` to key a tolerance on.
+
+## Compression: ask for zstd or ask for nothing
+
+martin compresses on demand, and the default `Accept-Encoding` any HTTP client sends makes
+it choose gzip. On the z7 laterals tile (2,037,023 B, the hottest tile in the access log):
+
+| `Accept-Encoding` | martin | bytes on the wire |
+|---|---|---|
+| `identity` | 1.8 ms | 2,037,023 |
+| `zstd` | 19 ms | 751,192 |
+| `gzip` | 140 ms | 702,691 |
+| `br` | 165 ms | 638,610 |
+
+gzip buys 48 KB over zstd for 120 ms of a tile server every other request depends on. The
+proxy therefore asks martin for `zstd` when the caller can take it and `identity` otherwise
+(`glasswell.api.routers.tiles.UPSTREAM_ENCODINGS`), and passes the encoded body through
+without decoding it. Anything that talks to martin directly should do the same.
+
+martin answers `If-None-Match` with a `304` in 0.7 ms and no body, which is what makes the
+proxy's revalidate cache class cheap.
+
 ## Operational notes
 
 - martin reads its catalogue at startup. Layers created after it started are invisible
