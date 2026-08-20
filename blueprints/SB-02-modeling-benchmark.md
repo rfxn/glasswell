@@ -88,9 +88,12 @@ patched locally.
 Restating SB-07 §12's SB-02 row as an acceptance list, because it is the integration
 contract and it is testable:
 
-- Model registry rows carrying `training_data_vintage`, `holdout_def`, `seeds`,
-  `probe_set_ref`, `probe_tolerance`, `calibration_report_ref`, `feature_version`,
-  `feature_set_hash`.
+- Model registry rows carrying `kind`, `training_data_vintage`, `holdout_def`, `seeds`,
+  `probe_set_ref`, `probe_tolerance` **and `probe_tolerance_cross_env`**,
+  `calibration_report_ref`, `feature_version`, `feature_set_hash`, and — for a bundle —
+  `member_model_ids[]`, `horizon_months` and `bundle_manifest_sha256`.
+- `calibration_sets` and `calibration_groups` rows whose canonical serialization hashes to
+  the calibrator artifact, so the serving copy is checked rather than trusted.
 - `model.train`, `model.calibrate`, `forecast.batch`, `forecast.scenario`, `analog.index`
   and `ledger.grade` derivations, each with an `output_sha256`.
 - `ledger.grade` rows carrying **both** `trained_on_vintage` and `graded_against_vintage`.
@@ -124,30 +127,46 @@ oversight.
 An implementer must not invent any of these, and a reviewer must be able to find all of
 them in one place. Each is defended at its section.
 
-| Symbol | Value | Where | Why this value |
-|---|---|---|---|
-| `ALPHA` | 0.20 (80% central) | §4.3 | v0.6 §4A.7 |
-| `ALPHA_LO`, `ALPHA_HI` | 0.10 each | §4.3 | asymmetric CQR, per-tail |
-| `CAL_MIN_N` | 100 per Mondrian group per tail | §4.4 | finite-sample slack ≤ ~1% |
-| `CAL_WINDOW_MONTHS` | 12 (well-time) | §3.3 | nearest-to-test cohort |
-| `EMBARGO_MONTHS` | 0 | §3.3 | grouping does the work, not an embargo |
-| `PAD_RADIUS_M` | 150 | §3.4 | surface-hole cluster |
-| `PAD_WINDOW_DAYS` | 180 | §3.4 | co-completion window |
-| `COVERAGE_PASS_BAND` | [0.72, 0.88] pooled | §4.6, §10.2 | promotion gate |
-| `COVERAGE_SLICE_BAND` | [0.65, 0.92] per slice with n ≥ 200 | §4.6 | promotion gate |
-| `CROSSING_RATE_MAX` | 0.02 pre-rearrangement | §4.2 | mis-specification flag |
-| `ROLLING_ORIGINS` | 4, annual spacing | §3.5 | a single cutoff is one draw |
-| `KNN_K` | 25 (`training_support`), 10 (served analogs) | §6.5, §6.4 | declared per 4A.10 |
-| `IQR_BRACKET_TARGET` | 0.50, tolerance ±0.10 | §6.4 | an IQR brackets half by definition |
-| `TC_MIN_N` | 20 peer wells | §5.4 | below this the curve is noise |
-| `TC_FALLBACK_LADDER` | 3 levels | §5.4 | recorded per subject, never silent |
-| `OFFSET_RADII_FT` | 500, 1000, 2000 | §1.3 D | OQ-4 ablation grid |
-| `DECAY_LAMBDA_FT` | 1000 | §1.3 D | OQ-4 ablation parameter |
-| `MONOTONE_LATERAL` | +1 | §4.1 | physical, and it protects U14 |
-| `SLICE_MIN_N` | 50 (report), 200 (gate) | §7.3 | below: "insufficient n", never dropped |
-| `BOOTSTRAP_B` | 2000 paired resamples | §7.2 | CIs, not p-values |
-| `LEDGER_CYCLE_MIN_N` | 100 ND oil cum12 entries | §8.5 | makes S7 testable |
-| `SEED` | 20260820 (global, per-run overridable in the recipe) | §4.7 | recorded, never defaulted in code |
+**Every constant is marked `measured` or `asserted`, and the distinction is not decoration.**
+An *asserted* constant is a design choice defended by argument — a reviewer may disagree with
+it, and the argument is what they attack. A *measured* constant came out of a named experiment
+with a decision rule fixed before the number was seen; the experiment id is the citation, the
+script re-runs it, and disagreeing with it means disagreeing with the data. `provisional`
+marks a measured constant whose experiment ran on the six production months loaded today and
+is re-decided by the same rule once the MPR back-load lands (`work-output/pre-p3-gate-results.md`).
+
+| Symbol | Value | Where | Basis | Why this value |
+|---|---|---|---|---|
+| `ALPHA` | 0.20 (80% central) | §4.3 | asserted | v0.6 §4A.7 |
+| `ALPHA_LO`, `ALPHA_HI` | 0.10 each | §4.3 | asserted | asymmetric CQR, per-tail |
+| `CAL_MIN_N` | 100 per Mondrian group per tail | §4.4 | asserted | finite-sample slack ≤ ~1% |
+| `CAL_WINDOW_MONTHS` | 12 (well-time) | §3.3 | asserted | nearest-to-test cohort |
+| `EMBARGO_MONTHS` | 0 | §3.3 | asserted | grouping does the work, not an embargo |
+| `PAD_RADIUS_M` | 150 | §3.4 | **measured** (E-1) | largest radius that groups without chaining; `pad_group_max_share` 0.0008 at 150 m, 0.0018 at 400 m |
+| `PAD_WINDOW_DAYS` | 180 | §3.4 | **measured** (E-1) | co-completion window; the grid moves the component distribution by 1 well at p99 |
+| `PAD_GROUP_MAX_SHARE` | 0.02 | §3.4 | asserted | above it a component is a field, not a pad, and the split is rejected |
+| `HORIZON_CALENDAR_GUARD_MONTHS` | 18 | §2.2, §2.6 | **provisional** (E-6) | no ND well reaches a twelfth producing month in the loaded window; the proxy p95 is 14.4 months and cannot see a multi-year shut-in |
+| `COVERAGE_PASS_BAND` | [0.72, 0.88] pooled | §4.6, §10.2 | asserted | promotion gate |
+| `COVERAGE_SLICE_BAND` | [0.65, 0.92] per slice with n ≥ 200 | §4.6 | asserted | promotion gate |
+| `CROSSING_RATE_MAX` | 0.02 pre-rearrangement | §4.2 | asserted | mis-specification flag |
+| `ROLLING_ORIGINS` | 4, annual spacing | §3.5 | **provisional** (E-8) | all four clear 500 cum12 test wells on the spud-date projection; none is reachable on loaded data |
+| `LENGTH_BUCKETS_FT` | `{<8000, 8000–10000, 10000–10500, >10500}` (ND) | §4.4, §5.2 | **measured** (E-3) | quartiles snapped to 500 ft; the previous cuts held 6.2% and 58.5% of wells in two of four buckets |
+| `FORMATION_GROUP_MIN_COUNT` | 100 wells | §4.4 | **measured** (G-13) | equals `CAL_MIN_N`: a group too small to calibrate falls back anyway. 9 ND groups, 97.15% of wells named |
+| `KNN_K` | 25 (`training_support`), 10 (served analogs) | §6.5, §6.4 | asserted | declared per 4A.10 |
+| `IQR_BRACKET_TARGET` | 0.50, band [0.40, 0.60] on the interval, not the point | §6.4 | asserted | an IQR brackets half by definition |
+| `ANALOG_IQR_RATIO_MAX` | unset — E-4 sets it at P3 exit | §6.4 | **pending** (E-4) | the 75th percentile of the type-curve control's own per-cell ratios; the placeholder 0.60 was an invention and is withdrawn |
+| `TC_MIN_N` | 20 peer wells | §5.4 | **measured** (E-2) | 89.3% of ND subjects resolve at rung 1 and 2.5% at `control_unavailable`, inside the 0.60/0.05 rule |
+| `VINTAGE_WINDOW_MONTHS` | 36 | §5.2 | **measured** (E-2) | not widened to 48, because rung 1 already clears its floor |
+| `TC_FALLBACK_LADDER` | 3 levels, ordered and closed | §5.4 | asserted | recorded per subject, never silent; the fourth rung is `control_unavailable` |
+| `OFFSET_RADII_FT` | 500, 1000, 2000 | §1.3 D | asserted | OQ-4 ablation grid |
+| `DECAY_LAMBDA_FT` | 1000 | §1.3 D | asserted | OQ-4 ablation parameter |
+| `MONOTONE_LATERAL` | +1 | §4.1 | asserted | physical, and it protects U14 |
+| `SLICE_MIN_N` | 50 (report), 200 (gate) | §7.3 | asserted | below: "insufficient n", never dropped |
+| `BOOTSTRAP_B` | 2000 paired resamples | §7.2 | asserted | CIs, not p-values |
+| `LEDGER_CYCLE_MIN_N` | 100 ND oil cum12 entries | §8.5 | asserted | makes S7 testable |
+| `PROBE_TOLERANCE_SAME_ENV` | 0 | §4.7 | asserted | byte equality and exact prediction equality, or the D2 claim fails |
+| `PROBE_TOLERANCE_CROSS_ENV` | unset, ceiling 1e-4 | §4.7 | **pending** (E-7) | measured as the 99.9th percentile of relative P50 deviation across two `env_id`s; at or above the ceiling the artifact is D3 |
+| `SEED` | 20260820 (global, per-run overridable in the recipe) | §4.7 | asserted | recorded, never defaulted in code |
 
 ---
 
@@ -483,6 +502,17 @@ Consequences, all deliberate:
   months reaches cum12 three calendar months later. This is the industry convention and it
   is the only one under which two wells' cum12 are comparable.
 - A `withheld` month inside the horizon makes the well **censored**, not zero (§2.6).
+- A well whose **twelfth producing month falls more than `HORIZON_CALENDAR_GUARD_MONTHS`
+  calendar months after its first** is `intermittent`: twelve months of production spread over
+  three years of shut-ins is a different physical quantity from twelve consecutive months, and
+  pooling the two is the failure mode producing-month counting hides. Excluded as a label,
+  retained as a feature input and as a type-curve member, counted in the denominator, with
+  `intermittent_share` published beside `censored_share` (v0.6 §4A.4). The constant is
+  **provisionally 18 and is set by E-6**, which cannot run until the MPR back-load lands: on
+  the six months loaded today no ND well reaches a twelfth producing month at all. The
+  runnable proxy — producing-month rate over the loaded window, scaled to twelve — puts p95 at
+  14.4 months with 6.6% of wells showing a gap, and is explicitly **not** used to lower the
+  guard, because a six-month window cannot observe a multi-year shut-in.
 - `cum12(w, stream) = Σ` volume over the first 12 producing months from
   `first_production_month`. `cum24` likewise. Both in the stream's canonical unit (bbl for
   oil and water, mcf for gas), DECIMAL throughout per SB-07 §4.4.
@@ -579,6 +609,7 @@ treats withheld/confidential as a distinct class. It does not say what censored 
 | As a **feature input to other wells** | **Included.** A censored parent still depletes its neighbours, and dropping it from `depletion_proxy` would silently understate depletion for exactly the newest, most infill-heavy child wells. This is the half v0.6 omits (§16 ER-09) |
 | In the **denominator of reported accuracy** | Counted. `censored_share` is published beside every accuracy figure (4A.4) and per slice |
 | In the **type-curve control** | Included up to its last producing month; the control's month-*m* statistic uses only wells with ≥ *m* producing months, and `n_m` is published per month (§5.4) |
+| As an **`intermittent` well** (reaches H producing months, but late — §2.2) | A distinct class, not a censored one: excluded as a label because its cum12 is a different quantity, retained everywhere a censored well is retained, and its share published |
 
 **Withheld and confidential wells (OQ-7).** Interim policy: excluded from train, calibration
 and test as a distinct class; the share is reported by cohort and by basin. This is a
@@ -725,9 +756,39 @@ fallback for wells with no surface point:
     group = (spacing_unit_id, completion half-year)
 ```
 
+The component is **single linkage** — leakage is transitive, so if A leaks to B and B to C,
+A's group must contain C — and it is computed in **EPSG:5070**, one projected CRS covering ND,
+NM and TX, so the rule is basin-portable and no Williston zone choice arises. It governs
+proximity only; length still comes from the basin compute CRS.
+
 Every group is assigned wholly to TRAIN, CAL or TEST by its median `t_fp`. The split object
-records `n_wells_reassigned_by_group_rule`; **a zero there is a red flag** — it means the
+records `n_wells_reassigned_by_group_rule`, the **component-size distribution** (max, p99,
+mean) and `pad_group_max_share`; **a zero reassignment count is a red flag** — it means the
 rule found nothing and should be investigated rather than celebrated.
+
+**The guard, because single linkage at a fixed radius is exactly the algorithm that chains.**
+If `pad_group_max_share` — largest component ÷ population — exceeds `PAD_GROUP_MAX_SHARE` =
+0.02, the split is **rejected**: a component holding more than 2% of the population is a
+field, not a pad, and assigning it wholly to one side has destroyed the temporal split rather
+than protected it.
+
+**Measured, and it does not chain here** (E-1, `scripts/experiments/e1-pad-grouping.sh`,
+2026-08-20, 43,817 ND wells): at 150 m / 180 days the rule forms 5,935 multi-well groups
+holding 21,875 wells, the largest component is 34 wells and `pad_group_max_share` = 0.0008 —
+25× below the guard, with p99 group size 10. The sweep over {100, 150, 200, 250, 400} m ×
+{90, 180, 365} days never approaches the guard: the worst cell, 400 m and a year, still tops
+out at 78 wells (0.0018). So 150 m and 180 days stand as *ratified* values rather than
+assumed ones, and the guard stays in the split object as the thing that fires in a basin
+where pads are not discrete — the Permian, on a century-old wellbore population, is where it
+earns its keep. The fallback is an edge case on the population that matters: of the 22,263 ND
+wells with a promoted centreline, 22 (0.10%) have no date. The 6,970 dateless rows in
+`canonical.wells` are expired permits that were never drilled and never enter a training set,
+which is why the share is measured on the modelling population and not on the well table.
+
+**Completion dates are the rule; spud dates are what exists.** `completion_events` has not
+landed, so E-1 measured the window on `spud_date`. The proxy is close — spud-to-completion
+spread is short relative to a 180-day window — and the experiment is re-run when completion
+dates land, which is a change in the input, not in the rule.
 
 Note what this is *not*: it is not a random group split (v0.6 §4A.3 prohibits random splits
 and is right to). Temporal order is primary; grouping only moves the small number of wells
@@ -748,6 +809,17 @@ instead of them.
 
 Cost: four times the training compute. Accepted; §12 shows it fits the budget, and one
 training job runs system-wide at a time (v0.6 §3.7.3).
+
+**None of the four origins is reachable on the data that is loaded, and that is P3's entry
+gate, not a P3 discovery.** `canonical.production_monthly` holds six production months
+(2025-10 … 2026-03) at one report vintage; a cum12 label needs twelve producing months after
+the boundary, so E-8 measures **zero** test wells at every origin. Projecting from spud dates
+on wells with a promoted centreline, all four origins clear the 500-well floor for cum12
+(3,294 / 2,747 / 1,884 / 1,023) and only three clear it for cum24 — the 2024 origin reaches
+169 — so **ND at P3 ships the nine cum12 models**, which is the branch §3.7 already
+anticipated, and OQ-1 closes on the measured number once the back-load lands. An origin that
+loses its cohort is dropped; the origins are **not shifted to fit the data** (E-0's decision
+rule).
 
 ### 3.6 Hyperparameters — selected without touching calibration or test
 
@@ -902,15 +974,27 @@ knowing its slice table would fail.
 ```
 Taxonomy  g(x) = (basin, stream, horizon, formation_group, lateral_length_bucket)
 
-lateral_length_bucket ∈ { <7500, 7500–9500, 9500–11000, >11000 } ft
-formation_group        = canonical formation via formation_aliases, collapsed to the
-                         basin's principal targets, with an __other__ bucket
+lateral_length_bucket ∈ { <8000, 8000–10000, 10000–10500, >10500 } ft   (ND; per basin)
+formation_group        = canonical.well_completions.formation_group, resolved from the
+                         regulator's reported pool through the formation_aliases LOOKUP
+                         rule, collapsed to the basin's principal targets, with an
+                         __other__ bucket below FORMATION_GROUP_MIN_COUNT = 100 wells and a
+                         distinct __confidential__ value where the pool itself is withheld
 
 Fallback ladder when n_g < CAL_MIN_N:
     (basin, stream, horizon, formation_group, length_bucket)
  →  (basin, stream, horizon, formation_group)
  →  (basin, stream, horizon)
 ```
+
+**Both terms in the taxonomy are measured, and one of them moved.** The length buckets are
+E-3's: the previously pinned `{7500, 9500, 11000}` ft cuts put 6.2% and 11.3% of ND wells in
+two buckets and 58.5% in one — a Mondrian cell that holds three-fifths of the population is
+not a conditioning variable — so the measured quartiles snapped to 500 ft replace them, at
+25.3 / 16.0 / 24.1 / 34.7%. The cuts are **per basin**, recorded on the index, and the
+Permian gets its own. `formation_group` is G-13: it existed in no table until the gate added
+it, and a Mondrian taxonomy keyed on a column that does not exist is a calibration plan that
+cannot run.
 
 Every prediction records `calibration_group_used` and `calibration_n`, and these appear in
 the response envelope alongside the interval. A user reading a wide band on an unusual well
@@ -934,18 +1018,29 @@ forecast that "cites a `model_id`" (v0.6 §4A.13) is therefore ambiguous today (
 
 - Each quantile model is registered as a normal `lineage.models` row with its `alpha` in
   `hyperparams`.
-- A **bundle** is registered as one further `lineage.models` row with `algo = "cqr_bundle"`,
-  whose `artifact_sha256` is taken over a canonically-serialized manifest listing the three
-  member `model_id`s, the calibrator artifact hash, `feature_version`, `feature_set_hash`,
-  `conformal_alpha` and the Mondrian taxonomy definition.
+- A **bundle** is registered as one further `lineage.models` row with **`kind = 'cqr_bundle'`,
+  not `algo = 'cqr_bundle'`** — `algo` is a NOT NULL column already carrying the algorithm on
+  live rows, and overloading it makes "what algorithm produced this" unanswerable for the one
+  row a forecast cites (v0.6 §3.4.4, as amended). Its `bundle_manifest_sha256` is taken over a
+  canonically-serialized manifest listing the three member `model_id`s, the calibrator artifact
+  hash, `feature_version`, `feature_set_hash`, `conformal_alpha` and the Mondrian taxonomy
+  definition.
 - **The bundle's `model_id` is what every forecast, valuation, inventory slot, tile
   attribute and ledger entry cites.** Member models are reachable one hop away through the
   bundle's derivation inputs.
 - The calibrator table (per-group `Q_lo`, `Q_hi`, `n_g`) is a D1 artifact with its own
   `model.calibrate` derivation, referenced by `calibration_report_ref`.
 
-This consumes SB-07 as written. The schema gap in v0.6 §3.4.4 is handed to SB-00 (§16
-ER-07), not patched locally.
+**The registry as shipped cannot hold any of this, which is why it is a gate item rather
+than an implementation note.** Verified 2026-08-20 against migration 006: `lineage.models` has
+no `kind`, no `quantile`, no `horizon_months`, no member list and no
+`probe_tolerance_cross_env`; `lineage.calibration_sets` and `marts.forecasts` do not exist;
+`ids.py` mints `man_` and `drv_` only, so no `mdl_` or `fct_` id can be minted at all; and the
+table holds zero rows. The delta is additive — columns, two tables, a `content_id(prefix,
+payload)` generator and the prefix registry — and it lands before the first model is
+registered. Amending the document toward the shipped table, rather than rewriting a table that
+already carries grants, an FK from `derivations.model_id` and a status index, is also the
+cheapest path through P3.
 
 ### 4.6 Calibration reporting (4A.8)
 
@@ -988,8 +1083,21 @@ monotone_constraints, monotone_constraints_method            = pinned
   reproducible byte-exactly given the same scores, which localizes any determinism failure
   to the learner.
 - **Probe set**: 1,000 feature rows, a D1 artifact with its own derivation, versioned with
-  `feature_version`. Registered at model registration per SB-07 §4.3;
-  `probe_tolerance` default 1e-9 same-architecture, recorded per model otherwise.
+  `feature_version`, referenced by `probe_set_ref` and registered at model registration per
+  SB-07 §4.3.
+- **Two tolerances, not one.** `probe_tolerance_same_env` = **0**: byte equality of the
+  artifact *and* exact prediction equality over the probe set, asserted by training twice in
+  the pinned environment. `probe_tolerance_cross_env` is a **relative** tolerance on P50 over
+  the probe set, and **it must be < 1e-4 or the artifact is not D2** — it is reclassified D3
+  in the same commit with the measured deviation and both `env_id`s recorded. The previously
+  stated 1e-9 default was defended only for the same architecture, so the cross-environment
+  claim was untested and untestable; the two cases differ by six orders of magnitude and one
+  number carrying both hides which guarantee failed. The value is **set by E-7** as the
+  99.9th percentile of observed relative deviation rounded up to the next power of ten, and
+  re-measured whenever `env_id` changes: a tolerance is a measurement, never a target, and one
+  recorded after the fact with no failure branch is a rubber stamp. E-7 needs a trained bundle
+  in two pinned environments; `lineage.models` holds zero rows today, so it is a P3-exit
+  measurement with its rule fixed in advance.
 - The determinism check (SB-07 §10 Check 8) trains the fixture model twice in the pinned
   environment and asserts artifact hash equality plus probe-prediction equality. SB-02 owns
   the fixture and the assertion; SB-07 owns the harness.
@@ -1024,13 +1132,37 @@ for the benchmark: an unpinned control makes S4 irreproducible across runs (§16
 **Pinned benchmark control peer group:**
 
 ```
-peer(subject) = wells w in TRAIN ∪ CAL  (never TEST) such that
-      formation_group(w) == formation_group(subject)
-  AND area(w)            == area(subject)             # county in ND; RRC district in TX
+peer(subject) = wells w in TRAIN ∪ CAL  (never TEST, never the subject's pad-mates) s.t.
+      formation_group(w) == formation_group(subject)   # canonical.well_completions, G-13
+  AND area(w)            == area(subject)              # county in ND; RRC district in TX
   AND lateral_length_bucket(w) == lateral_length_bucket(subject)
   AND t_fp(w) within VINTAGE_WINDOW (36 months) before B
   AND w has ≥ 1 producing month at as_of(C)
+
+fallback ladder — ordered, closed, recorded per subject:
+      (formation_group, area, length_bucket)
+   →  (formation_group, area)
+   →  (formation_group, basin)
+   →  control_unavailable          # never a fourth widening
 ```
+
+An unordered ladder is an unpinned control with extra words: two engineers would widen along
+different axes and get different controls. The order drops the **weakest** discriminator first
+— length, which the `typecurve_absolute` arm (§5.3) already handles by bucketing — and keeps
+formation to the last, because a Three Forks peer group for a Middle Bakken subject is not a
+control, it is different rock. Terminating in an explicit `control_unavailable` rather than a
+basin-wide rung is what stops the benchmark from quietly dropping its hard subjects, which is
+the single most effective way to rig an ML-versus-control comparison and the first thing an
+adversary tests. `control_unavailable_share` is a **published benchmark field**.
+
+**Measured** (E-2, `scripts/experiments/e2-peer-availability.sh`, 2026-08-20, 20,493 ND
+subjects): 89.3% of subjects resolve at rung 1, 4.4% at rung 2, 3.9% at rung 3, and 2.5% have
+no control at all — comfortably inside the rule's 0.60 rung-1 floor and 0.05 unavailability
+ceiling, so neither `TC_MIN_N` nor the vintage window is widened. Median rung-1 peer count is
+213. The measurement runs on a spud-date vintage proxy and on a `formation_group` derived from
+the six loaded MPR months, so it is **re-decided against `t_fp` after the back-load**; the
+direction of the bias is knowable — a longer history adds peers — so the finding is that the
+ladder is not tight, not that it is loose.
 
 The **product** builder accepts any user filter set (that is its purpose, and it is the
 ComboCurve-attributed harvest row in v0.6 §5.1); the **benchmark** uses the pinned
@@ -1081,9 +1213,10 @@ that produces a plausible, slightly-wrong number.
 Weighting is **equal per well**, not volume-weighted: volume weighting lets one monster well
 define the "typical" curve, which is the opposite of what a type curve is for.
 
-**Fallback ladder** when the pinned peer group is below `TC_MIN_N`:
-`(formation, area, length_bucket)` → `(formation, area)` → `(formation, basin)`. The level
-used is recorded per subject. If even the basin level fails, the control is **unavailable**
+**Fallback ladder** when the pinned peer group is below `TC_MIN_N` — ordered and closed,
+per §5.2: `(formation_group, area, length_bucket)` → `(formation_group, area)` →
+`(formation_group, basin)`. The level used is recorded per subject, and 89.3 / 4.4 / 3.9% of
+ND subjects land on the three rungs respectively (E-2). If even the basin level fails, the control is **unavailable**
 for that subject and the benchmark records `control_unavailable` — it never falls back
 silently, and `control_unavailable_share` is a reported benchmark field, because a comparison
 that quietly drops the hard subjects is a rigged comparison.
@@ -1168,6 +1301,12 @@ once E3 is stable". Defence and its limit, both stated:
   `geology`, `spacing`) contributes equal total weight by default, with the weights recorded
   on the index and exposed as a parameter. This is a small, defensible correction, not a
   learned metric.
+- The four families — `design`, `location`, `geology`, `spacing` — each contribute **equal
+  total weight (0.25)**, with within-family weights uniform. `operator` and `vintage` are
+  **excluded from the support space entirely**: support answers "has the model seen rock and
+  geometry like this", and including operator would let a familiar operator mask unfamiliar
+  rock. The weights, the TRAIN-only standardization statistics, the ordered feature id list,
+  `k`, the metric and `d_ref` are all inside the index hash and declared on every prediction.
 - The learned alternative (model leaf co-occurrence — how often two wells land in the same
   LightGBM leaf) is the OQ-8 comparison arm, run once E3 is stable and evaluated by the same
   §6.4 check. It is not the default because a learned metric inherits the model's biases and
@@ -1194,14 +1333,29 @@ stated rates". The rate is never stated anywhere in v0.6, yet P3's exit criterio
 green" (v0.6 §7.1) — an exit gate that cannot fire (§16 ER-05). Pinned:
 
 ```
-For a sample of held-out subject wells (TEST, ≥ 300 subjects, seeded sample):
+Over EVERY TEST subject with a matured actual at V_eval — not a sample:
     A(s)        = top-10 analogs of s, drawn from TRAIN ∪ CAL at as_of(C)
-    [Q1, Q3](s) = interquartile range of { actual cum12(a) : a ∈ A(s) }
-    bracket(s)  = 1 if actual cum12(s) ∈ [Q1, Q3](s) else 0
+    IQR(s)      = interquartile range of { actual cum12(a) : a ∈ A(s) }, i.e. Q1..Q3
+    bracket(s)  = 1 if actual cum12(s) lies inside IQR(s) else 0
 
-    bracket_rate = mean(bracket)
-    PASS iff |bracket_rate − IQR_BRACKET_TARGET| ≤ 0.10       (i.e. 0.40 ≤ rate ≤ 0.60)
+    bracket_rate = mean(bracket), with a Clopper-Pearson 95% interval CI
+    PASS          iff CI lies wholly inside [0.40, 0.60]
+    FAIL          iff CI lies wholly outside
+    INCONCLUSIVE  otherwise — blocks P3 exit exactly as FAIL does, and is remediated by
+                  adding subjects (more origins), never by widening the band
 ```
+
+**The sample is gone, and its removal is the amendment.** At n = 300 the sampling half-width
+is ±0.057, so the pass band was the same size as the noise and the gate could not distinguish
+0.44 from 0.56. At ND scale the analog query is exact brute force over ~2×10⁴ wells and costs
+milliseconds (§6.2), so sampling bought no compute and cost power. Making INCONCLUSIVE a
+first-class blocking outcome is what turns "we did not have enough evidence" into an answer
+rather than a coin flip dressed as a pass.
+
+Analog actuals are read at `as_of(C)` — the leakage rule wins — while the subject's actual is
+read at `V_eval`. The share of analog cum12 values that changed between the two vintages is
+published as `analog_label_drift_share`, so a bracket result cannot quietly be a restatement
+artifact.
 
 **The target is 0.50, and that is the whole subtlety.** An interquartile range covers half
 the mass of the distribution it is drawn from, so a *well-behaved* analog set brackets the
@@ -1219,7 +1373,14 @@ Reported alongside, so the rate is interpretable rather than a lone number:
 
 - **Median IQR width** relative to the population IQR — the sharpness counterpart to the
   bracket rate, exactly as interval width is to coverage (§4.6). A bracket rate of 0.50 with
-  an IQR as wide as the whole basin is a failure that the rate alone cannot express.
+  an IQR as wide as the whole basin is a failure that the rate alone cannot express, and it
+  carries its own floor, `ANALOG_IQR_RATIO_MAX`. **The floor is set by E-4 as the 75th
+  percentile of the per-cell ratios observed on the type-curve control's own peer groups** —
+  the control is the best-practice manual workflow (§5.1), so an analog set no sharper than
+  three-quarters of hand-built peer groups is uninformative by the product's own standard.
+  E-4 measures an index that does not exist yet, so it is a P3-exit measurement with its rule
+  fixed in advance; the number it replaces was a placeholder and is withdrawn rather than
+  carried.
 - Median absolute feature distance to the 10th analog, and its distribution.
 - Bracket rate **by slice** (formation, length bucket, vintage), so 4A.12 is "reported like
   calibration" as v0.6 §4A.12 requires — same slice taxonomy, same Clopper–Pearson CIs.
@@ -1253,6 +1414,24 @@ Properties, all deliberate:
   populations differ.
 - `k`, `metric`, `d_ref` and the index id are **declared on every prediction**, per 4A.10 —
   the number is never served bare.
+
+**`low_support` is a percentile of the training population, not a constant.** A slot is
+flagged `low_support` when its `training_support` falls below the **10th percentile of the
+TRAIN self-support distribution for the same index** — recomputed per index and declared on
+the artifact with its realized value. A hardcoded `support ≥ 0.35` gate is a number an
+adversary attacks and means different things in ND and the Permian; a percentile of the
+training population itself is self-calibrating and has no free parameter, which is the move
+`d_ref` already makes one level down. Low-support slots are **retained, flagged and excluded
+from headline rollup totals**, with the excluded count and volume stated beside every total —
+ND's confidential period systematically hides the newest wells, so the low-support population
+is exactly the infill inventory the user cares about, and dropping it would answer a different
+question silently (v0.6 §4D.2).
+
+Whether the space is non-degenerate at all is **E-5**, a P3-exit measurement against the built
+index: TRAIN self-support median above 0.90 or below 0.20, or more than half the serving
+population inside one decile, means the space is degenerate, and the remedies are family
+weights, then the OQ-8 learned metric, then `k` — **never** `d_ref`'s percentile, which would
+make support incomparable across indexes for no gain in information.
 
 `training_support` is reported as a distribution, never as a mean, wherever it describes a
 set (4D.3: inventory rollups always state the support distribution). A mean support of 0.6
@@ -1596,9 +1775,11 @@ the promotion job, with the results recorded on the `model.promoted` audit event
 | 3 | Per-slice coverage inside `COVERAGE_SLICE_BAND` for every slice with n ≥ 200 | [0.65, 0.92]; a single breach blocks |
 | 4 | Per-tail coverage each within [0.85, 0.95] against nominal 0.90 | asymmetric calibration must work on both ends |
 | 5 | `crossing_rate` ≤ `CROSSING_RATE_MAX` | 0.02 |
-| 6 | Determinism check green (SB-07 §10 Check 8) | artifact hash equality + probe equality |
+| 6 | Determinism check green (SB-07 §10 Check 8) | artifact hash equality + probe equality; `probe_tolerance_same_env` = 0 |
+| 6b | `probe_tolerance_cross_env` recorded and **< 1e-4**, or the row's `determinism_class` is `D3` | a D2 claim above the ceiling is a false claim, not a wide one |
 | 7 | Every leakage guard test green (§11.4) | any red blocks; no override |
-| 8 | 4A.12 analog check green if the bundle ships a new index | §6.4 |
+| 8 | 4A.12 analog check **PASS** if the bundle ships a new index — INCONCLUSIVE blocks exactly as FAIL does | §6.4, on the whole TEST population |
+| 8b | `analog_iqr_ratio` at or below `ANALOG_IQR_RATIO_MAX` for every cell, once E-4 has set it | a diffuse analog set can sit at 0.52 and still be uninformative |
 | 9 | **Non-inferiority to the incumbent promoted bundle** on interval score, pooled | the 95% paired-bootstrap CI of (candidate − incumbent) must not lie entirely above zero |
 | 10 | No slice with n ≥ 200 degrades by more than 10% in interval score versus the incumbent | prevents a pooled win that hides a slice collapse |
 | 11 | `training_support` distribution over the serving population not materially shifted | 10th percentile within 0.05 of the incumbent's |
@@ -1940,6 +2121,17 @@ fire, a gate that would fire on the wrong number, or — ER-07 — a schema ambi
 the first forecast that has to cite a model. ER-08 through ER-15 are corrections that can
 travel with the next consolidation pass.
 
+**Status at v0.6-rc2: all fifteen are applied**, ER-01 … ER-07 through the pre-P3 gate
+(`work-output/pre-p3-gate.md` §3, amendments A-1 … A-20) and ER-08 … ER-15 through the v0.6-rc1
+amendment set. Six of them landed with a *number* rather than only a clause, because a clause
+that names an unmeasured constant is the same defect one level down: ER-03's radius and window
+are E-1's, ER-04's minimum and window are E-2's, ER-05's whole-population three-way gate
+replaced a sample whose noise equalled its pass band, ER-06's families are pinned and its 4D
+threshold is a percentile, ER-07 is reconciled against the shipped registry rather than the
+prose, and ER-12 is resolved as two tolerances with a demotion path. What remains open in this
+section is not an erratum: it is the ND MPR back-load, without which none of the six can be
+re-measured on real history (`work-output/pre-p3-gate-results.md`).
+
 ---
 
 ## 17. Open items handed back
@@ -1947,13 +2139,15 @@ travel with the next consolidation pass.
 | Item | Owner | Why it is not decided here |
 |---|---|---|
 | Ratify the fifteen errata in §16; add the DIR-8 glossary rows from §13 | SB-00 | §4 protocols are change-controlled (v0.6 §10) |
-| Whether `NDOGD_Surveys` carries station-level MD/INC/AZI or headers only (`ad:97`) | SB-01, **before P3 feature work** | Decides whether ND gets `landing_tvd_ft` and `structural_residual_ft` at all |
+| ~~Whether `NDOGD_Surveys` carries station-level MD/INC/AZI or headers only (`ad:97`)~~ **CLOSED — station-level, YES** | — | Probed 2026-08-20 by ranged read: 5,470,017 stations and 52,579 wellbores, both carrying `measdpth`/`inclination`/`azimuth`/`tvd`; NAD83 geographic; units UNVERIFIED and shipped as a conformance rule (§1.3 C). ND gets both features |
 | OQ-2: whether NDIC Premium tops ($500/yr) are bought | Owner, after the §7.6 `with_tops` ablation | The ablation is the input to the decision; the decision is not SB-02's |
-| OQ-1: when cum24 joins cum12 as a headline | SB-02 + owner, after P3 | Depends on measured ND history depth at the rolling origins |
+| OQ-1: when cum24 joins cum12 as a headline | SB-02 + owner, after P3 | **Provisionally answered: not at P3.** Projected from ND spud dates, three of four origins clear 500 cum24 test wells and the 2024 origin reaches 169, so ND ships the nine cum12 models (E-8). Re-decided against producing months after the back-load |
 | OQ-7: final confidential / withheld policy | SB-02, after `withheld_share_by_completion_cohort` is measured in P3 | The interim policy is stated (§2.6); the final one needs the number |
 | OQ-4: which parent-child encoding wins | SB-02, from the §7.6 ablation arms | Answered by the harness, not by argument |
 | OQ-8: Euclidean versus learned analog metric | SB-02, once E3 is stable | Comparison arm designed (§6.2); result pending |
 | Per-basin reporting lags used in `holdout_def` | SB-01 | Ingest cadence is SB-01/SB-06 (v0.6 §3.7.4) |
+| **The ND MPR back-load (E-0)** — 2015-05 … 2025-09, 134 workbooks, 349 MB | SB-01 ingest, **before P3 opens** | Not a decision and not a measurement: an ingest job. Six of the nine gate experiments depend on it, and P3's entry gate is now stated in terms of it (v0.6 §7.1) |
+| Which pools roll up to which `formation_group` (G-13) | Owner ratification, per §11 | The mechanism is settled — a LOOKUP rule, `__other__` below 100 wells, `__confidential__` where the pool is withheld — but the ND assignments are 33 geology judgments, recorded row by row with evidence |
 | Whether `ledger_restatement_drift` is published on the scorecard | E11 / SB-04 | SB-02 computes it and accepts ownership (§8.3); placement is the scorecard's |
 | TX allocated-label training experiment | SB-02, after 4F.5 error bounds exist | Blocked on the allocation study (v0.6 §4F.4) |
 | Whether E14 survives the cut order | Owner | v0.6 §7.4; §9.5 states what must be recorded either way |
