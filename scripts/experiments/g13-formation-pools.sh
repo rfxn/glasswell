@@ -49,7 +49,7 @@ awk -F'|' -v thr="${GW_FORMATION_GROUP_MIN_COUNT:-100}" '
     $1 == "pool_inventory" { pools = $3 }
     $1 == "min_count" && $2 + 0 == thr + 0 { groups = $3; named = $4; other = $5 }
     $1 == "registry" && $2 ~ /formation_aliases/ { aliases = $3 }
-    $1 == "registry" && $2 ~ /columns named/ { columns = $3 }
+    $1 == "registry" && $2 ~ /columns named/ { columns = $3; group_column = ($3 ~ /formation_group/) }
     END {
         if (groups == "") {
             printf "VERDICT|FORMATION_GROUP_MIN_COUNT|BLOCKED no measurement at %s wells\n", thr;
@@ -57,6 +57,7 @@ awk -F'|' -v thr="${GW_FORMATION_GROUP_MIN_COUNT:-100}" '
             printf "VERDICT|FORMATION_GROUP_MIN_COUNT|MEASURED %s — %s of %s pools name a group, %s%% of wells named, __other__ %s%%\n",
                    thr, groups, pools, named, other;
         }
-        printf "VERDICT|formation_group registry|%s lineage.formation_aliases holds %s row(s); columns named formation: %s\n",
-               ((aliases + 0 == 0 || columns == "none") ? "BLOCKED" : "PASS"), aliases, columns;
+        printf "VERDICT|formation_group registry|%s lineage.formation_aliases holds %s row(s) and no formation_group column %s\n",
+               ((aliases + 0 == 0 || !group_column) ? "BLOCKED" : "PASS"), aliases,
+               (group_column ? "is missing" : "exists");
     }' "$rows"
