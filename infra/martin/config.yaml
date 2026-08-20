@@ -1,0 +1,44 @@
+listen_addresses: "127.0.0.1:3000"
+pool_size: 10
+postgres:
+  connection_string: "postgresql:///glasswell?host=/var/run/postgresql"
+  auto_publish: false
+  tables:
+    nd_laterals:
+      schema: marts
+      table: nd_laterals_tile
+      srid: 4326
+      geometry_column: geom
+      geometry_type: LINESTRING
+      properties:
+        api10: text
+        linekey: text
+        operator_name: text
+        status_canonical: text
+        spud_year: int4
+        lateral_length_ft: numeric
+        derivation_id: text
+    nd_wells:
+      schema: marts
+      table: nd_wells_tile
+      srid: 4326
+      geometry_column: geom
+      geometry_type: POINT
+      properties:
+        api10: text
+        operator_name: text
+        status_canonical: text
+        spud_year: int4
+        derivation_id: text
+    nd_spacing_units:
+      schema: marts
+      table: nd_spacing_units_tile
+      srid: 4326
+      geometry_column: geom
+      geometry_type: MULTIPOLYGON
+      properties:
+        spacing_unit_id: text
+        label: text
+        formation_reported: text
+        ds_size_acres: numeric
+        derivation_id: text
