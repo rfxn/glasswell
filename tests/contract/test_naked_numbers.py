@@ -8,6 +8,7 @@ Every handle found is then resolved through `/v1/explain` to a terminal manifest
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,7 @@ import yaml
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import REQUEST_EXAMPLE_KEY
+from glasswell.lineage.ids import parse_handle
 
 ALLOWLIST_PATH = Path(__file__).with_name("non_figure_allowlist.yml")
 NUMERIC_TEXT = re.compile(r"\A-?\d+(\.\d+)?\Z")
@@ -68,31 +70,42 @@ def _allowed(pointer: str) -> bool:
     return any(regex.match(pointer) for regex, _ in ALLOWED)
 
 
-def _naked(node: Any, pointer: str, prefixes: set[str], parent: Any, key: str) -> list[str]:
+def _walk(
+    node: Any, pointer: str, prefixes: set[str], parent: Any, key: str
+) -> Iterator[tuple[str, str]]:
+    """Every numeric leaf, classified `figure`, `allowed` or `naked`."""
     if isinstance(node, dict):
-        return [
-            offender
-            for child_key, value in node.items()
-            for offender in _naked(value, f"{pointer}/{child_key}", prefixes, node, child_key)
-        ]
+        for child_key, value in node.items():
+            yield from _walk(value, f"{pointer}/{child_key}", prefixes, node, child_key)
+        return
     if isinstance(node, list):
-        return [
-            offender
-            for index, value in enumerate(node)
-            for offender in _naked(value, f"{pointer}/{index}", prefixes, node, str(index))
-        ]
+        for index, value in enumerate(node):
+            yield from _walk(value, f"{pointer}/{index}", prefixes, node, str(index))
+        return
     if not _is_number(node):
-        return []
+        return
     in_figure = isinstance(parent, dict) and key == "value" and "d" in parent
-    if in_figure or _covered_by_sidecar(pointer, prefixes) or _allowed(pointer):
-        return []
-    return [pointer]
+    if in_figure or _covered_by_sidecar(pointer, prefixes):
+        yield pointer, "figure"
+    elif _allowed(pointer):
+        yield pointer, "allowed"
+    else:
+        yield pointer, "naked"
+
+
+def _classify(data: Any, wanted: str) -> list[str]:
+    prefixes: set[str] = set()
+    _sidecar_prefixes(data, "", prefixes)
+    return [pointer for pointer, status in _walk(data, "", prefixes, None, "") if status == wanted]
 
 
 def naked_numbers(data: Any) -> list[str]:
-    prefixes: set[str] = set()
-    _sidecar_prefixes(data, "", prefixes)
-    return _naked(data, "", prefixes, None, "")
+    return _classify(data, "naked")
+
+
+def figure_numbers(data: Any) -> list[str]:
+    """Numbers the response does carry lineage for — the population no exemption may cover."""
+    return _classify(data, "figure")
 
 
 def handles(data: Any) -> set[str]:
@@ -162,13 +175,55 @@ def test_no_served_number_is_naked(client: TestClient) -> None:
     assert offenders == {}
 
 
-def test_every_handle_resolves_to_a_terminal_manifest(client: TestClient) -> None:
-    """SB-07 §10 check 3 at seeded scale — this is S9, and it is never cut."""
+def served_figures(client: TestClient) -> set[str]:
+    figures: set[str] = set()
+    for _, call in exercised(client):
+        body = payload(client.get(call["url"], params=call["params"]))
+        if body is not None:
+            figures.update(figure_numbers(body))
+    return figures
+
+
+def test_no_exemption_covers_a_served_figure(client: TestClient) -> None:
+    """The allowlist's minimality gate: `- pointer: /**` would silence every check above."""
+    figures = served_figures(client)
+
+    assert figures, "no operation served a figure, so this test proves nothing"
+    covered = {
+        entry["pointer"]: sorted(pointer for pointer in figures if regex.match(pointer))
+        for regex, entry in ALLOWED
+    }
+
+    assert {pointer: hits for pointer, hits in covered.items() if hits} == {}
+
+
+def test_no_number_is_naked_in_any_reachable_derivation(client: TestClient) -> None:
+    """One published example per operation is not the surface. Every handle has a record too."""
+    offenders: dict[str, list[str]] = {}
+    for handle in sorted(walked_handles(client)):
+        derivation = parse_handle(handle).derivation_id
+        body = payload(
+            client.get(f"/v1/derivations/{derivation}", params={"include": ["inputs", "rules"]})
+        )
+        found = naked_numbers(body)
+        if found:
+            offenders[derivation] = found
+
+    assert offenders == {}
+
+
+def walked_handles(client: TestClient) -> set[str]:
     found: set[str] = set()
     for _, call in exercised(client):
         body = payload(client.get(call["url"], params=call["params"]))
         if body is not None:
             found.update(handles(body))
+    return found
+
+
+def test_every_handle_resolves_to_a_terminal_manifest(client: TestClient) -> None:
+    """SB-07 §10 check 3 at seeded scale — this is S9, and it is never cut."""
+    found = walked_handles(client)
 
     assert found, "no response carried a handle, so the walker proves nothing"
     for handle in sorted(found):

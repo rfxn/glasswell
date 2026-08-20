@@ -1,0 +1,12 @@
+[Unit]
+Description=glasswell nightly logical backup (pg_dump + raw-zone push to forge)
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql@16-main.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/glasswell-backup.sh
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=4h

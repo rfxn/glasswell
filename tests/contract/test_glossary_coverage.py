@@ -6,6 +6,7 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
+from glasswell.api.examples import EXAMPLE_API10
 from tests.contract.test_naked_numbers import exercised
 
 GLOSSARY_EXTENSION = "x-glasswell-glossary"
@@ -42,7 +43,7 @@ def test_every_schema_binding_resolves(client: TestClient, term_ids: set[str]) -
 
 
 def test_labels_are_json_pointers(client: TestClient) -> None:
-    labels = client.get("/v1/wells/3305301234").json()["meta"]["labels"]
+    labels = client.get(f"/v1/wells/{EXAMPLE_API10}").json()["meta"]["labels"]
 
     assert all(pointer.startswith("/") for pointer in labels)
 

@@ -6,18 +6,21 @@ INFRA_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ETC_DIR=/etc/glasswell
 STATE_DIR=/var/lib/glasswell
 UNIT_DIR=/etc/systemd/system
+SBIN_DIR=/usr/local/sbin
 WEB_ROOT=/opt/glasswell/web
 PG_CONF_DIR=/etc/postgresql/16/main/conf.d
 RUN_USER=glasswell
 
 with_postgres=0
 enable_ingest=0
+enable_backup=0
 for argument in "$@"; do
     case "$argument" in
         --with-postgres) with_postgres=1 ;;
         --enable-ingest) enable_ingest=1 ;;
+        --enable-backup) enable_backup=1 ;;
         -h|--help)
-            printf 'usage: %s [--with-postgres] [--enable-ingest]\n' "${0##*/}"
+            printf 'usage: %s [--with-postgres] [--enable-ingest] [--enable-backup]\n' "${0##*/}"
             exit 0
             ;;
         *)
@@ -54,8 +57,13 @@ if ! grep -q '^GLASSWELL_OWNER_KEY=.\{16,\}' "$ETC_DIR/app.env"; then
 fi
 
 for unit in glasswell-api.service glasswell-ingest.service glasswell-ingest.timer \
-            glasswell-alert@.service; do
+            glasswell-alert@.service glasswell-backup.service glasswell-backup.timer; do
     install -o root -g root -m 0644 "$INFRA_DIR/systemd/$unit" "$UNIT_DIR/$unit"
+done
+
+# glasswell-backup.service calls these by absolute path.
+for script in glasswell-backup.sh glasswell-restore-drill.sh; do
+    install -o root -g root -m 0755 "$INFRA_DIR/backup/$script" "$SBIN_DIR/$script"
 done
 
 if [[ $with_postgres -eq 1 ]]; then
@@ -77,6 +85,13 @@ if [[ $enable_ingest -eq 1 ]]; then
     printf 'enabled glasswell-ingest.timer — it will fetch from NDIC monthly\n'
 else
     printf 'glasswell-ingest.timer installed but NOT enabled (--enable-ingest to arm it)\n'
+fi
+
+if [[ $enable_backup -eq 1 ]]; then
+    systemctl enable glasswell-backup.timer
+    printf 'enabled glasswell-backup.timer — nightly, and it pushes to forge over ssh\n'
+else
+    printf 'glasswell-backup.timer installed but NOT enabled (--enable-backup to arm it)\n'
 fi
 
 printf 'install complete. start with: systemctl start glasswell-api\n'

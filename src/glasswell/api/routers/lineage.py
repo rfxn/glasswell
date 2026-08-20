@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Path, Query, Request
 from pydantic import BaseModel, Field
@@ -15,7 +16,12 @@ from starlette.responses import JSONResponse
 
 from glasswell.api.deps import AsOf, Connection, Cursor, SpineLimit, rows
 from glasswell.api.errors import ProblemError, problem_responses
-from glasswell.api.examples import EXAMPLE_DERIVATION_ID, EXAMPLE_MANIFEST_ID, request_example
+from glasswell.api.examples import (
+    CONTENT_ADDRESS_NOTE,
+    EXAMPLE_DERIVATION_ID,
+    EXAMPLE_MANIFEST_ID,
+    request_example,
+)
 from glasswell.api.pagination import (
     DEFAULT_LIMIT,
     decode_cursor,
@@ -205,6 +211,7 @@ def _depth(raw: str) -> int | Literal["full"]:
         " file. Up to twenty handles per request and eight levels deep; both caps are"
         " refused rather than clamped. A handle that cannot be resolved returns"
         " `lineage_unresolved` naming the last node that did resolve — never a bare 404."
+        + CONTENT_ADDRESS_NOTE
     ),
     response_model=EnvelopeModel[Chains],
     openapi_extra=request_example(query={"h": [EXAMPLE_DERIVATION_ID], "depth": "full"}),
@@ -245,6 +252,7 @@ def get_explain(
         " conformance rules, and what it produced. Ask for `include=inputs` and"
         " `include=rules` to expand them. Derivation ids are content addresses, so this"
         " record is immutable."
+        + CONTENT_ADDRESS_NOTE
     ),
     response_model=EnvelopeModel[Derivation],
     openapi_extra=request_example(
@@ -309,7 +317,7 @@ def get_derivation(
         request,
         data,
         as_of=row["created_vintage"],
-        links={"explain": f"/v1/explain?h={derivation_id}&depth=full"},
+        links={"explain": f"/v1/explain?h={quote(derivation_id, safe='')}&depth=full"},
     )
 
 
@@ -438,6 +446,7 @@ def list_manifests(
         " acquisition URL and method, the self-stamped fetch vintage, and the supersession"
         " links either side of it. Manifest ids are content addresses, so this record is"
         " immutable. The bytes are not served (SB-07 §9.6)."
+        + CONTENT_ADDRESS_NOTE
     ),
     response_model=EnvelopeModel[Manifest],
     openapi_extra=request_example(path={"manifest_id": EXAMPLE_MANIFEST_ID}),

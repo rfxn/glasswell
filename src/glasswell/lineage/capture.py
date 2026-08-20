@@ -33,6 +33,7 @@ class LineageSession:
     environment: DeriveEnvironment
     clock: Clock
     correlation_id: str
+    vintage: date
 
 
 _SESSION: ContextVar[LineageSession | None] = ContextVar("glasswell_lineage_session", default=None)
@@ -93,13 +94,19 @@ def lineage_session(
     clock: Clock | None = None,
     correlation_id: str | None = None,
 ) -> Iterator[LineageSession]:
-    """Bind the recorder, the pinned environment and the run's correlation id for this task."""
+    """Bind the recorder, the pinned environment, the correlation id and the run's vintage.
+
+    The vintage is read once here: a run that opens at 23:59:59Z and finishes after midnight
+    stamps one knowledge day, not two (DR-31).
+    """
     resolved_clock = clock or SystemClock()
+    opened_at = resolved_clock.now()
     session = LineageSession(
         recorder=recorder,
         environment=environment,
         clock=resolved_clock,
-        correlation_id=correlation_id or new_ulid(resolved_clock.now()),
+        correlation_id=correlation_id or new_ulid(opened_at),
+        vintage=opened_at.date(),
     )
     token = _SESSION.set(session)
     try:

@@ -239,7 +239,7 @@ curl -sS "$B/openapi.json" | python3 -c 'import json,sys; print(len(json.load(sy
     `scripts/smoke.sh` covering the sixteen API assertions is unwritten.
 15. **The VM's `/opt/glasswell/src` copy carries working files** (`PLAN.md`,
     `CLAUDE.md`) that are excluded from git. Harmless on a LAN box, worth tidying.
-16. **The GIS `_VERT`/`_STK` segments still quarantine as `unknown_vocab`** — 24,875
+16. **The GIS `_VERT`/`_STK` segments still quarantine as `unknown_vocab`** — 24,872
     rows. They are not unknown either: a vertical hole is not a centreline, and the
     promotion measures them deliberately. Unlike the stream case there is no rule id
     on those rows, so nothing in the ledger proves the truer reason and the relabel

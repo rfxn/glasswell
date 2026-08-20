@@ -11,7 +11,12 @@ from starlette.responses import JSONResponse
 
 from glasswell.api.deps import Connection, Cursor, SpineLimit, rows
 from glasswell.api.errors import ProblemError, problem_responses
-from glasswell.api.examples import EXAMPLE_QUARANTINE_ID, GLOSSARY_KEY, request_example
+from glasswell.api.examples import (
+    CONTENT_ADDRESS_NOTE,
+    EXAMPLE_QUARANTINE_ID,
+    GLOSSARY_KEY,
+    request_example,
+)
 from glasswell.api.pagination import (
     DEFAULT_LIMIT,
     decode_cursor,
@@ -231,6 +236,7 @@ def get_quarantine_summary(
         "The rejected row itself, served verbatim alongside the rule that rejected it and"
         " the manifests it was first and last seen in. Re-processing always re-reads the"
         " manifest, never this payload, so the payload is evidence rather than input."
+        + CONTENT_ADDRESS_NOTE
     ),
     response_model=EnvelopeModel[QuarantineDetail],
     openapi_extra=request_example(path={"quarantine_id": EXAMPLE_QUARANTINE_ID}),

@@ -7,6 +7,65 @@ on:
     branches: [main]
 
 jobs:
+  python:
+    name: Python — ruff and the full pytest suite (unit, integration, contract)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the recorded environment
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.lock
+          python -m pip install -e . --no-deps
+
+      - name: ruff
+        run: python -m ruff check .
+
+      # The integration and contract tiers start their own PostGIS container through the
+      # docker CLI and reach it on the bridge IP, so no `services:` block applies here.
+      # GLASSWELL_REQUIRE_DOCKER turns a missing daemon into a failure, not a silent skip.
+      - name: pytest
+        env:
+          GLASSWELL_REQUIRE_DOCKER: "1"
+        run: python -m pytest tests -q
+
+  web:
+    name: Web — vitest, tsc and the production build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: vitest
+        run: npx vitest run
+
+      - name: tsc
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
   collateral:
     name: Collateral checks
     runs-on: ubuntu-latest

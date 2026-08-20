@@ -22,6 +22,7 @@ from glasswell.lineage.models import DeriveEnvironment
 POSTGIS_IMAGE = "postgis/postgis:16-3.4"
 TEMPLATE_DATABASE = "glasswell_template"
 READY_TIMEOUT_SECONDS = 90
+REQUIRE_DOCKER_ENV = "GLASSWELL_REQUIRE_DOCKER"
 
 FIXTURE_ENV_ID = "env_test"
 LINEAGE_FIXTURE_ENV_ID = "env_lineage_fixture"
@@ -105,6 +106,10 @@ def postgres_server() -> Iterator[str]:
     """Session-scoped PostGIS container. Yields a DSN template with a {database} slot."""
     environment = docker_environment()
     if environment is None:
+        # CI sets this: a green run that skipped 414 of 677 tests is worse than a red one.
+        if os.environ.get(REQUIRE_DOCKER_ENV):
+            pytest.fail(f"{REQUIRE_DOCKER_ENV} is set but docker is unavailable"
+                        f" ({_docker_probe_error})", pytrace=False)
         pytest.skip(f"docker unavailable, integration tier skipped ({_docker_probe_error})")
 
     name = f"glasswell-test-{uuid4().hex[:8]}"

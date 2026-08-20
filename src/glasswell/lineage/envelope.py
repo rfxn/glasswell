@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Any
+from urllib.parse import quote
 
 from pydantic import Field
 
@@ -295,6 +296,11 @@ def _warning(item: Mapping[str, Any] | str) -> Mapping[str, Any]:
 
 
 def _explain_link(handles: Sequence[str]) -> str:
-    """SB-04 §2.2: the S9 one-call path, pre-built so no client assembles it."""
+    """SB-04 §2.2: the S9 one-call path, pre-built so no client assembles it.
+
+    Cell handles carry `#`, so the value is percent-encoded: unencoded, a client following
+    the link verbatim sends the selector and `depth` as a fragment the server never receives.
+    """
     unique = list(dict.fromkeys(handles))[:MAX_HANDLES]
-    return "/v1/explain?" + "&".join(f"h={handle}" for handle in unique) + "&depth=full"
+    query = "&".join(f"h={quote(handle, safe='')}" for handle in unique)
+    return f"/v1/explain?{query}&depth=full"

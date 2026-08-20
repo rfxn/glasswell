@@ -7,18 +7,39 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
-### 2026-08-20 — data-truth fixes from the false-positive audit
+### 2026-08-20 — fix cycle: data truth and guardrails
 
+- [New] The well card discloses what the map cannot show and the ingest held back:
+      `below_tile_resolution` for laterals no zoom can render, and
+      `geometry_not_promoted` for a well whose only horizontal trace is a
+      sidetrack (audit A3-F5, A3-F3)
+- [New] CI runs the code: a `python` job (ruff, then the full pytest suite against
+      a PostGIS container the suite starts itself) and a `web` job (vitest,
+      `tsc --noEmit`, production build), alongside the collateral job that was the
+      only one before; `GLASSWELL_REQUIRE_DOCKER` turns a missing daemon into a
+      failure, so a suite that skipped two of its three tiers can no longer report
+      green
+- [New] The raw zone verifies itself: `MANIFEST.sha256` is written beside the
+      payload and `manifest.json` before a vintage directory is sealed, so
+      `sha256sum -c` passes inside a restored directory with no arguments and no
+      database (SB-06 §3.3 rule 2)
+- [New] The naked-number allowlist has a minimality gate: every served figure is
+      re-walked against every exemption, so a broad pattern such as `/**` fails
+      the walker instead of silencing it
+- [New] The naked-number walker reaches past the published examples: every handle
+      a response carries is resolved to its derivation record and checked there too
+- [New] `install.sh` places `glasswell-backup.{service,timer}` and the two backup
+      scripts, adopted byte-for-byte from the host that was already running them;
+      `--enable-backup` arms the timer, which stays disabled by default like the
+      ingest timer
+- [New] `verify.sh` checks the shipped Postgres tuning against the running server,
+      driven by the drop-in itself so the check cannot drift from the file it
+      verifies
 - [Fix] A production point cites the derivation that promoted its own month.
       `sorted(derivations)[-1]` put one handle on a whole column, and ND publishes
       one workbook a month, so 327,924 of 394,278 served numbers explained to a
       regulator file that does not contain them; `_lineage` now keys a handle per
       point once a column's months disagree (audit D3)
-- [Change] Lateral length is measured geodesically on the WGS84 ellipsoid under
-      `cr_nd_compute_crs_2`, which supersedes the UTM 14N rule rather than editing
-      it. 97.6 % of ND laterals lie outside zone 14N, which overstated the fleet by
-      144,378.78 ft (+0.0709 %); the new method agrees with an independent pyproj
-      geodesic to 8e-8 ft over a 100-lateral sample spanning the state (audit A3-F1)
 - [Fix] The tile ships `lateral_length_ft` as a double rounded to the cent instead
       of a twenty-digit protobuf string a MapLibre expression compared
       lexicographically; the exact conversion stays in `lateral_length_ft_exact`
@@ -42,10 +63,35 @@ its own version in its header, and its history is summarised in §3.1.
 - [Fix] `applied_rows` counts the rows a rule touched. `cr_nd_land_unit_1` was
       recorded as applied to 22,223 production rows by an executor that only
       checks three column names (audit D4)
-- [New] The well card discloses what the map cannot show and the ingest held back:
-      `below_tile_resolution` for laterals no zoom can render, and
-      `geometry_not_promoted` for a well whose only horizontal trace is a
-      sidetrack (audit A3-F5, A3-F3)
+- [Fix] `run.as_of` and the manifest `fetch_vintage` no longer diverge across UTC
+      midnight: the vintage is read once when the lineage session opens, and a
+      fetch stamps the day its run opened rather than the day its bytes happened
+      to land
+- [Fix] The pre-built `links.explain` percent-encodes the handle: a cell handle
+      carries `#`, so the unencoded link sent the selector and `depth=full` as a
+      URL fragment the server never received
+- [Fix] The contract fixture seeds a derivation with numeric params, which the R6
+      walker had never seen; `params={}` on every fixture derivation is why
+      `/params/compute_epsg` shipped unexamined, and `/params/**` is now an
+      exemption with a written reason
+- [Fix] The published well example is a well that carries figures on a deployed
+      instance, and the four content-addressed examples state in their OpenAPI
+      description that they are the fixture's ids and where to obtain a live one
+- [Fix] SMOKE.md gap 16 said 24,875 `unknown_vocab` rows where §5 and the database
+      say 24,872
+- [Change] Lateral length is measured geodesically on the WGS84 ellipsoid under
+         `cr_nd_compute_crs_2`, which supersedes the UTM 14N rule rather than
+         editing it. 97.6 % of ND laterals lie outside zone 14N, which overstated
+         the fleet by 144,378.78 ft (+0.0709 %); the new method agrees with an
+         independent pyproj geodesic to 8e-8 ft over a 100-lateral sample spanning
+         the state (audit A3-F1)
+- [Change] `[Change]` continuation lines indent nine spaces to the tag width, and
+         the markdown variant of the rule is recorded rather than left to be
+         re-derived
+- [Change] infra/README.md carries a deploy runbook, including the two one-time
+         steps that are still outstanding: applying the Postgres tuning, and
+         dropping the `3000/tcp` LAN rule that sits in front of a loopback-only
+         martin
 
 ### 2026-08-20 — North Dakota spine and map slice
 
@@ -111,10 +157,10 @@ its own version in its header, and its history is summarised in §3.1.
 - [Fix] The production build ships no source map; `StaticFiles` was serving 2.7 MB
       of readable proprietary TypeScript
 - [Change] Frontend test fixtures are recorded from the deployed API rather than
-      derived from the router source, so a response-shape drift fails a test
-      instead of the first click
+         derived from the router source, so a response-shape drift fails a test
+         instead of the first click
 - [Change] README describes a repository that runs rather than one that is
-      pre-build, and points at SMOKE.md
+         pre-build, and points at SMOKE.md
 
 ### 2026-08-19 — repository bootstrap
 
@@ -129,8 +175,9 @@ its own version in its header, and its history is summarised in §3.1.
       rules, .gitignore, contributing guide, security policy, code of conduct,
       GitHub issue and pull-request templates, and a collateral CI check
 - [Change] Licensing and attribution: proprietary, all rights reserved, attributed
-      directly to Ryan MacDonald. glasswell does not carry the GNU GPL v2 and the
-      R-fx Networks org attribution that the rest of the rfxn workspace uses
+         directly to Ryan MacDonald. glasswell does not carry the GNU GPL v2 and the
+         R-fx Networks org attribution that the rest of the rfxn workspace uses
 - [New] llms.txt orientation file for agent consumers
 
-No application code yet. P0 (scaffold) has not started — see [ROADMAP.md](ROADMAP.md).
+At the close of that day there was no application code and P0 had not started — see
+[ROADMAP.md](ROADMAP.md). The entries above this section are what changed since.

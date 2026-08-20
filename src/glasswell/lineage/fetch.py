@@ -12,7 +12,7 @@ import re
 import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
@@ -30,6 +30,7 @@ from glasswell.lineage.serialization import canonical_json, json_ready
 RAW_ROOT_ENV = "GLASSWELL_RAW_ROOT"
 DEFAULT_RAW_ROOT = Path("data/raw")
 MANIFEST_FILENAME = "manifest.json"
+SHA256_MANIFEST_FILENAME = "MANIFEST.sha256"
 PAYLOAD_STEM = "payload"
 FILE_MODE = 0o444
 DIRECTORY_MODE = 0o555
@@ -118,9 +119,9 @@ def _acquisition_params(download: _Download) -> dict[str, Any]:
 
 
 def _artifact_directory(
-    root: Path, source_id: str, source_key: str, fetched_at: datetime, sha256: str
+    root: Path, source_id: str, source_key: str, vintage: date, fetched_at: datetime, sha256: str
 ) -> Path:
-    stamp = f"{fetched_at.date().isoformat()}T{fetched_at.strftime('%H%M%S')}Z-{sha256[:12]}"
+    stamp = f"{vintage.isoformat()}T{fetched_at.strftime('%H%M%S')}Z-{sha256[:12]}"
     return root / source_id / _slug(source_key) / stamp
 
 
@@ -150,6 +151,22 @@ def _link_fetch_derivation(
 def _write_manifest_json(directory: Path, manifest: ManifestRecord) -> Path:
     path = directory / MANIFEST_FILENAME
     path.write_bytes(canonical_json(json_ready(manifest.model_dump())))
+    return path
+
+
+def _write_sha256_manifest(directory: Path) -> Path:
+    """SB-06 §3.3: a restored vintage verifies with `sha256sum -c` and no external state."""
+    names = sorted(
+        entry.name
+        for entry in directory.iterdir()
+        if entry.is_file() and entry.name != SHA256_MANIFEST_FILENAME
+    )
+    lines = [
+        f"{hashlib.sha256((directory / name).read_bytes()).hexdigest()}  {name}\n"
+        for name in names
+    ]
+    path = directory / SHA256_MANIFEST_FILENAME
+    path.write_text("".join(lines), encoding="utf-8")
     return path
 
 
@@ -199,9 +216,12 @@ def fetch_raw(
                 payload={"url": url, "reason": type(error).__name__, "detail": str(error)},
             )
             raise
-        # Self-stamped at completion from the run's clock, never the wall: the fetch vintage
-        # is part of the primary key a restatement lands on (DIR-9, B2).
-        fetched_at = current_session().clock.now()
+        # Self-stamped from the run's clock, never the wall. `fetched_at` is when the bytes
+        # landed; the vintage is the run's, so a fetch that crosses midnight still stamps the
+        # day its run opened — the vintage is part of the key a restatement lands on (DIR-9, B2).
+        session = current_session()
+        fetched_at = session.clock.now()
+        vintage = session.vintage
 
         # The bytes that arrived are part of this fetch's address; changed upstream bytes are
         # the common path (§2.1), and a spec blind to them would read as a determinism failure.
@@ -215,7 +235,7 @@ def fetch_raw(
             existing = _existing_storage_uri(connection, download.sha256)
             if existing is None:
                 directory = _artifact_directory(
-                    root, source_id, source_key, fetched_at, download.sha256
+                    root, source_id, source_key, vintage, fetched_at, download.sha256
                 )
                 directory.mkdir(parents=True, exist_ok=True)
                 payload_path = directory / f"{PAYLOAD_STEM}{_extension(source_key)}"
@@ -233,6 +253,7 @@ def fetch_raw(
                 acquisition_method=acquisition_method,
                 acquisition_params=_acquisition_params(download),
                 fetched_at=fetched_at,
+                fetch_vintage=vintage,
                 storage_uri=str(payload_path),
                 media_type=media_type or download.headers.get("content-type"),
                 upstream_mtime=_upstream_mtime(download.headers),
@@ -247,6 +268,7 @@ def fetch_raw(
     if registration.created:
         manifest = _link_fetch_derivation(connection, manifest.manifest_id, context.derivation_id)
         _write_manifest_json(payload_path.parent, manifest)
+        _write_sha256_manifest(payload_path.parent)
         _seal(payload_path.parent)
     return FetchResult(
         manifest=manifest,

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import stat
-from datetime import UTC, datetime
+import subprocess
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import httpx
@@ -10,7 +12,11 @@ import pytest
 
 from glasswell.ingest.base import open_ingest_run
 from glasswell.lineage.capture import lineage_session
-from glasswell.lineage.fetch import MANIFEST_FILENAME, fetch_raw
+from glasswell.lineage.fetch import (
+    MANIFEST_FILENAME,
+    SHA256_MANIFEST_FILENAME,
+    fetch_raw,
+)
 from glasswell.lineage.models import ManifestRecord
 from glasswell.lineage.serialization import canonical_json, json_ready
 from glasswell.lineage.store import PostgresRecorder
@@ -102,6 +108,26 @@ def test_the_colocated_manifest_json_round_trips_to_the_database_row(db, raw_roo
     assert orjson.loads(on_disk)["sha256"] == result.manifest.sha256
 
 
+def test_the_sealed_directory_verifies_itself_with_sha256sum(db, raw_root, lineage_env):
+    """SB-06 §3.3 rule 2: `sha256sum -c` passes with no arguments and no external state."""
+    result = fetch(db, raw_root, lineage_env)
+    directory = result.payload_path.parent
+    listing = (directory / SHA256_MANIFEST_FILENAME).read_text(encoding="utf-8")
+    entries = [line.split("  ", 1) for line in listing.splitlines()]
+
+    assert [name for _, name in entries] == [MANIFEST_FILENAME, result.payload_path.name]
+    for digest, name in entries:
+        assert digest == hashlib.sha256((directory / name).read_bytes()).hexdigest()
+    verified = subprocess.run(
+        ["sha256sum", "-c", SHA256_MANIFEST_FILENAME],
+        cwd=directory,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert verified.returncode == 0, verified.stderr
+
+
 def test_the_payload_and_its_directory_are_sealed_read_only(db, raw_root, lineage_env):
     result = fetch(db, raw_root, lineage_env)
     assert stat.S_IMODE(result.payload_path.stat().st_mode) == 0o444
@@ -190,6 +216,28 @@ def test_the_run_as_of_and_the_manifest_fetch_vintage_converge(db, raw_root, lin
     db.commit()
 
     assert result.manifest.fetch_vintage == run.as_of
+
+
+def test_the_vintage_holds_when_the_fetch_crosses_utc_midnight(db, raw_root, lineage_env):
+    """DR-31: a run opened at 23:59:30Z lands its bytes on the next day. It stamps one vintage."""
+    clock = FixedClock(start=datetime(2026, 5, 14, 23, 59, 30, tzinfo=UTC), step_ms=30_000)
+    with open_ingest_run(
+        db,
+        source_id=SOURCE_ID,
+        raw_root=raw_root,
+        environment=lineage_env,
+        clock=clock,
+        correlation_id="run_midnight",
+    ) as run, client_for(PAYLOAD) as client:
+        result = fetch_raw(
+            run.connection, SOURCE_ID, SOURCE_KEY, url=URL, raw_root=run.raw_root, client=client
+        )
+    db.commit()
+
+    assert run.as_of == date(2026, 5, 14)
+    assert result.manifest.fetched_at.date() == date(2026, 5, 15), "the boundary was not crossed"
+    assert result.manifest.fetch_vintage == run.as_of
+    assert result.payload_path.parent.name.startswith("2026-05-14T")
 
 
 def test_a_failed_fetch_leaves_no_manifest_and_records_the_attempt(db, raw_root, lineage_env):

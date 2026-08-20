@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -16,6 +16,7 @@ from glasswell.lineage.fetch import (
 )
 
 FETCHED_AT = datetime(2026, 8, 1, 5, 2, 11, tzinfo=UTC)
+RUN_VINTAGE = date(2026, 8, 1)
 
 
 def test_the_raw_root_prefers_the_explicit_argument(monkeypatch):
@@ -54,9 +55,22 @@ def test_the_payload_keeps_the_upstream_extension(source_key, expected):
 
 def test_the_artifact_directory_is_unique_by_vintage_time_and_hash():
     directory = _artifact_directory(
-        Path("/raw"), "nd_mpr_xlsx", "2026_03.xlsx", FETCHED_AT, "a" * 64
+        Path("/raw"), "nd_mpr_xlsx", "2026_03.xlsx", RUN_VINTAGE, FETCHED_AT, "a" * 64
     )
     assert directory == Path("/raw/nd_mpr_xlsx/2026-03-xlsx/2026-08-01T050211Z-aaaaaaaaaaaa")
+
+
+def test_the_artifact_directory_is_dated_by_the_run_vintage_not_the_landing_time():
+    """DR-31: bytes landing after midnight still file under the day their run opened."""
+    directory = _artifact_directory(
+        Path("/raw"),
+        "nd_mpr_xlsx",
+        "2026_03.xlsx",
+        date(2026, 5, 14),
+        datetime(2026, 5, 15, 0, 0, 30, tzinfo=UTC),
+        "a" * 64,
+    )
+    assert directory.name == "2026-05-14T000030Z-aaaaaaaaaaaa"
 
 
 def test_a_malformed_upstream_date_is_not_a_fetch_failure():

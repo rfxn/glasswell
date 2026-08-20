@@ -35,6 +35,8 @@ from tests.support.seed import FIXTURE_ENV, seed_manifest, seed_well, seed_well_
 
 MPR_SHA256 = "e" * 64
 GIS_SHA256 = "d" * 64
+# The GIS promote records its compute CRS as a param, so the walker meets a numeric param.
+COMPUTE_EPSG = 32614
 REPORT_VINTAGE = date(2026, 8, 1)
 EARLIER_VINTAGE = date(2026, 7, 1)
 RESTATED_MONTH = date(2026, 3, 1)
@@ -107,7 +109,11 @@ def _spatial_derivation(connection: psycopg.Connection, manifest_id: str) -> str
             dataset="canonical.well_spatial",
             partition={"source_id": "nd_gis_horizontals_line"},
         ),
-        params={"source_id": "nd_gis_horizontals_line"},
+        params={
+            "layer": "nd_gis_horizontals_line",
+            "compute_epsg": COMPUTE_EPSG,
+            "length_expression": None,
+        },
         inputs=[
             InputRef(
                 kind="manifest",

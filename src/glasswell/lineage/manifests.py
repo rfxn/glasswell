@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 import psycopg
@@ -49,6 +49,7 @@ def register_manifest(
     acquisition_url: str,
     acquisition_method: AcquisitionMethod,
     fetched_at: datetime,
+    fetch_vintage: date | None = None,
     acquisition_params: Mapping[str, Any] | None = None,
     storage_uri: str = "",
     media_type: str | None = None,
@@ -105,7 +106,7 @@ def register_manifest(
                 "acquisition_method": acquisition_method,
                 "acquisition_params": Jsonb(json_ready(dict(acquisition_params or {}))),
                 "fetched_at": fetched_at,
-                "fetch_vintage": fetched_at.date(),
+                "fetch_vintage": fetch_vintage or fetched_at.date(),
                 "upstream_mtime": upstream_mtime,
                 "upstream_etag": upstream_etag,
                 "media_type": media_type,
