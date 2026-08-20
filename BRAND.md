@@ -73,7 +73,8 @@ PNG lockup instead of embedding the SVG.
 
 | File | Use |
 |------|-----|
-| `assets/logo-mark.svg` | Icon with the ink tile — app icon, favicon, avatar |
+| `assets/logo-mark.svg` | Icon with the ink tile — app icon, avatar, anything ≥64 px |
+| `assets/logo-mark-small.svg` | Simplified mark for ≤48 px: no formation top, no perf ticks, thicker strokes. Favicons render from this |
 | `assets/logo-icon.svg` | Tile-less mark for light surfaces and watermarks |
 | `assets/logo-horizontal-dark.svg` | Primary lockup on dark |
 | `assets/logo-horizontal-light.svg` | Primary lockup on light |
@@ -102,9 +103,12 @@ for canonical, green for marts and serving, amber for quarantine and audit.
 rsvg-convert -w 1200 -h 630 assets/og-card.svg          -o assets/og-card.png
 rsvg-convert -w 512        assets/logo-mark.svg         -o assets/brand/app-icon-512.png
 rsvg-convert -w 180        assets/logo-mark.svg         -o assets/brand/favicon-180.png
-rsvg-convert -w 32         assets/logo-mark.svg         -o assets/brand/favicon-32.png
-rsvg-convert -w 256        assets/logo-mark.svg         -o /tmp/mark256.png
-magick /tmp/mark256.png -define icon:auto-resize=64,48,32,16 assets/brand/favicon.ico
+
+# Small sizes render from the simplified mark — the dashed formation top and the
+# perf ticks turn to noise below ~48 px.
+rsvg-convert -w 32         assets/logo-mark-small.svg   -o assets/brand/favicon-32.png
+rsvg-convert -w 256        assets/logo-mark-small.svg   -o /tmp/mark-small256.png
+magick /tmp/mark-small256.png -define icon:auto-resize=64,48,32,16 assets/brand/favicon.ico
 rsvg-convert -w 1320       assets/logo-horizontal-dark.svg  -o assets/brand/logo-horizontal-dark.png
 rsvg-convert -w 1320       assets/logo-horizontal-light.svg -o assets/brand/logo-horizontal-light.png
 rsvg-convert -w 2400 -h 680 assets/banner-dark.svg      -o assets/brand/banner-dark.png
