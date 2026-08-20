@@ -5,6 +5,8 @@ import { statusSwatch } from "./swatch.ts";
 const NUMBER = new Intl.NumberFormat("en-US");
 
 export interface LegendOptions {
+  /** The classes to open with; absent means every one of them. */
+  on?: ReadonlySet<string>;
   onFilter(on: Set<string>): void;
 }
 
@@ -61,7 +63,9 @@ export function createLegend(options: LegendOptions): LegendHandle {
   element.appendChild(body);
 
   const rows = new Map<string, HTMLElement>();
-  for (const status of STATUS_CLASSES) rows.set(status.id, appendRow(body, status));
+  for (const status of STATUS_CLASSES) {
+    rows.set(status.id, appendRow(body, status, options.on?.has(status.id) ?? true));
+  }
 
   const note = document.createElement("p");
   note.className = "gw-lg-note";
@@ -79,7 +83,21 @@ export function createLegend(options: LegendOptions): LegendHandle {
     return on;
   };
 
-  const report = (): void => options.onFilter(activeStatuses());
+  /**
+   * Collapsed, the key is a pill with no rows on it — and with the filter now surviving a
+   * reload, a reader can arrive at a map missing classes with nothing on the canvas saying
+   * so. The count is that statement, and it is why the pill is not silent about a filter.
+   */
+  function syncTitle(): void {
+    const count = activeStatuses().size;
+    const total = STATUS_CLASSES.length;
+    title.textContent = count === total ? "Well status" : `Well status · ${count}/${total}`;
+  }
+
+  const report = (): void => {
+    syncTitle();
+    options.onFilter(activeStatuses());
+  };
 
   /**
    * The bulk control owns `checked` and nothing else. `disabled` and the out-of-scale mark
@@ -114,7 +132,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
 
   function setCounts(counts: Record<string, number>, zoom: number): void {
     if (counts[UNMAPPED_STATUS.id] !== undefined && !rows.has(UNMAPPED_STATUS.id)) {
-      rows.set(UNMAPPED_STATUS.id, body.insertBefore(buildRow(UNMAPPED_STATUS), note));
+      rows.set(UNMAPPED_STATUS.id, body.insertBefore(buildRow(UNMAPPED_STATUS, true), note));
     }
     for (const [id, row] of rows) {
       const status = statusClass(id);
@@ -136,6 +154,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
     }
   }
 
+  syncTitle();
   return { element, setCounts, activeStatuses };
 }
 
@@ -148,13 +167,13 @@ function bulkButton(which: string, label: string, description: string): HTMLButt
   return button;
 }
 
-function appendRow(body: HTMLElement, status: StatusClass): HTMLElement {
-  const row = buildRow(status);
+function appendRow(body: HTMLElement, status: StatusClass, on: boolean): HTMLElement {
+  const row = buildRow(status, on);
   body.appendChild(row);
   return row;
 }
 
-function buildRow(status: StatusClass): HTMLElement {
+function buildRow(status: StatusClass, on: boolean): HTMLElement {
   const row = document.createElement("label");
   row.className = "gw-lg-row";
   row.dataset["status"] = status.id;
@@ -162,7 +181,7 @@ function buildRow(status: StatusClass): HTMLElement {
 
   const box = document.createElement("input");
   box.type = "checkbox";
-  box.checked = true;
+  box.checked = on;
   box.disabled = status.id === UNMAPPED_STATUS.id;
   box.setAttribute("aria-label", `Show ${status.label} wells`);
   row.appendChild(box);

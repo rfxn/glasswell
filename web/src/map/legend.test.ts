@@ -1,7 +1,13 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { createLegend, legendEnabled } from "./legend.ts";
+import {
+  STATUS_STORAGE_KEY,
+  readCapabilitySet,
+  restoreCapabilitySet,
+  writeCapabilitySet,
+} from "./persist.ts";
 import { MEASURED_WELL_COUNTS, STATUS_CLASSES, statusIds } from "./status.ts";
 
 const rows = (root: HTMLElement): HTMLElement[] => [...root.querySelectorAll<HTMLElement>(".gw-lg-row")];
@@ -237,5 +243,63 @@ describe("?legend=0", () => {
   it("is not satisfied by the substring of another parameter", () => {
     expect(legendEnabled("?notlegend=0")).toBe(true);
     expect(legendEnabled("?legendary=0")).toBe(true);
+  });
+});
+
+describe("the legend's persisted status set", () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it("opens with the classes the last visit left on", () => {
+    const legend = createLegend({ on: new Set(["active", "drilling"]), onFilter: () => {} });
+    expect([...legend.activeStatuses()].sort()).toEqual(["active", "drilling"]);
+    expect(boxFor(legend.element, "plugged").checked).toBe(false);
+  });
+
+  it("round-trips a deselect-all through storage and back into a fresh legend", () => {
+    const first = createLegend({
+      on: restoreCapabilitySet(readCapabilitySet(STATUS_STORAGE_KEY), statusIds(), statusIds()),
+      onFilter: (next) => writeCapabilitySet(STATUS_STORAGE_KEY, next, statusIds(), 0),
+    });
+    expand(first.element);
+    expect(first.activeStatuses().size).toBe(statusIds().length);
+
+    control(first.element, "none").click();
+    expect(readCapabilitySet(STATUS_STORAGE_KEY)).toEqual({ on: [], known: statusIds() });
+
+    const reloaded = createLegend({
+      on: restoreCapabilitySet(readCapabilitySet(STATUS_STORAGE_KEY), statusIds(), statusIds()),
+      onFilter: () => {},
+    });
+    expect(reloaded.activeStatuses().size).toBe(0);
+    for (const id of statusIds()) expect(boxFor(reloaded.element, id).checked, id).toBe(false);
+  });
+
+  it("ships a class the stored set never knew about on, rather than hiding a new one", () => {
+    // The {on,known} shape is what tells "the reader turned this off" apart from "this class
+    // did not exist when that state was written". A vocabulary row added later must not
+    // arrive invisible because a stored `on` list predates it.
+    const known = statusIds();
+    const stored = { on: [], known: known.filter((id) => id !== "confidential") };
+    const legend = createLegend({
+      on: restoreCapabilitySet(stored, known, known),
+      onFilter: () => {},
+    });
+    expect([...legend.activeStatuses()]).toEqual(["confidential"]);
+  });
+
+  it("says how many classes are on, so a collapsed key cannot hide a filter", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    const title = (): string => legend.element.querySelector(".gw-lg-title")!.textContent!;
+    expect(title()).toBe("Well status");
+    expand(legend.element);
+    control(legend.element, "none").click();
+    expect(title()).toBe(`Well status · 0/${statusIds().length}`);
+    control(legend.element, "all").click();
+    expect(title()).toBe("Well status");
+    expect(
+      createLegend({ on: new Set(["active"]), onFilter: () => {} }).element.querySelector(
+        ".gw-lg-title",
+      )!.textContent,
+    ).toBe(`Well status · 1/${statusIds().length}`);
   });
 });

@@ -17,6 +17,17 @@ its own version in its header, and its history is summarised in §3.1.
       untouched — a defect marker is not a filter the reader owns. It reports through
       the same `activeStatuses()` path a row toggle uses, and is hidden while the key is
       collapsed to its pill (VF-6)
+- [New] The legend's status filter now survives a reload, under the same `{on,known}` shape
+      the layer set has always used (`glasswell.statuses`), so a class added to
+      `cr_nd_status_vocab_1` later arrives visible rather than hidden by a stored set that
+      predates it. It did not persist before — VF-6 names a persistence contract the legend
+      was not party to, and this is that half (VF-6)
+- [New] The collapsed legend pill reads `Well status · 3/9` whenever classes are filtered
+      out. A filter that survives a reload must not be invisible on the canvas that reload
+      produces
+- [Change] `persist.ts` takes the storage key as an argument — `readCapabilitySet`,
+         `writeCapabilitySet`, `restoreCapabilitySet` — and keeps one debounce timer per
+         key, so a status write cannot cancel a layer write still in flight
 
 ### 2026-08-20 — DIR-13: TLS on the LAN endpoint
 
