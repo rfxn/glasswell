@@ -23,6 +23,10 @@ POSTGIS_IMAGE = "postgis/postgis:16-3.4"
 TEMPLATE_DATABASE = "glasswell_template"
 READY_TIMEOUT_SECONDS = 90
 REQUIRE_DOCKER_ENV = "GLASSWELL_REQUIRE_DOCKER"
+# DR-25/N-10: `make prune-test-volumes` sweeps on this label, so it must be on everything the
+# harness creates and on nothing else. An anonymous volume is indistinguishable from a real one.
+TEST_LABEL = "glasswell.test=1"
+DATA_DIRECTORY = "/var/lib/postgresql/data"
 
 FIXTURE_ENV_ID = "env_test"
 LINEAGE_FIXTURE_ENV_ID = "env_lineage_fixture"
@@ -31,6 +35,8 @@ CONTRACT_OWNER_KEY = "contract-tier-owner-key"
 
 _docker_environment: dict[str, str] | None = None
 _docker_probe_error = ""
+_session_container = ""
+_session_volume = ""
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -112,15 +118,23 @@ def postgres_server() -> Iterator[str]:
                         f" ({_docker_probe_error})", pytrace=False)
         pytest.skip(f"docker unavailable, integration tier skipped ({_docker_probe_error})")
 
+    global _session_container, _session_volume
     name = f"glasswell-test-{uuid4().hex[:8]}"
+    volume = f"{name}-data"
+    # A named volume rather than the image's anonymous one: `--rm` does not reclaim a volume
+    # when the session is killed rather than exiting, which is how 151 of them accumulated.
+    _docker(environment, "volume", "create", "--label", TEST_LABEL, volume)
     _docker(
         environment,
         "run", "-d", "--rm", "--name", name,
+        "--label", TEST_LABEL,
+        "-v", f"{volume}:{DATA_DIRECTORY}",
         "-e", "POSTGRES_USER=glasswell",
         "-e", "POSTGRES_PASSWORD=glasswell",
         "-e", "POSTGRES_DB=postgres",
         POSTGIS_IMAGE,
     )
+    _session_container, _session_volume = name, volume
     try:
         # The bridge IP rather than a published port: docker-proxy is absent on this host,
         # and both supported daemon endpoints are local, so the bridge network is routable.
@@ -138,12 +152,35 @@ def postgres_server() -> Iterator[str]:
         yield dsn_template
     finally:
         subprocess.run(
-            ["docker", "rm", "-f", name],
+            ["docker", "rm", "-f", "-v", name],
             env=environment,
             check=False,
             capture_output=True,
             timeout=120,
         )
+        _remove_volume(environment, volume)
+
+
+def _remove_volume(environment: dict[str, str], volume: str) -> None:
+    """`docker rm` returns before the daemon has always released the mount; retry, then leave
+    it labelled for the sweep rather than failing a green run on cleanup."""
+    for _ in range(10):
+        completed = subprocess.run(
+            ["docker", "volume", "rm", volume],
+            env=environment,
+            check=False,
+            capture_output=True,
+            timeout=60,
+        )
+        if completed.returncode == 0:
+            return
+        time.sleep(0.5)
+
+
+@pytest.fixture(scope="session")
+def session_resources(postgres_server: str) -> tuple[str, str]:
+    """The container and volume this session owns, so a test can audit what it leaves behind."""
+    return _session_container, _session_volume
 
 
 def _create_database(dsn_template: str, name: str, template: str | None = None) -> str:

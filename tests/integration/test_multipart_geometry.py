@@ -112,7 +112,13 @@ def test_the_migration_relabels_the_ledger_from_the_detail_it_stored(
                 " %s, now(), %s, now(), %s)",
                 (quarantine_id, quarantine_id, GIS_SOURCE, Jsonb(payload), manifest, manifest),
             )
+        # 017 retypes marts.nd_laterals_tile.geom, and migration 026 later put a view over
+        # that column. Replaying an older migration against a fully migrated schema has to
+        # stand the view down first; what this test asserts is the quarantine relabel, which
+        # the view has no part in.
+        cursor.execute("drop view if exists marts.tile_nd_laterals")
         cursor.execute(migration_sql("multipart_geometry"))
+        cursor.execute(migration_sql("marts_grant_and_tile_wire_type"))
         cursor.execute(
             "select quarantine_id, reason_code, state, notes is not null"
             "  from lineage.quarantine_rows order by quarantine_id"

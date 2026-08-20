@@ -1,15 +1,21 @@
+# The DSN deliberately names no user: pg_hba maps a socket connection to the role named for
+# the OS user, martin.service runs `User=martin`, and migration 026 creates that role with
+# select on the marts.tile_* views these sources name — table-level, because geometry_columns
+# filters on has_table_privilege and a column grant leaves martin unable to start at all.
+# Adopting this file turns auto_publish off; the grant is what makes staging unreachable
+# either way (README.md, DR-05).
 listen_addresses: "127.0.0.1:3000"
-pool_size: 10
 postgres:
   connection_string: "postgresql:///glasswell?host=/var/run/postgresql"
+  pool_size: 10
   auto_publish: false
   tables:
     nd_laterals:
       schema: marts
-      table: nd_laterals_tile
+      table: tile_nd_laterals
       srid: 4326
       geometry_column: geom
-      geometry_type: LINESTRING
+      geometry_type: GEOMETRY
       properties:
         api10: text
         linekey: text
@@ -20,7 +26,7 @@ postgres:
         derivation_id: text
     nd_wells:
       schema: marts
-      table: nd_wells_tile
+      table: tile_nd_wells
       srid: 4326
       geometry_column: geom
       geometry_type: POINT
@@ -32,7 +38,7 @@ postgres:
         derivation_id: text
     nd_spacing_units:
       schema: marts
-      table: nd_spacing_units_tile
+      table: tile_nd_spacing_units
       srid: 4326
       geometry_column: geom
       geometry_type: MULTIPOLYGON
@@ -40,5 +46,5 @@ postgres:
         spacing_unit_id: text
         label: text
         formation_reported: text
-        ds_size_acres: numeric
+        ds_size_acres: float8
         derivation_id: text

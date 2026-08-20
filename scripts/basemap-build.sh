@@ -57,12 +57,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 if ! command -v pmtiles >/dev/null 2>&1; then
-    cat >&2 <<EOF
+    cat >&2 <<'EOF'
 pmtiles is not on PATH. Install the release binary for this host:
 
-  curl -sL -o /tmp/go-pmtiles.tar.gz \\
+  scratch="$(mktemp -d)"
+  curl -sL -o "$scratch/go-pmtiles.tar.gz" \
     https://github.com/protomaps/go-pmtiles/releases/download/v1.31.2/go-pmtiles_1.31.2_Linux_x86_64.tar.gz
-  tar -xzf /tmp/go-pmtiles.tar.gz -C /usr/local/bin pmtiles
+  tar -xzf "$scratch/go-pmtiles.tar.gz" -C /usr/local/bin pmtiles && rm -rf "$scratch"
 EOF
     exit 1
 fi

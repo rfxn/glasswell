@@ -9,19 +9,29 @@ UNIT_DIR=/etc/systemd/system
 SBIN_DIR=/usr/local/sbin
 WEB_ROOT=/opt/glasswell/web
 BASEMAP_ROOT=/opt/glasswell/basemap
+# SB-07 2.3 zones. /data is the 1 TB volume; /srv/glasswell is an empty directory on the
+# root disk, which is why the raw zone never went there (DR-06).
+DATA_ROOT=/data
+STAGING_ROOT="$DATA_ROOT/staging"
+SCRATCH_ROOT="$DATA_ROOT/scratch"
 PG_CONF_DIR=/etc/postgresql/16/main/conf.d
+# Not under /etc/glasswell: that directory is 0700 root and martin runs as `martin`. The
+# tile config carries no secret — its DSN has no password — so it does not belong there.
+MARTIN_CONF_DIR=/etc/martin
 RUN_USER=glasswell
 
 with_postgres=0
+with_martin_config=0
 enable_ingest=0
 enable_backup=0
 for argument in "$@"; do
     case "$argument" in
         --with-postgres) with_postgres=1 ;;
+        --with-martin-config) with_martin_config=1 ;;
         --enable-ingest) enable_ingest=1 ;;
         --enable-backup) enable_backup=1 ;;
         -h|--help)
-            printf 'usage: %s [--with-postgres] [--enable-ingest] [--enable-backup]\n' "${0##*/}"
+            printf 'usage: %s [--with-postgres] [--with-martin-config] [--enable-ingest] [--enable-backup]\n' "${0##*/}"
             exit 0
             ;;
         *)
@@ -38,6 +48,13 @@ install -d -o root -g root -m 0700 "$ETC_DIR"
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 0750 "$STATE_DIR"
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$WEB_ROOT"
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$BASEMAP_ROOT"
+
+if [[ -d $DATA_ROOT ]]; then
+    install -d -o "$RUN_USER" -g "$RUN_USER" -m 0750 "$STAGING_ROOT" "$SCRATCH_ROOT"
+else
+    printf '%s is not mounted; staging and scratch roots not created\n' "$DATA_ROOT" >&2
+    exit 1
+fi
 
 # The owner key is generated here and never printed: it exists only inside app.env.
 if [[ ! -f "$ETC_DIR/app.env" ]]; then
@@ -77,6 +94,17 @@ if [[ $with_postgres -eq 1 ]]; then
         printf '%s does not exist; postgres tuning not placed\n' "$PG_CONF_DIR" >&2
         exit 1
     fi
+fi
+
+if [[ $with_martin_config -eq 1 ]]; then
+    install -d -o root -g root -m 0755 "$MARTIN_CONF_DIR"
+    install -o root -g root -m 0644 "$INFRA_DIR/martin/config.yaml" "$MARTIN_CONF_DIR/config.yaml"
+    install -d -o root -g root -m 0755 "$UNIT_DIR/martin.service.d"
+    install -o root -g root -m 0644 "$INFRA_DIR/systemd/martin.service.d/glasswell-config.conf" \
+        "$UNIT_DIR/martin.service.d/glasswell-config.conf"
+    printf 'placed %s/config.yaml and the martin drop-in — restart martin to adopt it\n' \
+        "$MARTIN_CONF_DIR"
+    printf 'martin will fail to connect until migration 026 has created the PG role martin\n'
 fi
 
 systemctl daemon-reload

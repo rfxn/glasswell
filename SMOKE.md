@@ -4,6 +4,11 @@ Fifteen minutes at a keyboard, in order. Everything below was executed against t
 running instance on 2026-08-20; the screenshots named in each step are on the build
 host under `work-output/smoke-shots/` (untracked, not in git).
 
+Every figure here was re-read from the deployed instance after migrations 014-019 and the
+re-derivation, so the numbers are the ones the API serves now, not the ones it served the
+night this file was written. `scripts/smoke.sh` is the machine-checkable twin: if a number
+below has moved, that script is what tells you.
+
 ---
 
 ## 1. What this is, and what it is not
@@ -86,7 +91,8 @@ http://glasswell.lab.rpx.sh:8000/?map=12.00/47.71074/-102.74821&well=3305310451
 
 Expect **Mandaree 50-2008H**, API-10 `3305310451`, operator `EOG RESOURCES, INC.`,
 status `active`, land unit `149N-94W-20`, spud `2025-01-05`, one lateral,
-`lateral length 15,073.98 ft`. Note the URL: viewport and selection are in the
+`lateral length 15,065.44 ft` — the geodesic figure migration 014 introduced, 8.54 ft
+shorter than the planar one this file quoted before the re-derivation. Note the URL: viewport and selection are in the
 query string, so any state you reach is a link you can send.
 Screenshots: `02-map-well-selected.png`, `03b-well-card-closeup.png`.
 
@@ -177,23 +183,30 @@ curl -sS -K "$CFG" "$B/v1/health" | python3 -m json.tool
 curl -sS "$B/openapi.json" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["paths"]), "paths")'
 ```
 
-- **`/v1/conformance`** — 14 rules, every one carrying a rationale and an evidence
+- **`/v1/conformance`** — 17 rules, every one carrying a rationale and an evidence
   URL. If two sources were reconciled anywhere in the pipeline, the rule that did it
   is in this list. A mapping that exists only in code is the defect this endpoint
   exists to make visible.
-- **`/v1/quarantine/summary`** — **292,394 rejected rows**, grouped:
-  `stream_not_promoted` 263,786 · `unknown_vocab` 24,872 · `key_collision` 1,401 ·
-  `out_of_range_date` 1,055 · `multi_wellbore_policy` 694 · `parse_error` 585 ·
-  `duplicate_row` 1. A zero here would mean the checks were not running. Each row is
-  kept with its payload and its reason code — nothing is silently dropped.
+- **`/v1/quarantine/summary`** — **292,972 rows in the ledger**, grouped:
+  `stream_not_promoted` 263,786 · `segment_not_promoted` 25,449 · `key_collision` 1,401 ·
+  `confidential_withheld` 1,055 · `multi_wellbore_policy` 695 · `schema_mismatch` 583 ·
+  `parse_error` 2 · `duplicate_row` 1. A zero here would mean the checks were not running.
+  Each row is kept with its payload and its reason code — nothing is silently dropped.
+  **"Rejected" is the wrong word for almost all of it and this file used to use it.**
+  98.7 % of the ledger is two deliberate non-promotions of rows that were read correctly:
+  `stream_not_promoted` (`GasSold`/`Flared`, dispositions of gas that did promote) and
+  `segment_not_promoted` (vertical and sidetrack traces that are not a producing
+  centreline). True source-row rejection is **1,057 of 132,950 MPR rows — 0.79 %**, not the
+  ~43 % the old framing implied (fp-audit A5-F13, off by ~54×).
   `stream_not_promoted` is the dominant fact and it is a **decision, not a failure**:
   `GasSold` and `Flared` are dispositions of produced gas, enumerated in
   `lineage.nd_stream_map` with `promoted = false`, so conflict C7's claim is measured
   rather than asserted. Migration 007's reason vocabulary had no such code and every
   one of these rows read `unknown_vocab` until migration 011 admitted it and relabelled
   them — bounded by `rule_id = cr_nd_stream_vocab_1`, which is what proves the reason,
-  and recorded as a `quarantine.relabelled` audit event. The remaining `unknown_vocab`
-  are the GIS layer's `_VERT`/`_STK` segments, which carry no rule id (see gap 16).
+  and recorded as a `quarantine.relabelled` audit event. The GIS layer's `_VERT`/`_STK`
+  segments were the last `unknown_vocab` rows; migration 016 gave them a vocabulary of
+  their own and there are now **zero** (gap 16, closed).
   Note `multi_wellbore_policy` at 3.1 %, above the 2 % ND revisit trigger: that is a
   real signal to act on, not noise.
 - **`/v1/health`** — four sources, all `current`, with the manifest count per source
@@ -207,13 +220,18 @@ curl -sS "$B/openapi.json" | python3 -c 'import json,sys; print(len(json.load(sy
    of writing canonical rows. Real separation needs two login identities. Do not
    claim write-separation until it is split.
 3. **martin auto-publishes `staging` and `canonical`**, so its catalogue on
-   `127.0.0.1:3000` still lists relations that are not published layers. The
-   `/v1/tiles` proxy now refuses everything outside `nd_laterals`, `nd_wells` and
-   `nd_spacing_units` with a `404`, so "staging never serves" is a control on the one
-   path a caller can reach. Making martin's own source list equal that allowlist
-   (S-C) needs `infra/martin/config.yaml` adopted — morning-queue item 2.
-4. **One `marts` grant is hand-applied**, not in a migration — exactly the drift
-   migrations exist to prevent. Fold it into a migration before the next rebuild.
+   `127.0.0.1:3000` still lists eleven sources, eight of which are not published layers —
+   three of them `staging` relations. The `/v1/tiles` proxy refuses everything outside
+   `nd_laterals`, `nd_wells` and `nd_spacing_units` with a `404`, so "staging never serves"
+   is a control on the one path a caller can reach, and `verify.sh` asserts it. It is one
+   control, not two. `infra/martin/config.yaml` closes it at the source and it works: what
+   was missing is the PG role `martin` its DSN peer-authenticates as. Migration 026 creates
+   that role with select on the published columns and nothing else, and
+   `install.sh --with-martin-config` places the file and the unit drop-in.
+4. **~~One `marts` grant is hand-applied~~ — closed.** `create on schema marts` is held
+   by a migration now (DR-21), so a database built from migrations alone survives its
+   first `refresh_all`. The deployed host already had the privilege; the migration is what
+   makes the next one reproducible.
 5. **Six months of production only** (2025-10 → 2026-03), one knowledge vintage per
    source. The full back-load is a loop of real fetches against a public regulator.
 6. **No GOR, no water cut, no forecasts, no economics** — out of scope by design.
@@ -234,16 +252,21 @@ curl -sS "$B/openapi.json" | python3 -c 'import json,sys; print(len(json.load(sy
     and rewriting it would be falsification. Re-run the pipeline to repin them.
 13. **The frontend is one 1.14 MB chunk.** No code splitting. The source map is no
     longer built or deployed (the project is proprietary and `StaticFiles` served it).
-14. **No repeatable end-to-end smoke script in the repo.** Tonight's gate was a
-    browser drive plus the 27 checks in `infra/verify.sh` on the VM; a committed
-    `scripts/smoke.sh` covering the sixteen API assertions is unwritten.
+14. **~~No repeatable end-to-end smoke script in the repo~~ — closed.**
+    `scripts/smoke.sh` runs nineteen read-only API assertions against a deployed
+    instance, and `tests/e2e/` runs twelve more through a real browser
+    (`make test-e2e`). Together with `infra/verify.sh` they are the regression net this
+    walkthrough used to be.
 15. **The VM's `/opt/glasswell/src` copy carries working files** (`PLAN.md`,
-    `CLAUDE.md`) that are excluded from git. Harmless on a LAN box, worth tidying.
-16. **The GIS `_VERT`/`_STK` segments still quarantine as `unknown_vocab`** — 24,872
-    rows. They are not unknown either: a vertical hole is not a centreline, and the
-    promotion measures them deliberately. Unlike the stream case there is no rule id
-    on those rows, so nothing in the ledger proves the truer reason and the relabel
-    would have been a guess. It needs a conformance rule, not a migration.
+    `CLAUDE.md`, `work-output/`, and the six `docs/product-*.md` deep-dives, which are IP
+    carve-out material). They are rsync-era residue — the deploy is
+    `git archive HEAD | ssh tar -x` and cannot produce them. `verify.sh` now fails while
+    they are there; runbook step 8 removes them.
+16. **~~The GIS `_VERT`/`_STK` segments quarantine as `unknown_vocab`~~ — closed.**
+    Migration 016 gave them `cr_nd_segment_vocab_1` and the reason code
+    `segment_not_promoted`; `unknown_vocab` is 0 and 25,449 rows now say what they are.
+    The relabel was not a guess after all: every row carried the segment its own parser
+    had read (fp-audit A5-F6).
 17. **Not a gap, so it does not surprise you:** no basemap (deliberate), `204` on a
     tile means healthy-but-empty, and the `series_spans_derivations` warning is
     correct.
@@ -260,13 +283,13 @@ six-figure axis labels. Each has a regression test.
    retires gap 1 and is the only thing standing between this and being reachable
    from outside the LAN.
 2. **Split the login roles** to restore pipeline/API write separation (gap 2), and
-   adopt `infra/martin/config.yaml` with `auto_publish: false` so martin's own
-   source list equals the proxy allowlist (gap 3, S-C hardening condition 2) —
-   never run both publishing mechanisms at once.
-3. **Fold the hand-applied `marts` grant into a migration** (gap 4).
+   **adopt `infra/martin/config.yaml`** so martin's own source list equals the proxy
+   allowlist (gap 3): migration 026, then `./install.sh --with-martin-config`, then
+   `systemctl restart martin`. Never run both publishing mechanisms at once.
+3. ~~**Fold the hand-applied `marts` grant into a migration**~~ (gap 4) — done.
 4. **Full production back-load** beyond six months, then re-check the quarantine
    shares.
-5. **`scripts/smoke.sh`** (gap 14) so this walkthrough has a machine-checkable twin.
+5. ~~**`scripts/smoke.sh`**~~ (gap 14) — done, with a browser tier beside it.
 6. **IP carve-out review** — the top risk item, and the gate on anything public.
 
 ## 8. Three decisions waiting for you

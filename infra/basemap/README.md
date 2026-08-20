@@ -11,7 +11,10 @@ in the manifest.
 Run on the build host, not the VM — the extract pulls from `build.protomaps.com`:
 
 ```bash
-scripts/basemap-build.sh --region nd --maxzoom 13 --with-labels --out /tmp/basemap
+# Not a fixed /tmp path: two agents building at once would overwrite each other, and the
+# nd-tx extract is 336 MB, which is more than a tmpfs /tmp usually wants (N-3).
+build_dir="$(mktemp -d -t gw-basemap.XXXXXXXX)/basemap"
+scripts/basemap-build.sh --region nd --maxzoom 13 --with-labels --out "$build_dir"
 ```
 
 Measured against the 2026-08-15 planet build (`--dry-run`, no download):
@@ -32,7 +35,8 @@ before street-level detail matters.
 ## Deploy
 
 ```bash
-rsync -a --delete /tmp/basemap/ root@<vm>:/opt/glasswell/basemap/
+# $build_dir from the build step above
+rsync -a --delete "$build_dir"/ root@<vm>:/opt/glasswell/basemap/
 chown -R glasswell:glasswell /opt/glasswell/basemap
 systemctl restart glasswell-api
 ```
