@@ -38,6 +38,9 @@ AUDIT_EVENT_TYPES: frozenset[str] = frozenset(
         "quarantine.reoccurred",
         "quarantine.released",
         "quarantine.accepted_loss",
+        # Extends §5.2: migration 011 restores reason codes the 007 CHECK forced to degrade,
+        # and a correction to the ledger is itself a fact about the ledger.
+        "quarantine.relabelled",
         "model.training_started",
         "model.training_completed",
         "model.registered",

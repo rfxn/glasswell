@@ -45,8 +45,8 @@ IDENTITY_RULE = "cr_nd_api_identity_1"
 MONTH_RULE = "cr_nd_month_convention_1"
 UNITS_RULE = "cr_nd_units_1"
 
-# Migration 007 pins the reason vocabulary. A rule naming an unregistered code degrades to the
-# vocabulary's own miss code and keeps its rule_id, which is the specific reason. See P2 notes.
+# The reason vocabulary is read from the CHECK (migration 011), never hardcoded. A rule naming
+# a code the CHECK does not admit still degrades rather than raising, keeping its rule_id.
 UNREGISTERED_REASON = "unknown_vocab"
 IDENTITY_REASON = "parse_error"
 COLLISION_REASON = "key_collision"

@@ -17,7 +17,7 @@ YEAR, MONTH = 2026, 3
 DATA_ROWS = 200
 CLEAN_ROWS = 195
 PROMOTED_STREAMS = 3
-UNREGISTERED_REASON = nd_mpr.UNREGISTERED_REASON
+NOT_PROMOTED_REASON = "stream_not_promoted"
 
 
 def client_for(path: Path) -> httpx.Client:
@@ -103,15 +103,17 @@ def test_gas_sold_and_flared_produce_no_canonical_row_and_quarantine_with_a_reas
     assert scalar(db, "select count(*) from canonical.production_monthly") == CLEAN_ROWS * 3
 
 
-def test_an_unregistered_reason_code_degrades_to_the_vocabulary_migration_007_pins(db, promoted):
-    """cr_nd_stream_vocab_1 names `stream_not_promoted`, which the CHECK does not admit."""
+def test_a_stream_that_is_not_promoted_carries_its_own_reason_code(db, promoted):
+    """M-3: GasSold and Flared are the opposite of unknown — cr_nd_stream_vocab_1 enumerates
+    them. Migration 011 admits the code the rule names, so the ledger stops reading as
+    "the ingest does not understand its own source file"."""
     assert (
         scalar(
             db,
             "select distinct reason_code from lineage.quarantine_rows where rule_id = %s",
             "cr_nd_stream_vocab_1",
         )
-        == UNREGISTERED_REASON
+        == NOT_PROMOTED_REASON
     )
 
 
@@ -124,7 +126,7 @@ def test_the_quarantine_share_is_above_zero_and_every_row_carries_a_reason(db, p
         )
     )
 
-    assert reasons == {"out_of_range_date": 5, UNREGISTERED_REASON: CLEAN_ROWS * 2}
+    assert reasons == {"out_of_range_date": 5, NOT_PROMOTED_REASON: CLEAN_ROWS * 2}
     assert promoted.quarantined == reasons
     assert scalar(db, "select count(*) from lineage.quarantine_rows where rule_id is null") == 0
 
