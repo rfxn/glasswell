@@ -11,6 +11,7 @@ import psycopg
 import pytest
 import yaml
 
+from glasswell.api.routers.tiles import PUBLISHED_LAYERS
 from glasswell.ingest.nd_gis import load_laterals, load_spacing_units, load_wells
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.explain import resolve_chain
@@ -283,13 +284,15 @@ def test_the_marts_read_canonical_and_never_staging():
         assert "staging." not in source.read_text(), f"{source.name} reads staging"
 
 
-def test_the_martin_config_publishes_the_marts_and_nothing_else():
+def test_the_martin_config_declares_the_same_layers_the_proxy_admits():
+    """The config is reference-only until the unit adopts it (PLAN rev 2 B7); the proxy's
+    allowlist is tonight's control, so the two must not drift apart. S-C's fuller hardening
+    — CI asserting martin's own source list equals the allowlist — lands with the tunnel."""
     config = yaml.safe_load(MARTIN_CONFIG.read_text())
     postgres = config["postgres"]
 
     assert config["listen_addresses"] == "127.0.0.1:3000"
-    assert postgres["auto_publish"] is False, "auto_publish would expose staging (§3.0.1)"
-    assert set(postgres["tables"]) == {layer.name for layer in TILE_LAYERS}
+    assert set(postgres["tables"]) == PUBLISHED_LAYERS == {layer.name for layer in TILE_LAYERS}
     for layer in TILE_LAYERS:
         source = postgres["tables"][layer.name]
         assert source["schema"] == "marts"

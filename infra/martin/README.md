@@ -21,6 +21,13 @@ appear with **no config file and no unit change** (B7: `martin.service` is alrea
 and is not reconfigured). The MVT layer name inside each tile equals the id, which is what
 MapLibre binds `source-layer` to.
 
+`auto_publish` also discovers every *table* with a geometry column, so martin's catalogue
+carries `staging` and `canonical` relations that are not published layers. They are not
+reachable: `glasswell.api.routers.tiles.PUBLISHED_LAYERS` is the entitlement, derived from
+`TILE_LAYERS`, and the proxy answers `not_found` for anything outside it before a request
+reaches martin. S-C's fuller condition — CI asserting martin's own source list equals the
+allowlist — needs the config path below and lands with the tunnel.
+
 **Table sources (`config.yaml`, the documented target).** Pointing martin at this file
 turns `auto_publish` off — which is the point: auto-publish exposes every geometry table in
 `staging` and `canonical` as a tile source, and **staging never serves** (blueprint

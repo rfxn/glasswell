@@ -6,6 +6,8 @@ import httpx
 from fastapi.testclient import TestClient
 
 from glasswell.api.errors import TYPE_BASE
+from glasswell.api.routers.tiles import PUBLISHED_LAYERS
+from glasswell.marts.tiles import TILE_LAYERS
 from tests.contract.conftest import TILE_BODY
 
 
@@ -26,10 +28,35 @@ def test_an_empty_tile_passes_204_through(client: TestClient) -> None:
 
 
 def test_an_upstream_failure_is_reported_as_such(client: TestClient) -> None:
-    response = client.get("/v1/tiles/missing_layer/8/54/89.pbf")
+    def refuse(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, text="no such layer")
+
+    client.app.state.tile_client = httpx.Client(
+        transport=httpx.MockTransport(refuse), base_url="http://martin.invalid"
+    )
+
+    response = client.get("/v1/tiles/nd_laterals/8/54/89.pbf")
 
     assert response.status_code == 502
     assert response.json()["type"] == f"{TYPE_BASE}/upstream_tile_error"
+
+
+def test_a_staging_layer_is_refused_before_it_reaches_martin(client: TestClient) -> None:
+    """M-1: martin auto-publishes staging, so the proxy is where "staging never serves" holds."""
+    response = client.get("/v1/tiles/nd_gis_wells/8/54/89.pbf")
+
+    assert response.status_code == 404
+    assert response.json()["type"] == f"{TYPE_BASE}/not_found"
+    assert response.content != TILE_BODY
+
+
+def test_a_canonical_relation_is_refused_too(client: TestClient) -> None:
+    """Only the mart layers are published; canonical is not a tile surface either."""
+    assert client.get("/v1/tiles/well_spatial/8/54/89.pbf").status_code == 404
+
+
+def test_the_allowlist_is_exactly_the_published_mart_layers() -> None:
+    assert frozenset(layer.name for layer in TILE_LAYERS) == PUBLISHED_LAYERS
 
 
 def test_an_unreachable_martin_is_reported_as_such(client: TestClient) -> None:

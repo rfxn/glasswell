@@ -23,7 +23,7 @@ restricted `authorized_keys` `from=` clause and every probe in this repo use `.1
 | `glasswell-api.service` | `glasswell` | `uvicorn glasswell.api:app --host 0.0.0.0 --port 8000 --workers 2` — serves `/v1`, the `/v1/tiles` proxy, and the built frontend at `/` |
 | `glasswell-ingest.service` + `.timer` | `glasswell` | Monthly ND pull: GIS layers, one production month, tile marts. Installed **disabled**; `install.sh --enable-ingest` arms it |
 | `glasswell-alert@.service` | `glasswell` | `OnFailure=` target: logs to the journal and appends to `/var/lib/glasswell/health-events` |
-| `martin.service` | `martin` | **Pre-existing, not owned by this directory.** Auto-publishes the `marts.nd_*` tile functions on `127.0.0.1:3000` |
+| `martin.service` | `martin` | **Pre-existing, not owned by this directory.** Runs with `auto_publish` on, so its catalogue is every relation with a geometry column — `staging` and `canonical` included — on `127.0.0.1:3000`. The `/v1/tiles` proxy's allowlist, not martin, is what keeps staging off the wire |
 | `postgresql@16-main` | `postgres` | Distro unit. `listen_addresses = 'localhost'`, socket peer auth |
 
 `glasswell-backup.{service,timer}`, `glasswell-restore-drill.sh` and the forge-side vzdump

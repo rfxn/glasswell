@@ -5435,7 +5435,7 @@
     },
     "/v1/tiles/{layer}/{z}/{x}/{y}.pbf": {
       "get": {
-        "description": "Streams one MVT from the tile server behind the same origin and the same key as the rest of the API. A `204` is passed through unchanged: it means the tile is empty, which is the normal answer outside the basin, not an error. A non-2xx from the tile server becomes `upstream_tile_error`.",
+        "description": "Streams one MVT from the tile server behind the same origin and the same key as the rest of the API. `layer` must name a published mart layer; anything else is `not_found` and never reaches the tile server. A `204` is passed through unchanged: it means the tile is empty, which is the normal answer outside the basin, not an error. A non-2xx from the tile server becomes `upstream_tile_error`.",
         "operationId": "get_tile",
         "parameters": [
           {
@@ -5497,6 +5497,31 @@
           },
           "204": {
             "description": "Empty tile: healthy, and outside the data's extent"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "https://glasswell.rpx.sh/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
           },
           "422": {
             "content": {

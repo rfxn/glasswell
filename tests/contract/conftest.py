@@ -300,8 +300,6 @@ def _tile_transport(request: httpx.Request) -> httpx.Response:
     """Stands in for martin: a body for the seeded tile, 204 for anything else."""
     if request.url.path.endswith("/0/0/0"):
         return httpx.Response(204)
-    if "missing" in request.url.path:
-        return httpx.Response(404, text="no such layer")
     return httpx.Response(
         200, content=TILE_BODY, headers={"content-type": "application/x-protobuf"}
     )

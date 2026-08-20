@@ -12,12 +12,18 @@ from starlette.responses import Response
 from glasswell.api.deps import DEFAULT_MARTIN_URL, MARTIN_URL_ENV
 from glasswell.api.errors import ProblemError, problem_responses
 from glasswell.api.examples import EXAMPLE_TILE, request_example
+from glasswell.marts.tiles import TILE_LAYERS
 
 router = APIRouter(tags=["tiles"])
 
 LAYER_PATTERN = r"^[a-z][a-z0-9_]*$"
 TILE_MEDIA_TYPE = "application/x-protobuf"
 TILE_TIMEOUT_SECONDS = 10.0
+
+# martin runs with auto_publish on, so its catalogue is every relation with a geometry column,
+# staging included. The proxy is where "staging never serves" is a control rather than a
+# convention: the entitlement is this set, shared with the module that builds the layers.
+PUBLISHED_LAYERS: frozenset[str] = frozenset(layer.name for layer in TILE_LAYERS)
 
 
 def tile_client(request: Request) -> httpx.Client:
@@ -38,16 +44,17 @@ def tile_client(request: Request) -> httpx.Client:
     summary="Mapbox vector tile",
     description=(
         "Streams one MVT from the tile server behind the same origin and the same key as"
-        " the rest of the API. A `204` is passed through unchanged: it means the tile is"
-        " empty, which is the normal answer outside the basin, not an error. A non-2xx"
-        " from the tile server becomes `upstream_tile_error`."
+        " the rest of the API. `layer` must name a published mart layer; anything else is"
+        " `not_found` and never reaches the tile server. A `204` is passed through"
+        " unchanged: it means the tile is empty, which is the normal answer outside the"
+        " basin, not an error. A non-2xx from the tile server becomes `upstream_tile_error`."
     ),
     response_class=Response,
     openapi_extra=request_example(path=EXAMPLE_TILE),
     responses={
         200: {"content": {TILE_MEDIA_TYPE: {}}, "description": "Vector tile"},
         204: {"description": "Empty tile: healthy, and outside the data's extent"},
-        **problem_responses("upstream_tile_error", "validation_failed"),
+        **problem_responses("not_found", "upstream_tile_error", "validation_failed"),
     },
 )
 def get_tile(
@@ -57,6 +64,8 @@ def get_tile(
     x: Annotated[int, Path(description="Tile column.", ge=0)],
     y: Annotated[int, Path(description="Tile row.", ge=0)],
 ) -> Response:
+    if layer not in PUBLISHED_LAYERS:
+        raise ProblemError("not_found", detail=f"no published tile layer {layer}")
     try:
         upstream = tile_client(request).get(f"/{layer}/{z}/{x}/{y}")
     except httpx.RequestError as error:
