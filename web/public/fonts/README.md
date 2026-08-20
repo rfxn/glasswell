@@ -14,6 +14,34 @@ Neither upstream licence declares a Reserved Font Name, so subsetting and
 redistribution under the OFL are permitted; both licence files ship beside the
 fonts because OFL §2 requires it.
 
+## Substitution — awaiting owner sign-off
+
+glasswell has no proprietary brand face, so nothing here is a licensed face
+being stood in for. What is being stood in for is a *stack*: BRAND.md
+§Typography specifies `system-ui` for text and `ui-monospace` for identifiers,
+and says "no vendored fonts and no font loading". VF-4 of the owner's live
+review asks the app for the opposite — a brand face, self-hosted WOFF2,
+same-origin. Both cannot hold, so the scope was split rather than one silently
+overriding the other:
+
+| Surface | Faces | Why |
+|---|---|---|
+| `assets/*.svg`, README banners, diagrams | unchanged — `system-ui` / `ui-monospace`, nothing loaded | BRAND.md's stated reason is that diagrams must render identically in a GitHub markdown preview, a terminal image viewer and a PDF export. None of those can load a font. The rule is about collateral and still binds there |
+| `web/` app chrome | Inter, JetBrains Mono | A served app can load a face, and VF-4 asks it to. Inter is the closest open face to what `system-ui` resolves to on the platforms this is read on; JetBrains Mono fills the `ui-monospace` role |
+
+The substitution is deliberately conservative: Inter and JetBrains Mono are the
+faces the generic stacks were already resolving to on most readers' machines,
+so this pins a letterform that was mostly already being seen rather than
+introducing a new voice.
+
+**What the owner is being asked to sign off:** that Inter and JetBrains Mono are
+glasswell's standing app faces, and that BRAND.md §Typography be read as
+governing collateral only. Until that is signed off, BRAND.md remains the
+contract and this file is the recorded divergence, not an amendment to it —
+BRAND.md is not edited here (Track V reads `assets/` and BRAND.md, never writes
+them). Rejecting the substitution costs three `@font-face` blocks and the three
+`--gw-font-*` token values; nothing else in the app names a family.
+
 `gw-symbols.woff2` exists because Inter has no glyph for `U+233E ⌾` — the explain
 affordance the product uses in prose, in the help panel and on every figure — nor
 for `U+2715 ✕`. It is declared under the same CSS family names with a two-codepoint

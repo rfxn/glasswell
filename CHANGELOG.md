@@ -16,6 +16,13 @@ its own version in its header, and its history is summarised in §3.1.
       Reserved Font Name and both licences ship beside the files. No font CDN: a
       `gstatic` request would publish a page view past Access to an origin the
       reader never agreed to
+- [New] `web/public/fonts/README.md` records the substitution the faces represent
+      and parks it for owner sign-off: BRAND.md §Typography specifies `system-ui`
+      and `ui-monospace` and forbids font loading, VF-4 asks the app for a loaded
+      brand face, and the two are reconciled by scope — collateral keeps the
+      generic stacks, the served app pins Inter and JetBrains Mono. BRAND.md is
+      not edited; until sign-off it remains the contract and the README is the
+      recorded divergence
 - [New] A light theme built from BRAND.md's light column, with a control in the
       rail's action group; the choice persists per reader. Dark stays the default
       because the default basemap is dark. Every text colour that is also a data
