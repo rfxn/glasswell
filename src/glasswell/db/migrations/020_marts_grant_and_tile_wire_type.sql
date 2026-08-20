@@ -17,6 +17,12 @@
 
 grant create on schema marts to glasswell_pipeline;
 
+-- Stand the published views down first: they select the columns retyped below, and a view
+-- blocks a type change on a column it reads. They are recreated at the foot of this file.
+drop view if exists marts.tile_nd_laterals;
+drop view if exists marts.tile_nd_wells;
+drop view if exists marts.tile_nd_spacing_units;
+
 drop view if exists marts.nd_spacing_units_tile;
 
 alter table canonical.spacing_units
@@ -32,18 +38,23 @@ comment on column canonical.spacing_units.ds_size_acres is
     'Double precision, not numeric: this column is published as a tile attribute and
      ST_AsMVT has no numeric encoding (N-2, the class migration 015 opened).';
 
--- The tile server's own role (DR-05). `pg_hba` maps a socket connection to the role named for
--- the OS user (`local all all peer`), `martin.service` runs `User=martin`, and no role `martin`
--- existed — which is the whole of why infra/martin/config.yaml had never been adopted. The
--- name is not a choice: peer auth requires it to equal the OS user.
+-- The tile server's own role, and the only three relations it can see (DR-05).
 --
--- It gets the least a tile server can work with, and the column list is the point. martin is
--- given select on exactly the columns each layer publishes, so the privilege — not a
--- declaration in a config file — is what keeps everything else off the wire: `staging` (R:
--- staging never serves, blueprint 3.0.1), `canonical`, `lineage`, and
--- `lateral_length_ft_exact`, which is `numeric` and would ride an auto-published tile as a
--- 19-digit string. The spacing-unit view reads canonical with its owner's rights, so martin
--- needs no grant there at all.
+-- `pg_hba` maps a socket connection to the role named for the OS user (`local all all peer`),
+-- `martin.service` runs `User=martin`, and no role `martin` existed — which is why
+-- infra/martin/config.yaml had never been adopted. The name is not a choice: peer auth
+-- requires it to equal the OS user.
+--
+-- What it may read is a view per layer holding exactly the published columns, and table-level
+-- select on those views only. Two things fall out of that shape. `staging` (blueprint 3.0.1),
+-- `canonical` and `lineage` are denied at the schema, so `auto_publish: true` could not expose
+-- them. And `marts.nd_laterals_tile.lateral_length_ft_exact` — `numeric`, which ST_AsMVT can
+-- only encode as a 19-digit string — is not in the view, so no configuration reaches it.
+--
+-- Column-level grants express the same intent and cannot be used: PostGIS's `geometry_columns`
+-- filters on `has_table_privilege(..., 'SELECT')`, which a column grant does not satisfy, so
+-- martin discovers an empty schema and exits — and `Restart=on-failure` turns that into a
+-- crash loop with every tile down (Gate-O B-3, reproduced against the martin binary).
 do $$
 begin
     if not exists (select 1 from pg_roles where rolname = 'martin') then
@@ -52,14 +63,26 @@ begin
 end
 $$;
 
+create or replace view marts.tile_nd_laterals as
+select api10, linekey, operator_name, status_canonical, spud_year, lateral_length_ft,
+       derivation_id, geom
+  from marts.nd_laterals_tile;
+
+create or replace view marts.tile_nd_wells as
+select api10, operator_name, status_canonical, spud_year, derivation_id, geom
+  from marts.nd_wells_tile;
+
+create or replace view marts.tile_nd_spacing_units as
+select spacing_unit_id, label, formation_reported, ds_size_acres, derivation_id, geom
+  from canonical.spacing_units;
+
 grant usage on schema marts to martin;
+grant select on marts.tile_nd_laterals, marts.tile_nd_wells, marts.tile_nd_spacing_units
+    to martin;
+grant select on marts.tile_nd_laterals, marts.tile_nd_wells, marts.tile_nd_spacing_units
+    to glasswell_api;
 
-grant select (api10, linekey, operator_name, status_canonical, spud_year, lateral_length_ft,
-              derivation_id, geom)
-    on marts.nd_laterals_tile to martin;
-
-grant select (api10, operator_name, status_canonical, spud_year, derivation_id, geom)
-    on marts.nd_wells_tile to martin;
-
-grant select (spacing_unit_id, label, formation_reported, ds_size_acres, derivation_id, geom)
-    on marts.nd_spacing_units_tile to martin;
+comment on view marts.tile_nd_laterals is
+    'What the tile server may see. The column list is the publication boundary: martin holds
+     select on this view and on no base relation, so lateral_length_ft_exact cannot reach a
+     tile whatever a config file declares (DR-05, N-2).';

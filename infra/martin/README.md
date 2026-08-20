@@ -65,18 +65,27 @@ $ sudo -u martin martin --config config.yaml
 ERROR Failed to create postgres pool: FATAL: role "martin" does not exist
 ```
 
-**Migration 020 creates it**, with the least a tile server can work with: `usage` on `marts`
-and `select` on **exactly the columns each layer publishes** — no `staging`, no `canonical`,
-no `lineage`, and not `marts.nd_laterals_tile.lateral_length_ft_exact`, which is `numeric`
-and would ride an auto-published tile as a 19-digit string. The spacing-unit view reads
-canonical with its owner's rights, so martin needs nothing there.
+**Migration 020 creates it**, and gives it `usage` on `marts` plus `select` on three views —
+`marts.tile_nd_laterals`, `tile_nd_wells`, `tile_nd_spacing_units` — and on nothing else. Each
+view holds exactly the columns its layer publishes, so the *column list is the publication
+boundary*: `marts.nd_laterals_tile.lateral_length_ft_exact` is `numeric`, ST_AsMVT can only
+encode it as a 19-digit string, and it is simply not in the view. `staging` (blueprint §3.0.1),
+`canonical` and `lineage` are denied at the schema.
 
-That column list is the control, not the config: `auto_publish: true` could be set back on
-tomorrow and martin still could not read a staging table.
+That grant is the control, not the config: `auto_publish: true` could be set back on tomorrow
+and martin still could not read a staging relation. `tests/integration/test_martin_publishes.py`
+proves it by starting the binary with auto-publish on.
+
+**It has to be a view with a table-level grant, and not a column-level grant on the mart.**
+PostGIS's `geometry_columns` filters on `has_table_privilege(…, 'SELECT')`, which a column
+grant does not satisfy, so martin discovers *"schema 'marts' exists but has no tables with a
+geometry column"* and exits — and `Restart=on-failure` makes that a crash loop with every tile
+down. That was Gate-O B-3, found by running the binary as the role rather than reading the
+grant, which is why the test now does exactly that.
 
 ### Adopting it (deployer, one time)
 
-`./install.sh --with-martin-config` places the file at `/etc/glasswell/martin.yaml` and a
+`./install.sh --with-martin-config` places the file at `/etc/martin/config.yaml` and a
 drop-in that adds `--config` to the pre-existing `martin.service` — a drop-in, because that
 unit belongs to the host and not to this directory. Then:
 

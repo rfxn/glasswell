@@ -1,5 +1,9 @@
 """Function tile sources: one `marts.<layer>(z, x, y, query)` per published layer.
 
+Each reads a `marts.tile_*` view rather than the mart it projects: that view's column list is
+the publication boundary migration 020 grants the tile server, so both publication paths see
+exactly the same columns.
+
 martin publishes a function source under the function's own name, so these names are the
 `/v1/tiles/{layer}/…` ids the API proxies and the `source-layer` MapLibre binds to.
 """
@@ -33,7 +37,7 @@ class TileLayer:
 TILE_LAYERS: tuple[TileLayer, ...] = (
     TileLayer(
         name="nd_laterals",
-        source="marts.nd_laterals_tile",
+        source="marts.tile_nd_laterals",
         # Migration 017 widened the column to hold a multi-part centreline, so this is what
         # `geometry_columns` reports and therefore what martin discovers. MVT encodes a
         # multi-part line as LINESTRING either way.
@@ -50,7 +54,7 @@ TILE_LAYERS: tuple[TileLayer, ...] = (
     ),
     TileLayer(
         name="nd_wells",
-        source="marts.nd_wells_tile",
+        source="marts.tile_nd_wells",
         geometry_type="POINT",
         properties=(
             ("api10", "text"),
@@ -62,7 +66,7 @@ TILE_LAYERS: tuple[TileLayer, ...] = (
     ),
     TileLayer(
         name="nd_spacing_units",
-        source="marts.nd_spacing_units_tile",
+        source="marts.tile_nd_spacing_units",
         geometry_type="MULTIPOLYGON",
         properties=(
             ("spacing_unit_id", "text"),

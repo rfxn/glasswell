@@ -46,12 +46,18 @@ its own version in its header, and its history is summarised in §3.1.
       same `/tmp` path; both use `mktemp -d` now
 - [Fix] DR-05: `infra/martin/config.yaml` had never been adopted because its DSN names no
       user and `martin.service` runs `User=martin`, for which no PostgreSQL role existed.
-      Migration 020 creates it with `usage` on `marts` and select on **exactly the columns
-      each layer publishes** — so `staging`, `canonical` and the `numeric`
-      `lateral_length_ft_exact` are off the wire by privilege rather than by declaration —
-      and `install.sh --with-martin-config` places the file and a `martin.service` drop-in.
+      Migration 020 creates it, publishes each layer through a `marts.tile_*` view holding
+      exactly the columns that layer serves, and grants the role select on those three views
+      and nothing else — so `staging`, `canonical` and the `numeric`
+      `lateral_length_ft_exact` are unreachable by privilege rather than by declaration.
+      `install.sh --with-martin-config` places the file and a `martin.service` drop-in.
       Adopted, martin publishes three sources where auto-publish published eleven, three of
       them `staging` relations
+- [New] `tests/integration/test_martin_publishes.py` starts the martin binary as the role the
+      unit runs as and reads its catalogue. Config and grant were previously verified apart:
+      a column-level grant expresses the same intent and cannot work, because PostGIS's
+      `geometry_columns` filters on `has_table_privilege`, and martin would have exited into
+      a `Restart=on-failure` crash loop with every tile down
 - [Change] The martin config declares `pool_size` under `postgres:`, where 1.14.0 reads it;
          at the top level it was silently ignored. The same run settles the
          view-under-`tables:` question — martin resolves the spacing-unit view as

@@ -183,6 +183,43 @@ def test_martin_reads_the_published_columns_and_no_others(
     """Auto-publish serves whatever the role can select, so the grant is the real allowlist."""
     expected = {*layer.columns, "geom"}
     assert martin_readable_columns(canonical_nd, layer.source) == expected
+    assert set(column_types(canonical_nd, layer.source)) == expected, (
+        "the published view carries a column nobody publishes"
+    )
+
+
+@pytest.mark.parametrize("layer", TILE_LAYERS, ids=lambda layer: layer.name)
+def test_martin_holds_table_privilege_on_what_it_publishes(
+    canonical_nd, refreshed, layer  # noqa: F811
+):
+    """PostGIS's `geometry_columns` filters on has_table_privilege, and martin discovers table
+    sources through it. A column grant leaves the schema looking empty and the server exits —
+    with Restart=on-failure, a crash loop (Gate-O B-3)."""
+    assert scalar(
+        canonical_nd, "select has_table_privilege(%s, %s, 'select')", (MARTIN_ROLE, layer.source)
+    )
+    assert not scalar(
+        canonical_nd,
+        "select has_table_privilege(%s, 'marts.nd_laterals_tile', 'select')",
+        (MARTIN_ROLE,),
+    ), "the tile server can read a mart directly, so the view is not the boundary"
+
+
+@pytest.mark.parametrize("layer", TILE_LAYERS, ids=lambda layer: layer.name)
+def test_geometry_columns_resolves_for_the_role_martin_runs_as(
+    canonical_nd, refreshed, layer  # noqa: F811
+):
+    """The catalogue martin actually reads, read as martin reads it."""
+    schema, relation = layer.source.split(".")
+    with canonical_nd.cursor() as cursor:
+        cursor.execute("set local role martin")
+        cursor.execute(
+            "select count(*) from geometry_columns"
+            " where f_table_schema = %s and f_table_name = %s",
+            (schema, relation),
+        )
+        assert cursor.fetchone()[0] == 1, f"{layer.source} is invisible to the tile server"
+    canonical_nd.rollback()
 
 
 @pytest.mark.parametrize("relation", OFF_LIMITS_RELATIONS)
