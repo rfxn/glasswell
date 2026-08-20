@@ -54,6 +54,25 @@ select distinct (row_payload ->> 'production_month')::date as production_month, 
    and row_payload ->> 'production_month' is not null
 """
 
+# D1: an API-10 that filed in more than one pool has one row promoted by spreadsheet ordinal
+# and the rest in the ledger. Until the canonical key widens, the promoted row is not the
+# well's production and is not served as if it were.
+_MULTI_POOL_PENDING = """
+select (row_payload ->> 'production_month')::date as production_month,
+       row_payload ->> 'stream_canonical' as stream,
+       min(rule_id) as rule_id,
+       count(*) as filings,
+       sum(nullif(row_payload ->> 'volume', '')::numeric) as ledger_volume,
+       min(nullif(row_payload ->> 'unit', '')) as unit
+  from lineage.quarantine_rows
+ where source_id = 'nd_mpr_xlsx'
+   and reason_code = 'key_collision'
+   and state = 'open'
+   and row_payload ->> 'api10' = %(api10)s
+   and row_payload ->> 'production_month' is not null
+ group by 1, 2
+"""
+
 _FRESHNESS = """
 select source_id,
        max(fetch_vintage) as retrieval_vintage,
@@ -78,21 +97,26 @@ class ProductionSeries(BaseModel):
         default=None, description="Report vintage used for each oil point."
     )
     oil_bbl_null_semantics: list[str] | None = Field(
-        default=None, description="reported, reported_zero, no_report or withheld, per point."
+        default=None,
+        description=(
+            "reported, reported_zero, no_report or withheld per point, plus"
+            " multi_pool_pending where the well filed in more than one pool and no single"
+            " row is its production."
+        ),
     )
     gas_mcf: list[str | None] | None = Field(default=None, description="Gas volumes in mcf.")
     gas_mcf_report_vintage: list[str | None] | None = Field(
         default=None, description="Report vintage used for each gas point."
     )
     gas_mcf_null_semantics: list[str] | None = Field(
-        default=None, description="Null semantics per gas point."
+        default=None, description="Null semantics per gas point; same vocabulary as oil."
     )
     water_bbl: list[str | None] | None = Field(default=None, description="Water volumes in bbl.")
     water_bbl_report_vintage: list[str | None] | None = Field(
         default=None, description="Report vintage used for each water point."
     )
     water_bbl_null_semantics: list[str] | None = Field(
-        default=None, description="Null semantics per water point."
+        default=None, description="Null semantics per water point; same vocabulary as oil."
     )
 
 
@@ -160,6 +184,10 @@ def _months(raw: str | None, name: str) -> date | None:
         " vintages: `as_of` selects the greatest report vintage at or before the date and"
         " every point says which one it used. `null_semantics` keeps a reported zero, an"
         " absent report and a withheld value apart; they are never collapsed into a gap."
+        " A month the regulator withheld rides the axis with a null value, and a month whose"
+        " API-10 filed in more than one pool is withdrawn as multi_pool_pending rather than"
+        " served as if one pool's row were the well. meta.warnings names both, with the rule"
+        " that recorded them."
         " GOR and water cut are deliberately not served in this slice."
     ),
     response_model=EnvelopeModel[Production],
@@ -216,6 +244,7 @@ def get_well_production(
     }
 
     withheld = _withheld_months(connection, api10, window)
+    pending = _multi_pool_pending(connection, api10, window)
     months = sorted({row["production_month"] for row in observed} | set(withheld))
     payload: dict[str, Any] = {"pm": [month_label(month) for month in months]}
     warnings: list[dict[str, Any]] = _withheld_warning(withheld)
@@ -240,17 +269,24 @@ def get_well_production(
                     "pointer": f"/series/{column}",
                 }
             )
+        held = {month: row for (month, stream), row in pending.items() if stream == name}
+        warnings.extend(_pending_warning(held, column))
         first = next(iter(points.values()))
         spans = len(derivations) > 1
         payload[column] = series(
-            [_volume(points.get(month)) for month in months],
+            [None if month in held else _volume(points.get(month)) for month in months],
             unit=first["unit"],
             derivation=first["derivation_id"],
             selector=f"api10={api10}&col={column}",
             granularity=first["granularity"],
             basis=STREAM_BASIS[name],
             point_handles=(
-                [_point_handle(api10, column, month, points.get(month)) for month in months]
+                [
+                    None
+                    if month in held
+                    else _point_handle(api10, column, month, points.get(month))
+                    for month in months
+                ]
                 if spans
                 else None
             ),
@@ -259,17 +295,14 @@ def get_well_production(
             iso(points[month]["report_vintage"]) if month in points else None for month in months
         ]
         payload[f"{column}_null_semantics"] = [
-            semantics.get(
-                (
-                    month,
-                    name,
-                    points[month]["source_id"],
-                    points[month]["report_vintage"],
-                ),
-                "reported",
+            _point_semantics(
+                month,
+                stream=name,
+                point=points.get(month),
+                stored=semantics,
+                held=held,
+                withheld=withheld,
             )
-            if month in points
-            else ("withheld" if month in withheld else "no_report")
             for month in months
         ]
 
@@ -292,6 +325,58 @@ def get_well_production(
         warnings=warnings,
         links={"well": f"/v1/wells/{api10}"},
     )
+
+
+def _point_semantics(
+    month: date,
+    *,
+    stream: str,
+    point: dict[str, Any] | None,
+    stored: dict[tuple, str],
+    held: dict[date, dict[str, Any]],
+    withheld: dict[date, str],
+) -> str:
+    """Why this point reads as it does: three regulator facts plus one serving state."""
+    if month in held:
+        return "multi_pool_pending"
+    if point is None:
+        return "withheld" if month in withheld else "no_report"
+    key = (month, stream, point["source_id"], point["report_vintage"])
+    return stored.get(key, "reported")
+
+
+def _pending_warning(held: dict[date, dict[str, Any]], column: str) -> list[dict[str, Any]]:
+    """D1: say which months are withdrawn, how much the ledger holds, and under which rule."""
+    if not held:
+        return []
+    months = ", ".join(month_label(month) for month in sorted(held))
+    filings = sum(row["filings"] for row in held.values())
+    volume = sum(row["ledger_volume"] or 0 for row in held.values())
+    unit = next((row["unit"] for row in held.values() if row["unit"]), "")
+    rules = ", ".join(sorted({str(row["rule_id"]) for row in held.values()}))
+    return [
+        {
+            "code": "multi_pool_pending",
+            "detail": (
+                f"{months}: this API-10 filed in more than one pool, so no single row is the"
+                f" well's production. {filings} further pool filing(s) holding {volume} {unit}"
+                f" are quarantined as key_collision under {rules}; the promoted row is withheld"
+                " here rather than served as the well. The payloads are in /v1/quarantine."
+            ),
+            "pointer": f"/series/{column}",
+        }
+    ]
+
+
+def _multi_pool_pending(
+    connection: psycopg.Connection, api10: str, window: tuple[date | None, date | None]
+) -> dict[tuple[date, str], dict[str, Any]]:
+    return {
+        (row["production_month"], row["stream"]): row
+        for row in rows(connection, _MULTI_POOL_PENDING, {"api10": api10})
+        if (window[0] is None or row["production_month"] >= window[0])
+        and (window[1] is None or row["production_month"] <= window[1])
+    }
 
 
 def _withheld_warning(withheld: dict[date, str]) -> list[dict[str, Any]]:

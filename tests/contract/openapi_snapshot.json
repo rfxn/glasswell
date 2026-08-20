@@ -2166,7 +2166,7 @@
                 "type": "null"
               }
             ],
-            "description": "Null semantics per gas point.",
+            "description": "Null semantics per gas point; same vocabulary as oil.",
             "title": "Gas Mcf Null Semantics"
           },
           "gas_mcf_report_vintage": {
@@ -2225,7 +2225,7 @@
                 "type": "null"
               }
             ],
-            "description": "reported, reported_zero, no_report or withheld, per point.",
+            "description": "reported, reported_zero, no_report or withheld per point, plus multi_pool_pending where the well filed in more than one pool and no single row is its production.",
             "title": "Oil Bbl Null Semantics"
           },
           "oil_bbl_report_vintage": {
@@ -2292,7 +2292,7 @@
                 "type": "null"
               }
             ],
-            "description": "Null semantics per water point.",
+            "description": "Null semantics per water point; same vocabulary as oil.",
             "title": "Water Bbl Null Semantics"
           },
           "water_bbl_report_vintage": {
@@ -5992,7 +5992,7 @@
     },
     "/v1/wells/{api10}/production": {
       "get": {
-        "description": "Monthly produced volumes for one well, in the SB-07 \u00a79.1(b) sidecar form: derivation handles in `_lineage`, units in `_units`, the liquids basis in `_basis`, and per-point `report_vintage` and `null_semantics` arrays. ND publishes one workbook a month, so a month is promoted by its own derivation: `_lineage` keys a handle per point (`series.oil_bbl.0`) whenever the points of a column disagree, and each handle explains to the file that carries that month. In North Dakota these are well-level regulator reports, so `granularity` is `well_observed` \u2014 nothing here is allocated. A series never silently mixes vintages: `as_of` selects the greatest report vintage at or before the date and every point says which one it used. `null_semantics` keeps a reported zero, an absent report and a withheld value apart; they are never collapsed into a gap. GOR and water cut are deliberately not served in this slice.",
+        "description": "Monthly produced volumes for one well, in the SB-07 \u00a79.1(b) sidecar form: derivation handles in `_lineage`, units in `_units`, the liquids basis in `_basis`, and per-point `report_vintage` and `null_semantics` arrays. ND publishes one workbook a month, so a month is promoted by its own derivation: `_lineage` keys a handle per point (`series.oil_bbl.0`) whenever the points of a column disagree, and each handle explains to the file that carries that month. In North Dakota these are well-level regulator reports, so `granularity` is `well_observed` \u2014 nothing here is allocated. A series never silently mixes vintages: `as_of` selects the greatest report vintage at or before the date and every point says which one it used. `null_semantics` keeps a reported zero, an absent report and a withheld value apart; they are never collapsed into a gap. A month the regulator withheld rides the axis with a null value, and a month whose API-10 filed in more than one pool is withdrawn as multi_pool_pending rather than served as if one pool's row were the well. meta.warnings names both, with the rule that recorded them. GOR and water cut are deliberately not served in this slice.",
         "operationId": "get_well_production",
         "parameters": [
           {
