@@ -10,14 +10,18 @@ from __future__ import annotations
 import psycopg
 from psycopg.types.json import Jsonb
 
+from glasswell.ingest.nd_gis import load_laterals, load_wells
+from glasswell.lineage.capture import lineage_session
+from glasswell.lineage.store import PostgresRecorder
 from glasswell.seed import seed_all
 from tests.integration.test_lateral_length_truth import laterals_loaded  # noqa: F401
-from tests.integration.test_marts_nd import rows, scalar
+from tests.integration.test_marts_nd import ARCHIVES, client_for, rows, scalar
 from tests.integration.test_migration_014 import migration_sql
 from tests.support.seed import seed_manifest
 
 GIS_SOURCE = "nd_gis_horizontals_line"
 FIXTURE_MULTIPART = ("33025003920000_VERT", "33007011950000_VERT")
+LATERAL_RECORDS = 300
 
 
 def test_a_multi_part_record_reaches_staging_with_its_geometry(laterals_loaded):  # noqa: F811
@@ -128,3 +132,38 @@ def test_the_migration_relabels_the_ledger_from_the_detail_it_stored(
     assert event is not None
     assert event[0]["rows"] == 2
     assert event[0]["finding"] == "fp-audit A5-F8"
+
+
+def test_restaging_recovers_geometry_a_previous_load_could_not_store(
+    db: psycopg.Connection, raw_root, lineage_env
+):
+    """The deployer's re-derivation step: the same bytes, re-parsed under the new schema."""
+    seed_all(db)
+    db.commit()
+    for layer, loader in (("wells", load_wells), ("laterals", load_laterals)):
+        with lineage_session(
+            recorder=PostgresRecorder(db), environment=lineage_env
+        ), client_for(ARCHIVES[layer]) as client:
+            loader(db, raw_root=raw_root, client=client)
+        db.commit()
+    before = scalar(db, "select count(*) from canonical.well_spatial where geom_type = 'lateral'")
+    with db.cursor() as cursor:
+        # The state migration 017 inherits: the rows the LineString column could not hold.
+        cursor.execute(
+            "update staging.nd_gis_laterals set geom = null where linekey = any(%s)",
+            (list(FIXTURE_MULTIPART),),
+        )
+    db.commit()
+    assert scalar(db, "select count(*) from staging.nd_gis_laterals where geom is null") == 2
+
+    with lineage_session(
+        recorder=PostgresRecorder(db), environment=lineage_env
+    ), client_for(ARCHIVES["laterals"]) as client:
+        load_laterals(db, raw_root=raw_root, client=client, restage=True)
+    db.commit()
+
+    assert scalar(db, "select count(*) from staging.nd_gis_laterals where geom is null") == 0
+    assert scalar(db, "select count(*) from staging.nd_gis_laterals") == LATERAL_RECORDS
+    assert scalar(
+        db, "select count(*) from canonical.well_spatial where geom_type = 'lateral'"
+    ) == before

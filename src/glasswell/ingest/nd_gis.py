@@ -190,9 +190,12 @@ def load_laterals(
     url: str | None = None,
     raw_root: Path | str | None = None,
     client: httpx.Client | None = None,
+    restage: bool = False,
 ) -> LoadResult:
     """Fetch OGD_Horizontals_Line, stage it, and promote lateral centrelines."""
-    return _load(connection, LAYERS["laterals"], url=url, raw_root=raw_root, client=client)
+    return _load(
+        connection, LAYERS["laterals"], url=url, raw_root=raw_root, client=client, restage=restage
+    )
 
 
 def load_spacing_units(
@@ -217,6 +220,7 @@ def _load(
     url: str | None = None,
     raw_root: Path | str | None = None,
     client: httpx.Client | None = None,
+    restage: bool = False,
 ) -> LoadResult:
     datum = _datum_rule(connection)
     source_epsg = int(datum.spec["source_epsg"])
@@ -232,7 +236,11 @@ def _load(
         media_type="application/zip",
     )
     manifest = fetched.manifest
-    if _already_promoted(connection, spec, manifest.manifest_id):
+    if restage:
+        # Re-derivation after a rule or schema change: staging is rebuildable from the raw
+        # bytes, and the insert is conflict-skipping, so the old rows have to go first.
+        _clear_staging(connection, spec, manifest.manifest_id)
+    elif _already_promoted(connection, spec, manifest.manifest_id):
         parse_id, promote_id = _existing_derivations(connection, manifest.manifest_id)
         return LoadResult(
             layer=spec.layer,
@@ -291,6 +299,12 @@ def _already_promoted(connection: psycopg.Connection, spec: LayerSpec, manifest_
             (manifest_id,),
         )
         return cursor.fetchone() is not None
+
+
+def _clear_staging(connection: psycopg.Connection, spec: LayerSpec, manifest_id: str) -> int:
+    with connection.cursor() as cursor:
+        cursor.execute(f"delete from {spec.staging_table} where manifest_id = %s", (manifest_id,))
+        return cursor.rowcount
 
 
 def _existing_derivations(connection: psycopg.Connection, manifest_id: str) -> tuple[str, str]:
@@ -970,6 +984,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--raw-root", default=None)
     parser.add_argument("--env-id", default=None, help="override the fingerprinted env id")
     parser.add_argument("--code-version", default=None)
+    parser.add_argument(
+        "--restage",
+        action="store_true",
+        help="re-parse and re-promote from the stored bytes after a rule or schema change",
+    )
     arguments = parser.parse_args(argv)
 
     # Wells first: a lateral whose api10 has no well row quarantines as orphan_fk.
@@ -981,7 +1000,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         with lineage_session(recorder=PostgresRecorder(connection), environment=environment):
             for layer in layers:
                 result = load_layer(
-                    connection, layer, url=arguments.url, raw_root=arguments.raw_root
+                    connection,
+                    layer,
+                    url=arguments.url,
+                    raw_root=arguments.raw_root,
+                    restage=arguments.restage,
                 )
                 connection.commit()
                 print(json.dumps(result.to_dict(), sort_keys=True))
