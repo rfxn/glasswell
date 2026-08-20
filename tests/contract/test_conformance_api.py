@@ -76,10 +76,11 @@ def test_an_unknown_rule_is_not_found(client: TestClient) -> None:
 
 
 def test_the_policy_declarations_are_visible_as_such(client: TestClient) -> None:
-    """The two code_ref rows are registry data with no executor; they are not hidden."""
+    """The code_ref rows are registry data with no executor; they are not hidden."""
     data = client.get("/v1/conformance", params={"kind": "code_ref"}).json()["data"]
 
     assert {item["rule_id"] for item in data} == {
         "cr_nd_liquids_policy_1",
         "cr_nd_null_semantics_1",
+        "cr_nd_pool_rollup_1",
     }

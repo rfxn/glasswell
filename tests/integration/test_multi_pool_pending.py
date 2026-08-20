@@ -1,14 +1,14 @@
-"""D1 interim guard: a well that files in two pools is not a zero-producer.
+"""The withdrawal guard, on the two well-months the S-E key still cannot decompose.
 
-`split_key_collisions` keeps the first row by spreadsheet ordinal and quarantines the rest.
-Refusing to sum across pools is defensible; serving row one as the well is not. Well
-3305302532 filed 17,247 bbl of oil over six months and the API served 0.000, labelled
-`reported_zero` — an affirmative claim that the regulator reported a zero — under
-`granularity: well_observed`. 78 wells, 454 well-months, 139,644 bbl.
+Well 3305302532 filed 17,247 bbl of oil over six months and the API served 0.000, labelled
+`reported_zero` under `granularity: well_observed` — 78 wells, 454 well-months, 139,644 bbl
+(fp-audit D1). The structural fix promotes each pool and serves their disclosed sum, and
+`test_multi_pool_serving.py` holds it to that.
 
-Widening the canonical key is the structural fix and is not this one. Until then the served
-point is withdrawn and the response says why, because a figure that is 39% of the well is
-worse than no figure at all.
+This file holds the remainder: a well-month whose `key_collision` rows are still open, either
+because two filings share one pool label so `cr_nd_pool_rollup_1` cannot say which is the
+well, or because the month has not been re-promoted yet. There the point stays withdrawn and
+the response says why, because a figure that is 39% of the well is worse than no figure.
 """
 
 from __future__ import annotations
