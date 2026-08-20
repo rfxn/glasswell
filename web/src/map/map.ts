@@ -66,13 +66,13 @@ export function createMap(
   map.on("load", () => {
     map.addSource("nd_laterals", {
       type: "vector",
-      tiles: [absolute(tileUrl(LATERALS))],
+      tiles: [absoluteTileUrl(tileUrl(LATERALS))],
       minzoom: 0,
       maxzoom: 14,
     });
     map.addSource("nd_wells", {
       type: "vector",
-      tiles: [absolute(tileUrl(WELLS))],
+      tiles: [absoluteTileUrl(tileUrl(WELLS))],
       minzoom: 0,
       maxzoom: 14,
     });
@@ -154,10 +154,11 @@ export function createMap(
 }
 
 /** M12: no third-party basemap. A graticule and the well geometry are the whole reference. */
-function baseStyle(): maplibregl.StyleSpecification {
+export function baseStyle(): maplibregl.StyleSpecification {
+  // No `glyphs` key at all: MapLibre validates any property that is present, and an
+  // undefined one fails validation, so the style — and every layer with it — never loads.
   return {
     version: 8,
-    glyphs: undefined,
     sources: {
       graticule: { type: "geojson", data: graticule() },
     },
@@ -192,8 +193,9 @@ function line(coordinates: [number, number][]): GeoJSON.Feature {
   };
 }
 
-function absolute(path: string): string {
-  return new URL(path, window.location.origin).toString();
+/** Same-origin by default. Not `new URL()`: it percent-encodes MapLibre's {z}/{x}/{y}. */
+export function absoluteTileUrl(template: string): string {
+  return /^https?:\/\//i.test(template) ? template : `${window.location.origin}${template}`;
 }
 
 export function layerLegend(): HTMLElement {

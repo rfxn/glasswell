@@ -53,9 +53,11 @@ export function renderChart(
     scales: { x: { time: true } },
     axes: [
       { stroke: "#9FB0BC", grid: { stroke: "#1d2a33" }, ticks: { stroke: "#1d2a33" } },
+      // uPlot's default axis size (50 px) clips a six-figure monthly volume.
       ...chart.scales.map((unit, position) => ({
         scale: unit,
         side: position === 0 ? (3 as const) : (1 as const),
+        size: 62,
         stroke: "#9FB0BC",
         grid: { stroke: "#1d2a33" },
         ticks: { stroke: "#1d2a33" },
