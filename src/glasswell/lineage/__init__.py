@@ -19,16 +19,27 @@ from glasswell.lineage.conformance import (
     apply_rules,
     load_rules,
 )
+from glasswell.lineage.envelope import (
+    Envelope,
+    Figure,
+    Series,
+    attach_lineage,
+    figure,
+    series,
+)
 from glasswell.lineage.errors import (
     DeterminismViolation,
     InvalidHandle,
     InvalidSelector,
     LineageError,
     LineageNotConfigured,
+    LineageUnresolved,
     RuleSpecError,
     UnknownAuditEvent,
     UnknownRuleKind,
 )
+from glasswell.lineage.explain import Chain, resolve_chain, resolve_chains, to_json
+from glasswell.lineage.fetch import FetchResult, fetch_raw
 from glasswell.lineage.ids import (
     Handle,
     derivation_id,
@@ -52,16 +63,21 @@ from glasswell.lineage.models import (
     VintageRecord,
 )
 from glasswell.lineage.quarantine import QuarantineResult, quarantine
+from glasswell.lineage.recipes import build_recipe
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.lineage.vintages import open_vintage, select_production
 
 __all__ = [
     "AuditEvent",
+    "Chain",
     "ConformanceRule",
     "DerivationContext",
     "DerivationRecord",
     "DeriveEnvironment",
     "DeterminismViolation",
+    "Envelope",
+    "FetchResult",
+    "Figure",
     "Handle",
     "InputRef",
     "InvalidHandle",
@@ -69,6 +85,7 @@ __all__ = [
     "LineageError",
     "LineageNotConfigured",
     "LineageSession",
+    "LineageUnresolved",
     "ManifestRecord",
     "ManifestRegistration",
     "OutputSpec",
@@ -78,15 +95,20 @@ __all__ = [
     "RuleApplication",
     "RuleRef",
     "RuleSpecError",
+    "Series",
     "UnknownAuditEvent",
     "UnknownRuleKind",
     "VintageRecord",
     "apply_registry_rules",
     "apply_rules",
+    "attach_lineage",
+    "build_recipe",
     "current_session",
     "derivation_id",
     "derive",
     "emit",
+    "fetch_raw",
+    "figure",
     "format_handle",
     "format_selector",
     "lineage_session",
@@ -99,5 +121,9 @@ __all__ = [
     "parse_selector",
     "quarantine",
     "register_manifest",
+    "resolve_chain",
+    "resolve_chains",
     "select_production",
+    "series",
+    "to_json",
 ]

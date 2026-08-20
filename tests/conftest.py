@@ -12,12 +12,15 @@ import psycopg
 import pytest
 
 from glasswell.db.migrate import migrate
+from glasswell.lineage.fetch import RAW_ROOT_ENV
+from glasswell.lineage.models import DeriveEnvironment
 
 POSTGIS_IMAGE = "postgis/postgis:16-3.4"
 TEMPLATE_DATABASE = "glasswell_template"
 READY_TIMEOUT_SECONDS = 90
 
 FIXTURE_ENV_ID = "env_test"
+LINEAGE_FIXTURE_ENV_ID = "env_lineage_fixture"
 FIXTURE_SOURCES = ("nd_mpr_xlsx", "tx_pdq_dsv", "nm_ocd_wcproduction")
 
 _docker_environment: dict[str, str] | None = None
@@ -199,3 +202,31 @@ def empty_db(postgres_server: str) -> Iterator[psycopg.Connection]:
 @pytest.fixture
 def now() -> datetime:
     return datetime(2026, 8, 1, 5, 2, 11, tzinfo=UTC)
+
+
+@pytest.fixture
+def raw_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A throwaway raw zone; the env var keeps any resolver in the run away from /srv."""
+    root = tmp_path / "raw"
+    root.mkdir()
+    monkeypatch.setenv(RAW_ROOT_ENV, str(root))
+    return root
+
+
+@pytest.fixture
+def lineage_env(db: psycopg.Connection) -> DeriveEnvironment:
+    """A pinned environment row, so derive()'s NOT NULL env_id FK is satisfiable."""
+    with db.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.environments (env_id, python_version, threads, lockfile_sha256)"
+            " values (%s, '3.12.10', 1, %s) on conflict (env_id) do nothing",
+            (LINEAGE_FIXTURE_ENV_ID, "0" * 64),
+        )
+    return DeriveEnvironment(
+        code_version="git:0000test", code_dirty=False, env_id=LINEAGE_FIXTURE_ENV_ID
+    )
+
+
+@pytest.fixture
+def api_client(db: psycopg.Connection) -> None:
+    pytest.skip("glasswell.api does not exist yet; P4 replaces this fixture body")

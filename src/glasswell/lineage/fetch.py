@@ -1,0 +1,255 @@
+"""fetch_raw(): bytes into the raw zone, a manifest row, and the derivation that links them.
+
+Layout is SB-07 §2.3 under SB-06's root (plan conflict C1). The raw zone is the truth and
+Postgres is the index: `manifest.json` beside each payload is the byte-identical row.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import os
+import re
+import tempfile
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
+from pathlib import Path
+from typing import Any
+
+import httpx
+import psycopg
+from psycopg.rows import dict_row
+
+from glasswell.lineage.audit import emit
+from glasswell.lineage.capture import derive
+from glasswell.lineage.manifests import register_manifest
+from glasswell.lineage.models import AcquisitionMethod, ManifestRecord, OutputSpec
+from glasswell.lineage.serialization import canonical_json, json_ready
+
+RAW_ROOT_ENV = "GLASSWELL_RAW_ROOT"
+DEFAULT_RAW_ROOT = Path("data/raw")
+MANIFEST_FILENAME = "manifest.json"
+PAYLOAD_STEM = "payload"
+FILE_MODE = 0o444
+DIRECTORY_MODE = 0o555
+
+_CHUNK_BYTES = 1 << 20
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+
+@dataclass(frozen=True, slots=True)
+class FetchResult:
+    manifest: ManifestRecord
+    created: bool
+    unchanged: bool
+    payload_path: Path
+
+
+@dataclass(frozen=True, slots=True)
+class _Download:
+    path: Path
+    sha256: str
+    size_bytes: int
+    status: int
+    headers: Mapping[str, str]
+    redirect_chain: list[str]
+
+
+def resolve_raw_root(explicit: Path | str | None = None) -> Path:
+    """Explicit argument, then `GLASSWELL_RAW_ROOT`, then a repo-local default — never /srv."""
+    if explicit is not None:
+        return Path(explicit)
+    return Path(os.environ.get(RAW_ROOT_ENV) or DEFAULT_RAW_ROOT)
+
+
+def _slug(source_key: str) -> str:
+    return _SLUG_RE.sub("-", source_key.lower()).strip("-") or "artifact"
+
+
+def _extension(source_key: str) -> str:
+    return Path(source_key).suffix or ".bin"
+
+
+def _download_to(url: str, destination: Path, client: httpx.Client | None) -> _Download:
+    session = client or httpx.Client(follow_redirects=True, timeout=60.0)
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with session.stream("GET", url) as response:
+            response.raise_for_status()
+            with destination.open("wb") as handle:
+                for chunk in response.iter_bytes(_CHUNK_BYTES):
+                    digest.update(chunk)
+                    size += len(chunk)
+                    handle.write(chunk)
+            return _Download(
+                path=destination,
+                sha256=digest.hexdigest(),
+                size_bytes=size,
+                status=response.status_code,
+                headers=dict(response.headers),
+                redirect_chain=[str(previous.url) for previous in response.history],
+            )
+    finally:
+        if client is None:
+            session.close()
+
+
+def _upstream_mtime(headers: Mapping[str, str]) -> datetime | None:
+    raw = headers.get("last-modified")
+    if not raw:
+        return None
+    try:
+        return parsedate_to_datetime(raw)
+    except (TypeError, ValueError):  # a malformed upstream date is not a fetch failure
+        return None
+
+
+def _acquisition_params(download: _Download) -> dict[str, Any]:
+    """SB-07 §2.4 for https_get: what the server said, recorded where it can be audited."""
+    return {
+        "status": download.status,
+        "content_length": download.headers.get("content-length"),
+        "etag": download.headers.get("etag"),
+        "last_modified": download.headers.get("last-modified"),
+        "redirect_chain": download.redirect_chain,
+    }
+
+
+def _artifact_directory(
+    root: Path, source_id: str, source_key: str, fetched_at: datetime, sha256: str
+) -> Path:
+    stamp = f"{fetched_at.date().isoformat()}T{fetched_at.strftime('%H%M%S')}Z-{sha256[:12]}"
+    return root / source_id / _slug(source_key) / stamp
+
+
+def _existing_storage_uri(connection: psycopg.Connection, sha256: str) -> str | None:
+    with connection.cursor() as cursor:
+        cursor.execute("select storage_uri from lineage.manifests where sha256 = %s", (sha256,))
+        row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def _link_fetch_derivation(
+    connection: psycopg.Connection, manifest_id: str, derivation_id: str
+) -> ManifestRecord:
+    """Set after the derive block: the FK needs the derivation row to exist first."""
+    with connection.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(
+            "update lineage.manifests set fetch_derivation_id = %s"
+            " where manifest_id = %s returning *",
+            (derivation_id, manifest_id),
+        )
+        row = cursor.fetchone()
+    if row is None:
+        raise RuntimeError(f"manifest {manifest_id} vanished between insert and link")
+    return ManifestRecord(**dict(row))
+
+
+def _write_manifest_json(directory: Path, manifest: ManifestRecord) -> Path:
+    path = directory / MANIFEST_FILENAME
+    path.write_bytes(canonical_json(json_ready(manifest.model_dump())))
+    return path
+
+
+def _seal(directory: Path) -> None:
+    for entry in directory.iterdir():
+        entry.chmod(FILE_MODE)
+    directory.chmod(DIRECTORY_MODE)
+
+
+def fetch_raw(
+    connection: psycopg.Connection,
+    source_id: str,
+    source_key: str,
+    *,
+    url: str,
+    acquisition_method: AcquisitionMethod = "https_get",
+    raw_root: Path | str | None = None,
+    client: httpx.Client | None = None,
+    media_type: str | None = None,
+    license_note: str | None = None,
+    redistributable: bool = False,
+) -> FetchResult:
+    """Fetch an artifact idempotently by content hash; identical bytes re-register as a check."""
+    root = resolve_raw_root(raw_root)
+    staging = root / ".incoming"
+    staging.mkdir(parents=True, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(dir=staging, prefix="fetch-")
+    os.close(handle)
+    temporary_path = Path(temporary)
+
+    params = {
+        "url": url,
+        "acquisition_method": acquisition_method,
+        "source_id": source_id,
+        "source_key": source_key,
+    }
+
+    try:
+        try:
+            download = _download_to(url, temporary_path, client)
+        except (httpx.HTTPError, OSError) as error:
+            emit(
+                connection,
+                "raw.fetch_failed",
+                subject_type="manifest",
+                subject_id=f"{source_id}/{source_key}",
+                payload={"url": url, "reason": type(error).__name__, "detail": str(error)},
+            )
+            raise
+        # Self-stamped at completion: no regulator dates its artifacts reliably (DIR-9).
+        fetched_at = datetime.now(UTC)
+
+        # The bytes that arrived are part of this fetch's address; changed upstream bytes are
+        # the common path (§2.1), and a spec blind to them would read as a determinism failure.
+        output = OutputSpec(
+            store="file",
+            dataset=f"raw.{source_id}",
+            partition={"source_key": source_key, "sha256": download.sha256[:12]},
+        )
+        with derive("raw.fetch", output=output, params=params) as context:
+            context.set_output_hash(download.sha256)
+            existing = _existing_storage_uri(connection, download.sha256)
+            if existing is None:
+                directory = _artifact_directory(
+                    root, source_id, source_key, fetched_at, download.sha256
+                )
+                directory.mkdir(parents=True, exist_ok=True)
+                payload_path = directory / f"{PAYLOAD_STEM}{_extension(source_key)}"
+                os.replace(temporary_path, payload_path)
+            else:
+                payload_path = Path(existing)
+
+            registration = register_manifest(
+                connection,
+                sha256=download.sha256,
+                size_bytes=download.size_bytes,
+                source_id=source_id,
+                source_key=source_key,
+                acquisition_url=url,
+                acquisition_method=acquisition_method,
+                acquisition_params=_acquisition_params(download),
+                fetched_at=fetched_at,
+                storage_uri=str(payload_path),
+                media_type=media_type or download.headers.get("content-type"),
+                upstream_mtime=_upstream_mtime(download.headers),
+                upstream_etag=download.headers.get("etag"),
+                license_note=license_note,
+                redistributable=redistributable,
+            )
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+    manifest = registration.manifest
+    if registration.created:
+        manifest = _link_fetch_derivation(connection, manifest.manifest_id, context.derivation_id)
+        _write_manifest_json(payload_path.parent, manifest)
+        _seal(payload_path.parent)
+    return FetchResult(
+        manifest=manifest,
+        created=registration.created,
+        unchanged=not registration.created,
+        payload_path=payload_path,
+    )

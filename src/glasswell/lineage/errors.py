@@ -44,3 +44,21 @@ class DeterminismViolation(LineageError):
 
 class ManifestConflict(LineageError):
     """The same bytes were registered under a different source slot."""
+
+
+UNRESOLVED_REASONS = ("selector_ambiguous", "depth_exceeded", "derivation_swept", "unknown_id")
+
+
+class LineageUnresolved(LineageError):
+    """SB-07 §9.5: an auditor never gets a bare 404 — the error says where resolution stopped."""
+
+    code = "lineage_unresolved"
+
+    def __init__(self, handle: str, *, reason: str, last_resolved: str | None = None) -> None:
+        super().__init__(
+            f"{handle}: resolution stopped ({reason}); "
+            f"last resolvable node {last_resolved or 'none'}"
+        )
+        self.handle = handle
+        self.reason = reason
+        self.last_resolved = last_resolved

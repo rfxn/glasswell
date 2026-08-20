@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+import operator as _operator
+import re
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_DOWN, ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal, InvalidOperation
+from functools import lru_cache
+from typing import Any
 
 import polars as pl
 import psycopg
@@ -168,6 +172,225 @@ def _alias_join(
     return _split_on_marker(marked, rule, target_col, action, reason)
 
 
+PREDICATE_NODE_TYPES: tuple[str, ...] = (
+    "and",
+    "or",
+    "not",
+    "cmp",
+    "in",
+    "between",
+    "is_null",
+)
+
+_CMP_OPERATORS: dict[str, Callable[[pl.Expr, pl.Expr], pl.Expr]] = {
+    "==": _operator.eq,
+    "!=": _operator.ne,
+    "<": _operator.lt,
+    "<=": _operator.le,
+    ">": _operator.gt,
+    ">=": _operator.ge,
+}
+
+_COLUMN_RE = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
+_LITERAL_TYPES = (str, int, float, bool, type(None))
+_ROW_INDEX = "__glasswell_row_index"
+
+
+def _predicate_error(message: str) -> RuleSpecError:
+    return RuleSpecError(f"predicate_ast: {message}")
+
+
+def _is_list(payload: object) -> bool:
+    return isinstance(payload, (list, tuple))
+
+
+def _leaf(node: object) -> pl.Expr:
+    if not isinstance(node, Mapping) or len(node) != 1:
+        raise _predicate_error(f"{node!r} is not a column or literal leaf")
+    key, value = next(iter(node.items()))
+    if key == "col":
+        if not isinstance(value, str) or not _COLUMN_RE.match(value):
+            raise _predicate_error(f"{value!r} is not a column name")
+        return pl.col(value)
+    if key == "lit":
+        if not isinstance(value, _LITERAL_TYPES):
+            raise _predicate_error(f"{value!r} is not a scalar literal")
+        return pl.lit(value)
+    raise _predicate_error(f"{key!r} is not a leaf type; expected col or lit")
+
+
+def _junction(payload: object, symbol: str) -> pl.Expr:
+    if not _is_list(payload) or not payload:
+        raise _predicate_error(f"{symbol} takes a non-empty list of nodes")
+    expression = _compile_predicate(payload[0])
+    for node in payload[1:]:
+        operand = _compile_predicate(node)
+        expression = expression & operand if symbol == "and" else expression | operand
+    return expression
+
+
+def _cmp(payload: object) -> pl.Expr:
+    if not _is_list(payload) or len(payload) != 3:
+        raise _predicate_error("cmp takes [left, operator, right]")
+    left, symbol, right = payload
+    if symbol not in _CMP_OPERATORS:
+        raise _predicate_error(f"{symbol!r} is not an allowlisted comparison operator")
+    return _CMP_OPERATORS[str(symbol)](_leaf(left), _leaf(right))
+
+
+def _in(payload: object) -> pl.Expr:
+    if not _is_list(payload) or len(payload) != 2:
+        raise _predicate_error("in takes [value, [option, ...]]")
+    value, options = payload
+    if not _is_list(options) or not options:
+        raise _predicate_error("in takes a non-empty option list")
+    if any(not isinstance(option, _LITERAL_TYPES) for option in options):
+        raise _predicate_error("in options must be scalar literals")
+    return _leaf(value).is_in(list(options))
+
+
+def _between(payload: object) -> pl.Expr:
+    if not _is_list(payload) or len(payload) != 3:
+        raise _predicate_error("between takes [value, low, high]")
+    value, low, high = payload
+    return _leaf(value).is_between(_leaf(low), _leaf(high), closed="both")
+
+
+_PREDICATE_COMPILERS: dict[str, Callable[[Any], pl.Expr]] = {
+    "and": lambda payload: _junction(payload, "and"),
+    "or": lambda payload: _junction(payload, "or"),
+    "not": lambda payload: _compile_predicate(payload).not_(),
+    "cmp": _cmp,
+    "in": _in,
+    "between": _between,
+    "is_null": lambda payload: _leaf(payload).is_null(),
+}
+
+
+def _compile_predicate(node: object) -> pl.Expr:
+    """SB-07 §6.1: an allowlisted AST, never eval — rules are data and data is reachable."""
+    if not isinstance(node, Mapping) or len(node) != 1:
+        raise _predicate_error(f"{node!r} is not a single-key predicate node")
+    node_type, payload = next(iter(node.items()))
+    if node_type not in PREDICATE_NODE_TYPES:
+        raise _predicate_error(
+            f"{node_type!r} is not an allowlisted node type; "
+            f"expected one of {', '.join(PREDICATE_NODE_TYPES)}"
+        )
+    return _PREDICATE_COMPILERS[str(node_type)](payload)
+
+
+def _validity_filter(
+    frame: pl.DataFrame, rule: ConformanceRule
+) -> tuple[pl.DataFrame, list[QuarantineBatch]]:
+    predicate = rule.spec.get("predicate_ast")
+    _require(predicate is not None, rule, "predicate_ast is required")
+    action = str(rule.spec.get("on_fail", "quarantine"))
+    _require(action == "quarantine", rule, f"on_fail {action!r} is not supported yet")
+    reason = rule.spec.get("reason_code")
+    _require(isinstance(reason, str) and reason, rule, "reason_code is required")
+
+    # A row the predicate cannot judge is not a valid row; it is quarantined, never assumed.
+    keep = _compile_predicate(predicate).fill_null(False)
+    kept = frame.filter(keep)
+    rejected = frame.filter(~keep)
+    if rejected.is_empty():
+        return kept, []
+    return kept, [QuarantineBatch(reason_code=str(reason), rule_id=rule.rule_id, frame=rejected)]
+
+
+def _parse_directive(
+    frame: pl.DataFrame, rule: ConformanceRule
+) -> tuple[pl.DataFrame, list[QuarantineBatch]]:
+    """Validation only: this kind configures a reader, which consumes the spec in ingest."""
+    declared = [str(column) for column in rule.spec.get("expected_columns") or ()]
+    if not declared:
+        declared = [field for field in rule.applies_to_fields if field != "all"]
+    if not declared:
+        return frame, []
+
+    policy = str(rule.spec.get("header_policy", "contains"))
+    missing = [column for column in declared if column not in frame.columns]
+    extra = [c for c in frame.columns if c not in declared] if policy == "declared" else []
+    if not missing and not extra:
+        return frame, []
+    # The header failed, not any one row: nothing parsed under it can be trusted.
+    return frame.clear(), [
+        QuarantineBatch(reason_code="schema_mismatch", rule_id=rule.rule_id, frame=frame)
+    ]
+
+
+@lru_cache(maxsize=64)
+def _transformer(source_epsg: int, target_epsg: int):
+    # Imported lazily: pyproj loads the PROJ database, and most spine callers never project.
+    from pyproj import Transformer
+
+    return Transformer.from_crs(f"EPSG:{source_epsg}", f"EPSG:{target_epsg}", always_xy=True)
+
+
+def _coordinate_columns(frame: pl.DataFrame, rule: ConformanceRule) -> tuple[str, str]:
+    detect = rule.spec.get("detect") or {}
+    _require(isinstance(detect, Mapping), rule, "detect must be an object")
+    x = detect.get("x_col") or detect.get("lon_col") or rule.spec.get("x_col")
+    y = detect.get("y_col") or detect.get("lat_col") or rule.spec.get("y_col")
+    # The ND seeds keep detect for the .prj signature and name the pair in applies_to_fields.
+    if not y:
+        y = next((f for f in rule.applies_to_fields if f.lower().startswith("lat")), None)
+    if not x:
+        x = next((f for f in rule.applies_to_fields if f.lower().startswith("lon")), None)
+    _require(x and y, rule, "detect must name x_col and y_col, or applies_to_fields a lat/lon pair")
+    for column in (str(x), str(y)):
+        _require(column in frame.columns, rule, f"{column} is not a column of the frame")
+    return str(x), str(y)
+
+
+def _datum_transform(
+    frame: pl.DataFrame, rule: ConformanceRule
+) -> tuple[pl.DataFrame, list[QuarantineBatch]]:
+    x_col, y_col = _coordinate_columns(frame, rule)
+    target = rule.spec.get("target_epsg")
+    _require(isinstance(target, int), rule, "target_epsg is required")
+    detect = rule.spec.get("detect") or {}
+    epsg_col = detect.get("epsg_col")
+    source = rule.spec.get("source_epsg")
+    _require(
+        isinstance(source, int) or epsg_col,
+        rule,
+        "source_epsg or detect.epsg_col is required; a datum is never assumed",
+    )
+    if epsg_col:
+        _require(epsg_col in frame.columns, rule, f"{epsg_col} is not a column of the frame")
+
+    work = frame.with_row_index(_ROW_INDEX)
+    placeable = pl.col(x_col).is_not_null() & pl.col(y_col).is_not_null()
+    if epsg_col:
+        placeable = placeable & pl.col(str(epsg_col)).is_not_null()
+    placed = work.filter(placeable)
+    unplaceable = work.filter(~placeable)
+
+    groups = placed.partition_by(str(epsg_col)) if epsg_col else [placed]
+    transformed: list[pl.DataFrame] = []
+    for group in groups:
+        if group.is_empty():
+            continue
+        code = int(group[str(epsg_col)][0]) if epsg_col else int(str(source))
+        xs, ys = _transformer(code, int(str(target))).transform(
+            group[x_col].to_list(), group[y_col].to_list()
+        )
+        transformed.append(group.with_columns(pl.Series(x_col, xs), pl.Series(y_col, ys)))
+
+    placed = pl.concat(transformed) if transformed else placed
+    finite = pl.col(x_col).is_finite() & pl.col(y_col).is_finite()
+    diverged = placed.filter(~finite)
+    kept = placed.filter(finite).sort(_ROW_INDEX).drop(_ROW_INDEX)
+    rejected = pl.concat([unplaceable, diverged]).sort(_ROW_INDEX).drop(_ROW_INDEX)
+    if rejected.is_empty():
+        return kept, []
+    return kept, [
+        QuarantineBatch(reason_code="datum_undetermined", rule_id=rule.rule_id, frame=rejected)
+    ]
+
+
 def _unimplemented(kind: str) -> Executor:
     def executor(
         frame: pl.DataFrame, rule: ConformanceRule
@@ -183,10 +406,10 @@ _EXECUTORS: dict[str, Executor] = {
     "unit_conform": _unit_conform,
     "vocab_map": _vocab_map,
     "alias_join": _alias_join,
-    "datum_transform": _unimplemented("datum_transform"),
+    "datum_transform": _datum_transform,
     "key_composite": _unimplemented("key_composite"),
-    "parse_directive": _unimplemented("parse_directive"),
-    "validity_filter": _unimplemented("validity_filter"),
+    "parse_directive": _parse_directive,
+    "validity_filter": _validity_filter,
     "code_ref": _unimplemented("code_ref"),
 }
 
