@@ -40,23 +40,24 @@ jobs:
 
       - name: Local links and image references resolve
         run: |
-          set -euo pipefail
+          set -uo pipefail
           FAIL=0
           while IFS= read -r md; do
             # markdown links, plus src= and srcset= in the inline HTML blocks
-            grep -oE '\]\([^)]+\)|src="[^"]+"|srcset="[^"]+"' "$md" \
-              | sed -E 's/^\]\(//; s/\)$//; s/^srcset="//; s/^src="//; s/"$//' \
-              | sed -E 's/#.*$//' \
-              | while IFS= read -r target; do
-                  [ -z "$target" ] && continue
-                  case "$target" in
-                    http://*|https://*|mailto:*) continue ;;
-                  esac
-                  if [ ! -e "$target" ]; then
-                    echo "BROKEN in $md: $target"
-                    exit 1
-                  fi
-                done || FAIL=1
+            refs=$(grep -oE '\]\([^)]+\)|src="[^"]+"|srcset="[^"]+"' "$md") || true  # grep exits 1 on no matches; a file with no links is not an error
+            [ -z "$refs" ] && continue
+            while IFS= read -r ref; do
+              target=$(printf '%s' "$ref" \
+                | sed -E 's/^\]\(//; s/\)$//; s/^srcset="//; s/^src="//; s/"$//; s/#.*$//')
+              [ -z "$target" ] && continue
+              case "$target" in
+                http://*|https://*|mailto:*) continue ;;
+              esac
+              if [ ! -e "$target" ]; then
+                echo "BROKEN in $md: $target"
+                FAIL=1
+              fi
+            done <<< "$refs"
           done < <(git ls-files '*.md')
           exit "$FAIL"
 
