@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  collateral:
+    name: Collateral checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install libxml2-utils
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+
+      - name: SVG well-formedness
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          FAIL=0
+          for f in assets/*.svg; do
+            xmllint --noout "$f" || { echo "MALFORMED: $f"; FAIL=1; }
+          done
+          exit "$FAIL"
+
+      - name: SVG accessibility metadata
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          FAIL=0
+          for f in assets/*.svg; do
+            grep -q 'role="img"'   "$f" || { echo "missing role=img: $f";   FAIL=1; }
+            grep -q 'aria-label='  "$f" || { echo "missing aria-label: $f"; FAIL=1; }
+          done
+          exit "$FAIL"
+
+      - name: Local links and image references resolve
+        run: |
+          set -euo pipefail
+          FAIL=0
+          while IFS= read -r md; do
+            # markdown links, plus src= and srcset= in the inline HTML blocks
+            grep -oE '\]\([^)]+\)|src="[^"]+"|srcset="[^"]+"' "$md" \
+              | sed -E 's/^\]\(//; s/\)$//; s/^srcset="//; s/^src="//; s/"$//' \
+              | sed -E 's/#.*$//' \
+              | while IFS= read -r target; do
+                  [ -z "$target" ] && continue
+                  case "$target" in
+                    http://*|https://*|mailto:*) continue ;;
+                  esac
+                  if [ ! -e "$target" ]; then
+                    echo "BROKEN in $md: $target"
+                    exit 1
+                  fi
+                done || FAIL=1
+          done < <(git ls-files '*.md')
+          exit "$FAIL"
+
+      - name: No AI-assistant attribution
+        run: |
+          set -euo pipefail
+          if git grep -nEi 'co-authored-by:[[:space:]]*claude|generated with \[?claude|anthropic\.com/claude-code' -- . ; then
+            echo "AI attribution found — remove before merge"
+            exit 1
+          fi
+          exit 0

@@ -1,0 +1,27 @@
+name: Bug report
+description: Something is broken that is not a wrong number
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Include the endpoint, command, or UI action, and the actual result
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: A curl invocation or the shortest sequence that shows it
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit

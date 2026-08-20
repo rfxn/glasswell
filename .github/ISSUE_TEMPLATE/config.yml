@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security reports (private)
+    url: https://github.com/rfxn/glasswell/blob/main/SECURITY.md
+    about: Do not open a public issue for a vulnerability — see the security policy
+  - name: Scope and intent
+    url: https://github.com/rfxn/glasswell/blob/main/blueprint.md
+    about: The blueprint is the contract; anything not in scope there is out until it changes

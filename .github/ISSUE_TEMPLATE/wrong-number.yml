@@ -1,0 +1,52 @@
+name: Wrong number
+description: A served figure looks wrong — forecast, valuation, production, spacing, or inventory
+labels: ["correctness"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The lineage chain exists so a bug report can name the derivation rather than
+        describe a symptom. Paste the `?explain=true` output and this becomes a
+        five-minute fix instead of an archaeology project.
+  - type: input
+    id: figure
+    attributes:
+      label: The figure
+      description: What was shown, where, and what value
+      placeholder: "NPV10 = $4.81 MM on the well card for API-10 33053xxxxx"
+    validations:
+      required: true
+  - type: input
+    id: expected
+    attributes:
+      label: What you expected, and why
+      placeholder: "~$2.1 MM — the deck is $65 flat and cum12 is 118 Mbo"
+    validations:
+      required: true
+  - type: textarea
+    id: explain
+    attributes:
+      label: "`?explain=true` output"
+      description: The full lineage block — derivation, conformance rules applied, manifest
+      render: json
+    validations:
+      required: false
+  - type: input
+    id: artifact
+    attributes:
+      label: Artifact id
+      description: forecast_id, valuation_id, or run_id if you have one
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Where do you think it went wrong?
+      options:
+        - "Unsure"
+        - "Ingest / parsing"
+        - "Conformance (a cross-source mapping)"
+        - "Allocation"
+        - "Features"
+        - "Model / calibration"
+        - "Economics"
+        - "Geometry / spacing / datum"
+        - "Rendering only — the underlying number is fine"

@@ -1,0 +1,40 @@
+name: Conformance gap
+description: Two sources disagree about a field and no rule governs the mapping
+labels: ["conformance", "R8"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Rule R8: every cross-source mapping decision is a row in `conformance_rules`
+        with a rationale and an effective date. A mapping that exists only in code
+        is the bug this template is for.
+  - type: input
+    id: field
+    attributes:
+      label: Canonical field
+      placeholder: "production_observation.stream"
+    validations:
+      required: true
+  - type: textarea
+    id: disagreement
+    attributes:
+      label: How the sources disagree
+      description: Name each source, what it reports, and where the two cannot both be right
+      placeholder: |
+        TX RRC classifies X as condensate under lease-level reporting.
+        NM OCD classifies the same stream as oil at the well level.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed rule and rationale
+      description: What should canonical do, and why that choice rather than the other one
+    validations:
+      required: false
+  - type: input
+    id: effective
+    attributes:
+      label: Effective from
+      description: The file vintage or date at which the rule should start applying
+      placeholder: "2026-01 file vintage"
