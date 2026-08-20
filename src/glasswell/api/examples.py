@@ -13,9 +13,15 @@ KEY_HEADER = "X-Glasswell-Key"
 REQUEST_EXAMPLE_KEY = "x-glasswell-request-example"
 GLOSSARY_KEY = "x-glasswell-glossary"
 
-EXAMPLE_API10 = "3305301234"
+EXAMPLE_API10 = "3305310451"
 EXAMPLE_MANIFEST_ID = "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 EXAMPLE_DERIVATION_ID = "drv_obqajdni25f25zmxcz7a"
+
+CONTENT_ADDRESS_NOTE = (
+    " The example id is the contract fixture's. `drv_`, `man_` and `qr_` ids are content"
+    " addresses over bytes and run parameters, so they differ per deployment by construction"
+    " — take a live one from the `d` handle on any served figure, or from `/v1/manifests`."
+)
 EXAMPLE_RULE_ID = "cr_nd_stream_vocab_1"
 EXAMPLE_SOURCE_ID = "nd_mpr_xlsx"
 EXAMPLE_QUARANTINE_ID = "qr_01contract0001"
