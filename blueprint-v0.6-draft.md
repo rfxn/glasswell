@@ -1,0 +1,1056 @@
+# glasswell
+
+**Product and engineering blueprint. v0.6-draft (consolidated, non-delta).**
+Personal platform: well-level upstream analytics on public data, API-first, map-first, agent-ready, multi-basin, fully self-explaining.
+
+Owner: Ryan MacDonald. Status: pre-build. This document is the contract to spec against; anything not in scope here is out until this doc changes.
+
+**Reconstruction tags.** v0.5 was a delta document over a v0.4 that is confirmed lost and unrecoverable (empty git object store; no copy anywhere on disk). This version restates everything in one place. Items marked **[R]** are reconstructed from an anchor that survives in v0.5 (the anchor is cited). Items marked **[D]** are re-derived from the system's own logic — personas, success criteria, data model, API surface, owner direction — and need one owner eyeball. Untagged content is either verbatim-from-v0.5, new in v0.6, or a mechanical completion. §11 lists every [D] item for one-pass review.
+
+---
+
+## 0. Change log
+
+| Version | Change | Why |
+|---|---|---|
+| v0.2 | Economics, scenarios, benchmark, activity, agent layer | Dollars, generative loop, control group, leading indicators, completeness test |
+| v0.3 | Multi-basin, allocation v0, quality scorecard, forecast ledger, transfer | Permian; allocation as highest-learning build; quality measured not asserted; compounding track record |
+| v0.4 | Glass box: lineage, explain, audit stream, recipes, drawer, field notes | Transparency as trust mechanism and product thesis |
+| v0.5 | Rename to glasswell; canonical model thesis (§3.0) with rule R8 and conformance registry; competitor harvest (three-stream, analogs, type-curve builder UI, econ tornado, operator league table, AOI alerts, portfolio sets, inventory v0) | The unified model is the product; conformance decisions become served data; low-effort/high-value features on existing machinery |
+| **v0.6-draft** | **Consolidation.** v0.5 was a delta over an unrecoverable base; every "stands as v0.4" reference was unresolvable, not merely unlinked. This version restates all components, rules, epics, stories, protocols, decisions, risks, open questions, phases, and glossary in full. It also closes the blockers surfaced by the v0.5 defect assessment and applies owner directions DIR-1..DIR-9: bitemporal production (DIR-2), allocation as derived artifact (DIR-3), a first-class implementation stack section (DIR-4), residual league metric (DIR-5), Cloudflare Access exposure and three-scope auth (DIR-6), host placement and sizing (DIR-7), glossary-as-data as a product feature (DIR-8), and verified data-source realities including free NDIC well-level production and NM-before-TX Permian ordering (DIR-9). §7 build phases are rewritten, not patched, with an honest re-estimate. | A delta document with no base is not buildable. Consolidation is the gate for every sub-blueprint. |
+
+---
+
+## 1. Purpose and framing
+
+### 1.1 Dual mandate
+
+**Mandate A, the stake in the sand.** Recreate the core product loop sold by Novi Labs, Enverus, ComboCurve and Petro.ai, in a garage, on public data, by one builder. The point is a measured demonstration: what is reproducible without the proprietary network, and therefore where the real floor sits under the category's value. The closing artifact is a capability matrix against the incumbents' public product surfaces, with evidence per row and honest gaps stated.
+
+**Mandate B, the learning instrument.** The system itself must teach. If a visitor cannot trace any figure on screen back to a checksummed regulator file, the system has failed Mandate B regardless of accuracy. Mandate B also has a vocabulary obligation: the domain's jargon is a barrier to entry, and a system that teaches must define its own terms in place, from data (§5 E18, DIR-8).
+
+These are one mandate seen from two sides. Incumbents sell trust through brand and curation claims from a black box. A garage build cannot compete on brand or data volume, so its only trust mechanism is total transparency. Glass-box lineage is simultaneously the proof of capability, the pedagogy, and a live product thesis: audit-grade provenance is a feature this category should ship and does not.
+
+Positioning note: the "against the incumbents" framing is internal motivation. Anything public-facing is gated behind the IP carve-out (§8.2 R-01). The capability matrix is worded as what a garage build proves about the floor.
+
+**Attribution correction (v0.6).** v0.5 treated "EVA" as an Enverus product. It is not. EVA is Turing Analytics' platform (Calgary, built with McDaniel & Associates), acquired by Novi Labs in April 2026. Enverus's flagship is **PRISM**. Every incumbent reference in this document and in the E16 matrix uses the corrected attribution; getting a competitor's product name wrong is exactly the class of error that discredits an evidence-linked artifact (S10).
+
+### 1.2 Questions this project exists to answer
+
+1. Where does public data fail, and what exactly does proprietary data buy?
+2. How large is the ML advantage over type curves when measured honestly?
+3. What does the forecast-to-dollars path look like, and who consumes which output?
+4. What does an API-complete analytics product feel like to build and operate?
+5. Where does the agent layer fit, and what does it demand from the API?
+6. What is the measured error rate of public data, and what does allocation cost in accuracy?
+7. Does a model trained in one basin transfer to another, and what breaks when it moves?
+8. What does audit-grade lineage cost, and is it viable as a product feature?
+9. How much of the category's product surface is schema and conformance work rather than modeling, and can conformance-as-data stand as a differentiator?
+
+### 1.3 Naming
+
+**glasswell**: the glass-box thesis plus the domain object, one word, lowercase, in-house style. Renamed from basinforge at v0.5 because the project's center of gravity moved from "multi-basin, hand-built" to "fully self-explaining"; the name should carry the thesis. basinforge is retained as a repo alias so prior notes resolve.
+
+**What this is not.** Not a commercial product. Not multi-user in the product sense (§8.1 D-12 states the precise boundary). Not an ownership graph. Not daily production. Not a lineage ontology platform. Not an OSDU implementation (mapping memo only, §3.0.6).
+
+---
+
+## 2. Product brief
+
+### 2.1 Problem statement
+
+Upstream capital decisions (drill, buy, lend, trade) all reduce to: given rock, design, and depletion by neighbors, what will a well produce and what is that worth. Incumbent workflow is manual type curves in spreadsheets. Vendors sell curated data plus ML forecasts plus economics plus dashboards, from black boxes. This project rebuilds the public-data tier of that stack end to end, across two structurally different reporting regimes, as a fully self-explaining system.
+
+### 2.2 Personas
+
+| Persona | Decision | Needs |
+|---|---|---|
+| Reservoir engineer | Where and how to drill next | Scenario forecasts, spacing context, design sensitivity, analogs |
+| A&D / PE analyst | Buy or pass | Acreage rollups, NPV per well, breakeven distribution, inventory, confidence per number |
+| Minerals buyer | Price a royalty interest | PDP forecasts under a supplied NRI, valuation at a deck |
+| Equity analyst | Long/short an operator | Activity pace, design evolution, capital efficiency, league tables |
+| OFS BD | Which operators to call | Permits, DUC proxy, activity heatmaps, AOI alerts |
+| Agent / developer | Answer questions programmatically | Complete self-describing API |
+| Auditor / skeptic | Trust or reject a number | Full derivation to raw source; repro recipe; conformance rules |
+| Newcomer / learner | Understand what any of this means | In-place definitions for every surfaced term (DIR-8) |
+
+The agent and the auditor are first-class. If the agent cannot do it, the API is incomplete. If the auditor cannot trace it, the number does not ship. The learner persona is new in v0.6 and is Mandate B's acceptance surface. [D]
+
+**Minerals-buyer scope resolution.** NRI is a **user-supplied scalar input** on the valuation request, defaulting to 0.75 with a stated warning, not a derived quantity. glasswell does not build an ownership graph and never claims to know the actual burden stack for a tract. The persona is served as "price this interest at an NRI you supply", which is the honest boundary. [D]
+
+### 2.3 Scope
+
+**In, phase order:**
+
+- **Basin 1: North Dakota (Bakken / Three Forks).** Well-level monthly production (free NDIC MPR XLSX, 2015-05 → present; PDF era 2003-01 → 2015-04 deferred within P1), well spine and attributes (`OGD_Wells`), lateral geometry (`OGD_Horizontals_Line`), directional surveys (`NDOGD_Surveys`), spacing units, PLSS sections and townships, pre-spud permits, FracFocus completion design.
+- **Basin 2: Permian, ordered NM before TX (DIR-9).**
+  - **NM (Delaware).** OCD well-level production (`wcproduction`), well and completion history, spacing units, POD↔well-completion crosswalk. Well-level, so it exercises the Permian canonical model with the allocation variable removed.
+  - **TX (Midland, TX Delaware).** RRC PDQ lease production (`OG_LEASE_CYCLE`), the in-dump well↔lease crosswalk (`OG_WELL_COMPLETION`) plus the independent Wellbore Query CSV, wellbore master (`dbf900.txt.gz`), W-2/G-1 completion feed, W-1 permits, county GIS well and survey layers (NAD27); allocation v0 with error bounds validated against both crosswalks and against NM well-level behaviour.
+- **Cross-cutting:** three-stream forecasting (oil primary; gas and water secondary), type curves, gradient-boosted quantile model with conformal calibration, DCF economics with sensitivities, scenarios, analogs, inventory v0 (ND-scoped, §8.1 D-11), benchmark harness, forecast ledger, quality scorecard, conformance registry, glossary-as-data, glass-box lineage, vector-tile map, agent gateway.
+
+**Out:** mineral ownership and title, daily production, multi-tenant SaaS auth (single-tenant key auth is in — see §3.6.8), distributed infrastructure, mobile, lineage ontology platform, rig and frac-crew tracking (documented moat item), interpreted maturity mapping (moat item), news and research layer, TX directional survey station data (no free parseable source exists — honest gap, tagged data-unreachable).
+
+**Deferred until after P8:** Canada, NGL three-stream economics beyond simple gas pricing, fault-aware geology, additional basins, TX inventory geometry (§8.1 D-11), public release (IP-gated).
+
+### 2.4 Success criteria
+
+**System outcomes.**
+
+- **S1.** A stranger with the OpenAPI doc and a guest key reproduces every number in the UI.
+- **S2.** 20k+ laterals with model-driven styling at interactive frame rates on one VM.
+- **S3.** Scenario returns forecast plus NPV in under 3 seconds (p95, single scenario, warm).
+- **S4.** Benchmark artifact per basin, sliced, type curve vs ML on an identical temporal holdout.
+- **S5.** Agent passes the 10-question suite (§3.6.10) via public tools, every figure traceable.
+- **S6.** Allocation v0 with measured error bounds from both validators (the second RRC crosswalk and the NM well-level analogue — §4F).
+- **S7.** Forecast ledger live with one graded cycle complete, graded as-of the forecast's own vintage.
+- **S8.** Quality scorecard published, reproducible from the API.
+- **S9.** Glass box holds: any UI number to raw manifest in 3 or fewer interactions and one `/explain` call.
+- **S10.** Capability matrix with evidence links and honest gaps, each gap tagged data-unreachable or effort-unreachable.
+- **S11.** Conformance registry served: every cross-source number can cite the rules that shaped it.
+- **S12.** Inventory demo: remaining locations for a chosen ND township with forecasts and NPV at a deck. *(Conditional — see below.)*
+- **S13.** Glossary-as-data: every term surfaced in a UI label, chart axis, table header, or API field description resolves through `/v1/glossary`, and CI proves coverage. *(New in v0.6, DIR-8.)*
+- **S14.** As-of reproducibility: any served number can be re-requested at a prior report vintage and returns what the system published at that vintage. *(New in v0.6, DIR-2.)* [D]
+
+**Conditionality (resolves assessment D-16).** S1–S11, S13 and S14 are unconditional. **S12 is conditional on E17 surviving the cut order in §7.4.** If E17 is cut, S12 is not silently failed: the E16 capability matrix records inventory as *effort-unreachable* with the cut decision cited. No other success criterion is conditional. [D]
+
+**Fluency outcomes.** These are Mandate B's personal-competence measures. F1–F8 map one-to-one onto the research questions in §1.2; F9 is domain fluency proper; F10 and F11 were added at v0.5 and v0.6. [R] — the mapping is recovered from v0.5 L93, where F10 restates §1.2 question 9 near-verbatim.
+
+- **F1.** Can explain where public data fails and what exactly proprietary data buys, with measurements, not opinion.
+- **F2.** Can quantify the ML advantage over type curves honestly, including the cases where it is zero.
+- **F3.** Can walk the forecast-to-dollars path end to end and name which consumer uses which output.
+- **F4.** Can describe what it costs to build and operate an API-complete analytics product, from ingest to agent.
+- **F5.** Can state where the agent layer fits and what it demands from an API that a human UI does not.
+- **F6.** Can state the measured error rate of public data and what allocation costs in accuracy.
+- **F7.** Can state whether a model transfers across basins and precisely what breaks when it moves.
+- **F8.** Can state what audit-grade lineage costs in build time and runtime, and whether it is viable as a product feature.
+- **F9.** Can hold a working conversation in the domain's own vocabulary — DCA, EUR, IP90, GOR, water cut, WI/NRI, spacing and parent-child, datum, allocation, scout ticket — without a cheat sheet. The glossary (E18) is the instrument that forces this. [D]
+- **F10.** Can explain why cross-source conformance is most of the ETL moat, with the conformance registry as evidence.
+- **F11.** Can explain the restatement problem — that no regulator publishes an as-reported history and no production figure is ever final — and why bitemporal capture is load-bearing rather than fastidious. *(New in v0.6.)* [D]
+
+### 2.5 Design philosophy: glass box
+
+1. **No naked numbers.** Every served figure carries a derivation handle. Untraceable equals wrong.
+2. **The kitchen is the product.** Preparation, cleaning decisions, rejected rows, and conformance rules are queryable surfaces. The quarantine table has an endpoint.
+3. **Reproducibility is an output.** Every artifact carries the recipe that regenerates it, and the recipe declares which of three determinism classes the artifact belongs to (§4C.5): **D1** byte-identical in any pinned environment — manifests, all staging, canonical and mart Parquet, type curves, feature matrices, recipe and manifest JSON; **D2** environment-pinned byte-identical and cross-environment prediction-equivalent within a recorded `probe_tolerance` — LightGBM model artifacts and conformal calibrators; **D3** semantically identical after a declared normalization against a per-endpoint or per-layer `volatile_fields` list — API responses and vector tiles. Naming which artifacts land where is the point: an unqualified byte-for-byte promise is tested against a model artifact first, and fails.
+4. **Quiet by default, verbose on request.** Lean responses; `?explain=true` inlines lineage on reads; the drawer holds the chain.
+5. **Append-only memory.** One audit stream; restatements are new vintages, never edits (DIR-2).
+6. **Estimates never pose as observations.** Every number carries its granularity and its method. An allocated volume is labelled allocated everywhere it appears (DIR-3).
+7. **The build emits learning.** Findings memos live at `/notebook` with live data links, and every term the system surfaces is defined in the system.
+
+---
+
+## 3. Architecture brief
+
+*(The cumulative "what changed and why" table lives in §0 and is not repeated here.)*
+
+### 3.0 Canonical model thesis
+
+The claim: in this category, the unified data model is the product. Novi's loudest technical claim is its Data Engine; the reason OSDU exists at all is that no two schemas agree. Rebuilding the canonical model, and exposing every decision inside it, is therefore Mandate A work, not plumbing.
+
+**3.0.1 Three layers.** *Staging* is source-faithful: one schema per regulator file type, no opinions, quarantine for rejects. *Canonical* is conformed: one schema for the domain, every mapping decision recorded, observations at their native granularity only. *Marts* serve: features, models, forecasts, valuations, allocations, tiles, rollups — all derived from canonical only. **Staging never serves; marts never ingest; canonical never estimates.** The third clause is new in v0.6 and is what resolves the allocation-placement blocker (DIR-3). Because canonical never estimates, every canonical observation carries `granularity = observed`; the level the regulator reported at is carried separately in `reporting_level` (R5).
+
+**3.0.2 Canonical entities.** Well (API-10), wellbore (API-12; see 3.0.5), operator, operator alias, lease (TX), **well completion pool** (the NM OCD reporting unit: one or more completions in a named pool, reported together — `canonical.well_completions`, keyed on the OCD completion key with its member API-10s), production observation (entity, month, report vintage, stream, volume, unit, granularity, reporting level), completion event, spatial features (surface point, bottomhole, lateral geometry), formation top, permit, land unit, spacing unit, glossary term. Conformance rules, formation aliases, operator aliases and the CRS registry are canonical-layer reference data, not marts.
+
+**3.0.3 Conformance as data (rule R8).** Every cross-source mapping decision is a row in `conformance_rules` (rule id, source, field, rule kind, rule text, rationale, transform reference, parameters, effective dates, evidence URL), served at `/v1/conformance` and referenced by derivations. Seed rows, all evidenced from primary sources:
+
+- **Datum.** Legacy TX RRC coordinates are NAD27 — the RRC GIS FAQ states it verbatim: *"Projection: Geographic  Units: Decimal Degrees  Datum: NAD27"*. Modern layers are NAD83/WGS84. Untransformed NAD27 is off by up to roughly 100 m in Texas, enough to silently corrupt spacing math. Rule: datum detected per file vintage, transformed to EPSG:4326 for storage, the transform recorded as a derivation node.
+- **Compute CRS.** `crs_registry` holds one projected metre-based CRS per basin: ND in UTM 14N (EPSG:32614), Permian in UTM 13N (EPSG:32613). Storage always EPSG:4326; every distance, area, and spacing computation is done projected, never in degrees.
+- **Liquids policy.** Condensate vs oil classification differs by state. Rule: keep the regulator classification in staging; canonical carries `stream` plus a `liquids_policy` tag; oil-plus-condensate is the default modeling liquid, stated everywhere it appears.
+- **Gas conditions.** Gas volumes conform to mcf at the regulator's stated conditions; conditions are recorded, not silently normalized.
+- **Month convention.** Production month vs report month resolved per source and recorded.
+- **Formation names.** Conform through `formation_aliases` (reported name, canonical formation, basin, confidence); tops and landing zones pass through it.
+- **Well status.** Regulator status vocabularies map to a small canonical set; the mapping is rows, not code.
+- **Operator identity.** Conform through `operator_aliases` (§3.4, resolves assessment A-12). New in v0.6 — v0.5 had a league table with no operator resolution mechanism, which made it uncomputable.
+- **TX lease key is composite.** RRC: *"LEASE_NO — RRC-assigned number representing the lease; unique within district."* A bare `LEASE_NO` collides silently. Key on `(OIL_GAS_CODE, DISTRICT_NO, LEASE_NO)` everywhere. This is precisely the silent-corruption class R8 exists to prevent; seed it in P0, five phases before TX ingest.
+- **PDQ delimiter.** `PDQ_DSV.zip` is delimited text with `}` as the delimiter, header row present, **no enclosure characters** — despite the RRC page labelling it "CSV". Parser configuration, recorded as a rule.
+- **ND format divergence is a lineage decision.** NDIC's own index page: *"Because of amendments, past excel documents will not match the PDF files."* Pin XLSX or PDF **per period**, record which, and never mix the two within a month. This is a ready-made `/explain` demonstration for S9.
+- **NM county codes break the odd-number rule.** Later-added NM counties carry even codes (Cibola 30-006, Los Alamos 30-028). Do not filter NM APIs on odd county codes; that silently drops wells. (Onshore TX county codes *are* odd and do align with the GIS file naming — verified, and a suspected join hazard that turned out not to be one.)
+- **Units of measure.** Every numeric canonical field declares a unit; there is no implicit unit anywhere. The system mixes feet (`spacing_assumption_ft`, `cum12_per_kft`) and metres (projected CRS, datum offsets) by necessity, so unit declaration is a conformance obligation, not a style preference. (Resolves assessment A-13.)
+- **API number formatting.** API-10 stored zero-padded as `SSCCCUUUUU` with the *API* state code (ND 33, TX 42, NM 30), which is **not** FIPS. County segment reflects the county at time of permitting and must never be used to infer producing or bottomhole county for a horizontal that crosses a county line.
+- **Null vs zero vs withheld.** Three distinct meanings across all four sources (no report filed; reported zero; withheld as confidential or trade secret). Canonical carries them as distinct states; they are never collapsed.
+- **Confidential and tight-hole wells.** ND withholds production for confidential wells; FracFocus withholds chemistry as trade secret on a large majority of disclosures. Withheld data is a distinct state and its share is reported in the scorecard, because it biases both training holdouts and quality metrics if treated as missing-at-random.
+
+**3.0.4 Identity policy.** API-10 identifies the well and is the spine. API-12 normalizes to API-10 for joins. **P1 first-hour verification task (DIR-9, resolves data-source finding B11):** determine whether the free ND MPR XLSX carries API-10 or only the NDIC file number. NDIC's own reports key on the file number. If the MPR is file-number-keyed, the file-number → API-10 crosswalk from `OGD_Wells.zip` is a hard P1 sequencing dependency and must land before any production row can join. The answer is recorded as a conformance rule with evidence either way.
+
+**3.0.5 Wellbore simplification (pinned decision).** One producing wellbore per API-10 is assumed. Sidetracks and multi-completion wellbores are detected and quarantined with reason rather than mis-joined. **Detection keys on API-12**, which is standards-backed; API-14 is vendor/state convention, not standard — PPDM, custodian of the API number since 2010, defines digits 1–12 only and explicitly discourages using the number for wellbores, permits, or filings. Any API-14 handling is governed by its own conformance rule. (Corrects v0.5's "API-12/14" language.) Measured share of quarantined wellbores is reported in the scorecard per basin; the revisit trigger is **2% in ND and 5% in the Permian**, not a single global number — re-entry and multi-completion rates differ materially between the Bakken and a century-old Permian wellbore population. P7 exit includes an explicit quarantine-rate check by basin so the trigger has a gate that can actually fire. [D] *(Resolves assessment D-17.)*
+
+**3.0.6 OSDU stance.** No implementation. A short mapping memo (canonical entities to OSDU well-known schemas) is written in P7 as a literacy exercise; the lean bespoke model is the build.
+
+### 3.1 Implementation stack (DIR-4)
+
+v0.5's entire technology statement was "raw zone, Parquet plus DuckDB, PostGIS, martin, MapLibre plus deck.gl, one VM" — no language, no API framework, no test framework. That was the single largest completeness gap. It is now pinned. **Boring and auditable beats contrarian** (DIR-1, DIR-4).
+
+| Layer | Choice | Why |
+|---|---|---|
+| Language | **Python 3.12** | One language across ingest, conformance, modeling, economics, API, and agent gateway. A polyglot solo build is a velocity tax with no offsetting benefit. |
+| Dataframes / transforms | **Polars** (lazy where it matters) | Fast, deterministic, expression-based; the expression graph is a natural place to hang derivation capture. |
+| Analytical store | **DuckDB over Parquet** | Canonical and marts. Single-file, no server, reads Parquet natively, joins across zones without a load step. |
+| Spatial store | **PostGIS** (PostgreSQL 16) | Authoritative geometry, spatial indexes, and the source martin serves tiles from. Also holds mutable operational state (AOIs, well sets, jobs, audit stream). |
+| Tiles | **martin** | Vector tiles direct from PostGIS. Not exposed directly; proxied behind the API origin (§3.6.8). |
+| Map client | **MapLibre GL** + **deck.gl** | Complementary, not redundant: martin/MapLibre for server-side vector geometry, deck.gl for GPU-rendered attribute-driven overlays at 20k+ features. Split of responsibility in §3.5. |
+| Modeling | **LightGBM** quantile objective + **split-conformal calibration** | Gradient-boosted quantile regression is the category standard; conformal wraps it with coverage that is distribution-free **under exchangeability** — which a temporal holdout violates by construction, so the guarantee is *measured* per slice with a confidence interval and a miss is reported as a miss, never assumed away (S4, 4A.7–4A.8). |
+| API | **FastAPI** + Pydantic v2 + uvicorn | OpenAPI generated from the same models that validate requests, so S1's self-describing API is a property of the framework rather than a maintained artifact. |
+| Agent gateway | **MCP server** (Python SDK), curated tools | §3.6.10. |
+| UI | **Lit 3** + TypeScript + Vite, served static | Minimum viable framing around MapLibre/deck.gl and the chart surfaces — Lit satisfies that stated bar better than React does, since the glossary tooltip is a custom element under any framework and MapLibre/deck.gl own an imperative canvas and a WebGL context whose lifecycle should not be governed by VDOM render heuristics. No UI framework beyond that. |
+| Charts | **uPlot** + an in-house SVG **ChartSpec** | The ChartSpec is the inspectable artifact: it carries the derivation ids of every series it renders, which is what the Vega-Lite row was chosen for. Vega-Lite's runtime spec compiler needs `unsafe-eval`, which the CSP forbids — a checkable defect, not a preference. [D] |
+| Tests | **pytest** + schemathesis (contract) + golden-file fixtures | §3.7.6. |
+| Packaging / pinning | **uv** with a committed lockfile; lockfile hash recorded in every recipe | Determinism (4C.5) is unachievable without it. |
+| Lint / format | ruff, mypy (strict on the compute layer) | |
+| Scheduling | **systemd timers** + a `jobs` table | No Airflow/Dagster. One VM, a dozen jobs, a queryable run-status table (§3.7.4). |
+| Process supervision | systemd units | |
+| Ingress | **Cloudflare Tunnel + Cloudflare Access** (DIR-6) | §3.7.2. |
+| Backup | restic to the hdd-pool, weekly off-box copy | §3.7.5. |
+
+**Explicitly rejected:** React and Vega-Lite at the UI seam (reasons in the two rows above; DIR-4's pins — Polars, DuckDB, LightGBM, FastAPI, pytest, PostGIS, martin, MapLibre, deck.gl — are untouched by that choice), Airflow/Dagster/Prefect (orchestration weight exceeding the workload), dbt (SQL-first modeling fights the Python compute layer where derivations are captured), Kubernetes, a message broker, a separate feature store product, and any hosted ML platform. Each rejection is recorded because a future reader will otherwise assume oversight.
+
+### 3.2 Component inventory
+
+C1–C21 are the base tier, restated in full. C22–C23 arrived at v0.5. C24–C26 are new in v0.6 and close named architecture gaps. Numbering is thematic (pipeline order), which is a reconstruction choice: v0.5 gives no evidence of the original ordering.
+
+**Ingest and provenance**
+
+- **C1 — Source fetcher and raw zone.** [D] Per-source fetchers on a schedule (§3.7.4). Writes every retrieved artifact byte-identical to `raw/<source_id>/<sha256[:2]>/<sha256>`, read-only, never deleted, and writes one `manifests` row per artifact (§3.4). Handles the two verified access hazards: RRC bulk data sits behind opaque-GUID GoAnywhere MFT links (`https://mft.rrc.texas.gov/link/<uuid>`) with HTML-rendered listings paginated at 250 entries, so GUID resolution is a monitored first step of every TX fetch; NM OCD is anonymous FTP at a numeric address published as a PNG image on the EMNRD page, so the address is re-resolved from the page on failure. Content-addressed: re-fetching an unchanged artifact writes a `fetch_log` row and stops. *Anchor: "checksummed regulator file" (v0.5 L18), "raw zone" (L142), "raw manifest" (L87).*
+- **C2 — Staging store and loader.** [D] One table per regulator file type, source-faithful, no opinions, typed as loosely as the source demands. Parquet under DuckDB. Never served. *Anchor: "Staging is source-faithful: one schema per regulator file type" (v0.5 L112).*
+- **C3 — Parsers.** [R, HIGH] One parser per source file type; writes staging only. Formats in scope: XLSX (ND MPR), text-layer PDF tables (ND MPR pre-2015, deferred within P1), ESRI shapefile and file geodatabase (ND and TX GIS), `}`-delimited text with no enclosures (TX PDQ), fixed-width ASCII (TX `dbf900`, `daf420`), EBCDIC (TX P-4, avoided in favour of the ASCII completion feed), XML full-table extracts (NM OCD), CSV and SQL Server backup (FracFocus). Every parser emits either a staging row or a `quarantine` row with a reason code — never a silent drop. Parser identity and version are recorded in the manifest, because a parser change is a lineage event. *Anchor: v0.5 L148 "Parsers write staging only"; L237.*
+- **C4 — Conformance and promotion engine.** [R, MED] Promotes staging to canonical by applying `conformance_rules`, emitting a derivation node per promoted partition that names every rule applied. Owns entity resolution: API number normalization, formation aliasing, operator aliasing, well-status mapping, unit normalization, datum transformation, and bitemporal vintage assignment (DIR-2). Three rule kinds and their enforcement are specified in §3.3 R8. *Anchor: v0.5 L148, "a new conformance step (C4 extended) promotes staging to canonical, emitting conformance references into derivations" — C4's base role was the staging-side validator/normalizer, now extended into promotion.*
+- **C5 — Canonical and marts store.** [D] DuckDB over partitioned Parquet. Canonical partitioned by `(source, entity_type, production_month)`; marts by `(basin, artifact_type)`. Holds no geometry beyond an API-10 → geometry-id reference. *Anchor: "Parquet plus DuckDB" (v0.5 L142).*
+- **C6 — Spatial store and CRS service.** [D] PostGIS. Holds surface points, bottomholes, lateral lines, PLSS sections and townships, TX abstracts and surveys, spacing units, AOI polygons, and the tile-attribute table. The CRS service is the only code path permitted to transform coordinates; it reads `crs_registry`, applies the datum rule, and emits a derivation node for every transform (E12 acceptance). *Anchor: "PostGIS" (v0.5 L142); datum rules (L118–119).*
+
+**Modeling and valuation**
+
+- **C7 — Modeling engine.** [R, HIGH] Feature-to-forecast. LightGBM quantile models at P10/P50/P90 for three streams (oil primary, gas and water secondary), split-conformal calibration, type-curve baseline as the mandatory control, analog KNN index over feature vectors, and batch scenario execution for inventory. Training is a job; every trained model is registered in C24 before it can serve. *Anchor: v0.5 L149; "gradient-boosted quantile model with conformal calibration" (L69).*
+- **C8 — Feature builder.** [D] Builds `well_features` from canonical at a pinned `as_of` vintage: location and rock proxies, completion design (lateral length, proppant and fluid intensity from FracFocus where present), landing zone via `formation_aliases`, spacing and parent-child depletion context computed in the projected CRS, operator, and vintage. Every feature declares its availability date; features computed from post-completion information are structurally excluded (4A.6). Emits `feature_version`. *Anchor: `well_features` referenced as existing (v0.5 L165).*
+- **C9 — Benchmark harness.** [D] Runs the temporal-holdout comparison of type curve vs ML on identical splits, produces the sliced benchmark artifact (S4), and is the only sanctioned producer of accuracy claims. Sliced by operator, vintage, formation, area, and lateral-length bucket. *Anchor: E4 in the never-cut list (v0.5 L245); S4 (L82).*
+- **C10 — Economics engine.** [R, HIGH] Monthly DCF from a forecast, a deck, and an assumptions object: NPV at a stated discount rate, breakeven, payout, and per-stream revenue. Assumptions include water handling cost per bbl and per-state severance and ad-valorem defaults. Pure by construction (R3), which is what makes sensitivity runs cheap. *Anchor: v0.5 L150, L164; "sensitivity runs … at trivial cost via R3 purity".*
+- **C11 — Scenario orchestrator.** [R, MED] Composes C7 and C10 into the user-facing loop: takes a design and location, builds features, forecasts, values, and returns forecast + NPV within the S3 budget. Persists scenarios so they are addressable, analog-able, and explainable. C22 is thin orchestration over C11 in batch mode. *Anchor: v0.5 L153 "thin orchestration over C11".*
+
+**Serving**
+
+- **C12 — API server.** [D] FastAPI. Owns the response envelope, error model, pagination, `as_of` semantics, auth enforcement, and OpenAPI generation. Every endpoint in §3.6. *Anchor: S1's OpenAPI doc (v0.5 L79); the entire §3.4 endpoint surface.*
+- **C13 — Map application.** [R, LOW] MapLibre + deck.gl. Lateral and well layers, PLSS/land-unit layers, spacing units, AOI drawing, activity heatmaps, and the inventory slot layer. *Anchor: v0.5 L151 pairs C13/C14 as the UI tier and adds "inventory layer (remaining slots per section)"; the map/analytics split between C13 and C14 is a reconstruction choice — v0.5 does not recover it.*
+- **C14 — Analytics UI.** [R, LOW] Well card (production history, GOR and water-cut charts, completion design, forecast with band, neighbors, analogs), scenario card (with analog panel and training support), type-curve builder, league table, well-set rollups, tornado, quality scorecard view, the lineage drawer, the field-notes reader, and the glossary tooltip component (E18). *Anchor: as C13.*
+- **C15 — Agent gateway.** [R, HIGH] MCP server exposing a curated tool list over the same API contract, with typed parameters and enumerated failure modes. Runs on the same VM as a separate systemd unit; authenticates with a scoped service token (DIR-6) and never holds the owner key. Tool-to-endpoint equivalence is CI-asserted (§3.6.10). *Anchor: v0.5 L152, L253 "curated MCP tools", L69 "agent gateway".*
+
+**Glass box**
+
+- **C16 — Lineage and derivation spine.** [D] The `@derives` capture contract, the derivation DAG store, recipe assembly, `/explain` traversal, and the append-only audit stream. Derivations are captured **at the compute layer**, not authored per endpoint — the decision and its justification are in §3.6.9. This component is a P0 deliverable because retrofitting it is the single most expensive mistake available to this project. *Anchor: v0.5 L97–L101, L253 item 6 "manifest-level lineage".*
+- **C17 — Quarantine service.** [D] Schema, reason codes, lifecycle states, the `/v1/quarantine` surface, and the reprocessing path that re-runs promotion for a manifest partition once a rule is added or fixed. Every quarantine row links to the conformance rule that rejected it — which is the pedagogical payload of "the kitchen is the product". *Anchor: v0.5 L98 "The quarantine table has an endpoint".*
+- **C18 — Quality scorecard.** [D] Computes and serves the measured quality surface: source coverage and freshness per source, quarantine share by reason and basin, wellbore-quarantine share against the 3.0.5 trigger, withheld/confidential share, allocation error bounds, model calibration coverage by slice, conformance-rule coverage and staleness, and glossary coverage. Reproducible from the API (S8). *Anchor: v0.5 L86, L137, L209.*
+- **C19 — Forecast ledger.** [D] Writes an immutable ledger entry every time a forecast is published for a well: forecast id, model id, feature version, as-of vintage, horizon, and the P10/P50/P90 values. Grades entries as actuals arrive, **as-of the vintage the forecast was made against** (DIR-2), so the track record does not grade against a moving target. *Anchor: v0.5 L85 (S7), L240 "ledger starts writing", L243 "E13 graded cycle".*
+- **C20 — Tile pipeline.** [D] Maintains the PostGIS tile source tables and the attribute bundles deck.gl joins client-side; regeneration cadence and the martin/deck.gl responsibility split are in §3.5. *Anchor: martin (v0.5 L142); S2 (L80).*
+- **C21 — Notebook / field notes.** [D] Markdown findings memos with live data links, served at `/v1/notebook` and rendered in the UI. This is where Mandate B's prose output lives, and where every "honest gap" gets written down at the moment it is discovered rather than reconstructed later. *Anchor: v0.5 L102 "Findings memos live at /notebook with live data links"; "field notes" (L138), "field-notes UI" (L245).*
+
+**Harvest tier (v0.5)**
+
+- **C22 — Inventory engine.** Spacing-gap detection per section or spacing unit, slot generation at an assumed spacing, batch scenario forecasts, rollup with NPV. Thin orchestration over C11. Scoped ND-only in v0.6 (§8.1 D-11).
+- **C23 — Alerting.** Saved AOIs (polygons), weekly diff on permits and new first-production wells, digest output. One systemd timer plus two tables. Delivery is pull-primary (§8.1 D-13).
+
+**New in v0.6**
+
+- **C24 — Model and artifact registry.** Registers every trained model, calibration set, analog index, and benchmark run with a content-addressed id binding config, training-data vintage, feature version, artifact hash, seed, and dependency-lockfile hash. Nothing may serve a number from an unregistered artifact. *(Resolves assessment A-01, A-15.)*
+- **C25 — Glossary service.** Owns `glossary_terms`, the term index used for auto-highlighting, and the CI coverage check that every served label resolves. *(DIR-8.)*
+- **C26 — Job runner and scheduler.** systemd timers invoking a single job entry point that writes `jobs` rows (queued/running/succeeded/failed, with derivation and manifest references). Provides the async contract behind `202 Accepted` responses, the concurrency guard that keeps a training run from starving interactive tile serving, and the run-status surface that makes an unattended weekly digest fail loudly instead of silently producing nothing. *(Resolves assessment A-19, API-02, G-10, G-13.)*
+
+### 3.3 Rules (normative)
+
+Rules bind the whole system. A change to any rule requires a written rationale in the commit (§ change control).
+
+- **R1 — Provenance floor.** [D] Nothing enters the system except through the raw zone, and nothing enters the raw zone without a manifest carrying source URL, retrieval timestamp, declared vintage, byte length and SHA-256. Every served number resolves, through derivations, to at least one manifest id. A number with no reachable manifest is a defect, not a caveat. *Derived from: "traced back to a checksummed regulator file" (v0.5 L18), S9 (L87), decision 6 "manifest-level lineage" (L253).*
+- **R2 — Append-only.** [D] The audit stream, the manifest table, the derivation store, the ledger, and canonical production observations are append-only. Restatements are new vintages; corrections are new events. Nothing is updated in place except explicitly mutable operational objects (AOIs, well sets, job status), and those carry revision counters. *Derived from: "Append-only memory. One audit stream; restatements are new events, never edits" (v0.5 L101), extended to canonical data by DIR-2.*
+- **R3 — Purity of the dollars path.** [R, HIGH] Valuation is a pure, deterministic, side-effect-free function of `(forecast, deck, assumptions)`. Forecasting is a pure function of `(features, model artifact)`. No hidden state, no ambient configuration, no wall-clock reads inside either. This is what makes sensitivity sweeps and batch inventory runs cheap, and what makes recipes replayable. *Anchor: "sensitivity runs … at trivial cost via R3 purity" (v0.5 L150).*
+- **R4 — No leakage.** [D] A model may only see information that existed at the as-of date of the prediction it is being trained to make. Feature availability dates are declared and enforced in code, not observed by convention. Holdouts are temporal, never random. *Derived from: 4A's "split, censoring, and control rules" (v0.5 L192), S4's temporal holdout (L82), ledger grading (L85).*
+- **R5 — Estimates are labelled.** [D] Every served number carries its unit, its as-of vintage, and **three separate fields**, one vocabulary each — because one field carrying two concepts is why three documents independently invented three vocabularies for it:
+  - **`granularity`** — `observed | allocated | modelled | assumed`, and nothing else. This is the field the naked-number CI check asserts on. In canonical it is **always `observed`** (§3.0.1, DIR-3).
+  - **`reporting_level`** — `well | lease | well_completion_pool`. A canonical column: the level the regulator reported at, which is not a statement about what kind of number it is.
+  - **`method`** — required wherever `granularity` is not `observed`: `extrapolated | derived_ratio | allocated_v0 | assumed_default | …`, plus an uncertainty representation.
+
+  The served envelope token is the **composition**, not a fourth vocabulary: `(observed, well) → well_observed`; `(observed, well_completion_pool) → well_observed` with `aggregation = sum_over_pools`; `(observed, lease) → lease_reported`; `(allocated, well) → lease_allocated` with `allocation_model_id` and `error_bounds`. Summing NM pools stays `observed` — it is exact arithmetic on observations — and the aggregation is recorded in the derivation params and surfaced, because a two-pool well is a different object and the consumer is entitled to know which one they have. An allocated TX volume is labelled allocated in the API, in the UI, in exports, and in the agent tool response. **[as-built]** four mappings compose to three distinct tokens — `well_observed`, `lease_reported`, `lease_allocated` — and migration 012 plus `envelope.GRANULARITIES` hold exactly that set. *Derived from: DIR-3; "production observation (… granularity, allocation ref)" (v0.5 L114); 4D's support requirement (L194).*
+- **R6 — Derivation coverage.** [R, LOW] Every served figure carries a derivation handle, and `/v1/explain` resolves that handle to a machine-readable derivation graph terminating in manifests. Coverage is proven mechanically by the naked-number CI check (§3.6.11), not asserted. The rule binds producers as well as the serving surface: **an artifact produced outside a recorded derivation may not be served, and every artifact a served figure depends on — raw file, staging load, canonical promotion, feature build, model run, forecast, valuation, mart, tile build — is produced inside a derivation whose inputs terminate in raw-zone manifests.** *Anchor: "All new endpoints obey R6/R7: derivations, recipes, explain coverage" (v0.5 L180); "Every served figure carries a derivation handle" (L97).*
+- **R7 — Reproducibility.** [R, LOW] Every persisted artifact carries a recipe: pinned code revision, dependency lockfile hash, input manifest and artifact ids, parameters, seeds, and the as-of vintage. Recipes declare their determinism class (§4C.5). An artifact whose recipe cannot be replayed is withdrawn, not annotated. *Anchor: as R6; "Every artifact carries the recipe that regenerates it byte-for-byte" (v0.5 L99).*
+- **R8 — Conformance as data.** Every cross-source mapping decision is a `conformance_rules` row, served at `/v1/conformance`, and referenced by the derivations of every number it shaped. **A mapping that exists only in code fails review.** Mechanized in three kinds, because "read rules from the table at run time where feasible" is an escape hatch that guts the rule:
+  - **LOOKUP** — the rule *is* data (formation aliases, operator aliases, well-status maps, county-code sets). The promotion engine reads the table; there is no code path that can disagree with it.
+  - **PARAMETERIZED** — the rule names a registered transform plus parameters (datum transform, unit conversion, delimiter, composite-key construction, vintage assignment). The promotion engine dispatches on `transform_id`; the parameters live in the row.
+  - **DOCUMENTED** — narrative only, for logic that genuinely cannot be tabulated. Must name the implementing code symbol in `impl_ref`, and that symbol must carry the rule id as an annotation. CI asserts the symbol exists and is annotated.
+
+  Three CI checks, run every build: **coverage** (every canonical field maps to ≥1 rule), **execution** (every LOOKUP and PARAMETERIZED rule appears in at least one derivation from the most recent full promotion run — a rule that never fires is flagged stale), and **binding** (every DOCUMENTED rule's `impl_ref` resolves and is annotated). The residual risk is honestly bounded: DOCUMENTED rules can still drift from their prose, so their count and share are reported on the scorecard as a tracked quality metric rather than papered over. *(Resolves assessment D-09, A-06.)*
+- **R9 — Glossary coverage.** *(New in v0.6, DIR-8.)* Every term the system surfaces — UI label, chart axis, table header, API field description, agent tool parameter description — resolves to a `glossary_terms` row. New surfaced term means new glossary row, in the same commit. CI-enforced (§3.6.11). The glossary is data served through the same glass-box rules as everything else: R6 and R7 apply to it, and the agent and the UI read the same terms.
+
+### 3.4 Data model
+
+Column lists below are the load-bearing subset, not exhaustive DDL. Every numeric column declares a unit in the schema; every canonical column maps to at least one conformance rule (R8 coverage check).
+
+**3.4.1 Raw and provenance**
+
+- `manifests` — `manifest_id` (content-addressed, `man_<sha256[:16]>`), `source_id`, `artifact_url`, `resolved_from` (the GUID-resolution provenance for RRC MFT links), `retrieved_at`, `declared_vintage` (null where the source publishes none), `retrieval_vintage` (always set — NM and RRC ship undated filenames, so glasswell stamps its own; DIR-9), `sha256`, `byte_length`, `media_type`, `parser_id`, `parser_version`, `supersedes`, `notes`. A manifest covers exactly one retrieved artifact. Raw bytes are stored read-only and never deleted. *(Resolves assessment A-11.)*
+- `fetch_log` — `fetch_id`, `source_id`, `attempted_at`, `outcome` (new | unchanged | failed), `manifest_id`, `http_status`, `error`. Makes "we checked and nothing changed" a first-class, queryable fact, which the freshness contract depends on.
+- `sources` — `source_id`, `agency`, `dataset`, `access_method`, `cadence_upstream`, `cadence_pull`, `licence_status`, `licence_evidence_url`, `tos_notes`. Licence status is explicit per source and includes the honest UNVERIFIED cases (NM OCD publishes no affirmative grant; absence of a restriction is not a grant).
+
+**3.4.2 Staging and quarantine**
+
+- `stg_<source>_<filetype>` — one per source file type, source-faithful, plus `manifest_id`, `source_row_ordinal`, and `ingested_at` on every row. No type coercion beyond what the file format forces.
+- `quarantine` — `quarantine_id`, `manifest_id`, `source_id`, `staging_table`, `source_row_ordinal`, `raw_payload` (jsonb), `reason_code`, `rule_id`, `detected_at`, `state` (open | rule_added | reprocessed | accepted | rejected_permanent), `resolved_at`, `resolution_ref`. Reason codes are an enumerated, documented set. Reprocessing is a job that re-runs promotion for the manifest partition. *(Resolves assessment A-16.)*
+
+**3.4.3 Canonical**
+
+- `wells` — `api10` (PK), `state_code`, `county_code_at_permit`, `ndic_file_no` (nullable, ND), `operator_id`, `well_name`, `well_number`, `status_canonical`, `spud_date`, `completion_date`, `first_production_month`, `confidential_flag`, `confidential_release_date`, `basin`, `land_unit_id`, `spacing_unit_id`, `effective_from`, `effective_to`, `manifest_id`.
+- `wellbores` — `api12` (PK), `api10`, `wellbore_type` (original | sidetrack | recompletion), `detected_from`, `quarantine_id` (set when 3.0.5 quarantines it).
+- `operators` — `operator_id` (PK), `canonical_name`, `parent_operator_id`, `ticker`, `notes`.
+- `operator_aliases` — `alias_id`, `source_id`, `source_operator_key` (RRC operator number, NM OGRID, ND operator name), `reported_name`, `normalized_name`, `operator_id`, `effective_from`, `effective_to`, `confidence`, `method` (exact_key | normalized_name | manual), `rule_id`, `evidence`. Mirrors `formation_aliases` deliberately. *(Resolves assessment A-12 — v0.5 shipped a league table with no way to know who an operator is.)*
+- `operator_events` — `operator_id`, `event_type` (rename | merge | acquisition | subsidiary), `effective_date`, `successor_operator_id`, `source_ref`. Lets the league table be run **as-reported** or **rolled up to today's parent**; both are offered, and which one is in force is stated on every response. Neither is silently the default.
+- `leases` — `lease_key` = `(oil_gas_code, district_no, lease_no)` (composite PK — a bare `LEASE_NO` is unique only within district), `lease_name`, `operator_id`, `field_id`, `district_no`, `county_names[]`, `effective_from`, `effective_to`.
+- `production_observations` — **bitemporal, per DIR-2.** `observation_id`, `entity_type` (well | lease | well_completion_pool), `entity_key` (api10 or lease_key or NM completion key), `production_month`, `report_vintage` (timestamp of the manifest that reported it), `stream` (oil | gas | water | condensate), `volume`, `uom`, `days_produced`, `granularity` (observed), `conditions_ref`, `liquids_policy`, `null_semantics` (reported_zero | no_report | withheld), `mod_dte` (NM's per-row modification date, the change-detection key for a source that destructively replaces files), `manifest_id`, `rule_ids[]`. Natural key: `(entity_type, entity_key, production_month, stream, report_vintage)`. **Nothing is ever updated.** A restatement is a new row at a later `report_vintage`; the "current" value is the maximum vintage at or before the requested `as_of`. This is required, not elegant: TX states there is *no point beyond which an operator may not file corrected production reports*; NDIC's XLSX and PDF of the same month disagree because they were generated at different vintages; NM amendments *"completely erase and take the place of the old file"* upstream, so a vintage history exists only if glasswell captures it.
+- `completion_events` — `completion_id`, `api10`, `event_date`, `event_type`, `lateral_length_ft`, `proppant_lb`, `fluid_bbl`, `stage_count`, `landing_zone_formation_id`, `source_id`, `manifest_id`, `rule_ids[]`, per-field `null_semantics`. Design fields come from FracFocus (chemistry and base fluid volume), the TX completion feed's "Amount and Kind of Material Used" segment (interval-level treatment, `AMT_MATERIAL_PROCESS_CODE` = 2 for fracture), and state GIS for geometry-derived lateral length. **Lateral length is not sourced from FracFocus** — no such field is evidenced there.
+- `well_spatial` — `api10`, `geom_type` (surface | bottomhole | lateral), `geom` (PostGIS, EPSG:4326), `source_datum`, `transform_rule_id`, `derivation_id`, `manifest_id`.
+- `formation_tops` — `api10`, `formation_id`, `md_ft`, `tvd_ft`, `source_id`, `confidence`, `manifest_id`.
+- `formations` / `formation_aliases` — canonical formation registry and the reported-name → canonical mapping with basin and confidence.
+- `permits` — `permit_id`, `api10` (nullable pre-spud), `operator_id`, `permit_date`, `permit_type`, `field_id`, `land_unit_id`, `geom`, `status`, `manifest_id`.
+- `land_units` — `land_unit_id`, `system` (**plss** | **tx_abstract** | **nm_plss**), `state`, `label` (e.g. `150N-96W-14` or `A-123 / Survey`), `parent_land_unit_id` (township for a PLSS section), `geom`, `area_acres`, `manifest_id`. **The abstraction exists from P0** so that TX is a data problem rather than a schema migration; the *inventory geometry* built on top of it is ND/PLSS-only in v0.6 (§8.1 D-11).
+- `spacing_units` — `spacing_unit_id`, `state`, `label`, `geom`, `formation_id`, `order_ref`, `manifest_id`.
+- `conformance_rules` — `rule_id`, `source_id`, `entity`, `field`, `kind` (lookup | parameterized | documented), `rule_text`, `rationale`, `transform_id`, `params` (jsonb), `lookup_table`, `impl_ref`, `evidence_url`, `effective_from`, `effective_to`, `supersedes`, `author`, `created_at`.
+- `crs_registry` — `basin`, `compute_crs` (EPSG), `storage_crs` (always 4326), `notes`.
+- `glossary_terms` — `term_id`, `term`, `aliases[]`, `short_definition`, `expanded_definition`, `domain_tags[]`, `related_terms[]`, `source_refs[]`, `first_surfaced_in`, `effective_from`. *(DIR-8.)*
+
+**3.4.4 Marts and artifacts**
+
+- `well_features` — `api10`, `feature_version`, `as_of_vintage`, feature columns each with a declared availability date, `derivation_id`.
+- `allocated_production` — **derived, never canonical (DIR-3).** `allocation_id`, `api10`, `production_month`, `report_vintage`, `stream`, `volume`, `uom`, `allocation_basis` (the rule that split the lease volume), `error_lo`, `error_hi`, `granularity` = `allocated`, `derivation_id`. Joined to `allocation_runs` (`allocation_id`, `method`, `method_version`, `lease_scope`, `model_id`, `validator_refs[]`, `created_at`, `error_bounds_ref`).
+- `models` — `model_id` (`mdl_<sha256[:16]>`, content-addressed over config + training-data vintage + feature version + lockfile hash), `name`, `target_stream`, `quantile`, `basin`, `algo`, `algo_version`, `hyperparams`, `feature_version`, `training_data_vintage`, `training_cutoff`, `artifact_uri`, `artifact_sha256`, `seed`, `lockfile_sha256`, `calibration_ref`, `status` (candidate | published | retired), `created_at`. Models are never deleted; retraining is additive. *(Resolves assessment A-01.)*
+- `calibration_sets` — `calibration_id`, `model_id`, `split_definition`, `empirical_coverage_by_slice` (jsonb), `derivation_id`.
+- `analog_index` — `index_id`, `feature_version`, `model_id`, `metric`, `built_at`, `artifact_sha256`, `n_wells`, `derivation_id`. **Always persisted** — v0.5 made persistence conditional on a 60 s rebuild threshold, which silently decided whether analog results could carry a derivation at all. An in-process cache is a read-through of the persisted artifact, never a substitute for it. *(Resolves assessment A-15.)*
+- `forecasts` — `forecast_id` (content-addressed), `api10` or `scenario_id`, `model_id`, `feature_version`, `as_of_vintage`, `stream`, `horizon_months`, `p10`/`p50`/`p90` series, `training_support`, `derivation_id`, `created_at`.
+- `type_curves` — `type_curve_id`, `filter_spec` (canonical serialization of the filter set — the id is content-addressed over it), `normalization` (absolute | per_1000ft), `n_wells`, `band_definition`, `series`, `as_of_vintage`, `derivation_id`.
+- `decks` — `deck_id` (immutable, content-addressed), `name`, `price_series` (oil, gas, NGL by month), `basis_differentials`, `source`, `created_at`.
+- `econ_assumptions` — `assumption_id` (immutable), `capex`, `fixed_opex_per_month`, `opex_oil_per_bbl`, `opex_gas_per_mcf`, `opex_water_per_bbl`, `severance_oil_pct`, `severance_gas_pct`, `ad_valorem_pct`, `state`, `wi`, `nri`, `discount_rate`, `abandonment_cost`, `notes`. State severance and ad-valorem defaults ship per state; WI defaults to 1.00 and **NRI defaults to 0.75 with an explicit warning that it is an assumption, not knowledge** (§2.2).
+- `valuations` — `valuation_id` (content-addressed), `forecast_id`, `deck_id`, `assumption_id`, `npv_by_quantile`, `breakeven_price`, `payout_months`, `derivation_id`.
+- `scenarios` — `scenario_id`, `owner_principal`, `visibility`, `name`, `design` (lateral length, proppant intensity, fluid intensity, stage count, landing zone, spacing), `location` (geom or land unit), `as_of_vintage`, `forecast_id`, `valuation_id`, `created_at`, `revision`.
+- `sensitivities` — `sensitivity_id`, `base_ref` (forecast_id or valuation_id), `parameter`, `delta`, `npv_delta`, `derivation_id`.
+- `inventory_runs` — `run_id`, `owner_principal`, `area_ref` (land_unit_id), `spacing_assumption_ft`, `model_id`, `deck_id`, `assumption_id`, `job_id`, `status`, `created_at`. `inventory_slots` — `run_id`, `slot_id`, `geom`, `land_unit_id`, `spacing_unit_id`, `forecast_id`, `valuation_id`, `training_support`, `admissibility_flags`, `derivation_id`.
+- `aois` — `aoi_id`, `owner_principal`, `visibility`, `name`, `geom`, `created_at`, `revision`. `alert_digests` — `aoi_id`, `period_start`, `period_end`, `freshness_window` (per source), `payload` (jsonb), `derivation_id`, `generated_at`.
+- `well_sets` — `set_id`, `owner_principal`, `visibility`, `name`, `api10s[]`, `created_at`, `revision`.
+- `operator_league` — `basin`, `vintage_window`, `metric`, `rollup_mode` (as_reported | parent_rollup), `operator_id`, `value`, `ci_lo`, `ci_hi`, `n_wells`, `model_id`, `derivation_id`.
+- `scorecard_metrics` — `metric_id`, `as_of_vintage`, `scope`, `value`, `unit`, `derivation_id`.
+- `ledger_entries` — `entry_id`, `api10`, `forecast_id`, `model_id`, `published_at`, `as_of_vintage`, `horizon_months`, `predicted_p10/p50/p90`, `graded_at`, `actual_at_vintage`, `grading_vintage`, `error_metrics`, `derivation_id`.
+- `tile_attributes` — `api10`, `model_id`, `as_of_vintage`, styling columns (p50 cum12 per 1000 ft, operator, vintage, formation, training support bucket). Rebuilt on model publication; see §3.5.
+
+**3.4.5 Spine and operations**
+
+- `derivations` — `derivation_id` (content-addressed), `output_ref`, `transform_id`, `code_revision`, `params`, `input_refs[]` (derivation ids, artifact ids, manifest ids), `rule_ids[]`, `model_id`, `as_of_vintage`, `determinism_class`, `created_at`. A DAG; manifests are the only terminal nodes.
+- `recipes` — `recipe_id`, `artifact_ref`, `code_revision`, `lockfile_sha256`, `entry_point`, `params`, `input_manifest_ids[]`, `input_artifact_ids[]`, `seed`, `determinism_class`, `expected_output_sha256`.
+- `audit_events` — `event_id`, `occurred_at`, `actor` (principal or job), `event_type`, `subject_ref`, `payload`, `prev_event_hash`, `event_hash`. Hash-chained, append-only.
+- `jobs` — `job_id`, `job_type`, `params`, `state`, `queued_at`, `started_at`, `finished_at`, `progress`, `result_ref`, `error`, `derivation_id`.
+- `api_keys` — `key_id`, `principal`, `scope` (owner | guest | agent), `layer_entitlements[]`, `hashed_secret`, `issued_at`, `expires_at`, `revoked_at`, `last_used_at`.
+
+### 3.5 Storage and compute division of labour
+
+v0.5 named two stores and assigned no queries to either, which left a routine served figure spanning both engines with no stitching story. Pinned:
+
+- **PostGIS is authoritative for geometry** and for mutable operational state (AOIs, well sets, jobs, audit stream, API keys). It holds identifiers, geometry, and the small denormalized `tile_attributes` table. It does not hold time series.
+- **DuckDB over Parquet is authoritative for everything columnar**: canonical production observations, features, forecasts, valuations, allocations, scorecard metrics, ledger entries, and marts.
+- **Cross-store joins happen in Python (Polars) on `api10`**, never via a foreign data wrapper. Every cross-store join emits a derivation node naming both store revisions (the Parquet partition manifest set and the PostGIS transaction id), so the S9 chain stays traversable across engines rather than breaking at the boundary. *(Resolves assessment A-03.)*
+- **Spatial computations** — spacing distance, parent-child proximity, slot admissibility, AOI containment — are PostGIS operations in the basin's projected CRS from `crs_registry`, never in degrees, and their results are materialized back into DuckDB as features with a derivation reference.
+
+**Tiles and model-driven styling.** *(Resolves assessment A-04.)* Two layer families with different lifecycles:
+
+1. **Geometry layers** (laterals, wells, sections and townships, TX abstracts, spacing units, permits) are served by martin from PostGIS and regenerate only when the upstream GIS artifact changes — weekly at most. They carry stable keys and no model output.
+2. **Attribute overlays** are *not* baked into tiles. deck.gl fetches a compact binary attribute bundle (Arrow IPC) for the current viewport's key set from `GET /v1/tiles/attributes` and joins client-side. At 20k laterals the bundle is a few hundred kilobytes.
+
+The consequence is the point: **a model rerun does not require tile regeneration.** Geometry tiles regenerate on GIS refresh; attribute bundles regenerate on model publication. This is what makes S2 affordable on one VM and keeps the inventory slot layer from compounding the cost.
+
+### 3.6 API surface
+
+The API is the product's contract. S1 and S5 both terminate here, and "if the agent cannot do it, the API is incomplete" is the acceptance standard.
+
+#### 3.6.1 Versioning
+
+All resource paths are prefixed `/v1`. Within a major version, changes are additive only: new fields, new optional parameters, new endpoints. Removing a field, narrowing a type, or changing a default is a `/v2` event. Deprecations are announced via a `Sunset` header and a `deprecations` block in `meta`, and are listed at `GET /v1`. The OpenAPI document is generated from the Pydantic models that validate requests, and CI asserts the served document matches the committed snapshot — so the contract cannot drift from the implementation without failing the build. Recipes record the API version they were captured under, because R7's replay guarantee is meaningless against an unversioned surface.
+
+#### 3.6.2 Response envelope
+
+Every response body is:
+
+```
+{
+  "data":  <resource or array>,
+  "meta":  { "as_of": "...", "request_id": "...", "source_freshness": {...},
+             "derivations": { "<json-pointer>": "<derivation_id>", ... },
+             "units":       { "<json-pointer>": "<unit>", ... },
+             "labels":      { "<json-pointer>": "<glossary_term_id>", ... },
+             "next_cursor": "...", "warnings": [...] },
+  "links": { "self": "...", "next": "...", "explain": "..." }
+}
+```
+
+`meta.derivations` maps a JSON Pointer into `data` to the derivation that produced the value at that pointer. A pointer covers its descendants, so a whole series can be covered by one entry. This makes R6 **mechanically checkable**: walk every numeric leaf of `data`, assert some pointer in `meta.derivations` covers it, assert `meta.units` declares its unit, and assert every label string resolves in `meta.labels`. `meta.labels` is what the UI's glossary highlighter and the agent both read, so hover text and tool documentation cannot diverge. *(Resolves assessment API-05.)*
+
+#### 3.6.3 Error model
+
+RFC 9457 `application/problem+json`: `type` (a stable URI under `/v1/errors/{code}`), `title`, `status`, `detail`, `instance`, plus `errors[]` for field-level validation failures and `request_id`. Every error type is enumerated in the OpenAPI document with an example — an agent cannot handle failures it cannot discover. Batch endpoints return `207`-style partial results inside a normal envelope with per-item `status` and `problem` fields rather than failing whole; the partial-failure shape is part of the schema. *(Resolves assessment G-03.)*
+
+#### 3.6.4 Pagination
+
+Cursor-based on every collection. `limit` defaults to 100, maximum 1000. The cursor is an opaque base64 encoding of `(sort key value, tiebreak id, as_of vintage)`, so pagination is **deterministic and stable under concurrent ingest** — a requirement for agents and for S1's stranger, not a nicety. Every collection declares a total order: an explicit sort key plus `id` as tiebreak. `meta.next_cursor` is null at the end. No offset pagination anywhere. *(Resolves assessment G-05.)*
+
+#### 3.6.5 Identifiers
+
+Immutable artifacts — manifests, derivations, recipes, forecasts, valuations, type curves, models, decks, assumptions, analog indexes, calibration sets — carry **content-addressed** ids of the form `<prefix>_<sha256[:16]>`. Mutable operational objects — AOIs, well sets, scenarios, inventory runs, jobs — carry ULIDs plus a `revision` counter, and a mutation is an audit event. **No id is ever reused or reassigned.** Under DIR-2, mutable ids on artifacts would be actively unsafe: a recipe citing a mutable id could not replay. *(Resolves assessment API-04.)*
+
+#### 3.6.6 As-of semantics
+
+Every read endpoint accepts `as_of=<ISO timestamp | vintage-id | latest>`. The default is **the current published vintage, not wall-clock now** — determinism beats freshness for a system whose thesis is reproducibility, and freshness is exposed separately in `meta.source_freshness`. `as_of` propagates through every layer: the observation vintage selected, the model whose training vintage is at or before it, the conformance rules effective at that time, and the derivation graph `/explain` returns. This is the mechanism behind S14. *(DIR-2.)*
+
+#### 3.6.7 Idempotency, async, exports
+
+- **Idempotency.** Every POST accepts an `Idempotency-Key` header; replay within 24 h returns the original response. Creating the same scenario twice yields one scenario.
+- **Async.** Any operation whose p95 exceeds 5 s returns `202 Accepted` with a `job_id` and a `Location` pointing at `GET /v1/jobs/{job_id}`. This covers inventory runs, model training, benchmark runs, re-promotion, and large exports. Jobs have states, progress, cancellation (`DELETE /v1/jobs/{job_id}`), and a failure representation. *(Resolves assessment API-02 and the D-04 contradiction: batch inventory is explicitly not held to the S3 interactive budget — S3 governs a single scenario, and a township run is a job.)*
+- **Exports.** `?format=csv` on collections, or `POST /v1/exports` returning a job for large sets. Every export carries a header block: `as_of` vintage, the derivation ids covering each column, granularity flags per R5, and — for inventory exports — the mandatory 4D statements. An export that strips provenance is not an export this system produces. *(Resolves assessment A-18, API-10.)*
+
+#### 3.6.8 Auth and exposure (DIR-6)
+
+Not multi-tenant SaaS; not wide open either. The precise boundary:
+
+- **Ingress.** Cloudflare Tunnel only. No port forwards. Public hostname `glasswell.rpx.sh` (bare-zone label, because Universal SSL covers one label deep); LAN break-glass `glasswell.lab.rpx.sh` (A record, RFC1918, DNS-only). Cloudflare Access sits in front of every path; the origin **validates the Access JWT on every request** and rejects anything without it, so a tunnel misconfiguration alone is not sufficient to expose data.
+- **Three scopes.** `owner` (email-based Access policy; full read/write). `guest` (one-time-PIN Access policy, expiring; read-only; sees all public data and only `visibility = shared-read` saved objects — this is the S1 stranger). `agent` (Cloudflare service token plus an app-level API key; read-only by default, write scope grantable per key; never the owner key).
+- **Application keys.** `api_keys` rows with hashed secrets, explicit scope, layer entitlements, issue and expiry timestamps, and revocation. Key use is an audit event. Rotation is a documented procedure, not an aspiration.
+- **Tile entitlement pattern.** [D] *(Reconstruction of v0.5 decision 5, whose content was unrecoverable and which is the only access-control statement in the entire v0.5 document.)* martin is never exposed directly. A map client authenticates normally, then calls `POST /v1/tiles/token` to mint a short-lived (5 minute) signed token bound to `(principal, allowed layer set, as_of)`. The tile proxy validates the signature and the layer scope before forwarding to martin. Layer entitlement is therefore a property of the key, uniform with the rest of the auth model, and a leaked tile URL expires in minutes.
+- **Rate limits.** Per-key token bucket: 60 req/min for reads, 5 concurrent jobs for writes, one training job system-wide. One VM plus unbounded `POST /v1/inventory/runs` is a self-DoS; the limit is a correctness control, not a billing one. *(Resolves assessment G-06.)*
+- **Ownership.** Saved objects carry `owner_principal` and `visibility`. "Not multi-user" now means precisely: no user-management UI, no organizations, no billing, no per-user isolation guarantee beyond the principal column and Access identity. It does **not** mean global mutable state that any keyholder can clobber. *(Resolves assessment D-01, D-02.)*
+
+#### 3.6.9 The `/explain` mechanism — decided
+
+Two architectures were available and they differ by an order of magnitude in cost:
+
+- **(a) Capture at the compute layer.** Every transform runs inside a `@derives` context that records its inputs (upstream derivation ids, artifact ids, manifest ids), its identity (transform id, code revision, parameters, seed), the conformance rules it applied, and its output reference — producing one derivation node. The serving layer never authors an explanation; it attaches already-computed derivation ids to response pointers. `/explain` is a graph traversal.
+- **(b) Hand-author an explain path per endpoint.** Cost scales with the endpoint count (~30 resource families here), every new endpoint carries an explain tax forever, and the explanation is a *reimplementation* of the compute path, so it drifts from it — silently, and in the direction that flatters the system.
+
+**Decision: (a).** Justification: cost scales with the number of *transforms*, which is bounded by the data model, rather than with the number of *endpoints*, which grows with the product; the derivation is produced by the code that actually did the work, so it cannot describe something the system did not do; and R6 becomes a mechanical schema property (§3.6.2) rather than a review promise. The honest cost: the compute layer must be written derivation-first from **P0**, and retrofitting derivation capture after a computation layer exists is the most expensive mistake available to this project. That is why C16 is a P0 deliverable and not a hardening item. *(Resolves assessment A-05.)*
+
+**Payload.** `/v1/explain?ref=<derivation_id|artifact_id>&depth=n` returns a machine-readable graph: nodes (transform id, code revision, params, rule ids, model id, as-of vintage, determinism class), edges, and terminal manifest nodes with source URL, retrieval timestamp and SHA-256. Prose is a *rendering* of the graph produced by the UI, never the payload — a human-prose explanation satisfies the drawer and fails the agent. *(Resolves assessment API-06.)*
+
+**`?explain=true` semantics.** [D] Query-parameter explain is **GET-only** and inlines the derivation nodes for the pointers in `meta.derivations`. POST responses always include derivation ids for the artifacts they created, with no flag; there is no `?explain=true` on a POST, because "explain the run you just created" and "explain the run you would create" are different requests and conflating them is how an audit surface starts lying. A dry-run preview is `POST /v1/inventory/runs?dry_run=true`, which returns the plan and its inputs without executing. *(Resolves assessment D-14, API-11.)*
+
+#### 3.6.10 Agent gateway and the 10-question suite
+
+C15 exposes a **curated** MCP tool list — not auto-generated from OpenAPI, because good tool ergonomics require fewer, task-shaped tools than the REST surface has endpoints. The drift risk this creates is closed explicitly: every tool declares the endpoints it calls, and CI asserts (i) every declared endpoint exists in the served OpenAPI document, (ii) every tool's parameter schema is a subset of the endpoint's, and (iii) an equivalence report lists which endpoints have no tool coverage, which is a reviewed list rather than an accident. S1 and S5 exercise two surfaces; the equivalence report is what keeps them one contract. *(Resolves assessment API-08.)*
+
+Transport: HTTP/SSE, separate systemd unit, same VM, behind the same Access policy with an `agent`-scope service token.
+
+**The 10-question suite** (S5, P6 exit). Named here because v0.5 referenced it twice and never listed it. Each question must be answerable through public tools with every figure traceable. [D]
+
+1. What was well *X*'s first-12-month oil, and which regulator file did that number come from?
+2. Which ten wells are most similar to *X* in feature space, and what did they actually produce?
+3. For a 10,000 ft Middle Bakken lateral at 1,800 lb/ft in McKenzie County, what are the P10/P50/P90 12-month oil volumes, and what is the training support for that point in feature space?
+4. What are the NPV10 and breakeven of that scenario at the default deck, and which single input moves NPV most?
+5. Which ND operators outperformed rock-adjusted expectation on 2023–2024 completions, by how much, and with what confidence interval?
+6. How many undrilled slots exist in township 150N-96W at 1,320 ft spacing, what is the P50 NPV of the set, and what spacing assumption and support distribution underlie it?
+7. Why do North Dakota and Texas "oil" volumes mean different things, and which conformance rules govern the difference?
+8. What share of ND wellbores is quarantined, for what reasons, and what would change if the rule were relaxed?
+9. Show the full derivation chain for the number in question 1 down to a checksummed file, and give me the recipe that regenerates it.
+10. What did this system forecast for well *X* six months ago, what has it actually produced since, and how did that forecast grade — using the actuals as they stood at grading vintage, not as they stand now?
+
+#### 3.6.11 CI checks on the API surface
+
+Run every build, against a live instance seeded with fixtures:
+
+- **Naked-number check.** Walk the OpenAPI, exercise every GET with fixture parameters, JSON-walk every numeric leaf of `data`, assert `meta.derivations` covers it and `meta.units` declares its unit. Failure fails the build. *(Resolves assessment A-09.)*
+- **Glossary coverage check (R9, DIR-8).** Every string in `meta.labels`, every UI label extracted from the built frontend bundle, and every OpenAPI field description term flagged by the term index must resolve to a `glossary_terms` row.
+- **Conformance checks (R8).** Coverage, execution, and binding, per §3.3.
+- **Contract check.** schemathesis property tests against the OpenAPI document; served document byte-compared to the committed snapshot.
+- **Tool-equivalence check.** Per §3.6.10.
+- **Determinism check.** Train a small fixture model twice; assert identical artifact hashes.
+
+#### 3.6.12 Endpoint inventory
+
+Every endpoint, its component, and its glass-box obligations. All GETs obey R6 (derivations in envelope) and accept `as_of`, `explain`, `limit`, `cursor` unless noted. All artifact-producing endpoints obey R7 (recipe recorded).
+
+| # | Method / path | Params | Response (summary) | Served by | Obligations |
+|---|---|---|---|---|---|
+| 1 | `GET /openapi.json` | — | OpenAPI 3.1 document | C12 | S1 anchor; CI-compared |
+| 2 | `GET /v1` | — | Service index: versions, deprecations, source freshness, published vintages | C12 | — |
+| 3 | `GET /v1/health` | — | Liveness plus per-source freshness and last-job state; `degraded` when any scheduled job failed | C12, C26 | — |
+| 4 | `GET /v1/wells` | basin, operator, formation, county, land_unit, vintage, bbox, status | Well list with spine attributes | C12, C5 | R6 |
+| 5 | `GET /v1/wells/{api10}` | — | Well header, operator (resolved, with alias provenance), geometry refs, completion summary, latest forecast ref | C12 | R6 |
+| 6 | `GET /v1/wells/{api10}/production` | stream, from, to, granularity, as_of | Monthly series per stream with `granularity` and `null_semantics` per point; GOR and water-cut derived series | C12, C5 | R5, R6; U21 |
+| 7 | `GET /v1/wells/{api10}/completions` | — | Completion events with design fields and per-field null semantics | C12 | R5, R6 |
+| 8 | `GET /v1/wells/{api10}/neighbors` | radius_ft, formation, at_date | Spatial neighbours with projected distances and completion dates | C12, C6 | R6; distinct from analogs |
+| 9 | `GET /v1/wells/{api10}/forecast` | model_id, stream, horizon | P10/P50/P90 series, model ref, training support, calibration ref | C12, C7 | R6, R7 |
+| 10 | `GET /v1/analogs` | **api10 or scenario_id** (exactly one), n, metric, index_id | Ranked analogs with feature distances and actual outcomes | C12, C7 | R6; **serves wells and scenarios** |
+| 11 | `GET /v1/scenarios` · `POST /v1/scenarios` · `GET /v1/scenarios/{id}` · `PATCH` · `DELETE` | design, location, model_id, deck_id, assumption_id | Scenario with forecast, valuation, training support, analog panel | C12, C11 | R3, R6, R7; **S3's 3 s budget lives here** |
+| 12 | `GET /v1/typecurves` · `POST /v1/typecurves` | filter_spec, normalization, band, min_n | Curve, band, n, filter echo, `type_curve_id` | C12, C7 | R6, R7; POST for filter sets too long for a URL |
+| 13 | `GET /v1/forecasts/{forecast_id}` | — | Forecast artifact | C12 | R6, R7 |
+| 14 | `GET /v1/models` · `GET /v1/models/{model_id}` | basin, stream, status | Registry entries: training vintage, feature version, artifact hash, calibration coverage by slice | C12, C24 | R7 |
+| 15 | `GET /v1/benchmarks` · `GET /v1/benchmarks/{id}` | basin, as_of | Sliced type-curve vs ML comparison on the temporal holdout | C12, C9 | R6, R7; S4 |
+| 16 | `GET /v1/decks` · `GET /v1/decks/{deck_id}` | — | Price decks (discoverable because they are user-selectable inputs) | C12, C10 | R6 |
+| 17 | `GET /v1/assumptions` · `GET /v1/assumptions/{id}` | state | Econ assumption sets with per-state tax defaults | C12, C10 | R6 |
+| 18 | `POST /v1/valuations` · `GET /v1/valuations/{id}` | forecast_id, deck_id, assumption_id, wi, nri | NPV by quantile, breakeven, payout, monthly cash flows | C12, C10 | R3, R5, R6, R7 |
+| 19 | `POST /v1/sensitivities` | base_ref, parameter deltas | Tornado rows ranked by absolute NPV delta | C12, C10 | R3, R6 |
+| 20 | `POST /v1/inventory/runs` · `GET /v1/inventory/runs` · `GET /v1/inventory/runs/{id}` · `GET .../slots` · `DELETE` | area_ref, spacing_assumption_ft, model_id, deck_id, `dry_run` | `202` + job; then slots, rollup, spacing assumption, support distribution | C12, C22, C26 | 4D statements mandatory; R5, R6, R7 |
+| 21 | `GET /v1/operators` · `GET /v1/operators/{id}` | — | Canonical operator with aliases, parent, and event history | C12, C4 | R6 |
+| 22 | `GET /v1/operators/league` | basin, vintage, `metric` (default `residual_cum12`), rollup_mode, min_wells | Ranked operators with value, CI, n, expectation-model ref | C12, C7 | R5, R6; DIR-5 |
+| 23 | `GET /v1/permits` | basin, operator, from, to, bbox, land_unit | Permits with geometry and status | C12 | R6 |
+| 24 | `GET /v1/landunits` · `GET /v1/landunits/{id}` | system, state, bbox, label | PLSS sections and townships, TX abstracts, NM units | C12, C6 | R6 |
+| 25 | `GET /v1/spacingunits` · `GET /v1/formations` | basin, formation | Reference collections | C12 | R6 |
+| 26 | `POST /v1/aois` · `GET /v1/aois` · `GET/PATCH/DELETE /v1/aois/{id}` · `GET /v1/aois/{id}/digests` · `GET .../digest` | period, since | AOI CRUD; digest with new permits and first-production wells plus the freshness window diffed | C12, C23 | R6; symmetric CRUD |
+| 27 | `POST /v1/wellsets` · `GET /v1/wellsets` · `GET/PATCH/DELETE /v1/wellsets/{id}` · `GET /v1/wellsets/{id}/rollup` | deck_id, assumption_id | Set CRUD; rollup of production, forecast, valuation, tornado | C12, C10 | R5, R6, R7 |
+| 28 | `GET /v1/explain` | ref, depth | Machine-readable derivation graph terminating in manifests | C12, C16 | S9 |
+| 29 | `GET /v1/derivations/{id}` | — | Single derivation node | C12, C16 | — |
+| 30 | `GET /v1/recipes/{id}` · `POST /v1/recipes/{id}/replay` | — | Recipe; replay returns a job and a hash comparison | C12, C16, C26 | R7 |
+| 31 | `GET /v1/manifests` · `GET /v1/manifests/{id}` | source, from, to | Manifest records: URL, retrieval time, vintages, SHA-256, parser version. **Terminal node of every lineage chain** | C12, C1 | R1 |
+| 32 | `GET /v1/audit` | since, actor, event_type | Append-only, hash-chained event stream | C12, C16 | R2 |
+| 33 | `GET /v1/quarantine` · `GET /v1/quarantine/{id}` · `POST /v1/quarantine/{id}/reprocess` | source, reason_code, state | Rejected rows with reason, the rule that rejected them, and lifecycle state | C12, C17 | "The kitchen is the product" |
+| 34 | `GET /v1/conformance` · `GET /v1/conformance/{rule_id}` | source, entity, field, kind, effective_at | Conformance rules with rationale, evidence URL, and what they shaped | C12, C4 | R8; S11 |
+| 35 | `GET /v1/scorecard` | as_of, scope | Quality metrics, each with a derivation | C12, C18 | S8 |
+| 36 | `GET /v1/ledger` · `GET /v1/ledger/{entry_id}` | api10, model_id, graded | Forecast track record with as-of-vintage grading | C12, C19 | S7 |
+| 37 | `GET /v1/glossary` · `GET /v1/glossary/{term}` | domain_tag, q | Terms with short and expanded definitions, related terms, and where each appears | C12, C25 | R6, R7, R9; DIR-8 |
+| 38 | `GET /v1/notebook` · `GET /v1/notebook/{slug}` | tag | Findings memos with live data links | C12, C21 | Mandate B |
+| 39 | `GET /v1/jobs` · `GET /v1/jobs/{id}` · `DELETE /v1/jobs/{id}` | state, type | Job status, progress, failure, cancellation | C12, C26 | — |
+| 40 | `POST /v1/exports` · `GET /v1/exports/{id}` | query_ref, format | Async export with a provenance header block | C12, C26 | R5, R6 |
+| 41 | `POST /v1/tiles/token` · `GET /v1/tiles/{layer}/{z}/{x}/{y}.pbf` · `GET /v1/tiles/attributes` | layer, bbox, model_id, as_of | Short-lived tile token; vector tiles via the proxy; Arrow attribute bundle for client-side join | C12, C20, C6 | S2; §3.6.8 |
+
+### 3.7 Deployment and operations
+
+#### 3.7.1 Host and sizing (DIR-7)
+
+One VM on `forge`: VMID 111, 8 vCPU, 16 GB RAM ballooned with an 8 GB floor, 150 GB on the ssd-pool plus 1 TB on the hdd-pool, Ubuntu 24.04. (`pw-bridge` 102 and `arena` 110 were shut down and `onboot`-disabled on 2026-08-19 to reclaim 18 GB; re-enable with `qm set <id> --onboot 1`.)
+
+Sizing against measured source volumes rather than guesses:
+
+| Zone | Size | Placement |
+|---|---|---|
+| Raw / immutable (compressed artifacts plus retained vintages) | ~15 GB and growing slowly | hdd-pool |
+| Staging (uncompressed, parsed) | 60–90 GB peak, dominated by TX PDQ (>25 GB) and NM XML (10–20 GB, estimated) | hdd-pool, transient |
+| Canonical + marts (Parquet) | single-digit GB | ssd-pool |
+| PostGIS (geometry, tiles, operational state) | ~20 GB | ssd-pool |
+| Model artifacts, indexes, backups | ~20 GB | ssd-pool / hdd-pool |
+
+**Storage is not a constraint on this project.** The binding constraints are parse complexity (EBCDIC, `}`-DSV, XML, text-layer PDF tables) and restatement vintage management. **Open item:** residential upstream bandwidth is unmeasured, and it is the one number that could move placement to a hosted VM (DIR-7); measure before infrastructure build starts.
+
+#### 3.7.2 Exposure
+
+Per §3.6.8 and DIR-6. Cloudflare Tunnel is the only ingress; Access policies gate every path; the origin validates the Access JWT. An app-hostname exception for the bare-zone name must be codified in `rfxn-lab/dns.md` at provisioning time.
+
+#### 3.7.3 Concurrency
+
+C26 enforces: one training job system-wide; at most two batch jobs concurrently; interactive API and tile serving are never preempted (batch jobs run at a lower CPU weight via systemd slices with a hard cap of 5 of 8 vCPU). Ingest, promotion, model training, tile regeneration, and the weekly digest all share one VM, and without an explicit policy the map goes unresponsive during a training run. *(Resolves assessment A-19.)*
+
+#### 3.7.4 Ingest cadence and freshness contract
+
+Weekly digests presuppose an ingest cadence, which v0.5 never stated. Pinned per source, against verified upstream behaviour:
+
+| Source | Upstream cadence | Pull cadence | Notes |
+|---|---|---|---|
+| ND MPR (XLSX) | Monthly, ~1 month + 15 days lag | Weekly poll | Publication is irregular within the month; polling is cheaper than predicting |
+| ND DMR GIS | Daily | Weekly | PLSS layers static since 2020; DMR mirror is stale, ND GIS Hub is the refresh path |
+| NM OCD FTP | **Nightly** (documentation claims monthly; probes disagree and the probes win) | Nightly during Permian phases, weekly otherwise | Undated filenames — glasswell stamps retrieval vintage; `mod_dte` is the change-detection key |
+| TX PDQ | Monthly, last Saturday | Monthly, plus a GUID-resolution monitor | 3.55 GB; GUID rotation is a monitored failure mode |
+| TX wellbore `dbf900.txt.gz` | Weekly | Weekly | Always take the `.gz`; the uncompressed variants on the portal are stale since 2022 |
+| TX completions / permits | Nightly / daily | Daily, backfilled in batches | Each zip holds only the previous day; history is built by harvesting every daily zip, and the archive appears to start 2021-01-01 |
+| FracFocus | Business-daily | Weekly | Retroactive corrections; snapshot each pull and diff on the modification date |
+
+**Freshness contract.** `meta.source_freshness` on every response reports, per source, the latest manifest's retrieval vintage and the upstream declared vintage. AOI digests state the freshness window they actually diffed, so a digest generated against stale data says so rather than silently reporting nothing new. `/v1/health` reports `degraded` when any source is beyond its expected pull interval. *(Resolves assessment G-10, D-06, A-17.)*
+
+#### 3.7.5 Backup, retention, DR
+
+The raw zone is the only irreplaceable asset in the system — **no regulator publishes an as-reported history, so a vintage glasswell did not capture cannot be reconstructed from any of the four sources.** Everything else is derivable given raw plus code.
+
+- Nightly `restic` snapshot of raw zone, PostGIS dump, DuckDB/Parquet marts, and model artifacts to the hdd-pool; weekly encrypted off-box copy.
+- Retention: raw and manifests forever; staging 30 days (regenerable); marts 90 days of snapshots; audit stream and ledger forever.
+- **Restore drill is a P6 exit item, not a document.** An untested backup on a single unbacked VM is the failure mode that ends this project. *(Resolves assessment G-07.)*
+
+#### 3.7.6 Test strategy
+
+pytest, with five layers:
+
+1. **Unit** — pure transforms, conformance rule application, DCF mechanics, API-number normalization.
+2. **Golden-file parser fixtures** — a small, committed, byte-checked sample per source file type, including deliberately nasty rows (the `}` delimiter with an embedded `}`, an EBCDIC record, a withheld-production row, a NAD27 coordinate with a published NAD83 truth value).
+3. **Data-quality assertions** — expressed as conformance rules and quarantine counts, run against every promotion; a fixed set of TX wells with published NAD83 positions asserted in CI (the datum regression guard).
+4. **Contract** — schemathesis against the OpenAPI document; the six CI checks in §3.6.11.
+5. **Determinism** — train twice, hash-compare; replay one recipe end to end per build.
+
+*(Resolves assessment G-12.)*
+
+#### 3.7.7 Observability
+
+`structlog` JSON to journald. The `jobs` table is the run-status surface, exposed at `/v1/jobs`; every job failure writes an audit event and flips `/v1/health` to `degraded`. A weekly self-report digest to the owner covers job outcomes, source freshness, quarantine deltas, and scorecard movement. No Prometheus stack — one VM, a dozen jobs, and a queryable table is the proportionate answer, and the failure mode being defended against is *silence*, not lack of dashboards. *(Resolves assessment G-13.)*
+
+#### 3.7.8 Non-functional budgets
+
+Beyond S2 and S3: `/v1/wells/{api10}` p95 < 300 ms; `/v1/typecurves` p95 < 2 s at the enforced result cap; `/v1/explain` depth-5 p95 < 500 ms; tile p95 < 150 ms warm; ND full promotion < 30 min; three-stream model training < 20 min; township inventory run < 10 min; analog index rebuild < 5 min. Every budget is a test, not a hope. *(Resolves assessment G-14.)*
+
+#### 3.7.9 Source licensing posture
+
+Per-source licence status is a `sources` column and appears on the scorecard. Verified positions: ND free MPR and DMR GIS carry accuracy disclaimers only and no redistribution restriction; TX RRC data is free with no redistribution clause found; NM OCD publishes **no affirmative grant** (low practical risk as public records, but glasswell must not describe it as "open licensed"); FracFocus §7 permits use "without restriction" but forbids altering the data, which the staging/canonical split satisfies by construction — raw stays byte-identical, every change is a canonical-layer transform with a conformance rule. **The NDIC subscription ToS is the one materially hostile agreement** (it forbids automated mining and "business practices that substantially duplicate OGD subscription services"), and P1 avoids it entirely by using only the free path. Redistribution of raw manifests in any public artifact requires a per-source re-read before publication — this is a different legal question from the competitor IP carve-out, and v0.5 conflated them. *(Resolves assessment G-08.)*
+
+#### 3.7.10 Repository layout
+
+```
+glasswell/
+  src/glasswell/
+    sources/      fetchers, GUID resolution, manifest writing        (C1)
+    staging/      parsers, quarantine emission                       (C2, C3, C17)
+    conformance/  rule engine, registered transforms, promotion      (C4)
+    canonical/    schema, bitemporal accessors                       (C5)
+    spatial/      PostGIS access, CRS service, tile sources          (C6, C20)
+    features/     feature builder                                    (C8)
+    models/       training, calibration, analogs, registry           (C7, C9, C24)
+    econ/         deck, assumptions, DCF, sensitivities              (C10)
+    scenarios/    scenario and inventory orchestration               (C11, C22)
+    lineage/      derivation capture, recipes, explain, audit        (C16)
+    quality/      scorecard, ledger                                  (C18, C19)
+    api/          FastAPI app, envelope, errors, auth                (C12)
+    agent/        MCP server and tools                               (C15)
+    jobs/         job runner, systemd unit templates                 (C26, C23)
+    glossary/     terms, index, coverage check                       (C25)
+  ui/             React app, map, cards, drawer, glossary tooltip    (C13, C14)
+  notebook/       findings memos                                     (C21)
+  tests/          unit, fixtures, contract, determinism
+  ops/            systemd units, tunnel config, backup, restore drill
+```
+
+---
+
+## 4. Protocols (pinned; normative)
+
+### 4A — Modeling protocol
+
+- **4A.1 Unit of analysis.** [D] The well (API-10), not the wellbore and not the lease. Multi-wellbore API-10s are quarantined by 3.0.5 rather than modelled.
+- **4A.2 Targets.** [D] Cumulative production at 12 and 24 months by stream, reported both absolute and per 1,000 ft of completed lateral. Cum12 oil is the headline. EUR is **not** a target — it is an extrapolation, and extrapolation is a separate, labelled step (4A.9).
+- **4A.2a Training normalization.** Models train on **absolute** cumulative volume with completed lateral length as a feature. Per-kft figures are a post-hoc division of the served absolute value; **training on per-kft targets is prohibited.** 4A.2 states the *reported* normalization and was silent on the trained one, and per-kft metrics cannot falsify the proportionality assumption because they share it.
+- **4A.3 Split.** [D] Temporal holdout only. Train on wells whose first production month precedes the cutoff; test on wells after it. Random splits are prohibited — they leak vintage, operator behaviour, and price environment simultaneously.
+- **4A.3a Pad groups are indivisible across the split.** Surface holes within 150 m whose completions fall within 180 days of one another, measured in the basin's projected CRS, form a pad group, and a pad group is assigned wholly to one side of the split. The count of wells reassigned to honour this is reported with every benchmark. Leakage here is **asymmetric** — the ML model exploits a co-completed neighbour and the type-curve control cannot — so it inflates the S4 advantage in exactly the direction that discredits it.
+- **4A.4 Censoring.** [D] A **producing month** is a month in which the entity reports a non-null, non-withheld volume for the target stream; months with `null_semantics = no_report` or `withheld` are not producing months and are not zeros. A well with fewer than the target horizon of producing months is censored, not imputed and not dropped silently. Censored wells are excluded as training **labels** but retained as **feature inputs** to other wells, as type-curve members up to their last producing month, and in the reported denominator — a censored parent still depletes its neighbours, and dropping it silently understates depletion for exactly the newest infill wells. Censored wells are counted, and the censored share is reported alongside every accuracy figure. Withheld and confidential wells are a distinct censoring class (§3.0.3), because they are not missing at random.
+- **4A.5 Control.** [D] The peer-group type curve is the mandatory control for every ML claim. No accuracy statement ships without its control on the identical split. This is what makes question §1.2.2 answerable rather than rhetorical. The control's peer group is **pinned**, not user-chosen: formation group × area × lateral-length bucket × 36-month vintage window, minimum n = 20, with a recorded fallback ladder when n is short, and the resolved definition written verbatim onto the benchmark artifact. OQ-3's user-controlled filter set governs the **product builder**, not the control — an adversary attacks the control first, and a control that moves between runs is not reproducible.
+- **4A.6 Feature availability (R4).** [D] Every feature declares the date on which it became knowable. A model predicting from a completion date may not use any feature whose availability date is later. Neighbour depletion is computed as of the subject well's completion date, never as of today.
+- **4A.7 Quantiles and calibration.** [D] LightGBM quantile objective at P10/P50/P90, wrapped in split-conformal calibration on a held-out calibration set disjoint from both train and test. Nominal coverage is 80% central. **The conformal guarantee is distribution-free only under exchangeability, which a temporal holdout violates by construction**, so the guarantee is not claimed: empirical coverage is measured per slice with a confidence interval, published with the model and on the scorecard, and a miss is reported as a miss. Quantile naming is **statistical-ascending everywhere** — P90 is the 90th percentile of the outcome distribution, which is the *high* production case — and `quantile_convention` is mandatory on every forecast-derived figure, because the reserves convention pointing the other way is the single most likely misread in the product.
+- **4A.8 Calibration reporting.** [D] Empirical coverage tables by slice, published with every model and on the scorecard.
+- **4A.9 Slicing and extrapolation.** [D] All results reported sliced by operator, vintage, formation, county or area, and lateral-length bucket — aggregate accuracy hides the failure modes that matter. Extrapolation beyond the trained horizon uses an Arps hyperbolic fit with a terminal exponential, and is labelled `granularity = modelled` with `method = extrapolated` — **`extrapolated` is a method, never a granularity** (R5) — and never shares a chart series with in-horizon predictions without a visual break.
+- **4A.10 Training support.** [D] Every prediction carries `training_support`: the density of training wells near the prediction point in standardized feature space. Pinned so the gate is testable: **k = 25**, Euclidean distance on standardized family-weighted features, `support = clip(1 − d̄/d_ref, 0, 1)` where `d̄` is the mean distance to those k and **`d_ref` is the 90th percentile of the training set's leave-one-out mean k-distance**. `k`, the metric and `d_ref` are declared on every prediction that carries a support value. 4D.2 and 4D.3 make this a hard gate on every slot and every scenario, and a gate with no scale cannot be tested. **This is the single canonical name for the concept** — v0.5 used "support score" and `training_support` interchangeably for the same normative gate. "Support score" is retired.
+- **4A.11 Three streams.** Gas and water are secondary targets under identical split, censoring, and control rules. GOR and water cut are derived surfaces, never targets. Oil remains the headline; three-stream results are reported together.
+- **4A.11a Derived ratio surfaces.** GOR and water cut are the ratio of the P50 forecasts of their two streams, labelled `granularity = modelled`, `method = derived_ratio`, and **carry no band**: a ratio of independently fitted marginal quantiles has no quantile interpretation, so a band on it would be fabricated — which the anti-story list forbids as firmly as a naked number. Historical GOR and water cut computed from actuals are a distinct `observed` object and never share a series with the derived one without a visual break.
+- **4A.12 Analog quality.** For a sample of wells, the top-10 analogs' actual cum12 IQR must bracket the subject's actual at a rate of **0.50 ± 0.10**. The target is counterintuitive and therefore worth stating: an IQR brackets ~50% of draws by construction, so a *high* bracket rate means diffuse, uninformative analogs and fails the check exactly as a low rate does. Median analog-IQR width relative to the population IQR is reported alongside it, and both are sliced like calibration.
+- **4A.13 Model registry (new v0.6).** No number is served from an unregistered artifact. Every forecast cites a `model_id` that binds config, training-data vintage, feature version, artifact hash, seed, and lockfile hash (C24). Retraining is additive; a published model is never overwritten, so an old forecast remains re-derivable. **League expectation models (D-17) are models under this protocol** — same split, same censoring, same leakage constraints, registered, and cited by `model_id` on every league row. They serve numbers through endpoint 22, so 4A already applied to them; it simply never said so.
+- **4A.14 As-of-vintage grading (new v0.6, DIR-2).** Ledger grading compares a forecast against actuals **as they stood at the grading vintage recorded on the entry**, and separately against current actuals, reporting both. A track record graded against a moving target is not a track record.
+
+### 4B — Economics and valuation protocol
+
+[D] *(4B's topic is unrecoverable from v0.5; economics is the assignment that leaves the protocol families coherent — modeling, economics, lineage, inventory — and it is the family with the most unstated conventions.)*
+
+- **4B.1 Conventions.** Monthly cash flows, mid-month discounting, nominal USD, discount rate stated on every result (10% default; "NPV10" is never used without its rate in the payload).
+- **4B.2 Deck.** A `deck_id` is immutable and content-addressed: oil, gas and NGL price by month plus basin basis differentials. Flat, strip, and scenario decks are all just decks. The default deck's provenance is stated, including that a free-tier strip is not available and the default is therefore a flat assumption.
+- **4B.3 Assumptions and interest type.** Capex, fixed opex, variable opex per bbl and per mcf, water handling cost per bbl, per-state severance and ad-valorem defaults, abandonment, WI, NRI, discount rate. WI and NRI are **user inputs**, never derived (§2.2). What each one *scales* is now pinned, because the same input set otherwise produces two mutually exclusive valuations with no way for the caller to say which they asked for:
+
+  | Field | Rule |
+  |---|---|
+  | `interest_type` | `working \| royalty`. **Required, no default** — a missing value is `422`, never a guess |
+  | `royalty_kind` | `royalty \| orri \| nri_override`. Label only; identical arithmetic; lets the response say what was priced |
+  | `wi` | Share of costs, default 1.00. **Must be null** when `interest_type = royalty` |
+  | `nri` | Share of revenue, default 0.75 with the mandatory §2.2 warning |
+  | `post_production_deduct_pct` | Royalty only, default 0.00, **always `granularity = assumed`**, never derived |
+
+  A royalty interest bears **severance and ad valorem pro rata** — production taxes are levied on wellhead value and borne by every revenue interest — and bears **no opex, no capex and no abandonment**. Its economic limit is inherited from the working-interest cashflow, because a royalty owner does not decide when to plug. States where ad valorem falls on the operator rather than on the royalty are a per-state rule row, not a code branch. Every royalty valuation returns an `assumption_warnings` block stating the three things glasswell does not know and does not claim: the actual burden stack, whether the lease permits post-production deductions, and any shut-in or minimum-royalty terms. `wi`/`nri` supplied as request parameters construct a **derived, content-addressed assumption set**; the valuation cites exactly one assumption id, so there is no precedence question to lose.
+- **4B.4 Purity (R3).** `valuation = f(forecast, deck, assumptions)`, deterministic and side-effect-free. Sensitivity sweeps and batch inventory runs are cheap only because of this.
+- **4B.5 Breakeven.** The flat price of the deck's **declared benchmark** — `benchmark_oil`, `benchmark_gas`, `benchmark_ngl`, carried on the deck rather than assumed to be WTI — at which NPV at the stated discount rate equals zero, holding the deck's differentials and all assumptions constant. The benchmark and the method are stated in the response, because "breakeven" means at least four different things in this industry and "flat WTI" is uncheckable against a deck that never named its benchmark. Breakeven is reported **per forecast quantile**, not as a scalar (4B.7).
+- **4B.6 Sensitivities.** One-at-a-time deltas around a base case, ranked by absolute NPV change. **Nine parameters:** price, capex, opex, water handling, cum12 forecast error, **basis differential, NRI, discount rate**, and abandonment. The three additions are three of the top levers the A&D and minerals personas actually pull; a sensitivity surface that cannot vary the discount rate cannot answer "what is this worth to *you*". The tornado states its base case — `valuation_id`, quantile, deck, assumption set, discount rate and horizon — and its delta magnitudes.
+- **4B.7 No dollars without a band.** Every valuation reports NPV at P10, P50 and P90 forecast quantiles together, under the statistical-ascending quantile convention stated on the response (4A.7). A single-point NPV is never served alone. Payout is served under two unambiguous names, `payout_months_undiscounted` and `payout_months_discounted`, because the industry default is undiscounted and the two differ.
+
+### 4C — Lineage and reproducibility protocol
+
+[D] *(As 4B: 4C's topic is unrecoverable, and lineage is the family that v0.5's philosophy section demands and no other protocol covers.)*
+
+- **4C.1 Manifests.** Every raw artifact gets a manifest (§3.4.1). Manifest granularity is one retrieved file — matching v0.5 decision 6's "manifest-level lineage", which is the deliberate choice not to do row-level provenance. SHA-256 is the checksum algorithm. Raw files are read-only and never deleted.
+- **4C.2 Derivations.** Captured at the compute layer (§3.6.9), machine-readable, forming a DAG whose only terminal nodes are manifests.
+- **4C.3 Recipes.** Code revision, lockfile hash, entry point, parameters, input manifest and artifact ids, seed, determinism class, expected output hash. `POST /v1/recipes/{id}/replay` runs it and reports the hash comparison.
+- **4C.4 Audit stream.** Append-only. Ingest, promotion, model publication, key use, mutations of saved objects, and every restatement are events. **The enforced guarantee is stated as what it is:** `REVOKE UPDATE, DELETE` on the table, a `BEFORE UPDATE OR DELETE` trigger that rejects the statement, and a single writing role. There is no hash chain. A chain whose custodian is also its only writer and also the party the tamper evidence would be shown to provides no property against the only actor who could tamper, and claiming one is the class of unearned trust claim Mandate B cannot afford.
+- **4C.5 Determinism classes.** v0.5 promised byte-for-byte regeneration, which is unachievable for model-derived artifacts without pinning that v0.5 never stated. Three classes, declared on every recipe and on every derivation:
+  - **`D1`** — byte-identical in any pinned environment. Manifests, all staging, canonical and mart Parquet, type curves, feature matrices, and recipe and manifest JSON. Four conditions, cheap on data artifacts: dependency-lockfile hash recorded, fixed codec (zstd-3), explicit output sort order, and no wall-clock or hostname in artifact content. Hashes asserted in CI.
+  - **`D2`** — environment-pinned byte-identical; cross-environment prediction-equivalent within a recorded `probe_tolerance`. **LightGBM model artifacts and conformal calibrators.** The thread count is **pinned and recorded in `env_id`**, not fixed at one: `num_threads=1` for models collides head-on with §3.7.8's 20-minute training budget, and under D2 the same environment on the same CPU still yields byte equality, so the guarantee survives the removal of the collision.
+  - **`D3`** — semantically identical after a declared normalization, against a per-endpoint or per-layer `volatile_fields` list. API responses, vector tiles, and anything embedding wall-clock or request identity.
+
+  **A fetch is not a classed artifact.** v0.5's `environment_bound` was describing an *operation*, not an output: the manifest a fetch produces is D1 by construction, and a fetch's reproducibility mechanism is that manifest, never replay. The cost is real — pinned artifact production is slower, and the training budget interacts with it directly (§3.7.8) — and saying so is better than shipping a promise that fails on first audit. *(Resolves assessment A-14.)*
+- **4C.6 Explain traversal.** `/v1/explain` returns the graph; prose is a UI rendering of it.
+- **4C.7 Naked-number CI.** §3.6.11. R6 is proven, not asserted.
+- **4C.8 As-of semantics.** Every derivation records the `as_of` vintage it ran under; `/explain` for a restated number cites the vintage of the source file actually used, not the latest one.
+
+### 4D — Inventory protocol
+
+- **4D.1** Slots are generated only where existing-lateral geometry admits a full lateral at the assumed spacing, computed in the basin's projected CRS.
+- **4D.2** Every slot forecast carries `training_support`.
+- **4D.3** Inventory rollups **always** state the spacing assumption and the support distribution. No inventory number ships without both — in the API, in the UI, and in every export.
+- **4D.4** [D] Inventory geometry in v0.6 is **PLSS-based and ND-only** (§8.1 D-11). A slot references a `land_unit_id` of system `plss`. TX inventory is deferred with a named design task.
+- **4D.5** [D] Slot counts are never labelled reserves, resources, or locations in any regulatory sense. `not_a_reserves_estimate` is a **field, not a sentence in the documentation**: it is carried on the `inventory_runs` row, on the slot collection response, and in the header block of every export, and a CI string check asserts its presence on all three. Inventory is the feature in this system most prone to confident nonsense.
+
+### 4E — Ingest, vintage and restatement protocol
+
+*(New in v0.6; DIR-2, DIR-9. Resolves assessment A-10, D-05, G-15.)*
+
+- **4E.1 Idempotency.** Fetch, hash, compare. A known hash writes a `fetch_log` row and stops. An unknown hash writes raw bytes, a manifest, and triggers parse and promotion **for the affected partitions only**.
+- **4E.2 Vintage stamping.** Every observation carries `report_vintage`, taken from the manifest. Sources that publish a vintage supply it; sources that do not (NM's undated `<table>.zip`, RRC's opaque MFT links) get glasswell's retrieval vintage, and which one was used is recorded.
+- **4E.3 Restatement.** A revised source file is a new manifest and a new vintage. Prior rows are never touched. Detection per source: TX by re-pulling the monthly dump and diffing on `(lease key, cycle)`; ND by diffing on `(well, month)` with the format pinned per period; NM by diffing on `mod_dte`; FracFocus by diffing on the modification date.
+- **4E.4 Rule changes.** When a conformance rule changes, the rule row is superseded (never edited), and affected canonical partitions are **re-promoted into a new vintage** rather than rebuilt in place. Downstream features, forecasts and valuations built on the old vintage remain valid at their own `as_of` and are recomputed lazily. A rule change is an audit event and appears on the scorecard.
+- **4E.5 Vintage capture starts at P1, not at the ledger phase.** History not snapshotted cannot be reconstructed from any of these four regulators.
+- **4E.6 Politeness.** Pull cadences in §3.7.4 are deliberately below upstream refresh rates where nothing is gained by matching them. No source is polled more often than it changes.
+
+### 4F — Allocation and granularity protocol
+
+*(New in v0.6; DIR-3. Resolves assessment D-11.)*
+
+- **4F.1 Canonical never estimates.** TX lease-level production stays lease-level in canonical, keyed on `(oil_gas_code, district_no, lease_no)`. ND and NM stay well-level. Canonical has no cross-basin well-level production table, and that is the correct answer: fabricating one would put a modelled number in the layer that lineage treats as ground truth.
+- **4F.2 Allocation is a derived artifact.** Well-level TX series live in `allocated_production` in marts, produced by a versioned allocation model with an `allocation_id`, and are labelled `granularity = allocated` on every served number, chart, export, and agent response.
+- **4F.3 Scope.** Gas leases hold one gas well per lease, so allocation is an **oil-lease problem**. The affected share is measured early in P7b and reported — it may be materially smaller than assumed, which changes the effort estimate and the error bounds.
+- **4F.4 Two validators (S6).** (a) The independent RRC crosswalk (`OG_WELLBORE_EWA_Report.csv`) against the in-dump `OG_WELL_COMPLETION` — disagreement between two regulator-published crosswalks bounds the identity-mapping error. (b) NM well-level Delaware production, where the same allocation method is applied to synthetically aggregated lease-equivalents and scored against the known well-level truth — this bounds the *allocation method* error, which the crosswalk comparison cannot. v0.5 named only one validator; this is the second. [D]
+- **4F.5 Error bounds are mandatory.** No allocated number is served without `error_lo` and `error_hi` from the validation study, and the study is a published artifact.
+- **4F.6 Single-well leases are not allocated.** Where a lease maps to exactly one well, the volume is passed through with `granularity = observed` and an explicit note that the lease-well mapping is 1:1. This is a large share of the population and inflating the "allocated" count would understate the system's honesty.
+
+---
+
+## 5. Key features and outcomes (epics)
+
+Epic numbering is thematic. v0.5 anchors E3, E5, E6, E7, E8, E11, E12, E13, E14, E16 by name or context; E1, E2, E4, E9, E10, E15 are re-derived to cover the capability set the document commits to. E17 arrived at v0.5; E18 is new in v0.6.
+
+| Epic | Scope | Acceptance |
+|---|---|---|
+| **E1 Ingest and provenance spine** [D] | Source fetchers with GUID and FTP-address resilience, raw zone, manifests and checksums, fetch log, staging loaders, quarantine emission, vintage stamping, idempotent re-fetch | Every raw artifact has a manifest; a re-fetch of unchanged data is a no-op with a log row; a restatement produces a new vintage without touching prior rows (4E) |
+| **E2 Canonical model and spatial spine** [D] | Canonical schema, conformance promotion engine, identity policy, formation and operator aliasing, CRS/datum service, PostGIS load, land-unit abstraction | Every canonical field maps to ≥1 conformance rule; every coordinate transform emits a derivation; a well's spacing value explains through its datum transform |
+| **E3 Forecasting** [R] | Feature builder, type-curve baseline, LightGBM quantile three-stream models, conformal calibration, analog KNN index, model registry | 4A.1–4A.14 honored; 4A.11 and 4A.12 green per basin; every forecast cites a registered model |
+| **E4 Benchmark harness** [R, MED-LOW] | Temporal-holdout comparison of type curve vs ML, sliced, published as an artifact | S4; the artifact is regenerable from its recipe with a matching hash |
+| **E5 Economics** [R] | Decks, assumptions with water opex and per-state tax defaults, DCF, breakeven, payout, tornado sensitivities | Tornado on one well and one well-set, hand-checked directionally; every valuation reports P10/P50/P90 together (4B.7) |
+| **E6 Scenario loop** [R] | Design + location → features → forecast → NPV, persisted and addressable; analog panel and training support on the scenario card | S3; card shows analogs; support and analogs agree or the divergence is displayed |
+| **E7 Map and UI** [R] | MapLibre + deck.gl map, well card with GOR and water-cut charts, scenario card, type-curve builder, league table, inventory layer, lineage drawer, field-notes reader | S2; builder produces a curve with band and n from any filter set via `/v1/typecurves` only; every UI figure has a reproducing endpoint |
+| **E8 Activity and leading indicators** [R, MED] | Permits, DUC proxy, activity heatmaps, operator pace and design evolution over time, AOI alerts | One AOI digest generated and correct against a manual diff, with its freshness window stated |
+| **E9 API and agent gateway** [D] | Full endpoint surface, envelope, error model, versioning, pagination, auth and tile entitlement, OpenAPI generation, MCP tools, 10-question suite | S1, S5; tool-equivalence report clean; all six CI checks green |
+| **E10 Glass-box lineage and reproducibility** [D] | Derivation capture at the compute layer, `/explain`, recipes and replay, append-only audit stream, quarantine surface, naked-number CI, determinism classes | S9; any UI number to raw manifest in ≤3 interactions and one `/explain` call; one recipe replayed per build |
+| **E11 Quality and conformance** [R] | Conformance registry served, quality scorecard, quarantine share by basin, calibration coverage, withheld-data share, rule staleness | S8, S11; `/v1/conformance` live; scorecard shows wellbore quarantine share against the per-basin trigger (3.0.5) |
+| **E12 Permian expansion and allocation v0** [R] | NM well-level spine, then TX lease-level with allocation v0; NAD27 transforms as derivations; conformance rules seeded from §3.0.3 | S6; a TX well's spacing value explains through its datum transform; allocation error bounds published from both validators (4F.4) |
+| **E13 Forecast ledger** [R, MED] | Immutable forecast publication log, as-of-vintage grading, track-record surface | S7; one graded cycle complete; grading reported both as-of-vintage and against current actuals |
+| **E14 Basin transfer (stretch)** [R, LOW] | Train in ND, apply to the Permian without retraining; measure degradation; identify which features fail to transfer and why | F7 answerable with numbers; first item in the cut order |
+| **E15 Learning instrument** [D] | Findings memos at `/notebook` with live data links, honest-gap register, fluency outcomes F1–F11 written up | Every honest gap discovered during the build has a memo written at discovery time, not reconstructed at the end |
+| **E16 Capability matrix** [R] | Row-by-row comparison against incumbent public product surfaces with evidence links and honest gaps | S10; every gap tagged data-unreachable or effort-unreachable; attribution verified per §5.1 |
+| **E17 Inventory v0** | Spacing-gap slot generation, batch scenarios, NPV rollup, map layer — ND/PLSS only | S12 (conditional); 4D honored; one township demo recorded |
+| **E18 Glossary-as-data** *(new v0.6, DIR-8)* | `glossary_terms` table, `/v1/glossary` endpoints, a single UI tooltip/popover component with auto-highlighting driven by the term index (not hand-tagged per view), CI coverage check | S13; hover gives the short definition, expand gives the full definition with related terms and where the term appears; the agent and the UI read the same rows; a new surfaced term without a glossary row fails the build |
+
+### 5.1 Capability matrix attribution (E16)
+
+Corrected and current as of 2026-08. Getting these wrong discredits the artifact.
+
+| Incumbent | Flagship surface | Notes for the matrix |
+|---|---|---|
+| **Novi Labs** | Novi Insights, Data Engine, Model Engine, Forecast Engine, Novi Data Network, **Novi Intelligence** | The inventory flagship: AI-driven inventory quality, bottom-up forecast for every undrilled well, explicit spacing-interference and parent-child modelling, DCET/PV/IRR per well. Acquired RBN Energy 2026-05-28. Acquired **Turing Analytics** (whose platform is **EVA**) April 2026 |
+| **Enverus** | **PRISM** — not "EVA" | Foundations, CORE, Fusion, Activity Analytics, Production Forecast Solutions, Inventory Solutions, Field Development Studio, Instant Analyst GenAI. Blackstone acquisition announced 2025-08-06; closing unconfirmed |
+| **ComboCurve** | Auto-forecast, econ, **type curve creation**, scenarios, reserves, A&D screening | Independent as of 2026. The type-curve-builder and sensitivity rows attribute here |
+| **Petro.ai** | Day One Basin Models, Design Inventory, Predict Forecasts, Compare Scenarios, gunbarrel UI | Repositioned from completions analytics toward inventory and forecasting |
+| **WellDatabase** | Public-data platform with a free tier | **The closest public-data analogue to glasswell** and therefore the most honest comparison row in the matrix. New in v0.6 |
+
+All **eight** harvested features get a matrix row with incumbent attribution: three-stream forecasting (category-wide), analog finder (category-wide), type-curve builder UI (ComboCurve), econ tornado (ComboCurve), operator league table (Enverus PRISM dashboards), AOI alerts (Enverus), portfolio sets (category-wide), inventory v0 (Novi Intelligence). v0.5 variously said seven, eight, and six; it is eight. *(Resolves assessment D-08.)*
+
+---
+
+## 6. User stories
+
+U1–U15 are re-derived to cover every persona; U16–U21 arrived at v0.5; U22 is new in v0.6. Each has an acceptance criterion reproducible via `curl`.
+
+| # | Persona | Story | Acceptance |
+|---|---|---|---|
+| **U1** [D] | RE | I open a well and see production history by stream, completion design, a forecast with its band, and its neighbours | `/v1/wells/{api10}` plus `/production`, `/completions`, `/forecast`, `/neighbors`; every figure carries a derivation |
+| **U2** [D] | RE | I filter a well population and get a type curve with a band and a well count | `/v1/typecurves` from any filter set; the curve is content-addressed and replayable |
+| **U3** [D] | RE | I see spacing context for a well: nearest offsets, their completion dates, and projected distances | `/neighbors` in the basin's projected CRS; distances never computed in degrees |
+| **U4** [D] | A&D analyst | I get NPV and breakeven for a well at a deck I choose | `POST /v1/valuations`; P10/P50/P90 NPVs together (4B.7) |
+| **U5** [D] | A&D analyst | I draw or select an area and get an acreage rollup: well count, production, forecast, valuation | `/v1/wellsets/{id}/rollup` or an AOI-scoped query; granularity flags per R5 |
+| **U6** [D] | Minerals buyer | I price a royalty interest: PDP forecast for a set of wells at an NRI I supply and a deck I choose | `POST /v1/valuations` with `nri`; the response states that NRI is a supplied assumption, not knowledge |
+| **U7** [D] | Equity analyst | I see an operator's activity pace and design evolution over time — permits, spuds, first production, lateral length and proppant intensity by vintage | `/v1/operators/{id}`, `/v1/permits`, `/v1/wells` sliced by vintage; operator identity resolved through `operator_aliases` with the rollup mode stated |
+| **U8** [D] | OFS BD | I see where activity is: permit and DUC-proxy heatmaps by area and operator | Map layers from `/v1/permits` and the DUC proxy (permitted, not yet producing), with the proxy's definition served from the glossary |
+| **U9** [D] | Agent / developer | I discover the entire API from its OpenAPI document and answer the 10-question suite without human help | S5; every tool's parameters typed, every failure mode enumerated |
+| **U10** [D] | Auditor | I take any number on screen and reach the checksummed regulator file it came from | S9: ≤3 interactions and one `/explain` call; terminal node is a manifest with a SHA-256 |
+| **U11** [D] | Auditor | I fetch the recipe for an artifact and re-run it, and the system tells me whether the output matched | `GET /v1/recipes/{id}` and `POST .../replay`; hash comparison returned, determinism class stated |
+| **U12** [D] | Auditor | I ask why a row was rejected and get the rule that rejected it, the raw payload, and its lifecycle state | `/v1/quarantine`; every row links to a `rule_id` |
+| **U13** [R, LOW] | A&D analyst | I look at a Texas well's monthly production and can see that it is allocated, by what method, with what error bounds, and what the underlying lease volume was | `/v1/wells/{api10}/production` returns `granularity = allocated` with `allocation_id`, error bounds, and a link to the lease observation; **passes on TX data** (v0.5 L242 anchor) |
+| **U14** [D] | RE | I change lateral length, proppant intensity, landing zone, or spacing and get a new forecast and NPV | `POST /v1/scenarios`; under 3 s (S3) |
+| **U15** [D] | Owner / data scientist | I compare ML against type curves on an identical temporal holdout, sliced, and see where ML adds nothing | `/v1/benchmarks`; S4; the control is always present |
+| **U16** | OFS BD | I save an AOI and am notified of new permits and first-production wells inside it, and can fetch the digest | `POST /v1/aois`, `GET /v1/aois/{id}/digests`; reproducible via curl; digest states its freshness window |
+| **U17** | RE | For any well **or scenario**, I see its ten nearest analogs by feature distance with their actual outcomes | `GET /v1/analogs?api10=` or `?scenario_id=`; scenario card panel; 4A.12 check green |
+| **U18** | A&D analyst | For any valuation, I get a tornado: NPV sensitivity to price, opex, capex, water handling, and cum12 error | `POST /v1/sensitivities`; renders on the well card and the well-set rollup |
+| **U19** | A&D analyst | I pick an ND township and a spacing assumption and get remaining locations with forecasts and NPV at a deck, with the support distribution stated | Inventory run end to end; 4D honored; map layer shows slots; ND-scoped |
+| **U20** | A&D analyst | I save a named well set and get rollups — production, forecast, valuation, tornado — for it | `/v1/wellsets/{id}/rollup?deck=` |
+| **U21** | Auditor | I ask why two states' "oil" differs and get the conformance rules governing liquids, with rationale, from the API | `/v1/conformance` query; a production number's `/explain` cites the applied rules |
+| **U22** *(new v0.6, DIR-8)* | Newcomer / learner | I hover any unfamiliar term anywhere in the product and get a definition; I click and get the full definition, related terms, and where else it appears | `/v1/glossary`; one tooltip component; terms auto-highlighted from the index, not hand-tagged; the agent gets the identical text |
+
+### 6.1 Anti-stories
+
+Negative acceptance constraints. In a system whose thesis is "no naked numbers", these are the primary falsification tests — a passing feature that violates one of these has failed. [D] *(v0.5's anti-story list was unrecoverable; this set is re-derived from the philosophy, rules, and protocols.)*
+
+- **No number without a derivation handle.** Not "most numbers". The CI check is the arbiter.
+- **No estimate presented as an observation.** An allocated, modelled, or assumed value that is not labelled as such is a defect of the same severity as a wrong value.
+- **No forecast without a registered `model_id`, a training-data vintage, and a calibration reference.**
+- **No accuracy claim without its type-curve control on the identical split.**
+- **No fitting on information that post-dates the prediction's as-of date.**
+- **No silent unit conversion, and no numeric field without a declared unit.**
+- **No cross-source join without a conformance rule that governs it.**
+- **No blended vintages inside one served series** — a chart never mixes an XLSX-vintage month with a PDF-vintage month.
+- **No in-place update of an observation, ever.** Restatements are new vintages.
+- **No slot generated outside 4D constraints, and no inventory number without its spacing assumption and support distribution** — in the API, the UI, and every export.
+- **No slot count described as reserves, resources, or booked locations.**
+- **No UI figure without an endpoint that reproduces it.** If the UI can compute something the API cannot serve, the API is incomplete.
+- **No agent tool without a declared, existing endpoint behind it.**
+- **No served term outside the glossary index.**
+- **No mutable identifier on an immutable artifact,** and no identifier ever reused.
+- **No silent drop.** A row that does not make it to canonical is a quarantine row with a reason code, countable and queryable.
+- **No published artifact without a replayable recipe and a declared determinism class.**
+- **No public artifact before the IP carve-out review and a per-source redistribution re-read.**
+
+---
+
+## 7. Build phases
+
+§7 is rewritten, not patched: seven of eight v0.5 phase rows defined their contents as "As v0.4", so there was nothing to patch. Contents are now fully stated, data-source realities from DIR-9 are folded in, and the timebox is re-estimated honestly.
+
+### 7.1 Phase table
+
+| Phase | Contents | Exit criteria |
+|---|---|---|
+| **P0 Scaffold and contracts** | Repo layout (§3.7.10); Python 3.12 + uv lockfile; ruff, mypy, pytest; DuckDB and PostGIS up; systemd units and job runner skeleton (C26). **Derivation capture library first** (C16) — the `@derives` contract exists before any transform does. DDL for manifests, fetch_log, sources, quarantine, derivations, recipes, audit_events, jobs, conformance_rules, crs_registry, formation_aliases, operator_aliases, glossary_terms, land_units. Seed the conformance registry from evidence already in hand: NAD27→EPSG:4326, per-basin compute CRS, liquids policy, TX composite lease key, PDQ `}` delimiter, ND XLSX/PDF vintage divergence, NM even-numbered county codes, API-number formatting, unit policy. Seed the glossary from §9. API skeleton with the envelope, error model, pagination, `as_of`, and auth stub; OpenAPI snapshot committed | Audit stream live and hash-chained; first conformance rows and glossary rows committed with evidence URLs; envelope and error model frozen; a trivial endpoint passes the naked-number and glossary-coverage CI checks; one recipe replays byte-exact |
+| **P1 ND spine** | **First hour: the identity question** — open `2026_06.xlsx` and determine whether the free MPR carries API-10 or only the NDIC file number; if file-number-keyed, build the `OGD_Wells` crosswalk before anything else (3.0.4, DIR-9 B11). Fetchers for the free NDIC MPR path and the free DMR GIS downloads — **no NDIC subscription is on the P1 critical path** (well-level ND production is free; the subscription ToS is hostile to this access pattern and is avoided entirely). Parsers: XLSX, shapefile, file geodatabase. Staging load, quarantine live. Promotion to canonical with conformance references and bitemporal vintages (4E). PostGIS load: well points, `OGD_Horizontals_Line` laterals, PLSS sections and townships, spacing units, pre-spud permits. FracFocus ingest (measure the size on first pull — no published figures exist). **Deferred within P1:** MPR PDF back-extraction for 2003-01 → 2015-04; horizontal Bakken effectively starts ~2008 and the XLSX era covers the modern design space | Every ND production row explains to a manifest and cites its rules; the identity decision is a committed conformance rule with evidence; quarantine share measured and non-zero (a zero quarantine rate means the checks are not running); re-fetching an unchanged file is a logged no-op; a synthetic restatement produces a new vintage without touching prior rows |
+| **P2 Serving and map** | API v1 for wells, production, completions, neighbours, permits, land units, spacing units, formations, manifests, conformance, quarantine, glossary. Tile pipeline: geometry tiles from PostGIS via martin behind the tile proxy; attribute bundles for client-side join (§3.5). Map application, well card with GOR and water-cut charts, the lineage drawer, and the glossary tooltip component | S2 (20k+ laterals at interactive frame rates); S9 demonstrated on a production number; S13 for the surfaces that exist; tile entitlement enforced; every UI figure has a reproducing endpoint |
+| **P3 Forecasting and benchmark** | Feature builder with declared availability dates (C8); type-curve baseline; LightGBM three-stream quantile models; split-conformal calibration; model registry (C24); analog index, persisted; benchmark harness (C9) | 4A.1–4A.14 honored; S4 artifact for ND, sliced; 4A.11 and 4A.12 green; determinism check green (train twice, identical hash); no number served from an unregistered artifact |
+| **P4 Dollars and scenarios** | Decks, assumptions with water opex and per-state tax defaults; DCF, breakeven, payout; sensitivities and tornado; scenario loop (C11); type-curve builder UI; analog panel on the scenario card | S3; U14, U17, U18 pass; tornado hand-checked directionally; every valuation reports P10/P50/P90 together |
+| **P5 Intelligence, agents and alerts** | Activity surfaces and DUC proxy; operator league table on the residual metric (DIR-5) with `operator_aliases` and rollup mode; AOIs and weekly digests (C23); well sets and rollups; MCP gateway and curated tools (C15); ledger starts writing (C19) | S5 (10-question suite passes via public tools); U16, U20 pass; tool-equivalence report clean; AOI digest correct against a manual diff with its freshness window stated |
+| **P6 Hardening and glass-box proof** | Naked-number, glossary-coverage, conformance (coverage/execution/binding), contract, tool-equivalence and determinism CI checks all wired and blocking; determinism pinning across the artifact path; Cloudflare Tunnel and Access with all three scopes; guest key issued and exercised by an actual outsider; rate limits; backup **and a live restore drill**; observability and the weekly self-report; non-functional budgets converted to tests | S1, S2, S3, S5, S9, S11, S13, S14 green; restore drill completed from backup to working system; a stranger with a guest key reproduces every number in the UI |
+| **P7 Permian — NM first, then TX** | **P7a New Mexico.** OCD anonymous FTP fetch with address re-resolution; XML full-table parsers; `wcproduction`, `wellhistory`, `wchistory`, `spacingunit`, `podwc`; `mod_dte` change detection; well-level Permian spine; NM county-code rule exercised. **P7b Texas.** RRC MFT GUID resolution with rotation monitoring; `PDQ_DSV.zip` (`OG_LEASE_CYCLE`, `OG_WELL_COMPLETION`) with the `}` parser and the composite lease key; `dbf900.txt.gz` wellbore master (the `.gz`, never the stale plain files); county GIS well and survey layers with the NAD27 transform recorded as derivations; completion feed and drilling permits, incremental; **allocation v0** with both validators (4F.4); TX abstracts loaded into `land_units`. **TX directional survey PDFs are skipped** — no free parseable station data exists; logged as an honest gap tagged data-unreachable. OSDU mapping memo | S6 (allocation error bounds from both validators); S8; U13 and U21 pass on TX data; quarantine rate reported **by basin** against the per-basin trigger (3.0.5); the oil-lease share of allocation measured and published; NM-before-TX ordering validated — the well-level spine de-confounded the allocation error measurement or it is documented why it did not |
+| **P8 Living systems** | E13 graded cycle (elapsed-time bound); E17 inventory v0, ND-scoped; E14 transfer stretch; E16 capability matrix with corrected attribution; E15 notebook write-up and fluency outcomes; publish decision against IP-carve-out status | S7, S10, S12 (conditional); every honest gap tagged data-unreachable or effort-unreachable; publish decision recorded either way |
+
+### 7.2 Timebox
+
+v0.5 budgeted P1–P5 at "roughly ten to eleven focused weekends" with "harvest adds one to two", P6 at three to four, and P7 at two plus waiting — about 17–19 weekends total. That estimate did not survive inspection: the same span had to deliver ND ingest across six source families, staging-to-canonical promotion, PostGIS and tiles and a map UI, three-stream GBM with conformal calibration, a benchmark harness, analog KNN, DCF economics with per-state tax, scenarios, a type-curve builder UI, tornado, league table, AOI alerting, the ledger write path, and an agent gateway passing a ten-question suite — plus hardening to S1/S5/S9/S11. It is roughly half-credible.
+
+Re-estimated, at 12–16 productive hours per focused weekend, solo:
+
+| Phase | Weekends | Note |
+|---|---|---|
+| P0 Scaffold and contracts | 2 | Higher than instinct because derivation capture and the envelope are contracts, and contracts frozen late are the most reliable source of rework |
+| P1 ND spine | 4 | Six source families, three file formats, bitemporal promotion, quarantine |
+| P2 Serving and map | 3 | Tiles, attribute bundles, well card, drawer, glossary component |
+| P3 Forecasting and benchmark | 4 | Features, three streams, conformal, registry, harness, determinism |
+| P4 Dollars and scenarios | 3 | |
+| P5 Intelligence, agents and alerts | 3 | The agent suite is the long pole here, not the league table |
+| P6 Hardening and glass-box proof | 3 | Six CI checks, three auth scopes, a real restore drill |
+| P7 Permian (NM 2, TX 4) | 6 | TX carries the heaviest parse work in the project |
+| P8 Living systems | 3 + elapsed | The graded cycle is bounded by calendar time, not effort |
+| **Total** | **~31 weekends** | ≈ 7–8 months of weekends |
+
+That is roughly 1.7× v0.5's figure. The increase is not scope creep: it is the cost of the things v0.5 assumed rather than budgeted — derivation capture written first rather than retrofitted, bitemporal ingest, determinism pinning, six CI checks, an auth model, a restore drill, and the honest parse cost of `}`-DSV, XML, fixed-width ASCII and text-layer PDF. **It is better for this number to be bigger and true.**
+
+### 7.3 Traceability
+
+Every success criterion maps to at least one epic and one phase.
+
+| Criterion | Epics | Phase where it is proven |
+|---|---|---|
+| S1 stranger reproduces every number | E9, E10 | P6 |
+| S2 20k+ laterals at frame rate | E7 | P2 (re-verified P6) |
+| S3 scenario under 3 s | E6 | P4 |
+| S4 benchmark artifact per basin | E4 | P3 (ND), P7 (Permian) |
+| S5 agent 10-question suite | E9 | P5 (re-verified P6) |
+| S6 allocation with both validators | E12 | P7b |
+| S7 ledger with a graded cycle | E13 | P8 |
+| S8 quality scorecard published | E11 | P7 |
+| S9 glass box holds | E10 | P2 (first proof), P6 (full) |
+| S10 capability matrix | E16 | P8 |
+| S11 conformance registry served | E11 | P6 |
+| S12 inventory demo *(conditional)* | E17 | P8 |
+| S13 glossary coverage | E18 | P2 (partial), P6 (full) |
+| S14 as-of reproducibility | E1, E10 | P6 |
+| F1–F11 fluency | E15 | continuous; written up in P8 |
+
+### 7.4 Cut order under compression
+
+Cut in this order: **E14 transfer**, then **E17 inventory**, then **alerts and league table**, then **E8 activity**, then **E7 polish**, then the **field-notes UI** (the memos still get written; only the reader is cut).
+
+**Never cut:** E1 and E2 (there is no product without the spine), E4 benchmark (it is the control group — without it every accuracy claim is marketing), E5 economics, E10 glass-box lineage and E11 quality (they are the thesis), E12's validators, derivation capture, the conformance registry, and **E18's glossary** — the glossary is cheap, load-bearing for S13, and the only thing making Mandate B's teaching claim concrete rather than aspirational. Cutting E17 forfeits S12, which §2.4 already makes explicit and conditional; nothing else in the cut order costs a success criterion.
+
+---
+
+## 8. Decisions, risks, open questions
+
+### 8.1 Resolved decisions
+
+- **D-1 Conformalized quantile regression.** [R, HIGH] The forecast model is a gradient-boosted quantile regressor wrapped in split-conformal calibration, not a point model with a heuristic band and not a Bayesian model. Rationale: conformal gives distribution-free coverage that can be *measured* and reported, which is the only kind of uncertainty claim this project is entitled to make. Nominal 80% central coverage; the calibration split is disjoint from train and test. *Anchor: v0.5 L253 keyword "CQR"; L69 "gradient-boosted quantile model with conformal calibration".*
+- **D-2 Both normalizations, selected by role.** [R, MED] Absolute per-well and per-1,000-ft normalizations are both retained, and which one is primary depends on the consumer: per-1,000-ft for cross-well and cross-operator comparison (type curves, league tables, benchmark slices, analogs), absolute for anything that becomes dollars (valuation, inventory rollups, ledger entries). Every served series states its normalization. *Anchor: v0.5 L253 keyword "both normalizations by role"; `cum12_per_kft` (L177); "normalization choice" (L174).*
+- **D-3 Quality is measured, not asserted.** [R, MED] The scorecard publishes numbers with derivations rather than claims of curation. Every quality metric is reproducible from the API. This is the direct counter-position to the incumbents' curation claims. *Anchor: v0.5 L253 keyword "quality measured"; S8.*
+- **D-4 Curated MCP tools.** [R, HIGH] The agent tool list is hand-curated for task ergonomics, not generated from OpenAPI — with the drift risk closed by the CI equivalence report (§3.6.10). *Anchor: v0.5 L253 keyword "curated MCP tools".*
+- **D-5 Tile entitlement pattern.** [D] Short-lived signed tile tokens bound to principal and layer set, minted by the API, validated by a proxy in front of martin, which is never directly exposed (§3.6.8). *v0.5 L253 retained this as a resolved decision with no recoverable content; this is a fresh reconstruction, and it was the only access-control statement in the entire prior document.*
+- **D-6 Manifest-level lineage.** [R, HIGH] Provenance granularity is the source-file manifest, not the source row. A derivation names the manifests its inputs came from; it does not carry row-level provenance. Rationale: row-level lineage multiplies storage by the row count for a marginal audit gain, and the manifest plus a deterministic parser already makes any row locatable. SHA-256 is the checksum; raw artifacts are immutable and never deleted. *Anchor: v0.5 L253 keyword "manifest-level lineage"; S9's "to raw manifest".*
+- **D-7 Name.** glasswell, for the reasons in §1.3. basinforge retained as a repo alias.
+- **D-8 Layering.** Strict staging / canonical / marts. Staging never serves, marts never ingest, **canonical never estimates**.
+- **D-9 Wellbore policy.** One producing wellbore per API-10 assumed; violations detected on API-12 and quarantined, measured per basin against a per-basin trigger (§3.0.5).
+- **D-10 Liquids policy.** Oil plus condensate is the modeling liquid; the regulator classification is preserved in staging; the policy is stated wherever the number appears.
+- **D-11 Inventory guardrail and scope.** No slot without geometric admissibility and training support (4D). **Inventory v0 is PLSS-based and ND-only.** Rationale: PLSS sections and townships are a regulator-published, uniform tiling that spacing-gap geometry can be built on; Texas has no PLSS — it uses abstracts and surveys of wildly varying size and shape, so a TX inventory unit is a genuinely different geometric problem (most naturally the operator's unit or lease polygon, or a synthetic grid), not a data-loading exercise. The `land_units` abstraction exists in canonical from P0 so that TX is a design problem rather than a schema migration, and TX inventory is a named deferred design task (OQ-11). S12 and U19 are explicitly ND-scoped. *(Resolves assessment D-12.)*
+- **D-12 Single-tenant with owner-scoped state.** [D] "Not multi-user" means no user management, no organizations, no billing, and no isolation guarantee beyond the principal column — it does **not** mean global mutable state. Saved objects carry `owner_principal` and `visibility`; three auth scopes exist (§3.6.8). *(Resolves assessment D-01, D-02.)*
+- **D-13 Alert delivery is pull-primary.** [D] Digests are materialized and fetched from `GET /v1/aois/{id}/digests`; an optional systemd timer renders the current digest and mails it to the owner via the host MTA. No webhooks, no external notification service in v0.6. U16 is worded "am notified and can fetch" rather than "receive", because the AC was always "reproducible via curl". *(Resolves assessment A-17.)*
+- **D-14 Implementation stack.** Python scientific ecosystem per DIR-4 and §3.1. Boring and auditable beats contrarian.
+- **D-15 Bitemporal production.** Every observation carries production month and report vintage; restatements are new vintages; `/explain`, ledger grading and reproducibility are as-of-vintage (DIR-2, 4E).
+- **D-16 Allocation placement.** Canonical carries native granularity only; well-level TX series are versioned derived artifacts with error bounds and a granularity flag (DIR-3, 4F).
+- **D-17 League metric.** [DIR-5] Headline metric is **residual cum12 per 1,000 ft**: actual minus the expectation of a **rock-and-location-only** model whose features deliberately exclude operator identity and completion design. The residual therefore credits design *and* execution to the operator, which is what an equity analyst is actually asking about. Raw `cum12_per_kft` is shown alongside, always, with well count and a bootstrap confidence interval. A second variant, `residual_cum12_design_adj`, uses an expectation model that *includes* design, isolating execution alone; it is available as a parameter, not a default. Both state their expectation model's `model_id`.
+- **D-18 `/explain` is captured at the compute layer.** Not hand-authored per endpoint (§3.6.9). This is the decision that determines whether the glass-box thesis is affordable.
+- **D-19 Glossary is data.** [DIR-8] A table, two endpoints, one UI component, one CI check. Terms are auto-highlighted from an index, never hand-tagged per view.
+- **D-20 Permian ordering: NM before TX.** [DIR-9] A well-level Permian spine de-confounds allocation validation — it makes the allocation method's error measurable independently of the identity-mapping error. This inverts v0.5's implied TX-first ordering.
+- **D-21 ND is built entirely on the free path.** [DIR-9] Well-level ND monthly production is free (`dmr.nd.gov/oilgas/mpr/YYYY_MM.xlsx`), and the free DMR GIS downloads cover wells, laterals, surveys, spacing units, PLSS and pre-spud permits. The NDIC subscription is $100 Basic / $500 Premium (not the ~$175 previously assumed), and its ToS forbids "business practices that substantially duplicate OGD subscription services" — which describes this project. **No subscription on the critical path.** Bulk formation tops remain Premium-only and are a separate, later, bounded decision (OQ-12).
+- **D-22 No number from an unregistered artifact.** [D] Every forecast, type curve, benchmark, analog result and allocated volume cites a registered artifact id (C24, 4A.13).
+- **D-23 The analog index is always persisted.** [D] v0.5 made persistence conditional on a 60 s rebuild threshold; that performance decision silently determined whether analog results could carry a derivation at all. Persistence is now unconditional and the in-process index is a cache. *(Resolves assessment A-15.)*
+- **D-24 Determinism is classed, not promised.** [D] `byte_exact`, `value_equal`, `environment_bound` (4C.5). Published artifacts are `byte_exact`; the cost is single-threaded artifact production, and the alternative is a promise that fails on first audit.
+- **D-25 Host placement.** [DIR-7] One VM on `forge` (VMID 111, 8 vCPU, 16 GB balloon / 8 GB floor, 150 GB ssd + 1 TB hdd, Ubuntu 24.04), pending the upstream-bandwidth measurement that could move it to a hosted VM (OQ-13).
+
+### 8.2 Risks
+
+| # | Risk | Impact | Mitigation |
+|---|---|---|---|
+| **R-01** | **IP carve-out** [R] — competitor IP exposure on anything public-facing; remains the top item and time-sensitive | Blocks publication of the capability matrix, the notebook, and any public demo — i.e. the closing artifact of Mandate A | **Now schedulable, which it was not before:** owner is Ryan; the trigger is the first public URL or the first published matrix row; the review must complete **before P8 exit**; until then every artifact is private and the guest scope serves only invited outsiders. An unschedulable deadline is not a mitigation |
+| **R-02** | Solo-builder bandwidth; ~31 weekends is a long single-threaded run | Phases slip; momentum decays; half-built subsystems rot | The cut order in §7.4 is pre-decided so compression is a lookup rather than a negotiation; phases are ordered so each ends with something demonstrable |
+| **R-03** | Source access drift: RRC MFT GUIDs rotate without notice; the NM FTP address is published only as a PNG; NDIC page structure changes | Ingest silently stops; digests silently empty | GUID resolution is a monitored step with its own job and alert; FTP address re-resolved from the page on failure; every fetch writes a `fetch_log` row so "nothing changed" and "nothing fetched" are distinguishable; `/v1/health` goes `degraded` on a missed pull window |
+| **R-04** | Restatement drift corrupts the track record | The ledger grades against a moving target and the headline S7 claim collapses | Bitemporal capture from P1 (DIR-2, 4E); grading reported both as-of-vintage and against current actuals |
+| **R-05** | Public-data quality bias: withheld/confidential wells, trade-secret FracFocus fields, missing quantity data | Models trained on a non-random sample; the quality scorecard overstates coverage | Withheld is a distinct state, never collapsed to missing; the share is a scorecard metric; 4A.4 treats it as its own censoring class |
+| **R-06** | Allocation error too large to be useful | S6 is met technically but the Permian well-level product is not credible | Measure early in P7b; report the oil-lease share; if error bounds are wide, ship them wide and say so — a labelled bad number is Mandate B content, an unlabelled one is a defect |
+| **R-07** | Model overfit or leakage | Benchmark advantage evaporates on real holdouts; F2 is answered wrongly | R4 and 4A.3/4A.6 enforced in code; temporal holdout only; type-curve control mandatory |
+| **R-08** | Single VM is a single point of failure; the raw zone is irreplaceable | Losing the raw zone loses every vintage no regulator retained — unrecoverable | Nightly restic to hdd-pool, weekly off-box copy, **and a live restore drill as a P6 exit item** |
+| **R-09** | Harvest scope creep — eight small features quietly become eight medium ones | The timebox blows past ~31 weekends | Each harvested feature capped at its stated acceptance; anything beyond it is a new document version |
+| **R-10** | Conformance registry rot — rules drift from code and the registry becomes decoration | S11 and F10 both rest on the registry being real | R8's three rule kinds plus three CI checks (coverage, execution, binding); the DOCUMENTED share is itself a tracked scorecard metric; the "where feasible" escape hatch is removed |
+| **R-11** | Datum mishandling — silent ~100 m position errors corrupt spacing and inventory | Wrong numbers that look right; the worst failure class in this system | §3.0.3 rules; the CRS service is the only transform path; a fixed set of TX wells with published NAD83 positions asserted in CI |
+| **R-12** | Inventory misuse — slot counts read as reserves | Reputational, and directly contrary to Mandate B | 4D.3 and 4D.5 statements mandatory in every rollup, response and export |
+| **R-13** | Glass-box tax collapses velocity — derivation capture on every transform slows the build | The thesis eats the product | Capture is a decorator and a context manager, not a per-call-site chore (D-18); it is built in P0 so the cost is paid once; if it does slow things, that measurement *is* F8's answer and belongs in the notebook |
+| **R-14** | NDIC subscription ToS is hostile to this access pattern | Access suspension; and the "substantially duplicate" clause plausibly describes this project | Build entirely on the free path (D-21); if Premium is ever bought for tops, restrict it to a bounded one-time bulk pull |
+| **R-15** | Source redistribution rights on any published artifact | Publishing raw manifests or bulk extracts is a different legal question from competitor IP, and v0.5 conflated them | Per-source licence status tracked in `sources` with evidence URLs; NM's absence of an affirmative grant recorded honestly; a per-source re-read is a gate on any public artifact |
+| **R-16** | Residential upstream bandwidth insufficient for the tunnel | Public demo unusable; placement decision reopens late | Measure before infrastructure build starts (OQ-13); Vultr is the fallback and the sizing already fits |
+| **R-17** | Cloudflare Access or tunnel misconfiguration exposes data | Private PoC becomes public unintentionally | Origin validates the Access JWT independently, so the tunnel is not the only control; tunnel-only ingress with no port forwards; a deliberate unauthenticated-access test in the P6 CI suite |
+| **R-18** | Parse cost underestimated on the exotic formats (EBCDIC, `}`-DSV, XML at 10–20 GB, text-layer PDF) | P1 and P7b slip hardest | Golden-file fixtures per format from day one; the ND PDF era is explicitly deferred within P1; the TX EBCDIC P-4 path is avoided in favour of the ASCII completion feed |
+
+### 8.3 Open questions
+
+Re-derived and re-opened. v0.5 carried seven open questions whose *subjects* were unrecoverable; missing open questions are worse than missing definitions, because the build rediscovers them at the worst moment. OQ-1 through OQ-7 are a fresh design review of the questions this system genuinely has open. [D]
+
+1. **OQ-1 Headline target horizon.** Cum12, cum24, or an EUR-style extrapolation as the headline? Start with cum12 oil (data-supported for recent vintages, short feedback loop for the ledger); add cum24 once the ND history supports it. EUR stays out of the target set (4A.2) — revisit only if the ledger shows short-horizon accuracy is uninformative about long-horizon value.
+2. **OQ-2 Feature-set boundary.** How much geology (formation tops, thickness, structural position) versus design-and-location only? Bulk ND tops are paywalled (D-21) while TX formation data ships free in the completion feed — so the honest starting point is design-plus-location, with geology as an ablation study. Decide after E3 whether the geology lift justifies the $500 Premium spend.
+3. **OQ-3 Type-curve peer-group definition.** What defines a peer group — geography, formation, vintage window, operator, or a learned neighbourhood? Start with an explicit filter set the user controls (which is also the builder UI), and compare against a learned grouping once E3 is stable.
+4. **OQ-4 Parent-child depletion encoding.** How is neighbour depletion at completion time encoded without leakage — count within a radius, time-weighted cumulative production of offsets, or a distance-decayed pressure proxy? All three are computable in the projected CRS; the choice needs an ablation, and it is likely the single highest-value feature family in the Bakken.
+5. **OQ-5 Extrapolation form.** Arps hyperbolic with terminal exponential (interpretable, industry-legible, imposes a functional form) versus direct multi-horizon ML (fewer assumptions, worse extrapolation behaviour, harder to defend to a reservoir engineer)? Blueprint currently pins Arps (4A.9). Revisit with evidence from the ledger.
+6. **OQ-6 Price deck source and default.** No free, redistributable forward strip is in hand. Options: a flat default deck stated as an assumption, a manually-entered strip refreshed occasionally, or a scenario set. Currently: flat default, provenance stated (4B.2). This is an honest gap and belongs in the E16 matrix as data-unreachable.
+7. **OQ-7 Confidential and tight-hole handling.** Exclude from training, model as censored, or impute? Currently censored (4A.4) — but the ND confidential period systematically hides *new* wells, which is exactly the population inventory and scenarios care about. Needs a measurement of how much of the recent vintage is affected before the policy is final.
+8. **OQ-8 Analog distance metric.** Plain Euclidean on standardized features, or learned (model leaf co-occurrence)? Start Euclidean; compare once E3 is stable. *(Carried from v0.5.)*
+9. **OQ-9 Inventory spacing assumption.** Single user input, or per-operator inferred from recent development? Start with user input; inferred spacing is a P8 experiment. *(Carried from v0.5.)*
+10. **OQ-10 League table normalization.** **Closed by DIR-5** — see D-17. Recorded here rather than deleted, so the resolution is traceable.
+11. **OQ-11 TX inventory geometry.** [New] What is the inventory unit in a state with no PLSS — the operator's unit polygon, the lease, the abstract, or a synthetic grid? Named deferred design task; the `land_units` abstraction keeps this a design question rather than a migration (D-11).
+12. **OQ-12 NDIC Premium ($500/yr) for bulk formation tops.** [New, owner-parked] Only if OQ-2's ablation shows geology carries real lift. Bounded one-time bulk pull if bought (R-14).
+13. **OQ-13 Residential upstream bandwidth.** [New, owner-parked] The one measurement that could move the VM off `forge` (DIR-7). Measure before infrastructure build starts.
+14. **OQ-14 Attribute-bundle size ceiling.** [New] The client-side attribute join (§3.5) is measured at ~20k ND laterals. The Permian is an order of magnitude larger; at what feature count does the bundle need server-side filtering, tiling, or a return to baked-in tile attributes? Measure in P7, not assume.
+15. **OQ-15 Rule-change re-promotion cost.** [New] 4E.4 re-promotes affected partitions into a new vintage on a conformance-rule change. At what rule-change frequency does that become the dominant compute cost, and does a rule change ever justify rebuilding rather than re-vintaging? Measure once the registry has a few dozen live rules.
+
+---
+
+## 9. Glossary
+
+This section is the **seed set for `glossary_terms`** (DIR-8, E18, R9), not a document appendix. Every entry here becomes a row; every term the product later surfaces adds one.
+
+**Allocation / allocation v0** — Estimating well-level volumes from a lease-level report by splitting the lease total across its wells. Necessary only in Texas, where production is reported by lease, not by well. Always labelled `allocated`, never `observed`.
+**Analog** — A well near another in *feature* space (rock, design, location), as distinct from a neighbour, which is near in *physical* space.
+**AOI** — Area of interest: a saved polygon that generates periodic digests of new permits and new first-production wells inside it.
+**API-10 / API-12 / API-14** — The American Petroleum Institute well number. Digits 1–2 state (ND 33, TX 42, NM 30 — API codes, not FIPS), 3–5 county at time of permitting, 6–10 unique well. Digits 11–12 identify the sidetrack (wellbore); 13–14 are convention, not standard. API-10 is glasswell's identity spine.
+**Arps decline** — The standard empirical decline-curve family (exponential, hyperbolic, harmonic) used to extrapolate production beyond observed history.
+**Audit stream** — The system's single append-only, hash-chained event log. Restatements, promotions, model publications and key uses are events in it; nothing in it is ever edited.
+**Band** — The P10–P90 interval around a forecast or type curve. A curve without a band is not shipped.
+**Bitemporal** — Carrying two time axes: when something *happened* (production month) and when it was *reported* (report vintage). The mechanism that makes restatement survivable.
+**Breakeven** — Here: the flat WTI price at which NPV equals zero at the stated discount rate, holding differentials and assumptions constant. The word means several different things in this industry, so glasswell always states its method.
+**Canonical** — The conformed layer: one schema for the domain, every mapping decision recorded, observations at native granularity. Canonical never estimates.
+**Capex / opex** — Capital cost to drill and complete; operating cost to produce. glasswell splits opex into fixed monthly, per-bbl oil, per-mcf gas, and per-bbl water handling.
+**Censoring** — Treating a well with less history than the target horizon as incomplete rather than dropping or imputing it. The censored share is reported with every accuracy figure.
+**Completion design** — The controllable variables: lateral length, proppant and fluid intensity, stage count, landing zone.
+**Condensate** — Light liquid hydrocarbon produced with gas. Classified differently by different states, which is why `liquids_policy` exists.
+**Confidential well** — A well whose production a regulator withholds for a statutory period. Withheld is a distinct state from missing, and is never collapsed into it.
+**Conformal calibration** — A distribution-free method that turns model outputs into intervals with a measurable coverage guarantee, calibrated on a held-out split.
+**Conformance rule** — A recorded cross-source mapping decision with its rationale, evidence and effective dates. Served as data (R8). A mapping that exists only in code fails review.
+**CQR** — Conformalized quantile regression: quantile gradient boosting wrapped in conformal calibration. glasswell's forecast model.
+**CRS / compute CRS** — Coordinate reference system. Storage is always EPSG:4326; every distance, area and spacing calculation runs in the basin's projected metre-based CRS (ND UTM 14N, Permian UTM 13N). Distance math in degrees is a defect.
+**Cum12 / cum24** — Cumulative production over the first 12 or 24 producing months. Reported both absolute and per 1,000 ft of lateral.
+**Datum** — The geodetic reference frame (NAD27, NAD83, WGS84). Legacy Texas RRC coordinates are NAD27; using them untransformed shifts a well by up to ~100 m, silently corrupting spacing.
+**DCA** — Decline curve analysis: fitting an empirical decline to production history to forecast the remainder.
+**DCF** — Discounted cash flow: the monthly revenue-minus-cost stream discounted to a present value.
+**Deck** — An immutable price assumption set: oil, gas and NGL prices by month plus basin differentials. Selected by `deck_id`.
+**Derivation handle** — The reference attached to every served figure that resolves, through `/v1/explain`, to the graph of transforms that produced it, terminating in checksummed source manifests.
+**Determinism class** — Whether an artifact's recipe reproduces it byte-for-byte (`byte_exact`), to a stated numeric tolerance (`value_equal`), or only via its manifests (`environment_bound`).
+**DUC / DUC proxy** — Drilled but uncompleted well. glasswell's proxy: permitted or spudded, not yet reporting production, within a stated age window. A proxy, labelled as one.
+**EUR** — Estimated ultimate recovery: total expected lifetime production. An extrapolation, not an observation; not a model target here.
+**Effective date** — The date from which a rule, alias or record applies. Reference data is effective-dated so that a past number can be re-derived under the rules in force at the time.
+**First production** — The first month a well reports non-zero volume. The anchor for vintage, censoring and DUC logic.
+**Formation top** — The measured or true vertical depth at which a named geologic formation is encountered.
+**GOR** — Gas-oil ratio: gas volume per barrel of oil. A derived surface, never a model target.
+**Granularity** — What kind of number this is: `observed`, `allocated`, `modelled`, or `assumed`. Carried on every served figure (R5).
+**Guest scope** — A read-only, expiring access grant. The mechanism behind S1's stranger.
+**IP90** — Initial production over the first 90 days. A common early-performance indicator.
+**Land unit** — The canonical container for a legal land subdivision: a PLSS section or township in ND and NM, a survey or abstract in TX. The abstraction that keeps Texas from being a schema migration.
+**Landing zone** — The specific formation interval a lateral is drilled and completed in.
+**League table** — A ranked operator benchmark on a normalized metric. glasswell's headline is a residual metric (D-17), not raw output.
+**Lease (TX)** — The RRC reporting unit for production. Its key is composite: `(oil_gas_code, district_no, lease_no)` — a bare lease number collides across districts.
+**Liquids policy** — The stated rule for what counts as the modeling liquid. glasswell: oil plus condensate, with the regulator's own classification preserved in staging.
+**Manifest** — The record of one retrieved raw artifact: source URL, retrieval timestamp, declared and retrieval vintages, byte length and SHA-256. The terminal node of every lineage chain.
+**Marts** — The serving layer: features, models, forecasts, valuations, allocations, tiles and rollups, all derived from canonical only. Marts never ingest.
+**Mcf** — Thousand cubic feet of gas, at the regulator's stated conditions, which glasswell records rather than silently normalizes.
+**Model registry** — The record binding a `model_id` to its config, training-data vintage, feature version, artifact hash, seed and dependency lockfile. Nothing serves a number from an unregistered artifact.
+**Naked number** — A served figure with no derivation handle. Treated as a defect, and detected by a CI check rather than by review.
+**NRI / WI** — Net revenue interest (the share of revenue after royalties and burdens) and working interest (the share of costs). Both are **user-supplied inputs** here; glasswell builds no ownership graph and never claims to know a tract's actual burden stack.
+**Parent-child** — The interference between an earlier ("parent") well and a later ("child") well completed nearby into a depleted reservoir. Encoded as an as-of-completion-date feature, never as of today.
+**Payout** — The number of months until cumulative discounted cash flow turns positive.
+**PDP** — Proved developed producing: wells already on production. The category a minerals buyer prices.
+**PLSS** — The Public Land Survey System: the township/range/section grid used in ND and NM. **Texas has none**, which is why inventory v0 is ND-scoped.
+**Proppant intensity** — Pounds of proppant per foot of lateral. The most-cited single completion-design variable.
+**Quantile (P10 / P50 / P90)** — The forecast values that 10%, 50% and 90% of outcomes fall below. P90 is the high case for production and the conservative case for value; glasswell always states which convention it is using.
+**Quarantine** — The table of rows that failed promotion, with the reason code, the rule that rejected them, the raw payload, and a lifecycle state. It has an endpoint, because the kitchen is the product.
+**Raw zone** — The immutable, content-addressed store of source bytes exactly as retrieved. Never modified, never deleted. The only irreplaceable asset in the system.
+**Recipe** — The pinned instructions that regenerate an artifact: code revision, lockfile hash, entry point, parameters, input ids, seed, determinism class, expected output hash.
+**Report vintage** — When a value was *reported*, as distinct from the month it describes. A restatement is a new vintage.
+**Residual metric** — Actual minus a model's expectation. Used for league tables so that operators are compared on what they did with the rock they had, not on who owns the better rock.
+**Restatement** — A regulator revising previously-published production. Universal: Texas states there is no point beyond which corrections may not be filed; NDIC's XLSX and PDF of the same month disagree because of amendments; New Mexico's amendments destructively replace the prior file upstream.
+**Scout ticket** — A per-well summary sheet of location, status, tops, completion and test data.
+**Severance tax / ad valorem** — State production taxes and local property taxes on producing wells. Defaults ship per state.
+**Slot** — A geometrically admissible undrilled lateral position at an assumed spacing. Never a reserve, a resource, or a booked location.
+**Spacing / spacing unit** — The distance between parallel laterals, and the regulator-defined area within which wells producing from a pool are allocated. Both are computed in the projected CRS.
+**Spine** — The identity backbone a schema joins on. glasswell's is API-10.
+**Staging** — The source-faithful layer: one schema per regulator file type, no opinions, rejects to quarantine. Staging never serves.
+**Stream** — Oil, gas, water, or condensate — the substance a volume measures.
+**Three-stream** — Forecasting oil, gas and water together under identical split, censoring and control rules, rather than oil alone.
+**Tornado** — A single-parameter sensitivity chart around a base case, bars ranked by absolute effect on NPV.
+**Training support** — How densely the training data covers the point being predicted, on a stated 0–1 scale with its k and metric declared. A gate: no slot and no scenario ships without it. (Formerly also called "support score"; that name is retired.)
+**Type curve** — An aggregate production profile for a group of comparable wells, used as the industry-standard baseline and as glasswell's mandatory control group for every ML accuracy claim.
+**Vintage (well vintage)** — The year or period a well was completed. Distinct from report vintage; both appear in this system and the glossary keeps them apart deliberately.
+**Water cut** — Water as a share of gross produced liquids. A derived surface, never a model target.
+**Wellbore** — The physical hole. One API-10 may have several (original plus sidetracks); glasswell assumes one producing wellbore per API-10 and quarantines the exceptions rather than mis-joining them.
+**Withheld** — Data a source deliberately does not publish (a confidential well's production, a trade-secret frac ingredient). A distinct state from "not reported" and from "zero".
+
+---
+
+## 10. Change control
+
+*Edits to Section 4 (protocols), Section 2.5 (philosophy), Section 3.0 (canonical thesis), Section 3.1 (implementation stack), or rules R1–R9 require a written rationale in the commit. Everything else is fair game.*
+
+*The reconstruction tags in this document ([R] and [D]) are transitional. Once the owner has reviewed §11, the tags are removed and v0.6 becomes v0.6 final — the first non-delta, self-contained blueprint since the base was lost. Sub-blueprints SB-01 through SB-07 spec against this document and no earlier one.*
+
+---
+
+## 11. Re-derived items requiring owner review
+
+Every `[D]` item in this document, grouped for a single review pass. `[R]` items (reconstructed from a surviving v0.5 anchor, with the anchor cited inline) are not listed — they are recoveries, not judgment calls.
+
+| § | Item | What was decided | Why it needs an eyeball |
+|---|---|---|---|
+| 2.2 | Learner persona; NRI as a supplied scalar | Added an eighth persona for Mandate B; resolved the minerals-buyer contradiction by making NRI a user input with a stated default of 0.75 | The persona is new. The NRI resolution narrows what the minerals-buyer persona is actually promised |
+| 2.4 | S14 (as-of reproducibility); S12 conditionality; F9 (domain fluency); F11 (restatement fluency) | Added two success criteria and two fluency outcomes; made S12 explicitly conditional on E17 surviving the cut | New criteria change the definition of done. F9 is the one fluency outcome with no matching research question |
+| 3.0.5 | Per-basin quarantine trigger (ND 2%, Permian 5%) | Replaced a single global 2% threshold; added a P7 gate that can fire it | The 5% Permian figure is a judgment about wellbore-population messiness, not a measurement |
+| 3.1 | Chart specs carry derivation ids | Declarative chart specs (Observable Plot / Vega-Lite) treated as inspectable artifacts | Minor, but it constrains the charting choice |
+| 3.2 | C1, C2, C5, C6, C8, C9, C12, C16–C21 (13 components) | The thirteen components v0.5 left with no anchor at all: fetcher/raw zone, staging store, canonical store, spatial store, feature builder, benchmark harness, API server, lineage spine, quarantine service, scorecard, ledger, tile pipeline, notebook | This is the largest single re-derivation in the document. The set is inferred from the capabilities v0.5 commits to; the *numbering* is a fresh thematic ordering with no evidence behind it |
+| 3.3 | R1 (provenance floor), R2 (append-only), R4 (no leakage), R5 (estimates labelled) | Four of the seven unstatable normative rules | These are change-controlled and bind the whole system. R5 in particular is what operationalizes DIR-3 |
+| 3.6.8 | Tile entitlement pattern | Short-lived signed tile tokens bound to principal and layer set, martin never exposed | v0.5 retained this as a resolved decision with zero recoverable content. It is the only access-control statement that existed and is now fully re-invented |
+| 3.6.9 | `?explain=true` is GET-only; POSTs return derivations unconditionally; `dry_run` for previews | Resolves the undefined semantics of explain-on-a-mutation | A small API decision with an outsized honesty consequence |
+| 3.6.10 | The 10-question agent suite | Ten concrete questions, chosen to exercise every endpoint family and both mandates | S5 and a phase exit both gate on this list. If the questions are wrong, the acceptance test is wrong |
+| 4A.1–4A.10 | Ten modeling sub-clauses | Unit of analysis, targets, split, censoring, control, feature availability, quantiles and calibration, calibration reporting, slicing and extrapolation, training support | Normative and change-controlled. 4A.2 (no EUR target) and 4A.9 (Arps extrapolation) are the two most contestable |
+| 4B | Economics and valuation protocol (whole family) | Assigned 4B's unrecoverable topic to economics; wrote seven clauses | The topic assignment is a guess; the clauses are defensible on their own terms either way |
+| 4C | Lineage and reproducibility protocol (whole family) | Assigned 4C's unrecoverable topic to lineage; wrote eight clauses including the three determinism classes | Same: topic assignment is inferred. 4C.5 walks back v0.5's unqualified "byte-for-byte" promise |
+| 4D.4, 4D.5 | Inventory is PLSS/ND-only; slot counts carry a not-reserves disclaimer field | Scopes E17 and S12 to North Dakota | This narrows a headline feature. See D-11 |
+| 4F.4 | The second allocation validator | NM well-level data used as synthetic lease-equivalents to score the allocation *method*, distinct from the crosswalk comparison that scores *identity mapping* | v0.5 promised "both validators" and named one. This is the missing one, and S6 depends on it being the right choice |
+| 5 | E1, E2, E9, E10, E15 | Ingest spine, canonical spine, API and agent, glass-box lineage, learning instrument | Five of sixteen epics had no anchor. E15 (learning instrument) is the most interpretive: it exists because Mandate B otherwise has no epic |
+| 6 | U1–U12, U14, U15, and the entire anti-story set | Fourteen user stories plus seventeen negative constraints | The anti-stories are the falsification tests for the whole thesis; they were entirely unrecoverable |
+| 8.1 | D-5, D-12, D-13, D-22, D-23, D-24 | Tile entitlement, single-tenant boundary, pull-primary alerts, registered-artifact requirement, unconditional analog-index persistence, determinism classes | Each closes a contradiction or a blocker rather than restating a prior position |
+| 8.3 | OQ-1 through OQ-7 | Seven re-opened design questions: target horizon, feature-set boundary, peer-group definition, parent-child encoding, extrapolation form, price deck source, confidential-well handling | v0.5's seven open questions were unrecoverable *including their subjects*. These are a fresh design review, so they are genuinely new content — the risk is not that they are wrong but that they are not the seven that were actually open |
+
