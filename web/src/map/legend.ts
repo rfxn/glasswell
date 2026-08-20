@@ -33,12 +33,28 @@ export function createLegend(options: LegendOptions): LegendHandle {
   const element = document.createElement("div");
   element.className = "gw-lg";
 
+  const head = document.createElement("div");
+  head.className = "gw-lg-head";
+  element.appendChild(head);
+
   const title = document.createElement("button");
   title.type = "button";
   title.className = "gw-lg-title";
   title.textContent = "Well status";
   title.setAttribute("aria-expanded", "false");
-  element.appendChild(title);
+  head.appendChild(title);
+
+  // Hidden while the key is a pill: nine rows are what is being bulk-toggled, and a click
+  // whose whole effect is off screen is worse than no affordance.
+  const actions = document.createElement("div");
+  actions.className = "gw-lg-actions";
+  actions.hidden = true;
+  actions.setAttribute("role", "group");
+  actions.setAttribute("aria-label", "Show or hide every status class");
+  const all = bulkButton("all", "All", "Show every status class");
+  const none = bulkButton("none", "None", "Hide every status class");
+  actions.append(all, none);
+  head.appendChild(actions);
 
   const body = document.createElement("div");
   body.className = "gw-lg-body";
@@ -63,16 +79,37 @@ export function createLegend(options: LegendOptions): LegendHandle {
     return on;
   };
 
+  const report = (): void => options.onFilter(activeStatuses());
+
+  /**
+   * The bulk control owns `checked` and nothing else. `disabled` and the out-of-scale mark
+   * belong to setCounts, so "All" cannot promote a class the zoom has withdrawn; and a class
+   * the zoom has withdrawn is still cleared by "None", so zooming in does not resurrect what
+   * the reader dismissed.
+   */
+  function setAll(next: boolean): void {
+    for (const [id, row] of rows) {
+      if (id === UNMAPPED_STATUS.id) continue;
+      const box = row.querySelector<HTMLInputElement>("input");
+      if (box) box.checked = next;
+    }
+    report();
+  }
+
+  all.addEventListener("click", () => setAll(true));
+  none.addEventListener("click", () => setAll(false));
+
   element.addEventListener("click", (event) => {
-    // A filter row is a control, not the expand target.
-    if ((event.target as HTMLElement).closest(".gw-lg-row")) return;
+    // A filter row and the bulk control are controls, not the expand target.
+    if ((event.target as HTMLElement).closest(".gw-lg-row, .gw-lg-actions")) return;
     const open = element.classList.toggle("gw-open");
     title.setAttribute("aria-expanded", String(open));
+    actions.hidden = !open;
   });
 
   element.addEventListener("change", (event) => {
     if (!(event.target as HTMLElement).closest(".gw-lg-row")) return;
-    options.onFilter(activeStatuses());
+    report();
   });
 
   function setCounts(counts: Record<string, number>, zoom: number): void {
@@ -100,6 +137,15 @@ export function createLegend(options: LegendOptions): LegendHandle {
   }
 
   return { element, setCounts, activeStatuses };
+}
+
+function bulkButton(which: string, label: string, description: string): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `gw-lg-bulk gw-lg-${which}`;
+  button.textContent = label;
+  button.setAttribute("aria-label", description);
+  return button;
 }
 
 function appendRow(body: HTMLElement, status: StatusClass): HTMLElement {

@@ -7,6 +7,17 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-20 — VF-6: legend select/deselect all
+
+- [New] The well legend's header carries an All/None control, so clearing or restoring
+      the nine status classes is one click rather than nine. It owns `checked` and
+      nothing else: `disabled` and the out-of-scale mark stay the zoom's to set, so
+      "All" cannot promote a class the zoom has withdrawn, and "None" clears one anyway
+      so zooming in does not resurrect what the reader dismissed. The unmapped row is
+      untouched — a defect marker is not a filter the reader owns. It reports through
+      the same `activeStatuses()` path a row toggle uses, and is hidden while the key is
+      collapsed to its pill (VF-6)
+
 ### 2026-08-20 — DIR-13: TLS on the LAN endpoint
 
 - [New] Caddy terminates `https://glasswell.lab.rpx.sh` on VM 111 and reverse-proxies
