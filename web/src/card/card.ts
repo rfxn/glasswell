@@ -4,6 +4,7 @@ import type { Envelope, Figure } from "../api/envelope.ts";
 import { renderChart } from "../chart/chart.ts";
 import { toChartSeries } from "../chart/series.ts";
 import type { ProductionData } from "../chart/series.ts";
+import { focusPanel } from "../chrome/overlays.ts";
 import { labelElement } from "../glossary/gw-term.ts";
 import { highlight } from "../glossary/index.ts";
 import { termIndex } from "../glossary/store.ts";
@@ -32,6 +33,9 @@ export interface WellDetail {
 export interface CardCallbacks {
   onExplain(handle: string): void;
   onClose(): void;
+  onFixKey?(): void;
+  onLocated?(point: { lon: number; lat: number }): void;
+  onVintage?(resolved: string | null): void;
 }
 
 const HEADER_FIELDS: [keyof WellDetail, string, string][] = [
@@ -68,7 +72,9 @@ export async function renderWellCard(
   });
 
   const header = document.createElement("header");
+  header.className = "gw-panel-head";
   const heading = document.createElement("h2");
+  heading.tabIndex = -1;
   heading.textContent = detail.well_name ?? detail.api10;
   header.appendChild(heading);
 
@@ -89,6 +95,11 @@ export async function renderWellCard(
   close.addEventListener("click", callbacks.onClose);
   header.appendChild(close);
   card.appendChild(header);
+
+  // Head fixed, body scrolling: the shell is capped in CSS and only this child overflows.
+  const body = document.createElement("div");
+  body.className = "gw-panel-body";
+  card.appendChild(body);
 
   const facts = document.createElement("dl");
   facts.className = "gw-facts";
@@ -124,6 +135,8 @@ export async function renderWellCard(
   const asOfValue = document.createElement("dd");
   asOfValue.textContent = `${formatVintage(well.meta.as_of.resolved)} (requested ${well.meta.as_of.requested})`;
   facts.appendChild(asOfValue);
+  callbacks.onVintage?.(well.meta.as_of.resolved);
+  if (detail.surface_point) callbacks.onLocated?.(detail.surface_point);
 
   if (detail.compute_crs) {
     facts.appendChild(term("Compute CRS", labelFor(well, "/compute_crs")));
@@ -132,17 +145,18 @@ export async function renderWellCard(
     definition.textContent = `${detail.compute_crs} · stored ${detail.storage_crs}`;
     facts.appendChild(definition);
   }
-  card.appendChild(facts);
+  body.appendChild(facts);
 
-  for (const warning of well.meta.warnings) card.appendChild(warningPanel(warning));
+  for (const panel of warningPanels(well.meta.warnings)) body.appendChild(panel);
 
   const chartHost = document.createElement("section");
   chartHost.className = "gw-card-chart";
   chartHost.appendChild(placeholder("Loading production…"));
-  card.appendChild(chartHost);
+  body.appendChild(chartHost);
 
   container.replaceChildren(card);
   highlight(card, termIndex());
+  focusPanel(container);
 
   try {
     const production = await getEnvelope<ProductionData>(`/v1/wells/${api10}/production`);
@@ -155,19 +169,21 @@ export async function renderWellCard(
       onExplain: callbacks.onExplain,
       labelTermFor: (pointer) => labelFor(production, pointer),
     });
-    for (const warning of production.meta.warnings) chartHost.appendChild(warningPanel(warning));
+    for (const panel of warningPanels(production.meta.warnings)) chartHost.appendChild(panel);
     highlight(chartHost, termIndex());
   } catch (error) {
     chartHost.replaceChildren(errorPanel(error, callbacks));
   }
 }
 
+/** The <dt> beside it is the label, so the chip carries it for assistive tech only. */
 function figureElement(figure: Figure, label: string, handle: string | null): HTMLElement {
   const element = document.createElement("gw-figure");
   element.setAttribute("value", figure.value);
   element.setAttribute("unit", figure.unit);
   element.setAttribute("handle", handle ?? figure.d ?? "");
   element.setAttribute("label", label);
+  element.setAttribute("label-hidden", "");
   if (figure.granularity) element.setAttribute("granularity", figure.granularity);
   if (figure.report_vintage) element.setAttribute("vintage", figure.report_vintage);
   return element;
@@ -186,16 +202,32 @@ function placeholder(text: string): HTMLElement {
   return element;
 }
 
-function warningPanel(warning: { code: string; detail?: string; pointer?: string }): HTMLElement {
-  const element = document.createElement("p");
-  element.className = "gw-warning";
-  element.textContent = `${warning.code}: ${warning.detail ?? ""}${
-    warning.pointer ? ` (${warning.pointer})` : ""
-  }`;
-  return element;
+type ApiWarning = { code: string; detail?: string; pointer?: string };
+
+/** One panel per code with its count: three identical warnings used to stack as a wall. */
+function warningPanels(warnings: ApiWarning[]): HTMLElement[] {
+  const grouped = new Map<string, ApiWarning[]>();
+  for (const warning of warnings) {
+    grouped.set(warning.code, [...(grouped.get(warning.code) ?? []), warning]);
+  }
+  return [...grouped.entries()].map(([code, group]) => {
+    const element = document.createElement("p");
+    element.className = "gw-warning";
+    const count = group.length > 1 ? ` ×${group.length}` : "";
+    const pointers = group
+      .map((warning) => warning.pointer)
+      .filter((pointer): pointer is string => Boolean(pointer))
+      .join(", ");
+    element.textContent =
+      `${code}${count}: ${group[0]?.detail ?? ""}` + (pointers ? ` (${pointers})` : "");
+    return element;
+  });
 }
 
-export function errorPanel(error: unknown, callbacks: { onClose(): void }): HTMLElement {
+export function errorPanel(
+  error: unknown,
+  callbacks: { onClose(): void; onFixKey?(): void },
+): HTMLElement {
   const element = document.createElement("div");
   element.className = "gw-error";
   const heading = document.createElement("h3");
@@ -205,12 +237,21 @@ export function errorPanel(error: unknown, callbacks: { onClose(): void }): HTML
     body.textContent = error.problem.detail ?? "";
     if (error.problem.status === 403) {
       body.textContent =
-        "The API needs the owner key. Open this page with #key=<GLASSWELL_OWNER_KEY> once and it is remembered.";
+        "The API rejected this browser's owner key, or has never been given one.";
+      if (callbacks.onFixKey) {
+        const fix = document.createElement("button");
+        fix.type = "button";
+        fix.className = "gw-error-key";
+        fix.textContent = "Enter or clear the key";
+        fix.addEventListener("click", () => callbacks.onFixKey?.());
+        element.append(heading, body, fix);
+      } else {
+        element.append(heading, body);
+      }
+    } else {
+      element.append(heading, body);
     }
-    const link = document.createElement("a");
-    link.href = error.problem.type;
-    link.textContent = error.problem.type;
-    element.append(heading, body, link);
+    element.appendChild(errorLink(error.code));
   } else {
     heading.textContent = "Request failed";
     body.textContent = String(error);
@@ -219,8 +260,21 @@ export function errorPanel(error: unknown, callbacks: { onClose(): void }): HTML
   const close = document.createElement("button");
   close.type = "button";
   close.className = "gw-close";
+  close.setAttribute("aria-label", "Dismiss this error");
   close.textContent = "×";
   close.addEventListener("click", callbacks.onClose);
   element.appendChild(close);
   return element;
+}
+
+/**
+ * `problem.type` is absolute at a host that does not resolve, and the same document is
+ * served here. The relative path is the only link in an error panel that works (UX P1-7).
+ */
+function errorLink(code: string): HTMLElement {
+  const link = document.createElement("a");
+  link.href = `/v1/errors/${code}`;
+  link.textContent = `What does ${code} mean?`;
+  link.setAttribute("data-no-glossary", "");
+  return link;
 }

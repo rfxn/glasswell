@@ -55,6 +55,32 @@ describe("lineage drawer", () => {
     expect(explanations[1]).toBe(explainEnvelope.data.chains[0]?.nodes[1]?.explanation);
   });
 
+  it("keeps the acquisition link out of the app's own tab, so state survives the download", async () => {
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ "/v1/explain": explainEnvelope })));
+    await renderLineageDrawer(host, OIL_HANDLE, noop);
+    const link = host.querySelector("a") as HTMLAnchorElement;
+
+    expect(link.target).toBe("_blank");
+    expect(link.rel).toContain("noopener");
+  });
+
+  it("splits into a fixed head and a scrolling body like every other panel", async () => {
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ "/v1/explain": explainEnvelope })));
+    await renderLineageDrawer(host, OIL_HANDLE, noop);
+
+    expect(host.children).toHaveLength(2);
+    expect(host.children[0]?.className).toContain("gw-panel-head");
+    expect(host.children[1]?.className).toContain("gw-panel-body");
+    expect(host.querySelector(".gw-panel-body .gw-chain")).toBeTruthy();
+  });
+
+  it("gives the head a focus target so opening the drawer can move focus into it", async () => {
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ "/v1/explain": explainEnvelope })));
+    await renderLineageDrawer(host, OIL_HANDLE, noop);
+
+    expect(host.querySelector("h2")?.getAttribute("tabindex")).toBe("-1");
+  });
+
   it("renders a broken chain as a broken chain, naming the stop reason", async () => {
     vi.stubGlobal("fetch", vi.fn(stubFetch({ "/v1/explain": problemBody })));
     await renderLineageDrawer(host, "drv_missing", noop);
