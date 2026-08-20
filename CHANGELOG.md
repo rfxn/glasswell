@@ -16,6 +16,9 @@ its own version in its header, and its history is summarised in §3.1.
       change measured as a cost with no return (SB-05 §2.4.1 pins a fixed metre
       ladder and marks it for tuning against measured tile bytes; this is the tuned
       form)
+- [New] `/basemap/*` is served `public, max-age=86400` — the archive is immutable
+      for the life of a vintage — with `manifest.json` held at `no-cache`, since it
+      is how the client notices a swap
 - [Fix] Every tile evaluated `ST_AsMVTGeom` twice per row — once for the null test,
       once for the aggregate — because the planner flattened the subquery. The
       function sources materialise it, which is 5–40% off every layer at every zoom

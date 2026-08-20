@@ -58,14 +58,24 @@ The client refuses the archive unless a ranged GET returns exactly `206`
 whole `200` would make every tile read pull the entire archive, so that case falls back to
 OpenFreeMap rather than quietly costing 48 MB per read.
 
+The app applies the cache classes itself: `public, max-age=86400` on everything under
+`/basemap/`, except `manifest.json`, which stays `no-cache` because it is how the client
+notices a vintage swap. A swapped archive is therefore visible to a fresh session
+immediately and to a warm cache within a day.
+
+Range serving is not the map's bottleneck, and was measured rather than assumed. On VM 111
+against the deployed 336 MB archive, 64 KB ranges through uvicorn's two workers answered in
+2.3 ms sequentially and 7.0 ms median / 11.9 ms p95 under an eight-way burst; the same
+ranges taken while the tile proxy was saturated moved to 6.4 ms median / 15.2 ms p95. That
+is head-of-line blocking, but of a size that does not justify `aiofiles`, `sendfile` or more
+workers. Re-measure before adding any of them.
+
 If a reverse proxy is put in front later, it must preserve `Range`, `Accept-Ranges` and the
-`206`, and should add a long cache lifetime, since the archive is immutable for the life of
-a vintage:
+`206`:
 
 ```nginx
 location /basemap/ {
     alias /opt/glasswell/basemap/;
-    add_header Cache-Control "public, max-age=86400";
     # nginx serves Range/206 for static files natively; do not add anything that buffers.
 }
 ```
