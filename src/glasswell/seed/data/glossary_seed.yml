@@ -124,12 +124,16 @@
 - term: CRS / compute CRS
   aliases: ["CRS", "Compute CRS"]
   short_definition: >-
-    Coordinate reference system. Storage is always EPSG:4326; every distance, area and spacing
-    calculation runs in the basin's projected metre-based CRS.
+    Coordinate reference system. Storage is always EPSG:4326; lateral length is measured
+    geodesically on the WGS84 ellipsoid, and a projected metre-based CRS is used for area and
+    spacing work.
   expanded_definition: >-
-    North Dakota computes in UTM 14N (EPSG:32614), the Permian in UTM 13N. Distance maths in
-    degrees is a defect, not an approximation - which is why a shapefile's own length field,
-    shipped in degrees, is never served as a length.
+    The Williston basin spans UTM 13N and 14N and 97.6 percent of ND laterals lie west of 102W,
+    so no single projected zone is right for the state: measuring them in UTM 14N overstated the
+    fleet by 144,379 ft (fp-audit A3-F1). Lateral length is therefore geodesic on the ellipsoid
+    under cr_nd_compute_crs_2, which chooses no zone. Distance maths in degrees remains a defect,
+    not an approximation - which is why a shapefile's own length field, shipped in degrees, is
+    never served as a length.
   domain_tags: [geospatial]
   related_terms: ["Datum", "Spacing / spacing unit"]
   source_refs: ["blueprint-v0.6 §9", "blueprint-v0.6 §3.0.3"]

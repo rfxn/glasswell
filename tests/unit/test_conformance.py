@@ -6,7 +6,7 @@ from decimal import Decimal
 import polars as pl
 import pytest
 
-from glasswell.lineage.conformance import RULE_KINDS, apply_rules, executor_for
+from glasswell.lineage.conformance import RULE_KINDS, active_rules, apply_rules, executor_for
 from glasswell.lineage.errors import RuleSpecError, UnknownRuleKind
 from glasswell.lineage.models import ConformanceRule
 
@@ -266,3 +266,22 @@ def test_unit_conform_rejects_a_factor_that_is_not_a_decimal():
                 )
             ],
         )
+
+
+def test_a_superseded_rule_is_not_applied_alongside_its_replacement():
+    """R8: a rule row is never edited, so the successor row is what retires it."""
+    old = rule("cr_nd_compute_crs_1", "parse_directive", {"compute_epsg": 32614})
+    new = rule(
+        "cr_nd_compute_crs_2",
+        "parse_directive",
+        {"length_method": "geodesic"},
+        supersedes_rule_id="cr_nd_compute_crs_1",
+    )
+
+    assert [item.rule_id for item in active_rules([old, new])] == ["cr_nd_compute_crs_2"]
+
+
+def test_a_rule_nothing_supersedes_stays_active():
+    old = rule("cr_nd_days_range_1", "validity_filter", {})
+
+    assert active_rules([old]) == [old]

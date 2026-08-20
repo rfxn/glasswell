@@ -2963,7 +2963,7 @@
                 "type": "null"
               }
             ],
-            "description": "CRS every projected length here was computed in.",
+            "description": "CRS the length computation is defined on. Zone-free while length_method is geodesic, which is why it reads as the storage CRS.",
             "title": "Compute Crs",
             "x-glasswell-glossary": "gt_crs_compute_crs"
           },
@@ -3029,6 +3029,12 @@
             ],
             "description": "Total lateral length, projected into the basin compute CRS.",
             "x-glasswell-glossary": "gt_wellbore"
+          },
+          "length_method": {
+            "description": "How lateral length was measured, from the active cr_nd_compute_crs rule: geodesic on the WGS84 ellipsoid, or projected into a named CRS.",
+            "title": "Length Method",
+            "type": "string",
+            "x-glasswell-glossary": "gt_crs_compute_crs"
           },
           "links": {
             "additionalProperties": {
@@ -3172,6 +3178,7 @@
           "lateral_count",
           "lateral_length_ft",
           "compute_crs",
+          "length_method",
           "storage_crs",
           "geometry",
           "surface_point"

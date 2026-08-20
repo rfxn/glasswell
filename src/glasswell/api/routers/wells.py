@@ -22,6 +22,7 @@ from glasswell.api.pagination import (
     query_fingerprint,
 )
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, iso
+from glasswell.lengths import STORAGE_EPSG, resolve_length_method
 from glasswell.lineage.envelope import figure
 from glasswell.units import metres_to_feet
 
@@ -56,7 +57,7 @@ select {_COLUMNS}
 
 _SPATIAL = """
 select geom_type, geom_key, derivation_id, source_datum, source_manifest_id,
-       st_length(st_transform(geom, %(epsg)s)) as length_m,
+       {length_metres} as length_m,
        case when st_geometrytype(geom) = 'ST_Point' then st_x(geom) end as lon,
        case when st_geometrytype(geom) = 'ST_Point' then st_y(geom) end as lat
   from canonical.well_spatial
@@ -64,8 +65,8 @@ select geom_type, geom_key, derivation_id, source_datum, source_manifest_id,
  order by geom_type, geom_key
 """
 
-_CRS = """
-select compute_epsg, storage_epsg
+_STORAGE_CRS = """
+select storage_epsg
   from lineage.crs_registry
  where basin = %(basin)s
  order by effective_from desc
@@ -114,8 +115,20 @@ class WellDetail(WellSummary):
         description="Total lateral length, projected into the basin compute CRS.",
         json_schema_extra={GLOSSARY_KEY: "gt_wellbore"},
     )
-    compute_crs: str | None = Field(description="CRS every projected length here was computed in.",
-                                    json_schema_extra={GLOSSARY_KEY: "gt_crs_compute_crs"})
+    compute_crs: str | None = Field(
+        description=(
+            "CRS the length computation is defined on. Zone-free while length_method is"
+            " geodesic, which is why it reads as the storage CRS."
+        ),
+        json_schema_extra={GLOSSARY_KEY: "gt_crs_compute_crs"},
+    )
+    length_method: str = Field(
+        description=(
+            "How lateral length was measured, from the active cr_nd_compute_crs rule:"
+            " geodesic on the WGS84 ellipsoid, or projected into a named CRS."
+        ),
+        json_schema_extra={GLOSSARY_KEY: "gt_crs_compute_crs"},
+    )
     storage_crs: str = Field(description="CRS geometry is stored in; always EPSG:4326.")
     geometry: list[Geometry] = Field(description="Geometry rows held for this well.")
     surface_point: SurfacePoint | None = Field(description="Surface hole location, if recorded.")
@@ -294,23 +307,15 @@ def get_well(
         raise ProblemError("not_found", detail=f"no well {api10} at this vintage")
     row = found[0]
 
-    crs = rows(connection, _CRS, {"basin": row["basin"] or "williston"})
-    compute_epsg = crs[0]["compute_epsg"] if crs else None
-    storage_epsg = crs[0]["storage_epsg"] if crs else 4326
+    crs = rows(connection, _STORAGE_CRS, {"basin": row["basin"] or "williston"})
+    storage_epsg = crs[0]["storage_epsg"] if crs else STORAGE_EPSG
+    method = resolve_length_method(connection)
     warnings: list[dict[str, Any]] = []
-    geometry = (
-        rows(connection, _SPATIAL, {"api10": api10, "epsg": compute_epsg})
-        if compute_epsg is not None
-        else []
+    geometry = rows(
+        connection,
+        _SPATIAL.format(length_metres=method.metres_sql()),
+        {"api10": api10},
     )
-    if compute_epsg is None:
-        warnings.append(
-            {
-                "code": "crs_unregistered",
-                "detail": "no compute CRS registered for this basin; length is not served",
-                "pointer": "/lateral_length_ft",
-            }
-        )
 
     laterals = [item for item in geometry if item["geom_type"] == "lateral"]
     length_figure = None
@@ -343,7 +348,8 @@ def get_well(
         "basin": row["basin"],
         "lateral_count": len(laterals),
         "lateral_length_ft": length_figure,
-        "compute_crs": f"EPSG:{compute_epsg}" if compute_epsg else None,
+        "compute_crs": method.compute_crs,
+        "length_method": method.method,
         "storage_crs": f"EPSG:{storage_epsg}",
         "geometry": [
             {

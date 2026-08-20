@@ -241,25 +241,25 @@ def test_a_multi_lateral_well_keeps_every_centreline_and_raises_one_quarantine_r
     assert result.multi_lateral_rate == pytest.approx(MULTI_LATERAL_WELLS / LATERAL_WELLS)
 
 
-def test_lateral_length_comes_from_the_projected_crs_and_not_from_shape_leng(
+def test_lateral_length_comes_from_the_geodesic_measure_and_not_from_shape_leng(
     wells_loaded, seeded, raw_root, lineage_env
 ):
     result = load(seeded, raw_root, lineage_env, "laterals")
-    projected = rows(
+    measured = rows(
         seeded,
         "select s.geom_key,"
-        "       ST_Length(ST_Transform(s.geom, 32614)) / 0.3048 as feet,"
+        "       ST_Length(s.geom::geography) / 0.3048 as feet,"
         "       g.shape_leng::double precision"
         "  from canonical.well_spatial s"
         "  join staging.nd_gis_laterals g on g.linekey = s.geom_key"
         " where s.geom_type = 'lateral'",
     )
-    assert len(projected) == LATERAL_SEGMENTS
-    feet = sorted(row[1] for row in projected)
+    assert len(measured) == LATERAL_SEGMENTS
+    feet = sorted(row[1] for row in measured)
     median = feet[len(feet) // 2]
     assert 500 <= median <= 25000
-    # SHAPE_Leng is degrees: the projected length is five orders of magnitude larger.
-    for _, computed, shape_leng in projected:
+    # SHAPE_Leng is degrees: the measured length is five orders of magnitude larger.
+    for _, computed, shape_leng in measured:
         assert shape_leng < 1
         assert computed / shape_leng > 10_000
 
@@ -340,7 +340,8 @@ def test_the_compute_crs_directive_is_read_from_the_registry_not_hard_coded(
     wells_loaded, seeded, raw_root, lineage_env
 ):
     result = load(seeded, raw_root, lineage_env, "laterals")
-    assert result.compute_epsg == 32614
+    # A3-F1: the active rule measures geodesically, so no zone is pinned anywhere in code.
+    assert (result.length_rule_id, result.compute_epsg) == ("cr_nd_compute_crs_2", None)
     applied = [
         row[0]
         for row in rows(
@@ -350,4 +351,4 @@ def test_the_compute_crs_directive_is_read_from_the_registry_not_hard_coded(
             (result.promote_derivation_id,),
         )
     ]
-    assert applied == ["cr_nd_compute_crs_1", "cr_nd_datum_1", "cr_nd_multilateral_1"]
+    assert applied == ["cr_nd_compute_crs_2", "cr_nd_datum_1", "cr_nd_multilateral_1"]

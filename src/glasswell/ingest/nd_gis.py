@@ -22,6 +22,7 @@ from psycopg.rows import dict_row
 
 from glasswell.ingest.base import resolve_environment
 from glasswell.ingest.shapefile import ShapefileRecord, ZippedShapefile
+from glasswell.lengths import LengthMethod, compute_crs_rule, length_method
 from glasswell.lineage import (
     ConformanceRule,
     InputRef,
@@ -135,6 +136,7 @@ class LoadResult:
     quarantined: Mapping[str, int]
     unchanged: bool = False
     compute_epsg: int | None = None
+    length_rule_id: str | None = None
     length_stats: Mapping[str, float] = field(default_factory=dict)
     multi_lateral_rate: float | None = None
 
@@ -648,9 +650,10 @@ def _promote_laterals(
     staged_rows: int,
     datum: ConformanceRule,
 ) -> LoadResult:
-    directive = _rule(connection, spec.source_id, "cr_nd_compute_crs_1")
+    # The family, not a pinned id: a supersession changes the id and must not be missed.
+    directive = compute_crs_rule(load_rules(connection, source_id=spec.source_id))
     multilateral = _rule(connection, spec.source_id, "cr_nd_multilateral_1")
-    compute_epsg = int(directive.spec["compute_epsg"])
+    method = length_method(directive)
     forbidden = str(directive.spec.get("forbidden_field", "")).lower()
 
     frame = _staging_frame(connection, _LATERALS_SELECT, manifest_id, _LATERALS_SCHEMA)
@@ -730,7 +733,8 @@ def _promote_laterals(
         output=output,
         params={
             "layer": spec.layer,
-            "compute_epsg": compute_epsg,
+            "length_method": method.method,
+            "compute_epsg": method.compute_epsg,
             "length_expression": directive.spec.get("length_expression"),
         },
         inputs=[
@@ -773,8 +777,9 @@ def _promote_laterals(
         staged_rows=staged_rows,
         promoted_rows=len(kept),
         quarantined=counts,
-        compute_epsg=compute_epsg,
-        length_stats=_length_stats(connection, derivation_id, compute_epsg),
+        compute_epsg=method.compute_epsg,
+        length_rule_id=method.rule_id,
+        length_stats=_length_stats(connection, derivation_id, method),
         multi_lateral_rate=len(multi) / len(per_well) if per_well else None,
     )
 
@@ -791,16 +796,16 @@ def _known_api10s(connection: psycopg.Connection, wanted: Iterable[str]) -> set[
 
 
 def _length_stats(
-    connection: psycopg.Connection, derivation_id: str, compute_epsg: int
+    connection: psycopg.Connection, derivation_id: str, method: LengthMethod
 ) -> dict[str, float]:
     with connection.cursor() as cursor:
         cursor.execute(
             "select min(feet), percentile_cont(0.5) within group (order by feet), max(feet),"
             "       count(*)"
-            "  from (select ST_Length(ST_Transform(geom, %s)) / %s as feet"
+            f"  from (select {method.metres_sql()} / %s as feet"
             "          from canonical.well_spatial"
             "         where derivation_id = %s and geom_type = 'lateral') lengths",
-            (compute_epsg, float(METRES_PER_FOOT), derivation_id),
+            (float(METRES_PER_FOOT), derivation_id),
         )
         minimum, median, maximum, rows = cursor.fetchone()
     if not rows:

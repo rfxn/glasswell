@@ -423,6 +423,12 @@ def executor_for(kind: str) -> Executor:
         ) from None
 
 
+def active_rules(rules: Sequence[ConformanceRule]) -> list[ConformanceRule]:
+    """R8 supersession: rows are immutable, so a successor row is what retires its ancestor."""
+    superseded = {rule.supersedes_rule_id for rule in rules if rule.supersedes_rule_id}
+    return [rule for rule in rules if rule.rule_id not in superseded]
+
+
 def apply_rules(frame: pl.DataFrame, rules: Sequence[ConformanceRule]) -> RuleApplication:
     """Execute loaded rules in registry order. Rejected rows leave the frame with a reason."""
     applied: list[str] = []
@@ -463,7 +469,8 @@ def load_rules(
             {"source_id": source_id, "stage": stage, "as_of": as_of or date.today()},
         )
         rows = cursor.fetchall()
-    return [_hydrate(connection, ConformanceRule(**row)) for row in rows]
+    loaded = active_rules([ConformanceRule(**row) for row in rows])
+    return [_hydrate(connection, rule) for rule in loaded]
 
 
 def _hydrate(connection: psycopg.Connection, rule: ConformanceRule) -> ConformanceRule:
