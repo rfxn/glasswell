@@ -91,8 +91,7 @@ TILE_LAYERS: tuple[TileLayer, ...] = (
 #
 # `as materialized` is load-bearing, not style. Inlined, the planner flattens the subquery
 # and evaluates ST_AsMVTGeom twice per row — once for the null test and again for the
-# aggregate — which measured 246 ms against 134 ms on the z4 laterals tile and 518 ms
-# against 158 ms on z4 wells.
+# aggregate — which cost 5% to 40% of every layer at every zoom on the live ND slice.
 _TILE_FUNCTION = """
 create or replace function marts.{name}(z integer, x integer, y integer, query json default null)
 returns bytea

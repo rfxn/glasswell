@@ -44,8 +44,14 @@ on VM 111 against the live ND slice (`work-output/track-t-status.md`):
 
 - **One `ST_AsMVTGeom` per row.** The body wraps the projection in `with … as materialized`.
   Inlined, the planner evaluates the geometry twice — once for the `is not null` test and
-  again for the aggregate — which cost 246 ms against 134 ms on the z4 laterals tile and
-  518 ms against 158 ms on z4 wells.
+  again for the aggregate. Measured as the parameterised function martin calls, removing
+  the second evaluation is −25% to −40% on `nd_laterals`, −5% to −16% on `nd_wells` and
+  −8% to −35% on `nd_spacing_units`, from z4 to z13.
+
+  **Measure the function, not the expanded statement.** With literal `z`/`x`/`y` the
+  planner sees constants and picks different paths: benchmarked that way, `nd_wells` at z11
+  looks like a 1213% regression, while the function itself improves 10.5% there and keeps
+  its `Bitmap Index Scan on nd_wells_tile_geom_idx`.
 - **Zoom-proportional thinning of the line layer.** `ST_Simplify` at four MVT units of the
   tile being built, so the discarded detail is a quarter of a rendered pixel at any zoom.
   At z7 that is 12.7% fewer bytes and 30% less time; at z9, 19.8% fewer bytes at no cost.
