@@ -2,7 +2,6 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import "../map.css";
-import { authHeaders } from "../api/client.ts";
 import { connectMap, selectWell, setUrlParam } from "../bus.ts";
 import type { FlyTarget } from "../bus.ts";
 import type { Viewport } from "../app/state.ts";
@@ -30,6 +29,7 @@ import { LAYERS, defaultLayerSet, layerDef, layerIds } from "./registry.ts";
 import { UNMAPPED_STATUS, statusClass, statusIds } from "./status.ts";
 import { dataLayers, sourceSpecs, statusFilter, strikeGlyph } from "./style.ts";
 import { createTileBanner } from "./tile-banner.ts";
+import { tileRequest } from "./tile-request.ts";
 import { applyVariantStyling } from "./variant-style.ts";
 
 export { absoluteTileUrl } from "./style.ts";
@@ -143,12 +143,7 @@ export function createMap(
     zoom: viewport.zoom,
     attributionControl: false,
     maxZoom: 18,
-    transformRequest: (url, resourceType) => {
-      if (resourceType === "Tile" && url.includes("/v1/tiles/")) {
-        return { url, headers: authHeaders() };
-      }
-      return { url };
-    },
+    transformRequest: (url, resourceType) => tileRequest(url, resourceType),
   });
 
   // An analytic map has an up. Rotation costs orientation and buys nothing here.

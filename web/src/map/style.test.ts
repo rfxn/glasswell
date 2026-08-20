@@ -117,6 +117,17 @@ describe("the data layers", () => {
     }
   });
 
+  it("holds the tile ceiling to the mart's, because a disclosure is computed against it", () => {
+    // Item 4 of work-output/tileperf-client-handoff.md. Dropping this to 13 would delete
+    // 432 of 5,903 requests, but glasswell.marts.tiles.TILE_MAX_ZOOM is what the well card's
+    // `below_tile_resolution` disclosure (audit A3-F5) is computed against: lowering it here
+    // alone makes that disclosure understate, and a feature that only resolves at z14 would
+    // silently never render. It moves as a paired change with Track T or not at all.
+    for (const spec of Object.values(sourceSpecs())) {
+      expect("maxzoom" in spec ? spec.maxzoom : undefined).toBe(14);
+    }
+  });
+
   it("paints its own label for the basemap under it, not for the dark one only", () => {
     const label = (variant: BasemapVariant): LayerSpecification | undefined =>
       dataLayers({ labels: true, variant }).find((layer) => layer.id === "spacing-units-label");
