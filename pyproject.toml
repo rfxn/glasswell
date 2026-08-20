@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "glasswell"
+version = "0.1.0"
+description = "Glass-box upstream analytics on public data"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "Ryan MacDonald", email = "ryan@rfxn.com" }]
+classifiers = ["License :: Other/Proprietary License"]
+dependencies = [
+    "polars>=1.0",
+    "duckdb>=1.0",
+    "psycopg[binary]>=3.2",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "pydantic>=2.8",
+    "orjson>=3.10",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+glasswell-migrate = "glasswell.db.migrate:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"glasswell.db" = ["migrations/*.sql"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = [
+    "unit: pure-function tests; no database, no docker",
+    "integration: requires an ephemeral PostGIS container",
+    "contract: FastAPI/OpenAPI surface tests",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "PT", "RUF"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["glasswell", "tests"]
+
+[tool.ruff.lint.per-file-ignores]
+# Nested context managers are the behaviour under test where derive() nests.
+"tests/**" = ["SIM117"]
+
+[tool.coverage.run]
+source = ["src/glasswell"]

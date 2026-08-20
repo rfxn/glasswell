@@ -32,9 +32,9 @@ derivation handle back to a checksummed regulator file, or it does not ship.
 > Copyright (C) 2026 Ryan MacDonald &lt;ryan@rfxn.com&gt; &#183; All rights reserved
 
 > [!IMPORTANT]
-> **Pre-build, private, and not a product.** This repository currently holds the
-> blueprint and the collateral built from it — no application code has been
-> written yet. glasswell is a personal single-operator build on public regulator
+> **Early build, private, and not a product.** The repository holds the blueprint,
+> the collateral built from it, and the first code: the lineage and reproducibility
+> spine every other layer will import. glasswell is a personal single-operator build on public regulator
 > data. It is not commercial, not multi-tenant, not investment advice, and not a
 > source of verified reserves or ownership. Public release is gated on the IP
 > review in [`blueprint.md`](blueprint.md) §8.2.
@@ -53,6 +53,7 @@ derivation handle back to a checksummed regulator file, or it does not ship.
 - [Build phases](#build-phases)
 - [Success criteria](#success-criteria)
 - [What this is not](#what-this-is-not)
+- [Development](#development)
 - [Project docs](#project-docs)
 - [License](#license)
 - [Support](#support)
@@ -249,6 +250,35 @@ Stated plainly, because the failure mode of a system like this is confident nons
 - **Not a commercial product**, not multi-tenant, and not a hosted service.
 - **Not an OSDU implementation.** A mapping memo is written as a literacy exercise; the lean bespoke model is the build.
 - **Not investment advice.** Every number is derived from public filings that states restate.
+
+## Development
+
+Python 3.12, Polars, DuckDB, FastAPI, PostGIS. Source lives under `src/`, tests under
+`tests/`, and database migrations are plain SQL applied by `glasswell.db.migrate`.
+
+```
+src/glasswell/lineage/   the lineage and reproducibility spine every layer imports
+src/glasswell/db/        migration runner and NNN_name.sql migrations
+tests/unit/              pure functions; no database, no docker
+tests/integration/       ephemeral PostGIS container, one database per test
+tests/contract/          FastAPI/OpenAPI surface (empty until the API lands)
+```
+
+```bash
+make install           # create .venv and install glasswell with dev dependencies
+make test              # full suite
+make test-unit         # pure-function tier, runs without docker
+make test-integration  # PostGIS tier
+make lint              # ruff
+```
+
+The integration tier starts one `postgis/postgis:16-3.4` container per session and clones
+a migrated template database per test. It uses the local docker socket, falling back to
+`tcp://127.0.0.1:2376` with TLS. Without a reachable docker daemon the tier skips with a
+reason and the unit tier still runs.
+
+Migrations are append-only: add `NNN_name.sql`, never edit an applied one — the runner
+records each file's checksum and refuses a changed migration.
 
 ## Project docs
 
