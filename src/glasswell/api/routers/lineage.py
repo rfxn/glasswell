@@ -6,20 +6,24 @@ and adds no lineage logic of its own — a second chain resolver would be a revi
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
+from pathlib import Path as PathType
+from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Path, Query, Request
+from fastapi import APIRouter, Depends, Path, Query, Request
 from pydantic import BaseModel, Field
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 
-from glasswell.api.deps import AsOf, Connection, Cursor, SpineLimit, rows
-from glasswell.api.errors import ProblemError, problem_responses
+from glasswell.api.deps import AsOf, Connection, Cursor, Principal, SpineLimit, rows
+from glasswell.api.errors import ProblemError, problem_responses, removed_query_parameters
 from glasswell.api.examples import (
     CONTENT_ADDRESS_NOTE,
     EXAMPLE_DERIVATION_ID,
     EXAMPLE_MANIFEST_ID,
+    EXAMPLE_VINTAGE_ID,
     request_example,
 )
 from glasswell.api.pagination import (
@@ -30,10 +34,14 @@ from glasswell.api.pagination import (
     page,
     query_fingerprint,
 )
+from glasswell.api.principal import Principal as ResolvedPrincipal
 from glasswell.api.responses import EnvelopeModel, enveloped, iso
 from glasswell.lineage.explain import MAX_DEPTH, MAX_HANDLES, resolve_chains, to_json
+from glasswell.lineage.fetch import resolve_raw_root
 
 router = APIRouter(tags=["lineage"])
+
+_SAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]")
 
 _DERIVATION = """
 select derivation_id, operation, output_store, output_dataset, output_partition, output_locator,
@@ -70,6 +78,24 @@ select {_MANIFEST_COLUMNS},
        (select m2.manifest_id from lineage.manifests m2
          where m2.supersedes_manifest_id = m.manifest_id) as superseded_by
   from lineage.manifests m
+ where true
+"""
+
+_VINTAGE_COLUMNS = (
+    "vintage_id, source_id, vintage_date, manifest_ids, opened_at, promotion_derivation_id,"
+    " rows_examined, rows_appended, months_touched, restatement_summary"
+)
+
+_VINTAGES = f"""
+select {_VINTAGE_COLUMNS}
+  from lineage.vintages
+ where true
+"""
+
+_DERIVATION_COLLECTION = """
+select derivation_id, operation, output_store, output_dataset, output_rows, code_version,
+       created_vintage, created_at, status, determinism_class, recipe_id, model_id
+  from lineage.derivations
  where true
 """
 
@@ -174,10 +200,42 @@ class Manifest(BaseModel):
     decompressed_inventory: list[dict[str, Any]] = Field(description="Members of an archive.")
     supersedes: str | None = Field(description="Manifest this one replaced.")
     superseded_by: str | None = Field(description="Manifest that replaced this one.")
-    storage_uri: str = Field(description="Where the raw-zone copy lives.")
+    storage_uri: str | None = Field(
+        description="Absolute path of the raw-zone copy on the serving host; owner scope only."
+    )
     license_note: str | None = Field(description="Licensing note recorded for the source.")
     redistributable: bool = Field(description="Whether the bytes may be re-served.")
     fetch_derivation_id: str | None = Field(description="Derivation that recorded the fetch.")
+
+
+class Vintage(BaseModel):
+    vintage_id: str = Field(description="Id of the (source, vintage) promotion.")
+    source_id: str = Field(description="Source the vintage was promoted from.")
+    vintage_date: date = Field(description="Knowledge-time label of the promotion (DIR-9).")
+    manifest_ids: list[str] = Field(description="Manifests the promotion read.")
+    opened_at: datetime = Field(description="When the vintage was opened.")
+    promotion_derivation_id: str | None = Field(description="Derivation that promoted it.")
+    rows_examined: int = Field(description="Rows read during the promotion.")
+    rows_appended: int = Field(description="Rows appended; a restatement appends (DIR-2).")
+    months_touched: list[str] = Field(description="Production months the promotion covered.")
+    restatement_summary: dict[str, Any] = Field(
+        description="Per-reason counts of values this vintage restated."
+    )
+
+
+class DerivationSummary(BaseModel):
+    derivation_id: str = Field(description="Content address of the derivation spec.")
+    operation: str = Field(description="Operation that ran.")
+    output_store: str = Field(description="Where the output was written.")
+    output_dataset: str = Field(description="Dataset it produced.")
+    output_rows: int | None = Field(description="Rows written.")
+    code_version: str = Field(description="Code version that produced it.")
+    created_vintage: date | None = Field(description="Knowledge time, not wall clock.")
+    created_at: datetime = Field(description="When the derivation ran.")
+    status: str = Field(description="ok or failed.")
+    determinism_class: str = Field(description="D1, D2 or D3.")
+    recipe_id: str | None = Field(description="Recipe, where one was recorded.")
+    model_id: str | None = Field(description="Model, where one was used.")
 
 
 def _depth(raw: str) -> int | Literal["full"]:
@@ -218,6 +276,9 @@ def _depth(raw: str) -> int | Literal["full"]:
     responses=problem_responses(
         "lineage_unresolved", "selector_ambiguous", "validation_failed", "service_degraded"
     ),
+    dependencies=[
+        Depends(removed_query_parameters(ref="use h, which is repeatable 1 to 20 per request"))
+    ],
 )
 def get_explain(
     request: Request,
@@ -321,7 +382,12 @@ def get_derivation(
     )
 
 
-def _manifest(row: dict[str, Any]) -> dict[str, Any]:
+def _manifest(row: dict[str, Any], *, principal: ResolvedPrincipal) -> dict[str, Any]:
+    """DR-33: `storage_uri` is an absolute path on this host — deployment detail, owner only.
+
+    Everything an auditor needs to verify the bytes independently (sha256, the exact
+    acquisition URL, the method and the vintage) stays on the record for every principal.
+    """
     return {
         "manifest_id": row["manifest_id"],
         "source_id": row["source_id"],
@@ -336,7 +402,7 @@ def _manifest(row: dict[str, Any]) -> dict[str, Any]:
         "decompressed_inventory": row["decompressed_inventory"],
         "supersedes": row["supersedes_manifest_id"],
         "superseded_by": row["superseded_by"],
-        "storage_uri": row["storage_uri"],
+        "storage_uri": row["storage_uri"] if principal.scope == "owner" else None,
         "license_note": row["license_note"],
         "redistributable": row["redistributable"],
         "fetch_derivation_id": row["fetch_derivation_id"],
@@ -362,6 +428,7 @@ def _manifest(row: dict[str, Any]) -> dict[str, Any]:
 def list_manifests(
     request: Request,
     connection: Connection,
+    principal: Principal,
     cursor: Cursor = None,
     limit: SpineLimit = DEFAULT_LIMIT,
     as_of: AsOf = None,
@@ -425,7 +492,7 @@ def list_manifests(
     )
     return enveloped(
         request,
-        [_manifest(row) for row in items],
+        [_manifest(row, principal=principal) for row in items],
         as_of=as_of,
         as_of_requested=iso(as_of) or "latest",
         next_cursor=next_cursor,
@@ -455,6 +522,7 @@ def list_manifests(
 def get_manifest(
     request: Request,
     connection: Connection,
+    principal: Principal,
     manifest_id: Annotated[str, Path(description="Content-addressed manifest id.")],
 ) -> JSONResponse:
     found = rows(
@@ -467,7 +535,238 @@ def get_manifest(
     row = found[0]
     return enveloped(
         request,
-        _manifest(row),
+        _manifest(row, principal=principal),
         as_of=row["fetch_vintage"],
         links={"source": f"/v1/manifests?source_id={row['source_id']}"},
     )
+
+
+@router.get(
+    "/derivations",
+    operation_id="list_derivations",
+    summary="List recorded derivations",
+    description=(
+        "Every derivation this system has recorded, newest first: what ran, what it"
+        " produced and under which code version. Filter by `operation` or `status` to find"
+        " the run behind a figure when you have the dataset but not the handle. Expand one"
+        " with `GET /v1/derivations/{derivation_id}`."
+    ),
+    response_model=EnvelopeModel[list[DerivationSummary]],
+    openapi_extra=request_example(query={"limit": 5}),
+    responses=problem_responses(
+        "validation_failed", "cursor_malformed", "cursor_query_mismatch", "service_degraded"
+    ),
+)
+def list_derivations(
+    request: Request,
+    connection: Connection,
+    cursor: Cursor = None,
+    limit: SpineLimit = DEFAULT_LIMIT,
+    operation: Annotated[str | None, Query(description="Filter to one operation.")] = None,
+    status: Annotated[
+        Literal["ok", "failed"] | None, Query(description="Filter to ok or failed runs.")
+    ] = None,
+) -> JSONResponse:
+    filters = {"operation": operation, "status": status}
+    fingerprint = query_fingerprint(filters)
+    params: dict[str, Any] = {"limit": limit + 1}
+    clauses = [_DERIVATION_COLLECTION]
+    if operation is not None:
+        clauses.append("and operation = %(operation)s")
+        params["operation"] = operation
+    if status is not None:
+        clauses.append("and status = %(status)s")
+        params["status"] = status
+    if cursor is not None:
+        decoded = decode_cursor(cursor, fingerprint=fingerprint)
+        clauses.append("and (created_at, derivation_id) < (%(after_key)s, %(after_id)s)")
+        params |= {"after_key": decoded.key, "after_id": decoded.tiebreak}
+    clauses.append("order by created_at desc, derivation_id desc limit %(limit)s")
+
+    found = rows(connection, "\n".join(clauses), params)
+    items, has_more = page(found, limit)
+    next_cursor = (
+        encode_cursor(
+            key=items[-1]["created_at"],
+            tiebreak=items[-1]["derivation_id"],
+            as_of=None,
+            fingerprint=fingerprint,
+        )
+        if has_more and items
+        else None
+    )
+    return enveloped(
+        request,
+        [
+            {
+                "derivation_id": row["derivation_id"],
+                "operation": row["operation"],
+                "output_store": row["output_store"],
+                "output_dataset": row["output_dataset"],
+                "output_rows": row["output_rows"],
+                "code_version": row["code_version"],
+                "created_vintage": iso(row["created_vintage"]),
+                "created_at": iso(row["created_at"]),
+                "status": row["status"],
+                "determinism_class": row["determinism_class"],
+                "recipe_id": row["recipe_id"],
+                "model_id": row["model_id"],
+            }
+            for row in items
+        ],
+        next_cursor=next_cursor,
+        links={
+            "next": next_link("/v1/derivations", filters | {"limit": limit}, next_cursor)
+            if next_cursor
+            else None
+        },
+    )
+
+
+def _vintage(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "vintage_id": row["vintage_id"],
+        "source_id": row["source_id"],
+        "vintage_date": iso(row["vintage_date"]),
+        "manifest_ids": list(row["manifest_ids"]),
+        "opened_at": iso(row["opened_at"]),
+        "promotion_derivation_id": row["promotion_derivation_id"],
+        "rows_examined": row["rows_examined"],
+        "rows_appended": row["rows_appended"],
+        "months_touched": list(row["months_touched"]),
+        "restatement_summary": dict(row["restatement_summary"]),
+    }
+
+
+@router.get(
+    "/vintages",
+    operation_id="list_vintages",
+    summary="List published vintages",
+    description=(
+        "One row per (source, knowledge time) promotion: what it read, how many rows it"
+        " examined and appended, which months it touched, and what it restated. This is"
+        " the index behind `as_of` — every vintage here is a value `as_of` can select."
+    ),
+    response_model=EnvelopeModel[list[Vintage]],
+    openapi_extra=request_example(query={"limit": 10}),
+    responses=problem_responses("validation_failed", "service_degraded"),
+)
+def list_vintages(
+    request: Request,
+    connection: Connection,
+    limit: SpineLimit = DEFAULT_LIMIT,
+    source_id: Annotated[str | None, Query(description="Filter to one source.")] = None,
+) -> JSONResponse:
+    params: dict[str, Any] = {"limit": limit}
+    clauses = [_VINTAGES]
+    if source_id is not None:
+        clauses.append("and source_id = %(source_id)s")
+        params["source_id"] = source_id
+    clauses.append("order by vintage_date desc, source_id limit %(limit)s")
+    found = rows(connection, "\n".join(clauses), params)
+    return enveloped(request, [_vintage(row) for row in found])
+
+
+@router.get(
+    "/vintages/{vintage_id}",
+    operation_id="get_vintage",
+    summary="One published vintage",
+    description=(
+        "The promotion record `as_of` resolves to, including the manifests it read and its"
+        " restatement summary. Vintages are append-only: a correction opens a new one."
+    ),
+    response_model=EnvelopeModel[Vintage],
+    openapi_extra=request_example(path={"vintage_id": EXAMPLE_VINTAGE_ID}),
+    responses=problem_responses("not_found", "service_degraded"),
+)
+def get_vintage(
+    request: Request,
+    connection: Connection,
+    vintage_id: Annotated[str, Path(description="Id of the (source, vintage) promotion.")],
+) -> JSONResponse:
+    found = rows(
+        connection, _VINTAGES + " and vintage_id = %(vintage_id)s", {"vintage_id": vintage_id}
+    )
+    if not found:
+        raise ProblemError("not_found", detail=f"no vintage {vintage_id}")
+    row = found[0]
+    return enveloped(
+        request,
+        _vintage(row),
+        as_of=row["vintage_date"],
+        links={"source": f"/v1/vintages?source_id={row['source_id']}"},
+    )
+
+
+@router.get(
+    "/manifests/{manifest_id}/bytes",
+    operation_id="get_manifest_bytes",
+    summary="Download the raw bytes",
+    description=(
+        "The archived copy of the fetched artifact, byte-identical to what was hashed."
+        " Owner scope, unless the source's terms mark the artifact redistributable"
+        " (SB-07 §9.6) — an auditor does not need our copy, because the checksum and the"
+        " exact acquisition URL let them re-fetch from the regulator and hash it"
+        " themselves, which is the stronger audit. `404` when this host does not hold the"
+        " bytes; the record at `/v1/manifests/{manifest_id}` still resolves."
+    ),
+    response_class=Response,
+    openapi_extra=request_example(path={"manifest_id": EXAMPLE_MANIFEST_ID}),
+    responses=problem_responses("forbidden", "not_found", "service_degraded"),
+)
+def get_manifest_bytes(
+    request: Request,
+    connection: Connection,
+    principal: Principal,
+    manifest_id: Annotated[str, Path(description="Content-addressed manifest id.")],
+) -> Response:
+    found = rows(
+        connection,
+        _MANIFESTS + " and m.manifest_id = %(manifest_id)s",
+        {"manifest_id": manifest_id},
+    )
+    if not found:
+        raise ProblemError("not_found", detail=f"no manifest {manifest_id}")
+    row = found[0]
+    if principal.scope != "owner" and not row["redistributable"]:
+        raise ProblemError(
+            "forbidden",
+            detail=(
+                f"{row['source_id']} bytes are not marked redistributable; verify with the"
+                f" sha256 and {row['acquisition_url']} instead"
+            ),
+        )
+    payload = _payload_within_raw_zone(row["storage_uri"])
+    if payload is None:
+        raise ProblemError(
+            "not_found", detail=f"this host holds no raw-zone copy for manifest {manifest_id}"
+        )
+    return Response(
+        payload.read_bytes(),
+        media_type=row["media_type"] or "application/octet-stream",
+        headers={
+            "ETag": f'"sha256:{row["sha256"]}"',
+            "Content-Disposition": f'attachment; filename="{_download_name(row)}"',
+        },
+    )
+
+
+def _payload_within_raw_zone(storage_uri: str) -> PathType | None:
+    """`storage_uri` is a filesystem path from a table, so it is treated as untrusted input.
+
+    Resolving before the containment check is what closes both traversal and a symlink
+    planted inside the zone; a path that escapes is indistinguishable from a missing file.
+    """
+    if not storage_uri:
+        return None
+    root = resolve_raw_root().resolve()
+    candidate = PathType(storage_uri).resolve()
+    if not candidate.is_relative_to(root) or not candidate.is_file():
+        return None
+    return candidate
+
+
+def _download_name(row: dict[str, Any]) -> str:
+    """Quoted into a header, so it carries no quote, control byte or path separator."""
+    stem = PurePosixPath(row["source_key"]).name or row["manifest_id"]
+    return _SAFE_FILENAME.sub("_", stem)[:100] or row["manifest_id"]

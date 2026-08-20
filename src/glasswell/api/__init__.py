@@ -26,16 +26,35 @@ from glasswell.api.routers import (
     glossary,
     health,
     index,
+    keys,
     lineage,
     production,
     quarantine,
     tiles,
     wells,
 )
+from glasswell.api.security import STATIC_SECURITY_HEADERS, header_for
 from glasswell.lineage.ids import new_ulid
 
 API_TITLE = "glasswell"
 API_VERSION = "0.1.0"
+FREEZE_KEY = "x-glasswell-freeze"
+
+# The S1 freeze, stated in the document a stranger reads rather than only in a status file.
+# After this date §3.6.1 makes a removal or an incompatible tightening a /v2 event, which is
+# why DR-01, DR-02 and DR-33 were done before it and cannot be done after.
+FREEZE = {
+    "surface": "v1",
+    "status": "frozen",
+    "frozen_on": "2026-08-20",
+    "criterion": "S1",
+    "policy": (
+        "Additive change only. A path, operation, parameter, response field or enum value"
+        " that is published here is published for the life of /v1; removing one, or making"
+        " an optional request parameter required, is a /v2 event (blueprint §3.6.1)."
+    ),
+    "checked_by": "tests/contract/openapi_diff.py",
+}
 REQUEST_ID_HEADER = "X-Request-Id"
 KEY_QUERY_PARAM = "key"
 ASSET_PREFIX = "/assets/"
@@ -132,6 +151,18 @@ def create_app() -> FastAPI:
         response.headers[REQUEST_ID_HEADER] = request.state.request_id
         return response
 
+    # Registered last, so it is the outermost layer and no inner short-circuit — the
+    # query-key refusal, a validation problem, a StaticFiles 404 — escapes unheadered.
+    @app.middleware("http")
+    async def _security_headers(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        response = await call_next(request)
+        response.headers.update(STATIC_SECURITY_HEADERS)
+        name, policy = header_for(request.url.path, https=request.url.scheme == "https")
+        response.headers[name] = policy
+        return response
+
     app.include_router(health.liveness)
     for router in (
         index.router,
@@ -143,6 +174,7 @@ def create_app() -> FastAPI:
         conformance.router,
         quarantine.router,
         glossary.router,
+        keys.router,
     ):
         app.include_router(router, prefix="/v1", dependencies=[Depends(require_key)])
 
@@ -157,7 +189,21 @@ def create_app() -> FastAPI:
     if web_root and Path(web_root).is_dir():
         # Mounted last: /v1 and /healthz are already routed, so the SPA only sees the rest.
         app.mount("/", StaticFiles(directory=web_root, html=True), name="web")
+
+    _stamp_the_freeze(app)
     return app
+
+
+def _stamp_the_freeze(app: FastAPI) -> None:
+    """Carry the freeze terms in `info`, so the served document states its own change policy."""
+    generate = app.openapi
+
+    def openapi() -> dict[str, object]:
+        document = generate()
+        document["info"][FREEZE_KEY] = dict(FREEZE)
+        return document
+
+    app.openapi = openapi  # type: ignore[method-assign]
 
 
 app = create_app()

@@ -24,6 +24,7 @@ CONTENT_ADDRESS_NOTE = (
 )
 EXAMPLE_RULE_ID = "cr_nd_stream_vocab_1"
 EXAMPLE_SOURCE_ID = "nd_mpr_xlsx"
+EXAMPLE_VINTAGE_ID = "vin_nd_mpr_xlsx_2026-08-01"
 EXAMPLE_QUARANTINE_ID = "qr_01contract0001"
 EXAMPLE_TERM_ID = "gt_report_vintage"
 EXAMPLE_ERROR_CODE = "lineage_unresolved"

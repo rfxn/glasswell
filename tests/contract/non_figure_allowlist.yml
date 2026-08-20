@@ -55,6 +55,24 @@
   reason: Promotion bookkeeping from lineage.vintages, not a served observation.
 - pointer: /published_vintages/*/rows_appended
   reason: Promotion bookkeeping from lineage.vintages, not a served observation.
+- pointer: /rows_examined
+  reason: Promotion bookkeeping on a vintage record, not a served observation.
+- pointer: /rows_appended
+  reason: Promotion bookkeeping on a vintage record, not a served observation.
+- pointer: /*/rows_examined
+  reason: Promotion bookkeeping, in a vintage collection item.
+- pointer: /*/rows_appended
+  reason: Promotion bookkeeping, in a vintage collection item.
+- pointer: /restatement_summary/**
+  reason: >-
+    Per-reason counts of values a vintage restated. A count of restatements is
+    bookkeeping about the ledger, not a quantity the ledger stands behind.
+- pointer: /*/restatement_summary/**
+  reason: Restatement counts, in a vintage collection item.
+- pointer: /*/output_rows
+  reason: >-
+    Rows a derivation recorded when it wrote its output, in the derivation
+    collection. Same class as /output/rows on the expanded record.
 - pointer: /entries/*/n_words
   reason: Token count the highlighter uses to build its trie (SB-04 §6.2).
 
