@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import hmac
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, date, datetime
 from typing import Annotated
 
@@ -12,10 +11,22 @@ import psycopg
 from fastapi import Depends, Query, Security
 from fastapi.security import APIKeyHeader
 from psycopg.rows import dict_row
+from pydantic import BaseModel, Field
 
 from glasswell.api.errors import ProblemError
 from glasswell.api.examples import KEY_HEADER
 from glasswell.api.pagination import DEFAULT_LIMIT, SPINE_LIMIT_CAP, WELLS_LIMIT_CAP
+from glasswell.api.principal import (
+    KeyStore,
+    Scope,
+    check_scope,
+    key_store_from_environment,
+    resolve_principal,
+    utc_now,
+)
+from glasswell.api.principal import (
+    Principal as ResolvedPrincipal,
+)
 
 OWNER_KEY_ENV = "GLASSWELL_OWNER_KEY"
 ALLOW_ANON_ENV = "GLASSWELL_ALLOW_ANON"
@@ -49,16 +60,25 @@ owner_key_scheme = APIKeyHeader(
 )
 
 
-def require_key(presented: Annotated[str | None, Security(owner_key_scheme)] = None) -> str:
-    """A single static owner key. Rev 2 (C12) honours no origin header: it is client-settable."""
+def get_key_store() -> KeyStore:
+    """Resolved per request and consulted only when the static owner key does not match, so
+    a route that needs no database (`/v1/errors/{code}`) still needs none to authenticate."""
+    return key_store_from_environment()
+
+
+def require_key(
+    presented: Annotated[str | None, Security(owner_key_scheme)] = None,
+    store: Annotated[KeyStore, Depends(get_key_store)] = None,  # type: ignore[assignment]
+) -> ResolvedPrincipal:
+    """The static owner key, then the issued keys. Rev 2 (C12) honours no origin header."""
     if os.environ.get(ALLOW_ANON_ENV) == "1":
-        return "anonymous"
-    if not presented:
-        raise ProblemError("key_required", detail=f"send the owner key in {KEY_HEADER}")
-    expected = os.environ.get(OWNER_KEY_ENV, "")
-    if not expected or not hmac.compare_digest(presented, expected):
-        raise ProblemError("unauthenticated")
-    return "owner"
+        return ResolvedPrincipal(id="anonymous", kind="anonymous", scope="owner")
+    return resolve_principal(
+        presented,
+        owner_key=os.environ.get(OWNER_KEY_ENV, ""),
+        store=store,
+        now=utc_now(),
+    )
 
 
 def rows(connection: psycopg.Connection, statement: str, params: object = None) -> list[dict]:
@@ -72,7 +92,49 @@ def today() -> date:
 
 
 Connection = Annotated[psycopg.Connection, Depends(get_connection)]
-Principal = Annotated[str, Depends(require_key)]
+Principal = Annotated[ResolvedPrincipal, Depends(require_key)]
+
+
+def require_scope(*allowed: Scope) -> Callable[[ResolvedPrincipal], ResolvedPrincipal]:
+    """Guard a route by scope. The allowed set is data, so the auth matrix reads off it."""
+
+    def guard(principal: Principal) -> ResolvedPrincipal:
+        return check_scope(principal, allowed)
+
+    return guard
+
+
+class PostFlags(BaseModel):
+    """S-K: `?explain=true` is allowed on POST post-hoc; only the combination is refused."""
+
+    explain: bool = Field(description="Attach the derivation chain for what the call produced.")
+    dry_run: bool = Field(description="Validate and report, without creating anything.")
+
+
+def post_flags(
+    explain: Annotated[
+        bool, Query(description="Explain the run this call created, after it has run.")
+    ] = False,
+    dry_run: Annotated[
+        bool, Query(description="Validate the request and report; create nothing.")
+    ] = False,
+) -> PostFlags:
+    if explain and dry_run:
+        raise ProblemError(
+            "explain_on_dry_run",
+            detail="a dry run produces no artifact, so there is nothing to explain",
+            errors=[
+                {
+                    "pointer": "/query/explain",
+                    "code": "explain_on_dry_run",
+                    "detail": "drop one of explain or dry_run",
+                }
+            ],
+        )
+    return PostFlags(explain=explain, dry_run=dry_run)
+
+
+PostEffect = Annotated[PostFlags, Depends(post_flags)]
 
 AsOf = Annotated[
     date | None,

@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -18,13 +19,17 @@ import pytest
 from fastapi.testclient import TestClient
 from psycopg.types.json import Jsonb
 
+from glasswell.api.deps import get_key_store
 from glasswell.api.examples import (
     EXAMPLE_API10,
     EXAMPLE_DERIVATION_ID,
     EXAMPLE_MANIFEST_ID,
     EXAMPLE_QUARANTINE_ID,
+    KEY_HEADER,
 )
+from glasswell.api.principal import ConnectionKeyStore
 from glasswell.lineage.capture import derive, lineage_session
+from glasswell.lineage.fetch import RAW_ROOT_ENV
 from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.serialization import hash_payload
 from glasswell.lineage.store import PostgresRecorder
@@ -249,8 +254,26 @@ def _seed_quarantine(connection: psycopg.Connection, manifest_id: str) -> None:
             cursor.execute(_INSERT_QUARANTINE, row)
 
 
+RAW_PAYLOAD = b"contract-fixture raw bytes, hashed as fetched"
+
+
 @pytest.fixture
-def seeded(db: psycopg.Connection) -> psycopg.Connection:
+def raw_zone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A raw zone holding the example manifest's payload.
+
+    Without it the published `get_manifest_bytes` example 404s, which is exactly the
+    MAJOR-2(b) shape: an example that only resolves where the artifact happens to exist.
+    """
+    root = tmp_path / "raw"
+    (root / "nd_mpr_xlsx").mkdir(parents=True)
+    payload = root / "nd_mpr_xlsx" / "2026_06.xlsx"
+    payload.write_bytes(RAW_PAYLOAD)
+    monkeypatch.setenv(RAW_ROOT_ENV, str(root))
+    return payload
+
+
+@pytest.fixture
+def seeded(db: psycopg.Connection, raw_zone: Path) -> psycopg.Connection:
     """Registries, wells, geometry, production and quarantine, keyed to the examples."""
     seed_all(db)
     mpr_manifest = seed_manifest(db, sha256=MPR_SHA256, source_key="2026_06.xlsx")
@@ -258,6 +281,11 @@ def seeded(db: psycopg.Connection) -> psycopg.Connection:
         db, sha256=GIS_SHA256, source_id="nd_gis_wells", source_key="OGD_Wells.zip"
     )
     assert mpr_manifest == EXAMPLE_MANIFEST_ID, "the documented manifest example must be seeded"
+    with db.cursor() as cursor:
+        cursor.execute(
+            "update lineage.manifests set storage_uri = %s where manifest_id = %s",
+            (str(raw_zone), mpr_manifest),
+        )
 
     promotion = _promotion_derivation(db, mpr_manifest)
     assert promotion == EXAMPLE_DERIVATION_ID, (
@@ -317,5 +345,30 @@ def client(api_client: TestClient, seeded: psycopg.Connection) -> Iterator[TestC
     api_client.app.state.tile_client = httpx.Client(
         transport=httpx.MockTransport(_tile_transport), base_url="http://martin.invalid"
     )
+    api_client.app.dependency_overrides[get_key_store] = lambda: ConnectionKeyStore(seeded)
     yield api_client
     api_client.app.state.tile_client.close()
+
+
+def issue_key(client: TestClient, *, label: str, scope: str) -> str:
+    """Issue through the API rather than the table: a test key that skipped the endpoint
+    would not prove the endpoint stores what it claims to store."""
+    response = client.post("/v1/keys", json={"label": label, "scope": scope})
+    assert response.status_code == 201, response.text
+    return response.json()["data"]["secret"]
+
+
+def as_principal(client: TestClient, secret: str | None) -> TestClient:
+    """A second client on the same app, presenting a different credential (or none)."""
+    headers = {} if secret is None else {KEY_HEADER: secret}
+    return TestClient(client.app, headers=headers)
+
+
+@pytest.fixture
+def guest_client(client: TestClient) -> TestClient:
+    return as_principal(client, issue_key(client, label="qa-guest-2026", scope="guest"))
+
+
+@pytest.fixture
+def agent_client(client: TestClient) -> TestClient:
+    return as_principal(client, issue_key(client, label="qa-agent-2026", scope="agent"))

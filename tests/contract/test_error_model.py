@@ -85,13 +85,22 @@ def test_an_unknown_error_code_is_not_found(client: TestClient) -> None:
     assert response.json()["type"] == f"{TYPE_BASE}/not_found"
 
 
-def test_type_uris_are_absolute(client: TestClient) -> None:
-    """m5: a relative type URI resolves against the request URL and drifts per client."""
-    assert TYPE_BASE.startswith("https://")
+def test_type_uris_resolve_on_the_origin_that_served_them(client: TestClient) -> None:
+    """N-9 supersedes sentinel m5's absolute rule, and asserts the property m5 wanted.
+
+    m5 required `https://…` so the URI would resolve. It did not: the hostname it pinned
+    answers on one of this deployment's three names, so a LAN or localhost caller followed a
+    dead link. Origin-relative resolves everywhere, keeps the compared string identical
+    across deployments, and — unlike the old rule — can be dereferenced in a test.
+    """
+    assert TYPE_BASE.startswith("/"), "the type URI is a contract fact, not a deployment fact"
 
     body = client.get("/v1/wells/3300000000").json()
+    described = client.get(body["type"])
 
-    assert body["type"].startswith("https://")
+    assert described.status_code == 200
+    assert described.json()["data"]["code"] == "not_found"
+    assert described.json()["data"]["type"] == body["type"]
 
 
 def test_a_request_with_no_key_is_refused(client: TestClient) -> None:

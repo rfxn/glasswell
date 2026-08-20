@@ -1,12 +1,16 @@
 """RFC 9457 problem+json, the frozen error registry, and the handlers that emit them.
 
-`type` URIs are absolute and every one resolves at `GET /v1/errors/{code}` (SB-04 §4.1),
-so a stranger holding only a response body can look the failure up.
+Every `type` URI resolves at `GET /v1/errors/{code}` (SB-04 §4.1), so a stranger holding
+only a response body can look the failure up. The URI is an origin-relative reference
+(RFC 9457 §3.1.1) rather than a hostname: this API answers on a LAN name, a tunnel name and
+localhost, and a type that names one of them does not resolve from the other two (N-9).
+Relative also makes the identifier a property of the contract instead of the deployment, so
+two instances agree on what `type` a caller is comparing against.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,7 +22,7 @@ from starlette.responses import JSONResponse
 
 from glasswell.lineage.errors import InvalidHandle, InvalidSelector, LineageUnresolved
 
-TYPE_BASE = "https://glasswell.rpx.sh/v1/errors"
+TYPE_BASE = "/v1/errors"
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 
 
@@ -46,7 +50,7 @@ ERROR_REGISTRY: Mapping[str, ErrorSpec] = {
         "The request carried no owner key. Send it in the X-Glasswell-Key header.",
     ),
     "key_revoked": ErrorSpec(
-        403, "API key revoked", "The key matched a revoked or expired record.", emitted=False
+        403, "API key revoked", "The key matched a revoked or expired record."
     ),
     "jwks_unavailable": ErrorSpec(
         503,
@@ -92,8 +96,7 @@ ERROR_REGISTRY: Mapping[str, ErrorSpec] = {
         " `unknown_id`). An auditor never gets a bare 404.",
     ),
     "explain_on_dry_run": ErrorSpec(
-        422, "explain cannot be combined with dry_run", "There is no artifact to explain.",
-        emitted=False,
+        422, "explain cannot be combined with dry_run", "There is no artifact to explain."
     ),
     "result_cap_exceeded": ErrorSpec(
         422,
@@ -205,6 +208,33 @@ def problem_response(
         body["errors"] = [dict(error) for error in errors]
     body |= dict(extra or {})
     return JSONResponse(body, status_code=spec.status, media_type=PROBLEM_MEDIA_TYPE)
+
+
+def removed_query_parameters(**replacements: str) -> Callable[[Request], None]:
+    """Refuse a parameter this API used to accept, naming what replaced it.
+
+    Dropping the parameter silently is what makes a removal invisible: the caller keeps
+    sending it and keeps getting an answer computed from something else.
+    """
+
+    def guard(request: Request) -> None:
+        offenders = [name for name in replacements if name in request.query_params]
+        if not offenders:
+            return
+        raise ProblemError(
+            "validation_failed",
+            detail=f"{offenders[0]} was removed from this operation: {replacements[offenders[0]]}",
+            errors=[
+                {
+                    "pointer": f"/query/{name}",
+                    "code": "parameter_removed",
+                    "detail": replacements[name],
+                }
+                for name in offenders
+            ],
+        )
+
+    return guard
 
 
 def problem_responses(*codes: str) -> dict[int | str, dict[str, Any]]:

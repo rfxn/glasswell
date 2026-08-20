@@ -7,6 +7,42 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-20 — wave 1
+
+- [New] `/v1/keys` issues, lists, revokes and rotates API keys at owner, agent or
+      guest scope: the cleartext is returned once and never stored, only its sha256
+      reaches the table, issuance and revocation append `key.issued` / `key.revoked`
+      to the audit stream, and an unknown key, a revoked key and an empty key table
+      all answer identically so no caller can use the refusal as an oracle
+      (SB-06 §8.3, DR-67)
+- [New] Security response headers on every surface: a Content-Security-Policy that
+      admits the MapLibre worker's blob URL and same-origin PMTiles range fetches and
+      nothing else, plus `X-Content-Type-Options`, `X-Frame-Options: DENY`,
+      `Referrer-Policy: no-referrer` and `X-Robots-Tag`; the policy was verified in a
+      headless browser against the real bundle, and re-verified by removing `blob:`
+      and watching the map die (SB-05 §1.5, N-6)
+- [New] `/v1/vintages` and `/v1/vintages/{vintage_id}` serve the promotion records
+      `as_of` resolves against, and `/v1/derivations` serves the collection the
+      service index had been linking to since it was written (S-K, DR-65)
+- [New] `/v1/manifests/{manifest_id}/bytes` serves the archived copy of a fetched
+      artifact to the owner, or to any key when the source's terms mark it
+      redistributable; a `storage_uri` that resolves outside the raw zone serves
+      nothing (SB-07 §9.6)
+- [New] The OpenAPI document states its own freeze terms in `info`, and a differ
+      classifies any change against the committed snapshot as additive or breaking —
+      a removed path, a withdrawn response guarantee or a newly required request
+      field is reported as the `/v2` event §3.6.1 says it is
+- [New] The auth matrix is a committed test: every served operation against
+      anonymous, invalid, revoked, guest, agent and owner, with a coverage check that
+      fails when an endpoint arrives without an entry
+- [Remove] `/v1/explain?ref=` is refused with `parameter_removed` instead of being
+      accepted and ignored, and `storage_uri` is absent from every manifest response
+      below owner scope. Both are removals, so both had to happen before the S1
+      freeze published the surface (S-A, S-K, DR-02, DR-33)
+- [Change] `problem.type` is origin-relative, so it resolves on the LAN name, the
+           tunnel name and localhost alike; the previous absolute host answered on
+           only one of the three and was a dead link from the other two (N-9)
+
 ### 2026-08-20 — fix cycle: data truth, guardrails, panels and map
 
 - [New] The well card discloses what the map cannot show and the ingest held back:

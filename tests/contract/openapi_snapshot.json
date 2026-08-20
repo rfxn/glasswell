@@ -894,6 +894,116 @@
         "title": "DerivationRule",
         "type": "object"
       },
+      "DerivationSummary": {
+        "properties": {
+          "code_version": {
+            "description": "Code version that produced it.",
+            "title": "Code Version",
+            "type": "string"
+          },
+          "created_at": {
+            "description": "When the derivation ran.",
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_vintage": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Knowledge time, not wall clock.",
+            "title": "Created Vintage"
+          },
+          "derivation_id": {
+            "description": "Content address of the derivation spec.",
+            "title": "Derivation Id",
+            "type": "string"
+          },
+          "determinism_class": {
+            "description": "D1, D2 or D3.",
+            "title": "Determinism Class",
+            "type": "string"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Model, where one was used.",
+            "title": "Model Id"
+          },
+          "operation": {
+            "description": "Operation that ran.",
+            "title": "Operation",
+            "type": "string"
+          },
+          "output_dataset": {
+            "description": "Dataset it produced.",
+            "title": "Output Dataset",
+            "type": "string"
+          },
+          "output_rows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Rows written.",
+            "title": "Output Rows"
+          },
+          "output_store": {
+            "description": "Where the output was written.",
+            "title": "Output Store",
+            "type": "string"
+          },
+          "recipe_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Recipe, where one was recorded.",
+            "title": "Recipe Id"
+          },
+          "status": {
+            "description": "ok or failed.",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "derivation_id",
+          "operation",
+          "output_store",
+          "output_dataset",
+          "output_rows",
+          "code_version",
+          "created_vintage",
+          "created_at",
+          "status",
+          "determinism_class",
+          "recipe_id",
+          "model_id"
+        ],
+        "title": "DerivationSummary",
+        "type": "object"
+      },
       "EnvelopeModel_Chains_": {
         "properties": {
           "data": {
@@ -1034,6 +1144,46 @@
         "title": "EnvelopeModel[Health]",
         "type": "object"
       },
+      "EnvelopeModel_IssuedKey_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/IssuedKey"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[IssuedKey]",
+        "type": "object"
+      },
+      "EnvelopeModel_KeyRecordModel_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/KeyRecordModel"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[KeyRecordModel]",
+        "type": "object"
+      },
       "EnvelopeModel_Manifest_": {
         "properties": {
           "data": {
@@ -1134,6 +1284,26 @@
         "title": "EnvelopeModel[ServiceIndex]",
         "type": "object"
       },
+      "EnvelopeModel_Vintage_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Vintage"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[Vintage]",
+        "type": "object"
+      },
       "EnvelopeModel_WellDetail_": {
         "properties": {
           "data": {
@@ -1178,6 +1348,30 @@
         "title": "EnvelopeModel[list[ConformanceRule]]",
         "type": "object"
       },
+      "EnvelopeModel_list_DerivationSummary__": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/DerivationSummary"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[list[DerivationSummary]]",
+        "type": "object"
+      },
       "EnvelopeModel_list_GlossaryTerm__": {
         "properties": {
           "data": {
@@ -1200,6 +1394,30 @@
           "links"
         ],
         "title": "EnvelopeModel[list[GlossaryTerm]]",
+        "type": "object"
+      },
+      "EnvelopeModel_list_KeyRecordModel__": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/KeyRecordModel"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[list[KeyRecordModel]]",
         "type": "object"
       },
       "EnvelopeModel_list_Manifest__": {
@@ -1248,6 +1466,30 @@
           "links"
         ],
         "title": "EnvelopeModel[list[QuarantineRow]]",
+        "type": "object"
+      },
+      "EnvelopeModel_list_Vintage__": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/Vintage"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[list[Vintage]]",
         "type": "object"
       },
       "EnvelopeModel_list_WellSummary__": {
@@ -1713,6 +1955,267 @@
         "title": "IndexEntry",
         "type": "object"
       },
+      "IssueRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the key stops working. A guest key should carry one.",
+            "title": "Expires At"
+          },
+          "label": {
+            "description": "`<consumer>-<purpose>-<year>`, lowercase and hyphenated (SB-06 \u00a78.3).",
+            "maxLength": 64,
+            "minLength": 3,
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "title": "Label",
+            "type": "string"
+          },
+          "scope": {
+            "description": "owner, agent or guest. The key carries it, not the class.",
+            "enum": [
+              "owner",
+              "agent",
+              "guest"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "scope"
+        ],
+        "title": "IssueRequest",
+        "type": "object"
+      },
+      "IssuedKey": {
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Issue time; null when `dry_run` is set.",
+            "title": "Created At"
+          },
+          "created_by": {
+            "description": "Principal that issued it.",
+            "title": "Created By",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Expiry, where one was set.",
+            "title": "Expires At"
+          },
+          "key_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Id of the new key; null when `dry_run` is set.",
+            "title": "Key Id"
+          },
+          "label": {
+            "description": "Human label the key was issued under.",
+            "title": "Label",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last time this key authenticated a request.",
+            "title": "Last Used At"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it was revoked, if it was.",
+            "title": "Revoked At"
+          },
+          "revoked_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Principal that revoked it.",
+            "title": "Revoked By"
+          },
+          "scope": {
+            "description": "Effective scope of the principal presenting this key.",
+            "title": "Scope",
+            "type": "string"
+          },
+          "secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The cleartext key. Returned once at issuance; null on a dry run.",
+            "title": "Secret"
+          },
+          "state": {
+            "description": "active, expired or revoked.",
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_id",
+          "label",
+          "scope",
+          "state",
+          "created_at",
+          "created_by",
+          "expires_at",
+          "revoked_at",
+          "revoked_by",
+          "last_used_at",
+          "secret"
+        ],
+        "title": "IssuedKey",
+        "type": "object"
+      },
+      "KeyRecordModel": {
+        "properties": {
+          "created_at": {
+            "description": "When the key was issued.",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "description": "Principal that issued it.",
+            "title": "Created By",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Expiry, where one was set.",
+            "title": "Expires At"
+          },
+          "key_id": {
+            "description": "Stable id of the key row; safe to log and to reference.",
+            "title": "Key Id",
+            "type": "string"
+          },
+          "label": {
+            "description": "Human label the key was issued under.",
+            "title": "Label",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last time this key authenticated a request.",
+            "title": "Last Used At"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it was revoked, if it was.",
+            "title": "Revoked At"
+          },
+          "revoked_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Principal that revoked it.",
+            "title": "Revoked By"
+          },
+          "scope": {
+            "description": "Effective scope of the principal presenting this key.",
+            "title": "Scope",
+            "type": "string"
+          },
+          "state": {
+            "description": "active, expired or revoked.",
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_id",
+          "label",
+          "scope",
+          "state",
+          "created_at",
+          "created_by",
+          "expires_at",
+          "revoked_at",
+          "revoked_by",
+          "last_used_at"
+        ],
+        "title": "KeyRecordModel",
+        "type": "object"
+      },
       "LinksModel": {
         "additionalProperties": true,
         "properties": {
@@ -1870,9 +2373,16 @@
             "type": "string"
           },
           "storage_uri": {
-            "description": "Where the raw-zone copy lives.",
-            "title": "Storage Uri",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Absolute path of the raw-zone copy on the serving host; owner scope only.",
+            "title": "Storage Uri"
           },
           "superseded_by": {
             "anyOf": [
@@ -2922,6 +3432,90 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "Vintage": {
+        "properties": {
+          "manifest_ids": {
+            "description": "Manifests the promotion read.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Manifest Ids",
+            "type": "array"
+          },
+          "months_touched": {
+            "description": "Production months the promotion covered.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Months Touched",
+            "type": "array"
+          },
+          "opened_at": {
+            "description": "When the vintage was opened.",
+            "format": "date-time",
+            "title": "Opened At",
+            "type": "string"
+          },
+          "promotion_derivation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Derivation that promoted it.",
+            "title": "Promotion Derivation Id"
+          },
+          "restatement_summary": {
+            "additionalProperties": true,
+            "description": "Per-reason counts of values this vintage restated.",
+            "title": "Restatement Summary",
+            "type": "object"
+          },
+          "rows_appended": {
+            "description": "Rows appended; a restatement appends (DIR-2).",
+            "title": "Rows Appended",
+            "type": "integer"
+          },
+          "rows_examined": {
+            "description": "Rows read during the promotion.",
+            "title": "Rows Examined",
+            "type": "integer"
+          },
+          "source_id": {
+            "description": "Source the vintage was promoted from.",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "vintage_date": {
+            "description": "Knowledge-time label of the promotion (DIR-9).",
+            "format": "date",
+            "title": "Vintage Date",
+            "type": "string"
+          },
+          "vintage_id": {
+            "description": "Id of the (source, vintage) promotion.",
+            "title": "Vintage Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vintage_id",
+          "source_id",
+          "vintage_date",
+          "manifest_ids",
+          "opened_at",
+          "promotion_derivation_id",
+          "rows_examined",
+          "rows_appended",
+          "months_touched",
+          "restatement_summary"
+        ],
+        "title": "Vintage",
+        "type": "object"
+      },
       "WellDetail": {
         "properties": {
           "api10": {
@@ -3318,7 +3912,15 @@
   "info": {
     "description": "Glass-box upstream analytics on public data. Every number this API serves carries a\nderivation handle in band, and `GET /v1/explain` walks that handle back to the\nchecksummed government file it came from.\n\nConventions that hold everywhere: responses are `data` / `meta` / `links`; collections\nare cursor-paginated with no offset parameter; failures are RFC 9457 problem documents\nwhose `type` resolves at `/v1/errors/{code}`; and `as_of` selects knowledge time, with\nthe resolved vintage reported back in `meta.as_of`.\n\nThis deployment is the North Dakota slice: wells, geometry, monthly production, the\nlineage spine, the conformance registry, quarantine and the glossary. Forecasts,\neconomics and other basins are not served.",
     "title": "glasswell",
-    "version": "0.1.0"
+    "version": "0.1.0",
+    "x-glasswell-freeze": {
+      "checked_by": "tests/contract/openapi_diff.py",
+      "criterion": "S1",
+      "frozen_on": "2026-08-20",
+      "policy": "Additive change only. A path, operation, parameter, response field or enum value that is published here is published for the life of /v1; removing one, or making an optional request parameter required, is a /v2 event (blueprint \u00a73.6.1).",
+      "status": "frozen",
+      "surface": "v1"
+    }
   },
   "openapi": "3.1.0",
   "paths": {
@@ -3354,7 +3956,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 503,
                       "title": "Service degraded",
-                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                      "type": "/v1/errors/service_degraded"
                     }
                   }
                 }
@@ -3405,7 +4007,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 503,
                       "title": "Service degraded",
-                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                      "type": "/v1/errors/service_degraded"
                     }
                   }
                 }
@@ -3604,7 +4206,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Cursor malformed",
-                      "type": "https://glasswell.rpx.sh/v1/errors/cursor_malformed"
+                      "type": "/v1/errors/cursor_malformed"
                     }
                   },
                   "cursor_query_mismatch": {
@@ -3615,7 +4217,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Cursor does not match this query",
-                      "type": "https://glasswell.rpx.sh/v1/errors/cursor_query_mismatch"
+                      "type": "/v1/errors/cursor_query_mismatch"
                     }
                   },
                   "validation_failed": {
@@ -3626,7 +4228,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Request validation failed",
-                      "type": "https://glasswell.rpx.sh/v1/errors/validation_failed"
+                      "type": "/v1/errors/validation_failed"
                     }
                   }
                 }
@@ -3651,7 +4253,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 503,
                       "title": "Service degraded",
-                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                      "type": "/v1/errors/service_degraded"
                     }
                   }
                 }
@@ -3740,7 +4342,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 404,
                       "title": "Not found",
-                      "type": "https://glasswell.rpx.sh/v1/errors/not_found"
+                      "type": "/v1/errors/not_found"
                     }
                   }
                 }
@@ -3765,7 +4367,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Request validation failed",
-                      "type": "https://glasswell.rpx.sh/v1/errors/validation_failed"
+                      "type": "/v1/errors/validation_failed"
                     }
                   }
                 }
@@ -3790,7 +4392,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 503,
                       "title": "Service degraded",
-                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                      "type": "/v1/errors/service_degraded"
                     }
                   }
                 }
@@ -3814,6 +4416,185 @@
           },
           "query": {
             "include": "applied_by"
+          }
+        }
+      }
+    },
+    "/v1/derivations": {
+      "get": {
+        "description": "Every derivation this system has recorded, newest first: what ran, what it produced and under which code version. Filter by `operation` or `status` to find the run behind a figure when you have the dataset but not the handle. Expand one with `GET /v1/derivations/{derivation_id}`.",
+        "operationId": "list_derivations",
+        "parameters": [
+          {
+            "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size, 100 by default, 200 at most (SB-07 \u00a79.5 caps the spine collections lower than the data ones).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Page size, 100 by default, 200 at most (SB-07 \u00a79.5 caps the spine collections lower than the data ones).",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter to one operation.",
+            "in": "query",
+            "name": "operation",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one operation.",
+              "title": "Operation"
+            }
+          },
+          {
+            "description": "Filter to ok or failed runs.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "ok",
+                    "failed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to ok or failed runs.",
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_list_DerivationSummary__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "cursor_malformed": {
+                    "summary": "Cursor malformed",
+                    "value": {
+                      "detail": "The cursor did not decode to the four declared fields.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor malformed",
+                      "type": "/v1/errors/cursor_malformed"
+                    }
+                  },
+                  "cursor_query_mismatch": {
+                    "summary": "Cursor does not match this query",
+                    "value": {
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor does not match this query",
+                      "type": "/v1/errors/cursor_query_mismatch"
+                    }
+                  },
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "List recorded derivations",
+        "tags": [
+          "lineage"
+        ],
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {
+            "limit": 5
           }
         }
       }
@@ -3888,7 +4669,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 404,
                       "title": "Not found",
-                      "type": "https://glasswell.rpx.sh/v1/errors/not_found"
+                      "type": "/v1/errors/not_found"
                     }
                   }
                 }
@@ -3913,7 +4694,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Request validation failed",
-                      "type": "https://glasswell.rpx.sh/v1/errors/validation_failed"
+                      "type": "/v1/errors/validation_failed"
                     }
                   }
                 }
@@ -3938,7 +4719,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 503,
                       "title": "Service degraded",
-                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                      "type": "/v1/errors/service_degraded"
                     }
                   }
                 }
@@ -4014,7 +4795,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 404,
                       "title": "Not found",
-                      "type": "https://glasswell.rpx.sh/v1/errors/not_found"
+                      "type": "/v1/errors/not_found"
                     }
                   }
                 }
@@ -4123,7 +4904,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 404,
                       "title": "Lineage could not be resolved",
-                      "type": "https://glasswell.rpx.sh/v1/errors/lineage_unresolved"
+                      "type": "/v1/errors/lineage_unresolved"
                     }
                   }
                 }
@@ -4148,7 +4929,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Handle selector is ambiguous",
-                      "type": "https://glasswell.rpx.sh/v1/errors/selector_ambiguous"
+                      "type": "/v1/errors/selector_ambiguous"
                     }
                   },
                   "validation_failed": {
@@ -4159,7 +4940,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Request validation failed",
-                      "type": "https://glasswell.rpx.sh/v1/errors/validation_failed"
+                      "type": "/v1/errors/validation_failed"
                     }
                   }
                 }
@@ -4184,7 +4965,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 503,
                       "title": "Service degraded",
-                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                      "type": "/v1/errors/service_degraded"
                     }
                   }
                 }
@@ -4315,7 +5096,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Cursor malformed",
-                      "type": "https://glasswell.rpx.sh/v1/errors/cursor_malformed"
+                      "type": "/v1/errors/cursor_malformed"
                     }
                   },
                   "cursor_query_mismatch": {
@@ -4326,7 +5107,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Cursor does not match this query",
-                      "type": "https://glasswell.rpx.sh/v1/errors/cursor_query_mismatch"
+                      "type": "/v1/errors/cursor_query_mismatch"
                     }
                   },
                   "validation_failed": {
@@ -4337,7 +5118,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Request validation failed",
-                      "type": "https://glasswell.rpx.sh/v1/errors/validation_failed"
+                      "type": "/v1/errors/validation_failed"
                     }
                   }
                 }
@@ -4362,7 +5143,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 503,
                       "title": "Service degraded",
-                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                      "type": "/v1/errors/service_degraded"
                     }
                   }
                 }
@@ -4420,7 +5201,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 503,
                       "title": "Service degraded",
-                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                      "type": "/v1/errors/service_degraded"
                     }
                   }
                 }
@@ -4489,7 +5270,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 404,
                       "title": "Not found",
-                      "type": "https://glasswell.rpx.sh/v1/errors/not_found"
+                      "type": "/v1/errors/not_found"
                     }
                   }
                 }
@@ -4524,7 +5305,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 503,
                       "title": "Service degraded",
-                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                      "type": "/v1/errors/service_degraded"
                     }
                   }
                 }
@@ -4582,7 +5363,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 503,
                       "title": "Service degraded",
-                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                      "type": "/v1/errors/service_degraded"
                     }
                   }
                 }
@@ -4602,6 +5383,582 @@
         ],
         "x-glasswell-request-example": {
           "path": {},
+          "query": {}
+        }
+      }
+    },
+    "/v1/keys": {
+      "get": {
+        "description": "Every key this deployment has issued, newest first, with its scope, lifecycle timestamps and last use. Neither the cleartext nor its hash appears here \u2014 the list answers *which credentials exist*, not *what they are*.",
+        "operationId": "list_keys",
+        "parameters": [
+          {
+            "description": "Page size, 100 by default, 200 at most (SB-07 \u00a79.5 caps the spine collections lower than the data ones).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Page size, 100 by default, 200 at most (SB-07 \u00a79.5 caps the spine collections lower than the data ones).",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_list_KeyRecordModel__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "forbidden": {
+                    "summary": "Forbidden",
+                    "value": {
+                      "detail": "Authenticated, but out of scope for this operation.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 403,
+                      "title": "Forbidden",
+                      "type": "/v1/errors/forbidden"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "List API keys",
+        "tags": [
+          "keys"
+        ],
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {
+            "limit": 20
+          }
+        }
+      },
+      "post": {
+        "description": "Creates a key at one of three scopes and returns it. Labels are unique across live keys, so a rotation can reuse the label the consumer already knows. The cleartext key is returned by this call and by nothing else, ever: only its sha256 is stored. A key that has been lost is rotated, not recovered.",
+        "operationId": "issue_key",
+        "parameters": [
+          {
+            "description": "Explain the run this call created, after it has run.",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Explain the run this call created, after it has run.",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Validate the request and report; create nothing.",
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Validate the request and report; create nothing.",
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_IssuedKey_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "forbidden": {
+                    "summary": "Forbidden",
+                    "value": {
+                      "detail": "Authenticated, but out of scope for this operation.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 403,
+                      "title": "Forbidden",
+                      "type": "/v1/errors/forbidden"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "explain_on_dry_run": {
+                    "summary": "explain cannot be combined with dry_run",
+                    "value": {
+                      "detail": "There is no artifact to explain.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "explain cannot be combined with dry_run",
+                      "type": "/v1/errors/explain_on_dry_run"
+                    }
+                  },
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Issue an API key",
+        "tags": [
+          "keys"
+        ],
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {}
+        }
+      }
+    },
+    "/v1/keys/{key_id}": {
+      "delete": {
+        "description": "Takes the key out of service immediately and records `key.revoked`. Revoking an already-revoked key returns the same record and writes no second event, so a retry after a timeout is safe.",
+        "operationId": "revoke_key",
+        "parameters": [
+          {
+            "description": "Id of the key to revoke.",
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "description": "Id of the key to revoke.",
+              "title": "Key Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_KeyRecordModel_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "forbidden": {
+                    "summary": "Forbidden",
+                    "value": {
+                      "detail": "Authenticated, but out of scope for this operation.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 403,
+                      "title": "Forbidden",
+                      "type": "/v1/errors/forbidden"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Revoke an API key",
+        "tags": [
+          "keys"
+        ],
+        "x-glasswell-request-example": {
+          "path": {
+            "key_id": "key_01JBQ7M0Z8K2V4N6X8R0T2Y4W6"
+          },
+          "query": {}
+        }
+      }
+    },
+    "/v1/keys/{key_id}/rotate": {
+      "post": {
+        "description": "Issues a replacement under the same label and scope and revokes the old key in the same call, which is what makes rotation a single step a consumer cannot half-do. The cleartext key is returned by this call and by nothing else, ever: only its sha256 is stored. A key that has been lost is rotated, not recovered.",
+        "operationId": "rotate_key",
+        "parameters": [
+          {
+            "description": "Id of the key being replaced.",
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "description": "Id of the key being replaced.",
+              "title": "Key Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Explain the run this call created, after it has run.",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Explain the run this call created, after it has run.",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Validate the request and report; create nothing.",
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Validate the request and report; create nothing.",
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_IssuedKey_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "forbidden": {
+                    "summary": "Forbidden",
+                    "value": {
+                      "detail": "Authenticated, but out of scope for this operation.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 403,
+                      "title": "Forbidden",
+                      "type": "/v1/errors/forbidden"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "explain_on_dry_run": {
+                    "summary": "explain cannot be combined with dry_run",
+                    "value": {
+                      "detail": "There is no artifact to explain.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "explain cannot be combined with dry_run",
+                      "type": "/v1/errors/explain_on_dry_run"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "explain cannot be combined with dry_run"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Rotate an API key",
+        "tags": [
+          "keys"
+        ],
+        "x-glasswell-request-example": {
+          "path": {
+            "key_id": "key_01JBQ7M0Z8K2V4N6X8R0T2Y4W6"
+          },
           "query": {}
         }
       }
@@ -4777,7 +6134,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Cursor malformed",
-                      "type": "https://glasswell.rpx.sh/v1/errors/cursor_malformed"
+                      "type": "/v1/errors/cursor_malformed"
                     }
                   },
                   "cursor_query_mismatch": {
@@ -4788,7 +6145,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Cursor does not match this query",
-                      "type": "https://glasswell.rpx.sh/v1/errors/cursor_query_mismatch"
+                      "type": "/v1/errors/cursor_query_mismatch"
                     }
                   },
                   "validation_failed": {
@@ -4799,7 +6156,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Request validation failed",
-                      "type": "https://glasswell.rpx.sh/v1/errors/validation_failed"
+                      "type": "/v1/errors/validation_failed"
                     }
                   }
                 }
@@ -4824,7 +6181,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 503,
                       "title": "Service degraded",
-                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                      "type": "/v1/errors/service_degraded"
                     }
                   }
                 }
@@ -4895,7 +6252,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 404,
                       "title": "Not found",
-                      "type": "https://glasswell.rpx.sh/v1/errors/not_found"
+                      "type": "/v1/errors/not_found"
                     }
                   }
                 }
@@ -4930,7 +6287,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 503,
                       "title": "Service degraded",
-                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                      "type": "/v1/errors/service_degraded"
                     }
                   }
                 }
@@ -4945,6 +6302,130 @@
           }
         ],
         "summary": "One manifest",
+        "tags": [
+          "lineage"
+        ],
+        "x-glasswell-request-example": {
+          "path": {
+            "manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          },
+          "query": {}
+        }
+      }
+    },
+    "/v1/manifests/{manifest_id}/bytes": {
+      "get": {
+        "description": "The archived copy of the fetched artifact, byte-identical to what was hashed. Owner scope, unless the source's terms mark the artifact redistributable (SB-07 \u00a79.6) \u2014 an auditor does not need our copy, because the checksum and the exact acquisition URL let them re-fetch from the regulator and hash it themselves, which is the stronger audit. `404` when this host does not hold the bytes; the record at `/v1/manifests/{manifest_id}` still resolves.",
+        "operationId": "get_manifest_bytes",
+        "parameters": [
+          {
+            "description": "Content-addressed manifest id.",
+            "in": "path",
+            "name": "manifest_id",
+            "required": true,
+            "schema": {
+              "description": "Content-addressed manifest id.",
+              "title": "Manifest Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "forbidden": {
+                    "summary": "Forbidden",
+                    "value": {
+                      "detail": "Authenticated, but out of scope for this operation.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 403,
+                      "title": "Forbidden",
+                      "type": "/v1/errors/forbidden"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Download the raw bytes",
         "tags": [
           "lineage"
         ],
@@ -5124,7 +6605,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Cursor malformed",
-                      "type": "https://glasswell.rpx.sh/v1/errors/cursor_malformed"
+                      "type": "/v1/errors/cursor_malformed"
                     }
                   },
                   "cursor_query_mismatch": {
@@ -5135,7 +6616,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Cursor does not match this query",
-                      "type": "https://glasswell.rpx.sh/v1/errors/cursor_query_mismatch"
+                      "type": "/v1/errors/cursor_query_mismatch"
                     }
                   },
                   "validation_failed": {
@@ -5146,7 +6627,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Request validation failed",
-                      "type": "https://glasswell.rpx.sh/v1/errors/validation_failed"
+                      "type": "/v1/errors/validation_failed"
                     }
                   }
                 }
@@ -5171,7 +6652,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 503,
                       "title": "Service degraded",
-                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                      "type": "/v1/errors/service_degraded"
                     }
                   }
                 }
@@ -5283,7 +6764,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Request validation failed",
-                      "type": "https://glasswell.rpx.sh/v1/errors/validation_failed"
+                      "type": "/v1/errors/validation_failed"
                     }
                   }
                 }
@@ -5308,7 +6789,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 503,
                       "title": "Service degraded",
-                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                      "type": "/v1/errors/service_degraded"
                     }
                   }
                 }
@@ -5379,7 +6860,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 404,
                       "title": "Not found",
-                      "type": "https://glasswell.rpx.sh/v1/errors/not_found"
+                      "type": "/v1/errors/not_found"
                     }
                   }
                 }
@@ -5414,7 +6895,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 503,
                       "title": "Service degraded",
-                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                      "type": "/v1/errors/service_degraded"
                     }
                   }
                 }
@@ -5522,7 +7003,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 404,
                       "title": "Not found",
-                      "type": "https://glasswell.rpx.sh/v1/errors/not_found"
+                      "type": "/v1/errors/not_found"
                     }
                   }
                 }
@@ -5547,7 +7028,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Request validation failed",
-                      "type": "https://glasswell.rpx.sh/v1/errors/validation_failed"
+                      "type": "/v1/errors/validation_failed"
                     }
                   }
                 }
@@ -5572,7 +7053,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 502,
                       "title": "Tile upstream failed",
-                      "type": "https://glasswell.rpx.sh/v1/errors/upstream_tile_error"
+                      "type": "/v1/errors/upstream_tile_error"
                     }
                   }
                 }
@@ -5596,6 +7077,229 @@
             "x": 54,
             "y": 89,
             "z": 8
+          },
+          "query": {}
+        }
+      }
+    },
+    "/v1/vintages": {
+      "get": {
+        "description": "One row per (source, knowledge time) promotion: what it read, how many rows it examined and appended, which months it touched, and what it restated. This is the index behind `as_of` \u2014 every vintage here is a value `as_of` can select.",
+        "operationId": "list_vintages",
+        "parameters": [
+          {
+            "description": "Page size, 100 by default, 200 at most (SB-07 \u00a79.5 caps the spine collections lower than the data ones).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Page size, 100 by default, 200 at most (SB-07 \u00a79.5 caps the spine collections lower than the data ones).",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter to one source.",
+            "in": "query",
+            "name": "source_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one source.",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_list_Vintage__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "List published vintages",
+        "tags": [
+          "lineage"
+        ],
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {
+            "limit": 10
+          }
+        }
+      }
+    },
+    "/v1/vintages/{vintage_id}": {
+      "get": {
+        "description": "The promotion record `as_of` resolves to, including the manifests it read and its restatement summary. Vintages are append-only: a correction opens a new one.",
+        "operationId": "get_vintage",
+        "parameters": [
+          {
+            "description": "Id of the (source, vintage) promotion.",
+            "in": "path",
+            "name": "vintage_id",
+            "required": true,
+            "schema": {
+              "description": "Id of the (source, vintage) promotion.",
+              "title": "Vintage Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_Vintage_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "One published vintage",
+        "tags": [
+          "lineage"
+        ],
+        "x-glasswell-request-example": {
+          "path": {
+            "vintage_id": "vin_nd_mpr_xlsx_2026-08-01"
           },
           "query": {}
         }
@@ -5776,7 +7480,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Cursor malformed",
-                      "type": "https://glasswell.rpx.sh/v1/errors/cursor_malformed"
+                      "type": "/v1/errors/cursor_malformed"
                     }
                   },
                   "cursor_query_mismatch": {
@@ -5787,7 +7491,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Cursor does not match this query",
-                      "type": "https://glasswell.rpx.sh/v1/errors/cursor_query_mismatch"
+                      "type": "/v1/errors/cursor_query_mismatch"
                     }
                   },
                   "validation_failed": {
@@ -5798,7 +7502,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Request validation failed",
-                      "type": "https://glasswell.rpx.sh/v1/errors/validation_failed"
+                      "type": "/v1/errors/validation_failed"
                     }
                   }
                 }
@@ -5823,7 +7527,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 503,
                       "title": "Service degraded",
-                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                      "type": "/v1/errors/service_degraded"
                     }
                   }
                 }
@@ -5914,7 +7618,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 404,
                       "title": "Not found",
-                      "type": "https://glasswell.rpx.sh/v1/errors/not_found"
+                      "type": "/v1/errors/not_found"
                     }
                   }
                 }
@@ -5939,7 +7643,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Request validation failed",
-                      "type": "https://glasswell.rpx.sh/v1/errors/validation_failed"
+                      "type": "/v1/errors/validation_failed"
                     }
                   }
                 }
@@ -5964,7 +7668,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 503,
                       "title": "Service degraded",
-                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                      "type": "/v1/errors/service_degraded"
                     }
                   }
                 }
@@ -6119,7 +7823,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 404,
                       "title": "Not found",
-                      "type": "https://glasswell.rpx.sh/v1/errors/not_found"
+                      "type": "/v1/errors/not_found"
                     }
                   }
                 }
@@ -6144,7 +7848,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "as_of precedes the captured history",
-                      "type": "https://glasswell.rpx.sh/v1/errors/as_of_out_of_range"
+                      "type": "/v1/errors/as_of_out_of_range"
                     }
                   },
                   "validation_failed": {
@@ -6155,7 +7859,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
                       "title": "Request validation failed",
-                      "type": "https://glasswell.rpx.sh/v1/errors/validation_failed"
+                      "type": "/v1/errors/validation_failed"
                     }
                   }
                 }
@@ -6180,7 +7884,7 @@
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 503,
                       "title": "Service degraded",
-                      "type": "https://glasswell.rpx.sh/v1/errors/service_degraded"
+                      "type": "/v1/errors/service_degraded"
                     }
                   }
                 }

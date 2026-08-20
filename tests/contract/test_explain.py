@@ -108,11 +108,17 @@ def test_the_manifest_is_the_terminal_record(client: TestClient) -> None:
     assert "storage_uri" in data
 
 
-def test_no_bytes_route_exists(client: TestClient) -> None:
-    """SB-07 §9.6: verifiability is the checksum plus the URL, not our copy of the bytes."""
+def test_the_bytes_route_is_gated_and_the_record_is_not(client: TestClient) -> None:
+    """SB-07 §9.6, as written: the record is open to every key, the bytes are owner-scoped.
+
+    This test previously asserted no `/bytes` route at all. That read §9.6's justification —
+    verifiability is the checksum plus the acquisition URL — as if it forbade the route,
+    when §9.6 specifies it and scopes it. S-K adds it; the gate is what §9.6 actually asks for.
+    """
     document = client.get("/openapi.json").json()
 
-    assert not any(path.endswith("/bytes") for path in document["paths"])
+    assert "/v1/manifests/{manifest_id}/bytes" in document["paths"]
+    assert "forbidden" in str(document["paths"]["/v1/manifests/{manifest_id}/bytes"]["get"])
 
 
 def test_the_manifest_collection_filters_by_source(client: TestClient) -> None:
