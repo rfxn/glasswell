@@ -78,14 +78,14 @@ def test_the_registry_rejects_unknown_kinds(kind):
         executor_for(kind)
 
 
-@pytest.mark.parametrize("kind", ["key_composite", "code_ref"])
+@pytest.mark.parametrize("kind", ["code_ref"])
 def test_unimplemented_kinds_fail_loudly_rather_than_silently_passing_rows_through(kind):
     frame = pl.DataFrame({"x": [1]})
     with pytest.raises(NotImplementedError, match=kind):
         apply_rules(frame, [rule(f"cr_{kind}_1", kind, {})])
 
 
-@pytest.mark.parametrize("kind", ["datum_transform", "validity_filter"])
+@pytest.mark.parametrize("kind", ["datum_transform", "validity_filter", "key_composite"])
 def test_an_implemented_kind_still_refuses_a_spec_it_cannot_execute(kind):
     frame = pl.DataFrame({"x": [1]})
     with pytest.raises(RuleSpecError):

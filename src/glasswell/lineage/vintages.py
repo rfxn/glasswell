@@ -13,22 +13,32 @@ from psycopg.types.json import Jsonb
 from glasswell.lineage.models import VintageRecord
 from glasswell.lineage.serialization import json_ready
 
+# S-E: the window partitions on the entity key, so a well's two pool filings are two heads and
+# not one row shadowing the other. There is no tiebreak after report_vintage because there
+# cannot be one: the primary key holds every column this window partitions and orders on, so a
+# tie inside a partition is unrepresentable. A same-vintage re-promotion does not produce two
+# rows to order - it is refused (VintageAlreadyPromoted).
 _SELECT_PRODUCTION = """
-select api10, production_month, stream, source_id, report_vintage, volume, unit, days_produced,
-       granularity, value_hash, source_manifest_id, derivation_id
+select entity_type, entity_key, reporting_level, well_completion_pool, aggregation, api10,
+       production_month, stream, source_id, report_vintage, volume, unit, days_produced,
+       granularity, value_hash, source_manifest_id, derivation_id, null_semantics
   from (select p.*,
                row_number() over (
-                   partition by api10, production_month, stream, source_id
-                   order by report_vintage desc, created_at desc) as vintage_rank
+                   partition by entity_type, entity_key, production_month, stream, source_id
+                   order by report_vintage desc) as vintage_rank
           from canonical.production_monthly p
          where (%(as_of)s::date is null or p.report_vintage <= %(as_of)s::date)
            and (%(api10)s::text is null or p.api10 = %(api10)s)
+           and (%(entity_type)s::text is null or p.entity_type = %(entity_type)s)
+           and (%(entity_key)s::text is null or p.entity_key = %(entity_key)s)
+           and (%(well_completion_pool)s::text is null
+                or p.well_completion_pool = %(well_completion_pool)s)
            and (%(stream)s::text is null or p.stream = %(stream)s)
            and (%(source_id)s::text is null or p.source_id = %(source_id)s)
            and (%(production_month)s::date is null
                 or p.production_month = %(production_month)s::date)) ranked
  where vintage_rank = 1
- order by api10, production_month, stream, source_id
+ order by entity_type, entity_key, production_month, stream, source_id
 """
 
 
@@ -40,10 +50,14 @@ def select_production(
     production_month: date | None = None,
     stream: str | None = None,
     source_id: str | None = None,
+    entity_type: str | None = None,
+    entity_key: str | None = None,
+    well_completion_pool: str | None = None,
 ) -> list[dict[str, Any]]:
-    """As-of semantics: greatest report_vintage <= as_of, per (well, month, stream, source).
+    """As-of semantics: greatest report_vintage <= as_of, per (entity, month, stream, source).
 
-    `as_of=None` is the serving default — latest known state.
+    `as_of=None` is the serving default — latest known state. `api10` selects a well's rows at
+    every level, so a caller that wants the well's own series passes `entity_type='well'`.
     """
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(
@@ -54,6 +68,9 @@ def select_production(
                 "production_month": production_month,
                 "stream": stream,
                 "source_id": source_id,
+                "entity_type": entity_type,
+                "entity_key": entity_key,
+                "well_completion_pool": well_completion_pool,
             },
         )
         return [dict(row) for row in cursor.fetchall()]

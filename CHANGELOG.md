@@ -7,6 +7,79 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-20 — wave 1: the S-E production key
+
+- [New] The S-E production key: `canonical.production_monthly` is keyed by
+      `(entity_type, entity_key, production_month, stream, source_id, report_vintage)`
+      with `reporting_level` alongside and `api10` kept denormalised, so a Texas lease
+      row and the two pool filings one API-10 makes in a month both have somewhere to
+      live (reconciliation §S-E, DR-04)
+- [New] `canonical.well_completions`, the `well_completion_pool` entity the §3.4.3 enum
+      named and no table defined; New Mexico reports at exactly this grain, so the gap
+      blocked P7a rather than P7b (SB-01 E5)
+- [New] `cr_nd_pool_rollup_1`, the legislated sum that replaces D1's interim withdrawal:
+      a well that filed in two pools promotes one row per pool plus a well row carrying
+      their exact sum, disclosed as `aggregation = sum_over_pools`, with days taken as
+      the maximum over pools and never their sum; 78 wells and 139,644 bbl that were
+      served as zeroes are served as what the regulator filed
+- [New] `cr_nd_entity_key_1` and the `key_composite` executor that runs it — the last
+      rule kind with no implementation apart from `code_ref`; it also unblocks NM's
+      well-completion key and TX's `(OIL_GAS_CODE, DISTRICT_NO, LEASE_NO)` lease key,
+      neither of which may be built by a literal in a parser (R8, DR-40)
+- [New] `glasswell.ingest.repromote`, which re-promotes every staged month under the new
+      key from staging rather than from the workbook, appends a vintage instead of
+      rewriting one, is idempotent, and closes the `key_collision` ledger rows whose
+      collision no longer exists
+- [New] `GET /v1/wells/{api10}/production/pools`, the per-pool breakdown behind a summed
+      well series, and `links.pools` / `links.aggregation_rule` on the well series that
+      point at it and at the rule
+- [New] `condensate` enters the canonical stream vocabulary and `key_incomplete` the
+      quarantine reason vocabulary, both for the states that need them (C7, SB-01 §2.10)
+- [Change] A well series whose months were summed across pools says so per point in
+         `*_aggregation`, carries `reporting_level = well_completion_pool`, and resolves
+         to an aggregation derivation taken over the pool rows — never a serve-time sum,
+         which would be a figure with no derivation to cite (DIR-3, R6)
+- [Change] The `production_monthly_latest` window partitions on the entity key and needs
+         no tiebreak at all: the primary key holds every column the window partitions and
+         orders on, so a report-vintage tie inside a partition is unrepresentable, and
+         believing otherwise is what made a same-vintage re-promotion look safe (SB-01 H2)
+- [Change] A canonical row's composed granularity token is checked against its
+         `reporting_level` by the database, and `lease_allocated` is refused outright
+         because allocation is a derived artifact and never a canonical observation
+         (S-B, DIR-3)
+- [Change] A promotion's `output_sha256` covers what it computed rather than the
+         change-only subset it appended, so re-running one over the same bytes no longer
+         trips the determinism detector with a hash that depended on prior state
+- [Fix] `tests/support/seed.py` stamps the unit its stream declares instead of `bbl` on
+      every row, takes `days_produced`, `null_semantics` and `value_hash`, and can seed
+      any entity level; a fixture that made every gas row read `bbl` is a fixture that
+      made the unit column untestable (DR-46)
+- [Fix] A re-promotion at a vintage that already answers is refused rather than swallowed.
+      `report_vintage` is the wall-clock day, so running the correction on the day the fleet
+      was last promoted put every well aggregate on the primary key of the row it corrects;
+      `on conflict do nothing` discarded them all while the collision ledger closed anyway,
+      restoring the zero-producer defect with its only disclosure deleted. A repeat run that
+      computes what is already recorded is still a no-op, as the derivation store's
+      reconcile() is (SB-07 §1.3)
+- [Fix] A well row that becomes a disclosed sum is appended even when its value did not move.
+      The change key is `value_hash` plus `reporting_level` and `aggregation`; `value_hash`
+      itself keeps migration 008's definition, so an unaffected well still appends nothing,
+      but a well whose sibling pool contributed no volume no longer keeps an undisclosed head
+      row and serves a cross-pool sum as a single-pool observation
+- [Fix] A released ledger row carries `released_at_vintage`, and the withdrawal and
+      withholding queries read it as of the vintage being asked for. An as-of replay of a
+      date before the release disclosed nothing and answered with an affirmative regulator
+      zero; it now answers what that date answered (DIR-2)
+- [Fix] Collisions are superseded only for the well-months whose aggregate actually landed,
+      and `RepromotionReport.rows_appended` counts rows that landed rather than rows that
+      were computed
+- [Fix] A no-op re-run no longer overwrites the vintage ledger row with zeroes, and two
+      staged manifests for one workbook are refused up front rather than resolved by
+      insertion order half-way through a run
+- [Change] `entity_type` and `reporting_level` are checked against each other, so a lease row
+         can no longer assert it was observed at the well. Latent today — every row is
+         consistent — and load-bearing when the lease and pool writers arrive at P7a/P7b
+
 ### 2026-08-20 — wave 1 merge train: the pre-train batch fix
 
 - [Fix] The read slot stops shearing the bottom rule off the key chip and the
@@ -375,7 +448,6 @@ its own version in its header, and its history is summarised in §3.1.
          lateral length reads 15,065.44 ft where the projected rule said 15,073.98,
          the oil column carries a handle per month, and `compute_crs` reports the
          CRS the length is defined on beside the new `length_method`
-
 ### 2026-08-20 — North Dakota spine and map slice
 
 - [New] Lineage and reproducibility spine: content-addressed raw zone with sealed

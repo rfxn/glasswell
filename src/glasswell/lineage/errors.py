@@ -46,6 +46,28 @@ class ManifestConflict(LineageError):
     """The same bytes were registered under a different source slot."""
 
 
+class VintageAlreadyPromoted(LineageError):
+    """DIR-2 at the canonical grain: this vintage already answers, and differently.
+
+    The store-side analogue of DeterminismViolation (SB-07 §1.3). Knowledge time is a date, so
+    two promotions on one calendar day share a primary key; re-running one is a no-op only when
+    it computes what is already there. Anything else would have to rewrite a vintage, which a
+    re-promotion never does — it appends one.
+    """
+
+    def __init__(self, dataset: str, report_vintage: object, rows: int, example: str) -> None:
+        super().__init__(
+            f"{dataset}: report_vintage {report_vintage} already holds {rows} row(s) that"
+            f" differ from what this run computed (first: {example}). A re-promotion appends a"
+            " vintage and never rewrites one, and knowledge time is a date, so this run must"
+            " open a later one — re-run on a day after the newest report_vintage."
+        )
+        self.dataset = dataset
+        self.report_vintage = report_vintage
+        self.rows = rows
+        self.example = example
+
+
 UNRESOLVED_REASONS = ("selector_ambiguous", "depth_exceeded", "derivation_swept", "unknown_id")
 
 

@@ -24,6 +24,7 @@ from glasswell.ingest.base import IngestRun, open_ingest_run
 from glasswell.lineage.audit import emit
 from glasswell.lineage.capture import derive
 from glasswell.lineage.conformance import QuarantineBatch, apply_rules, load_rules
+from glasswell.lineage.errors import VintageAlreadyPromoted
 from glasswell.lineage.fetch import fetch_raw
 from glasswell.lineage.models import ConformanceRule, InputRef, OutputSpec
 from glasswell.lineage.quarantine import quarantine
@@ -53,7 +54,11 @@ UNREGISTERED_REASON = "unknown_vocab"
 IDENTITY_REASON = "parse_error"
 COLLISION_REASON = "key_collision"
 
-_COLLISION_RANK = "__glasswell_collision_rank"
+ENTITY_KEY_RULE = "cr_nd_entity_key_1"
+ROLLUP_RULE = "cr_nd_pool_rollup_1"
+AGGREGATION = "sum_over_pools"
+
+_PROMOTION_INDEX = "__glasswell_promotion_index"
 
 _ISO_DATE_RE = re.compile(r"\A\d{4}-\d{2}-\d{2}")
 _NON_DIGITS_RE = re.compile(r"\D")
@@ -73,6 +78,7 @@ class IngestReport:
     quarantined: Mapping[str, int] = field(default_factory=dict)
     restatement_summary: Mapping[str, int] = field(default_factory=dict)
     promote_derivation_id: str | None = None
+    aggregate_derivation_id: str | None = None
 
 
 def liquids_basis() -> str:
@@ -256,71 +262,293 @@ def _with_measured_value(
     return frame.with_columns(volume.alias("volume"), unit.alias("unit"))
 
 
-def split_key_collisions(frame: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
-    """The MPR's grain is (api14, pool, month); canonical's is (api10, month, stream).
+def _value_hash(volume: Decimal | None, unit: str | None, days: int | None, semantics: str) -> str:
+    """The change detector covers the measured value, unchanged from migration 008's definition.
 
-    A well completed in two pools files two rows, so the natural key collides on real data. The
-    first row by source ordinal promotes and the rest are returned for quarantine — an unlegislated
-    sum across pools is exactly the kind of silent aggregation SB-07 §6 exists to prevent.
+    Widening it to the entity columns would re-append all 394,278 rows at a new vintage with
+    identical volumes, which the ledger would publish as a restatement that never happened.
     """
-    ranked = frame.with_columns(
-        pl.col("source_row_ordinal")
-        .rank("ordinal")
-        .over(["api10", "production_month", "stream_canonical"])
-        .alias(_COLLISION_RANK)
-    )
-    kept = ranked.filter(pl.col(_COLLISION_RANK) == 1).drop(_COLLISION_RANK)
-    collided = ranked.filter(pl.col(_COLLISION_RANK) > 1).drop(_COLLISION_RANK)
-    return kept, collided
-
-
-def _promotion_records(frame: pl.DataFrame) -> list[dict[str, Any]]:
-    records = []
-    for row in frame.iter_rows(named=True):
-        volume = row["volume"]
-        semantics = classify_null_semantics(volume)
-        payload = {
+    return hash_payload(
+        {
             "volume": volume,
-            "unit": row["unit"],
-            "days_produced": row["days"],
+            "unit": unit,
+            "days_produced": days,
             "granularity": GRANULARITY,
             "null_semantics": semantics,
         }
-        records.append(
-            {
-                "api10": row["api10"],
-                "production_month": row["production_month"],
-                "stream": row["stream_canonical"],
-                # canonical.volume is NOT NULL, so an absent volume is carried as zero and the
-                # null_semantics label is what distinguishes it from a reported zero.
-                "volume": volume if volume is not None else Decimal(0),
-                "unit": row["unit"],
-                "days_produced": row["days"],
-                "granularity": GRANULARITY,
-                "value_hash": hash_payload(payload),
-                "null_semantics": semantics,
-            }
+    )
+
+
+def _record(
+    *,
+    entity_type: str,
+    entity_key: str,
+    reporting_level: str,
+    well_completion_pool: str | None,
+    aggregation: str | None,
+    api10: str,
+    production_month: date,
+    stream: str,
+    volume: Decimal | None,
+    unit: str | None,
+    days: int | None,
+    semantics: str,
+) -> dict[str, Any]:
+    return {
+        "entity_type": entity_type,
+        "entity_key": entity_key,
+        "reporting_level": reporting_level,
+        "well_completion_pool": well_completion_pool,
+        "aggregation": aggregation,
+        "api10": api10,
+        "production_month": production_month,
+        "stream": stream,
+        # canonical.volume is NOT NULL, so an absent volume is carried as zero and the
+        # null_semantics label is what distinguishes it from a reported zero.
+        "volume": volume if volume is not None else Decimal(0),
+        "unit": unit,
+        "days_produced": days,
+        "granularity": GRANULARITY,
+        "value_hash": _value_hash(volume, unit, days, semantics),
+        "null_semantics": semantics,
+    }
+
+
+def _rollup_semantics(volumes: Sequence[Decimal | None], total: Decimal) -> str:
+    if all(volume is None for volume in volumes):
+        return "no_report"
+    return classify_null_semantics(total)
+
+
+@dataclass(frozen=True, slots=True)
+class PoolPromotion:
+    records: list[dict[str, Any]]
+    aggregates: list[dict[str, Any]]
+    completions: list[dict[str, Any]]
+    collided: pl.DataFrame
+
+
+def _sum_over_pools(filings: Sequence[Mapping[str, Any]]) -> tuple[Decimal, int | None, str]:
+    """cr_nd_pool_rollup_1: volume sums exactly, days take the maximum, never the sum."""
+    volumes = [filing["volume"] for filing in filings]
+    total = sum((volume for volume in volumes if volume is not None), Decimal(0))
+    days = [filing["days"] for filing in filings if filing["days"] is not None]
+    return total, (max(days) if days else None), _rollup_semantics(volumes, total)
+
+
+def pool_promotion_records(frame: pl.DataFrame) -> PoolPromotion:
+    """cr_nd_pool_rollup_1, the legislated replacement for D1's interim withdrawal.
+
+    One filing for a well-month-stream promotes as the well. Two or more promote as one row per
+    pool plus a well row carrying their exact sum, disclosed as `aggregation = sum_over_pools`,
+    so a consumer can tell a two-pool well from a one-pool well. A group the rule cannot
+    decompose — a filing with no pool label, or two filings under one label — leaves the rows it
+    cannot key for quarantine rather than guessing which one is the well.
+    """
+    if "entity_key" not in frame.columns:
+        # cr_nd_entity_key_1 is not in force at this as_of, so no filing can be keyed to a pool
+        # and every group falls back to what the pipeline did before the rule existed. Replaying
+        # an old vintage has to reproduce the old result (R7), not apply today's rule to it.
+        frame = frame.with_columns(pl.lit(None, dtype=pl.String).alias("entity_key"))
+    indexed = frame.with_row_index(_PROMOTION_INDEX).sort("source_row_ordinal")
+    groups: dict[tuple[str, date, str], list[dict[str, Any]]] = {}
+    for row in indexed.iter_rows(named=True):
+        key = (row["api10"], row["production_month"], row["stream_canonical"])
+        groups.setdefault(key, []).append(row)
+
+    records: list[dict[str, Any]] = []
+    aggregates: list[dict[str, Any]] = []
+    completions: list[dict[str, Any]] = []
+    collided: list[int] = []
+    for (api10, month, stream), filings in groups.items():
+        by_pool: dict[str, dict[str, Any]] = {}
+        for filing in filings:
+            entity_key = filing["entity_key"]
+            if entity_key is not None and entity_key not in by_pool:
+                by_pool[entity_key] = filing
+        decomposable = len(filings) > 1 and len(by_pool) == len(filings)
+        if not decomposable:
+            head, *rest = filings
+            # Two filings under one pool label, or one with no label at all: the rule cannot
+            # say which is the well, so the rest stay in the ledger and the API withdraws the
+            # point rather than serving the first by spreadsheet ordinal as the well (D1).
+            collided.extend(filing[_PROMOTION_INDEX] for filing in rest)
+            records.append(
+                _record(
+                    entity_type="well",
+                    entity_key=api10,
+                    reporting_level="well",
+                    well_completion_pool=head["pool"],
+                    aggregation=None,
+                    api10=api10,
+                    production_month=month,
+                    stream=stream,
+                    volume=head["volume"],
+                    unit=head["unit"],
+                    days=head["days"],
+                    semantics=classify_null_semantics(head["volume"]),
+                )
+            )
+            continue
+        for entity_key, filing in by_pool.items():
+            records.append(
+                _record(
+                    entity_type="well_completion_pool",
+                    entity_key=entity_key,
+                    reporting_level="well_completion_pool",
+                    well_completion_pool=filing["pool"],
+                    aggregation=None,
+                    api10=api10,
+                    production_month=month,
+                    stream=stream,
+                    volume=filing["volume"],
+                    unit=filing["unit"],
+                    days=filing["days"],
+                    semantics=classify_null_semantics(filing["volume"]),
+                )
+            )
+            completions.append(
+                {
+                    "completion_key": entity_key,
+                    "api10": api10,
+                    "well_completion_pool": filing["pool"],
+                    "pool_reported": filing["pool"],
+                    "production_month": month,
+                }
+            )
+        pool_filings = list(by_pool.values())
+        total, days, semantics = _sum_over_pools(pool_filings)
+        aggregates.append(
+            _record(
+                entity_type="well",
+                entity_key=api10,
+                reporting_level="well_completion_pool",
+                well_completion_pool=None,
+                aggregation=AGGREGATION,
+                api10=api10,
+                production_month=month,
+                stream=stream,
+                volume=total,
+                unit=next(
+                    (filing["unit"] for filing in pool_filings if filing["unit"] is not None), None
+                ),
+                days=days,
+                semantics=semantics,
+            )
         )
-    return records
+
+    rejected = indexed.filter(pl.col(_PROMOTION_INDEX).is_in(collided)).drop(_PROMOTION_INDEX)
+    return PoolPromotion(
+        records=records, aggregates=aggregates, completions=completions, collided=rejected
+    )
 
 
-def _current_heads(connection: psycopg.Connection) -> dict[tuple[str, date, str], str]:
+def _head_key(record: Mapping[str, Any]) -> tuple[str, str, date, str]:
+    return (
+        record["entity_type"],
+        record["entity_key"],
+        record["production_month"],
+        record["stream"],
+    )
+
+
+def _change_key(record: Mapping[str, Any]) -> tuple[str, str | None, str | None]:
+    """What has to differ before a row is worth appending.
+
+    `value_hash` alone is not enough. A well-month whose pool filings happen to sum to what the
+    first-by-ordinal row already said hashes identically, and dropping it would leave the old
+    undisclosed row as the head: the number would be right and the response would still call a
+    cross-pool sum a single-pool observation (DIR-3). `value_hash` itself stays exactly as
+    migration 008 defined it, so an unaffected well still appends nothing.
+    """
+    return (record["value_hash"], record["reporting_level"], record["aggregation"])
+
+
+def _current_heads(
+    connection: psycopg.Connection,
+) -> dict[tuple[str, str, date, str], tuple[str, str | None, str | None]]:
     with connection.cursor() as cursor:
         cursor.execute(
-            "select api10, production_month, stream, value_hash"
+            "select entity_type, entity_key, production_month, stream, value_hash,"
+            "       reporting_level, aggregation"
             " from canonical.production_monthly_latest where source_id = %s",
             (SOURCE_ID,),
         )
-        return {(row[0], row[1], row[2]): row[3] for row in cursor.fetchall()}
+        return {(r[0], r[1], r[2], r[3]): (r[4], r[5], r[6]) for r in cursor.fetchall()}
+
+
+def _unchanged(records: Sequence[Mapping[str, Any]], heads: Mapping[tuple, tuple]) -> list[dict]:
+    """Change-only append (SB-07 §3.2): the PK carries the vintage, so the head check is here."""
+    return [
+        dict(record) for record in records if heads.get(_head_key(record)) != _change_key(record)
+    ]
+
+
+_ROWS_AT_VINTAGE = """
+select entity_type, entity_key, production_month, stream, value_hash, reporting_level,
+       aggregation
+  from canonical.production_monthly
+ where source_id = %(source_id)s and report_vintage = %(report_vintage)s
+"""
+
+
+def reject_same_vintage_divergence(
+    connection: psycopg.Connection,
+    records: Sequence[Mapping[str, Any]],
+    *,
+    report_vintage: date,
+) -> list[dict[str, Any]]:
+    """Return the rows that can land at this vintage; raise if any would have to overwrite one.
+
+    Mirrors the derivation store's reconcile() one layer up (SB-07 §1.3): a repeat run that
+    computes what is already recorded is a no-op, and one that computes something else is an
+    error rather than a silent `on conflict do nothing`. Without this a re-promotion on the same
+    calendar day as the vintage it is correcting drops every aggregate and says it wrote them.
+    """
+    if not records:
+        return []
+    with connection.cursor() as cursor:
+        cursor.execute(
+            _ROWS_AT_VINTAGE, {"source_id": SOURCE_ID, "report_vintage": report_vintage}
+        )
+        occupied = {(r[0], r[1], r[2], r[3]): (r[4], r[5], r[6]) for r in cursor.fetchall()}
+
+    landable: list[dict[str, Any]] = []
+    divergent: list[str] = []
+    for record in records:
+        existing = occupied.get(_head_key(record))
+        if existing is None:
+            landable.append(dict(record))
+        elif existing != _change_key(record):
+            divergent.append(
+                f"{record['entity_type']} {record['entity_key']} {record['production_month']}"
+                f" {record['stream']}: recorded {existing}, computed {_change_key(record)}"
+            )
+    if divergent:
+        raise VintageAlreadyPromoted(
+            "canonical.production_monthly", report_vintage, len(divergent), divergent[0]
+        )
+    return landable
 
 
 _INSERT_CANONICAL = """
 insert into canonical.production_monthly (
+    entity_type, entity_key, reporting_level, well_completion_pool, aggregation,
     api10, production_month, stream, source_id, report_vintage, volume, unit, days_produced,
     granularity, value_hash, source_manifest_id, derivation_id, null_semantics)
-values (%(api10)s, %(production_month)s, %(stream)s, %(source_id)s, %(report_vintage)s,
-        %(volume)s, %(unit)s, %(days_produced)s, %(granularity)s, %(value_hash)s,
-        %(source_manifest_id)s, %(derivation_id)s, %(null_semantics)s)
+values (%(entity_type)s, %(entity_key)s, %(reporting_level)s, %(well_completion_pool)s,
+        %(aggregation)s, %(api10)s, %(production_month)s, %(stream)s, %(source_id)s,
+        %(report_vintage)s, %(volume)s, %(unit)s, %(days_produced)s, %(granularity)s,
+        %(value_hash)s, %(source_manifest_id)s, %(derivation_id)s, %(null_semantics)s)
+"""
+
+_INSERT_COMPLETION = """
+insert into canonical.well_completions (
+    completion_key, api10, well_completion_pool, pool_reported, source_id, production_month,
+    report_vintage, source_manifest_id, derivation_id)
+values (%(completion_key)s, %(api10)s, %(well_completion_pool)s, %(pool_reported)s,
+        %(source_id)s, %(production_month)s, %(report_vintage)s, %(source_manifest_id)s,
+        %(derivation_id)s)
 on conflict do nothing
 """
 
@@ -351,41 +579,115 @@ def _route_quarantine(
         counts[reason] = counts.get(reason, 0) + result.opened + result.reoccurred
 
 
-def ingest_month(
+@dataclass(frozen=True, slots=True)
+class PromotionOutcome:
+    promote_derivation_id: str
+    aggregate_derivation_id: str | None
+    staged_rows: int
+    rows_examined: int
+    rows_appended: int
+    rows_aggregated: int
+    months_touched: list[str]
+    restatement_summary: dict[str, int]
+    quarantined: dict[str, int]
+    collisions_superseded: int
+
+
+def read_staged(connection: psycopg.Connection, manifest_id: str) -> pl.DataFrame:
+    """The staged rows a manifest loaded, in the shape the parse stage handed on.
+
+    Re-promotion reads staging, not the workbook: the bytes were already parsed under the
+    parse-stage rules and that derivation is a historical record, not something to redo.
+    """
+    names = sorted(_staging_columns(connection) - {"manifest_id", "ingested_at"})
+    selection = ", ".join(f'"{name}"' for name in names)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"select {selection} from {STAGING_TABLE} where manifest_id = %s"
+            " order by source_row_ordinal",
+            (manifest_id,),
+        )
+        rows = cursor.fetchall()
+    schema = {
+        name: (pl.Int64 if name == "source_row_ordinal" else pl.String) for name in names
+    }
+    return pl.DataFrame(rows, schema=schema, orient="row")
+
+
+def _parse_and_stage(
     run: IngestRun,
     *,
-    year: int,
-    month: int,
-    url: str | None = None,
-    client: httpx.Client | None = None,
-) -> IngestReport:
-    """Fetch one MPR month, stage it, and promote it under the seeded rules."""
+    manifest: Any,
+    payload_path: Path,
+    sheet: str,
+    source_key: str,
+    parse_rules: Sequence[ConformanceRule],
+    partition: Mapping[str, str],
+    manifest_input: InputRef,
+    vocabulary: frozenset[str],
+    counts: dict[str, int],
+) -> tuple[pl.DataFrame, int]:
     connection = run.connection
-    source_key = f"{year:04d}_{month:02d}.xlsx"
-    fetched = fetch_raw(
-        connection,
-        SOURCE_ID,
-        source_key,
-        url=url or URL_TEMPLATE.format(year=year, month=month),
-        raw_root=run.raw_root,
-        client=client,
-        media_type=MEDIA_TYPE,
-    )
-    manifest = fetched.manifest
-    if fetched.unchanged and _already_staged(connection, manifest.manifest_id):
-        return IngestReport(
+    with derive(
+        "stage.parse",
+        output=OutputSpec(store="postgres", dataset=STAGING_TABLE, partition=dict(partition)),
+        params={"sheet": sheet, "source_key": source_key},
+        inputs=[manifest_input],
+    ) as parsing:
+        staged = parse_workbook(payload_path, sheet=sheet)
+        parsed = apply_rules(staged, parse_rules)
+        _route_quarantine(
+            run,
+            parsed.quarantined,
+            stage="parse",
             manifest_id=manifest.manifest_id,
-            source_key=source_key,
-            report_vintage=run.as_of,
-            unchanged=True,
+            vocabulary=vocabulary,
+            counts=counts,
         )
+        staged_rows = load_staging(connection, parsed.frame, manifest_id=manifest.manifest_id)
+        for rule_id in parsed.applied_rule_ids:
+            # A parse_directive executor only checks the header; the specs this module
+            # reads per row (the sheet, the api10 slice, the month epoch) shaped every
+            # staged row and say so, and the rest stamp what they touched: nothing.
+            shaped = rule_id in TYPING_RULES
+            parsing.add_rule(
+                rule_id, applied_rows=staged_rows if shaped else parsed.applied_rows[rule_id]
+            )
+        parsing.set_rows(staged_rows)
+        parsing.set_output_hash(hash_payload(parsed.frame.rows()))
+        emit(
+            connection,
+            "staging.load_completed",
+            subject_type="manifest",
+            subject_id=manifest.manifest_id,
+            payload={"table": STAGING_TABLE, "rows": staged_rows},
+            correlation_id=run.session.correlation_id,
+            occurred_at=run.session.clock.now(),
+        )
+    return parsed.frame, staged_rows
 
+
+def promote_manifest(
+    run: IngestRun,
+    *,
+    manifest: Any,
+    source_key: str,
+    partition: Mapping[str, str],
+    payload_path: Path | None = None,
+) -> PromotionOutcome:
+    """Promote one staged manifest under the seeded rules, at the run's vintage.
+
+    `payload_path` runs the parse stage first; without it the rows come from staging, which is
+    what a re-promotion under a widened key reads.
+    """
+    connection = run.connection
     parse_rules = load_rules(connection, source_id=SOURCE_ID, stage="parse", as_of=run.as_of)
     conform_rules = [
         rule
         for rule in load_rules(connection, source_id=SOURCE_ID, stage="conform", as_of=run.as_of)
-        # The code_ref executor is unimplemented in this slice: those two rows are policy
-        # declarations this module implements directly (liquids_basis, classify_null_semantics).
+        # The code_ref executor is unimplemented in this slice: those rows are policy
+        # declarations this module implements directly (liquids_basis, classify_null_semantics,
+        # pool_promotion_records), and the last of them is cited on the aggregate below.
         if rule.rule_kind != "code_ref"
     ]
     sheet = str(_rule(parse_rules, FORMAT_RULE).spec["sheet"])
@@ -399,57 +701,33 @@ def ingest_month(
         role="primary",
         as_of_vintage=manifest.fetch_vintage,
     )
-    partition = {"month": f"{year:04d}-{month:02d}", "manifest_id": manifest.manifest_id}
 
     with derive(
         "canonical.promote",
         output=OutputSpec(
-            store="postgres", dataset="canonical.production_monthly", partition=partition
+            store="postgres", dataset="canonical.production_monthly", partition=dict(partition)
         ),
         params={"source_key": source_key, "liquids_basis": liquids_basis()},
         inputs=[manifest_input],
     ) as promotion:
-        with derive(
-            "stage.parse",
-            output=OutputSpec(store="postgres", dataset=STAGING_TABLE, partition=partition),
-            params={"sheet": sheet, "source_key": source_key},
-            inputs=[manifest_input],
-        ) as parsing:
-            staged = parse_workbook(fetched.payload_path, sheet=sheet)
-            parsed = apply_rules(staged, parse_rules)
-            _route_quarantine(
+        if payload_path is not None:
+            staged_frame, staged_rows = _parse_and_stage(
                 run,
-                parsed.quarantined,
-                stage="parse",
-                manifest_id=manifest.manifest_id,
+                manifest=manifest,
+                payload_path=payload_path,
+                sheet=sheet,
+                source_key=source_key,
+                parse_rules=parse_rules,
+                partition=partition,
+                manifest_input=manifest_input,
                 vocabulary=vocabulary,
                 counts=quarantined,
             )
-            staged_rows = load_staging(
-                connection, parsed.frame, manifest_id=manifest.manifest_id
-            )
-            for rule_id in parsed.applied_rule_ids:
-                # A parse_directive executor only checks the header; the specs this module
-                # reads per row (the sheet, the api10 slice, the month epoch) shaped every
-                # staged row and say so, and the rest stamp what they touched: nothing.
-                shaped = rule_id in TYPING_RULES
-                parsing.add_rule(
-                    rule_id,
-                    applied_rows=staged_rows if shaped else parsed.applied_rows[rule_id],
-                )
-            parsing.set_rows(staged_rows)
-            parsing.set_output_hash(hash_payload(parsed.frame.rows()))
-            emit(
-                connection,
-                "staging.load_completed",
-                subject_type="manifest",
-                subject_id=manifest.manifest_id,
-                payload={"table": STAGING_TABLE, "rows": staged_rows},
-                correlation_id=run.session.correlation_id,
-                occurred_at=run.session.clock.now(),
-            )
+        else:
+            staged_frame = read_staged(connection, manifest.manifest_id)
+            staged_rows = staged_frame.height
 
-        typed = _typed_frame(parsed.frame, rules=parse_rules, measures=measures)
+        typed = _typed_frame(staged_frame, rules=parse_rules, measures=measures)
         identified = typed.filter(pl.col("api10").is_not_null())
         unidentified = typed.filter(pl.col("api10").is_null())
         if not unidentified.is_empty():
@@ -490,15 +768,21 @@ def ingest_month(
         )
 
         units = _rule(conform_rules, UNITS_RULE).spec["units"]
-        promotable, collided = split_key_collisions(
+        promoted = pool_promotion_records(
             _with_measured_value(conformed.frame, labels=labels, units=units)
         )
-        if not collided.is_empty():
+        if not promoted.collided.is_empty():
             _route_quarantine(
                 run,
                 [
                     QuarantineBatch(
-                        reason_code=COLLISION_REASON, rule_id=IDENTITY_RULE, frame=collided
+                        reason_code=COLLISION_REASON,
+                        rule_id=(
+                            ENTITY_KEY_RULE
+                            if ENTITY_KEY_RULE in conformed.applied_rule_ids
+                            else IDENTITY_RULE
+                        ),
+                        frame=promoted.collided,
                     )
                 ],
                 stage="conform",
@@ -506,56 +790,121 @@ def ingest_month(
                 vocabulary=vocabulary,
                 counts=quarantined,
             )
-        records = _promotion_records(promotable)
         heads = _current_heads(connection)
-        appended = []
+        # Two filters, in this order. The head check decides what is worth appending; the
+        # vintage check decides what this vintage is still allowed to say, and refuses rather
+        # than letting a conflicting row be swallowed on insert.
+        appended = reject_same_vintage_divergence(
+            connection, _unchanged(promoted.records, heads), report_vintage=run.as_of
+        )
+        aggregates = reject_same_vintage_divergence(
+            connection, _unchanged(promoted.aggregates, heads), report_vintage=run.as_of
+        )
         restatement: dict[str, int] = {}
-        for record in records:
-            key = (record["api10"], record["production_month"], record["stream"])
-            previous = heads.get(key)
-            if previous == record["value_hash"]:
-                continue
-            appended.append(record)
-            if previous is not None:
+        for record in appended + aggregates:
+            if _head_key(record) in heads:
                 month_key = record["production_month"].isoformat()
                 restatement[month_key] = restatement.get(month_key, 0) + 1
 
         for application in (validated, conformed):
             for rule_id in application.applied_rule_ids:
                 promotion.add_rule(rule_id, applied_rows=application.applied_rows[rule_id])
-        promotion.set_rows(len(appended))
-        promotion.set_output_hash(hash_payload([record["value_hash"] for record in appended]))
+        # What the promotion computed, not what the store happened to keep: hashing the
+        # change-only subset makes the derivation a function of prior state, and a second run
+        # over the same bytes then trips the determinism detector (SB-07 §1.3).
+        promotion.set_rows(len(promoted.records))
+        promotion.set_output_hash(
+            hash_payload([record["value_hash"] for record in promoted.records])
+        )
 
-    months = sorted({record["production_month"].isoformat() for record in records})
+    examined = len(promoted.records) + len(promoted.aggregates)
+    months = sorted(
+        {
+            record["production_month"].isoformat()
+            for record in promoted.records + promoted.aggregates
+        }
+    )
     _append_canonical(
-        connection,
+        run.connection,
         appended,
         manifest_id=manifest.manifest_id,
         derivation_id=promotion.derivation_id,
         report_vintage=run.as_of,
     )
-    open_vintage(
-        connection,
-        source_id=SOURCE_ID,
-        vintage_date=run.as_of,
-        manifest_ids=[manifest.manifest_id],
-        opened_at=run.session.clock.now(),
-        promotion_derivation_id=promotion.derivation_id,
-        rows_examined=len(records),
-        rows_appended=len(appended),
-        months_touched=months,
-        restatement_summary=restatement,
+    _append_completions(
+        run.connection,
+        promoted.completions,
+        manifest_id=manifest.manifest_id,
+        derivation_id=promotion.derivation_id,
+        report_vintage=run.as_of,
     )
+
+    landed_keys = {_head_key(record) for record in appended + aggregates}
+
+    aggregate_derivation_id = None
+    if aggregates:
+        # A well figure that sums its pools carries a derivation over those pool rows, never a
+        # naked sum at serve time (DIR-3, R6). Its input is the promotion that wrote them.
+        with derive(
+            "canonical.promote",
+            output=OutputSpec(
+                store="postgres",
+                dataset="canonical.production_monthly",
+                partition={**dict(partition), "aggregation": AGGREGATION},
+            ),
+            params={
+                "source_key": source_key,
+                "aggregation": AGGREGATION,
+                "rule_id": ROLLUP_RULE,
+                "liquids_basis": liquids_basis(),
+            },
+            inputs=[
+                InputRef(
+                    kind="derivation",
+                    ref_id=promotion.derivation_id,
+                    role="primary",
+                    as_of_vintage=manifest.fetch_vintage,
+                ),
+                manifest_input,
+            ],
+        ) as aggregation:
+            aggregation.add_rule(ROLLUP_RULE, applied_rows=len(promoted.aggregates))
+            aggregation.set_rows(len(promoted.aggregates))
+            aggregation.set_output_hash(
+                hash_payload([record["value_hash"] for record in promoted.aggregates])
+            )
+        aggregate_derivation_id = aggregation.derivation_id
+        _append_canonical(
+            run.connection,
+            aggregates,
+            manifest_id=manifest.manifest_id,
+            derivation_id=aggregation.derivation_id,
+            report_vintage=run.as_of,
+        )
+
+    # Driven off the aggregates that landed, never off the ones that were computed: closing a
+    # collision whose replacement row was not written is how the ledger loses the only
+    # disclosure a wrong figure had (gate-a1b Defect A).
+    disclosed = {
+        (record["api10"], record["production_month"])
+        for record in promoted.aggregates
+        if _head_key(record) in landed_keys or heads.get(_head_key(record)) == _change_key(record)
+    }
+    superseded = supersede_pool_collisions(
+        run, pairs=sorted(disclosed), derivation_id=aggregate_derivation_id
+    )
+
     payload = {
         "manifest_id": manifest.manifest_id,
-        "rows_examined": len(records),
-        "rows_appended": len(appended),
+        "rows_examined": examined,
+        "rows_appended": len(appended) + len(aggregates),
         "months_touched": months,
         "quarantined": quarantined,
         "liquids_basis": liquids_basis(),
+        "aggregated_rows": len(aggregates),
     }
     emit(
-        connection,
+        run.connection,
         "canonical.promotion_completed",
         subject_type="vintage",
         subject_id=f"vin_{SOURCE_ID}_{run.as_of.isoformat()}",
@@ -565,7 +914,7 @@ def ingest_month(
     )
     if restatement:
         emit(
-            connection,
+            run.connection,
             "canonical.restatement_detected",
             subject_type="vintage",
             subject_id=f"vin_{SOURCE_ID}_{run.as_of.isoformat()}",
@@ -573,17 +922,135 @@ def ingest_month(
             correlation_id=run.session.correlation_id,
             occurred_at=run.session.clock.now(),
         )
+    return PromotionOutcome(
+        promote_derivation_id=promotion.derivation_id,
+        aggregate_derivation_id=aggregate_derivation_id,
+        staged_rows=staged_rows,
+        rows_examined=examined,
+        rows_appended=len(appended) + len(aggregates),
+        rows_aggregated=len(aggregates),
+        months_touched=months,
+        restatement_summary=restatement,
+        quarantined=quarantined,
+        collisions_superseded=superseded,
+    )
+
+
+def supersede_pool_collisions(
+    run: IngestRun, *, pairs: Sequence[tuple[str, date]], derivation_id: str | None
+) -> int:
+    """Close the key_collision rows a well-month no longer has, now that its pools promote.
+
+    Scoped to the exact (api10, month) pairs this promotion decomposed, so a collision the rule
+    could not decompose keeps the open row the API's withdrawal guard reads.
+    """
+    if not pairs:
+        return 0
+    with run.connection.cursor() as cursor:
+        cursor.execute(
+            "update lineage.quarantine_rows"
+            "   set state = 'superseded', released_by_rule_id = %(rule_id)s,"
+            "       released_at = %(resolved_at)s, released_at_vintage = %(vintage)s,"
+            "       release_derivation_id = %(derivation_id)s, notes = %(note)s"
+            " where source_id = %(source_id)s and reason_code = %(reason_code)s"
+            "   and state = 'open'"
+            "   and (row_payload ->> 'api10', (row_payload ->> 'production_month')::date)"
+            "       in (select * from unnest(%(api10s)s::text[], %(months)s::date[]))",
+            {
+                "rule_id": ROLLUP_RULE,
+                "resolved_at": run.session.clock.now(),
+                "vintage": run.as_of,
+                "derivation_id": derivation_id,
+                "note": (
+                    "The pool filings this row held now promote as well_completion_pool rows"
+                    f" under {ROLLUP_RULE}; the collision it recorded no longer exists."
+                ),
+                "source_id": SOURCE_ID,
+                "reason_code": COLLISION_REASON,
+                "api10s": [api10 for api10, _ in pairs],
+                "months": [month for _, month in pairs],
+            },
+        )
+        closed = cursor.rowcount
+    if closed:
+        emit(
+            run.connection,
+            "quarantine.relabelled",
+            subject_type="rule",
+            subject_id=ROLLUP_RULE,
+            payload={
+                "from_state": "open",
+                "to_state": "superseded",
+                "reason_code": COLLISION_REASON,
+                "rows": closed,
+                "finding": "fp-audit D1",
+            },
+            correlation_id=run.session.correlation_id,
+            occurred_at=run.session.clock.now(),
+        )
+    return closed
+
+
+def ingest_month(
+    run: IngestRun,
+    *,
+    year: int,
+    month: int,
+    url: str | None = None,
+    client: httpx.Client | None = None,
+) -> IngestReport:
+    """Fetch one MPR month, stage it, and promote it under the seeded rules."""
+    connection = run.connection
+    source_key = f"{year:04d}_{month:02d}.xlsx"
+    fetched = fetch_raw(
+        connection,
+        SOURCE_ID,
+        source_key,
+        url=url or URL_TEMPLATE.format(year=year, month=month),
+        raw_root=run.raw_root,
+        client=client,
+        media_type=MEDIA_TYPE,
+    )
+    manifest = fetched.manifest
+    if fetched.unchanged and _already_staged(connection, manifest.manifest_id):
+        return IngestReport(
+            manifest_id=manifest.manifest_id,
+            source_key=source_key,
+            report_vintage=run.as_of,
+            unchanged=True,
+        )
+
+    outcome = promote_manifest(
+        run,
+        manifest=manifest,
+        source_key=source_key,
+        partition={"month": f"{year:04d}-{month:02d}", "manifest_id": manifest.manifest_id},
+        payload_path=fetched.payload_path,
+    )
+    open_vintage(
+        connection,
+        source_id=SOURCE_ID,
+        vintage_date=run.as_of,
+        manifest_ids=[manifest.manifest_id],
+        opened_at=run.session.clock.now(),
+        promotion_derivation_id=outcome.promote_derivation_id,
+        rows_examined=outcome.rows_examined,
+        rows_appended=outcome.rows_appended,
+        months_touched=outcome.months_touched,
+        restatement_summary=outcome.restatement_summary,
+    )
     return IngestReport(
         manifest_id=manifest.manifest_id,
         source_key=source_key,
         report_vintage=run.as_of,
         unchanged=fetched.unchanged,
-        staged_rows=staged_rows,
-        rows_examined=len(records),
-        rows_appended=len(appended),
-        quarantined=quarantined,
-        restatement_summary=restatement,
-        promote_derivation_id=promotion.derivation_id,
+        staged_rows=outcome.staged_rows,
+        rows_examined=outcome.rows_examined,
+        rows_appended=outcome.rows_appended,
+        quarantined=outcome.quarantined,
+        restatement_summary=outcome.restatement_summary,
+        promote_derivation_id=outcome.promote_derivation_id,
+        aggregate_derivation_id=outcome.aggregate_derivation_id,
     )
 
 
@@ -618,6 +1085,33 @@ def _append_canonical(
                     "derivation_id": derivation_id,
                 }
                 for record in records
+            ],
+        )
+
+
+def _append_completions(
+    connection: psycopg.Connection,
+    completions: Sequence[Mapping[str, Any]],
+    *,
+    manifest_id: str,
+    derivation_id: str,
+    report_vintage: date,
+) -> None:
+    """Register the well_completion_pool entities whose rows this promotion wrote (SB-01 E5)."""
+    if not completions:
+        return
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            _INSERT_COMPLETION,
+            [
+                {
+                    **completion,
+                    "source_id": SOURCE_ID,
+                    "report_vintage": report_vintage,
+                    "source_manifest_id": manifest_id,
+                    "derivation_id": derivation_id,
+                }
+                for completion in completions
             ],
         )
 

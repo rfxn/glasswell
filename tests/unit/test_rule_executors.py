@@ -31,9 +31,10 @@ def rule(rule_id: str, kind: str, spec: dict[str, Any], **kwargs: Any) -> Confor
     )
 
 
-def test_only_the_texas_and_ci_kinds_remain_unimplemented():
+def test_only_the_ci_kind_remains_unimplemented():
+    """`key_composite` builds the S-E entity_key, so NM cannot enter with it unimplemented."""
     unimplemented = {kind for kind, fn in _EXECUTORS.items() if "unimplemented" in repr(fn)}
-    assert unimplemented == {"key_composite", "code_ref"}
+    assert unimplemented == {"code_ref"}
 
 
 MPR_FRAME = pl.DataFrame(

@@ -175,6 +175,54 @@ def _alias_join(
     return _split_on_marker(marked, rule, target_col, action, reason)
 
 
+def _padded(part: pl.Expr, width: object, rule: ConformanceRule, column: str) -> pl.Expr:
+    _require(
+        isinstance(width, int) and not isinstance(width, bool) and width > 0,
+        rule,
+        f"pad[{column}] must be a positive integer, not {width!r}",
+    )
+    return part.str.zfill(int(str(width)))
+
+
+def _key_composite(
+    frame: pl.DataFrame, rule: ConformanceRule
+) -> tuple[pl.DataFrame, list[QuarantineBatch]]:
+    """The S-E entity key, assembled from declared columns (SB-01 §2.10, §4.1).
+
+    NM reports at well-completion x pool and TX's `LEASE_NO` is unique within district only, so
+    neither key is derivable from one column. A partial key is a wrong key: a row missing any
+    component leaves under the declared reason rather than keying on what happens to be there.
+    """
+    source_cols = [str(column) for column in rule.spec.get("source_cols") or ()]
+    target_col = str(rule.spec.get("target_col", ""))
+    _require(source_cols, rule, "source_cols is required and names at least one column")
+    _require(target_col, rule, "target_col is required")
+    separator = rule.spec.get("separator", "")
+    _require(isinstance(separator, str), rule, "separator must be a string")
+    pad = rule.spec.get("pad") or {}
+    _require(isinstance(pad, Mapping), rule, "pad must map a column name to a width")
+    for column in source_cols:
+        _require(column in frame.columns, rule, f"{column} is not a column of the frame")
+
+    parts = []
+    for column in source_cols:
+        part = pl.col(column).cast(pl.String)
+        if column in pad:
+            part = _padded(part, pad[column], rule, column)
+        # An empty component is missing, not a key that happens to render as `a::b`.
+        parts.append(
+            pl.when(part.is_null() | (part.str.len_chars() == 0))
+            .then(pl.lit(None, dtype=pl.String))
+            .otherwise(part)
+        )
+    marked = frame.with_columns(
+        pl.concat_str(parts, separator=separator, ignore_nulls=False).alias(_MARKER)
+    )
+    action = str(rule.spec.get("on_missing", "quarantine"))
+    reason = str(rule.spec.get("reason_code", "key_incomplete"))
+    return _split_on_marker(marked, rule, target_col, action, reason)
+
+
 PREDICATE_NODE_TYPES: tuple[str, ...] = (
     "and",
     "or",
@@ -410,7 +458,7 @@ _EXECUTORS: dict[str, Executor] = {
     "vocab_map": _vocab_map,
     "alias_join": _alias_join,
     "datum_transform": _datum_transform,
-    "key_composite": _unimplemented("key_composite"),
+    "key_composite": _key_composite,
     "parse_directive": _parse_directive,
     "validity_filter": _validity_filter,
     "code_ref": _unimplemented("code_ref"),

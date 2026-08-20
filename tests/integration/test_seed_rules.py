@@ -15,7 +15,7 @@ from glasswell.seed.conformance_nd import ND_RULES
 MINIMUM_RULES = 17
 MINIMUM_TERMS = 30
 MEASURED_ND_STATUSES = 19
-POLICY_RULES = ("cr_nd_liquids_policy_1", "cr_nd_null_semantics_1")
+POLICY_RULES = ("cr_nd_liquids_policy_1", "cr_nd_null_semantics_1", "cr_nd_pool_rollup_1")
 
 SUPERSEDED_RULE_IDS = {rule["supersedes_rule_id"] for rule in ND_RULES if rule.get(
     "supersedes_rule_id")}
@@ -41,6 +41,7 @@ PROBE_FRAMES: dict[str, pl.DataFrame] = {
     "cr_nd_volume_range_1": pl.DataFrame(VOLUMES, schema=VOLUME_SCHEMA),
     "cr_nd_confidential_1": pl.DataFrame({"pool": ["BAKKEN"]}),
     "cr_nd_days_range_1": pl.DataFrame({"days": [31]}),
+    "cr_nd_entity_key_1": pl.DataFrame({"api10": ["3305302532"], "pool": ["DUPEROW"]}),
     "cr_nd_stream_vocab_1": pl.DataFrame({"api10": ["3305303901"], "stream_raw": ["Oil"]}),
     "cr_nd_units_1": pl.DataFrame(VOLUMES, schema=VOLUME_SCHEMA),
     "cr_nd_status_vocab_1": pl.DataFrame({"api": ["33043000020000"], "status": ["A"]}),
@@ -111,7 +112,7 @@ def test_every_executable_seeded_rule_runs_against_a_one_row_frame(db, seeded, r
     assert application.quarantined == []
 
 
-def test_the_only_rules_without_an_executor_are_the_two_policy_declarations(db, seeded):
+def test_the_only_rules_without_an_executor_are_the_policy_declarations(db, seeded):
     declarations = tuple(
         row["rule_id"] for row in registry_rows(db) if row["rule_kind"] == "code_ref"
     )
@@ -123,7 +124,7 @@ def test_the_only_rules_without_an_executor_are_the_two_policy_declarations(db, 
 
 
 def test_a_conform_pass_that_forgets_to_drop_the_code_ref_rows_fails_loudly(db, seeded):
-    frame = pl.DataFrame({"stream_raw": ["Oil"]})
+    frame = pl.DataFrame({"api10": ["3305302532"], "pool": ["DUPEROW"], "stream_raw": ["Oil"]})
     with pytest.raises(NotImplementedError, match="code_ref"):
         apply_registry_rules(db, frame, source_id="nd_mpr_xlsx", stage="conform")
 

@@ -3,6 +3,7 @@ per point, and the three null semantics kept apart."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date
 from typing import Annotated, Any, Literal
 
@@ -26,20 +27,28 @@ router = APIRouter(tags=["wells"])
 # slice, so the string is pinned here and a contract test holds it to the seeded rule.
 ND_LIQUIDS_BASIS = "oil+condensate"
 
+# cr_nd_pool_rollup_1 legislates the sum a well figure carries when it filed in two pools. Its
+# id is pinned here for the same reason as the basis above, and held to the seeded row and to
+# glasswell.ingest.nd_mpr by test_pool_rollup_rule_is_the_one_the_promotion_used.
+ROLLUP_RULE = "cr_nd_pool_rollup_1"
+
 STREAM_COLUMNS = {"oil": "oil_bbl", "gas": "gas_mcf", "water": "water_bbl"}
 STREAM_BASIS = {"oil": ND_LIQUIDS_BASIS, "water": "water", "gas": None}
 MONTH_FORMAT = r"^\d{4}-\d{2}$"
-
-_NULL_SEMANTICS = """
-select production_month, stream, source_id, report_vintage, null_semantics
-  from canonical.production_monthly
- where api10 = %(api10)s
-"""
 
 _VINTAGE_BOUNDS = """
 select min(report_vintage) as earliest, max(report_vintage) as latest
   from canonical.production_monthly
  where api10 = %(api10)s
+"""
+
+# A released row is not gone, it is released at a knowledge time. An as-of read from before
+# that time has to see it the way that date saw it, or the replay manufactures a fact (DIR-2).
+_OPEN_AS_OF = """
+   and (state = 'open'
+        or (released_at_vintage is not null
+            and %(as_of)s::date is not null
+            and released_at_vintage > %(as_of)s::date))
 """
 
 # D2: a month the regulator withheld is not a gap. It has no canonical row to serve, so the
@@ -49,14 +58,13 @@ select distinct (row_payload ->> 'production_month')::date as production_month, 
   from lineage.quarantine_rows
  where source_id = 'nd_mpr_xlsx'
    and reason_code = 'confidential_withheld'
-   and state = 'open'
    and row_payload ->> 'api10' = %(api10)s
    and row_payload ->> 'production_month' is not null
-"""
+""" + _OPEN_AS_OF
 
-# D1: an API-10 that filed in more than one pool has one row promoted by spreadsheet ordinal
-# and the rest in the ledger. Until the canonical key widens, the promoted row is not the
-# well's production and is not served as if it were.
+# D1 residue: a well-month whose pool filings the rule could not decompose, or one that has
+# not been re-promoted at the as_of being read. The promoted row is not the well's production
+# and is not served as if it were.
 _MULTI_POOL_PENDING = """
 select (row_payload ->> 'production_month')::date as production_month,
        row_payload ->> 'stream_canonical' as stream,
@@ -67,9 +75,9 @@ select (row_payload ->> 'production_month')::date as production_month,
   from lineage.quarantine_rows
  where source_id = 'nd_mpr_xlsx'
    and reason_code = 'key_collision'
-   and state = 'open'
    and row_payload ->> 'api10' = %(api10)s
    and row_payload ->> 'production_month' is not null
+""" + _OPEN_AS_OF + """
  group by 1, 2
 """
 
@@ -100,8 +108,15 @@ class ProductionSeries(BaseModel):
         default=None,
         description=(
             "reported, reported_zero, no_report or withheld per point, plus"
-            " multi_pool_pending where the well filed in more than one pool and no single"
-            " row is its production."
+            " multi_pool_pending where two filings share one pool label and no single row is"
+            " the well's production."
+        ),
+    )
+    oil_bbl_aggregation: list[str | None] | None = Field(
+        default=None,
+        description=(
+            "sum_over_pools where the point is the exact sum of the well's pool rows under"
+            " cr_nd_pool_rollup_1; null where the month is a single filing."
         ),
     )
     gas_mcf: list[str | None] | None = Field(default=None, description="Gas volumes in mcf.")
@@ -111,12 +126,18 @@ class ProductionSeries(BaseModel):
     gas_mcf_null_semantics: list[str] | None = Field(
         default=None, description="Null semantics per gas point; same vocabulary as oil."
     )
+    gas_mcf_aggregation: list[str | None] | None = Field(
+        default=None, description="Aggregation per gas point; same vocabulary as oil."
+    )
     water_bbl: list[str | None] | None = Field(default=None, description="Water volumes in bbl.")
     water_bbl_report_vintage: list[str | None] | None = Field(
         default=None, description="Report vintage used for each water point."
     )
     water_bbl_null_semantics: list[str] | None = Field(
         default=None, description="Null semantics per water point; same vocabulary as oil."
+    )
+    water_bbl_aggregation: list[str | None] | None = Field(
+        default=None, description="Aggregation per water point; same vocabulary as oil."
     )
 
 
@@ -127,6 +148,13 @@ class Production(BaseModel):
     source_id: str | None = Field(description="Source the series was promoted from.")
     granularity: str = Field(
         description="well_observed for ND regulator reports; never silently allocated.",
+        json_schema_extra={GLOSSARY_KEY: "gt_granularity"},
+    )
+    reporting_level: str = Field(
+        description=(
+            "The level the source reported at: well, or well_completion_pool where the well"
+            " filed in more than one pool and the series is their disclosed sum."
+        ),
         json_schema_extra={GLOSSARY_KEY: "gt_granularity"},
     )
     streams: list[str] = Field(description="Streams present in this response.")
@@ -184,10 +212,14 @@ def _months(raw: str | None, name: str) -> date | None:
         " vintages: `as_of` selects the greatest report vintage at or before the date and"
         " every point says which one it used. `null_semantics` keeps a reported zero, an"
         " absent report and a withheld value apart; they are never collapsed into a gap."
-        " A month the regulator withheld rides the axis with a null value, and a month whose"
-        " API-10 filed in more than one pool is withdrawn as multi_pool_pending rather than"
-        " served as if one pool's row were the well. meta.warnings names both, with the rule"
-        " that recorded them."
+        " A month the regulator withheld rides the axis with a null value."
+        " A well that filed in more than one pool is served the exact sum of its pool rows,"
+        " never a serve-time sum: the point's handle resolves to the aggregation derivation"
+        " over those rows, `*_aggregation` reads `sum_over_pools`, `reporting_level` reads"
+        " `well_completion_pool`, and `links.pools` carries the per-pool breakdown. Where two"
+        " filings share one pool label the rule cannot say which is the well, so that point is"
+        " withdrawn as multi_pool_pending instead. meta.warnings names every case with the"
+        " rule that decided it."
         " GOR and water cut are deliberately not served in this slice."
     ),
     response_model=EnvelopeModel[Production],
@@ -230,21 +262,14 @@ def get_well_production(
             ),
         )
 
-    observed = [
-        row
-        for row in select_production(connection, as_of=as_of, api10=api10)
-        if row["stream"] in requested
-        and (window[0] is None or row["production_month"] >= window[0])
-        and (window[1] is None or row["production_month"] <= window[1])
-    ]
-    semantics = {
-        (row["production_month"], row["stream"], row["source_id"], row["report_vintage"]):
-            row["null_semantics"]
-        for row in rows(connection, _NULL_SEMANTICS, {"api10": api10})
-    }
+    observed = _rows_in_window(
+        select_production(connection, as_of=as_of, api10=api10, entity_type="well"),
+        requested=requested,
+        window=window,
+    )
 
-    withheld = _withheld_months(connection, api10, window)
-    pending = _multi_pool_pending(connection, api10, window)
+    withheld = _withheld_months(connection, api10, window, as_of)
+    pending = _multi_pool_pending(connection, api10, window, as_of)
     months = sorted({row["production_month"] for row in observed} | set(withheld))
     payload: dict[str, Any] = {"pm": [month_label(month) for month in months]}
     warnings: list[dict[str, Any]] = _withheld_warning(withheld)
@@ -295,26 +320,30 @@ def get_well_production(
             iso(points[month]["report_vintage"]) if month in points else None for month in months
         ]
         payload[f"{column}_null_semantics"] = [
-            _point_semantics(
-                month,
-                stream=name,
-                point=points.get(month),
-                stored=semantics,
-                held=held,
-                withheld=withheld,
-            )
+            _point_semantics(month, point=points.get(month), held=held, withheld=withheld)
             for month in months
         ]
+        payload[f"{column}_aggregation"] = [
+            None if month in held else _point_aggregation(points.get(month))
+            for month in months
+        ]
+        warnings.extend(_aggregation_warning(points, column, api10=api10))
 
     source_ids = sorted({row["source_id"] for row in observed})
     resolved = max((row["report_vintage"] for row in observed), default=None)
+    aggregated = any(row["aggregation"] is not None for row in observed)
     data = {
         "api10": api10,
         "source_id": source_ids[0] if source_ids else None,
         "granularity": next((row["granularity"] for row in observed), "well_observed"),
+        "reporting_level": "well_completion_pool" if aggregated else "well",
         "streams": [name for name in requested if STREAM_COLUMNS[name] in columns],
         "series": payload,
     }
+    links = {"well": f"/v1/wells/{api10}"}
+    if aggregated:
+        links["pools"] = f"/v1/wells/{api10}/production/pools"
+        links["aggregation_rule"] = f"/v1/conformance/{ROLLUP_RULE}"
     return enveloped(
         request,
         data,
@@ -323,16 +352,175 @@ def get_well_production(
         labels=_labels(columns),
         source_freshness=_freshness(connection, source_ids),
         warnings=warnings,
-        links={"well": f"/v1/wells/{api10}"},
+        links=links,
     )
+
+
+class PoolProduction(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    well_completion_pool: str = Field(description="Pool the operator filed this series under.")
+    entity_key: str = Field(description="S-E entity key of this completion: api10:pool.")
+    streams: list[str] = Field(description="Streams present for this pool.")
+    series: ProductionSeries = Field(description="The parallel arrays for this pool alone.")
+
+
+class ProductionPools(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    api10: str = Field(description="Ten-digit API well number.")
+    granularity: str = Field(
+        description="well_observed; a pool filing is an observation, not an allocation.",
+        json_schema_extra={GLOSSARY_KEY: "gt_granularity"},
+    )
+    reporting_level: str = Field(description="well_completion_pool for every row here.")
+    pools: list[PoolProduction] = Field(description="One entry per pool the well filed in.")
+    lineage: dict[str, str] = Field(
+        alias="_lineage", description="Dotted path to derivation handle (SB-07 §9.1b)."
+    )
+    units: dict[str, str] = Field(alias="_units", description="Dotted column path to unit.")
+    basis: dict[str, str] = Field(
+        alias="_basis", description="Dotted column path to liquids basis, where one applies."
+    )
+
+
+@router.get(
+    "/wells/{api10}/production/pools",
+    operation_id="get_well_production_pools",
+    summary="Per-pool production for one well",
+    description=(
+        "The pool rows behind a well series. A well completed in two pools files one row per"
+        " pool per month, and each is a first-class `well_completion_pool` entity under the"
+        " S-E key; `/v1/wells/{api10}/production` serves their sum with the aggregation"
+        " disclosed, and this sub-resource serves the rows that sum was taken over. A well"
+        " that filed in exactly one pool has no breakdown to give and returns an empty list —"
+        " its own series already is the pool's."
+    ),
+    response_model=EnvelopeModel[ProductionPools],
+    openapi_extra=request_example(path={"api10": EXAMPLE_API10}),
+    responses=problem_responses(
+        "not_found", "validation_failed", "as_of_out_of_range", "service_degraded"
+    ),
+)
+def get_well_production_pools(
+    request: Request,
+    connection: Connection,
+    api10: Annotated[str, Path(description="Ten-digit API well number.", pattern=API10_PATTERN)],
+    as_of: AsOf = None,
+    stream: Annotated[
+        list[Literal["oil", "gas", "water"]] | None,
+        Query(description="Stream to include; repeatable. Defaults to oil, gas and water."),
+    ] = None,
+) -> JSONResponse:
+    existence = {"as_of": None, "api10": api10}
+    if not rows(connection, RANKED_WELLS + " and api10 = %(api10)s", existence):
+        raise ProblemError("not_found", detail=f"no well {api10}")
+    requested = list(stream or STREAM_COLUMNS)
+    observed = _rows_in_window(
+        select_production(
+            connection, as_of=as_of, api10=api10, entity_type="well_completion_pool"
+        ),
+        requested=requested,
+        window=(None, None),
+    )
+
+    pools: list[dict[str, Any]] = []
+    for pool in sorted({row["well_completion_pool"] for row in observed}):
+        rows_for_pool = [row for row in observed if row["well_completion_pool"] == pool]
+        months = sorted({row["production_month"] for row in rows_for_pool})
+        payload: dict[str, Any] = {"pm": [month_label(month) for month in months]}
+        present: list[str] = []
+        for name in STREAM_COLUMNS:
+            points = {
+                row["production_month"]: row
+                for row in rows_for_pool
+                if row["stream"] == name
+            }
+            if not points:
+                continue
+            column = STREAM_COLUMNS[name]
+            present.append(name)
+            first = next(iter(points.values()))
+            entity_key = first["entity_key"]
+            handles = [
+                _pool_handle(entity_key, column, month, points.get(month)) for month in months
+            ]
+            payload[column] = series(
+                [_volume(points.get(month)) for month in months],
+                unit=first["unit"],
+                derivation=first["derivation_id"],
+                selector=f"entity_key={entity_key}&col={column}",
+                granularity=first["granularity"],
+                basis=STREAM_BASIS[name],
+                point_handles=handles if len(set(handles)) > 1 else None,
+            )
+            payload[f"{column}_report_vintage"] = [
+                iso(points[month]["report_vintage"]) if month in points else None
+                for month in months
+            ]
+            payload[f"{column}_null_semantics"] = [
+                _point_semantics(month, point=points.get(month), held={}, withheld={})
+                for month in months
+            ]
+        pools.append(
+            {
+                "well_completion_pool": pool,
+                "entity_key": next(row["entity_key"] for row in rows_for_pool),
+                "streams": present,
+                "series": payload,
+            }
+        )
+
+    source_ids = sorted({row["source_id"] for row in observed})
+    return enveloped(
+        request,
+        {
+            "api10": api10,
+            "granularity": "well_observed",
+            "reporting_level": "well_completion_pool",
+            "pools": pools,
+        },
+        as_of=max((row["report_vintage"] for row in observed), default=None),
+        as_of_requested=iso(as_of) or "latest",
+        labels={"/granularity": "gt_granularity", "/api10": "gt_api_10_api_12_api_14"},
+        source_freshness=_freshness(connection, source_ids),
+        links={
+            "well": f"/v1/wells/{api10}",
+            "production": f"/v1/wells/{api10}/production",
+            "aggregation_rule": f"/v1/conformance/{ROLLUP_RULE}",
+        },
+    )
+
+
+def _pool_handle(
+    entity_key: str, column: str, month: date, row: dict[str, Any] | None
+) -> str | None:
+    if row is None:
+        return None
+    return format_handle(
+        row["derivation_id"], f"entity_key={entity_key}&col={column}&pm={month:%Y-%m}"
+    )
+
+
+def _rows_in_window(
+    found: list[dict[str, Any]],
+    *,
+    requested: list[str],
+    window: tuple[date | None, date | None],
+) -> list[dict[str, Any]]:
+    return [
+        row
+        for row in found
+        if row["stream"] in requested
+        and (window[0] is None or row["production_month"] >= window[0])
+        and (window[1] is None or row["production_month"] <= window[1])
+    ]
 
 
 def _point_semantics(
     month: date,
     *,
-    stream: str,
     point: dict[str, Any] | None,
-    stored: dict[tuple, str],
     held: dict[date, dict[str, Any]],
     withheld: dict[date, str],
 ) -> str:
@@ -341,8 +529,34 @@ def _point_semantics(
         return "multi_pool_pending"
     if point is None:
         return "withheld" if month in withheld else "no_report"
-    key = (month, stream, point["source_id"], point["report_vintage"])
-    return stored.get(key, "reported")
+    return point["null_semantics"]
+
+
+def _point_aggregation(point: dict[str, Any] | None) -> str | None:
+    return None if point is None else point["aggregation"]
+
+
+def _aggregation_warning(
+    points: Mapping[date, dict[str, Any]], column: str, *, api10: str
+) -> list[dict[str, Any]]:
+    """DIR-3: a summed figure says it is summed, names the rule, and offers the breakdown."""
+    summed = sorted(month for month, row in points.items() if row["aggregation"] is not None)
+    if not summed:
+        return []
+    months = ", ".join(month_label(month) for month in summed)
+    return [
+        {
+            "code": "pools_aggregated",
+            "detail": (
+                f"{months}: this API-10 filed in more than one pool, and the value served is"
+                f" the exact sum of those pool rows under {ROLLUP_RULE}. Days produced are the"
+                " maximum over the pools, never their sum. The per-pool breakdown is at"
+                f" /v1/wells/{api10}/production/pools and the rule is at"
+                f" /v1/conformance/{ROLLUP_RULE}."
+            ),
+            "pointer": f"/series/{column}",
+        }
+    ]
 
 
 def _pending_warning(held: dict[date, dict[str, Any]], column: str) -> list[dict[str, Any]]:
@@ -369,11 +583,14 @@ def _pending_warning(held: dict[date, dict[str, Any]], column: str) -> list[dict
 
 
 def _multi_pool_pending(
-    connection: psycopg.Connection, api10: str, window: tuple[date | None, date | None]
+    connection: psycopg.Connection,
+    api10: str,
+    window: tuple[date | None, date | None],
+    as_of: date | None,
 ) -> dict[tuple[date, str], dict[str, Any]]:
     return {
         (row["production_month"], row["stream"]): row
-        for row in rows(connection, _MULTI_POOL_PENDING, {"api10": api10})
+        for row in rows(connection, _MULTI_POOL_PENDING, {"api10": api10, "as_of": as_of})
         if (window[0] is None or row["production_month"] >= window[0])
         and (window[1] is None or row["production_month"] <= window[1])
     }
@@ -398,12 +615,15 @@ def _withheld_warning(withheld: dict[date, str]) -> list[dict[str, Any]]:
 
 
 def _withheld_months(
-    connection: psycopg.Connection, api10: str, window: tuple[date | None, date | None]
+    connection: psycopg.Connection,
+    api10: str,
+    window: tuple[date | None, date | None],
+    as_of: date | None,
 ) -> dict[date, str]:
     """Months the ledger holds as withheld, mapped to the rule that recorded the withholding."""
     return {
         row["production_month"]: row["rule_id"] or "an unattributed rule"
-        for row in rows(connection, _WITHHELD_MONTHS, {"api10": api10})
+        for row in rows(connection, _WITHHELD_MONTHS, {"api10": api10, "as_of": as_of})
         if (window[0] is None or row["production_month"] >= window[0])
         and (window[1] is None or row["production_month"] <= window[1])
     }
