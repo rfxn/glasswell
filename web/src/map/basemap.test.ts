@@ -4,9 +4,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { BASE_STORAGE_KEY } from "./persist.ts";
 import {
   BASEMAPS,
+  BASEMAP_VARIANTS,
   DEFAULT_BASEMAP,
+  applyBasemapVariant,
   basemapDef,
   basemapIds,
+  basemapVariant,
   chooseBasemap,
   graticuleStyle,
   pmtilesUrl,
@@ -96,5 +99,33 @@ describe("the basemap catalogue", () => {
   it("draws the graticule when no basemap is chosen, so 'none' is a view not a blank", () => {
     const style = graticuleStyle();
     expect(style.layers.map((layer) => layer.id)).toEqual(["canvas", "graticule"]);
+  });
+});
+
+describe("the basemap variant attribute", () => {
+  beforeEach(() => delete document.documentElement.dataset["basemap"]);
+
+  it("names one variant per offered basemap, and nothing else", () => {
+    expect([...BASEMAP_VARIANTS]).toEqual(basemapIds());
+  });
+
+  it("publishes the active variant on the document, where any stylesheet can read it", () => {
+    applyBasemapVariant("light");
+    expect(document.documentElement.dataset["basemap"]).toBe("light");
+    applyBasemapVariant("satellite");
+    expect(document.documentElement.dataset["basemap"]).toBe("satellite");
+  });
+
+  it("mirrors the variant onto the map container, so map.css need not reach the root", () => {
+    const container = document.createElement("div");
+    applyBasemapVariant("none", container);
+    expect(container.dataset["basemap"]).toBe("none");
+    expect(document.documentElement.dataset["basemap"]).toBe("none");
+  });
+
+  it("falls back to the default variant rather than writing an id no stylesheet keys on", () => {
+    expect(basemapVariant("carto-dark-matter")).toBe(DEFAULT_BASEMAP);
+    applyBasemapVariant("carto-dark-matter");
+    expect(document.documentElement.dataset["basemap"]).toBe(DEFAULT_BASEMAP);
   });
 });

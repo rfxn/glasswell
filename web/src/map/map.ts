@@ -9,6 +9,7 @@ import type { Viewport } from "../app/state.ts";
 import {
   BASEMAP_SOURCE,
   PMTILES_PATH,
+  applyBasemapVariant,
   basemapDef,
   chooseBasemap,
   firstLabelLayerId,
@@ -159,6 +160,7 @@ export function createMap(
   chrome.append(banner.element, hover.element);
 
   let basemap = chooseBasemap();
+  applyBasemapVariant(basemap, container);
   let on = restoreLayerSet(readLayerSet(), layerIds(), defaultLayerSet());
   let statuses = new Set(statusIds());
   const opacities = new Map(LAYERS.map((layer) => [layer.id, layer.opacity]));
@@ -336,6 +338,7 @@ export function createMap(
 
   async function setBasemap(id: string): Promise<void> {
     basemap = id;
+    applyBasemapVariant(id, container);
     rememberBasemap(id);
     setUrlParam("base", id === "dark" ? null : id);
     panel.setBasemap(id);
