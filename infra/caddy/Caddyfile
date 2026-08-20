@@ -39,3 +39,8 @@ glasswell.lab.rpx.sh {
 		}
 	}
 }
+
+http://glasswell.lab.rpx.sh:8000, http://192.168.2.111:8000 {
+	bind 192.168.2.111
+	redir https://glasswell.lab.rpx.sh{uri} 308
+}
