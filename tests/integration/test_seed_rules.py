@@ -12,7 +12,7 @@ from glasswell.lineage.conformance import RULE_KINDS, apply_registry_rules, appl
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_nd import ND_RULES
 
-MINIMUM_RULES = 16
+MINIMUM_RULES = 17
 MINIMUM_TERMS = 30
 MEASURED_ND_STATUSES = 19
 POLICY_RULES = ("cr_nd_liquids_policy_1", "cr_nd_null_semantics_1")
@@ -39,6 +39,7 @@ PROBE_FRAMES: dict[str, pl.DataFrame] = {
         {"township": ["151"], "range": ["101"], "section": ["11"]}
     ),
     "cr_nd_volume_range_1": pl.DataFrame(VOLUMES, schema=VOLUME_SCHEMA),
+    "cr_nd_confidential_1": pl.DataFrame({"pool": ["BAKKEN"]}),
     "cr_nd_days_range_1": pl.DataFrame({"days": [31]}),
     "cr_nd_stream_vocab_1": pl.DataFrame({"api10": ["3305303901"], "stream_raw": ["Oil"]}),
     "cr_nd_units_1": pl.DataFrame(VOLUMES, schema=VOLUME_SCHEMA),
@@ -154,8 +155,9 @@ def test_the_mpr_validate_stage_routes_an_impossible_volume_to_quarantine(db, se
             "wtr": [Decimal("845.000"), Decimal("1.000")],
             "gas": [Decimal("1885.000"), Decimal("2.000")],
             "days": [31, 31],
+            "pool": ["BAKKEN", "BAKKEN"],
         },
-        schema={**VOLUME_SCHEMA, "days": pl.Int64},
+        schema={**VOLUME_SCHEMA, "days": pl.Int64, "pool": pl.String},
     )
     application = apply_registry_rules(db, frame, source_id="nd_mpr_xlsx", stage="validate")
     assert application.frame.height == 1

@@ -124,6 +124,35 @@ ND_RULES: tuple[dict[str, object], ...] = (
         "evidence_url": MPR_FILE_URL,
     },
     {
+        "rule_id": "cr_nd_confidential_1",
+        "effective_from": SUPERSESSION_FROM,
+        "source_id": "nd_mpr_xlsx",
+        "stage": "validate",
+        "rule_kind": "validity_filter",
+        "applies_to_fields": ["pool"],
+        "spec": {
+            "predicate_ast": {
+                "or": [
+                    {"is_null": {"col": "pool"}},
+                    {"not": {"cmp": [{"col": "pool"}, "==", {"lit": "CONFIDENTIAL"}]}},
+                ]
+            },
+            "on_fail": "quarantine",
+            "reason_code": "confidential_withheld",
+        },
+        "rule": "A month NDIC pools as CONFIDENTIAL is withheld, not missing and not invalid.",
+        "rationale": (
+            "ND publishes a confidential well's month with the literal string NULL in Oil, Wtr,"
+            " Gas and Days and Pool = CONFIDENTIAL. cr_nd_days_range_1 compiles to"
+            " between(days, 0, 31), which cannot judge a row that has no days, so the row fell"
+            " out under out_of_range_date - a code asserting that a value exists and is wrong,"
+            " for a value the regulator withheld (fp-audit D2 / A5-F7, 1,055 well-months)."
+            " This rule runs first, by rule_id order, and gives the withholding its own name."
+            " Confidential is a status, and withheld is a distinct state from missing (§3.0.3)."
+        ),
+        "evidence_url": MPR_FILE_URL,
+    },
+    {
         "rule_id": "cr_nd_days_range_1",
         "source_id": "nd_mpr_xlsx",
         "stage": "validate",

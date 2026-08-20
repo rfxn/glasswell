@@ -126,7 +126,7 @@ def test_the_quarantine_share_is_above_zero_and_every_row_carries_a_reason(db, p
         )
     )
 
-    assert reasons == {"out_of_range_date": 5, NOT_PROMOTED_REASON: CLEAN_ROWS * 2}
+    assert reasons == {"confidential_withheld": 5, NOT_PROMOTED_REASON: CLEAN_ROWS * 2}
     assert promoted.quarantined == reasons
     assert scalar(db, "select count(*) from lineage.quarantine_rows where rule_id is null") == 0
 

@@ -42,6 +42,18 @@ select min(report_vintage) as earliest, max(report_vintage) as latest
  where api10 = %(api10)s
 """
 
+# D2: a month the regulator withheld is not a gap. It has no canonical row to serve, so the
+# ledger is where the axis learns it exists at all.
+_WITHHELD_MONTHS = """
+select distinct (row_payload ->> 'production_month')::date as production_month, rule_id
+  from lineage.quarantine_rows
+ where source_id = 'nd_mpr_xlsx'
+   and reason_code = 'confidential_withheld'
+   and state = 'open'
+   and row_payload ->> 'api10' = %(api10)s
+   and row_payload ->> 'production_month' is not null
+"""
+
 _FRESHNESS = """
 select source_id,
        max(fetch_vintage) as retrieval_vintage,
@@ -203,9 +215,10 @@ def get_well_production(
         for row in rows(connection, _NULL_SEMANTICS, {"api10": api10})
     }
 
-    months = sorted({row["production_month"] for row in observed})
+    withheld = _withheld_months(connection, api10, window)
+    months = sorted({row["production_month"] for row in observed} | set(withheld))
     payload: dict[str, Any] = {"pm": [month_label(month) for month in months]}
-    warnings: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = _withheld_warning(withheld)
     columns: list[str] = []
     for name in STREAM_COLUMNS:
         if name not in requested:
@@ -256,7 +269,7 @@ def get_well_production(
                 "reported",
             )
             if month in points
-            else "no_report"
+            else ("withheld" if month in withheld else "no_report")
             for month in months
         ]
 
@@ -279,6 +292,36 @@ def get_well_production(
         warnings=warnings,
         links={"well": f"/v1/wells/{api10}"},
     )
+
+
+def _withheld_warning(withheld: dict[date, str]) -> list[dict[str, Any]]:
+    if not withheld:
+        return []
+    months = ", ".join(month_label(month) for month in sorted(withheld))
+    rules = ", ".join(sorted(set(withheld.values())))
+    return [
+        {
+            "code": "months_withheld",
+            "detail": (
+                f"{len(withheld)} month(s) are withheld by the regulator and ride the axis with"
+                f" a null value: {months}. Recorded by {rules}; the rows are in /v1/quarantine"
+                " with their payloads."
+            ),
+            "pointer": "/series/pm",
+        }
+    ]
+
+
+def _withheld_months(
+    connection: psycopg.Connection, api10: str, window: tuple[date | None, date | None]
+) -> dict[date, str]:
+    """Months the ledger holds as withheld, mapped to the rule that recorded the withholding."""
+    return {
+        row["production_month"]: row["rule_id"] or "an unattributed rule"
+        for row in rows(connection, _WITHHELD_MONTHS, {"api10": api10})
+        if (window[0] is None or row["production_month"] >= window[0])
+        and (window[1] is None or row["production_month"] <= window[1])
+    }
 
 
 def _volume(row: dict[str, Any] | None) -> str | None:
