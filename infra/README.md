@@ -24,7 +24,7 @@ restricted `authorized_keys` `from=` clause and every probe in this repo use `.1
 | `glasswell-ingest.service` + `.timer` | `glasswell` | Monthly ND pull: GIS layers, one production month, tile marts. Installed **disabled**; `install.sh --enable-ingest` arms it |
 | `glasswell-alert@.service` | `glasswell` | `OnFailure=` target: logs to the journal and appends to `/var/lib/glasswell/health-events` |
 | `glasswell-backup.service` + `.timer` | `root` | Nightly `pg_dump` plus an rsync of the raw zone to forge, via `/usr/local/sbin/glasswell-backup.sh`. Installed **disabled**; `install.sh --enable-backup` arms it. **VM 111 has it enabled already** — the units here were adopted from that host byte-for-byte |
-| `martin.service` | `martin` | **Pre-existing, not owned by this directory** — configured through a drop-in. Runs with `auto_publish` on until runbook step 9, so its catalogue is every relation with a geometry column, `staging` and `canonical` included, on `127.0.0.1:3000`. Adopting `martin/config.yaml` cuts it to the three published layers; migration 020's `martin` role is what makes the rest unreadable to it either way |
+| `martin.service` | `martin` | **Pre-existing, not owned by this directory** — configured through a drop-in. Runs with `auto_publish` on until runbook step 9, so its catalogue is every relation with a geometry column, `staging` and `canonical` included, on `127.0.0.1:3000`. Adopting `martin/config.yaml` cuts it to the three published layers; migration 020's `martin` role, which holds select on three `marts.tile_*` views and nothing else, is what makes the rest unreachable either way |
 | `postgresql@16-main` | `postgres` | Distro unit. `listen_addresses = 'localhost'`, socket peer auth |
 
 `backup/glasswell-backup.sh` and `backup/glasswell-restore-drill.sh` are placed in
@@ -136,8 +136,10 @@ cd /opt/glasswell/src && rm -rf CLAUDE.md PLAN.md AUDIT.md MEMORY.md docs work-o
 
 ```bash
 # 9. ONE-TIME — adopt the martin config so the tile server stops publishing staging (DR-05).
-#    Migration 020 first: the config's DSN peer-auths as the OS user martin, and that role
-#    does not exist until the migration creates it.
+#    Migration 020 first, without exception: the config's DSN peer-auths as the OS user
+#    martin, and both that role and the three marts.tile_* views it may read are created
+#    there. martin.service carries Restart=on-failure, so adopting the config against a
+#    database that lacks them is a crash loop, not a failed start.
 ./install.sh --with-martin-config
 systemctl restart martin
 curl -s 127.0.0.1:3000/catalog | python3 -m json.tool   # expect exactly three ids
