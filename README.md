@@ -39,8 +39,6 @@ derivation handle back to a checksummed regulator file, or it does not ship.
 > source of verified reserves or ownership. Public release is gated on the IP
 > review in [`blueprint.md`](blueprint.md) §8.2.
 
-<p align="center"><img src="assets/og-card.png" alt="glasswell share card: glass-box upstream analytics on public data" width="640"></p>
-
 ---
 
 ## Contents
