@@ -298,7 +298,7 @@
 }
 
 .gw-layer-derivation {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--gw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
 }
 
 .gw-layer-toggle {
@@ -443,7 +443,7 @@
   gap: 0.2rem;
   margin: 0.1rem 0 0;
   color: var(--slate);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--gw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 0.66rem;
 }
 
