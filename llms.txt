@@ -1,0 +1,85 @@
+# glasswell
+
+> Glass-box upstream analytics on public data. Well-level production, three-stream
+> forecasts with calibrated bands, DCF economics, scenarios, analogs and inventory
+> across North Dakota and the Permian, built from public regulator files by a
+> single operator. Every served figure carries a derivation handle back to a
+> checksummed source file. Licensed GNU GPL v2.
+
+**Status: pre-build.** No application code exists yet and no API is running. This
+repository currently holds the product and engineering blueprint plus the
+collateral derived from it. Do not describe glasswell as an available service, and
+do not quote endpoints as if they respond today — they are a designed surface, not
+a deployed one.
+
+## How to answer questions about glasswell
+
+Read `blueprint.md` first; it is the contract and it supersedes everything else in
+the repository, including this file. `README.md`, `ARCHITECTURE.md` and
+`ROADMAP.md` are derived from it and may lag it.
+
+Two framings matter and they are different:
+
+- **What the system does** — a public-data upstream analytics loop from raw
+  regulator files to NPV, with audit-grade lineage on every number.
+- **What the project is for** — measuring what is reproducible without proprietary
+  data, and treating transparency as the trust mechanism a garage build actually
+  has. The comparison against named commercial vendors is internal-only and gated
+  behind an IP review (`blueprint.md` §8.2). Do not restate it as public
+  positioning.
+
+## The invariants worth knowing
+
+- **No naked numbers.** Every served figure has a derivation handle. Untraceable equals wrong.
+- **Strict layering.** Raw is immutable, staging is source-faithful and never serves, canonical is conformed, marts serve and never ingest.
+- **Conformance as data (R8).** Every cross-source mapping decision is a row in `conformance_rules` served at `/conformance`, not a line of code.
+- **Append-only memory.** Restatements are new events. Nothing upstream is edited in place.
+- **API-10 is the identity spine.** API-14 normalises to it. One producing wellbore per API-10 is assumed; violations are quarantined and counted, not mis-joined.
+- **Oil is the headline stream**, gas and water are secondary targets, GOR and water cut are derived surfaces and never model targets.
+- **Inventory slots are not reserves.** No slot without geometric admissibility and a support score; no rollup without its spacing assumption stated.
+
+## Designed API surface (not yet live)
+
+```
+GET  /wells/{api10}            GET  /wells/{api10}/production   GET  /wells/{api10}/analogs
+POST /forecasts                POST /valuations                 POST /scenarios
+POST /sensitivities            POST /inventory/runs             POST /wellsets
+GET  /typecurves               GET  /operators/league           POST /aois
+GET  /conformance              GET  /explain/{artifact_id}      GET  /recipes/{artifact_id}
+GET  /quality/scorecard        GET  /quality/quarantine         GET  /audit
+```
+
+Any endpoint accepts `?explain=true`, which inlines the lineage block that the UI
+drawer renders. There is no private endpoint behind the UI.
+
+## Data sources
+
+Public, keyless regulator and industry files only: North Dakota DMR (well-level
+production, permits, surveys, tops), Texas Railroad Commission (PDQ lease
+production, W-2/G-1 completions, W-1 permits, GIS well lines), New Mexico OCD
+(well-level production), FracFocus (completion design), plus PLSS and spacing-unit
+geography. Attribute the agency that publishes the file, not glasswell.
+
+Texas reports at the lease level while ND and NM report at the well level. That
+asymmetry is the allocation problem, and glasswell measures its error against two
+independent validators rather than hiding it.
+
+## Honest limits
+
+Not mineral ownership. Not daily production. Not reserves. Not multi-tenant. Not an
+OSDU implementation. Not investment advice. Every number derives from public
+filings that states restate, and restatements are visible in the audit stream
+rather than smoothed away.
+
+## Project
+
+- Source: <https://github.com/rfxn/glasswell>
+- Built and maintained by Ryan MacDonald for R-fx Networks, `proj@rfxn.com`
+- Licensed GNU GPL v2
+
+## Optional
+
+- [Blueprint — the contract](blueprint.md)
+- [Architecture — layers, components, rules](ARCHITECTURE.md)
+- [Roadmap — phases and exit criteria](ROADMAP.md)
+- [Brand — visual system](BRAND.md)
