@@ -358,6 +358,17 @@ feature specification is a table, `features.feature_specs`, and the builder read
 | `member_of[]` | named feature sets: `full`, `rock_location_only`, `design_adjusted`, `no_depletion` |
 | `introduced_in_fv`, `retired_in_fv` | append-only lifecycle; a feature is never edited in place |
 
+**`geology.formation_group` is a registry row like any other, and it is the one the gate
+added** (G-13): `family = geology`, `dtype = categorical`, `knowable_at_rule = completion_date`,
+`transform_id = lookup_formation_alias` with the reported pool as its parameter,
+`source_refs = [canonical.well_completions.formation_group, cr_formation_group_rollup]`,
+`missing_policy = native_nan` — a well whose pool reads `CONFIDENTIAL` is `__confidential__`,
+which is information, not absence — and `member_of = [full, rock_location_only,
+design_adjusted, no_depletion]`, because the peer group, the Mondrian taxonomy and the analog
+space all read it and the league expectation model is *about* rock. Its value comes from the
+LOOKUP table, never from a code branch, so "which formations were grouped together" is a
+query against `formation_aliases` and not an archaeology exercise in the builder.
+
 `member_of` is what makes D-17's league expectation model a **data declaration rather than a
 code branch**: `rock_location_only` is a set membership, so "the expectation model excluded
 operator and design" is provable from the registry and citable from `/models`, not asserted
