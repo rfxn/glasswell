@@ -12,7 +12,7 @@ import re
 import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
@@ -22,7 +22,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from glasswell.lineage.audit import emit
-from glasswell.lineage.capture import derive
+from glasswell.lineage.capture import current_session, derive
 from glasswell.lineage.manifests import register_manifest
 from glasswell.lineage.models import AcquisitionMethod, ManifestRecord, OutputSpec
 from glasswell.lineage.serialization import canonical_json, json_ready
@@ -199,8 +199,9 @@ def fetch_raw(
                 payload={"url": url, "reason": type(error).__name__, "detail": str(error)},
             )
             raise
-        # Self-stamped at completion: no regulator dates its artifacts reliably (DIR-9).
-        fetched_at = datetime.now(UTC)
+        # Self-stamped at completion from the run's clock, never the wall: the fetch vintage
+        # is part of the primary key a restatement lands on (DIR-9, B2).
+        fetched_at = current_session().clock.now()
 
         # The bytes that arrived are part of this fetch's address; changed upstream bytes are
         # the common path (§2.1), and a spec blind to them would read as a determinism failure.

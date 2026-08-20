@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import stat
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
 import orjson
 import pytest
 
+from glasswell.ingest.base import open_ingest_run
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.fetch import MANIFEST_FILENAME, fetch_raw
 from glasswell.lineage.models import ManifestRecord
 from glasswell.lineage.serialization import canonical_json, json_ready
 from glasswell.lineage.store import PostgresRecorder
+from tests.support.fakes import FixedClock
 
 SOURCE_ID = "nd_mpr_xlsx"
 SOURCE_KEY = "2026_03.xlsx"
@@ -160,6 +163,33 @@ def test_changed_bytes_supersede_the_head_and_keep_both_artifacts(db, raw_root, 
 def test_the_incoming_directory_never_keeps_a_partial_download(db, raw_root, lineage_env):
     fetch(db, raw_root, lineage_env)
     assert list((raw_root / ".incoming").iterdir()) == []
+
+
+def test_the_fetch_vintage_follows_the_injected_clock(db, raw_root, lineage_env):
+    clock = FixedClock(start=datetime(2026, 5, 14, 13, 12, tzinfo=UTC))
+    with lineage_session(
+        recorder=PostgresRecorder(db), environment=lineage_env, clock=clock
+    ), client_for(PAYLOAD) as client:
+        result = fetch_raw(db, SOURCE_ID, SOURCE_KEY, url=URL, raw_root=raw_root, client=client)
+    db.commit()
+
+    assert result.manifest.fetched_at == datetime(2026, 5, 14, 13, 12, tzinfo=UTC)
+    assert result.manifest.fetch_vintage.isoformat() == "2026-05-14"
+    assert result.payload_path.parent.name.startswith("2026-05-14T")
+
+
+def test_the_run_as_of_and_the_manifest_fetch_vintage_converge(db, raw_root, lineage_env):
+    """B2: one clock per run. A divergence here republishes a restatement under the wrong day."""
+    clock = FixedClock(start=datetime(2026, 5, 14, 13, 12, tzinfo=UTC))
+    with open_ingest_run(
+        db, source_id=SOURCE_ID, raw_root=raw_root, environment=lineage_env, clock=clock
+    ) as run, client_for(PAYLOAD) as client:
+        result = fetch_raw(
+            run.connection, SOURCE_ID, SOURCE_KEY, url=URL, raw_root=run.raw_root, client=client
+        )
+    db.commit()
+
+    assert result.manifest.fetch_vintage == run.as_of
 
 
 def test_a_failed_fetch_leaves_no_manifest_and_records_the_attempt(db, raw_root, lineage_env):
