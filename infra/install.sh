@@ -8,6 +8,7 @@ STATE_DIR=/var/lib/glasswell
 UNIT_DIR=/etc/systemd/system
 SBIN_DIR=/usr/local/sbin
 WEB_ROOT=/opt/glasswell/web
+BASEMAP_ROOT=/opt/glasswell/basemap
 PG_CONF_DIR=/etc/postgresql/16/main/conf.d
 RUN_USER=glasswell
 
@@ -36,6 +37,7 @@ id "$RUN_USER" >/dev/null || { printf 'user %s does not exist\n' "$RUN_USER" >&2
 install -d -o root -g root -m 0700 "$ETC_DIR"
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 0750 "$STATE_DIR"
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$WEB_ROOT"
+install -d -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$BASEMAP_ROOT"
 
 # The owner key is generated here and never printed: it exists only inside app.env.
 if [[ ! -f "$ETC_DIR/app.env" ]]; then

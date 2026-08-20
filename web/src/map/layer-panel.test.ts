@@ -1,0 +1,160 @@
+// @vitest-environment happy-dom
+import { describe, expect, it, vi } from "vitest";
+
+import { createLayerPanel } from "./layer-panel.ts";
+import { createPillStrip } from "./pills.ts";
+import { LAYERS, defaultLayerSet } from "./registry.ts";
+
+const panel = (on: string[] = defaultLayerSet()) => {
+  const events: { id: string; on: boolean }[] = [];
+  const opacity: { id: string; value: number }[] = [];
+  const handle = createLayerPanel({
+    on: new Set(on),
+    onToggle: (id, next) => events.push({ id, on: next }),
+    onOpacity: (id, value) => opacity.push({ id, value }),
+    onBasemap: () => {},
+    basemap: "dark",
+  });
+  return { handle, events, opacity };
+};
+
+const rows = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>(".gw-layer-row")];
+const rowFor = (root: HTMLElement, id: string) => rows(root).find((row) => row.dataset["layer"] === id);
+
+describe("the layer panel", () => {
+  it("renders one row per registered layer, in draw order", () => {
+    const { handle } = panel();
+    expect(rows(handle.element).map((row) => row.dataset["layer"])).toEqual(LAYERS.map((l) => l.id));
+  });
+
+  it("carries the epistemic subtitle and the provenance badge in the row itself", () => {
+    const { handle } = panel();
+    const wells = rowFor(handle.element, "wells")!;
+    expect(wells.querySelector(".gw-layer-sub")?.textContent).toContain("ND DMR GIS");
+    expect(wells.querySelector(".gw-layer-badge")?.textContent?.toLowerCase()).toBe("official");
+  });
+
+  it("disables a stub layer and says the source is not ingested", () => {
+    const { handle, events } = panel();
+    const play = rowFor(handle.element, "play-outline")!;
+    const toggle = play.querySelector<HTMLButtonElement>(".gw-layer-toggle")!;
+    expect(toggle.disabled).toBe(true);
+    toggle.click();
+    expect(events).toEqual([]);
+    expect(play.textContent).toMatch(/not ingested|no ingest recipe/i);
+  });
+
+  it("reports a toggle rather than mutating the map itself", () => {
+    const { handle, events } = panel();
+    rowFor(handle.element, "spacing-units")!.querySelector<HTMLButtonElement>(".gw-layer-toggle")!.click();
+    expect(events).toEqual([{ id: "spacing-units", on: true }]);
+  });
+
+  it("keeps aria-pressed in step with the visible state", () => {
+    const { handle } = panel();
+    const toggle = rowFor(handle.element, "wells")!.querySelector<HTMLButtonElement>(".gw-layer-toggle")!;
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    handle.setOn(new Set(["laterals"]));
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("patches state in place instead of re-rendering the list", () => {
+    const { handle } = panel();
+    const toggle = rowFor(handle.element, "wells")!.querySelector(".gw-layer-toggle");
+    handle.setOn(new Set(["laterals"]));
+    expect(rowFor(handle.element, "wells")!.querySelector(".gw-layer-toggle")).toBe(toggle);
+  });
+
+  it("offers per-layer opacity", () => {
+    const { handle, opacity } = panel();
+    const slider = rowFor(handle.element, "wells")!.querySelector<HTMLInputElement>("input[type=range]")!;
+    slider.value = "40";
+    slider.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(opacity).toEqual([{ id: "wells", value: 0.4 }]);
+  });
+
+  it("filters the list by label and by subtitle", () => {
+    const { handle } = panel();
+    const search = handle.element.querySelector<HTMLInputElement>(".gw-layer-search")!;
+    search.value = "spacing";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    const shown = rows(handle.element).filter((row) => !row.hidden).map((row) => row.dataset["layer"]);
+    expect(shown).toContain("spacing-units");
+    expect(shown).not.toContain("laterals");
+  });
+
+  it("marks a row out of scale when the map is zoomed out past its floor", () => {
+    const { handle } = panel();
+    handle.setZoom(6);
+    const spacing = rowFor(handle.element, "spacing-units")!;
+    expect(spacing.getAttribute("data-out-of-scale")).toBe("true");
+    expect(spacing.textContent).toMatch(/zoom 8/i);
+  });
+
+  it("shows the geometry derivation handle once a tile has reported one", () => {
+    const { handle } = panel();
+    handle.setProvenance("wells", "der_01J9");
+    expect(rowFor(handle.element, "wells")!.querySelector(".gw-layer-derivation")?.textContent).toContain(
+      "der_01J9",
+    );
+  });
+
+  it("resets to the registry defaults, not to a second hand-written list", () => {
+    const seen: Set<string>[] = [];
+    const handle = createLayerPanel({
+      on: new Set(["spacing-units"]),
+      onToggle: () => {},
+      onOpacity: () => {},
+      onBasemap: () => {},
+      onReset: (next) => seen.push(next),
+      basemap: "dark",
+    });
+    handle.element.querySelector<HTMLButtonElement>(".gw-layer-reset")!.click();
+    expect([...(seen[0] ?? [])].sort()).toEqual([...defaultLayerSet()].sort());
+  });
+
+  it("groups the basemap switcher above the overlays and reports the chosen id", () => {
+    const chosen: string[] = [];
+    const handle = createLayerPanel({
+      on: new Set(),
+      onToggle: () => {},
+      onOpacity: () => {},
+      onBasemap: (id) => chosen.push(id),
+      basemap: "dark",
+    });
+    const light = handle.element.querySelector<HTMLButtonElement>('.gw-base-option[data-base="light"]')!;
+    expect(light.getAttribute("aria-pressed")).toBe("false");
+    light.click();
+    expect(chosen).toEqual(["light"]);
+  });
+});
+
+describe("the active-layer pill strip", () => {
+  it("names every layer that is on, and hides itself when only the defaults are", () => {
+    const removed: string[] = [];
+    const strip = createPillStrip({ onRemove: (id) => removed.push(id), onOpen: () => {} });
+    strip.setOn(new Set(defaultLayerSet()));
+    expect(strip.element.hidden).toBe(true);
+
+    strip.setOn(new Set([...defaultLayerSet(), "spacing-units"]));
+    expect(strip.element.hidden).toBe(false);
+    const labels = [...strip.element.querySelectorAll(".gw-pill-label")].map((n) => n.textContent);
+    expect(labels).toContain("Spacing units");
+  });
+
+  it("removes a layer from the strip itself", () => {
+    const removed: string[] = [];
+    const strip = createPillStrip({ onRemove: (id) => removed.push(id), onOpen: () => {} });
+    strip.setOn(new Set([...defaultLayerSet(), "spacing-units"]));
+    strip.element.querySelector<HTMLButtonElement>('.gw-pill[data-layer="spacing-units"] .gw-pill-x')!.click();
+    expect(removed).toEqual(["spacing-units"]);
+  });
+
+  it("ends in an add pill that reopens the panel", () => {
+    const open = vi.fn();
+    const strip = createPillStrip({ onRemove: () => {}, onOpen: open });
+    strip.setOn(new Set([...defaultLayerSet(), "spacing-units"]));
+    strip.element.querySelector<HTMLButtonElement>(".gw-pill-add")!.click();
+    expect(open).toHaveBeenCalled();
+  });
+});

@@ -1,0 +1,524 @@
+/* Map chrome only. Tokens are declared in style.css; this file never redefines them. */
+
+.gw-map-chrome {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.gw-map-chrome > * {
+  pointer-events: auto;
+}
+
+/* ── legend: collapsed to a title pill, expanded on demand ───────────────── */
+
+.gw-lg {
+  position: absolute;
+  left: 0.6rem;
+  bottom: 2.2rem;
+  max-width: 15rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: rgb(18 26 33 / 94%);
+  color: var(--paper);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.gw-lg-title {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gw-lg:not(.gw-open) .gw-lg-body {
+  display: none;
+}
+
+.gw-lg-title::after {
+  content: " ▸";
+  color: var(--cyan);
+  font-weight: 700;
+}
+
+.gw-lg.gw-open .gw-lg-title::after {
+  content: " ▾";
+  color: var(--muted);
+}
+
+.gw-lg.gw-open .gw-lg-body {
+  max-height: min(60vh, 24rem);
+  margin-top: 0.25rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* A legend row is a filter control: checkbox, swatch, label, live count. */
+.gw-lg-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-height: 22px;
+  cursor: pointer;
+}
+
+.gw-lg-row input {
+  flex: 0 0 auto;
+  margin: 0 0.3rem 0 0;
+  accent-color: var(--cyan);
+}
+
+.gw-lg-swatch {
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin-right: 0.3rem;
+}
+
+.gw-lg-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gw-lg-count {
+  flex: 0 0 auto;
+  margin-left: 0.45rem;
+  color: var(--slate);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.gw-lg-row[data-out-of-scale] {
+  opacity: 0.45;
+}
+
+.gw-lg-row[data-out-of-scale] .gw-lg-count::after {
+  content: " ⤒";
+  color: var(--muted);
+}
+
+.gw-lg-note {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.66rem;
+  line-height: 1.4;
+}
+
+/* ── layer panel ─────────────────────────────────────────────────────────── */
+
+.gw-layers {
+  position: absolute;
+  top: 0.6rem;
+  right: 3.4rem;
+  display: flex;
+  flex-direction: column;
+  width: min(22rem, calc(100% - 4rem));
+  max-height: min(calc(100% - 1.2rem), 34rem);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: rgb(18 26 33 / 97%);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 45%);
+  font-size: 0.78rem;
+}
+
+.gw-layers[hidden] {
+  display: none;
+}
+
+.gw-layers-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.gw-layers-head h2 {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.gw-layer-reset,
+.gw-layers-close {
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  background: none;
+  color: var(--slate);
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.gw-layer-reset:hover,
+.gw-layers-close:hover {
+  color: var(--paper);
+  border-color: var(--cyan);
+}
+
+.gw-layer-search {
+  flex: 0 0 auto;
+  margin: 0.5rem 0.6rem 0;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  background: var(--ink);
+  color: var(--paper);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.gw-layers-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0.4rem 0.6rem 0.6rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.gw-base-group h3,
+.gw-layers-body h3 {
+  margin: 0.3rem 0 0.3rem;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gw-base-switcher {
+  display: flex;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.gw-base-option {
+  flex: 1 1 0;
+  padding: 0.28rem 0.2rem;
+  border: 0;
+  border-right: 1px solid var(--hairline);
+  background: none;
+  color: var(--slate);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.gw-base-option:last-child {
+  border-right: 0;
+}
+
+.gw-base-option[aria-pressed="true"] {
+  background: var(--cyan);
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.gw-layer-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas:
+    "swatch text toggle"
+    ". opacity opacity";
+  align-items: start;
+  gap: 0.25rem 0.4rem;
+  min-height: 44px;
+  padding: 0.35rem 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.gw-layer-row[hidden] {
+  display: none;
+}
+
+.gw-layer-swatch {
+  grid-area: swatch;
+  display: inline-flex;
+  padding-top: 0.1rem;
+}
+
+.gw-layer-text {
+  grid-area: text;
+  min-width: 0;
+}
+
+.gw-layer-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-weight: 600;
+}
+
+.gw-layer-badge {
+  padding: 0 0.25rem;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.gw-layer-badge[data-kind="pending"] {
+  color: var(--amber);
+  border-color: var(--amber);
+}
+
+.gw-layer-sub,
+.gw-layer-hint,
+.gw-layer-derivation {
+  margin: 0.1rem 0 0;
+  color: var(--muted);
+  font-size: 0.66rem;
+  line-height: 1.35;
+}
+
+.gw-layer-hint {
+  color: var(--amber);
+}
+
+.gw-layer-derivation {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.gw-layer-toggle {
+  grid-area: toggle;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--ink);
+  cursor: pointer;
+}
+
+.gw-layer-toggle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: left 120ms ease, background 120ms ease;
+}
+
+.gw-layer-toggle[aria-pressed="true"] {
+  border-color: var(--cyan);
+}
+
+.gw-layer-toggle[aria-pressed="true"]::after {
+  left: 16px;
+  background: var(--cyan);
+}
+
+.gw-layer-toggle:disabled,
+.gw-layer-opacity:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.gw-layer-opacity {
+  grid-area: opacity;
+  width: 100%;
+  accent-color: var(--cyan);
+}
+
+.gw-layer-row[data-out-of-scale] .gw-layer-label {
+  color: var(--slate);
+}
+
+.gw-layer-row[data-out-of-scale] .gw-layer-swatch {
+  opacity: 0.4;
+}
+
+/* ── active-layer pills ──────────────────────────────────────────────────── */
+
+.gw-pills {
+  position: absolute;
+  top: 0.6rem;
+  left: 0.6rem;
+  right: 8rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: flex-start;
+  pointer-events: none;
+}
+
+.gw-pills[hidden] {
+  display: none;
+}
+
+.gw-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--cyan);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--paper);
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 35%);
+  pointer-events: auto;
+}
+
+.gw-pill-off {
+  border-color: var(--hairline);
+  color: var(--slate);
+}
+
+.gw-pill-x {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.62rem;
+  cursor: pointer;
+}
+
+.gw-pill-x:hover {
+  color: var(--gas);
+}
+
+.gw-pill-add {
+  border-color: var(--hairline);
+  color: var(--slate);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ── hover card and the tile-failure banner ──────────────────────────────── */
+
+.gw-hover {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: 16rem;
+  padding: 0.25rem 0.45rem;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  background: rgb(11 16 20 / 94%);
+  color: var(--paper);
+  font-size: 0.72rem;
+  pointer-events: none;
+}
+
+.gw-hover[hidden] {
+  display: none;
+}
+
+.gw-hover-name {
+  margin: 0;
+  font-weight: 650;
+}
+
+.gw-hover-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin: 0.1rem 0 0;
+  color: var(--slate);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.66rem;
+}
+
+.gw-banner {
+  position: absolute;
+  top: 0.6rem;
+  left: 50%;
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  max-width: min(32rem, calc(100% - 2rem));
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--amber);
+  border-radius: 5px;
+  background: rgb(18 26 33 / 97%);
+  color: var(--paper);
+  font-size: 0.72rem;
+  transform: translateX(-50%);
+  z-index: 8;
+}
+
+.gw-banner[hidden] {
+  display: none;
+}
+
+.gw-banner-line {
+  margin: 0;
+}
+
+.gw-banner-x {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+/* ── map controls ────────────────────────────────────────────────────────── */
+
+/* The stock control button is a 29 px icon square; this one carries a word. */
+.maplibregl-ctrl-group button.gw-layers-button {
+  width: auto;
+  min-width: 4rem;
+  height: 29px;
+  padding: 0 0.5rem;
+  color: #333;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.maplibregl-ctrl-attrib.maplibregl-compact {
+  font-size: 0.66rem;
+}
+
+@media (width <= 768px) {
+  .gw-layers {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-width: none;
+    max-height: 70dvh;
+    border-radius: 10px 10px 0 0;
+  }
+
+  .gw-lg {
+    max-width: 11rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gw-layer-toggle::after {
+    transition: none;
+  }
+}

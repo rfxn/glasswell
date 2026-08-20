@@ -15,8 +15,9 @@ import { highlight } from "./glossary/index.ts";
 import { loadGlossary, termIndex } from "./glossary/store.ts";
 import "./glossary/gw-term.ts";
 import { renderLineageDrawer } from "./lineage/drawer.ts";
-import { createMap, layerLegend } from "./map/map.ts";
+import { createMap } from "./map/map.ts";
 import type { MapHandle } from "./map/map.ts";
+import { onUrlParam } from "./map/map-bus.ts";
 import { createSearch } from "./search/search.ts";
 
 const mapHost = required("gw-map");
@@ -168,7 +169,16 @@ function start(): void {
   });
 
   shell.setAttribute("data-drawer", "closed");
-  mapHost.appendChild(layerLegend());
+
+  // The map writes its own share parameters; mirror them so a later viewport commit,
+  // which serialises the snapshot taken at boot, does not drop them.
+  onUrlParam((key, value) => {
+    const extra = { ...state.extra };
+    if (value === null) delete extra[key];
+    else extra[key] = value;
+    state = { ...state, extra };
+  });
+
   map = createMap(mapHost, state.map, {
     onSelect: (api10) => selectWell(api10, "map"),
     onViewport: (viewport) => commit({ map: viewport }, "replace"),

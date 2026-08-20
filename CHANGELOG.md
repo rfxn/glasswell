@@ -7,7 +7,7 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
-### 2026-08-20 — fix cycle: data truth, guardrails and panels
+### 2026-08-20 — fix cycle: data truth, guardrails, panels and map
 
 - [New] The well card discloses what the map cannot show and the ingest held back:
       `below_tile_resolution` for laterals no zoom can render, and
@@ -56,6 +56,31 @@ its own version in its header, and its history is summarised in §3.1.
 - [New] The bundle is gzipped on the wire (1,153,996 to 322,718 bytes) and hashed
       assets carry `Cache-Control: public, max-age=31536000, immutable`, with
       `no-cache` on the shell that names them
+- [New] Self-hosted basemap: a Protomaps PMTiles extract served from this origin
+      at `/basemap` with a manifest carrying its vintage, region, maxzoom and
+      sha256; `scripts/basemap-build.sh` builds it (ND measures 48 MB at z0–13,
+      ND+TX 336 MB) and `infra/basemap/README.md` is the deployer runbook
+- [New] Basemap switcher with four keyless options — brand-tuned dark, a grayscale
+      light variant, USGS imagery and the graticule — reachable by `?base=`,
+      remembered through a guarded lookup, with a collapsed attribution pill and a
+      banner naming any source whose tiles fail and what was substituted
+- [New] Layer registry drives the panel, the pills, the legend, the reset and the
+      persisted `{on, known}` set from one table; wells, laterals and spacing units
+      are registered, and EIA play outlines and USGS assessment units are
+      registered as stubs stating that no ingest recipe exists yet
+- [New] Layer panel with per-layer opacity, a search filter, provenance badges, the
+      epistemic subtitle in the row, the geometry `derivation_id` read back out of
+      the tile, and out-of-scale rows disabled with the zoom that brings them back
+- [New] Legend rows are filter controls with live counts taken from what is
+      rendered, collapsed to a title pill by default, patched in place, showing an
+      em dash rather than a zero for a count the viewport cannot supply
+- [New] Active-layer pill strip, scale bar, rotation disabled, and a hover card
+      that identifies a well from the tile's own fields without a request
+- [New] The assembled style is validated against the official style spec in a test.
+      MapLibre drops a layer that fails validation and reports it on the `error`
+      event, which an `error` listener then swallows — an invalid paint expression
+      reads as "the well layers do not appear" over a clean console, which is how
+      it shipped during this phase
 - [Fix] A production point cites the derivation that promoted its own month.
       `sorted(derivations)[-1]` put one handle on a whole column, and ND publishes
       one workbook a month, so 327,924 of 394,278 served numbers explained to a
@@ -115,6 +140,23 @@ its own version in its header, and its history is summarised in §3.1.
 - [Fix] Repeated warnings collapse to one panel with a count, and the lineage
       drawer's acquisition link opens in a new tab instead of navigating the app
       away to download a 3 MB XLSX
+- [Fix] Well status symbology matches the data: the nine classes of
+      `cr_nd_status_vocab_1`, each labelled, `producing` (which matched no well)
+      removed, dry, expired and temporarily_abandoned added — 12,339 of 43,817
+      wells that rendered as an unlabelled grey — a struck-through modifier for the
+      terminal classes per the ND DMR legend, an unmapped class in quarantine
+      amber, and glass cyan reserved for selection
+- [Fix] Wells render from zoom 4 rather than zoom 9, so the basin is visible at the
+      app's own default viewport; culling is per status rather than a blanket
+      minzoom, so active wells and drilling show statewide and the terminal classes
+      arrive at zoom 9
+- [Fix] Clicks hit-test a ±6 px box through one priority-sorted dispatcher instead
+      of one exact-pixel handler per layer: measured on the same 195-point grid,
+      6.2 per cent of clicks selected a well before and 42.6 per cent after, wells
+      outrank laterals, and the pointer cursor and hover card follow the same query
+- [Fix] Lateral width interpolates over `lateral_length_ft` coerced to a number:
+      martin serves a Postgres `numeric` as an MVT string, so the ramp silently
+      held its base value
 - [Change] Lateral length is measured geodesically on the WGS84 ellipsoid under
          `cr_nd_compute_crs_2`, which supersedes the UTM 14N rule rather than
          editing it. 97.6 % of ND laterals lie outside zone 14N, which overstated
@@ -130,6 +172,10 @@ its own version in its header, and its history is summarised in §3.1.
          martin
 - [Change] `web/src/bus.ts` is the seam between the map module and the rest of
          the app: selection requests in, committed selection and camera moves out
+- [Change] Selection is `promoteId` plus `feature-state` rather than a duplicate
+         `*-selected` filter layer per source, and data layers are inserted beneath
+         the basemap's labels so town and county names stay readable over dense
+         wells
 
 ### 2026-08-20 — North Dakota spine and map slice
 

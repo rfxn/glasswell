@@ -18,7 +18,7 @@ from starlette.responses import Response
 from starlette.staticfiles import StaticFiles
 
 from glasswell.api.access_log import install_access_log_redaction
-from glasswell.api.deps import WEB_ROOT_ENV, require_key
+from glasswell.api.deps import BASEMAP_ROOT_ENV, WEB_ROOT_ENV, require_key
 from glasswell.api.errors import install_handlers, problem_response
 from glasswell.api.examples import KEY_HEADER
 from glasswell.api.routers import (
@@ -135,6 +135,13 @@ def create_app() -> FastAPI:
         glossary.router,
     ):
         app.include_router(router, prefix="/v1", dependencies=[Depends(require_key)])
+
+    basemap_root = os.environ.get(BASEMAP_ROOT_ENV)
+    if basemap_root and Path(basemap_root).is_dir():
+        # Keyless on purpose: the archive is public OSM data on this origin, and PMTiles
+        # reads it with range requests, which StaticFiles answers with a 206. Mounted
+        # before the SPA so `/basemap/*` never falls through to index.html.
+        app.mount("/basemap", StaticFiles(directory=basemap_root), name="basemap")
 
     web_root = os.environ.get(WEB_ROOT_ENV)
     if web_root and Path(web_root).is_dir():
