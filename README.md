@@ -9,7 +9,7 @@
 <p align="center"><strong>Glass-box upstream analytics on public data</strong></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/status-pre--build-B57A18?style=flat-square" alt="Status: pre-build">
+  <img src="https://img.shields.io/badge/status-ND_slice_running-3FA55E?style=flat-square" alt="Status: North Dakota slice running">
   <img src="https://img.shields.io/badge/blueprint-v0.5-2A9BB5?style=flat-square" alt="Blueprint v0.5">
   <img src="https://img.shields.io/badge/license-proprietary-7C8B96?style=flat-square" alt="License: proprietary">
   <img src="https://img.shields.io/badge/data-public_only-3FA55E?style=flat-square" alt="Public data only">
@@ -43,6 +43,7 @@ derivation handle back to a checksummed regulator file, or it does not ship.
 
 ## Contents
 
+- [What runs today](#what-runs-today)
 - [Why it exists](#why-it-exists)
 - [The glass box](#the-glass-box)
 - [Architecture](#architecture)
@@ -59,6 +60,19 @@ derivation handle back to a checksummed regulator file, or it does not ship.
 - [Support](#support)
 
 ---
+
+## What runs today
+
+The first slice is North Dakota, end to end on one VM: NDIC monthly production and
+DMR GIS geometry in the raw zone under content-addressed manifests, conformed into a
+canonical model with a rule registry and a quarantine ledger, served through a
+FastAPI subset, drawn as vector tiles on a MapLibre map, and traceable — a
+production number on the chart resolves through one `/v1/explain` call to a
+SHA-256 and the `dmr.nd.gov` URL it came from.
+
+Forecasts, economics, scenarios, inventory, the Permian, and the agent gateway are
+**not** in it. [SMOKE.md](SMOKE.md) is the fifteen-minute walkthrough, including
+what is missing and what is queued next.
 
 ## Why it exists
 
@@ -284,6 +298,7 @@ records each file's checksum and refuses a changed migration.
 
 | Document | Contents |
 |----------|----------|
+| [SMOKE.md](SMOKE.md) | Walkthrough of the running ND slice, its gaps, and the morning queue |
 | [blueprint.md](blueprint.md) | The product and engineering contract. Anything not in scope there is out until it changes. |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Layers, components, boundaries, and the rules R1–R8 |
 | [ROADMAP.md](ROADMAP.md) | Build phases P0–P7 with exit criteria and cut order |
