@@ -30,6 +30,7 @@ from glasswell.lineage.serialization import canonical_json, json_ready
 RAW_ROOT_ENV = "GLASSWELL_RAW_ROOT"
 DEFAULT_RAW_ROOT = Path("data/raw")
 MANIFEST_FILENAME = "manifest.json"
+SHA256_MANIFEST_FILENAME = "MANIFEST.sha256"
 PAYLOAD_STEM = "payload"
 FILE_MODE = 0o444
 DIRECTORY_MODE = 0o555
@@ -153,6 +154,22 @@ def _write_manifest_json(directory: Path, manifest: ManifestRecord) -> Path:
     return path
 
 
+def _write_sha256_manifest(directory: Path) -> Path:
+    """SB-06 §3.3: a restored vintage verifies with `sha256sum -c` and no external state."""
+    names = sorted(
+        entry.name
+        for entry in directory.iterdir()
+        if entry.is_file() and entry.name != SHA256_MANIFEST_FILENAME
+    )
+    lines = [
+        f"{hashlib.sha256((directory / name).read_bytes()).hexdigest()}  {name}\n"
+        for name in names
+    ]
+    path = directory / SHA256_MANIFEST_FILENAME
+    path.write_text("".join(lines), encoding="utf-8")
+    return path
+
+
 def _seal(directory: Path) -> None:
     for entry in directory.iterdir():
         entry.chmod(FILE_MODE)
@@ -251,6 +268,7 @@ def fetch_raw(
     if registration.created:
         manifest = _link_fetch_derivation(connection, manifest.manifest_id, context.derivation_id)
         _write_manifest_json(payload_path.parent, manifest)
+        _write_sha256_manifest(payload_path.parent)
         _seal(payload_path.parent)
     return FetchResult(
         manifest=manifest,

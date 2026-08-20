@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import stat
+import subprocess
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -10,7 +12,11 @@ import pytest
 
 from glasswell.ingest.base import open_ingest_run
 from glasswell.lineage.capture import lineage_session
-from glasswell.lineage.fetch import MANIFEST_FILENAME, fetch_raw
+from glasswell.lineage.fetch import (
+    MANIFEST_FILENAME,
+    SHA256_MANIFEST_FILENAME,
+    fetch_raw,
+)
 from glasswell.lineage.models import ManifestRecord
 from glasswell.lineage.serialization import canonical_json, json_ready
 from glasswell.lineage.store import PostgresRecorder
@@ -100,6 +106,26 @@ def test_the_colocated_manifest_json_round_trips_to_the_database_row(db, raw_roo
 
     assert on_disk == canonical_json(json_ready(ManifestRecord(**row).model_dump()))
     assert orjson.loads(on_disk)["sha256"] == result.manifest.sha256
+
+
+def test_the_sealed_directory_verifies_itself_with_sha256sum(db, raw_root, lineage_env):
+    """SB-06 §3.3 rule 2: `sha256sum -c` passes with no arguments and no external state."""
+    result = fetch(db, raw_root, lineage_env)
+    directory = result.payload_path.parent
+    listing = (directory / SHA256_MANIFEST_FILENAME).read_text(encoding="utf-8")
+    entries = [line.split("  ", 1) for line in listing.splitlines()]
+
+    assert [name for _, name in entries] == [MANIFEST_FILENAME, result.payload_path.name]
+    for digest, name in entries:
+        assert digest == hashlib.sha256((directory / name).read_bytes()).hexdigest()
+    verified = subprocess.run(
+        ["sha256sum", "-c", SHA256_MANIFEST_FILENAME],
+        cwd=directory,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert verified.returncode == 0, verified.stderr
 
 
 def test_the_payload_and_its_directory_are_sealed_read_only(db, raw_root, lineage_env):
