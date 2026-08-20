@@ -11,11 +11,19 @@ from glasswell.lengths import resolve_length_method
 from glasswell.lineage.conformance import RULE_KINDS, apply_registry_rules, apply_rules, load_rules
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_nd import ND_RULES
+from glasswell.seed.reference import NM_TABLES
 
 MINIMUM_RULES = 17
 MINIMUM_TERMS = 30
 MEASURED_ND_STATUSES = 19
-POLICY_RULES = ("cr_nd_liquids_policy_1", "cr_nd_null_semantics_1", "cr_nd_pool_rollup_1")
+POLICY_RULES = (
+    "cr_nd_liquids_policy_1",
+    "cr_nd_null_semantics_1",
+    "cr_nd_pool_rollup_1",
+    # One host pin per NM source: the pin is a policy declaration the fetcher implements, and
+    # a rule row loads only for the source_id it names (M5).
+    *sorted(f"cr_nm_{table}_host_pin_1" for table, _ in NM_TABLES),
+)
 
 SUPERSEDED_RULE_IDS = {rule["supersedes_rule_id"] for rule in ND_RULES if rule.get(
     "supersedes_rule_id")}

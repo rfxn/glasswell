@@ -7,6 +7,43 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-20 — D1 phase 1: New Mexico's production spine, pulled and stamped
+
+- [New] `lineage/ftp.py` and an `ftp_anon` transport inside `fetch_raw`: anonymous FTP to
+      the pinned host, MDTM and SIZE read before the transfer and recorded in
+      `acquisition_params`, the bytes hashed as they stream, and a short transfer refused
+      rather than sealed. A host that does not answer halts with `raw.fetch_failed
+      reason=host_unresolved` instead of guessing — the EMNRD page publishes the address
+      as an image, so a re-pin is a config change and an audit event, never a scraper
+- [New] Nine NM OCD sources with the honest licence note: UNVERIFIED, no published grant,
+      and absence of a restriction is not a grant
+- [New] Twenty-seven parse-stage rule rows — an undated-vintage, an FTP-layout and a
+      host-pin rule per source, because `load_rules` reads one `source_id` per call and a
+      derivation may not cite another source's rule. The FTP refreshes nightly with
+      undated per-table filenames, contradicting its own published documentation, so the
+      retrieval vintage is glasswell's own stamp and the `source_key` is the constant
+      filename the supersession chain is built on
+- [New] `ingest.nm_ocd --fetch-only`: one login, the tables in order, five seconds apart.
+      A reset data channel — which is what 164.64.106.6 did on the third transfer — is
+      retried twice on a fresh login, each failure recorded; a host that will not answer
+      is never retried
+- [New] Fixtures cut from one polite pull cached to `/data/raw`, preserving UTF-16LE with
+      its BOM, the `SqlRowSet1` namespace and the inline schema. The production fixture
+      straddles DIR-12's 2015-01 window because the member opens in 1973, and
+      `tests/unit/test_nm_fixtures.py` asserts every trap it exists to carry
+- [Change] `fetch_raw` reads `upstream_mtime`, the etag and the media type from whichever
+         transport ran rather than from HTTP headers, and hashes the sealed files in
+         chunks — the NM artifact is 968 MB and `read_bytes()` held all of it
+- [Change] `seed_conformance_nd` counts its own jurisdiction's rules rather than the whole
+         registry, which is what made a second state's seed non-idempotent
+
+The `wcproduction` member measures **48,310,560,330 bytes across 48,104,334 records**,
+streamed once in 24m51s: 17,645,580 rows and 80,624 well-completion × pool entities fall
+inside the 2015-01 window. Three findings change what phases 2-4 must handle — a fourth
+`prd_knd_cde` (`'C '`, condensate, 1986-1993 only), one row whose `api_well_idn` is six
+digits and cannot compose an API-10, and an `amend_ind` that is a ten-value vocabulary
+rather than a flag. `tests/fixtures/nm_ocd/SOURCE.md` carries the measurements.
+
 ### 2026-08-20 — DIR-13: TLS on the LAN endpoint
 
 - [New] Caddy terminates `https://glasswell.lab.rpx.sh` on VM 111 and reverse-proxies

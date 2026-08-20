@@ -7,6 +7,25 @@ from datetime import date
 import psycopg
 
 ND_LICENSE_NOTE = "Free GIS download, NAD83, standard ND accuracy disclaimer"
+# The honest note, and it stays honest: absence of a restriction is not a grant, so every NM
+# manifest carries redistributable = False until someone publishes terms (SB-01 §1.3).
+NM_LICENSE_NOTE = (
+    "UNVERIFIED. No published licence, ToS or redistribution grant on the OCD Data or FTP"
+    " pages. Absence of a restriction is not a grant; NM data is never described as open"
+    " licensed."
+)
+
+NM_TABLES: tuple[tuple[str, str], ...] = (
+    ("wcproduction", "well-completion monthly volumes"),
+    ("wellhistory", "well header history"),
+    ("wchistory", "well-completion history"),
+    ("podwc", "POD to well-completion crosswalk"),
+    ("pod", "pooled development units"),
+    ("ogrid", "operator registry"),
+    ("pool", "pool registry"),
+    ("spacingunit", "spacing units"),
+    ("property", "properties"),
+)
 
 SOURCES: tuple[dict[str, object], ...] = (
     {
@@ -40,6 +59,16 @@ SOURCES: tuple[dict[str, object], ...] = (
         "license_note": ND_LICENSE_NOTE,
         "redistributable": False,
     },
+    *(
+        {
+            "source_id": f"nm_ocd_{table}",
+            "name": f"NM OCD {description} ({table})",
+            "jurisdiction": "NM",
+            "license_note": NM_LICENSE_NOTE,
+            "redistributable": False,
+        }
+        for table, description in NM_TABLES
+    ),
 )
 
 CRS_ROWS: tuple[dict[str, object], ...] = (
