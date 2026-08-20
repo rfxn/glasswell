@@ -19,7 +19,10 @@ from glasswell.lineage.ids import format_handle, parse_selector
 from glasswell.lineage.models import Frozen
 from glasswell.lineage.serialization import json_ready
 
-GRANULARITIES: tuple[str, ...] = ("well_observed", "lease_allocated")
+# S-B's composed token, not R5's granularity field: (observed, well) -> well_observed,
+# (observed, lease) -> lease_reported, (allocated, well) -> lease_allocated. Migration 012
+# holds the same three, and a canonical row the store admits must serialize (M-5).
+GRANULARITIES: tuple[str, ...] = ("well_observed", "lease_reported", "lease_allocated")
 
 # A figure carries no stream, so its unit is what says the liquids policy must be stated.
 LIQUID_UNITS: frozenset[str] = frozenset({"bbl", "bbl/d", "bbl/mo", "stb"})
