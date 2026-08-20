@@ -12,7 +12,7 @@ from glasswell.lineage.envelope import (
     figure,
     series,
 )
-from glasswell.lineage.errors import InvalidSelector
+from glasswell.lineage.errors import InvalidHandle, InvalidSelector
 
 DERIVATION = "drv_7qk3m2xr4v9b"
 SELECTOR = "api10=3305301234&col=cum12_oil"
@@ -134,6 +134,58 @@ def test_a_dense_series_carries_one_handle_in_a_sidecar():
     assert envelope["data"]["_lineage"] == {"series.oil_bbl": DERIVATION}
     assert envelope["data"]["_units"] == {"series.oil_bbl": "bbl"}
     assert envelope["data"]["_basis"] == {"series.oil_bbl": "oil+condensate"}
+
+
+def test_points_that_disagree_carry_a_handle_each():
+    """D3: one handle per point when the points come from different promotions."""
+    envelope = envelope_of(
+        {
+            "series": {
+                "pm": ["2025-12", "2026-01"],
+                "oil_bbl": series(
+                    [Decimal("31535.000"), Decimal("15478.000")],
+                    unit="bbl",
+                    derivation=DERIVATION,
+                    basis="oil+condensate",
+                    point_handles=[f"{DERIVATION}#pm=2025-12", "drv_other01#pm=2026-01"],
+                ),
+            }
+        }
+    )
+    assert envelope["data"]["_lineage"] == {
+        "series.oil_bbl.0": f"{DERIVATION}#pm=2025-12",
+        "series.oil_bbl.1": "drv_other01#pm=2026-01",
+    }
+    assert envelope["data"]["_units"] == {"series.oil_bbl": "bbl"}
+    assert envelope["links"]["explain"] == (
+        f"/v1/explain?h={DERIVATION}#pm=2025-12&h=drv_other01#pm=2026-01&depth=full"
+    )
+
+
+def test_a_point_without_a_value_carries_no_handle():
+    envelope = envelope_of(
+        {
+            "series": {
+                "oil_bbl": series(
+                    [Decimal("1"), None],
+                    unit="mcf",
+                    derivation=DERIVATION,
+                    point_handles=[f"{DERIVATION}#pm=2025-12", None],
+                )
+            }
+        }
+    )
+    assert set(envelope["data"]["_lineage"]) == {"series.oil_bbl.0"}
+
+
+def test_point_handles_must_align_with_the_values():
+    with pytest.raises(ValueError, match="one-to-one"):
+        series([1, 2], unit="mcf", derivation=DERIVATION, point_handles=[DERIVATION])
+
+
+def test_a_point_handle_is_validated_like_any_other_handle():
+    with pytest.raises(InvalidHandle):
+        series([1], unit="mcf", derivation=DERIVATION, point_handles=["not-a-handle"])
 
 
 def test_a_collection_hangs_its_sidecars_on_each_item():

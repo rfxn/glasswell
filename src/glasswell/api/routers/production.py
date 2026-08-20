@@ -17,6 +17,7 @@ from glasswell.api.examples import EXAMPLE_API10, GLOSSARY_KEY, request_example
 from glasswell.api.responses import EnvelopeModel, enveloped, freshness_state, iso, month_label
 from glasswell.api.routers.wells import API10_PATTERN, RANKED_WELLS
 from glasswell.lineage.envelope import series
+from glasswell.lineage.ids import format_handle
 from glasswell.lineage.vintages import select_production
 
 router = APIRouter(tags=["wells"])
@@ -95,7 +96,12 @@ class Production(BaseModel):
     streams: list[str] = Field(description="Streams present in this response.")
     series: ProductionSeries = Field(description="The parallel arrays the chart consumes.")
     lineage: dict[str, str] = Field(
-        alias="_lineage", description="Dotted column path to derivation handle (SB-07 §9.1b)."
+        alias="_lineage",
+        description=(
+            "Dotted path to derivation handle (SB-07 §9.1b). One entry per column while a"
+            " column has one derivation; one entry per point (`series.oil_bbl.0`) once its"
+            " months were promoted from different workbooks."
+        ),
     )
     units: dict[str, str] = Field(alias="_units", description="Dotted column path to unit.")
     basis: dict[str, str] = Field(
@@ -131,9 +137,12 @@ def _months(raw: str | None, name: str) -> date | None:
     operation_id="get_well_production",
     summary="Monthly production for one well",
     description=(
-        "Monthly produced volumes for one well, in the SB-07 §9.1(b) sidecar form: one"
-        " derivation handle per column in `_lineage`, units in `_units`, the liquids basis"
+        "Monthly produced volumes for one well, in the SB-07 §9.1(b) sidecar form:"
+        " derivation handles in `_lineage`, units in `_units`, the liquids basis"
         " in `_basis`, and per-point `report_vintage` and `null_semantics` arrays."
+        " ND publishes one workbook a month, so a month is promoted by its own derivation:"
+        " `_lineage` keys a handle per point (`series.oil_bbl.0`) whenever the points of a"
+        " column disagree, and each handle explains to the file that carries that month."
         " In North Dakota these are well-level regulator reports, so `granularity` is"
         " `well_observed` — nothing here is allocated. A series never silently mixes"
         " vintages: `as_of` selects the greatest report vintage at or before the date and"
@@ -211,18 +220,27 @@ def get_well_production(
             warnings.append(
                 {
                     "code": "series_spans_derivations",
-                    "detail": f"{len(derivations)} derivations contributed to this column",
+                    "detail": (
+                        f"{len(derivations)} derivations contributed to this column;"
+                        " _lineage carries one handle per point"
+                    ),
                     "pointer": f"/series/{column}",
                 }
             )
         first = next(iter(points.values()))
+        spans = len(derivations) > 1
         payload[column] = series(
             [_volume(points.get(month)) for month in months],
             unit=first["unit"],
-            derivation=sorted(derivations)[-1],
+            derivation=first["derivation_id"],
             selector=f"api10={api10}&col={column}",
             granularity=first["granularity"],
             basis=STREAM_BASIS[name],
+            point_handles=(
+                [_point_handle(api10, column, month, points.get(month)) for month in months]
+                if spans
+                else None
+            ),
         )
         payload[f"{column}_report_vintage"] = [
             iso(points[month]["report_vintage"]) if month in points else None for month in months
@@ -265,6 +283,13 @@ def get_well_production(
 
 def _volume(row: dict[str, Any] | None) -> str | None:
     return None if row is None else str(row["volume"])
+
+
+def _point_handle(api10: str, column: str, month: date, row: dict[str, Any] | None) -> str | None:
+    """D3: the point's own promotion, addressed by the month it reports (SB-07 §9.3)."""
+    if row is None:
+        return None
+    return format_handle(row["derivation_id"], f"api10={api10}&col={column}&pm={month:%Y-%m}")
 
 
 def _freshness(connection: psycopg.Connection, source_ids: list[str]) -> dict[str, Any]:

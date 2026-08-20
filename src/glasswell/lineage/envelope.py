@@ -15,7 +15,7 @@ from typing import Any
 from pydantic import Field
 
 from glasswell.lineage.explain import MAX_HANDLES
-from glasswell.lineage.ids import format_handle, parse_selector
+from glasswell.lineage.ids import format_handle, parse_handle, parse_selector
 from glasswell.lineage.models import Frozen
 from glasswell.lineage.serialization import json_ready
 
@@ -73,7 +73,12 @@ class Figure(Frozen):
 
 
 class Series(Frozen):
-    """A dense series under one handle, carried by sidecar: SB-07 §9.1(b)."""
+    """A dense series under one handle, carried by sidecar: SB-07 §9.1(b).
+
+    `point_handles` is the §9.1(b) exception the ND MPR forces: one workbook per month means
+    one promote derivation per point, and a single column handle would resolve to a file that
+    does not contain most of the column. Set it only when the points genuinely disagree.
+    """
 
     values: Sequence[Any]
     unit: str
@@ -81,10 +86,17 @@ class Series(Frozen):
     selector: str | None = None
     granularity: str | None = None
     basis: str | None = None
+    point_handles: Sequence[str | None] | None = None
 
     @property
     def handle(self) -> str:
         return format_handle(self.derivation, self.selector)
+
+    @property
+    def handles(self) -> list[str]:
+        if self.point_handles is None:
+            return [self.handle]
+        return [handle for handle in self.point_handles if handle]
 
 
 class AsOf(Frozen):
@@ -164,11 +176,18 @@ def series(
     selector: str | None = None,
     granularity: str | None = None,
     basis: str | None = None,
+    point_handles: Sequence[str | None] | None = None,
 ) -> Series:
     """A dense series: one handle for the column, per-point vintages ride alongside it."""
     _validate(unit, granularity, basis, None)
     if selector is not None:
         parse_selector(selector)
+    if point_handles is not None:
+        if len(point_handles) != len(values):
+            raise ValueError("point_handles must align one-to-one with the series values")
+        for handle in point_handles:
+            if handle is not None:
+                parse_handle(handle)
     return Series(
         values=list(values),
         unit=unit,
@@ -176,6 +195,7 @@ def series(
         selector=selector,
         granularity=granularity,
         basis=basis,
+        point_handles=None if point_handles is None else list(point_handles),
     )
 
 
@@ -186,7 +206,12 @@ class _Sidecars:
         self.basis: dict[str, str] = {}
 
     def record(self, path: str, node: Series) -> None:
-        self.lineage[path] = node.handle
+        if node.point_handles is None:
+            self.lineage[path] = node.handle
+        else:
+            for index, handle in enumerate(node.point_handles):
+                if handle is not None:
+                    self.lineage[f"{path}.{index}"] = handle
         self.units[path] = node.unit
         if node.basis is not None:
             self.basis[path] = node.basis
@@ -206,7 +231,7 @@ def _walk(node: Any, path: str, sidecars: _Sidecars | None, handles: list[str]) 
         handles.append(node.handle)
         return node.to_wire()
     if isinstance(node, Series):
-        handles.append(node.handle)
+        handles.extend(node.handles)
         if sidecars is not None:
             sidecars.record(path, node)
         return list(node.values)

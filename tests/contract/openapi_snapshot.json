@@ -2067,7 +2067,7 @@
             "additionalProperties": {
               "type": "string"
             },
-            "description": "Dotted column path to derivation handle (SB-07 \u00a79.1b).",
+            "description": "Dotted path to derivation handle (SB-07 \u00a79.1b). One entry per column while a column has one derivation; one entry per point (`series.oil_bbl.0`) once its months were promoted from different workbooks.",
             "title": "Lineage",
             "type": "object"
           },
@@ -5985,7 +5985,7 @@
     },
     "/v1/wells/{api10}/production": {
       "get": {
-        "description": "Monthly produced volumes for one well, in the SB-07 \u00a79.1(b) sidecar form: one derivation handle per column in `_lineage`, units in `_units`, the liquids basis in `_basis`, and per-point `report_vintage` and `null_semantics` arrays. In North Dakota these are well-level regulator reports, so `granularity` is `well_observed` \u2014 nothing here is allocated. A series never silently mixes vintages: `as_of` selects the greatest report vintage at or before the date and every point says which one it used. `null_semantics` keeps a reported zero, an absent report and a withheld value apart; they are never collapsed into a gap. GOR and water cut are deliberately not served in this slice.",
+        "description": "Monthly produced volumes for one well, in the SB-07 \u00a79.1(b) sidecar form: derivation handles in `_lineage`, units in `_units`, the liquids basis in `_basis`, and per-point `report_vintage` and `null_semantics` arrays. ND publishes one workbook a month, so a month is promoted by its own derivation: `_lineage` keys a handle per point (`series.oil_bbl.0`) whenever the points of a column disagree, and each handle explains to the file that carries that month. In North Dakota these are well-level regulator reports, so `granularity` is `well_observed` \u2014 nothing here is allocated. A series never silently mixes vintages: `as_of` selects the greatest report vintage at or before the date and every point says which one it used. `null_semantics` keeps a reported zero, an absent report and a withheld value apart; they are never collapsed into a gap. GOR and water cut are deliberately not served in this slice.",
         "operationId": "get_well_production",
         "parameters": [
           {
