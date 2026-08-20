@@ -9,6 +9,11 @@ Three published layers, all in `marts`, all served through the API at
 | `nd_wells` | `marts.nd_wells_tile` | POINT | same |
 | `nd_spacing_units` | `marts.nd_spacing_units_tile` (view over `canonical.spacing_units`) | MULTIPOLYGON | always current |
 
+`ds_size_acres` is `double precision` and not `numeric` on purpose: ST_AsMVT has no numeric
+encoding and would put the acreage on the wire as a string (N-2, migration 015's class).
+`nd_laterals` declares `GEOMETRY` because migration 017 widened the column for multi-part
+centrelines — the declaration follows `geometry_columns`, which is where martin looks.
+
 Every layer carries `derivation_id` as a feature property. A tile is a served figure, and
 "no naked numbers" has no exception for tiles.
 
@@ -36,6 +41,40 @@ turns `auto_publish` off — which is the point: auto-publish exposes every geom
 Do not enable both. `config.yaml` publishes ids `nd_laterals`/`nd_wells`/`nd_spacing_units`
 as tables; the functions publish the same ids. Running with the config and an added
 `functions:` block would collide.
+
+### Adoption is blocked on the file, not on the deployer (DR-05)
+
+`config.yaml` was written against martin 0.x. **The installed binary is martin 1.14.0 and it
+publishes nothing from this file** — measured, not assumed, against VM 111's own database:
+
+```
+$ martin --config config.yaml --listen-addresses 127.0.0.1:3999
+ERROR martin: No tile sources found. Set sources by giving a database connection string
+              on command line, env variable, or a config file.
+```
+
+It fails before it connects, so it is the file martin rejects, not the database. Dropping
+the stray top-level `pool_size` does not change it. Point the same binary at a bare
+connection string and it resolves eleven sources happily, so the binary and the database are
+both fine.
+
+The reference for the shape martin 1.14 does accept is martin's own resolved config:
+
+```
+martin --save-config - "postgresql:///glasswell?host=/var/run/postgresql" 2>/dev/null
+```
+
+which emits `postgres.tables.<id>` entries carrying `schema`, `table`, `srid`,
+`geometry_column`, `bounds`, `geometry_type` and `properties`, and — worth noting for
+DR-35 — resolves `marts.nd_spacing_units_tile` as `source.kind="view"` without complaint.
+A view under `tables:` is not the defect; PostGIS lists it in `geometry_columns` and martin
+discovers it there.
+
+**Until the file is reconciled with the installed binary, do not point the unit at it.** The
+`/v1/tiles` proxy allowlist remains the control that holds "staging never serves", and
+`infra/verify.sh` asserts a staging layer is refused through the proxy. Adoption also needs
+one thing this file cannot carry: the running unit takes `DATABASE_URL` from
+`/etc/glasswell/db.env`, and a `connection_string` here would override it.
 
 ## Operational notes
 

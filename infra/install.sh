@@ -9,6 +9,11 @@ UNIT_DIR=/etc/systemd/system
 SBIN_DIR=/usr/local/sbin
 WEB_ROOT=/opt/glasswell/web
 BASEMAP_ROOT=/opt/glasswell/basemap
+# SB-07 2.3 zones. /data is the 1 TB volume; /srv/glasswell is an empty directory on the
+# root disk, which is why the raw zone never went there (DR-06).
+DATA_ROOT=/data
+STAGING_ROOT="$DATA_ROOT/staging"
+SCRATCH_ROOT="$DATA_ROOT/scratch"
 PG_CONF_DIR=/etc/postgresql/16/main/conf.d
 RUN_USER=glasswell
 
@@ -38,6 +43,13 @@ install -d -o root -g root -m 0700 "$ETC_DIR"
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 0750 "$STATE_DIR"
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$WEB_ROOT"
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$BASEMAP_ROOT"
+
+if [[ -d $DATA_ROOT ]]; then
+    install -d -o "$RUN_USER" -g "$RUN_USER" -m 0750 "$STAGING_ROOT" "$SCRATCH_ROOT"
+else
+    printf '%s is not mounted; staging and scratch roots not created\n' "$DATA_ROOT" >&2
+    exit 1
+fi
 
 # The owner key is generated here and never printed: it exists only inside app.env.
 if [[ ! -f "$ETC_DIR/app.env" ]]; then

@@ -7,6 +7,8 @@ INFRA_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 API=http://127.0.0.1:8000
 MARTIN=http://127.0.0.1:3000
 WEB_ROOT=/opt/glasswell/web
+DEPLOY_SRC=/opt/glasswell/src
+DATA_ROOT=/data
 LAN_ADDRESS=192.168.2.111
 PG_TUNING="$INFRA_DIR/postgres/postgresql.conf.d/glasswell.conf"
 PSQL=(sudo -u postgres psql -d glasswell -tAc)
@@ -94,7 +96,7 @@ printf 'tiles\n'
 assert "martin /health" 200 \
     "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$MARTIN/health")"
 catalog="$(curl -s --max-time 10 "$MARTIN/catalog")"
-for layer in nd_laterals nd_wells; do
+for layer in nd_laterals nd_wells nd_spacing_units; do
     assert_true "martin publishes $layer" "absent from /catalog" \
         grep -q "\"$layer\"" <<<"$catalog"
 done
@@ -123,6 +125,21 @@ fi
 assert "a staging layer through the proxy is refused" 404 \
     "$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
         -H "X-Glasswell-Key: $owner_key" "$API/v1/tiles/nd_gis_wells/8/54/89.pbf")"
+
+# DR-06: SB-07 2.3's zones under the volume that exists. install.sh creates them.
+printf 'zones\n'
+for zone in raw staging scratch; do
+    assert_true "$DATA_ROOT/$zone exists" "run install.sh" test -d "$DATA_ROOT/$zone"
+done
+
+# DR-28: the deploy is `git archive HEAD | tar -x`, which cannot carry a git-excluded file.
+# Anything here is a leftover of the rsync era, and docs/product-*.md is carve-out material.
+printf 'deploy hygiene\n'
+stray=""
+for pattern in CLAUDE.md 'PLAN*.md' AUDIT.md MEMORY.md docs work-output .claude .rdf; do
+    for path in $(compgen -G "$DEPLOY_SRC/$pattern"); do stray+="${path##*/} "; done
+done
+assert "no git-excluded working file on the deploy root" "" "${stray% }"
 
 printf 'exposure\n'
 assert_true "martin is loopback-only" "not bound to 127.0.0.1:3000" listening_on '127.0.0.1:3000'

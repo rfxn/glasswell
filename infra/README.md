@@ -11,7 +11,7 @@ copies under `/etc` on the VM are placed by `install.sh` and are not edited in p
 | OS | Ubuntu 24.04.4 LTS, Python 3.12.3, Node 18.19.1 |
 | Exposure | LAN only. `ufw` default-deny with 22 and 8000 open to `192.168.2.0/24` |
 | Deploy root | `/opt/glasswell` — `venv/`, `src/` (rsynced repo), `web/` (built frontend) |
-| Bulk volume | `/data` (1007 G): `raw/`, `staging/`, `parquet/`, `backups/` |
+| Bulk volume | `/data` (1007 G): `raw/`, `staging/`, `scratch/`, `parquet/`, `backups/`, `basemap/` |
 
 **SB-06 §4.5 and §11 say `192.168.2.61`. That is stale** — the DNS A record, forge's
 restricted `authorized_keys` `from=` clause and every probe in this repo use `.111`.
@@ -53,7 +53,9 @@ collide.
 
 **`/data`, not `/srv/glasswell`.** The 1 TB volume is mounted at `/data`; `/srv/glasswell` is
 an empty directory on the 145 GB root disk. Every path in these units follows the mount that
-exists.
+exists. SB-07 §2.3's three zones are therefore `/data/raw`, `/data/staging` and
+`/data/scratch` (DR-06); `install.sh` creates the last two and `verify.sh` asserts all
+three.
 
 ## Roles and the separation that is not enforced tonight
 
@@ -71,8 +73,14 @@ sudo -u postgres /opt/glasswell/venv/bin/glasswell-migrate \
     --dsn "postgresql:///glasswell?host=/var/run/postgresql"
 ```
 
-`marts.refresh_all` issues `create or replace function` in schema `marts`, so
-`glasswell_pipeline` also needs `create on schema marts` — migration 009 grants only `usage`.
+`marts.refresh_all` issues `create or replace function` and `create or replace view` in
+schema `marts`, so `glasswell_pipeline` needs `create` there. Migration 009 grants only
+`usage`; the privilege was applied by hand on this host during P7 and is now held by a
+migration (DR-21), which is what makes a rebuild on a fresh database possible.
+
+`GLASSWELL_RAW_ROOT=/data/raw` has to be exported for **manual** ingest commands. The
+`glasswell-ingest` unit supplies it, so the runbook in `fix-data-truth-status.md` omits it
+and a hand-run fetch would otherwise write the raw zone to a relative `data/raw`.
 
 ## Postgres tuning is shipped but not applied
 
@@ -111,7 +119,21 @@ sudo -u postgres psql -d glasswell -c 'show shared_buffers'   # expect 2GB
 ufw status numbered | grep 3000     # confirm the rule is there and nothing else uses 3000
 ufw delete allow from 192.168.2.0/24 to any port 3000
 ss -ltn | grep 3000                 # still 127.0.0.1:3000 — the rule was never reachable
+
+# 7. ONE-TIME — the two missing zone roots (DR-06). install.sh creates them; /data/raw and
+#    /data/staging already exist, /data/scratch does not.
+./install.sh                        # then: ls -ld /data/raw /data/staging /data/scratch
+
+# 8. ONE-TIME — clear the rsync-era leftovers from the deploy root (DR-28). The deploy is
+#    `git archive HEAD | ssh tar -x`, which cannot carry a git-excluded file, so these are
+#    stale. docs/product-*.md are IP carve-out material (blueprint 8.2) and should not sit
+#    on a LAN-reachable host at all.
+cd /opt/glasswell/src && rm -rf CLAUDE.md PLAN.md AUDIT.md MEMORY.md docs work-output
+./verify.sh                         # the "deploy hygiene" and "zones" checks must now be ok
 ```
+
+Steps 7 and 8 are what the two `zones`/`deploy hygiene` failures in `verify.sh` are pointing
+at. Everything else in the file passes today.
 
 `verify.sh` derives its tuning expectations from the shipped drop-in, so the check cannot
 drift from the file. Step 6 has no counterpart in `verify.sh`: `ufw status` needs root and
