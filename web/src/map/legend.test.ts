@@ -134,6 +134,14 @@ describe("the legend", () => {
     expect(legend.element.textContent).toMatch(/not a directional survey trace/i);
     expect(legend.element.textContent).toContain("cr_nd_status_vocab_1");
   });
+
+  it("names both regulators the one lateral row now draws", () => {
+    // The key's geometry line spoke for a row that was North Dakota's alone. One toggle over
+    // two regulators' files may not leave the key saying "regulator GIS" and nothing more.
+    const legend = createLegend({ onFilter: () => {} });
+    expect(legend.element.textContent).toContain("ND DMR");
+    expect(legend.element.textContent).toContain("TX RRC");
+  });
 });
 
 describe("the legend's all/none control", () => {

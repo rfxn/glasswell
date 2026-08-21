@@ -8,7 +8,10 @@ import {
   restoreCapabilitySet,
   writeCapabilitySet,
 } from "./persist.ts";
+import { defaultLayerSet, layerIds } from "./registry.ts";
 
+// Three ids standing in for a registry: these hold the mechanism, not this build's rows. The
+// block at the foot of the file is the one that reads the real registry.
 const KNOWN = ["wells", "laterals", "spacing-units"];
 const DEFAULT_ON = ["wells", "laterals"];
 
@@ -69,5 +72,45 @@ describe("the capability set", () => {
     expect(readCapabilitySet(LAYER_STORAGE_KEY)?.on).toEqual(["wells"]);
     expect(readCapabilitySet(STATUS_STORAGE_KEY)?.on).toEqual(["active"]);
     vi.useRealTimers();
+  });
+});
+
+describe("a set stored before the two lateral rows were combined", () => {
+  // The combined row is a different capability under a different id, so the {on,known}
+  // contract is the whole migration: both retired ids fall out of `known.filter`, and the new
+  // row was never seen, so it arrives at its registry default. There is no version ladder
+  // because there is nothing a version could tell this shape that the shape does not carry.
+  const legacy = {
+    on: ["laterals", "tx-laterals", "wells", "tx-wells"],
+    known: ["spacing-units", "plss-labels", "laterals", "tx-laterals", "wells", "tx-wells"],
+  };
+
+  it("does not resurrect either retired row", () => {
+    const restored = restoreCapabilitySet(legacy, layerIds(), defaultLayerSet());
+    expect([...restored].sort()).not.toContain("laterals");
+    expect([...restored].sort()).not.toContain("tx-laterals");
+  });
+
+  it("hands the combined row its new default rather than a bit about a different layer", () => {
+    // `laterals` was on because it shipped on, which is not the same fact as a reader choosing
+    // it. Inheriting the bit would restore, for every returning reader, the default the
+    // combination removed — silently, and at the zoom the owner asked it off.
+    const restored = restoreCapabilitySet(legacy, layerIds(), defaultLayerSet());
+    expect(restored.has("lateral-bores")).toBe(false);
+    expect(restored.has("wells")).toBe(true);
+    expect(restored.has("tx-wells")).toBe(true);
+  });
+
+  it("keeps the reader's own answer once they give one", () => {
+    const chosen = { on: ["lateral-bores", "wells"], known: layerIds() };
+    const restored = restoreCapabilitySet(chosen, layerIds(), defaultLayerSet());
+    expect(restored.has("lateral-bores")).toBe(true);
+  });
+
+  it("survives a set written by a build that predates Texas entirely", () => {
+    const older = { on: ["laterals", "wells"], known: ["spacing-units", "laterals", "wells"] };
+    const restored = restoreCapabilitySet(older, layerIds(), defaultLayerSet());
+    expect(restored.has("lateral-bores")).toBe(false);
+    expect(restored.has("tx-wells")).toBe(true);
   });
 });

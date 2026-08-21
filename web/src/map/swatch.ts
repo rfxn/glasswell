@@ -73,20 +73,34 @@ export function statusSwatch(colour: string, glyph: StatusGlyph, size = 14): SVG
 export function layerSwatch(swatch: LayerSwatch, size = 14): SVGSVGElement {
   const node = svg(size);
   const c = size / 2;
+  // A dot, a fill and an outline each have one ink; only the line divides. The registry test
+  // holds a multi-colour swatch to the line kind so nothing is dropped here in silence.
+  const [ink] = swatch.colours;
   if (swatch.kind === "dot") {
-    node.appendChild(el("circle", { cx: String(c), cy: String(c), r: String(size * 0.3), fill: swatch.colour }));
+    node.appendChild(el("circle", { cx: String(c), cy: String(c), r: String(size * 0.3), fill: ink }));
   } else if (swatch.kind === "line") {
-    node.appendChild(
-      el("line", {
-        x1: "1",
-        y1: String(size - 3),
-        x2: String(size - 1),
-        y2: "3",
-        stroke: swatch.colour,
-        "stroke-width": "2",
-        "stroke-linecap": "round",
-      }),
-    );
+    const [x1, y1, x2, y2] = [1, size - 3, size - 1, 3];
+    const stops = swatch.colours.length;
+    const at = (step: number): [string, string] => [
+      String(x1 + ((x2 - x1) * step) / stops),
+      String(y1 + ((y2 - y1) * step) / stops),
+    ];
+    for (const [step, colour] of swatch.colours.entries()) {
+      const [startX, startY] = at(step);
+      const [endX, endY] = at(step + 1);
+      node.appendChild(
+        el("line", {
+          x1: startX,
+          y1: startY,
+          x2: endX,
+          y2: endY,
+          stroke: colour,
+          "stroke-width": "2",
+          // Butt, or a rounded cap paints each segment over the next one's start.
+          "stroke-linecap": stops === 1 ? "round" : "butt",
+        }),
+      );
+    }
   } else {
     node.appendChild(
       el("rect", {
@@ -94,8 +108,8 @@ export function layerSwatch(swatch: LayerSwatch, size = 14): SVGSVGElement {
         y: "2",
         width: String(size - 4),
         height: String(size - 4),
-        fill: swatch.kind === "fill" ? swatch.colour : "none",
-        stroke: swatch.colour,
+        fill: swatch.kind === "fill" ? ink : "none",
+        stroke: ink,
         "stroke-width": "1.4",
       }),
     );

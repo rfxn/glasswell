@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { LayerSpecification } from "maplibre-gl";
 
 import type { BasemapVariant } from "./basemap.ts";
+import { LAYERS } from "./registry.ts";
 import { variantStyle } from "./variant-style.ts";
 import {
   LATERALS_SOURCE,
@@ -143,10 +144,34 @@ describe("the data layers", () => {
   });
 
   it("registers every style layer the registry claims to drive", () => {
-    const rendered = new Set(ids());
-    for (const id of ["wells", "wells-struck", "laterals", "spacing-units-fill", "spacing-units-line"]) {
-      expect(rendered.has(id), `${id} missing from the style`).toBe(true);
+    const rendered = new Set(dataLayers({ labels: true }).map((layer) => layer.id));
+    for (const layer of LAYERS) {
+      for (const id of layer.styleLayers) {
+        expect(rendered.has(id), `${id} missing from the style`).toBe(true);
+      }
     }
+    expect(rendered.has("tx-laterals")).toBe(true);
+  });
+
+  it("draws each row at the zoom its own registry entry advertises", () => {
+    // The panel's out-of-scale mark and the canvas read one number each, declared in two
+    // files. They were only ever equal by hand: a row that says "visible at zoom 8" over a
+    // layer with no floor is a promise the map does not keep, in the direction the reader
+    // cannot see.
+    for (const layer of LAYERS) {
+      if (layer.styleLayers.length === 0) continue;
+      const floors = dataLayers({ labels: true })
+        .filter((built) => layer.styleLayers.includes(built.id))
+        .map((built) => built.minzoom ?? 0);
+      expect(Math.min(...floors), `${layer.id} draws below its own minZoom`).toBe(layer.minZoom);
+    }
+  });
+
+  it("holds both basins' laterals to the same gate, so one toggle means one thing", () => {
+    const floors = dataLayers()
+      .filter((layer) => layer.id === "laterals" || layer.id === "tx-laterals")
+      .map((layer) => layer.minzoom);
+    expect(floors).toEqual([8, 8]);
   });
 
   it("fetches no tile below the zoom its own layers start drawing at", () => {
@@ -159,8 +184,11 @@ describe("the data layers", () => {
     };
     expect(floor(SPACING_SOURCE)).toBe(8);
     expect(floor(WELLS_SOURCE)).toBe(4);
-    // Laterals draw from z0, so their source still has to serve z0 — no free win there.
-    expect(floor(LATERALS_SOURCE)).toBe(0);
+    // The z7 laterals tile is 2,037,023 B (api/routers/tiles.py), and z0-z7 is where the tile
+    // tier thins the layer to a sample. The gate takes both basins' lateral tiles off the wire
+    // below z8 rather than paying for geometry the canvas cannot resolve.
+    expect(floor(LATERALS_SOURCE)).toBe(8);
+    expect(floor(TX_LATERALS_SOURCE)).toBe(8);
     for (const layer of dataLayers({ labels: true })) {
       const source = "source" in layer ? String(layer.source) : "";
       expect(Number(floor(source)), `${layer.id} draws below its source floor`).toBeLessThanOrEqual(

@@ -325,11 +325,18 @@
 
 .gw-layer-sub,
 .gw-layer-hint,
+.gw-layer-source,
 .gw-layer-derivation {
   margin: 0.1rem 0 0;
   color: var(--muted);
   font-size: 0.66rem;
   line-height: 1.35;
+}
+
+/* One line per source on a row that draws more than one, indented under the claim they share. */
+.gw-layer-source {
+  margin-left: 0.55rem;
+  font-size: 0.62rem;
 }
 
 .gw-layer-hint {
