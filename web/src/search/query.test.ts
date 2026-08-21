@@ -76,3 +76,49 @@ describe("toResults", () => {
     expect(toResults({ data: [] })).toEqual([]);
   });
 });
+
+/**
+ * UDM-SPEC §4.3 and §7.3 chunk 1.5. The key is `(authority, native_id)` and the API-10 is its
+ * United States instantiation, so a row is a well when it carries *an* identifier — not when it
+ * carries that one. The guard used to require `api10`, which would drop a non-US well silently:
+ * no row, no error, and a search that says "no well matches" about a well that exists.
+ */
+describe("toResults reads the general key, not only its US instantiation", () => {
+  const envelope = (row: Record<string, unknown>) => ({ data: [row], meta: {}, links: {} });
+
+  it("still keeps a row that carries only an api10", () => {
+    const results = toResults(envelope({ api10: "3305310451", well_name: "MANDAREE 30-31H" }));
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.api10).toBe("3305310451");
+  });
+
+  it("keeps a well identified by its authority and native id, with no api10 to give", () => {
+    const results = toResults(
+      envelope({ authority: "ca-ab", native_id: "0209070806W400", well_name: "SYNTHETIC 1" }),
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.name).toBe("SYNTHETIC 1");
+    // §5.3 ground two: a field named api10 never carries a non-API-10. Absent says absent.
+    expect(results[0]?.api10).toBeNull();
+  });
+
+  it("labels such a well with the identifier it does answer to, never `undefined` (N-6)", () => {
+    const results = toResults(envelope({ authority: "ca-ab", native_id: "0209070806W400" }));
+
+    expect(results[0]?.name).toBe("0209070806W400");
+  });
+
+  it("reads a well_id or a uwi the same way, so a later wave adds no branch here", () => {
+    expect(toResults(envelope({ well_id: "wl_0af31c" }))[0]?.name).toBe("wl_0af31c");
+    expect(toResults(envelope({ uwi: "100062503507W400" }))[0]?.name).toBe("100062503507W400");
+  });
+
+  it("drops a row that identifies no well at all rather than rendering a blank option", () => {
+    expect(toResults(envelope({ well_name: "NAMED BUT UNIDENTIFIED" }))).toEqual([]);
+    expect(toResults(envelope({ authority: "ca-ab" }))).toEqual([]);
+    expect(toResults(envelope({ api10: 3305310451 }))).toEqual([]);
+    expect(toResults(envelope({ api10: "" }))).toEqual([]);
+  });
+});

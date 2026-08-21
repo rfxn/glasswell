@@ -179,6 +179,75 @@ def test_the_differ_reads_its_verdicts_off_one_rule_table() -> None:
     assert all(isinstance(Change(kind, "x", "added").verdict, str) for kind in kinds)
 
 
+def test_relaxing_a_parameter_pattern_is_breaking() -> None:
+    """UDM-SPEC §5.3 ground one, closed as a class (N-5).
+
+    Widening `API10_PATTERN` is formally a relaxation, so nothing else in this table objects to
+    it. Before the `pattern` kind existed the differ produced *no fact at all* for it and
+    returned `additive` having examined nothing: the identifier grammar of the product's primary
+    key could move with the gate reporting no semantic change.
+    """
+    before = copy.deepcopy(BASE)
+    before["paths"]["/v1/things"]["get"]["parameters"][0]["schema"] = {
+        "type": "string",
+        "pattern": r"^\d{10}$",
+    }
+    after = copy.deepcopy(before)
+    after["paths"]["/v1/things"]["get"]["parameters"][0]["schema"]["pattern"] = r"^[\dA-Z/]{10,16}$"
+
+    assert [change.fact for change in breaking(before, after)] == [
+        r"GET /v1/things ?limit =~ ^\d{10}$"
+    ]
+
+
+def test_dropping_a_pattern_altogether_is_breaking_and_declaring_one_reports_additive() -> None:
+    """The rule table's two directions, stated so the asymmetry is deliberate rather than found.
+
+    `("additive", "breaking")` is what §7.3 chunk 1.1 specifies, and it matches `type` and
+    `enum-value`: a constraint that disappears is a promise withdrawn.
+    """
+    unconstrained = copy.deepcopy(BASE)
+    unconstrained["components"]["schemas"]["Thing"]["properties"]["id"] = {"type": "string"}
+    constrained = copy.deepcopy(unconstrained)
+    constrained["components"]["schemas"]["Thing"]["properties"]["id"]["pattern"] = "^t_[a-z]+$"
+
+    assert [change.fact for change in breaking(constrained, unconstrained)] == [
+        "Thing.id =~ ^t_[a-z]+$"
+    ]
+    assert breaking(unconstrained, constrained) == []
+    assert [change.kind for change in classify(unconstrained, constrained)] == ["pattern"]
+
+
+def test_a_pattern_inside_an_anyof_branch_is_still_a_fact() -> None:
+    """`from` and `to` on the production route are `str | None`, and the pattern is on the branch.
+
+    A kind that only reads the top level would leave every optional constrained parameter in the
+    served document unwatched, which is the same blind spot one level down.
+    """
+    before = copy.deepcopy(BASE)
+    before["paths"]["/v1/things"]["get"]["parameters"][0]["schema"] = {
+        "anyOf": [{"type": "string", "pattern": r"^\d{4}-\d{2}$"}, {"type": "null"}]
+    }
+    after = copy.deepcopy(before)
+    after["paths"]["/v1/things"]["get"]["parameters"][0]["schema"]["anyOf"][0]["pattern"] = "^.*$"
+
+    assert [change.fact for change in breaking(before, after)] == [
+        r"GET /v1/things ?limit =~ ^\d{4}-\d{2}$"
+    ]
+
+
+def test_the_pattern_kind_reads_the_document_this_product_actually_serves() -> None:
+    """A kind proven only against BASE is a kind that may see nothing in the real document."""
+    committed = json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
+
+    patterns = {fact for fact, entry in facts(committed).items() if entry.kind == "pattern"}
+
+    assert r"GET /v1/wells/{api10} ?api10 =~ ^\d{10}$" in patterns
+    # The two the anyOf arm above exists for, and the one on a request body property.
+    assert r"GET /v1/wells/{api10}/production ?from =~ ^\d{4}-\d{2}$" in patterns
+    assert "IssueRequest.label =~ ^[a-z0-9]+(-[a-z0-9]+)*$" in patterns
+
+
 def test_widening_a_response_field_to_nullable_is_breaking() -> None:
     """DR-33 gated `storage_uri` behind owner scope, which is exactly this shape of change."""
     before = copy.deepcopy(BASE)
