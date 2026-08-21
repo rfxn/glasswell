@@ -45,6 +45,14 @@ export function all(...conditions: (Expr | boolean)[]): Expr {
   return ["all", ...conditions] as Expr;
 }
 
+export function any(...conditions: (Expr | boolean)[]): Expr {
+  return ["any", ...conditions] as Expr;
+}
+
+export function not(condition: Expr): Expr {
+  return ["!", condition] as Expr;
+}
+
 export function toNumber(value: Expr): Expr {
   return ["to-number", value] as Expr;
 }

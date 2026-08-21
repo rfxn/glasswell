@@ -2,7 +2,19 @@ import type { LayerSpecification, SourceSpecification } from "maplibre-gl";
 
 import { tileUrl } from "../api/client.ts";
 import type { BasemapVariant } from "./basemap.ts";
-import { coalesce, featureState, get, inSet, interpolate, step, toNumber, when, zoom } from "./expr.ts";
+import {
+  any,
+  coalesce,
+  featureState,
+  get,
+  inSet,
+  interpolate,
+  not,
+  step,
+  toNumber,
+  when,
+  zoom,
+} from "./expr.ts";
 import type { Expr } from "./expr.ts";
 import {
   SELECTION_COLOUR,
@@ -11,6 +23,7 @@ import {
   UNMAPPED_STATUS,
   statusColourExpression,
   statusFillExpression,
+  statusIds,
   statusProperty,
 } from "./status.ts";
 import { rgba, variantStyle } from "./variant-style.ts";
@@ -109,9 +122,12 @@ export function visibleStatusesAt(atZoom: number): string[] {
  * class on the canvas and unfilterable ink is ink nobody can account for.
  */
 export function statusFilter(atZoom: number, on: ReadonlySet<string>): Expr {
-  const allowed = visibleStatusesAt(atZoom).filter((id) => on.has(id));
-  if (on.has(UNMAPPED_STATUS.id)) allowed.push(UNMAPPED_STATUS.id);
-  return inSet(statusProperty(), allowed);
+  const named = inSet(statusProperty(), visibleStatusesAt(atZoom).filter((id) => on.has(id)));
+  if (!on.has(UNMAPPED_STATUS.id)) return named;
+  // The absence class is anything the vocabulary cannot name — the rule `statusClass()` applies
+  // when counting. Matching the literal id instead let a well with an unknown *present* status
+  // fall out of the map, the count and the legend at once, with nothing saying so.
+  return any(named, not(inSet(statusProperty(), statusIds())));
 }
 
 function selectable<T>(selected: T, base: T | Expr): Expr {

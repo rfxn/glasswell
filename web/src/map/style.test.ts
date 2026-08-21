@@ -1,3 +1,4 @@
+import { featureFilter } from "@maplibre/maplibre-gl-style-spec";
 import { describe, expect, it } from "vitest";
 import type { LayerSpecification } from "maplibre-gl";
 
@@ -25,9 +26,12 @@ import {
 
 const ids = (): string[] => dataLayers().map((layer) => layer.id);
 
-/** The classes an `["in", <status>, ["literal", [...]]]` filter lets through. */
-const rendered = (filter: unknown): string[] =>
-  ((filter as [string, unknown, [string, string[]]])[2] ?? ["literal", []])[1];
+/** Whether a well carrying this `status_canonical` is drawn — evaluated, not pattern-matched. */
+const draws = (filter: unknown, status: string | null, atZoom = 12): boolean =>
+  featureFilter(filter as never).filter({ zoom: atZoom } as never, {
+    type: 1,
+    properties: { status_canonical: status },
+  } as never, undefined as never);
 
 const paintOf = (layer?: LayerSpecification): Record<string, unknown> =>
   ((layer && "paint" in layer && layer.paint) || {}) as Record<string, unknown>;
@@ -76,14 +80,26 @@ describe("the data layers", () => {
 
   it("keeps an unmapped status in scale at every zoom, so a data defect cannot hide", () => {
     const on = new Set([...visibleStatusesAt(4), UNMAPPED_STATUS.id]);
-    expect(rendered(statusFilter(4, on))).toContain(UNMAPPED_STATUS.id);
+    expect(draws(statusFilter(4, on), null, 4)).toBe(true);
+    expect(draws(statusFilter(4, on), "plugged", 4)).toBe(false);
   });
 
   it("withdraws the unmapped class when the reader filters it off, like any other class", () => {
     // On the Permian slice it is the largest class on the canvas; a row nobody can switch off
     // is the one class whose ink the reader cannot answer for.
-    expect(rendered(statusFilter(12, new Set(statusIds())))).not.toContain(UNMAPPED_STATUS.id);
-    expect(rendered(statusFilter(12, new Set(filterableStatusIds())))).toContain(UNMAPPED_STATUS.id);
+    expect(draws(statusFilter(12, new Set(statusIds())), null)).toBe(false);
+    expect(draws(statusFilter(12, new Set(filterableStatusIds())), null)).toBe(true);
+  });
+
+  it("draws a status it cannot name as the absence class, rather than not at all", () => {
+    // The count path routes any unrecognised code to `unmapped` (statusClass), so a filter that
+    // matched only the literal id disagreed with it: a well whose status was present but not in
+    // `cr_nd_status_vocab_1` was dropped from the canvas, the count and the key at once.
+    const all = statusFilter(12, new Set(filterableStatusIds()));
+    expect(draws(all, "wildcat_unknown")).toBe(true);
+    expect(draws(all, "")).toBe(true);
+    expect(draws(all, "ACTIVE")).toBe(true);
+    expect(draws(statusFilter(12, new Set(statusIds())), "wildcat_unknown")).toBe(false);
   });
 
   it("gates every layer the status vocabulary paints, and only where the filter slot is free", () => {

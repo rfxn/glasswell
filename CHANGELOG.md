@@ -9,6 +9,12 @@ its own version in its header, and its history is summarised in §3.1.
 
 ### 2026-08-20 — increment-3 closeout
 
+- [Fix] A well whose status is present but not in `cr_nd_status_vocab_1` is drawn as the
+      absence class instead of not being drawn at all. The filter matched the literal
+      `unmapped` id while the count routed any unrecognised code to it through
+      `statusClass()`, so an unknown code fell out of the canvas, the legend count and the key
+      at once — the failure mode the class exists to prevent
+
 - [Fix] The satellite basemap's declared graticule fallback executes. `BasemapDef.fallback`
       had no consumer at all — `resolveStyle`'s non-vector branch set no failure path — so a
       reader whose imagery could not be fetched got an empty canvas, no banner and no
