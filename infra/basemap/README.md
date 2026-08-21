@@ -59,8 +59,8 @@ reverse proxy is required for the basemap to work.
 
 The client refuses the archive unless a ranged GET returns exactly `206`
 (`web/src/map/map.ts`, `archiveServesRanges`). A server that ignores `Range` and returns a
-whole `200` would make every tile read pull the entire archive, so that case falls back to
-OpenFreeMap rather than quietly costing 48 MB per read.
+whole `200` would make every tile read pull the entire archive, so that case degrades to the
+graticule rather than quietly costing 48 MB per read.
 
 The app applies the cache classes itself: `public, max-age=86400` on everything under
 `/basemap/`, except `manifest.json`, which stays `no-cache` because it is how the client
@@ -97,8 +97,27 @@ when the basemap enters the source manifest.
 
 1. `/basemap/manifest.json` is read; a missing manifest is a normal pre-deploy state.
 2. A ranged GET of the archive must return `206`.
-3. Otherwise the dark and light options fall back to OpenFreeMap (`positron` / `dark`,
-   keyless, attribution required, no SLA) and a banner names what failed and what replaced
-   it.
-4. If that is unreachable too, the map draws the one-degree graticule, which is also the
-   `?base=none` option a reader can choose deliberately.
+3. Otherwise the map draws the one-degree graticule — the same view `?base=none` offers
+   deliberately — and a banner names what failed and what replaced it.
+
+**There is no hosted runtime fallback, and this is deliberate.** The client used to reach for
+`https://tiles.openfreemap.org` at step 3, and it had never once worked on any stack we run:
+`connect-src 'self'` refuses it, which is the correct zero-external posture and is not being
+widened for a fallback. A fallback the security policy forbids is not a recovery — it is a
+second failure mode wearing the label of one, and it made the failure banner promise the reader
+a substitute they could not receive. The degradation is now local, which means it works.
+
+### OpenFreeMap as an operator step
+
+If an operator decides to run against a hosted basemap — a demo before the archive is built, or
+a stack where the archive genuinely cannot be served — it is a deliberate, documented change,
+not something the browser does on its own:
+
+1. Add `https://tiles.openfreemap.org` to `connect-src` in `glasswell.api.security`, **and** to
+   the Caddy restatement of the same header, which must not drift from it.
+2. Point the vector style at `https://tiles.openfreemap.org/styles/{dark,positron}` (keyless,
+   attribution required, no SLA).
+3. Understand what has been given up: the map now depends on someone else's uptime, and the
+   app's origin is no longer the only origin a reader's browser talks to.
+
+Steps 1 and 2 together are the whole change. Neither belongs in the shipped default.

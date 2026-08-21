@@ -166,17 +166,19 @@ export async function renderWellCard(
   }
   body.appendChild(facts);
 
-  for (const panel of warningPanels(well.meta.warnings)) body.appendChild(panel);
+  // Everything except the codes a dedicated panel already renders, or the card shows the raw
+  // internal warning line immediately above the polished version of the same sentence.
+  const panelled = new Set([PENDING_ALLOCATION]);
+  const generic = well.meta.warnings.filter((warning) => !panelled.has(warning.code));
+  for (const panel of warningPanels(generic)) body.appendChild(panel);
 
   // A lease-reporting jurisdiction has no observed well-level series, so the card says that
   // instead of drawing an empty chart: "no production has been reported" would be false about
   // a Texas well whose lease reports every month (DIR-3, cr_tx_allocation_scope_1).
-  const pending = well.meta.warnings.find(
-    (warning) => warning.code === "production_pending_allocation",
-  );
+  const pending = well.meta.warnings.find((warning) => warning.code === PENDING_ALLOCATION);
   if (pending) {
     container.replaceChildren(card);
-    card.appendChild(pendingProductionPanel(pending));
+    card.appendChild(pendingProductionPanel(pending, well.links?.["reporting_rule"] ?? undefined));
     highlight(card, termIndex());
     focusPanel(container);
     return;
@@ -248,11 +250,14 @@ function placeholder(text: string): HTMLElement {
 
 type ApiWarning = { code: string; detail?: string; pointer?: string };
 
+/** The one warning code the card renders as its own panel rather than as a warning line. */
+export const PENDING_ALLOCATION = "production_pending_allocation";
+
 /**
  * The production slot for a well whose regulator reports at the lease. It is a state, not an
  * absence: the section is titled for what is pending and links to the rule that says so.
  */
-export function pendingProductionPanel(warning: ApiWarning): HTMLElement {
+export function pendingProductionPanel(warning: ApiWarning, ruleLink?: string): HTMLElement {
   const frame = document.createElement("section");
   frame.className = "gw-card-chart gw-pending";
   frame.dataset["state"] = "production_pending_allocation";
@@ -268,8 +273,10 @@ export function pendingProductionPanel(warning: ApiWarning): HTMLElement {
       " been observed.";
   const link = document.createElement("a");
   link.className = "gw-pending-rule";
-  link.href = "/v1/conformance";
-  link.textContent = "See /conformance for the rule that decided this.";
+  // The rule itself, not the collection: the well header already carries the link, and a
+  // reader sent to a list of thirty-three rules has to find this one again.
+  link.href = ruleLink ?? "/v1/conformance";
+  link.textContent = "See the conformance rule that decided this.";
   body.append(detail, link);
   frame.append(title, body);
   return frame;

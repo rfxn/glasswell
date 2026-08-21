@@ -14,7 +14,6 @@ import {
   chooseBasemap,
   firstLabelLayerId,
   graticuleStyle,
-  openFreeMapStyle,
   rasterStyle,
   rememberBasemap,
   vectorStyle,
@@ -41,6 +40,9 @@ import { applyVariantStyling } from "./variant-style.ts";
 
 export { absoluteTileUrl } from "./style.ts";
 export { graticuleStyle as baseStyle } from "./basemap.ts";
+// Exported for the archive-failure test: the degradation path is the one part of the map
+// module that only runs when something is broken, so it is the part most likely to rot.
+export { resolveStyle as resolveBasemapStyle };
 
 export interface MapCallbacks {
   onViewport(viewport: Viewport): void;
@@ -131,10 +133,8 @@ async function resolveStyle(id: string): Promise<ResolvedStyle> {
     return result;
   }
 
-  const hosted = base.fallback === "openfreemap" ? openFreeMapStyle(id) : null;
-  if (hosted) {
-    return { style: hosted, failure: { source: archive, fallback: "OpenFreeMap" } };
-  }
+  // Local-only degradation: no request leaves this origin, so the fallback works under the
+  // same `connect-src 'self'` that refuses every hosted one.
   return { style: graticuleStyle(), failure: { source: archive, fallback: "the graticule" } };
 }
 

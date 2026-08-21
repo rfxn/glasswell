@@ -39,6 +39,7 @@ describe("a well whose regulator reports at the lease", () => {
   it("says production is pending allocation instead of drawing an empty chart", async () => {
     const pending = {
       ...wellEnvelope,
+      links: { ...wellEnvelope.links, reporting_rule: "/v1/conformance/cr_tx_allocation_scope_1" },
       meta: {
         ...wellEnvelope.meta,
         warnings: [
@@ -52,19 +53,10 @@ describe("a well whose regulator reports at the lease", () => {
         ],
       },
     };
-    const production = vi.fn();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        stubFetch({
-          [`/v1/wells/${API10}`]: pending,
-          [`/v1/wells/${API10}/production`]: () => {
-            production();
-            return productionEnvelope;
-          },
-        }),
-      ),
-    );
+    // Only the well route is stubbed: a production request would 404 through stubFetch and
+    // surface as an error panel, which is a failure the spy could not have shown — it matched
+    // the well route first and was never reached.
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: pending })));
 
     await renderWellCard(host, API10, callbacks);
 
@@ -73,10 +65,56 @@ describe("a well whose regulator reports at the lease", () => {
       "Production pending allocation",
     );
     expect(panel?.textContent).toContain("cr_tx_allocation_scope_1");
-    expect(panel?.querySelector(".gw-pending-rule")?.getAttribute("href")).toBe("/v1/conformance");
+    expect(panel?.querySelector(".gw-pending-rule")?.getAttribute("href")).toBe(
+      "/v1/conformance/cr_tx_allocation_scope_1",
+    );
     expect(host.textContent).not.toContain("No production has been reported");
     expect(renderChart).not.toHaveBeenCalled();
-    expect(production).not.toHaveBeenCalled();
+  });
+
+  it("says it once: no raw warning line above the panel that renders the same sentence", async () => {
+    const pending = {
+      ...wellEnvelope,
+      links: { ...wellEnvelope.links, reporting_rule: "/v1/conformance/cr_tx_allocation_scope_1" },
+      meta: {
+        ...wellEnvelope.meta,
+        warnings: [
+          {
+            code: "production_pending_allocation",
+            detail: "reports production at the lease (cr_tx_allocation_scope_1)",
+            pointer: "/production",
+          },
+        ],
+      },
+    };
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: pending })));
+
+    await renderWellCard(host, API10, callbacks);
+
+    for (const warning of host.querySelectorAll(".gw-warning")) {
+      expect(warning.textContent).not.toContain("production_pending_allocation");
+    }
+    expect(host.textContent?.match(/pending allocation/gi)?.length).toBe(1);
+  });
+
+  it("still renders warnings that have no panel of their own", async () => {
+    const both = {
+      ...wellEnvelope,
+      links: { ...wellEnvelope.links, reporting_rule: "/v1/conformance/cr_tx_allocation_scope_1" },
+      meta: {
+        ...wellEnvelope.meta,
+        warnings: [
+          { code: "production_pending_allocation", detail: "pending", pointer: "/production" },
+          { code: "geometry_not_promoted", detail: "one segment held back", pointer: "/geometry" },
+        ],
+      },
+    };
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: both })));
+
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.textContent).toContain("geometry_not_promoted");
+    expect(host.querySelector("[data-state='production_pending_allocation']")).not.toBeNull();
   });
 });
 

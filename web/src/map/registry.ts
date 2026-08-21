@@ -84,8 +84,12 @@ export const LAYERS: readonly LayerDef[] = [
     id: "tx-laterals",
     group: "wells",
     label: "Laterals (TX)",
-    subtitle: "TX RRC well arcs · bore geometry, not a directional survey — none is published free",
-    swatch: { kind: "line", colour: "#3FA55E" },
+    subtitle: "TX RRC well arcs · 69,897 lines · bore geometry, not a directional survey",
+    // Not ND's green. Both basins share one status vocabulary and one set of status colours,
+    // but a swatch is a prediction about what the canvas will look like, and Texas draws
+    // mostly plugged grey: 29% of its wells are plugged and 18% carry no status at all, so a
+    // green dot promises a green map and delivers a grey one.
+    swatch: { kind: "line", colour: "#7C8B96" },
     defaultOn: true,
     minZoom: 0,
     opacity: 1,
@@ -111,8 +115,8 @@ export const LAYERS: readonly LayerDef[] = [
     id: "tx-wells",
     group: "wells",
     label: "Wells (TX)",
-    subtitle: "TX RRC GIS surface locations, Permian districts · culled by status below zoom 9",
-    swatch: { kind: "dot", colour: "#3FA55E" },
+    subtitle: "TX RRC GIS surface locations, 55 Permian-district counties · 355,463 points",
+    swatch: { kind: "dot", colour: "#7C8B96" },
     defaultOn: true,
     minZoom: 4,
     zoomHint: "Visible at zoom 4 and above",

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { tileUrl } from "../api/client.ts";
 import { graticuleStyle, vectorStyle, basemapDef } from "./basemap.ts";
+import { resolveBasemapStyle } from "./map.ts";
 import { absoluteTileUrl, dataLayers, sourceSpecs } from "./style.ts";
 
 describe("every style this app can load", () => {
@@ -34,6 +35,55 @@ describe("every style this app can load", () => {
     const style = graticuleStyle();
     expect(style.layers.map((layer) => layer.id)).toEqual(["canvas", "graticule"]);
     expect(Object.keys(style.sources)).toEqual(["graticule"]);
+  });
+});
+
+describe("when the basemap archive cannot serve", () => {
+  const withFetch = async (handler: (url: string) => Response) => {
+    const seen: string[] = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      seen.push(url);
+      return handler(url);
+    }) as typeof fetch;
+    try {
+      return { style: await resolveBasemapStyle("dark"), seen };
+    } finally {
+      globalThis.fetch = original;
+    }
+  };
+
+  it("falls back to the graticule, locally, and asks no other origin for anything", async () => {
+    // The coded fallback used to be https://tiles.openfreemap.org and it had never once
+    // worked: `connect-src 'self'` refuses it, which is the correct posture. A fallback the
+    // security policy forbids is a second failure, not a recovery.
+    const { style, seen } = await withFetch(() => new Response(null, { status: 404 }));
+
+    expect(typeof style.style).not.toBe("string");
+    expect((style.style as { layers: { id: string }[] }).layers.map((l) => l.id)).toEqual([
+      "canvas",
+      "graticule",
+    ]);
+    expect(style.failure?.fallback).toBe("the graticule");
+    expect(seen.filter((url) => /^https?:\/\//i.test(url))).toEqual([]);
+  });
+
+  it("says so, and names the source that failed rather than the one that did not", async () => {
+    const { style } = await withFetch(() => new Response(null, { status: 404 }));
+
+    expect(style.failure?.source).toContain("pmtiles");
+  });
+
+  it("takes the archive when it answers a ranged request", async () => {
+    const { style, seen } = await withFetch((url) =>
+      url.includes("manifest")
+        ? new Response("{}", { status: 200, headers: { "content-type": "application/json" } })
+        : new Response(null, { status: 206 }),
+    );
+
+    expect(style.failure).toBeUndefined();
+    expect(seen.filter((url) => /^https?:\/\//i.test(url))).toEqual([]);
   });
 });
 

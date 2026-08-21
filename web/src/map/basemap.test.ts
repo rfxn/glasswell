@@ -91,9 +91,22 @@ describe("the basemap catalogue", () => {
     });
   });
 
-  it("names a coded fallback for every option that could fail to load", () => {
-    expect(basemapDef("dark")?.fallback).toBe("openfreemap");
+  it("degrades locally: every option that can fail falls back to the graticule", () => {
+    // Not a hosted style. `connect-src 'self'` refuses every external origin — correctly, and
+    // it is not being widened — so a hosted fallback was a second failure mode wearing the
+    // label of a recovery. It had never once worked.
+    for (const id of ["dark", "light", "satellite"]) {
+      expect(basemapDef(id)?.fallback).toBe("graticule");
+    }
     expect(basemapDef("none")?.fallback).toBe(null);
+  });
+
+  it("names no external tile origin anywhere in the basemap module", () => {
+    const external = Object.values(BASEMAPS)
+      .flatMap((base) => ("tiles" in base && base.tiles) || [])
+      .filter((url) => !url.includes("basemap.nationalmap.gov"));
+
+    expect(external).toEqual([]);
   });
 
   it("draws the graticule when no basemap is chosen, so 'none' is a view not a blank", () => {

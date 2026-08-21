@@ -159,16 +159,27 @@ export const STATUS_CLASSES: readonly StatusClass[] = [
 ];
 
 /**
- * Deep amber is BRAND.md's quarantine colour, and an unmapped status *is* a quarantine
- * condition — `cr_nd_status_vocab_1` sets `unmapped_action: quarantine`. Visible at every
- * zoom on purpose: a data defect must never be the thing that hides.
+ * A low-salience neutral, and deliberately not BRAND.md's deep amber `#B57A18`.
+ *
+ * That amber is the quarantine colour, and it was the right read while ND was the only slice:
+ * `cr_nd_status_vocab_1` quarantines an unmapped status, so an amber dot meant "a row failed a
+ * rule". Texas broke both halves of that. Its 65,685 statusless wells are not quarantined —
+ * the RRC reported no well type and filed no plugging date, which is an absence, not a defect —
+ * and at z12 amber painted 19.7% of the canvas against active's 8.9%, so absence was the
+ * loudest thing on the map. Worse, `#B57A18` is hue 37.5 and ND's `confidential` `#E4A33C` is
+ * hue 36.8: the colour meaning "we do not know" was the colour meaning "the operator elected
+ * to withhold", one lightness step apart. A reader who learned the palette on ND would misread
+ * Texas.
+ *
+ * Still drawn at every zoom: absence must not be the thing that hides. It just should not
+ * shout.
  */
 export const UNMAPPED_STATUS: StatusClass = {
   id: "unmapped",
   label: "Unmapped status",
-  colour: "#B57A18",
+  colour: "#46525C",
   glyph: "hollow",
-  note: `Not in ${STATUS_VOCAB_RULE}: the tile carries a status this build cannot name.`,
+  note: `No status in ${STATUS_VOCAB_RULES.join(" or ")}: the source reported none.`,
   minZoom: 0,
   rule: STATUS_VOCAB_RULE,
 };

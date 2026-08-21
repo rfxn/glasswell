@@ -51,6 +51,30 @@ describe("the status catalogue", () => {
     expect(statusClass("service").rule).toBe("cr_tx_status_vocab_1");
   });
 
+  it("does not give absence the quarantine colour, or confidential's hue", () => {
+    // TX has 65,685 wells the regulator gave no status: an absence, not a rule failure. In the
+    // old amber it painted 19.7% of the canvas at z12 against active's 8.9%, in the same hue
+    // family as ND's `confidential` — the colour for "withheld on purpose".
+    expect(UNMAPPED_STATUS.colour).not.toBe("#B57A18");
+    expect(statusClass("confidential").colour).toBe("#E4A33C");
+    const hue = (hex: string): number => {
+      const [r = 0, g = 0, b = 0] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      if (max === min) return 0;
+      const d = max - min;
+      const h =
+        max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      return (h * 60) % 360;
+    };
+    expect(Math.abs(hue(UNMAPPED_STATUS.colour) - hue(statusClass("confidential").colour))).
+      toBeGreaterThan(20);
+  });
+
+  it("still draws absence at every zoom, because a gap must not be what hides", () => {
+    expect(UNMAPPED_STATUS.minZoom).toBe(0);
+  });
+
   it("reserves the selection colour: no status may paint with it", () => {
     for (const status of [...STATUS_CLASSES, UNMAPPED_STATUS]) {
       expect(status.colour.toLowerCase()).not.toBe(SELECTION_COLOUR.toLowerCase());

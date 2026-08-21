@@ -7,8 +7,17 @@ import { BASE_STORAGE_KEY, readGuarded, writeGuarded } from "./persist.ts";
 /**
  * Basemap options, all keyless and all attributable. The vector flavours read a PMTiles
  * archive from this app's own origin over HTTP range requests, so the map has no runtime
- * dependency on anyone else's uptime; OpenFreeMap is the coded fallback when the archive is
- * absent, and the graticule is the fallback after that.
+ * dependency on anyone else's uptime, and when that archive is unavailable the map degrades to
+ * the graticule — locally, with no request leaving the origin.
+ *
+ * There is no hosted runtime fallback. The code carried one to
+ * `https://tiles.openfreemap.org` and it had never once worked: `connect-src 'self'` refuses
+ * it on every stack we run, which is the correct posture and is not being widened for a
+ * fallback. A fallback that the security policy forbids is not a fallback, it is a second
+ * failure mode wearing the label of a recovery — and it made the failure banner name a
+ * recovery the reader could not have received. OpenFreeMap remains a documented *operator*
+ * step (`web/README-basemap.md`), taken deliberately with the CSP consequences understood,
+ * not something the browser reaches for on its own.
  */
 export type BasemapKind = "vector" | "raster" | "graticule";
 
@@ -21,7 +30,8 @@ export interface BasemapDef {
   tiles?: string[];
   maxzoom?: number;
   attribution: string;
-  fallback: "openfreemap" | null;
+  /** What the map degrades to when the archive cannot serve. Local, always. */
+  fallback: "graticule" | null;
   /** Overrides applied on top of the named flavour, from BRAND.md's palette. */
   palette?: Record<string, string>;
 }
@@ -81,7 +91,7 @@ export const BASEMAPS: readonly BasemapDef[] = [
     kind: "vector",
     flavor: "dark",
     attribution: OSM_CREDIT,
-    fallback: "openfreemap",
+    fallback: "graticule",
     palette: DARK_PALETTE,
   },
   {
@@ -90,7 +100,7 @@ export const BASEMAPS: readonly BasemapDef[] = [
     kind: "vector",
     flavor: "grayscale",
     attribution: OSM_CREDIT,
-    fallback: "openfreemap",
+    fallback: "graticule",
     palette: LIGHT_PALETTE,
   },
   {
@@ -103,13 +113,13 @@ export const BASEMAPS: readonly BasemapDef[] = [
     ],
     maxzoom: 16,
     attribution: "USGS National Map — imagery, public domain",
-    fallback: null,
+    fallback: "graticule",
   },
   {
     id: "none",
     label: "None",
     kind: "graticule",
-    attribution: "Geometry: ND DMR GIS · one-degree graticule, no basemap",
+    attribution: "Geometry: regulator GIS · one-degree graticule, no basemap",
     fallback: null,
   },
 ];
@@ -137,11 +147,6 @@ export function applyBasemapVariant(id: string, container?: HTMLElement): Basema
   return variant;
 }
 
-export const OPENFREEMAP_STYLES: Readonly<Record<string, string>> = {
-  dark: "https://tiles.openfreemap.org/styles/dark",
-  light: "https://tiles.openfreemap.org/styles/positron",
-};
-
 const BY_ID = new Map(BASEMAPS.map((base) => [base.id, base]));
 
 export function basemapIds(): string[] {
@@ -164,10 +169,6 @@ export function rememberBasemap(id: string): void {
 
 export function pmtilesUrl(path: string = PMTILES_PATH): string {
   return `pmtiles://${path}`;
-}
-
-export function openFreeMapStyle(id: string): string | null {
-  return OPENFREEMAP_STYLES[id] ?? null;
 }
 
 export interface StyleOptions {
