@@ -7,6 +7,22 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-21 — the z<=7 overplot gate
+
+- [New] The four well and lateral tile functions keep one feature per half CSS pixel at
+      z<=7, ranked by `md5(api10)`. Below z8 the map draws more features than it has
+      pixels for and the surplus reads as alpha overplot: on the ND measurement half the
+      features carry 15% of the ink at z7 and 0.5% of it at z4, and the projected saving
+      is z0-z7 session bytes 5.68 MB -> ~2.0 MB. The rank is deterministic and carries no
+      tilt — `spud_year desc` and `lateral_length_ft desc` were measured and rejected
+      because they visibly shift the status colour mix, which is a biased sample of
+      something the reader reads as information (DIR-11 gate, conditions C1-C4)
+- [Change] `TileLayer` carries the gate per layer. Spacing units publish no `api10` and so
+         have no rank; a layer marked thinned without one is refused at SQL generation
+         rather than installed. Above z7 the cell is a micrometre, which no two distinct
+         positions share, so the clause is present at every zoom and thins at none but the
+         approved band
+
 ### 2026-08-21 — Texas on the map: RRC GIS wells and wellbore identity
 
 - [New] `glasswell.ingest.tx_gis` loads the RRC county well archives — surface points,

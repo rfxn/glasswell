@@ -20,7 +20,7 @@ from glasswell.lineage.explain import resolve_chain
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts import ND_LAYERS, TILE_LAYERS, refresh_all
 from glasswell.marts.nd_wells import main
-from glasswell.marts.tiles import simplify_tolerance
+from glasswell.marts.tiles import simplify_tolerance, thin_key_sql
 from glasswell.seed import seed_all
 from glasswell.units import METRES_PER_FOOT
 
@@ -443,3 +443,41 @@ def test_the_martin_config_declares_the_same_layers_the_proxy_admits():
     # Publishing the same ids twice — once as functions, once as the tables they read — is a
     # martin id collision, so the config carries exactly one mechanism.
     assert "tables" not in postgres
+
+
+def _cells_at(connection: psycopg.Connection, relation: str, zoom: int) -> int:
+    """How many distinct grid cells the whole mart occupies at `zoom`.
+
+    The cell expression comes from the module, so what is measured here is the rule the
+    installed function applies rather than a restatement of it.
+    """
+    return scalar(
+        connection,
+        f"select count(distinct {thin_key_sql()})"
+        f"  from {relation} t, (values (%(z)s::int)) as e(z)",
+        {"z": zoom},
+    )
+
+
+@pytest.mark.parametrize("zoom", [8, 11, 14])
+@pytest.mark.parametrize("relation", PROJECTED_MARTS)
+def test_the_overplot_gate_takes_nothing_off_the_wire_above_the_band(
+    canonical_nd, refreshed, relation, zoom
+):
+    """Above z7 the cell is a micrometre, so every feature is its own cell and `distinct on`
+    collapses nothing. A feature lost here would be one the reader zoomed in to see."""
+    total = scalar(canonical_nd, f"select count(*) from marts.{relation}")
+
+    assert total > 0, "the fixture carries nothing to measure the gate against"
+    assert _cells_at(canonical_nd, f"marts.{relation}", zoom) == total
+
+
+@pytest.mark.parametrize("relation", PROJECTED_MARTS)
+def test_the_overplot_gate_collapses_features_inside_the_band_it_is_gated_to(
+    canonical_nd, refreshed, relation
+):
+    """The other half of the same claim: a gate that removes nothing anywhere is not a gate,
+    and the bytes the approval rests on are features that do not ride the tile."""
+    total = scalar(canonical_nd, f"select count(*) from marts.{relation}")
+
+    assert _cells_at(canonical_nd, f"marts.{relation}", 4) < total

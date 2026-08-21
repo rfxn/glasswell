@@ -31,6 +31,17 @@ TILE_MAX_ZOOM = 14
 WORLD_SPAN_3857 = 40075016.685578488
 SIMPLIFY_MVT_UNITS = 4
 
+# At and below z7 the map draws more features than it has pixels for, and the surplus reads as
+# alpha overplot rather than as information: half the features carry 15% of the ink at z7 and
+# 0.5% of it at z4 (gate-inc3-visual.md §2). One feature per half CSS pixel, ranked by
+# md5(api10) because it is deterministic across refreshes and carries no tilt — ranking by
+# spud year or lateral length visibly shifts the status colour mix, which is a biased sample of
+# something the reader is reading as information. The constants and the rank are the approval:
+# changing either re-opens the gate.
+THIN_MAX_ZOOM = 7
+THIN_PIXELS = 0.5
+TILE_CSS_PIXELS = 256
+
 
 @dataclass(frozen=True, slots=True)
 class TileLayer:
@@ -42,6 +53,10 @@ class TileLayer:
     # tile 12.7% and ran 30% faster, while on the spacing-unit polygons the topology-safe
     # variant cost 171% more time for 3% fewer bytes, and points have nothing to thin.
     simplify: bool = False
+    # Per layer, because the rank is md5(api10) and a layer without that column has no rank —
+    # and because the gate approved the rule for the well and lateral layers, not for anything
+    # that later joins the roster.
+    thin: bool = False
 
     @property
     def columns(self) -> tuple[str, ...]:
@@ -66,6 +81,7 @@ ND_LAYERS: tuple[TileLayer, ...] = (
             ("derivation_id", "text"),
         ),
         simplify=True,
+        thin=True,
     ),
     TileLayer(
         name="nd_wells",
@@ -78,6 +94,7 @@ ND_LAYERS: tuple[TileLayer, ...] = (
             ("spud_year", "int4"),
             ("derivation_id", "text"),
         ),
+        thin=True,
     ),
     TileLayer(
         name="nd_spacing_units",
@@ -110,6 +127,7 @@ TX_LAYERS: tuple[TileLayer, ...] = (
             ("derivation_id", "text"),
         ),
         simplify=True,
+        thin=True,
     ),
     TileLayer(
         name="tx_wells",
@@ -123,6 +141,7 @@ TX_LAYERS: tuple[TileLayer, ...] = (
             ("county_code", "text"),
             ("derivation_id", "text"),
         ),
+        thin=True,
     ),
 )
 
@@ -142,15 +161,24 @@ stable
 parallel safe
 as $tile$
     with feature as materialized (
-        select ST_AsMVTGeom({geom}, ST_TileEnvelope(z, x, y), {extent}, {buffer}, true) as geom,
+        select {distinct}ST_AsMVTGeom({geom}, ST_TileEnvelope(z, x, y), {extent}, {buffer}, true)
+                   as geom,
                {columns}
           from {source} t
-         where t.geom && ST_Transform(ST_TileEnvelope(z, x, y), 4326))
+         where t.geom && ST_Transform(ST_TileEnvelope(z, x, y), 4326){order})
     select ST_AsMVT(feature, '{name}', {extent}, 'geom')
       from feature
      where feature.geom is not null
 $tile$
 """
+
+# Above THIN_MAX_ZOOM the cell is a micrometre, which no two distinct positions share, so the
+# clause is present at every zoom and thins at none of them but the approved band.
+_THIN_CELL = (
+    "case when z <= {max_zoom} then {span} / power(2, z) / {css} * {pixels}"
+    " else 0.000001 end"
+)
+_THIN_KEY = "ST_SnapToGrid(ST_Centroid({projected}), {cell}, {cell})"
 
 _PROJECTED = "ST_Transform(t.geom, {mercator})"
 # preserveCollapsed is true so a lateral shorter than the tolerance thins to its endpoints
@@ -177,18 +205,45 @@ def simplify_tolerance(zoom: int) -> float:
     return WORLD_SPAN_3857 / 2**zoom / TILE_EXTENT * SIMPLIFY_MVT_UNITS
 
 
+def thin_cell(zoom: int) -> float:
+    """The 3857-unit grid cell one surviving feature is kept per, at `zoom`."""
+    if zoom > THIN_MAX_ZOOM:
+        return 0.000001
+    return WORLD_SPAN_3857 / 2**zoom / TILE_CSS_PIXELS * THIN_PIXELS
+
+
+def thin_key_sql() -> str:
+    """The grid-cell expression `distinct on` collapses a thinned layer's features into."""
+    cell = _THIN_CELL.format(
+        max_zoom=THIN_MAX_ZOOM,
+        span=WORLD_SPAN_3857,
+        css=TILE_CSS_PIXELS,
+        pixels=THIN_PIXELS,
+    )
+    projected = _PROJECTED.format(mercator=WEB_MERCATOR)
+    return _THIN_KEY.format(projected=projected, cell=f"({cell})")
+
+
+def tile_function_sql(layer: TileLayer) -> str:
+    """The `create or replace function` statement one layer installs."""
+    if layer.thin and "api10" not in layer.columns:
+        raise ValueError(f"{layer.name} is thinned but publishes no api10 to rank by")
+    key = thin_key_sql() if layer.thin else ""
+    return _TILE_FUNCTION.format(
+        name=layer.name,
+        source=layer.source,
+        geom=tile_geometry_sql(layer),
+        extent=TILE_EXTENT,
+        buffer=TILE_BUFFER,
+        columns=", ".join(f"t.{column}" for column in layer.columns),
+        distinct=f"distinct on ({key})\n               " if layer.thin else "",
+        order=f"\n         order by {key}, md5(t.api10)" if layer.thin else "",
+    )
+
+
 def install_tile_functions(connection: psycopg.Connection) -> tuple[str, ...]:
     """Create or replace every layer's MVT function. Its relation must already exist."""
     with connection.cursor() as cursor:
         for layer in TILE_LAYERS:
-            cursor.execute(
-                _TILE_FUNCTION.format(
-                    name=layer.name,
-                    source=layer.source,
-                    geom=tile_geometry_sql(layer),
-                    extent=TILE_EXTENT,
-                    buffer=TILE_BUFFER,
-                    columns=", ".join(f"t.{column}" for column in layer.columns),
-                )
-            )
+            cursor.execute(tile_function_sql(layer))
     return tuple(layer.name for layer in TILE_LAYERS)
