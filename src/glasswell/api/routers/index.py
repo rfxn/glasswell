@@ -8,7 +8,7 @@ from starlette.responses import JSONResponse
 
 from glasswell.api.deps import Connection, rows
 from glasswell.api.errors import ERROR_REGISTRY, TYPE_BASE, ProblemError, problem_responses
-from glasswell.api.examples import EXAMPLE_ERROR_CODE, dataset, request_example
+from glasswell.api.examples import EXAMPLE_ERROR_CODE, dataset, not_a_figure, request_example
 from glasswell.api.responses import EnvelopeModel, enveloped, iso
 
 router = APIRouter(tags=["service"])
@@ -39,14 +39,27 @@ select source_id, vintage_date, rows_examined, rows_appended, promotion_derivati
 class PublishedVintage(BaseModel):
     source_id: str = Field(description="Source the vintage was promoted from.")
     vintage_date: str = Field(description="Knowledge-time label of the promotion.")
-    rows_examined: int = Field(description="Rows read during the promotion.")
-    rows_appended: int = Field(description="Rows appended; restatements append, never update.")
+    rows_examined: int = Field(
+        description="Rows read during the promotion.",
+        json_schema_extra=not_a_figure(
+            "Promotion bookkeeping from lineage.vintages, not a served observation."
+        ),
+    )
+    rows_appended: int = Field(
+        description="Rows appended; restatements append, never update.",
+        json_schema_extra=not_a_figure(
+            "Promotion bookkeeping from lineage.vintages, not a served observation."
+        ),
+    )
     promotion_derivation_id: str | None = Field(description="Derivation that did the promotion.")
 
 
 class ErrorCode(BaseModel):
     code: str = Field(description="Registry code, also the last segment of the type URI.")
-    status: int = Field(description="HTTP status this code is served with.")
+    status: int = Field(
+        description="HTTP status this code is served with.",
+        json_schema_extra=not_a_figure("An HTTP status code in the error index."),
+    )
     title: str = Field(description="Short summary of the failure.")
     type: str = Field(description="Absolute, resolvable type URI.")
     emitted_by_this_slice: bool = Field(
@@ -63,7 +76,12 @@ class ServiceIndex(BaseModel):
 
 class ErrorType(BaseModel):
     code: str = Field(description="The registry code.")
-    status: int = Field(description="HTTP status this code is served with.")
+    status: int = Field(
+        description="HTTP status this code is served with.",
+        json_schema_extra=not_a_figure(
+            "An HTTP status code on the error-type description."
+        ),
+    )
     title: str = Field(description="Short summary of the failure.")
     description: str = Field(description="What causes it and what a caller should do.")
     type: str = Field(description="Absolute type URI, identical to the one in problem bodies.")

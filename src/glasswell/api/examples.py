@@ -19,6 +19,7 @@ KEY_HEADER = "X-Glasswell-Key"
 REQUEST_EXAMPLE_KEY = "x-glasswell-request-example"
 GLOSSARY_KEY = "x-glasswell-glossary"
 DATASET_KEY = "x-glasswell-dataset"
+NOT_A_FIGURE_KEY = "x-glasswell-not-a-figure"
 
 DATASET_GROUPS = ("wells", "kitchen", "vocabulary", "service")
 # The explorer's own top-level routes. A dataset taking one of these ids shadows the shell.
@@ -54,6 +55,17 @@ def request_example(
 ) -> dict[str, Any]:
     """`openapi_extra` payload: the parameters a caller (or the harness) can replay."""
     return {REQUEST_EXAMPLE_KEY: {"path": path or {}, "query": query or {}}}
+
+
+def not_a_figure(reason: str) -> dict[str, Any]:
+    """`json_schema_extra` payload: SB-08 A-2's exemption, served beside the number it exempts.
+
+    The reason is byte-equal to the `non_figure_allowlist.yml` entry that covers the property's
+    response pointer — `tests/contract/test_not_a_figure.py` fails if the two ever diverge, in
+    either direction. Nothing else may use this key: an extension without a covering entry is a
+    number claiming an exemption the allowlist never granted.
+    """
+    return {NOT_A_FIGURE_KEY: reason}
 
 
 class RowProjection(BaseModel):

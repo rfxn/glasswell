@@ -109,6 +109,11 @@ def figure_numbers(data: Any) -> list[str]:
     return _classify(data, "figure")
 
 
+def allowed_numbers(data: Any) -> list[str]:
+    """Numbers an allowlist entry exempts — the population SB-08 A-2's register must explain."""
+    return _classify(data, "allowed")
+
+
 def handles(data: Any) -> set[str]:
     found: set[str] = set()
     if isinstance(data, dict):

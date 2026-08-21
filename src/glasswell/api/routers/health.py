@@ -11,7 +11,7 @@ from starlette.responses import JSONResponse
 
 from glasswell.api.deps import Connection, rows, today
 from glasswell.api.errors import problem_responses
-from glasswell.api.examples import dataset, request_example
+from glasswell.api.examples import dataset, not_a_figure, request_example
 from glasswell.api.responses import EnvelopeModel, enveloped, freshness_state, iso
 
 liveness = APIRouter(tags=["service"])
@@ -45,7 +45,12 @@ class SourceHealth(BaseModel):
     retrieval_vintage: str | None = Field(description="Date of the newest manifest fetched.")
     declared_vintage: str | None = Field(description="Newest vintage promoted from this source.")
     last_manifest_id: str | None = Field(description="Newest manifest registered.")
-    manifest_count: int = Field(description="Manifests registered for this source.")
+    manifest_count: int = Field(
+        description="Manifests registered for this source.",
+        json_schema_extra=not_a_figure(
+            "Count of registered manifests per source on the health page."
+        ),
+    )
 
 
 class Health(BaseModel):

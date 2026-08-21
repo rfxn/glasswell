@@ -108,6 +108,22 @@ its own version in its header, and its history is summarised in §3.1.
       exists: no `fetch(` outside the one declared exemption in `shell.ts`, no `XMLHttpRequest`,
       no absolute URL, and every operation named as a literal either served by the committed
       document or listed in the gap register as one that is not
+- [New] `x-glasswell-not-a-figure` (SB-08 A-2) on all thirty-three properties
+      `non_figure_allowlist.yml` exempts, carrying the exempter's reason verbatim. The register
+      was a CI-only file; it is now a served surface, so the explorer can render a number with no
+      derivation handle and answer "why?" in the words that granted the exemption. `api10` and
+      the other identifiers are in it — they are numeric text the walker exempts and the schema
+      calls strings, and they are the first exempt numbers a reader meets
+- [New] `tests/contract/test_not_a_figure.py` checks the equivalence in both directions against
+      the served document: a property the allowlist covers and the document does not annotate
+      fails, an annotation no entry covers fails, and a reason changed in one file only fails.
+      The matcher is imported from the R6 walker rather than reimplemented, so the two cannot
+      drift; the population is the one R6 actually exempts, which is why `Derivation.status`
+      — matched by `/status` but never a number — stays out of the register instead of
+      publishing a sentence about HTTP status codes on a field that has none
+- [Change] `WellDetail` redeclares `api10` and `county_code_at_permit`, and `QuarantineDetail`
+         redeclares `occurrence_count`. The record and the collection item are exempted by
+         different allowlist entries, and an inherited `Field` can only publish one reason
 
 ### 2026-08-21 — increment-3 merge train
 
