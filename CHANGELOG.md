@@ -9,6 +9,16 @@ its own version in its header, and its history is summarised in §3.1.
 
 ### 2026-08-20 — increment-3 closeout
 
+- [Remove] `statusMinZoomExpression()` is gone. The per-class zoom floor has one
+      implementation — `visibleStatusesAt()` inside `statusFilter()`, measured holding at z4
+      and z6 — and the second expression of the same table had no consumer at all
+      (gate-inc3 4.1)
+- [Fix] The status gate is applied to every layer the vocabulary paints, derived from the
+      built layers rather than from a hand-written pair of ids. The pair was complete for
+      North Dakota alone; a second basin's layers were ungated at style-build time and drew
+      every class at every zoom until the reader happened to zoom, which is the disagreement
+      between legend, count and canvas the gate measured on the Permian frames
+
 - [Change] The unmapped row filters like every other class: its checkbox is live, All/None
          act on it, and `statusFilter()` withdraws it when the reader switches it off.
          It stays on by default and the zoom never withdraws it — a defect must not hide —

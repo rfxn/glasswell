@@ -12,6 +12,7 @@ import {
   publishedSource,
   sourceSpecs,
   statusFilter,
+  statusStyledLayerIds,
   visibleStatusesAt,
 } from "./style.ts";
 import {
@@ -83,6 +84,22 @@ describe("the data layers", () => {
     // is the one class whose ink the reader cannot answer for.
     expect(rendered(statusFilter(12, new Set(statusIds())))).not.toContain(UNMAPPED_STATUS.id);
     expect(rendered(statusFilter(12, new Set(filterableStatusIds())))).toContain(UNMAPPED_STATUS.id);
+  });
+
+  it("gates every layer the status vocabulary paints, and only where the filter slot is free", () => {
+    // 4.1's live half: the gate used to be applied to a hand-written pair of layer ids at
+    // style-build time, so a second basin's layers drew every class at every zoom until the
+    // reader happened to zoom. `wells-struck` is excluded because it carries its own filter,
+    // and setting the gate on it would replace the strike-through's own one.
+    const gated = new Set(statusStyledLayerIds());
+    for (const layer of dataLayers({ labels: true })) {
+      const paintsStatus = JSON.stringify(paintOf(layer)).includes("status_canonical");
+      const ownFilter = "filter" in layer;
+      expect(gated.has(layer.id), `${layer.id} gated=${gated.has(layer.id)}`).toBe(
+        paintsStatus && !ownFilter,
+      );
+    }
+    expect(gated.size).toBeGreaterThan(0);
   });
 
   it("intersects the zoom gate with the legend's own filter", () => {

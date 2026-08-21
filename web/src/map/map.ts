@@ -33,7 +33,7 @@ import {
 import { createPillStrip } from "./pills.ts";
 import { LAYERS, defaultLayerSet, layerDef, layerIds } from "./registry.ts";
 import { UNMAPPED_STATUS, filterableStatusIds, statusClass } from "./status.ts";
-import { dataLayers, sourceSpecs, statusFilter, strikeGlyph } from "./style.ts";
+import { dataLayers, sourceSpecs, statusFilter, statusStyledLayerIds, strikeGlyph } from "./style.ts";
 import { createTileBanner } from "./tile-banner.ts";
 import { tileRequest } from "./tile-request.ts";
 import { applyVariantStyling } from "./variant-style.ts";
@@ -180,6 +180,9 @@ export function createMap(
     filterableStatusIds(),
   );
   const opacities = new Map(LAYERS.map((layer) => [layer.id, layer.opacity]));
+  // Built once: `zoom` fires on every animation frame of a pinch, and the gated set is a
+  // property of the style, not of the viewport.
+  const statusGated = statusStyledLayerIds();
   let selected: string | null = null;
 
   const legend = createLegend({
@@ -259,7 +262,7 @@ export function createMap(
 
   function applyStatusFilter(): void {
     const filter = statusFilter(map.getZoom(), statuses);
-    for (const id of ["wells", "laterals"]) {
+    for (const id of statusGated) {
       if (map.getLayer(id)) map.setFilter(id, filter as maplibregl.FilterSpecification);
     }
   }
@@ -307,7 +310,9 @@ export function createMap(
       labels: Boolean(next.glyphs),
       variant,
       ...(typeof hollowFill === "string" ? { hollowFill } : {}),
-    }).map((layer) => {
+    });
+    const gated = new Set(statusStyledLayerIds(built));
+    const styled = built.map((layer) => {
       const owner = LAYERS.find((candidate) => candidate.styleLayers.includes(layer.id));
       if (owner && !on.has(owner.id)) {
         layer.layout = { ...layer.layout, visibility: "none" } as typeof layer.layout;
@@ -319,9 +324,9 @@ export function createMap(
           layer.paint = { ...layer.paint, [property]: opacity } as typeof layer.paint;
         }
       }
-      if (layer.id === "wells" || layer.id === "laterals") {
-        // Both are circle/line layers, which the spec allows a filter on; the union type
-        // includes `background`, which does not, so the narrowing has to be written out.
+      if (gated.has(layer.id)) {
+        // Circle and line layers, which the spec allows a filter on; the union type includes
+        // `background`, which does not, so the narrowing has to be written out.
         (layer as { filter?: maplibregl.FilterSpecification }).filter = statusFilter(
           map.getZoom(),
           statuses,
@@ -333,7 +338,7 @@ export function createMap(
     // Under the basemap's own labels, so town and county names stay readable over wells.
     const layers = [...next.layers];
     const labelIndex = layers.findIndex((layer) => layer.id === firstLabelLayerId(next));
-    layers.splice(labelIndex < 0 ? layers.length : labelIndex, 0, ...built);
+    layers.splice(labelIndex < 0 ? layers.length : labelIndex, 0, ...styled);
     const data = sourceSpecs();
     // The variant pass runs over the merged list — the basemap's labels and lines as well as
     // this app's — so nothing text-bearing reaches the canvas unkeyed to the substrate.

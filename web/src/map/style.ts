@@ -82,6 +82,22 @@ export function sourceSpecs(origin?: string, search?: string): Record<string, So
   return specs;
 }
 
+/**
+ * Marks the layers whose filter slot belongs to the status gate. Read off the built layers
+ * rather than kept as a list of ids beside them: a hand list is what left a second basin's
+ * layers ungated at style-build time until the reader happened to zoom (gate-inc3 4.1).
+ */
+const STATUS_GATE = "gw:status-gate";
+const STATUS_GATED = { [STATUS_GATE]: true } as const;
+
+export function statusStyledLayerIds(
+  layers: readonly LayerSpecification[] = dataLayers({ labels: true }),
+): string[] {
+  return layers
+    .filter((layer) => (layer.metadata as Record<string, unknown> | undefined)?.[STATUS_GATE])
+    .map((layer) => layer.id);
+}
+
 export function visibleStatusesAt(atZoom: number): string[] {
   return STATUS_CLASSES.filter((status) => atZoom >= status.minZoom).map((status) => status.id);
 }
@@ -186,6 +202,7 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       type: "line",
       source: laterals,
       "source-layer": laterals,
+      metadata: STATUS_GATED,
       paint: {
         "line-color": selectable(SELECTION_COLOUR, statusColourExpression()),
         "line-width": lateralWidth(),
@@ -198,6 +215,7 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       source: wells,
       "source-layer": wells,
       minzoom: 4,
+      metadata: STATUS_GATED,
       paint: {
         "circle-color": selectable(SELECTION_COLOUR, statusFillExpression(hollow)),
         "circle-stroke-color": selectable(SELECTION_COLOUR, statusColourExpression()),

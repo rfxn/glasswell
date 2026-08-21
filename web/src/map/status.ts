@@ -176,15 +176,6 @@ export function statusColourExpression(): Expr {
   );
 }
 
-/** Per-status zoom floor as a style expression, so the gate and the legend read one table. */
-export function statusMinZoomExpression(): Expr {
-  return match(
-    statusProperty(),
-    STATUS_CLASSES.map((status) => [status.id, status.minZoom] as [string, number]),
-    UNMAPPED_STATUS.minZoom,
-  );
-}
-
 /** Hollow classes are drawn as a ring: ink fill, status stroke. */
 export function statusFillExpression(inkColour: string): Expr {
   return match(
