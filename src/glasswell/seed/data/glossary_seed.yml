@@ -121,6 +121,21 @@
   related_terms: ["Quarantine", "Effective date", "Canonical"]
   source_refs: ["blueprint-v0.6 §9", "SB-07 §6"]
 
+- term: County at permit
+  aliases: ["County code at permit"]
+  highlightable: false
+  short_definition: >-
+    The county a well was permitted in, frozen at permit time and carried inside its API number.
+  expanded_definition: >-
+    Digits 3-5 of the API-10 are this county, and they stay what they were on the day the
+    permit was filed. A lateral routinely crosses a county line, counties get re-drawn, and a
+    well can be re-permitted, so grouping production by this code tells you where the paperwork
+    went rather than where the rock is. It is a permit fact, and it is the only county most
+    free regulator files publish.
+  domain_tags: [identity, geospatial]
+  related_terms: ["API-10 / API-12 / API-14", "PLSS"]
+  source_refs: ["canonical.wells.county_code_at_permit", "SB-08 §7.1 O-6"]
+
 - term: CRS / compute CRS
   aliases: ["CRS", "Compute CRS"]
   short_definition: >-
@@ -303,6 +318,37 @@
   related_terms: ["Derivation handle", "Granularity"]
   source_refs: ["blueprint-v0.6 §9", "SB-07 §12"]
 
+- term: Operator of record
+  aliases: ["Operator", "Operator name reported"]
+  highlightable: false
+  short_definition: >-
+    The company the regulator lists as responsible for the well, spelled the way that source
+    spelled it.
+  expanded_definition: >-
+    Served exactly as reported, because tidying the name is a cross-source mapping decision and
+    those are conformance rules with rationales, not string edits inside a parser. So one
+    company appears under several spellings until a rule joins them, and filtering by operator
+    counts filings rather than corporate parents - an acquisition, a name change and a
+    subsidiary all read as separate operators here until the join is recorded.
+  domain_tags: [identity, data-model]
+  related_terms: ["Conformance rule", "Canonical", "Spine"]
+  source_refs: ["canonical.wells.operator_name_reported", "SB-08 §7.1 O-6"]
+
+- term: Pipeline stage
+  aliases: ["Stage"]
+  highlightable: false
+  short_definition: >-
+    Which of parse, validate, conform or join a rule runs at, or a rejected row failed at.
+  expanded_definition: >-
+    The four stages are ordered and a row only reaches one by clearing the ones before it, so
+    the stage is a measure of how far the data got: parse means the bytes would not read at
+    all, join means the row was well-formed and still could not be tied to a well. It is the
+    first thing to group a quarantine backlog by, because the repair is a different job at
+    each stage - a parse failure is usually one file, a join failure is usually one rule.
+  domain_tags: [lineage, quality]
+  related_terms: ["Conformance rule", "Quarantine", "Staging"]
+  source_refs: ["SB-07 §6.2", "migration 005_conformance.sql", "migration 007_quarantine.sql"]
+
 - term: PLSS
   aliases: ["Public Land Survey System"]
   short_definition: >-
@@ -314,6 +360,38 @@
   related_terms: ["Land unit"]
   source_refs: ["blueprint-v0.6 §9"]
 
+- term: Pool
+  aliases: ["Well completion pool", "Reservoir pool"]
+  highlightable: false
+  short_definition: >-
+    The producing reservoir interval a completion is assigned to by the regulator.
+  expanded_definition: >-
+    A well completed in two pools files one row per pool per month, and each of those is its
+    own entity keyed on the well and the pool rather than on the well alone. The well-level
+    series is the disclosed sum of those rows with the aggregation stated; the pool rows are
+    what the sum was taken over. Read the two together without noticing the difference and a
+    well is either double-counted or shown at half its production, depending on which side you
+    started from.
+  domain_tags: [production, identity, data-model]
+  related_terms: ["Granularity", "Spine", "Stream"]
+  source_refs: ["canonical.well_completions", "SB-01 E5"]
+
+- term: Production month
+  aliases: ["pm"]
+  highlightable: false
+  short_definition: >-
+    The month a volume is attributed to - when the oil came out of the ground, not when anyone
+    said so.
+  expanded_definition: >-
+    Every production row carries two dates answering two different questions, and this is the
+    valid-time one. The other is the report vintage, the knowledge date the regulator published
+    it on. A single production month therefore has as many values as it has restatements, and
+    all of them are correct at their own vintage - which is why an axis of production months
+    means nothing until the vintage it was read at is stated beside it.
+  domain_tags: [production, time]
+  related_terms: ["Report vintage", "Valid time", "Bitemporal", "Restatement"]
+  source_refs: ["canonical.production.production_month", "DIR-2"]
+
 - term: Quarantine
   short_definition: >-
     The table of rows that failed promotion, with the reason code, the rule that rejected them,
@@ -324,6 +402,21 @@
   domain_tags: [quality, lineage]
   related_terms: ["Conformance rule", "Audit stream"]
   source_refs: ["blueprint-v0.6 §9", "SB-07 §12"]
+
+- term: Quarantine state
+  highlightable: false
+  short_definition: >-
+    Where a rejected row stands: open, released, accepted_loss or superseded.
+  expanded_definition: >-
+    A rejected row is never deleted, so this is how the backlog gets worked rather than
+    cleared. Released means a later rule resolved the row and it was promoted after all;
+    accepted_loss is a deliberate decision to leave data on the floor, and it is the one state
+    that should be read as a claim about the product; superseded means the source itself
+    replaced the row. Counting open alone understates what was rejected and overstates what
+    was fixed.
+  domain_tags: [quality, governance]
+  related_terms: ["Quarantine", "Conformance rule", "Restatement"]
+  source_refs: ["SB-07 §8", "migration 007_quarantine.sql"]
 
 - term: Raw zone
   short_definition: >-
@@ -370,6 +463,21 @@
   related_terms: ["Report vintage", "Bitemporal", "Raw zone"]
   source_refs: ["blueprint-v0.6 §9", "DIR-2"]
 
+- term: Rule kind
+  highlightable: false
+  short_definition: >-
+    What a conformance rule does - unit_conform, vocab_map, alias_join, datum_transform,
+    key_composite, parse_directive, validity_filter or code_ref.
+  expanded_definition: >-
+    The kind is the executor, so it says how to read the rule's spec and what a failure at that
+    rule means. code_ref is the honest exception: the decision is recorded as a row and carried
+    out by named code, which keeps a policy reviewable where an executable spec could not
+    express it. A registry that was all code_ref would be a mapping living in code, wearing a
+    row for cover.
+  domain_tags: [lineage, data-model, governance]
+  related_terms: ["Conformance rule", "Datum", "Canonical"]
+  source_refs: ["SB-07 §6.2", "migration 005_conformance.sql"]
+
 - term: Slot
   highlightable: false
   short_definition: >-
@@ -380,6 +488,21 @@
   domain_tags: [modeling]
   related_terms: ["Spacing / spacing unit", "Training support"]
   source_refs: ["blueprint-v0.6 §9"]
+
+- term: Source
+  aliases: ["Source id", "Source layer"]
+  highlightable: false
+  short_definition: >-
+    One upstream publication - a specific regulator file or feed - under a stable id.
+  expanded_definition: >-
+    The source id is the join key for most of the kitchen: manifests record whose bytes were
+    fetched, conformance rules are declared against one source, quarantined rows name the
+    source they were read from, and freshness is measured per source rather than for the system
+    as a whole. Two files from one agency are two sources when they are published separately,
+    because they go stale separately and a single freshness number would hide the older one.
+  domain_tags: [lineage, data-model]
+  related_terms: ["Manifest", "Raw zone", "Conformance rule"]
+  source_refs: ["lineage.sources", "SB-08 §7.1 O-6"]
 
 - term: Spacing / spacing unit
   aliases: ["Spacing", "Spacing unit"]
@@ -403,6 +526,20 @@
   domain_tags: [identity, data-model]
   related_terms: ["API-10 / API-12 / API-14", "Wellbore"]
   source_refs: ["blueprint-v0.6 §9"]
+
+- term: Spud date
+  highlightable: false
+  short_definition: >-
+    The day drilling started on a well, as reported.
+  expanded_definition: >-
+    Not first production - the gap between the two is months, and using one for the other
+    misdates a whole well vintage. It is also among the fields most often missing or later
+    corrected in a permit file, so an empty spud date means the regulator published none, not
+    that the well was never drilled. Any cohort built on spud dates inherits both problems and
+    should say which vintage it read them at.
+  domain_tags: [identity, time]
+  related_terms: ["First production", "Vintage (well vintage)", "Restatement"]
+  source_refs: ["canonical.wells.spud_date", "SB-08 §7.1 O-6"]
 
 - term: Staging
   short_definition: >-
@@ -481,6 +618,35 @@
   domain_tags: [production]
   related_terms: ["GOR", "Stream"]
   source_refs: ["blueprint-v0.6 §9"]
+
+- term: Well name
+  highlightable: false
+  short_definition: >-
+    The operator's name for a well - usually a lease name and a number - exactly as filed.
+  expanded_definition: >-
+    A label, never an identity. Names repeat across operators and basins, change when a lease
+    changes hands, and differ between the permit file and the production file for the same
+    hole. Joining on one is how two wells quietly become one well, and it is the reason the
+    spine is API-10 - a name is for reading, a number is for joining.
+  domain_tags: [identity]
+  related_terms: ["API-10 / API-12 / API-14", "Spine", "Operator of record"]
+  source_refs: ["canonical.wells.well_name", "SB-08 §7.1 O-6"]
+
+- term: Well status
+  aliases: ["Status canonical"]
+  highlightable: false
+  short_definition: >-
+    The well's lifecycle state mapped to one vocabulary across states - active, plugged, dry,
+    expired, inactive, confidential, permitted, drilling or temporarily_abandoned.
+  expanded_definition: >-
+    Each regulator publishes its own codes, and every mapping onto this vocabulary is a
+    conformance rule with a rationale - cr_nd_status_vocab_1 in North Dakota,
+    cr_tx_status_vocab_1 in Texas - so a canonical status resolves to the decision that
+    produced it. Empty is not the same as unknown: it means the source reported no status at
+    all, and a code the map does not recognise is quarantined rather than guessed at.
+  domain_tags: [identity, data-model]
+  related_terms: ["Conformance rule", "Confidential well", "Quarantine"]
+  source_refs: ["migration 010_nd_reference_seed.sql", "migration 027_tx_slice.sql"]
 
 - term: Wellbore
   highlightable: false

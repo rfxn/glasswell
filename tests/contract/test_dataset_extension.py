@@ -1,8 +1,11 @@
-"""SB-08 A-1: `x-glasswell-dataset`, and the lint that keeps a generated catalogue honest.
+"""SB-08 A-1 and A-8: the two document extensions the explorer is generated from, and their
+lint.
 
-The explorer's rail is built from this extension rather than from a list in the client
+The explorer's rail is built from `x-glasswell-dataset` rather than from a list in the client
 (SB-08 §2.3), so a declaration naming a missing operation or an unresolvable pointer is a rail
-entry pointing at nothing. Every rule is checked against the served document and then against a
+entry pointing at nothing. `x-glasswell-semantics` (§4.3) is what the API pane's OPERATION block
+reads for WHY and SO, so an entry naming a parameter the operation does not take is an
+annotation nothing renders. Every rule is checked against the served document and then against a
 mutant that breaks it: a lint whose failure path is never taken is a comment.
 """
 
@@ -18,13 +21,23 @@ from pydantic import ValidationError
 from glasswell.api.examples import (
     DATASET_GROUPS,
     DATASET_KEY,
+    GLOSSARY_KEY,
     RESERVED_DATASET_IDS,
+    SEMANTICS_KEY,
     dataset,
+    semantics,
 )
+from tests.contract.test_naked_numbers import exercised
 
 MIN_DEFAULT_COLUMNS = 5
 MAX_DEFAULT_COLUMNS = 7
 MAX_REF_HOPS = 8
+
+# SB-08 §3.2's ratchet. P-B raises it to 0.70 and P-C to 1.00; this is the line to move.
+PHASE_FLOOR = 0.40
+# B5's other half: a future edit that drops `columns.default` from ten datasets would take the
+# denominator to six, hit 100 %, and report a green ratchet over nothing.
+MIN_DENOMINATOR = 40
 
 
 def declarations(
@@ -614,3 +627,287 @@ def test_the_helper_omits_what_a_declaration_did_not_state() -> None:
     assert "summary_operation" not in payload
     assert "default" not in payload["columns"]
     assert payload["series_pointer"] == "/series"
+
+
+def annotations(
+    document: dict[str, Any],
+) -> list[tuple[str, dict[str, Any], dict[str, Any]]]:
+    """Every operation carrying A-8 semantics, with its entries and itself."""
+    return [
+        (operation["operationId"], operation[SEMANTICS_KEY], operation)
+        for item in document["paths"].values()
+        for operation in item.values()
+        if isinstance(operation, dict) and SEMANTICS_KEY in operation
+    ]
+
+
+def semantics_findings(document: dict[str, Any]) -> list[str]:
+    """Every way an A-8 entry can be wrong. `so`'s prose is reviewed, never machine-checked."""
+    findings: list[str] = []
+    for operation_id, entries, operation in annotations(document):
+        described = {
+            parameter["name"]: parameter.get("description")
+            for parameter in operation.get("parameters", [])
+        }
+        for name in sorted(entries):
+            entry = entries[name]
+            if name not in described:
+                findings.append(f"{operation_id}: {name!r} is not a parameter of this operation")
+                continue
+            # WHAT is sourced from the parameter's own description (§4.3), so a parameter with
+            # WHY and SO but no description renders a pane entry missing its first line.
+            if not (described[name] or "").strip():
+                findings.append(f"{operation_id}: {name} carries no description for WHAT")
+            if GLOSSARY_KEY not in entry and "so" not in entry:
+                findings.append(f"{operation_id}: {name} binds no term and states no consequence")
+            if "glossary" in entry:
+                findings.append(f"{operation_id}: {name} spells its binding 'glossary' (G-2)")
+            if "so" in entry and not str(entry["so"]).strip():
+                findings.append(f"{operation_id}: {name}'s so is empty")
+    return findings
+
+
+def _namespaces(
+    document: dict[str, Any], declaration: dict[str, Any], operation: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]:
+    """The three schemas a projected row spans: root, collection element, aligned series."""
+    schema = operation["responses"]["200"]["content"]["application/json"]["schema"]
+    root = _element(document, _object(document, schema)["properties"]["data"])
+    element = _element(document, _at(document, root, declaration.get("collection_pointer", "")))
+    series_pointer = declaration.get("series_pointer")
+    series = (
+        _element(document, _at(document, element, series_pointer))
+        if series_pointer is not None
+        else None
+    )
+    return root, element, series
+
+
+def namespace_for(declaration: dict[str, Any], column: str) -> str:
+    """`web/src/explore/grid/rows.ts:namespaceFor`, restated. The order of the arms is load-
+    bearing: an anchor that is also a series column is a series column."""
+    projection = declaration.get("row_projection")
+    if projection is not None and column in [projection["axis"], *projection["columns"]]:
+        return "series"
+    return "root" if column in declaration.get("anchors", []) else "element"
+
+
+def response_pointer_for(declaration: dict[str, Any], column: str, element_index: int = 0) -> str:
+    """B5a's fix, on the python side of the same rule: one composition, two consumers.
+
+    The client's `responsePointerFor` composes the pointer the grid looks a label up with; this
+    composes the pointer the floor test counts one at. They agree because they are the same rule
+    written twice against one specification, and `rows.test.ts` pins the same five cases.
+    """
+    collection = declaration.get("collection_pointer", "")
+    prefix = "" if collection == "" else f"{collection}/{element_index}"
+    match namespace_for(declaration, column):
+        case "series":
+            return f"{prefix}{declaration.get('series_pointer', '')}{column}"
+        case "root":
+            return column
+        case _:
+            return f"{prefix}{column}"
+
+
+def _emitted_labels(client: TestClient) -> dict[str, dict[str, str]]:
+    """`meta.labels` per operation, read off the responses the R6 walker already replays."""
+    labels: dict[str, dict[str, str]] = {}
+    for operation_id, call in exercised(client):
+        response = client.get(call["url"], params=call["params"])
+        if not response.headers["content-type"].startswith("application/json"):
+            continue
+        body = response.json()
+        if isinstance(body, dict) and isinstance(body.get("meta"), dict):
+            labels.setdefault(operation_id, {}).update(body["meta"].get("labels") or {})
+    return labels
+
+
+def _binding_table(
+    document: dict[str, Any], labels: dict[str, dict[str, str]]
+) -> dict[str, tuple[int, int, list[str]]]:
+    """Per dataset: bound, declared, and the columns still unbound — the numbers §3.2 wants."""
+    table: dict[str, tuple[int, int, list[str]]] = {}
+    for operation_id, declaration, operation in declarations(document):
+        root, element, series = _namespaces(document, declaration, operation)
+        spaces = {"root": root, "element": element, "series": series}
+        emitted = labels.get(operation_id, {})
+        columns = (declaration.get("columns") or {}).get("default") or []
+        unbound: list[str] = []
+        for column in columns:
+            space = spaces[namespace_for(declaration, column)]
+            declared = _at(document, space, column) if space is not None else None
+            if response_pointer_for(declaration, column) in emitted:
+                continue
+            if declared is not None and GLOSSARY_KEY in _deref(document, declared):
+                continue
+            unbound.append(column)
+        table[declaration["id"]] = (len(columns) - len(unbound), len(columns), unbound)
+    return table
+
+
+def _printed(table: dict[str, tuple[int, int, list[str]]]) -> str:
+    lines = [f"{'dataset':<20} {'bound':>5} {'cols':>5} {'pct':>6}  unbound"]
+    for name in sorted(table):
+        bound, declared, unbound = table[name]
+        share = bound / declared if declared else 0.0
+        lines.append(
+            f"{name:<20} {bound:>5} {declared:>5} {share:>5.0%}  {', '.join(unbound) or '—'}"
+        )
+    bound = sum(entry[0] for entry in table.values())
+    declared = sum(entry[1] for entry in table.values())
+    lines.append(f"{'ALL':<20} {bound:>5} {declared:>5} {bound / declared:>5.0%}")
+    return "\n".join(lines)
+
+
+def test_default_column_binding_meets_the_phase_floor(
+    client: TestClient, document: dict[str, Any]
+) -> None:
+    """SB-08 §3.2's ratchet, over the declared defaults of every browsable dataset.
+
+    Both terms are derived. The denominator is the declared `columns.default` set — never a
+    literal — and the numerator composes its lookup pointer with the rule the grid composes
+    its own with, because B5a was two call sites composing different pointers and agreeing to
+    report zero.
+    """
+    table = _binding_table(document, _emitted_labels(client))
+    bound = sum(entry[0] for entry in table.values())
+    declared = sum(entry[1] for entry in table.values())
+    report = _printed(table)
+    print(f"\n{report}")
+
+    assert declared >= MIN_DENOMINATOR, report
+    assert bound / declared >= PHASE_FLOOR, report
+
+
+def test_the_authored_tranche_is_wholly_bound(
+    client: TestClient, document: dict[str, Any]
+) -> None:
+    """The aggregate floor is a ratchet and cannot fall on one lost binding — at 55 % a dataset
+    could quietly give up a column and the phase gate would still pass. This is the other half:
+    the datasets O-6's first tranche authored are bound end to end, and a column that stops
+    being is named. P-B extends the tuple as it authors, rather than lowering anything."""
+    authored = ("production", "production_pools", "wells")
+    table = _binding_table(document, _emitted_labels(client))
+
+    assert {name: table[name][2] for name in authored if table[name][2]} == {}
+
+
+def test_the_semantics_the_document_serves_pass_the_lint(document: dict[str, Any]) -> None:
+    """The A-8 gate. `annotated` guards the vacuous pass an unannotated document would give."""
+    annotated = annotations(document)
+
+    assert annotated, "no operation annotates its parameters"
+    assert semantics_findings(document) == []
+
+
+def test_a_semantics_entry_naming_a_parameter_the_operation_lacks_fails_the_lint(
+    document: dict[str, Any],
+) -> None:
+    """The pane keys its OPERATION block off the parameter list; an entry with no parameter is
+    prose nothing renders and nothing notices."""
+    mutant = _annotated(document, "list_wells", {"basin": {"so": "Filters to one basin."}})
+
+    assert semantics_findings(mutant) == [
+        "list_wells: 'basin' is not a parameter of this operation"
+    ]
+
+
+def test_a_semantics_entry_that_says_nothing_fails_the_lint(document: dict[str, Any]) -> None:
+    """An empty entry counts as annotated in the coverage report while teaching nothing."""
+    mutant = _annotated(document, "list_wells", {"limit": {}})
+
+    assert semantics_findings(mutant) == [
+        "list_wells: limit binds no term and states no consequence"
+    ]
+
+
+def test_the_inner_binding_spelled_glossary_fails_the_lint(document: dict[str, Any]) -> None:
+    """G-2 from the other side: `glossary` is invisible to R9's collector, so a document that
+    carries the pre-rev-3 spelling is refused here rather than passing a check it evades."""
+    mutant = _annotated(
+        document, "list_wells", {"limit": {"glossary": "gt_spine", "so": "Caps the page."}}
+    )
+
+    assert semantics_findings(mutant) == ["list_wells: limit spells its binding 'glossary' (G-2)"]
+
+
+def test_the_semantics_bindings_are_collected_by_the_r9_check_with_no_edit_to_it(
+    document: dict[str, Any],
+) -> None:
+    """G-2's payoff, proved by mutation rather than asserted: the term collector that already
+    guards schema bindings picks A-8's up because the key is spelled the same."""
+    from tests.contract.test_glossary_coverage import _bindings
+
+    served = _bindings(document)
+    mutant = _annotated(
+        document, "list_wells", {"limit": {GLOSSARY_KEY: "gt_does_not_exist", "so": "..."}}
+    )
+
+    assert "gt_does_not_exist" not in served
+    assert "gt_does_not_exist" in _bindings(mutant)
+    assert {term for _, entries, _ in annotations(document) for entry in entries.values()
+            if (term := entry.get(GLOSSARY_KEY)) is not None} <= served
+
+
+def test_the_helper_refuses_an_entry_that_binds_nothing_and_says_nothing() -> None:
+    with pytest.raises(ValidationError, match="is not written"):
+        semantics(limit={})
+
+
+def test_the_helper_refuses_a_term_id_that_is_not_one() -> None:
+    """A term id that cannot exist fails here rather than at the R9 check's database round
+    trip, which is the difference between a typo caught at import and one caught in CI."""
+    with pytest.raises(ValidationError, match="pattern"):
+        semantics(limit={"glossary": "report_vintage"})
+
+
+def test_the_helper_serves_the_binding_under_the_key_r9_collects() -> None:
+    """The call site may write `glossary=` for readability; the document may not (G-2)."""
+    payload = semantics(as_of={"glossary": "gt_report_vintage", "so": "Selects the vintage."})
+
+    assert payload[SEMANTICS_KEY]["as_of"] == {
+        GLOSSARY_KEY: "gt_report_vintage",
+        "so": "Selects the vintage.",
+    }
+
+
+def _annotated(
+    document: dict[str, Any], operation_id: str, entries: dict[str, Any]
+) -> dict[str, Any]:
+    """A deep copy of the served document whose one operation carries exactly `entries`."""
+    mutant = copy.deepcopy(document)
+    for item in mutant["paths"].values():
+        for operation in item.values():
+            if isinstance(operation, dict) and operation.get("operationId") == operation_id:
+                operation[SEMANTICS_KEY] = entries
+    return mutant
+
+
+def test_the_pooled_form_labels_each_pool_by_index_and_never_by_glob(
+    document: dict[str, Any],
+) -> None:
+    """M6: `labelFor` is `meta.labels[pointer]` with no glob and no prefix walk
+    (`web/src/api/envelope.ts:54-56`), so a `/pools/*/series/oil_bbl` key resolves for nobody
+    and teaching the client globs would mean editing a frozen file. The router emits one key
+    per pool it just assembled; this pins the shape without needing a two-pool fixture."""
+    from glasswell.api.routers.production import _pool_labels
+
+    labels = _pool_labels(
+        [
+            {"well_completion_pool": "BAKKEN", "streams": ["oil", "gas"]},
+            {"well_completion_pool": "THREE FORKS", "streams": ["oil"]},
+        ]
+    )
+
+    assert [pointer for pointer in labels if "*" in pointer] == []
+    assert labels["/pools/0/well_completion_pool"] == "gt_pool"
+    assert labels["/pools/1/well_completion_pool"] == "gt_pool"
+    assert labels["/pools/0/series/oil_bbl"] == "gt_liquids_policy"
+    assert labels["/pools/0/series/gas_mcf"] == "gt_stream"
+    assert "/pools/1/series/gas_mcf" not in labels
+    # The dataset declares the composed pointer; the router emits it. B5a was these two
+    # disagreeing, so the test asserts the agreement rather than each side separately.
+    pools = _declaration(document, "get_well_production_pools")
+    assert response_pointer_for(pools, "/oil_bbl") in labels
+    assert response_pointer_for(pools, "/well_completion_pool") in labels

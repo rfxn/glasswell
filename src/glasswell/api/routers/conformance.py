@@ -17,6 +17,7 @@ from glasswell.api.examples import (
     dataset,
     not_a_figure,
     request_example,
+    semantics,
 )
 from glasswell.api.pagination import (
     DEFAULT_LIMIT,
@@ -60,16 +61,28 @@ class ConformanceRule(BaseModel):
     )
     rule_family: str = Field(description="Family the rule versions belong to.")
     supersedes_rule_id: str | None = Field(description="Rule version this one replaced.")
-    source_id: str = Field(description="Source the rule applies to.")
-    stage: str = Field(description="parse, validate, conform or join.")
+    source_id: str = Field(
+        description="Source the rule applies to.",
+        json_schema_extra={GLOSSARY_KEY: "gt_source"},
+    )
+    stage: str = Field(
+        description="parse, validate, conform or join.",
+        json_schema_extra={GLOSSARY_KEY: "gt_pipeline_stage"},
+    )
     applies_to_fields: list[str] = Field(description="Fields the rule governs.")
-    rule_kind: str = Field(description="Executor kind, or code_ref for a policy declaration.")
+    rule_kind: str = Field(
+        description="Executor kind, or code_ref for a policy declaration.",
+        json_schema_extra={GLOSSARY_KEY: "gt_rule_kind"},
+    )
     spec: dict[str, Any] = Field(description="Executable specification, served verbatim.")
     rule: str = Field(description="The rule stated in one sentence.")
     rationale: str = Field(description="Why this decision was taken, in the author's words.")
     evidence_url: str | None = Field(description="Where the upstream evidence lives.")
     evidence_sha256: str | None = Field(description="Hash of the evidence artifact, if taken.")
-    effective_from: date = Field(description="First day the rule applies.")
+    effective_from: date = Field(
+        description="First day the rule applies.",
+        json_schema_extra={GLOSSARY_KEY: "gt_effective_date"},
+    )
     effective_to: date | None = Field(description="Last day it applied, if superseded.")
     code_ref: str | None = Field(description="Symbol implementing the rule, for code_ref kinds.")
 
@@ -135,6 +148,68 @@ def _rule(row: dict[str, Any]) -> dict[str, Any]:
             },
             intro="nb_dataset_conformance",
             order=21,
+        ),
+        **semantics(
+            cursor={
+                "so": (
+                    "Pins the page to a newest-effective-first ordering and to the filters that"
+                    " opened it. Rules are append-only, so a cursor here holds in a way a"
+                    " quarantine cursor does not — what was on page two is still on page two."
+                ),
+            },
+            limit={
+                "so": (
+                    "Capped at 200. The registry is small on purpose: if paging this collection"
+                    " is laborious, the mapping policy has grown faster than anyone is reading"
+                    " it, which is itself the finding."
+                ),
+            },
+            source_id={
+                "glossary": "gt_source",
+                "so": (
+                    "Every rule is declared against exactly one source, so this is the whole"
+                    " mapping policy for one regulator file, on one page, in the author's own"
+                    " words."
+                ),
+            },
+            kind={
+                "glossary": "gt_rule_kind",
+                "so": (
+                    "Narrows to one executor. Filtering to code_ref is the honest audit: it"
+                    " lists every decision recorded as a row but carried out by code, which is"
+                    " the set most likely to drift from what the row says."
+                ),
+            },
+            family={
+                "glossary": "gt_conformance_rule",
+                "so": (
+                    "Groups a rule with the versions it superseded. The family is the history"
+                    " of one decision; a rule_id is a single version of it, so only the family"
+                    " shows you what changed and when."
+                ),
+            },
+            stage={
+                "glossary": "gt_pipeline_stage",
+                "so": (
+                    "Narrows to one stage of the pipeline, which decides when a rule runs and"
+                    " therefore which quarantine reasons it can produce."
+                ),
+            },
+            field={
+                "so": (
+                    "Lists every rule that governs one field. Before trusting a column, this is"
+                    " the parameter that says what was done to it — and an empty answer means"
+                    " nothing was, which is also worth knowing."
+                ),
+            },
+            effective_at={
+                "glossary": "gt_effective_date",
+                "so": (
+                    "Asks which rules were in force on a date, not which rules exist. It is how"
+                    " a figure published six months ago is explained: read the policy as of"
+                    " that day rather than as of today."
+                ),
+            },
         ),
     },
     responses=problem_responses(

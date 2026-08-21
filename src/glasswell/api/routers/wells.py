@@ -18,6 +18,7 @@ from glasswell.api.examples import (
     dataset,
     not_a_figure,
     request_example,
+    semantics,
 )
 from glasswell.api.pagination import (
     DEFAULT_LIMIT,
@@ -116,22 +117,35 @@ class WellSummary(BaseModel):
             **not_a_figure("Identifier, in a collection item."),
         },
     )
-    well_name: str | None = Field(description="Well name as reported by the operator.")
-    operator_name_reported: str | None = Field(description="Operator name exactly as reported.")
+    well_name: str | None = Field(
+        description="Well name as reported by the operator.",
+        json_schema_extra={GLOSSARY_KEY: "gt_well_name"},
+    )
+    operator_name_reported: str | None = Field(
+        description="Operator name exactly as reported.",
+        json_schema_extra={GLOSSARY_KEY: "gt_operator_of_record"},
+    )
     status_canonical: str | None = Field(
         description=(
             "Status mapped through the source's status vocabulary rule — cr_nd_status_vocab_1"
             " in North Dakota, cr_tx_status_vocab_1 in Texas. Null where the source reported"
             " no status at all, which is not the same as an unknown one."
-        )
+        ),
+        json_schema_extra={GLOSSARY_KEY: "gt_well_status"},
     )
     county_code_at_permit: str | None = Field(
         description="County code recorded at permit.",
-        json_schema_extra=not_a_figure("County code, in a collection item."),
+        json_schema_extra={
+            GLOSSARY_KEY: "gt_county_at_permit",
+            **not_a_figure("County code, in a collection item."),
+        },
     )
     land_unit_label: str | None = Field(description="PLSS land unit label.", json_schema_extra={
         GLOSSARY_KEY: "gt_land_unit"})
-    spud_date: date | None = Field(description="Spud date as reported.")
+    spud_date: date | None = Field(
+        description="Spud date as reported.",
+        json_schema_extra={GLOSSARY_KEY: "gt_spud_date"},
+    )
     confidential_flag: bool = Field(description="Whether the regulator withholds this well.",
                                     json_schema_extra={GLOSSARY_KEY: "gt_confidential_well"})
     effective_from: date = Field(description="Effective date of this well row (M13).",
@@ -176,9 +190,10 @@ class WellDetail(WellSummary):
     )
     county_code_at_permit: str | None = Field(
         description="County code recorded at permit.",
-        json_schema_extra=not_a_figure(
-            "County code as reported at permit; an identifier, not a quantity."
-        ),
+        json_schema_extra={
+            GLOSSARY_KEY: "gt_county_at_permit",
+            **not_a_figure("County code as reported at permit; an identifier, not a quantity."),
+        },
     )
     api14: str | None = Field(
         description="Fourteen-digit API number where known.",
@@ -348,6 +363,72 @@ def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
             },
             intro="nb_dataset_wells",
             order=10,
+        ),
+        **semantics(
+            as_of={
+                "glossary": "gt_knowledge_time",
+                "so": (
+                    "Reads the spine as it stood on that knowledge date. A well permitted"
+                    " afterwards is absent, and one whose operator changed since answers with"
+                    " the older name. It does not filter on when a well was drilled — it"
+                    " chooses which version of every row you are looking at."
+                ),
+            },
+            cursor={
+                "so": (
+                    "Pins the page to the api10 order and to the filters that opened it. Change"
+                    " a filter and the cursor is refused rather than quietly re-scoped, so a"
+                    " resumed page is the same population you started paging through."
+                ),
+            },
+            limit={
+                "so": (
+                    "Caps this collection at 1000 a page — higher than the kitchen collections,"
+                    " because a wells page is what the map draws. Ask for more and the request"
+                    " is rejected rather than trimmed, so a page is never quietly short."
+                ),
+            },
+            status={
+                "glossary": "gt_well_status",
+                "so": (
+                    "Filters on the canonical value rather than the code the state published,"
+                    " so `active` here means every source's version of active. A reported code"
+                    " with no mapping is quarantined, so it matches no status at all."
+                ),
+            },
+            operator={
+                "glossary": "gt_operator_of_record",
+                "so": (
+                    "Substring-matches the reported spelling. A company that files under"
+                    " several spellings needs several searches, and a parent's subsidiaries do"
+                    " not roll up — that join is a conformance rule, not a search behaviour."
+                ),
+            },
+            county={
+                "glossary": "gt_county_at_permit",
+                "so": (
+                    "Matches the county on the permit, which is fixed inside the API number and"
+                    " never restated. A lateral that produces in the next county still answers"
+                    " to the county it was permitted in."
+                ),
+            },
+            bbox={
+                "glossary": "gt_crs_compute_crs",
+                "so": (
+                    "WGS84 degrees, rejected above four a side. It matches a well any of whose"
+                    " recorded geometry — surface, bottomhole or lateral — overlaps the box, so"
+                    " a lateral clipping one corner is a hit and a surface hole outside it is"
+                    " not a miss."
+                ),
+            },
+            q={
+                "glossary": "gt_well_name",
+                "so": (
+                    "Substring-matches the name the operator filed. Names repeat across"
+                    " operators and change with the lease, so this narrows a list to read; it"
+                    " does not identify a well. Use api10 for that."
+                ),
+            },
         ),
     },
     responses=problem_responses(
