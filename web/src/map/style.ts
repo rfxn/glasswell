@@ -87,13 +87,15 @@ export function visibleStatusesAt(atZoom: number): string[] {
 }
 
 /**
- * The rendered set is the zoom gate intersected with the legend's own filter. An unmapped
- * status is always in it: a class the build cannot name is a defect, and a defect that
- * disappears at low zoom is worse than one that shows.
+ * The rendered set is the zoom gate intersected with the legend's own filter. The unmapped
+ * class is never withdrawn by the *zoom* — a defect that disappears at low zoom is worse than
+ * one that shows — but the reader can switch it off, because on some slices it is the largest
+ * class on the canvas and unfilterable ink is ink nobody can account for.
  */
 export function statusFilter(atZoom: number, on: ReadonlySet<string>): Expr {
   const allowed = visibleStatusesAt(atZoom).filter((id) => on.has(id));
-  return inSet(statusProperty(), [...allowed, UNMAPPED_STATUS.id]);
+  if (on.has(UNMAPPED_STATUS.id)) allowed.push(UNMAPPED_STATUS.id);
+  return inSet(statusProperty(), allowed);
 }
 
 function selectable<T>(selected: T, base: T | Expr): Expr {

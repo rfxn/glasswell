@@ -62,10 +62,15 @@ export function createLegend(options: LegendOptions): LegendHandle {
   body.className = "gw-lg-body";
   element.appendChild(body);
 
+  const wanted = (id: string): boolean => options.on?.has(id) ?? true;
+
   const rows = new Map<string, HTMLElement>();
   for (const status of STATUS_CLASSES) {
-    rows.set(status.id, appendRow(body, status, options.on?.has(status.id) ?? true));
+    rows.set(status.id, appendRow(body, status, wanted(status.id)));
   }
+  // Built now, listed when the map first draws one. The switch has to exist before the class
+  // does — a row conjured out of a count could not be the row that switches the count off.
+  rows.set(UNMAPPED_STATUS.id, buildRow(UNMAPPED_STATUS, wanted(UNMAPPED_STATUS.id)));
 
   const note = document.createElement("p");
   note.className = "gw-lg-note";
@@ -74,12 +79,15 @@ export function createLegend(options: LegendOptions): LegendHandle {
     " Laterals are ND DMR GIS bore geometry — not a directional survey trace.";
   body.appendChild(note);
 
+  const checked = (row: HTMLElement): boolean =>
+    row.querySelector<HTMLInputElement>("input")?.checked === true;
+
+  /** The rows the reader can see. A row the key has not listed is not part of what it claims. */
+  const listed = (): HTMLElement[] => [...rows.values()].filter((row) => row.parentNode === body);
+
   const activeStatuses = (): Set<string> => {
     const on = new Set<string>();
-    for (const [id, row] of rows) {
-      if (id === UNMAPPED_STATUS.id) continue;
-      if (row.querySelector<HTMLInputElement>("input")?.checked) on.add(id);
-    }
+    for (const [id, row] of rows) if (checked(row)) on.add(id);
     return on;
   };
 
@@ -89,8 +97,9 @@ export function createLegend(options: LegendOptions): LegendHandle {
    * so. The count is that statement, and it is why the pill is not silent about a filter.
    */
   function syncTitle(): void {
-    const count = activeStatuses().size;
-    const total = STATUS_CLASSES.length;
+    const rendered = listed();
+    const count = rendered.filter(checked).length;
+    const total = rendered.length;
     title.textContent = count === total ? "Well status" : `Well status · ${count}/${total}`;
   }
 
@@ -106,8 +115,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
    * the reader dismissed.
    */
   function setAll(next: boolean): void {
-    for (const [id, row] of rows) {
-      if (id === UNMAPPED_STATUS.id) continue;
+    for (const row of rows.values()) {
       const box = row.querySelector<HTMLInputElement>("input");
       if (box) box.checked = next;
     }
@@ -131,8 +139,10 @@ export function createLegend(options: LegendOptions): LegendHandle {
   });
 
   function setCounts(counts: Record<string, number>, zoom: number): void {
-    if (counts[UNMAPPED_STATUS.id] !== undefined && !rows.has(UNMAPPED_STATUS.id)) {
-      rows.set(UNMAPPED_STATUS.id, body.insertBefore(buildRow(UNMAPPED_STATUS, true), note));
+    const unmapped = rows.get(UNMAPPED_STATUS.id);
+    if (counts[UNMAPPED_STATUS.id] !== undefined && unmapped && unmapped.parentNode !== body) {
+      body.insertBefore(unmapped, note);
+      syncTitle();
     }
     for (const [id, row] of rows) {
       const status = statusClass(id);
@@ -143,7 +153,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
       if (cell) cell.textContent = count === undefined ? "—" : NUMBER.format(count);
       const outOfScale = zoom < status.minZoom;
       const box = row.querySelector<HTMLInputElement>("input");
-      if (box) box.disabled = outOfScale || id === UNMAPPED_STATUS.id;
+      if (box) box.disabled = outOfScale;
       if (outOfScale) {
         row.setAttribute("data-out-of-scale", "true");
         row.title = `Zoom to ${status.minZoom} to see ${status.label.toLowerCase()} wells`;
@@ -182,7 +192,6 @@ function buildRow(status: StatusClass, on: boolean): HTMLElement {
   const box = document.createElement("input");
   box.type = "checkbox";
   box.checked = on;
-  box.disabled = status.id === UNMAPPED_STATUS.id;
   box.setAttribute("aria-label", `Show ${status.label} wells`);
   row.appendChild(box);
 

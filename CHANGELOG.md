@@ -7,14 +7,25 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-20 — increment-3 closeout
+
+- [Change] The unmapped row filters like every other class: its checkbox is live, All/None
+         act on it, and `statusFilter()` withdraws it when the reader switches it off.
+         It stays on by default and the zoom never withdraws it — a defect must not hide —
+         but on the Permian slice it is the largest class on the canvas, and unfilterable
+         ink is ink the reader cannot account for (gate-inc3 4.2)
+- [Change] The legend builds the absence row up front and lists it only once the map has
+         drawn one, so the switch exists before the class does; the collapsed pill counts
+         what it lists (`Well status · 9/10`), and `glasswell.statuses` carries `unmapped`
+         in its known vocabulary so a reader's refusal of it survives a reload
+
 ### 2026-08-20 — VF-6: legend select/deselect all
 
 - [New] The well legend's header carries an All/None control, so clearing or restoring
       the nine status classes is one click rather than nine. It owns `checked` and
       nothing else: `disabled` and the out-of-scale mark stay the zoom's to set, so
       "All" cannot promote a class the zoom has withdrawn, and "None" clears one anyway
-      so zooming in does not resurrect what the reader dismissed. The unmapped row is
-      untouched — a defect marker is not a filter the reader owns. It reports through
+      so zooming in does not resurrect what the reader dismissed. It reports through
       the same `activeStatuses()` path a row toggle uses, and is hidden while the key is
       collapsed to its pill (VF-6)
 - [New] The legend's status filter now survives a reload, under the same `{on,known}` shape

@@ -14,9 +14,19 @@ import {
   statusFilter,
   visibleStatusesAt,
 } from "./style.ts";
-import { SELECTION_COLOUR, STATUS_CLASSES } from "./status.ts";
+import {
+  SELECTION_COLOUR,
+  STATUS_CLASSES,
+  UNMAPPED_STATUS,
+  filterableStatusIds,
+  statusIds,
+} from "./status.ts";
 
 const ids = (): string[] => dataLayers().map((layer) => layer.id);
+
+/** The classes an `["in", <status>, ["literal", [...]]]` filter lets through. */
+const rendered = (filter: unknown): string[] =>
+  ((filter as [string, unknown, [string, string[]]])[2] ?? ["literal", []])[1];
 
 const paintOf = (layer?: LayerSpecification): Record<string, unknown> =>
   ((layer && "paint" in layer && layer.paint) || {}) as Record<string, unknown>;
@@ -63,9 +73,16 @@ describe("the data layers", () => {
     expect(visibleStatusesAt(9).sort()).toEqual(STATUS_CLASSES.map((s) => s.id).sort());
   });
 
-  it("keeps an unmapped status visible at every zoom, so a data defect cannot hide", () => {
-    const filter = JSON.stringify(statusFilter(4, new Set(visibleStatusesAt(4))));
-    expect(filter).toContain("unmapped");
+  it("keeps an unmapped status in scale at every zoom, so a data defect cannot hide", () => {
+    const on = new Set([...visibleStatusesAt(4), UNMAPPED_STATUS.id]);
+    expect(rendered(statusFilter(4, on))).toContain(UNMAPPED_STATUS.id);
+  });
+
+  it("withdraws the unmapped class when the reader filters it off, like any other class", () => {
+    // On the Permian slice it is the largest class on the canvas; a row nobody can switch off
+    // is the one class whose ink the reader cannot answer for.
+    expect(rendered(statusFilter(12, new Set(statusIds())))).not.toContain(UNMAPPED_STATUS.id);
+    expect(rendered(statusFilter(12, new Set(filterableStatusIds())))).toContain(UNMAPPED_STATUS.id);
   });
 
   it("intersects the zoom gate with the legend's own filter", () => {

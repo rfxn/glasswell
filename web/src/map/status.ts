@@ -147,6 +147,11 @@ export function statusIds(): string[] {
   return STATUS_CLASSES.map((status) => status.id);
 }
 
+/** The canonical vocabulary plus the absence class, which the legend filters like any other. */
+export function filterableStatusIds(): string[] {
+  return [...statusIds(), UNMAPPED_STATUS.id];
+}
+
 export function statusClass(id: string | null | undefined): StatusClass {
   return BY_ID.get(String(id ?? "").toLowerCase()) ?? UNMAPPED_STATUS;
 }

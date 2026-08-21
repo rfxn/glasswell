@@ -32,7 +32,7 @@ import {
 } from "./persist.ts";
 import { createPillStrip } from "./pills.ts";
 import { LAYERS, defaultLayerSet, layerDef, layerIds } from "./registry.ts";
-import { UNMAPPED_STATUS, statusClass, statusIds } from "./status.ts";
+import { UNMAPPED_STATUS, filterableStatusIds, statusClass } from "./status.ts";
 import { dataLayers, sourceSpecs, statusFilter, strikeGlyph } from "./style.ts";
 import { createTileBanner } from "./tile-banner.ts";
 import { tileRequest } from "./tile-request.ts";
@@ -176,8 +176,8 @@ export function createMap(
   // later arrives visible rather than hidden by a stored set that predates it.
   let statuses = restoreCapabilitySet(
     readCapabilitySet(STATUS_STORAGE_KEY),
-    statusIds(),
-    statusIds(),
+    filterableStatusIds(),
+    filterableStatusIds(),
   );
   const opacities = new Map(LAYERS.map((layer) => [layer.id, layer.opacity]));
   let selected: string | null = null;
@@ -186,7 +186,7 @@ export function createMap(
     on: statuses,
     onFilter: (next) => {
       statuses = next;
-      writeCapabilitySet(STATUS_STORAGE_KEY, statuses, statusIds());
+      writeCapabilitySet(STATUS_STORAGE_KEY, statuses, filterableStatusIds());
       applyStatusFilter();
       refreshCounts();
     },
