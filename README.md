@@ -70,6 +70,13 @@ FastAPI subset, drawn as vector tiles on a MapLibre map, and traceable — a
 production number on the chart resolves through one `/v1/explain` call to a
 SHA-256 and the `dmr.nd.gov` URL it came from.
 
+Texas is on the map beside it, as far as it honestly goes: RRC county GIS well
+layers and the wellbore query export give the Permian districts their wells, their
+bore geometry and their operators, transformed out of NAD27 through a manifested
+NADCON grid. Texas production is **not** there, because the Railroad Commission
+reports it by lease: a Texas well card says production is pending allocation and
+names the rule, rather than drawing an empty chart.
+
 Forecasts, economics, scenarios, inventory, the Permian, and the agent gateway are
 **not** in it. [SMOKE.md](SMOKE.md) is the fifteen-minute walkthrough, including
 what is missing and what is queued next.
@@ -196,7 +203,7 @@ and recorded in a manifest before anything reads it.
 | Basin | Sources |
 |-------|---------|
 | **North Dakota** (Bakken / Three Forks) | DMR well-level monthly production, permits, well index, surveys, formation tops |
-| **Texas** (Midland, TX Delaware) | RRC PDQ lease production, W-2 / G-1 completions, W-1 permits, GIS well lines, wellbore master |
+| **Texas** (Midland, TX Delaware) | RRC county GIS wells and well arcs, wellbore query export *(landed)*; PDQ lease production, W-2 / G-1 completions, W-1 permits, wellbore master |
 | **New Mexico** (Delaware) | OCD well-level production — a third spine, and the allocation validator |
 | **Cross-cutting** | FracFocus completion design, PLSS and spacing units, operator registries |
 

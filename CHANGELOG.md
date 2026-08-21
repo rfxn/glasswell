@@ -7,6 +7,58 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-21 — Texas on the map: RRC GIS wells and wellbore identity
+
+- [New] `glasswell.ingest.tx_gis` loads the RRC county well archives — surface points,
+      bottom-hole points and well arcs, three shapefiles inside one `well###.zip`, each with
+      its own `.prj`. Staging holds them in the datum the archive declares (EPSG:4267) and
+      the transform to 4326 is a promotion step under `cr_tx_nad27_1`, which pins a PROJ
+      `hgridshift` pipeline over `us_noaa_conus.tif`. The grid is fetched as its own
+      manifested artifact and its hash is checked against the rule, so a host without it
+      fails rather than falling back to the three-parameter transform PROJ would otherwise
+      choose — a median 3.40 m error where the pinned pipeline leaves 0.0074 m
+- [New] `glasswell.ingest.tx_wellbore` loads the Wellbore Query export: 59 comma-separated
+      fields, no header row, so the layout is `cr_tx_ewa_layout_1` carrying the RRC manual's
+      own field numbers and two assertions proved on every record before anything is
+      promoted. It writes TX identity into `canonical.wells` — operator, well name, status,
+      total depth, completion date — and the well-to-lease keys into
+      `canonical.well_lease_links`
+- [New] `canonical.well_lease_links` captures `(oil_gas_code, district_no, lease_no)` under
+      `cr_tx_lease_key_1` with `link_role = validator_a`. A bare lease number is not a key:
+      33,868 of 348,293 in the 2026-08 export appear under more than one (code, district)
+      pair. The links are recorded beside the canonical crosswalk the PDQ path will bring,
+      never merged into it — their disagreement is the allocation error bound (SB-01 §2.9)
+- [New] `mft_guid_resolve` is implemented: `glasswell.ingest.tx_mft` resolves a GoAnywhere
+      public link to its listing, hashes it, and downloads through the portal's own form
+      postback. The listing paginates at 250 rows while the well folder holds 255, so a
+      first-page read silently loses four counties including Yoakum; the resolver pages once
+      and refuses a listing shorter than the row count the portal declares
+- [New] TX tile layers `tx_wells` and `tx_laterals` follow the landed view-model and
+      function-source pattern exactly — privilege-scoped `marts.tile_tx_*` views, one
+      `marts.<layer>(z, x, y, query)` function each, martin grants in the migration,
+      `auto_publish` still false — and the map registers both, on by default, so panning to
+      the Permian shows wells without a toggle in between
+- [New] `service` joins the canonical status vocabulary. Eleven of the RRC's twenty-three
+      well types describe injection, disposal, storage or observation rather than
+      production, and 24,710 rows in scope are injection alone; painting those as active
+      would be a claim about production the source does not make
+- [New] A TX well card shows identity and geometry with their handles — total depth is a
+      figure with a derivation, not a bare number — and carries no production section at
+      all. `/v1/wells/{api10}` and `/v1/wells/{api10}/production` both warn
+      `production_pending_allocation` and link the rule: TX reports at the lease (DIR-3), so
+      "no production has been reported" would be false about a well whose lease reports
+      every month
+- [Change] The compute-CRS rule a length resolves is the one the basin names.
+         `lineage.crs_registry` gains `length_rule_source`, the Permian row pins UTM 13N for
+         area work with `cr_tx_compute_crs_1` measuring geodesically, and a TX length now
+         cites a rule about TX geometry rather than ND's
+- [Change] `lineage.quarantine_rows` admits `out_of_scope`: a county file whose features
+         carry another county's API is not a parse failure, an unknown vocabulary or an
+         orphan, and every existing code would have asserted something that did not happen
+- [Fix] The TX identity pass keys API-10 over every record and the lease key only on the
+      link path. Keying both together quarantined a well for a lease number it does not need
+      and lost whole counties — every one of Bee county's records has no lease number yet
+
 ### 2026-08-20 — DIR-13: TLS on the LAN endpoint
 
 - [New] Caddy terminates `https://glasswell.lab.rpx.sh` on VM 111 and reverse-proxies
