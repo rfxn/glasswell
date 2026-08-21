@@ -31,6 +31,9 @@ Pointer = Annotated[str, Field(pattern=r"^/[^/]+(/[^/]+)*$")]
 TermId = Annotated[str, Field(pattern=r"^gt_[a-z0-9_]+$")]
 
 EXAMPLE_API10 = "3305310451"
+# A box around the fixture's ND surface hole and lateral, so the published example returns a
+# populated summary rather than an empty one (MAJOR-2(b): an example that resolves nowhere).
+EXAMPLE_BBOX = "-104,47.5,-103,48.5"
 EXAMPLE_MANIFEST_ID = "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 EXAMPLE_DERIVATION_ID = "drv_obqajdni25f25zmxcz7a"
 

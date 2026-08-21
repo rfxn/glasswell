@@ -21,6 +21,8 @@
   reason: Identifier. The completion-level API number.
 - pointer: /state_code
   reason: FIPS-style state code carried as reported; an identifier, not a quantity.
+- pointer: /basins/*/state_code
+  reason: API state code on a per-basin summary row; an identifier, not a quantity.
 - pointer: /county_code_at_permit
   reason: County code as reported at permit; an identifier, not a quantity.
 - pointer: /*/county_code_at_permit

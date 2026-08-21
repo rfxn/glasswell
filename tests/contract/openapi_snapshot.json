@@ -83,6 +83,81 @@
         "title": "AsOfModel",
         "type": "object"
       },
+      "BasinStatusCounts": {
+        "properties": {
+          "basin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Basin the wells are assigned to; null where none is.",
+            "title": "Basin"
+          },
+          "state_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "API state code the wells were promoted under \u2014 33 in ND, 42 in TX.",
+            "title": "State Code",
+            "x-glasswell-not-a-figure": "API state code on a per-basin summary row; an identifier, not a quantity."
+          },
+          "status_vocabulary_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Conformance rule that mapped this jurisdiction's reported codes onto the canonical vocabulary. Null where no rule is registered for the state, which is disclosed as a warning rather than answered with another state's rule.",
+            "title": "Status Vocabulary Rule",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "statuses": {
+            "description": "One entry per class present, largest first.",
+            "items": {
+              "$ref": "#/components/schemas/StatusCount"
+            },
+            "title": "Statuses",
+            "type": "array"
+          },
+          "unmapped_wells": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FigureModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Wells here whose source reported no status; absent when there are none."
+          },
+          "wells": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Wells in this basin inside the box."
+          }
+        },
+        "required": [
+          "basin",
+          "state_code",
+          "status_vocabulary_rule",
+          "wells",
+          "unmapped_wells",
+          "statuses"
+        ],
+        "title": "BasinStatusCounts",
+        "type": "object"
+      },
       "Chain": {
         "properties": {
           "as_of_vintage": {
@@ -1359,6 +1434,26 @@
           "links"
         ],
         "title": "EnvelopeModel[WellDetail]",
+        "type": "object"
+      },
+      "EnvelopeModel_WellStatusSummary_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WellStatusSummary"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[WellStatusSummary]",
         "type": "object"
       },
       "EnvelopeModel_list_ConformanceRule__": {
@@ -3575,6 +3670,26 @@
         "title": "SourceHealth",
         "type": "object"
       },
+      "StatusCount": {
+        "properties": {
+          "status": {
+            "description": "Canonical status the wells in this bucket carry. Never null: a well the source reported no status for is counted in `unmapped_wells`, not here.",
+            "title": "Status",
+            "type": "string",
+            "x-glasswell-glossary": "gt_well_status"
+          },
+          "wells": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Wells in this class inside the box, with the handle the count resolves by."
+          }
+        },
+        "required": [
+          "status",
+          "wells"
+        ],
+        "title": "StatusCount",
+        "type": "object"
+      },
       "SummaryGroup": {
         "properties": {
           "count": {
@@ -4079,6 +4194,73 @@
           "surface_point"
         ],
         "title": "WellDetail",
+        "type": "object"
+      },
+      "WellStatusSummary": {
+        "properties": {
+          "basins": {
+            "description": "The same counts split by basin and jurisdiction, ordered by basin.",
+            "items": {
+              "$ref": "#/components/schemas/BasinStatusCounts"
+            },
+            "title": "Basins",
+            "type": "array"
+          },
+          "bbox": {
+            "description": "The box the counts were taken over, normalised to minx,miny,maxx,maxy.",
+            "title": "Bbox",
+            "type": "string"
+          },
+          "statuses": {
+            "description": "One entry per canonical class present in the box, largest first.",
+            "items": {
+              "$ref": "#/components/schemas/StatusCount"
+            },
+            "title": "Statuses",
+            "type": "array"
+          },
+          "unmapped_wells": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FigureModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Wells whose source reported no status at all. Its own bucket, never added to a class \u2014 an absence is not a value, and in the 2026-08-20 Texas load 65,685 wells are in it, which is more than any single class it could have been folded into.",
+            "x-glasswell-glossary": "gt_well_status"
+          },
+          "vocabulary_rules": {
+            "description": "Every status vocabulary rule that shaped these counts; each one is linked.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Vocabulary Rules",
+            "type": "array",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "wells": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FigureModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Every well in the box, mapped and unmapped together. Null when the box holds none \u2014 a class no well is in has no count, and neither does an empty box."
+          }
+        },
+        "required": [
+          "bbox",
+          "wells",
+          "unmapped_wells",
+          "statuses",
+          "basins",
+          "vocabulary_rules"
+        ],
+        "title": "WellStatusSummary",
         "type": "object"
       },
       "WellSummary": {
@@ -8312,6 +8494,131 @@
           "status": {
             "so": "Filters on the canonical value rather than the code the state published, so `active` here means every source's version of active. A reported code with no mapping is quarantined, so it matches no status at all.",
             "x-glasswell-glossary": "gt_well_status"
+          }
+        }
+      }
+    },
+    "/v1/wells/status-summary": {
+      "get": {
+        "description": "How many wells of each canonical status have geometry inside a bounding box, as of a knowledge-time cut. This is the count a map legend states, asked of the data rather than of what a renderer drew: a tile pyramid thins points as it zooms out and a symbology withdraws its low-salience classes, so a count taken from drawn features falls exactly as the viewed area grows. This one does not move with zoom, with styling or with which tiles have arrived. The population is wells whose recorded geometry \u2014 surface, bottomhole or lateral \u2014 intersects the box, which is the same population `/v1/wells?bbox=` pages, and a well with no geometry at all is in no viewport and in no count here. The box is closed: a well exactly on the edge is inside it. There is no degree cap, because the answer is bounded by the status vocabulary rather than by the population; `links.wells` is published only where the box is inside the collection's own four-degree cap. Every count is a figure with a derivation handle over the rows it counted, so a legend number resolves at /v1/explain to the government file the statuses came from. The box a handle names is the box the query ran over, at full precision \u2014 two viewports a metre apart are two handles. Where a box produces more counts than /v1/explain accepts handles in one call, `links.explain` carries as many as it can and a warning says exactly how many it left out; each count still resolves alone. A class no well in the box carries is absent rather than zero. Wells whose source reported no status are their own bucket, `unmapped_wells`, and are never added to a class \u2014 in the 2026-08-20 Texas load 65,685 wells are in it, which is more than any class it could have been folded into. Counts are split per basin with the vocabulary rule that mapped that jurisdiction's codes (cr_nd_status_vocab_1 in North Dakota, cr_tx_status_vocab_1 in Texas), because a status class means what its rule says it means. It does not return the wells themselves \u2014 see /v1/wells.",
+        "operationId": "get_well_status_summary",
+        "parameters": [
+          {
+            "description": "minx,miny,maxx,maxy in WGS84. Required; there is no cap.",
+            "in": "query",
+            "name": "bbox",
+            "required": true,
+            "schema": {
+              "description": "minx,miny,maxx,maxy in WGS84. Required; there is no cap.",
+              "title": "Bbox",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+              "title": "As Of"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_WellStatusSummary_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Well status counts for a box",
+        "tags": [
+          "wells"
+        ],
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {
+            "bbox": "-104,47.5,-103,48.5"
+          }
+        },
+        "x-glasswell-semantics": {
+          "as_of": {
+            "so": "Counts the classes as they were described on that knowledge date, not the wells drilled by then. A status restatement appends a row, so an earlier as_of returns the earlier class and the totals move between them; a well whose spine row is later than the date is counted in no class and disclosed as geometry without a well row.",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "bbox": {
+            "so": "WGS84 degrees, and the only scope this endpoint has \u2014 it is required, so a count always says which box it is a count of. It matches a well any of whose recorded geometry overlaps the box, so a lateral crossing one corner is counted while its surface hole sits outside. Uncapped, unlike the collection's: a whole-state box is the case the endpoint exists for.",
+            "x-glasswell-glossary": "gt_crs_compute_crs"
           }
         }
       }
