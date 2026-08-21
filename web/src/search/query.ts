@@ -44,7 +44,7 @@ export function toResults(envelope: { data: unknown }): SearchResult[] {
   const data = envelope.data;
   const rows: unknown[] = Array.isArray(data) ? data : data ? [data] : [];
   return rows.filter(isWellRow).map((row) => ({
-    api10: row.api10 ?? null,
+    api10: given(row.api10),
     // A well with neither a name nor an API-10 rendered as `undefined` before the chain ended
     // at the identifier the guard already proved is there (N-6).
     name: row.well_name ?? identifierOf(row),
@@ -53,11 +53,20 @@ export function toResults(envelope: { data: unknown }): SearchResult[] {
   }));
 }
 
+/**
+ * An identifier the row actually carries, or null. `?? ` alone let `""` through, so a row kept
+ * alive by a second identifier served an empty api10 against this field's own contract, and
+ * `selectWell` reads null as deselect and `""` as neither (gate-udmw1 F-3).
+ */
+function given(value: string | undefined): string | null {
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
 /** The first identifier the row answers to, or `""` when it answers to none. */
 function identifierOf(row: WellRow): string {
   for (const field of IDENTIFIERS) {
-    const value = row[field];
-    if (typeof value === "string" && value !== "") return value;
+    const value = given(row[field]);
+    if (value !== null) return value;
   }
   return "";
 }

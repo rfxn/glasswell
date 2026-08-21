@@ -121,4 +121,22 @@ describe("toResults reads the general key, not only its US instantiation", () =>
     expect(toResults(envelope({ api10: 3305310451 }))).toEqual([]);
     expect(toResults(envelope({ api10: "" }))).toEqual([]);
   });
+
+  /**
+   * gate-udmw1 F-3: dropping the row was only half the fix. When another identifier keeps the
+   * row alive, `?? null` does not catch `""`, so the field contract this same change added —
+   * absent says absent — was broken by the value it was written to exclude. `main.ts:185` hands
+   * this straight to `selectWell`, where `null` is the deselect signal, and `""` is neither a
+   * well nor a deselect.
+   */
+  it("emits a null api10, never an empty one, when another identifier carries the row", () => {
+    const carried = toResults(envelope({ api10: "", native_id: "0209070806W400" }));
+    const named = toResults(envelope({ api10: "", well_id: "wl_0af31c", well_name: "X 1" }));
+
+    expect(carried).toHaveLength(1);
+    expect(carried[0]?.api10).toBeNull();
+    expect(carried[0]?.name).toBe("0209070806W400");
+    expect(named[0]?.api10).toBeNull();
+    expect(named[0]?.name).toBe("X 1");
+  });
 });

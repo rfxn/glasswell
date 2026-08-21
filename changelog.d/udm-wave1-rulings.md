@@ -20,4 +20,6 @@
 - [Change] The explorer grid classifies `well_id`, `native_id`, `authority` and `uwi` as
            identifier columns, so the general key renders as identity rather than as prose
 - [Fix] A row whose `api10` was an empty string passed the search type guard and rendered a
-      blank option in the dropdown
+      blank option in the dropdown; where a second identifier kept such a row alive the empty
+      string was emitted as the result's `api10`, which is neither a well nor the `null` the
+      selection bus reads as deselect
