@@ -54,7 +54,19 @@ export interface HeaderTreatment {
   title: string;
 }
 
-const IDENTIFIER_NAMES = new Set(["api10", "api14", "sha256", "row_fingerprint", "value_hash"]);
+// The last four are the general key `(authority, native_id)` and the two other names the UDM
+// surfaces. API-10 is one authority's instantiation of that key, not a second vocabulary.
+const IDENTIFIER_NAMES = new Set([
+  "api10",
+  "api14",
+  "sha256",
+  "row_fingerprint",
+  "value_hash",
+  "well_id",
+  "native_id",
+  "authority",
+  "uwi",
+]);
 const GEOMETRY_NAMES = new Set(["geometry", "surface_point", "links", "bbox"]);
 
 interface LabelSource {

@@ -82,6 +82,43 @@ describe("the grid's column kinds come from the document, not from the values (�
     for (const kind of seen) expect(COLUMN_KINDS).toContain(kind);
     expect(seen.size).toBeGreaterThanOrEqual(5);
   });
+
+  /**
+   * UDM-SPEC §7.3 chunk 1.6. `(authority, native_id)` is the general key and `well_id` and
+   * `uwi` are the other two names the model surfaces, so the grid has to read them as identity
+   * rather than as prose — an identifier rendered as a sentence is a column a reader cannot
+   * copy, and an unstyled key column reads as a value.
+   *
+   * The columns do not exist in the served document yet, so the dataset is synthetic: the
+   * classification is what this pins, and it must hold before Wave 3 declares the fields, not
+   * after somebody notices the grid rendering a key as prose. `well_id` and `native_id` are
+   * carried by the `_id` suffix rule as well; `authority` and `uwi` are carried by nothing else,
+   * and the row identity is held off this dataset's columns so it carries nothing here either.
+   */
+  it("reads the general key's names as identity, not as prose", () => {
+    const declared = ["/authority", "/native_id", "/well_id", "/uwi", "/well_name"];
+    const udm = {
+      ...dataset("wells"),
+      id: "udm_probe",
+      operationId: "no_such_operation",
+      row_id: ["/row_key"],
+      columns: { ...dataset("wells").columns, default: declared, hidden: [], hidden_reason: {} },
+    };
+
+    const found: Record<string, string> = {};
+    for (const column of columnsFor(udm, SNAPSHOT, { meta: { labels: {} } })) {
+      found[column.pointer] = column.kind;
+    }
+
+    expect(found).toEqual({
+      "/authority": "identifier",
+      "/native_id": "identifier",
+      "/well_id": "identifier",
+      "/uwi": "identifier",
+      // The control: without it a rule that called everything an identifier would pass.
+      "/well_name": "prose",
+    });
+  });
 });
 
 describe("a column header binds where a binding exists and says so where it does not (B4)", () => {

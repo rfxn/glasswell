@@ -40,6 +40,9 @@ _RULES: dict[str, tuple[Verdict, Verdict]] = {
     "enum-value": ("additive", "breaking"),
     # A type is one fact per shape, so a change reports as the old shape leaving.
     "type": ("additive", "breaking"),
+    # UDM-SPEC §5.3/§5.2a (N-5): a relaxed identifier grammar produced no fact at all before
+    # this kind existed, so the classifier answered `additive` having examined nothing.
+    "pattern": ("additive", "breaking"),
 }
 
 
@@ -151,15 +154,19 @@ def _shape(schema: Any, label: str, container: str) -> Iterator[tuple[str, Fact]
     name = _type_name(schema)
     if name:
         yield f"{label} : {name}", Fact("type", container)
-    yield from _enum_values(schema, label, container)
+    yield from _constraints(schema, label, container)
 
 
-def _enum_values(schema: dict[str, Any], label: str, container: str) -> Iterator[tuple[str, Fact]]:
+def _constraints(schema: dict[str, Any], label: str, container: str) -> Iterator[tuple[str, Fact]]:
+    """What a field admits, beyond its type. `str | None` carries both one branch down."""
     for value in schema.get("enum", ()):
         yield f"{label} = {value!r}", Fact("enum-value", container)
+    pattern = schema.get("pattern")
+    if isinstance(pattern, str):
+        yield f"{label} =~ {pattern}", Fact("pattern", container)
     for branch in schema.get("anyOf", ()) or schema.get("oneOf", ()):
         if isinstance(branch, dict):
-            yield from _enum_values(branch, label, container)
+            yield from _constraints(branch, label, container)
 
 
 def _type_name(schema: dict[str, Any]) -> str:
