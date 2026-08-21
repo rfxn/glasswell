@@ -221,12 +221,12 @@ TX_RULES: tuple[dict[str, object], ...] = (
         "applies_to_fields": ["api10"],
         "spec": {
             "reason_code": "multi_completion",
-            "prefer": ["on_schedule", "plug_date", "completion_date", "source_row_ordinal"],
+            "prefer": ["plug_date", "on_schedule", "completion_date", "source_row_ordinal"],
             "module_function": "glasswell.ingest.tx_wellbore:_identity_rows",
             "contract_note": (
                 "One identity row per API-10. The records that lose are quarantined as"
-                " multi_completion, and the preference order is what stops a record carrying a"
-                " plugging date from losing to one that does not."
+                " multi_completion. The promotion judges the fields this list names, in this"
+                " order, and refuses a list naming a field it cannot judge."
             ),
         },
         "rule": (
@@ -240,10 +240,19 @@ TX_RULES: tuple[dict[str, object], ...] = (
             " the RRC's own wellbore codes - they are the lease-level reporting TX does. This"
             " slice models the wellbore, so it keeps one record and says plainly what happened"
             " to the others rather than labelling them with a policy they do not evidence."
-            " The preference order matters: an on-schedule record describes the live wellbore,"
-            " and taking source order alone dropped a plugging date that a sibling record"
-            " carried for 2,493 wells, each of which was then painted as something other than"
-            " plugged while its plugging date sat in the same file."
+            " A record carrying a plugging date is preferred first, because"
+            " cr_tx_plugged_precedence_1 makes that date the well's status and a record"
+            " discarded here is a record that rule never reads: with the on-schedule flag"
+            " ranked above it, 2,157 wells are drawn active, service, inactive or temporarily"
+            " abandoned against a plugging date the same export carries for them - 840, 711,"
+            " 536 and 70 respectively, measured on the full 55-county 2026-08-20 load. Ranking"
+            " the plugging date first takes that to nil and moves those 2,157 onto the plugged"
+            " class. It is paid for in completion dates: the promoted record is then sometimes"
+            " the one that carries none, so the wells whose completion date sits only on a"
+            " quarantined sibling rise from 1,299 to 2,346. That trade is deliberate and it is"
+            " not symmetric - a missing completion date is an absence a reader can see on the"
+            " card and follow into /v1/quarantine, while a well painted active over a filed"
+            " plugging date is the product stating the opposite of its own source."
         ),
         "evidence_url": EWA_MANUAL,
     },

@@ -6,7 +6,9 @@ import polars as pl
 import pytest
 
 from glasswell.ingest.tx_gis import _keyed, _metres_apart, _residuals
+from glasswell.ingest.tx_wellbore import _identity_rows, _preference_order
 from glasswell.lineage.conformance import apply_rules
+from glasswell.lineage.errors import RuleSpecError
 from glasswell.lineage.models import ConformanceRule
 from glasswell.seed.conformance_tx import TX_RULES
 
@@ -139,6 +141,50 @@ def test_an_arc_is_keyed_on_the_wellbore_code_and_one_without_it_is_refused() ->
 
     assert applied.frame["geom_key"].to_list() == ["4200347302_H1"]
     assert [batch.reason_code for batch in applied.quarantined] == ["key_incomplete"]
+
+
+def collapse(order: list[str]) -> ConformanceRule:
+    declared = rule("cr_tx_identity_collapse_1")
+    return declared.model_copy(update={"spec": {**declared.spec, "prefer": order}})
+
+
+def siblings() -> pl.DataFrame:
+    """4200300446 as the export ships it: an on-schedule producer and its plugged sibling."""
+    return pl.DataFrame(
+        [
+            {"api10": "4200300446", "source_row_ordinal": 1, "on_schedule": "Y",
+             "plug_date": "", "completion_date": "19900306", "well_type_name": "PRODUCING"},
+            {"api10": "4200300446", "source_row_ordinal": 2, "on_schedule": "N",
+             "plug_date": "19860715", "completion_date": "", "well_type_name": ""},
+        ]
+    )
+
+
+def test_the_tie_break_promotes_the_record_the_rule_ranks_first() -> None:
+    identity, extra = _identity_rows(
+        siblings(), _preference_order(rule("cr_tx_identity_collapse_1"))
+    )
+
+    assert [row["plug_date"] for row in identity] == ["19860715"]
+    assert [row["on_schedule"] for row in extra] == ["Y"]
+
+
+def test_the_order_is_the_rules_and_not_the_codes() -> None:
+    """Mutation: the same rows under the order that shipped, which is the defect itself."""
+    order = _preference_order(
+        collapse(["on_schedule", "plug_date", "completion_date", "source_row_ordinal"])
+    )
+
+    identity, extra = _identity_rows(siblings(), order)
+
+    assert [row["plug_date"] for row in identity] == [""]
+    assert [row["plug_date"] for row in extra] == ["19860715"]
+
+
+@pytest.mark.parametrize("order", [[], ["plug_date", "spud_date"]])
+def test_an_order_the_promotion_cannot_judge_fails_loudly(order) -> None:
+    with pytest.raises(RuleSpecError, match="prefer is"):
+        _preference_order(collapse(order))
 
 
 def test_the_residual_counts_an_unconverted_row_rather_than_scoring_it() -> None:

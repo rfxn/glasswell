@@ -14,7 +14,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -41,6 +41,7 @@ from glasswell.lineage import (
     quarantine,
 )
 from glasswell.lineage.audit import emit
+from glasswell.lineage.errors import RuleSpecError
 from glasswell.lineage.serialization import hash_payload, json_ready
 
 SOURCE_ID = "tx_wellbore_ewa_csv"
@@ -331,29 +332,43 @@ on conflict (api10, lease_key, source_id, effective_from) do nothing
 BASIN = "permian"
 
 
-def _preference(row: Mapping[str, Any]) -> tuple[int, int, int, int]:
-    """cr_tx_identity_collapse_1's order, lowest wins: on-schedule, then a record that carries
-    a regulatory date, then source order.
-
-    The dates are in the order because a record with a plugging date on it decides the well's
-    status: taking source order alone left 2,493 wells painted as something other than plugged
-    while their plugging date sat on a sibling record in the same file.
-    """
-    return (
-        0 if row["on_schedule"] == "Y" else 1,
-        0 if row["plug_date"] else 1,
-        0 if row["completion_date"] else 1,
-        int(row["source_row_ordinal"]),
-    )
+_PREFERENCE_TESTS: Mapping[str, Callable[[Mapping[str, Any]], int]] = {
+    "plug_date": lambda row: 0 if row["plug_date"] else 1,
+    "on_schedule": lambda row: 0 if row["on_schedule"] == "Y" else 1,
+    "completion_date": lambda row: 0 if row["completion_date"] else 1,
+    "source_row_ordinal": lambda row: int(row["source_row_ordinal"]),
+}
 
 
-def _identity_rows(frame: pl.DataFrame) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _preference_order(collapse: ConformanceRule) -> tuple[str, ...]:
+    """The tie-break is rule data (R8), so the order is read rather than written here."""
+    declared = tuple(str(name) for name in collapse.spec.get("prefer") or ())
+    unjudgeable = [name for name in declared if name not in _PREFERENCE_TESTS]
+    if not declared or unjudgeable:
+        raise RuleSpecError(
+            f"{collapse.rule_id}: prefer is {list(declared)};"
+            f" this promotion can judge {sorted(_PREFERENCE_TESTS)}"
+        )
+    return declared
+
+
+def _preference(row: Mapping[str, Any], order: Sequence[str]) -> tuple[int, ...]:
+    return tuple(_PREFERENCE_TESTS[name](row) for name in order)
+
+
+def _identity_rows(
+    frame: pl.DataFrame, order: Sequence[str]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """One identity row per API-10, and the export's further records for that wellbore.
 
     canonical.wells models the wellbore, and the export lists one once per completion, lease
     and field. The records that lose are completions, not evidence of a second wellbore, and
     they leave under cr_tx_identity_collapse_1 saying so; whether an API-10 really carries more
     than one wellbore is measured on the RRC's own wellbore codes in the GIS layers.
+
+    Which record wins is the rule's `prefer` order, not this function's: a plugging date is
+    ranked first there because cr_tx_plugged_precedence_1 makes that date the well's status,
+    and a record discarded here is a record that rule never reads.
     """
     chosen: dict[str, dict[str, Any]] = {}
     extra: list[dict[str, Any]] = []
@@ -363,7 +378,7 @@ def _identity_rows(frame: pl.DataFrame) -> tuple[list[dict[str, Any]], list[dict
         if held is None:
             chosen[api10] = row
             continue
-        if _preference(row) < _preference(held):
+        if _preference(row, order) < _preference(held, order):
             chosen[api10] = row
             extra.append(held)
         else:
@@ -451,7 +466,9 @@ def load(
             rule_id=batch.rule_id,
         )
 
-    identity, extra = _identity_rows(_status_input(keyed.frame, precedence))
+    identity, extra = _identity_rows(
+        _status_input(keyed.frame, precedence), _preference_order(collapse_rule)
+    )
     counts["multi_completion"] += _quarantine(
         connection,
         _quarantine_frame(extra),

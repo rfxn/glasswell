@@ -46,16 +46,18 @@ export const MEASURED_WELL_COUNTS: Readonly<Record<string, number>> = {
 };
 
 /**
- * The same query against `marts.tx_wells_tile` over the 55 Permian-district counties, 2026-08-21.
- * A further 66,103 wells carry no status: the RRC's identity export reported none for them,
- * which the legend shows as unmapped rather than inventing a class for.
+ * The same query against `marts.tx_wells_tile`, on the full load of the 2026-08-20 RRC export
+ * over the 55 Permian-district counties. A further 65,685 wells carry no status: the identity
+ * export reported none for them, which the legend shows as unmapped rather than inventing a
+ * class for. 2,157 of the plugged were drawn as one of the other four until the identity
+ * tie-break was ordered to prefer a filed plugging date (cr_tx_identity_collapse_1).
  */
 export const MEASURED_TX_WELL_COUNTS: Readonly<Record<string, number>> = {
-  active: 114_770,
-  plugged: 102_351,
-  inactive: 42_825,
-  service: 25_199,
-  temporarily_abandoned: 4_302,
+  active: 113_991,
+  plugged: 104_839,
+  inactive: 42_272,
+  service: 24_497,
+  temporarily_abandoned: 4_179,
 };
 
 /** What the legend may list: a class either basin has actually drawn. */

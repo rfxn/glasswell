@@ -125,7 +125,7 @@ describe("the status catalogue", () => {
     // no dry hole, so a single table would have had to claim a zero neither slice measured.
     for (const id of CANONICAL) expect(measuredWellCount(id)).toBeGreaterThan(0);
     expect(Object.values(MEASURED_WELL_COUNTS).reduce((sum, n) => sum + n, 0)).toBe(43_817);
-    expect(Object.values(MEASURED_TX_WELL_COUNTS).reduce((sum, n) => sum + n, 0)).toBe(289_447);
+    expect(Object.values(MEASURED_TX_WELL_COUNTS).reduce((sum, n) => sum + n, 0)).toBe(289_778);
     expect(MEASURED_WELL_COUNTS["service"]).toBeUndefined();
     expect(MEASURED_TX_WELL_COUNTS["dry"]).toBeUndefined();
   });
