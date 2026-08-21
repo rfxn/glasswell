@@ -5,6 +5,7 @@ from __future__ import annotations
 import psycopg
 
 from glasswell.seed.conformance_nd import ND_RULES, seed_conformance_nd
+from glasswell.seed.conformance_nm import NM_RULES, seed_conformance_nm
 from glasswell.seed.conformance_tx import TX_RULES, seed_conformance_tx
 from glasswell.seed.glossary import GLOSSARY_SEED_PATH, load_glossary_seed, seed_glossary, slug
 from glasswell.seed.reference import CRS_ROWS, SOURCES, seed_crs, seed_sources
@@ -13,11 +14,13 @@ __all__ = [
     "CRS_ROWS",
     "GLOSSARY_SEED_PATH",
     "ND_RULES",
+    "NM_RULES",
     "SOURCES",
     "TX_RULES",
     "load_glossary_seed",
     "seed_all",
     "seed_conformance_nd",
+    "seed_conformance_nm",
     "seed_conformance_tx",
     "seed_crs",
     "seed_glossary",
@@ -36,5 +39,6 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
         "sources": seed_sources(connection),
         "crs_registry": seed_crs(connection),
         "conformance_rules": seed_conformance_nd(connection),
+        "conformance_rules_nm": seed_conformance_nm(connection),
         "glossary_terms": seed_glossary(connection),
     }

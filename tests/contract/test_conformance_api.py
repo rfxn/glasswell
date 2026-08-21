@@ -83,6 +83,17 @@ def test_the_policy_declarations_are_visible_as_such(client: TestClient) -> None
         "cr_nd_liquids_policy_1",
         "cr_nd_null_semantics_1",
         "cr_nd_pool_rollup_1",
+        # One FTP host pin per NM source: a policy the fetcher implements and the registry
+        # states, so it is served as a declaration rather than executed.
+        "cr_nm_ogrid_host_pin_1",
+        "cr_nm_pod_host_pin_1",
+        "cr_nm_podwc_host_pin_1",
+        "cr_nm_pool_host_pin_1",
+        "cr_nm_property_host_pin_1",
+        "cr_nm_spacingunit_host_pin_1",
+        "cr_nm_wchistory_host_pin_1",
+        "cr_nm_wcproduction_host_pin_1",
+        "cr_nm_wellhistory_host_pin_1",
         "cr_tx_allocation_scope_1",
         "cr_tx_ewa_role_1",
         "cr_tx_geometry_survivor_1",

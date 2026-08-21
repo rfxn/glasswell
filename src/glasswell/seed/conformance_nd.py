@@ -517,5 +517,9 @@ def seed_conformance_nd(connection: psycopg.Connection) -> int:
     """Rule ids are immutable: a change is a new row with supersedes_rule_id (SB-07 §6.2)."""
     with connection.cursor() as cursor:
         cursor.executemany(_INSERT, [_row(rule) for rule in ND_RULES])
-        cursor.execute("select count(*) from lineage.conformance_rules")
+        # Counted per jurisdiction, not registry-wide: a second state's rows would otherwise
+        # make this number depend on what else seed_all had already run.
+        cursor.execute(
+            "select count(*) from lineage.conformance_rules where source_id like 'nd\\_%%'"
+        )
         return int(cursor.fetchone()[0])

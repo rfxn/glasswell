@@ -59,6 +59,75 @@ its own version in its header, and its history is summarised in §3.1.
       link path. Keying both together quarantined a well for a lease number it does not need
       and lost whole counties — every one of Bee county's records has no lease number yet
 
+### 2026-08-21 — D1 phase 2: 48 GB of XML streamed into staging without holding it
+
+- [New] Migration 028: eight verbatim staging tables for the NM sibling sources, a Parquet
+      partition registry for the production spine, the NM pool, status and stream
+      registries, and an index on `(source_id, production_month)` so promotion's batch
+      predicate has something to sit on once canonical grows 122x. The reason vocabulary
+      is untouched — migration 021 already admits `key_incomplete`, and the two codes
+      SB-01 handback H5 asks for belong to the track that owns H5
+- [New] `ingest/xml_stream.py`: BOM-aware UTF-16 decoding, a fully-qualified match against
+      the `SqlRowSet1` namespace, and root pruning into 65,536-row batches. A bare-tag
+      match against this document returns zero records in silence and `elem.clear()`
+      without pruning holds all 48.1M siblings, so both are pinned in a rule and asserted
+      in a test
+- [New] `staging/duck.py` makes DuckDB — locked since P0 and imported nowhere — both the
+      Parquet writer and the reader. Batches cross into it through the Arrow C stream
+      capsule polars already exposes, because `pyarrow` is not in the lockfile and is not
+      being added; `COPY ... (FORMAT PARQUET)` after `SET threads=1` is the expressible
+      form of SB-01 §3.6's write profile, and the same rows written twice are byte-identical
+- [New] `ingest.nm_ocd --stage-only` streams each artifact out of its zip member — nothing
+      is extracted, so NM contributes nothing to the scratch budget — and reconciles every
+      parsed row as staged or quarantined on the derivation itself (SB-01 §3.5). A batch
+      that loses a declared column is quarantined as `schema_mismatch`; a column nobody
+      declared, or a member that stops being XML, halts the load rather than staging a
+      partial artifact as if it were whole
+- [New] Twenty parse-stage rule rows: a record-tag, namespace, encoding and declared-header
+      rule per source, plus the CHAR widths each one pads to. `prd_knd_cde` is CHAR(2) and
+      arrives as `'O '`, so an exact-match vocabulary would have quarantined every row of
+      the spine as `stream_not_promoted` while reporting success — the trim is a mapping
+      decision and gets a rule row rather than a `.strip()` in the parser. Which columns
+      pad is measured across every record of all nine artifacts, not assumed: 26 columns
+      in six sources, each to one fixed width, while leading spaces are data
+
+### 2026-08-20 — D1 phase 1: New Mexico's production spine, pulled and stamped
+
+- [New] `lineage/ftp.py` and an `ftp_anon` transport inside `fetch_raw`: anonymous FTP to
+      the pinned host, MDTM and SIZE read before the transfer and recorded in
+      `acquisition_params`, the bytes hashed as they stream, and a short transfer refused
+      rather than sealed. A host that does not answer halts with `raw.fetch_failed
+      reason=host_unresolved` instead of guessing — the EMNRD page publishes the address
+      as an image, so a re-pin is a config change and an audit event, never a scraper
+- [New] Nine NM OCD sources with the honest licence note: UNVERIFIED, no published grant,
+      and absence of a restriction is not a grant
+- [New] Twenty-seven parse-stage rule rows — an undated-vintage, an FTP-layout and a
+      host-pin rule per source, because `load_rules` reads one `source_id` per call and a
+      derivation may not cite another source's rule. The FTP refreshes nightly with
+      undated per-table filenames, contradicting its own published documentation, so the
+      retrieval vintage is glasswell's own stamp and the `source_key` is the constant
+      filename the supersession chain is built on
+- [New] `ingest.nm_ocd --fetch-only`: one login, the tables in order, five seconds apart.
+      A reset data channel — which is what 164.64.106.6 did on the third transfer — is
+      retried twice on a fresh login, each failure recorded; a host that will not answer
+      is never retried
+- [New] Fixtures cut from one polite pull cached to `/data/raw`, preserving UTF-16LE with
+      its BOM, the `SqlRowSet1` namespace and the inline schema. The production fixture
+      straddles DIR-12's 2015-01 window because the member opens in 1973, and
+      `tests/unit/test_nm_fixtures.py` asserts every trap it exists to carry
+- [Change] `fetch_raw` reads `upstream_mtime`, the etag and the media type from whichever
+         transport ran rather than from HTTP headers, and hashes the sealed files in
+         chunks — the NM artifact is 968 MB and `read_bytes()` held all of it
+- [Change] `seed_conformance_nd` counts its own jurisdiction's rules rather than the whole
+         registry, which is what made a second state's seed non-idempotent
+
+The `wcproduction` member measures **48,310,560,330 bytes across 48,104,334 records**,
+streamed once in 24m51s: 17,645,580 rows and 80,624 well-completion × pool entities fall
+inside the 2015-01 window. Three findings change what phases 2-4 must handle — a fourth
+`prd_knd_cde` (`'C '`, condensate, 1986-1993 only), one row whose `api_well_idn` is six
+digits and cannot compose an API-10, and an `amend_ind` that is a ten-value vocabulary
+rather than a flag. `tests/fixtures/nm_ocd/SOURCE.md` carries the measurements.
+
 ### 2026-08-20 — DIR-13: TLS on the LAN endpoint
 
 - [New] Caddy terminates `https://glasswell.lab.rpx.sh` on VM 111 and reverse-proxies

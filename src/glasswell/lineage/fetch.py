@@ -10,7 +10,7 @@ import hashlib
 import os
 import re
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from email.utils import parsedate_to_datetime
@@ -23,11 +23,15 @@ from psycopg.rows import dict_row
 
 from glasswell.lineage.audit import emit
 from glasswell.lineage.capture import current_session, derive
+from glasswell.lineage.ftp import FTP, download_ftp, remote_path_from_url
 from glasswell.lineage.manifests import register_manifest
 from glasswell.lineage.models import AcquisitionMethod, ManifestRecord, OutputSpec
 from glasswell.lineage.serialization import canonical_json, json_ready
 
 RAW_ROOT_ENV = "GLASSWELL_RAW_ROOT"
+# SB-01 §1.2: the EMNRD page publishes the address as an image, so the pin is a config line and
+# a move is an audit event. Recorded on every ftp_anon manifest so the pin's provenance travels.
+HOST_RESOLVED_FROM = "pinned_config"
 DEFAULT_RAW_ROOT = Path("data/raw")
 MANIFEST_FILENAME = "manifest.json"
 SHA256_MANIFEST_FILENAME = "MANIFEST.sha256"
@@ -49,12 +53,15 @@ class FetchResult:
 
 @dataclass(frozen=True, slots=True)
 class _Download:
+    """What a transport hands the registrar: the bytes, and what the far end said about them."""
+
     path: Path
     sha256: str
     size_bytes: int
-    status: int
-    headers: Mapping[str, str]
-    redirect_chain: list[str]
+    acquisition_params: dict[str, Any]
+    upstream_mtime: datetime | None = None
+    upstream_etag: str | None = None
+    media_type: str | None = None
 
 
 def resolve_raw_root(explicit: Path | str | None = None) -> Path:
@@ -84,17 +91,44 @@ def _download_to(url: str, destination: Path, client: httpx.Client | None) -> _D
                     digest.update(chunk)
                     size += len(chunk)
                     handle.write(chunk)
+            headers = dict(response.headers)
             return _Download(
                 path=destination,
                 sha256=digest.hexdigest(),
                 size_bytes=size,
-                status=response.status_code,
-                headers=dict(response.headers),
-                redirect_chain=[str(previous.url) for previous in response.history],
+                acquisition_params={
+                    "status": response.status_code,
+                    "content_length": headers.get("content-length"),
+                    "etag": headers.get("etag"),
+                    "last_modified": headers.get("last-modified"),
+                    "redirect_chain": [str(previous.url) for previous in response.history],
+                },
+                upstream_mtime=_upstream_mtime(headers),
+                upstream_etag=headers.get("etag"),
+                media_type=headers.get("content-type"),
             )
     finally:
         if client is None:
             session.close()
+
+
+def _download_ftp_to(url: str, destination: Path, connection: FTP | None) -> _Download:
+    """`ftp_anon` (SB-07 §2.4): the host is pinned by the caller and never re-resolved here."""
+    host, remote_path = remote_path_from_url(url)
+    download = download_ftp(host, remote_path, destination, connection=connection)
+    return _Download(
+        path=destination,
+        sha256=download.sha256,
+        size_bytes=download.size_bytes,
+        acquisition_params={
+            "host": download.host,
+            "path": download.remote_path,
+            "mdtm": download.mdtm,
+            "size_reported": download.size_reported,
+            "host_resolved_from": HOST_RESOLVED_FROM,
+        },
+        upstream_mtime=download.upstream_mtime,
+    )
 
 
 def _upstream_mtime(headers: Mapping[str, str]) -> datetime | None:
@@ -105,17 +139,6 @@ def _upstream_mtime(headers: Mapping[str, str]) -> datetime | None:
         return parsedate_to_datetime(raw)
     except (TypeError, ValueError):  # a malformed upstream date is not a fetch failure
         return None
-
-
-def _acquisition_params(download: _Download) -> dict[str, Any]:
-    """SB-07 §2.4 for https_get: what the server said, recorded where it can be audited."""
-    return {
-        "status": download.status,
-        "content_length": download.headers.get("content-length"),
-        "etag": download.headers.get("etag"),
-        "last_modified": download.headers.get("last-modified"),
-        "redirect_chain": download.redirect_chain,
-    }
 
 
 def _artifact_directory(
@@ -154,6 +177,15 @@ def _write_manifest_json(directory: Path, manifest: ManifestRecord) -> Path:
     return path
 
 
+def _file_sha256(path: Path) -> str:
+    """Chunked: NM's production artifact is 968 MB, and read_bytes() would hold all of it."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(_CHUNK_BYTES), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _write_sha256_manifest(directory: Path) -> Path:
     """SB-06 §3.3: a restored vintage verifies with `sha256sum -c` and no external state."""
     names = sorted(
@@ -161,10 +193,7 @@ def _write_sha256_manifest(directory: Path) -> Path:
         for entry in directory.iterdir()
         if entry.is_file() and entry.name != SHA256_MANIFEST_FILENAME
     )
-    lines = [
-        f"{hashlib.sha256((directory / name).read_bytes()).hexdigest()}  {name}\n"
-        for name in names
-    ]
+    lines = [f"{_file_sha256(directory / name)}  {name}\n" for name in names]
     path = directory / SHA256_MANIFEST_FILENAME
     path.write_text("".join(lines), encoding="utf-8")
     return path
@@ -185,6 +214,8 @@ def fetch_raw(
     acquisition_method: AcquisitionMethod = "https_get",
     raw_root: Path | str | None = None,
     client: httpx.Client | None = None,
+    ftp: FTP | None = None,
+    rules: Sequence[str] = (),
     media_type: str | None = None,
     license_note: str | None = None,
     redistributable: bool = False,
@@ -206,14 +237,23 @@ def fetch_raw(
 
     try:
         try:
-            download = _download_to(url, temporary_path, client)
+            if acquisition_method == "ftp_anon":
+                download = _download_ftp_to(url, temporary_path, ftp)
+            else:
+                download = _download_to(url, temporary_path, client)
         except (httpx.HTTPError, OSError) as error:
             emit(
                 connection,
                 "raw.fetch_failed",
                 subject_type="manifest",
                 subject_id=f"{source_id}/{source_key}",
-                payload={"url": url, "reason": type(error).__name__, "detail": str(error)},
+                payload={
+                    "url": url,
+                    # A transport that names its own failure mode says so; everything else
+                    # keeps the class name this ledger has recorded since P1.
+                    "reason": getattr(error, "glasswell_reason", type(error).__name__),
+                    "detail": str(error),
+                },
             )
             raise
         # Self-stamped from the run's clock, never the wall. `fetched_at` is when the bytes
@@ -230,7 +270,7 @@ def fetch_raw(
             dataset=f"raw.{source_id}",
             partition={"source_key": source_key, "sha256": download.sha256[:12]},
         )
-        with derive("raw.fetch", output=output, params=params) as context:
+        with derive("raw.fetch", output=output, params=params, rules=rules) as context:
             context.set_output_hash(download.sha256)
             existing = _existing_storage_uri(connection, download.sha256)
             if existing is None:
@@ -251,13 +291,13 @@ def fetch_raw(
                 source_key=source_key,
                 acquisition_url=url,
                 acquisition_method=acquisition_method,
-                acquisition_params=_acquisition_params(download),
+                acquisition_params=download.acquisition_params,
                 fetched_at=fetched_at,
                 fetch_vintage=vintage,
                 storage_uri=str(payload_path),
-                media_type=media_type or download.headers.get("content-type"),
-                upstream_mtime=_upstream_mtime(download.headers),
-                upstream_etag=download.headers.get("etag"),
+                media_type=media_type or download.media_type,
+                upstream_mtime=download.upstream_mtime,
+                upstream_etag=download.upstream_etag,
                 license_note=license_note,
                 redistributable=redistributable,
             )
