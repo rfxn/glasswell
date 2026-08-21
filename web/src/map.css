@@ -28,9 +28,16 @@
   cursor: pointer;
 }
 
+/* Wraps rather than breaking out of the 11rem pill at the narrow breakpoint. */
+.gw-lg-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gw-space-1) var(--gw-space-2);
+}
+
 .gw-lg-title {
-  display: block;
-  width: 100%;
+  flex: 1 1 auto;
   padding: 0;
   border: 0;
   background: none;
@@ -39,6 +46,36 @@
   font-weight: 650;
   text-align: left;
   cursor: pointer;
+}
+
+.gw-lg-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--gw-space-1);
+}
+
+.gw-lg-actions[hidden] {
+  display: none;
+}
+
+.gw-lg-bulk {
+  /* Eyebrow tracking hangs off the last letter; the right pad gives it back. */
+  padding: 0 calc(var(--gw-space-1) - var(--gw-ls-eyebrow)) 0 var(--gw-space-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--gw-radius-xs);
+  background: none;
+  color: var(--slate);
+  font-family: var(--gw-font-display);
+  font-size: var(--gw-fs-eyebrow);
+  font-weight: var(--gw-fw-eyebrow);
+  letter-spacing: var(--gw-ls-eyebrow);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.gw-lg-bulk:hover {
+  border-color: var(--cyan);
+  color: var(--paper);
 }
 
 .gw-lg:not(.gw-open) .gw-lg-body {

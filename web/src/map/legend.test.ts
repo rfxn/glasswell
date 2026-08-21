@@ -1,12 +1,26 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { createLegend, legendEnabled } from "./legend.ts";
-import { STATUS_CLASSES, measuredWellCount } from "./status.ts";
+import {
+  STATUS_STORAGE_KEY,
+  readCapabilitySet,
+  restoreCapabilitySet,
+  writeCapabilitySet,
+} from "./persist.ts";
+import { STATUS_CLASSES, measuredWellCount, statusIds } from "./status.ts";
 
 const rows = (root: HTMLElement): HTMLElement[] => [...root.querySelectorAll<HTMLElement>(".gw-lg-row")];
 const rowFor = (root: HTMLElement, id: string): HTMLElement | undefined =>
   rows(root).find((row) => row.dataset["status"] === id);
+const boxFor = (root: HTMLElement, id: string): HTMLInputElement =>
+  rowFor(root, id)!.querySelector<HTMLInputElement>("input")!;
+const control = (root: HTMLElement, which: "all" | "none"): HTMLButtonElement =>
+  root.querySelector<HTMLButtonElement>(`.gw-lg-${which}`)!;
+const expand = (root: HTMLElement): HTMLElement => {
+  root.querySelector<HTMLElement>(".gw-lg-title")?.click();
+  return root;
+};
 
 describe("the legend", () => {
   it("collapses to a title pill by default and expands on a click of the title", () => {
@@ -90,6 +104,123 @@ describe("the legend", () => {
   });
 });
 
+describe("the legend's all/none control", () => {
+  it("sits in the header, as two named buttons the keyboard can reach", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    document.body.appendChild(legend.element); // focus is only meaningful on a rendered tree
+    expand(legend.element);
+    for (const which of ["all", "none"] as const) {
+      const button = control(legend.element, which);
+      expect(button.tagName).toBe("BUTTON");
+      expect(button.type).toBe("button");
+      expect(button.disabled).toBe(false);
+      expect(button.getAttribute("aria-label")?.length).toBeGreaterThan(0);
+      expect(legend.element.querySelector(".gw-lg-head")?.contains(button)).toBe(true);
+      button.focus();
+      expect(document.activeElement).toBe(button);
+    }
+    legend.element.remove();
+  });
+
+  it("appears with the rows it acts on, not on the collapsed pill", () => {
+    // Nine rows are the thing being bulk-toggled; offering the bulk action while they are
+    // hidden is a click whose whole effect is off screen.
+    const legend = createLegend({ onFilter: () => {} });
+    const actions = legend.element.querySelector<HTMLElement>(".gw-lg-actions")!;
+    expect(actions.hidden).toBe(true);
+    expand(legend.element);
+    expect(actions.hidden).toBe(false);
+    expand(legend.element);
+    expect(actions.hidden).toBe(true);
+  });
+
+  it("clears every known class in one click, and reports it down the row-toggle path", () => {
+    const seen: string[][] = [];
+    const legend = createLegend({ onFilter: (on) => seen.push([...on].sort()) });
+    expand(legend.element);
+    control(legend.element, "none").click();
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toEqual([]);
+    expect(legend.activeStatuses().size).toBe(0);
+    for (const id of statusIds()) expect(boxFor(legend.element, id).checked, id).toBe(false);
+  });
+
+  it("restores every known class in one click", () => {
+    const seen: string[][] = [];
+    const legend = createLegend({ onFilter: (on) => seen.push([...on].sort()) });
+    expand(legend.element);
+    control(legend.element, "none").click();
+    control(legend.element, "all").click();
+    expect(seen[seen.length - 1]).toEqual([...statusIds()].sort());
+    for (const id of statusIds()) expect(boxFor(legend.element, id).checked, id).toBe(true);
+  });
+
+  it("leaves the unmapped row alone — a defect marker is not a filter the reader owns", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    expand(legend.element);
+    legend.setCounts({ unmapped: 4 }, 12);
+    for (const which of ["none", "all"] as const) {
+      control(legend.element, which).click();
+      expect(boxFor(legend.element, "unmapped").disabled).toBe(true);
+      expect(legend.activeStatuses().has("unmapped")).toBe(false);
+    }
+  });
+
+  it("does not enable an out-of-scale row: disabled is the zoom's to say, not the control's", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    expand(legend.element);
+    legend.setCounts({}, 5);
+    for (const which of ["all", "none"] as const) {
+      control(legend.element, which).click();
+      const plugged = rowFor(legend.element, "plugged")!;
+      expect(plugged.querySelector<HTMLInputElement>("input")!.disabled, which).toBe(true);
+      expect(plugged.getAttribute("data-out-of-scale"), which).toBe("true");
+      expect(plugged.title, which).toMatch(/zoom to 9/i);
+    }
+  });
+
+  it("clears an out-of-scale class too, so zooming in does not resurrect what was cleared", () => {
+    // The alternative — skipping the rows the zoom has disabled — makes "none" mean "none of
+    // what you can see", and the wells the reader dismissed come back on the next zoom in.
+    const seen: string[][] = [];
+    const legend = createLegend({ onFilter: (on) => seen.push([...on].sort()) });
+    expand(legend.element);
+    legend.setCounts({}, 5);
+    control(legend.element, "none").click();
+    expect(seen[seen.length - 1]).toEqual([]);
+    legend.setCounts({ plugged: 7_316 }, 12);
+    expect(boxFor(legend.element, "plugged").disabled).toBe(false);
+    expect(boxFor(legend.element, "plugged").checked).toBe(false);
+    expect(legend.activeStatuses().has("plugged")).toBe(false);
+  });
+
+  it("survives the repaint that follows it, rather than being undone by the next count", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    expand(legend.element);
+    control(legend.element, "none").click();
+    legend.setCounts({ active: 20_643, plugged: 7_316 }, 12);
+    expect(legend.activeStatuses().size).toBe(0);
+  });
+
+  it("does not collapse the legend — the control is a control, like a row", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.element.querySelector<HTMLElement>(".gw-lg-title")?.click();
+    control(legend.element, "none").click();
+    expect(legend.element.classList.contains("gw-open")).toBe(true);
+  });
+
+  it("still drives the filter when ?legend=0 has kept the element off the canvas", () => {
+    // map.ts never appends the element in that case but keeps the handle live; a control that
+    // needed a layout to work would make the suppressed map unfilterable.
+    const seen: string[][] = [];
+    const legend = createLegend({ onFilter: (on) => seen.push([...on].sort()) });
+    expand(legend.element);
+    expect(legend.element.isConnected).toBe(false);
+    control(legend.element, "none").click();
+    expect(seen[0]).toEqual([]);
+  });
+});
+
 describe("?legend=0", () => {
   it("suppresses the legend on exactly that value", () => {
     expect(legendEnabled("?legend=0")).toBe(false);
@@ -112,5 +243,63 @@ describe("?legend=0", () => {
   it("is not satisfied by the substring of another parameter", () => {
     expect(legendEnabled("?notlegend=0")).toBe(true);
     expect(legendEnabled("?legendary=0")).toBe(true);
+  });
+});
+
+describe("the legend's persisted status set", () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it("opens with the classes the last visit left on", () => {
+    const legend = createLegend({ on: new Set(["active", "drilling"]), onFilter: () => {} });
+    expect([...legend.activeStatuses()].sort()).toEqual(["active", "drilling"]);
+    expect(boxFor(legend.element, "plugged").checked).toBe(false);
+  });
+
+  it("round-trips a deselect-all through storage and back into a fresh legend", () => {
+    const first = createLegend({
+      on: restoreCapabilitySet(readCapabilitySet(STATUS_STORAGE_KEY), statusIds(), statusIds()),
+      onFilter: (next) => writeCapabilitySet(STATUS_STORAGE_KEY, next, statusIds(), 0),
+    });
+    expand(first.element);
+    expect(first.activeStatuses().size).toBe(statusIds().length);
+
+    control(first.element, "none").click();
+    expect(readCapabilitySet(STATUS_STORAGE_KEY)).toEqual({ on: [], known: statusIds() });
+
+    const reloaded = createLegend({
+      on: restoreCapabilitySet(readCapabilitySet(STATUS_STORAGE_KEY), statusIds(), statusIds()),
+      onFilter: () => {},
+    });
+    expect(reloaded.activeStatuses().size).toBe(0);
+    for (const id of statusIds()) expect(boxFor(reloaded.element, id).checked, id).toBe(false);
+  });
+
+  it("ships a class the stored set never knew about on, rather than hiding a new one", () => {
+    // The {on,known} shape is what tells "the reader turned this off" apart from "this class
+    // did not exist when that state was written". A vocabulary row added later must not
+    // arrive invisible because a stored `on` list predates it.
+    const known = statusIds();
+    const stored = { on: [], known: known.filter((id) => id !== "confidential") };
+    const legend = createLegend({
+      on: restoreCapabilitySet(stored, known, known),
+      onFilter: () => {},
+    });
+    expect([...legend.activeStatuses()]).toEqual(["confidential"]);
+  });
+
+  it("says how many classes are on, so a collapsed key cannot hide a filter", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    const title = (): string => legend.element.querySelector(".gw-lg-title")!.textContent!;
+    expect(title()).toBe("Well status");
+    expand(legend.element);
+    control(legend.element, "none").click();
+    expect(title()).toBe(`Well status · 0/${statusIds().length}`);
+    control(legend.element, "all").click();
+    expect(title()).toBe("Well status");
+    expect(
+      createLegend({ on: new Set(["active"]), onFilter: () => {} }).element.querySelector(
+        ".gw-lg-title",
+      )!.textContent,
+    ).toBe(`Well status · 1/${statusIds().length}`);
   });
 });

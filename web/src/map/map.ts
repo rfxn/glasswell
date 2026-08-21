@@ -22,7 +22,13 @@ import { installClickRouter } from "./click-router.ts";
 import { createHoverCard } from "./hover-card.ts";
 import { createLayerPanel } from "./layer-panel.ts";
 import { createLegend, legendEnabled } from "./legend.ts";
-import { readLayerSet, restoreLayerSet, writeLayerSet } from "./persist.ts";
+import {
+  LAYER_STORAGE_KEY,
+  STATUS_STORAGE_KEY,
+  readCapabilitySet,
+  restoreCapabilitySet,
+  writeCapabilitySet,
+} from "./persist.ts";
 import { createPillStrip } from "./pills.ts";
 import { LAYERS, defaultLayerSet, layerDef, layerIds } from "./registry.ts";
 import { UNMAPPED_STATUS, statusClass, statusIds } from "./status.ts";
@@ -172,14 +178,22 @@ export function createMap(
 
   let basemap = chooseBasemap();
   let variant = applyBasemapVariant(basemap, container);
-  let on = restoreLayerSet(readLayerSet(), layerIds(), defaultLayerSet());
-  let statuses = new Set(statusIds());
+  let on = restoreCapabilitySet(readCapabilitySet(LAYER_STORAGE_KEY), layerIds(), defaultLayerSet());
+  // Every class on by default; the same {on,known} shape, so a class added to the vocabulary
+  // later arrives visible rather than hidden by a stored set that predates it.
+  let statuses = restoreCapabilitySet(
+    readCapabilitySet(STATUS_STORAGE_KEY),
+    statusIds(),
+    statusIds(),
+  );
   const opacities = new Map(LAYERS.map((layer) => [layer.id, layer.opacity]));
   let selected: string | null = null;
 
   const legend = createLegend({
+    on: statuses,
     onFilter: (next) => {
       statuses = next;
+      writeCapabilitySet(STATUS_STORAGE_KEY, statuses, statusIds());
       applyStatusFilter();
       refreshCounts();
     },
@@ -210,7 +224,7 @@ export function createMap(
   map.addControl(new LayerButton(() => panel.toggle()), "top-right");
 
   function persist(): void {
-    writeLayerSet(on, layerIds());
+    writeCapabilitySet(LAYER_STORAGE_KEY, on, layerIds());
     const extras = layerIds().filter((id) => on.has(id) !== Boolean(layerDef(id)?.defaultOn));
     setUrlParam("layers", extras.length > 0 ? extras.join(",") : null);
   }

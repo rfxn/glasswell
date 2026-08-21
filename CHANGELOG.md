@@ -128,6 +128,28 @@ inside the 2015-01 window. Three findings change what phases 2-4 must handle —
 digits and cannot compose an API-10, and an `amend_ind` that is a ten-value vocabulary
 rather than a flag. `tests/fixtures/nm_ocd/SOURCE.md` carries the measurements.
 
+### 2026-08-20 — VF-6: legend select/deselect all
+
+- [New] The well legend's header carries an All/None control, so clearing or restoring
+      the nine status classes is one click rather than nine. It owns `checked` and
+      nothing else: `disabled` and the out-of-scale mark stay the zoom's to set, so
+      "All" cannot promote a class the zoom has withdrawn, and "None" clears one anyway
+      so zooming in does not resurrect what the reader dismissed. The unmapped row is
+      untouched — a defect marker is not a filter the reader owns. It reports through
+      the same `activeStatuses()` path a row toggle uses, and is hidden while the key is
+      collapsed to its pill (VF-6)
+- [New] The legend's status filter now survives a reload, under the same `{on,known}` shape
+      the layer set has always used (`glasswell.statuses`), so a class added to
+      `cr_nd_status_vocab_1` later arrives visible rather than hidden by a stored set that
+      predates it. It did not persist before — VF-6 names a persistence contract the legend
+      was not party to, and this is that half (VF-6)
+- [New] The collapsed legend pill reads `Well status · 3/9` whenever classes are filtered
+      out. A filter that survives a reload must not be invisible on the canvas that reload
+      produces
+- [Change] `persist.ts` takes the storage key as an argument — `readCapabilitySet`,
+         `writeCapabilitySet`, `restoreCapabilitySet` — and keeps one debounce timer per
+         key, so a status write cannot cancel a layer write still in flight
+
 ### 2026-08-20 — DIR-13: TLS on the LAN endpoint
 
 - [New] Caddy terminates `https://glasswell.lab.rpx.sh` on VM 111 and reverse-proxies
