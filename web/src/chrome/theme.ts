@@ -4,6 +4,8 @@
  * The choice is an override, so it persists; it is not URL state, because app/state.ts is
  * a frozen file and a theme is a reader preference, not a view someone would share.
  */
+import { readSetting, writeSetting } from "./store.ts";
+
 export type Theme = "dark" | "light";
 
 export const THEME_STORAGE_KEY = "glasswell.theme";
@@ -17,21 +19,8 @@ const COPY: Record<Theme, { label: string; title: string }> = {
   light: { label: "Dark", title: "Switch to the dark theme" },
 };
 
-function storage(): Storage | null {
-  try {
-    return window.localStorage;
-  } catch {
-    return null; // A privacy-mode browser throws on access; a theme is not worth failing boot over.
-  }
-}
-
 export function storedTheme(): Theme | null {
-  let raw: string | null = null;
-  try {
-    raw = storage()?.getItem(THEME_STORAGE_KEY) ?? null;
-  } catch {
-    return null; // Same class as above: getItem itself can throw once storage is blocked.
-  }
+  const raw = readSetting(THEME_STORAGE_KEY);
   return raw === "dark" || raw === "light" ? raw : null;
 }
 
@@ -42,12 +31,7 @@ export function currentTheme(): Theme {
 export function applyTheme(theme: Theme): void {
   document.documentElement.dataset.theme = theme;
   document.dispatchEvent(new CustomEvent(THEME_EVENT, { detail: { theme } }));
-  try {
-    storage()?.setItem(THEME_STORAGE_KEY, theme);
-  } catch {
-    // Quota or a blocked store: the attribute is applied either way, the choice just
-    // does not survive a reload.
-  }
+  writeSetting(THEME_STORAGE_KEY, theme);
 }
 
 /**
