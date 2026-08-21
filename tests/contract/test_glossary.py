@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-SEEDED_TERMS = 44
+SEEDED_TERMS = 45  # 44 from the glossary seed, plus gt_service_well from migration 027
 STOPWORD_TERMS = 9
 
 

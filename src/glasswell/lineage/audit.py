@@ -27,6 +27,10 @@ AUDIT_EVENT_TYPES: frozenset[str] = frozenset(
         "staging.load_completed",
         "staging.load_failed",
         "staging.rows_quarantined",
+        # A record left out of staging because the run's scope did not cover it. Not a reject:
+        # nothing failed, the raw bytes are unchanged, and widening the scope is a re-parse. The
+        # count is what stops an exclusion from being invisible in the staged row total.
+        "staging.scope_excluded",
         "canonical.promotion_completed",
         "canonical.vintage_opened",
         "canonical.restatement_detected",

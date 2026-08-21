@@ -6,8 +6,10 @@ from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_MANIFEST_ID
 
-# Four ND sources from seed_all, plus the three the shared test template already carries.
-SOURCE_COUNT = 6
+# Four ND sources and three TX ones (the county GIS, the wellbore export and the NAD27 grid)
+# from seed_all, plus the three the shared test template already carries. tx_pdq_dsv is one of
+# those three, so it is not counted twice.
+SOURCE_COUNT = 9
 
 
 def test_healthz_is_cheap_and_unenveloped(client: TestClient) -> None:

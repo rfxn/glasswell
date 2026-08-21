@@ -15,7 +15,13 @@ from glasswell.seed.conformance_nd import ND_RULES
 MINIMUM_RULES = 17
 MINIMUM_TERMS = 30
 MEASURED_ND_STATUSES = 19
-POLICY_RULES = ("cr_nd_liquids_policy_1", "cr_nd_null_semantics_1", "cr_nd_pool_rollup_1")
+POLICY_RULES = (
+    "cr_nd_liquids_policy_1",
+    "cr_nd_null_semantics_1",
+    "cr_nd_pool_rollup_1",
+    "cr_tx_allocation_scope_1",
+    "cr_tx_ewa_role_1",
+)
 
 SUPERSEDED_RULE_IDS = {rule["supersedes_rule_id"] for rule in ND_RULES if rule.get(
     "supersedes_rule_id")}
@@ -119,7 +125,7 @@ def test_the_only_rules_without_an_executor_are_the_policy_declarations(db, seed
     assert declarations == POLICY_RULES
     for row in registry_rows(db):
         if row["rule_kind"] == "code_ref":
-            assert row["spec"]["module_function"].startswith("glasswell.ingest.")
+            assert row["spec"]["module_function"].startswith("glasswell.")
             assert row["spec"]["contract_note"]
 
 

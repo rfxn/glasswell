@@ -83,4 +83,6 @@ def test_the_policy_declarations_are_visible_as_such(client: TestClient) -> None
         "cr_nd_liquids_policy_1",
         "cr_nd_null_semantics_1",
         "cr_nd_pool_rollup_1",
+        "cr_tx_allocation_scope_1",
+        "cr_tx_ewa_role_1",
     }
