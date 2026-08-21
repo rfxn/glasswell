@@ -7,6 +7,38 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-21 — D1 phase 2: 48 GB of XML streamed into staging without holding it
+
+- [New] Migration 028: eight verbatim staging tables for the NM sibling sources, a Parquet
+      partition registry for the production spine, the NM pool, status and stream
+      registries, and an index on `(source_id, production_month)` so promotion's batch
+      predicate has something to sit on once canonical grows 122x. The reason vocabulary
+      is untouched — migration 021 already admits `key_incomplete`, and the two codes
+      SB-01 handback H5 asks for belong to the track that owns H5
+- [New] `ingest/xml_stream.py`: BOM-aware UTF-16 decoding, a fully-qualified match against
+      the `SqlRowSet1` namespace, and root pruning into 65,536-row batches. A bare-tag
+      match against this document returns zero records in silence and `elem.clear()`
+      without pruning holds all 48.1M siblings, so both are pinned in a rule and asserted
+      in a test
+- [New] `staging/duck.py` makes DuckDB — locked since P0 and imported nowhere — both the
+      Parquet writer and the reader. Batches cross into it through the Arrow C stream
+      capsule polars already exposes, because `pyarrow` is not in the lockfile and is not
+      being added; `COPY ... (FORMAT PARQUET)` after `SET threads=1` is the expressible
+      form of SB-01 §3.6's write profile, and the same rows written twice are byte-identical
+- [New] `ingest.nm_ocd --stage-only` streams each artifact out of its zip member — nothing
+      is extracted, so NM contributes nothing to the scratch budget — and reconciles every
+      parsed row as staged or quarantined on the derivation itself (SB-01 §3.5). A batch
+      that loses a declared column is quarantined as `schema_mismatch`; a column nobody
+      declared, or a member that stops being XML, halts the load rather than staging a
+      partial artifact as if it were whole
+- [New] Twenty parse-stage rule rows: a record-tag, namespace, encoding and declared-header
+      rule per source, plus the CHAR widths each one pads to. `prd_knd_cde` is CHAR(2) and
+      arrives as `'O '`, so an exact-match vocabulary would have quarantined every row of
+      the spine as `stream_not_promoted` while reporting success — the trim is a mapping
+      decision and gets a rule row rather than a `.strip()` in the parser. Which columns
+      pad is measured across every record of all nine artifacts, not assumed: 26 columns
+      in six sources, each to one fixed width, while leading spaces are data
+
 ### 2026-08-20 — D1 phase 1: New Mexico's production spine, pulled and stamped
 
 - [New] `lineage/ftp.py` and an `ftp_anon` transport inside `fetch_raw`: anonymous FTP to
