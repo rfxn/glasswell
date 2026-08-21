@@ -8,8 +8,11 @@ Named there as **the highest-risk SB in the program**.
 
 **Citation convention.** `v0.6 §N` = `blueprint-v0.6-draft.md` section N · `ad:N` =
 `work-output/assessment-datasources.md` line N · `ab:N` = `work-output/assessment-blueprint.md`
-line N · `DIR-n` = `work-output/direction-log.md` · `SB-07 §N` / `SB-06 §N` = the sibling
-sub-blueprints. Every requirement carries a citation; every design decision carries a one-line
+line N · `dsl:N` = `work-output/data-sources-land.md` line N · `dsw:N` =
+`work-output/data-sources-wellops.md` line N · `DIR-n` = `work-output/direction-log.md` ·
+`SB-07 §N` / `SB-06 §N` = the sibling sub-blueprints. The two assessments now live under
+`work-output/archive/overnight/`; the `ad:`/`ab:` line numbers are unchanged by the move.
+Every requirement carries a citation; every design decision carries a one-line
 justification. Rejected alternatives are in §14, deliberate cuts in §15, and defects found in
 the contract are in §16 — **nothing diverges silently**.
 
@@ -164,9 +167,108 @@ not a grant (`ad:317,641`), and the scorecard reports it as such (v0.6 §3.7.9).
 | Opaque-GUID MFT portal; GUIDs rotate without notice; HTML listings paginate at 250 | all `tx_*` | `mft_guid_resolve` (SB-07 §2.4): hash the dataset page and the listing page into `acquisition_params`; a rotation surfaces as a listing-hash change, not a mystery 404. Weekly monitor job. | `ad:246,536-539` |
 | FTP host published only as a PNG image | `nm_ocd_*` | Pin `164.64.106.6`; on failure, re-resolve by OCR-free fallback — fetch the EMNRD page, extract the image, and **halt with `raw.fetch_failed reason=host_unresolved`** rather than guess. Manual re-pin is a one-line config change and an audit event. | `ad:259,314` |
 | Click-through terms wall blocks unauthenticated HEAD | `fracfocus_csv` | `click_wall_accept`; record `terms_url`, `terms_sha256`, `accepted_at`. A terms-text change is a manifest-visible event. | `ad:330,335` |
-| ArcGIS REST API token-gated (`code 499`) | `nd_gis_*` | Bulk file downloads only. Never build a REST ingest path. | `ad:95` |
+| ArcGIS REST **service-info** request token-gated (`code 499`) on the ND DMR mirror | `nd_gis_*` | Bulk file downloads only **for `gis.dmr.nd.gov`**. Not a general prohibition: every other host is governed by the §1.2.1 allowlist. | `ad:95`, `dsw:528-545` |
 | Subscription ToS forbids automated mining and "practices that substantially duplicate OGD subscription services" | NDIC `/oilgas/basic/` | **Never fetched.** No credential exists in the system. §2.11. | `ad:123,575-576` |
 | Bot-walled web app | OCD Online | Never fetched; FTP is the only NM path. | `ad:312` |
+
+#### 1.2.1 `arcgis_rest_paginate` — the sanctioned REST harvest
+
+*(Amendment, 2026-08-21. Narrows the ArcGIS row above to its own evidence and specifies the
+method that row was blocking. Change-controlled: it lands one new clause in v0.6 §4E — 4E.7.)*
+
+**What the 499 actually evidenced.** `ad:95` is a single observation:
+`https://gis.dmr.nd.gov/dmrpublicservices/rest/services/.../FeatureServer?f=json` returned
+`{"error":{"code":499,"message":"Token Required"}}`, and the handling generalised it into a
+standing rule for every ArcGIS service anywhere. Two later measurements bound that inference:
+
+- Five *other* ArcGIS hosts answer anonymous, unauthenticated queries and return data —
+  `gis.blm.gov`, `ndgishub.nd.gov`, `gis.emnrd.nm.gov`, `mapservice.nmstatelands.org` and
+  `services1.arcgis.com` — all queried by direct fetch on 2026-08-21 (`dsl:5-6,103-113`).
+- On `gis.dmr.nd.gov` **itself**, `/query?where=1=1&returnCountOnly=true&f=json` against the
+  same public service returned `HTTP 200 → {"count":43824}` with no token, reconciling exactly
+  with the 43,824 records in `OGD_Wells.zip` (`dsw:528-545`). Whatever the 499 gates, it is an
+  endpoint or a date — not the host, and certainly not the protocol.
+
+So the prohibition narrows to what it evidenced. **`nd_gis_*` still ingests bulk files**: they
+are cheaper, they carry a `Last-Modified` for conditional GET, and the fetchers exist — no REST
+path is built against `gis.dmr.nd.gov` without an amendment. Everything else is governed by the
+allowlist below. The blanket reading cost real coverage: six of the nine highest-value land
+sources are REST-only, so one 499 made two thirds of that catalogue unreachable (`dsl:883-890`).
+
+**Method.** `arcgis_rest_paginate` is a fifth acquisition method beside SB-07 §2.4's four. SB-01
+owns its *configuration*, as it does for the GUID, FTP and click-wall resolvers (§0.1); the enum
+value and `acquisition_params` shape are handed back to SB-07 as **H11** (§16.2).
+
+- **Paging.** `resultOffset` / `resultRecordCount`, with `resultRecordCount` **≤ the layer's own
+  advertised `maxRecordCount`** — read from the layer JSON, never guessed and never exceeded
+  (2000 on the BLM national service, 1000 on the MT/Dakotas and ND Hub layers, 10000 on NMSLO:
+  `dsl:76,122,243,339`). A layer that does not advertise `supportsPagination: true` is not
+  harvested.
+- **Total order.** `orderByFields` on the layer's object-id field, ascending, on every page.
+  `resultOffset` over an unordered result set is undefined paging: features silently duplicate
+  and drop across page boundaries, and nothing downstream can tell.
+- **Format.** `f=geojson` where `supportedQueryFormats` advertises it, `f=pbf` where it is
+  advertised and materially smaller, `f=json` (Esri JSON) as the fallback. The format used is
+  recorded on the manifest, never re-inferred at parse time.
+- **CRS.** `outSR` is the layer's own declared `spatialReference`, recorded and not converted.
+  Invariant §0.4.5 — the CRS service is the only code path that transforms coordinates — is not
+  relaxed for a fetcher; the BLM national service is EPSG:3857 with a NAD83 sibling, and picking
+  between them is a registry decision, not a query parameter (`dsl:75-78`).
+- **Count assertion.** `returnCountOnly=true` is issued **before and after** the walk.
+  `count_before`, `count_after` and the harvested feature count all land in
+  `acquisition_params`, and page count must equal `ceil(count_before / resultRecordCount)`. Any
+  disagreement fails the fetch with `raw.fetch_failed reason=page_walk_incomplete` and **writes
+  no manifest**. A partial walk that silently under-loads a map layer is the exact failure this
+  method exists to make loud (`dsl:888-890`).
+- **One artifact, one manifest.** Pages are concatenated in walk order into a single
+  newline-delimited payload, hashed once, and written as one raw-zone artifact with one `sha256`
+  and one `manifest.json` (SB-07 §2.2–§2.3). Pages are not separate manifests, on the same
+  reasoning that makes archive members addressable inside one inventory rather than fifteen rows.
+- **Vintage.** A service publishes no vintage, so the manifest is **self-stamped** with the
+  retrieval vintage under v0.6 §4E.2 — the same treatment NM's undated `<table>.zip` and RRC's
+  opaque MFT links already get. Where the layer or its portal item exposes an edit date it lands
+  in `upstream_mtime`; where it does not, the column is null and the register says so.
+- **Change detection.** `manifest_head` sha256 comparison, as everywhere else (§0.3). The
+  assembled bytes are stable across pulls *because* the order is pinned; that is what lets an
+  unchanged layer produce `raw.fetch_verified_unchanged` instead of a spurious new vintage.
+- **Politeness** (§1.3, v0.6 §4E.6). One connection per host, pages issued serially with a
+  minimum inter-request delay, the project `User-Agent`, and a poll cadence tracking the layer's
+  own change rate — monthly for PLSS-class layers, which is the existing `nd_gis_sections`
+  posture (`dsl:97-101`).
+
+**Host allowlist**, seeded with the five hosts verified by direct fetch on 2026-08-21 (`dsl:5-6`):
+
+| Host | Verified | Evidence |
+|---|---|---|
+| `gis.blm.gov` (`/arcgis`, `/mtarcgis`, `/nmarcgis`) | `MapServer?f=json` → `200`; `supportedQueryFormats: JSON, geoJSON, PBF`; `maxRecordCount` 2000 / 1000; `supportsPagination: true` | `dsl:65-76`, `dsl:117-124`, `dsl:421` |
+| `ndgishub.nd.gov` | `All_GovtLands_State/MapServer?f=json` → `200`; `maxRecordCount: 1000`; `supportsPagination: true` | `dsl:239-243` |
+| `gis.emnrd.nm.gov` | `OCDView/OCD_PLSS/MapServer?f=json` → `200`; counts measured live | `dsl:128-131` |
+| `mapservice.nmstatelands.org` | `/arcgis/rest/services?f=json` → `200`; `capabilities: Map,Query,Data`; `maxRecordCount: 10000` | `dsl:335-339` |
+| `services1.arcgis.com` (orgs `YWG34dhJxrbxQWdF`, `KbxwQRRfWyEYLgp4`, `GOcSXpzwBHyk2nog`) | `FeatureServer/0?f=json` → `200`; `capabilities: Query,Extract`; `maxRecordCount: 2000` | `dsl:185-186`, `dsl:385`, `dsl:575` |
+
+**Failure posture — hosts move by amendment, not by code.** An allowlisted host that starts
+returning `499`, `403` or `429` halts with `raw.fetch_failed reason=host_token_gated`, emits the
+audit event, and **stops**: no retry against a sibling host, no fallback mirror, no quiet
+degrade to an unallowlisted path. Removing it is an amendment to this section, dated, carrying
+the failing response as its evidence — the same discipline R8 puts on a conformance decision,
+for the same reason: an access decision that lives only inside a `try`/`except` is a decision
+nobody can review, and §2.2's `parse_directive` seed is superseded rather than edited (v0.6
+§4E.4). Admission runs the same way in the other direction, so three hosts with real evidence
+and no amendment are **candidates, not allowlist entries**:
+
+- `gis.dmr.nd.gov/dmrpublicservices` — `HTTP 200`, no token, count reconciles with the shapefile
+  (`dsw:528-545`). Not seeded: it is the host the row above was written against, and admitting
+  it belongs with the ND fetcher work that would actually use it.
+- `gis.rrc.texas.gov/server` — `HTTP 200`, `currentVersion 11.3`, a 180,195-feature wellbore-line
+  layer (`dsw:1068-1075`). Not seeded on two grounds: the two reports disagree on the path
+  (`https://gis.rrc.texas.gov/arcgis/rest/services?f=json` → `404`, `dsl:225`), and the RRC grant
+  text is in the owner queue, which is not this amendment's to read.
+- `gisweb.glo.texas.gov` — `HTTP 200` (`dsl:213`, `dsl:561`). Not seeded: outside the five the
+  land report names as its verified set, and no TX land source is registered yet.
+
+**This amendment registers no source.** No `source_id` is added, no cadence is scheduled, no
+phase gains work, and §1.1's register gains no row. It removes an access prohibition broader than
+its evidence and pins the method the land-layer roadmap would otherwise invent under deadline.
 
 ### 1.3 Politeness
 
@@ -177,6 +279,14 @@ and we pull on the first Tuesday. One connection per source, no parallel fan-out
 source, `User-Agent: glasswell-ingest/<version> (+ryan@rfxn.com)`. Conditional GET wherever an
 ETag or `Last-Modified` is offered — the 248 TX county GIS zips are the case where this matters,
 turning a 160 MB weekly pull into a handful of changed files.
+
+A paginated REST harvest (§1.2.1) is the one fetch that issues hundreds of requests for one
+artifact, so politeness is stated for it in requests rather than in pulls: pages serially on one
+connection, never in parallel, ≥ 1 s apart, and the harvest is scheduled at the layer's change
+rate — monthly for a PLSS-class layer, not weekly because the fetcher is cheap. The measured
+walks are large enough for that to matter: 36 pages for ND sections, 566 for ND intersected
+(`dsl:91-93`). Run daily, that is the first thing this project does that a publisher could
+reasonably call abuse (`dsl:97-101`).
 
 ---
 
@@ -300,8 +410,12 @@ a permit event stream are subscription-gated (`ad:129`). Consequence: ND permit 
 permit event stream that E8/U16 consume. This is DIR-2 paying for itself in a place v0.6 does
 not anticipate, and it is why the pull cadence is weekly on a 22 KB file.
 
-**Gotchas → seeds.** ArcGIS REST is token-gated, files only (`ad:95`) — a `parse_directive`
-recording the access decision. PLSS layers static since 2020 with the ND GIS Hub as the
+**Gotchas → seeds.** ArcGIS REST on the DMR mirror is files-only (`ad:95`) — a `parse_directive`
+recording the access decision, whose substance is now **host-scoped rather than universal**
+(§1.2.1) and whose evidence gains the 2026-08-21 probe that got `HTTP 200` off the same host
+without a token (`dsw:528-545`). If the row is already seeded, the narrowing is a supersession
+with a new effective date, never an edit (v0.6 §4E.4).
+PLSS layers static since 2020 with the ND GIS Hub as the
 authoritative refresh path (`ad:96,99`) — a `parse_directive` naming the mirror and its
 staleness, so a future reader does not "fix" it. `OGD_Wells` / `NDOGD_Surveys` attribute schemas
 are **UNVERIFIED** (`ad:97,638`) — see P1-T1.
@@ -1763,6 +1877,7 @@ Fourteen. Each is a defect in `blueprint-v0.6-draft.md`, not a divergence taken 
 | **H8** | SB-06 | Two paths are unallocated: the tabular staging Parquet root and the extraction scratch root (≤30 GB peak, purge-on-boot) | Add `/srv/glasswell/staging` and `/srv/glasswell/scratch` to §3.1/§3.2, both on the HDD zvol |
 | **H9** | SB-06 / SB-07 | **Role separation is defeated.** SB-06 §1.3 promises one login role `glasswell` with `peer` auth; SB-07 §11 requires `glasswell_pipeline` (RW on lineage) and `glasswell_api` (RO plus narrow inserts) to be genuinely separated. One OS user peer-mapped to one role means the API can rewrite pipeline lineage | Two OS users — `glasswell` (API) and `glasswell-ingest` (pipeline) — each peer-mapped to its own login role inheriting the corresponding `nologin` group role |
 | **H10** | SB-06 | DIR-9's 60–90 GB staging figure is carried into SB-06 §3.2's `bulk` tablespace sizing. Under §3.2's split, `bulk` holds only spatial staging (~5 GB) and the bulk of staging is Parquet | Re-scope the `bulk` tablespace note; the disk budget is unchanged and gains headroom |
+| **H11** | SB-07 | §2.4's `acquisition_method` enum has four values and no way to express a paginated service harvest, which §1.2.1 now sanctions for hosts outside the ND DMR mirror | Add `arcgis_rest_paginate` to the enum, with `acquisition_params` = `{service_url, layer_id, layer_json_sha256, service_version, where, out_sr, format, result_record_count, order_by, pages, count_before, count_after, features_written}`, and `page_walk_incomplete` / `host_token_gated` to the `raw.fetch_failed` reason vocabulary |
 
 ### 16.3 Open items handed back
 
