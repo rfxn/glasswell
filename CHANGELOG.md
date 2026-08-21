@@ -7,6 +7,10 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-21 — explorer P-A + NM D1 conformance
+
+(tracks append entries under this heading; consolidated at integration)
+
 ### 2026-08-21 — increment-3 merge train
 
 - [Fix] The `collateral` job's link check allows this product's own `gw:` scheme beside
