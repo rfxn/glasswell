@@ -136,7 +136,7 @@ manifest key and appears in every partition path. Renaming one is a migration, n
 | `nm_ocd_wcproduction` | OCD well-completion production | `ftp_anon` | XML in zip | nightly | nightly | 923.6 MB | **no published grant** | `ad:269,317` |
 | `nm_ocd_core_<table>` | `wellhistory`, `wchistory`, `pod`, `podwc`, `ogrid`, `property`, `pool`, `spacingunit`, `acreage`, `punevent` | `ftp_anon` | XML in zip | nightly | nightly | ~97 MB total | as above | `ad:274-283` |
 | `nm_ocd_othervolume` | dispositions | `ftp_anon` | XML in zip | nightly | nightly | 95.6 MB | as above | `ad:272` |
-| `fracfocus_csv` | FracFocus bulk CSV | `click_wall_accept` | CSV in zip | business-daily | weekly | **UNVERIFIED** | §7 use "without restriction"; **no alteration** | `ad:330-335,358-363` |
+| `fracfocus_csv` | FracFocus bulk CSV | `click_wall_accept` | CSV in zip | business-daily | weekly | **440.2 MB → 3.26 GiB / 18 members** (measured) | §7 use "without restriction"; **no alteration** | `ad:330-335,358-363`, `dsw:39-79` |
 | `proj_grid_nad27` | PROJ/NOAA NADCON grid used by the NAD27 transform | `https_get` | GeoTIFF | on PROJ release | on pin change | ~10 MB | public domain | §2.8 |
 
 `lineage.sources` as shipped in P0 lacks the columns this register needs. SB-01 extends it
@@ -166,7 +166,7 @@ not a grant (`ad:317,641`), and the scorecard reports it as such (v0.6 §3.7.9).
 |---|---|---|---|
 | Opaque-GUID MFT portal; GUIDs rotate without notice; HTML listings paginate at 250 | all `tx_*` | `mft_guid_resolve` (SB-07 §2.4): hash the dataset page and the listing page into `acquisition_params`; a rotation surfaces as a listing-hash change, not a mystery 404. Weekly monitor job. | `ad:246,536-539` |
 | FTP host published only as a PNG image | `nm_ocd_*` | Pin `164.64.106.6`; on failure, re-resolve by OCR-free fallback — fetch the EMNRD page, extract the image, and **halt with `raw.fetch_failed reason=host_unresolved`** rather than guess. Manual re-pin is a one-line config change and an audit event. | `ad:259,314` |
-| Click-through terms wall blocks unauthenticated HEAD | `fracfocus_csv` | `click_wall_accept`; record `terms_url`, `terms_sha256`, `accepted_at`. A terms-text change is a manifest-visible event. | `ad:330,335` |
+| Click-through terms wall — **acceptance is recorded by policy, not enforced by the server** (HEAD and range both succeed unauthenticated) | `fracfocus_csv` | `click_wall_accept` is **kept**: hashing the terms we agreed to is an evidentiary choice, not a technical workaround. Record `terms_url`, `terms_sha256`, `accepted_at`. A terms-text change is a manifest-visible event. | `ad:330,335`, `dsw:39-63` |
 | ArcGIS REST **service-info** request token-gated (`code 499`) on the ND DMR mirror | `nd_gis_*` | Bulk file downloads only **for `gis.dmr.nd.gov`**. Not a general prohibition: every other host is governed by the §1.2.1 allowlist. | `ad:95`, `dsw:528-545` |
 | Subscription ToS forbids automated mining and "practices that substantially duplicate OGD subscription services" | NDIC `/oilgas/basic/` | **Never fetched.** No credential exists in the system. §2.11. | `ad:123,575-576` |
 | Bot-walled web app | OCD Online | Never fetched; FTP is the only NM path. | `ad:312` |
@@ -434,13 +434,55 @@ data-unreachable** in the E16 matrix, not a silent feature omission.
 
 **Fetch.** `click_wall_accept`: the terms page is fetched and hashed, acceptance recorded, then
 `https://www.fracfocusdata.org/digitaldownload/FracFocusCSV.zip` (`ad:330-331`). CSV is taken,
-not the SQL Server `.bak` — see §14. Size is **UNVERIFIED** because the click-wall blocks HEAD
-and range probes (`ad:335,635`); the first pull measures it and the measurement is written to
-the source register, not guessed at now.
+not the SQL Server `.bak` — see §14. **Size, measured 2026-08-21: 440,245,205 bytes compressed →
+3,497,920,894 bytes (3.26 GiB) across 18 members**, taken by `HEAD` plus a ranged read of the
+zip central directory rather than by downloading the archive (`dsw:39-79`). This is the figure
+§11 and §16.3 were holding open. `ad:335,635` recorded HEAD and range as blocked; both succeed
+unauthenticated today, and the later reproducible measurement stands — the terms live on
+`fracfocus.org`, the payload on `fracfocusdata.org`, and only the first is gated (`dsw:55-63`).
+The archive is ~8× its compressed size, so members are **streamed, never materialised together**
+(§11).
 
 **Cadence.** Business-daily upstream (`ad:333`), weekly pull (v0.6 §3.7.4). Corrections are
-retroactive (`ad:349`), so every pull is a potential restatement of arbitrary history; detection
-is by `DTMOD` (`ad:499`).
+retroactive (`ad:349`), so every pull is a potential restatement of arbitrary history. Detection
+is **not** by `DTMOD` — see below.
+
+**Restatement detection — corrected, because the named column does not exist.** `ad:499` records
+the detection key as `DTMOD` and this document repeated it here and in §5.4. **There is no
+`DTMOD` column in the CSV distribution**: not in `DisclosureList` (17 columns), not in
+`FracFocusRegistry` (31), not in `WaterSource` (9), confirmed against live header rows read out
+of each member's local header and against the bundled `readme csv.txt` dictionary
+(`dsw:82-105`). It is plausibly a column of the SQL Server `.bak`, which is a different artifact
+and one §14 rejects on its own grounds. A design keyed on a field the source does not publish is
+a design that fails on first run, so it is replaced rather than patched:
+
+- **Did anything change?** Per-member `sha256` in the manifest's `decompressed_inventory`
+  (SB-07 §2.2). 18 members, 16 of them registry shards; an unchanged member is skipped whole and
+  costs one hash comparison, not a row-wise compare. This is the ordinary manifest discipline
+  every other source already uses, applied at member granularity because the archive is
+  re-cut daily and one shard changing does not implicate the other fifteen.
+- **Which rows restated?** The existing bitemporal append (§5.4): `value_hash` over the mutable
+  payload columns, keyed on `DisclosureId` for the disclosure grain and
+  `(DisclosureId, IngredientsId)` for the ingredient grain. A row whose hash differs from the
+  head appends at the new `report_vintage`; a row whose hash matches writes nothing. **No new
+  machinery is required** — this is what change-only append was built to do, and it is why the
+  absent column costs a scan rather than a redesign.
+- **What it costs, stated rather than hidden.** A full-snapshot compare over 3.26 GiB of
+  decompressed CSV per changed member, weekly. That is the honest price of a source that
+  publishes no per-row modification stamp, and it is bounded by the pull cadence, not the
+  upstream one (`dsw:100-105`).
+- **`upstream_mtime` is a trigger, not a detector.** The `Last-Modified` on the zip
+  (`Fri, 21 Aug 2026 08:04:14 GMT`, `dsw:39-50`) tells us the archive was re-cut. It cannot tell
+  us *which* disclosures moved, and treating a file-level date as a row-level change key is the
+  same error `DTMOD` was standing in for.
+- **The same root cause reaches one paragraph further, and is flagged rather than quietly
+  rewritten.** `DTMOD` came from the SQL Server schema, and so do the staging table names and
+  join key below: the CSV distribution ships `DisclosureList_1.csv`, `FracFocusRegistry_1..15.csv`,
+  `WaterSource_1.csv` and `readme csv.txt`, joining on `DisclosureId` / `IngredientsId`, not
+  `ru.pkey = ri.pKeyDisclosure` (`ad:337`, graded LIKELY and now superseded by measurement —
+  `dsw:82-95`). Renaming a staging table is a migration, so the rename lands with the parser
+  rather than here; **what this amendment fixes is the design that cannot run, and what it
+  records is the one that will need renaming.**
 
 **Staging schemas.** One per CSV member, source-faithful:
 `stg_fracfocus_csv__registryupload`, `__registryuploadpurpose`, `__registryuploadingredients`,
@@ -1054,7 +1096,7 @@ Detection per source (v0.6 §4E.3, `ad:496-499`):
 | TX | re-pull the monthly dump; diff on `(lease_key, cycle)` — the RRC states there is **no point beyond which corrected reports may not be filed** (`ad:472`) |
 | ND | re-pull; diff on `(entity_key, production_month)` with the format pinned per period |
 | NM | nightly re-pull; diff on `mod_dte` — a promotion optimisation, not a lineage concept (SB-07 §2.1) |
-| FracFocus | snapshot each pull; diff on `DTMOD` |
+| FracFocus | per-member `sha256` from the manifest inventory decides *whether* a shard changed; `value_hash` on `DisclosureId` / `(DisclosureId, IngredientsId)` decides *which rows* restated. **No `DTMOD` column exists in the CSV distribution** (`dsw:96-105`) — §2.3 |
 
 `canonical.restatement_detected` is emitted with the SB-07 §5.4 payload and is the trigger for
 `mart.invalidated`. **Vintage capture starts at P1** (v0.6 §4E.5): history not snapshotted
@@ -1802,7 +1844,7 @@ Reconciled to DIR-9 (`ad:592-597`) and mapped onto SB-06 §3.1–3.2's mounts.
 
 | Zone | DIR-9 figure | SB-01 realised | Mount | Note |
 |---|---|---|---|---|
-| Raw / immutable | ~15 GB | **~15 GB + ~2 GB/yr of changed re-pulls** | `/srv/glasswell/raw` (HDD) | ND 1.4 GB · TX ~5.5–7 GB · NM 1.72 GB · FracFocus unknown (`ad:429-441`). Growth is bounded by the change rate, not the pull rate — unchanged bytes create no artifact (SB-07 §2.1) |
+| Raw / immutable | ~15 GB | **~15 GB + ~2 GB/yr of changed re-pulls** | `/srv/glasswell/raw` (HDD) | ND 1.4 GB · TX ~5.5–7 GB · NM 1.72 GB · FracFocus **440 MB per changed pull** (`dsw:39-50`). Growth is bounded by the change rate, not the pull rate — unchanged bytes create no artifact (SB-07 §2.1) |
 | Staging, **resident** | "60–90 GB peak" | **8–15 GB** | `/srv/glasswell/staging` (HDD) | The 60–90 GB figure is *uncompressed parsed text* (`ad:456`). Staging is zstd Parquet, so >25 GB of PDQ DSV lands as single-digit GB. |
 | Staging, **transient scratch** | not separately stated | **≤ 30 GB peak, TX PDQ only** | `/srv/glasswell/scratch` (HDD) | Only `tx_pdq_dsv` needs on-disk extraction, and only one member at a time (§2.4). NM streams from the zip member (§2.10) and contributes zero. Purged after each member; purged on boot. |
 | Spatial staging | — | ~5 GB | tablespace `bulk` → `/srv/glasswell/pgbulk` (HDD) | 248+246 TX county layers plus ND layers, truncated after promotion |
@@ -1820,10 +1862,15 @@ is not a constraint** (`ad:597`). HDD total at maturity: 15 + 15 + 30 + 5 + 8 �
 SSD: SB-06 §3.2's ≈104 GB of 150 GB budget stands, with SB-01's PGDATA share inside its ~60 GB
 allowance.
 
-**The unmeasured number.** FracFocus size is UNVERIFIED (`ad:335,635`) and is measured on first
-pull, not guessed. At a plausible multi-million-ingredient-row scale it is a low-single-digit-GB
-addition to raw and staging, inside the headroom above; the register is updated with the measured
-figure and the scorecard carries it.
+**The measured number.** FracFocus is **440.2 MB compressed → 3.26 GiB across 18 members**,
+measured 2026-08-21 by `HEAD` plus a ranged read of the zip central directory, without
+downloading the archive (`dsw:39-79`). It was the one unmeasured figure in this budget. Three
+consequences, none of which move the conclusion: raw gains 440 MB per *changed* pull, not per
+pull; the ~8× expansion ratio is why §2.3 streams each member out of the zip rather than
+extracting the archive, so like NM it contributes **zero** to the scratch line and single-digit
+GB of Parquet to resident staging; and the weekly restatement compare (§2.3) reads 3.26 GiB of
+decompressed CSV per changed member, which is a CPU and I/O cost on a source that publishes no
+per-row modification stamp, not a storage cost. **Storage is still not a constraint** (`ad:597`).
 
 ---
 
@@ -1896,7 +1943,7 @@ figure and the scorecard carries it.
 
 ### 16.1 v0.6 errata — defects found in the contract
 
-Fourteen. Each is a defect in `blueprint-v0.6-draft.md`, not a divergence taken by this document.
+Fifteen. Each is a defect in `blueprint-v0.6-draft.md`, not a divergence taken by this document.
 
 | # | § | Defect | Proposed resolution |
 |---|---|---|---|
@@ -1914,6 +1961,7 @@ Fourteen. Each is a defect in `blueprint-v0.6-draft.md`, not a divergence taken 
 | **E12** | §3.6.12 row 6 | `/v1/wells/{api10}/production` takes `granularity` as a **request** parameter, but granularity is an output property (R5), not a user-selectable dimension | Rename to `granularity_filter` with an explicit enum, or drop it; SB-04 to decide |
 | **E13** | §3.7.1 | The sizing table labels 60–90 GB as *staging residency*. That figure is uncompressed parsed text (`ad:456`); Parquet staging never materialises it wholesale. The line conflates a transient decompression scratch requirement with resident cost | Replace with §11's decomposition: ~8–15 GB resident, ≤30 GB transient scratch, one member at a time |
 | **E14** | §3.7.4 | The ND DMR GIS row reads as though the whole DMR mirror is stale. `ad:68` says the *downloads* refresh daily; `ad:96` says only the PLSS layers are stale | Scope the staleness note to the PLSS layers |
+| **E15** | §4E.3, §3.7.4 | FracFocus restatement detection is specified against a **modification date the CSV distribution does not carry** — no `DTMOD` and no per-row stamp in any of its three schemas (`dsw:82-105`). SB-01 inherited the same defect in §2.3 and §5.4 from `ad:499`. A detection design keyed on an absent field does not fail at review, it fails on the first pull, and it fails by finding nothing | Member-level `sha256` for *whether*, `value_hash` on `DisclosureId` / `(DisclosureId, IngredientsId)` for *which* — the append-only vintage model already does both (§2.3, §5.4). **Applied in this amendment**, in v0.6 §4E.3 and §3.7.4 and here |
 
 ### 16.2 Cross-SB conflicts handed back
 
@@ -1939,7 +1987,7 @@ Fourteen. Each is a defect in `blueprint-v0.6-draft.md`, not a divergence taken 
 | P1-T1: ND operator key, pool/landing-zone attribute, survey station granularity | SB-01, P1 | Requires opening the archives; each outcome maps to a rule row or a recorded honest gap |
 | P7b-T2: the NAD83 truth set for the CI datum guard | SB-01, P7b | No source is identified anywhere in the assessment; the daf420 lat/long datum is itself unknown |
 | P7b-T3: `dbf900` record layout | SB-01, P7b | The assessment names the manual, not the structure |
-| FracFocus download size | SB-01, first pull | Click-wall blocks HEAD and range probes (`ad:335,635`) |
+| ~~FracFocus download size~~ — **CLOSED 2026-08-21** | — | Measured without downloading: 440,245,205 bytes → 3.26 GiB, 18 members (`dsw:39-79`). The stated blocker was wrong as well as stale — HEAD and range both succeed unauthenticated (`dsw:55-63`). Register, §2.3 and §11 carry the figure |
 | NM uncompressed XML size | SB-01, first pull | 10–20 GB is a compression-ratio estimate (`ad:640`) |
 | TX completion-feed true archive floor | SB-01, backfill | Portal pagination caps at 250 entries (`ad:213`) |
 | Whether Permian wellbore quarantine share justifies the 5% trigger | SB-01, P7 exit | The threshold is a judgment (v0.6 §11); §4.3 makes it falsifiable |
