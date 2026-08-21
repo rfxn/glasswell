@@ -1,0 +1,334 @@
+/* SB-08 §2.5. Named slots aliasing the ladder in style.css:82-90 — the explorer declares no
+   rung of its own (G-3), and the one raw z-index below is sealed inside a local stacking
+   context, so it cannot compete with the drawer. */
+#gw-explore {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.gw-explore {
+  --gw-z-explore-pane: var(--gw-z-panel);
+  --gw-z-explore-rail-pop: var(--gw-z-rail-pop);
+  --gw-explore-rail-w: 240px;
+  --gw-explore-pane-w: 420px;
+
+  position: relative;
+  height: 100%;
+  display: grid;
+  grid-template-columns: var(--gw-explore-rail-w) minmax(0, 1fr) var(--gw-explore-pane-w);
+  background: var(--ink);
+  color: var(--paper);
+  font-size: var(--gw-fs-body);
+}
+
+.gw-explore-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gw-space-4);
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--gw-space-4) var(--gw-space-3);
+  background: var(--panel);
+  border-right: 1px solid var(--hairline);
+}
+
+.gw-explore-rail-eyebrow,
+.gw-explore-rail h3 {
+  margin: 0;
+  font-size: var(--gw-fs-eyebrow);
+  font-weight: var(--gw-fw-eyebrow);
+  letter-spacing: var(--gw-ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.gw-explore-rail-eyebrow {
+  color: var(--cyan-text);
+}
+
+.gw-explore-rail ul {
+  list-style: none;
+  margin: var(--gw-space-2) 0 0;
+  padding: 0;
+}
+
+.gw-explore-rail li {
+  position: relative;
+}
+
+.gw-explore-ds {
+  display: block;
+  width: 100%;
+  padding: var(--gw-space-1) var(--gw-space-2);
+  border: 0;
+  border-radius: var(--gw-radius-xs);
+  background: none;
+  color: var(--slate);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gw-explore-ds:hover {
+  background: var(--tint-accent);
+  color: var(--paper);
+}
+
+.gw-explore-ds[aria-current="page"] {
+  background: var(--tint-accent);
+  color: var(--paper);
+  box-shadow: inset 2px 0 0 var(--cyan);
+}
+
+.gw-explore-rail-label {
+  display: block;
+}
+
+.gw-explore-rail-note,
+.gw-explore-rail-degraded {
+  margin: var(--gw-space-2) 0 0;
+  font-size: var(--gw-fs-micro);
+  color: var(--muted);
+}
+
+/* §6.5: a gap is stated, never suggested. No control, no link, no count — the register is
+   read-only text and the styling says so before the markup has to. */
+.gw-explore-gap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--gw-space-2);
+  row-gap: 2px;
+  /* No horizontal padding: nothing here is a target, and the 16 px it gives back is what a
+     240 px rail needs to set /v1/wells/{api10}/completions without breaking it mid-word. */
+  padding: var(--gw-space-1) 0;
+  color: var(--muted);
+  cursor: default;
+}
+
+.gw-explore-gap-title {
+  grid-area: 1 / 1;
+  color: var(--slate);
+}
+
+/* Its own row, spanning both columns: the path is the entry's claim, and a claim that is
+   half off the edge of the rail is not one. */
+.gw-explore-gap-op {
+  grid-area: 2 / 1 / auto / -1;
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-fs-mono);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.gw-explore-gap-phase {
+  grid-area: 1 / 2;
+  justify-self: end;
+}
+
+.gw-explore-gap-amendment {
+  grid-column: 1 / -1;
+}
+
+.gw-explore-gap-phase,
+.gw-explore-gap-amendment {
+  font-size: var(--gw-fs-micro);
+  color: var(--amber-text);
+}
+
+.gw-explore-centre {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.gw-explore-tabs {
+  display: flex;
+  gap: var(--gw-space-4);
+  flex: none;
+  padding: 0 var(--gw-space-5);
+  background: var(--panel);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.gw-explore-tab {
+  padding: var(--gw-space-3) 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--slate);
+  font: inherit;
+  font-weight: var(--gw-fw-title);
+  cursor: pointer;
+}
+
+.gw-explore-tab[aria-selected="true"] {
+  color: var(--paper);
+  border-bottom-color: var(--cyan);
+}
+
+.gw-explore-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--gw-space-5);
+}
+
+.gw-explore-title {
+  margin: 0;
+  font-family: var(--gw-font-display);
+  font-size: var(--gw-fs-title);
+  font-weight: var(--gw-fw-title);
+  letter-spacing: var(--gw-ls-title);
+}
+
+.gw-explore-op {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gw-space-2);
+  margin: var(--gw-space-2) 0 0;
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-fs-mono);
+  color: var(--paper);
+}
+
+.gw-explore-op-id {
+  color: var(--muted);
+}
+
+.gw-explore-identity,
+.gw-explore-note {
+  margin: var(--gw-space-2) 0 0;
+  max-width: 68ch;
+  font-size: var(--gw-fs-micro);
+  color: var(--muted);
+}
+
+.gw-explore-facets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gw-space-2);
+  margin-top: var(--gw-space-4);
+}
+
+.gw-explore-facets:empty {
+  margin-top: 0;
+}
+
+/* The grid is a local stacking context of its own, which is what lets its sticky header take a
+   raw z-index without joining the global ladder. */
+.gw-explore-grid {
+  isolation: isolate;
+  position: relative;
+  margin-top: var(--gw-space-4);
+  min-height: 0;
+}
+
+.gw-explore-grid .gw-explore-grid-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--ink);
+  border-bottom: 1px solid var(--hairline-strong);
+}
+
+.gw-explore-pane {
+  z-index: var(--gw-z-explore-pane);
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--gw-space-4);
+  background: var(--panel);
+  border-left: 1px solid var(--hairline);
+}
+
+.gw-explore-eyebrow {
+  margin: 0 0 var(--gw-space-2);
+  font-size: var(--gw-fs-eyebrow);
+  font-weight: var(--gw-fw-eyebrow);
+  letter-spacing: var(--gw-ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--cyan-text);
+}
+
+/* The empty grid and the empty pane are stated, not blank: a placeholder that says what will
+   render there is the difference between "not built yet" and "broken". */
+.gw-explore-grid .gw-explore-note,
+.gw-explore-pane .gw-explore-note {
+  padding: var(--gw-space-3);
+  border: 1px dashed var(--hairline-strong);
+  border-radius: var(--gw-radius-sm);
+}
+
+/* 1366-1599: the pane narrows and the rail gives up width, so the grid keeps its 640 px floor.
+   The rail's full title lifts into a popover rather than collapsing to a group initial — the
+   four initials repeat across every dataset in a group, so an icon strip identifies nothing.
+   Deviation from §2.5's "56 px icon strip", recorded in the chunk's status note. */
+@media (max-width: 1599px) {
+  .gw-explore {
+    --gw-explore-rail-w: 176px;
+    --gw-explore-pane-w: 380px;
+  }
+
+  .gw-explore-ds .gw-explore-rail-label {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .gw-explore-ds:hover .gw-explore-rail-label,
+  .gw-explore-ds:focus-visible .gw-explore-rail-label {
+    position: absolute;
+    top: 100%;
+    left: var(--gw-space-2);
+    right: var(--gw-space-2);
+    z-index: var(--gw-z-explore-rail-pop);
+    padding: var(--gw-space-1) var(--gw-space-2);
+    white-space: normal;
+    background: var(--panel);
+    border: 1px solid var(--hairline-strong);
+    border-radius: var(--gw-radius-xs);
+    box-shadow: var(--shadow-pop);
+  }
+}
+
+/* 1024-1365: the pane stacks below the grid rather than narrowing further. A request block at
+   320 px wraps a curl command into confetti, and the request block is the pane's best content. */
+@media (max-width: 1365px) {
+  .gw-explore {
+    grid-template-columns: var(--gw-explore-rail-w) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .gw-explore-rail {
+    grid-row: 1 / -1;
+  }
+
+  .gw-explore-pane {
+    max-height: 40%;
+    border-left: 0;
+    border-top: 1px solid var(--hairline);
+  }
+}
+
+/* Below 1024 the three columns stop being columns. The card-list and phone postures §2.5
+   specifies are C10's; this arm only keeps the surface readable in the meantime. */
+@media (max-width: 1023px) {
+  .gw-explore {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .gw-explore-rail {
+    grid-row: auto;
+    max-height: 30%;
+    border-right: 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .gw-explore-panel {
+    padding: var(--gw-space-4);
+  }
+}

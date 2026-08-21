@@ -268,6 +268,41 @@ body {
   background: var(--cyan);
 }
 
+/* mode switch. Two surfaces, one segmented control, sitting with the brand rather than in the
+   control cluster: it says where you are, and the cluster says what you can do (SB-08 §2.1). */
+.gw-mode-switch {
+  display: flex;
+  flex: none;
+  height: var(--gw-control-h);
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-pill);
+  background: var(--ink);
+}
+
+.gw-mode-btn {
+  padding: 0 var(--gw-space-3);
+  border: 0;
+  border-radius: var(--gw-radius-pill);
+  background: none;
+  color: var(--slate);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  font-weight: var(--gw-fw-title);
+  cursor: pointer;
+}
+
+.gw-mode-btn:hover {
+  color: var(--paper);
+}
+
+.gw-mode-btn[aria-pressed="true"] {
+  background: var(--tint-accent);
+  color: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--cyan);
+}
+
 .gw-controls {
   display: flex;
   align-items: center;
