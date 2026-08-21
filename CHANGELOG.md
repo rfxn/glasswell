@@ -60,6 +60,10 @@ its own version in its header, and its history is summarised in §3.1.
       pointers are relative to `series_pointer`, and the axis is exempt from suffix expansion
 - [New] The R6 walker asserts every browsable dataset is an operation it already exercises, so a
       generated catalogue cannot outrun the naked-number gate
+- [New] `scripts/regen-snapshot.py` and `make snapshot`: the one in-tree path that rewrites the
+      OpenAPI snapshot, with a `--check` arm that reports drift and writes nothing. A contract test
+      runs the script and holds its output to the bytes the byte-equality gate demands, so a
+      scratch renderer cannot half-repair a generated artifact
 
 ### 2026-08-21 — increment-3 merge train
 
