@@ -126,7 +126,7 @@ manifest key and appears in every partition path. Renaming one is a migration, n
 | `nd_gis_sections` / `_townships` | PLSS `Sections.zip`, `Townships.zip` | `https_get` | shapefile | static since 2020 | monthly | 9.1 MB | as above | `ad:88-89,96` |
 | `nd_gis_surveys` | `NDOGD_Surveys.gdb.zip` | `https_get` | file geodatabase | daily | monthly | 313.6 MB | as above | `ad:76,97` |
 | `nd_gis_fields` / `_units` / `_rigs` | field, unit, rig layers | `https_get` | shapefile | daily | weekly | 335 KB | as above | `ad:83-86` |
-| `tx_pdq_dsv` | RRC PDQ bulk, 16 tables | `mft_guid_resolve` | `}`-DSV in zip | monthly, last Sat | monthly + GUID monitor | 3.55 GB | free, no redistribution clause | `ad:147-160,244` |
+| `tx_pdq_dsv` | RRC PDQ bulk, 16 tables | `mft_guid_resolve` | `}`-DSV in zip | monthly, last Sat | monthly + GUID monitor | 3.55 GB | free, no redistribution clause — **contradicted by the published grant; see §16.3** | `ad:147-160,244`, `dsw:1272-1290` |
 | `tx_wellbore_dbf900` | RRC wellbore master | `mft_guid_resolve` | fixed-width ASCII `.gz` | weekly | weekly | 367.8 MB | as above | `ad:188-193` |
 | `tx_wellbore_ewa_csv` | Wellbore Query export | `mft_guid_resolve` | CSV | monthly, 2nd working day | monthly | 457 MB | as above | `ad:178` |
 | `tx_completions_daily` | W-2/G-1 completion feed | `mft_guid_resolve` | daily zip of ASCII segments | nightly | daily + backfill | 150 MB–1 GB (est.) | as above | `ad:201-213` |
@@ -208,8 +208,11 @@ value and `acquisition_params` shape are handed back to SB-07 as **H11** (§16.2
   `resultOffset` over an unordered result set is undefined paging: features silently duplicate
   and drop across page boundaries, and nothing downstream can tell.
 - **Format.** `f=geojson` where `supportedQueryFormats` advertises it, `f=pbf` where it is
-  advertised and materially smaller, `f=json` (Esri JSON) as the fallback. The format used is
-  recorded on the manifest, never re-inferred at parse time.
+  advertised and materially smaller, `f=json` (Esri JSON) as the fallback. What is recorded on
+  the manifest is the **page** format, in `acquisition_params`; the artifact's own `media_type`
+  is the concatenation's — newline-delimited — because a file of `FeatureCollection`s one per
+  line is not a GeoJSON document, and a parser that reads `media_type` and guesses otherwise
+  fails on the first member. Neither is re-inferred at parse time.
 - **CRS.** `outSR` is the layer's own declared `spatialReference`, recorded and not converted.
   Invariant §0.4.5 — the CRS service is the only code path that transforms coordinates — is not
   relaxed for a fetcher; the BLM national service is EPSG:3857 with a NAD83 sibling, and picking
@@ -240,29 +243,63 @@ value and `acquisition_params` shape are handed back to SB-07 as **H11** (§16.2
 
 | Host | Verified | Evidence |
 |---|---|---|
-| `gis.blm.gov` (`/arcgis`, `/mtarcgis`, `/nmarcgis`) | `MapServer?f=json` → `200`; `supportedQueryFormats: JSON, geoJSON, PBF`; `maxRecordCount` 2000 / 1000; `supportsPagination: true` | `dsl:65-76`, `dsl:117-124`, `dsl:421` |
+| `gis.blm.gov` (`/arcgis`, `/mtarcgis`, `/nmarcgis`) | `MapServer?f=json` → `200` on all three; `supportedQueryFormats: JSON, geoJSON, PBF` and `supportsPagination: true` evidenced **on the national service only**; `maxRecordCount` 2000 (`/arcgis`) / 1000 (`/mtarcgis`); `/nmarcgis` evidences neither, and the method's own guard is what settles it per layer | `dsl:65-76`, `dsl:117-124`, `dsl:421` |
 | `ndgishub.nd.gov` | `All_GovtLands_State/MapServer?f=json` → `200`; `maxRecordCount: 1000`; `supportsPagination: true` | `dsl:239-243` |
 | `gis.emnrd.nm.gov` | `OCDView/OCD_PLSS/MapServer?f=json` → `200`; counts measured live | `dsl:128-131` |
 | `mapservice.nmstatelands.org` | `/arcgis/rest/services?f=json` → `200`; `capabilities: Map,Query,Data`; `maxRecordCount: 10000` | `dsl:335-339` |
-| `services1.arcgis.com` (orgs `YWG34dhJxrbxQWdF`, `KbxwQRRfWyEYLgp4`, `GOcSXpzwBHyk2nog`) | `FeatureServer/0?f=json` → `200`; `capabilities: Query,Extract`; `maxRecordCount: 2000` | `dsl:185-186`, `dsl:385`, `dsl:575` |
+| `services1.arcgis.com` (orgs `YWG34dhJxrbxQWdF`, `KbxwQRRfWyEYLgp4`, `GOcSXpzwBHyk2nog`) | `FeatureServer/0?f=json` → `200`; `capabilities: Query,Extract`; `maxRecordCount: 2000` | `dsl:185-186`, `dsl:385-386`, `dsl:575-576` |
 
-**Failure posture — hosts move by amendment, not by code.** An allowlisted host that starts
+**Failure posture — hosts move by amendment, not by code.** An allowlisted service that starts
 returning `499`, `403` or `429` halts with `raw.fetch_failed reason=host_token_gated`, emits the
 audit event, and **stops**: no retry against a sibling host, no fallback mirror, no quiet
-degrade to an unallowlisted path. Removing it is an amendment to this section, dated, carrying
-the failing response as its evidence — the same discipline R8 puts on a conformance decision,
-for the same reason: an access decision that lives only inside a `try`/`except` is a decision
-nobody can review, and §2.2's `parse_directive` seed is superseded rather than edited (v0.6
-§4E.4). Admission runs the same way in the other direction, so three hosts with real evidence
-and no amendment are **candidates, not allowlist entries**:
+degrade to an unallowlisted path.
 
-- `gis.dmr.nd.gov/dmrpublicservices` — `HTTP 200`, no token, count reconciles with the shapefile
-  (`dsw:528-545`). Not seeded: it is the host the row above was written against, and admitting
-  it belongs with the ND fetcher work that would actually use it.
-- `gis.rrc.texas.gov/server` — `HTTP 200`, `currentVersion 11.3`, a 180,195-feature wellbore-line
-  layer (`dsw:1068-1075`). Not seeded on two grounds: the two reports disagree on the path
-  (`https://gis.rrc.texas.gov/arcgis/rest/services?f=json` → `404`, `dsl:225`), and the RRC grant
-  text is in the owner queue, which is not this amendment's to read.
+- **The halt unit is the service path, not the allowlist row.** An allowlist row can cover
+  several service trees — `gis.blm.gov` covers `/arcgis`, `/mtarcgis` and `/nmarcgis`, and a row
+  is an *authorisation* boundary, not a failure boundary. A `403` on one tree halts that tree's
+  harvests and leaves the others running; halting the row would take three of the highest-value
+  land sources off on one endpoint's bad day. This is the same endpoint-scoped reading the whole
+  section rests on: `ad:95`'s 499 and `dsw:537`'s 200 are one host and one service tree apart,
+  and RRC's own `rrc_internal` is 499 while `rrc_public` is open (`dsw:1079-1080`).
+- **Resuming is not the same event as removing.** A halted service path is re-verified on the
+  next scheduled run: one `returnCountOnly` probe, no harvest. Two consecutive successes and the
+  path resumes on its own, with both the halt and the resume as audit events — a transient
+  upstream `403` must not require a human to write a blueprint amendment before ingest restarts.
+  What an amendment is for is the **standing** case: a service that stays gated leaves the
+  allowlist by amendment, dated, carrying the failing response as its evidence.
+
+Removal is therefore the deliberate act, and it carries the same discipline R8 puts on a
+conformance decision, for the same reason: an access decision that lives only inside a
+`try`/`except` is a decision nobody can review, and §2.2's `parse_directive` seed is superseded
+rather than edited (v0.6 §4E.4). Admission runs the same way in the other direction, so three
+hosts with real evidence and no amendment are **candidates, not allowlist entries**:
+
+- `gis.dmr.nd.gov/dmrpublicservices` — `HTTP 200`, no token, `maxRecordCount: 10000`, and a count
+  of 43,824 that reconciles **exactly** with `OGD_Wells.zip` (`dsw:528-545`). On evidence quality
+  this is the strongest candidate in the set — a cross-validation against an independently
+  published artifact that none of the five seeded hosts has. It is still **not seeded**, and the
+  ground is not sequencing: **the evidence that found this service does not recommend it for
+  *this* method.** `dsw:549-551` is explicit — *"this does not obsolete the bulk files — SB-01's
+  determinism model wants checksummed payload bytes, and a paged REST query is harder to make
+  byte-reproducible. Recommend REST for change **detection**, files for the manifest."* §1.2.1
+  specifies an **ingest** method — assemble, hash, manifest — so seeding this host into it would
+  license precisely the use its own evidence cautions against, on a source whose bulk files
+  already work and are verified live. A second ground: the 499 at `ad:95` is on this host and
+  this service tree, and the failure posture below halts on a 499 — seeding puts a recorded
+  observation and a standing halt condition into the allowlist on the same day. **Admission
+  requires both to be resolved:** the 499's scope explained (endpoint or date), and a ruling on
+  whether DMR REST is a change-detector — which is a different mechanism, not this one — or an
+  ingest path.
+- `gis.rrc.texas.gov/server` — `HTTP 200`, `currentVersion 11.3`, `rrc_public/RRC_Public_Viewer_Srvs`
+  advertising `maxRecordCount 1000`, `supportsPagination: true` and a 180,195-feature
+  wellbore-line layer (`dsw:1068-1085`). Not seeded: the RRC grant text is unresolved and in the
+  owner queue (§16.3), which is not this amendment's to read. **The path confusion is not a
+  ground** — the two reports reconcile rather than disagree: `/server/rest/services` answers and
+  `/arcgis/rest/services` is the `404` (`dsw:1078`, `dsl:224-225`). Worth recording for the row
+  above: within that same host, `Hosted`, `SB3` and `rrc_internal` return
+  `{"code": 499, "message": "Token Required"}` while `rrc_public` is open (`dsw:1079-1080`) — a
+  **second worked example of a 499 scoped to an endpoint rather than to a host**, which is the
+  pattern this whole section rests on.
 - `gisweb.glo.texas.gov` — `HTTP 200` (`dsl:213`, `dsl:561`). Not seeded: outside the five the
   land report names as its verified set, and no TX land source is registered yet.
 
@@ -477,21 +514,38 @@ a design that fails on first run, so it is replaced rather than patched:
 
 - **Did anything change?** Per-member `sha256` in the manifest's `decompressed_inventory`
   (SB-07 §2.2). The archive is 18 members — 15 `FracFocusRegistry` shards, one `DisclosureList`,
-  one `WaterSource`, one readme (`dsw:68-79`) — and an unchanged member is skipped whole, at the
-  cost of one hash comparison rather than a row-wise compare. This is the ordinary manifest
-  discipline every other source already uses, applied at member granularity because the archive
-  is re-cut every business day and one shard changing does not implicate the other seventeen.
+  one `WaterSource`, one readme (`dsw:68-79`) — and a member whose hash is unchanged is skipped
+  whole, so the **row-wise compare is bounded by the changed set**. The archive is re-cut every
+  business day and one shard changing does not implicate the other seventeen.
 - **Which rows restated?** The existing bitemporal append (§5.4): `value_hash` over the mutable
   payload columns, keyed on `DisclosureId` for the disclosure grain and
   `(DisclosureId, IngredientsId)` for the ingredient grain. A row whose hash differs from the
   head appends at the new `report_vintage`; a row whose hash matches writes nothing. **No new
-  machinery is required** — this is what change-only append was built to do, and it is why the
+  subsystem is required** — this is what change-only append was built to do, and it is why the
   absent column costs a scan rather than a redesign.
-- **What it costs, stated rather than hidden.** A full-snapshot row compare over every changed
-  member: ~102–245 MB of decompressed CSV when one registry shard moves, up to the full 3.26 GiB
-  when they all do, weekly. That is the honest price of a source that publishes no per-row
-  modification stamp, and it is bounded by our pull cadence, not the upstream one
-  (`dsw:73-79,100-105`).
+- **What it costs — two stages, and only one of them is bounded by the changed set.**
+  **Detect:** SB-07 §2.2's inventory hash is a content hash over the *decompressed* member, so
+  producing it means inflating **all 18 members on every pull** — a ~3.26 GiB decompression floor
+  each week no matter how little moved. **Compare:** the row-wise `value_hash` pass runs only
+  over members whose hash changed — ~102–245 MB per registry shard, up to the full 3.26 GiB when
+  they all move (`dsw:73-79`). Both are bounded by our pull cadence, not the upstream one
+  (`dsw:100-105`). The cheaper detector — per-member CRC-32 and sizes straight from the zip
+  central directory, one ranged request, which is the technique that produced this evidence
+  (`dsw:68-79`) — is **rejected**: CRC-32 is a 32-bit integrity check, not a content identity,
+  and a manifest that can collide is not a lineage primitive. Paying a weekly decompression to
+  keep `sha256` as the only identity in the system is the right trade, and it is a CPU cost, not
+  a storage one.
+- **What of this exists today, precisely.** The `value_hash` change-only append **runs**
+  (`src/glasswell/ingest/nm_ocd.py:980` appends on
+  `where h.value_hash is distinct from b.value_hash`; migrations 008/009/020/024 carry the
+  column). `decompressed_inventory` is a **column with no writer**: it exists
+  (`003_manifests.sql:18`, GIN-indexed at `:36`), `register_manifest()` takes it as a kwarg
+  (`lineage/manifests.py:58`) and the API serves it (`api/routers/lineage.py:468`), but the sole
+  call site — `lineage/fetch.py:286` — does not pass it, so every manifest written today carries
+  `'[]'`. **Populating it is code the FracFocus fetcher has to write.** No fetcher or parser for
+  this source exists yet, so nothing is misled; what this design avoids is a *new subsystem*, not
+  all new code, and saying "no new machinery" without that distinction would be the same
+  overclaim this amendment exists to fix.
 - **`upstream_mtime` is a trigger, not a detector.** The `Last-Modified` on the zip
   (`Fri, 21 Aug 2026 08:04:14 GMT`, `dsw:39-50`) tells us the archive was re-cut. It cannot tell
   us *which* disclosures moved, and treating a file-level date as a row-level change key is the
@@ -806,7 +860,7 @@ correct under one. This is errata E9 (§16.1).
 | NDIC subscription (`/oilgas/basic/`, Basic $100 / Premium $500) | ToS forbids automated mining and "practices that substantially duplicate OGD subscription services" — which describes this project. **No credential exists in the system.** Bulk formation tops stay a separate later decision (OQ-12). | `ad:109-127,575-576`, v0.6 D-21 |
 | `nd_mpr_pdf` back-extraction 2003-01 → 2015-04 | Deferred within P1 (v0.6 §7.1). Horizontal Bakken effectively starts ~2008 and the XLSX era covers the modern design space. The source is registered and the manifests are fetched so the bytes exist when the parser does. | `ad:50,613` |
 | TX P-4 EBCDIC `p4f606.ebc.gz` | Same content is per-completion in the ASCII completion feed (§2.5). EBCDIC decode is avoided outright, removing a whole parse-risk class (v0.6 R-18). | `ad:182` |
-| TX directional survey applications, **filings before 2021-01-01** | Scanned PDF/TIF images with no free machine-readable index; `W-12` carries form-header fields only. Honest gap, tagged **data-unreachable**. Lateral geometry comes from well arcs. **From 2021-01-01 the ruling is different — see the re-scope below.** | `ad:240,559-560`, `dsw:1014-1065` |
+| TX directional survey applications, **filings before 2021-01-01** | No free machine-readable index reaches them in bulk, and the era's filings are **UNVERIFIED** — characterised as scanned PDF/TIF by `ad:240`, which the 2021-onward half of that same finding refutes, and no pre-2021 filing has been opened. Honest gap, tagged **data-unreachable**; `W-12` remains form-header only. Lateral geometry comes from well arcs. **From 2021-01-01 the ruling is different — see the re-scope below.** | `ad:240,559-560`, `dsw:1014-1065` |
 | ND Daily Activity Reports | Subscription-gated. ND permit history is constructed by vintage-diffing the pre-spud layer (§2.2). | `ad:129` |
 | OCD GIS over FTP | Retired 2023-07-05; the directory holds only a redirect note. NM spatial comes from the ArcGIS Hub if and when needed. | `ad:296` |
 | Go-Tech / NM Tech PRRC | Pre-ONGARD records with no API numbers, never reconciled. Relevant only to deep pre-database history, which is out of scope. | `ad:318` |
@@ -833,10 +887,19 @@ and holds; the other half is stale, and flipping it outright would be as wrong a
   headers declare their own geodesy — `Map System: US State Plane 1927`, `Geo Datum: NAD 1927
   (NADCON CONUS)`, zone, grid convergence — which lands them directly in §2.8's datum pipeline
   rather than beside it.
-- **The split, stated as the tag.** **Before 2021-01-01: `data-unreachable`.** The images exist;
-  no free machine-readable index over them does. The Directional Survey Query webapp reaches
-  back to Nov 2009 (`dsw:1051-1056`) but it is a per-well web form, and driving it is refused on
-  the same posture that refuses OCD Online and refuses to drive the TxGIO SPA (§1.2).
+- **The split, stated as the tag.** **Before 2021-01-01: `data-unreachable`**, and the ground is
+  the *content*, not the index: a scanned plat yields no station table at any effort, which is
+  what the two `Directional Survey - Other` rows in the sampled zip demonstrate
+  (`dsw:1032-1034`). **The era's character is UNVERIFIED** — `ad:240` calls the whole dataset
+  "daily zips of PDF/TIF images" and this amendment refutes that for the modern half, so the
+  same characterisation cannot be treated as established for the older half; **no pre-2021 filing
+  was opened by either report.** The tag is still the right bucket under the binary S10/E16
+  vocabulary, and it is carried at the evidence grade §2.5 already applies to the adjacent
+  archive floor rather than as a finding. The index half is secondary and weaker: the Directional
+  Survey Query webapp does reach back to Nov 2009 (`dsw:1051-1059`), but it is a per-well web
+  form, and driving it is refused on the same posture that refuses OCD Online and refuses to
+  drive the TxGIO SPA (§1.2). **If a pre-2021 sample is ever opened and parses, this row moves**
+  — that is what the grade is for.
   **From 2021-01-01: `effort-unreachable`** — reachable, and not built. It is per-well PDF
   parsing, **vendor-format dependent by construction** (two vendors' layouts already differ), and
   graded **effort L** (`dsw:1057-1060`). Both tags are v0.6's own vocabulary (v0.6 §2.4 S10,
@@ -846,7 +909,8 @@ and holds; the other half is stale, and flipping it outright would be as wrong a
   resolver every other TX bulk source already uses (§1.2) — with the CSV type manifest as the
   pre-filter and a multi-template PDF parser behind `layout_ref`/`layout_sha256` (handback H4,
   §2.5). No `source_id` is registered by this amendment and no phase gains work; registration is
-  a P7b-or-later decision that needs the licence question answered first (§16.3).
+  a P7b-or-later decision that needs the licence question answered first — **§16.3, "TX RRC
+  licence grant"**, which this amendment adds because the question had a pointer and no home.
 - **The coverage boundary is a stated limitation, not a footnote.** No current feature depends on
   these stations: TX lateral geometry comes from the county well-arc layers (§2.8) and TX
   `landing_tvd_ft` from this feed's free Formation Data segment (`ad:209`, §2.5). Should a TX
@@ -2018,6 +2082,7 @@ Fifteen. Each is a defect in `blueprint-v0.6-draft.md`, not a divergence taken b
 | Confidential/tight-hole censoring policy (OQ-7) | SB-02 | SB-01 supplies the measured affected share; the policy is modelling |
 | Re-promotion compute share threshold (OQ-15) | SB-01, once ~40 rules are live | §5.6 instruments it; the batching decision needs the measurement |
 | TX inventory geometry (OQ-11) | SB-03 | `land_units` keeps it a design question, not a migration |
+| **TX RRC licence grant** — §1.1's register asserts a posture the published grant contradicts | **OWNER / COUNSEL** | RRC's site policy, re-fetched verbatim 2026-08-21: *"RRC grants permission to copy and distribute the information on its website for **noncommercial use, as long as the content remains unaltered** and is not presented in a misleading way"*, plus *"as long as a fee is not charged to access our material"* (`dsw:1272-1290`). §1.1's seven `tx_*` rows read **"free, no redistribution clause"** (`ad:411-419`), which is not what the grant says. Countervailing facts, stated without a preferred reading: this is Texas public information under Gov. Code Ch. 552, the policy is a website disclaimer rather than a negotiated data licence, the bulk page says "free of charge", and the GIS service returns an empty `copyrightText` (`dsw:1289-1293`). **Whether that grant admits a commercial derived-analytics product is a legal reading and SB-01 does not take one** — `dsw:1453-1455` says so in terms ("Needs counsel, not a preferred reading"), and `work-output/QUEUE-DISPATCH.md` routes it to the owner queue. The 2026-08-21 owner ruling ("publicly reachable ⇒ usable; counsel gates lifted") lifts the gate on *proceeding*; it does not ratify the register cell, which is a claim about a licence and not about reachability. **Recorded here, unresolved, and it gates every `tx_*` row already in scope — not only new TX sources.** |
 
 ### 16.4 Apply-order adjacency with the carried-forward amendments
 
