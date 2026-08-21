@@ -249,6 +249,39 @@ its own version in its header, and its history is summarised in §3.1.
 - [Remove] The anchor prompt's duplicate sentence in the dataset header, and the coverage line
            above an empty result. One named the anchor twice 110 px apart; the other counted
            headers that were not on screen
+- [New] Row detail: expanding a row calls the dataset's `detail_operation` and renders the fuller
+      record it exists for — `get_quarantine_row` adds `row_payload` and the first and last-seen
+      manifests the collection never carries. Where none is declared the panel renders the row's
+      own fields and says which operation declined to have a detail form, rather than showing a
+      shorter record and calling it the record
+- [New] The panel is the grid's column kinds read vertically: the same figure, count, identifier,
+      enum, prose, timestamp and geometry treatments, the same placeholder honesty on a withheld
+      month, and the columns the grid hides listed with the reason they were hidden. Every field
+      carries its JSON Pointer, off by default and toggleable — the key `meta.labels`, `_lineage`
+      and the naked-number walker all speak
+- [New] Join by navigation: every id in a record is a chip, and the hop table is derived rather
+      than maintained. An id whose leaf is another dataset's whole `row_id` lands on that row; an
+      id the target declares as a query parameter lands on that collection narrowed to it; both
+      carry `as_of` and push history. `first_seen_manifest_id` resolves as a manifest id, which is
+      what makes §3.3's diagram real without a mapping table
+- [New] An id no served operation reads renders inert and says so, which surfaces a missing
+      endpoint instead of hiding it behind a client-side join. A hop whose target still needs a
+      path parameter nobody can supply is not offered at all
+- [New] "How did I get here": the last three hops with the operation each one issued, copyable as
+      a numbered list of curl commands whose URLs are the requests that were actually made, with
+      `$GLASSWELL_KEY` where the key goes. Three is S9's own budget for a trace, and the panel
+      says the older steps are not recorded
+- [New] `row=` addresses the open row, so a record is a link somebody else can open. Expanding
+      costs one detail request and no re-read of the page in view; the back button returns the
+      grid with its cursor and its filters intact, which `explore/detail/back.test.ts` drives end
+      to end through the shell
+- [Fix] A figure inside the detail is a flex line, not two of the grid table's tracks. The cell's
+      `grid-template-columns: subgrid` resolves to `none` outside the table, and `6,000 bbl`
+      rendered one character per line — caught in the capture pack, not by a test
+- [Fix] The detail panel takes the width the reader can see rather than the width of the longest
+      row: it sticks to the scrollport's left edge and caps at the grid host's inline size. At
+      1366 it was 884 px against a 762 px panel, so a record that fits needed a sideways scroll to
+      be read
 
 ### 2026-08-21 — increment-3 merge train
 

@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 // The chrome/*.test.ts precedent: read the shipped stylesheets, not a fixture of them.
-const SHEETS = ["src/explore/grid/grid.css", "src/explore/facets/facets.css"].map((path) => ({
+const SHEETS = [
+  "src/explore/grid/grid.css",
+  "src/explore/facets/facets.css",
+  "src/explore/detail/detail.css",
+].map((path) => ({
   path,
   css: readFileSync(path, "utf8"),
 }));
@@ -15,7 +19,12 @@ const SHEETS = ["src/explore/grid/grid.css", "src/explore/facets/facets.css"].ma
  * unconditional `display` renders a closed popover into the layout — which is exactly what
  * made an exempt column's rows 86 px tall before the C7 visual pass caught it.
  */
-const HIDDEN_CLASSES = ["gw-count-reason", "gw-cursor-decoded", "gw-grid-more"];
+const HIDDEN_CLASSES = [
+  "gw-count-reason",
+  "gw-cursor-decoded",
+  "gw-grid-more",
+  "gw-trail-curl",
+];
 
 function sources(directory: string): string[] {
   const found: string[] = [];
@@ -61,8 +70,9 @@ describe("C7's stylesheets obey the rules C6 wrote down for the explorer's own (
         [...readFileSync(path, "utf8").matchAll(/(\w+)\.hidden = /g)].map((match) => match[1]),
       ),
     );
-    // Three elements today. A fourth has to join HIDDEN_CLASSES or this reddens, which is the
-    // only thing that stops the list above rotting into a comment.
+    // Four elements today — C8's curl block was the fourth, and this is what caught it. A
+    // fifth has to join HIDDEN_CLASSES or this reddens, which is the only thing that stops the
+    // list above rotting into a comment.
     expect(hidden.size).toBe(HIDDEN_CLASSES.length);
   });
 });

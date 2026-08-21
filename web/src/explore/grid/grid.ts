@@ -4,6 +4,7 @@ import { getEnvelope } from "../../api/client.ts";
 import type { Envelope } from "../../api/envelope.ts";
 import type { AppState } from "../../app/state.ts";
 import type { CatalogueDataset } from "../catalogue.ts";
+import { mountDetail } from "../detail/detail.ts";
 import { renderFacets } from "../facets/facets.ts";
 import { filtersOf, requestFor, withFilter } from "../router.ts";
 import { renderCell, vintagesIn } from "./cells.ts";
@@ -24,12 +25,20 @@ export interface GridOptions {
   state: AppState;
   facetHost: HTMLElement;
   commit(next: Partial<AppState>): void;
+  /**
+   * Expanding a row is a `pushState` and a detail request, not a re-read of the collection —
+   * the shell writes the URL and leaves the grid standing. Without it, every row click would
+   * re-issue the page request the reader is already looking at.
+   */
+  select?(row: string | null): void;
   signal: AbortSignal;
 }
 
 interface Loaded {
   envelope: Envelope<unknown>;
   columns: Column[];
+  /** Visible plus hidden, in declaration order: the detail's field list (M3). */
+  all: Column[];
   rows: Row[];
   total: number | null;
   vintages: Set<string>;
@@ -55,11 +64,14 @@ export async function mountGrid(host: HTMLElement, options: GridOptions): Promis
   try {
     const envelope = await getEnvelope<unknown>(request.path, request.query, options.signal);
     if (options.signal.aborted) return;
-    const columns = columnsFor(options.dataset, options.document, envelope);
+    // M3: the detail lists the hidden columns too — `hidden` means "not a cell", never "not a
+    // fact" — so one picker answers both surfaces and there is no second list to drift.
+    const all = columnsFor(options.dataset, options.document, envelope, { includeHidden: true });
+    const columns = all.filter((column) => !column.hidden);
     const rows = extractRows(
       options.dataset,
       envelope.data,
-      columns.map((column) => column.pointer),
+      all.map((column) => column.pointer),
     );
     const total = await summaryTotalFor(
       options.dataset,
@@ -68,7 +80,7 @@ export async function mountGrid(host: HTMLElement, options: GridOptions): Promis
       options.signal,
     );
     if (options.signal.aborted) return;
-    render(host, options, { envelope, columns, rows, total, vintages: vintagesIn(rows) });
+    render(host, options, { envelope, columns, all, rows, total, vintages: vintagesIn(rows) });
   } catch (error) {
     if (options.signal.aborted) return;
     host.replaceChildren(failure(error));
@@ -98,10 +110,17 @@ function render(host: HTMLElement, options: GridOptions, loaded: Loaded): void {
   const more = document.createElement("button");
   more.type = "button";
   more.className = "gw-grid-more";
+  // A `row=` deep link must reach its row even when the window would have stopped short of it.
+  const expanded = rows.findIndex((row) => row.id === options.state.row);
+  const open = openPanel(body, loaded, options);
 
   const extend = (): void => {
-    const next = Math.min(shown + WINDOW, rows.length);
-    for (const row of rows.slice(shown, next)) body.append(bodyRow(row, columns, loaded));
+    const next = Math.min(Math.max(shown + WINDOW, expanded + 1), rows.length);
+    for (const row of rows.slice(shown, next)) {
+      const element = bodyRow(row, columns, loaded, options, open);
+      body.append(element);
+      if (row.index === expanded) open(row, row.id, element);
+    }
     shown = next;
     more.hidden = shown >= rows.length;
     more.textContent = `show ${Math.min(WINDOW, rows.length - shown)} more of ${rows.length - shown} loaded`;
@@ -126,6 +145,11 @@ function render(host: HTMLElement, options: GridOptions, loaded: Loaded): void {
     { onNext: (href) => followNext(href, options) },
   );
   host.replaceChildren(strap(columns, loaded), table, more, pagination);
+  // A chip hop lands on a row this page need not contain, so the panel stands on its own above
+  // the grid rather than the link dead-ending in "not found here".
+  if (options.state.row !== null && expanded < 0) {
+    table.before(detailSlot(null, options.state.row, loaded, options));
+  }
 
   // Read after the tracks are in the document, because only layout knows whether they fit.
   const cut = offScreenColumns(table, columns);
@@ -198,11 +222,73 @@ function spacer(): HTMLElement {
   return element;
 }
 
-function bodyRow(row: Row, columns: readonly Column[], loaded: Loaded): HTMLElement {
+/** Anything that already answers a click keeps it: a term, a handle, an exemption, a chip. */
+function interactive(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest("a, button, gw-term, gw-figure, gw-count") !== null;
+}
+
+type OpenPanel = (row: Row | null, rowId: string, element: HTMLElement | null) => void;
+
+/**
+ * The panel opens and closes in the DOM the grid already rendered — the URL is written beside
+ * it, never instead of it, so a row click costs one detail request and no page re-read.
+ */
+function openPanel(body: HTMLElement, loaded: Loaded, options: GridOptions): OpenPanel {
+  let slot: HTMLElement | null = null;
+  let owner: HTMLElement | null = null;
+
+  return (row, rowId, element) => {
+    slot?.remove();
+    owner?.setAttribute("aria-expanded", "false");
+    slot = null;
+    owner = null;
+    if (rowId === "") return;
+    slot = detailSlot(row, rowId, loaded, options);
+    if (element) {
+      element.setAttribute("aria-expanded", "true");
+      element.after(slot);
+      owner = element;
+      return;
+    }
+    body.prepend(slot);
+  };
+}
+
+function bodyRow(
+  row: Row,
+  columns: readonly Column[],
+  loaded: Loaded,
+  options: GridOptions,
+  open: OpenPanel,
+): HTMLElement {
   const element = document.createElement("div");
   element.className = "gw-grid-tr";
   element.setAttribute("role", "row");
   element.dataset["rowId"] = row.id;
+  element.tabIndex = 0;
+  element.setAttribute("aria-expanded", "false");
+  const toggle = (): void => {
+    const opening = element.getAttribute("aria-expanded") !== "true";
+    open(opening ? row : null, opening ? row.id : "", opening ? element : null);
+    select(options, opening ? row.id : null);
+  };
+  element.addEventListener(
+    "click",
+    (event) => {
+      if (!interactive(event.target)) toggle();
+    },
+    { signal: options.signal },
+  );
+  element.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      if (interactive(event.target)) return;
+      event.preventDefault();
+      toggle();
+    },
+    { signal: options.signal },
+  );
   for (const column of columns) {
     const cell = document.createElement("div");
     cell.className = `gw-grid-td gw-grid-td-${column.kind}`;
@@ -217,6 +303,46 @@ function bodyRow(row: Row, columns: readonly Column[], loaded: Loaded): HTMLElem
     element.append(cell);
   }
   return element;
+}
+
+function select(options: GridOptions, row: string | null): void {
+  if (options.select) options.select(row);
+  else options.commit({ row });
+}
+
+/**
+ * §3.4's panel, in flow inside the table so it sits with its row — and spanning every track
+ * without sizing any of them, which is N1's lesson applied one element out.
+ */
+function detailSlot(
+  row: Row | null,
+  rowId: string,
+  loaded: Loaded,
+  options: GridOptions,
+): HTMLElement {
+  const slot = document.createElement("div");
+  slot.className = "gw-grid-detail";
+  slot.setAttribute("role", "row");
+  void mountDetail(slot, {
+    dataset: options.dataset,
+    document: options.document,
+    datasets: options.datasets,
+    state: { ...options.state, row: rowId },
+    row,
+    rowId,
+    columns: loaded.all,
+    data: loaded.envelope.data,
+    request: requestFor(options.dataset, options.state),
+    navigate: (next) => options.commit({ ds: next.ds, row: next.row, tab: next.tab, extra: next.extra }),
+    close: () => {
+      const owner = slot.previousElementSibling;
+      slot.remove();
+      if (owner?.classList.contains("gw-grid-tr")) owner.setAttribute("aria-expanded", "false");
+      select(options, null);
+    },
+    signal: options.signal,
+  });
+  return slot;
 }
 
 /** One line above the grid: what every value here reports at, and how much of it is bound. */

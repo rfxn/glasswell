@@ -95,6 +95,17 @@ function commit(next: Partial<AppState>): void {
   render(state);
 }
 
+/**
+ * A row expansion is a `pushState` and nothing else. The grid opens its own panel in place, so
+ * re-rendering here would re-issue the collection request the reader is already looking at —
+ * and the back button still arrives through `popstate` and the full render.
+ */
+function select(row: string | null): void {
+  if (!mounted || !state) return;
+  state = { ...state, row };
+  mounted.hooks.commit({ row }, "push");
+}
+
 function render(next: AppState): void {
   if (!mounted) return;
   state = next;
@@ -147,6 +158,7 @@ function renderGrid(next: AppState): void {
     state: next,
     facetHost: facets,
     commit,
+    select,
     signal: gridAbort.signal,
   });
 }
