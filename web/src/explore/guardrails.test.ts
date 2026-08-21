@@ -66,20 +66,26 @@ const EXCLUDED = [/\.test\.ts$/, /\/fixtures\.ts$/];
 // break C0's "from that commit forward SB-08 touches no frozen file".
 const FETCH_ALLOWLIST = ["src/explore/shell.ts"];
 
-function sources(directory: string): string[] {
+function sources(directory: string, extensions: readonly string[] = [".ts"]): string[] {
   const found: string[] = [];
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) found.push(...sources(path));
-    else if (entry.name.endsWith(".ts") && !EXCLUDED.some((pattern) => pattern.test(path))) {
+    if (entry.isDirectory()) found.push(...sources(path, extensions));
+    else if (
+      extensions.some((extension) => entry.name.endsWith(extension)) &&
+      !EXCLUDED.some((pattern) => pattern.test(path))
+    ) {
       found.push(path);
     }
   }
   return found;
 }
 
-function withoutComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+// CSS has no `//` comment, and stripping one there would eat the rest of a line that merely
+// contains a URL.
+function withoutComments(source: string, dialect: "ts" | "css" = "ts"): string {
+  const blocks = source.replace(/\/\*[\s\S]*?\*\//g, "");
+  return dialect === "css" ? blocks : blocks.replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
 const EXPLORE = sources("src/explore").map((path) => ({ path, source: readFileSync(path, "utf8") }));
@@ -149,7 +155,7 @@ describe("the explorer's network surface is one call site (SB-08 §2.3 arms 1-3)
 // F5: `ⓔ` (U+24D4) shipped in none of the three self-hosted faces, and `style.css` pins GW
 // Symbols to two codepoints — so the browser never attempted that face and the mark resolved to
 // whatever the reader's system had, which is the outcome `style.css:22-23`'s own comment exists
-// to prevent. A glyph the explorer renders is either in a declared range or it is tofu.
+// to prevent. A glyph this product renders is either in a declared range or it is tofu.
 const RANGES = [...readFileSync("src/style.css", "utf8").matchAll(/unicode-range:\s*([^;]+);/g)]
   .flatMap((match) => (match[1] as string).split(","))
   .map((part) => part.trim().replace(/^U\+/i, "").split("-"))
@@ -158,7 +164,33 @@ const RANGES = [...readFileSync("src/style.css", "utf8").matchAll(/unicode-range
     Number.parseInt((to ?? from) as string, 16),
   ]);
 
-describe("every glyph the explorer renders comes from a face this product ships", () => {
+// N2: rev 1 read double-quoted and template strings under `src/explore` only, so `'ⓔ'` passed
+// it green and two out-of-range glyphs outside that root were live in the product. A guardrail
+// against tofu is only worth its name over every quote form and every file that renders text.
+const LITERAL = /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g;
+const RENDERED = sources("src", [".ts", ".css"]).map((path) => ({
+  path,
+  source: readFileSync(path, "utf8"),
+}));
+
+function literalsOf(path: string, source: string): string[] {
+  const dialect = path.endsWith(".css") ? "css" : "ts";
+  return [...withoutComments(source, dialect).matchAll(LITERAL)].map(([literal]) => literal);
+}
+
+function outOfRange(path: string, source: string): { point: number; character: string }[] {
+  const found: { point: number; character: string }[] = [];
+  for (const literal of literalsOf(path, source)) {
+    for (const character of literal) {
+      const point = character.codePointAt(0) as number;
+      if (point < 0x80 || RANGES.some(([from, to]) => from <= point && point <= to)) continue;
+      found.push({ point, character });
+    }
+  }
+  return found;
+}
+
+describe("every glyph this product renders comes from a face it ships", () => {
   it("reads the declared ranges off style.css rather than assuming them", () => {
     expect(RANGES.length).toBeGreaterThan(5);
     expect(RANGES.some(([from, to]) => from <= 0x233e && 0x233e <= to)).toBe(true);
@@ -166,22 +198,46 @@ describe("every glyph the explorer renders comes from a face this product ships"
     expect(RANGES.some(([from, to]) => from <= 0x24d4 && 0x24d4 <= to)).toBe(false);
   });
 
+  it("reads every quote form, so single quotes are not a way through it", () => {
+    const probe = [
+      `const double = "ⓔ";`,
+      `const single = 'ⓔ';`,
+      "const template = `a",
+      "ⓔ`;",
+    ].join("\n");
+
+    expect(outOfRange("probe.ts", probe).map((hit) => hit.point)).toEqual([0x24d4, 0x24d4, 0x24d4]);
+  });
+
+  it("walks every .ts and .css under src, not one directory of it", () => {
+    const paths = RENDERED.map((file) => file.path);
+
+    expect(paths).toContain("src/explore/gw-count.ts");
+    expect(paths).toContain("src/map.css");
+    expect(paths).toContain("src/map/pills.ts");
+    expect(paths.length).toBeGreaterThan(EXPLORE.length);
+  });
+
   it("renders no character outside them", () => {
-    let checked = 0;
-    for (const file of EXPLORE) {
-      for (const [literal] of withoutComments(file.source).matchAll(/"[^"\n]*"|`[^`\n]*`/g)) {
-        for (const character of literal) {
-          const point = character.codePointAt(0) as number;
-          if (point < 0x80) continue;
-          checked += 1;
-          expect(
-            RANGES.some(([from, to]) => from <= point && point <= to),
-            `${file.path}: U+${point.toString(16).toUpperCase()} (${character}) is in no shipped face`,
-          ).toBe(true);
-        }
-      }
-    }
-    // The em dash, the disclosure triangles and the cursor block's arrow, at least.
-    expect(checked).toBeGreaterThan(5);
+    // Every offender at once rather than the first one: a tofu sweep is worth running whole.
+    const offenders = RENDERED.flatMap((file) =>
+      outOfRange(file.path, file.source).map(
+        (hit) =>
+          `${file.path}: U+${hit.point.toString(16).toUpperCase()} (${hit.character}) is in no shipped face`,
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("still meets the characters it is meant to clear, so a green run is not an empty walk", () => {
+    const nonAscii = RENDERED.flatMap((file) =>
+      literalsOf(file.path, file.source)
+        .flatMap((literal) => [...literal])
+        .filter((character) => (character.codePointAt(0) as number) >= 0x80),
+    );
+
+    // The em dash, the disclosure triangles, ⌾, ✕ and the cursor block's arrow, at least.
+    expect(nonAscii.length).toBeGreaterThan(5);
   });
 });

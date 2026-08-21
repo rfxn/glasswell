@@ -308,6 +308,24 @@ describe("the grid renders a collection off one state object (§3.1 rule 2)", ()
     expect(overflowNote(3)?.textContent).toMatch(/scroll the grid sideways/);
   });
 
+  it("adds nothing to the table when a reason opens, so the off-edge count stays true (N1)", async () => {
+    // `offScreenColumns` measures once, at mount. That is only sound if no later state can
+    // change the table's box — and an in-flow reason inside a right-aligned cell did exactly
+    // that: 148.6 px past the panel with the sentence still silent. The reason is now the
+    // body's child, so the measurement has nothing to go stale against.
+    await mount("quarantine");
+    const table = host.querySelector(".gw-grid-table") as HTMLElement;
+    const nodes = table.querySelectorAll("*").length;
+
+    (table.querySelector(".gw-count-mark") as HTMLElement).click();
+
+    expect(table.querySelectorAll("*").length).toBe(nodes);
+    expect(table.querySelector(".gw-count-reason")).toBeNull();
+    const popover = document.querySelector(".gw-count-reason") as HTMLElement;
+    expect(popover.hidden).toBe(false);
+    expect(popover.closest(".gw-grid-table")).toBeNull();
+  });
+
   it("states an empty answer as an answer rather than as a blank rectangle", async () => {
     await mount("production", { extra: { "f.api10": ["3305300003"] } });
 

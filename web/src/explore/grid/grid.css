@@ -271,14 +271,11 @@ gw-count {
   display: block;
 }
 
-.gw-count-reason {
+/* N1: the panel is `.gw-popover` — the glossary's chrome, and its `position: absolute`, which is
+   what keeps an open reason out of the row's flow. Only what differs from it is declared here,
+   at two-class specificity so the cascade order of the two sheets cannot decide the width. */
+.gw-popover.gw-count-reason {
   max-width: 44ch;
-  margin-top: var(--gw-space-1);
-  padding: var(--gw-space-2);
-  background: var(--panel);
-  border: 1px solid var(--hairline-strong);
-  border-radius: var(--gw-radius-sm);
-  box-shadow: var(--shadow-pop);
   font-size: var(--gw-fs-micro);
   color: var(--slate);
   white-space: normal;

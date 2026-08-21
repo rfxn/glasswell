@@ -178,6 +178,18 @@ its own version in its header, and its history is summarised in §3.1.
       three self-hosted faces carries and which `style.css` pins GW Symbols away from, so it fell
       to the reader's system font or to tofu. A guardrail now reads the declared unicode-ranges
       off `style.css` and fails on any character the explorer renders from outside them
+- [Fix] An exemption reason opens as a popover on the app's own `.gw-popover` chrome instead of
+      as a block inside the cell. In flow, in a right-aligned count, it widened its own track:
+      the clicked row's count moved 240 px, the last column landed 148.6 px past the panel, and
+      the sentence naming off-edge columns is measured once at mount, so it could not answer for
+      a state that arrives on a click. Out of the row entirely, nothing a click does can change
+      the table's box, which is what makes that single measurement sound
+- [Fix] The glyph guardrail reads both quote forms and template literals, over every `.ts` and
+      `.css` file under `web/src` rather than one directory of it — `'ⓔ'` passed it green, and it
+      covered neither of the two out-of-range characters that were already live in the product.
+      `⤒` (U+2912) in the legend and `＋` (U+FF0B) on the map pills become `↑` and `+`: rendered
+      under the app's own font stack, both drew at exactly the width they draw at with the brand
+      faces removed, so no shipped face was supplying them
 - [Change] Whole volumes drop an all-zero fraction: `1,000.000 bbl` beside a comma thousands
            separator invites a 1000x misread, and the served string stays on the element. Nothing
            is rounded — a fraction with any non-zero digit is untouched

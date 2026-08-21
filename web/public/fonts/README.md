@@ -48,7 +48,12 @@ for `U+2715 ✕`. It is declared under the same CSS family names with a two-code
 `unicode-range`, so those characters render from a brand face instead of falling
 back to whatever the reader's system supplies.
 
-`U+FF0B ＋` (`web/src/map/pills.ts`) is in neither face and still falls back.
+`U+FF0B ＋` (`web/src/map/pills.ts`) and `U+2912 ⤒` (`web/src/map.css`) were the two
+characters no declared range covered, so both drew from the reader's system font.
+Neither was added to a subset: they were replaced with `+` and `↑`, which the Inter
+subset already carries. `web/src/explore/guardrails.test.ts` now fails on any
+character in a `.ts` or `.css` string literal under `web/src` that no declared
+`unicode-range` covers, so a third one cannot be added without the suite saying so.
 
 ## Deploying (N-7)
 
