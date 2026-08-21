@@ -85,9 +85,26 @@ CRS_ROWS: tuple[dict[str, object], ...] = (
     },
 )
 
+# prd_knd_cde, trimmed of its CHAR(2) padding by cr_nm_wcproduction_pad_1. All four codes are
+# seeded although 'C' has no row inside the promotion window: it was measured on 3,398 records
+# of 1986-1993, and a vocabulary seeded from the window would quarantine every one of them on
+# the day the window widened (cr_nm_wcproduction_stream_vocab_1).
+NM_STREAM_ROWS: tuple[dict[str, object], ...] = (
+    {"stream_raw": "C", "stream_canonical": "condensate", "promoted": True},
+    {"stream_raw": "G", "stream_canonical": "gas", "promoted": True},
+    {"stream_raw": "O", "stream_canonical": "oil", "promoted": True},
+    {"stream_raw": "W", "stream_canonical": "water", "promoted": True},
+)
+
 _INSERT_SOURCE = """
 insert into lineage.sources (source_id, name, jurisdiction, license_note, redistributable)
 values (%(source_id)s, %(name)s, %(jurisdiction)s, %(license_note)s, %(redistributable)s)
+on conflict do nothing
+"""
+
+_INSERT_NM_STREAM = """
+insert into lineage.nm_stream_map (stream_raw, stream_canonical, promoted)
+values (%(stream_raw)s, %(stream_canonical)s, %(promoted)s)
 on conflict do nothing
 """
 
@@ -102,6 +119,13 @@ def seed_sources(connection: psycopg.Connection) -> int:
     with connection.cursor() as cursor:
         cursor.executemany(_INSERT_SOURCE, SOURCES)
         cursor.execute("select count(*) from lineage.sources")
+        return int(cursor.fetchone()[0])
+
+
+def seed_nm_streams(connection: psycopg.Connection) -> int:
+    with connection.cursor() as cursor:
+        cursor.executemany(_INSERT_NM_STREAM, NM_STREAM_ROWS)
+        cursor.execute("select count(*) from lineage.nm_stream_map")
         return int(cursor.fetchone()[0])
 
 

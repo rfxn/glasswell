@@ -16,7 +16,7 @@ from psycopg.types.json import Jsonb
 
 from glasswell.db.migrate import discover_migrations, migrate
 from glasswell.ingest.nd_mpr import UNREGISTERED_REASON, _reason_vocabulary
-from glasswell.seed import ND_RULES, seed_all
+from glasswell.seed import ND_RULES, seed_conformance_nd, seed_sources
 from tests.conftest import FIXTURE_ENV_ID
 from tests.support.seed import seed_manifest
 
@@ -73,7 +73,10 @@ def mislabelled(empty_db, tmp_path) -> psycopg.Connection:
     """The ledger as migration 010 left it: true reasons flattened onto `unknown_vocab`."""
     migrate(empty_db, _staged_migrations(tmp_path, RELABEL_VERSION - 1))
     empty_db.commit()
-    seed_all(empty_db)
+    # Not seed_all: this database stops at migration 10, and the registries later
+    # migrations create are not in it. The ledger under test is ND's.
+    seed_sources(empty_db)
+    seed_conformance_nd(empty_db)
     with empty_db.cursor() as cursor:
         cursor.execute(
             "insert into lineage.environments (env_id, python_version, threads)"
