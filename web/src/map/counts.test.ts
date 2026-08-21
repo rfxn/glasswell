@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Envelope } from "../api/envelope.ts";
+import type { Envelope, Warning } from "../api/envelope.ts";
 import {
   STATUS_SUMMARY_PATH,
   bboxParam,
@@ -43,7 +43,11 @@ function summary(box: Bbox, overrides: Partial<WellStatusSummary> = {}): WellSta
   };
 }
 
-function envelope(data: WellStatusSummary, links: Record<string, string> = {}): Envelope<WellStatusSummary> {
+function envelope(
+  data: WellStatusSummary,
+  links: Record<string, string> = {},
+  warnings: Warning[] = [],
+): Envelope<WellStatusSummary> {
   return {
     data,
     meta: {
@@ -52,11 +56,29 @@ function envelope(data: WellStatusSummary, links: Record<string, string> = {}): 
       source_freshness: {},
       labels: {},
       next_cursor: null,
-      warnings: [],
+      warnings,
       deprecations: [],
     },
     links: { self: STATUS_SUMMARY_PATH, next: null, explain: "/v1/explain?h=…&depth=full", ...links },
   };
+}
+
+/**
+ * A body whose prebuilt explain call is short of its own counts: four buckets, two handles on
+ * the link, and the warning that says so. The shape §2.3 rule 4 says is routine.
+ */
+function truncated(box: Bbox): Envelope<WellStatusSummary> {
+  return envelope(
+    summary(box),
+    { explain: "/v1/explain?h=drv_xret5nw2hhouqi5mfvda%23col%3Dwells&h=drv_xret5nw2hhouqi5mfvda%23col%3Dwells%26status%3Dactive&depth=full" },
+    [
+      {
+        code: "explain_link_truncated",
+        detail: "4 counts produced, 2 handles carried, 2 absent",
+        pointer: "/links/explain",
+      },
+    ],
+  );
 }
 
 /** A load function whose every call is resolved by the test, in whatever order it chooses. */
@@ -76,6 +98,14 @@ function collector() {
 
 const last = (seen: CountsState[]): CountsState => seen[seen.length - 1]!;
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** The adjacent double, one unit in the last place away — the smallest difference there is. */
+function nextDouble(value: number): number {
+  const bits = new DataView(new ArrayBuffer(8));
+  bits.setFloat64(0, value);
+  bits.setBigUint64(0, bits.getBigUint64(0) + 1n);
+  return bits.getFloat64(0);
+}
 
 afterEach(() => vi.useRealTimers());
 
@@ -99,8 +129,17 @@ describe("the box the summary is asked for", () => {
     expect(sameBbox(null, ND)).toBe(false);
   });
 
-  it("separates two viewports a ten-millionth of a degree apart", () => {
-    expect(sameBbox([-104, 47, -102, 48], [-104.0000001, 47, -102, 48])).toBe(false);
+  it("separates two viewports by any difference a double can hold, at no tolerance at all", () => {
+    // Not a scale question — an identity one. The echo is the box the query ran with, so any
+    // epsilon substituted for `===` is a window in which a count is attributed to the wrong
+    // viewport. The last pair differs by one unit in the last place, which is the smallest
+    // difference that exists, so no tolerance survives this — not 1e-6, and not 1e-15.
+    for (const delta of [1e-7, 1e-9, 1e-12]) {
+      expect(sameBbox([-104, 47, -102, 48], [-104 - delta, 47, -102, 48]), `${delta}`).toBe(false);
+      expect(sameBbox([-104, 47, -102, 48], [-104, 47, -102, 48 + delta]), `${delta}`).toBe(false);
+    }
+    expect(sameBbox([-104, 47, -102, 48], [nextDouble(-104), 47, -102, 48])).toBe(false);
+    expect(sameBbox([-104, 47, -102, 48], [-104, 47, -102, nextDouble(48)])).toBe(false);
   });
 
   it("clamps a latitude the projection can produce and the API refuses", () => {
@@ -205,10 +244,28 @@ describe("a viewport that settles", () => {
     expect(state.totalHandle).toContain("col=wells");
   });
 
-  it("carries no truncated explain link — every count addresses itself", () => {
-    // §2.3 rule 4: links.explain is capped at 20 handles and a whole-of-ND box exceeds it
-    // routinely. Ten complete handles are a better affordance than one short link.
-    expect(Object.keys(statusHandles(summary(ND)))).toHaveLength(4);
+  it("publishes no explain link, truncated or otherwise — every count addresses itself", async () => {
+    // §2.3 rule 4: the prebuilt call is capped at 20 handles and a whole-of-ND box exceeds it
+    // routinely, so a published link would be a promise the response cannot keep. The
+    // assertion is on what reaches the legend, not on the fixture: carrying `links.explain`
+    // or `meta.warnings` into the state turns this red.
+    const { calls, load } = deferredLoader();
+    const { seen, onState } = collector();
+    createCountSource({ load, onState }).request(ND);
+    calls[0]!.settle(truncated(ND));
+    await flush();
+
+    const state = last(seen);
+    expect(state.kind).toBe("ready");
+    if (state.kind !== "ready") return;
+    const published = Object.keys(state);
+    expect(published).not.toContain("explain");
+    expect(published).not.toContain("warnings");
+    expect(JSON.stringify(state)).not.toContain("/v1/explain");
+    expect(JSON.stringify(state)).not.toContain("explain_link_truncated");
+    // Four buckets the link could carry two of, and four handles that each resolve alone.
+    expect(Object.keys(state.handles).sort()).toEqual(["active", "dry", "plugged", "unmapped"]);
+    for (const handle of Object.values(state.handles)) expect(handle).toMatch(/^drv_\w+#col=/);
   });
 
   it("reports an empty box as no classes and no total, rather than a screen of zeroes", async () => {

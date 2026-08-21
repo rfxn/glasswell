@@ -28,6 +28,14 @@ const expand = (root: HTMLElement): HTMLElement => {
 };
 const partial = (root: HTMLElement): HTMLElement =>
   root.querySelector<HTMLElement>(".gw-lg-partial")!;
+const fault = (root: HTMLElement): HTMLElement => root.querySelector<HTMLElement>(".gw-lg-fault")!;
+/**
+ * Visibility, not text. happy-dom's `textContent` reads into `hidden` subtrees, so a banner
+ * that is present-but-hidden and one that is on screen read identically through text — which
+ * is how an error surface can end up with no regression net at all (gate-wssweb C-2).
+ */
+const shown = (element: HTMLElement): boolean =>
+  element.hidden === false && element.hasAttribute("hidden") === false;
 
 describe("the legend", () => {
   it("collapses to a title pill by default and expands on a click of the title", () => {
@@ -400,7 +408,31 @@ describe("counts that could not be had", () => {
 
     for (const id of statusIds()) expect(countFor(legend.element, id), id).toBe("—");
     expect(legend.element.dataset["counts"]).toBe("unavailable");
-    expect(legend.element.textContent).toMatch(/could not be read/i);
+    expect(shown(fault(legend.element))).toBe(true);
+    expect(fault(legend.element).textContent).toMatch(/could not be read/i);
+  });
+
+  it("keeps the failure off the key while the counts are good", () => {
+    // The other direction, and the one a string assertion cannot make: a banner that is
+    // present but hidden reads the same as one on screen through textContent.
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setUnavailable(12);
+    expect(shown(fault(legend.element))).toBe(true);
+
+    legend.setCounts({ active: 20_643 }, 12);
+    expect(shown(fault(legend.element))).toBe(false);
+    expect(fault(legend.element).hidden).toBe(true);
+  });
+
+  it("announces no failure for a request that is merely in flight", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setPending(12);
+    expect(shown(fault(legend.element))).toBe(false);
+    expect(legend.element.dataset["counts"]).toBe("pending");
+  });
+
+  it("carries no failure banner before anything has been asked", () => {
+    expect(shown(fault(createLegend({ onFilter: () => {} }).element))).toBe(false);
   });
 
   it("carries no handle it cannot resolve", () => {
@@ -416,6 +448,7 @@ describe("counts that could not be had", () => {
     legend.setCounts({ active: 3 }, 12);
     expect(legend.element.dataset["counts"]).toBe("ready");
     expect(legend.element.textContent).not.toMatch(/could not be read/i);
+    expect(shown(fault(legend.element))).toBe(false);
   });
 });
 
@@ -555,6 +588,19 @@ describe("the vocabulary the counts were classed by", () => {
     expect(links.map((link) => link.textContent)).toEqual(["cr_nd_status_vocab_1"]);
     expect(links[0]!.href).toContain("/v1/conformance/cr_nd_status_vocab_1");
     expect(legend.element.textContent).not.toContain("cr_tx_status_vocab_1");
+  });
+
+  it("opens a rule away from the map without handing it the map's window", () => {
+    // A rule row is a new tab, so `rel` is load-bearing: without noreferrer the opened page
+    // gets `window.opener` and can navigate this one. Classic reverse tabnabbing, and silent.
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setVocabulary([
+      { rule: "cr_nd_status_vocab_1", href: "/v1/conformance/cr_nd_status_vocab_1" },
+    ]);
+    const link = legend.element.querySelector<HTMLAnchorElement>(".gw-lg-rule")!;
+
+    expect(link.target).toBe("_blank");
+    expect(link.rel).toBe("noreferrer");
   });
 
   it("still names a rule the response did not link, rather than dropping it", () => {
