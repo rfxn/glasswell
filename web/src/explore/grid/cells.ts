@@ -8,6 +8,9 @@ import type { Cell, Row } from "./rows.ts";
 const ABSENT =
   "This field was absent from the response. That is not the same as a zero and not the same" +
   " as a value the source withheld.";
+/** The three labels whose volume is a NOT NULL placeholder rather than a measurement. */
+const PLACEHOLDER_SEMANTICS = new Set(["no_report", "withheld", "multi_pool_pending"]);
+
 const NO_SEMANTICS =
   "The response carried no value here and stated no null semantics for it, so what the blank" +
   " means is unknown rather than zero.";
@@ -67,14 +70,25 @@ function body(column: Column, cell: Cell, context: CellContext): Node[] {
  */
 function figureCell(column: Column, cell: Cell, context: CellContext): Node[] {
   const source = isFigure(cell.value) ? cell.value : null;
-  const handle = source?.d ?? derivationFor(context.data, cell.dataPointer) ?? "";
+  const served = String(source?.value ?? cell.value);
   const unit = source?.unit ?? sidecarFor(context.data, cell.dataPointer, "_units") ?? "";
+  const state = cell.companions["_null_semantics"];
+  // `canonical.volume` is NOT NULL, so the ingest carries an absent volume as zero and the
+  // label is the only thing distinguishing it from a reported zero (`ingest/nd_mpr.py:89-93`).
+  // Rendering the placeholder beside the label is that collapse in reverse, and `0.000 bbl`
+  // reading as a filed zero is the misread the whole vocabulary exists to prevent.
+  if (typeof state === "string" && PLACEHOLDER_SEMANTICS.has(state)) {
+    return [stateChip(state, served, unit)];
+  }
+
+  const handle = source?.d ?? derivationFor(context.data, cell.dataPointer) ?? "";
   const figure = document.createElement("gw-figure");
-  figure.setAttribute("value", String(source?.value ?? cell.value));
+  figure.setAttribute("value", withoutEmptyFraction(served));
   figure.setAttribute("unit", unit);
   figure.setAttribute("handle", handle);
   figure.setAttribute("label", column.name);
   figure.setAttribute("label-hidden", "");
+  figure.title = `${served}${unit ? ` ${unit}` : ""} as served`;
 
   const granularity = granularityOf(context.row) ?? source?.granularity ?? null;
   if (granularity) figure.setAttribute("granularity", granularity);
@@ -83,7 +97,19 @@ function figureCell(column: Column, cell: Cell, context: CellContext): Node[] {
     figure.setAttribute("vintage", vintage);
   }
 
-  return [figure, ...stateStrip(cell), ...aggregation(cell)];
+  return [figure, ...marks(cell)];
+}
+
+/**
+ * C1: `1,000.000 bbl` invites a 1000x misread — comma thousands beside a three-place dot
+ * decimal, on a value that is an exact thousand. Nothing is rounded and no precision is
+ * claimed away: only a fraction that is entirely zeros is dropped, and the served string stays
+ * on the element. `card/format.ts:formatVolume` already ruled that a monthly volume is not
+ * measured to a thousandth; this is the same finding without rounding anything.
+ */
+export function withoutEmptyFraction(value: string): string {
+  const match = /^(-?\d+)\.0+$/.exec(value.trim());
+  return match ? (match[1] as string) : value;
 }
 
 /**
@@ -105,11 +131,20 @@ function countCell(column: Column, cell: Cell, context: CellContext): Node[] {
   return [count];
 }
 
-/** §3.2: `reported_zero`, `no_report`, `withheld` and `multi_pool_pending` are different facts. */
-function stateStrip(cell: Cell): Node[] {
+/**
+ * §3.2: `reported_zero`, `no_report`, `withheld` and `multi_pool_pending` are different facts.
+ *
+ * F2: the marks live in the cell's own second track, not in the number's, so a row that carries
+ * one cannot push its value off the column's right edge. A numeric column is right-aligned so
+ * magnitudes compare down the column by eye; one indented row breaks exactly that read.
+ */
+function marks(cell: Cell): Node[] {
+  const slot = document.createElement("span");
+  slot.className = "gw-cell-marks";
   const state = cell.companions["_null_semantics"];
-  if (typeof state !== "string" || state === "reported") return [];
-  return [stateChip(state)];
+  if (typeof state === "string" && state !== "reported") slot.append(stateChip(state));
+  slot.append(...aggregation(cell));
+  return [slot];
 }
 
 /** Every report vintage this response carries, so the grid can state one once or chip many. */
@@ -128,12 +163,16 @@ export function vintagesIn(rows: readonly Row[]): Set<string> {
 }
 
 /** The chart's own swatch classes carry the palette; the grid adds the word beside the mark. */
-function stateChip(state: string): HTMLElement {
+function stateChip(state: string, replaced?: string, unit?: string): HTMLElement {
   const mark = nullSemantics(state);
   const chip = document.createElement("span");
   chip.className = "gw-state";
   chip.dataset["state"] = state;
-  chip.title = mark.title;
+  // Naming the placeholder it stands in for keeps the substitution auditable rather than
+  // silent: a reader who wonders what the API actually sent can read it here.
+  chip.title = replaced
+    ? `${mark.title} The response carried ${replaced}${unit ? ` ${unit}` : ""} here, which is a placeholder rather than a measurement.`
+    : mark.title;
   const swatch = document.createElement("span");
   swatch.className = `gw-state-mark ${mark.className}`;
   chip.append(swatch, document.createTextNode(mark.label));
@@ -162,7 +201,7 @@ function nullCell(cell: Cell): Node {
 
 function missing(title: string): HTMLElement {
   const element = document.createElement("span");
-  element.className = "gw-cell-absent";
+  element.className = "gw-value-absent";
   element.setAttribute("data-no-glossary", "");
   element.textContent = "—";
   element.title = title;
@@ -172,7 +211,7 @@ function missing(title: string): HTMLElement {
 /** SB-05 §5.3's exclusion: no glossary underline inside `qr_01…`, which closes P2-12 here. */
 function identifier(value: string): HTMLElement {
   const element = document.createElement("code");
-  element.className = "gw-cell-id";
+  element.className = "gw-value-id";
   element.setAttribute("data-no-glossary", "");
   element.textContent = value;
   return element;
@@ -182,13 +221,13 @@ function enumCell(column: Column, cell: Cell): Node[] {
   const text = String(cell.value);
   if (!column.termId) {
     const plain = document.createElement("span");
-    plain.className = "gw-cell-enum";
+    plain.className = "gw-value-enum";
     plain.textContent = text;
     return [plain];
   }
   const term = document.createElement("gw-term");
   term.setAttribute("term-id", column.termId);
-  term.className = "gw-cell-enum";
+  term.className = "gw-value-enum";
   term.textContent = text;
   return [term];
 }
@@ -197,17 +236,17 @@ function timestamp(value: string): Node[] {
   const match = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/.exec(value);
   if (!match) {
     const plain = document.createElement("time");
-    plain.className = "gw-cell-time";
+    plain.className = "gw-value-time";
     plain.setAttribute("datetime", value);
     plain.textContent = value;
     return [plain];
   }
   const element = document.createElement("time");
-  element.className = "gw-cell-time";
+  element.className = "gw-value-time";
   element.setAttribute("datetime", value);
   element.textContent = match[1] as string;
   const clock = document.createElement("span");
-  clock.className = "gw-cell-clock";
+  clock.className = "gw-value-clock";
   clock.textContent = match[2] as string;
   return [element, clock];
 }
@@ -215,7 +254,7 @@ function timestamp(value: string): Node[] {
 /** §3.2: a coordinate in a cell teaches the wrong thing, and the map is where geometry reads. */
 function geometry(): HTMLElement {
   const element = document.createElement("span");
-  element.className = "gw-cell-geometry";
+  element.className = "gw-value-geometry";
   element.textContent = "on the map";
   element.title =
     "Geometry renders on the map, never as coordinates in a cell. The crossing from a row to" +
@@ -223,13 +262,15 @@ function geometry(): HTMLElement {
   return element;
 }
 
+/** F1: prose is the one kind that ellipsizes, so it is the one kind that must say what from. */
 function prose(value: unknown): HTMLElement {
   const element = document.createElement("span");
-  element.className = "gw-cell-prose";
+  element.className = "gw-value-prose";
   element.textContent = Array.isArray(value)
     ? value.map(String).join(" · ")
     : typeof value === "number"
       ? formatValue(String(value))
       : String(value);
+  element.title = element.textContent;
   return element;
 }

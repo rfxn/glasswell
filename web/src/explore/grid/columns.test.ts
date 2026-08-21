@@ -140,6 +140,18 @@ describe("a column header binds where a binding exists and says so where it does
     expect(header.className).not.toContain("gw-col-bound");
   });
 
+  it("carries the whole column name in a title, because a narrow track ellipsizes it", () => {
+    const columns = columnsFor(dataset("wells"), SNAPSHOT, wellsEnvelope);
+    const long = columns.find((column) => column.name === "operator_name_reported");
+    const header = renderHeader(long as never);
+
+    // At 1366 six columns share 762 px and this name does not fit; without the title it read
+    // as `operator_name_reportedtatus_canonical`, overrunning into the next column.
+    expect(header.querySelector(".gw-label")?.getAttribute("title")).toBe(
+      "operator_name_reported",
+    );
+  });
+
   it("renders a bound header as a term, which is the affordance the unbound one withholds", () => {
     const [reasonCode] = columnsFor(dataset("quarantine"), SNAPSHOT, quarantineEnvelope).filter(
       (column) => column.binding !== "unbound",

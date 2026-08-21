@@ -78,14 +78,15 @@ export async function mountGrid(host: HTMLElement, options: GridOptions): Promis
 function render(host: HTMLElement, options: GridOptions, loaded: Loaded): void {
   const { columns, rows } = loaded;
   if (rows.length === 0) {
-    host.replaceChildren(coverageLine(columns), emptyState(options.state));
+    // C3: the coverage line counts headers, and there are none on screen to count.
+    host.replaceChildren(emptyState(options.state));
     return;
   }
 
   const table = document.createElement("div");
   table.className = "gw-grid-table";
   table.setAttribute("role", "table");
-  table.style.setProperty("--gw-grid-columns", String(columns.length));
+  table.style.gridTemplateColumns = trackList(columns);
   table.append(headRow(columns));
 
   const body = document.createElement("div");
@@ -120,14 +121,55 @@ function render(host: HTMLElement, options: GridOptions, loaded: Loaded): void {
     { signal: options.signal, passive: true },
   );
 
-  host.replaceChildren(
-    strap(columns, loaded),
-    table,
-    more,
-    renderPagination(
-      paginationOf(options.dataset, options.document, loaded.envelope, rows.length, loaded.total),
-      { onNext: (href) => followNext(href, options) },
-    ),
+  const pagination = renderPagination(
+    paginationOf(options.dataset, options.document, loaded.envelope, rows.length, loaded.total),
+    { onNext: (href) => followNext(href, options) },
+  );
+  host.replaceChildren(strap(columns, loaded), table, more, pagination);
+
+  // Read after the tracks are in the document, because only layout knows whether they fit.
+  const cut = offScreenColumns(table, columns);
+  const note_ = overflowNote(cut);
+  if (note_) table.after(note_);
+}
+
+/**
+ * F1: one track per column, two for a figure — the value and the marks beside it — so a state
+ * chip cannot displace a number, and only prose is allowed to give up width. Every other kind
+ * stays at `max-content`, which is what stops a date being cut to `2026-0` at the panel's edge.
+ */
+export function trackList(columns: readonly Column[]): string {
+  return columns.map(trackFor).join(" ");
+}
+
+function trackFor(column: Column): string {
+  if (column.kind === "figure") return "max-content auto";
+  // The one kind that can be shortened without becoming a different value, so it absorbs the
+  // slack and ellipsizes — and carries its full text in a title when it does.
+  if (column.kind === "prose") return "minmax(8ch, max-content)";
+  return "max-content";
+}
+
+function offScreenColumns(table: HTMLElement, columns: readonly Column[]): number {
+  const overflow = table.scrollWidth - table.clientWidth;
+  if (overflow <= 0 || table.clientWidth <= 0) return 0;
+  const heads = [...table.querySelectorAll(".gw-grid-th")];
+  const edge = table.getBoundingClientRect().right;
+  const cut = heads.filter((head) => head.getBoundingClientRect().right > edge + 1).length;
+  return Math.min(Math.max(cut, 1), columns.length);
+}
+
+/**
+ * A value cut at the panel's edge with no signal reads as a complete value — `2019-05-2` for a
+ * date, `2026-0` for a vintage. The columns that do not fit are named rather than cropped.
+ */
+export function overflowNote(cut: number): HTMLElement | null {
+  if (cut <= 0) return null;
+  return note(
+    cut === 1
+      ? "1 more column is off the right edge of this panel — scroll the grid sideways to read it. Nothing is hidden; the panel is narrower than the row."
+      : `${cut} more columns are off the right edge of this panel — scroll the grid sideways to read them. Nothing is hidden; the panel is narrower than the row.`,
+    "gw-grid-offscreen",
   );
 }
 
@@ -137,12 +179,23 @@ function headRow(columns: readonly Column[]): HTMLElement {
   head.setAttribute("role", "row");
   for (const column of columns) {
     const cell = document.createElement("div");
-    cell.className = "gw-grid-th";
+    cell.className = `gw-grid-th gw-grid-th-${column.kind}`;
     cell.setAttribute("role", "columnheader");
     cell.append(renderHeader(column));
     head.append(cell);
+    // F3: a figure's label occupies the value track alone, right-aligned to the same edge its
+    // numbers are, so a plumb line from the header lands on its own data rather than on the
+    // gap left of it. The marks track gets a spacer so auto-placement stays in step.
+    if (column.kind === "figure") head.append(spacer());
   }
   return head;
+}
+
+function spacer(): HTMLElement {
+  const element = document.createElement("div");
+  element.className = "gw-grid-th gw-grid-th-spacer";
+  element.setAttribute("aria-hidden", "true");
+  return element;
 }
 
 function bodyRow(row: Row, columns: readonly Column[], loaded: Loaded): HTMLElement {
@@ -152,7 +205,7 @@ function bodyRow(row: Row, columns: readonly Column[], loaded: Loaded): HTMLElem
   element.dataset["rowId"] = row.id;
   for (const column of columns) {
     const cell = document.createElement("div");
-    cell.className = "gw-grid-td";
+    cell.className = `gw-grid-td gw-grid-td-${column.kind}`;
     cell.setAttribute("role", "cell");
     cell.append(
       renderCell(column, {

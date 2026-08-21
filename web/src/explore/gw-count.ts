@@ -50,12 +50,20 @@ export class GwCount extends HTMLElement {
     const marker = document.createElement("button");
     marker.type = "button";
     marker.className = reason ? "gw-count-mark" : "gw-count-mark gw-count-mark-unserved";
-    marker.textContent = reason ? "ⓔ" : "?";
+    // F5: a ringed ASCII glyph, not `ⓔ` (U+24D4), which none of the three self-hosted faces
+    // carries — `style.css` pins GW Symbols to U+233E/U+2715, so the browser never even tries
+    // it and the mark lands on the reader's system font or on tofu. The ring is drawn in CSS.
+    marker.textContent = reason ? "e" : "?";
+    // F4: the state, named once, so the pane and the detail row can say which it is rather
+    // than each deciding what a `?` in a cell means.
+    marker.dataset["mark"] = reason ? "exempt" : "exempt-unstated";
     marker.title = text;
+    marker.setAttribute("aria-expanded", "false");
     marker.setAttribute("aria-label", reason ? "Why this is not a figure" : "Exemption not served");
     marker.addEventListener("click", (event) => {
       event.stopPropagation();
       popover.hidden = !popover.hidden;
+      marker.setAttribute("aria-expanded", String(!popover.hidden));
     });
 
     this.replaceChildren(value, marker, popover);

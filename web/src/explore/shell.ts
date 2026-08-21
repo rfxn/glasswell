@@ -219,13 +219,8 @@ function datasetHeader(dataset: CatalogueDataset, next: AppState): HTMLElement {
   identity.textContent = `Row identity ${dataset.row_id.join(" + ")}`;
   header.append(identity);
 
-  if (request.missing.length > 0) {
-    header.append(
-      note(
-        `This dataset is read one anchor at a time: ${request.missing.join(", ")} has no value yet, so there is nothing to list until you supply one.`,
-      ),
-    );
-  }
+  // C2: the grid's own anchor prompt says this, names the 404 and offers the input. Two
+  // paraphrases of one fact 110 px apart is one more than the reader needs.
   return header;
 }
 

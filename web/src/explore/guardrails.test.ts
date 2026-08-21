@@ -145,3 +145,43 @@ describe("the explorer's network surface is one call site (SB-08 §2.3 arms 1-3)
     }
   });
 });
+
+// F5: `ⓔ` (U+24D4) shipped in none of the three self-hosted faces, and `style.css` pins GW
+// Symbols to two codepoints — so the browser never attempted that face and the mark resolved to
+// whatever the reader's system had, which is the outcome `style.css:22-23`'s own comment exists
+// to prevent. A glyph the explorer renders is either in a declared range or it is tofu.
+const RANGES = [...readFileSync("src/style.css", "utf8").matchAll(/unicode-range:\s*([^;]+);/g)]
+  .flatMap((match) => (match[1] as string).split(","))
+  .map((part) => part.trim().replace(/^U\+/i, "").split("-"))
+  .map(([from, to]): [number, number] => [
+    Number.parseInt(from as string, 16),
+    Number.parseInt((to ?? from) as string, 16),
+  ]);
+
+describe("every glyph the explorer renders comes from a face this product ships", () => {
+  it("reads the declared ranges off style.css rather than assuming them", () => {
+    expect(RANGES.length).toBeGreaterThan(5);
+    expect(RANGES.some(([from, to]) => from <= 0x233e && 0x233e <= to)).toBe(true);
+    // The offender this arm was written for, proving the check can actually fail.
+    expect(RANGES.some(([from, to]) => from <= 0x24d4 && 0x24d4 <= to)).toBe(false);
+  });
+
+  it("renders no character outside them", () => {
+    let checked = 0;
+    for (const file of EXPLORE) {
+      for (const [literal] of withoutComments(file.source).matchAll(/"[^"\n]*"|`[^`\n]*`/g)) {
+        for (const character of literal) {
+          const point = character.codePointAt(0) as number;
+          if (point < 0x80) continue;
+          checked += 1;
+          expect(
+            RANGES.some(([from, to]) => from <= point && point <= to),
+            `${file.path}: U+${point.toString(16).toUpperCase()} (${character}) is in no shipped face`,
+          ).toBe(true);
+        }
+      }
+    }
+    // The em dash, the disclosure triangles and the cursor block's arrow, at least.
+    expect(checked).toBeGreaterThan(5);
+  });
+});

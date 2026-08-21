@@ -35,7 +35,12 @@ describe("a cell renders the fact the API stated, never a tidier one (§3.2)", (
     const cell = cellsOf("production", productionEnvelope)(3, "/oil_bbl");
     const figure = cell.querySelector("gw-figure") as HTMLElement;
 
-    expect(figure.getAttribute("value")).toBe(productionEnvelope.data.series.oil_bbl[3]);
+    // The served string is `57199.000`; C1 drops an all-zero fraction and keeps the original
+    // on the element, so nothing is rounded and nothing is lost.
+    expect(figure.getAttribute("value")).toBe("57199");
+    expect(figure.getAttribute("title")).toBe(
+      `${productionEnvelope.data.series.oil_bbl[3]} bbl as served`,
+    );
     expect(figure.getAttribute("unit")).toBe("bbl");
     expect(figure.getAttribute("handle")).toBe(
       productionEnvelope.data._lineage["series.oil_bbl.3"],
@@ -133,10 +138,63 @@ describe("a cell renders the fact the API stated, never a tidier one (§3.2)", (
     });
     const isNull = renderCell(notes as never, { data: quarantineEnvelope.data, row: nulled });
 
-    expect(absent.querySelector(".gw-cell-absent")?.getAttribute("title")).toMatch(/absent from/);
-    expect(isNull.querySelector(".gw-cell-absent")?.getAttribute("title")).toMatch(
+    expect(absent.querySelector(".gw-value-absent")?.getAttribute("title")).toMatch(/absent from/);
+    expect(isNull.querySelector(".gw-value-absent")?.getAttribute("title")).toMatch(
       /stated no null semantics/,
     );
+  });
+
+  it("renders the semantics and no number where the volume is a NOT NULL placeholder", () => {
+    // `classify_null_semantics` returns withheld/no_report only for a missing volume, and
+    // `canonical.volume` is NOT NULL — so the ingest carries the absence as zero and the label
+    // is the only thing distinguishing it from a reported zero (`ingest/nd_mpr.py:89-93,305`).
+    // Rendering `0.000 bbl` beside `withheld` is that collapse running in reverse.
+    const held = JSON.parse(JSON.stringify(productionEnvelope));
+    held.data.series.oil_bbl_null_semantics = [
+      "withheld",
+      "no_report",
+      "multi_pool_pending",
+      "reported_zero",
+      "reported",
+      "reported",
+    ];
+    held.data.series.oil_bbl = ["0.000", "0.000", "0.000", "0.000", "49328.000", "43237.000"];
+    const cell = cellsOf("production", held);
+
+    for (const index of [0, 1, 2]) {
+      expect(cell(index, "/oil_bbl").querySelector("gw-figure"), String(index)).toBeNull();
+      expect(cell(index, "/oil_bbl").querySelector(".gw-state"), String(index)).not.toBeNull();
+    }
+    // A reported zero is a number the operator filed: it keeps its figure and its chip.
+    expect(cell(3, "/oil_bbl").querySelector("gw-figure")).not.toBeNull();
+    expect(cell(3, "/oil_bbl").querySelector(".gw-state")).not.toBeNull();
+    expect(cell(4, "/oil_bbl").querySelector("gw-figure")).not.toBeNull();
+    expect(cell(4, "/oil_bbl").querySelector(".gw-state")).toBeNull();
+  });
+
+  it("says which volume the placeholder replaced, so the substitution is not silent", () => {
+    const held = JSON.parse(JSON.stringify(productionEnvelope));
+    held.data.series.oil_bbl_null_semantics[0] = "withheld";
+    const chip = cellsOf("production", held)(0, "/oil_bbl").querySelector(".gw-state");
+
+    expect(chip?.getAttribute("title")).toMatch(/regulator withheld/i);
+    expect(chip?.getAttribute("title")).toMatch(/70965\.000/);
+  });
+
+  it("drops an all-zero fraction and keeps the served string on the element (C1)", () => {
+    // `1,000.000 bbl` invites a 1000x misread by a reader who has not been told the
+    // convention. Nothing is rounded: only a fraction that is entirely zeros is dropped, and
+    // the exact string the API served stays on the element for anyone who wants it.
+    const exact = JSON.parse(JSON.stringify(productionEnvelope));
+    exact.data.series.oil_bbl = ["1000.000", "1000.500", "0.125", "1000.000", "1.000", "2.000"];
+    const cell = cellsOf("production", exact);
+
+    expect(cell(0, "/oil_bbl").querySelector("gw-figure")?.getAttribute("value")).toBe("1000");
+    expect(cell(0, "/oil_bbl").querySelector("gw-figure")?.getAttribute("title")).toBe(
+      "1000.000 bbl as served",
+    );
+    expect(cell(1, "/oil_bbl").querySelector("gw-figure")?.getAttribute("value")).toBe("1000.500");
+    expect(cell(2, "/oil_bbl").querySelector("gw-figure")?.getAttribute("value")).toBe("0.125");
   });
 
   it("renders each null semantics as its own fact, never as a shared blank", () => {
@@ -177,7 +235,7 @@ describe("a cell renders the fact the API stated, never a tidier one (§3.2)", (
     const cell = cellsOf("quarantine", quarantineEnvelope)(0, "/last_seen_at");
 
     expect(cell.querySelector("time")?.textContent).toBe("2026-08-01");
-    expect(cell.querySelector(".gw-cell-clock")?.textContent).toBe("05:02");
+    expect(cell.querySelector(".gw-value-clock")?.textContent).toBe("05:02");
     expect(cell.querySelector("time")?.getAttribute("datetime")).toBe(
       quarantineEnvelope.data[0]?.last_seen_at,
     );

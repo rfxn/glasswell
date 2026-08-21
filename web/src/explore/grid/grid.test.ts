@@ -24,7 +24,7 @@ import {
   wellsEnvelope,
 } from "../fixtures.ts";
 import { columnsFor } from "./columns.ts";
-import { WINDOW, mountGrid } from "./grid.ts";
+import { WINDOW, mountGrid, overflowNote } from "./grid.ts";
 
 const SNAPSHOT = JSON.parse(readFileSync("../tests/contract/openapi_snapshot.json", "utf8"));
 const CATALOGUE = buildCatalogue(SNAPSHOT);
@@ -202,6 +202,112 @@ describe("the grid renders a collection off one state object (§3.1 rule 2)", ()
     ).toHaveLength(1);
   });
 
+  it("sizes one track per column, and two for a figure so its marks leave the number alone", async () => {
+    await mount("production", { extra: { "f.api10": ["3305310451"] } });
+    const table = host.querySelector(".gw-grid-table") as HTMLElement;
+
+    // pm identifier, three figures at two tracks each, granularity root scalar.
+    expect(table.style.gridTemplateColumns).toBe(
+      "max-content max-content auto max-content auto max-content auto max-content",
+    );
+    const water = host.querySelectorAll(".gw-grid-tr")[5]?.querySelectorAll(".gw-grid-td")[3];
+    expect(water?.className).toContain("gw-grid-td-figure");
+    expect(water?.querySelector(".gw-cell-marks")).not.toBeNull();
+  });
+
+  it("keeps a chip out of the number's track, so one annotated row cannot indent a column", async () => {
+    // F2 measured a 63 px break on the one row that carried a chip. `reported_zero` is the
+    // case where a number and a chip legitimately coexist — a filed zero is a real number —
+    // so it is the case that has to hold the column's right edge.
+    const zeroed = JSON.parse(JSON.stringify(productionEnvelope));
+    zeroed.data.series.water_bbl_null_semantics[2] = "reported_zero";
+    zeroed.data.series.water_bbl[2] = "0.000";
+    overrides["/v1/wells/3305310451/production"] = zeroed;
+
+    await mount("production", { extra: { "f.api10": ["3305310451"] } });
+    const cells = [...host.querySelectorAll(".gw-grid-tr")].map(
+      (row) => row.querySelectorAll(".gw-grid-td")[3] as HTMLElement,
+    );
+
+    expect(cells[2]?.querySelector(".gw-cell-marks .gw-state")).not.toBeNull();
+    expect(cells[2]?.querySelector("gw-figure")).not.toBeNull();
+    // Every row's figure is the value's first child, in the value track; the chip never is.
+    for (const [index, cell] of cells.entries()) {
+      expect(cell.querySelector(".gw-cell")?.firstElementChild?.tagName, String(index)).toBe(
+        "GW-FIGURE",
+      );
+    }
+  });
+
+  it("puts the label in place of the number where the volume is a placeholder (F6)", async () => {
+    // The recorded envelope reports every month; the withheld shape comes from the ledger's
+    // separate withheld-months query, so it is injected here rather than waited for.
+    const held = JSON.parse(JSON.stringify(productionEnvelope));
+    held.data.series.water_bbl_null_semantics[5] = "withheld";
+    held.data.series.water_bbl[5] = "0.000";
+    overrides["/v1/wells/3305310451/production"] = held;
+
+    await mount("production", { extra: { "f.api10": ["3305310451"] } });
+    const withheld = host.querySelectorAll(".gw-grid-tr")[5]?.querySelectorAll(".gw-grid-td")[3];
+
+    // The contract fixture seeds a real volume under a withheld label; the ingest cannot —
+    // `classify_null_semantics` labels withheld only for a missing volume, which canonical
+    // stores as zero. Either way the number is not one the system stands behind.
+    expect(withheld?.querySelector("gw-figure")).toBeNull();
+    expect(withheld?.querySelector(".gw-state")?.textContent).toContain("withheld");
+    expect(withheld?.querySelector(".gw-state")?.getAttribute("title")).toMatch(/placeholder/);
+  });
+
+  it("lets prose absorb the width and keeps every other column at its content (F1)", async () => {
+    await mount("sources");
+    const table = host.querySelector(".gw-grid-table") as HTMLElement;
+
+    // `name` is the one prose column; it is the only track allowed to shrink, so the dates and
+    // the count that were being cut mid-glyph keep their full width.
+    // `SourceHealth` declares its two vintages as bare strings rather than `format: date`, so
+    // they classify as prose and can shrink — the schema gap is recorded, not worked around.
+    expect(table.style.gridTemplateColumns).toBe(
+      "max-content minmax(8ch, max-content) minmax(8ch, max-content)" +
+        " minmax(8ch, max-content) minmax(8ch, max-content) max-content",
+    );
+  });
+
+  it("puts a figure's header over its own data, not over the previous column's (F3)", async () => {
+    await mount("production", { extra: { "f.api10": ["3305310451"] } });
+    const heads = [...host.querySelectorAll(".gw-grid-th")];
+
+    // One header per track: a figure's label occupies the value track alone and is aligned to
+    // its right edge, so a plumb line from the header lands on its own numbers.
+    expect(heads).toHaveLength(8);
+    const oil = heads[1] as HTMLElement;
+    expect(oil.className).toContain("gw-grid-th-figure");
+    expect(oil.textContent).toContain("oil_bbl");
+    expect((heads[2] as HTMLElement).className).toContain("gw-grid-th-spacer");
+    expect((heads[2] as HTMLElement).textContent).toBe("");
+    expect((heads[2] as HTMLElement).getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("carries the whole value in a title wherever a cell can ellipsize (F1)", async () => {
+    await mount("sources");
+    const prose = host.querySelector(".gw-value-prose") as HTMLElement;
+
+    // The grid already teaches `…` on prose cells, so a reader reads an un-ellipsized value as
+    // complete. Anything that can be shortened says what it was shortened from.
+    expect(prose.title).toBe(prose.textContent);
+    expect(prose.title.length).toBeGreaterThan(20);
+  });
+
+  it("states how many columns are off the right edge rather than cutting one mid-glyph", () => {
+    // Layout is what decides this and happy-dom has none, so the sentence is a pure function
+    // and the measurement that calls it is one line.
+    expect(overflowNote(0)).toBeNull();
+    expect(overflowNote(1)?.textContent).toMatch(
+      /1 more column is off the right edge of this panel/,
+    );
+    expect(overflowNote(3)?.textContent).toMatch(/3 more columns are off/);
+    expect(overflowNote(3)?.textContent).toMatch(/scroll the grid sideways/);
+  });
+
   it("states an empty answer as an answer rather than as a blank rectangle", async () => {
     await mount("production", { extra: { "f.api10": ["3305300003"] } });
 
@@ -312,7 +418,7 @@ describe("every number on this surface handles through or states its exemption (
           const cell = cells[index] as HTMLElement;
           const figure = cell.querySelector("gw-figure");
           const count = cell.querySelector("gw-count");
-          const absent = cell.querySelector(".gw-cell-absent, .gw-state");
+          const absent = cell.querySelector(".gw-value-absent, .gw-state");
           expect(
             Boolean(figure ?? count ?? absent),
             `${id} ${column.pointer}: ${cell.textContent}`,

@@ -131,6 +131,12 @@ function classify(
   }
   if (schema?.type === "integer" || schema?.type === "number") return "count";
   if (schema?.enum || schema?.type === "boolean" || parameterEnum(operation, name)) return "enum";
+  // §3.2 names `granularity` among the vocabulary columns, and no parameter is called that.
+  // The document's own signal is the binding: a bare string the schema binds to a glossary
+  // term is a term, so the value carries the definition rather than only the header.
+  if (glossaryOf(schema) && schema?.type === "string" && schema.format === undefined) {
+    return "enum";
+  }
   if (schema?.format === "date" || schema?.format === "date-time") return "timestamp";
   return "prose";
 }
@@ -178,7 +184,10 @@ export function renderHeader(column: Column): HTMLElement {
   const header = document.createElement("div");
   header.className = `gw-col-head ${treatment.className}`;
   header.dataset["kind"] = column.kind;
-  header.append(labelElement(column.name, column.termId));
+  const label = labelElement(column.name, column.termId);
+  // The name ellipsizes when the track is narrower than it, so it says what it was cut from.
+  label.title = column.name;
+  header.append(label);
 
   if (treatment.marker) {
     const marker = document.createElement("span");

@@ -153,6 +153,40 @@ its own version in its header, and its history is summarised in §3.1.
       instead of chipped onto every cell. Eighteen identical chips pushed a declared column off
       the surface at 1600 px; the chip now appears per row only when a second vintage does, which
       is the case where it means something
+- [Fix] A withheld month renders its label in place of the volume rather than beside it.
+      `classify_null_semantics` labels a month withheld or unreported only when the volume is
+      missing, and `canonical.volume` is NOT NULL — so the ingest stores the absence as zero and
+      the label is the only thing separating it from a filed zero. Rendering both put
+      `0.000 bbl` beside `withheld`, which is the collapse the vocabulary exists to prevent,
+      running backwards. A reported zero keeps its number, because the operator filed it
+- [Fix] Grid tracks are sized per column kind: prose is the one kind that may shrink, because it
+      ellipsizes without becoming a different value, and everything else holds `max-content`. A
+      date cut to `2019-05-2` at the panel's edge reads as a complete date, and the grid already
+      teaches `…` on prose cells. Column names ellipsize the same way and carry the full name in
+      a title, and where columns still do not fit the grid says how many are off the right edge
+      instead of cropping one silently
+- [Fix] A figure cell is two tracks — the number and the marks beside it — so the one row
+      carrying a state chip no longer pushes its value 63 px off the column's right edge, which
+      is the alignment a numeric column exists to provide. Figure headers right-align onto that
+      same edge: left-aligned, `water_bbl` sat three times closer to the gas column's data than
+      to its own
+- [Fix] The three marks a reader meets are three treatments: a served exemption is a solid amber
+      ring, an unserved one is the same ring dashed, and an unbound column header keeps its muted
+      pill. They were two identical `?` glyphs in one token, and the exemption mark — the only
+      interactive thing in the row — was the quietest ink on it
+- [Fix] The exemption mark is a ringed ASCII glyph rather than `ⓔ` (U+24D4), which none of the
+      three self-hosted faces carries and which `style.css` pins GW Symbols away from, so it fell
+      to the reader's system font or to tofu. A guardrail now reads the declared unicode-ranges
+      off `style.css` and fails on any character the explorer renders from outside them
+- [Change] Whole volumes drop an all-zero fraction: `1,000.000 bbl` beside a comma thousands
+           separator invites a 1000x misread, and the served string stays on the element. Nothing
+           is rounded — a fraction with any non-zero digit is untouched
+- [Change] A column the schema binds to a glossary term and types as a bare string renders as
+           vocabulary, so `granularity` carries its definition on the value and not only on the
+           header — §3.2 names it among the vocabulary columns and no parameter is called that
+- [Remove] The anchor prompt's duplicate sentence in the dataset header, and the coverage line
+           above an empty result. One named the anchor twice 110 px apart; the other counted
+           headers that were not on screen
 
 ### 2026-08-21 — increment-3 merge train
 
