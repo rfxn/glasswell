@@ -8,7 +8,7 @@ import {
   restoreCapabilitySet,
   writeCapabilitySet,
 } from "./persist.ts";
-import { STATUS_CLASSES, measuredWellCount, statusIds } from "./status.ts";
+import { STATUS_CLASSES, filterableStatusIds, measuredWellCount, statusIds } from "./status.ts";
 
 const rows = (root: HTMLElement): HTMLElement[] => [...root.querySelectorAll<HTMLElement>(".gw-lg-row")];
 const rowFor = (root: HTMLElement, id: string): HTMLElement | undefined =>
@@ -94,7 +94,39 @@ describe("the legend", () => {
     const row = rowFor(legend.element, "unmapped");
     expect(row).toBeTruthy();
     expect(row!.querySelector(".gw-lg-count")?.textContent).toBe("4");
-    expect(row!.querySelector<HTMLInputElement>("input")!.disabled).toBe(true);
+    expect(row!.querySelector<HTMLInputElement>("input")!.disabled).toBe(false);
+  });
+
+  it("filters the unmapped row like any other, because it is the largest class on some maps", () => {
+    const seen: string[][] = [];
+    const legend = createLegend({ onFilter: (on) => seen.push([...on].sort()) });
+    legend.setCounts({ unmapped: 66_103 }, 12);
+    const box = boxFor(legend.element, "unmapped");
+
+    expect(box.disabled).toBe(false);
+    expect(box.checked).toBe(true);
+    box.checked = false;
+    box.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(seen[seen.length - 1]).not.toContain("unmapped");
+    expect(legend.activeStatuses().has("unmapped")).toBe(false);
+  });
+
+  it("holds the absence class on before it has listed it, so a defect never hides by default", () => {
+    // The row is only listed once the class is drawn, but its switch exists from the start —
+    // otherwise "None" would leave on the canvas the one class the key had never named.
+    const legend = createLegend({ onFilter: () => {} });
+    expect(rowFor(legend.element, "unmapped")).toBeUndefined();
+    expect(legend.activeStatuses().has("unmapped")).toBe(true);
+    legend.setCounts({ unmapped: 4 }, 12);
+    expect(boxFor(legend.element, "unmapped").checked).toBe(true);
+  });
+
+  it("carries a reader's stored refusal of the absence class through to the filter", () => {
+    const legend = createLegend({ on: new Set(statusIds()), onFilter: () => {} });
+    expect(legend.activeStatuses().has("unmapped")).toBe(false);
+    legend.setCounts({ unmapped: 4 }, 12);
+    expect(boxFor(legend.element, "unmapped").checked).toBe(false);
   });
 
   it("states the geometry provenance rather than implying a survey trace", () => {
@@ -145,25 +177,37 @@ describe("the legend's all/none control", () => {
     for (const id of statusIds()) expect(boxFor(legend.element, id).checked, id).toBe(false);
   });
 
-  it("restores every known class in one click", () => {
+  it("restores every known class in one click, the absence class among them", () => {
     const seen: string[][] = [];
     const legend = createLegend({ onFilter: (on) => seen.push([...on].sort()) });
     expand(legend.element);
     control(legend.element, "none").click();
     control(legend.element, "all").click();
-    expect(seen[seen.length - 1]).toEqual([...statusIds()].sort());
+    expect(seen[seen.length - 1]).toEqual([...filterableStatusIds()].sort());
     for (const id of statusIds()) expect(boxFor(legend.element, id).checked, id).toBe(true);
   });
 
-  it("leaves the unmapped row alone — a defect marker is not a filter the reader owns", () => {
+  it("acts on the unmapped row too, once the map has one — it is a class, not an ornament", () => {
     const legend = createLegend({ onFilter: () => {} });
     expand(legend.element);
     legend.setCounts({ unmapped: 4 }, 12);
-    for (const which of ["none", "all"] as const) {
-      control(legend.element, which).click();
-      expect(boxFor(legend.element, "unmapped").disabled).toBe(true);
-      expect(legend.activeStatuses().has("unmapped")).toBe(false);
-    }
+    control(legend.element, "none").click();
+    expect(boxFor(legend.element, "unmapped").checked).toBe(false);
+    expect(legend.activeStatuses().has("unmapped")).toBe(false);
+    control(legend.element, "all").click();
+    expect(boxFor(legend.element, "unmapped").checked).toBe(true);
+    expect(legend.activeStatuses().has("unmapped")).toBe(true);
+  });
+
+  it("counts the unmapped row in the title, so a hidden defect class is stated on the pill", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    const title = (): string => legend.element.querySelector(".gw-lg-title")!.textContent!;
+    expand(legend.element);
+    legend.setCounts({ unmapped: 4 }, 12);
+    expect(title()).toBe("Well status");
+    boxFor(legend.element, "unmapped").checked = false;
+    boxFor(legend.element, "unmapped").dispatchEvent(new Event("change", { bubbles: true }));
+    expect(title()).toBe(`Well status · ${statusIds().length}/${statusIds().length + 1}`);
   });
 
   it("does not enable an out-of-scale row: disabled is the zoom's to say, not the control's", () => {

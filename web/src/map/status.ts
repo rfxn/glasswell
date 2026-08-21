@@ -192,6 +192,11 @@ export function statusIds(): string[] {
   return STATUS_CLASSES.map((status) => status.id);
 }
 
+/** The canonical vocabulary plus the absence class, which the legend filters like any other. */
+export function filterableStatusIds(): string[] {
+  return [...statusIds(), UNMAPPED_STATUS.id];
+}
+
 export function statusClass(id: string | null | undefined): StatusClass {
   return BY_ID.get(String(id ?? "").toLowerCase()) ?? UNMAPPED_STATUS;
 }
@@ -213,15 +218,6 @@ export function statusColourExpression(): Expr {
     statusProperty(),
     STATUS_CLASSES.map((status) => [status.id, status.colour] as [string, string]),
     UNMAPPED_STATUS.colour,
-  );
-}
-
-/** Per-status zoom floor as a style expression, so the gate and the legend read one table. */
-export function statusMinZoomExpression(): Expr {
-  return match(
-    statusProperty(),
-    STATUS_CLASSES.map((status) => [status.id, status.minZoom] as [string, number]),
-    UNMAPPED_STATUS.minZoom,
   );
 }
 

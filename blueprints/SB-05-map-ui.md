@@ -215,9 +215,9 @@ default-src 'none';
 script-src 'self';
 style-src 'self';
 style-src-attr 'unsafe-inline';
-img-src 'self' data: blob:;
+img-src 'self' data: blob: https://basemap.nationalmap.gov;
 font-src 'self';
-connect-src 'self';
+connect-src 'self' https://basemap.nationalmap.gov;
 worker-src 'self' blob:;
 child-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none';
 object-src 'none'; upgrade-insecure-requests
@@ -228,9 +228,16 @@ deck.gl set element `style` attributes directly **[A]**; it is the narrowest dir
 permits that and it does not permit inline `<style>` or inline event handlers.
 `worker-src blob:` is listed because MapLibre has historically constructed its worker from
 a blob URL **[A]** — **P2 task: verify against the pinned MapLibre build and delete `blob:`
-if it is not needed.** `connect-src 'self'` is the machine-checkable expression of SB-06's
-"single origin, so no CORS is required or permitted" **[V]** — a third-party basemap key
-would break this line, which is one more reason for §2.1's decision.
+if it is not needed.** `connect-src` is the machine-checkable expression of SB-06's "single
+origin, so no CORS is required or permitted" **[V]**, with exactly one named exception:
+`basemap.nationalmap.gov`, the USGS National Map imagery the satellite option draws from.
+It is public domain and keyless — a third-party basemap *key* would still break this line,
+which is §2.1's argument intact — and the requests happen only when a reader selects
+satellite; the dark, light and none options remain zero-external, and a test holds them
+there. The origin is named, never a wildcard, and it appears in `connect-src` and `img-src`
+only, never in a directive that loads code. Amended by controller ruling under DIR-1
+(`work-output/wave1-gate-findings.md`), which also requires that the imagery's declared
+graticule fallback actually execute — a fallback the policy forbids is not a recovery.
 
 Ship CSP in `Report-Only` for the first week of P2, then enforce. No `unsafe-eval`
 anywhere: this rules out any charting or templating library that compiles at runtime,

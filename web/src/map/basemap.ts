@@ -6,18 +6,10 @@ import { BASE_STORAGE_KEY, readGuarded, writeGuarded } from "./persist.ts";
 
 /**
  * Basemap options, all keyless and all attributable. The vector flavours read a PMTiles
- * archive from this app's own origin over HTTP range requests, so the map has no runtime
- * dependency on anyone else's uptime, and when that archive is unavailable the map degrades to
- * the graticule — locally, with no request leaving the origin.
- *
- * There is no hosted runtime fallback. The code carried one to
- * `https://tiles.openfreemap.org` and it had never once worked: `connect-src 'self'` refuses
- * it on every stack we run, which is the correct posture and is not being widened for a
- * fallback. A fallback that the security policy forbids is not a fallback, it is a second
- * failure mode wearing the label of a recovery — and it made the failure banner name a
- * recovery the reader could not have received. OpenFreeMap remains a documented *operator*
- * step (`web/README-basemap.md`), taken deliberately with the CSP consequences understood,
- * not something the browser reaches for on its own.
+ * archive from this app's own origin, so the map does not depend on anyone else's uptime, and
+ * every option degrades to the graticule locally rather than to a hosted substitute that
+ * `connect-src 'self'` would refuse. Satellite imagery is the one external origin, and the
+ * policy names it (`glasswell.api.security`, `infra/basemap/README.md`).
  */
 export type BasemapKind = "vector" | "raster" | "graticule";
 
@@ -30,7 +22,7 @@ export interface BasemapDef {
   tiles?: string[];
   maxzoom?: number;
   attribution: string;
-  /** What the map degrades to when the archive cannot serve. Local, always. */
+  /** What the map degrades to when this option's tiles cannot be had. `fallbackStyle` runs it. */
   fallback: "graticule" | null;
   /** Overrides applied on top of the named flavour, from BRAND.md's palette. */
   palette?: Record<string, string>;
@@ -239,7 +231,9 @@ export function rasterStyle(base: BasemapDef): StyleSpecification {
   return {
     version: 8,
     sources: {
-      [BASEMAP_SOURCE]: {
+      // Its own id, not the vector one: a tile error carries `sourceId`, and reusing
+      // `protomaps` here made a USGS outage report itself as a Protomaps one (R3.2).
+      [base.id]: {
         type: "raster",
         tiles: base.tiles ?? [],
         tileSize: 256,
@@ -249,9 +243,48 @@ export function rasterStyle(base: BasemapDef): StyleSpecification {
     },
     layers: [
       { id: "canvas", type: "background", paint: { "background-color": "#0B1014" } },
-      { id: "satellite", type: "raster", source: BASEMAP_SOURCE },
+      { id: base.id, type: "raster", source: base.id },
     ],
   };
+}
+
+/** The locator a reader could act on: the host imagery comes from, the path an archive is at. */
+export function tileOrigin(base: BasemapDef): string {
+  const template = base.tiles?.[0];
+  if (!template) return PMTILES_PATH;
+  try {
+    return new URL(template).host;
+  } catch {
+    return template; // A template that is not a URL is still the truest name we have for it.
+  }
+}
+
+/** One tile, fetched to find out whether the origin will serve any at all. */
+export function tileProbeUrl(base: BasemapDef): string | null {
+  const template = base.tiles?.[0];
+  return template ? template.replace(/\{[zxy]\}/g, "0") : null;
+}
+
+/** What a MapLibre `sourceId` means to a reader; a data source is already named for one. */
+export function sourceLabel(sourceId: string): string {
+  if (sourceId === BASEMAP_SOURCE) return PMTILES_PATH;
+  const base = basemapDef(sourceId);
+  return base ? tileOrigin(base) : sourceId;
+}
+
+export interface BasemapFallback {
+  style: StyleSpecification;
+  failure: { source: string; fallback: string };
+}
+
+/**
+ * Runs the option's declared fallback, or returns null where none is declared. The graticule
+ * is local — no request leaves this origin — so it works under the same policy that refuses
+ * a hosted substitute.
+ */
+export function fallbackStyle(base: BasemapDef): BasemapFallback | null {
+  if (base.fallback !== "graticule") return null;
+  return { style: graticuleStyle(), failure: { source: tileOrigin(base), fallback: "the graticule" } };
 }
 
 /** The no-basemap view is a shipped choice, not the only state: SB-05 §2.1's `?base=none`. */

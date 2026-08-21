@@ -2,7 +2,19 @@ import type { LayerSpecification, SourceSpecification } from "maplibre-gl";
 
 import { tileUrl } from "../api/client.ts";
 import type { BasemapVariant } from "./basemap.ts";
-import { coalesce, featureState, get, inSet, interpolate, step, toNumber, when, zoom } from "./expr.ts";
+import {
+  any,
+  coalesce,
+  featureState,
+  get,
+  inSet,
+  interpolate,
+  not,
+  step,
+  toNumber,
+  when,
+  zoom,
+} from "./expr.ts";
 import type { Expr } from "./expr.ts";
 import {
   SELECTION_COLOUR,
@@ -11,6 +23,7 @@ import {
   UNMAPPED_STATUS,
   statusColourExpression,
   statusFillExpression,
+  statusIds,
   statusProperty,
 } from "./status.ts";
 import { rgba, variantStyle } from "./variant-style.ts";
@@ -21,8 +34,6 @@ export const SPACING_SOURCE = "nd_spacing_units";
 export const TX_WELLS_SOURCE = "tx_wells";
 export const TX_LATERALS_SOURCE = "tx_laterals";
 
-/** Every layer the status vocabulary paints, so the filter and the gate read one list. */
-export const STATUS_STYLED_LAYERS = ["wells", "laterals", "tx-wells", "tx-laterals"] as const;
 /** The point layers the legend counts from. Both basins, because the legend counts what is drawn. */
 export const WELL_POINT_LAYERS = ["wells", "tx-wells"] as const;
 
@@ -91,18 +102,39 @@ export function sourceSpecs(origin?: string, search?: string): Record<string, So
   return specs;
 }
 
+/**
+ * Marks the layers whose filter slot belongs to the status gate. Read off the built layers
+ * rather than kept as a list of ids beside them: a hand list is what left a second basin's
+ * layers ungated at style-build time until the reader happened to zoom (gate-inc3 4.1).
+ */
+const STATUS_GATE = "gw:status-gate";
+const STATUS_GATED = { [STATUS_GATE]: true } as const;
+
+export function statusStyledLayerIds(
+  layers: readonly LayerSpecification[] = dataLayers({ labels: true }),
+): string[] {
+  return layers
+    .filter((layer) => (layer.metadata as Record<string, unknown> | undefined)?.[STATUS_GATE])
+    .map((layer) => layer.id);
+}
+
 export function visibleStatusesAt(atZoom: number): string[] {
   return STATUS_CLASSES.filter((status) => atZoom >= status.minZoom).map((status) => status.id);
 }
 
 /**
- * The rendered set is the zoom gate intersected with the legend's own filter. An unmapped
- * status is always in it: a class the build cannot name is a defect, and a defect that
- * disappears at low zoom is worse than one that shows.
+ * The rendered set is the zoom gate intersected with the legend's own filter. The unmapped
+ * class is never withdrawn by the *zoom* — a defect that disappears at low zoom is worse than
+ * one that shows — but the reader can switch it off, because on some slices it is the largest
+ * class on the canvas and unfilterable ink is ink nobody can account for.
  */
 export function statusFilter(atZoom: number, on: ReadonlySet<string>): Expr {
-  const allowed = visibleStatusesAt(atZoom).filter((id) => on.has(id));
-  return inSet(statusProperty(), [...allowed, UNMAPPED_STATUS.id]);
+  const named = inSet(statusProperty(), visibleStatusesAt(atZoom).filter((id) => on.has(id)));
+  if (!on.has(UNMAPPED_STATUS.id)) return named;
+  // The absence class is anything the vocabulary cannot name — the rule `statusClass()` applies
+  // when counting. Matching the literal id instead let a well with an unknown *present* status
+  // fall out of the map, the count and the legend at once, with nothing saying so.
+  return any(named, not(inSet(statusProperty(), statusIds())));
 }
 
 function selectable<T>(selected: T, base: T | Expr): Expr {
@@ -195,6 +227,7 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       type: "line",
       source: laterals,
       "source-layer": laterals,
+      metadata: STATUS_GATED,
       paint: {
         "line-color": selectable(SELECTION_COLOUR, statusColourExpression()),
         "line-width": lateralWidth(),
@@ -207,6 +240,7 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       source: wells,
       "source-layer": wells,
       minzoom: 4,
+      metadata: STATUS_GATED,
       paint: {
         "circle-color": selectable(SELECTION_COLOUR, statusFillExpression(hollow)),
         "circle-stroke-color": selectable(SELECTION_COLOUR, statusColourExpression()),
@@ -245,6 +279,7 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       type: "line",
       source: txLaterals,
       "source-layer": txLaterals,
+      metadata: STATUS_GATED,
       paint: {
         "line-color": selectable(SELECTION_COLOUR, statusColourExpression()),
         "line-width": lateralWidth(),
@@ -257,6 +292,7 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       source: txWells,
       "source-layer": txWells,
       minzoom: 4,
+      metadata: STATUS_GATED,
       paint: {
         "circle-color": selectable(SELECTION_COLOUR, statusFillExpression(hollow)),
         "circle-stroke-color": selectable(SELECTION_COLOUR, statusColourExpression()),

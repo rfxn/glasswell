@@ -22,6 +22,12 @@ DOCS_PATH = "/docs"
 DOCS_SCRIPT_ORIGIN = "https://cdn.jsdelivr.net"
 DOCS_IMAGE_ORIGIN = "https://fastapi.tiangolo.com"
 
+# Satellite imagery is inherently external: USGS National Map is public domain and keyless,
+# and there is no self-hosted equivalent to point at. One named origin, never a wildcard;
+# requests to it happen only when a reader selects the satellite basemap, and dark, light and
+# none stay provably zero-external (`web/src/map/map.test.ts`, `infra/basemap/README.md`).
+SATELLITE_IMAGERY_ORIGIN = "https://basemap.nationalmap.gov"
+
 STATIC_SECURITY_HEADERS: Mapping[str, str] = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
@@ -36,9 +42,10 @@ _DIRECTIVES: tuple[tuple[str, str], ...] = (
     # maplibre and deck.gl write element style attributes directly; this is the narrowest
     # directive that permits it and it admits neither inline <style> nor onclick handlers.
     ("style-src-attr", "'unsafe-inline'"),
-    ("img-src", "'self' data: blob:"),
+    ("img-src", f"'self' data: blob: {SATELLITE_IMAGERY_ORIGIN}"),
     ("font-src", "'self'"),
-    ("connect-src", "'self'"),
+    # maplibre fetches raster tiles and paints them from a bitmap, so imagery needs both.
+    ("connect-src", f"'self' {SATELLITE_IMAGERY_ORIGIN}"),
     ("worker-src", "'self' blob:"),
     ("child-src", "'none'"),
     ("frame-ancestors", "'none'"),

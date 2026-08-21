@@ -1,3 +1,4 @@
+import { featureFilter } from "@maplibre/maplibre-gl-style-spec";
 import { describe, expect, it } from "vitest";
 import type { LayerSpecification } from "maplibre-gl";
 
@@ -14,11 +15,25 @@ import {
   publishedSource,
   sourceSpecs,
   statusFilter,
+  statusStyledLayerIds,
   visibleStatusesAt,
 } from "./style.ts";
-import { SELECTION_COLOUR, STATUS_CLASSES } from "./status.ts";
+import {
+  SELECTION_COLOUR,
+  STATUS_CLASSES,
+  UNMAPPED_STATUS,
+  filterableStatusIds,
+  statusIds,
+} from "./status.ts";
 
 const ids = (): string[] => dataLayers().map((layer) => layer.id);
+
+/** Whether a well carrying this `status_canonical` is drawn — evaluated, not pattern-matched. */
+const draws = (filter: unknown, status: string | null, atZoom = 12): boolean =>
+  featureFilter(filter as never).filter({ zoom: atZoom } as never, {
+    type: 1,
+    properties: { status_canonical: status },
+  } as never, undefined as never);
 
 const paintOf = (layer?: LayerSpecification): Record<string, unknown> =>
   ((layer && "paint" in layer && layer.paint) || {}) as Record<string, unknown>;
@@ -65,9 +80,44 @@ describe("the data layers", () => {
     expect(visibleStatusesAt(9).sort()).toEqual(STATUS_CLASSES.map((s) => s.id).sort());
   });
 
-  it("keeps an unmapped status visible at every zoom, so a data defect cannot hide", () => {
-    const filter = JSON.stringify(statusFilter(4, new Set(visibleStatusesAt(4))));
-    expect(filter).toContain("unmapped");
+  it("keeps an unmapped status in scale at every zoom, so a data defect cannot hide", () => {
+    const on = new Set([...visibleStatusesAt(4), UNMAPPED_STATUS.id]);
+    expect(draws(statusFilter(4, on), null, 4)).toBe(true);
+    expect(draws(statusFilter(4, on), "plugged", 4)).toBe(false);
+  });
+
+  it("withdraws the unmapped class when the reader filters it off, like any other class", () => {
+    // On the Permian slice it is the largest class on the canvas; a row nobody can switch off
+    // is the one class whose ink the reader cannot answer for.
+    expect(draws(statusFilter(12, new Set(statusIds())), null)).toBe(false);
+    expect(draws(statusFilter(12, new Set(filterableStatusIds())), null)).toBe(true);
+  });
+
+  it("draws a status it cannot name as the absence class, rather than not at all", () => {
+    // The count path routes any unrecognised code to `unmapped` (statusClass), so a filter that
+    // matched only the literal id disagreed with it: a well whose status was present but not in
+    // `cr_nd_status_vocab_1` was dropped from the canvas, the count and the key at once.
+    const all = statusFilter(12, new Set(filterableStatusIds()));
+    expect(draws(all, "wildcat_unknown")).toBe(true);
+    expect(draws(all, "")).toBe(true);
+    expect(draws(all, "ACTIVE")).toBe(true);
+    expect(draws(statusFilter(12, new Set(statusIds())), "wildcat_unknown")).toBe(false);
+  });
+
+  it("gates every layer the status vocabulary paints, and only where the filter slot is free", () => {
+    // 4.1's live half: the gate used to be applied to a hand-written pair of layer ids at
+    // style-build time, so a second basin's layers drew every class at every zoom until the
+    // reader happened to zoom. `wells-struck` is excluded because it carries its own filter,
+    // and setting the gate on it would replace the strike-through's own one.
+    const gated = new Set(statusStyledLayerIds());
+    for (const layer of dataLayers({ labels: true })) {
+      const paintsStatus = JSON.stringify(paintOf(layer)).includes("status_canonical");
+      const ownFilter = "filter" in layer;
+      expect(gated.has(layer.id), `${layer.id} gated=${gated.has(layer.id)}`).toBe(
+        paintsStatus && !ownFilter,
+      );
+    }
+    expect(gated.size).toBeGreaterThan(0);
   });
 
   it("intersects the zoom gate with the legend's own filter", () => {

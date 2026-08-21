@@ -128,14 +128,65 @@ inside the 2015-01 window. Three findings change what phases 2-4 must handle —
 digits and cannot compose an API-10, and an `amend_ind` that is a ten-value vocabulary
 rather than a flag. `tests/fixtures/nm_ocd/SOURCE.md` carries the measurements.
 
+### 2026-08-20 — increment-3 closeout
+
+- [Fix] A well whose status is present but not in `cr_nd_status_vocab_1` is drawn as the
+      absence class instead of not being drawn at all. The filter matched the literal
+      `unmapped` id while the count routed any unrecognised code to it through
+      `statusClass()`, so an unknown code fell out of the canvas, the legend count and the key
+      at once — the failure mode the class exists to prevent
+
+- [Fix] The satellite basemap's declared graticule fallback executes. `BasemapDef.fallback`
+      had no consumer at all — `resolveStyle`'s non-vector branch set no failure path — so a
+      reader whose imagery could not be fetched got an empty canvas, no banner and no
+      graticule. The client now asks the imagery origin for one tile before committing to it,
+      and degrades locally when the answer does not come (gate-inc3 R3.1)
+- [Fix] The failure banner names the source that failed. The raster style reused the vector
+      source id, so a USGS outage reported itself as `Tiles for protomaps did not load`; the
+      imagery style now carries its own source and `sourceLabel()` turns a MapLibre
+      `sourceId` into the locator a reader can act on — a host, or the archive path (R3.2)
+- [Fix] The imagery attribution goes down with the imagery. A credit over a canvas with no
+      imagery on it is a false statement about what was drawn (R3.3)
+- [Remove] The hosted OpenFreeMap fallback, which `connect-src 'self'` had always refused;
+      every basemap now degrades to the graticule, locally, through the one declared-fallback
+      path both the vector and the imagery branches run
+
+- [Change] The CSP names one external origin, `https://basemap.nationalmap.gov`, in
+         `connect-src` and `img-src` and in no directive that loads code. USGS National Map
+         imagery is public domain and keyless and has no self-hosted equivalent, so the
+         satellite basemap could not draw under `connect-src 'self'` — 122 refusals and an
+         empty canvas. Named, never a wildcard; requests happen only when a reader selects
+         satellite, and dark, light and none stay zero-external under test (DIR-1 ruling)
+- [Change] SB-05 §1.5 carries the amended policy and the reason, so the blueprint and the
+         emitted header do not disagree
+
+- [Remove] `statusMinZoomExpression()` is gone. The per-class zoom floor has one
+      implementation — `visibleStatusesAt()` inside `statusFilter()`, measured holding at z4
+      and z6 — and the second expression of the same table had no consumer at all
+      (gate-inc3 4.1)
+- [Fix] The status gate is applied to every layer the vocabulary paints, derived from the
+      built layers rather than from a hand-written pair of ids. The pair was complete for
+      North Dakota alone; a second basin's layers were ungated at style-build time and drew
+      every class at every zoom until the reader happened to zoom, which is the disagreement
+      between legend, count and canvas the gate measured on the Permian frames
+
+- [Change] The unmapped row filters like every other class: its checkbox is live, All/None
+         act on it, and `statusFilter()` withdraws it when the reader switches it off.
+         It stays on by default and the zoom never withdraws it — a defect must not hide —
+         but on the Permian slice it is the largest class on the canvas, and unfilterable
+         ink is ink the reader cannot account for (gate-inc3 4.2)
+- [Change] The legend builds the absence row up front and lists it only once the map has
+         drawn one, so the switch exists before the class does; the collapsed pill counts
+         what it lists (`Well status · 9/10`), and `glasswell.statuses` carries `unmapped`
+         in its known vocabulary so a reader's refusal of it survives a reload
+
 ### 2026-08-20 — VF-6: legend select/deselect all
 
 - [New] The well legend's header carries an All/None control, so clearing or restoring
       the nine status classes is one click rather than nine. It owns `checked` and
       nothing else: `disabled` and the out-of-scale mark stay the zoom's to set, so
       "All" cannot promote a class the zoom has withdrawn, and "None" clears one anyway
-      so zooming in does not resurrect what the reader dismissed. The unmapped row is
-      untouched — a defect marker is not a filter the reader owns. It reports through
+      so zooming in does not resurrect what the reader dismissed. It reports through
       the same `activeStatuses()` path a row toggle uses, and is hidden while the key is
       collapsed to its pill (VF-6)
 - [New] The legend's status filter now survives a reload, under the same `{on,known}` shape

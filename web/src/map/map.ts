@@ -5,6 +5,7 @@ import "../map.css";
 import { connectMap, selectWell, setUrlParam } from "../bus.ts";
 import type { FlyTarget } from "../bus.ts";
 import type { Viewport } from "../app/state.ts";
+import type { BasemapDef } from "./basemap.ts";
 import {
   BASEMAP_SOURCE,
   GLYPHS_URL,
@@ -12,10 +13,13 @@ import {
   applyBasemapVariant,
   basemapDef,
   chooseBasemap,
+  fallbackStyle,
   firstLabelLayerId,
   graticuleStyle,
   rasterStyle,
   rememberBasemap,
+  sourceLabel,
+  tileProbeUrl,
   vectorStyle,
 } from "./basemap.ts";
 import { installClickRouter } from "./click-router.ts";
@@ -31,13 +35,13 @@ import {
 } from "./persist.ts";
 import { createPillStrip } from "./pills.ts";
 import { LAYERS, defaultLayerSet, layerDef, layerIds } from "./registry.ts";
-import { UNMAPPED_STATUS, statusClass, statusIds } from "./status.ts";
+import { UNMAPPED_STATUS, filterableStatusIds, statusClass } from "./status.ts";
 import {
-  STATUS_STYLED_LAYERS,
   WELL_POINT_LAYERS,
   dataLayers,
   sourceSpecs,
   statusFilter,
+  statusStyledLayerIds,
   strikeGlyph,
 } from "./style.ts";
 import { createTileBanner } from "./tile-banner.ts";
@@ -97,6 +101,21 @@ async function archiveServesRanges(path: string): Promise<boolean> {
   }
 }
 
+/**
+ * Imagery is somebody else's origin, so "can it be reached" is a question with an answer
+ * before anything is drawn — and the answer decides whether the reader is shown a basemap or
+ * a fallback, rather than an empty canvas with an attribution over it.
+ */
+async function tilesReachable(base: BasemapDef): Promise<boolean> {
+  const probe = tileProbeUrl(base);
+  if (!probe) return false;
+  try {
+    return (await fetch(probe)).ok;
+  } catch {
+    return false; // A refused origin and an unreachable one are one failure to the reader.
+  }
+}
+
 async function readManifest(): Promise<BasemapManifest | null> {
   try {
     const response = await fetch(MANIFEST_PATH, { headers: { Accept: "application/json" } });
@@ -119,12 +138,19 @@ async function resolveStyle(id: string): Promise<ResolvedStyle> {
   const base = basemapDef(id) ?? basemapDef("none")!;
   if (base.kind !== "vector") {
     const assets = await readManifest();
-    const style = base.kind === "raster" ? rasterStyle(base) : graticuleStyle();
     // Glyphs are served from this origin whatever the basemap is, and without the url every
     // symbol layer is dropped — which is why the spacing-unit label did not exist at all on
     // satellite or on none, the two variants VF-5 calls hardest to read.
-    if (assets?.labels === true) style.glyphs = GLYPHS_URL;
-    return { style };
+    const labelled = (style: maplibregl.StyleSpecification): maplibregl.StyleSpecification => {
+      if (assets?.labels === true) style.glyphs = GLYPHS_URL;
+      return style;
+    };
+    if (base.kind !== "raster") return { style: labelled(graticuleStyle()) };
+    const declared = fallbackStyle(base);
+    if (declared && !(await tilesReachable(base))) {
+      return { style: labelled(declared.style), failure: declared.failure };
+    }
+    return { style: labelled(rasterStyle(base)) };
   }
 
   const manifest = await readManifest();
@@ -139,9 +165,10 @@ async function resolveStyle(id: string): Promise<ResolvedStyle> {
     return result;
   }
 
-  // Local-only degradation: no request leaves this origin, so the fallback works under the
-  // same `connect-src 'self'` that refuses every hosted one.
-  return { style: graticuleStyle(), failure: { source: archive, fallback: "the graticule" } };
+  // The same declared fallback the imagery path runs, named for the archive that failed.
+  const declared = fallbackStyle(base);
+  if (declared) return { style: declared.style, failure: { ...declared.failure, source: archive } };
+  return { style: graticuleStyle() };
 }
 
 export function createMap(
@@ -183,17 +210,20 @@ export function createMap(
   // later arrives visible rather than hidden by a stored set that predates it.
   let statuses = restoreCapabilitySet(
     readCapabilitySet(STATUS_STORAGE_KEY),
-    statusIds(),
-    statusIds(),
+    filterableStatusIds(),
+    filterableStatusIds(),
   );
   const opacities = new Map(LAYERS.map((layer) => [layer.id, layer.opacity]));
+  // Built once: `zoom` fires on every animation frame of a pinch, and the gated set is a
+  // property of the style, not of the viewport.
+  const statusGated = statusStyledLayerIds();
   let selected: string | null = null;
 
   const legend = createLegend({
     on: statuses,
     onFilter: (next) => {
       statuses = next;
-      writeCapabilitySet(STATUS_STORAGE_KEY, statuses, statusIds());
+      writeCapabilitySet(STATUS_STORAGE_KEY, statuses, filterableStatusIds());
       applyStatusFilter();
       refreshCounts();
     },
@@ -266,7 +296,7 @@ export function createMap(
 
   function applyStatusFilter(): void {
     const filter = statusFilter(map.getZoom(), statuses);
-    for (const id of STATUS_STYLED_LAYERS) {
+    for (const id of statusGated) {
       if (map.getLayer(id)) map.setFilter(id, filter as maplibregl.FilterSpecification);
     }
   }
@@ -317,7 +347,9 @@ export function createMap(
       labels: Boolean(next.glyphs),
       variant,
       ...(typeof hollowFill === "string" ? { hollowFill } : {}),
-    }).map((layer) => {
+    });
+    const gated = new Set(statusStyledLayerIds(built));
+    const styled = built.map((layer) => {
       const owner = LAYERS.find((candidate) => candidate.styleLayers.includes(layer.id));
       if (owner && !on.has(owner.id)) {
         layer.layout = { ...layer.layout, visibility: "none" } as typeof layer.layout;
@@ -329,9 +361,9 @@ export function createMap(
           layer.paint = { ...layer.paint, [property]: opacity } as typeof layer.paint;
         }
       }
-      if (layer.id === "wells" || layer.id === "laterals") {
-        // Both are circle/line layers, which the spec allows a filter on; the union type
-        // includes `background`, which does not, so the narrowing has to be written out.
+      if (gated.has(layer.id)) {
+        // Circle and line layers, which the spec allows a filter on; the union type includes
+        // `background`, which does not, so the narrowing has to be written out.
         (layer as { filter?: maplibregl.FilterSpecification }).filter = statusFilter(
           map.getZoom(),
           statuses,
@@ -343,7 +375,7 @@ export function createMap(
     // Under the basemap's own labels, so town and county names stay readable over wells.
     const layers = [...next.layers];
     const labelIndex = layers.findIndex((layer) => layer.id === firstLabelLayerId(next));
-    layers.splice(labelIndex < 0 ? layers.length : labelIndex, 0, ...built);
+    layers.splice(labelIndex < 0 ? layers.length : labelIndex, 0, ...styled);
     const data = sourceSpecs();
     // The variant pass runs over the merged list — the basemap's labels and lines as well as
     // this app's — so nothing text-bearing reaches the canvas unkeyed to the substrate.
@@ -423,7 +455,7 @@ export function createMap(
 
   map.on("error", (event) => {
     const source = (event as unknown as { sourceId?: string }).sourceId;
-    if (source) banner.report(source);
+    if (source) banner.report(sourceLabel(source));
     // MapLibre logs errors itself only when nothing is listening. Having a listener and
     // dropping the ones it cannot attribute to a source is how a style-validation failure
     // becomes an empty map over a clean console.

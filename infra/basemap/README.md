@@ -121,3 +121,21 @@ not something the browser does on its own:
    app's origin is no longer the only origin a reader's browser talks to.
 
 Steps 1 and 2 together are the whole change. Neither belongs in the shipped default.
+
+## Satellite imagery, and the one origin the policy names
+
+The satellite option is USGS National Map imagery — public domain, keyless, and inherently
+somebody else's origin. `glasswell.api.security` allow-lists exactly
+`https://basemap.nationalmap.gov` in `connect-src` and `img-src`, by name and never as a
+wildcard. Nothing else external is allowed, and the dark, light and none options remain
+provably zero-external (`web/src/map/map.test.ts`).
+
+The requests happen only when a reader selects satellite, and the client asks the origin for
+one tile before committing to it: if that tile does not arrive — the origin is down, the
+policy refuses it, the network is gone — the map degrades to the graticule and the banner
+names `basemap.nationalmap.gov` as what failed. The imagery credit goes with it, because an
+attribution over a canvas with no imagery on it is a false statement about what was drawn.
+
+Adding a second imagery origin means adding it to that allow-list in the same change. If the
+list ever needs to exceed two hosts, that is a decision to take deliberately, not a widening
+to slip in with a basemap.
