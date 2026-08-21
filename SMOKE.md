@@ -74,16 +74,19 @@ curl -sS -K "$CFG" https://glasswell.lab.rpx.sh/v1/health
 
 ## 3. The map and one well — about eight minutes
 
-**Step 1 — open the keyed link.** Expect the Williston basin: several thousand
-lateral centrelines on a dark canvas with a one-degree graticule, coloured by well
-status, a status legend bottom-left, and a header line reading
+**Step 1 — open the keyed link.** Expect the Williston basin: several thousand well
+points on a dark canvas with a one-degree graticule, coloured by well status, a
+status legend bottom-left, and a header line reading
 `Glossary loaded: 50 highlightable surface forms.`
+Laterals are a layer now, not the default: open **Layers** and switch **Laterals**
+on. The row stays dark and says "Visible at zoom 8 and above" until Step 2.
 *There is no basemap.* No roads, no terrain, no satellite — the geometry and the
 graticule are the whole reference, by design. It is not broken.
 Screenshot: `01-map-initial.png`.
 
 **Step 2 — zoom in.** Scroll to about z12 anywhere in the green mass. Laterals
-thicken; **well points appear from z9** as circles at the surface location. Pan
+appear at z8 and thicken from there; **well points appear from z9** as circles at
+the surface location. Pan
 east past roughly −100.5° and the canvas empties — that is the edge of the data,
 not a failure.
 
