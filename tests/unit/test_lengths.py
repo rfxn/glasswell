@@ -26,9 +26,15 @@ def crs_rule(rule_id: str, spec: dict) -> ConformanceRule:
     )
 
 
-GEODESIC_RULE = crs_rule("cr_nd_compute_crs_2", {"length_method": "geodesic"})
+GEODESIC_RULE = crs_rule(
+    "cr_nd_compute_crs_2", {"length_method": "geodesic", "purpose": "length_computation"}
+)
 PROJECTED_RULE = crs_rule(
-    "cr_nd_compute_crs_1", {"length_method": "projected", "compute_epsg": 32614}
+    "cr_nd_compute_crs_1",
+    {"length_method": "projected", "compute_epsg": 32614, "purpose": "length_computation"},
+)
+TX_RULE = crs_rule(
+    "cr_tx_compute_crs_1", {"length_method": "geodesic", "purpose": "length_computation"}
 )
 
 
@@ -67,5 +73,21 @@ def test_the_family_is_what_selects_the_rule_not_a_pinned_id():
     """A supersession changes the id; a consumer that pins the id would miss the new rule."""
     assert compute_crs_rule([GEODESIC_RULE]).rule_id == "cr_nd_compute_crs_2"
 
-    with pytest.raises(LookupError, match="cr_nd_compute_crs"):
+    with pytest.raises(LookupError, match="length_computation"):
         compute_crs_rule([])
+
+
+def test_the_purpose_selects_it_so_each_basin_can_seed_its_own_instance():
+    """cr_tx_compute_crs_1 is not in ND's family, and a TX length must resolve a TX rule."""
+    assert compute_crs_rule([TX_RULE]).rule_id == "cr_tx_compute_crs_1"
+
+
+def test_two_families_claiming_the_same_purpose_for_one_source_is_refused():
+    """Ambiguity here would serve one basin's length under the other basin's evidence."""
+    with pytest.raises(LookupError, match="cr_nd_compute_crs, cr_tx_compute_crs"):
+        compute_crs_rule([GEODESIC_RULE, TX_RULE])
+
+
+def test_a_rule_that_is_not_about_length_is_not_the_length_rule():
+    with pytest.raises(LookupError, match="length_computation"):
+        compute_crs_rule([crs_rule("cr_nd_datum_9", {"length_method": "geodesic"})])
