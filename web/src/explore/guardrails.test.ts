@@ -88,6 +88,14 @@ function withoutComments(source: string, dialect: "ts" | "css" = "ts"): string {
   return dialect === "css" ? blocks : blocks.replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
+// C9 renders a `fetch` snippet for the reader to copy, and a snippet is text rather than a call
+// site. Arms 1 and 2 therefore read the code with its strings taken out: a call cannot hide
+// inside a literal, and a literal must not be able to trip a network-surface check. `LITERAL` is
+// the tofu sweep's own quote-form regex, declared below and used here rather than restated.
+function withoutLiterals(source: string): string {
+  return withoutComments(source).replace(LITERAL, '""');
+}
+
 const EXPLORE = sources("src/explore").map((path) => ({ path, source: readFileSync(path, "utf8") }));
 const SNAPSHOT = JSON.parse(readFileSync("../tests/contract/openapi_snapshot.json", "utf8")) as {
   paths: Record<string, Record<string, { operationId?: string }>>;
@@ -102,14 +110,23 @@ describe("the explorer's network surface is one call site (SB-08 §2.3 arms 1-3)
   });
 
   it("calls fetch from exactly one file, and that file is the declared exemption", () => {
-    const callers = EXPLORE.filter((file) => /\bfetch\(/.test(file.source)).map((file) => file.path);
+    const callers = EXPLORE.filter((file) => /\bfetch\(/.test(withoutLiterals(file.source))).map(
+      (file) => file.path,
+    );
 
     expect(FETCH_ALLOWLIST).toHaveLength(1);
     expect(callers).toEqual(FETCH_ALLOWLIST);
   });
 
+  it("still sees a real call once the strings are out, and no longer sees a printed one", () => {
+    expect(withoutLiterals("const answer = await fetch(url);")).toMatch(/\bfetch\(/);
+    expect(withoutLiterals('const snippet = "await fetch(url)";')).not.toMatch(/\bfetch\(/);
+  });
+
   it("never reaches for XMLHttpRequest anywhere", () => {
-    for (const file of EXPLORE) expect(file.source, file.path).not.toContain("XMLHttpRequest");
+    for (const file of EXPLORE) {
+      expect(withoutLiterals(file.source), file.path).not.toContain("XMLHttpRequest");
+    }
   });
 
   it("classifies every operation it names against the committed document", () => {
@@ -149,6 +166,93 @@ describe("the explorer's network surface is one call site (SB-08 §2.3 arms 1-3)
     for (const file of EXPLORE) {
       expect(withoutComments(file.source), file.path).not.toMatch(/https?:\/\//);
     }
+  });
+});
+
+/**
+ * Arm 4 (SB-08 §2.3, §4.7). "No domain prose in the client" cannot be a length rule alone: the
+ * explorer legitimately writes long sentences about its own surface — which column is off the
+ * right edge, which tab lands in P-B. What it must never write is a sentence about the *data*,
+ * because that sentence already exists as a glossary row and a second copy of it drifts.
+ *
+ * The vocabulary is therefore derived from the served document rather than listed here: every
+ * word of every term the API binds through `x-glasswell-glossary`. A long literal that speaks
+ * the glossary's own words is a glossary entry the client has re-authored.
+ */
+const DOMAIN_LEXICON = new Set(
+  [
+    ...new Set(
+      [...readFileSync("../tests/contract/openapi_snapshot.json", "utf8").matchAll(
+        /"x-glasswell-glossary":\s*"([^"]+)"/g,
+      )].map((match) => match[1] as string),
+    ),
+  ].flatMap((term) => term.replace(/^gt_/, "").split("_").filter((word) => word.length >= 5)),
+);
+
+const PROSE_LIMIT = 120;
+
+/** `${…}` is an expression, not prose, so it is neither counted nor read for vocabulary. */
+function proseOf(literal: string): string {
+  return literal.slice(1, -1).replace(/\$\{[^}]*\}/g, "");
+}
+
+/**
+ * Whole comment lines only. `withoutComments` cuts at the first `//` on a line, which inside a
+ * shell snippet — `jq -r '.a // empty'` — cuts a string literal in half and pairs its opening
+ * quote with the next one, producing an "offender" spanning four lines of code.
+ */
+function withoutCommentLines(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("//"))
+    .join("\n");
+}
+
+function domainProse(source: string): string[] {
+  return [...withoutCommentLines(source).matchAll(LITERAL)]
+    .map(([literal]) => proseOf(literal))
+    .filter((prose) => prose.length > PROSE_LIMIT)
+    .filter((prose) =>
+      [...DOMAIN_LEXICON].some((word) => new RegExp(`\\b${word}s?\\b`, "i").test(prose)),
+    );
+}
+
+describe("the explorer authors no domain prose of its own (SB-08 §2.3 arm 4)", () => {
+  it("derives its vocabulary from the document, and finds a real one", () => {
+    expect(DOMAIN_LEXICON.size).toBeGreaterThan(20);
+    for (const word of ["vintage", "quarantine", "granularity", "manifest"]) {
+      expect([...DOMAIN_LEXICON], word).toContain(word);
+    }
+  });
+
+  it("can fail, and does not fire on a sentence about the surface itself", () => {
+    const domain = `"A report vintage is the knowledge date the regulator published the figure on, and a restatement is a new one rather than an edit of the old."`;
+    const surface = `"This collection cannot be narrowed by that filter here, so the control is stated as absent rather than rendered and quietly ignored on the wire."`;
+
+    expect(proseOf(domain).length).toBeGreaterThan(PROSE_LIMIT);
+    expect(proseOf(surface).length).toBeGreaterThan(PROSE_LIMIT);
+    expect(domainProse(`const a = ${domain};`)).toHaveLength(1);
+    expect(domainProse(`const b = ${surface};`)).toEqual([]);
+  });
+
+  it("scans the pane, and not the fixtures or the tests that quote the API back", () => {
+    const scanned = EXPLORE.map((file) => file.path);
+
+    expect(scanned).toContain("src/explore/api/pane.ts");
+    expect(scanned).toContain("src/explore/api/semantics.ts");
+    expect(scanned).not.toContain("src/explore/api/fixtures.ts");
+    // §3: widening the exclusion list until the scan covers nothing is the failure mode, so the
+    // list is asserted whole here as well as at arm 1.
+    expect(EXCLUDED.map(String)).toEqual(["/\\.test\\.ts$/", "/\\/fixtures\\.ts$/"]);
+  });
+
+  it("finds none under explore/", () => {
+    const offenders = EXPLORE.flatMap((file) =>
+      domainProse(file.source).map((prose) => `${file.path}: ${prose.slice(0, 60)}…`),
+    );
+
+    expect(offenders).toEqual([]);
   });
 });
 

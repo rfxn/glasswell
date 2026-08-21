@@ -1,9 +1,11 @@
 import "./detail.css";
 
 import { getEnvelope } from "../../api/client.ts";
+import type { ResponseMeta } from "../../api/client.ts";
 import { isFigure, valueAt } from "../../api/envelope.ts";
 import type { AppState } from "../../app/state.ts";
 import { labelElement } from "../../glossary/gw-term.ts";
+import { publishCall } from "../api/context.ts";
 import type { CatalogueDataset } from "../catalogue.ts";
 import { renderCell } from "../grid/cells.ts";
 import { columnsFor } from "../grid/columns.ts";
@@ -91,9 +93,18 @@ export async function mountDetail(host: HTMLElement, options: DetailOptions): Pr
     return;
   }
 
+  const response: { out?: ResponseMeta } = {};
   try {
-    const envelope = await getEnvelope<unknown>(request.path, request.query, options.signal);
+    const envelope = await getEnvelope<unknown>(
+      request.path,
+      request.query,
+      options.signal,
+      response,
+    );
     if (options.signal.aborted) return;
+    // C8 N1: while a row is open the record is the call in view, so the pane renders it over
+    // the collection's rather than teaching a request the reader has moved on from.
+    publishRecord(detail, request, "loaded", { envelope, meta: response.out ?? null });
     const columns = columnsFor(detail, options.document, envelope).filter(listed);
     renderRecord(body, options, {
       columns,
@@ -106,10 +117,28 @@ export async function mountDetail(host: HTMLElement, options: DetailOptions): Pr
     root.append(...trailNodes(options));
   } catch (error) {
     if (options.signal.aborted) return;
+    publishRecord(detail, request, "failed", { error, meta: response.out ?? null });
     body.append(
       note(`${detail.operationId} did not answer: ${String(error)}. The fields above are the collection's.`),
     );
   }
+}
+
+function publishRecord(
+  detail: CatalogueDataset,
+  request: { path: string; query: Record<string, string[]> },
+  state: "loaded" | "failed",
+  answer: { envelope?: unknown; error?: unknown; meta?: ResponseMeta | null },
+): void {
+  publishCall({
+    state,
+    role: "record",
+    dataset: detail,
+    request: { operationId: detail.operationId, path: request.path, query: request.query },
+    envelope: (answer.envelope as never) ?? null,
+    error: answer.error ?? null,
+    meta: answer.meta ?? null,
+  });
 }
 
 interface RecordView {

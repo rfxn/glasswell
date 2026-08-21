@@ -8,6 +8,7 @@ const SHEETS = [
   "src/explore/grid/grid.css",
   "src/explore/facets/facets.css",
   "src/explore/detail/detail.css",
+  "src/explore/api/pane.css",
 ].map((path) => ({
   path,
   css: readFileSync(path, "utf8"),
@@ -24,6 +25,7 @@ const HIDDEN_CLASSES = [
   "gw-cursor-decoded",
   "gw-grid-more",
   "gw-trail-curl",
+  "gw-api-param-body",
 ];
 
 function sources(directory: string): string[] {
@@ -44,7 +46,7 @@ function rules(css: string): { selector: string; body: string }[] {
   }));
 }
 
-describe("C7's stylesheets obey the rules C6 wrote down for the explorer's own (G-3)", () => {
+describe("the explorer's stylesheets obey the rules C6 wrote down for its own (G-3)", () => {
   it("declares no z-index at all — the grid and the facet bar do not overlap anything", () => {
     for (const sheet of SHEETS) {
       expect(sheet.css.replace(/\/\*[\s\S]*?\*\//g, ""), sheet.path).not.toMatch(/z-index/);
@@ -70,8 +72,8 @@ describe("C7's stylesheets obey the rules C6 wrote down for the explorer's own (
         [...readFileSync(path, "utf8").matchAll(/(\w+)\.hidden = /g)].map((match) => match[1]),
       ),
     );
-    // Four elements today — C8's curl block was the fourth, and this is what caught it. A
-    // fifth has to join HIDDEN_CLASSES or this reddens, which is the only thing that stops the
+    // Five elements today — C9's parameter body was the fifth, and this is what caught it. A
+    // sixth has to join HIDDEN_CLASSES or this reddens, which is the only thing that stops the
     // list above rotting into a comment.
     expect(hidden.size).toBe(HIDDEN_CLASSES.length);
   });

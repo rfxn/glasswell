@@ -106,3 +106,30 @@ describe("the explorer aliases the global ladder and declares none of its own (G
     expect(LAYOUT).not.toMatch(/--gw-z-(map-chrome|panel|drawer|rail-pop|modal|popover|toast)\s*:/);
   });
 });
+
+/**
+ * C9 regression. Where the pane stacks it shares a column with the grid, and a row sized `auto`
+ * takes the pane's whole content — which, once the pane had content, left the grid a zero-height
+ * row and two thirds of the window empty. The row has to be capped, not the item: a percentage
+ * `max-height` on a grid item cannot resolve against a row that item is sizing.
+ */
+describe("the stacked pane is capped by its row, not by its content", () => {
+  const stacked = [...LAYOUT.matchAll(/@media \(max-width: (1365|1023)px\)([\s\S]*?)\n}/g)];
+
+  it("caps the pane's row in both stacked arms", () => {
+    expect(stacked).toHaveLength(2);
+    for (const [, width, block] of stacked) {
+      const rows = /grid-template-rows:\s*([^;]+);/.exec(block as string)?.[1];
+      expect(rows, `${width}px`).toContain("fit-content(40%)");
+      expect(rows, `${width}px`).not.toMatch(/\bauto\s*;?\s*$/);
+    }
+  });
+
+  it("keeps the grid's own row able to shrink to nothing rather than overflow the window", () => {
+    for (const [, width, block] of stacked) {
+      expect(/grid-template-rows:\s*([^;]+);/.exec(block as string)?.[1], `${width}px`).toContain(
+        "minmax(0, 1fr)",
+      );
+    }
+  });
+});

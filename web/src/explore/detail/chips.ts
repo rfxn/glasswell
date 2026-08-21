@@ -1,10 +1,13 @@
-import { apiUrl } from "../../api/client.ts";
 import { serializeState } from "../../app/state.ts";
 import type { AppState } from "../../app/state.ts";
+import { curlList as commandList } from "../api/request.ts";
 import type { CatalogueDataset } from "../catalogue.ts";
 import type { Parameter } from "../facets/schema.ts";
 import { operationFor } from "../grid/schema.ts";
 import { FILTER_PREFIX, requestFor } from "../router.ts";
+
+/** C9's builder is the only one: the breadcrumb copies the same command the pane renders. */
+export { curlFor } from "../api/request.ts";
 
 /** SB-08 §3.3: a hop lands on a row, or on the collection narrowed to this id. Never on a chain. */
 export type HopKind = "row" | "filtered";
@@ -39,8 +42,6 @@ export interface TrailStep {
  * not recorded, instead of implying it remembers a walk it did not.
  */
 export const HOP_CAP = 3;
-
-const KEY_PLACEHOLDER = "$GLASSWELL_KEY";
 
 let steps: TrailStep[] = [];
 
@@ -196,14 +197,8 @@ export function resetTrail(): void {
   steps = [];
 }
 
-/** The URL is `apiUrl`'s, resolved against this origin — never a host literal in the bundle. */
-export function curlFor(step: TrailStep): string {
-  const url = new URL(apiUrl(step.request.path, step.request.query), window.location.origin);
-  return `curl -s -H "X-Glasswell-Key: ${KEY_PLACEHOLDER}" '${url.toString()}'`;
-}
-
-export function curlList(walked: readonly TrailStep[] = steps): string {
-  return walked.map((step, index) => `# ${index + 1}. ${step.title}\n${curlFor(step)}`).join("\n");
+export function curlList(): string {
+  return commandList(steps);
 }
 
 export interface TrailOptions {
@@ -236,7 +231,7 @@ export function renderTrail(options: TrailOptions): HTMLElement | null {
   const commands = document.createElement("pre");
   commands.className = "gw-trail-curl";
   commands.hidden = true;
-  commands.textContent = curlList(walked);
+  commands.textContent = curlList();
 
   const copy = document.createElement("button");
   copy.type = "button";
