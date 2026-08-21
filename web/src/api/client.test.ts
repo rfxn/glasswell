@@ -1,19 +1,36 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { apiKey, authHeaders, clearKey, isKeyShaped, saveKey, storedKey } = await import(
-  "./client.ts"
-);
+import type { ResponseMeta } from "./client.ts";
+
+const { ApiError, apiKey, authHeaders, clearKey, getEnvelope, isKeyShaped, saveKey, storedKey } =
+  await import("./client.ts");
 
 const KEY = "a".repeat(64);
+const ENVELOPE = { data: { api10: "3305310451" }, meta: { as_of: "2026-08-01" } };
 
 function visit(url: string): void {
   window.history.replaceState(null, "", url);
 }
 
+function responds(status: number, body: unknown, headers: Record<string, string> = {}) {
+  return vi.fn(() =>
+    Promise.resolve(
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { "content-type": "application/json", ...headers },
+      }),
+    ),
+  );
+}
+
 beforeEach(() => {
   window.localStorage.clear();
   visit(`/`);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("the owner key never travels in a place the server logs", () => {
@@ -92,5 +109,44 @@ describe("a stored key can be replaced without devtools (UX P1-6)", () => {
     saveKey(`  ${KEY}\n`);
 
     expect(storedKey()).toBe(KEY);
+  });
+});
+
+describe("a response can report itself, so the API pane can quote it (SB-08 §4.4)", () => {
+  it("fills the out-parameter with the status, the headers and the elapsed milliseconds", async () => {
+    vi.stubGlobal("fetch", responds(200, ENVELOPE, { "X-Glasswell-Vintage": "2026-08-01" }));
+    const meta: { out?: ResponseMeta } = {};
+
+    const envelope = await getEnvelope<{ api10: string }>("/v1/wells", {}, undefined, meta);
+
+    expect(envelope).toEqual(ENVELOPE);
+    expect(meta.out?.status).toBe(200);
+    expect(meta.out?.headers.get("x-glasswell-vintage")).toBe("2026-08-01");
+    expect(Number.isFinite(meta.out?.elapsed_ms)).toBe(true);
+    expect(meta.out?.elapsed_ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it("returns the same envelope when nobody asks, so every existing call site is unchanged", async () => {
+    const fetchSpy = responds(200, ENVELOPE);
+    vi.stubGlobal("fetch", fetchSpy);
+
+    expect(await getEnvelope("/v1/wells")).toEqual(ENVELOPE);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // §4.7: a failed request keeps its REQUEST block, so it has to keep its status and its timing.
+  it("fills the out-parameter before it throws, so a failure is still quotable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      responds(404, { type: "/v1/problems/not_found", title: "Not found", status: 404 }),
+    );
+    const meta: { out?: ResponseMeta } = {};
+
+    await expect(getEnvelope("/v1/wells/0000000000", {}, undefined, meta)).rejects.toBeInstanceOf(
+      ApiError,
+    );
+
+    expect(meta.out?.status).toBe(404);
+    expect(Number.isFinite(meta.out?.elapsed_ms)).toBe(true);
   });
 });

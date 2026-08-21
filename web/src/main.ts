@@ -15,16 +15,19 @@ import { highlight } from "./glossary/index.ts";
 import { loadGlossary, termIndex } from "./glossary/store.ts";
 import "./glossary/gw-term.ts";
 import { renderLineageDrawer } from "./lineage/drawer.ts";
-import { createMap } from "./map/map.ts";
+// Type-only, so it emits no import edge and the map stays out of the entry chunk.
+import type { MapHandle } from "./map/map.ts";
 import { createSearch } from "./search/search.ts";
 
 const mapHost = required("gw-map");
 const cardHost = required("gw-card");
 const drawerHost = required("gw-drawer");
 const keyHost = required("gw-key-host");
+const exploreHost = required("gw-explore");
 const shell = required("gw-main");
 
 let state: AppState = readState();
+let mapHandle: MapHandle | undefined;
 let pendingSource: SelectSource = "url";
 
 function required(id: string): HTMLElement {
@@ -119,12 +122,35 @@ document.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("popstate", () => {
+  // Captured before the assignment: comparing next.view with state.view after it would be
+  // comparing next with itself, and a back button across the mode switch would render nothing.
+  const previousView = state.view;
   const next = readState();
   state = next;
   pendingSource = "url";
+  if (next.view !== previousView) void renderView();
   showWell(next.well, "replace");
   openExplain(next.explain, "replace");
 });
+
+async function renderView(): Promise<void> {
+  if (state.view === "explore") {
+    const { mountExplorer } = await import("./explore/shell.ts");
+    await mountExplorer(exploreHost, state, { commit });
+    mapHost.hidden = true;
+    exploreHost.hidden = false;
+    return;
+  }
+  const { createMap } = await import("./map/map.ts");
+  exploreHost.hidden = true;
+  mapHost.hidden = false;
+  // createMap is not idempotent and connectMap's disposer is discarded inside it, so a second
+  // mount is a second canvas and a second bus handler. Mount once; the map lives behind the
+  // explorer after that.
+  mapHandle ??= createMap(mapHost, state.map, {
+    onViewport: (viewport) => commit({ map: viewport }, "replace"),
+  });
+}
 
 async function boot(): Promise<void> {
   try {
@@ -145,7 +171,7 @@ async function boot(): Promise<void> {
   }
 }
 
-function start(): void {
+async function start(): Promise<void> {
   // First, and before any history rewrite: serializeState() writes a search-only URL, which
   // drops the fragment the key arrived in.
   apiKey();
@@ -169,14 +195,14 @@ function start(): void {
   onUrlParam((key, value) => {
     const extra = { ...state.extra };
     if (value === null) delete extra[key];
-    else extra[key] = value;
+    // The map only ever writes single-valued parameters, so replacing the array is exact.
+    else extra[key] = [value];
     state = { ...state, extra };
   });
 
-  // The map subscribes itself to the bus in createMap; the app only owns the viewport.
-  createMap(mapHost, state.map, {
-    onViewport: (viewport) => commit({ map: viewport }, "replace"),
-  });
+  // Awaited: the map subscribes itself to the bus inside createMap, and a selection restored
+  // before that would fire into a bus the map has not joined.
+  await renderView();
 
   if (state.well) showWell(state.well, "replace");
   if (state.explain) openExplain(state.explain, "replace");
@@ -186,4 +212,4 @@ function start(): void {
   void boot();
 }
 
-start();
+void start();
