@@ -1,0 +1,13 @@
+/* The stamp is a link to /changelog/#v<version> now. It keeps the read column's colour and
+   weight: a blue underlined string in the corner reads as a control, and this is a fact. */
+.gw-build-hash {
+  border-bottom: 1px solid transparent;
+  color: inherit;
+  text-decoration: none;
+}
+
+.gw-build-hash:hover,
+.gw-build-hash:focus-visible {
+  border-bottom-color: var(--cyan);
+  color: var(--paper);
+}

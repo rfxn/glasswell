@@ -101,6 +101,12 @@ assert_true "hashed bundle present" "no assets/index-*.js" \
 assert_false "no source map is deployed" "assets/*.js.map is published" \
     glob_matches "$WEB_ROOT/assets/*.map"
 assert "GET / serves the app" 200 "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/")"
+# DR-57: there is no SPA fallback, so /changelog/ resolves only if the file is really there.
+# The header stamp links to it from every screen, which makes a 404 here a visible one.
+assert_true "the changelog page is deployed" "no changelog/index.html" \
+    test -f "$WEB_ROOT/changelog/index.html"
+assert "GET /changelog/ serves the release notes" 200 \
+    "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/changelog/")"
 
 printf 'tiles\n'
 assert "martin /health" 200 \
