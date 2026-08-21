@@ -137,6 +137,53 @@
   font-weight: 650;
 }
 
+/* The count is a served figure, so it carries the app's provenance affordance — at the size a
+   15rem key can hold, which the shared .gw-handle padding is not. */
+.gw-lg-handle {
+  flex: 0 0 auto;
+  margin-left: 0.25rem;
+  padding: 0 0.15rem;
+  border: 0;
+  font-size: 0.7rem;
+}
+
+.gw-lg-handle[hidden] {
+  display: none;
+}
+
+/* A count that is being asked for reads as a wait, not as a number and not as an absence. */
+.gw-lg[data-counts="pending"] .gw-lg-count {
+  color: var(--muted);
+}
+
+.gw-lg[data-counts="unavailable"] .gw-lg-count {
+  color: var(--gas-text);
+}
+
+.gw-lg-partial,
+.gw-lg-fault {
+  margin: 0.35rem 0 0;
+  font-size: 0.66rem;
+  line-height: 1.4;
+}
+
+.gw-lg-partial {
+  color: var(--slate);
+}
+
+.gw-lg-fault {
+  color: var(--gas-text);
+}
+
+.gw-lg-partial[hidden],
+.gw-lg-fault[hidden] {
+  display: none;
+}
+
+.gw-lg-rule {
+  color: var(--cyan-text);
+}
+
 .gw-lg-row[data-out-of-scale] {
   opacity: 0.45;
 }

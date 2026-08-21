@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { EXPLAIN_EVENT } from "../card/gw-figure.ts";
 import { createLegend, legendEnabled } from "./legend.ts";
 import {
   STATUS_STORAGE_KEY,
@@ -15,12 +16,18 @@ const rowFor = (root: HTMLElement, id: string): HTMLElement | undefined =>
   rows(root).find((row) => row.dataset["status"] === id);
 const boxFor = (root: HTMLElement, id: string): HTMLInputElement =>
   rowFor(root, id)!.querySelector<HTMLInputElement>("input")!;
+const countFor = (root: HTMLElement, id: string): string =>
+  rowFor(root, id)!.querySelector<HTMLElement>(".gw-lg-count")!.textContent ?? "";
+const handleFor = (root: HTMLElement, id: string): HTMLButtonElement | null =>
+  rowFor(root, id)!.querySelector<HTMLButtonElement>(".gw-lg-handle");
 const control = (root: HTMLElement, which: "all" | "none"): HTMLButtonElement =>
   root.querySelector<HTMLButtonElement>(`.gw-lg-${which}`)!;
 const expand = (root: HTMLElement): HTMLElement => {
   root.querySelector<HTMLElement>(".gw-lg-title")?.click();
   return root;
 };
+const partial = (root: HTMLElement): HTMLElement =>
+  root.querySelector<HTMLElement>(".gw-lg-partial")!;
 
 describe("the legend", () => {
   it("collapses to a title pill by default and expands on a click of the title", () => {
@@ -353,5 +360,207 @@ describe("the legend's persisted status set", () => {
         ".gw-lg-title",
       )!.textContent,
     ).toBe(`Well status · 1/${statusIds().length}`);
+  });
+});
+
+describe("counts that are being fetched", () => {
+  it("says it is asking, rather than leaving the last viewport's numbers on screen", () => {
+    // The honesty rule the whole track turns on: a number under a viewport it was not counted
+    // over is a wrong number, and the moment the reader pans it is exactly that.
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 20_643, plugged: 7_316 }, 12);
+    legend.setPending(12);
+
+    expect(countFor(legend.element, "active")).not.toContain("20,643");
+    expect(countFor(legend.element, "plugged")).not.toContain("7,316");
+    for (const id of statusIds()) expect(countFor(legend.element, id), id).toBe("…");
+  });
+
+  it("marks itself busy while it asks, so a reader is not left guessing at a still key", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setPending(12);
+    expect(legend.element.querySelector(".gw-lg-body")?.getAttribute("aria-busy")).toBe("true");
+    legend.setCounts({ active: 3 }, 12);
+    expect(legend.element.querySelector(".gw-lg-body")?.getAttribute("aria-busy")).toBe("false");
+  });
+
+  it("keeps the out-of-scale marks while it asks — the zoom did not stop being true", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setPending(5);
+    expect(rowFor(legend.element, "plugged")!.getAttribute("data-out-of-scale")).toBe("true");
+    expect(boxFor(legend.element, "plugged").disabled).toBe(true);
+  });
+});
+
+describe("counts that could not be had", () => {
+  it("shows an em dash and says so, so absence is not read as a count of none", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 20_643 }, 12);
+    legend.setUnavailable(12);
+
+    for (const id of statusIds()) expect(countFor(legend.element, id), id).toBe("—");
+    expect(legend.element.dataset["counts"]).toBe("unavailable");
+    expect(legend.element.textContent).toMatch(/could not be read/i);
+  });
+
+  it("carries no handle it cannot resolve", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 3 }, 12, { active: "drv_a#col=wells&status=active" });
+    legend.setUnavailable(12);
+    expect(handleFor(legend.element, "active")!.hidden).toBe(true);
+  });
+
+  it("is cleared by the next answer", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setUnavailable(12);
+    legend.setCounts({ active: 3 }, 12);
+    expect(legend.element.dataset["counts"]).toBe("ready");
+    expect(legend.element.textContent).not.toMatch(/could not be read/i);
+  });
+});
+
+describe("a count that is now a served figure", () => {
+  const HANDLES = {
+    active: "drv_xret5nw2hhouqi5mfvda#col=wells&status=active&bbox=-104.5:47.2:-102.1:48.6",
+    plugged: "drv_xret5nw2hhouqi5mfvda#col=wells&status=plugged&bbox=-104.5:47.2:-102.1:48.6",
+  };
+
+  it("offers its own derivation, not one borrowed from the class beside it", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 3, plugged: 2 }, 12, HANDLES);
+
+    expect(handleFor(legend.element, "active")!.dataset["handle"]).toBe(HANDLES.active);
+    expect(handleFor(legend.element, "plugged")!.dataset["handle"]).toBe(HANDLES.plugged);
+  });
+
+  it("opens the drawer through the one event the app already listens for", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    document.body.appendChild(legend.element);
+    const seen: string[] = [];
+    document.addEventListener(EXPLAIN_EVENT, (event) => {
+      seen.push((event as CustomEvent<{ handle: string }>).detail.handle);
+    });
+    legend.setCounts({ active: 3 }, 12, HANDLES);
+    handleFor(legend.element, "active")!.click();
+
+    expect(seen).toEqual([HANDLES.active]);
+    legend.element.remove();
+  });
+
+  it("cancels the click a <label> would otherwise forward to its checkbox", () => {
+    // A handle is not a filter. happy-dom does not implement label activation, so the toggle
+    // itself cannot fail here — what is observable, and what a browser reads before deciding
+    // to forward, is that the click was cancelled. The browser tier carries the visual proof.
+    const legend = createLegend({ onFilter: () => {} });
+    document.body.appendChild(legend.element);
+    legend.setCounts({ active: 3 }, 12, HANDLES);
+    let cancelled: boolean | null = null;
+    rowFor(legend.element, "active")!.addEventListener("click", (event) => {
+      cancelled = event.defaultPrevented;
+    });
+    handleFor(legend.element, "active")!.click();
+
+    expect(cancelled).toBe(true);
+    expect(boxFor(legend.element, "active").checked).toBe(true);
+    legend.element.remove();
+  });
+
+  it("does not collapse the key it sits in", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    expand(legend.element);
+    legend.setCounts({ active: 3 }, 12, HANDLES);
+    handleFor(legend.element, "active")!.click();
+    expect(legend.element.classList.contains("gw-open")).toBe(true);
+  });
+
+  it("is absent on a class with no count, because there is nothing to explain", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 3 }, 12, HANDLES);
+    expect(handleFor(legend.element, "active")!.hidden).toBe(false);
+    expect(handleFor(legend.element, "dry")!.hidden).toBe(true);
+  });
+
+  it("names the class in its label, so a screen reader is not given ten identical buttons", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 3 }, 12, HANDLES);
+    expect(handleFor(legend.element, "active")!.getAttribute("aria-label")).toMatch(/active/i);
+  });
+});
+
+describe("the canvas beside the counts", () => {
+  it("says nothing while the two agree", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 30, plugged: 20 }, 12);
+    legend.setDrawn(50);
+    expect(partial(legend.element).hidden).toBe(true);
+  });
+
+  it("states both numbers when the canvas is drawing a subset of what is in view", () => {
+    // The counts are the data's; the canvas is thinned and zoom-culled. Neither is wrong, and
+    // a reader who can see both cannot read them as contradicting each other.
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 20_643, plugged: 7_316 }, 6);
+    legend.setDrawn(1_204);
+
+    expect(partial(legend.element).hidden).toBe(false);
+    expect(partial(legend.element).textContent).toContain("1,204");
+    expect(partial(legend.element).textContent).toContain("27,959");
+    expect(partial(legend.element).title).toMatch(/zoom|thin/i);
+  });
+
+  it("counts only the classes the reader has left on, so a filter is not read as a shortfall", () => {
+    // The count states what is in the area; the checkbox states what is drawn. Both stay true.
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 20_643, plugged: 7_316 }, 12);
+    boxFor(legend.element, "plugged").checked = false;
+    boxFor(legend.element, "plugged").dispatchEvent(new Event("change", { bubbles: true }));
+    legend.setDrawn(20_643);
+
+    expect(partial(legend.element).hidden).toBe(true);
+    expect(countFor(legend.element, "plugged")).toBe("7,316");
+  });
+
+  it("says nothing when there is no canvas census to make — silence, not a zero", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 20_643 }, 12);
+    legend.setDrawn(null);
+    expect(partial(legend.element).hidden).toBe(true);
+  });
+
+  it("withdraws the statement when the counts are no longer known", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 20_643 }, 6);
+    legend.setDrawn(1_204);
+    expect(partial(legend.element).hidden).toBe(false);
+    legend.setPending(6);
+    expect(partial(legend.element).hidden).toBe(true);
+  });
+});
+
+describe("the vocabulary the counts were classed by", () => {
+  it("names the static pair before any answer, so the key is never unsourced", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    expect(legend.element.textContent).toContain("cr_nd_status_vocab_1");
+    expect(legend.element.textContent).toContain("cr_tx_status_vocab_1");
+  });
+
+  it("names the rules that shaped this answer, each opening the row it is", () => {
+    // R8: a mapping decision is a row with a rationale and an effective date, not a string.
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setVocabulary([
+      { rule: "cr_nd_status_vocab_1", href: "/v1/conformance/cr_nd_status_vocab_1" },
+    ]);
+    const links = [...legend.element.querySelectorAll<HTMLAnchorElement>(".gw-lg-rule")];
+
+    expect(links.map((link) => link.textContent)).toEqual(["cr_nd_status_vocab_1"]);
+    expect(links[0]!.href).toContain("/v1/conformance/cr_nd_status_vocab_1");
+    expect(legend.element.textContent).not.toContain("cr_tx_status_vocab_1");
+  });
+
+  it("still names a rule the response did not link, rather than dropping it", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setVocabulary([{ rule: "cr_tx_status_vocab_1", href: null }]);
+    expect(legend.element.textContent).toContain("cr_tx_status_vocab_1");
+    expect(legend.element.querySelectorAll(".gw-lg-rule")).toHaveLength(0);
   });
 });
