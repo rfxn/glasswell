@@ -12,7 +12,7 @@ ANVIL_ENV      := DOCKER_HOST=$(ANVIL_HOST) DOCKER_TLS_VERIFY=1 DOCKER_CERT_PATH
 TEST_LABEL ?= glasswell.test
 
 .PHONY: help venv install test test-anvil test-local test-unit test-integration test-e2e \
-        dbtier-preflight \
+        dbtier-preflight serve-branch changelog \
         lint fmt clean prune-test-volumes check-workstation snapshot
 
 help:
@@ -27,6 +27,8 @@ help:
 	@echo "test-e2e          browser path against \$$GLASSWELL_BASE_URL (needs a key)"
 	@echo "prune-test-volumes  reclaim volumes a killed test session left behind"
 	@echo "check-workstation   flag glasswell persistent state on a workstation"
+	@echo "serve-branch      ephemeral PostGIS + seeds + uvicorn for a branch (GW_ROOT=...)"
+	@echo "changelog         fold changelog.d/ fragments into CHANGELOG.md (TITLE=\"...\")"
 	@echo "lint              ruff"
 	@echo "fmt               ruff --fix"
 	@echo "snapshot          rewrite tests/contract/openapi_snapshot.json from the document"
@@ -76,6 +78,15 @@ lint:
 
 fmt:
 	$(PY) -m ruff check . --fix
+
+# A gate that judges a branch needs the branch's own API under the browser, not the
+# deployed instance's; tests/e2e/README.md explains the GW_* knobs.
+serve-branch:
+	$(PY) tests/support/serve_branch.py
+
+# Tracks write changelog.d/<branch>-<slug>.md; only the integrator folds. changelog.d/README.md.
+changelog:
+	$(PY) scripts/changelog-assemble.py --title "$(TITLE)"
 
 # A generated artifact with no in-tree regeneration path is one an agent repairs by hand.
 snapshot:

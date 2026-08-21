@@ -25,6 +25,27 @@ GLASSWELL_BASE_URL=http://127.0.0.1:8000 make test-e2e    # on the VM, against t
 | `GW_SHOTS` | a directory to write screenshots to; unset writes none |
 | `GLASSWELL_REQUIRE_E2E` | `1` turns "no browser" from a skip into a failure |
 
+## lib.mjs — the shared gate library
+
+The machinery every DIR-11 visual gate used to re-derive under `work-output/` now lives in
+`lib.mjs`: chromium discovery, `launch`, an instrumented page whose journal records page
+errors, console noise, non-2xx responses, tile/API traffic and key leaks, the `BREAKPOINTS`
+ladder (1600/1366/1024/820/390), screenshot helpers, a WCAG `contrastAudit` sampler and a
+`frameProbe`. Gate scripts import it (`import { launch, instrumentedPage, BREAKPOINTS } from
+"<repo>/tests/e2e/lib.mjs"`) and carry only their scenario. It is import-safe: playwright is
+loaded lazily, so `smoke.mjs` shares it and still skips cleanly when no browser exists.
+
+To judge a branch's own bundle against its own API (rather than the deployed instance),
+`tests/support/serve_branch.py` stands up an ephemeral PostGIS, runs the branch's
+migrations, loads the contract-tier seeds plus a quarantine-density and a two-pool shape,
+and serves uvicorn on `127.0.0.1` — `GW_ROOT` points it at any worktree, `GW_SEED` names an
+optional python file exec'd with `connection` for track-specific rows. `make serve-branch`
+runs it; the printed key-file path carries the owner key.
+
+Running `smoke.mjs` against a serve-branch instance is a useful boot check, but two of its
+assertions read real ND data the fixture does not carry (viewport tile coverage and the
+`dmr.nd.gov` acquisition url) — expect 11/13 there, 13/13 only against a deployed instance.
+
 ## Why this is its own npm project
 
 `playwright-core` is a test dependency of the *browser path*, not of the shipped bundle.

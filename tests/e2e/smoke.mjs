@@ -5,8 +5,10 @@
 //
 // Read-only. It navigates and reads; it never writes through the API.
 // The key rides the fragment, is never logged, and is redacted out of every url printed.
-import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+
+import { chromeExecutable } from "./lib.mjs";
 
 // GW_BASE is the retired name, still read so an old invocation targets what it names rather
 // than silently running against the default.
@@ -16,7 +18,6 @@ const KEY = (process.env.GLASSWELL_OWNER_KEY ?? process.env.GW_KEY ?? "").trim()
 const WELL = process.env.GW_WELL ?? "3305310451";
 const SHOTS = process.env.GW_SHOTS ?? "";
 const REQUIRE = process.env.GLASSWELL_REQUIRE_E2E === "1";
-const PLAYWRIGHT_CACHE = "/root/.cache/ms-playwright";
 // The roster is read off the module that installs the tile functions and answers
 // PUBLISHED_LAYERS, so a basin added later cannot leave this list saying its tiles escaped.
 // An empty parse would make the two assertions below vacuous, which is Gate-O M-2 again.
@@ -53,19 +54,6 @@ function unavailable(reason) {
   }
   console.log(`e2e skipped: ${reason}`);
   process.exit(0);
-}
-
-function chromeExecutable() {
-  if (process.env.GW_CHROME) return process.env.GW_CHROME;
-  if (!existsSync(PLAYWRIGHT_CACHE)) return null;
-  const builds = readdirSync(PLAYWRIGHT_CACHE)
-    .filter((entry) => entry.startsWith("chromium-"))
-    .sort((a, b) => Number(b.split("-")[1]) - Number(a.split("-")[1]));
-  for (const build of builds) {
-    const path = `${PLAYWRIGHT_CACHE}/${build}/chrome-linux64/chrome`;
-    if (existsSync(path)) return path;
-  }
-  return null;
 }
 
 let chromium;

@@ -32,6 +32,10 @@ pkg/**                      export-ignore
 .github/                    export-ignore
 .github/**                  export-ignore
 
+# Changelog fragments: folded into CHANGELOG.md at each merge train
+changelog.d/                export-ignore
+changelog.d/**              export-ignore
+
 # Audit and agent working output
 audit-output/               export-ignore
 audit-output/**             export-ignore
