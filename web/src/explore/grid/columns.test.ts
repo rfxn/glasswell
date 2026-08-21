@@ -170,9 +170,9 @@ describe("a column header binds where a binding exists and says so where it does
     expect(quarantine.total).toBe((dataset("quarantine").columns.default ?? []).length);
     expect(quarantine.bound).toBeGreaterThan(0);
     expect(quarantine.bound).toBeLessThan(quarantine.total);
-    // Vintages binds nothing today and the grid says so out loud rather than looking finished.
-    expect(vintages.bound).toBe(0);
-    expect(vintages.percent).toBe(0);
+    // C5 authored vintage bindings; the grid reports real partial coverage.
+    expect(vintages.bound).toBeGreaterThan(0);
+    expect(vintages.bound).toBeLessThan(vintages.total);
   });
 
   it("names a column by the field the API itself uses, which is what a reader would curl", () => {
