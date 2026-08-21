@@ -3,9 +3,10 @@ from __future__ import annotations
 import os
 import subprocess
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import psycopg
@@ -27,6 +28,16 @@ REQUIRE_DOCKER_ENV = "GLASSWELL_REQUIRE_DOCKER"
 # harness creates and on nothing else. An anonymous volume is indistinguishable from a real one.
 TEST_LABEL = "glasswell.test=1"
 DATA_DIRECTORY = "/var/lib/postgresql/data"
+PULL_TIMEOUT_SECONDS = 600
+# A LAN connection that loses a burst of packets backs off to a multi-minute RTO and never
+# recovers inside a test; without these the session hangs rather than failing. They fire only
+# on unacknowledged data, so a slow query is unaffected.
+CONNECTION_PARAMETERS = (
+    "connect_timeout=5&keepalives=1&keepalives_idle=10&keepalives_interval=5"
+    "&keepalives_count=3&tcp_user_timeout=30000"
+)
+LOCAL_DAEMON_SCHEMES = ("", "unix", "fd", "npipe")
+LOCAL_DAEMON_HOSTS = ("localhost", "127.0.0.1", "::1")
 
 FIXTURE_ENV_ID = "env_test"
 LINEAGE_FIXTURE_ENV_ID = "env_lineage_fixture"
@@ -37,6 +48,8 @@ _docker_environment: dict[str, str] | None = None
 _docker_probe_error = ""
 _session_container = ""
 _session_volume = ""
+_session_container_address = ""
+_session_password = ""
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -47,13 +60,28 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
                 item.add_marker(getattr(pytest.mark, tier))
 
 
-def docker_environment() -> dict[str, str] | None:
-    """Local socket first, then freedom's TLS endpoint."""
-    global _docker_environment, _docker_probe_error
-    if _docker_environment is not None:
-        return _docker_environment
+def daemon_address(environment: Mapping[str, str]) -> str | None:
+    """The host a published container port answers on, or None when the daemon is local.
 
-    candidates = [
+    DIR-14 sends full suites to anvil. A container's bridge IP is routable only from the
+    daemon's own host, so a remote daemon has to publish and be addressed by name.
+    """
+    endpoint = environment.get("DOCKER_HOST", "")
+    parsed = urlsplit(endpoint)
+    if parsed.scheme in LOCAL_DAEMON_SCHEMES:
+        return None
+    host = parsed.hostname
+    if host is None or host in LOCAL_DAEMON_HOSTS:
+        return None
+    return host
+
+
+def docker_candidates(environ: Mapping[str, str]) -> list[dict[str, str]]:
+    """An explicit DOCKER_HOST is the only candidate: `make test-anvil` that quietly ran here
+    instead would be a full suite reported against the wrong host."""
+    if environ.get("DOCKER_HOST"):
+        return [{}]
+    return [
         {},
         {
             "DOCKER_HOST": "tcp://127.0.0.1:2376",
@@ -61,6 +89,15 @@ def docker_environment() -> dict[str, str] | None:
             "DOCKER_CERT_PATH": str(Path.home() / ".docker" / "tls"),
         },
     ]
+
+
+def docker_environment() -> dict[str, str] | None:
+    """An inherited DOCKER_HOST, or the local socket, or the workstation's TLS endpoint."""
+    global _docker_environment, _docker_probe_error
+    if _docker_environment is not None:
+        return _docker_environment
+
+    candidates = docker_candidates(os.environ)
     failures = []
     for candidate in candidates:
         environment = {**os.environ, **candidate}
@@ -94,6 +131,57 @@ def _docker(environment: dict[str, str], *arguments: str) -> str:
     return completed.stdout.strip()
 
 
+def _ensure_image(environment: dict[str, str]) -> None:
+    """A remote daemon that has never run this suite has no image, and the pull outlasts the
+    ordinary command timeout on a residential uplink."""
+    present = subprocess.run(
+        ["docker", "image", "inspect", POSTGIS_IMAGE],
+        env=environment,
+        check=False,
+        capture_output=True,
+        timeout=60,
+    )
+    if present.returncode == 0:
+        return
+    subprocess.run(
+        ["docker", "pull", POSTGIS_IMAGE],
+        env=environment,
+        check=True,
+        capture_output=True,
+        timeout=PULL_TIMEOUT_SECONDS,
+    )
+
+
+def _container_address(environment: dict[str, str], name: str) -> str:
+    """host:port the test process connects to: the published port on a remote daemon, the
+    bridge IP on a local one."""
+    host = daemon_address(environment)
+    if host is None:
+        bridge = _docker(
+            environment,
+            "inspect",
+            "-f",
+            "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+            name,
+        )
+        return f"{bridge}:5432"
+    mapping = _docker(environment, "port", name, "5432/tcp")
+    return f"{host}:{mapping.splitlines()[0].rsplit(':', 1)[1]}"
+
+
+def _bridge_address(environment: dict[str, str], name: str) -> str:
+    """host:port a sibling container connects to. Always the bridge network, wherever the
+    test process happens to be."""
+    bridge = _docker(
+        environment,
+        "inspect",
+        "-f",
+        "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+        name,
+    )
+    return f"{bridge}:5432"
+
+
 def _wait_until_ready(dsn: str) -> None:
     deadline = time.monotonic() + READY_TIMEOUT_SECONDS
     last_error: Exception | None = None
@@ -118,9 +206,13 @@ def postgres_server() -> Iterator[str]:
                         f" ({_docker_probe_error})", pytrace=False)
         pytest.skip(f"docker unavailable, integration tier skipped ({_docker_probe_error})")
 
-    global _session_container, _session_volume
+    global _session_container, _session_volume, _session_container_address, _session_password
+    _ensure_image(environment)
     name = f"glasswell-test-{uuid4().hex[:8]}"
     volume = f"{name}-data"
+    # Published on a remote daemon, so the credential is per-session rather than a known pair
+    # on a LAN-reachable port.
+    password = _session_password = uuid4().hex
     # A named volume rather than the image's anonymous one: `--rm` does not reclaim a volume
     # when the session is killed rather than exiting, which is how 151 of them accumulated.
     _docker(environment, "volume", "create", "--label", TEST_LABEL, volume)
@@ -128,25 +220,19 @@ def postgres_server() -> Iterator[str]:
         environment,
         "run", "-d", "--rm", "--name", name,
         "--label", TEST_LABEL,
+        *(["-p", "5432"] if daemon_address(environment) else []),
         "-v", f"{volume}:{DATA_DIRECTORY}",
         "-e", "POSTGRES_USER=glasswell",
-        "-e", "POSTGRES_PASSWORD=glasswell",
+        "-e", f"POSTGRES_PASSWORD={password}",
         "-e", "POSTGRES_DB=postgres",
         POSTGIS_IMAGE,
     )
     _session_container, _session_volume = name, volume
     try:
-        # The bridge IP rather than a published port: docker-proxy is absent on this host,
-        # and both supported daemon endpoints are local, so the bridge network is routable.
-        address = _docker(
-            environment,
-            "inspect",
-            "-f",
-            "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-            name,
-        )
+        _session_container_address = _bridge_address(environment, name)
+        address = _container_address(environment, name)
         dsn_template = (
-            f"postgresql://glasswell:glasswell@{address}:5432/{{database}}?connect_timeout=5"
+            f"postgresql://glasswell:{password}@{address}/{{database}}?{CONNECTION_PARAMETERS}"
         )
         _wait_until_ready(dsn_template.format(database="postgres"))
         yield dsn_template
@@ -181,6 +267,20 @@ def _remove_volume(environment: dict[str, str], volume: str) -> None:
 def session_resources(postgres_server: str) -> tuple[str, str]:
     """The container and volume this session owns, so a test can audit what it leaves behind."""
     return _session_container, _session_volume
+
+
+@pytest.fixture(scope="session")
+def postgres_password(postgres_server: str) -> str:
+    """`ConnectionInfo.dsn` never carries the password, so anything that reconnects from one
+    needs it out of band."""
+    return _session_password
+
+
+@pytest.fixture(scope="session")
+def database_address_for_containers(postgres_server: str) -> str:
+    """What a container started by a test puts in its DSN. Not the same host:port the test
+    process uses once the daemon is remote."""
+    return _session_container_address
 
 
 def _create_database(dsn_template: str, name: str, template: str | None = None) -> str:

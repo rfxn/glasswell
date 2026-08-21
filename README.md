@@ -280,16 +280,33 @@ tests/contract/          FastAPI/OpenAPI surface (empty until the API lands)
 
 ```bash
 make install           # create .venv and install glasswell with dev dependencies
-make test              # full suite
+make test-anvil        # full suite on the lab CI host — the default for a full run
+make test-local        # full suite on this machine's docker daemon
 make test-unit         # pure-function tier, runs without docker
 make test-integration  # PostGIS tier
+make check-workstation # flag glasswell persistent state on a workstation
 make lint              # ruff
 ```
 
 The integration tier starts one `postgis/postgis:16-3.4` container per session and clones
-a migrated template database per test. It uses the local docker socket, falling back to
-`tcp://127.0.0.1:2376` with TLS. Without a reachable docker daemon the tier skips with a
-reason and the unit tier still runs.
+a migrated template database per test. It honours an inherited `DOCKER_HOST`, then tries the
+local socket, then `tcp://127.0.0.1:2376` with TLS. Without a reachable docker daemon the
+tier skips with a reason and the unit tier still runs.
+
+A remote daemon changes one thing: a container's bridge IP is routable only from the daemon's
+own host, so against a remote daemon the harness publishes the database port and addresses it
+by the daemon's hostname, while containers a test starts keep using the bridge address.
+`daemon_address` in `tests/conftest.py` is the single place that decision is made, and
+`tests/integration/test_harness_hygiene.py` asserts the branch actually taken.
+
+Full suites and anything docker-heavy run on `anvil`, the lab CI host; a workstation runs
+single-file iteration. Nothing of glasswell's — service, timer, or dataset — is installed on a
+workstation, and `make check-workstation` is what says so out loud.
+
+A remote daemon puts every statement on the LAN, so a full run is several times slower than a
+local one and a straggler may need re-running while the CI host is reached over a wireless
+backhaul. The DSN carries keepalives and `tcp_user_timeout`, which turns a collapsed connection
+into a failed test rather than a hung session.
 
 Migrations are append-only: add `NNN_name.sql`, never edit an applied one — the runner
 records each file's checksum and refuses a changed migration.

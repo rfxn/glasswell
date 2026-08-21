@@ -13,7 +13,7 @@ import subprocess
 
 import pytest
 
-from tests.conftest import DATA_DIRECTORY, TEST_LABEL, docker_environment
+from tests.conftest import DATA_DIRECTORY, TEST_LABEL, daemon_address, docker_environment
 
 
 def inspect(what: str, name: str) -> dict:
@@ -63,3 +63,29 @@ def test_the_data_directory_is_the_mount_that_is_labelled(resources):
     attached = inspect("container", container)["Mounts"]
     mounts = {mount["Destination"]: mount["Name"] for mount in attached}
     assert mounts.get(DATA_DIRECTORY) == volume
+
+
+def test_the_container_publishes_its_port_exactly_when_the_daemon_is_remote(resources):
+    """DIR-14: the same suite has to run on freedom's socket and on anvil's TLS endpoint. A
+    bridge IP answers only on the first, a published port is needed for the second."""
+    container, _ = resources
+    published = inspect("container", container)["NetworkSettings"]["Ports"].get("5432/tcp")
+    if daemon_address(docker_environment()) is None:
+        assert not published, "a local daemon reaches the bridge, so publishing exposes it"
+    else:
+        assert published, "a remote daemon's bridge network is not routable from here"
+
+
+def test_the_client_dsn_and_the_container_dsn_agree_about_locality(
+    resources, postgres_server: str, database_address_for_containers: str
+):
+    container, _ = resources
+    remote = daemon_address(docker_environment())
+    client_host = postgres_server.format(database="postgres").split("@")[1].split(":")[0]
+    bridge_host = database_address_for_containers.split(":")[0]
+
+    assert bridge_host == inspect("container", container)["NetworkSettings"]["IPAddress"]
+    if remote is None:
+        assert client_host == bridge_host
+    else:
+        assert client_host == remote != bridge_host

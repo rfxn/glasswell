@@ -48,6 +48,15 @@ support distribution stated. This is the feature most prone to confident nonsens
 step, where a conformance bug is invisible until someone audits a number months
 later.
 
+**Nothing of glasswell's lives on a workstation.** Services, timers, datasets, and
+CI-scale docker belong on the VM or on the lab CI host — a workstation is an editor
+and a fast test loop. Before creating anything persistent, ask whether it must
+survive the machine being switched off; if it must, it is in the wrong place.
+`make check-workstation` fails on the classes that have actually accumulated:
+installed units, cron entries, routable listeners, dev servers left running,
+unswept test volumes, and regulator downloads sitting outside the raw zone. Full
+suites run with `make test-anvil`.
+
 ## Working in the repo
 
 ```bash

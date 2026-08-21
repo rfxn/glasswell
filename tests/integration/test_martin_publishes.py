@@ -26,7 +26,12 @@ import pytest
 import yaml
 
 from glasswell.marts.tiles import install_tile_functions
-from tests.conftest import REQUIRE_DOCKER_ENV, TEST_LABEL, docker_environment
+from tests.conftest import (
+    REQUIRE_DOCKER_ENV,
+    TEST_LABEL,
+    daemon_address,
+    docker_environment,
+)
 
 # Pinned: `latest` resolves to 1.14.0 today and would move under this test silently, leaving
 # it verifying a binary the VM does not run (gate-o m-6). `v1.14.0` is not a published tag.
@@ -70,7 +75,7 @@ def _catalog(address: str) -> dict:
     last: Exception | None = None
     while time.monotonic() < deadline:
         try:
-            with urllib.request.urlopen(f"http://{address}:3000/catalog", timeout=5) as response:
+            with urllib.request.urlopen(f"http://{address}/catalog", timeout=5) as response:
                 return json.load(response)
         except (urllib.error.URLError, OSError, json.JSONDecodeError) as error:
             last = error
@@ -79,23 +84,36 @@ def _catalog(address: str) -> dict:
 
 
 def _serve(environment: dict[str, str], directory: Path, name: str) -> str:
-    """Run martin on the same bridge network the database is on, and return its address."""
+    """Run martin on the same bridge network the database is on, and return `host:port`.
+
+    `docker cp` rather than a bind mount, because a remote daemon cannot see this host's
+    tmp_path (DIR-14).
+    """
+    remote = daemon_address(environment)
     _docker(
         environment,
-        "run", "-d", "--rm", "--name", name,
+        "create", "--rm", "--name", name,
         "--label", TEST_LABEL,
-        "-v", f"{directory}:/cfg:ro",
+        *(["-p", "3000"] if remote else []),
         MARTIN_IMAGE,
-        "--config", "/cfg/config.yaml",
+        "--config", "/config.yaml",
     )
-    return _docker(
+    _docker(environment, "cp", str(directory / "config.yaml"), f"{name}:/config.yaml")
+    _docker(environment, "start", name)
+    if remote:
+        mapping = _docker(environment, "port", name, "3000/tcp")
+        return f"{remote}:{mapping.splitlines()[0].rsplit(':', 1)[1]}"
+    bridge = _docker(
         environment,
         "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", name
     )
+    return f"{bridge}:3000"
 
 
 @pytest.fixture
-def martin_ready(db: psycopg.Connection, tmp_path: Path) -> dict:
+def martin_ready(
+    db: psycopg.Connection, tmp_path: Path, database_address_for_containers: str
+) -> dict:
     """The shipped config, pointed at this test's database, served by the real binary."""
     environment = docker_environment()
     if environment is None:
@@ -125,10 +143,11 @@ def martin_ready(db: psycopg.Connection, tmp_path: Path) -> dict:
         )
     db.commit()
 
-    parameters = db.info.get_parameters()
+    # The address martin uses is the database's bridge address, not the one this process
+    # connects on: they diverge as soon as the daemon is remote.
     dsn = (
         f"postgresql://{MARTIN_ROLE}:{MARTIN_PASSWORD}"
-        f"@{parameters['host']}:{parameters.get('port', '5432')}/{db.info.dbname}"
+        f"@{database_address_for_containers}/{db.info.dbname}"
     )
     shipped = yaml.safe_load(MARTIN_CONFIG.read_text())
     return {"config": shipped, "dsn": dsn, "directory": tmp_path, "environment": environment}
