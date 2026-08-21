@@ -5,7 +5,8 @@
 //
 // Read-only. It navigates and reads; it never writes through the API.
 // The key rides the fragment, is never logged, and is redacted out of every url printed.
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 // GW_BASE is the retired name, still read so an old invocation targets what it names rather
 // than silently running against the default.
@@ -16,7 +17,14 @@ const WELL = process.env.GW_WELL ?? "3305310451";
 const SHOTS = process.env.GW_SHOTS ?? "";
 const REQUIRE = process.env.GLASSWELL_REQUIRE_E2E === "1";
 const PLAYWRIGHT_CACHE = "/root/.cache/ms-playwright";
-const ALLOWED_TILE_LAYERS = ["nd_wells", "nd_laterals", "nd_spacing_units"];
+// The roster is read off the module that installs the tile functions and answers
+// PUBLISHED_LAYERS, so a basin added later cannot leave this list saying its tiles escaped.
+// An empty parse would make the two assertions below vacuous, which is Gate-O M-2 again.
+const TILES_MODULE = fileURLToPath(new URL("../../src/glasswell/marts/tiles.py", import.meta.url));
+const ALLOWED_TILE_LAYERS = [
+  ...readFileSync(TILES_MODULE, "utf8").matchAll(/^\s*name="([a-z0-9_]+)",$/gm),
+].map((match) => match[1]);
+if (ALLOWED_TILE_LAYERS.length === 0) throw new Error(`no tile layers parsed from ${TILES_MODULE}`);
 // The build host renders through swiftshader. A shader that will not compile there says
 // nothing about the app, and the map still draws — every other page error is real.
 const SOFTWARE_GL = /shader|webgl|swiftshader|GPU stall/i;
