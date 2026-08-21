@@ -62,10 +62,19 @@ tiles through untouched, and serves `basemap.pmtiles` identity-encoded so `Range
 Caddy's `encode` would at best duplicate that work and at worst re-encode an already-encoded
 body, so it is absent.
 
-**No security headers.** The API emits them on every response, including its own 403s and
-404s (`src/glasswell/api/security.py`). Adding `header` here would *append* a second value,
-not replace the first — `curl -I` would show two `X-Frame-Options`, and a CSP would be
-intersected. The rule is: the origin owns the policy, the edge does not restate it.
+**No security headers on the proxied path.** The API emits them on every response, including
+its own 403s and 404s (`src/glasswell/api/security.py`). Adding `header` outside the basemap
+block would *append* a second value, not replace the first — `curl -I` would show two
+`X-Frame-Options`, and a CSP would be intersected. The rule is: the origin owns the policy,
+the edge does not restate it.
+
+`/basemap/*` is the one exception, because there the edge **is** the origin: the archive is
+served from disk by `file_server` and uvicorn is not in the path. Those responses therefore
+carry the policy written into the handler, and
+`tests/unit/test_caddy_basemap_headers.py` asserts every value against
+`glasswell.api.security` so the two copies cannot drift. Why the block exists at all — a
+~40 ms Nagle stall per read on the proxy hop, with numbers — is in
+`../basemap/README.md § Why Caddy serves this directly`.
 
 **No HSTS.** `glasswell.lab.rpx.sh` is the break-glass path. Pinning a browser to HTTPS for
 this name would remove the plain-HTTP fallback exactly when the certificate is the thing that
