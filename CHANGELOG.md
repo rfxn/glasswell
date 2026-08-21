@@ -11,6 +11,19 @@ its own version in its header, and its history is summarised in §3.1.
 
 (tracks append entries under this heading; consolidated at integration)
 
+- [New] `make test-anvil` runs a `dbtier-preflight` target first: 24 timed `docker version`
+      round-trips, refusing the suite if any fails or if more than 10% exceed 250 ms. A healthy
+      window measures 59-88 ms, so a daemon that answers while its path drops packets no longer
+      reaches the fixtures. An unreachable daemon costs 10 s rather than six minutes
+- [New] `tests/conftest.py:pytest_exception_interact` stops a run the first time a libpq
+      network error arrives from a remote daemon. The stall lands in a session-scoped fixture,
+      whose exception pytest replays for every test that requests it: one stall against anvil
+      measured 1063 errors and 545 passes in 6m40s. Local daemons and
+      `GLASSWELL_SKIP_DBTIER_PREFLIGHT=1` are unaffected, so a real failure still reports
+- [New] `tests/support/dbtier_preflight.py` holds the path verdict, the libpq-error
+      classifier and the operator message; `tests/unit/test_dbtier_preflight.py` covers them,
+      including that the budget is a fraction not a count and that an empty sample set fails
+      rather than passes. Measurements: `work-output/anvil-dbtier-status.md`
 - [New] Fourteen promotion rule rows, each naming one `source_id` because `rule_id` is a
       primary key and `load_rules` reads one source per call.
       `cr_nm_wcproduction_api10_1` pads every API segment to its own width — 2, 3 and 5 —
