@@ -18,6 +18,13 @@ import { rgba, variantStyle } from "./variant-style.ts";
 export const WELLS_SOURCE = "nd_wells";
 export const LATERALS_SOURCE = "nd_laterals";
 export const SPACING_SOURCE = "nd_spacing_units";
+export const TX_WELLS_SOURCE = "tx_wells";
+export const TX_LATERALS_SOURCE = "tx_laterals";
+
+/** Every layer the status vocabulary paints, so the filter and the gate read one list. */
+export const STATUS_STYLED_LAYERS = ["wells", "laterals", "tx-wells", "tx-laterals"] as const;
+/** The point layers the legend counts from. Both basins, because the legend counts what is drawn. */
+export const WELL_POINT_LAYERS = ["wells", "tx-wells"] as const;
 
 const INK = "#0B1014";
 const SPACING_LABEL_SIZE = 10;
@@ -66,6 +73,8 @@ export function sourceSpecs(origin?: string, search?: string): Record<string, So
     ["wells", WELLS_SOURCE],
     ["laterals", LATERALS_SOURCE],
     ["spacing", SPACING_SOURCE],
+    ["tx_wells", TX_WELLS_SOURCE],
+    ["tx_laterals", TX_LATERALS_SOURCE],
   ] as const) {
     const name = publishedSource(parameter, fallback, search);
     specs[name] = {
@@ -154,6 +163,8 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
   const wells = publishedSource("wells", WELLS_SOURCE, options.search);
   const laterals = publishedSource("laterals", LATERALS_SOURCE, options.search);
   const spacing = publishedSource("spacing", SPACING_SOURCE, options.search);
+  const txWells = publishedSource("tx_wells", TX_WELLS_SOURCE, options.search);
+  const txLaterals = publishedSource("tx_laterals", TX_LATERALS_SOURCE, options.search);
 
   const built: LayerSpecification[] = [
     {
@@ -218,6 +229,54 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
         "icon-image": "gw-strike",
         // A well symbol is a data mark, not a label: collision placement would drop marks
         // silently, which is the same defect class as an unlabelled status.
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
+        "icon-size": interpolate(zoom, [
+          [11, 0.55],
+          [15, 1],
+        ]) as unknown as number,
+      },
+    },
+    // Texas, drawn from the same expressions as North Dakota. The status vocabulary is
+    // per-source (cr_tx_status_vocab_1 there, cr_nd_status_vocab_1 here) but the canonical
+    // classes are one list, so a reader compares like with like across the two basins.
+    {
+      id: "tx-laterals",
+      type: "line",
+      source: txLaterals,
+      "source-layer": txLaterals,
+      paint: {
+        "line-color": selectable(SELECTION_COLOUR, statusColourExpression()),
+        "line-width": lateralWidth(),
+        "line-opacity": selectable(1, 0.85),
+      },
+    },
+    {
+      id: "tx-wells",
+      type: "circle",
+      source: txWells,
+      "source-layer": txWells,
+      minzoom: 4,
+      paint: {
+        "circle-color": selectable(SELECTION_COLOUR, statusFillExpression(hollow)),
+        "circle-stroke-color": selectable(SELECTION_COLOUR, statusColourExpression()),
+        "circle-stroke-width": interpolate(zoom, [
+          [4, 0.4],
+          [9, 0.7],
+          [12, 1.2],
+        ]),
+        "circle-radius": wellRadius(),
+      },
+    },
+    {
+      id: "tx-wells-struck",
+      type: "symbol",
+      source: txWells,
+      "source-layer": txWells,
+      minzoom: 11,
+      filter: inSet(statusProperty(), [...STRUCK_STATUSES]),
+      layout: {
+        "icon-image": "gw-strike",
         "icon-allow-overlap": true,
         "icon-ignore-placement": true,
         "icon-size": interpolate(zoom, [

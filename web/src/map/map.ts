@@ -27,7 +27,14 @@ import { readLayerSet, restoreLayerSet, writeLayerSet } from "./persist.ts";
 import { createPillStrip } from "./pills.ts";
 import { LAYERS, defaultLayerSet, layerDef, layerIds } from "./registry.ts";
 import { UNMAPPED_STATUS, statusClass, statusIds } from "./status.ts";
-import { dataLayers, sourceSpecs, statusFilter, strikeGlyph } from "./style.ts";
+import {
+  STATUS_STYLED_LAYERS,
+  WELL_POINT_LAYERS,
+  dataLayers,
+  sourceSpecs,
+  statusFilter,
+  strikeGlyph,
+} from "./style.ts";
 import { createTileBanner } from "./tile-banner.ts";
 import { tileRequest } from "./tile-request.ts";
 import { applyVariantStyling } from "./variant-style.ts";
@@ -245,7 +252,7 @@ export function createMap(
 
   function applyStatusFilter(): void {
     const filter = statusFilter(map.getZoom(), statuses);
-    for (const id of ["wells", "laterals"]) {
+    for (const id of STATUS_STYLED_LAYERS) {
       if (map.getLayer(id)) map.setFilter(id, filter as maplibregl.FilterSpecification);
     }
   }
@@ -260,13 +267,16 @@ export function createMap(
   function refreshCounts(): void {
     const zoom = map.getZoom();
     panel.setZoom(zoom);
-    if (!map.getLayer("wells") || !on.has("wells")) {
+    // Both basins' point layers: the key describes what is drawn, and what is drawn depends
+    // on where the viewport is rather than on which state shipped first.
+    const drawn = WELL_POINT_LAYERS.filter((id) => map.getLayer(id) && on.has(id));
+    if (drawn.length === 0) {
       legend.setCounts({}, zoom);
       return;
     }
     const counts: Record<string, number> = {};
     let derivation: string | undefined;
-    for (const feature of map.queryRenderedFeatures({ layers: ["wells"] })) {
+    for (const feature of map.queryRenderedFeatures({ layers: [...drawn] })) {
       const id = statusClass(feature.properties["status_canonical"] as string).id;
       counts[id] = (counts[id] ?? 0) + 1;
       if (!derivation && typeof feature.properties["derivation_id"] === "string") {
@@ -276,7 +286,7 @@ export function createMap(
     // Absent, not zero: a class the viewport does not contain has no count to report.
     if (counts[UNMAPPED_STATUS.id] === undefined) delete counts[UNMAPPED_STATUS.id];
     legend.setCounts(counts, zoom);
-    if (derivation) panel.setProvenance("wells", derivation);
+    if (derivation) for (const id of drawn) panel.setProvenance(id, derivation);
   }
 
   /**

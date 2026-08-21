@@ -8,6 +8,9 @@ import type { Expr } from "./expr.ts";
  * plugging is a modifier struck through the fluid glyph rather than a colour of its own.
  */
 export const STATUS_VOCAB_RULE = "cr_nd_status_vocab_1";
+/** One canonical class list, one vocabulary rule per source. Both are named where counts are. */
+export const STATUS_VOCAB_RULES = ["cr_nd_status_vocab_1", "cr_tx_status_vocab_1"] as const;
+export const TX_STATUS_VOCAB_RULE = "cr_tx_status_vocab_1";
 
 /** Reserved for selection. No layer and no status may paint with it (UX P1-5). */
 export const SELECTION_COLOUR = "#5FD3E8";
@@ -41,6 +44,24 @@ export const MEASURED_WELL_COUNTS: Readonly<Record<string, number>> = {
   drilling: 343,
   temporarily_abandoned: 223,
 };
+
+/**
+ * The same query against `marts.tx_wells_tile` over the 55 Permian-district counties, 2026-08-21.
+ * A further 66,103 wells carry no status: the RRC's identity export reported none for them,
+ * which the legend shows as unmapped rather than inventing a class for.
+ */
+export const MEASURED_TX_WELL_COUNTS: Readonly<Record<string, number>> = {
+  active: 114_770,
+  plugged: 102_351,
+  inactive: 42_825,
+  service: 25_199,
+  temporarily_abandoned: 4_302,
+};
+
+/** What the legend may list: a class either basin has actually drawn. */
+export function measuredWellCount(id: string): number {
+  return (MEASURED_WELL_COUNTS[id] ?? 0) + (MEASURED_TX_WELL_COUNTS[id] ?? 0);
+}
 
 export const STATUS_CLASSES: readonly StatusClass[] = [
   {
@@ -96,6 +117,17 @@ export const STATUS_CLASSES: readonly StatusClass[] = [
     note: "Suspended, not plugged (TA, TAO, TASC, TATD).",
     minZoom: 8,
     rule: STATUS_VOCAB_RULE,
+  },
+  {
+    id: "service",
+    label: "Service",
+    colour: "#7A6FD0",
+    glyph: "hollow",
+    note:
+      "Injection, disposal, storage, observation or water supply — not a producer" +
+      " (cr_tx_status_vocab_1).",
+    minZoom: 8,
+    rule: TX_STATUS_VOCAB_RULE,
   },
   {
     id: "plugged",

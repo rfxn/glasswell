@@ -35,6 +35,51 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("a well whose regulator reports at the lease", () => {
+  it("says production is pending allocation instead of drawing an empty chart", async () => {
+    const pending = {
+      ...wellEnvelope,
+      meta: {
+        ...wellEnvelope.meta,
+        warnings: [
+          {
+            code: "production_pending_allocation",
+            detail:
+              "This well's regulator reports production at the lease" +
+              " (cr_tx_allocation_scope_1), so no well-level series has been observed.",
+            pointer: "/production",
+          },
+        ],
+      },
+    };
+    const production = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}`]: pending,
+          [`/v1/wells/${API10}/production`]: () => {
+            production();
+            return productionEnvelope;
+          },
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const panel = host.querySelector<HTMLElement>("[data-state='production_pending_allocation']");
+    expect(panel?.querySelector(".gw-frame-title")?.textContent).toBe(
+      "Production pending allocation",
+    );
+    expect(panel?.textContent).toContain("cr_tx_allocation_scope_1");
+    expect(panel?.querySelector(".gw-pending-rule")?.getAttribute("href")).toBe("/v1/conformance");
+    expect(host.textContent).not.toContain("No production has been reported");
+    expect(renderChart).not.toHaveBeenCalled();
+    expect(production).not.toHaveBeenCalled();
+  });
+});
+
 describe("well card", () => {
   it("renders the header the operator would recognise", async () => {
     await renderWellCard(host, API10, callbacks);

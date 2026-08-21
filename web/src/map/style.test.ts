@@ -7,6 +7,8 @@ import {
   LATERALS_SOURCE,
   SOURCE_ID,
   SPACING_SOURCE,
+  TX_LATERALS_SOURCE,
+  TX_WELLS_SOURCE,
   WELLS_SOURCE,
   dataLayers,
   publishedSource,
@@ -222,13 +224,16 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
   it("carries the refusal into every place the id is interpolated, not just the url", () => {
     // The id is the tile path, the MVT `source-layer`, and the promoteId key. A validator
     // that only guarded the url would still hand the other two an attacker's string.
-    const search = "?wells=..%2F..%2Fetc%2Fpasswd&laterals=gw-evil-layer&spacing=%2Fetc%2Fpasswd";
+    const search =
+      "?wells=..%2F..%2Fetc%2Fpasswd&laterals=gw-evil-layer&spacing=%2Fetc%2Fpasswd" +
+      "&tx_wells=..%2F..%2Fetc%2Fshadow&tx_laterals=gw-evil-layer";
     const specs = sourceSpecs("https://gw.example", search);
     expect(Object.keys(specs).sort()).toEqual(
-      [WELLS_SOURCE, LATERALS_SOURCE, SPACING_SOURCE].sort(),
+      [WELLS_SOURCE, LATERALS_SOURCE, SPACING_SOURCE, TX_WELLS_SOURCE, TX_LATERALS_SOURCE].sort(),
     );
     const serialised = JSON.stringify(specs);
     expect(serialised).not.toContain("etc/passwd");
+    expect(serialised).not.toContain("etc/shadow");
     expect(serialised).not.toContain("gw-evil-layer");
     for (const layer of dataLayers({ labels: true, search })) {
       const source = "source" in layer ? String(layer.source) : "";

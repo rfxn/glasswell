@@ -1,20 +1,25 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  MEASURED_TX_WELL_COUNTS,
   MEASURED_WELL_COUNTS,
   SELECTION_COLOUR,
   STATUS_CLASSES,
   STATUS_VOCAB_RULE,
+  STATUS_VOCAB_RULES,
   UNMAPPED_STATUS,
   statusClass,
   statusColour,
+  measuredWellCount,
   statusIds,
   statusMinZoom,
 } from "./status.ts";
 
-// The canonical set as `cr_nd_status_vocab_1` states it, transcribed from the live rule:
-// "The canonical set is active, plugged, dry, permitted, inactive, confidential, drilling,
-//  temporarily_abandoned and expired; the permit-lifecycle terminal codes collapse to expired."
+// The canonical set as the two status rules state it, transcribed from the live rules:
+// `cr_nd_status_vocab_1` gives active, plugged, dry, permitted, inactive, confidential,
+// drilling, temporarily_abandoned and expired, with the permit-lifecycle terminal codes
+// collapsing to expired; `cr_tx_status_vocab_1` adds service, which eleven of the RRC's
+// twenty-three well types map to and which is not a producer.
 const CANONICAL = [
   "active",
   "plugged",
@@ -25,6 +30,7 @@ const CANONICAL = [
   "drilling",
   "temporarily_abandoned",
   "expired",
+  "service",
 ];
 
 describe("the status catalogue", () => {
@@ -37,7 +43,12 @@ describe("the status catalogue", () => {
 
   it("cites the conformance rule that defines the vocabulary", () => {
     expect(STATUS_VOCAB_RULE).toBe("cr_nd_status_vocab_1");
-    for (const status of STATUS_CLASSES) expect(status.rule).toBe(STATUS_VOCAB_RULE);
+    // A class carries the rule that put it in the vocabulary, and every one of those rules is
+    // named in STATUS_VOCAB_RULES, which is what the legend prints.
+    for (const status of STATUS_CLASSES) {
+      expect(STATUS_VOCAB_RULES as readonly string[]).toContain(status.rule);
+    }
+    expect(statusClass("service").rule).toBe("cr_tx_status_vocab_1");
   });
 
   it("reserves the selection colour: no status may paint with it", () => {
@@ -86,8 +97,12 @@ describe("the status catalogue", () => {
   });
 
   it("records the measured well counts for every canonical status", () => {
-    expect([...Object.keys(MEASURED_WELL_COUNTS)].sort()).toEqual([...CANONICAL].sort());
-    const total = Object.values(MEASURED_WELL_COUNTS).reduce((sum, n) => sum + n, 0);
-    expect(total).toBe(43_817);
+    // Per basin, and every class is measured somewhere: ND draws no service well and TX draws
+    // no dry hole, so a single table would have had to claim a zero neither slice measured.
+    for (const id of CANONICAL) expect(measuredWellCount(id)).toBeGreaterThan(0);
+    expect(Object.values(MEASURED_WELL_COUNTS).reduce((sum, n) => sum + n, 0)).toBe(43_817);
+    expect(Object.values(MEASURED_TX_WELL_COUNTS).reduce((sum, n) => sum + n, 0)).toBe(289_447);
+    expect(MEASURED_WELL_COUNTS["service"]).toBeUndefined();
+    expect(MEASURED_TX_WELL_COUNTS["dry"]).toBeUndefined();
   });
 });

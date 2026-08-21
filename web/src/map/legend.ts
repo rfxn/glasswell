@@ -1,4 +1,4 @@
-import { STATUS_CLASSES, STATUS_VOCAB_RULE, UNMAPPED_STATUS, statusClass } from "./status.ts";
+import { STATUS_CLASSES, STATUS_VOCAB_RULES, UNMAPPED_STATUS, statusClass } from "./status.ts";
 import type { StatusClass } from "./status.ts";
 import { statusSwatch } from "./swatch.ts";
 
@@ -50,8 +50,9 @@ export function createLegend(options: LegendOptions): LegendHandle {
   const note = document.createElement("p");
   note.className = "gw-lg-note";
   note.textContent =
-    `Status colours are data colours, not severity colours. Vocabulary: ${STATUS_VOCAB_RULE}.` +
-    " Laterals are ND DMR GIS bore geometry — not a directional survey trace.";
+    "Status colours are data colours, not severity colours. Vocabulary: " +
+    `${STATUS_VOCAB_RULES.join(", ")}.` +
+    " Laterals are regulator GIS bore geometry — not a directional survey trace.";
   body.appendChild(note);
 
   const activeStatuses = (): Set<string> => {

@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { LAYERS, defaultLayerSet, layerDef, layerIds, layerRowState } from "./registry.ts";
 
 describe("the layer registry", () => {
-  it("registers the three tiled layers this build actually serves", () => {
-    for (const id of ["wells", "laterals", "spacing-units"]) {
+  it("registers the five tiled layers this build actually serves", () => {
+    for (const id of ["wells", "laterals", "spacing-units", "tx-wells", "tx-laterals"]) {
       expect(layerIds()).toContain(id);
       expect(layerDef(id)?.pendingSource).toBeFalsy();
     }
@@ -41,6 +41,19 @@ describe("the layer registry", () => {
     expect(defaultLayerSet()).toEqual(LAYERS.filter((l) => l.defaultOn).map((l) => l.id));
     expect(defaultLayerSet()).toContain("wells");
     expect(defaultLayerSet()).toContain("laterals");
+  });
+
+  it("puts Texas on by default so panning there shows wells without hunting the panel", () => {
+    // The default viewport stays over North Dakota; a reader who moves to the Permian gets
+    // the same two layers, drawn from the same expressions, with no toggle in between.
+    expect(defaultLayerSet()).toContain("tx-wells");
+    expect(defaultLayerSet()).toContain("tx-laterals");
+    expect(layerDef("tx-wells")?.provenance.source).toBe("marts.tx_wells_tile");
+    expect(layerDef("tx-laterals")?.provenance.source).toBe("marts.tx_laterals_tile");
+  });
+
+  it("says what a TX lateral is, since no free TX directional survey exists", () => {
+    expect(layerDef("tx-laterals")?.subtitle).toMatch(/not a directional survey/i);
   });
 
   it("reports a row for a retired layer as null instead of throwing", () => {

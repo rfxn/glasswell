@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createLegend, legendEnabled } from "./legend.ts";
-import { MEASURED_WELL_COUNTS, STATUS_CLASSES } from "./status.ts";
+import { STATUS_CLASSES, measuredWellCount } from "./status.ts";
 
 const rows = (root: HTMLElement): HTMLElement[] => [...root.querySelectorAll<HTMLElement>(".gw-lg-row")];
 const rowFor = (root: HTMLElement, id: string): HTMLElement | undefined =>
@@ -37,7 +37,7 @@ describe("the legend", () => {
     const legend = createLegend({ onFilter: () => {} });
     const listed = rows(legend.element).map((row) => row.dataset["status"]);
     expect(listed).not.toContain("producing");
-    for (const id of listed) expect(MEASURED_WELL_COUNTS[id!]).toBeGreaterThan(0);
+    for (const id of listed) expect(measuredWellCount(id!)).toBeGreaterThan(0);
   });
 
   it("reports the filtered set back when a row is toggled", () => {

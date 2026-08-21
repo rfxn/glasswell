@@ -24,6 +24,8 @@ export interface WellDetail {
   basin: string | null;
   lateral_count: number;
   lateral_length_ft: Figure | null;
+  total_depth_ft: Figure | null;
+  completion_date: string | null;
   compute_crs: string | null;
   storage_crs: string;
   effective_from: string;
@@ -131,6 +133,23 @@ export async function renderWellCard(
     facts.appendChild(definition);
   }
 
+  if (detail.total_depth_ft) {
+    facts.appendChild(term("Total depth", labelFor(well, "/total_depth_ft")));
+    const definition = document.createElement("dd");
+    definition.appendChild(
+      figureElement(detail.total_depth_ft, "total depth", derivationFor(detail, "/total_depth_ft")),
+    );
+    facts.appendChild(definition);
+  }
+
+  if (detail.completion_date) {
+    facts.appendChild(term("Completed", null));
+    const definition = document.createElement("dd");
+    definition.setAttribute("data-no-glossary", "");
+    definition.textContent = formatVintage(detail.completion_date);
+    facts.appendChild(definition);
+  }
+
   facts.appendChild(term("As of", null));
   const asOfValue = document.createElement("dd");
   asOfValue.textContent = `${formatVintage(well.meta.as_of.resolved)} (requested ${well.meta.as_of.requested})`;
@@ -148,6 +167,20 @@ export async function renderWellCard(
   body.appendChild(facts);
 
   for (const panel of warningPanels(well.meta.warnings)) body.appendChild(panel);
+
+  // A lease-reporting jurisdiction has no observed well-level series, so the card says that
+  // instead of drawing an empty chart: "no production has been reported" would be false about
+  // a Texas well whose lease reports every month (DIR-3, cr_tx_allocation_scope_1).
+  const pending = well.meta.warnings.find(
+    (warning) => warning.code === "production_pending_allocation",
+  );
+  if (pending) {
+    container.replaceChildren(card);
+    card.appendChild(pendingProductionPanel(pending));
+    highlight(card, termIndex());
+    focusPanel(container);
+    return;
+  }
 
   // Title outside the swappable body: the placeholder, the plot and an error all land in
   // .gw-frame-body, so none of them can take the frame's label down with them.
@@ -214,6 +247,33 @@ function placeholder(text: string): HTMLElement {
 }
 
 type ApiWarning = { code: string; detail?: string; pointer?: string };
+
+/**
+ * The production slot for a well whose regulator reports at the lease. It is a state, not an
+ * absence: the section is titled for what is pending and links to the rule that says so.
+ */
+export function pendingProductionPanel(warning: ApiWarning): HTMLElement {
+  const frame = document.createElement("section");
+  frame.className = "gw-card-chart gw-pending";
+  frame.dataset["state"] = "production_pending_allocation";
+  const title = document.createElement("h3");
+  title.className = "gw-frame-title";
+  title.textContent = "Production pending allocation";
+  const body = document.createElement("div");
+  body.className = "gw-frame-body";
+  const detail = document.createElement("p");
+  detail.textContent =
+    warning.detail ??
+    "This well's regulator reports production at the lease, so no well-level series has" +
+      " been observed.";
+  const link = document.createElement("a");
+  link.className = "gw-pending-rule";
+  link.href = "/v1/conformance";
+  link.textContent = "See /conformance for the rule that decided this.";
+  body.append(detail, link);
+  frame.append(title, body);
+  return frame;
+}
 
 /** One panel per code with its count: three identical warnings used to stack as a wall. */
 function warningPanels(warnings: ApiWarning[]): HTMLElement[] {
