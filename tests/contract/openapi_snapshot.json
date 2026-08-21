@@ -1930,11 +1930,19 @@
       "Health": {
         "properties": {
           "degraded_sources": {
-            "description": "Sources that are not current, named.",
+            "description": "Sources whose data has gone stale, named.",
             "items": {
               "type": "string"
             },
             "title": "Degraded Sources",
+            "type": "array"
+          },
+          "pending_sources": {
+            "description": "Registered sources that have never been fetched, named.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Pending Sources",
             "type": "array"
           },
           "sources": {
@@ -1946,7 +1954,7 @@
             "type": "array"
           },
           "state": {
-            "description": "ok when every source is current, otherwise degraded.",
+            "description": "ok when no source is stale, otherwise degraded.",
             "title": "State",
             "type": "string"
           },
@@ -1963,7 +1971,8 @@
           "state",
           "stores",
           "sources",
-          "degraded_sources"
+          "degraded_sources",
+          "pending_sources"
         ],
         "title": "Health",
         "type": "object"
@@ -3549,7 +3558,7 @@
             "x-glasswell-glossary": "gt_source"
           },
           "state": {
-            "description": "current, stale or never_fetched.",
+            "description": "current, stale or pending.",
             "title": "State",
             "type": "string"
           }
@@ -5811,7 +5820,7 @@
     },
     "/v1/health": {
       "get": {
-        "description": "Per-source retrieval and declared vintages, the state of each store, and an overall `ok`/`degraded`. A source that has never been fetched is reported as `never_fetched` and degrades the service state rather than being hidden.",
+        "description": "Per-source retrieval and declared vintages, the state of each store, and an overall `ok`/`degraded`. A source whose newest manifest has gone stale degrades the service. A source that is registered but has never been fetched is `pending` and is named in `pending_sources`: registration says the pipeline knows about a source, not that a pull has happened, and reporting a planned ingest as a defect would leave the endpoint unable to say when there is a real one.",
         "operationId": "get_health",
         "responses": {
           "200": {
