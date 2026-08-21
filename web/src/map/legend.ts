@@ -1,8 +1,19 @@
+import { EXPLAIN_EVENT } from "../card/gw-figure.ts";
+import type { VocabularyLink } from "./counts.ts";
 import { STATUS_CLASSES, STATUS_VOCAB_RULES, UNMAPPED_STATUS, statusClass } from "./status.ts";
 import type { StatusClass } from "./status.ts";
 import { statusSwatch } from "./swatch.ts";
 
 const NUMBER = new Intl.NumberFormat("en-US");
+const PENDING_MARK = "…";
+const ABSENT_MARK = "—";
+const FAULT_COPY = "Counts for this area could not be read.";
+const PARTIAL_NOTE =
+  "Status classes recede at low zoom and point tiles are thinned below zoom 8." +
+  " The counts above are the data's, not the canvas's.";
+
+/** What the count cells are allowed to say. Never the last viewport's numbers. */
+type CountMode = "ready" | "pending" | "unavailable";
 
 export interface LegendOptions {
   /** The classes to open with; absent means every one of them. */
@@ -21,8 +32,16 @@ export function legendEnabled(search: string): boolean {
 
 export interface LegendHandle {
   element: HTMLElement;
-  /** Counts come from what is actually drawn, so the key can never describe an absent class. */
-  setCounts(counts: Record<string, number>, zoom: number): void;
+  /** The wells the box holds, from `/v1/wells/status-summary` — not from what was drawn. */
+  setCounts(counts: Record<string, number>, zoom: number, handles?: Record<string, string>): void;
+  /** A request is out for the current viewport; the previous one's numbers are gone. */
+  setPending(zoom: number): void;
+  /** No count could be had. Every cell reads absent, and the key says why. */
+  setUnavailable(zoom: number): void;
+  /** How many features the canvas actually drew, or null when there is no census to make. */
+  setDrawn(drawn: number | null): void;
+  /** The conformance rules that classed this answer (R8). */
+  setVocabulary(rules: VocabularyLink[]): void;
   activeStatuses(): Set<string>;
 }
 
@@ -72,12 +91,22 @@ export function createLegend(options: LegendOptions): LegendHandle {
   // does — a row conjured out of a count could not be the row that switches the count off.
   rows.set(UNMAPPED_STATUS.id, buildRow(UNMAPPED_STATUS, wanted(UNMAPPED_STATUS.id)));
 
+  // Between the rows and the note: the canvas is a subset of the box at low zoom, and the
+  // reader has to be able to see that without reading it as the counts disagreeing.
+  const partial = document.createElement("p");
+  partial.className = "gw-lg-partial";
+  partial.hidden = true;
+  partial.title = PARTIAL_NOTE;
+  body.appendChild(partial);
+
+  const fault = document.createElement("p");
+  fault.className = "gw-lg-fault";
+  fault.hidden = true;
+  fault.setAttribute("role", "status");
+  body.appendChild(fault);
+
   const note = document.createElement("p");
   note.className = "gw-lg-note";
-  note.textContent =
-    "Status colours are data colours, not severity colours. Vocabulary: " +
-    `${STATUS_VOCAB_RULES.join(", ")}.` +
-    " Laterals are ND DMR and TX RRC GIS bore geometry — not a directional survey trace.";
   body.appendChild(note);
 
   const checked = (row: HTMLElement): boolean =>
@@ -106,6 +135,8 @@ export function createLegend(options: LegendOptions): LegendHandle {
 
   const report = (): void => {
     syncTitle();
+    // The filter moves what is drawn, so the drawn-versus-in-view line has to move with it.
+    renderPartial();
     options.onFilter(activeStatuses());
   };
 
@@ -139,20 +170,37 @@ export function createLegend(options: LegendOptions): LegendHandle {
     report();
   });
 
-  function setCounts(counts: Record<string, number>, zoom: number): void {
-    const unmapped = rows.get(UNMAPPED_STATUS.id);
-    if (counts[UNMAPPED_STATUS.id] !== undefined && unmapped && unmapped.parentNode !== body) {
-      body.insertBefore(unmapped, note);
-      syncTitle();
-    }
+  let mode: CountMode = "ready";
+  let counts: Record<string, number> = {};
+  let handles: Record<string, string> = {};
+  let drawn: number | null = null;
+  let zoomNow = 0;
+
+  function cellText(id: string): string {
+    if (mode === "pending") return PENDING_MARK;
+    if (mode === "unavailable") return ABSENT_MARK;
+    const count = counts[id];
+    // Absent, not zero: a class the box does not hold has no count to report.
+    return count === undefined ? ABSENT_MARK : NUMBER.format(count);
+  }
+
+  function renderRows(): void {
+    element.dataset["counts"] = mode;
+    body.setAttribute("aria-busy", String(mode === "pending"));
     for (const [id, row] of rows) {
       const status = statusClass(id);
-      const count = counts[id];
       const cell = row.querySelector<HTMLElement>(".gw-lg-count");
       // Patched in place: replacing the markup would tear the checkbox out from under
       // the pointer mid-click, and reset the row's focus.
-      if (cell) cell.textContent = count === undefined ? "—" : NUMBER.format(count);
-      const outOfScale = zoom < status.minZoom;
+      if (cell) cell.textContent = cellText(id);
+      const handle = row.querySelector<HTMLButtonElement>(".gw-lg-handle");
+      const derivation = mode === "ready" ? handles[id] : undefined;
+      if (handle) {
+        handle.hidden = derivation === undefined;
+        handle.dataset["handle"] = derivation ?? "";
+        handle.title = derivation ? `Show where this count came from: ${derivation}` : "";
+      }
+      const outOfScale = zoomNow < status.minZoom;
       const box = row.querySelector<HTMLInputElement>("input");
       if (box) box.disabled = outOfScale;
       if (outOfScale) {
@@ -163,10 +211,102 @@ export function createLegend(options: LegendOptions): LegendHandle {
         row.title = status.note;
       }
     }
+    fault.hidden = mode !== "unavailable";
+    fault.textContent = mode === "unavailable" ? FAULT_COPY : "";
   }
 
+  /**
+   * "Showing X of Y" (MAP-ROADMAP M1-1), stated only where it is true: X is a census of the
+   * canvas, Y is the box's own count of the classes the reader has left on. Filtering a class
+   * off lowers Y with X, so a filter never reads as a shortfall.
+   */
+  function renderPartial(): void {
+    const inView = [...rows]
+      .filter(([, row]) => checked(row))
+      .reduce((sum, [id]) => sum + (counts[id] ?? 0), 0);
+    if (mode !== "ready" || drawn === null || inView === 0 || drawn >= inView) {
+      partial.hidden = true;
+      partial.textContent = "";
+      return;
+    }
+    partial.hidden = false;
+    partial.textContent = `Showing ${NUMBER.format(drawn)} of ${NUMBER.format(inView)} in view`;
+  }
+
+  function render(): void {
+    renderRows();
+    renderPartial();
+  }
+
+  function setVocabulary(vocabulary: VocabularyLink[]): void {
+    note.replaceChildren(
+      document.createTextNode("Status colours are data colours, not severity colours. Vocabulary: "),
+    );
+    for (const [index, entry] of vocabulary.entries()) {
+      if (index > 0) note.appendChild(document.createTextNode(", "));
+      note.appendChild(ruleNode(entry));
+    }
+    note.appendChild(
+      document.createTextNode(
+        ". Laterals are ND DMR and TX RRC GIS bore geometry — not a directional survey trace.",
+      ),
+    );
+  }
+
+  function setCounts(
+    next: Record<string, number>,
+    zoom: number,
+    derivations?: Record<string, string>,
+  ): void {
+    mode = "ready";
+    counts = next;
+    handles = derivations ?? {};
+    zoomNow = zoom;
+    const unmapped = rows.get(UNMAPPED_STATUS.id);
+    if (counts[UNMAPPED_STATUS.id] !== undefined && unmapped && unmapped.parentNode !== body) {
+      body.insertBefore(unmapped, partial);
+      syncTitle();
+    }
+    render();
+  }
+
+  /** The previous viewport's numbers are dropped, not dimmed: they are no longer an answer. */
+  function withdraw(next: CountMode, zoom: number): void {
+    mode = next;
+    counts = {};
+    handles = {};
+    zoomNow = zoom;
+    render();
+  }
+
+  setVocabulary(STATUS_VOCAB_RULES.map((rule) => ({ rule, href: null })));
   syncTitle();
-  return { element, setCounts, activeStatuses };
+  render();
+  return {
+    element,
+    setCounts,
+    setPending: (zoom) => withdraw("pending", zoom),
+    setUnavailable: (zoom) => withdraw("unavailable", zoom),
+    setDrawn(next) {
+      drawn = next;
+      renderPartial();
+    },
+    setVocabulary,
+    activeStatuses,
+  };
+}
+
+/** A rule the response linked is a row a reader can open; one it did not is still named. */
+function ruleNode(entry: VocabularyLink): Node {
+  if (!entry.href) return document.createTextNode(entry.rule);
+  const link = document.createElement("a");
+  link.className = "gw-lg-rule";
+  link.href = entry.href;
+  link.target = "_blank";
+  link.rel = "noreferrer";
+  link.textContent = entry.rule;
+  link.title = `Open ${entry.rule} in the conformance register`;
+  return link;
 }
 
 function bulkButton(which: string, label: string, description: string): HTMLButtonElement {
@@ -208,7 +348,29 @@ function buildRow(status: StatusClass, on: boolean): HTMLElement {
 
   const count = document.createElement("span");
   count.className = "gw-lg-count";
-  count.textContent = "—";
+  count.textContent = ABSENT_MARK;
   row.appendChild(count);
+
+  // The count is a served figure now, so it carries the app's own provenance affordance and
+  // raises the one event main.ts already opens the drawer on.
+  const handle = document.createElement("button");
+  handle.type = "button";
+  handle.className = "gw-handle gw-lg-handle";
+  handle.hidden = true;
+  handle.textContent = "⌾";
+  handle.setAttribute("aria-label", `Lineage for the ${status.label} count`);
+  handle.addEventListener("click", (event) => {
+    // Inside a <label>: without this the browser forwards the activation to the checkbox, and
+    // asking where a number came from would switch its class off. happy-dom does not implement
+    // that forwarding, so legend.test.ts pins the cancellation rather than the toggle.
+    event.preventDefault();
+    const derivation = handle.dataset["handle"];
+    if (derivation) {
+      handle.dispatchEvent(
+        new CustomEvent(EXPLAIN_EVENT, { detail: { handle: derivation }, bubbles: true }),
+      );
+    }
+  });
+  row.appendChild(handle);
   return row;
 }

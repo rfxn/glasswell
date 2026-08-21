@@ -2,9 +2,11 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import "../map.css";
+import { getEnvelope } from "../api/client.ts";
 import { connectMap, selectWell, setUrlParam } from "../bus.ts";
 import type { FlyTarget } from "../bus.ts";
 import type { Viewport } from "../app/state.ts";
+import { toast } from "../chrome/status.ts";
 import type { BasemapDef } from "./basemap.ts";
 import {
   BASEMAP_SOURCE,
@@ -23,6 +25,13 @@ import {
   vectorStyle,
 } from "./basemap.ts";
 import { installClickRouter } from "./click-router.ts";
+import {
+  STATUS_SUMMARY_PATH,
+  bboxParam,
+  censusOfDrawn,
+  createCountSource,
+} from "./counts.ts";
+import type { Bbox, CountsState, WellStatusSummary } from "./counts.ts";
 import { createHoverCard } from "./hover-card.ts";
 import { createLayerPanel } from "./layer-panel.ts";
 import { createLegend, legendEnabled } from "./legend.ts";
@@ -35,7 +44,7 @@ import {
 } from "./persist.ts";
 import { createPillStrip } from "./pills.ts";
 import { LAYERS, defaultLayerSet, layerDef, layerIds } from "./registry.ts";
-import { UNMAPPED_STATUS, filterableStatusIds, statusClass } from "./status.ts";
+import { filterableStatusIds } from "./status.ts";
 import {
   WELL_POINT_LAYERS,
   dataLayers,
@@ -221,11 +230,13 @@ export function createMap(
 
   const legend = createLegend({
     on: statuses,
+    // The counts do not move: a class the reader stopped drawing is still in the area. What
+    // moves is the canvas, and the census of it has to wait for the repaint.
     onFilter: (next) => {
       statuses = next;
       writeCapabilitySet(STATUS_STORAGE_KEY, statuses, filterableStatusIds());
       applyStatusFilter();
-      refreshCounts();
+      invalidateDrawn();
     },
   });
 
@@ -281,7 +292,7 @@ export function createMap(
     }
     panel.setOn(on);
     pills.setOn(on);
-    refreshCounts();
+    invalidateDrawn();
   }
 
   function applyOpacity(id: string): void {
@@ -302,35 +313,71 @@ export function createMap(
   }
 
   let countTimer: ReturnType<typeof setTimeout> | undefined;
+  let countsFailing = false;
+
+  const countSource = createCountSource({
+    load: (bbox, signal) =>
+      getEnvelope<WellStatusSummary>(STATUS_SUMMARY_PATH, { bbox: bboxParam(bbox) }, signal),
+    onState: (state) => paintCounts(state),
+  });
 
   function scheduleCounts(): void {
     clearTimeout(countTimer);
     countTimer = setTimeout(refreshCounts, 250);
   }
 
+  function viewportBbox(): Bbox {
+    const bounds = map.getBounds();
+    return [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()];
+  }
+
+  /**
+   * Two questions with two answers. What is in the area is asked of the data, at any zoom;
+   * what is on the canvas is a census of the canvas, and is only ever reported as that.
+   */
   function refreshCounts(): void {
-    const zoom = map.getZoom();
-    panel.setZoom(zoom);
-    // Both basins' point layers: the key describes what is drawn, and what is drawn depends
-    // on where the viewport is rather than on which state shipped first.
-    const drawn = WELL_POINT_LAYERS.filter((id) => map.getLayer(id) && on.has(id));
-    if (drawn.length === 0) {
-      legend.setCounts({}, zoom);
+    panel.setZoom(map.getZoom());
+    countSource.request(viewportBbox());
+    refreshDrawn();
+  }
+
+  /** The canvas has changed but not yet repainted, so there is no census to report yet. */
+  function invalidateDrawn(): void {
+    legend.setDrawn(null);
+    scheduleCounts();
+  }
+
+  /** The pixel census, demoted to the one thing it can honestly answer. */
+  function refreshDrawn(): void {
+    const layers = WELL_POINT_LAYERS.filter((id) => map.getLayer(id) && on.has(id));
+    if (layers.length === 0) {
+      // Not a partial plot: the reader switched the layer off, and the panel already says so.
+      legend.setDrawn(null);
       return;
     }
-    const counts: Record<string, number> = {};
-    let derivation: string | undefined;
-    for (const feature of map.queryRenderedFeatures({ layers: [...drawn] })) {
-      const id = statusClass(feature.properties["status_canonical"] as string).id;
-      counts[id] = (counts[id] ?? 0) + 1;
-      if (!derivation && typeof feature.properties["derivation_id"] === "string") {
-        derivation = feature.properties["derivation_id"];
-      }
+    const census = censusOfDrawn(map.queryRenderedFeatures({ layers: [...layers] }));
+    legend.setDrawn(census.wells);
+    if (census.derivation) for (const id of layers) panel.setProvenance(id, census.derivation);
+  }
+
+  function paintCounts(state: CountsState): void {
+    const zoom = map.getZoom();
+    if (state.kind === "loading") {
+      legend.setPending(zoom);
+      return;
     }
-    // Absent, not zero: a class the viewport does not contain has no count to report.
-    if (counts[UNMAPPED_STATUS.id] === undefined) delete counts[UNMAPPED_STATUS.id];
-    legend.setCounts(counts, zoom);
-    if (derivation) for (const id of drawn) panel.setProvenance(id, derivation);
+    if (state.kind === "error") {
+      legend.setUnavailable(zoom);
+      // One toast per failing episode: a pan over a degraded API is a dozen settles, and a
+      // dozen toasts would bury the one line that says what happened.
+      if (!countsFailing) toast(`Well counts unavailable: ${state.message}`);
+      countsFailing = true;
+      return;
+    }
+    countsFailing = false;
+    legend.setCounts(state.counts, zoom, state.handles);
+    legend.setVocabulary(state.vocabulary);
+    refreshDrawn();
   }
 
   /**
