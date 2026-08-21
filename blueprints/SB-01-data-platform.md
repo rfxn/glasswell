@@ -476,20 +476,22 @@ and one §14 rejects on its own grounds. A design keyed on a field the source do
 a design that fails on first run, so it is replaced rather than patched:
 
 - **Did anything change?** Per-member `sha256` in the manifest's `decompressed_inventory`
-  (SB-07 §2.2). 18 members, 16 of them registry shards; an unchanged member is skipped whole and
-  costs one hash comparison, not a row-wise compare. This is the ordinary manifest discipline
-  every other source already uses, applied at member granularity because the archive is
-  re-cut daily and one shard changing does not implicate the other fifteen.
+  (SB-07 §2.2). The archive is 18 members — 15 `FracFocusRegistry` shards, one `DisclosureList`,
+  one `WaterSource`, one readme (`dsw:68-79`) — and an unchanged member is skipped whole, at the
+  cost of one hash comparison rather than a row-wise compare. This is the ordinary manifest
+  discipline every other source already uses, applied at member granularity because the archive
+  is re-cut every business day and one shard changing does not implicate the other seventeen.
 - **Which rows restated?** The existing bitemporal append (§5.4): `value_hash` over the mutable
   payload columns, keyed on `DisclosureId` for the disclosure grain and
   `(DisclosureId, IngredientsId)` for the ingredient grain. A row whose hash differs from the
   head appends at the new `report_vintage`; a row whose hash matches writes nothing. **No new
   machinery is required** — this is what change-only append was built to do, and it is why the
   absent column costs a scan rather than a redesign.
-- **What it costs, stated rather than hidden.** A full-snapshot compare over 3.26 GiB of
-  decompressed CSV per changed member, weekly. That is the honest price of a source that
-  publishes no per-row modification stamp, and it is bounded by the pull cadence, not the
-  upstream one (`dsw:100-105`).
+- **What it costs, stated rather than hidden.** A full-snapshot row compare over every changed
+  member: ~102–245 MB of decompressed CSV when one registry shard moves, up to the full 3.26 GiB
+  when they all do, weekly. That is the honest price of a source that publishes no per-row
+  modification stamp, and it is bounded by our pull cadence, not the upstream one
+  (`dsw:73-79,100-105`).
 - **`upstream_mtime` is a trigger, not a detector.** The `Last-Modified` on the zip
   (`Fri, 21 Aug 2026 08:04:14 GMT`, `dsw:39-50`) tells us the archive was re-cut. It cannot tell
   us *which* disclosures moved, and treating a file-level date as a row-level change key is the
@@ -837,8 +839,9 @@ and holds; the other half is stale, and flipping it outright would be as wrong a
   the same posture that refuses OCD Online and refuses to drive the TxGIO SPA (§1.2).
   **From 2021-01-01: `effort-unreachable`** — reachable, and not built. It is per-well PDF
   parsing, **vendor-format dependent by construction** (two vendors' layouts already differ), and
-  graded **effort L** (`dsw:1057-1060`). Both tags are v0.6's own vocabulary (§2.4 S10, §5 E16);
-  the honest gap becomes two gaps with different reasons, which is what an E16 row can defend.
+  graded **effort L** (`dsw:1057-1060`). Both tags are v0.6's own vocabulary (v0.6 §2.4 S10,
+  v0.6 §5 E16); the honest gap becomes two gaps with different reasons, which is what an E16 row
+  can defend.
 - **The access path, if it is ever built.** The nightly MFT zips under `mft_guid_resolve` — the
   resolver every other TX bulk source already uses (§1.2) — with the CSV type manifest as the
   pre-filter and a multi-template PDF parser behind `layout_ref`/`layout_sha256` (handback H4,
@@ -1887,9 +1890,10 @@ downloading the archive (`dsw:39-79`). It was the one unmeasured figure in this 
 consequences, none of which move the conclusion: raw gains 440 MB per *changed* pull, not per
 pull; the ~8× expansion ratio is why §2.3 streams each member out of the zip rather than
 extracting the archive, so like NM it contributes **zero** to the scratch line and single-digit
-GB of Parquet to resident staging; and the weekly restatement compare (§2.3) reads 3.26 GiB of
-decompressed CSV per changed member, which is a CPU and I/O cost on a source that publishes no
-per-row modification stamp, not a storage cost. **Storage is still not a constraint** (`ad:597`).
+GB of Parquet to resident staging; and the weekly restatement compare (§2.3) reads every changed
+member in full — ~102–245 MB per registry shard, 3.26 GiB in the worst case — which is a CPU and
+I/O cost on a source that publishes no per-row modification stamp, not a storage cost. **Storage
+is still not a constraint** (`ad:597`).
 
 ---
 
