@@ -1,0 +1,346 @@
+/* SB-08 §3.2. The sticky header's z-index and the isolation that contains it live in
+   layout.css (G-3); nothing here declares a rung or a raw z-index of its own. */
+
+.gw-grid-strap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gw-space-3);
+}
+
+.gw-grid-vintage,
+.gw-grid-coverage,
+.gw-grid-loading,
+.gw-grid-error {
+  margin: 0 0 var(--gw-space-2);
+  font-size: var(--gw-fs-micro);
+  color: var(--muted);
+}
+
+.gw-grid-vintage {
+  color: var(--amber-text);
+}
+
+.gw-grid-error {
+  color: var(--gas-text);
+}
+
+.gw-grid-table {
+  display: grid;
+  /* Identifier and figure columns want to be read across, not wrapped: min-content keeps a
+     10-digit API-10 and a thousands-separated volume on one line, 1fr gives prose the rest. */
+  grid-template-columns: repeat(var(--gw-grid-columns), minmax(max-content, auto));
+  min-width: 100%;
+  overflow-x: auto;
+  font-size: var(--gw-fs-body);
+}
+
+.gw-explore-grid-head,
+.gw-grid-tr {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+
+.gw-grid-body {
+  display: contents;
+}
+
+.gw-grid-th {
+  padding: var(--gw-space-2) var(--gw-space-3) var(--gw-space-2) 0;
+  text-align: left;
+}
+
+.gw-col-head {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--gw-space-1);
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-fs-mono);
+  color: var(--slate);
+}
+
+/* The counted-unbound treatment (§3.2): no dotted underline, no hover affordance, and a muted
+   ? a reader can ask about. A bound header is a gw-term and gets the app's own underline. */
+.gw-col-unbound-head .gw-label {
+  color: var(--muted);
+  text-decoration: none;
+  cursor: default;
+}
+
+.gw-col-unbound {
+  font-size: var(--gw-fs-micro);
+  color: var(--muted);
+  border: 1px solid var(--hairline);
+  border-radius: var(--gw-radius-pill);
+  padding: 0 0.25rem;
+  line-height: 1.3;
+}
+
+.gw-col-hidden {
+  font-size: var(--gw-fs-eyebrow);
+  color: var(--amber-text);
+  text-transform: uppercase;
+  letter-spacing: var(--gw-ls-eyebrow);
+}
+
+.gw-grid-tr {
+  border-top: 1px solid var(--hairline);
+}
+
+.gw-grid-tr:hover {
+  background: var(--tint-accent);
+}
+
+.gw-grid-td {
+  /* 4px vertical: a browsing grid is a scan surface, and 40 rows on screen beats 12 airy ones. */
+  padding: var(--gw-space-1) var(--gw-space-3) var(--gw-space-1) 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gw-cell {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gw-space-1);
+  min-width: 0;
+}
+
+.gw-cell-prose {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 46ch;
+}
+
+.gw-cell-id,
+.gw-cell-time {
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-fs-mono);
+  color: var(--paper);
+  white-space: nowrap;
+}
+
+.gw-cell-clock,
+.gw-cell-geometry {
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-fs-mono);
+  color: var(--muted);
+}
+
+.gw-cell-absent {
+  color: var(--muted);
+  cursor: help;
+}
+
+.gw-cell-figure {
+  justify-content: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+
+.gw-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gw-space-1);
+  font-size: var(--gw-fs-eyebrow);
+  letter-spacing: 0.02em;
+  color: var(--slate);
+  white-space: nowrap;
+  cursor: help;
+}
+
+.gw-chip-aggregation {
+  color: var(--cyan-text);
+}
+
+gw-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.15rem;
+}
+
+.gw-count-value {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: var(--gw-features), "tnum" 1;
+}
+
+/* The ⓔ is the exemption register reaching the reader, so it reads as an affordance and not as
+   an alarm — amber is the terminal-node colour, and nothing in this app uses red for severity. */
+.gw-count-mark {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--amber-text);
+  cursor: pointer;
+  font-size: var(--gw-fs-eyebrow);
+  vertical-align: super;
+  line-height: 1;
+}
+
+.gw-count-mark-unserved {
+  color: var(--muted);
+}
+
+/* `:not([hidden])`, not a bare `display: block`: a `display` declaration outranks the `hidden`
+   attribute's UA rule, so the closed popover stayed in the flow and every row of an exempt
+   column was 86 px tall. Found by the C7 visual pass, not by a test — hence styles.test.ts. */
+.gw-count-reason:not([hidden]) {
+  display: block;
+}
+
+.gw-count-reason {
+  max-width: 44ch;
+  margin-top: var(--gw-space-1);
+  padding: var(--gw-space-2);
+  background: var(--panel);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-sm);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--gw-fs-micro);
+  color: var(--slate);
+  white-space: normal;
+}
+
+.gw-grid-more {
+  margin-top: var(--gw-space-3);
+  padding: var(--gw-space-2) var(--gw-space-3);
+  background: none;
+  border: 1px dashed var(--hairline-strong);
+  border-radius: var(--gw-radius-sm);
+  color: var(--slate);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+.gw-grid-anchor-form {
+  display: flex;
+  gap: var(--gw-space-2);
+  margin-top: var(--gw-space-3);
+}
+
+.gw-grid-anchor-go {
+  padding: 0 var(--gw-space-3);
+  background: none;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-xs);
+  color: var(--cyan-text);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+/* §3.6: the block below the grid is a lesson, so it is laid out to be read rather than clicked. */
+.gw-page {
+  margin-top: var(--gw-space-4);
+  padding-top: var(--gw-space-3);
+  border-top: 1px solid var(--hairline);
+}
+
+.gw-page-count {
+  margin: 0;
+  font-size: var(--gw-fs-micro);
+  color: var(--slate);
+}
+
+.gw-page-next {
+  margin-top: var(--gw-space-2);
+  padding: var(--gw-space-1) var(--gw-space-3);
+  background: none;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-pill);
+  color: var(--cyan-text);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+.gw-page-uncursored,
+.gw-cursor-note {
+  margin: var(--gw-space-2) 0 0;
+  max-width: 68ch;
+  font-size: var(--gw-fs-micro);
+  color: var(--muted);
+}
+
+.gw-cursor {
+  margin-top: var(--gw-space-3);
+}
+
+.gw-cursor-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gw-space-2);
+  margin: 0;
+  min-width: 0;
+}
+
+.gw-cursor-label {
+  font-size: var(--gw-fs-eyebrow);
+  font-weight: var(--gw-fw-eyebrow);
+  letter-spacing: var(--gw-ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.gw-cursor-token {
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-fs-mono);
+  color: var(--slate);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 62ch;
+}
+
+.gw-cursor-toggle {
+  margin-top: var(--gw-space-1);
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--cyan-text);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+.gw-cursor-decoded {
+  margin-top: var(--gw-space-2);
+  padding: var(--gw-space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--gw-radius-sm);
+  background: var(--panel);
+}
+
+.gw-cursor-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gw-space-2);
+  margin: 0 0 var(--gw-space-1);
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-fs-mono);
+  color: var(--paper);
+}
+
+.gw-cursor-gloss {
+  font-family: var(--gw-font-body);
+  font-size: var(--gw-fs-micro);
+  color: var(--muted);
+}
+
+.gw-cursor-lesson {
+  margin: var(--gw-space-3) 0 0;
+  max-width: 72ch;
+  font-size: var(--gw-fs-micro);
+  color: var(--slate);
+}
+
+@media (max-width: 1365px) {
+  .gw-cell-prose {
+    max-width: 32ch;
+  }
+
+  .gw-cursor-token {
+    max-width: 40ch;
+  }
+}

@@ -1,0 +1,73 @@
+// @vitest-environment happy-dom
+import { beforeEach, describe, expect, it } from "vitest";
+
+import "./gw-count.ts";
+
+const REASON =
+  "An occurrence count is bookkeeping about how many fetches re-presented the row, not a" +
+  " measured quantity about the well.";
+
+function count(attributes: Record<string, string>): HTMLElement {
+  const element = document.createElement("gw-count");
+  for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
+  document.body.append(element);
+  return element;
+}
+
+beforeEach(() => {
+  document.body.replaceChildren();
+});
+
+describe("<gw-count> is the exemption register reaching the reader (§6.3)", () => {
+  it("renders the number and an ⓔ whose popover is the exemption reason, verbatim", () => {
+    const element = count({ value: "1284", reason: REASON });
+
+    expect(element.querySelector(".gw-count-value")?.textContent).toBe("1,284");
+    const marker = element.querySelector(".gw-count-mark") as HTMLElement;
+    expect(marker.textContent).toBe("ⓔ");
+    expect(element.querySelector(".gw-count-reason")?.textContent).toBe(REASON);
+    expect(marker.title).toBe(REASON);
+  });
+
+  it("keeps the reason hidden until it is asked for, and shows it on the ⓔ", () => {
+    const element = count({ value: "3", reason: REASON });
+    const popover = element.querySelector(".gw-count-reason") as HTMLElement;
+
+    expect(popover.hidden).toBe(true);
+    (element.querySelector(".gw-count-mark") as HTMLElement).click();
+    expect(popover.hidden).toBe(false);
+  });
+
+  it("throws in test mode when a count carries no reason at all", () => {
+    // The same discipline `gw-figure.ts:6,39` applies to a missing handle, and for the same
+    // reason: a number whose exemption nobody wrote down is a defect, not a rendering choice.
+    expect(() => count({ value: "12" })).toThrow(/reason/);
+  });
+
+  it("renders the counted-unbound treatment where the document serves no reason yet", () => {
+    const element = count({ value: "12", "no-reason": "" });
+
+    expect(element.querySelector(".gw-count-value")?.textContent).toBe("12");
+    const marker = element.querySelector(".gw-count-mark") as HTMLElement;
+    expect(marker.textContent).toBe("?");
+    expect(marker.title).toMatch(/does not state/i);
+    // Never identical to a reasoned count: the two facts are different and must look different.
+    expect(marker.className).not.toBe(
+      (count({ value: "12", reason: REASON }).querySelector(".gw-count-mark") as HTMLElement)
+        .className,
+    );
+  });
+
+  it("keeps the glossary highlighter out of the number itself", () => {
+    const element = count({ value: "1284", reason: REASON });
+
+    expect(element.querySelector(".gw-count-value")?.hasAttribute("data-no-glossary")).toBe(true);
+  });
+
+  it("re-renders when its value changes rather than keeping the number it first had", () => {
+    const element = count({ value: "1", reason: REASON });
+    element.setAttribute("value", "2");
+
+    expect(element.querySelector(".gw-count-value")?.textContent).toBe("2");
+  });
+});

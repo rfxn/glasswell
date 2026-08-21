@@ -108,6 +108,51 @@ its own version in its header, and its history is summarised in §3.1.
       exists: no `fetch(` outside the one declared exemption in `shell.ts`, no `XMLHttpRequest`,
       no absolute URL, and every operation named as a literal either served by the committed
       document or listed in the gap register as one that is not
+- [New] The result grid: a windowed renderer over the page the server already capped, with the
+      seven column kinds SB-08 §3.2 names. A pivot's value columns are figures by declaration and
+      carry the handle their dotted `_lineage` sidecar supplies; an identifier is monospace and
+      excluded from the glossary scan; an enum binds to its column's term; geometry states that
+      it renders on the map rather than printing coordinates into a cell; and `null` renders its
+      own `null_semantics` — `reported_zero`, `no_report`, `withheld` and `multi_pool_pending`
+      each with their own mark, word and explanation — while a field the response omitted renders
+      `—` and says so. No new runtime dependency: `web/package.json` is unchanged and the exit
+      criterion asserts it
+- [New] `<gw-count>`, the exempted number wearing its exemption: the value plus a superscript ⓔ
+      whose popover quotes `x-glasswell-not-a-figure` verbatim. Where the document does not serve
+      a reason yet the element renders the counted-unbound treatment and says the exemption exists
+      in the allowlist and is not served — it never invents the exempter's words, and a count with
+      neither a reason nor that marker throws in test mode exactly as a handle-less figure does
+- [New] Column headers bind through `meta.labels` first and the schema's `x-glasswell-glossary`
+      second, and where neither exists the header renders the counted-unbound treatment: a muted
+      `?`, no dotted underline, no hover affordance. The per-dataset percentage renders above the
+      grid, so the vocabulary debt is a product surface rather than a spreadsheet — nine of
+      sixty-six default columns are bound today and the grid says so on every dataset
+- [New] `explore/grid/rows.ts` turns an envelope into rows: `collection_pointer` for the two
+      projections whose array sits beside `data`, `row_projection` for the two pivots, one row per
+      axis entry with each suffix companion attached to its own value column, anchors repeated
+      onto every row, and composite row ids read across the series and element namespaces.
+      `responsePointerFor()` composes the one pointer `meta.labels` is looked up with, so the
+      client and the coverage floor cannot disagree about what a column is called
+- [New] The facet bar is generated from the operation's own parameters, unwrapping FastAPI's
+      `anyOf: [real, null]` and refusing two non-null survivors rather than guessing: enums become
+      chip groups over their own vocabulary, integers become steppers stating the server's cap,
+      months validate against the pattern the server declares, and `as_of` is lifted into its own
+      global strip. What a collection cannot be narrowed by is stated rather than hidden
+- [New] Pagination renders as the lesson it is: the opaque cursor, a decode affordance, and each
+      of the four keys annotated — including the filter fingerprint that makes a mid-walk edit a
+      422 instead of a wrong answer. No page number anywhere, `links.next` followed rather than
+      assembled, and an operation with no cursor parameter gets the stated fallback instead of a
+      disabled cursor UI
+- [Fix] The row-count line asks a summary operation for a total only when that operation declares
+      every filter the grid applied. `get_quarantine_summary` takes `source_id` and `state` and
+      not `stage`; FastAPI ignores an undeclared query parameter, so forwarding the grid's filters
+      answered over a broader population and the line read "29 rows matched · showing 1–10" for a
+      filter that matched ten. A total over a different population is a naked number wearing a
+      comma
+- [Fix] A report vintage shared by every value in a response is stated once above the grid
+      instead of chipped onto every cell. Eighteen identical chips pushed a declared column off
+      the surface at 1600 px; the chip now appears per row only when a second vintage does, which
+      is the case where it means something
 
 ### 2026-08-21 — increment-3 merge train
 

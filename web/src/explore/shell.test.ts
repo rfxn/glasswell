@@ -81,11 +81,17 @@ describe("the shell mounts into the host C0's dispatch gives it", () => {
       "query",
       "learn",
     ]);
-    expect(document.getElementById(FACET_HOST_ID)?.children).toHaveLength(0);
-    // Both hosts carry a placeholder that states what will render there; C7 and C9 replace
-    // those children, so neither surface ships as an unexplained blank column.
+    // C7 fills the facet host with one control per query parameter of this operation, so the
+    // assertion moved from "empty" to "generated" rather than being deleted.
+    const facets = document.getElementById(FACET_HOST_ID) as HTMLElement;
+    expect(facets.querySelectorAll("[data-facet]").length).toBeGreaterThan(4);
+    expect([...facets.querySelectorAll("[data-facet]")].map((f) => f.getAttribute("data-facet")))
+      .toContain("operator");
+    // The pane still carries C6's placeholder; the grid host keeps its `data-ds` and its
+    // children are C7's, which is the contract K1 wrote down.
     expect(document.getElementById(PANE_HOST_ID)?.textContent).toMatch(/renders here/);
     expect(document.getElementById(GRID_HOST_ID)?.dataset["ds"]).toBe("wells");
+    expect(document.getElementById(GRID_HOST_ID)?.textContent).toContain("/api10");
   });
 
   it("reads the document once, however many times the reader flips surfaces", async () => {
