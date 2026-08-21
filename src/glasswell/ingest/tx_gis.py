@@ -375,6 +375,15 @@ def _arc_feet(geometry) -> float:
     return abs(metres) / float(METRES_PER_FOOT)
 
 
+def _head(geometry) -> tuple[float, float]:
+    """The arc's first vertex — the wellbore head, which is where two arcs for one wellbore
+    are compared. An arc with no vertices has no position to be a duplicate of."""
+    for part in getattr(geometry, "geoms", [geometry]):
+        for point in part.coords:
+            return float(point[0]), float(point[1])
+    raise ValueError("an arc carrying no vertices cannot be promoted or displaced")
+
+
 def _quarantine_frame(rows: list[dict[str, Any]]) -> pl.DataFrame:
     """Scan every row for the schema: a column that is null for the first 100 rows and a
     wellbore code after them is a real shape of this data, not a malformed frame."""
@@ -755,29 +764,44 @@ def _promote_lines(
     storage_epsg = int(datum.spec["target_epsg"])
     ceiling_ft = float(bounds_rule.spec["max_length_ft"])
     payload: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
+    # The arc that took the key, so a displaced one can be read against what displaced it.
+    promoted_at: dict[tuple[str, str], tuple[float, float, int]] = {}
     duplicates: list[dict[str, Any]] = []
     implausible: list[dict[str, Any]] = []
     for row in arcs:
         key = (row["api10"], row["geom_key"])
-        if key in seen:
-            duplicates.append(row)
-            continue
-        seen.add(key)
         geometry = shapely_wkt.loads(by_ordinal[row["source_row_ordinal"]]["wkt"])
+        if key in promoted_at:
+            kept_lon, kept_lat, kept_ordinal = promoted_at[key]
+            lon, lat = _head(ops.transform(project, geometry))
+            duplicates.append(
+                {
+                    **row,
+                    "lon": lon,
+                    "lat": lat,
+                    "promoted_lon": kept_lon,
+                    "promoted_lat": kept_lat,
+                    "promoted_source_row_ordinal": kept_ordinal,
+                    "metres_from_promoted": round(
+                        _metres_apart(lon, lat, kept_lon, kept_lat), 3
+                    ),
+                }
+            )
+            continue
         # Measured before promotion, so a sixty-mile straight line never reaches a card, a
         # tile or a length statistic — the length is the thing being judged.
         feet = _arc_feet(geometry)
         if feet > ceiling_ft:
             implausible.append({**row, "length_ft": round(feet, 1), "ceiling_ft": ceiling_ft})
-            seen.discard(key)
             continue
+        projected = ops.transform(project, geometry)
+        promoted_at[key] = (*_head(projected), row["source_row_ordinal"])
         payload.append(
             {
                 "api10": row["api10"],
                 "geom_type": "lateral",
                 "geom_key": row["geom_key"],
-                "wkt": ops.transform(project, geometry).wkt,
+                "wkt": projected.wkt,
                 "storage_epsg": storage_epsg,
                 "source_datum": f"EPSG:{int(datum.spec['source_epsg'])}",
                 "transform_rule_id": datum.rule_id,
@@ -817,7 +841,7 @@ def _promote_lines(
     ) as context:
         context.set_rows(len(payload))
         context.set_output_hash(
-            hash_payload(json_ready({"keys": sorted(f"{a}/{k}" for a, k in sorted(seen))}))
+            hash_payload(json_ready({"keys": sorted(f"{a}/{k}" for a, k in sorted(promoted_at))}))
         )
     with connection.cursor() as cursor:
         cursor.executemany(

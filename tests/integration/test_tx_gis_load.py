@@ -316,6 +316,77 @@ def test_a_county_with_no_horizontal_wells_ships_no_arcs_layer_and_that_is_not_a
     assert absent == 1
 
 
+def test_every_duplicate_row_survivor_says_how_far_it_is_from_what_displaced_it(
+    county, seeded, raw_root, lineage_env
+):
+    """D2's payload contract on the arc path. 16 of the full load's 58 survivors carried no
+    distance, so "median separation 243 m" described 42 of them; an arc duplicate is judged on
+    the same claim as a point one and has to be checkable the same way."""
+    ordinal, api, stcode, wkt = rows(
+        seeded,
+        "select source_row_ordinal, api, stcode, ST_AsText(geom)"
+        "  from staging.tx_gis_wells_lines"
+        " where manifest_id = %s and geom is not null and coalesce(stcode, '') <> ''"
+        " order by source_row_ordinal limit 1",
+        (county.manifest_id,),
+    )[0]
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "insert into staging.tx_gis_wells_lines"
+            " (manifest_id, source_row_ordinal, source_county_code, api, stcode, geom)"
+            " values (%s, %s, %s, %s, %s, ST_Translate(ST_GeomFromText(%s, 4267), 0.01, 0.01))",
+            (county.manifest_id, ordinal + 900_000, COUNTY, api, stcode, wkt),
+        )
+    seeded.commit()
+
+    with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env), client_for(
+        {"us_noaa_conus": GRID}
+    ) as client:
+        datum = tx_gis._rule(seeded, tx_gis.DATUM_RULE)
+        grid_path, grid_manifest_id = tx_gis.ensure_grid(
+            seeded, datum, raw_root=raw_root, client=client
+        )
+        tx_gis._promote_lines(
+            seeded,
+            manifest_id=county.manifest_id,
+            county_code=COUNTY,
+            vintage=scalar(
+                seeded,
+                "select fetch_vintage from lineage.manifests where manifest_id = %s",
+                (county.manifest_id,),
+            ),
+            parse_derivation_id=scalar(
+                seeded,
+                "select derivation_id from lineage.derivations"
+                " where params ->> 'layer' = 'lines'"
+                "   and output_partition ->> 'manifest_id' = %s limit 1",
+                (county.manifest_id,),
+            ),
+            datum=datum,
+            transformer=tx_gis.datum_transformer(datum, grid_path),
+            grid_manifest_id=grid_manifest_id,
+            api10_rule=tx_gis._rule(seeded, tx_gis.API10_RULE),
+            scope_rule=tx_gis._rule(seeded, tx_gis.SCOPE_RULE),
+            wellbore_rule=tx_gis._rule(seeded, tx_gis.WELLBORE_KEY_RULE),
+            bounds_rule=tx_gis._rule(seeded, tx_gis.BOUNDS_RULE),
+            method=resolve_length_method(seeded, basin="permian"),
+            counts=dict.fromkeys(tx_gis.REASON_CODES, 0),
+        )
+    seeded.commit()
+
+    survivors = rows(
+        seeded,
+        "select staging_table, row_payload from lineage.quarantine_rows"
+        " where reason_code = 'duplicate_row'",
+    )
+    assert any(table.endswith("_lines") for table, _ in survivors), (
+        "the arc path must produce a survivor for this to be a test of it"
+    )
+    missing = [payload for _, payload in survivors if "metres_from_promoted" not in payload]
+    assert missing == [], "a duplicate is a claim about distance, so every row must carry it"
+    assert all(payload["metres_from_promoted"] > 0 for _, payload in survivors)
+
+
 def test_the_county_scope_comes_from_the_rule_and_refuses_a_county_outside_it(seeded):
     assert tx_gis.county_scope(seeded) == PERMIAN_COUNTY_CODES
     assert tx_gis.archive_name(seeded, COUNTY) == f"well{COUNTY}.zip"
