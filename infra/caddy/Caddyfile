@@ -12,12 +12,48 @@ glasswell.lab.rpx.sh {
 		resolvers 1.1.1.1 1.0.0.1
 	}
 
-	reverse_proxy 127.0.0.1:8000
+	# The archive is static bytes read by range request, and the proxy hop to uvicorn costs
+	# ~40 ms on every read under 64 KB — uvicorn's multi-worker listener is created without
+	# IPPROTO_TCP, so asyncio never sets TCP_NODELAY and Nagle holds each body until the
+	# peer's delayed ACK (infra/basemap/README.md § Why Caddy serves this directly). Caddy
+	# reads it with sendfile from the same origin. uvicorn keeps its own mount, so reverting
+	# this block restores the proxied path with no other change.
+	handle_path /basemap/* {
+		root * /opt/glasswell/basemap
+
+		@manifest path /manifest.json
+		@archive not path /manifest.json
+		# The manifest is how a client notices a vintage swap, so it is never cached.
+		header @manifest Cache-Control "no-cache"
+		header @archive Cache-Control "public, max-age=86400"
+
+		# Caddy knows neither extension, and an absent Content-Type is a difference from the
+		# uvicorn mount rather than a property of the file.
+		@binary path *.pmtiles *.pbf
+		header @binary Content-Type application/octet-stream
+
+		# This block is the origin for these bytes, so it owns the policy for them. The
+		# values are asserted against `glasswell.api.security` by
+		# tests/unit/test_caddy_basemap_headers.py, which is what keeps the copy honest.
+		header {
+			X-Content-Type-Options nosniff
+			X-Frame-Options DENY
+			Referrer-Policy no-referrer
+			X-Robots-Tag "noindex, nofollow"
+			Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; child-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; upgrade-insecure-requests"
+		}
+
+		file_server
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:8000
+	}
 
 	# No `encode`: the origin owns compression. It gzips text over 1 KiB, passes martin's
 	# zstd tiles through, and leaves basemap.pmtiles identity so range reads work.
-	# No `header`: the origin emits the security headers (N-6). Setting them here too would
-	# append a second value, not replace the first.
+	# No `header` outside the basemap block: the API emits its own (N-6), and setting them
+	# here too would append a second value rather than replace the first.
 
 	log {
 		output file /var/log/caddy/access.log {

@@ -23,21 +23,27 @@ usage() {
 usage: basemap-build.sh [options]
 
   --out DIR         where the archive and manifest land (default ./basemap)
-  --region NAME     a file in scripts/basemap-regions (nd, nd-tx), or a path to a GeoJSON
+  --region NAME     a file in scripts/basemap-regions (conus, nd, nd-tx), or a path to
+                    a GeoJSON
   --bbox BOX        min_lon,min_lat,max_lon,max_lat instead of a region file
   --maxzoom N       highest zoom to extract (default 13)
   --build DATE      planet build to read, YYYYMMDD, or `latest` (default latest)
   --with-labels     also fetch fonts and sprites so the label layers can render
   --dry-run         report the size the extract would be, and download nothing
 
-Measured sizes against the 2026-08-15 planet build (`--dry-run`):
+Measured sizes against the 2026-08-17 planet build (`--dry-run`):
 
-  region  z0-10   z0-12   z0-13
-  nd       ~6 MB   22 MB    48 MB
-  nd-tx     24 MB  138 MB   336 MB
+  region  z0-9    z0-10   z0-11   z0-12   z0-13
+  nd       —       ~6 MB   —        22 MB    48 MB
+  nd-tx    —        24 MB  —       138 MB   336 MB
+  conus   155 MB   380 MB  826 MB  1.9 GB   4.2 GB
+  world    —       —       —       —        45 MB at z0-6, 187 MB at z0-7
 
-ND alone is the current ingest footprint; nd-tx is the Permian-ready extract. Each zoom
-level roughly doubles the archive, so project from a low-maxzoom dry run before committing.
+A region narrower than the map's own viewport renders a cropped world at low zoom: the
+tiles outside the box do not exist and nothing reports their absence. `conus` is the
+serving extract for that reason — it is a superset of every basin region here, which is
+what `tests/unit/test_basemap_regions.py` asserts. Each zoom level roughly doubles the
+archive, so project from a low-maxzoom dry run before committing to a size.
 EOF
 }
 
@@ -121,12 +127,19 @@ if [[ $with_labels -eq 1 ]]; then
     rm -rf "$assets_dir"
 fi
 
+printf 'verifying the extract before it takes the archive name\n'
+pmtiles verify "$staging"
+bounds="$(pmtiles show --header-json "$staging" | tr -d ' \n' | sed -n 's/.*"bounds":\(\[[^]]*\]\).*/\1/p')"
+[[ -n "$bounds" ]] || { printf 'no bounds in the extract header\n' >&2; exit 1; }
+
 mv "$staging" "$archive"
 bytes="$(stat -c %s "$archive")"
 sha="$(sha256sum "$archive" | cut -d' ' -f1)"
 labels=false
 [[ -d "$out_dir/fonts" ]] && labels=true
 
+# `bounds` is the coverage claim in machine-readable form. Without it a too-narrow extract
+# is invisible until a reader zooms out and finds the continent missing.
 cat > "$out_dir/manifest.json" <<EOF
 {
   "archive": "/basemap/basemap.pmtiles",
@@ -134,6 +147,7 @@ cat > "$out_dir/manifest.json" <<EOF
   "vintage": "$build",
   "region": "$region_label",
   "maxzoom": $maxzoom,
+  "bounds": $bounds,
   "bytes": $bytes,
   "sha256": "$sha",
   "source": "$source_url",
@@ -142,6 +156,11 @@ cat > "$out_dir/manifest.json" <<EOF
 }
 EOF
 
+# Same shape as a sealed raw vintage (SB-06 §rules 1-2): `sha256sum -c` passes inside the
+# deployed directory with no arguments and no external state.
+(cd "$out_dir" && sha256sum basemap.pmtiles manifest.json > MANIFEST.sha256) || exit 1
+
 printf 'wrote %s (%s bytes)\n' "$archive" "$bytes"
 printf 'sha256 %s\n' "$sha"
+printf 'bounds %s\n' "$bounds"
 printf 'manifest %s\n' "$out_dir/manifest.json"

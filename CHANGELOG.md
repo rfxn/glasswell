@@ -7,6 +7,31 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-21 — Basemap coverage and the 40 ms proxy stall
+
+- [Fix] Basemap coverage: the serving extract is `conus` (z0–13, 4.22 GB) rather than the
+      `nd-tx` box, which ended at the Rockies and at Memphis and rendered blank ground with
+      no error at z3–z7. `scripts/basemap-regions/conus.geojson` is a superset of every
+      basin region, asserted in `tests/unit/test_basemap_regions.py`, so a swap cannot lose
+      coverage; the ND tiles are byte-identical
+- [Fix] `/basemap/*` is served by Caddy's `file_server` instead of proxied to uvicorn:
+      `uvicorn --workers N` binds a socket with `proto=0`, so asyncio never sets
+      `TCP_NODELAY` and Nagle holds every response body under the loopback MSS until the
+      peer's 40 ms delayed ACK. LAN medians through https: 4 KB range 48.7 → 5.9 ms,
+      16 KB 49.0 → 6.4 ms, 16 KB eight-way 49.6 → 7.6 ms. The uvicorn mount is unchanged,
+      so reverting the Caddy block is the whole rollback
+- [New] `scripts/tile-probe.py` measures the basemap and tile paths over the transport a
+      browser negotiates — sequential and concurrent range reads, first fetch, and
+      `If-None-Match` revalidation — and reports percentiles rather than one sample
+- [Change] `basemap-build.sh` verifies the extract before it takes the archive name, records
+         the archive's own `bounds` in the manifest, and writes a `MANIFEST.sha256` that
+         `sha256sum -c` passes in the deployed directory with no arguments (SB-06 §rules
+         1-2). A coverage claim is now readable without opening the archive
+- [Change] `infra/basemap/README.md` records the region-is-coverage rule, the measured size
+         ladder for `conus`, the symlink swap, and the Nagle diagnosis with the `tcpdump`
+         that convicts it; `infra/caddy/README.md` records why the basemap block is the one
+         place the edge states the response policy
+
 ### 2026-08-20 — DIR-13: TLS on the LAN endpoint
 
 - [New] Caddy terminates `https://glasswell.lab.rpx.sh` on VM 111 and reverse-proxies
