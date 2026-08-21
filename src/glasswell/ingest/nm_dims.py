@@ -86,6 +86,7 @@ OPERATOR_RAW = "operator_raw"
 OPERATOR = "operator"
 COMPLETION_KEY = "completion_key"
 EFFECTIVE_FROM = "effective_from"
+_ONSET = "__glasswell_pod_onset"
 # One batch is the working set; 426,529 rows is five of them and the widest sibling table fits
 # in one. The number is a memory bound, not a tuning knob.
 BATCH_ROWS = 100_000
@@ -446,29 +447,41 @@ def completion_records(frame: pl.DataFrame, *, policy: DimensionPolicy) -> pl.Da
 
 
 def _split_orphans(
-    records: pl.DataFrame, *, crosswalked: frozenset[str]
+    records: pl.DataFrame, *, onsets: pl.DataFrame
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
-    """A completion reaching none of the three identifiers cannot enter a group at all."""
-    has_pod = pl.col(COMPLETION_KEY).is_in(list(crosswalked))
+    """A completion reaching none of the three identifiers cannot enter a group at all.
+
+    The POD half asks the same question `_POD_LATERAL` asks — is a POD in force *at this
+    observation's* effective date — rather than the weaker "was one ever crosswalked". A POD
+    exists at date E exactly when the earliest crosswalk date is on or before E, so the onset
+    is all the join needs.
+    """
+    joined = records.join(onsets, on=COMPLETION_KEY, how="left")
+    has_pod = pl.col(_ONSET).is_not_null() & (pl.col(_ONSET) <= pl.col(EFFECTIVE_FROM))
     reachable = (
         has_pod | pl.col("spacing_unit_id").is_not_null() | pl.col("property_id").is_not_null()
     ) & pl.col(EFFECTIVE_FROM).is_not_null()
-    return records.filter(reachable), records.filter(~reachable)
+    return (
+        joined.filter(reachable).drop(_ONSET),
+        joined.filter(~reachable).drop(_ONSET),
+    )
 
 
-def _crosswalked_keys(
-    connection: psycopg.Connection, *, manifest_id: str
-) -> frozenset[str]:
-    """The completion keys `podwc` names, so the orphan test asks the crosswalk rather than
-    guessing from the dimension row alone."""
+def _crosswalk_onsets(connection: psycopg.Connection, *, manifest_id: str) -> pl.DataFrame:
+    """The earliest date `podwc` crosswalks each completion to any POD."""
     with connection.cursor() as cursor:
         cursor.execute(
-            "select distinct api_st_cde || lpad(api_cnty_cde, 3, '0')"
-            "       || lpad(api_well_idn, 5, '0') || ':' || pool_idn"
-            "  from staging.stg_nm_ocd_podwc__records where manifest_id = %s",
+            "select api_st_cde || lpad(api_cnty_cde, 3, '0')"
+            "       || lpad(api_well_idn, 5, '0') || ':' || pool_idn as completion_key,"
+            "       min(left(eff_dte, 10)::date) as pod_onset"
+            "  from staging.stg_nm_ocd_podwc__records where manifest_id = %s"
+            " group by 1",
             (manifest_id,),
         )
-        return frozenset(key for (key,) in cursor.fetchall())
+        rows = cursor.fetchall()
+    return pl.DataFrame(
+        rows, schema={COMPLETION_KEY: pl.String, _ONSET: pl.Date}, orient="row"
+    )
 
 
 def seed_operator_aliases(
@@ -597,7 +610,7 @@ def promote_dimensions(
     alias_rule = rule_for_family(rules_for(OPERATOR_TABLE, "join"), OPERATOR_FAMILY)
 
     vocabulary = _reason_vocabulary(connection)
-    crosswalked = _crosswalked_keys(connection, manifest_id=heads[CROSSWALK_TABLE].manifest_id)
+    onsets = _crosswalk_onsets(connection, manifest_id=heads[CROSSWALK_TABLE].manifest_id)
     counts: dict[str, int] = {}
     staged_rows = 0
     kept = 0
@@ -656,7 +669,7 @@ def promote_dimensions(
                 manifest_id=heads[DIM_TABLE].manifest_id,
             )
             records = completion_records(aliased.frame, policy=policy)
-            landable, orphans = _split_orphans(records, crosswalked=crosswalked)
+            landable, orphans = _split_orphans(records, onsets=onsets)
             if not orphans.is_empty():
                 _route_batches(
                     run,

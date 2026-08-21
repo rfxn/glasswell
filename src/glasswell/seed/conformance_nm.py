@@ -1265,12 +1265,19 @@ NM_DIMENSION_RULES: tuple[dict[str, object], ...] = (
             "on_multiple": "fan_out",
             "on_none": "null_pod_id",
             "measured": {
+                # Both figures below are on the grain this rule's own predicate joins at:
+                # eff_dte truncated to its date. podwc timestamps every row, so a
+                # timestamp-grained measurement is a different grouping and a smaller one.
+                "measured_at": "date",
                 "podwc_rows": 224778,
                 "podwc_completions": 93685,
-                "pods_per_completion_at_one_eff_dte": {"2": 34835, "3": 35857, "4": 417,
+                "pods_per_completion_at_one_eff_dte": {"2": 44061, "3": 35859, "4": 417,
                                                        "5": 274, "6": 51, "7": 1},
+                "pods_per_completion_at_one_eff_timestamp": {"2": 34835, "3": 35857, "4": 417,
+                                                             "5": 274, "6": 51, "7": 1},
                 "pod_typ_cde": {"G": 58107, "O": 49108, "W": 36678, "M": 51, "C": 11},
-                "fanned_out_rows": 762522,
+                "fanned_out_rows": 763473,
+                "fanned_out_rows_at_one_eff_timestamp": 762522,
                 "podwc_pods_absent_from_pod_registry": 17,
             },
         },
@@ -1280,8 +1287,10 @@ NM_DIMENSION_RULES: tuple[dict[str, object], ...] = (
         ),
         rationale=(
             "NM's POD is stream-scoped: the pod registry types 58,107 of them G, 49,108 O and"
-            " 36,678 W, and 71,435 (completion, eff_dte) groups in podwc name two to seven"
-            " distinct PODs at one instant. A single-valued pod_id therefore cannot be filled"
+            " 36,678 W, and 80,663 (completion, effective date) groups in podwc name two to"
+            " seven distinct PODs on one date - measured at the date granularity this rule's own"
+            " predicate joins at, because podwc timestamps every row and a timestamp-grained"
+            " grouping splits those 80,663 into 71,435. A single-valued pod_id cannot be filled"
             " without choosing, and choosing between filings by file order is the defect the"
             " spine's collision rule already refuses. It fans out instead - a completion in three"
             " PODs is three dimension rows, the same shape P4 landed for a well producing from"
@@ -1360,6 +1369,11 @@ NM_DIMENSION_RULES: tuple[dict[str, object], ...] = (
                     "canonical.well_completions, the latest observation per completion:"
                     " 147,975 completions, 121,940 wells"
                 ),
+                # POD is counted on the fanned completion x POD grain, which is why it holds
+                # more groups than the completions it reaches; the other two are counted once
+                # per completion. One label cannot cover both grains honestly.
+                "basis_pod": "the fanned completion x POD grain",
+                "basis_spacing_unit_and_property": "one row per completion",
                 "pod": {"groups": 141479, "well_slots": 204498, "mean": "1.445",
                         "p50": 1, "p90": 2, "max": 269, "singletons": 126676},
                 "spacing_unit": {"groups": 49994, "well_slots": 81100, "mean": "1.622",

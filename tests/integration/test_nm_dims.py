@@ -368,6 +368,55 @@ def test_a_pod_crosswalked_after_the_observation_is_not_backdated_onto_it(db, st
     assert backdated == 0
 
 
+def test_the_pod_rules_measured_figures_are_taken_at_the_granularity_it_joins_at(db, staged):
+    """gate-nm-p5 B1. `podwc` timestamps every row and the join truncates to the date, so a
+    timestamp-grained measurement counts a different grouping: 71,435 groups against 80,663,
+    and 762,522 fanned rows against the 763,473 the promotion actually appends. The label and
+    the predicate are asserted together, so changing one without the other goes red."""
+    promote(db)
+    measured = rule_spec(db, "cr_nm_podwc_pod_1")["measured"]
+
+    assert measured["measured_at"] == "date"
+    assert "left(eff_dte, 10)::date" in nm_dims._CREATE_CROSSWALK
+    assert "w.effective_from <= b.effective_from" in nm_dims._POD_LATERAL
+    assert sum(measured["pods_per_completion_at_one_eff_dte"].values()) == 80663
+    assert sum(measured["pods_per_completion_at_one_eff_timestamp"].values()) == 71435
+    assert measured["fanned_out_rows"] == 763473
+    assert measured["fanned_out_rows_at_one_eff_timestamp"] == 762522
+
+
+def test_a_pod_crosswalked_after_the_observation_does_not_rescue_it_from_the_orphan_exit(
+    db, seeded, raw_root, staging_root, tmp_path, monkeypatch
+):
+    """gate-nm-p5 O3. The orphan test asks the question the POD attach asks — is a POD in force
+    *at this observation's* effective date — so a completion whose only POD is crosswalked five
+    years later, with no spacing unit and no property, leaves as orphan_fk rather than landing
+    with all three identifiers null."""
+    for table in SIBLINGS:
+        document = None
+        if table == "wchistory":
+            document = _wchistory_with(
+                api_well_idn="99999", pool_idn="99999", spc_unit_idn="0", prod_prop_idn="0",
+                eff_dte="2015-01-01T00:00:00",
+            )
+        elif table == "podwc":
+            document = _podwc_with(
+                api_well_idn="99999", pool_idn="99999", eff_dte="2020-06-01T00:00:00"
+            )
+        stage(db, raw_root, tmp_path, monkeypatch, table=table, document=document, at=DAY_ONE)
+
+    report = promote(db)
+
+    assert report.quarantined["orphan_fk"] == 1
+    assert report.promoted_rows == 0
+    assert scalar(
+        db,
+        "select count(*) from canonical.well_completions where source_id = %s"
+        " and pod_id is null and spacing_unit_id is null and property_id is null",
+        DIM_SOURCE,
+    ) == 0
+
+
 # ---------------------------------------------------------------- 5.5 the rule row
 
 
@@ -604,6 +653,21 @@ def _wchistory_with(**overrides: str) -> bytes:
     )
     cells.update(overrides)
     return synthetic_document([record_text(**cells)], tag="wchistory")
+
+
+def _podwc_with(**overrides: str) -> bytes:
+    """One podwc record, carrying every column the source declares."""
+    cells = {column: "1" for column in NM_COLUMNS["podwc"]}
+    cells.update(
+        pod_idn="700001",
+        api_st_cde="30",
+        api_cnty_cde="5",
+        api_well_idn="1028",
+        pool_idn="8559",
+        eff_dte="2015-01-01T00:00:00",
+    )
+    cells.update(overrides)
+    return synthetic_document([record_text(**cells)], tag="podwc")
 
 
 def _seed_well_months(db: psycopg.Connection) -> None:

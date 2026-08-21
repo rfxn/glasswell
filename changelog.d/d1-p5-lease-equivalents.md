@@ -16,6 +16,12 @@
       groups over all 147,975, mean 2.824. Property is the only key with full coverage and
       every key's median group holds one well, which is the ceiling on what reweighting
       can reach
+- [New] The evidence for the POD fan-out is served at the granularity the join uses:
+      80,663 (completion, effective date) groups in `podwc` name two to seven distinct
+      PODs on one date, and the fan-out is 763,473 rows. `podwc` timestamps every row
+      and the join truncates to the date, so the rule row carries the timestamp-grained
+      variants beside them — 71,435 groups and 762,522 rows — rather than leaving the
+      difference unstated
 - [New] `cr_nm_wchistory_wellbore_policy_1` records SB-01 4.3's multi-wellbore share as
       vacuous rather than as 0%. No in-scope NM artifact carries a column past the
       api_st/api_cnty/api_well triple, so NM cannot express a sidetrack; `well_nbr_idn` is
