@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { LAYERS, defaultLayerSet, layerDef, layerIds, layerRowState } from "./registry.ts";
+import { UNMAPPED_STATUS, statusColour } from "./status.ts";
+import { dataLayers } from "./style.ts";
 
 describe("the layer registry", () => {
-  it("registers the five tiled layers this build actually serves", () => {
-    for (const id of ["wells", "laterals", "spacing-units", "tx-wells", "tx-laterals"]) {
+  it("registers the four tiled rows this build actually serves", () => {
+    for (const id of ["wells", "lateral-bores", "spacing-units", "tx-wells"]) {
       expect(layerIds()).toContain(id);
       expect(layerDef(id)?.pendingSource).toBeFalsy();
     }
@@ -14,14 +16,26 @@ describe("the layer registry", () => {
     const play = layerDef("play-outline");
     expect(play?.pendingSource).toBe(true);
     expect(play?.defaultOn).toBe(false);
-    expect(play?.provenance.kind).toBe("pending");
+    expect(play?.provenance[0]?.kind).toBe("pending");
   });
 
   it("gives every layer a label, an epistemic subtitle and a provenance kind", () => {
     for (const layer of LAYERS) {
       expect(layer.label.length).toBeGreaterThan(0);
       expect(layer.subtitle.length).toBeGreaterThan(0);
-      expect(["official", "derived", "basemap", "pending"]).toContain(layer.provenance.kind);
+      expect(layer.provenance.length).toBeGreaterThan(0);
+      for (const source of layer.provenance) {
+        expect(["official", "derived", "basemap", "pending"]).toContain(source.kind);
+      }
+    }
+  });
+
+  it("keeps one provenance kind per row, which is what the badge claims for all of them", () => {
+    // The row shows a single badge. A row whose sources disagreed about their kind would be
+    // making a claim about the second one that only the first supports.
+    for (const layer of LAYERS) {
+      const kinds = new Set(layer.provenance.map((source) => source.kind));
+      expect([...kinds], `${layer.id} carries ${kinds.size} provenance kinds`).toHaveLength(1);
     }
   });
 
@@ -31,35 +45,89 @@ describe("the layer registry", () => {
     expect(layerDef("wells")?.minZoom).toBeLessThanOrEqual(4);
   });
 
-  it("states the zoom hint on every zoom-gated layer", () => {
+  it("states the zoom hint on every zoom-gated layer, in the row's own numbers", () => {
     for (const layer of LAYERS) {
-      if (layer.minZoom > 0) expect(layer.zoomHint).toMatch(/zoom/i);
+      if (layer.minZoom === 0) continue;
+      expect(layer.zoomHint).toMatch(/zoom/i);
+      // The hint is what the panel says while the row is out of scale. A hint that named a
+      // different zoom than the gate would be the one statement the reader could act on.
+      expect(layer.zoomHint, `${layer.id} hint omits its own minZoom`).toContain(
+        String(layer.minZoom),
+      );
     }
   });
 
   it("derives the default set from the registry and nowhere else", () => {
     expect(defaultLayerSet()).toEqual(LAYERS.filter((l) => l.defaultOn).map((l) => l.id));
     expect(defaultLayerSet()).toContain("wells");
-    expect(defaultLayerSet()).toContain("laterals");
   });
 
-  it("puts Texas on by default so panning there shows wells without hunting the panel", () => {
+  it("puts Texas wells on by default so panning there shows them without hunting the panel", () => {
     // The default viewport stays over North Dakota; a reader who moves to the Permian gets
-    // the same two layers, drawn from the same expressions, with no toggle in between.
+    // the same point layer, drawn from the same expressions, with no toggle in between.
     expect(defaultLayerSet()).toContain("tx-wells");
-    expect(defaultLayerSet()).toContain("tx-laterals");
-    expect(layerDef("tx-wells")?.provenance.source).toBe("marts.tx_wells_tile");
-    expect(layerDef("tx-laterals")?.provenance.source).toBe("marts.tx_laterals_tile");
+    expect(layerDef("tx-wells")?.provenance[0]?.source).toBe("marts.tx_wells_tile");
   });
 
-  it("says what a TX lateral is, since no free TX directional survey exists", () => {
-    expect(layerDef("tx-laterals")?.subtitle).toMatch(/not a directional survey/i);
+  it("draws both basins' laterals from one row, without blurring whose file each came from", () => {
+    const laterals = layerDef("lateral-bores")!;
+    expect(laterals.styleLayers).toEqual(["laterals", "tx-laterals"]);
+    expect(laterals.provenance.map((source) => source.source)).toEqual([
+      "marts.nd_laterals_tile",
+      "marts.tx_laterals_tile",
+    ]);
+    // Two regulators, two lines. One toggle may not cost the reader the ability to say which
+    // file a line on the canvas came out of.
+    expect(laterals.provenance[0]?.label).toMatch(/ND DMR/);
+    expect(laterals.provenance[1]?.label).toMatch(/TX RRC/);
+  });
+
+  it("labels every source on a row that carries more than one", () => {
+    for (const layer of LAYERS) {
+      if (layer.provenance.length < 2) continue;
+      for (const source of layer.provenance) {
+        expect(source.label?.length, `${layer.id}/${source.source} is unlabelled`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("says what a lateral is once, rather than once per state", () => {
+    const laterals = layerDef("lateral-bores")!;
+    expect(laterals.subtitle).toMatch(/not a directional survey/i);
+    expect(laterals.subtitle.match(/directional survey/gi)).toHaveLength(1);
+  });
+
+  it("keeps laterals off until the reader asks for them", () => {
+    // The owner's cut: 93,125 lines drawn over the whole basin on first paint is the map's
+    // largest unrequested cost. Wells stay on — they are what the default viewport is for.
+    expect(layerDef("lateral-bores")?.defaultOn).toBe(false);
+    expect(defaultLayerSet()).not.toContain("lateral-bores");
+    expect(defaultLayerSet()).toContain("wells");
+  });
+
+  it("gates laterals at the zoom the tile tier stops sampling them", () => {
+    // marts/tiles.py THIN_MAX_ZOOM is 7: at and below it the tile keeps one feature per half
+    // CSS pixel, so the layer below z8 is a sample of itself and not what the row claims.
+    expect(layerDef("lateral-bores")?.minZoom).toBe(8);
+    expect(layerDef("lateral-bores")?.zoomHint).toMatch(/zoom 8 and above/i);
   });
 
   it("reports a row for a retired layer as null instead of throwing", () => {
     expect(layerRowState("wells", new Set(["wells"]))).toBe(true);
     expect(layerRowState("wells", new Set())).toBe(false);
     expect(layerRowState("layer-from-a-later-release", new Set())).toBe(null);
+  });
+
+  it("answers for the ids the combination retired, rather than resurrecting either", () => {
+    // A shared link or a stored set from before the combination still carries `laterals` and
+    // `tx-laterals`. The tri-state is the answer every consumer already guards on — the pill
+    // strip skips an id it cannot resolve, the panel has no row to patch — so nothing needs an
+    // alias table, and neither id can become a row that toggles half the geometry.
+    for (const retired of ["laterals", "tx-laterals"]) {
+      expect(layerIds()).not.toContain(retired);
+      expect(layerDef(retired)).toBeUndefined();
+      expect(layerRowState(retired, new Set([retired]))).toBe(null);
+    }
   });
 
   it("names the style layers each row drives, so nothing is toggled by guesswork", () => {
@@ -69,8 +137,36 @@ describe("the layer registry", () => {
     }
   });
 
+  it("gives every built style layer exactly one owning row", () => {
+    // Visibility, the opacity slider and Reset all reach a style layer through the row that
+    // claims it. A layer no row claims is drawn by nothing the reader can switch off, and a
+    // layer two rows claim takes whichever answer the loop reached last.
+    for (const built of dataLayers({ labels: true })) {
+      const owners = LAYERS.filter((layer) => layer.styleLayers.includes(built.id));
+      expect(owners.map((owner) => owner.id), `${built.id} owners`).toHaveLength(1);
+    }
+  });
+
   it("keeps the draw order the row order, so the panel mirrors the map", () => {
     const order = LAYERS.map((layer) => layer.drawOrder);
     expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
+  it("paints a swatch that predicts the canvas rather than one colour of it", () => {
+    // A row drawn from `statusColourExpression()` has no colour of its own, and the two rows
+    // this one replaced each predicted a canvas the other contradicted — ND green against TX
+    // grey. Both survive in the combined mark, which is the only claim the data supports: the
+    // row is keyed to status. The colours are read from status.ts so they cannot drift from it.
+    const swatch = layerDef("lateral-bores")!.swatch;
+    expect(swatch.kind).toBe("line");
+    expect(swatch.colours).toEqual([statusColour("active"), statusColour("plugged")]);
+    expect(swatch.colours).not.toContain(UNMAPPED_STATUS.colour);
+  });
+
+  it("keeps a multi-colour swatch to the kind that can draw one", () => {
+    // A dot has one ink. Handing three to it would silently drop two of them.
+    for (const layer of LAYERS) {
+      if (layer.swatch.colours.length > 1) expect(layer.swatch.kind).toBe("line");
+    }
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { PICK_RADIUS_PX, pickBox, topHit } from "./click-router.ts";
+import { PICKABLE_LAYERS, PICK_RADIUS_PX, pickBox, topHit } from "./click-router.ts";
+import { layerDef } from "./registry.ts";
 
 const hit = (layer: string, api10: string): { layer: { id: string }; properties: Record<string, unknown> } => ({
   layer: { id: layer },
@@ -41,5 +42,19 @@ describe("the click router", () => {
     const order = ["spacing-units-line", "laterals", "wells"].map((id) => topHit([hit(id, "a")]));
     expect(order[0]).not.toBe(null);
     expect(topHit([hit("spacing-units-line", "a"), hit("laterals", "b")])?.layer.id).toBe("laterals");
+  });
+
+  it("picks a Texas lateral, since one row now says both of them are the same thing", () => {
+    // Under two rows a reader could read "Laterals (TX)" as its own layer with its own
+    // behaviour. Under one, a click that selects in North Dakota and does nothing in the
+    // Permian is the row contradicting itself.
+    expect(topHit([hit("tx-laterals", "4231733333")])?.properties["api10"]).toBe("4231733333");
+    expect(topHit([hit("tx-laterals", "a"), hit("wells", "b")])?.layer.id).toBe("wells");
+  });
+
+  it("makes every style layer the laterals row drives pickable, not just the first", () => {
+    for (const styleLayer of layerDef("lateral-bores")!.styleLayers) {
+      expect(PICKABLE_LAYERS, `${styleLayer} is not pickable`).toContain(styleLayer);
+    }
   });
 });

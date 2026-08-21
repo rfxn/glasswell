@@ -34,6 +34,35 @@ describe("the layer panel", () => {
     expect(wells.querySelector(".gw-layer-badge")?.textContent?.toLowerCase()).toBe("official");
   });
 
+  it("names both regulators under the one row that draws both of their files", () => {
+    // One toggle, two sources. The subtitle can carry the claim they share; it cannot carry
+    // which file a line came from, so each source gets its own line under the row.
+    const { handle } = panel();
+    const row = rowFor(handle.element, "lateral-bores")!;
+    const sources = [...row.querySelectorAll(".gw-layer-source")].map((node) => node.textContent);
+    expect(sources).toHaveLength(2);
+    expect(sources[0]).toContain("ND DMR");
+    expect(sources[0]).toContain("marts.nd_laterals_tile");
+    expect(sources[1]).toContain("TX RRC");
+    expect(sources[1]).toContain("marts.tx_laterals_tile");
+    expect(row.querySelector(".gw-layer-sub")?.textContent).toMatch(/not a directional survey/i);
+  });
+
+  it("leaves a single-source row with no provenance line, since its subtitle already names one", () => {
+    const { handle } = panel();
+    expect(rowFor(handle.element, "wells")!.querySelectorAll(".gw-layer-source")).toHaveLength(0);
+  });
+
+  it("tells the reader why the laterals row is dark at basin zoom", () => {
+    const { handle } = panel();
+    handle.setZoom(7);
+    const row = rowFor(handle.element, "lateral-bores")!;
+    expect(row.getAttribute("data-out-of-scale")).toBe("true");
+    expect(row.textContent).toMatch(/zoom 8/i);
+    handle.setZoom(8);
+    expect(row.getAttribute("data-out-of-scale")).toBe(null);
+  });
+
   it("disables a stub layer and says the source is not ingested", () => {
     const { handle, events } = panel();
     const play = rowFor(handle.element, "play-outline")!;
@@ -54,14 +83,14 @@ describe("the layer panel", () => {
     const { handle } = panel();
     const toggle = rowFor(handle.element, "wells")!.querySelector<HTMLButtonElement>(".gw-layer-toggle")!;
     expect(toggle.getAttribute("aria-pressed")).toBe("true");
-    handle.setOn(new Set(["laterals"]));
+    handle.setOn(new Set(["lateral-bores"]));
     expect(toggle.getAttribute("aria-pressed")).toBe("false");
   });
 
   it("patches state in place instead of re-rendering the list", () => {
     const { handle } = panel();
     const toggle = rowFor(handle.element, "wells")!.querySelector(".gw-layer-toggle");
-    handle.setOn(new Set(["laterals"]));
+    handle.setOn(new Set(["lateral-bores"]));
     expect(rowFor(handle.element, "wells")!.querySelector(".gw-layer-toggle")).toBe(toggle);
   });
 
@@ -80,7 +109,7 @@ describe("the layer panel", () => {
     search.dispatchEvent(new Event("input", { bubbles: true }));
     const shown = rows(handle.element).filter((row) => !row.hidden).map((row) => row.dataset["layer"]);
     expect(shown).toContain("spacing-units");
-    expect(shown).not.toContain("laterals");
+    expect(shown).not.toContain("lateral-bores");
   });
 
   it("marks a row out of scale when the map is zoomed out past its floor", () => {
@@ -140,6 +169,16 @@ describe("the active-layer pill strip", () => {
     expect(strip.element.hidden).toBe(false);
     const labels = [...strip.element.querySelectorAll(".gw-pill-label")].map((n) => n.textContent);
     expect(labels).toContain("Spacing units");
+  });
+
+  it("skips an id this build no longer offers instead of drawing a pill nothing can remove", () => {
+    // A shared link from before the lateral rows were combined carries both retired ids.
+    const strip = createPillStrip({ onRemove: () => {}, onOpen: () => {} });
+    strip.setOn(new Set([...defaultLayerSet(), "laterals", "tx-laterals", "lateral-bores"]));
+    const shown = [...strip.element.querySelectorAll(".gw-pill[data-layer]")].map(
+      (node) => (node as HTMLElement).dataset["layer"],
+    );
+    expect(shown).toEqual(["lateral-bores"]);
   });
 
   it("removes a layer from the strip itself", () => {

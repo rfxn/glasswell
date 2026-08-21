@@ -41,6 +41,13 @@ const INK = "#0B1014";
 const SPACING_LABEL_SIZE = 10;
 
 /**
+ * Both basins' laterals, gated together because one row toggles them. Declared here as well as
+ * on the registry row — style.test.ts holds the two equal — because this is the copy the source
+ * floor is derived from, and it is what keeps a 2 MB z7 tile off the wire below the gate.
+ */
+const LATERAL_MIN_ZOOM = 8;
+
+/**
  * The shape martin publishes a source id in — a Postgres table name, which is what the
  * override is choosing between. Anchored with no `m` flag, so a trailing newline is refused.
  */
@@ -227,6 +234,7 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       type: "line",
       source: laterals,
       "source-layer": laterals,
+      minzoom: LATERAL_MIN_ZOOM,
       metadata: STATUS_GATED,
       paint: {
         "line-color": selectable(SELECTION_COLOUR, statusColourExpression()),
@@ -279,6 +287,7 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       type: "line",
       source: txLaterals,
       "source-layer": txLaterals,
+      minzoom: LATERAL_MIN_ZOOM,
       metadata: STATUS_GATED,
       paint: {
         "line-color": selectable(SELECTION_COLOUR, statusColourExpression()),

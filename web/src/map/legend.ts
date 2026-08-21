@@ -77,7 +77,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
   note.textContent =
     "Status colours are data colours, not severity colours. Vocabulary: " +
     `${STATUS_VOCAB_RULES.join(", ")}.` +
-    " Laterals are regulator GIS bore geometry — not a directional survey trace.";
+    " Laterals are ND DMR and TX RRC GIS bore geometry — not a directional survey trace.";
   body.appendChild(note);
 
   const checked = (row: HTMLElement): boolean =>

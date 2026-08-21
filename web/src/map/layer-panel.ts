@@ -104,7 +104,10 @@ export function createLayerPanel(options: LayerPanelOptions): LayerPanelHandle {
     const term = search.value.trim().toLowerCase();
     for (const [id, row] of rows) {
       const layer = LAYERS.find((candidate) => candidate.id === id);
-      const haystack = `${layer?.label} ${layer?.subtitle}`.toLowerCase();
+      // The sources too: "Laterals (TX)" was a label a reader could search for, and combining
+      // the rows would otherwise have made "tx" find nothing on a row that draws Texas.
+      const sources = (layer?.provenance ?? []).map((source) => `${source.label} ${source.source}`);
+      const haystack = `${layer?.label} ${layer?.subtitle} ${sources.join(" ")}`.toLowerCase();
       row.element.hidden = term.length > 0 && !haystack.includes(term);
     }
   });
@@ -166,8 +169,10 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
 
   const badge = document.createElement("span");
   badge.className = "gw-layer-badge";
-  badge.dataset["kind"] = layer.provenance.kind;
-  badge.textContent = layer.provenance.kind;
+  // Every source on a row shares one kind — registry.test.ts refuses a row where they do not.
+  const kind = layer.provenance[0]?.kind ?? "pending";
+  badge.dataset["kind"] = kind;
+  badge.textContent = kind;
   label.appendChild(badge);
   text.appendChild(label);
 
@@ -177,6 +182,19 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
     ? `${layer.subtitle} — source not ingested`
     : layer.subtitle;
   text.appendChild(subtitle);
+
+  // Only where the row draws more than one. With a single source the subtitle already names
+  // it, and the line would say nothing the row has not said; with two, the subtitle can carry
+  // what they share and nothing else, so this is where "which file did that line come from"
+  // is answered.
+  if (layer.provenance.length > 1) {
+    for (const source of layer.provenance) {
+      const line = document.createElement("p");
+      line.className = "gw-layer-source";
+      line.textContent = source.label ? `${source.label} · ${source.source}` : source.source;
+      text.appendChild(line);
+    }
+  }
 
   const hint = document.createElement("p");
   hint.className = "gw-layer-hint";
