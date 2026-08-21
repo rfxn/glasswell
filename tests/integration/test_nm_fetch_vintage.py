@@ -97,9 +97,9 @@ def count(db: psycopg.Connection, sql: str, *parameters: object) -> int:
         return int(cursor.fetchone()[0])
 
 
-def harness_dsn(db: psycopg.Connection) -> str:
+def harness_dsn(db: psycopg.Connection, password: str) -> str:
     """`info.dsn` masks the password, and the CLI opens its own connection."""
-    return f"postgresql://glasswell:glasswell@{db.info.host}:{db.info.port}/{db.info.dbname}"
+    return f"postgresql://glasswell:{password}@{db.info.host}:{db.info.port}/{db.info.dbname}"
 
 
 def artifact_directories(raw_root: Path) -> list[Path]:
@@ -262,7 +262,9 @@ def test_a_host_that_does_not_answer_halts_and_says_so(db, seeded, raw_root, mon
     assert payload[0]["url"].startswith(f"ftp://{FTP_HOST}/")
 
 
-def test_the_command_line_commits_the_failure_it_halted_on(db, seeded, raw_root, monkeypatch):
+def test_the_command_line_commits_the_failure_it_halted_on(
+    db, seeded, raw_root, monkeypatch, postgres_password
+):
     """A halt whose evidence is rolled back is a silent failure (SB-01 §1.2)."""
 
     class Unreachable(FakeFtp):
@@ -274,7 +276,7 @@ def test_the_command_line_commits_the_failure_it_halted_on(db, seeded, raw_root,
         main(
             [
                 "--dsn",
-                harness_dsn(db),
+                harness_dsn(db, postgres_password),
                 "--fetch-only",
                 "--tables",
                 TABLE,
