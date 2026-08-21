@@ -39,8 +39,10 @@ from glasswell.api.pagination import (
 )
 from glasswell.api.principal import Principal as ResolvedPrincipal
 from glasswell.api.responses import EnvelopeModel, enveloped, iso
+from glasswell.lineage.envelope import LINEAGE_SIDECAR, _explain_link
 from glasswell.lineage.explain import MAX_DEPTH, MAX_HANDLES, resolve_chains, to_json
 from glasswell.lineage.fetch import resolve_raw_root
+from glasswell.lineage.ids import format_handle
 
 router = APIRouter(tags=["lineage"])
 
@@ -242,21 +244,19 @@ class Vintage(BaseModel):
     manifest_ids: list[str] = Field(description="Manifests the promotion read.")
     opened_at: datetime = Field(description="When the vintage was opened.")
     promotion_derivation_id: str | None = Field(description="Derivation that promoted it.")
-    rows_examined: int = Field(
-        description="Rows read during the promotion.",
-        json_schema_extra=not_a_figure(
-            "Promotion bookkeeping on a vintage record, not a served observation."
-        ),
-    )
-    rows_appended: int = Field(
-        description="Rows appended; a restatement appends (DIR-2).",
-        json_schema_extra=not_a_figure(
-            "Promotion bookkeeping on a vintage record, not a served observation."
-        ),
-    )
+    rows_examined: int = Field(description="Rows read during the promotion.")
+    rows_appended: int = Field(description="Rows appended; a restatement appends (DIR-2).")
     months_touched: list[str] = Field(description="Production months the promotion covered.")
     restatement_summary: dict[str, Any] = Field(
         description="Per-reason counts of values this vintage restated."
+    )
+    lineage: dict[str, str] = Field(
+        default_factory=dict,
+        alias="_lineage",
+        description=(
+            "Dotted path to the handle of the derivation that promoted this vintage"
+            " (SB-07 §9.1b). Absent where no derivation did."
+        ),
     )
 
 
@@ -720,8 +720,13 @@ def list_derivations(
     )
 
 
+# A-4. Branches, not leaves: the client resolves by longest prefix, so the entry written for
+# `restatement_summary` covers every per-reason count a promotion adds under it.
+_VINTAGE_SIDECAR: tuple[str, ...] = ("rows_examined", "rows_appended", "restatement_summary")
+
+
 def _vintage(row: dict[str, Any]) -> dict[str, Any]:
-    return {
+    record = {
         "vintage_id": row["vintage_id"],
         "source_id": row["source_id"],
         "vintage_date": iso(row["vintage_date"]),
@@ -733,6 +738,22 @@ def _vintage(row: dict[str, Any]) -> dict[str, Any]:
         "months_touched": list(row["months_touched"]),
         "restatement_summary": dict(row["restatement_summary"]),
     }
+    if row["promotion_derivation_id"] is not None:
+        handle = format_handle(row["promotion_derivation_id"])
+        record[LINEAGE_SIDECAR] = dict.fromkeys(_VINTAGE_SIDECAR, handle)
+    return record
+
+
+def _vintage_explain(records: list[dict[str, Any]]) -> str | None:
+    """The S9 one-call path for a sidecar-carried page, read back off the sidecars so it
+    cannot advertise a handle the records do not carry.
+
+    `attach_lineage` builds this itself for figures and series; a sidecar the router wrote
+    never reaches its walk, so the link is built here — from the spine's own function,
+    which owns the percent-encoding and the `MAX_HANDLES` cap a hundred-row page needs.
+    """
+    found = [handle for record in records for handle in record.get(LINEAGE_SIDECAR, {}).values()]
+    return _explain_link(found) if found else None
 
 
 @router.get(
@@ -792,7 +813,8 @@ def list_vintages(
         params["source_id"] = source_id
     clauses.append("order by vintage_date desc, source_id limit %(limit)s")
     found = rows(connection, "\n".join(clauses), params)
-    return enveloped(request, [_vintage(row) for row in found])
+    records = [_vintage(row) for row in found]
+    return enveloped(request, records, links={"explain": _vintage_explain(records)})
 
 
 @router.get(
@@ -819,11 +841,15 @@ def get_vintage(
     if not found:
         raise ProblemError("not_found", detail=f"no vintage {vintage_id}")
     row = found[0]
+    record = _vintage(row)
     return enveloped(
         request,
-        _vintage(row),
+        record,
         as_of=row["vintage_date"],
-        links={"source": f"/v1/vintages?source_id={row['source_id']}"},
+        links={
+            "source": f"/v1/vintages?source_id={row['source_id']}",
+            "explain": _vintage_explain([record]),
+        },
     )
 
 

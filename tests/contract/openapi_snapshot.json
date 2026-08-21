@@ -3647,6 +3647,14 @@
       },
       "Vintage": {
         "properties": {
+          "_lineage": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Dotted path to the handle of the derivation that promoted this vintage (SB-07 \u00a79.1b). Absent where no derivation did.",
+            "title": "Lineage",
+            "type": "object"
+          },
           "manifest_ids": {
             "description": "Manifests the promotion read.",
             "items": {
@@ -3690,14 +3698,12 @@
           "rows_appended": {
             "description": "Rows appended; a restatement appends (DIR-2).",
             "title": "Rows Appended",
-            "type": "integer",
-            "x-glasswell-not-a-figure": "Promotion bookkeeping on a vintage record, not a served observation."
+            "type": "integer"
           },
           "rows_examined": {
             "description": "Rows read during the promotion.",
             "title": "Rows Examined",
-            "type": "integer",
-            "x-glasswell-not-a-figure": "Promotion bookkeeping on a vintage record, not a served observation."
+            "type": "integer"
           },
           "source_id": {
             "description": "Source the vintage was promoted from.",

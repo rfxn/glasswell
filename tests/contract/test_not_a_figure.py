@@ -20,12 +20,12 @@ consequences are worth stating because they look like bugs from the outside:
   reason wins over the "…, in a collection item." cross-reference. Reordering the file would
   change served prose; that is the trade for one matcher rather than two.
 * A property the allowlist reaches only through a free-form bag (`/params/**`, `/spec/**`,
-  `/row_payload/**`, `/restatement_summary/**`) has no declared property to annotate, so it
-  generates no extension and the check must not demand one. Asserted below, not assumed.
+  `/row_payload/**`) has no declared property to annotate, so it generates no extension and the
+  check must not demand one. Asserted below, not assumed.
 
 The two directions run over two populations, and the asymmetry is deliberate. An extension is
-**demanded** on the properties the R6 gate actually exempts: declared-numeric in a response
-schema, or observed `allowed` by `test_naked_numbers`' own walker. The second half is not
+**demanded** on the properties the R6 gate actually exempts: covered by an entry and either
+declared-numeric or observed `allowed` by `test_naked_numbers`' own walker. The second half is not
 decoration — `api10` and the other identifiers are numeric *text*, so the walker exempts them
 while the schema calls them strings, and they are the exemptions the wells grid puts in front
 of a reader first. It is also what keeps `Derivation.status` out: `/status` matches that
@@ -54,7 +54,7 @@ from tests.contract.test_naked_numbers import ALLOWED, allowed_numbers, exercise
 
 COVERAGE_REPORT = Path("/tmp/gw-pa/not-a-figure-coverage.json")
 NUMERIC_TYPES = frozenset({"integer", "number"})
-BAG_ENTRIES = ("/params/**", "/spec/**", "/*/spec/**", "/row_payload/**", "/restatement_summary/**")
+BAG_ENTRIES = ("/params/**", "/spec/**", "/*/spec/**", "/row_payload/**")
 # A walker that silently matched nothing would satisfy every assertion below by vacuity. The
 # floor is deliberately far under the measured register; it is a tripwire, not a target.
 VACUITY_FLOOR = 25
@@ -157,7 +157,8 @@ class Register(NamedTuple):
 
     `pointers` spans every declared leaf property, so the reverse direction can decide whether
     an annotation is covered without asking the fixture. `demanded` is the narrower set an
-    extension is *required* on: declared-numeric, or observed exempt by the R6 walker.
+    extension is *required* on: allowlist-covered, and either declared-numeric or observed
+    exempt by the R6 walker.
     """
 
     document: Any
@@ -193,7 +194,10 @@ def register(client: TestClient) -> Register:
             if pointer in leaves:
                 pointers.setdefault(leaves[pointer], set()).add(pointer)
                 demanded.add(leaves[pointer])
-    return Register(document, pointers, demanded)
+    # Declared-numeric is not the same as exempt, and A-4 is where the two part company:
+    # `Vintage.rows_examined` is an integer property that now carries a handle instead of a
+    # reason. A number no entry covers is `test_no_served_number_is_naked`'s business.
+    return Register(document, pointers, {p for p in demanded if matched_entry(pointers[p])})
 
 
 def _operation(document: Any, operation_id: str) -> Any:
