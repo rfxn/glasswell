@@ -8,3 +8,7 @@
       well row at the requested vintage is disclosed as a warning rather than dropped, and
       the box is uncapped — measured at 399,280 seeded well points: 19 ms for a screen,
       237 ms for the whole of North Dakota, 1.4 s for the whole world
+- [New] /v1/wells/status-summary discloses an explain-link truncation instead of an ellipsis:
+      where a box produces more counts than /v1/explain accepts handles in one call,
+      explain_link_truncated states exactly how many links.explain left out, and every count
+      still resolves through its own handle

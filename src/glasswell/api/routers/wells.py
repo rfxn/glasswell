@@ -34,6 +34,7 @@ from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, iso
 from glasswell.lengths import STORAGE_EPSG, resolve_length_method
 from glasswell.lineage.conformance import lease_reporting_rule
 from glasswell.lineage.envelope import Figure, figure
+from glasswell.lineage.explain import MAX_HANDLES
 from glasswell.marts.tiles import TILE_BUFFER, TILE_EXTENT, TILE_MAX_ZOOM, WEB_MERCATOR
 from glasswell.units import metres_to_feet
 
@@ -677,6 +678,20 @@ def _status_bbox(raw: str) -> tuple[float, float, float, float]:
     return minx, miny, maxx, maxy
 
 
+def _rendered_bbox(envelope: tuple[float, float, float, float], separator: str) -> str:
+    """The box, rendered so it names the box the query ran over — everywhere it identifies it.
+
+    `repr` is the shortest string that round-trips to the same float; `%g` is six significant
+    digits, which at a three-digit longitude is three decimals, about 76 m. Under `%g` two
+    viewports 0.0003 degrees apart collapsed to one echo and one derivation handle while
+    disagreeing on the count, and links.wells named a box that returned no rows under a
+    summary reporting one (gate-wss BLOCK-1). The selector charset (SB-07 §2.1) admits `.`,
+    `-`, `+` and `e`, so a repr is selector-safe; NaN and infinity never reach here because
+    the range guard rejects them first.
+    """
+    return separator.join(repr(value) for value in envelope)
+
+
 def _count(found: list[dict[str, Any]], *, selector: str) -> Figure | None:
     """Absent, not zero: a class the box does not contain has no count and no derivation."""
     if not found:
@@ -747,10 +762,35 @@ def _summary_labels(basins: list[dict[str, Any]]) -> dict[str, str]:
     }
 
 
+def _handles(node: Any) -> int:
+    """How many handles `links.explain` is being asked to carry, counted the way it counts."""
+    if isinstance(node, Figure):
+        return 1
+    if isinstance(node, dict):
+        return sum(_handles(value) for value in node.values())
+    if isinstance(node, list):
+        return sum(_handles(value) for value in node)
+    return 0
+
+
 def _summary_warnings(
-    counted: list[dict[str, Any]], *, orphans: int, states: list[str]
+    counted: list[dict[str, Any]], *, orphans: int, states: list[str], handles: int
 ) -> list[dict[str, Any]]:
     warnings: list[dict[str, Any]] = []
+    if handles > MAX_HANDLES:
+        warnings.append(
+            {
+                "code": "explain_link_truncated",
+                "detail": (
+                    f"This box produced {handles} counts and links.explain carries the first"
+                    f" {MAX_HANDLES} handles, so {handles - MAX_HANDLES} are absent from it."
+                    " Every count still resolves on its own: read the count's `d` and call"
+                    " /v1/explain?h=<d>&depth=full. The cap is /v1/explain's own"
+                    " (SB-07 §9.4), not this operation's."
+                ),
+                "pointer": "/basins",
+            }
+        )
     if orphans:
         subject, verb, pronoun = (
             ("geometry", "has", "it is") if orphans == 1 else ("geometries", "have", "they are")
@@ -814,6 +854,10 @@ def _summary_warnings(
         " published only where the box is inside the collection's own four-degree cap."
         " Every count is a figure with a derivation handle over the rows it counted, so a"
         " legend number resolves at /v1/explain to the government file the statuses came from."
+        " The box a handle names is the box the query ran over, at full precision — two"
+        " viewports a metre apart are two handles. Where a box produces more counts than"
+        " /v1/explain accepts handles in one call, `links.explain` carries as many as it can"
+        " and a warning says exactly how many it left out; each count still resolves alone."
         " A class no well in the box carries is absent rather than zero. Wells whose source"
         " reported no status are their own bucket, `unmapped_wells`, and are never added to a"
         " class — in the 2026-08-20 Texas load 65,685 wells are in it, which is more than any"
@@ -866,10 +910,8 @@ def get_well_status_summary(
     )
     counted = [row for row in found if not row["no_well_row"]]
     orphans = sum(row["wells"] for row in found if row["no_well_row"])
-    # `%g` normalises the echo so a client can match a late answer to the viewport it asked
-    # about; the selector form differs only in its separator, which may not be a comma.
-    box = ",".join(f"{value:g}" for value in envelope)
-    selector_box = ":".join(f"{value:g}" for value in envelope)
+    box = _rendered_bbox(envelope, ",")
+    selector_box = _rendered_bbox(envelope, ":")
     basins = _basins(counted, box=selector_box)
     unregistered = sorted(
         {
@@ -900,7 +942,9 @@ def get_well_status_summary(
         as_of=max((row["effective_from"] for row in counted), default=None),
         as_of_requested=iso(as_of) or "latest",
         labels=_summary_labels(basins),
-        warnings=_summary_warnings(counted, orphans=orphans, states=unregistered),
+        warnings=_summary_warnings(
+            counted, orphans=orphans, states=unregistered, handles=_handles(data)
+        ),
         links=links,
     )
 

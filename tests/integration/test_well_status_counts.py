@@ -15,12 +15,14 @@ from __future__ import annotations
 import json
 from datetime import date
 from typing import Any
+from urllib.parse import parse_qsl
 
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
 from glasswell.api.routers.wells import STATUS_SUMMARY_SQL
+from glasswell.lineage.explain import MAX_HANDLES
 from glasswell.seed import seed_all
 from tests.support.seed import seed_manifest, seed_well, seed_well_spatial
 
@@ -231,6 +233,98 @@ def test_every_count_addresses_itself_and_the_handles_are_distinct(
     assert "&status=active&" in next(
         row["wells"]["d"] for row in data["statuses"] if row["status"] == "active"
     )
+
+
+CLASSES = (
+    "active",
+    "drilling",
+    "confidential",
+    "permitted",
+    "inactive",
+    "temporarily_abandoned",
+    "service",
+    "plugged",
+    "dry",
+)
+
+
+@pytest.fixture
+def crowded(db: psycopg.Connection) -> psycopg.Connection:
+    """Two jurisdictions carrying every class plus an absence — 33 counts, over the cap."""
+    seed_all(db)
+    manifest = seed_manifest(db, sha256="d" * 64, source_id="nd_gis_wells")
+    for index, (state, basin) in enumerate((("33", "williston"), ("42", "permian"))):
+        for offset, status in enumerate((*CLASSES, None)):
+            api10 = f"{state}0530{index}{offset:03d}"
+            seed_well(
+                db,
+                api10=api10,
+                manifest_id=manifest,
+                state_code=state,
+                basin=basin,
+                status_canonical=status,
+            )
+            seed_well_spatial(
+                db,
+                api10=api10,
+                geom_type="surface",
+                wkt=f"POINT({-103.9 + offset * 0.01} {47.5 + index * 0.01})",
+                manifest_id=manifest,
+            )
+    db.commit()
+    return db
+
+
+def test_a_box_with_more_counts_than_explain_takes_says_how_many_it_left_out(
+    crowded: psycopg.Connection, api_client: TestClient
+) -> None:
+    """gate-wss MINOR-1: `links.explain` is capped at 20 handles by /v1/explain's own limit,
+    and a body of 33 counts was publishing 20 of them with no word about the other 13. The
+    pane rule is an exact count, never a silent ellipsis — so the response says the number,
+    and every count still resolves on its own `d`.
+    """
+    body = summary(api_client, WIDE)
+    warning = next(
+        item for item in body["meta"]["warnings"] if item["code"] == "explain_link_truncated"
+    )
+    carried = explain_handles(body["links"]["explain"])
+
+    assert len(carried) == MAX_HANDLES
+    assert warning["detail"].startswith(
+        f"This box produced 33 counts and links.explain carries the first {MAX_HANDLES}"
+        f" handles, so {33 - MAX_HANDLES} are absent from it."
+    )
+    omitted = sorted(handles(body["data"]) - set(carried))
+    assert len(omitted) == 33 - MAX_HANDLES
+    for handle in omitted:
+        resolved = api_client.get("/v1/explain", params={"h": handle, "depth": "full"})
+        assert resolved.status_code == 200, handle
+
+
+def test_a_body_inside_the_cap_says_nothing_about_truncation(
+    population: psycopg.Connection, api_client: TestClient
+) -> None:
+    codes = {item["code"] for item in summary(api_client, WIDE)["meta"]["warnings"]}
+
+    assert "explain_link_truncated" not in codes
+
+
+def explain_handles(link: str) -> list[str]:
+    return [value for key, value in parse_qsl(link.split("?", 1)[1]) if key == "h"]
+
+
+def handles(node: Any) -> set[str]:
+    """Every derivation handle in the body — the population links.explain draws from."""
+    found: set[str] = set()
+    if isinstance(node, dict):
+        if isinstance(node.get("d"), str):
+            found.add(node["d"])
+        for value in node.values():
+            found |= handles(value)
+    elif isinstance(node, list):
+        for value in node:
+            found |= handles(value)
+    return found
 
 
 def test_the_box_predicate_can_be_answered_from_the_geometry_index(

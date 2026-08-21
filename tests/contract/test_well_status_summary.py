@@ -24,15 +24,31 @@ SUMMARY = "/v1/wells/status-summary"
 # The published example: the seeded ND well's surface hole and its lateral. OTHER_API10S carry
 # no geometry at all, so they are in no viewport and in no count.
 ND_BOX = EXAMPLE_BBOX
+# What the box reads as once parsed and rendered back: the same four floats, shortest form.
+NORMALIZED_ND_BOX = "-104.0,47.5,-103.0,48.5"
 # Both jurisdictions: ND at 47.9N/103.6W and the TX well at 32.4N/102.8W.
 BOTH_BOX = "-105,30,-100,50"
 EMPTY_BOX = "-40,10,-39,11"
+# A box around the ND well whose corners need more than the six significant digits `%g`
+# renders. Every literal is already in shortest-round-trip form, so a correct echo is byte
+# equal to it; `%g` would publish `-103.58`, a line 76 m east that holds no well at all.
+LOSSY_BOX = "-103.5803217,47.9074998,-103.4,48.0"
+# The same viewport nudged by a ten-millionth of a degree — a different box with the same
+# answer, which must therefore be a different handle.
+NEIGHBOURING_LOSSY_BOX = "-103.5803218,47.9074998,-103.4,48.0"
+# The TX well sits exactly on this box's western edge. `%g` moves that edge 40 m east, which
+# puts the well outside the box the collection link names while the count still says 1.
+LOSSY_TX_BOX = "-102.7644756,32.35,-102.76,32.36"
 
 
 def summary(client: TestClient, bbox: str = ND_BOX, **params: Any) -> dict[str, Any]:
     response = client.get(SUMMARY, params={"bbox": bbox, **params})
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def corners(bbox: str) -> list[float]:
+    return [float(part) for part in bbox.split(",")]
 
 
 def test_the_summary_counts_the_wells_whose_geometry_is_in_the_box(client: TestClient) -> None:
@@ -56,10 +72,21 @@ def test_a_box_with_no_wells_reports_no_class_rather_than_a_zero(client: TestCli
 
 def test_a_well_on_the_boundary_is_inside_the_box(client: TestClient) -> None:
     """The box is closed: a surface hole exactly on the edge is in view, and a legend that
-    dropped it would disagree with the dot the map draws there."""
-    edge = summary(client, "-103.5803,47.9075,-103.4,48.0")["data"]
+    dropped it would disagree with the dot the map draws there.
 
-    assert edge["wells"]["value"] == "1"
+    The edge here is `maxx`, and the well's lateral runs east out of the box, so the only
+    thing holding the count up is the surface point sitting exactly on the boundary. The
+    earlier form of this test put the edge on the lateral's western end, where the whole
+    lateral stayed inside — an open box still contained it and the count never moved, so the
+    named boundary test survived the mutation that opened the box (gate-wss MINOR-2). The
+    second box below is one ten-thousandth of a degree short of the point, which is the same
+    assertion from the other side: on the line is in, west of it is out.
+    """
+    on_the_edge = summary(client, "-103.6,47.9,-103.5803,47.92")["data"]
+    just_short = summary(client, "-103.6,47.9,-103.58031,47.92")["data"]
+
+    assert on_the_edge["wells"]["value"] == "1"
+    assert just_short["wells"] is None
 
 
 def test_the_box_excludes_what_is_outside_it(client: TestClient) -> None:
@@ -108,16 +135,69 @@ def test_the_collection_link_is_offered_only_where_the_collection_can_answer(
     small = summary(client, ND_BOX)["links"]
     large = summary(client, BOTH_BOX)["links"]
 
-    assert small["wells"] == f"/v1/wells?bbox={ND_BOX}"
+    assert small["wells"] == f"/v1/wells?bbox={NORMALIZED_ND_BOX}"
     assert "wells" not in large
 
 
 def test_the_box_is_echoed_so_a_late_answer_can_be_matched_to_its_viewport(
     client: TestClient,
 ) -> None:
+    """The echo is the parsed box rendered back, not the caller's string: `-104` reads as
+    `-104.0`, and the floats it parses to are the floats the query ran with."""
     data = summary(client, ND_BOX)["data"]
 
-    assert data["bbox"] == ND_BOX
+    assert data["bbox"] == NORMALIZED_ND_BOX
+    assert corners(data["bbox"]) == corners(ND_BOX)
+
+
+def test_a_box_finer_than_six_significant_digits_is_echoed_as_asked(client: TestClient) -> None:
+    """gate-wss BLOCK-1. The echo was rendered with `%g` — six significant digits, which at a
+    three-digit longitude is three decimals, about 76 m. A viewport asking about
+    -103.5803217 was told the answer was about -103.58, a line the well is not on."""
+    data = summary(client, LOSSY_BOX)["data"]
+
+    assert data["bbox"] == LOSSY_BOX
+    assert corners(data["bbox"]) == corners(LOSSY_BOX)
+
+
+def test_the_handle_names_the_box_the_count_was_taken_over(client: TestClient) -> None:
+    """A handle that names a different box is a false provenance claim that resolves: worse
+    than a missing one. Every figure in the body has to name this box, not a rounding of it."""
+    data = summary(client, LOSSY_BOX)["data"]
+    selector = "bbox=-103.5803217:47.9074998:-103.4:48.0"
+
+    assert data["wells"]["value"] == "1"
+    assert data["wells"]["d"].endswith(selector)
+    assert data["unmapped_wells"] is None
+    for handle in sorted(handles(data)):
+        assert handle.endswith(selector), handle
+
+
+def test_two_viewports_a_metre_apart_are_two_handles(client: TestClient) -> None:
+    """The handle identifies the computation, not the answer: two boxes that agree on the
+    count still ran over different boxes, and `%g` collapsed them onto one address."""
+    near = summary(client, LOSSY_BOX)["data"]
+    nearer = summary(client, NEIGHBOURING_LOSSY_BOX)["data"]
+
+    assert near["wells"]["value"] == nearer["wells"]["value"] == "1"
+    assert near["bbox"] != nearer["bbox"]
+    assert near["wells"]["d"] != nearer["wells"]["d"]
+
+
+def test_following_the_collection_link_finds_the_wells_the_summary_counted(
+    client: TestClient,
+) -> None:
+    """The legend's click-through, over the Texas well because it is the fixture's only
+    point-without-a-lateral: the ND well's lateral has a bounding box wide enough that the
+    collection answers for it either way, which would make this assertion pass on a rounded
+    link and prove nothing. Under `%g` this link named a box 40 m west and returned no rows
+    under a summary reporting one (gate-wss BLOCK-1 evidence C)."""
+    body = summary(client, LOSSY_TX_BOX)
+    listed = client.get(body["links"]["wells"])
+
+    assert body["data"]["wells"]["value"] == "1"
+    assert listed.status_code == 200, listed.text
+    assert [row["api10"] for row in listed.json()["data"]] == [TX_API10]
 
 
 def test_every_count_carries_a_handle_that_resolves_to_a_manifest(client: TestClient) -> None:
@@ -173,7 +253,7 @@ def test_geometry_with_no_well_row_is_disclosed_and_never_counted_as_a_class(
     warnings = summary(client, BOTH_BOX, as_of="2019-01-01")["meta"]["warnings"]
 
     assert [item["code"] for item in warnings] == ["geometry_without_a_well_row"]
-    assert "2" in warnings[0]["detail"]
+    assert warnings[0]["detail"].startswith("2 geometries in this box have no well row")
 
 
 @pytest.mark.parametrize(
@@ -216,10 +296,15 @@ def test_a_whole_world_box_is_answered_rather_than_capped(client: TestClient) ->
 
 def test_a_zero_area_box_is_a_box(client: TestClient) -> None:
     """Degenerate, not malformed: a viewport can collapse, and the honest answer is what sits
-    on that line — here, the seeded surface hole."""
-    data = summary(client, "-103.5803,47.9075,-103.5803,47.9075")["data"]
+    on that point — here, the seeded surface hole. The echo and the handle have to name that
+    point too: under `%g` this test read `wells: 1` while its handle named `-103.58`, a
+    location holding nothing (gate-wss BLOCK-1 evidence A)."""
+    point = "-103.5803,47.9075,-103.5803,47.9075"
+    data = summary(client, point)["data"]
 
     assert data["wells"]["value"] == "1"
+    assert data["bbox"] == point
+    assert data["wells"]["d"].endswith("bbox=-103.5803:47.9075:-103.5803:47.9075")
 
 
 def test_the_summary_says_which_glossary_term_its_classes_belong_to(client: TestClient) -> None:
