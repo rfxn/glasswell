@@ -12,6 +12,7 @@ ANVIL_ENV      := DOCKER_HOST=$(ANVIL_HOST) DOCKER_TLS_VERIFY=1 DOCKER_CERT_PATH
 TEST_LABEL ?= glasswell.test
 
 .PHONY: help venv install test test-anvil test-local test-unit test-integration test-e2e \
+        dbtier-preflight \
         lint fmt clean prune-test-volumes check-workstation snapshot
 
 help:
@@ -20,6 +21,7 @@ help:
 	@echo "test              full suite against whichever daemon is configured"
 	@echo "test-anvil        full suite on anvil — the default for a full run (DIR-14)"
 	@echo "test-local        full suite on this workstation's daemon"
+	@echo "dbtier-preflight  check a remote daemon's path can carry the database tiers"
 	@echo "test-unit         pure-function tier, no docker required"
 	@echo "test-integration  ephemeral PostGIS tier"
 	@echo "test-e2e          browser path against \$$GLASSWELL_BASE_URL (needs a key)"
@@ -40,9 +42,13 @@ test: prune-test-volumes
 	$(PY) -m pytest tests -q
 
 # The suite reaches a remote daemon through published ports rather than the bridge network;
-# tests/conftest.py:daemon_address is where that branch is taken.
-test-anvil:
+# tests/conftest.py:daemon_address is where that branch is taken. The preflight goes first
+# because a reachable daemon says nothing about whether the path can carry a bulk transfer.
+test-anvil: dbtier-preflight
 	@$(ANVIL_ENV) $(MAKE) --no-print-directory test
+
+dbtier-preflight:
+	@$(ANVIL_ENV) $(PY) -m tests.support.dbtier_preflight
 
 test-local: test
 

@@ -60,6 +60,20 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
                 item.add_marker(getattr(pytest.mark, tier))
 
 
+def pytest_exception_interact(node, call, report) -> None:
+    """Stop the run the first time the path to a remote daemon stalls.
+
+    The stall lands in a session-scoped fixture, whose exception pytest caches and re-raises for
+    every test that requests it, so carrying on reports the same fault a thousand times.
+    """
+    from tests.support.dbtier_preflight import stop_reason
+
+    reason = stop_reason(call.excinfo.value, os.environ)
+    session = getattr(node, "session", None)
+    if reason is not None and session is not None and not session.shouldstop:
+        session.shouldstop = reason
+
+
 def daemon_address(environment: Mapping[str, str]) -> str | None:
     """The host a published container port answers on, or None when the daemon is local.
 
