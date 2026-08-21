@@ -38,7 +38,9 @@ jobs:
           tests/integration/test_tile_wire_types.py::test_the_martin_config_and_the_allowlist_declare_the_same_property_types
 
       # The integration and contract tiers start their own PostGIS container through the
-      # docker CLI and reach it on the bridge IP, so no `services:` block applies here.
+      # docker CLI, so no `services:` block applies here. The runner's daemon is local, so the
+      # harness reaches it on the bridge IP; a remote daemon (anvil, `make test-anvil`) gets a
+      # published port instead.
       # GLASSWELL_REQUIRE_DOCKER turns a missing daemon into a failure, not a silent skip.
       - name: pytest
         env:

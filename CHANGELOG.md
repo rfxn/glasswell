@@ -152,6 +152,39 @@ its own version in its header, and its history is summarised in §3.1.
       and `verify.sh` to one socket path and to the `*` allow-list, since each file is
       individually valid when they disagree and the symptom is a 502
 
+### 2026-08-21 — DIR-14: the suite runs on the CI host, not the workstation
+
+- [Change] The integration harness supports a remote docker daemon. A container's bridge IP
+         is routable only from the daemon's own host, so `tests/conftest.py:daemon_address`
+         decides once: a local daemon keeps the bridge address, a remote one publishes the
+         database port and is addressed by the daemon's own hostname. Containers a test
+         starts keep using the bridge address either way — `database_address_for_containers`
+         is that address, and the martin test now takes its DSN from it rather than from the
+         client's connection parameters
+- [Change] The martin test copies its config in with `docker cp` instead of bind-mounting
+         `tmp_path`, which a remote daemon cannot see, and reaches the server on a published
+         port when the daemon is remote
+- [Change] The session database's password is per-session rather than the fixed pair, since
+         a remote daemon means a LAN-reachable port; `postgres_password` hands it to the two
+         marts CLI tests, which reconnect from a `ConnectionInfo.dsn` that never carries one
+- [Change] The session DSN carries keepalives and `tcp_user_timeout=30000`. A LAN loss burst
+         backed one connection off to a 107-second RTO and hung a 25-minute run; the same
+         fault now fails the test that hit it. They fire on unacknowledged data, so a slow
+         query is unaffected
+- [Change] An explicit `DOCKER_HOST` is now the only candidate the probe tries — a
+         `make test-anvil` that silently fell back to the workstation would report a full
+         suite against a host it never ran on
+- [New] `make test-anvil` runs the full suite on the lab CI host, which is where full suites
+      belong; `make test-local` is the same suite on this machine's daemon, for iteration
+- [New] `make check-workstation` (`scripts/workstation-hygiene.sh`) fails on glasswell state
+      that has no business on a workstation: installed units, cron entries, routable
+      listeners, dev servers left running, unswept test volumes, regulator downloads outside
+      the raw zone, and basemap extracts. Read-only — it reclaims nothing itself
+- [New] The harness asserts which branch it took: one test that the session container
+      publishes a port exactly when the daemon is remote, one that the client DSN and the
+      container DSN agree about locality, and unit coverage of `daemon_address` across
+      socket, loopback and remote endpoints
+
 ### 2026-08-20 — D1 phase 1: New Mexico's production spine, pulled and stamped
 
 - [New] `lineage/ftp.py` and an `ftp_anon` transport inside `fetch_raw`: anonymous FTP to

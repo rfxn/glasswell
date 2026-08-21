@@ -289,8 +289,10 @@ def test_the_function_sources_carry_the_signature_martin_discovers(canonical_nd,
         assert (volatility, parallel) == ("s", "s")
 
 
-def test_the_cli_refreshes_the_database_p7_points_it_at(canonical_nd, monkeypatch, capsys):
-    monkeypatch.setenv("PGPASSWORD", "glasswell")
+def test_the_cli_refreshes_the_database_p7_points_it_at(
+    canonical_nd, postgres_password, monkeypatch, capsys
+):
+    monkeypatch.setenv("PGPASSWORD", postgres_password)
     assert main(["--dsn", canonical_nd.info.dsn, "--env-id", "env_p5_cli"]) == 0
     report = json.loads(capsys.readouterr().out)
     assert report["row_counts"]["nd_laterals_tile"] > 0
@@ -304,9 +306,11 @@ def test_the_cli_refreshes_the_database_p7_points_it_at(canonical_nd, monkeypatc
     )
 
 
-def test_the_cli_pins_the_lockfile_the_ingest_unit_exports(canonical_nd, monkeypatch, capsys):
+def test_the_cli_pins_the_lockfile_the_ingest_unit_exports(
+    canonical_nd, postgres_password, monkeypatch, capsys
+):
     """M-4: the refresh is one of the two paths that used to stamp an unpinned `env_cli`."""
-    monkeypatch.setenv("PGPASSWORD", "glasswell")
+    monkeypatch.setenv("PGPASSWORD", postgres_password)
     monkeypatch.setenv(LOCKFILE_SHA256_ENV, "7c" * 32)
 
     assert main(["--dsn", canonical_nd.info.dsn]) == 0
