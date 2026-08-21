@@ -26,6 +26,7 @@ from glasswell.api.examples import (
     EXAMPLE_VINTAGE_ID,
     VINTAGE_ID_NOTE,
     dataset,
+    not_a_figure,
     request_example,
 )
 from glasswell.api.pagination import (
@@ -124,7 +125,10 @@ class ChainEdge(BaseModel):
 class Chain(BaseModel):
     handle: str = Field(description="The handle that was resolved.")
     root: str = Field(description="Derivation the handle addresses.")
-    depth: int = Field(description="Levels walked from the root.")
+    depth: int = Field(
+        description="Levels walked from the root.",
+        json_schema_extra=not_a_figure("Graph depth of the resolved chain, not data."),
+    )
     truncated: bool = Field(description="True when the walk stopped before the terminals.")
     as_of_vintage: date | None = Field(description="Knowledge time of the root derivation.")
     nodes: list[ChainNode] = Field(description="Every node reached, root first.")
@@ -143,12 +147,20 @@ class DerivationOutput(BaseModel):
     dataset: str = Field(description="Dataset the derivation produced.")
     partition: dict[str, str] = Field(description="Partition keys of the output.")
     sha256: str | None = Field(description="Hash of the output artifact, where taken.")
-    rows: int | None = Field(description="Rows written.")
+    rows: int | None = Field(
+        description="Rows written.",
+        json_schema_extra=not_a_figure(
+            "Row count a derivation recorded when it wrote its output."
+        ),
+    )
     locator: str = Field(description="Where the artifact lives, when it is a file.")
 
 
 class DerivationInput(BaseModel):
-    ord: int = Field(description="Ordinal position of the input.")
+    ord: int = Field(
+        description="Ordinal position of the input.",
+        json_schema_extra=not_a_figure("Ordinal position of a derivation input."),
+    )
     kind: str = Field(description="derivation, manifest, rule, model or external.")
     ref_id: str = Field(description="Id of the referenced object.")
     selector: str | None = Field(description="Selector narrowing the input.")
@@ -158,7 +170,12 @@ class DerivationInput(BaseModel):
 
 class DerivationRule(BaseModel):
     rule_id: str = Field(description="Conformance rule cited by this derivation.")
-    applied_rows: int | None = Field(description="Rows the rule touched.")
+    applied_rows: int | None = Field(
+        description="Rows the rule touched.",
+        json_schema_extra=not_a_figure(
+            "How many rows a conformance rule touched during that derivation."
+        ),
+    )
     rule_kind: str | None = Field(description="Kind of the cited rule.")
     rule_family: str | None = Field(description="Family the rule belongs to.")
 
@@ -176,7 +193,10 @@ class Derivation(BaseModel):
     recipe_id: str | None = Field(description="Recipe, where one was recorded.")
     created_vintage: date | None = Field(description="Knowledge time, not wall clock.")
     created_at: datetime = Field(description="When the derivation ran.")
-    duration_ms: int = Field(description="How long it took.")
+    duration_ms: int = Field(
+        description="How long it took.",
+        json_schema_extra=not_a_figure("Wall-clock cost of the recorded derivation."),
+    )
     correlation_id: str = Field(description="Run correlation id.")
     status: str = Field(description="ok or failed.")
     determinism_class: str = Field(description="D1, D2 or D3.")
@@ -193,7 +213,12 @@ class Manifest(BaseModel):
     source_id: str = Field(description="Source registry id.")
     source_key: str = Field(description="Key of the artifact within the source.")
     sha256: str = Field(description="Hash of the bytes as fetched.")
-    bytes: int = Field(description="Byte length of the artifact.")
+    bytes: int = Field(
+        description="Byte length of the artifact.",
+        json_schema_extra=not_a_figure(
+            "Byte length of the fetched artifact, recorded on the manifest."
+        ),
+    )
     acquisition_url: str = Field(description="Exact URL the bytes came from.")
     acquisition_method: str = Field(description="How it was acquired.")
     fetched_at: datetime = Field(description="When it was fetched.")
@@ -217,8 +242,18 @@ class Vintage(BaseModel):
     manifest_ids: list[str] = Field(description="Manifests the promotion read.")
     opened_at: datetime = Field(description="When the vintage was opened.")
     promotion_derivation_id: str | None = Field(description="Derivation that promoted it.")
-    rows_examined: int = Field(description="Rows read during the promotion.")
-    rows_appended: int = Field(description="Rows appended; a restatement appends (DIR-2).")
+    rows_examined: int = Field(
+        description="Rows read during the promotion.",
+        json_schema_extra=not_a_figure(
+            "Promotion bookkeeping on a vintage record, not a served observation."
+        ),
+    )
+    rows_appended: int = Field(
+        description="Rows appended; a restatement appends (DIR-2).",
+        json_schema_extra=not_a_figure(
+            "Promotion bookkeeping on a vintage record, not a served observation."
+        ),
+    )
     months_touched: list[str] = Field(description="Production months the promotion covered.")
     restatement_summary: dict[str, Any] = Field(
         description="Per-reason counts of values this vintage restated."
@@ -230,7 +265,13 @@ class DerivationSummary(BaseModel):
     operation: str = Field(description="Operation that ran.")
     output_store: str = Field(description="Where the output was written.")
     output_dataset: str = Field(description="Dataset it produced.")
-    output_rows: int | None = Field(description="Rows written.")
+    output_rows: int | None = Field(
+        description="Rows written.",
+        json_schema_extra=not_a_figure(
+            "Rows a derivation recorded when it wrote its output, in the derivation"
+            " collection. Same class as /output/rows on the expanded record."
+        ),
+    )
     code_version: str = Field(description="Code version that produced it.")
     created_vintage: date | None = Field(description="Knowledge time, not wall clock.")
     created_at: datetime = Field(description="When the derivation ran.")

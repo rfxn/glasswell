@@ -12,7 +12,13 @@ from starlette.responses import JSONResponse
 
 from glasswell.api.deps import AsOf, Connection, Cursor, WellsLimit, rows
 from glasswell.api.errors import ProblemError, problem_responses
-from glasswell.api.examples import EXAMPLE_API10, GLOSSARY_KEY, dataset, request_example
+from glasswell.api.examples import (
+    EXAMPLE_API10,
+    GLOSSARY_KEY,
+    dataset,
+    not_a_figure,
+    request_example,
+)
 from glasswell.api.pagination import (
     DEFAULT_LIMIT,
     decode_cursor,
@@ -103,8 +109,13 @@ select reason_code, rule_id, count(*) as rows,
 
 
 class WellSummary(BaseModel):
-    api10: str = Field(description="Ten-digit API well number.", json_schema_extra={
-        GLOSSARY_KEY: "gt_api_10_api_12_api_14"})
+    api10: str = Field(
+        description="Ten-digit API well number.",
+        json_schema_extra={
+            GLOSSARY_KEY: "gt_api_10_api_12_api_14",
+            **not_a_figure("Identifier, in a collection item."),
+        },
+    )
     well_name: str | None = Field(description="Well name as reported by the operator.")
     operator_name_reported: str | None = Field(description="Operator name exactly as reported.")
     status_canonical: str | None = Field(
@@ -114,7 +125,10 @@ class WellSummary(BaseModel):
             " no status at all, which is not the same as an unknown one."
         )
     )
-    county_code_at_permit: str | None = Field(description="County code recorded at permit.")
+    county_code_at_permit: str | None = Field(
+        description="County code recorded at permit.",
+        json_schema_extra=not_a_figure("County code, in a collection item."),
+    )
     land_unit_label: str | None = Field(description="PLSS land unit label.", json_schema_extra={
         GLOSSARY_KEY: "gt_land_unit"})
     spud_date: date | None = Field(description="Spud date as reported.")
@@ -133,18 +147,62 @@ class Geometry(BaseModel):
 
 
 class SurfacePoint(BaseModel):
-    lon: float = Field(description="Longitude in the storage CRS (EPSG:4326).")
-    lat: float = Field(description="Latitude in the storage CRS (EPSG:4326).")
+    lon: float = Field(
+        description="Longitude in the storage CRS (EPSG:4326).",
+        json_schema_extra=not_a_figure(
+            "Geometry, not a figure. Storage CRS is EPSG:4326 and is stated alongside."
+        ),
+    )
+    lat: float = Field(
+        description="Latitude in the storage CRS (EPSG:4326).",
+        json_schema_extra=not_a_figure(
+            "Geometry, not a figure. Storage CRS is EPSG:4326 and is stated alongside."
+        ),
+    )
 
 
 class WellDetail(WellSummary):
-    api14: str | None = Field(description="Fourteen-digit API number where known.")
-    state_code: str | None = Field(description="State code as reported.")
-    ndic_file_no: str | None = Field(description="NDIC file number for the well.")
+    # api10 and county_code_at_permit are redeclared, not inherited: the record and the
+    # collection item are exempted by different allowlist entries, and an inherited Field
+    # would publish the collection item's cross-reference on the record too.
+    api10: str = Field(
+        description="Ten-digit API well number.",
+        json_schema_extra={
+            GLOSSARY_KEY: "gt_api_10_api_12_api_14",
+            **not_a_figure(
+                "Identifier. A 10-digit API number is an identity string, not a measurement."
+            ),
+        },
+    )
+    county_code_at_permit: str | None = Field(
+        description="County code recorded at permit.",
+        json_schema_extra=not_a_figure(
+            "County code as reported at permit; an identifier, not a quantity."
+        ),
+    )
+    api14: str | None = Field(
+        description="Fourteen-digit API number where known.",
+        json_schema_extra=not_a_figure("Identifier. The completion-level API number."),
+    )
+    state_code: str | None = Field(
+        description="State code as reported.",
+        json_schema_extra=not_a_figure(
+            "FIPS-style state code carried as reported; an identifier, not a quantity."
+        ),
+    )
+    ndic_file_no: str | None = Field(
+        description="NDIC file number for the well.",
+        json_schema_extra=not_a_figure(
+            "The NDIC file number is the regulator's identifier for the well."
+        ),
+    )
     status_reported: str | None = Field(description="Status code exactly as the source wrote it.")
     well_type_reported: str | None = Field(description="Well type exactly as reported.")
     basin: str | None = Field(description="Basin the well is assigned to.")
-    lateral_count: int = Field(description="Lateral geometries recorded for this well.")
+    lateral_count: int = Field(
+        description="Lateral geometries recorded for this well.",
+        json_schema_extra=not_a_figure("A count of geometry rows, not a measured quantity."),
+    )
     lateral_length_ft: FigureModel | None = Field(
         description="Total lateral length, projected into the basin compute CRS.",
         json_schema_extra={GLOSSARY_KEY: "gt_wellbore"},

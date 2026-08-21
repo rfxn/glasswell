@@ -13,7 +13,8 @@
               }
             ],
             "description": "Rows the rule touched in that derivation.",
-            "title": "Applied Rows"
+            "title": "Applied Rows",
+            "x-glasswell-not-a-figure": "Reverse index of rows touched, per citing derivation."
           },
           "created_vintage": {
             "anyOf": [
@@ -100,7 +101,8 @@
           "depth": {
             "description": "Levels walked from the root.",
             "title": "Depth",
-            "type": "integer"
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Graph depth of the resolved chain, not data."
           },
           "edges": {
             "description": "Edges between the nodes.",
@@ -613,7 +615,8 @@
           "duration_ms": {
             "description": "How long it took.",
             "title": "Duration Ms",
-            "type": "integer"
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Wall-clock cost of the recorded derivation."
           },
           "env_id": {
             "description": "Pinned environment id.",
@@ -744,7 +747,8 @@
           "ord": {
             "description": "Ordinal position of the input.",
             "title": "Ord",
-            "type": "integer"
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Ordinal position of a derivation input."
           },
           "ref_id": {
             "description": "Id of the referenced object.",
@@ -810,7 +814,8 @@
               }
             ],
             "description": "Rows written.",
-            "title": "Rows"
+            "title": "Rows",
+            "x-glasswell-not-a-figure": "Row count a derivation recorded when it wrote its output."
           },
           "sha256": {
             "anyOf": [
@@ -853,7 +858,8 @@
               }
             ],
             "description": "Rows the rule touched.",
-            "title": "Applied Rows"
+            "title": "Applied Rows",
+            "x-glasswell-not-a-figure": "How many rows a conformance rule touched during that derivation."
           },
           "rule_family": {
             "anyOf": [
@@ -962,7 +968,8 @@
               }
             ],
             "description": "Rows written.",
-            "title": "Output Rows"
+            "title": "Output Rows",
+            "x-glasswell-not-a-figure": "Rows a derivation recorded when it wrote its output, in the derivation collection. Same class as /output/rows on the expanded record."
           },
           "output_store": {
             "description": "Where the output was written.",
@@ -1551,7 +1558,8 @@
           "status": {
             "description": "HTTP status this code is served with.",
             "title": "Status",
-            "type": "integer"
+            "type": "integer",
+            "x-glasswell-not-a-figure": "An HTTP status code in the error index."
           },
           "title": {
             "description": "Short summary of the failure.",
@@ -1594,7 +1602,8 @@
           "status": {
             "description": "HTTP status this code is served with.",
             "title": "Status",
-            "type": "integer"
+            "type": "integer",
+            "x-glasswell-not-a-figure": "An HTTP status code on the error-type description."
           },
           "title": {
             "description": "Short summary of the failure.",
@@ -1954,7 +1963,8 @@
           "n_words": {
             "description": "Word count, so the client builds its trie in one pass.",
             "title": "N Words",
-            "type": "integer"
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Token count the highlighter uses to build its trie (SB-04 \u00a76.2)."
           },
           "surface": {
             "description": "Lower-cased surface form to match on.",
@@ -2308,7 +2318,8 @@
           "bytes": {
             "description": "Byte length of the artifact.",
             "title": "Bytes",
-            "type": "integer"
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Byte length of the fetched artifact, recorded on the manifest."
           },
           "decompressed_inventory": {
             "description": "Members of an archive.",
@@ -2646,7 +2657,8 @@
           "api10": {
             "description": "Ten-digit API well number.",
             "title": "Api10",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-not-a-figure": "Identifier. A 10-digit API number is an identity string, not a measurement."
           },
           "granularity": {
             "description": "well_observed for ND regulator reports; never silently allocated.",
@@ -2728,7 +2740,8 @@
           "api10": {
             "description": "Ten-digit API well number.",
             "title": "Api10",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-not-a-figure": "Identifier. A 10-digit API number is an identity string, not a measurement."
           },
           "granularity": {
             "description": "well_observed; a pool filing is an observation, not an allocation.",
@@ -3041,12 +3054,14 @@
           "rows_appended": {
             "description": "Rows appended; restatements append, never update.",
             "title": "Rows Appended",
-            "type": "integer"
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Promotion bookkeeping from lineage.vintages, not a served observation."
           },
           "rows_examined": {
             "description": "Rows read during the promotion.",
             "title": "Rows Examined",
-            "type": "integer"
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Promotion bookkeeping from lineage.vintages, not a served observation."
           },
           "source_id": {
             "description": "Source the vintage was promoted from.",
@@ -3108,7 +3123,8 @@
           "occurrence_count": {
             "description": "How many fetches have re-presented it.",
             "title": "Occurrence Count",
-            "type": "integer"
+            "type": "integer",
+            "x-glasswell-not-a-figure": "How many fetches re-presented this rejected row (SB-07 \u00a78.1)."
           },
           "quarantine_id": {
             "description": "Stable id of the quarantined row.",
@@ -3264,7 +3280,8 @@
           "occurrence_count": {
             "description": "How many fetches have re-presented it.",
             "title": "Occurrence Count",
-            "type": "integer"
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Occurrence counter, in a collection item."
           },
           "quarantine_id": {
             "description": "Stable id of the quarantined row.",
@@ -3392,7 +3409,8 @@
           "total": {
             "description": "Rows matching the filters.",
             "title": "Total",
-            "type": "integer"
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Row count of the quarantine population being summarised."
           }
         },
         "required": [
@@ -3474,7 +3492,8 @@
           "manifest_count": {
             "description": "Manifests registered for this source.",
             "title": "Manifest Count",
-            "type": "integer"
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Count of registered manifests per source on the health page."
           },
           "name": {
             "description": "Human-readable source name.",
@@ -3521,7 +3540,8 @@
           "count": {
             "description": "Rows in this group.",
             "title": "Count",
-            "type": "integer"
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Row count per group."
           },
           "key": {
             "description": "Group key: a reason code or a stage.",
@@ -3531,7 +3551,8 @@
           "share": {
             "description": "Group count over the filtered total.",
             "title": "Share",
-            "type": "number"
+            "type": "number",
+            "x-glasswell-not-a-figure": "Count divided by count; it carries no unit and no vintage."
           }
         },
         "required": [
@@ -3547,12 +3568,14 @@
           "lat": {
             "description": "Latitude in the storage CRS (EPSG:4326).",
             "title": "Lat",
-            "type": "number"
+            "type": "number",
+            "x-glasswell-not-a-figure": "Geometry, not a figure. Storage CRS is EPSG:4326 and is stated alongside."
           },
           "lon": {
             "description": "Longitude in the storage CRS (EPSG:4326).",
             "title": "Lon",
-            "type": "number"
+            "type": "number",
+            "x-glasswell-not-a-figure": "Geometry, not a figure. Storage CRS is EPSG:4326 and is stated alongside."
           }
         },
         "required": [
@@ -3667,12 +3690,14 @@
           "rows_appended": {
             "description": "Rows appended; a restatement appends (DIR-2).",
             "title": "Rows Appended",
-            "type": "integer"
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Promotion bookkeeping on a vintage record, not a served observation."
           },
           "rows_examined": {
             "description": "Rows read during the promotion.",
             "title": "Rows Examined",
-            "type": "integer"
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Promotion bookkeeping on a vintage record, not a served observation."
           },
           "source_id": {
             "description": "Source the vintage was promoted from.",
@@ -3712,7 +3737,8 @@
             "description": "Ten-digit API well number.",
             "title": "Api10",
             "type": "string",
-            "x-glasswell-glossary": "gt_api_10_api_12_api_14"
+            "x-glasswell-glossary": "gt_api_10_api_12_api_14",
+            "x-glasswell-not-a-figure": "Identifier. A 10-digit API number is an identity string, not a measurement."
           },
           "api14": {
             "anyOf": [
@@ -3724,7 +3750,8 @@
               }
             ],
             "description": "Fourteen-digit API number where known.",
-            "title": "Api14"
+            "title": "Api14",
+            "x-glasswell-not-a-figure": "Identifier. The completion-level API number."
           },
           "basin": {
             "anyOf": [
@@ -3780,7 +3807,8 @@
               }
             ],
             "description": "County code recorded at permit.",
-            "title": "County Code At Permit"
+            "title": "County Code At Permit",
+            "x-glasswell-not-a-figure": "County code as reported at permit; an identifier, not a quantity."
           },
           "effective_from": {
             "description": "Effective date of this well row (M13).",
@@ -3813,7 +3841,8 @@
           "lateral_count": {
             "description": "Lateral geometries recorded for this well.",
             "title": "Lateral Count",
-            "type": "integer"
+            "type": "integer",
+            "x-glasswell-not-a-figure": "A count of geometry rows, not a measured quantity."
           },
           "lateral_length_ft": {
             "anyOf": [
@@ -3851,7 +3880,8 @@
               }
             ],
             "description": "NDIC file number for the well.",
-            "title": "Ndic File No"
+            "title": "Ndic File No",
+            "x-glasswell-not-a-figure": "The NDIC file number is the regulator's identifier for the well."
           },
           "operator_name_reported": {
             "anyOf": [
@@ -3888,7 +3918,8 @@
               }
             ],
             "description": "State code as reported.",
-            "title": "State Code"
+            "title": "State Code",
+            "x-glasswell-not-a-figure": "FIPS-style state code carried as reported; an identifier, not a quantity."
           },
           "status_canonical": {
             "anyOf": [
@@ -4003,7 +4034,8 @@
             "description": "Ten-digit API well number.",
             "title": "Api10",
             "type": "string",
-            "x-glasswell-glossary": "gt_api_10_api_12_api_14"
+            "x-glasswell-glossary": "gt_api_10_api_12_api_14",
+            "x-glasswell-not-a-figure": "Identifier, in a collection item."
           },
           "confidential_flag": {
             "description": "Whether the regulator withholds this well.",
@@ -4021,7 +4053,8 @@
               }
             ],
             "description": "County code recorded at permit.",
-            "title": "County Code At Permit"
+            "title": "County Code At Permit",
+            "x-glasswell-not-a-figure": "County code, in a collection item."
           },
           "effective_from": {
             "description": "Effective date of this well row (M13).",

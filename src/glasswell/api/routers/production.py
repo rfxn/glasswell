@@ -14,7 +14,13 @@ from starlette.responses import JSONResponse
 
 from glasswell.api.deps import AsOf, Connection, rows, today
 from glasswell.api.errors import ProblemError, problem_responses
-from glasswell.api.examples import EXAMPLE_API10, GLOSSARY_KEY, dataset, request_example
+from glasswell.api.examples import (
+    EXAMPLE_API10,
+    GLOSSARY_KEY,
+    dataset,
+    not_a_figure,
+    request_example,
+)
 from glasswell.api.responses import EnvelopeModel, enveloped, freshness_state, iso, month_label
 from glasswell.api.routers.wells import API10_PATTERN, RANKED_WELLS, pending_allocation
 from glasswell.lineage.conformance import lease_reporting_rule
@@ -145,7 +151,12 @@ class ProductionSeries(BaseModel):
 class Production(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    api10: str = Field(description="Ten-digit API well number.")
+    api10: str = Field(
+        description="Ten-digit API well number.",
+        json_schema_extra=not_a_figure(
+            "Identifier. A 10-digit API number is an identity string, not a measurement."
+        ),
+    )
     source_id: str | None = Field(description="Source the series was promoted from.")
     granularity: str = Field(
         description="well_observed for ND regulator reports; never silently allocated.",
@@ -405,7 +416,12 @@ class PoolProduction(BaseModel):
 class ProductionPools(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    api10: str = Field(description="Ten-digit API well number.")
+    api10: str = Field(
+        description="Ten-digit API well number.",
+        json_schema_extra=not_a_figure(
+            "Identifier. A 10-digit API number is an identity string, not a measurement."
+        ),
+    )
     granularity: str = Field(
         description="well_observed; a pool filing is an observation, not an allocation.",
         json_schema_extra={GLOSSARY_KEY: "gt_granularity"},

@@ -11,7 +11,13 @@ from starlette.responses import JSONResponse
 
 from glasswell.api.deps import Connection, Cursor, SpineLimit, rows
 from glasswell.api.errors import ProblemError, problem_responses
-from glasswell.api.examples import EXAMPLE_RULE_ID, GLOSSARY_KEY, dataset, request_example
+from glasswell.api.examples import (
+    EXAMPLE_RULE_ID,
+    GLOSSARY_KEY,
+    dataset,
+    not_a_figure,
+    request_example,
+)
 from glasswell.api.pagination import (
     DEFAULT_LIMIT,
     decode_cursor,
@@ -70,7 +76,12 @@ class ConformanceRule(BaseModel):
 
 class AppliedBy(BaseModel):
     derivation_id: str = Field(description="Derivation that cited this rule.")
-    applied_rows: int | None = Field(description="Rows the rule touched in that derivation.")
+    applied_rows: int | None = Field(
+        description="Rows the rule touched in that derivation.",
+        json_schema_extra=not_a_figure(
+            "Reverse index of rows touched, per citing derivation."
+        ),
+    )
     operation: str = Field(description="Operation of the citing derivation.")
     output_dataset: str = Field(description="Dataset the citing derivation produced.")
     created_vintage: date | None = Field(description="Knowledge time of that derivation.")

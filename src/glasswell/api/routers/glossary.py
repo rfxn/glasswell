@@ -11,7 +11,7 @@ from starlette.responses import JSONResponse
 
 from glasswell.api.deps import Connection, Cursor, SpineLimit, rows
 from glasswell.api.errors import ProblemError, problem_responses
-from glasswell.api.examples import EXAMPLE_TERM_ID, dataset, request_example
+from glasswell.api.examples import EXAMPLE_TERM_ID, dataset, not_a_figure, request_example
 from glasswell.api.pagination import (
     DEFAULT_LIMIT,
     decode_cursor,
@@ -92,7 +92,12 @@ class GlossaryTermDetail(GlossaryTerm):
 class IndexEntry(BaseModel):
     surface: str = Field(description="Lower-cased surface form to match on.")
     term_id: str = Field(description="Term the surface form resolves to.")
-    n_words: int = Field(description="Word count, so the client builds its trie in one pass.")
+    n_words: int = Field(
+        description="Word count, so the client builds its trie in one pass.",
+        json_schema_extra=not_a_figure(
+            "Token count the highlighter uses to build its trie (SB-04 §6.2)."
+        ),
+    )
 
 
 class GlossaryIndex(BaseModel):

@@ -16,6 +16,7 @@ from glasswell.api.examples import (
     EXAMPLE_QUARANTINE_ID,
     GLOSSARY_KEY,
     dataset,
+    not_a_figure,
     request_example,
 )
 from glasswell.api.pagination import (
@@ -75,7 +76,10 @@ class QuarantineRow(BaseModel):
     first_seen_manifest_id: str = Field(description="Manifest it was first seen in.")
     last_seen_at: datetime = Field(description="When it was last re-presented.")
     last_seen_manifest_id: str = Field(description="Manifest it was last seen in.")
-    occurrence_count: int = Field(description="How many fetches have re-presented it.")
+    occurrence_count: int = Field(
+        description="How many fetches have re-presented it.",
+        json_schema_extra=not_a_figure("Occurrence counter, in a collection item."),
+    )
     state: str = Field(description="open, released, accepted_loss or superseded.")
     released_by_rule_id: str | None = Field(description="Rule that released it, if any.")
     released_at: datetime | None = Field(description="When it was released.")
@@ -84,6 +88,14 @@ class QuarantineRow(BaseModel):
 
 
 class QuarantineDetail(QuarantineRow):
+    # Redeclared, not inherited: the record and the collection item are exempted by different
+    # allowlist entries, and one Field can only publish one reason.
+    occurrence_count: int = Field(
+        description="How many fetches have re-presented it.",
+        json_schema_extra=not_a_figure(
+            "How many fetches re-presented this rejected row (SB-07 §8.1)."
+        ),
+    )
     row_payload: dict[str, Any] = Field(
         description="The rejected source row, verbatim. It is evidence, not a served figure."
     )
@@ -91,12 +103,25 @@ class QuarantineDetail(QuarantineRow):
 
 class SummaryGroup(BaseModel):
     key: str = Field(description="Group key: a reason code or a stage.")
-    count: int = Field(description="Rows in this group.")
-    share: float = Field(description="Group count over the filtered total.")
+    count: int = Field(
+        description="Rows in this group.",
+        json_schema_extra=not_a_figure("Row count per group."),
+    )
+    share: float = Field(
+        description="Group count over the filtered total.",
+        json_schema_extra=not_a_figure(
+            "Count divided by count; it carries no unit and no vintage."
+        ),
+    )
 
 
 class QuarantineSummary(BaseModel):
-    total: int = Field(description="Rows matching the filters.")
+    total: int = Field(
+        description="Rows matching the filters.",
+        json_schema_extra=not_a_figure(
+            "Row count of the quarantine population being summarised."
+        ),
+    )
     group_by: str = Field(description="Dimension the shares are computed over.")
     groups: list[SummaryGroup] = Field(description="One row per group, largest first.")
 
