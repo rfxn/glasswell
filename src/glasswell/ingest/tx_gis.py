@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import zipfile
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
+from functools import lru_cache
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -59,8 +60,14 @@ LAYERS_RULE = "cr_tx_gis_layers_1"
 SCOPE_RULE = "cr_tx_county_scope_1"
 API10_RULE = "cr_tx_api10_build_1"
 WELLBORE_KEY_RULE = "cr_tx_wellbore_key_1"
+SURVIVOR_RULE = "cr_tx_geometry_survivor_1"
+BOUNDS_RULE = "cr_tx_lateral_bounds_1"
+MULTI_WELLBORE_RULE = "cr_tx_multi_wellbore_1"
 BASIN = "permian"
 BOTTOMHOLE_DEFAULT_KEY = "bottomhole"
+# The RRC's API is three county digits then five well digits; the county the feature
+# belongs to is the first three, whatever the archive it shipped in is called.
+COUNTY_CODE_WIDTH = 3
 # ~1 cm at this latitude: below the difference between the .shp point and the .dbf
 # columns the same row publishes, and far below the 43 m the datum shift moves it.
 UNCONVERTED_DEGREES = 1e-7
@@ -89,7 +96,7 @@ class TxLayer:
     staging_table: str
     columns: tuple[str, ...]
     geometry_type: str
-    # A county with no horizontal wells ships no arcs shapefile at all — four of the 54
+    # A county with no horizontal wells ships no arcs shapefile at all — four of the 55
     # Permian-district archives on 2026-08-20. Absent is a fact about the county; a missing
     # surface or bottom-hole layer would be a truncated download.
     optional: bool = False
@@ -128,6 +135,7 @@ LAYERS: Mapping[str, TxLayer] = {
 
 REASON_CODES = (
     "parse_error", "key_incomplete", "out_of_scope", "duplicate_row", "datum_undetermined",
+    "multi_wellbore_policy", "unreliable_numeric",
 )
 
 
@@ -141,6 +149,7 @@ class CountyLoad:
     quarantined: Mapping[str, int]
     datum_residual_m: Mapping[str, float] = field(default_factory=dict)
     length_stats_ft: Mapping[str, float] = field(default_factory=dict)
+    multi_wellbore_api10s: int = 0
     unchanged: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -153,6 +162,7 @@ class CountyLoad:
             "quarantined": dict(self.quarantined),
             "datum_residual_m": dict(self.datum_residual_m),
             "length_stats_ft": dict(self.length_stats_ft),
+            "multi_wellbore_api10s": self.multi_wellbore_api10s,
             "unchanged": self.unchanged,
         }
 
@@ -358,6 +368,13 @@ def _stage_layer(
     return context.derivation_id, len(rows), held
 
 
+def _arc_feet(geometry) -> float:
+    """The arc's geodesic length, measured the way cr_tx_compute_crs_1 measures every other."""
+    coords = [point for part in getattr(geometry, "geoms", [geometry]) for point in part.coords]
+    metres = sum(_geod().inv(a[0], a[1], b[0], b[1])[2] for a, b in pairwise(coords))
+    return abs(metres) / float(METRES_PER_FOOT)
+
+
 def _quarantine_frame(rows: list[dict[str, Any]]) -> pl.DataFrame:
     """Scan every row for the schema: a column that is null for the first 100 rows and a
     wellbore code after them is a real shape of this data, not a malformed frame."""
@@ -424,9 +441,13 @@ def _keyed(
 ) -> tuple[list[dict[str, Any]], list]:
     """API-10 through the key rule, so the state prefix is never a literal in this module.
 
-    The scope filter runs here as well as at fetch time: an archive named for one county whose
-    features carry another county's wells is a real thing the portal could hand over, and it
-    would otherwise land as silently mis-scoped rows.
+    The scope predicate judges the **feature's own county**, read from the first three
+    characters of the API the RRC gave it, not the county the archive is named for. Those two
+    disagree for 520 surface features across the 55 archives, and 23 of them carry a county
+    outside the scope list entirely. Scoping on the archive name made the predicate compare a
+    value against the list it had just been assigned from, so it could never fire and the
+    disagreeing features landed as wells whose identity the export - which scopes on the
+    record's own county - had already excluded.
     """
     if not rows:
         return [], []
@@ -437,7 +458,8 @@ def _keyed(
         [
             {
                 "source_row_ordinal": row["source_row_ordinal"],
-                "source_county_code": row["source_county_code"],
+                "archive_county_code": row["source_county_code"],
+                "feature_county_code": (row["api"] or "")[:COUNTY_CODE_WIDTH],
                 "api": (row["api"] or ""),
                 "state_code": state_code,
                 **{name: row.get(name) or "" for name in extra},
@@ -446,7 +468,8 @@ def _keyed(
         ],
         schema={
             "source_row_ordinal": pl.Int32,
-            "source_county_code": pl.String,
+            "archive_county_code": pl.String,
+            "feature_county_code": pl.String,
             "api": pl.String,
             "state_code": pl.String,
             **dict.fromkeys(extra, pl.String),
@@ -456,9 +479,20 @@ def _keyed(
     return applied.frame.to_dicts(), applied.quarantined
 
 
+@lru_cache(maxsize=1)
+def _geod():
+    from pyproj import Geod
+
+    return Geod(ellps="WGS84")
+
+
 def _metres_apart(lon_a: float, lat_a: float, lon_b: float, lat_b: float) -> float:
-    scale_lon = 111_320.0 * math.cos(math.radians(lat_b))
-    return math.hypot((lon_a - lon_b) * scale_lon, (lat_a - lat_b) * 111_132.0)
+    """Geodesic, not a degree scale factor. The flat approximation this replaced used a fixed
+    111,132 m per degree of latitude against ~110,895 at 32.4N, which overstated every residual
+    it reported by 0.21 percent — immaterial at 4 mm, and the wrong instrument to measure a
+    transform with when the ellipsoid is right there."""
+    _, _, metres = _geod().inv(lon_a, lat_a, lon_b, lat_b)
+    return abs(metres)
 
 
 def _residuals(
@@ -574,7 +608,8 @@ def _promote_points(
 
     storage_epsg = int(datum.spec["target_epsg"])
     payload: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
+    # The row that took the key, so a displaced one can be read against what displaced it.
+    promoted_at: dict[tuple[str, str], tuple[float, float, int]] = {}
     duplicates: list[dict[str, Any]] = []
     for row, lon, lat in zip(keyed, lons, lats, strict=True):
         geom_key = (
@@ -583,10 +618,27 @@ def _promote_points(
             else "surface"
         )
         key = (row["api10"], geom_key)
-        if key in seen:
-            duplicates.append({**row, "geom_key": geom_key})
+        if key in promoted_at:
+            # A verdict a reader cannot check is not a verdict. The payload carries both
+            # positions and how far apart they are, because "duplicate" is a claim about
+            # distance and the two rows are sometimes tens of kilometres apart.
+            kept_lon, kept_lat, kept_ordinal = promoted_at[key]
+            duplicates.append(
+                {
+                    **row,
+                    "geom_key": geom_key,
+                    "lon": lon,
+                    "lat": lat,
+                    "promoted_lon": kept_lon,
+                    "promoted_lat": kept_lat,
+                    "promoted_source_row_ordinal": kept_ordinal,
+                    "metres_from_promoted": round(
+                        _metres_apart(lon, lat, kept_lon, kept_lat), 3
+                    ),
+                }
+            )
             continue
-        seen.add(key)
+        promoted_at[key] = (lon, lat, row["source_row_ordinal"])
         payload.append(
             {
                 "api10": row["api10"],
@@ -605,7 +657,7 @@ def _promote_points(
         )
     counts["duplicate_row"] += _quarantine(
         connection, _quarantine_frame(duplicates), layer=layer, manifest_id=manifest_id,
-        reason_code="duplicate_row", stage="conform",
+        reason_code="duplicate_row", stage="conform", rule_id=SURVIVOR_RULE,
     )
 
     with derive(
@@ -632,7 +684,9 @@ def _promote_points(
     ) as context:
         context.set_rows(len(payload))
         context.set_output_hash(
-            hash_payload(json_ready({"keys": sorted(f"{a}/{k}" for a, k in sorted(seen))}))
+            hash_payload(
+                json_ready({"keys": sorted(f"{a}/{k}" for a, k in sorted(promoted_at))})
+            )
         )
 
     added = 0
@@ -665,6 +719,7 @@ def _promote_lines(
     api10_rule: ConformanceRule,
     scope_rule: ConformanceRule,
     wellbore_rule: ConformanceRule,
+    bounds_rule: ConformanceRule,
     method: LengthMethod,
     counts: dict[str, int],
 ) -> tuple[str, int]:
@@ -698,9 +753,11 @@ def _promote_lines(
         return xs, ys
 
     storage_epsg = int(datum.spec["target_epsg"])
+    ceiling_ft = float(bounds_rule.spec["max_length_ft"])
     payload: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     duplicates: list[dict[str, Any]] = []
+    implausible: list[dict[str, Any]] = []
     for row in arcs:
         key = (row["api10"], row["geom_key"])
         if key in seen:
@@ -708,6 +765,13 @@ def _promote_lines(
             continue
         seen.add(key)
         geometry = shapely_wkt.loads(by_ordinal[row["source_row_ordinal"]]["wkt"])
+        # Measured before promotion, so a sixty-mile straight line never reaches a card, a
+        # tile or a length statistic — the length is the thing being judged.
+        feet = _arc_feet(geometry)
+        if feet > ceiling_ft:
+            implausible.append({**row, "length_ft": round(feet, 1), "ceiling_ft": ceiling_ft})
+            seen.discard(key)
+            continue
         payload.append(
             {
                 "api10": row["api10"],
@@ -722,7 +786,11 @@ def _promote_lines(
         )
     counts["duplicate_row"] += _quarantine(
         connection, _quarantine_frame(duplicates), layer=layer, manifest_id=manifest_id,
-        reason_code="duplicate_row", stage="conform",
+        reason_code="duplicate_row", stage="conform", rule_id=SURVIVOR_RULE,
+    )
+    counts["unreliable_numeric"] = counts.get("unreliable_numeric", 0) + _quarantine(
+        connection, _quarantine_frame(implausible), layer=layer, manifest_id=manifest_id,
+        reason_code="unreliable_numeric", stage="validate", rule_id=bounds_rule.rule_id,
     )
 
     with derive(
@@ -757,6 +825,62 @@ def _promote_lines(
             [{**row, "derivation_id": context.derivation_id} for row in payload],
         )
     return context.derivation_id, len(payload)
+
+
+_WELLBORE_CODES = """
+select api10, count(distinct code) as wellbores,
+       string_agg(distinct code, ',' order by code) as codes
+  from (select %(state_code)s || b.api as api10,
+               coalesce(nullif(b.stcode, ''), %(default_key)s) as code
+          from staging.tx_gis_wells_bottomhole b
+         where b.manifest_id = %(manifest_id)s and length(b.api) = %(api_width)s
+        union
+        select %(state_code)s || l.api, coalesce(nullif(l.stcode, ''), %(default_key)s)
+          from staging.tx_gis_wells_lines l
+         where l.manifest_id = %(manifest_id)s and length(l.api) = %(api_width)s) codes
+ group by api10
+having count(distinct code) > 1
+ order by api10
+"""
+
+
+def _flag_multi_wellbore(
+    connection: psycopg.Connection,
+    *,
+    manifest_id: str,
+    api10_rule: ConformanceRule,
+    api_width: int,
+    counts: dict[str, int],
+) -> int:
+    """One quarantine row per API-10 the RRC gives more than one wellbore code (§3.0.5).
+
+    A measurement, not a removal: every wellbore keeps its geometry. Keyed on the wellbore code
+    because that is the API-12 fact in the regulator's own notation — counting an API-10's rows
+    in the identity export measures how many completions it reports, which is a different thing
+    and 96.3 percent of the time a larger one.
+    """
+    with connection.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(
+            _WELLBORE_CODES,
+            {
+                "manifest_id": manifest_id,
+                "state_code": str(api10_rule.spec["state_code"]),
+                "default_key": BOTTOMHOLE_DEFAULT_KEY,
+                "api_width": api_width,
+            },
+        )
+        multi = cursor.fetchall()
+    held = _quarantine(
+        connection,
+        _quarantine_frame([dict(row) for row in multi]),
+        layer=LAYERS["bottomhole"],
+        manifest_id=manifest_id,
+        reason_code="multi_wellbore_policy",
+        stage="validate",
+        rule_id=MULTI_WELLBORE_RULE,
+    )
+    counts["multi_wellbore_policy"] = counts.get("multi_wellbore_policy", 0) + held
+    return held
 
 
 def _length_stats(
@@ -830,6 +954,7 @@ def load_county(
     api10_rule = _rule(connection, API10_RULE)
     wellbore_rule = _rule(connection, WELLBORE_KEY_RULE)
     scope_rule = _rule(connection, SCOPE_RULE)
+    bounds_rule = _rule(connection, BOUNDS_RULE)
     method = length_method(compute_crs_rule(load_rules(connection, source_id=SOURCE_ID)))
     scope = tuple(str(code) for code in scope_rule.spec["county_codes"])
     if county_code not in scope:
@@ -921,10 +1046,18 @@ def load_county(
         api10_rule=api10_rule,
         scope_rule=scope_rule,
         wellbore_rule=wellbore_rule,
+        bounds_rule=bounds_rule,
         method=method,
         counts=counts,
     )
     geometries["lateral"] = laterals
+    multi_wellbore = _flag_multi_wellbore(
+        connection,
+        manifest_id=manifest.manifest_id,
+        api10_rule=api10_rule,
+        api_width=int(api10_rule.spec["min_width"]["api"]),
+        counts=counts,
+    )
 
     open_vintage(
         connection,
@@ -945,6 +1078,7 @@ def load_county(
         quarantined=counts,
         datum_residual_m=residuals,
         length_stats_ft=_length_stats(connection, lateral_id, method),
+        multi_wellbore_api10s=multi_wellbore,
     )
 
 

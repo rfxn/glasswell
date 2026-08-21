@@ -101,9 +101,18 @@ comment on table staging.tx_wellbore_ewa is
 
 create index tx_wellbore_ewa_api_idx on staging.tx_wellbore_ewa ((fields[3]));
 
--- A county file whose features carry another county's API is not a parse failure, an unknown
--- vocabulary or an orphan: it is a row outside the scope the fetch was made under, and the
--- existing codes would each assert something that did not happen.
+-- Two codes for two things the existing vocabulary would each have misdescribed.
+--
+-- out_of_scope: a county file whose features carry another county's API is not a parse
+-- failure, an unknown vocabulary or an orphan. It is a row outside the scope the fetch was
+-- made under.
+--
+-- multi_completion: TX lists a wellbore once per completion, lease and field, so 78,579 API-10s
+-- have more than one record in the identity export. Those records are not a second wellbore -
+-- the GIS layers show one wellbore code for 96.3 percent of them, and none of the groups
+-- carries two different total depths - so calling them multi_wellbore_policy asserted a
+-- sidetrack the data denies. Whether an API-10 is really multi-wellbore is measured on the
+-- RRC's own wellbore codes under cr_tx_multi_wellbore_1, and that answer is 1.04 percent.
 alter table lineage.quarantine_rows drop constraint if exists quarantine_rows_reason_code_check;
 
 alter table lineage.quarantine_rows add constraint quarantine_rows_reason_code_check
@@ -113,7 +122,7 @@ alter table lineage.quarantine_rows add constraint quarantine_rows_reason_code_c
         'multi_wellbore_policy', 'impossible_volume', 'orphan_fk',
         'confidential_withheld', 'duplicate_row', 'out_of_range_date',
         'unreliable_numeric', 'stream_not_promoted', 'unknown_status',
-        'segment_not_promoted', 'key_incomplete', 'out_of_scope'));
+        'segment_not_promoted', 'key_incomplete', 'out_of_scope', 'multi_completion'));
 
 -- Identity, effective-dated like every other canonical well attribute.
 alter table canonical.wells
@@ -294,8 +303,12 @@ grant select, insert on staging.tx_gis_wells_surface, staging.tx_gis_wells_botto
     to glasswell_pipeline;
 grant delete on staging.tx_gis_wells_surface, staging.tx_gis_wells_bottomhole,
     staging.tx_gis_wells_lines, staging.tx_wellbore_ewa to glasswell_pipeline;
-grant select on staging.tx_gis_wells_surface, staging.tx_gis_wells_bottomhole,
-    staging.tx_gis_wells_lines, staging.tx_wellbore_ewa, canonical.well_lease_links
-    to glasswell_api;
+-- canonical.well_lease_links only. The serving role is not granted anything in `staging`:
+-- staging never serves (CLAUDE.md, SB-01 §3.1.4), and every ND staging table is
+-- pipeline-only. The four TX lines that were here granted glasswell_api select on staging
+-- and had no consumer at all - no router, mart or view reads staging - so they conferred a
+-- capability nothing used while breaking a hard rule. test_layer_boundary.py now asserts the
+-- rule schema-wide, so this cannot come back quietly.
+grant select on canonical.well_lease_links to glasswell_api;
 grant select on lineage.tx_status_map to glasswell_pipeline, glasswell_api;
 revoke update, delete on canonical.well_lease_links from glasswell_pipeline, glasswell_api;

@@ -220,6 +220,14 @@ def test_the_transform_lands_on_the_regulators_own_published_nad83(county, seede
     assert residual["n"] > 0
     assert residual["median"] < float(rule.spec["truth_tolerance_m"])
     assert residual["untransformed_median"] > float(rule.spec["untransformed_floor_m"])
+    # A median alone would pass a transform right for 51 percent of rows and catastrophically
+    # wrong for the rest, so the tail is asserted too: the ceiling sits above the RRC's own
+    # 3.4-3.9 m conversion-vintage cluster and far below the 42 m the shift itself is worth.
+    # within_1m is recorded rather than asserted — it measures how consistently the *RRC*
+    # converted its own file, so it moves with the sample, and a threshold on it here would be
+    # a threshold set by a fixture.
+    assert residual["p99"] < float(rule.spec["truth_p99_ceiling_m"])
+    assert 0.0 < residual["within_1m"] <= 1.0
 
 
 def test_a_missing_grid_is_a_failure_and_not_a_three_parameter_fit(seeded, raw_root, lineage_env):
@@ -282,8 +290,8 @@ def test_the_same_manifest_twice_is_idempotent_and_says_so(county, seeded, raw_r
 def test_a_county_with_no_horizontal_wells_ships_no_arcs_layer_and_that_is_not_an_error(
     seeded, identity, raw_root, lineage_env, tmp_path
 ):
-    """Four of the 54 archives in scope carry no arcs shapefile at all (Bee, Brooks, El Paso,
-    Kimble). A reader that treats that as a malformed download loses the county's wells too."""
+    """Four of the 55 archives in scope carry no arcs shapefile at all (Bailey, Concho, El
+    Paso, Kimble). A reader treating that as a malformed download loses the county's wells."""
     trimmed = tmp_path / "well003_no_arcs.zip"
     with zipfile.ZipFile(COUNTY_ARCHIVE) as source, zipfile.ZipFile(trimmed, "w") as target:
         for name in source.namelist():

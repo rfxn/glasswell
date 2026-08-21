@@ -65,14 +65,69 @@ def test_the_api10_is_the_state_prefix_and_the_rrcs_eight_digits() -> None:
     assert len(keyed[0]["api10"]) == 10
 
 
-def test_a_row_from_a_county_outside_the_scope_leaves_with_a_reason() -> None:
+def test_a_feature_whose_own_county_is_out_of_scope_leaves_with_a_reason() -> None:
+    """The predicate reads the API the RRC gave the feature, not the archive's filename."""
     rows = staged(2, "H1", "H1")
-    rows[1]["source_county_code"] = "999"
+    rows[1]["api"] = "15100001"  # Fisher county, which is not in the scope list
     keyed, quarantined = _keyed(
         rows, rule("cr_tx_api10_build_1"), rule("cr_tx_county_scope_1"), {"stcode": None}
     )
     assert len(keyed) == 1
     assert [batch.reason_code for batch in quarantined] == ["out_of_scope"]
+
+
+def test_the_archive_name_does_not_decide_scope_either_way() -> None:
+    """520 features across the 55 archives carry a county the archive is not named for. An
+    in-scope well is in scope wherever the RRC filed it, and scoping on the filename made the
+    predicate compare a value against the list it had just been assigned from."""
+    rows = staged(1, "H1", "H1")
+    rows[0]["source_county_code"] = "999"      # an archive name outside the list
+    rows[0]["api"] = "13500001"                # Ector county, which is in it
+    keyed, quarantined = _keyed(
+        rows, rule("cr_tx_api10_build_1"), rule("cr_tx_county_scope_1"), {"stcode": None}
+    )
+    assert [row["api10"] for row in keyed] == ["4213500001"]
+    assert quarantined == []
+
+
+def test_a_county_plot_point_is_not_padded_up_into_a_well() -> None:
+    """D1, the whole class: 78,856 of 794,826 point rows carry an API that is not eight
+    characters, and `'003'.zfill(8)` builds 4200000003 — a syntactically perfect API-10 for a
+    well that does not exist, which then reaches canonical, the mart and the map."""
+    rows = staged(1, "H1", "H1")
+    rows[0]["api"] = "003"
+    keyed, quarantined = _keyed(
+        rows, rule("cr_tx_api10_build_1"), rule("cr_tx_county_scope_1"), {"stcode": None}
+    )
+    assert keyed == []
+    assert [batch.reason_code for batch in quarantined] == ["key_incomplete"]
+
+
+def test_an_over_wide_component_is_refused_rather_than_truncated() -> None:
+    """The other half of the same semantic (D1-P3): zfill silently overbuilds an eleven-character
+    API-10 and SQL lpad silently truncates onto a different real well. Both are wrong."""
+    frame = pl.DataFrame(
+        {"state_code": ["42"], "api": ["003400001"]}, schema={"state_code": pl.String,
+                                                              "api": pl.String}
+    )
+    applied = apply_rules(frame, [rule("cr_tx_api10_build_1")])
+
+    assert applied.frame.height == 0
+    assert [batch.reason_code for batch in applied.quarantined] == ["key_incomplete"]
+
+
+def test_a_lease_number_shorter_than_its_pad_width_is_still_normalised() -> None:
+    """min_width is per column and the lease number declares none: the RRC's own manual shows
+    it six digits wide and the export ships five, so padding there is width normalisation
+    rather than invention. Refusing it would have quarantined most of the lease links."""
+    frame = pl.DataFrame(
+        {"oil_gas_code": ["O"], "district_no": ["02"], "lease_no": ["04411"]},
+        schema={"oil_gas_code": pl.String, "district_no": pl.String, "lease_no": pl.String},
+    )
+    applied = apply_rules(frame, [rule("cr_tx_lease_key_1")])
+
+    assert applied.frame["lease_key"].to_list() == ["O-02-004411"]
+    assert applied.quarantined == []
 
 
 def test_an_arc_is_keyed_on_the_wellbore_code_and_one_without_it_is_refused() -> None:

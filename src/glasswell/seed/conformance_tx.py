@@ -12,6 +12,8 @@ from datetime import date
 import psycopg
 from psycopg.types.json import Jsonb
 
+from glasswell.ingest.tx_mft import LISTING_PAGE_ROWS
+
 GIS_LINK = "https://mft.rrc.texas.gov/link/d551fb20-442e-4b67-84fa-ac3f23ecabb4"
 EWA_LINK = "https://mft.rrc.texas.gov/link/650649b7-e019-4d77-a8e0-d118d6455381"
 EWA_MANUAL = (
@@ -87,6 +89,7 @@ TX_RULES: tuple[dict[str, object], ...] = (
             "target_col": "api10",
             "separator": "",
             "pad": {"api": 8},
+            "min_width": {"api": 8},
             "on_missing": "quarantine",
             "reason_code": "key_incomplete",
             "state_code": "42",
@@ -95,11 +98,17 @@ TX_RULES: tuple[dict[str, object], ...] = (
         "rationale": (
             "The RRC's own layout manual is explicit that its API number 'DOES NOT REFER TO"
             " American Petroleum Institute' and is eight digits: three county, five well, with"
-            " no state prefix and no wellbore positions. Both the GIS layers and the wellbore"
-            " export ship a field literally named API10 that is not one - on the arc layer it is"
-            " the eight digits with a two-character wellbore code appended. TX is API state code"
-            " 42, which is not the FIPS code for Texas (48), so the prefix is a rule and never a"
-            " slice of something that looks like it already has it."
+            " no state prefix and no wellbore positions. The bottom-hole and arc layers ship a"
+            " field literally named API10 that is not one - the same eight digits, with a"
+            " two-character wellbore code appended on the arcs; the surface layer has no such"
+            " field, and the export's is API_NO. TX is API state code 42, which is not the FIPS"
+            " code for Texas (48), so the prefix is a rule and never a slice of something that"
+            " looks like it already has it. min_width is 8 and it is load-bearing: the RRC ships"
+            " county plot points whose API field holds the three-digit county code alone -"
+            " 78,856 of 794,826 point rows across the 55 archives are not eight characters - and"
+            " padding one of those up builds a syntactically perfect API-10 for a well that does"
+            " not exist. Those rows quarantine as key_incomplete, which is what they always"
+            " were."
         ),
         "evidence_url": EWA_MANUAL,
     },
@@ -128,6 +137,112 @@ TX_RULES: tuple[dict[str, object], ...] = (
         "evidence_url": GIS_LINK,
     },
     {
+        "rule_id": "cr_tx_geometry_survivor_1",
+        "source_id": "tx_gis_wells_county",
+        "stage": "conform",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["api10", "geom_key"],
+        "spec": {
+            "keeps": "first_by_source_row_ordinal",
+            "reason_code": "duplicate_row",
+            "payload_fields": [
+                "lon", "lat", "promoted_lon", "promoted_lat", "metres_from_promoted"
+            ],
+            "module_function": "glasswell.ingest.tx_gis:_promote_points",
+            "contract_note": (
+                "One geometry per (api10, geom_type, geom_key). The displaced row is"
+                " quarantined with both positions and the distance between them."
+            ),
+        },
+        "rule": (
+            "Where two features claim one well's geometry key, the first in source order is"
+            " promoted and the other is quarantined with both positions recorded."
+        ),
+        "rationale": (
+            "The canonical key is (api10, geom_type, geom_key) and the RRC ships more than one"
+            " feature under it: a well with two surface plots, or two bottom-holes carrying the"
+            " same wellbore code. Something has to lose, so the choice is a rule rather than an"
+            " accident of iteration order, and the losing row keeps its coordinates in the"
+            " payload. Without them a reader of /v1/quarantine sees the word duplicate and"
+            " cannot tell a re-survey a metre away from two records tens of kilometres apart -"
+            " which is exactly what the ledger looked like before the API-10 key was fixed, when"
+            " a median 'duplicate' was 35 km from the row that displaced it because both had"
+            " been given a fabricated identity."
+        ),
+        "evidence_url": GIS_LINK,
+    },
+    {
+        "rule_id": "cr_tx_multi_wellbore_1",
+        "source_id": "tx_gis_wells_county",
+        "stage": "validate",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["api10", "stcode"],
+        "spec": {
+            "detection_source": "RRC wellbore code (STCODE) on the bottom-hole and arc layers",
+            "keys_on": "api12_equivalent",
+            "reason_code": "multi_wellbore_policy",
+            "module_function": "glasswell.ingest.tx_gis:_flag_multi_wellbore",
+            "contract_note": (
+                "Emits one quarantine row per API-10 carrying more than one wellbore code,"
+                " naming the codes. It removes no geometry: every wellbore is still promoted."
+            ),
+        },
+        "rule": (
+            "A TX API-10 carrying more than one RRC wellbore code is a multi-wellbore well, and"
+            " is measured on those codes rather than on how many times the export lists it."
+        ),
+        "rationale": (
+            "v0.6 §3.0.5 keys sidetrack detection on API-12 because API-14 is convention rather"
+            " than standard. TX publishes no API-12: it publishes a two-character wellbore code"
+            " (H1, S1 and so on) on the bottom-hole and arc layers, which is the same fact in"
+            " the regulator's own notation, and the export carries no wellbore suffix at all."
+            " Counting an API-10's rows in the export therefore measures multi-completion"
+            " reporting, not multi-wellbore geometry: of the 78,579 API-10s with more than one"
+            " export row, the GIS layers show exactly one wellbore code for 75,563 - 96.3"
+            " percent - and not one of those groups carries two different non-blank total"
+            " depths, the signature of a single physical hole. What varies is the lease, the"
+            " field and the oil/gas code. Measured on the codes, 3,691 of 355,583 API-10s are"
+            " genuinely multi-wellbore - 1.04 percent, under the Permian's 5 percent trigger -"
+            " and 726 of them have a single export row, so the export-side count missed them"
+            " entirely while reporting a rate five times the trigger."
+        ),
+        "evidence_url": GIS_LINK,
+    },
+    {
+        "rule_id": "cr_tx_identity_collapse_1",
+        "source_id": "tx_wellbore_ewa_csv",
+        "stage": "validate",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["api10"],
+        "spec": {
+            "reason_code": "multi_completion",
+            "prefer": ["on_schedule", "plug_date", "completion_date", "source_row_ordinal"],
+            "module_function": "glasswell.ingest.tx_wellbore:_identity_rows",
+            "contract_note": (
+                "One identity row per API-10. The records that lose are quarantined as"
+                " multi_completion, and the preference order is what stops a record carrying a"
+                " plugging date from losing to one that does not."
+            ),
+        },
+        "rule": (
+            "canonical.wells holds one row per API-10 per vintage; the export's further records"
+            " for that wellbore are completions, and are quarantined as such."
+        ),
+        "rationale": (
+            "The export lists a wellbore once per completion, lease and field, so 78,579 API-10s"
+            " have more than one record. Those extra records are not rejects and they are not"
+            " evidence of a second wellbore - see cr_tx_multi_wellbore_1, which measures that on"
+            " the RRC's own wellbore codes - they are the lease-level reporting TX does. This"
+            " slice models the wellbore, so it keeps one record and says plainly what happened"
+            " to the others rather than labelling them with a policy they do not evidence."
+            " The preference order matters: an on-schedule record describes the live wellbore,"
+            " and taking source order alone dropped a plugging date that a sibling record"
+            " carried for 2,493 wells, each of which was then painted as something other than"
+            " plugged while its plugging date sat in the same file."
+        ),
+        "evidence_url": EWA_MANUAL,
+    },
+    {
         "rule_id": "cr_tx_nad27_1",
         "source_id": "tx_gis_wells_county",
         "stage": "conform",
@@ -148,7 +263,10 @@ TX_RULES: tuple[dict[str, object], ...] = (
             ),
             "truth_columns": {"lon": "long83", "lat": "lat83"},
             "truth_tolerance_m": 1.0,
+            "truth_within_1m_measured": 0.7987,
+            "truth_p99_ceiling_m": 5.0,
             "untransformed_floor_m": 20.0,
+            "untransformed_floor_deviates_from": "SB-01 §2.8 P7b-T2 (50 m)",
         },
         "rule": (
             "Transform RRC NAD27 coordinates to EPSG:4326 through the pinned NADCON grid, and"
@@ -172,6 +290,17 @@ TX_RULES: tuple[dict[str, object], ...] = (
             " TX coordinate's explain chain terminates in checksummed bytes for the transform as"
             " well as for the data, and a host missing the grid fails rather than quietly"
             " producing a metre-scale error."
+            " The guard asserts three things, not one: the median residual against the"
+            " regulator's own NAD83 and a p99 ceiling of 5 m, because a median alone would"
+            " pass a transform correct for half the rows and wrong for the rest. The share"
+            " inside a metre is recorded (0.7987 statewide) and not asserted: it measures how"
+            " consistently the RRC converted its own file rather than how well this transform"
+            " reproduces it, so it moves with the sample. The untransformed floor is 20 m"
+            " where SB-01 §2.8"
+            " specifies 50 m: 50 could never have passed, since the measured untransformed"
+            " median is 42.6 m and the minimum over Andrews is 30.1 m, so the floor is set"
+            " below the smallest real shift rather than above the median. Recorded here"
+            " because a spec deviation that lives only in code is a traceability gap."
         ),
         "evidence_url": GIS_FAQ,
     },
@@ -207,14 +336,46 @@ TX_RULES: tuple[dict[str, object], ...] = (
         "evidence_url": GIS_LINK,
     },
     {
+        "rule_id": "cr_tx_lateral_bounds_1",
+        "source_id": "tx_gis_wells_county",
+        "stage": "validate",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["geom"],
+        "spec": {
+            "max_length_ft": 50000,
+            "reason_code": "unreliable_numeric",
+            "module_function": "glasswell.ingest.tx_gis:_promote_lines",
+            "contract_note": (
+                "An arc measuring longer than max_length_ft is quarantined rather than"
+                " promoted, so no such length reaches a card, a tile or a length statistic."
+            ),
+        },
+        "rule": (
+            "A well arc longer than 50,000 ft is not a wellbore, and is quarantined rather than"
+            " served as a lateral length."
+        ),
+        "rationale": (
+            "The arc layer is digitised map geometry, and four arcs across the 55 archives"
+            " measure over 50,000 ft - the longest 317,390 ft, sixty miles, with a tortuosity of"
+            " exactly 1.0, which is to say a perfectly straight sixty-mile line. The longest"
+            " horizontal wells ever drilled are around 40,000 ft measured depth, so 50,000 ft"
+            " leaves the real fleet untouched while refusing the digitising artifacts. The bound"
+            " is one-sided on purpose: short arcs are ordinary - 3,416 measure under 500 ft,"
+            " which is what a vertical well's bottom-hole trace looks like - and a lower bound"
+            " would quarantine real geometry to tidy a histogram. Under DIR-1 an unbounded"
+            " served length is the first number a hostile reader reaches for."
+        ),
+        "evidence_url": GIS_LINK,
+    },
+    {
         "rule_id": "cr_tx_county_scope_1",
         "source_id": "tx_gis_wells_county",
         "stage": "validate",
         "rule_kind": "validity_filter",
-        "applies_to_fields": ["source_county_code"],
+        "applies_to_fields": ["feature_county_code"],
         "spec": {
             "predicate_ast": {
-                "in": [{"col": "source_county_code"}, list(PERMIAN_COUNTY_CODES)]
+                "in": [{"col": "feature_county_code"}, list(PERMIAN_COUNTY_CODES)]
             },
             "on_fail": "quarantine",
             "reason_code": "out_of_scope",
@@ -237,6 +398,12 @@ TX_RULES: tuple[dict[str, object], ...] = (
             " says so. The list is spec data because widening it is a superseding rule row with"
             " a date and a reason, which is what makes a coverage change auditable rather than a"
             " diff in a parser."
+            " The predicate judges the feature's own county - the first three characters of the"
+            " API the RRC gave it - and not the county the archive is named for. Those disagree"
+            " for 520 of the 794,826 point features, 23 of which belong to counties outside this"
+            " list; scoping on the archive name compared a value against the list it had just"
+            " been assigned from, so the guard could not fire, and those features landed as"
+            " wells whose identity the export had already excluded on the same grounds."
         ),
         "evidence_url": EWA_LINK,
     },
@@ -445,13 +612,6 @@ TX_RULES: tuple[dict[str, object], ...] = (
                 "The API reads this rule to decide whether a well's jurisdiction reports at the"
                 " lease, and serves the disclosure instead of an empty production series."
             ),
-            "measured": {
-                "oil_leases": 207094,
-                "oil_wells_per_lease_mean": 3.63,
-                "oil_leases_with_more_than_one_well": 0.404,
-                "gas_leases": 283043,
-                "gas_wells_per_lease_mean": 1.01,
-            },
         },
         "rule": (
             "TX production is reported at the lease. No well-level TX volume is served until"
@@ -463,10 +623,15 @@ TX_RULES: tuple[dict[str, object], ...] = (
             " individual well - and DIR-3 rules that canonical carries observations at native"
             " granularity only, so a well-level TX series is a derived artifact and cannot"
             " appear beside ND's observed ones without a granularity flag and an error bound."
-            " The scale of the problem is measured on the 2026-08-20 export: oil leases average"
-            " 3.63 wells and 40.4 percent carry more than one, while 98.8 percent of gas leases"
-            " carry exactly one, which is why allocation is an oil-lease problem. Until then the"
-            " honest state on a TX well is 'pending allocation', not 'no production reported'."
+            " The scale of the problem is measured on the 2026-08-20 export, per distinct"
+            " API-10 - this project's identity spine, and the basis its own"
+            " one-wellbore-per-API-10 policy asserts: 207,094 oil leases average 3.39 wells and"
+            " 38.3 percent carry more than one, while all 283,043 gas leases carry exactly one."
+            " Counted per export record instead, the same figures read 3.63, 40.4 percent and"
+            " 98.8 percent - the export lists a wellbore once per completion, so that basis"
+            " overstates the oil case and understates how clean the gas case is. Either way"
+            " allocation is an oil-lease problem. Until it ships, the honest state on a TX well"
+            " is 'pending allocation', not 'no production reported'."
         ),
         "evidence_url": DOWNLOADS_PAGE,
     },
@@ -493,7 +658,8 @@ TX_RULES: tuple[dict[str, object], ...] = (
             " parseable TX directional survey station data at all, only images and a W-12"
             " segment with form-header fields, so this layer is the substitute and the card says"
             " so rather than implying a survey trace. The arcs layer is optional and four of the"
-            " 54 archives in scope on 2026-08-20 - Bee, Brooks, El Paso and Kimble - ship none,"
+            " 55 archives in scope on 2026-08-20 - Bailey, Concho, El Paso and Kimble, named"
+            " from the export's own county-code table - ship none,"
             " which is a county with no horizontal wells rather than a truncated download; the"
             " surface and bottom-hole layers are not optional and their absence is an error."
         ),
@@ -509,7 +675,7 @@ TX_RULES: tuple[dict[str, object], ...] = (
             "acquisition_method": "mft_guid_resolve",
             "gis_link": GIS_LINK,
             "ewa_link": EWA_LINK,
-            "listing_page_rows": 5000,
+            "listing_page_rows": LISTING_PAGE_ROWS,
             "page_cap": 250,
             "completeness_check": "declared_row_count",
         },
@@ -524,7 +690,10 @@ TX_RULES: tuple[dict[str, object], ...] = (
             " folder holds 255: reading the first page loses well501 through wellFED, which"
             " includes Yoakum county and its 14,090 wellbore records. The count the page"
             " declares is checked against the rows that arrive, because this is a failure that"
-            " otherwise looks exactly like a county with no wells."
+            " otherwise looks exactly like a county with no wells. listing_page_rows is the"
+            " constant the resolver uses rather than a copy of it, and it must be one of the"
+            " sizes the portal's own control offers: asking for anything else comes back as"
+            " IllegalArgumentException rather than a page."
         ),
         "evidence_url": DOWNLOADS_PAGE,
     },

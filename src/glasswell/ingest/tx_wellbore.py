@@ -53,11 +53,12 @@ LEASE_KEY_RULE = "cr_tx_lease_key_1"
 API10_RULE = "cr_tx_api10_build_1"
 PLUGGED_RULE = "cr_tx_plugged_precedence_1"
 ROLE_RULE = "cr_tx_ewa_role_1"
+COLLAPSE_RULE = "cr_tx_identity_collapse_1"
 STATUS_FAMILY = "cr_tx_status_vocab"
 BATCH_ROWS = 20_000
 
 REASON_CODES = (
-    "schema_mismatch", "key_incomplete", "unknown_status", "multi_wellbore_policy",
+    "schema_mismatch", "key_incomplete", "unknown_status", "multi_completion",
 )
 
 
@@ -330,12 +331,29 @@ on conflict (api10, lease_key, source_id, effective_from) do nothing
 BASIN = "permian"
 
 
-def _identity_rows(frame: pl.DataFrame) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """One identity row per API-10, and the extra wellbore records that lost the tie.
+def _preference(row: Mapping[str, Any]) -> tuple[int, int, int, int]:
+    """cr_tx_identity_collapse_1's order, lowest wins: on-schedule, then a record that carries
+    a regulatory date, then source order.
 
-    SB-01 §4 assumes one producing wellbore per API-10. Where the export carries several, the
-    first by source order is promoted and the rest are quarantined with the API-10 named, so
-    the assumption is measured rather than asserted.
+    The dates are in the order because a record with a plugging date on it decides the well's
+    status: taking source order alone left 2,493 wells painted as something other than plugged
+    while their plugging date sat on a sibling record in the same file.
+    """
+    return (
+        0 if row["on_schedule"] == "Y" else 1,
+        0 if row["plug_date"] else 1,
+        0 if row["completion_date"] else 1,
+        int(row["source_row_ordinal"]),
+    )
+
+
+def _identity_rows(frame: pl.DataFrame) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """One identity row per API-10, and the export's further records for that wellbore.
+
+    canonical.wells models the wellbore, and the export lists one once per completion, lease
+    and field. The records that lose are completions, not evidence of a second wellbore, and
+    they leave under cr_tx_identity_collapse_1 saying so; whether an API-10 really carries more
+    than one wellbore is measured on the RRC's own wellbore codes in the GIS layers.
     """
     chosen: dict[str, dict[str, Any]] = {}
     extra: list[dict[str, Any]] = []
@@ -345,8 +363,7 @@ def _identity_rows(frame: pl.DataFrame) -> tuple[list[dict[str, Any]], list[dict
         if held is None:
             chosen[api10] = row
             continue
-        # An on-schedule record describes the live wellbore; prefer it over a historical row.
-        if row["on_schedule"] == "Y" and held["on_schedule"] != "Y":
+        if _preference(row) < _preference(held):
             chosen[api10] = row
             extra.append(held)
         else:
@@ -369,6 +386,7 @@ def load(
     api10_rule = rule(connection, API10_RULE, source_id="tx_gis_wells_county")
     precedence = rule(connection, PLUGGED_RULE)
     role_rule = rule(connection, ROLE_RULE)
+    collapse_rule = rule(connection, COLLAPSE_RULE)
     status_rules = [
         candidate
         for candidate in load_rules(connection, source_id=SOURCE_ID, stage="conform")
@@ -421,7 +439,7 @@ def load(
     # The API-10 rule runs over everything; the lease key runs only on the link path. A well
     # whose permit carries no lease number yet is still a well, and quarantining its identity
     # for a key it does not need loses whole counties: 68,806 of the 2026-08 export's in-scope
-    # records have no lease number, and every one of Bee county's records is one of them.
+    # records have no lease number, including every record Bailey and El Paso counties have.
     keyed = apply_rules(frame, [api10_rule])
     for batch in keyed.quarantined:
         counts[batch.reason_code] = counts.get(batch.reason_code, 0) + _quarantine(
@@ -434,13 +452,13 @@ def load(
         )
 
     identity, extra = _identity_rows(_status_input(keyed.frame, precedence))
-    counts["multi_wellbore_policy"] += _quarantine(
+    counts["multi_completion"] += _quarantine(
         connection,
         _quarantine_frame(extra),
         manifest_id=manifest.manifest_id,
-        reason_code="multi_wellbore_policy",
+        reason_code="multi_completion",
         stage="validate",
-        rule_id=role_rule.rule_id,
+        rule_id=collapse_rule.rule_id,
     )
 
     # A blank type is not an unknown one: the source reported nothing, so the row keeps a null

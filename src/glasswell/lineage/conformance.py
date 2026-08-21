@@ -175,13 +175,13 @@ def _alias_join(
     return _split_on_marker(marked, rule, target_col, action, reason)
 
 
-def _padded(part: pl.Expr, width: object, rule: ConformanceRule, column: str) -> pl.Expr:
+def _declared_width(width: object, rule: ConformanceRule, column: str, key: str) -> int:
     _require(
         isinstance(width, int) and not isinstance(width, bool) and width > 0,
         rule,
-        f"pad[{column}] must be a positive integer, not {width!r}",
+        f"{key}[{column}] must be a positive integer, not {width!r}",
     )
-    return part.str.zfill(int(str(width)))
+    return int(str(width))
 
 
 def _key_composite(
@@ -192,6 +192,22 @@ def _key_composite(
     NM reports at well-completion x pool and TX's `LEASE_NO` is unique within district only, so
     neither key is derivable from one column. A partial key is a wrong key: a row missing any
     component leaves under the declared reason rather than keying on what happens to be there.
+
+    **Padding normalises a width; it never invents identity.** Every segment is judged on the
+    value the source shipped, before any padding, against three declared bounds:
+
+    * empty or null — missing, as it always was;
+    * longer than `pad[col]` — refused, never truncated. `zfill` silently overbuilds (a
+      six-digit component under a five-wide pad yields an eleven-character API-10) and SQL's
+      `lpad` silently truncates onto a different real well. Both are wrong (D1-P3);
+    * shorter than `min_width[col]` — refused, never padded up. The RRC ships county plot
+      points whose API field holds the three-digit county code alone, and `'003'.zfill(8)`
+      builds `4200000003`: a syntactically perfect API-10 for a well that does not exist,
+      which then reaches the map. `min_width` is what separates a lease number whose leading
+      zeros the source dropped from a record that is not the thing at all.
+
+    `min_width` defaults to 1, so a rule that declares no minimum keeps the old behaviour for
+    everything except overbuilding, which is refused everywhere.
     """
     source_cols = [str(column) for column in rule.spec.get("source_cols") or ()]
     target_col = str(rule.spec.get("target_col", ""))
@@ -201,20 +217,34 @@ def _key_composite(
     _require(isinstance(separator, str), rule, "separator must be a string")
     pad = rule.spec.get("pad") or {}
     _require(isinstance(pad, Mapping), rule, "pad must map a column name to a width")
+    minimums = rule.spec.get("min_width") or {}
+    _require(isinstance(minimums, Mapping), rule, "min_width must map a column name to a width")
+    _require(
+        set(minimums) <= set(pad),
+        rule,
+        f"min_width names {sorted(set(minimums) - set(pad))}, which pad does not",
+    )
     for column in source_cols:
         _require(column in frame.columns, rule, f"{column} is not a column of the frame")
 
     parts = []
     for column in source_cols:
-        part = pl.col(column).cast(pl.String)
-        if column in pad:
-            part = _padded(part, pad[column], rule, column)
+        shipped = pl.col(column).cast(pl.String)
+        length = shipped.str.len_chars()
         # An empty component is missing, not a key that happens to render as `a::b`.
-        parts.append(
-            pl.when(part.is_null() | (part.str.len_chars() == 0))
-            .then(pl.lit(None, dtype=pl.String))
-            .otherwise(part)
-        )
+        usable = shipped.is_not_null() & (length > 0)
+        value = shipped
+        if column in pad:
+            width = _declared_width(pad[column], rule, column, "pad")
+            floor = _declared_width(minimums.get(column, 1), rule, column, "min_width")
+            _require(
+                floor <= width,
+                rule,
+                f"min_width[{column}] {floor} exceeds pad[{column}] {width}",
+            )
+            usable = usable & (length <= width) & (length >= floor)
+            value = shipped.str.zfill(width)
+        parts.append(pl.when(usable).then(value).otherwise(pl.lit(None, dtype=pl.String)))
     marked = frame.with_columns(
         pl.concat_str(parts, separator=separator, ignore_nulls=False).alias(_MARKER)
     )

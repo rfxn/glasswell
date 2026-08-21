@@ -85,4 +85,8 @@ def test_the_policy_declarations_are_visible_as_such(client: TestClient) -> None
         "cr_nd_pool_rollup_1",
         "cr_tx_allocation_scope_1",
         "cr_tx_ewa_role_1",
+        "cr_tx_geometry_survivor_1",
+        "cr_tx_identity_collapse_1",
+        "cr_tx_lateral_bounds_1",
+        "cr_tx_multi_wellbore_1",
     }

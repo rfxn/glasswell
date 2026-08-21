@@ -533,6 +533,19 @@ weaker and is labelled as such. The CI guard asserts both directions: transforme
 within 1 m of truth, **and** untransformed positions differing by > 50 m — a guard that cannot
 fail loudly is not a guard.
 
+> **Amended 2026-08-21, on measurement (TX slice).** Source (a) was not needed: the RRC's own
+> county well layers publish `LONG83`/`LAT83` beside `LONG27`/`LAT27`, so the truth set is in
+> the same file as the data and no external control points are required. Two numbers change
+> with it. The untransformed floor moves **50 m → 20 m**, because the measured untransformed
+> shift over Andrews county is a median 42.6 m with a **minimum of 30.1 m**, so a 50 m floor
+> could never have passed and would have been a guard that fails on correct data. And the
+> transformed side gains two assertions beside the median — the share inside 1 m (≥ 0.75,
+> measured 0.80) and a p99 ceiling of 5 m — because a median alone passes a transform that is
+> right for half the rows. The RRC's published NAD83 is itself imperfect: 602 Andrews rows were
+> never converted upstream and are counted rather than scored, and a further ~19% sit in a
+> 3.4–3.9 m cluster that is the regulator's own conversion vintage, not spread in ours. All
+> three thresholds are `cr_tx_nad27_1.spec`.
+
 **Compute CRS note.** `crs_registry` pins Permian to UTM 13N / EPSG:32613 (v0.6 §3.0.3). The
 Midland Basin extends roughly 1° east of that zone's edge; UTM scale error there is ≈ 1.1 mm/m,
 i.e. ≈ 0.44 m across a 1,320 ft spacing distance — two orders below the datum hazard, and
