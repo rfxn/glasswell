@@ -11,7 +11,13 @@ from starlette.responses import JSONResponse
 
 from glasswell.api.deps import Connection, Cursor, SpineLimit, rows
 from glasswell.api.errors import ProblemError, problem_responses
-from glasswell.api.examples import EXAMPLE_TERM_ID, dataset, not_a_figure, request_example
+from glasswell.api.examples import (
+    EXAMPLE_TERM_ID,
+    dataset,
+    not_a_figure,
+    request_example,
+    semantics,
+)
 from glasswell.api.pagination import (
     DEFAULT_LIMIT,
     decode_cursor,
@@ -149,6 +155,35 @@ def _term(row: dict[str, Any]) -> dict[str, Any]:
             },
             intro="nb_dataset_glossary",
             order=40,
+        ),
+        **semantics(
+            cursor={
+                "so": (
+                    "Pins the page to a byte-ordered term sequence, so no term is skipped and"
+                    " none appears twice. The rows are seeded rather than user-written, so what"
+                    " is under a cursor here does not move while you read it."
+                ),
+            },
+            limit={
+                "so": (
+                    "Capped at 200, which is more than the whole vocabulary — this collection"
+                    " is meant to be read end to end rather than paged through."
+                ),
+            },
+            q={
+                "so": (
+                    "Matches a term and its aliases, so the word a regulator uses finds the term"
+                    " this system files it under. It does not search definitions: a concept you"
+                    " can describe but not name is reached through domain_tag instead."
+                ),
+            },
+            domain_tag={
+                "so": (
+                    "Filters to one subject area. It is the way in when you do not know the word"
+                    " yet — production, lineage, identity and time each read as a short course"
+                    " on their own."
+                ),
+            },
         ),
     },
     responses=problem_responses(

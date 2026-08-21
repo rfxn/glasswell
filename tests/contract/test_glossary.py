@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-SEEDED_TERMS = 45  # 44 from the glossary seed, plus gt_service_well from migration 027
+from glasswell.seed.glossary import load_glossary_seed
+
+# Derived rather than written down: O-6 adds glossary rows every phase, and a literal here
+# turns each of those into a second, unrelated red. `gt_service_well` is inserted by migration
+# 027 instead of being seeded, so it is the one term the file cannot count.
+SEEDED_TERMS = len(load_glossary_seed()) + 1
 STOPWORD_TERMS = 9
 
 

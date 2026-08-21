@@ -297,7 +297,8 @@
             "description": "First day the rule applies.",
             "format": "date",
             "title": "Effective From",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_effective_date"
           },
           "effective_to": {
             "anyOf": [
@@ -360,12 +361,14 @@
           "rule_kind": {
             "description": "Executor kind, or code_ref for a policy declaration.",
             "title": "Rule Kind",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_rule_kind"
           },
           "source_id": {
             "description": "Source the rule applies to.",
             "title": "Source Id",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_source"
           },
           "spec": {
             "additionalProperties": true,
@@ -376,7 +379,8 @@
           "stage": {
             "description": "parse, validate, conform or join.",
             "title": "Stage",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_pipeline_stage"
           },
           "supersedes_rule_id": {
             "anyOf": [
@@ -452,7 +456,8 @@
             "description": "First day the rule applies.",
             "format": "date",
             "title": "Effective From",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_effective_date"
           },
           "effective_to": {
             "anyOf": [
@@ -515,12 +520,14 @@
           "rule_kind": {
             "description": "Executor kind, or code_ref for a policy declaration.",
             "title": "Rule Kind",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_rule_kind"
           },
           "source_id": {
             "description": "Source the rule applies to.",
             "title": "Source Id",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_source"
           },
           "spec": {
             "additionalProperties": true,
@@ -531,7 +538,8 @@
           "stage": {
             "description": "parse, validate, conform or join.",
             "title": "Stage",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_pipeline_stage"
           },
           "supersedes_rule_id": {
             "anyOf": [
@@ -929,12 +937,14 @@
           "derivation_id": {
             "description": "Content address of the derivation spec.",
             "title": "Derivation Id",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_derivation_handle"
           },
           "determinism_class": {
             "description": "D1, D2 or D3.",
             "title": "Determinism Class",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_determinism_class"
           },
           "model_id": {
             "anyOf": [
@@ -2346,7 +2356,8 @@
             "description": "Self-stamped knowledge-time label (DIR-9).",
             "format": "date",
             "title": "Fetch Vintage",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_knowledge_time"
           },
           "fetched_at": {
             "description": "When it was fetched.",
@@ -2369,7 +2380,8 @@
           "manifest_id": {
             "description": "Content address of the fetched bytes.",
             "title": "Manifest Id",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_manifest"
           },
           "media_type": {
             "anyOf": [
@@ -2396,7 +2408,8 @@
           "source_id": {
             "description": "Source registry id.",
             "title": "Source Id",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_source"
           },
           "source_key": {
             "description": "Key of the artifact within the source.",
@@ -2548,7 +2561,8 @@
           "well_completion_pool": {
             "description": "Pool the operator filed this series under.",
             "title": "Well Completion Pool",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_pool"
           }
         },
         "required": [
@@ -2799,7 +2813,8 @@
               }
             ],
             "description": "Gas volumes in mcf.",
-            "title": "Gas Mcf"
+            "title": "Gas Mcf",
+            "x-glasswell-glossary": "gt_stream"
           },
           "gas_mcf_aggregation": {
             "anyOf": [
@@ -2880,7 +2895,8 @@
               }
             ],
             "description": "Oil volumes in bbl as decimal strings; null where no report.",
-            "title": "Oil Bbl"
+            "title": "Oil Bbl",
+            "x-glasswell-glossary": "gt_liquids_policy"
           },
           "oil_bbl_aggregation": {
             "anyOf": [
@@ -2947,7 +2963,8 @@
               "type": "string"
             },
             "title": "Pm",
-            "type": "array"
+            "type": "array",
+            "x-glasswell-glossary": "gt_production_month"
           },
           "water_bbl": {
             "anyOf": [
@@ -2969,7 +2986,8 @@
               }
             ],
             "description": "Water volumes in bbl.",
-            "title": "Water Bbl"
+            "title": "Water Bbl",
+            "x-glasswell-glossary": "gt_stream"
           },
           "water_bbl_aggregation": {
             "anyOf": [
@@ -3195,17 +3213,20 @@
               }
             ],
             "description": "Conformance rule that rejected it.",
-            "title": "Rule Id"
+            "title": "Rule Id",
+            "x-glasswell-glossary": "gt_conformance_rule"
           },
           "source_id": {
             "description": "Source the row came from.",
             "title": "Source Id",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_source"
           },
           "stage": {
-            "description": "Pipeline stage that rejected it.",
+            "description": "Pipeline stage that rejected it: parse, validate, conform or join.",
             "title": "Stage",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_pipeline_stage"
           },
           "staging_table": {
             "description": "Staging table it was read from.",
@@ -3215,7 +3236,8 @@
           "state": {
             "description": "open, released, accepted_loss or superseded.",
             "title": "State",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_quarantine_state"
           }
         },
         "required": [
@@ -3346,17 +3368,20 @@
               }
             ],
             "description": "Conformance rule that rejected it.",
-            "title": "Rule Id"
+            "title": "Rule Id",
+            "x-glasswell-glossary": "gt_conformance_rule"
           },
           "source_id": {
             "description": "Source the row came from.",
             "title": "Source Id",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_source"
           },
           "stage": {
-            "description": "Pipeline stage that rejected it.",
+            "description": "Pipeline stage that rejected it: parse, validate, conform or join.",
             "title": "Stage",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_pipeline_stage"
           },
           "staging_table": {
             "description": "Staging table it was read from.",
@@ -3366,7 +3391,8 @@
           "state": {
             "description": "open, released, accepted_loss or superseded.",
             "title": "State",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_quarantine_state"
           }
         },
         "required": [
@@ -3475,7 +3501,9 @@
               }
             ],
             "description": "Newest vintage promoted from this source.",
-            "title": "Declared Vintage"
+            "format": "date",
+            "title": "Declared Vintage",
+            "x-glasswell-glossary": "gt_knowledge_time"
           },
           "last_manifest_id": {
             "anyOf": [
@@ -3510,12 +3538,15 @@
               }
             ],
             "description": "Date of the newest manifest fetched.",
-            "title": "Retrieval Vintage"
+            "format": "date",
+            "title": "Retrieval Vintage",
+            "x-glasswell-glossary": "gt_knowledge_time"
           },
           "source_id": {
             "description": "Registry id of the upstream source.",
             "title": "Source Id",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_source"
           },
           "state": {
             "description": "current, stale or never_fetched.",
@@ -3708,13 +3739,15 @@
           "source_id": {
             "description": "Source the vintage was promoted from.",
             "title": "Source Id",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_source"
           },
           "vintage_date": {
             "description": "Knowledge-time label of the promotion (DIR-9).",
             "format": "date",
             "title": "Vintage Date",
-            "type": "string"
+            "type": "string",
+            "x-glasswell-glossary": "gt_knowledge_time"
           },
           "vintage_id": {
             "description": "Id of the (source, vintage) promotion.",
@@ -3814,6 +3847,7 @@
             ],
             "description": "County code recorded at permit.",
             "title": "County Code At Permit",
+            "x-glasswell-glossary": "gt_county_at_permit",
             "x-glasswell-not-a-figure": "County code as reported at permit; an identifier, not a quantity."
           },
           "effective_from": {
@@ -3899,7 +3933,8 @@
               }
             ],
             "description": "Operator name exactly as reported.",
-            "title": "Operator Name Reported"
+            "title": "Operator Name Reported",
+            "x-glasswell-glossary": "gt_operator_of_record"
           },
           "spud_date": {
             "anyOf": [
@@ -3912,7 +3947,8 @@
               }
             ],
             "description": "Spud date as reported.",
-            "title": "Spud Date"
+            "title": "Spud Date",
+            "x-glasswell-glossary": "gt_spud_date"
           },
           "state_code": {
             "anyOf": [
@@ -3937,7 +3973,8 @@
               }
             ],
             "description": "Status mapped through the source's status vocabulary rule \u2014 cr_nd_status_vocab_1 in North Dakota, cr_tx_status_vocab_1 in Texas. Null where the source reported no status at all, which is not the same as an unknown one.",
-            "title": "Status Canonical"
+            "title": "Status Canonical",
+            "x-glasswell-glossary": "gt_well_status"
           },
           "status_reported": {
             "anyOf": [
@@ -3989,7 +4026,8 @@
               }
             ],
             "description": "Well name as reported by the operator.",
-            "title": "Well Name"
+            "title": "Well Name",
+            "x-glasswell-glossary": "gt_well_name"
           },
           "well_type_reported": {
             "anyOf": [
@@ -4060,6 +4098,7 @@
             ],
             "description": "County code recorded at permit.",
             "title": "County Code At Permit",
+            "x-glasswell-glossary": "gt_county_at_permit",
             "x-glasswell-not-a-figure": "County code, in a collection item."
           },
           "effective_from": {
@@ -4100,7 +4139,8 @@
               }
             ],
             "description": "Operator name exactly as reported.",
-            "title": "Operator Name Reported"
+            "title": "Operator Name Reported",
+            "x-glasswell-glossary": "gt_operator_of_record"
           },
           "spud_date": {
             "anyOf": [
@@ -4113,7 +4153,8 @@
               }
             ],
             "description": "Spud date as reported.",
-            "title": "Spud Date"
+            "title": "Spud Date",
+            "x-glasswell-glossary": "gt_spud_date"
           },
           "status_canonical": {
             "anyOf": [
@@ -4125,7 +4166,8 @@
               }
             ],
             "description": "Status mapped through the source's status vocabulary rule \u2014 cr_nd_status_vocab_1 in North Dakota, cr_tx_status_vocab_1 in Texas. Null where the source reported no status at all, which is not the same as an unknown one.",
-            "title": "Status Canonical"
+            "title": "Status Canonical",
+            "x-glasswell-glossary": "gt_well_status"
           },
           "well_name": {
             "anyOf": [
@@ -4137,7 +4179,8 @@
               }
             ],
             "description": "Well name as reported by the operator.",
-            "title": "Well Name"
+            "title": "Well Name",
+            "x-glasswell-glossary": "gt_well_name"
           }
         },
         "required": [
@@ -4592,6 +4635,37 @@
           "query": {
             "limit": 5
           }
+        },
+        "x-glasswell-semantics": {
+          "cursor": {
+            "so": "Pins the page to a newest-effective-first ordering and to the filters that opened it. Rules are append-only, so a cursor here holds in a way a quarantine cursor does not \u2014 what was on page two is still on page two."
+          },
+          "effective_at": {
+            "so": "Asks which rules were in force on a date, not which rules exist. It is how a figure published six months ago is explained: read the policy as of that day rather than as of today.",
+            "x-glasswell-glossary": "gt_effective_date"
+          },
+          "family": {
+            "so": "Groups a rule with the versions it superseded. The family is the history of one decision; a rule_id is a single version of it, so only the family shows you what changed and when.",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "field": {
+            "so": "Lists every rule that governs one field. Before trusting a column, this is the parameter that says what was done to it \u2014 and an empty answer means nothing was, which is also worth knowing."
+          },
+          "kind": {
+            "so": "Narrows to one executor. Filtering to code_ref is the honest audit: it lists every decision recorded as a row but carried out by code, which is the set most likely to drift from what the row says.",
+            "x-glasswell-glossary": "gt_rule_kind"
+          },
+          "limit": {
+            "so": "Capped at 200. The registry is small on purpose: if paging this collection is laborious, the mapping policy has grown faster than anyone is reading it, which is itself the finding."
+          },
+          "source_id": {
+            "so": "Every rule is declared against exactly one source, so this is the whole mapping policy for one regulator file, on one page, in the author's own words.",
+            "x-glasswell-glossary": "gt_source"
+          },
+          "stage": {
+            "so": "Narrows to one stage of the pipeline, which decides when a rule runs and therefore which quarantine reasons it can produce.",
+            "x-glasswell-glossary": "gt_pipeline_stage"
+          }
         }
       }
     },
@@ -4942,6 +5016,20 @@
           "path": {},
           "query": {
             "limit": 5
+          }
+        },
+        "x-glasswell-semantics": {
+          "cursor": {
+            "so": "Pins the page to a newest-run-first ordering and to the filters that opened it. A run that finishes while you are paging appears at the front, not in the middle of the page you are on."
+          },
+          "limit": {
+            "so": "Capped at 200. This collection grows with every run rather than with the data, so it is the one most worth narrowing before paging."
+          },
+          "operation": {
+            "so": "Narrows to one kind of run \u2014 a fetch, a promotion, a mart build. It is the shortest path from a column you doubt to the operation that wrote it."
+          },
+          "status": {
+            "so": "Separates ok runs from failed ones. A failed derivation is kept rather than deleted, so this is how a hole in a mart is traced to the run that did not fill it."
           }
         }
       }
@@ -5541,6 +5629,20 @@
           "path": {},
           "query": {
             "limit": 5
+          }
+        },
+        "x-glasswell-semantics": {
+          "cursor": {
+            "so": "Pins the page to a byte-ordered term sequence, so no term is skipped and none appears twice. The rows are seeded rather than user-written, so what is under a cursor here does not move while you read it."
+          },
+          "domain_tag": {
+            "so": "Filters to one subject area. It is the way in when you do not know the word yet \u2014 production, lineage, identity and time each read as a short course on their own."
+          },
+          "limit": {
+            "so": "Capped at 200, which is more than the whole vocabulary \u2014 this collection is meant to be read end to end rather than paged through."
+          },
+          "q": {
+            "so": "Matches a term and its aliases, so the word a regulator uses finds the term this system files it under. It does not search definitions: a concept you can describe but not name is reached through domain_tag instead."
           }
         }
       }
@@ -6645,6 +6747,36 @@
           "query": {
             "limit": 5
           }
+        },
+        "x-glasswell-semantics": {
+          "as_of": {
+            "so": "A knowledge-time cut over registrations: it answers what this system had fetched by that date. It is not the regulator's publication date \u2014 a file published in March and fetched in June appears in June.",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "cursor": {
+            "so": "Pins the page to a newest-fetched-first ordering. The raw zone is append-only, so a new fetch lands at the front and pushes nothing off the end of a page you already hold."
+          },
+          "head_only": {
+            "so": "Hides every manifest a later fetch superseded, which is the current picture. Leave it off to see the supersession chain: the older bytes are still there, and a figure derived from them still resolves to them."
+          },
+          "limit": {
+            "so": "Capped at 200. A manifest carries the archive's member inventory, so a zipped source makes a page much larger than its row count suggests."
+          },
+          "source_id": {
+            "so": "One source's fetch history end to end, which is the route from a figure that looks stale to the fetch that fed it.",
+            "x-glasswell-glossary": "gt_source"
+          },
+          "source_key": {
+            "so": "Names the artifact within the source, so it follows one file across every fetch of it. That sequence is where a source's restatements become visible as bytes rather than as an assertion."
+          },
+          "vintage_from": {
+            "so": "Windows on the fetch vintage the manifest stamped itself with \u2014 the day the bytes were retrieved, not the period they describe.",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "vintage_to": {
+            "so": "The other end of the same fetch-vintage window. Narrow both and you have reconstructed what the raw zone held during one ingest window.",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          }
         }
       }
     },
@@ -7156,6 +7288,34 @@
           "path": {},
           "query": {
             "limit": 5
+          }
+        },
+        "x-glasswell-semantics": {
+          "cursor": {
+            "so": "Pins the page to a last-seen-first ordering. A row a fetch re-presents while you are paging moves to the front, onto a page you have already passed \u2014 the page under a cursor is stable, the backlog under it is not."
+          },
+          "limit": {
+            "so": "Capped at 200 here, a fifth of the wells cap, because a quarantine row carries the rejected payload verbatim. Two hundred rejected rows is already a large response."
+          },
+          "reason_code": {
+            "so": "Narrows to one failure mode from a fixed vocabulary. It is the fastest way to tell a bad file from a bad rule: one code dominating one source is usually the file, one code across every source is usually the rule.",
+            "x-glasswell-glossary": "gt_quarantine"
+          },
+          "rule_id": {
+            "so": "Lists what one rule refused. Read beside the rule's own row at /v1/conformance it is the rule's cost \u2014 how much data this decision left on the floor, in rows you can open.",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "source_id": {
+            "so": "Scopes to one upstream publication. Quarantine counts are only comparable within a source, because each source is a different file with a different number of rows behind it.",
+            "x-glasswell-glossary": "gt_source"
+          },
+          "stage": {
+            "so": "Separates rows by how far they got. Two rows with the same reason code at different stages are different bugs, and this is the parameter that tells them apart.",
+            "x-glasswell-glossary": "gt_pipeline_stage"
+          },
+          "state": {
+            "so": "Filters the lifecycle, not the severity. Leaving it off shows released and accepted_loss rows beside open ones, which is the honest total \u2014 a backlog that counts only open rows shrinks every time somebody gives up.",
+            "x-glasswell-glossary": "gt_quarantine_state"
           }
         }
       }
@@ -7716,6 +7876,15 @@
           "query": {
             "limit": 10
           }
+        },
+        "x-glasswell-semantics": {
+          "limit": {
+            "so": "Capped at 200, and this collection has no cursor. A source with a long promotion history is read newest-first and narrowed with source_id rather than paged through."
+          },
+          "source_id": {
+            "so": "One source's promotion history, newest knowledge date first. Comparing two sources takes two requests, because a vintage date only means something inside the source that stamped it.",
+            "x-glasswell-glossary": "gt_source"
+          }
         }
       }
     },
@@ -8102,6 +8271,38 @@
           "path": {},
           "query": {
             "limit": 5
+          }
+        },
+        "x-glasswell-semantics": {
+          "as_of": {
+            "so": "Reads the spine as it stood on that knowledge date. A well permitted afterwards is absent, and one whose operator changed since answers with the older name. It does not filter on when a well was drilled \u2014 it chooses which version of every row you are looking at.",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "bbox": {
+            "so": "WGS84 degrees, rejected above four a side. It matches a well any of whose recorded geometry \u2014 surface, bottomhole or lateral \u2014 overlaps the box, so a lateral clipping one corner is a hit and a surface hole outside it is not a miss.",
+            "x-glasswell-glossary": "gt_crs_compute_crs"
+          },
+          "county": {
+            "so": "Matches the county on the permit, which is fixed inside the API number and never restated. A lateral that produces in the next county still answers to the county it was permitted in.",
+            "x-glasswell-glossary": "gt_county_at_permit"
+          },
+          "cursor": {
+            "so": "Pins the page to the api10 order and to the filters that opened it. Change a filter and the cursor is refused rather than quietly re-scoped, so a resumed page is the same population you started paging through."
+          },
+          "limit": {
+            "so": "Caps this collection at 1000 a page \u2014 higher than the kitchen collections, because a wells page is what the map draws. Ask for more and the request is rejected rather than trimmed, so a page is never quietly short."
+          },
+          "operator": {
+            "so": "Substring-matches the reported spelling. A company that files under several spellings needs several searches, and a parent's subsidiaries do not roll up \u2014 that join is a conformance rule, not a search behaviour.",
+            "x-glasswell-glossary": "gt_operator_of_record"
+          },
+          "q": {
+            "so": "Substring-matches the name the operator filed. Names repeat across operators and change with the lease, so this narrows a list to read; it does not identify a well. Use api10 for that.",
+            "x-glasswell-glossary": "gt_well_name"
+          },
+          "status": {
+            "so": "Filters on the canonical value rather than the code the state published, so `active` here means every source's version of active. A reported code with no mapping is quarantined, so it matches no status at all.",
+            "x-glasswell-glossary": "gt_well_status"
           }
         }
       }
@@ -8511,6 +8712,24 @@
               "oil"
             ]
           }
+        },
+        "x-glasswell-semantics": {
+          "as_of": {
+            "so": "Selects the vintage of every point in the series. Two requests a month apart can return different volumes for the same production month, and both are correct.",
+            "x-glasswell-glossary": "gt_report_vintage"
+          },
+          "from": {
+            "so": "Windows on the production month, not on the report vintage, so it changes which months you see and never which restatement of them you get. Pair it with as_of to hold both still.",
+            "x-glasswell-glossary": "gt_production_month"
+          },
+          "stream": {
+            "so": "Repeat it to ask for more than one; omit it and you get oil, gas and water. Dropping a stream drops its column, never a month \u2014 the shared axis is the same either way, which is what keeps two streams comparable point for point.",
+            "x-glasswell-glossary": "gt_stream"
+          },
+          "to": {
+            "so": "The window's inclusive end, on the same production-month axis. A month nobody filed is absent from the axis rather than present as a zero \u2014 a gap in the series is a gap in the record.",
+            "x-glasswell-glossary": "gt_production_month"
+          }
         }
       }
     },
@@ -8735,6 +8954,16 @@
             "api10": "3305310451"
           },
           "query": {}
+        },
+        "x-glasswell-semantics": {
+          "as_of": {
+            "so": "Selects the vintage each pool row is read at. A restatement can move one pool's month and leave the other's alone, so pools that do not add up to the well's series are usually two vintages being compared rather than an arithmetic error.",
+            "x-glasswell-glossary": "gt_report_vintage"
+          },
+          "stream": {
+            "so": "Filters the columns inside every pool at once \u2014 there is no way to ask for oil from one pool and gas from another. A pool that filed nothing for the requested stream keeps its row and loses the column.",
+            "x-glasswell-glossary": "gt_stream"
+          }
         }
       }
     }

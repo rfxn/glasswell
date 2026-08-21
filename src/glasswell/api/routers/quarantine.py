@@ -18,6 +18,7 @@ from glasswell.api.examples import (
     dataset,
     not_a_figure,
     request_example,
+    semantics,
 )
 from glasswell.api.pagination import (
     DEFAULT_LIMIT,
@@ -31,7 +32,7 @@ from glasswell.api.responses import EnvelopeModel, enveloped, iso
 
 router = APIRouter(tags=["quality"])
 
-QUARANTINE_LABELS = {"/reason_code": "gt_quarantine", "/state": "gt_quarantine"}
+QUARANTINE_LABELS = {"/reason_code": "gt_quarantine", "/state": "gt_quarantine_state"}
 
 _COLUMNS = (
     "quarantine_id, row_fingerprint, source_id, staging_table, stage, reason_code, rule_id,"
@@ -64,14 +65,23 @@ select {group_by} as key, count(*) as count
 class QuarantineRow(BaseModel):
     quarantine_id: str = Field(description="Stable id of the quarantined row.")
     row_fingerprint: str = Field(description="Fingerprint that dedupes it across re-pulls.")
-    source_id: str = Field(description="Source the row came from.")
+    source_id: str = Field(
+        description="Source the row came from.",
+        json_schema_extra={GLOSSARY_KEY: "gt_source"},
+    )
     staging_table: str = Field(description="Staging table it was read from.")
-    stage: str = Field(description="Pipeline stage that rejected it.")
+    stage: str = Field(
+        description="Pipeline stage that rejected it: parse, validate, conform or join.",
+        json_schema_extra={GLOSSARY_KEY: "gt_pipeline_stage"},
+    )
     reason_code: str = Field(
         description="Why it was rejected (SB-07 §8.2).",
         json_schema_extra={GLOSSARY_KEY: "gt_quarantine"},
     )
-    rule_id: str | None = Field(description="Conformance rule that rejected it.")
+    rule_id: str | None = Field(
+        description="Conformance rule that rejected it.",
+        json_schema_extra={GLOSSARY_KEY: "gt_conformance_rule"},
+    )
     first_seen_at: datetime = Field(description="When it was first rejected.")
     first_seen_manifest_id: str = Field(description="Manifest it was first seen in.")
     last_seen_at: datetime = Field(description="When it was last re-presented.")
@@ -80,7 +90,10 @@ class QuarantineRow(BaseModel):
         description="How many fetches have re-presented it.",
         json_schema_extra=not_a_figure("Occurrence counter, in a collection item."),
     )
-    state: str = Field(description="open, released, accepted_loss or superseded.")
+    state: str = Field(
+        description="open, released, accepted_loss or superseded.",
+        json_schema_extra={GLOSSARY_KEY: "gt_quarantine_state"},
+    )
     released_by_rule_id: str | None = Field(description="Rule that released it, if any.")
     released_at: datetime | None = Field(description="When it was released.")
     release_derivation_id: str | None = Field(description="Derivation that released it.")
@@ -180,6 +193,62 @@ def _row(row: dict[str, Any]) -> dict[str, Any]:
             },
             intro="nb_dataset_quarantine",
             order=20,
+        ),
+        **semantics(
+            cursor={
+                "so": (
+                    "Pins the page to a last-seen-first ordering. A row a fetch re-presents"
+                    " while you are paging moves to the front, onto a page you have already"
+                    " passed — the page under a cursor is stable, the backlog under it is not."
+                ),
+            },
+            limit={
+                "so": (
+                    "Capped at 200 here, a fifth of the wells cap, because a quarantine row"
+                    " carries the rejected payload verbatim. Two hundred rejected rows is"
+                    " already a large response."
+                ),
+            },
+            source_id={
+                "glossary": "gt_source",
+                "so": (
+                    "Scopes to one upstream publication. Quarantine counts are only comparable"
+                    " within a source, because each source is a different file with a different"
+                    " number of rows behind it."
+                ),
+            },
+            reason_code={
+                "glossary": "gt_quarantine",
+                "so": (
+                    "Narrows to one failure mode from a fixed vocabulary. It is the fastest way"
+                    " to tell a bad file from a bad rule: one code dominating one source is"
+                    " usually the file, one code across every source is usually the rule."
+                ),
+            },
+            rule_id={
+                "glossary": "gt_conformance_rule",
+                "so": (
+                    "Lists what one rule refused. Read beside the rule's own row at"
+                    " /v1/conformance it is the rule's cost — how much data this decision left"
+                    " on the floor, in rows you can open."
+                ),
+            },
+            state={
+                "glossary": "gt_quarantine_state",
+                "so": (
+                    "Filters the lifecycle, not the severity. Leaving it off shows released and"
+                    " accepted_loss rows beside open ones, which is the honest total — a"
+                    " backlog that counts only open rows shrinks every time somebody gives up."
+                ),
+            },
+            stage={
+                "glossary": "gt_pipeline_stage",
+                "so": (
+                    "Separates rows by how far they got. Two rows with the same reason code at"
+                    " different stages are different bugs, and this is the parameter that tells"
+                    " them apart."
+                ),
+            },
         ),
     },
     responses=problem_responses(

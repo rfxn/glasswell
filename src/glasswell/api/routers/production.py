@@ -20,6 +20,7 @@ from glasswell.api.examples import (
     dataset,
     not_a_figure,
     request_example,
+    semantics,
 )
 from glasswell.api.responses import EnvelopeModel, enveloped, freshness_state, iso, month_label
 from glasswell.api.routers.wells import API10_PATTERN, RANKED_WELLS, pending_allocation
@@ -104,9 +105,14 @@ class ProductionSeries(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    pm: list[str] = Field(description="Production months, YYYY-MM, ascending.")
+    pm: list[str] = Field(
+        description="Production months, YYYY-MM, ascending.",
+        json_schema_extra={GLOSSARY_KEY: "gt_production_month"},
+    )
     oil_bbl: list[str | None] | None = Field(
-        default=None, description="Oil volumes in bbl as decimal strings; null where no report."
+        default=None,
+        description="Oil volumes in bbl as decimal strings; null where no report.",
+        json_schema_extra={GLOSSARY_KEY: "gt_liquids_policy"},
     )
     oil_bbl_report_vintage: list[str | None] | None = Field(
         default=None, description="Report vintage used for each oil point."
@@ -126,7 +132,11 @@ class ProductionSeries(BaseModel):
             " cr_nd_pool_rollup_1; null where the month is a single filing."
         ),
     )
-    gas_mcf: list[str | None] | None = Field(default=None, description="Gas volumes in mcf.")
+    gas_mcf: list[str | None] | None = Field(
+        default=None,
+        description="Gas volumes in mcf.",
+        json_schema_extra={GLOSSARY_KEY: "gt_stream"},
+    )
     gas_mcf_report_vintage: list[str | None] | None = Field(
         default=None, description="Report vintage used for each gas point."
     )
@@ -136,7 +146,11 @@ class ProductionSeries(BaseModel):
     gas_mcf_aggregation: list[str | None] | None = Field(
         default=None, description="Aggregation per gas point; same vocabulary as oil."
     )
-    water_bbl: list[str | None] | None = Field(default=None, description="Water volumes in bbl.")
+    water_bbl: list[str | None] | None = Field(
+        default=None,
+        description="Water volumes in bbl.",
+        json_schema_extra={GLOSSARY_KEY: "gt_stream"},
+    )
     water_bbl_report_vintage: list[str | None] | None = Field(
         default=None, description="Report vintage used for each water point."
     )
@@ -191,6 +205,26 @@ def _labels(columns: list[str]) -> dict[str, str]:
         labels[f"/series/{column}"] = "gt_liquids_policy" if column == "oil_bbl" else "gt_stream"
         labels[f"/series/{column}_report_vintage"] = "gt_report_vintage"
         labels[f"/series/{column}_null_semantics"] = "gt_withheld"
+    return labels
+
+
+def _pool_labels(pools: list[dict[str, Any]]) -> dict[str, str]:
+    """One key per pool actually present, because the client's lookup is exact-match.
+
+    A `/pools/*/series/oil_bbl` key resolves for nobody: `web/src/api/envelope.ts:54-56` reads
+    `meta.labels[pointer]` with no glob and no prefix walk, and teaching it globs means editing
+    a frozen file. The loop is bounded by the pools a well filed in — one or two — and runs
+    where the assembled list already is.
+    """
+    labels = {"/granularity": "gt_granularity", "/api10": "gt_api_10_api_12_api_14"}
+    for index, pool in enumerate(pools):
+        labels[f"/pools/{index}/well_completion_pool"] = "gt_pool"
+        columns = [STREAM_COLUMNS[stream] for stream in pool["streams"]]
+        labels |= {
+            f"/pools/{index}{pointer}": term
+            for pointer, term in _labels(columns).items()
+            if pointer.startswith("/series/")
+        }
     return labels
 
 
@@ -263,6 +297,43 @@ def _state_code(connection, api10: str) -> str | None:
             },
             intro="nb_dataset_production",
             order=11,
+        ),
+        **semantics(
+            as_of={
+                "glossary": "gt_report_vintage",
+                "so": (
+                    "Selects the vintage of every point in the series. Two requests a month"
+                    " apart can return different volumes for the same production month, and"
+                    " both are correct."
+                ),
+            },
+            stream={
+                "glossary": "gt_stream",
+                "so": (
+                    "Repeat it to ask for more than one; omit it and you get oil, gas and"
+                    " water. Dropping a stream drops its column, never a month — the shared"
+                    " axis is the same either way, which is what keeps two streams comparable"
+                    " point for point."
+                ),
+            },
+            **{
+                "from": {
+                    "glossary": "gt_production_month",
+                    "so": (
+                        "Windows on the production month, not on the report vintage, so it"
+                        " changes which months you see and never which restatement of them you"
+                        " get. Pair it with as_of to hold both still."
+                    ),
+                },
+                "to": {
+                    "glossary": "gt_production_month",
+                    "so": (
+                        "The window's inclusive end, on the same production-month axis. A month"
+                        " nobody filed is absent from the axis rather than present as a zero —"
+                        " a gap in the series is a gap in the record."
+                    ),
+                },
+            },
         ),
     },
     responses=problem_responses(
@@ -407,7 +478,10 @@ def get_well_production(
 class PoolProduction(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    well_completion_pool: str = Field(description="Pool the operator filed this series under.")
+    well_completion_pool: str = Field(
+        description="Pool the operator filed this series under.",
+        json_schema_extra={GLOSSARY_KEY: "gt_pool"},
+    )
     entity_key: str = Field(description="S-E entity key of this completion: api10:pool.")
     streams: list[str] = Field(description="Streams present for this pool.")
     series: ProductionSeries = Field(description="The parallel arrays for this pool alone.")
@@ -481,6 +555,25 @@ class ProductionPools(BaseModel):
             },
             intro="nb_dataset_production_pools",
             order=12,
+        ),
+        **semantics(
+            as_of={
+                "glossary": "gt_report_vintage",
+                "so": (
+                    "Selects the vintage each pool row is read at. A restatement can move one"
+                    " pool's month and leave the other's alone, so pools that do not add up to"
+                    " the well's series are usually two vintages being compared rather than an"
+                    " arithmetic error."
+                ),
+            },
+            stream={
+                "glossary": "gt_stream",
+                "so": (
+                    "Filters the columns inside every pool at once — there is no way to ask for"
+                    " oil from one pool and gas from another. A pool that filed nothing for the"
+                    " requested stream keeps its row and loses the column."
+                ),
+            },
         ),
     },
     responses=problem_responses(
@@ -567,7 +660,7 @@ def get_well_production_pools(
         },
         as_of=max((row["report_vintage"] for row in observed), default=None),
         as_of_requested=iso(as_of) or "latest",
-        labels={"/granularity": "gt_granularity", "/api10": "gt_api_10_api_12_api_14"},
+        labels=_pool_labels(pools),
         source_freshness=_freshness(connection, source_ids),
         links={
             "well": f"/v1/wells/{api10}",

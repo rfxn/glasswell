@@ -24,10 +24,12 @@ from glasswell.api.examples import (
     EXAMPLE_DERIVATION_ID,
     EXAMPLE_MANIFEST_ID,
     EXAMPLE_VINTAGE_ID,
+    GLOSSARY_KEY,
     VINTAGE_ID_NOTE,
     dataset,
     not_a_figure,
     request_example,
+    semantics,
 )
 from glasswell.api.pagination import (
     DEFAULT_LIMIT,
@@ -211,8 +213,14 @@ class Derivation(BaseModel):
 
 
 class Manifest(BaseModel):
-    manifest_id: str = Field(description="Content address of the fetched bytes.")
-    source_id: str = Field(description="Source registry id.")
+    manifest_id: str = Field(
+        description="Content address of the fetched bytes.",
+        json_schema_extra={GLOSSARY_KEY: "gt_manifest"},
+    )
+    source_id: str = Field(
+        description="Source registry id.",
+        json_schema_extra={GLOSSARY_KEY: "gt_source"},
+    )
     source_key: str = Field(description="Key of the artifact within the source.")
     sha256: str = Field(description="Hash of the bytes as fetched.")
     bytes: int = Field(
@@ -224,7 +232,10 @@ class Manifest(BaseModel):
     acquisition_url: str = Field(description="Exact URL the bytes came from.")
     acquisition_method: str = Field(description="How it was acquired.")
     fetched_at: datetime = Field(description="When it was fetched.")
-    fetch_vintage: date = Field(description="Self-stamped knowledge-time label (DIR-9).")
+    fetch_vintage: date = Field(
+        description="Self-stamped knowledge-time label (DIR-9).",
+        json_schema_extra={GLOSSARY_KEY: "gt_knowledge_time"},
+    )
     media_type: str | None = Field(description="Media type, where the server declared one.")
     decompressed_inventory: list[dict[str, Any]] = Field(description="Members of an archive.")
     supersedes: str | None = Field(description="Manifest this one replaced.")
@@ -239,8 +250,14 @@ class Manifest(BaseModel):
 
 class Vintage(BaseModel):
     vintage_id: str = Field(description="Id of the (source, vintage) promotion.")
-    source_id: str = Field(description="Source the vintage was promoted from.")
-    vintage_date: date = Field(description="Knowledge-time label of the promotion (DIR-9).")
+    source_id: str = Field(
+        description="Source the vintage was promoted from.",
+        json_schema_extra={GLOSSARY_KEY: "gt_source"},
+    )
+    vintage_date: date = Field(
+        description="Knowledge-time label of the promotion (DIR-9).",
+        json_schema_extra={GLOSSARY_KEY: "gt_knowledge_time"},
+    )
     manifest_ids: list[str] = Field(description="Manifests the promotion read.")
     opened_at: datetime = Field(description="When the vintage was opened.")
     promotion_derivation_id: str | None = Field(description="Derivation that promoted it.")
@@ -261,7 +278,10 @@ class Vintage(BaseModel):
 
 
 class DerivationSummary(BaseModel):
-    derivation_id: str = Field(description="Content address of the derivation spec.")
+    derivation_id: str = Field(
+        description="Content address of the derivation spec.",
+        json_schema_extra={GLOSSARY_KEY: "gt_derivation_handle"},
+    )
     operation: str = Field(description="Operation that ran.")
     output_store: str = Field(description="Where the output was written.")
     output_dataset: str = Field(description="Dataset it produced.")
@@ -276,7 +296,10 @@ class DerivationSummary(BaseModel):
     created_vintage: date | None = Field(description="Knowledge time, not wall clock.")
     created_at: datetime = Field(description="When the derivation ran.")
     status: str = Field(description="ok or failed.")
-    determinism_class: str = Field(description="D1, D2 or D3.")
+    determinism_class: str = Field(
+        description="D1, D2 or D3.",
+        json_schema_extra={GLOSSARY_KEY: "gt_determinism_class"},
+    )
     recipe_id: str | None = Field(description="Recipe, where one was recorded.")
     model_id: str | None = Field(description="Model, where one was used.")
 
@@ -492,6 +515,64 @@ def _manifest(row: dict[str, Any], *, principal: ResolvedPrincipal) -> dict[str,
             intro="nb_dataset_manifests",
             order=22,
         ),
+        **semantics(
+            cursor={
+                "so": (
+                    "Pins the page to a newest-fetched-first ordering. The raw zone is"
+                    " append-only, so a new fetch lands at the front and pushes nothing off the"
+                    " end of a page you already hold."
+                ),
+            },
+            limit={
+                "so": (
+                    "Capped at 200. A manifest carries the archive's member inventory, so a"
+                    " zipped source makes a page much larger than its row count suggests."
+                ),
+            },
+            as_of={
+                "glossary": "gt_knowledge_time",
+                "so": (
+                    "A knowledge-time cut over registrations: it answers what this system had"
+                    " fetched by that date. It is not the regulator's publication date — a file"
+                    " published in March and fetched in June appears in June."
+                ),
+            },
+            source_id={
+                "glossary": "gt_source",
+                "so": (
+                    "One source's fetch history end to end, which is the route from a figure"
+                    " that looks stale to the fetch that fed it."
+                ),
+            },
+            source_key={
+                "so": (
+                    "Names the artifact within the source, so it follows one file across every"
+                    " fetch of it. That sequence is where a source's restatements become"
+                    " visible as bytes rather than as an assertion."
+                ),
+            },
+            vintage_from={
+                "glossary": "gt_knowledge_time",
+                "so": (
+                    "Windows on the fetch vintage the manifest stamped itself with — the day"
+                    " the bytes were retrieved, not the period they describe."
+                ),
+            },
+            vintage_to={
+                "glossary": "gt_knowledge_time",
+                "so": (
+                    "The other end of the same fetch-vintage window. Narrow both and you have"
+                    " reconstructed what the raw zone held during one ingest window."
+                ),
+            },
+            head_only={
+                "so": (
+                    "Hides every manifest a later fetch superseded, which is the current"
+                    " picture. Leave it off to see the supersession chain: the older bytes are"
+                    " still there, and a figure derived from them still resolves to them."
+                ),
+            },
+        ),
     },
     responses=problem_responses(
         "validation_failed", "cursor_malformed", "cursor_query_mismatch", "service_degraded"
@@ -649,6 +730,34 @@ def get_manifest(
             intro="nb_dataset_derivations",
             order=24,
         ),
+        **semantics(
+            cursor={
+                "so": (
+                    "Pins the page to a newest-run-first ordering and to the filters that opened"
+                    " it. A run that finishes while you are paging appears at the front, not in"
+                    " the middle of the page you are on."
+                ),
+            },
+            limit={
+                "so": (
+                    "Capped at 200. This collection grows with every run rather than with the"
+                    " data, so it is the one most worth narrowing before paging."
+                ),
+            },
+            operation={
+                "so": (
+                    "Narrows to one kind of run — a fetch, a promotion, a mart build. It is the"
+                    " shortest path from a column you doubt to the operation that wrote it."
+                ),
+            },
+            status={
+                "so": (
+                    "Separates ok runs from failed ones. A failed derivation is kept rather than"
+                    " deleted, so this is how a hole in a mart is traced to the run that did not"
+                    " fill it."
+                ),
+            },
+        ),
     },
     responses=problem_responses(
         "validation_failed", "cursor_malformed", "cursor_query_mismatch", "service_degraded"
@@ -796,6 +905,23 @@ def _vintage_explain(records: list[dict[str, Any]]) -> str | None:
             },
             intro="nb_dataset_vintages",
             order=23,
+        ),
+        **semantics(
+            limit={
+                "so": (
+                    "Capped at 200, and this collection has no cursor. A source with a long"
+                    " promotion history is read newest-first and narrowed with source_id rather"
+                    " than paged through."
+                ),
+            },
+            source_id={
+                "glossary": "gt_source",
+                "so": (
+                    "One source's promotion history, newest knowledge date first. Comparing two"
+                    " sources takes two requests, because a vintage date only means something"
+                    " inside the source that stamped it."
+                ),
+            },
         ),
     },
     responses=problem_responses("validation_failed", "service_degraded"),

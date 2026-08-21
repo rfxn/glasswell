@@ -6,7 +6,8 @@ contract fixture seeds exactly them.
 
 SB-08 A-1's browsable-dataset declaration lives here for the same reason: the explorer's
 catalogue is generated from the served document, so the document is where the declaration has
-to be right, and `dataset()` is the one place a declaration is built.
+to be right, and `dataset()` is the one place a declaration is built. A-8's per-parameter
+semantics ride in the same document for the same reason.
 """
 
 from __future__ import annotations
@@ -20,12 +21,14 @@ REQUEST_EXAMPLE_KEY = "x-glasswell-request-example"
 GLOSSARY_KEY = "x-glasswell-glossary"
 DATASET_KEY = "x-glasswell-dataset"
 NOT_A_FIGURE_KEY = "x-glasswell-not-a-figure"
+SEMANTICS_KEY = "x-glasswell-semantics"
 
 DATASET_GROUPS = ("wells", "kitchen", "vocabulary", "service")
 # The explorer's own top-level routes. A dataset taking one of these ids shadows the shell.
 RESERVED_DATASET_IDS = frozenset({"map", "query", "learn", "api"})
 
 Pointer = Annotated[str, Field(pattern=r"^/[^/]+(/[^/]+)*$")]
+TermId = Annotated[str, Field(pattern=r"^gt_[a-z0-9_]+$")]
 
 EXAMPLE_API10 = "3305310451"
 EXAMPLE_MANIFEST_ID = "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
@@ -137,3 +140,37 @@ def dataset(**fields: Any) -> dict[str, Any]:
     expressible as an omitted `columns.default`.
     """
     return {DATASET_KEY: Dataset(**fields).model_dump(exclude_none=True)}
+
+
+class ParameterSemantics(BaseModel):
+    """SB-08 rev 3 §4.3: one parameter's WHY source and its per-operation consequence.
+
+    The inner member is spelled `x-glasswell-glossary` and not `glossary` because the name is
+    the mechanism: `test_glossary_coverage._bindings` collects by key, at any depth, so this
+    spelling puts A-8's term references under R9 with no second code path (G-2).
+    """
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    glossary: TermId | None = Field(default=None, alias=GLOSSARY_KEY)
+    so: Annotated[str, Field(min_length=1)] | None = None
+
+    @model_validator(mode="after")
+    def _an_entry_carries_at_least_one_of_the_two(self) -> ParameterSemantics:
+        if self.glossary is None and (self.so is None or not self.so.strip()):
+            raise ValueError("an entry binds a term, states a consequence, or is not written")
+        return self
+
+
+def semantics(**parameters: Any) -> dict[str, Any]:
+    """`openapi_extra` payload: SB-08 A-8's per-parameter semantics, keyed by parameter name.
+
+    A parameter whose OpenAPI name is a Python keyword — `from` on the production window — is
+    passed by unpacking a literal mapping at the call site.
+    """
+    return {
+        SEMANTICS_KEY: {
+            name: ParameterSemantics(**entry).model_dump(by_alias=True, exclude_none=True)
+            for name, entry in parameters.items()
+        }
+    }

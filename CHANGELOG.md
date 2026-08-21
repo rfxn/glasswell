@@ -145,6 +145,40 @@ its own version in its header, and its history is summarised in §3.1.
          a wall of exempt numbers. `tests/contract/test_vintage_lineage.py` holds both
          directions of the coupling; the A-2 register stops demanding an exemption from every
          declared-numeric property, because a number that carries a handle is not exempt
+- [New] `x-glasswell-semantics` (SB-08 A-8) on nine operations, 47 parameters: what each one
+      does to *this* request, in a sentence written per operation. `as_of` on `/v1/wells`
+      resolves a spine snapshot while `as_of` on a well's production selects the vintage of
+      every point in the series, and the two say so separately — a shared glossary row could
+      not carry either, which is the modelling reason the extension exists. The inner binding
+      is named `x-glasswell-glossary`, so the R9 referential check picks these up by
+      construction: a term id that does not exist turns `test_every_schema_binding_resolves`
+      red with no edit to that test
+- [New] The A-8 lint: every annotated key is a real parameter of the operation it sits on,
+      every entry binds a term or states a consequence, every annotated parameter carries the
+      description the pane reads WHAT from, and the pre-rev-3 spelling `glossary` is refused
+      rather than silently uncollected. `so` is prose and stays reviewed, not machine-checked
+- [New] Eleven glossary terms — pool, production month, source, pipeline stage, rule kind,
+      quarantine state, well name, well status, operator of record, county at permit and spud
+      date — each written for a reader who knows software and not this domain, and each
+      answering the question the column raises: why a county code is a permit fact, why an
+      operator name counts filings rather than companies, why a production month with two
+      values has no wrong one
+- [New] O-6's first authoring tranche binds 36 of 66 declared default columns — 55 %, against
+      SB-08 §3.2's 40 % floor for this phase — with `production`, `production_pools` and
+      `wells` bound end to end. `test_default_column_binding_meets_the_phase_floor` derives
+      both terms at run time, composes its lookup pointer with the rule the grid composes its
+      own with, prints the per-dataset table, and carries a vacuity guard so a future edit
+      that deletes `columns.default` cannot report 100 % over six columns
+- [Change] The pooled production response labels each pool at the index it is served at —
+         `/pools/0/series/oil_bbl`, `/pools/1/…` — rather than at a `/pools/*/…` key. The
+         client resolves labels by exact pointer match with no glob and no prefix walk, so the
+         wildcard form bound nothing; the loop is bounded by the pools a well filed in
+- [Fix] `SourceHealth.retrieval_vintage` and `.declared_vintage` declare `format: date`. They
+      were bare strings, so the explorer classified two dates as prose where every other date
+      on the surface is typed
+- [Fix] `/v1/glossary`'s served-term count and `QuarantineRow.state`'s label are both derived
+      rather than written down: the count reads the seed, and the label follows the schema
+      binding instead of pointing at the general quarantine term
 
 ### 2026-08-21 — increment-3 merge train
 

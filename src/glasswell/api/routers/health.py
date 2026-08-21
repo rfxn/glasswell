@@ -11,7 +11,7 @@ from starlette.responses import JSONResponse
 
 from glasswell.api.deps import Connection, rows, today
 from glasswell.api.errors import problem_responses
-from glasswell.api.examples import dataset, not_a_figure, request_example
+from glasswell.api.examples import GLOSSARY_KEY, dataset, not_a_figure, request_example
 from glasswell.api.responses import EnvelopeModel, enveloped, freshness_state, iso
 
 liveness = APIRouter(tags=["service"])
@@ -39,11 +39,22 @@ class Liveness(BaseModel):
 
 
 class SourceHealth(BaseModel):
-    source_id: str = Field(description="Registry id of the upstream source.")
+    source_id: str = Field(
+        description="Registry id of the upstream source.",
+        json_schema_extra={GLOSSARY_KEY: "gt_source"},
+    )
     name: str = Field(description="Human-readable source name.")
     state: str = Field(description="current, stale or never_fetched.")
-    retrieval_vintage: str | None = Field(description="Date of the newest manifest fetched.")
-    declared_vintage: str | None = Field(description="Newest vintage promoted from this source.")
+    # `format: date` so the explorer's grid classifies these as dates rather than as prose,
+    # which is what every other date on the surface gets from its own type (C7 §8).
+    retrieval_vintage: str | None = Field(
+        description="Date of the newest manifest fetched.",
+        json_schema_extra={"format": "date", GLOSSARY_KEY: "gt_knowledge_time"},
+    )
+    declared_vintage: str | None = Field(
+        description="Newest vintage promoted from this source.",
+        json_schema_extra={"format": "date", GLOSSARY_KEY: "gt_knowledge_time"},
+    )
     last_manifest_id: str | None = Field(description="Newest manifest registered.")
     manifest_count: int = Field(
         description="Manifests registered for this source.",

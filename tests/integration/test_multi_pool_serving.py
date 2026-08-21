@@ -159,6 +159,20 @@ def test_every_pool_series_carries_its_own_handle(wells, api_client):
     assert body["data"]["reporting_level"] == "well_completion_pool"
 
 
+def test_every_pool_column_is_labelled_at_the_index_it_is_served_at(wells, api_client):
+    """SB-08 M6: the client resolves `meta.labels` by exact pointer match, so a pooled response
+    has to name each pool by its own index. The contract fixture's well files in one pool, so
+    this is the only place the two-pool shape reaches the router."""
+    body = api_client.get(f"/v1/wells/{MULTI_POOL}/production/pools").json()
+    labels = body["meta"]["labels"]
+
+    assert labels["/pools/0/well_completion_pool"] == "gt_pool"
+    assert labels["/pools/1/well_completion_pool"] == "gt_pool"
+    assert labels["/pools/0/series/oil_bbl"] == "gt_liquids_policy"
+    assert labels["/pools/1/series/oil_bbl"] == "gt_liquids_policy"
+    assert [pointer for pointer in labels if "*" in pointer] == []
+
+
 def test_the_pool_sum_reconciles_with_the_well_figure(wells, api_client):
     pools = api_client.get(f"/v1/wells/{MULTI_POOL}/production/pools").json()["data"]["pools"]
     well = series(api_client, MULTI_POOL)["data"]["series"]["oil_bbl"][0]
