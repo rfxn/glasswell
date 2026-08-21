@@ -217,10 +217,11 @@ assert "a well-formed layer id outside the allowlist is refused" 422 \
     "$(keyed_status "$base/v1/tiles/gw-evil-layer/8/54/89.pbf")"
 assert_true "every path in the committed OpenAPI snapshot exists on this instance" \
     "the published contract and the served one disagree" \
-    python3 -c '
-import json, sys, urllib.request
+    env SMOKE_OWNER_KEY="$owner_key" python3 -c '
+import json, os, sys, urllib.request
 snapshot = json.load(open(sys.argv[1]))
-with urllib.request.urlopen(sys.argv[2], timeout=30) as response:
+request = urllib.request.Request(sys.argv[2], headers={"X-Glasswell-Key": os.environ.get("SMOKE_OWNER_KEY", "")})
+with urllib.request.urlopen(request, timeout=30) as response:
     live = json.load(response)
 missing = sorted(set(snapshot["paths"]) - set(live["paths"]))
 if missing:
