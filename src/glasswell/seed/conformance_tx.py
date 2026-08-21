@@ -90,6 +90,7 @@ TX_RULES: tuple[dict[str, object], ...] = (
             "separator": "",
             "pad": {"api": 8},
             "min_width": {"api": 8},
+            "charset": {"api": "digits"},
             "on_missing": "quarantine",
             "reason_code": "key_incomplete",
             "state_code": "42",
@@ -108,7 +109,11 @@ TX_RULES: tuple[dict[str, object], ...] = (
             " 78,856 of 794,826 point rows across the 55 archives are not eight characters - and"
             " padding one of those up builds a syntactically perfect API-10 for a well that does"
             " not exist. Those rows quarantine as key_incomplete, which is what they always"
-            " were."
+            " were. charset bounds the other half of the same guarantee: eight characters is a"
+            " width and 42ABCDEFGH satisfies it, so the segment is declared numeric rather than"
+            " merely eight long. One value in the 55 archives is non-numeric ('475W3', which"
+            " min_width already refuses) so this changes no TX row - it is stated because the"
+            " same executor keys NM next, on components that are alphanumeric."
         ),
         "evidence_url": EWA_MANUAL,
     },

@@ -175,6 +175,9 @@ def _alias_join(
     return _split_on_marker(marked, rule, target_col, action, reason)
 
 
+CHARACTER_CLASSES: dict[str, str] = {"digits": r"^[0-9]+$"}
+
+
 def _declared_width(width: object, rule: ConformanceRule, column: str, key: str) -> int:
     _require(
         isinstance(width, int) and not isinstance(width, bool) and width > 0,
@@ -206,6 +209,10 @@ def _key_composite(
       which then reaches the map. `min_width` is what separates a lease number whose leading
       zeros the source dropped from a record that is not the thing at all.
 
+    `charset` bounds content the same way, per column: width alone accepts `ABCDEFGH` under an
+    eight-wide pad and builds `42ABCDEFGH`, an API-10 whose county and well number are letters.
+    A column the rule names no class for is unconstrained, because NM's pool label is prose.
+
     `min_width` defaults to 1, so a rule that declares no minimum keeps the old behaviour for
     everything except overbuilding, which is refused everywhere.
     """
@@ -224,6 +231,20 @@ def _key_composite(
         rule,
         f"min_width names {sorted(set(minimums) - set(pad))}, which pad does not",
     )
+    charsets = rule.spec.get("charset") or {}
+    _require(isinstance(charsets, Mapping), rule, "charset must map a column name to a class")
+    _require(
+        set(charsets) <= set(source_cols),
+        rule,
+        f"charset names {sorted(set(charsets) - set(source_cols))}, which source_cols does not",
+    )
+    for column, declared in charsets.items():
+        _require(
+            declared in CHARACTER_CLASSES,
+            rule,
+            f"charset[{column}] is {declared!r}; the classes are"
+            f" {', '.join(sorted(CHARACTER_CLASSES))}",
+        )
     for column in source_cols:
         _require(column in frame.columns, rule, f"{column} is not a column of the frame")
 
@@ -234,6 +255,8 @@ def _key_composite(
         # An empty component is missing, not a key that happens to render as `a::b`.
         usable = shipped.is_not_null() & (length > 0)
         value = shipped
+        if column in charsets:
+            usable = usable & shipped.str.contains(CHARACTER_CLASSES[charsets[column]])
         if column in pad:
             width = _declared_width(pad[column], rule, column, "pad")
             floor = _declared_width(minimums.get(column, 1), rule, column, "min_width")

@@ -135,6 +135,47 @@ def test_passthrough_leaves_the_unkeyable_row_in_the_frame_with_a_null_key():
     assert quarantined == []
 
 
+def test_a_component_outside_the_declared_character_class_is_refused():
+    """Width is not identity. `pad`/`min_width` judge length only, so an eight-character
+    non-numeric API passes both and builds `42ABCDEFGH` — a syntactically perfect API-10 whose
+    county and well number are letters. TX has no such row today; NM's key components are
+    alphanumeric, so the guarantee is declared per column rather than inferred from one state's
+    data (gate-tx-qa re-gate, D1 residual)."""
+    frame = pl.DataFrame({"state_code": ["42", "42"], "api": ["00300446", "ABCDEFGH"]})
+
+    kept, quarantined = run(
+        frame,
+        source_cols=["state_code", "api"],
+        separator="",
+        target_col="api10",
+        pad={"api": 8},
+        min_width={"api": 8},
+        charset={"api": "digits"},
+        on_missing="quarantine",
+        reason_code="key_incomplete",
+    )
+
+    assert kept["api10"].to_list() == ["4200300446"]
+    assert [batch.reason_code for batch in quarantined] == ["key_incomplete"]
+    assert quarantined[0].frame["api"].to_list() == ["ABCDEFGH"]
+
+
+def test_a_column_the_rule_declares_no_class_for_is_unconstrained():
+    """NM's pool label is prose the regulator writes; only the columns named are bounded."""
+    frame = pl.DataFrame({"api10": ["3005512345"], "pool": ["WC-025 G-09 S243308G"]})
+
+    kept, quarantined = run(
+        frame,
+        source_cols=["api10", "pool"],
+        separator=":",
+        target_col="entity_key",
+        charset={"api10": "digits"},
+    )
+
+    assert kept["entity_key"].to_list() == ["3005512345:WC-025 G-09 S243308G"]
+    assert quarantined == []
+
+
 @pytest.mark.parametrize(
     ("spec", "message"),
     [
@@ -149,6 +190,18 @@ def test_passthrough_leaves_the_unkeyable_row_in_the_frame_with_a_null_key():
         (
             {"source_cols": ["api10"], "target_col": "entity_key", "pad": {"api10": 0}},
             "positive integer",
+        ),
+        (
+            {
+                "source_cols": ["api10"],
+                "target_col": "entity_key",
+                "charset": {"api10": "numeric"},
+            },
+            "the classes are",
+        ),
+        (
+            {"source_cols": ["api10"], "target_col": "entity_key", "charset": {"pool": "digits"}},
+            "which source_cols does not",
         ),
     ],
 )
