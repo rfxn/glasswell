@@ -93,10 +93,17 @@ month" with dated bundles; the server carries neither (`cr_nm_<table>_ftp_layout
    every one of them falls in **1986–1993**. There are none inside the 2015-01 window, so the
    bounded first pass will see three codes and the eventual full backfill will see four. The
    stream vocabulary must admit it; `canonical.production_monthly` already does (migration 021).
-2. **One row cannot compose an API-10.** `api_well_idn` widths are 1→620, 2→39,300, 3→493,572,
-   4→7,927,412, 5→39,688,526 and **6→1**, that one being `30-15-256350`. A pad-to-five rule is
+2. **One row cannot compose an API-10.** `api_well_idn` widths are 1→620, 2→39,273, 3→493,111,
+   4→7,919,970, 5→39,651,359 and **6→1**, that one being `30-15-256350`. A pad-to-five rule is
    right for 48,104,333 rows and impossible for one, which is exactly what the `key_incomplete`
    reason code exists for.
+
+   > The widths above are P4's re-measurement off the staged partition and they sum to
+   > 48,104,334, the record count. The distribution first recorded here summed to 48,149,431 —
+   > 45,097 over — and was carried into `d1-p3-status.md` §6 as an open discrepancy. It is
+   > closed against the artifact: the corrected figures are these, the two facts P3 depended on
+   > (maximum width six, exactly one row at it) were right either way, and no rule row quoted
+   > the wrong ones.
 3. **`amend_ind` is a vocabulary, not a flag.** `N` 34,812,326 · `Y` 13,280,514 · `1` 5,959 ·
    `2` 5,252 · `4` 185 · `6` 72 · `9` 10 · `3` 8 · `X` 6 · `7` 2. Treating it as boolean would
    mis-read 11,494 rows.

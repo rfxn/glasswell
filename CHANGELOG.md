@@ -41,6 +41,41 @@ its own version in its header, and its history is summarised in §3.1.
 - [New] `cr_nm_ogrid_operator_1` resolves the operator on OGRID at confidence 1.0 — an
       exact key rather than a name match, because a fuzzy operator match is an unlabelled
       estimate in the identity layer (SB-01 §5.3)
+- [New] New Mexico promotes into `canonical.production_monthly` at `well_completion_pool`
+      granularity under the widened S-E key. A well producing from two pools is two observed
+      rows rather than a key collision, which is why the key was widened before P7a
+- [Change] Promotion is set-based: one `(report_vintage, production_month)` batch at a
+         time, appended by a server-side anti-join against that month's canonical head.
+         Nothing larger than one month — 147,714 rows at the widest — is ever in Python,
+         where the ND-shaped design would have needed roughly 19 GB of objects on a 15 GB
+         machine at 48.1M records. The anti-join is verified against that design on the
+         fixture rather than trusted
+- [New] `cr_nm_wcproduction_window_1` records DIR-12's 2015-01 window as a promotion
+      parameter rather than a property of the artifact: staging holds all 635 months, the
+      effective window is stamped on every promotion derivation, and widening it is the
+      same run again
+- [New] `cr_nm_wcproduction_collision_1` rules on the two rows the artifact files for
+      25,029 in-window well-completion-months, almost always under two OGRIDs. Summing them
+      is refuted by the bytes — 5,059 pairs already report more producing days between them
+      than the month has, and 5,564 report the identical amount twice — and choosing between
+      them is refuted the same way, so a disagreeing pair promotes nothing and both filings
+      are quarantined as `key_collision`, while an agreeing pair promotes once and the
+      second is a `duplicate_row`
+- [New] `cr_nm_wcproduction_days_1`: 244,025 rows file a day count longer than the month
+      they file it for, 41,593 of them inside the window, and 131,531 file 99. The day count
+      is withheld and the volume beside it still promotes
+- [New] `cr_nm_wcproduction_volume_range_1` refuses a negative volume as
+      `impossible_volume`. Three rows in 48,104,334 report one, all in 1993 and all outside
+      the window — which is why the rule is seeded now rather than on the day the window
+      widens onto them
+- [New] The restatement stress case: changed bytes on two days give two vintages and an
+      as-of read still returns yesterday's answer; a `mod_dte` bump with unchanged volumes
+      appends nothing, because `value_hash` covers the measurement while `mod_dte` and
+      `amend_ind` are change signals; and a second promotion inside one vintage is a no-op
+      when it agrees and a refusal when it does not, which is the arm DIR-2's four do not
+      cover
+- [Fix] `tests/fixtures/nm_ocd/SOURCE.md`'s `api_well_idn` width distribution summed 45,097
+      over the record count. Re-measured off the staged partition, it sums to 48,104,334
 
 ### 2026-08-21 — increment-3 merge train
 
