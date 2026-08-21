@@ -21,21 +21,31 @@ from glasswell.lineage.capture import current_session, derive, lineage_session
 from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.serialization import hash_payload
 from glasswell.lineage.store import PostgresRecorder
-from glasswell.marts.tiles import TILE_LAYERS, install_tile_functions
+from glasswell.marts.tiles import ND_LAYERS, install_tile_functions
 from glasswell.units import METRES_PER_FOOT
 
 DATUM_RULE = "cr_nd_datum_1"
+
+STATE_CODE = "33"
 
 _WELLS_AS_OF = """
 with wells_as_of as (
     select distinct on (api10) api10, operator_name_reported, status_canonical, spud_date
       from canonical.wells
-     where %(as_of)s::date is null or effective_from <= %(as_of)s::date
+     where state_code = %(state_code)s
+       and (%(as_of)s::date is null or effective_from <= %(as_of)s::date)
      order by api10, effective_from desc, created_at desc)
 """
 
-# Left join: a lateral whose api10 has no well row still tiles, unstyled, rather than
-# disappearing between canonical and the map.
+# Left join and a state predicate on the *geometry*: a lateral whose api10 has no well row
+# still tiles, unstyled, rather than disappearing between canonical and the map — but a well
+# from another state is not this mart's, and canonical.well_spatial holds every state.
+#
+# Without the predicate this select was `where geom_type = 'lateral'` and nothing else, so the
+# first ND refresh after another jurisdiction landed would have swept its rows in: 355,550 TX
+# wells into nd_wells_tile and 69,920 arcs into nd_laterals_tile, drawn a second time under
+# ND's own layer and its "43,817 points" subtitle. Latent, and it would have surfaced on a
+# night when nobody deployed anything.
 _LATERALS_SELECT = (
     _WELLS_AS_OF
     + """
@@ -49,7 +59,7 @@ select s.api10,
        s.geom
   from canonical.well_spatial s
   left join wells_as_of w on w.api10 = s.api10
- where s.geom_type = 'lateral'
+ where s.geom_type = 'lateral' and left(s.api10, 2) = %(state_code)s
 """
 )
 
@@ -63,7 +73,7 @@ select s.api10,
        s.geom
   from canonical.well_spatial s
   left join wells_as_of w on w.api10 = s.api10
- where s.geom_type = 'surface'
+ where s.geom_type = 'surface' and left(s.api10, 2) = %(state_code)s
 """
 )
 
@@ -77,8 +87,10 @@ select spacing_unit_id, label, formation_reported, ds_size_acres, derivation_id,
 _INPUT_DERIVATIONS = """
 select derivation_id, created_vintage
   from lineage.derivations
- where derivation_id in (select derivation_id from canonical.well_spatial
-                          union select derivation_id from canonical.wells)
+ where derivation_id in (
+    select derivation_id from canonical.well_spatial where left(api10, 2) = %(state_code)s
+     union
+    select derivation_id from canonical.wells where state_code = %(state_code)s)
  order by derivation_id
 """
 
@@ -131,7 +143,11 @@ def refresh_all(connection: psycopg.Connection, *, as_of: date | None = None) ->
     """Rebuild every ND tile mart from canonical under one content-addressed derivation."""
     method = resolve_length_method(connection)
     projections = _projections(method)
-    parameters: dict[str, object] = {"as_of": as_of, "metres_per_foot": METRES_PER_FOOT}
+    parameters: dict[str, object] = {
+        "as_of": as_of,
+        "metres_per_foot": METRES_PER_FOOT,
+        "state_code": STATE_CODE,
+    }
     with connection.cursor() as cursor:
         cursor.execute(_SPACING_UNITS_VIEW)
     measured = {p.table: _measure(connection, p, parameters) for p in projections}
@@ -145,7 +161,8 @@ def refresh_all(connection: psycopg.Connection, *, as_of: date | None = None) ->
             "as_of": as_of.isoformat() if as_of else None,
             "length_method": method.method,
             "compute_epsg": method.compute_epsg,
-            "layers": [layer.name for layer in TILE_LAYERS],
+            "state_code": STATE_CODE,
+            "layers": [layer.name for layer in ND_LAYERS],
         },
         inputs=_canonical_inputs(connection),
         rules=[method.rule_id, DATUM_RULE],
@@ -176,7 +193,7 @@ def refresh_all(connection: psycopg.Connection, *, as_of: date | None = None) ->
     return MartRefresh(
         derivation_id=context.derivation_id,
         row_counts={table: rows for table, (rows, _) in measured.items()},
-        layers=tuple(layer.name for layer in TILE_LAYERS),
+        layers=tuple(layer.name for layer in ND_LAYERS),
     )
 
 
@@ -207,7 +224,7 @@ def _measure(
 
 def _canonical_inputs(connection: psycopg.Connection) -> list[InputRef]:
     with connection.cursor() as cursor:
-        cursor.execute(_INPUT_DERIVATIONS)
+        cursor.execute(_INPUT_DERIVATIONS, {"state_code": STATE_CODE})
         return [
             InputRef(kind="derivation", ref_id=derivation_id, as_of_vintage=vintage)
             for derivation_id, vintage in cursor.fetchall()

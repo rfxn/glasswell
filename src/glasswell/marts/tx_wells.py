@@ -147,6 +147,7 @@ def refresh_all(connection: psycopg.Connection, *, as_of: date | None = None) ->
             "as_of": as_of.isoformat() if as_of else None,
             "length_method": method.method,
             "compute_epsg": method.compute_epsg,
+            "state_code": STATE_CODE,
             "layers": [layer.name for layer in TX_LAYERS],
         },
         inputs=_canonical_inputs(connection),
