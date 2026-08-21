@@ -299,7 +299,11 @@
 @media (max-width: 1365px) {
   .gw-explore {
     grid-template-columns: var(--gw-explore-rail-w) minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) auto;
+    /* C9: `auto` sized this row from the pane's content, and a full API guide is taller than
+       the window — the grid's own row collapsed to zero and a percentage max-height on the
+       item could not resolve against a row it was sizing. `fit-content` caps the row itself,
+       so a short pane still shrinks and a long one scrolls inside its band. */
+    grid-template-rows: minmax(0, 1fr) fit-content(40%);
   }
 
   .gw-explore-rail {
@@ -307,7 +311,6 @@
   }
 
   .gw-explore-pane {
-    max-height: 40%;
     border-left: 0;
     border-top: 1px solid var(--hairline);
   }
@@ -318,7 +321,7 @@
 @media (max-width: 1023px) {
   .gw-explore {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr) fit-content(40%);
   }
 
   .gw-explore-rail {

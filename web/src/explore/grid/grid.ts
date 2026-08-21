@@ -1,8 +1,11 @@
 import "./grid.css";
 
 import { getEnvelope } from "../../api/client.ts";
+import type { ResponseMeta } from "../../api/client.ts";
 import type { Envelope } from "../../api/envelope.ts";
 import type { AppState } from "../../app/state.ts";
+import { clearRecord, publishCall } from "../api/context.ts";
+import type { CallState } from "../api/context.ts";
 import type { CatalogueDataset } from "../catalogue.ts";
 import { mountDetail } from "../detail/detail.ts";
 import { renderFacets } from "../facets/facets.ts";
@@ -50,6 +53,9 @@ export async function mountGrid(host: HTMLElement, options: GridOptions): Promis
 
   if (request.missing.length > 0) {
     host.replaceChildren(anchorPrompt(request.missing, options));
+    // The pane still has an operation to teach, and stating that nothing was issued is more
+    // use to a reader than an empty column beside a prompt they have not answered yet.
+    publish(options, request, "unissued");
     return;
   }
   // The frame before the answer names the request and its columns rather than spinning: a
@@ -61,9 +67,18 @@ export async function mountGrid(host: HTMLElement, options: GridOptions): Promis
     ),
   );
 
+  publish(options, request, "pending");
+
+  const response: { out?: ResponseMeta } = {};
   try {
-    const envelope = await getEnvelope<unknown>(request.path, request.query, options.signal);
+    const envelope = await getEnvelope<unknown>(
+      request.path,
+      request.query,
+      options.signal,
+      response,
+    );
     if (options.signal.aborted) return;
+    publish(options, request, "loaded", { envelope, meta: response.out ?? null });
     // M3: the detail lists the hidden columns too — `hidden` means "not a cell", never "not a
     // fact" — so one picker answers both surfaces and there is no second list to drift.
     const all = columnsFor(options.dataset, options.document, envelope, { includeHidden: true });
@@ -83,8 +98,29 @@ export async function mountGrid(host: HTMLElement, options: GridOptions): Promis
     render(host, options, { envelope, columns, all, rows, total, vintages: vintagesIn(rows) });
   } catch (error) {
     if (options.signal.aborted) return;
+    // §4.7: a failed request keeps its REQUEST block, so the pane is told about it rather than
+    // left rendering the last call that worked.
+    publish(options, request, "failed", { error, meta: response.out ?? null });
     host.replaceChildren(failure(error));
   }
+}
+
+function publish(
+  options: GridOptions,
+  request: ReturnType<typeof requestFor>,
+  state: CallState,
+  answer: { envelope?: Envelope<unknown>; error?: unknown; meta?: ResponseMeta | null } = {},
+): void {
+  publishCall({
+    state,
+    role: "collection",
+    dataset: options.dataset,
+    request: { operationId: request.operationId, path: request.path, query: request.query },
+    missing: request.missing,
+    envelope: answer.envelope ?? null,
+    error: answer.error ?? null,
+    meta: answer.meta ?? null,
+  });
 }
 
 function render(host: HTMLElement, options: GridOptions, loaded: Loaded): void {
@@ -306,6 +342,9 @@ function bodyRow(
 }
 
 function select(options: GridOptions, row: string | null): void {
+  // Closing a row uncovers the collection the reader is still looking at, so the pane goes back
+  // to that call rather than keeping a record open that is no longer on screen.
+  if (row === null) clearRecord();
   if (options.select) options.select(row);
   else options.commit({ row });
 }

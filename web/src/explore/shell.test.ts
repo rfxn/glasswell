@@ -87,9 +87,11 @@ describe("the shell mounts into the host C0's dispatch gives it", () => {
     expect(facets.querySelectorAll("[data-facet]").length).toBeGreaterThan(4);
     expect([...facets.querySelectorAll("[data-facet]")].map((f) => f.getAttribute("data-facet")))
       .toContain("operator");
-    // The pane still carries C6's placeholder; the grid host keeps its `data-ds` and its
-    // children are C7's, which is the contract K1 wrote down.
-    expect(document.getElementById(PANE_HOST_ID)?.textContent).toMatch(/renders here/);
+    // C9 fills the pane: it names the operation the centre column is reading rather than the
+    // placeholder C6 stood in the slot. The grid host keeps its `data-ds` and its children are
+    // C7's, which is the contract K1 wrote down.
+    expect(document.getElementById(PANE_HOST_ID)?.querySelector(".gw-api")).not.toBeNull();
+    expect(document.getElementById(PANE_HOST_ID)?.textContent).toContain("list_wells");
     expect(document.getElementById(GRID_HOST_ID)?.dataset["ds"]).toBe("wells");
     expect(document.getElementById(GRID_HOST_ID)?.textContent).toContain("/api10");
   });

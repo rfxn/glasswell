@@ -3,6 +3,7 @@ import "./layout.css";
 import { apiUrl, authHeaders } from "../api/client.ts";
 import { readState } from "../app/state.ts";
 import type { AppState, ExploreTab } from "../app/state.ts";
+import { mountPane } from "./api/pane.ts";
 import { buildCatalogue } from "./catalogue.ts";
 import type { Catalogue, CatalogueDataset } from "./catalogue.ts";
 import { mountGrid } from "./grid/grid.ts";
@@ -106,6 +107,18 @@ function select(row: string | null): void {
   mounted.hooks.commit({ row }, "push");
 }
 
+/**
+ * Collapsing a section is not a new question for the API. It rides the URL so a shared link
+ * teaches what the sharer meant (§4.1), and it takes `select`'s route — the write without the
+ * re-render — because re-rendering here would re-issue the request the reader is reading.
+ */
+function sections(value: string): void {
+  if (!mounted || !state) return;
+  const extra = { ...state.extra, api: [value] };
+  state = { ...state, extra };
+  mounted.hooks.commit({ extra }, "replace");
+}
+
 function render(next: AppState): void {
   if (!mounted) return;
   state = next;
@@ -128,14 +141,12 @@ function render(next: AppState): void {
   const pane = element("aside", "gw-explore-pane");
   pane.id = PANE_HOST_ID;
   pane.setAttribute("aria-label", "API guide");
-  // A blank third of the window is a defect a reader has to guess at. The pane states what it
-  // is for until C9 fills it, and C9 replaces these children rather than finding an empty box.
-  pane.append(
-    eyebrow("API"),
-    note(
-      "The exact call behind whatever the centre column is showing renders here — its URL, its operation, the response envelope and the problems it can return. It arrives with the result grid.",
-    ),
-  );
+  mountPane(pane, {
+    document: apiDocument,
+    state: next,
+    onSections: sections,
+    signal: abort.signal,
+  });
 
   root.append(rail, centre, pane);
   host.replaceChildren(root);
@@ -256,12 +267,6 @@ function gridHost(dataset: CatalogueDataset): HTMLElement {
     ),
   );
   return wrapper;
-}
-
-function eyebrow(text: string): HTMLElement {
-  const element_ = element("p", "gw-explore-eyebrow");
-  element_.textContent = text;
-  return element_;
 }
 
 function heading(text: string): HTMLElement {
