@@ -8,7 +8,7 @@ from starlette.responses import JSONResponse
 
 from glasswell.api.deps import Connection, rows
 from glasswell.api.errors import ERROR_REGISTRY, TYPE_BASE, ProblemError, problem_responses
-from glasswell.api.examples import EXAMPLE_ERROR_CODE, request_example
+from glasswell.api.examples import EXAMPLE_ERROR_CODE, dataset, request_example
 from glasswell.api.responses import EnvelopeModel, enveloped, iso
 
 router = APIRouter(tags=["service"])
@@ -92,7 +92,24 @@ def _error_codes() -> list[dict]:
         " to every resource family. This is the one URL a stranger needs to start from."
     ),
     response_model=EnvelopeModel[ServiceIndex],
-    openapi_extra=request_example(),
+    openapi_extra={
+        **request_example(),
+        # One operation, one dataset: this points at `/error_codes` and only there. The
+        # vintages this response also carries are `list_vintages`'s dataset, not a second one.
+        **dataset(
+            id="problems",
+            title="Problems",
+            group="service",
+            collection_pointer="/error_codes",
+            row_id=["/code"],
+            detail_operation="get_error_type",
+            columns={
+                "default": ["/code", "/status", "/title", "/type", "/emitted_by_this_slice"],
+            },
+            intro="nb_dataset_problems",
+            order=51,
+        ),
+    },
     responses=problem_responses("service_degraded"),
 )
 def get_service_index(request: Request, connection: Connection) -> JSONResponse:

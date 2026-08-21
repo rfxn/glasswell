@@ -14,7 +14,7 @@ from starlette.responses import JSONResponse
 
 from glasswell.api.deps import AsOf, Connection, rows, today
 from glasswell.api.errors import ProblemError, problem_responses
-from glasswell.api.examples import EXAMPLE_API10, GLOSSARY_KEY, request_example
+from glasswell.api.examples import EXAMPLE_API10, GLOSSARY_KEY, dataset, request_example
 from glasswell.api.responses import EnvelopeModel, enveloped, freshness_state, iso, month_label
 from glasswell.api.routers.wells import API10_PATTERN, RANKED_WELLS, pending_allocation
 from glasswell.lineage.conformance import lease_reporting_rule
@@ -230,7 +230,30 @@ def _state_code(connection, api10: str) -> str | None:
         " GOR and water cut are deliberately not served in this slice."
     ),
     response_model=EnvelopeModel[Production],
-    openapi_extra=request_example(path={"api10": EXAMPLE_API10}, query={"stream": ["oil"]}),
+    openapi_extra={
+        **request_example(path={"api10": EXAMPLE_API10}, query={"stream": ["oil"]}),
+        **dataset(
+            id="production",
+            title="Production (per well)",
+            group="wells",
+            collection_pointer="",
+            series_pointer="/series",
+            row_projection={
+                "axis": "/pm",
+                "columns": ["/oil_bbl", "/gas_mcf", "/water_bbl"],
+                "suffixes": ["_report_vintage", "_null_semantics", "_aggregation"],
+            },
+            anchors=["/api10", "/granularity", "/reporting_level"],
+            row_id=["/pm"],
+            facets=["stream", "from", "to"],
+            columns={
+                "default": ["/pm", "/oil_bbl", "/gas_mcf", "/water_bbl", "/granularity"],
+                "sort": "/pm",
+            },
+            intro="nb_dataset_production",
+            order=11,
+        ),
+    },
     responses=problem_responses(
         "not_found", "validation_failed", "as_of_out_of_range", "service_degraded"
     ),
@@ -411,7 +434,39 @@ class ProductionPools(BaseModel):
         " its own series already is the pool's."
     ),
     response_model=EnvelopeModel[ProductionPools],
-    openapi_extra=request_example(path={"api10": EXAMPLE_API10}),
+    openapi_extra={
+        **request_example(path={"api10": EXAMPLE_API10}),
+        **dataset(
+            id="production_pools",
+            title="Production by pool",
+            group="wells",
+            collection_pointer="/pools",
+            series_pointer="/series",
+            row_projection={
+                "axis": "/pm",
+                "columns": ["/oil_bbl", "/gas_mcf", "/water_bbl"],
+                # No `_aggregation`: a pool row is a filing, not a sum over pools, so this
+                # operation never emits one and a declared column would render empty forever.
+                "suffixes": ["_report_vintage", "_null_semantics"],
+            },
+            anchors=["/api10", "/granularity", "/reporting_level"],
+            row_id=["/well_completion_pool", "/pm"],
+            facets=["stream"],
+            columns={
+                "default": [
+                    "/well_completion_pool",
+                    "/pm",
+                    "/oil_bbl",
+                    "/gas_mcf",
+                    "/water_bbl",
+                    "/granularity",
+                ],
+                "sort": "/well_completion_pool",
+            },
+            intro="nb_dataset_production_pools",
+            order=12,
+        ),
+    },
     responses=problem_responses(
         "not_found", "validation_failed", "as_of_out_of_range", "service_degraded"
     ),

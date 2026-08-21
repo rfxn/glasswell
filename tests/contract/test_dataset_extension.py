@@ -90,6 +90,10 @@ def _at(
     return node
 
 
+def _is_array(document: dict[str, Any], schema: dict[str, Any]) -> bool:
+    return _object(document, schema).get("type") == "array"
+
+
 def _distinct(*spaces: dict[str, Any] | None) -> list[dict[str, Any]]:
     seen: dict[int, dict[str, Any]] = {}
     for space in spaces:
@@ -113,6 +117,8 @@ def _pointer_findings(
     found = _at(document, root, collection)
     if found is None:
         return [f"{operation_id}: collection_pointer {collection} does not resolve"]
+    if collection and not _is_array(document, found):
+        return [f"{operation_id}: collection_pointer {collection} is not an array"]
     element = _element(document, found)
 
     series = None
@@ -152,13 +158,21 @@ def _pointer_findings(
 
     projection = declaration.get("row_projection")
     if projection is None:
+        if series is not None:
+            findings.append(
+                f"{operation_id}: series_pointer {series_pointer} declares no row_projection"
+            )
         return findings
     if series is None:
         return [*findings, f"{operation_id}: row_projection declares no series_pointer"]
 
     axis = projection["axis"]
-    if missing(axis, [series]):
+    axis_schema = _at(document, series, axis)
+    if axis_schema is None:
         findings.append(f"{operation_id}: row_projection.axis {axis} does not resolve")
+    elif not _is_array(document, axis_schema):
+        # The axis is the row count, so a scalar there projects an unknowable number of rows.
+        findings.append(f"{operation_id}: row_projection.axis {axis} is not an array")
     suffixes = projection.get("suffixes", [])
     for pointer in projection.get("columns", []):
         if missing(pointer, [series]):
@@ -211,6 +225,18 @@ def dataset_findings(document: dict[str, Any]) -> list[str]:
             f"{operation_id}: facet {facet!r} is not a query parameter"
             for facet in declaration.get("facets", [])
             if facet not in queries
+        ]
+
+        # A path parameter is not a filter the grid can append: it narrows the URL itself, so a
+        # dataset behind one is unbrowsable until the reader supplies it. Declaring it as an
+        # anchor is what lets the rail say so instead of letting the UI discover a 404.
+        anchored = set(declaration.get("anchors", []))
+        findings += [
+            f"{operation_id}: path parameter {parameter['name']!r} is not an anchor"
+            for parameter in operation.get("parameters", [])
+            if parameter["in"] == "path"
+            and parameter.get("required", False)
+            and f"/{parameter['name']}" not in anchored
         ]
 
         columns = declaration.get("columns", {})
@@ -279,6 +305,29 @@ def _pivot() -> dict[str, Any]:
         },
         "intro": "nb_dataset_production",
         "order": 11,
+    }
+
+
+def _projection() -> dict[str, Any]:
+    """The rev-3 projection shape: the browsable array is a property of `data`, not `data`."""
+    return {
+        "id": "sources",
+        "title": "Sources & freshness",
+        "group": "service",
+        "collection_pointer": "/sources",
+        "row_id": ["/source_id"],
+        "columns": {
+            "default": [
+                "/source_id",
+                "/name",
+                "/state",
+                "/retrieval_vintage",
+                "/declared_vintage",
+                "/manifest_count",
+            ],
+        },
+        "intro": "nb_dataset_sources",
+        "order": 50,
     }
 
 
@@ -476,11 +525,62 @@ def test_an_anchor_is_read_from_the_element_and_never_from_the_series(
     document: dict[str, Any],
 ) -> None:
     """`anchors[]` are the scalars beside the array (§2.3); a series column is not one."""
-    declaration = _pivot() | {"anchors": ["/oil_bbl"]}
+    declaration = _pivot() | {"anchors": ["/api10", "/oil_bbl"]}
 
     findings = dataset_findings(_mutated(document, "get_well_production", declaration))
 
     assert findings == ["get_well_production: anchors pointer /oil_bbl does not resolve"]
+
+
+def test_a_required_path_parameter_must_be_named_as_an_anchor(
+    document: dict[str, Any],
+) -> None:
+    """`api10` is in the path, so this dataset cannot be browsed until the reader supplies one.
+    The anchor is how the rail knows that before the API answers 404 (§2.1)."""
+    declaration = _pivot() | {"anchors": ["/granularity", "/reporting_level"]}
+
+    findings = dataset_findings(_mutated(document, "get_well_production", declaration))
+
+    assert findings == ["get_well_production: path parameter 'api10' is not an anchor"]
+
+
+def test_a_series_pointer_with_no_row_projection_fails_the_lint(
+    document: dict[str, Any],
+) -> None:
+    """A half-declared pivot is a defect rather than a default — without the projection the
+    series object reads as a single row. The model refuses it at authoring time; the lint
+    refuses a document that carries it anyway."""
+    declaration = _pivot()
+    declaration.pop("row_projection")
+
+    findings = dataset_findings(_mutated(document, "get_well_production", declaration))
+
+    assert findings == ["get_well_production: series_pointer /series declares no row_projection"]
+
+
+def test_a_collection_pointer_that_names_no_array_fails_the_lint(
+    document: dict[str, Any],
+) -> None:
+    """`collection_pointer` selects the element set; a scalar has no elements to browse."""
+    declaration = _projection() | {"collection_pointer": "/state"}
+
+    findings = dataset_findings(_mutated(document, "get_health", declaration))
+
+    assert findings == ["get_health: collection_pointer /state is not an array"]
+
+
+def test_a_pivot_axis_that_is_not_an_array_fails_the_lint(document: dict[str, Any]) -> None:
+    """The axis's length is the row count, so a scalar axis projects an unknowable number of
+    rows — the failure C7 would otherwise render as one row per character."""
+    declaration = _projection() | {
+        "collection_pointer": "",
+        "series_pointer": "/sources",
+        "row_projection": {"axis": "/manifest_count", "columns": [], "suffixes": []},
+    }
+
+    findings = dataset_findings(_mutated(document, "get_health", declaration))
+
+    assert findings == ["get_health: row_projection.axis /manifest_count is not an array"]
 
 
 def test_the_helper_refuses_a_reserved_id_at_authoring_time() -> None:
