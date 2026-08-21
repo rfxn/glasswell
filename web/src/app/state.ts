@@ -4,11 +4,19 @@ export interface Viewport {
   lon: number;
 }
 
+export type ViewMode = "map" | "explore";
+export type ExploreTab = "datasets" | "query" | "learn";
+
 export interface AppState {
   map: Viewport;
   well: string | null;
   explain: string | null;
-  extra: Record<string, string>;
+  view: ViewMode;
+  tab: ExploreTab;
+  ds: string | null;
+  row: string | null;
+  slug: string | null;
+  extra: Record<string, string[]>;
 }
 
 // Williston basin, the only basin this slice ingests.
@@ -16,31 +24,61 @@ export const DEFAULT_STATE: AppState = {
   map: { zoom: 7, lat: 47.8, lon: -102.8 },
   well: null,
   explain: null,
+  view: "map",
+  tab: "datasets",
+  ds: null,
+  row: null,
+  slug: null,
   extra: {},
 };
 
-const KNOWN = new Set(["map", "well", "explain"]);
+const KNOWN = new Set(["map", "well", "explain", "view", "tab", "ds", "row", "slug"]);
+const VIEWS: ViewMode[] = ["map", "explore"];
+const TABS: ExploreTab[] = ["datasets", "query", "learn"];
+
+/** A stale or hostile link must render the default, never a surface with no centre column. */
+function oneOf<T extends string>(raw: string | null, allowed: T[], fallback: T): T {
+  return allowed.find((candidate) => candidate === raw) ?? fallback;
+}
 
 export function parseState(search: string): AppState {
   const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
-  const extra: Record<string, string> = {};
+  const extra: Record<string, string[]> = {};
   for (const [key, value] of params) {
-    if (!KNOWN.has(key)) extra[key] = value;
+    if (!KNOWN.has(key)) (extra[key] ??= []).push(value);
   }
   return {
     map: parseViewport(params.get("map")) ?? DEFAULT_STATE.map,
     well: params.get("well"),
     explain: params.get("explain"),
+    view: oneOf(params.get("view"), VIEWS, DEFAULT_STATE.view),
+    tab: oneOf(params.get("tab"), TABS, DEFAULT_STATE.tab),
+    ds: params.get("ds"),
+    row: params.get("row"),
+    slug: params.get("slug"),
     extra,
   };
 }
 
 export function serializeState(state: AppState): string {
   const params = new URLSearchParams();
-  params.set("map", formatViewport(state.map));
+  // The viewport rides an explorer link only when the reader moved it: without that arm the
+  // crossing is one-way, because popstate rebuilds state from the URL and not from memory.
+  const movedViewport =
+    state.map.zoom !== DEFAULT_STATE.map.zoom ||
+    state.map.lat !== DEFAULT_STATE.map.lat ||
+    state.map.lon !== DEFAULT_STATE.map.lon;
+  if (state.view === "map" || movedViewport) params.set("map", formatViewport(state.map));
   if (state.well) params.set("well", state.well);
   if (state.explain) params.set("explain", state.explain);
-  for (const [key, value] of Object.entries(state.extra)) params.set(key, value);
+  if (state.view !== DEFAULT_STATE.view) params.set("view", state.view);
+  if (state.tab !== DEFAULT_STATE.tab) params.set("tab", state.tab);
+  if (state.ds) params.set("ds", state.ds);
+  if (state.row) params.set("row", state.row);
+  if (state.slug) params.set("slug", state.slug);
+  for (const [key, values] of Object.entries(state.extra)) {
+    for (const value of values) params.append(key, value);
+  }
   return `?${params.toString()}`;
 }
 

@@ -80,15 +80,32 @@ export function apiUrl(path: string, query: Record<string, string | string[]> = 
   return url.pathname + url.search;
 }
 
+export interface ResponseMeta {
+  status: number;
+  headers: Headers;
+  elapsed_ms: number;
+}
+
 export async function getEnvelope<T>(
   path: string,
   query: Record<string, string | string[]> = {},
   signal?: AbortSignal,
+  meta?: { out?: ResponseMeta },
 ): Promise<Envelope<T>> {
+  const started = performance.now();
   const response = await fetch(apiUrl(path, query), {
     headers: { Accept: "application/json", ...authHeaders() },
     signal,
   });
+  // Before the throw: a failed request keeps its REQUEST block, so it keeps its status and
+  // its timing too (SB-08 §4.7).
+  if (meta) {
+    meta.out = {
+      status: response.status,
+      headers: response.headers,
+      elapsed_ms: performance.now() - started,
+    };
+  }
   if (!response.ok) throw new ApiError(await problemOf(response));
   return (await response.json()) as Envelope<T>;
 }
