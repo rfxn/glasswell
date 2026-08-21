@@ -430,6 +430,25 @@ is the free landing-zone signal and the 10-question suite's Q3 depends on it; (i
 row or a recorded honest gap. Outcome (ii) negative is a **named honest gap tagged
 data-unreachable** in the E16 matrix, not a silent feature omission.
 
+**P1-T1 (iii) — supporting evidence exists, and G-12 is still the B-gate's to close.** Two
+independent probes now point the same way: `OGD_Directionals.zip` (3.4 MB) and
+`OGD_Horizontals.zip` (344 MB) carry `measdpth`, `inclinatio`, `azimuth` and `tvd` per record,
+and a ranged read of `NDOGD_Surveys.gdb.zip`'s system catalog finds exactly those two feature
+classes and nothing else (`dsw:482-521`). **This does not close G-12.** Closure belongs to the
+pre-P3 B-gate track, against the actual field list, and the two probes disagree on the one thing
+that decides which file gets fetched: the wellops report calls the shapefile's 52,579 records
+*station* records, while SB-02 §1.3's geodatabase probe reads 52,579 **surveyed wellbores**
+against 5,470,017 stations. The counts say the 3.4 MB layer is wellbore-grain and the 344 MB
+layer (5,471,270 records) is station-grain; reading that backwards fetches the wrong file for
+`landing_tvd_ft`. Three riders travel with the answer and are **recorded, not applied**: the
+field name differs by container (`inclination` in the GDB, `inclinatio` truncated in the DBF);
+the public extracts are served through non-confidential views, so free surveys **exclude
+confidential wells by construction** and that belongs in a coverage rule row rather than an
+unexplained hole; and the `api_wellno` attrdef states verbatim that ND's last four API digits
+are unused, which is regulator-published support for `cr_api10_format_1`, a row currently
+resting on inference. Whether the 313 MB monthly geodatabase pull in §1.1 is superseded by the
+two shapefiles is an ingest-register decision on the same track, not this amendment's.
+
 ### 2.3 `fracfocus_csv` — completion chemistry, both basins
 
 **Fetch.** `click_wall_accept`: the terms page is fetched and hashed, acceptance recorded, then
@@ -1995,3 +2014,23 @@ Fifteen. Each is a defect in `blueprint-v0.6-draft.md`, not a divergence taken b
 | Confidential/tight-hole censoring policy (OQ-7) | SB-02 | SB-01 supplies the measured affected share; the policy is modelling |
 | Re-promotion compute share threshold (OQ-15) | SB-01, once ~40 rules are live | §5.6 instruments it; the batching decision needs the measurement |
 | TX inventory geometry (OQ-11) | SB-03 | `land_units` keeps it a design question, not a migration |
+
+### 16.4 Apply-order adjacency with the carried-forward amendments
+
+`work-output/CADENCE.md` §1.3 carries six amendments accepted in the reconciliation set and never
+applied — SB-01 **E9**, **H4**, **H5**, **H6**, plus SB-03 E-14 and an SB-02 open item — and
+assigns them to the pre-P3 B-gate track (§"B-gate"). **None of them is applied here**, and
+nothing in §1.2.1, §2.11 or §2.3 depends on one landing first. What follows is the adjacency, so
+that whoever applies them next is not surprised by a document that moved underneath them:
+
+| Carried-forward | Touched by this set? | Adjacency, and what it means for order |
+|---|---|---|
+| **E9** — grade the NM even-county-code evidence `LIKELY`, not `VERIFIED` | No | No NM text moved. It is the **same class** as two amendments here, though: a claim carried at a confidence its evidence does not support. E9 fixes a grade; §1.2.1 and §2.3 fixed a scope and an absent field. Independent — apply in any order |
+| **H4** — `parse_directive` gains `layout_ref`, `layout_sha256`, `member_stream` | Yes, twice | It gains two consumers. §2.11 names `layout_ref`/`layout_sha256` as the mechanism a multi-template TX survey PDF parser would need, and §2.3's per-member detection makes the **member** the unit of both parse and change — which is exactly `member_stream`, previously justified by TX PDQ alone. H4 is now load-bearing for two more sources; **apply before any FracFocus or TX-survey parser**, not before this set |
+| **H5** — quarantine reason codes `withheld_trade_secret`, `crosswalk_disagreement` | Adjacent, unchanged | §2.3's measured schema **strengthens** H5's FracFocus half: `ClaimantCompany` is confirmed present in the CSV distribution (`dsw:90-95`), so the trade-secret claim is a column, not an inference. A restatement is not a quarantine, so nothing in §2.3's detection rewrite touches H5's substance. Independent |
+| **H6** — `alter table lineage.sources`, `promote_requires` | Adjacent, no constraint | §1.1's `alter table` **is** the H6 migration, and §1.2.1 adds a fifth value to the `access_method` vocabulary it carries. No ordering constraint today for two reasons: §1.2.1 registers no source, and §1.1's `access_method` is plain `text` with no `check`, so a new value needs no DDL. The constraint arrives with the first REST source registration, and it is on **H11** (the SB-07 enum), not on H6 |
+| **SB-03 E-14**, **SB-02 open item** | No | Neither is SB-01's surface. No interaction |
+
+One thing this set **adds** to that queue rather than resolving: **H11** (§16.2), which is H4's
+sibling — both are SB-07 surface changes that SB-01 needs and cannot make itself. If the B-gate
+track batches SB-07 handbacks, H11 travels with H4.
