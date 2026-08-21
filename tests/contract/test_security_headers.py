@@ -16,6 +16,7 @@ from glasswell.api.security import (
     CSP_REPORT_ONLY_HEADER,
     DOCS_PATH,
     REPORT_ONLY_ENV,
+    SATELLITE_IMAGERY_ORIGIN,
     STATIC_SECURITY_HEADERS,
     content_security_policy,
     directives,
@@ -72,15 +73,40 @@ def test_the_policy_admits_the_maplibre_worker_and_its_blob_url(client: TestClie
     assert "blob:" in policy["img-src"]
 
 
-def test_the_policy_admits_same_origin_range_fetches_and_nothing_else(
+def test_the_policy_admits_same_origin_range_fetches_and_one_named_imagery_origin(
     client: TestClient,
 ) -> None:
-    """PMTiles reads /basemap with ranged fetch; a third-party basemap would break this line."""
+    """PMTiles reads /basemap from this origin; USGS imagery is the one external tile source."""
     policy = directives(client.get("/v1").headers[CSP_HEADER])
 
-    assert policy["connect-src"] == "'self'"
+    assert policy["connect-src"] == f"'self' {SATELLITE_IMAGERY_ORIGIN}"
+    assert SATELLITE_IMAGERY_ORIGIN in policy["img-src"]
     assert policy["script-src"] == "'self'"
     assert "unsafe-eval" not in client.get("/v1").headers[CSP_HEADER]
+
+
+def test_the_imagery_origin_is_named_and_is_the_only_external_one_the_app_admits(
+    client: TestClient,
+) -> None:
+    """A wildcard would admit every host the imagery vendor ever redirects to (DIR-1 ruling)."""
+    policy = directives(client.get("/v1").headers[CSP_HEADER])
+    external = {
+        origin for value in policy.values() for origin in value.split() if origin.startswith("http")
+    }
+
+    assert external == {SATELLITE_IMAGERY_ORIGIN}
+    assert SATELLITE_IMAGERY_ORIGIN.startswith("https://")
+    assert "*" not in SATELLITE_IMAGERY_ORIGIN
+
+
+def test_the_imagery_origin_is_absent_from_the_directives_that_load_code(
+    client: TestClient,
+) -> None:
+    """Imagery is fetched and painted; it is never script, style, font or a frame."""
+    policy = directives(client.get("/v1").headers[CSP_HEADER])
+
+    for name in ("script-src", "style-src", "font-src", "worker-src", "child-src"):
+        assert SATELLITE_IMAGERY_ORIGIN not in policy[name]
 
 
 def test_the_plain_http_origin_does_not_upgrade_its_own_subresources() -> None:

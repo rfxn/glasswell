@@ -9,6 +9,15 @@ its own version in its header, and its history is summarised in §3.1.
 
 ### 2026-08-20 — increment-3 closeout
 
+- [Change] The CSP names one external origin, `https://basemap.nationalmap.gov`, in
+         `connect-src` and `img-src` and in no directive that loads code. USGS National Map
+         imagery is public domain and keyless and has no self-hosted equivalent, so the
+         satellite basemap could not draw under `connect-src 'self'` — 122 refusals and an
+         empty canvas. Named, never a wildcard; requests happen only when a reader selects
+         satellite, and dark, light and none stay zero-external under test (DIR-1 ruling)
+- [Change] SB-05 §1.5 carries the amended policy and the reason, so the blueprint and the
+         emitted header do not disagree
+
 - [Remove] `statusMinZoomExpression()` is gone. The per-class zoom floor has one
       implementation — `visibleStatusesAt()` inside `statusFilter()`, measured holding at z4
       and z6 — and the second expression of the same table had no consumer at all
