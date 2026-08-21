@@ -32,9 +32,10 @@ its own version in its header, and its history is summarised in §3.1.
       something the reader reads as information (DIR-11 gate, conditions C1-C4)
 - [Change] `TileLayer` carries the gate per layer. Spacing units publish no `api10` and so
          have no rank; a layer marked thinned without one is refused at SQL generation
-         rather than installed. Above z7 the cell is a micrometre, which no two distinct
-         positions share, so the clause is present at every zoom and thins at none but the
-         approved band
+         rather than installed. The gate is a rank inside the cell rather than a
+         `distinct on` over it, because 547 of Texas's 355,463 wells and 144 of North
+         Dakota's 43,817 sit at a coordinate another well already occupies: a set-collapse
+         drops those at every zoom, and only inside the band is what was approved
 
 ### 2026-08-21 — Texas on the map: RRC GIS wells and wellbore identity
 

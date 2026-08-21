@@ -93,3 +93,8 @@ def attribute_keys(layer: bytes) -> list[str]:
         for field in fields(layer)
         if field.number == 3 and field.wire_type == 2
     ]
+
+
+def feature_count(layer: bytes) -> int:
+    """Layer.features is field 2; counting them is how a tile says how much it carries."""
+    return sum(1 for field in fields(layer) if field.number == 2 and field.wire_type == 2)

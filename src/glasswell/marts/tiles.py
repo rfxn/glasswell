@@ -161,24 +161,29 @@ stable
 parallel safe
 as $tile$
     with feature as materialized (
-        select {distinct}ST_AsMVTGeom({geom}, ST_TileEnvelope(z, x, y), {extent}, {buffer}, true)
-                   as geom,
+        select ST_AsMVTGeom({geom}, ST_TileEnvelope(z, x, y), {extent}, {buffer}, true) as geom,
                {columns}
           from {source} t
-         where t.geom && ST_Transform(ST_TileEnvelope(z, x, y), 4326){order})
+         where t.geom && ST_Transform(ST_TileEnvelope(z, x, y), 4326))
     select ST_AsMVT(feature, '{name}', {extent}, 'geom')
       from feature
      where feature.geom is not null
 $tile$
 """
 
-# Above THIN_MAX_ZOOM the cell is a micrometre, which no two distinct positions share, so the
-# clause is present at every zoom and thins at none of them but the approved band.
-_THIN_CELL = (
-    "case when z <= {max_zoom} then {span} / power(2, z) / {css} * {pixels}"
-    " else 0.000001 end"
-)
-_THIN_KEY = "ST_SnapToGrid(ST_Centroid({projected}), {cell}, {cell})"
+# The gate is a rank inside the cell, not a `distinct on` over it: two wells at one coordinate
+# — 547 of the 355,463 in Texas, 144 of North Dakota's 43,817 — are one cell at any cell size,
+# so a set-collapse would have dropped them at every zoom rather than only inside the band.
+_THIN_SOURCE = """(
+              select ranked.*
+                from (select src.*,
+                             row_number() over (partition by {key} order by md5(src.api10))
+                                 as gw_overplot_rank
+                        from {source} src
+                       where src.geom && ST_Transform(ST_TileEnvelope(z, x, y), 4326)) ranked
+               where z > {max_zoom} or ranked.gw_overplot_rank = 1)"""
+_THIN_CELL = "{span} / power(2, z) / {css} * {pixels}"
+_THIN_KEY = "ST_SnapToGrid(ST_Centroid(ST_Transform(src.geom, {mercator})), {cell}, {cell})"
 
 _PROJECTED = "ST_Transform(t.geom, {mercator})"
 # preserveCollapsed is true so a lateral shorter than the tolerance thins to its endpoints
@@ -206,38 +211,36 @@ def simplify_tolerance(zoom: int) -> float:
 
 
 def thin_cell(zoom: int) -> float:
-    """The 3857-unit grid cell one surviving feature is kept per, at `zoom`."""
-    if zoom > THIN_MAX_ZOOM:
-        return 0.000001
+    """The 3857-unit grid cell one surviving feature is kept per, inside the gated band."""
     return WORLD_SPAN_3857 / 2**zoom / TILE_CSS_PIXELS * THIN_PIXELS
 
 
 def thin_key_sql() -> str:
-    """The grid-cell expression `distinct on` collapses a thinned layer's features into."""
-    cell = _THIN_CELL.format(
-        max_zoom=THIN_MAX_ZOOM,
-        span=WORLD_SPAN_3857,
-        css=TILE_CSS_PIXELS,
-        pixels=THIN_PIXELS,
+    """The grid cell a thinned layer's features are ranked within."""
+    cell = _THIN_CELL.format(span=WORLD_SPAN_3857, css=TILE_CSS_PIXELS, pixels=THIN_PIXELS)
+    return _THIN_KEY.format(mercator=WEB_MERCATOR, cell=f"({cell})")
+
+
+def tile_source_sql(layer: TileLayer) -> str:
+    """What the tile function reads: the relation, or the relation with the gate over it."""
+    if not layer.thin:
+        return layer.source
+    return _THIN_SOURCE.format(
+        source=layer.source, key=thin_key_sql(), max_zoom=THIN_MAX_ZOOM
     )
-    projected = _PROJECTED.format(mercator=WEB_MERCATOR)
-    return _THIN_KEY.format(projected=projected, cell=f"({cell})")
 
 
 def tile_function_sql(layer: TileLayer) -> str:
     """The `create or replace function` statement one layer installs."""
     if layer.thin and "api10" not in layer.columns:
         raise ValueError(f"{layer.name} is thinned but publishes no api10 to rank by")
-    key = thin_key_sql() if layer.thin else ""
     return _TILE_FUNCTION.format(
         name=layer.name,
-        source=layer.source,
+        source=tile_source_sql(layer),
         geom=tile_geometry_sql(layer),
         extent=TILE_EXTENT,
         buffer=TILE_BUFFER,
         columns=", ".join(f"t.{column}" for column in layer.columns),
-        distinct=f"distinct on ({key})\n               " if layer.thin else "",
-        order=f"\n         order by {key}, md5(t.api10)" if layer.thin else "",
     )
 
 

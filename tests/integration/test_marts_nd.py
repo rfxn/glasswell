@@ -23,6 +23,7 @@ from glasswell.marts.nd_wells import main
 from glasswell.marts.tiles import simplify_tolerance, thin_key_sql
 from glasswell.seed import seed_all
 from glasswell.units import METRES_PER_FOOT
+from tests.support.mvt import feature_count, layers
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "nd_gis"
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -449,35 +450,71 @@ def _cells_at(connection: psycopg.Connection, relation: str, zoom: int) -> int:
     """How many distinct grid cells the whole mart occupies at `zoom`.
 
     The cell expression comes from the module, so what is measured here is the rule the
-    installed function applies rather than a restatement of it.
+    installed function ranks within rather than a restatement of it.
     """
     return scalar(
         connection,
-        f"select count(distinct {thin_key_sql()})"
-        f"  from {relation} t, (values (%(z)s::int)) as e(z)",
+        f"select count(distinct {thin_key_sql().replace('src.', 'src.')})"
+        f"  from {relation} src, (values (%(z)s::int)) as e(z)",
         {"z": zoom},
     )
 
 
-@pytest.mark.parametrize("zoom", [8, 11, 14])
-@pytest.mark.parametrize("relation", PROJECTED_MARTS)
-def test_the_overplot_gate_takes_nothing_off_the_wire_above_the_band(
-    canonical_nd, refreshed, relation, zoom
-):
-    """Above z7 the cell is a micrometre, so every feature is its own cell and `distinct on`
-    collapses nothing. A feature lost here would be one the reader zoomed in to see."""
-    total = scalar(canonical_nd, f"select count(*) from marts.{relation}")
-
-    assert total > 0, "the fixture carries nothing to measure the gate against"
-    assert _cells_at(canonical_nd, f"marts.{relation}", zoom) == total
+def _features_in(connection: psycopg.Connection, layer, zoom: int, x: int, y: int) -> int:
+    """The features the installed function puts on one tile, read back out of the protobuf."""
+    tile = scalar(connection, f"select marts.{layer}(%s, %s, %s, null)", (zoom, x, y))
+    drawn = layers(bytes(tile)) if tile else []
+    return feature_count(drawn[0]) if drawn else 0
 
 
-@pytest.mark.parametrize("relation", PROJECTED_MARTS)
 def test_the_overplot_gate_collapses_features_inside_the_band_it_is_gated_to(
-    canonical_nd, refreshed, relation
+    canonical_nd, refreshed
 ):
-    """The other half of the same claim: a gate that removes nothing anywhere is not a gate,
-    and the bytes the approval rests on are features that do not ride the tile."""
-    total = scalar(canonical_nd, f"select count(*) from marts.{relation}")
+    """A gate that removes nothing anywhere is not a gate, and the bytes the approval rests
+    on are features that do not ride the tile."""
+    total = scalar(canonical_nd, "select count(*) from marts.nd_wells_tile")
 
-    assert _cells_at(canonical_nd, f"marts.{relation}", 4) < total
+    assert _cells_at(canonical_nd, "marts.nd_wells_tile", 4) < total
+
+
+@pytest.mark.parametrize("zoom", [8, 11, 14])
+def test_the_overplot_gate_keeps_wells_that_share_one_coordinate_above_the_band(
+    canonical_nd, refreshed, zoom
+):
+    """547 of Texas's 355,463 wells and 144 of North Dakota's 43,817 sit at a coordinate
+    another well already occupies. Ranking inside the cell keeps them; collapsing the cell
+    to a set dropped them at every zoom, which no fixture without a coincident pair can
+    show (measured on VM 111, 2026-08-21)."""
+    twin = scalar(canonical_nd, "select api10 from marts.nd_wells_tile order by api10 limit 1")
+    canonical_nd.execute(
+        "insert into marts.nd_wells_tile (api10, operator_name, status_canonical, spud_year,"
+        " derivation_id, geom)"
+        " select %s, operator_name, status_canonical, spud_year, derivation_id, geom"
+        "   from marts.nd_wells_tile where api10 = %s",
+        (f"{twin[:-1]}X", twin),
+    )
+    where_it_is = rows(
+        canonical_nd,
+        "select ST_X(geom), ST_Y(geom) from marts.nd_wells_tile where api10 = %s",
+        (twin,),
+    )[0]
+    zoom_x, zoom_y = tile_of(where_it_is[0], where_it_is[1], zoom)
+    both = rows(
+        canonical_nd,
+        "select count(*) from marts.nd_wells_tile where api10 in (%s, %s)",
+        (twin, f"{twin[:-1]}X"),
+    )
+
+    assert both[0][0] == 2, "the coincident pair was not staged"
+    assert _cells_at(canonical_nd, "marts.nd_wells_tile", zoom) < scalar(
+        canonical_nd, "select count(*) from marts.nd_wells_tile"
+    ), "the pair must share a cell, or this test proves nothing"
+    on_the_tile = scalar(
+        canonical_nd,
+        "select count(*) from marts.nd_wells_tile t"
+        " where t.geom && ST_Transform(ST_TileEnvelope(%s, %s, %s), 4326)",
+        (zoom, zoom_x, zoom_y),
+    )
+
+    assert on_the_tile >= 2, "the tile chosen does not carry the coincident pair"
+    assert _features_in(canonical_nd, "nd_wells", zoom, zoom_x, zoom_y) == on_the_tile
