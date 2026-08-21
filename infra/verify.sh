@@ -20,6 +20,7 @@ DATA_ROOT=/data
 LAN_ADDRESS=192.168.2.111
 PG_TUNING="$INFRA_DIR/postgres/postgresql.conf.d/glasswell.conf"
 PSQL=(sudo -u postgres psql -d glasswell -tAc)
+VENV_PY=/opt/glasswell/venv/bin/python
 
 passed=0
 failed=0
@@ -105,7 +106,11 @@ printf 'tiles\n'
 assert "martin /health" 200 \
     "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$MARTIN/health")"
 catalog="$(curl -s --max-time 10 "$MARTIN/catalog")"
-for layer in nd_laterals nd_wells nd_spacing_units; do
+# The roster is the code's, not a list here: a layer added to TILE_LAYERS and installed by
+# install_tile_functions must reach the catalogue, and a stale list here would say it had.
+expected_layers="$("$VENV_PY" -c 'from glasswell.marts.tiles import TILE_LAYERS
+print(" ".join(sorted(layer.name for layer in TILE_LAYERS)))' 2>/dev/null)"
+for layer in $expected_layers; do
     assert_true "martin publishes $layer" "absent from /catalog" \
         grep -q "\"$layer\"" <<<"$catalog"
 done
@@ -115,8 +120,7 @@ done
 # same honest signal the tuning block gave before deployer step 5.
 published="$(python3 -c 'import json,sys; print(" ".join(sorted(json.load(sys.stdin)["tiles"])))' \
     <<<"$catalog" 2>/dev/null)"  # a martin that answered nothing parses to nothing, and the assert below says so
-assert "martin publishes the allowlist and nothing else" \
-    "nd_laterals nd_spacing_units nd_wells" "$published"
+assert "martin publishes the allowlist and nothing else" "$expected_layers" "$published"
 
 # The tile is derived from a real feature, never hard-coded: a bounding-box corner tile can
 # legitimately be empty, and martin answers 204 for that (PLAN.md B9 / P5's correction).
