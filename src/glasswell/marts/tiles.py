@@ -48,7 +48,7 @@ class TileLayer:
         return tuple(column for column, _ in self.properties)
 
 
-TILE_LAYERS: tuple[TileLayer, ...] = (
+ND_LAYERS: tuple[TileLayer, ...] = (
     TileLayer(
         name="nd_laterals",
         source="marts.tile_nd_laterals",
@@ -92,6 +92,41 @@ TILE_LAYERS: tuple[TileLayer, ...] = (
         ),
     ),
 )
+
+# TX carries no spud date — the RRC's free identity export publishes a completion date and not
+# a spud — so the point layer styles on status and says what the wellbore is for instead.
+TX_LAYERS: tuple[TileLayer, ...] = (
+    TileLayer(
+        name="tx_laterals",
+        source="marts.tile_tx_laterals",
+        geometry_type="GEOMETRY",
+        properties=(
+            ("api10", "text"),
+            ("geom_key", "text"),
+            ("operator_name", "text"),
+            ("status_canonical", "text"),
+            ("county_code", "text"),
+            ("lateral_length_ft", "float8"),
+            ("derivation_id", "text"),
+        ),
+        simplify=True,
+    ),
+    TileLayer(
+        name="tx_wells",
+        source="marts.tile_tx_wells",
+        geometry_type="POINT",
+        properties=(
+            ("api10", "text"),
+            ("operator_name", "text"),
+            ("status_canonical", "text"),
+            ("well_type_reported", "text"),
+            ("county_code", "text"),
+            ("derivation_id", "text"),
+        ),
+    ),
+)
+
+TILE_LAYERS: tuple[TileLayer, ...] = (*ND_LAYERS, *TX_LAYERS)
 
 # `stable parallel safe` is what martin's function discovery expects, and the argument names
 # are part of the contract: it looks for (z, x, y) plus an optional json `query`.

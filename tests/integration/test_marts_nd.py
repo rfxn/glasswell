@@ -18,7 +18,7 @@ from glasswell.ingest.nd_gis import load_laterals, load_spacing_units, load_well
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.explain import resolve_chain
 from glasswell.lineage.store import PostgresRecorder
-from glasswell.marts import TILE_LAYERS, refresh_all
+from glasswell.marts import ND_LAYERS, TILE_LAYERS, refresh_all
 from glasswell.marts.nd_wells import main
 from glasswell.marts.tiles import simplify_tolerance
 from glasswell.seed import seed_all
@@ -252,7 +252,10 @@ def test_the_wells_tile_mart_holds_surface_points_only(canonical_nd, refreshed):
     )
 
 
-@pytest.mark.parametrize("layer", TILE_LAYERS, ids=lambda layer: layer.name)
+# ND_LAYERS, not TILE_LAYERS: this fixture holds the ND slice, and a TX layer with no rows in
+# it would fail for having no data rather than for producing a bad tile. The TX layers get the
+# same two assertions against TX data in test_tx_marts.py.
+@pytest.mark.parametrize("layer", ND_LAYERS, ids=lambda layer: layer.name)
 def test_the_function_source_returns_a_tile_over_the_data(canonical_nd, refreshed, layer):
     zoom, x, y = covering_tile(extent_of(canonical_nd, layer.source))
     tile = scalar(canonical_nd, f"select marts.{layer.name}(%s, %s, %s, null)", (zoom, x, y))
@@ -260,7 +263,7 @@ def test_the_function_source_returns_a_tile_over_the_data(canonical_nd, refreshe
     assert layer.name.encode() in bytes(tile), "the MVT layer name is not the tile source id"
 
 
-@pytest.mark.parametrize("layer", TILE_LAYERS, ids=lambda layer: layer.name)
+@pytest.mark.parametrize("layer", ND_LAYERS, ids=lambda layer: layer.name)
 def test_the_function_source_returns_nothing_off_the_data(canonical_nd, refreshed, layer):
     zoom, x, y = covering_tile(extent_of(canonical_nd, layer.source))
     opposite = (x + 2**zoom // 2) % 2**zoom

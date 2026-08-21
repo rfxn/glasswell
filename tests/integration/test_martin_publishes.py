@@ -25,7 +25,7 @@ import psycopg.sql
 import pytest
 import yaml
 
-from glasswell.marts.tiles import install_tile_functions
+from glasswell.marts.tiles import TILE_LAYERS, install_tile_functions
 from tests.conftest import REQUIRE_DOCKER_ENV, TEST_LABEL, docker_environment
 
 # Pinned: `latest` resolves to 1.14.0 today and would move under this test silently, leaving
@@ -35,7 +35,7 @@ MARTIN_CONFIG = Path(__file__).resolve().parents[2] / "infra" / "martin" / "conf
 MARTIN_ROLE = "martin"
 MARTIN_PASSWORD = "martin-test-only"
 READY_TIMEOUT_SECONDS = 45
-PUBLISHED = {"nd_laterals", "nd_wells", "nd_spacing_units"}
+PUBLISHED = {layer.name for layer in TILE_LAYERS}
 # Whatever else the catalogue holds, none of it may name a relation outside `marts`.
 FORBIDDEN_FRAGMENTS = ("staging", "nd_gis", "well_spatial", "quarantine", "production")
 

@@ -20,7 +20,7 @@ import psycopg
 import pytest
 import yaml
 
-from glasswell.marts import TILE_LAYERS
+from glasswell.marts import ND_LAYERS, TILE_LAYERS
 from tests.integration.test_marts_nd import (  # noqa: F401
     canonical_nd,
     covering_tile,
@@ -251,7 +251,9 @@ def test_the_declared_geometry_matches_what_postgis_reports(
     assert geometry_column == "geom"
 
 
-@pytest.mark.parametrize("layer", TILE_LAYERS, ids=lambda layer: layer.name)
+# ND_LAYERS: reading the protobuf needs features, and this fixture's features are ND's. The
+# TX layers are read the same way, from TX data, in test_tx_marts.py.
+@pytest.mark.parametrize("layer", ND_LAYERS, ids=lambda layer: layer.name)
 def test_every_numeric_attribute_rides_the_wire_as_a_number(
     canonical_nd, refreshed, layer  # noqa: F811
 ):
