@@ -76,6 +76,11 @@ its own version in its header, and its history is summarised in §3.1.
       cover
 - [Fix] `tests/fixtures/nm_ocd/SOURCE.md`'s `api_well_idn` width distribution summed 45,097
       over the record count. Re-measured off the staged partition, it sums to 48,104,334
+- [Change] `/v1/health` reports a registered source that has never been fetched as
+         `pending` and names it in `pending_sources`, rather than calling it degraded.
+         Registration says the pipeline knows about a source, not that a pull has happened;
+         nine NM sources registered ahead of their promotion deploy would otherwise hold the
+         endpoint permanently degraded and drown the signal it exists to carry
 
 ### 2026-08-21 — increment-3 merge train
 

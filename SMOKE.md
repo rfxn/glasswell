@@ -214,8 +214,11 @@ curl -sS "$B/openapi.json" | python3 -c 'import json,sys; print(len(json.load(sy
   their own and there are now **zero** (gap 16, closed).
   Note `multi_wellbore_policy` at 3.1 %, above the 2 % ND revisit trigger: that is a
   real signal to act on, not noise.
-- **`/v1/health`** — four sources, all `current`, with the manifest count per source
-  (six for the monthly production file, one per GIS layer).
+- **`/v1/health`** — every registered source with its manifest count (six for the monthly
+  production file, one per GIS layer). A source that has been fetched reads `current`; one
+  that is registered and not yet fetched reads `pending` and is named in `pending_sources`,
+  which is where the NM sources sit until the promotion deploy. `degraded_sources` must be
+  empty: that list is for data that has gone stale, and a source on it is a served lie.
 
 ## 6. Known gaps, stated plainly
 

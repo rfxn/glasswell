@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
+import psycopg
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_MANIFEST_ID
+from tests.support.seed import seed_manifest
 
 # Four ND, nine NM and three TX sources from seed_all, plus the three the shared test
 # template carries — nd_mpr_xlsx and nm_ocd_wcproduction are in both, so only tx_pdq_dsv
@@ -52,7 +56,7 @@ def test_health_reports_freshness_per_source(client: TestClient) -> None:
     assert len(freshness) == SOURCE_COUNT
     assert freshness["nd_mpr_xlsx"]["retrieval_vintage"] == "2026-08-01"
     assert freshness["nd_mpr_xlsx"]["state"] == "current"
-    assert freshness["nd_gis_spacing_units"]["state"] == "never_fetched"
+    assert freshness["nd_gis_spacing_units"]["state"] == "pending"
 
 
 def test_health_states_whether_it_is_degraded(client: TestClient) -> None:
@@ -63,8 +67,43 @@ def test_health_states_whether_it_is_degraded(client: TestClient) -> None:
     assert data["sources"][0]["last_manifest_id"] in {EXAMPLE_MANIFEST_ID, None}
 
 
-def test_health_is_degraded_when_a_source_has_never_been_fetched(client: TestClient) -> None:
+def test_a_source_that_has_never_been_fetched_is_pending_and_named(client: TestClient) -> None:
+    """Controller ruling: registration is not a promise that a pull has happened, so a source
+    with no manifest is `pending` rather than degraded — named in its own list, because the
+    complaint the old behaviour answered was about hiding it, not about the word."""
     data = client.get("/v1/health").json()["data"]
 
-    assert data["state"] == "degraded"
-    assert "nd_gis_spacing_units" in data["degraded_sources"]
+    assert data["state"] == "ok"
+    assert data["degraded_sources"] == []
+    assert "nd_gis_spacing_units" in data["pending_sources"]
+    assert all(
+        source["state"] == "pending"
+        for source in data["sources"]
+        if source["source_id"] in data["pending_sources"]
+    )
+
+
+def test_the_nm_sources_are_pending_until_one_is_fetched(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """Wave 2 registers nine NM sources on every deployment and promotes them at a later one.
+    Nine permanently degraded sources would make the signal useless exactly while it matters."""
+    before = client.get("/v1/health").json()["data"]
+
+    assert {source for source in before["pending_sources"] if source.startswith("nm_ocd_")}
+    assert before["state"] == "ok"
+
+    seed_manifest(
+        seeded,
+        sha256="a" * 64,
+        source_id="nm_ocd_wcproduction",
+        source_key="wcproduction.zip",
+        fetched_at=datetime.now(UTC),
+    )
+    seeded.commit()
+    after = client.get("/v1/health").json()["data"]
+    states = {source["source_id"]: source["state"] for source in after["sources"]}
+
+    assert states["nm_ocd_wcproduction"] == "current"
+    assert "nm_ocd_wcproduction" not in after["pending_sources"]
+    assert after["state"] == "ok"
