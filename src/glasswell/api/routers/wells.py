@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from decimal import Decimal
 from typing import Annotated, Any
@@ -14,6 +15,7 @@ from glasswell.api.deps import AsOf, Connection, Cursor, WellsLimit, rows
 from glasswell.api.errors import ProblemError, problem_responses
 from glasswell.api.examples import (
     EXAMPLE_API10,
+    EXAMPLE_BBOX,
     GLOSSARY_KEY,
     dataset,
     not_a_figure,
@@ -31,7 +33,7 @@ from glasswell.api.pagination import (
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, iso
 from glasswell.lengths import STORAGE_EPSG, resolve_length_method
 from glasswell.lineage.conformance import lease_reporting_rule
-from glasswell.lineage.envelope import figure
+from glasswell.lineage.envelope import Figure, figure
 from glasswell.marts.tiles import TILE_BUFFER, TILE_EXTENT, TILE_MAX_ZOOM, WEB_MERCATOR
 from glasswell.units import metres_to_feet
 
@@ -39,6 +41,21 @@ router = APIRouter(tags=["wells"])
 
 BBOX_DEGREE_CAP = 4.0
 API10_PATTERN = r"^\d{10}$"
+BBOX_PARTS = 4
+LON_LIMIT = 180.0
+LAT_LIMIT = 90.0
+COUNT_UNIT = "wells"
+
+# R8: a count grouped by status_canonical is a count of one conformance rule's output, so the
+# summary names the rule per jurisdiction rather than implying one vocabulary spans both. The
+# registry has no state-code edge to walk — a vocab_map row is keyed by source — so the pairing
+# is pinned here for the same reason as production.ROLLUP_RULE, and
+# test_well_status_summary.py holds every id to a seeded registry row.
+STATUS_VOCABULARY_RULES = {"33": "cr_nd_status_vocab_1", "42": "cr_tx_status_vocab_1"}
+
+# SB-07 §2.1 fixes the selector charset. A status outside it would raise at serve time, which
+# is a 500 on data the conformance rules are supposed to have already refused.
+_NOT_SELECTOR_SAFE = re.compile(r"[^A-Za-z0-9_.:+-]")
 
 WELL_LABELS = {
     "/api10": "gt_api_10_api_12_api_14",
@@ -46,6 +63,12 @@ WELL_LABELS = {
     "/confidential_flag": "gt_confidential_well",
     "/lateral_length_ft": "gt_wellbore",
     "/total_depth_ft": "gt_wellbore",
+}
+
+STATUS_SUMMARY_LABELS = {
+    "/statuses": "gt_well_status",
+    "/unmapped_wells": "gt_well_status",
+    "/vocabulary_rules": "gt_conformance_rule",
 }
 
 _COLUMNS = (
@@ -84,6 +107,38 @@ select geom_type, geom_key, derivation_id, source_datum, source_manifest_id,
   from canonical.well_spatial
  where api10 = %(api10)s
  order by geom_type, geom_key
+"""
+
+# The box narrows first and the spine is resolved over what it returned: `in_view` is an
+# index-answerable predicate on well_spatial_geom_idx, and `distinct on` then picks one row per
+# api10 in it. The left join is what keeps a promoted geometry whose api10 never reached the
+# spine visible — it groups as `no_well_row` and is disclosed, never silently dropped and never
+# folded into the no-status class, which is a different fact.
+#
+# `in_view` is referenced exactly once on purpose. A second reference makes PostgreSQL
+# materialise the CTE, which erases its row estimate; measured at 2,000 seeded wells, the
+# estimate fell to 1, the planner chose a nested loop with a join filter, and a 501-well box
+# cost 125,250 filter comparisons and 28 ms — quadratic in the wells in view, on the small
+# boxes the map spends its life in. Inlined, the same box is 3 ms. See work-output/wss-status.md.
+STATUS_SUMMARY_SQL = """
+with in_view as (
+    select distinct api10
+      from canonical.well_spatial
+     where st_intersects(geom,
+                         st_makeenvelope(%(minx)s, %(miny)s, %(maxx)s, %(maxy)s, 4326))),
+     latest as (
+    select distinct on (v.api10)
+           v.api10, w.status_canonical, w.basin, w.state_code, w.derivation_id, w.effective_from
+      from in_view v
+      left join canonical.wells w
+             on w.api10 = v.api10
+            and (%(as_of)s::date is null or w.effective_from <= %(as_of)s::date)
+     order by v.api10, w.effective_from desc nulls last, w.created_at desc nulls last)
+select basin, state_code, status_canonical, derivation_id is null as no_well_row,
+       count(*) as wells, max(derivation_id) as derivation_id,
+       max(effective_from) as effective_from
+  from latest
+ group by 1, 2, 3, 4
 """
 
 _STORAGE_CRS = """
@@ -513,6 +568,340 @@ def list_wells(
             if next_cursor
             else None
         },
+    )
+
+
+class StatusCount(BaseModel):
+    status: str = Field(
+        description=(
+            "Canonical status the wells in this bucket carry. Never null: a well the source"
+            " reported no status for is counted in `unmapped_wells`, not here."
+        ),
+        json_schema_extra={GLOSSARY_KEY: "gt_well_status"},
+    )
+    wells: FigureModel = Field(
+        description="Wells in this class inside the box, with the handle the count resolves by."
+    )
+
+
+class BasinStatusCounts(BaseModel):
+    basin: str | None = Field(description="Basin the wells are assigned to; null where none is.")
+    state_code: str | None = Field(
+        description="API state code the wells were promoted under — 33 in ND, 42 in TX.",
+        json_schema_extra=not_a_figure(
+            "API state code on a per-basin summary row; an identifier, not a quantity."
+        ),
+    )
+    status_vocabulary_rule: str | None = Field(
+        description=(
+            "Conformance rule that mapped this jurisdiction's reported codes onto the canonical"
+            " vocabulary. Null where no rule is registered for the state, which is disclosed as"
+            " a warning rather than answered with another state's rule."
+        ),
+        json_schema_extra={GLOSSARY_KEY: "gt_conformance_rule"},
+    )
+    wells: FigureModel = Field(description="Wells in this basin inside the box.")
+    unmapped_wells: FigureModel | None = Field(
+        description="Wells here whose source reported no status; absent when there are none."
+    )
+    statuses: list[StatusCount] = Field(description="One entry per class present, largest first.")
+
+
+class WellStatusSummary(BaseModel):
+    bbox: str = Field(
+        description="The box the counts were taken over, normalised to minx,miny,maxx,maxy."
+    )
+    wells: FigureModel | None = Field(
+        description=(
+            "Every well in the box, mapped and unmapped together. Null when the box holds none —"
+            " a class no well is in has no count, and neither does an empty box."
+        )
+    )
+    unmapped_wells: FigureModel | None = Field(
+        description=(
+            "Wells whose source reported no status at all. Its own bucket, never added to a"
+            " class — an absence is not a value, and in the 2026-08-20 Texas load 65,685 wells"
+            " are in it, which is more than any single class it could have been folded into."
+        ),
+        json_schema_extra={GLOSSARY_KEY: "gt_well_status"},
+    )
+    statuses: list[StatusCount] = Field(
+        description="One entry per canonical class present in the box, largest first."
+    )
+    basins: list[BasinStatusCounts] = Field(
+        description="The same counts split by basin and jurisdiction, ordered by basin."
+    )
+    vocabulary_rules: list[str] = Field(
+        description="Every status vocabulary rule that shaped these counts; each one is linked.",
+        json_schema_extra={GLOSSARY_KEY: "gt_conformance_rule"},
+    )
+
+
+def _token(value: str | None) -> str:
+    return _NOT_SELECTOR_SAFE.sub("_", value) if value else "unassigned"
+
+
+def _refuse_bbox(code: str, detail: str, raw: str) -> ProblemError:
+    return ProblemError(
+        "validation_failed",
+        detail=detail,
+        errors=[{"pointer": "/query/bbox", "code": code, "detail": raw}],
+    )
+
+
+def _status_bbox(raw: str) -> tuple[float, float, float, float]:
+    """The summary's own box: no degree cap, and every way it can be wrong is named.
+
+    `/v1/wells` caps its box at four degrees because it pages rows; this one returns at most a
+    row per class per basin however wide the box is, and a cap here would recreate the defect
+    it exists to fix — a legend that stops answering as the viewport grows.
+    """
+    parts = raw.split(",")
+    if len(parts) != BBOX_PARTS:
+        raise _refuse_bbox("bbox_shape", "bbox must be minx,miny,maxx,maxy in WGS84", raw)
+    try:
+        minx, miny, maxx, maxy = (float(part) for part in parts)
+    except ValueError:
+        raise _refuse_bbox("bbox_number", "bbox coordinates must be numbers", raw) from None
+    if not (-LON_LIMIT <= minx <= LON_LIMIT and -LON_LIMIT <= maxx <= LON_LIMIT):
+        raise _refuse_bbox("bbox_range", f"longitudes must be within ±{LON_LIMIT:g}", raw)
+    if not (-LAT_LIMIT <= miny <= LAT_LIMIT and -LAT_LIMIT <= maxy <= LAT_LIMIT):
+        raise _refuse_bbox("bbox_range", f"latitudes must be within ±{LAT_LIMIT:g}", raw)
+    if minx > maxx or miny > maxy:
+        raise _refuse_bbox(
+            "bbox_order",
+            "bbox must read minx,miny,maxx,maxy; a box that crosses the antimeridian is two"
+            " boxes and is asked for as two requests",
+            raw,
+        )
+    return minx, miny, maxx, maxy
+
+
+def _count(found: list[dict[str, Any]], *, selector: str) -> Figure | None:
+    """Absent, not zero: a class the box does not contain has no count and no derivation."""
+    if not found:
+        return None
+    return figure(
+        str(sum(row["wells"] for row in found)),
+        unit=COUNT_UNIT,
+        derivation=max(row["derivation_id"] for row in found),
+        selector=selector,
+    )
+
+
+def _classes(found: list[dict[str, Any]], *, box: str, scope: str = "") -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in found:
+        if row["status_canonical"] is not None:
+            grouped.setdefault(row["status_canonical"], []).append(row)
+    ordered = sorted(
+        grouped.items(), key=lambda item: (-sum(row["wells"] for row in item[1]), item[0])
+    )
+    return [
+        {
+            "status": status,
+            "wells": _count(
+                group, selector=f"col=wells&status={_token(status)}{scope}&bbox={box}"
+            ),
+        }
+        for status, group in ordered
+    ]
+
+
+def _basins(found: list[dict[str, Any]], *, box: str) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str | None, str | None], list[dict[str, Any]]] = {}
+    for row in found:
+        grouped.setdefault((row["basin"], row["state_code"]), []).append(row)
+    summaries = []
+    for (basin, state_code), group in sorted(
+        grouped.items(), key=lambda item: (item[0][0] or "", item[0][1] or "")
+    ):
+        scope = f"&basin={_token(basin)}&state={_token(state_code)}"
+        summaries.append(
+            {
+                "basin": basin,
+                "state_code": state_code,
+                "status_vocabulary_rule": STATUS_VOCABULARY_RULES.get(state_code or ""),
+                "wells": _count(group, selector=f"col=wells{scope}&bbox={box}"),
+                "unmapped_wells": _count(
+                    [row for row in group if row["status_canonical"] is None],
+                    selector=f"col=unmapped_wells{scope}&bbox={box}",
+                ),
+                "statuses": _classes(group, box=box, scope=scope),
+            }
+        )
+    return summaries
+
+
+def _summary_labels(basins: list[dict[str, Any]]) -> dict[str, str]:
+    """One key per basin actually present: `web/src/api/envelope.ts` looks a pointer up by
+    exact match, so a `/basins/*/…` key resolves for nobody (the same rule as _pool_labels)."""
+    return STATUS_SUMMARY_LABELS | {
+        pointer: term
+        for index in range(len(basins))
+        for pointer, term in (
+            (f"/basins/{index}/statuses", "gt_well_status"),
+            (f"/basins/{index}/unmapped_wells", "gt_well_status"),
+            (f"/basins/{index}/status_vocabulary_rule", "gt_conformance_rule"),
+        )
+    }
+
+
+def _summary_warnings(
+    counted: list[dict[str, Any]], *, orphans: int, states: list[str]
+) -> list[dict[str, Any]]:
+    warnings: list[dict[str, Any]] = []
+    if orphans:
+        subject, verb, pronoun = (
+            ("geometry", "has", "it is") if orphans == 1 else ("geometries", "have", "they are")
+        )
+        warnings.append(
+            {
+                "code": "geometry_without_a_well_row",
+                "detail": (
+                    f"{orphans} {subject} in this box {verb} no well row at this vintage, so"
+                    f" {pronoun} in no class and in no total here. That is not a well with no"
+                    " status — a different fact, counted in unmapped_wells — and the geometry"
+                    " still draws on the map."
+                ),
+                "pointer": "/wells",
+            }
+        )
+    if len({row["derivation_id"] for row in counted}) > 1:
+        warnings.append(
+            {
+                "code": "aggregate_spans_derivations",
+                "detail": (
+                    "More than one derivation promoted the wells in this box. Every count is"
+                    " over rows the box selected, and its handle names one of the derivations"
+                    " those rows came from; links.explain resolves what each handle names."
+                ),
+                "pointer": "/wells",
+            }
+        )
+    if states:
+        warnings.append(
+            {
+                "code": "status_vocabulary_unregistered",
+                "detail": (
+                    f"No status vocabulary rule is registered for state code(s)"
+                    f" {', '.join(states)}, so their rows name none. The counts are the"
+                    " canonical values as promoted; the rule that produced them is not"
+                    " citable here until it is registered (R8)."
+                ),
+                "pointer": "/basins",
+            }
+        )
+    return warnings
+
+
+@router.get(
+    "/wells/status-summary",
+    operation_id="get_well_status_summary",
+    summary="Well status counts for a box",
+    description=(
+        "How many wells of each canonical status have geometry inside a bounding box, as of a"
+        " knowledge-time cut. This is the count a map legend states, asked of the data rather"
+        " than of what a renderer drew: a tile pyramid thins points as it zooms out and a"
+        " symbology withdraws its low-salience classes, so a count taken from drawn features"
+        " falls exactly as the viewed area grows. This one does not move with zoom, with"
+        " styling or with which tiles have arrived."
+        " The population is wells whose recorded geometry — surface, bottomhole or lateral —"
+        " intersects the box, which is the same population `/v1/wells?bbox=` pages, and a well"
+        " with no geometry at all is in no viewport and in no count here. The box is closed:"
+        " a well exactly on the edge is inside it. There is no degree cap, because the answer"
+        " is bounded by the status vocabulary rather than by the population; `links.wells` is"
+        " published only where the box is inside the collection's own four-degree cap."
+        " Every count is a figure with a derivation handle over the rows it counted, so a"
+        " legend number resolves at /v1/explain to the government file the statuses came from."
+        " A class no well in the box carries is absent rather than zero. Wells whose source"
+        " reported no status are their own bucket, `unmapped_wells`, and are never added to a"
+        " class — in the 2026-08-20 Texas load 65,685 wells are in it, which is more than any"
+        " class it could have been folded into. Counts are split per basin with the vocabulary"
+        " rule that mapped that jurisdiction's codes (cr_nd_status_vocab_1 in North Dakota,"
+        " cr_tx_status_vocab_1 in Texas), because a status class means what its rule says it"
+        " means. It does not return the wells themselves — see /v1/wells."
+    ),
+    response_model=EnvelopeModel[WellStatusSummary],
+    openapi_extra={
+        **request_example(query={"bbox": EXAMPLE_BBOX}),
+        **semantics(
+            bbox={
+                "glossary": "gt_crs_compute_crs",
+                "so": (
+                    "WGS84 degrees, and the only scope this endpoint has — it is required, so a"
+                    " count always says which box it is a count of. It matches a well any of"
+                    " whose recorded geometry overlaps the box, so a lateral crossing one corner"
+                    " is counted while its surface hole sits outside. Uncapped, unlike the"
+                    " collection's: a whole-state box is the case the endpoint exists for."
+                ),
+            },
+            as_of={
+                "glossary": "gt_knowledge_time",
+                "so": (
+                    "Counts the classes as they were described on that knowledge date, not the"
+                    " wells drilled by then. A status restatement appends a row, so an earlier"
+                    " as_of returns the earlier class and the totals move between them; a well"
+                    " whose spine row is later than the date is counted in no class and"
+                    " disclosed as geometry without a well row."
+                ),
+            },
+        ),
+    },
+    responses=problem_responses("validation_failed", "service_degraded"),
+)
+def get_well_status_summary(
+    request: Request,
+    connection: Connection,
+    bbox: Annotated[
+        str, Query(description="minx,miny,maxx,maxy in WGS84. Required; there is no cap.")
+    ],
+    as_of: AsOf = None,
+) -> JSONResponse:
+    envelope = _status_bbox(bbox)
+    found = rows(
+        connection,
+        STATUS_SUMMARY_SQL,
+        dict(zip(("minx", "miny", "maxx", "maxy"), envelope, strict=True)) | {"as_of": as_of},
+    )
+    counted = [row for row in found if not row["no_well_row"]]
+    orphans = sum(row["wells"] for row in found if row["no_well_row"])
+    # `%g` normalises the echo so a client can match a late answer to the viewport it asked
+    # about; the selector form differs only in its separator, which may not be a comma.
+    box = ",".join(f"{value:g}" for value in envelope)
+    selector_box = ":".join(f"{value:g}" for value in envelope)
+    basins = _basins(counted, box=selector_box)
+    unregistered = sorted(
+        {
+            row["state_code"] or "unassigned"
+            for row in counted
+            if not STATUS_VOCABULARY_RULES.get(row["state_code"] or "")
+        }
+    )
+    rules = sorted({rule for row in basins if (rule := row["status_vocabulary_rule"])})
+    data = {
+        "bbox": box,
+        "wells": _count(counted, selector=f"col=wells&bbox={selector_box}"),
+        "unmapped_wells": _count(
+            [row for row in counted if row["status_canonical"] is None],
+            selector=f"col=unmapped_wells&bbox={selector_box}",
+        ),
+        "statuses": _classes(counted, box=selector_box),
+        "basins": basins,
+        "vocabulary_rules": rules,
+    }
+    links = {rule: f"/v1/conformance/{rule}" for rule in rules}
+    minx, miny, maxx, maxy = envelope
+    if maxx - minx <= BBOX_DEGREE_CAP and maxy - miny <= BBOX_DEGREE_CAP:
+        links["wells"] = f"/v1/wells?bbox={box}"
+    return enveloped(
+        request,
+        data,
+        as_of=max((row["effective_from"] for row in counted), default=None),
+        as_of_requested=iso(as_of) or "latest",
+        labels=_summary_labels(basins),
+        warnings=_summary_warnings(counted, orphans=orphans, states=unregistered),
+        links=links,
     )
 
 

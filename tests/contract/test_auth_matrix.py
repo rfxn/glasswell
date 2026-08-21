@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from glasswell.api.examples import (
     EXAMPLE_API10,
+    EXAMPLE_BBOX,
     EXAMPLE_DERIVATION_ID,
     EXAMPLE_ERROR_CODE,
     EXAMPLE_MANIFEST_ID,
@@ -39,6 +40,7 @@ MATRIX: tuple[tuple[str, str, str], ...] = (
     ("GET", "/v1/health", READ),
     ("GET", f"/v1/errors/{EXAMPLE_ERROR_CODE}", READ),
     ("GET", "/v1/wells", READ),
+    ("GET", f"/v1/wells/status-summary?bbox={EXAMPLE_BBOX}", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production/pools", READ),
