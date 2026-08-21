@@ -1,7 +1,9 @@
 import { readState, writeState } from "../app/state.ts";
 import type { ViewMode } from "../app/state.ts";
 import { crossTo } from "../explore/router.ts";
+import { mountHint } from "./hint.ts";
 import { registerOverlay } from "./overlays.ts";
+import { mountBuildStamp } from "./stamp.ts";
 import { mountStatus } from "./status.ts";
 import { mountThemeToggle } from "./theme.ts";
 
@@ -12,7 +14,11 @@ export const HEADER_IDS = [
   "gw-theme-btn",
   "gw-help-btn",
   "gw-help-panel",
+  "gw-hint",
   "gw-asof",
+  "gw-build",
+  "gw-help-asof",
+  "gw-help-build",
   "gw-status",
 ] as const;
 
@@ -55,7 +61,7 @@ function pressModeSwitch(view: ViewMode): void {
   }
 }
 
-/** Harvest §7.3: brand, one control cluster, one capped meta slot — one row at every width. */
+/** Harvest §7.3: brand, a signal readout in the slack, one control cluster — one row always. */
 export function wireHeader(options: HeaderOptions): void {
   const hosts = Object.fromEntries(
     HEADER_IDS.map((id) => [id, byId(id)]),
@@ -84,9 +90,13 @@ export function wireHeader(options: HeaderOptions): void {
   mountStatus({
     status: hosts["gw-status"],
     vintage: hosts["gw-asof"],
+    vintageEcho: hosts["gw-help-asof"],
     toasts: byId("gw-toasts"),
     keyState: hosts["gw-key-btn"],
   });
+  mountHint(hosts["gw-hint"]);
+  mountBuildStamp(hosts["gw-build"]);
+  mountBuildStamp(hosts["gw-help-build"]);
 
   hosts["gw-key-btn"].addEventListener("click", () => options.onKeyPanel());
   mountThemeToggle(hosts["gw-theme-btn"]);

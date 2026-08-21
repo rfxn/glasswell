@@ -70,8 +70,10 @@
   --gw-rail-pad-x: 16px;
   --gw-control-h: 32px;
   /* The read slot's width is a per-breakpoint constant, re-declared in the media queries
-     below and nowhere else. Anything that varies it by state reopens BLOCKER-1. */
-  --gw-meta-w: 240px;
+     below and nowhere else. Anything that varies it by state reopens BLOCKER-1. It is sized
+     for `as_of YYYY-MM-DD` over `build <hash>` — two strings whose width is known, which is
+     why it is a third of what it cost when a status line lived in it. */
+  --gw-meta-w: 150px;
 
   --gw-radius-xs: 4px;
   --gw-radius-sm: 6px;
@@ -169,7 +171,8 @@ body {
 .gw-axis-label,
 .gw-state-key,
 .gw-popover-tags,
-.gw-asof-label {
+.gw-asof-label,
+.gw-build-label {
   font-family: var(--gw-font-display);
   font-size: var(--gw-fs-eyebrow);
   font-weight: var(--gw-fw-eyebrow);
@@ -303,12 +306,30 @@ body {
   box-shadow: inset 0 0 0 1px var(--cyan);
 }
 
+/* The status is a statement about the data, not a tool, and it is the one thing in the rail
+   whose width is written by whatever went wrong. It reads here, in the slack between the mode
+   switch and the right-packed cluster, where it can say as much as it needs to without moving
+   a control the reader is already aiming at — the free-space answer to gate-v BLOCKER-1. */
+.gw-signal {
+  display: flex;
+  align-items: center;
+  gap: var(--gw-space-2);
+  flex: 0 1 auto;
+  min-width: 0;
+  height: var(--gw-rail-band);
+}
+
+/* Healthy is the common case, and an empty box still spends a rail gap. */
+.gw-signal:not(:has(> *:not([hidden]):not(:empty))) {
+  display: none;
+}
+
 .gw-controls {
   display: flex;
   align-items: center;
   gap: var(--gw-space-4);
   margin-left: auto;
-  flex: 0 1 auto;
+  flex: none;
   min-width: 0;
   height: var(--gw-rail-band);
 }
@@ -375,19 +396,27 @@ body {
   display: inline;
 }
 
-/* Not news when it is fine, and a warning the moment it is not. It reads on the read slot's
-   16 px signal line, not as a 32 px control: at control height the two-line slot came to
-   56 px and `overflow: hidden` sheared the date off the top and the chip off the bottom. */
-.gw-controls .gw-key-chip {
+/* Not news when it is fine, and a warning the moment it is not. It reads as a 16 px pill on
+   the signal row rather than as a 32 px control, and it carries its own base treatment: it
+   stands with the status now, where `.gw-controls button` does not reach it. */
+.gw-key-chip {
+  flex: none;
   height: 16px;
   padding: 0 var(--gw-space-2);
+  border: 1px solid var(--amber);
   border-radius: var(--gw-radius-pill);
-  color: var(--amber-text) !important;
-  border-color: var(--amber) !important;
+  background: transparent;
+  color: var(--amber-text);
+  font-family: var(--gw-font-body);
   font-size: var(--gw-fs-micro);
   font-weight: 700;
   line-height: 16px;
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.gw-key-chip:hover {
+  color: var(--paper);
 }
 
 .gw-key-chip[hidden] {
@@ -396,10 +425,10 @@ body {
 
 /* A fixed column, not a capped one. A cap bounds how far the slot can grow; it does not fix
    where it starts, so under a right-packed row every word the status gained pushed search and
-   the buttons left — 117 px between idle and a degraded source (gate-v BLOCKER-1). Fixing the
-   width makes the read slot a column the find and act groups can stand against, and hands the
-   truncation job to the ellipsis that was already here. Two lines of 20 px and 16 px plus the
-   4 px gap make exactly the 40 px band the controls beside it stand in. */
+   the buttons left — 117 px between idle and a degraded source (gate-v BLOCKER-1). What is in
+   the column now cannot grow at all: the vintage and the build stamp are both fixed-format
+   strings. Two lines of 20 px and 16 px plus the 4 px gap make exactly the 40 px band the
+   controls beside it stand in. */
 .gw-meta {
   flex: 0 0 var(--gw-meta-w);
   width: var(--gw-meta-w);
@@ -410,18 +439,6 @@ body {
   min-width: 0;
   overflow: hidden;
   text-align: right;
-}
-
-/* The key chip reads as status and lives with it. In the act group its ~100 px arrival on a
-   rejected key widened that group and shoved search sideways; here it is spent from the read
-   slot's own fixed width instead. */
-.gw-meta-signal {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--gw-space-1);
-  width: 100%;
-  min-width: 0;
 }
 
 /* Centred, not baseline-aligned: the row's strut is the 12 px mono face and the eyebrow inside
@@ -446,9 +463,32 @@ body {
   line-height: 20px;
 }
 
+/* The second line of the read column, and the answer to "which build am I looking at". Quieter
+   than the vintage on purpose: the date is what the reader is reading, the hash is what they
+   quote back. The full stamp, with its date, is the element's title. */
+.gw-build {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  margin: 0;
+  max-width: 100%;
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-fs-micro);
+  line-height: 16px;
+  color: var(--slate);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gw-build-label {
+  color: var(--muted);
+  line-height: 16px;
+}
+
 .gw-status {
   margin: 0;
   max-width: 100%;
+  min-width: 0;
   font-size: var(--gw-fs-micro);
   line-height: 16px;
   color: var(--muted);
@@ -468,6 +508,69 @@ body {
   color: var(--amber-text);
   box-shadow: inset 0 0 0 1px var(--amber);
   font-weight: 700;
+}
+
+/* The ⌾ lesson, coached once and anchored to the control that documents it for good. It is a
+   popover under the act group, so it teaches at full length without spending rail width — the
+   status slot said the same sentence in 254 px at 1600 and in a truncated stub at 390. */
+.gw-tools-act {
+  position: relative;
+}
+
+.gw-hint {
+  position: absolute;
+  top: calc(100% + var(--gw-space-3));
+  right: 0;
+  z-index: var(--gw-z-rail-pop);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gw-space-2);
+  width: max-content;
+  max-width: min(84vw, 19rem);
+  padding: var(--gw-space-2) var(--gw-space-2) var(--gw-space-2) var(--gw-space-3);
+  background: var(--panel);
+  border: 1px solid var(--cyan);
+  border-radius: var(--gw-radius-md);
+  box-shadow: var(--shadow-pop);
+}
+
+.gw-hint[hidden] {
+  display: none;
+}
+
+/* The tick points at the help button, which is where the sentence lives once this is gone. */
+.gw-hint::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  right: 18px;
+  width: 8px;
+  height: 8px;
+  background: var(--panel);
+  border-left: 1px solid var(--cyan);
+  border-top: 1px solid var(--cyan);
+  transform: rotate(45deg);
+}
+
+.gw-hint-text {
+  margin: 0;
+  font-size: var(--gw-fs-micro);
+  line-height: 1.5;
+  color: var(--paper);
+}
+
+/* Two classes, so it beats `.gw-controls button` and the 44 px touch rule without !important:
+   a dismiss cross is not a rail control and must not be sized like one. Hover comes from the
+   base button rule, which still wins on specificity. */
+.gw-controls .gw-hint-close {
+  flex: none;
+  height: 18px;
+  min-width: 18px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  line-height: 18px;
 }
 
 .gw-help-panel {
@@ -521,6 +624,17 @@ body {
 .gw-help-keys dd {
   margin: 0;
   color: var(--slate);
+}
+
+/* What the rail's corner says, in the one place that exists at every width. Below 520 px the
+   corner is gone and this is where the vintage and the build live. */
+.gw-help-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gw-space-1) var(--gw-space-3);
+  margin: var(--gw-space-3) 0 0;
+  padding-top: var(--gw-space-2);
+  border-top: 1px solid var(--hairline);
 }
 
 kbd {
@@ -1248,11 +1362,11 @@ a {
   }
 }
 
-/* The slot is narrow so a long status cannot crush the brand, not to truncate for its own
-   sake; above 1280 px there is room to say the whole thing. */
+/* Above 1280 the column can afford the full `as_of` and `build` eyebrows beside their values
+   without either line ellipsising. It is sized to its two strings, not to the rail. */
 @media (min-width: 1280px) {
   :root {
-    --gw-meta-w: 340px;
+    --gw-meta-w: 168px;
   }
 }
 
@@ -1309,7 +1423,7 @@ a {
   }
 
   :root {
-    --gw-meta-w: 150px;
+    --gw-meta-w: 132px;
   }
 }
 
@@ -1352,12 +1466,6 @@ a {
     border-left: none;
   }
 
-  /* Identity does not absorb the overflow: with the brand fixed, the squeeze lands on the
-     metadata, which ellipsises honestly, instead of on the middle of the product's name. */
-  .gw-brand {
-    flex: none;
-  }
-
   .gw-wordmark {
     font-size: 1.15rem;
     line-height: 20px;
@@ -1390,19 +1498,28 @@ a {
     padding-right: var(--gw-space-2);
   }
 
-  /* The two things search borrows from while it is open, and gives back on blur. */
+  /* What search borrows while it is open, and gives back on blur. Both live in the rail's
+     left half: the right-packed groups do not move, whatever happens here. */
   #gw-header:has(.gw-search-input:focus) .gw-wordmark,
   #gw-header:has(.gw-search-input:not(:placeholder-shown)) .gw-wordmark,
-  #gw-header:has(.gw-search-input:focus) .gw-meta,
-  #gw-header:has(.gw-search-input:not(:placeholder-shown)) .gw-meta {
+  #gw-header:has(.gw-search-input:focus) .gw-signal,
+  #gw-header:has(.gw-search-input:not(:placeholder-shown)) .gw-signal {
     display: none;
   }
 
-  /* The three rules that used to live here reallocated width between the brand and the read
-     slot whenever a key went bad or a source degraded. That is the phone face of BLOCKER-1:
-     the slot grew, the wordmark vanished, and the buttons moved under the reader's thumb.
-     The brief copy in chrome/status.ts is what makes them unnecessary — the message is
-     written to fit the column rather than the column stretched to fit the message. */
+  /* A live warning outranks the logotype on a 390 px rail, and it borrows from the same place
+     search does. The mark stays, so the app is still identified while the words are spent. */
+  #gw-header:has(#gw-status:not(:empty)) .gw-wordmark,
+  #gw-header:has(.gw-key-chip:not([hidden])) .gw-wordmark {
+    display: none;
+  }
+
+  /* One signal at a time at this width. Both at once leaves 30 px for a sentence, which is
+     MINOR-1's truncated stub wearing a different slot; the key is the actionable one, and the
+     status returns — with its tooltip intact — the moment the key is fixed. */
+  #gw-header:has(.gw-key-chip:not([hidden])) #gw-status {
+    display: none;
+  }
 
   /* Anchored to the field, the 26rem panel hung 79 px off the left edge of a 390 px viewport
      and clipped every operator name. At this width it belongs to the viewport, not the box. */
@@ -1414,11 +1531,35 @@ a {
     width: auto;
   }
 
-  .gw-asof-label {
+  /* The read column leaves the rail here, and this is arithmetic rather than taste: the brand,
+     the mode switch, search and help already ask for 373 of the 390 px a phone has. Measured
+     before this posture existed, the rail wanted 472 px and the browser resolved it by drawing
+     help on top of search and clipping the date's last digit — a corner that lies is worse
+     than a corner that moved. Help carries both facts at every width for exactly this reason
+     (#gw-help-asof, #gw-help-build), so nothing is lost, it is one tap away. */
+  .gw-meta {
     display: none;
   }
 
-  :root {
-    --gw-meta-w: 104px;
+  /* Last resort only: with 17 px of slack the wordmark never shrinks, but a fallback face
+     during font swap must ellipsise the name rather than scroll the whole page sideways. */
+  .gw-brand {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  /* Anchored to the act group, the popover hung off a 390 px viewport; here it is the
+     viewport's, like the search panel above it. */
+  .gw-hint {
+    position: fixed;
+    top: calc(var(--gw-rail-band) + 2 * var(--gw-rail-pad-y) + var(--gw-space-2));
+    right: var(--gw-space-2);
+    left: var(--gw-space-2);
+    width: auto;
+    max-width: none;
+  }
+
+  .gw-hint::before {
+    right: 44px;
   }
 }
