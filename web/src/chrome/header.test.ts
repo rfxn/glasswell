@@ -165,3 +165,64 @@ describe("the key chip", () => {
     expect(onKeyPanel).toHaveBeenCalledOnce();
   });
 });
+
+describe("the mode switch (SB-08 §2.1)", () => {
+  function modes(): HTMLButtonElement[] {
+    return [...element("gw-mode-switch").querySelectorAll("button")] as HTMLButtonElement[];
+  }
+
+  beforeEach(() => {
+    window.history.replaceState(null, "", "/");
+    document.body.innerHTML = `${MARKUP}<div id="gw-toasts"></div>`;
+    wireHeader({ search, onKeyPanel });
+  });
+
+  it("offers the two surfaces as one group, between the brand and the controls", () => {
+    expect(modes().map((button) => button.dataset["view"])).toEqual(["map", "explore"]);
+    expect(element("gw-mode-switch").getAttribute("role")).toBe("group");
+    expect(element("gw-mode-switch").previousElementSibling?.classList.contains("gw-brand")).toBe(true);
+  });
+
+  it("presses the surface the URL is on, so a deep link arrives with the switch already right", () => {
+    window.history.replaceState(null, "", "/?view=explore&ds=wells");
+    document.body.innerHTML = `${MARKUP}<div id="gw-toasts"></div>`;
+    wireHeader({ search, onKeyPanel });
+
+    expect(modes().map((button) => button.getAttribute("aria-pressed"))).toEqual(["false", "true"]);
+  });
+
+  it("crosses with a pushState, so the back button returns the reader to where they were", () => {
+    const before = window.history.length;
+
+    modes()[1]?.click();
+
+    expect(new URLSearchParams(window.location.search).get("view")).toBe("explore");
+    expect(window.history.length).toBeGreaterThan(before);
+  });
+
+  it("carries as_of across the crossing — the surfaces may not disagree about a number", () => {
+    window.history.replaceState(null, "", "/?as_of=2026-08-01");
+    document.body.innerHTML = `${MARKUP}<div id="gw-toasts"></div>`;
+    wireHeader({ search, onKeyPanel });
+
+    modes()[1]?.click();
+
+    expect(new URLSearchParams(window.location.search).get("as_of")).toBe("2026-08-01");
+  });
+
+  it("follows the back button rather than staying pressed on the surface it left", () => {
+    modes()[1]?.click();
+    window.history.replaceState(null, "", "/");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+
+    expect(modes().map((button) => button.getAttribute("aria-pressed"))).toEqual(["true", "false"]);
+  });
+
+  it("does nothing when the reader presses the surface they are already on", () => {
+    const url = window.location.href;
+
+    modes()[0]?.click();
+
+    expect(window.location.href).toBe(url);
+  });
+});

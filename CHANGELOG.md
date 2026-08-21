@@ -60,6 +60,33 @@ its own version in its header, and its history is summarised in §3.1.
       pointers are relative to `series_pointer`, and the axis is exempt from suffix expansion
 - [New] The R6 walker asserts every browsable dataset is an operation it already exercises, so a
       generated catalogue cannot outrun the naked-number gate
+- [New] A second top-level surface at `?view=explore`: a mode switch in the header, three tabs
+      (Datasets, plus Query and Learn stating the phase that lands them), a dataset catalogue
+      generated from `/openapi.json`'s `x-glasswell-dataset` members, and a rail grouped
+      wells / kitchen / vocabulary / service and ordered on `order` alone. The document is the
+      catalogue: a dataset that stops being declared stops being listed, and a new endpoint
+      appears the day its operation declares itself — with no UI release
+- [New] The rail renders the honest-gap register beside what exists: twenty-one class B
+      datasets, each naming the SB-04 §4 operation that would carry it and the phase where SB-08
+      states one, plus the single class C entry (production across wells) naming amendment A-3
+      and its status. No entry renders a link, a control or a count, and a test asserts every
+      class B path is absent from the served document — the day one resolves, the entry has to
+      move into the generated rail
+- [New] `explore/router.ts` is the `?view=` grammar as a pure codec: `f.<param>` filters read by
+      prefix and repeatable, `as_of` and `cursor` hoisted into the query rather than declared as
+      facets, path anchors substituted into the path and the ones with no value named rather
+      than issued as a request that 404s. The mode switch is a `pushState`, `as_of` survives the
+      crossing in both directions, and a selected well crosses as `ds=wells&f.q=<api10>`
+- [New] `explore/layout.css` declares named z-slots aliasing the global ladder —
+      `--gw-z-explore-pane` onto `--gw-z-panel`, `--gw-z-explore-rail-pop` onto
+      `--gw-z-rail-pop` — plus one local
+      stacking context for the grid's sticky header. No second ladder, no numeric literal outside
+      a declared `isolation: isolate` container, and the test fails if the global rungs are
+      renumbered underneath the explorer
+- [New] `explore/guardrails.test.ts` scans the explorer's own source in the web job that already
+      exists: no `fetch(` outside the one declared exemption in `shell.ts`, no `XMLHttpRequest`,
+      no absolute URL, and every operation named as a literal either served by the committed
+      document or listed in the gap register as one that is not
 
 ### 2026-08-21 — increment-3 merge train
 
