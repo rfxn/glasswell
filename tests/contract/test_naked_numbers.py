@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 
 from glasswell.api.examples import REQUEST_EXAMPLE_KEY
 from glasswell.lineage.ids import parse_handle
+from tests.contract.conftest import TX_API10
 
 ALLOWLIST_PATH = Path(__file__).with_name("non_figure_allowlist.yml")
 NUMERIC_TEXT = re.compile(r"\A-?\d+(\.\d+)?\Z")
@@ -124,8 +125,25 @@ def handles(data: Any) -> set[str]:
     return found
 
 
+# The published examples are all North Dakota, and a jurisdiction the walker never walks is a
+# jurisdiction the R6 gate does not cover. These are the same operations against the TX well the
+# fixture seeds: it is the only well with a depth figure, a null status and a production
+# endpoint whose answer is a disclosure, so without them the walker has never seen a depth
+# figure at all and MUST-KNOW-14's fixture reached no gate.
+JURISDICTION_ARMS: tuple[tuple[str, dict[str, Any]], ...] = (
+    ("get_well[tx]", {"url": f"/v1/wells/{TX_API10}", "params": {}}),
+    ("get_well_production[tx]", {"url": f"/v1/wells/{TX_API10}/production", "params": {}}),
+    ("list_wells[tx]", {"url": "/v1/wells", "params": {"county": "003"}}),
+    (
+        "get_conformance_rule[tx]",
+        {"url": "/v1/conformance/cr_tx_allocation_scope_1", "params": {}},
+    ),
+)
+
+
 def exercised(client: TestClient) -> list[tuple[str, dict[str, Any]]]:
-    """Every operation, called with the example the OpenAPI document publishes."""
+    """Every operation, called with the example the OpenAPI document publishes, and every
+    jurisdiction arm — because one example per operation is one jurisdiction per operation."""
     document = client.get("/openapi.json").json()
     calls = []
     for path, item in document["paths"].items():
@@ -137,7 +155,28 @@ def exercised(client: TestClient) -> list[tuple[str, dict[str, Any]]]:
         for name, value in example.get("path", {}).items():
             url = url.replace("{" + name + "}", str(value))
         calls.append((operation["operationId"], {"url": url, "params": example.get("query", {})}))
-    return calls
+    return [*calls, *JURISDICTION_ARMS]
+
+
+def test_the_walker_reaches_a_depth_figure_and_a_second_jurisdiction(client: TestClient) -> None:
+    """The gate's own coverage, asserted: a walker that only ever sees ND proves nothing about
+    the TX surface, and `total_depth_ft` is null on every ND well."""
+    walked = {operation_id for operation_id, _ in exercised(client)}
+    assert {name for name in walked if name.endswith("[tx]")} == {
+        name for name, _ in JURISDICTION_ARMS
+    }
+
+    figures = set()
+    for _, call in exercised(client):
+        if TX_API10 not in call["url"]:
+            continue
+        body = payload(client.get(call["url"], params=call["params"]))
+        if body is not None:
+            figures.update(figure_numbers(body))
+
+    assert any(pointer.endswith("/total_depth_ft/value") for pointer in figures), (
+        "the walker still never sees a depth figure, so R6 does not cover it"
+    )
 
 
 def test_the_allowlist_states_a_reason_for_every_exemption() -> None:

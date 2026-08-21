@@ -7,7 +7,9 @@ import httpx
 import pytest
 
 from glasswell.ingest.tx_mft import (
+    LISTING_PAGE_ROWS,
     OFFERED_PAGE_SIZES,
+    ListingError,
     ListingIncomplete,
     MftListing,
     UnknownEntry,
@@ -19,11 +21,21 @@ from glasswell.ingest.tx_mft import (
     listing_page_request,
     parse_listing,
 )
+from glasswell.seed.conformance_tx import TX_RULES
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "tx_gis"
 PAGE = FIXTURES / "mft_listing.html"
 PARTIAL = FIXTURES / "mft_listing_partial.xml"
 LINK = "https://mft.rrc.texas.gov/link/d551fb20-442e-4b67-84fa-ac3f23ecabb4"
+
+
+def _partial_of(page: str) -> str:
+    """The page's own rows wrapped as a PrimeFaces partial — a portal that never advances."""
+    rows = "".join(re.findall(r'<tr data-ri="\d+".*?</tr>', page, re.DOTALL))
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?><partial-response><changes>'
+        f'<update id="fileTable"><![CDATA[{rows}]]></update></changes></partial-response>'
+    )
 
 
 @pytest.fixture
@@ -107,6 +119,58 @@ def test_the_listing_page_request_asks_for_more_rows_than_the_portal_caps_at(
     assert int(body["fileTable_rows"]) in OFFERED_PAGE_SIZES
     assert body["javax.faces.partial.ajax"] == "true"
     assert listing_page_request(page.view_state, 1000)["fileTable_first"] == "1000"
+
+
+def test_fetch_listing_refuses_a_folder_that_never_completes() -> None:
+    """The guard on the path production actually runs.
+
+    `apply_page` has no production caller — `MftClient` goes through `fetch_listing` — so the
+    completeness assertion was only ever exercised on a helper the shipping code never calls,
+    and deleting the real one left the suite green. This drives the real one: a portal that
+    ignores `fileTable_first` answers every page with the same rows, so the loop stops making
+    progress and the folder is still short of the count the page declared.
+    """
+    page = PAGE.read_text(encoding="utf-8")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, text=page)
+        # Same first page every time, whatever offset was asked for.
+        return httpx.Response(200, text=_partial_of(page))
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(ListingIncomplete) as raised:
+            fetch_listing(client, LINK)
+    assert "declares" in str(raised.value)
+
+
+def test_fetch_listing_refuses_a_page_size_the_portal_rejects() -> None:
+    """The live portal answers an unoffered size with IllegalArgumentException, not a page."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, text=PAGE.read_text(encoding="utf-8"))
+        return httpx.Response(
+            200,
+            text='<?xml version="1.0"?><partial-response><error><error-name>'
+            "java.lang.IllegalArgumentException</error-name><error-message><![CDATA["
+            "Unsupported rows per page value: 5000]]></error-message></error></partial-response>",
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(ListingError, match="Unsupported rows per page"):
+            fetch_listing(client, LINK)
+
+
+def test_the_page_size_the_rule_records_is_the_one_the_code_asks_for() -> None:
+    """R8: the registry row is the served record of the acquisition decision, so a rule that
+    named 5,000 documented a request the portal refuses."""
+    declared = next(
+        row for row in TX_RULES if row["rule_id"] == "cr_tx_mft_resolve_1"
+    )["spec"]["listing_page_rows"]
+
+    assert declared == LISTING_PAGE_ROWS
+    assert declared in OFFERED_PAGE_SIZES
 
 
 def test_fetch_listing_pages_once_and_only_when_the_page_is_short() -> None:

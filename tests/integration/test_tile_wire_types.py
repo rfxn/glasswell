@@ -118,6 +118,26 @@ def martin_readable_columns(connection: psycopg.Connection, relation: str) -> se
     }
 
 
+def base_relation(connection: psycopg.Connection, view: str) -> str:
+    """The relation a published view selects from, read from the catalogue rather than named.
+
+    A view over a mart is the publication boundary only if the mart underneath it is unreadable,
+    and which mart that is differs per layer.
+    """
+    schema, relation = view.split(".")
+    rows_found = rows(
+        connection,
+        "select distinct d.refobjid::regclass::text"
+        "  from pg_rewrite r"
+        "  join pg_depend d on d.objid = r.oid and d.classid = 'pg_rewrite'::regclass"
+        " where r.ev_class = %s::regclass and d.refobjid <> %s::regclass"
+        "   and d.refclassid = 'pg_class'::regclass",
+        (f"{schema}.{relation}", f"{schema}.{relation}"),
+    )
+    assert rows_found, f"{view} selects from nothing"
+    return rows_found[0][0]
+
+
 def tile_of_layer(connection: psycopg.Connection, layer) -> bytes:
     zoom, x, y = covering_tile(extent_of(connection, layer.source))
     tile = scalar(connection, f"select marts.{layer.name}(%s, %s, %s, null)", (zoom, x, y))
@@ -198,11 +218,14 @@ def test_martin_holds_table_privilege_on_what_it_publishes(
     assert scalar(
         canonical_nd, "select has_table_privilege(%s, %s, 'select')", (MARTIN_ROLE, layer.source)
     )
+    # This layer's own base relation, not a hardcoded ND one: with the literal in place,
+    # widening the grant to a TX mart table left the whole suite green, so the negative
+    # assertion proved nothing about the layer it was parameterised over.
     assert not scalar(
         canonical_nd,
-        "select has_table_privilege(%s, 'marts.nd_laterals_tile', 'select')",
-        (MARTIN_ROLE,),
-    ), "the tile server can read a mart directly, so the view is not the boundary"
+        "select has_table_privilege(%s, %s, 'select')",
+        (MARTIN_ROLE, base_relation(canonical_nd, layer.source)),
+    ), f"the tile server can read {layer.name}'s mart directly, so the view is not the boundary"
 
 
 @pytest.mark.parametrize("layer", TILE_LAYERS, ids=lambda layer: layer.name)
