@@ -139,8 +139,10 @@ jobs:
               target=$(printf '%s' "$ref" \
                 | sed -E 's/^\]\(//; s/\)$//; s/^srcset="//; s/^src="//; s/"$//; s/#.*$//')
               [ -z "$target" ] && continue
+              # gw: is this product's own token-level link scheme (SB-05 §live data links),
+              # so a document showing its form is not naming a file that should exist.
               case "$target" in
-                http://*|https://*|mailto:*) continue ;;
+                http://*|https://*|mailto:*|gw:*) continue ;;
               esac
               if [ ! -e "$target" ]; then
                 echo "BROKEN in $md: $target"

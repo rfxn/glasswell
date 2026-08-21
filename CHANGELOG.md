@@ -7,6 +7,19 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+### 2026-08-21 — increment-3 merge train
+
+- [Fix] The `collateral` job's link check allows this product's own `gw:` scheme beside
+      `http`, `https` and `mailto`. `blueprints/SB-05-map-ui.md` shows the form a live data
+      link takes, and the check read the example as a missing local file — red on `main`
+      since the document landed, and reported by two branches that each correctly declined
+      to edit another lane's file
+- [Fix] `test_nm_fetch_vintage.harness_dsn` takes the session password from the fixture
+      rather than a `glasswell:glasswell` literal. D1 was cut before DIR-14 randomised it,
+      so the two only met at the merge and an authentication failure read as an FTP defect
+- [Fix] The Caddy basemap block's restated CSP carries the satellite imagery origin its
+      API-side original gained in the same increment
+
 ### 2026-08-21 — the z<=7 overplot gate
 
 - [New] The four well and lateral tile functions keep one feature per half CSS pixel at
