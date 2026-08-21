@@ -573,6 +573,12 @@ favour of this feed's P-4 segment (`cr_tx_p4_path_1`, `parse_directive`, `ad:182
 form-header fields only and **no station data** (`cr_tx_no_survey_stations_1`, `code_ref`,
 `ad:240,559-560`) — the rule row is where the honest gap is recorded as data, so E16 can cite it.
 
+`cr_tx_no_survey_stations_1`'s **substance stands**: W-12 in this feed is header-only, and that
+half of the finding was re-tested and not contradicted (`dsw:1016-1021`). Its **rationale is
+superseded** (never edited — v0.6 §4E.4) so that a reader of the row cannot over-read it into
+the blanket claim §2.11 used to make: station data exists elsewhere, from 2021-01-01, in a
+different RRC dataset. E16 cites the two-part gap of §2.11, not one gap.
+
 ### 2.6 `tx_permits_daf420` — W-1 drilling permits
 
 **Fetch.** `mft_guid_resolve`, the **Master & Trailer with Latitudes/Longitudes** daily variant
@@ -737,12 +743,58 @@ correct under one. This is errata E9 (§16.1).
 | NDIC subscription (`/oilgas/basic/`, Basic $100 / Premium $500) | ToS forbids automated mining and "practices that substantially duplicate OGD subscription services" — which describes this project. **No credential exists in the system.** Bulk formation tops stay a separate later decision (OQ-12). | `ad:109-127,575-576`, v0.6 D-21 |
 | `nd_mpr_pdf` back-extraction 2003-01 → 2015-04 | Deferred within P1 (v0.6 §7.1). Horizontal Bakken effectively starts ~2008 and the XLSX era covers the modern design space. The source is registered and the manifests are fetched so the bytes exist when the parser does. | `ad:50,613` |
 | TX P-4 EBCDIC `p4f606.ebc.gz` | Same content is per-completion in the ASCII completion feed (§2.5). EBCDIC decode is avoided outright, removing a whole parse-risk class (v0.6 R-18). | `ad:182` |
-| TX directional survey applications | PDF/TIF images; `W-12` carries header fields only. **No free parseable station data exists.** Honest gap, tagged data-unreachable. Lateral geometry comes from well arcs. | `ad:240,559-560` |
+| TX directional survey applications, **filings before 2021-01-01** | Scanned PDF/TIF images with no free machine-readable index; `W-12` carries form-header fields only. Honest gap, tagged **data-unreachable**. Lateral geometry comes from well arcs. **From 2021-01-01 the ruling is different — see the re-scope below.** | `ad:240,559-560`, `dsw:1014-1065` |
 | ND Daily Activity Reports | Subscription-gated. ND permit history is constructed by vintage-diffing the pre-spud layer (§2.2). | `ad:129` |
 | OCD GIS over FTP | Retired 2023-07-05; the directory holds only a redirect note. NM spatial comes from the ArcGIS Hub if and when needed. | `ad:296` |
 | Go-Tech / NM Tech PRRC | Pre-ONGARD records with no API numbers, never reconciled. Relevant only to deep pre-database history, which is out of scope. | `ad:318` |
 | EMNRD Water Data Act API | Requires a reviewed access request; FTP is the better path and coverage is unverified. | `ad:313` |
 | Third-party FracFocus wrappers | Lag the registry and drop malformed rows — i.e. they silently do the thing this project exists not to do. | `ad:365` |
+
+**TX directional survey stations — the ruling is re-scoped, not reversed (amendment,
+2026-08-21).** The row above used to read *"No free parseable station data exists"* and carried
+one `data-unreachable` tag over all of Texas, all vintages. Half of that finding was re-tested
+and holds; the other half is stale, and flipping it outright would be as wrong as leaving it.
+
+- **What holds.** `W-12` in the completion feed is form-header only —
+  `SHOT_POINT_500FT`, `BORE_DISPLACEMENT_1/2`, `NEAREST_LEASE_LINE`, `WAS_WELL_DEVIATED`,
+  remarks — and carries no station-by-station MD/INC/AZI (`ad:240`, re-tested `dsw:1016-1021`).
+  §2.5's `cr_tx_no_survey_stations_1` keeps its substance.
+- **What changed.** An MFT dataset **"Directional Survey Applications"** (GUID
+  `01769aa7-dee8-4121-bb25-e7557307f6bd`, nightly, listing rowCount 2,181) publishes daily zips
+  **from 2021-01-01**, up to ~14 MB/day, each containing a structured CSV type manifest —
+  `API_NO, EXTERNAL_ATTACHMENT_ID, ATTACHMENT_TYPE_CODE, FROM_DEPTH, TO_DEPTH, SURVEY_START_DT,
+  SURVEY_END_DT, LATERAL_LABEL` — beside **born-digital** PDFs. `ATTACHMENT_TYPE_CODE` pre-filters
+  them: in `01-01-2024.zip`, 7 of 7 rows typed `Directional Survey - MWD` yielded full
+  MD / inclination / azimuth / TVD station tables under `pdftotext -layout`, while the 2 typed
+  `Directional Survey - Other` were single-page scanned plats (`dsw:1023-1050`). The extracted
+  headers declare their own geodesy — `Map System: US State Plane 1927`, `Geo Datum: NAD 1927
+  (NADCON CONUS)`, zone, grid convergence — which lands them directly in §2.8's datum pipeline
+  rather than beside it.
+- **The split, stated as the tag.** **Before 2021-01-01: `data-unreachable`.** The images exist;
+  no free machine-readable index over them does. The Directional Survey Query webapp reaches
+  back to Nov 2009 (`dsw:1051-1056`) but it is a per-well web form, and driving it is refused on
+  the same posture that refuses OCD Online and refuses to drive the TxGIO SPA (§1.2).
+  **From 2021-01-01: `effort-unreachable`** — reachable, and not built. It is per-well PDF
+  parsing, **vendor-format dependent by construction** (two vendors' layouts already differ), and
+  graded **effort L** (`dsw:1057-1060`). Both tags are v0.6's own vocabulary (§2.4 S10, §5 E16);
+  the honest gap becomes two gaps with different reasons, which is what an E16 row can defend.
+- **The access path, if it is ever built.** The nightly MFT zips under `mft_guid_resolve` — the
+  resolver every other TX bulk source already uses (§1.2) — with the CSV type manifest as the
+  pre-filter and a multi-template PDF parser behind `layout_ref`/`layout_sha256` (handback H4,
+  §2.5). No `source_id` is registered by this amendment and no phase gains work; registration is
+  a P7b-or-later decision that needs the licence question answered first (§16.3).
+- **The coverage boundary is a stated limitation, not a footnote.** No current feature depends on
+  these stations: TX lateral geometry comes from the county well-arc layers (§2.8) and TX
+  `landing_tvd_ft` from this feed's free Formation Data segment (`ad:209`, §2.5). Should a TX
+  feature ever source one, every figure derived from it carries **`coverage_from = 2021-01-01`**
+  and reports the excluded pre-2021 population — the same discipline v0.6 §4D.2 puts on
+  low-support slots. A basin-wide TX claim resting on a 2021-onward sample without saying so
+  misstates its own denominator, which is the failure mode R5 and R6 exist to prevent.
+- **The floor is not specific to this dataset.** v0.6 §3.7.4 already records the TX completion
+  and permit archives as appearing to start 2021-01-01, and §2.5 records the same observed floor
+  with the portal's 250-entry pagination as the reason the *true* floor stays UNVERIFIED
+  (`ad:213`). One MFT archive floor, three datasets — and the same honest caveat applies here:
+  2021-01-01 is the observed floor, not a proven beginning.
 
 ---
 
@@ -1829,7 +1881,7 @@ figure and the scorecard carries it.
 ## 15. Cut as gold-plating
 
 1. **ND MPR PDF back-extraction (2003-01 → 2015-04)** — deferred within P1 (v0.6 §7.1); manifests are still fetched so the bytes exist when the parser does.
-2. **TX P-4 EBCDIC, TX directional survey images, ND Daily Activity Reports, Go-Tech, EMNRD WDA API** — §2.11, each with a reason.
+2. **TX P-4 EBCDIC, TX directional surveys, ND Daily Activity Reports, Go-Tech, EMNRD WDA API** — §2.11, each with a reason. TX surveys are two cuts, not one: pre-2021 filings are `data-unreachable` and cannot be bought back with effort; 2021-onward filings are `effort-unreachable` and could be, at effort L, whenever a feature justifies it.
 3. **A staging query surface.** Staging never serves; there is no `/v1/staging` and no debugging endpoint over it. The quarantine surface plus the raw manifest is the debugging path.
 4. **Column-level provenance in promotion** — answers a question no S-criterion asks (SB-07 §14).
 5. **Automatic mart recomputation cascade on restatement** — recorded invalidation plus the next scheduled rebuild (SB-07 §14 item 4).
