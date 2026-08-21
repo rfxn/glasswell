@@ -116,6 +116,42 @@ its own version in its header, and its history is summarised in §3.1.
          that convicts it; `infra/caddy/README.md` records why the basemap block is the one
          place the edge states the response policy
 
+### 2026-08-21 — the Caddy→uvicorn hop moves to a unix socket
+
+- [Fix] Every proxied response smaller than the loopback MSS paid ~40 ms of Nagle/delayed-ACK
+      before its body left the origin: `uvicorn --workers 2` builds its listener as
+      `socket.socket(family=family)`, leaving `proto` at `0`, so
+      `asyncio.base_events._set_nodelay` never sets `TCP_NODELAY` and the separate header and
+      body writes stall. Caddy now dials `unix//run/glasswell/api.sock` and uvicorn binds it
+      with `--uds`; AF_UNIX has no Nagle, so the defect cannot occur rather than being tuned
+      around. Measured over the real https path, medians of 30: `/v1/health` 64.5 → 21.0 ms,
+      a well card 84.1 → 39.0 ms, `/v1/wells?limit=25` 67.0 → 21.6 ms, a z11 tile 50.8 → 8.5 ms,
+      a z13 tile 50.2 → 8.2 ms, the app shell 49.7 → 7.6 ms, `/healthz` 48.3 → 6.6 ms — every
+      one a ~42-45 ms drop. The 304 path (8.6 → 7.9) and the basemap (5.8 → 4.6, served by
+      Caddy) never paid the tax and did not move, which is the same evidence from the other
+      side. Root cause and `tcpdump` in `work-output/tileperf-r2-status.md` §1
+- [Change] The API has no TCP listener at all, and `--forwarded-allow-ips` moves from
+         `127.0.0.1` to `*`: a unix peer has no address, so uvicorn leaves `scope["client"]`
+         None and a numeric allow-list would stop trusting `X-Forwarded-Proto` and silently
+         strip `upgrade-insecure-requests` from every CSP. The socket has one reachable peer,
+         so `*` grants nothing the directory mode has not already decided. Caddy still binds
+         `192.168.2.111:8000` for the courtesy redirect — that block is Caddy's and is
+         unaffected
+- [New] `infra/tmpfiles.d/glasswell.conf` creates `/run/glasswell` as `0750 glasswell caddy`,
+      which is the whole access control because uvicorn chmods the socket `0666` and exposes
+      no knob for it. Deliberately not a `RuntimeDirectory=`: systemd re-applies
+      exec-directory ownership on every exec invocation, so a `chgrp` from `ExecStartPre`
+      exits 0 and is then reverted before `ExecStart` — which cost a 502 on first deploy.
+      `ExecStartPre=rm -f` replaces the stale-socket cleanup `RuntimeDirectory=` used to give
+      for free, since uvicorn's `bind()` returns `EADDRINUSE` and exits; `install.sh` places
+      the file, runs `systemd-tmpfiles --create` and creates the `caddy` group unconditionally
+- [Change] `verify.sh` reaches the API through `--unix-socket` and its `exposure` block now
+         asserts the socket answers, that its directory is `glasswell:caddy 0750`, and that
+         nothing is bound to `127.0.0.1:8000` — the inverse of the assertion it replaced
+- [New] `tests/unit/test_api_socket_contract.py` holds `glasswell-api.service`, the Caddyfile
+      and `verify.sh` to one socket path and to the `*` allow-list, since each file is
+      individually valid when they disagree and the symptom is a 502
+
 ### 2026-08-20 — D1 phase 1: New Mexico's production spine, pulled and stamped
 
 - [New] `lineage/ftp.py` and an `ftp_anon` transport inside `fetch_raw`: anonymous FTP to

@@ -44,8 +44,9 @@ rotated and the journal vacuumed.
 
 **HTTPS, no port, no certificate warning.** Caddy terminates TLS with a Let's Encrypt
 host certificate obtained over the DNS-01 challenge — the name resolves to `192.168.2.111`,
-which no ACME server can reach, and DNS-01 does not care. It reverse-proxies uvicorn on
-`127.0.0.1:8000`; port 8000 no longer answers from the LAN and `http://` on `:80` redirects.
+which no ACME server can reach, and DNS-01 does not care. It reverse-proxies uvicorn over
+`/run/glasswell/api.sock`; the API has no TCP port at all, and `http://` on `:80` and the old
+`:8000` both redirect.
 The firewall is unchanged in spirit: `443` and `80` from `192.168.2.0/24` and nothing else.
 Still no tunnel and no Access, so this is reachable from the LAN only (§7).
 

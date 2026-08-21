@@ -9,7 +9,7 @@ copies under `/etc` on the VM are placed by `install.sh` and are not edited in p
 |---|---|
 | Host | `glasswell.lab.rpx.sh` → **192.168.2.111**, Proxmox VM 111 on forge |
 | OS | Ubuntu 24.04.4 LTS, Python 3.12.3, Node 18.19.1 |
-| Exposure | LAN only. `ufw` default-deny with 22, 80 and 443 open to `192.168.2.0/24`; 8000 is loopback and closed at the firewall (DIR-13) |
+| Exposure | LAN only. `ufw` default-deny with 22, 80 and 443 open to `192.168.2.0/24`; the API has no TCP listener at all — Caddy reaches it over `/run/glasswell/api.sock` (DIR-13) |
 | Deploy root | `/opt/glasswell` — `venv/`, `src/` (rsynced repo), `web/` (built frontend) |
 | Bulk volume | `/data` (1007 G): `raw/`, `staging/`, `scratch/`, `parquet/`, `backups/`, `basemap/` |
 
@@ -20,8 +20,8 @@ restricted `authorized_keys` `from=` clause and every probe in this repo use `.1
 
 | Unit | Runs as | Does |
 |---|---|---|
-| `caddy.service` | `caddy` | TLS front door: `https://glasswell.lab.rpx.sh` → `127.0.0.1:8000`, certificate from Let's Encrypt over Cloudflare DNS-01. Config `caddy/Caddyfile`, binary and token are host state — see `caddy/README.md` |
-| `glasswell-api.service` | `glasswell` | `uvicorn glasswell.api:app --host 127.0.0.1 --port 8000 --workers 2 --proxy-headers` — serves `/v1`, the `/v1/tiles` proxy, and the built frontend at `/`, behind Caddy |
+| `caddy.service` | `caddy` | TLS front door: `https://glasswell.lab.rpx.sh` → `unix//run/glasswell/api.sock`, certificate from Let's Encrypt over Cloudflare DNS-01. Config `caddy/Caddyfile`, binary and token are host state — see `caddy/README.md` |
+| `glasswell-api.service` | `glasswell` | `uvicorn glasswell.api:app --uds /run/glasswell/api.sock --workers 2 --proxy-headers` — serves `/v1`, the `/v1/tiles` proxy, and the built frontend at `/`, behind Caddy. The socket, not a port: see "Why the API has no port" below |
 | `glasswell-ingest.service` + `.timer` | `glasswell` | Monthly ND pull: GIS layers, one production month, tile marts. Installed **disabled**; `install.sh --enable-ingest` arms it |
 | `glasswell-alert@.service` | `glasswell` | `OnFailure=` target: logs to the journal and appends to `/var/lib/glasswell/health-events` |
 | `glasswell-backup.service` + `.timer` | `root` | Nightly `pg_dump` plus an rsync of the raw zone to forge, via `/usr/local/sbin/glasswell-backup.sh`. Installed **disabled**; `install.sh --enable-backup` arms it. **VM 111 has it enabled already** — the units here were adopted from that host byte-for-byte |
@@ -36,15 +36,49 @@ job is provisioning-owned and is not in this directory.
 ## The TLS front door (DIR-13)
 
 Caddy is in, which re-converges with SB-06 §4.5 and closes P7's C12 ("no Caddy, no TLS"):
-uvicorn binds `127.0.0.1:8000`, Caddy terminates `https://glasswell.lab.rpx.sh` on `:443`,
-redirects `:80`, and the LAN reaches the app through the name with no port and no certificate
-warning. Still no tunnel and no Access — that is the next step, and it points a `cloudflared`
-at the same origin.
+uvicorn binds `/run/glasswell/api.sock`, Caddy terminates `https://glasswell.lab.rpx.sh` on
+`:443`, redirects `:80`, and the LAN reaches the app through the name with no port and no
+certificate warning. Still no tunnel and no Access — that is the next step, and it points a
+`cloudflared` at the same origin.
 
 `caddy/README.md` carries the three decisions worth arguing about: why the binary is a
 download.caddyserver.com custom build rather than the distro package or an xcaddy build, why
 neither compression nor security headers are configured at the edge (the origin owns both,
 and a second `header` would append rather than replace), and how renewal is watched.
+
+### Why the API has no port
+
+The hop was `127.0.0.1:8000` and cost **~40 ms on every proxied response under 64 KB**.
+`uvicorn --workers 2` builds its listener as `socket.socket(family=family)`, leaving `proto`
+at `0`; `asyncio.base_events._set_nodelay` only sets `TCP_NODELAY` when `proto` is
+`IPPROTO_TCP`, so it never fired, and uvicorn writes headers and body as two `transport.write`
+calls. On loopback the MSS is 65,483, so every smaller body was a Nagle-held segment waiting
+on the peer's delayed ACK. The root-cause `tcpdump` is in
+`work-output/tileperf-r2-status.md` §1.
+
+AF_UNIX has no Nagle, so moving the hop to a socket removes the defect rather than tuning
+around it. Three consequences worth knowing:
+
+- **`--forwarded-allow-ips` must be `*`.** A unix peer has no address, so uvicorn leaves
+  `scope["client"]` as `None` and a numeric allow-list stops trusting `X-Forwarded-Proto` —
+  which would silently drop `upgrade-insecure-requests` from every CSP. `*` is safe here
+  because the socket has exactly one reachable peer.
+- **The directory is the access control.** uvicorn chmods the socket `0666` and offers no
+  knob for it, so `/run/glasswell` at `0750 glasswell caddy` is what keeps everyone else out.
+  It is created by `tmpfiles.d/glasswell.conf`, **not** by `RuntimeDirectory=`: systemd
+  re-applies exec-directory ownership on every exec invocation, so a `chgrp` from
+  `ExecStartPre` is reverted before `ExecStart` runs and Caddy 502s. Verified on the host —
+  `caddy` can connect, `martin` gets `EACCES`.
+- **The stale socket is removed explicitly.** `RuntimeDirectory=` used to guarantee a clean
+  path by deleting the directory on stop. A tmpfiles directory persists, and uvicorn's
+  `bind()` returns `EADDRINUSE` on an existing path and exits, so `ExecStartPre=rm -f` is
+  load-bearing: without it one `SIGKILL` wedges every subsequent start.
+- **`ufw`'s 8000 rule is now irrelevant to the API.** Caddy still binds `192.168.2.111:8000`
+  for the courtesy redirect to `https://`; that block is Caddy's and is unaffected.
+
+`tests/unit/test_api_socket_contract.py` holds the unit file, the Caddyfile and `verify.sh`
+to the same socket path, because a disagreement between any two of them is a 502 that each
+file passes its own reading of.
 
 ## Two decisions that differ from SB-06
 
@@ -175,7 +209,7 @@ chmod 0755 /usr/local/bin/caddy && caddy list-modules | grep dns.providers.cloud
 install -m 0600 /dev/null /etc/caddy/cloudflare.env   # then write CF_API_TOKEN=... into it
 ./install.sh --with-caddy && systemctl start caddy
 curl -sI https://glasswell.lab.rpx.sh/ | head -1      # 200 before anything else moves
-systemctl restart glasswell-api                       # now the bind drops to loopback
+systemctl restart glasswell-api                       # now the bind drops to the unix socket
 ufw allow proto tcp from 192.168.2.0/24 to any port 80,443
 ufw delete allow from 192.168.2.0/24 to any port 8000
 ./verify.sh                                           # the `tls` block must be all ok

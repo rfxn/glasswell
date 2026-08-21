@@ -73,6 +73,9 @@ def test_the_manifest_matcher_and_the_archive_matcher_are_complements(block):
 
 
 def test_the_proxied_path_still_exists_so_a_revert_is_the_only_rollback_needed():
+    # The upstream address is test_api_socket_contract.py's to pin; what matters here is that
+    # deleting this handler hands /basemap/* straight back to the catch-all beneath it.
     text = CADDYFILE.read_text()
-    assert "reverse_proxy 127.0.0.1:8000" in text
+    assert "handle {" in text
+    assert "reverse_proxy" in text[text.index("handle {") :]
     assert text.index(HANDLER) < text.index("handle {")
