@@ -51,24 +51,13 @@
   reason: Occurrence counter, in a collection item.
 - pointer: /sources/*/manifest_count
   reason: Count of registered manifests per source on the health page.
+# These two outlive their `/v1/vintages` twins, which A-4 retired: `get_service_index`
+# builds `published_vintages` inline and never calls `_vintage()`, so no sidecar reaches
+# them. Delete them and the walker goes naked on the service index.
 - pointer: /published_vintages/*/rows_examined
   reason: Promotion bookkeeping from lineage.vintages, not a served observation.
 - pointer: /published_vintages/*/rows_appended
   reason: Promotion bookkeeping from lineage.vintages, not a served observation.
-- pointer: /rows_examined
-  reason: Promotion bookkeeping on a vintage record, not a served observation.
-- pointer: /rows_appended
-  reason: Promotion bookkeeping on a vintage record, not a served observation.
-- pointer: /*/rows_examined
-  reason: Promotion bookkeeping, in a vintage collection item.
-- pointer: /*/rows_appended
-  reason: Promotion bookkeeping, in a vintage collection item.
-- pointer: /restatement_summary/**
-  reason: >-
-    Per-reason counts of values a vintage restated. A count of restatements is
-    bookkeeping about the ledger, not a quantity the ledger stands behind.
-- pointer: /*/restatement_summary/**
-  reason: Restatement counts, in a vintage collection item.
 - pointer: /*/output_rows
   reason: >-
     Rows a derivation recorded when it wrote its output, in the derivation

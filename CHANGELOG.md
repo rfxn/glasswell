@@ -124,6 +124,27 @@ its own version in its header, and its history is summarised in §3.1.
 - [Change] `WellDetail` redeclares `api10` and `county_code_at_permit`, and `QuarantineDetail`
          redeclares `occurrence_count`. The record and the collection item are exempted by
          different allowlist entries, and an inherited `Field` can only publish one reason
+- [New] `/v1/vintages` and `/v1/vintages/{id}` carry the SB-07 §9.1b `_lineage` sidecar keyed
+      on the promoting derivation (SB-08 A-4), so a vintage's `rows_examined`, `rows_appended`
+      and per-reason restatement counts resolve at `/v1/explain` to that promotion and the
+      manifests it read. The keys are branches of the record, not leaves — the client resolves
+      by longest prefix, so a count added under `restatement_summary` tomorrow is covered by
+      the entry written today. Absent, not empty, where no derivation promoted the vintage: an
+      empty object contributes no prefix and would leave the numbers under it naked
+- [Change] Six allowlist entries retired with it — `/rows_examined`, `/rows_appended`, their
+         `/*/` twins and both `restatement_summary` globs (37 entries, was 43) —
+         and `Vintage.rows_examined` and `.rows_appended` give up the A-2 extension they were
+         granted three commits ago; the register is 31 properties, was 33. The sidecar and the
+         prune are one commit because they must be: with the sidecar in place those patterns
+         cover served figures and the allowlist's minimality gate fails on any that does.
+         `/published_vintages/*/rows_examined` and its twin stay — the service index builds
+         that array inline and no sidecar reaches it
+- [Change] m-8 measured the R6 walker vacuous on the vintages operations: figure=0, every
+         numeric leaf allowlisted. It now finds four figures there and goes red if the sidecar
+         is removed, which is what makes the explorer's vintages grid a glass box rather than
+         a wall of exempt numbers. `tests/contract/test_vintage_lineage.py` holds both
+         directions of the coupling; the A-2 register stops demanding an exemption from every
+         declared-numeric property, because a number that carries a handle is not exempt
 
 ### 2026-08-21 — increment-3 merge train
 
