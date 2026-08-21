@@ -4,8 +4,11 @@ Phase 1 seeds the retrieval decisions: what the artifact is called, where it com
 why glasswell stamps its own vintage on it. Phase 2 adds the parse decisions: the record tag and
 namespace, the encoding, the header each source declares, and the CHAR widths that make a code
 look like a code only after a declared trim. Phase 3 adds the promotion decisions: the key, the
-stream vocabulary, the units and the policies the spine will cite. Rule ids are immutable — a
-correction is a new row with `supersedes_rule_id`, never an edit (R8).
+stream vocabulary, the units and the policies the spine will cite. Phase 4 adds the four the
+promotion itself had to take — the window, the day domain, the collision routing and the volume
+floor. Phase 5 adds the completion dimension's, and with them the grouping key D3's Validator B
+is built on. Rule ids are immutable — a correction is a new row with `supersedes_rule_id`, never
+an edit (R8).
 
 `load_rules` reads one `source_id` per call, so every family is instantiated per source: a row
 seeded on `nm_ocd_wcproduction` is invisible to a `nm_ocd_pool` load, and a derivation citing
@@ -1023,6 +1026,415 @@ NM_PROMOTION_RULES: tuple[dict[str, object], ...] = (
     },
 )
 
+# Phase 5's rows: the completion dimension D3's Validator B is built on. They are a separate
+# tuple from NM_PROMOTION_RULES because that tuple is the spine's, and tests/integration/
+# test_nm_seed_rules.py parametrises over it to prove every spine rule meets a probe frame.
+NM_DIMENSION_RULES: tuple[dict[str, object], ...] = (
+    {
+        "rule_id": "cr_nm_wchistory_api10_1",
+        "source_id": "nm_ocd_wchistory",
+        "stage": "conform",
+        "rule_kind": "key_composite",
+        "applies_to_fields": ["api_st_cde", "api_cnty_cde", "api_well_idn"],
+        "spec": {
+            "source_cols": ["api_st_cde", "api_cnty_cde", "api_well_idn"],
+            "pad": {"api_st_cde": 2, "api_cnty_cde": 3, "api_well_idn": 5},
+            "min_width": {"api_st_cde": 2},
+            "charset": {
+                "api_st_cde": "digits",
+                "api_cnty_cde": "digits",
+                "api_well_idn": "digits",
+            },
+            "pad_char": "0",
+            "pad_side": "left",
+            "separator": "",
+            "target_col": "api10",
+            "state_code": "30",
+            "on_missing": "quarantine",
+            "reason_code": "key_incomplete",
+        },
+        "rule": (
+            "wchistory's API-10 is built exactly as wcproduction's: state code 30, county padded"
+            " to three, well number padded to five."
+        ),
+        "rationale": (
+            "The dimension has to key identically to the spine or the two never join, so this row"
+            " restates cr_nm_wcproduction_api10_1's widths against wchistory's own measurements"
+            " rather than pointing at another source's rule - load_rules reads one source_id per"
+            " call, so a rule row cannot be shared across sources. The widths were re-measured on"
+            " this source: over 426,529 records api_well_idn is 1 char on 22, 2 on 414, 3 on"
+            " 6,574, 4 on 69,322 and 5 on 350,197, and nothing reaches six, so wchistory has no"
+            " counterpart to the one over-wide wcproduction record. The pads, the charset bound"
+            " and the key_incomplete exit are the same because the failure modes are the same:"
+            " zfill overbuilds and lpad truncates onto a different real well."
+        ),
+        "evidence_url": OCD_FTP_PAGE_URL,
+        "effective_from": PROMOTION_FROM,
+    },
+    {
+        "rule_id": "cr_nm_wchistory_completion_key_1",
+        "source_id": "nm_ocd_wchistory",
+        "stage": "conform",
+        "rule_kind": "key_composite",
+        "applies_to_fields": ["api10", "pool_idn"],
+        "spec": {
+            "source_cols": ["api10", "pool_idn"],
+            "separator": ":",
+            "target_col": "completion_key",
+            "entity_type": "well_completion_pool",
+            "reporting_level": "well_completion_pool",
+            "requires_rule_id": "cr_nm_wchistory_api10_1",
+            "on_missing": "quarantine",
+            "reason_code": "key_incomplete",
+        },
+        "rule": (
+            "A completion is the API-10 joined to its pool, and that string is the same"
+            " completion_key the production rows carry as entity_key."
+        ),
+        "rationale": (
+            "canonical.well_completions.completion_key is documented (migration 022) as the S-E"
+            " entity_key of the production rows that report the completion, so the dimension's"
+            " key is built by the same composition cr_nm_wcproduction_entity_key_1 declares:"
+            " api10 + ':' + pool_idn. wchistory holds 147,975 distinct completions over 121,940"
+            " distinct wells, so keying the dimension on the API-10 alone would collapse 26,035"
+            " of them onto a neighbour's identifiers. Registry order matters and is load-bearing:"
+            " rules execute by rule_id, and cr_nm_wchistory_api10_1 sorts before this row, which"
+            " needs the column it builds."
+        ),
+        "evidence_url": OCD_FTP_PAGE_URL,
+        "effective_from": PROMOTION_FROM,
+    },
+    _declaration(
+        "cr_nm_wchistory_effective_1",
+        source_id="nm_ocd_wchistory",
+        stage="conform",
+        fields=["eff_dte", "rec_termn_dte"],
+        spec={
+            "effective_from_field": "eff_dte",
+            "termination_field": "rec_termn_dte",
+            "open_sentinel": "9999-12-31",
+            "on_change": "append_new_row",
+            "in_place_update": "prohibited",
+            "measured": {
+                "rows": 426529,
+                "completions": 147975,
+                "open_rows": 147975,
+                "duplicate_completion_effective_dates": 0,
+                "eff_dte_range": ["1900-01-01", "2026-08-19"],
+            },
+        },
+        rule=(
+            "eff_dte is the completion observation's effective_from and rec_termn_dte 9999-12-31"
+            " marks the open record. A change is a new row, never an update."
+        ),
+        rationale=(
+            "canonical.wells is append-only and effective-dated for this reason (migration 009:"
+            " a status change is a new row, never an update), and wchistory is already shaped"
+            " that way - it is NM's own history table. Measured over all 426,529 records:"
+            " (completion, eff_dte) is unique, 0 duplicate groups, so the effective grain needs"
+            " no collision routing of its own; and exactly one record per completion carries"
+            " rec_termn_dte 9999-12-31, 147,975 open rows against 147,975 completions, so the"
+            " sentinel is the regulator's own open-record marker rather than an inference."
+            " Every observation is promoted, not only the open one: a dimension that keeps only"
+            " the current row cannot answer an as-of question, and DIR-2 makes as-of the point."
+            " eff_dte reaches back to 1900-01-01, which is a filing convention rather than a"
+            " date, and it is carried verbatim because narrowing it here would be an opinion"
+            " staging is not allowed to hold."
+        ),
+    ),
+    _declaration(
+        "cr_nm_wchistory_wellbore_policy_1",
+        source_id="nm_ocd_wchistory",
+        stage="conform",
+        fields=["api_st_cde", "api_cnty_cde", "api_well_idn", "well_nbr_idn"],
+        spec={
+            "policy": "one_producing_wellbore_per_api10",
+            "detection_source": "wchistory",
+            "detection_field": None,
+            "status": "vacuous",
+            "reason_code": "multi_wellbore_policy",
+            "measured": {
+                "api_suffix_columns_in_scope": 0,
+                "well_nbr_idn_distinct": 4854,
+                "well_nbr_idn_rows": 426529,
+                "well_nbr_idn_top": ["001", "002", "003", "004", "001H"],
+            },
+        },
+        rule=(
+            "NM cannot express a sidetrack, so the one-producing-wellbore-per-API-10 policy is"
+            " vacuously satisfied and no wellbore is quarantined under it."
+        ),
+        rationale=(
+            "SB-01 §5.3 assumes one producing wellbore per API-10 and detects the exception on"
+            " the API-12 suffix, naming wchistory as NM's detection source. wchistory has no such"
+            " column. The T1-d element inventory, measured over every record of all nine in-scope"
+            " artifacts, holds api_st_cde, api_cnty_cde and api_well_idn and nothing past them;"
+            " the probe found no completion suffix in wcproduction and this row records that"
+            " wchistory has none either. well_nbr_idn is the operator's well number, not a"
+            " wellbore suffix: 4,854 distinct values over 426,529 records and 121,940 wells, with"
+            " '001' on 72,977 rows, so it repeats across wells rather than distinguishing bores"
+            " within one. The policy is therefore vacuous, and this row says vacuous rather than"
+            " reporting a 0% share: a metric that cannot be non-zero is not a measurement, and"
+            " serving 0% would read as evidence that NM has no sidetracks when what is true is"
+            " that the artifact cannot say. If NM ever ships a suffix, the successor row is where"
+            " the share becomes measurable."
+        ),
+        evidence_url=OCD_FTP_DESCRIPTIONS_URL,
+    ),
+    _declaration(
+        "cr_nm_wchistory_status_domain_1",
+        source_id="nm_ocd_wchistory",
+        stage="conform",
+        fields=["wc_stat_cde"],
+        spec={
+            "promoted_to": "status_reported",
+            "status_canonical": None,
+            "mapping_table": None,
+            "measured_domain": {
+                "A": 270845, "N": 62724, "P": 51724, "T": 16084, "C": 14152,
+                "S": 4695, " ": 4380, "Z": 1624, "D": 212, "X": 89,
+            },
+            "measured_rows": 426529,
+            "complements_rule_id": "cr_nm_wchistory_status_vocab_1",
+        },
+        rule=(
+            "wc_stat_cde has ten values and they are promoted verbatim as status_reported."
+            " status_canonical stays null because no codebook maps them."
+        ),
+        rationale=(
+            "cr_nm_wchistory_status_vocab_1 recorded that the domain of this column was never"
+            " measured; P5 reads the source in full, so it is measured here: A 270,845, N 62,724,"
+            " P 51,724, T 16,084, C 14,152, S 4,695, a single space 4,380, Z 1,624, D 212 and X"
+            " 89, over all 426,529 records. The blank is real data and is carried, exactly as"
+            " c115_wc_stat_cde's blank is on the spine. Measuring the domain does not produce a"
+            " mapping: NM publishes no codebook for these letters, and guessing that A is active"
+            " would put an unlabelled estimate in the status column, which is the R8 violation"
+            " this registry exists to prevent. So status_reported carries the letter and"
+            " status_canonical is null - an absent mapping, not a mapping to null."
+            " lineage.nm_status_map stays empty for the same reason, and this row is what a"
+            " reader auditing that empty relation should find."
+        ),
+        evidence_url=OCD_FTP_DESCRIPTIONS_URL,
+    ),
+    _declaration(
+        "cr_nm_wchistory_lease_identifier_1",
+        source_id="nm_ocd_wchistory",
+        stage="conform",
+        fields=["spc_unit_idn", "prod_prop_idn"],
+        spec={
+            "spacing_unit_field": "spc_unit_idn",
+            "property_field": "prod_prop_idn",
+            "absent_sentinels": ["0", ""],
+            "on_no_identifier": "quarantine",
+            "reason_code": "orphan_fk",
+            "registry_resolution_is_not_required": True,
+            "measured": {
+                "spc_unit_idn_zero_rows": 119662,
+                "prod_prop_idn_zero_rows": 7,
+                "spc_unit_idn_not_in_spacingunit_registry": 21239,
+                "prod_prop_idn_not_in_property_registry": 1,
+            },
+        },
+        rule=(
+            "spc_unit_idn and prod_prop_idn of '0' mean absent, not identifier zero. A completion"
+            " that resolves no POD, no spacing unit and no property is quarantined as orphan_fk,"
+            " counted, never dropped."
+        ),
+        rationale=(
+            "119,662 of 426,529 records carry spc_unit_idn '0' and 7 carry prod_prop_idn '0'."
+            " Promoting those verbatim would create a spacing unit named zero holding a quarter"
+            " of New Mexico, and every Validator B group keyed on it would be an artefact of a"
+            " sentinel. They land null instead, which is what absent means. The identifiers are"
+            " promoted as filed even when the registry has no row for them - 21,239 distinct"
+            " spacing-unit references and 1 property reference do not resolve - because the"
+            " reference is the regulator's own and dropping it would lose grouping power the"
+            " artifact does have; the unresolved counts are published here rather than hidden by"
+            " a join. What is refused is a completion with none of the three: it cannot enter a"
+            " lease-equivalent group at all, so it is quarantined with its payload and counted"
+            " rather than promoted as a row no grouping key can reach."
+        ),
+    ),
+    _declaration(
+        "cr_nm_podwc_pod_1",
+        source_id="nm_ocd_podwc",
+        stage="join",
+        fields=["pod_idn", "api_st_cde", "api_cnty_cde", "api_well_idn", "pool_idn", "eff_dte"],
+        spec={
+            "join_cols": ["api10", "pool_idn"],
+            "effective_predicate": "podwc.eff_dte <= well_completions.effective_from",
+            "on_multiple": "fan_out",
+            "on_none": "null_pod_id",
+            "measured": {
+                # Both figures below are on the grain this rule's own predicate joins at:
+                # eff_dte truncated to its date. podwc timestamps every row, so a
+                # timestamp-grained measurement is a different grouping and a smaller one.
+                "measured_at": "date",
+                "podwc_rows": 224778,
+                "podwc_completions": 93685,
+                "pods_per_completion_at_one_eff_dte": {"2": 44061, "3": 35859, "4": 417,
+                                                       "5": 274, "6": 51, "7": 1},
+                "pods_per_completion_at_one_eff_timestamp": {"2": 34835, "3": 35857, "4": 417,
+                                                             "5": 274, "6": 51, "7": 1},
+                "pod_typ_cde": {"G": 58107, "O": 49108, "W": 36678, "M": 51, "C": 11},
+                "fanned_out_rows": 763473,
+                "fanned_out_rows_at_one_eff_timestamp": 762522,
+                "podwc_pods_absent_from_pod_registry": 17,
+            },
+        },
+        rule=(
+            "A completion's PODs are the distinct pod_idn crosswalked to it whose eff_dte is on"
+            " or before the observation's effective_from. More than one is more than one row."
+        ),
+        rationale=(
+            "NM's POD is stream-scoped: the pod registry types 58,107 of them G, 49,108 O and"
+            " 36,678 W, and 80,663 (completion, effective date) groups in podwc name two to"
+            " seven distinct PODs on one date - measured at the date granularity this rule's own"
+            " predicate joins at, because podwc timestamps every row and a timestamp-grained"
+            " grouping splits those 80,663 into 71,435. A single-valued pod_id cannot be filled"
+            " without choosing, and choosing between filings by file order is the defect the"
+            " spine's collision rule already refuses. It fans out instead - a completion in three"
+            " PODs is three dimension rows, the same shape P4 landed for a well producing from"
+            " two pools - which loses nothing and keeps every crosswalk edge inside canonical,"
+            " where staging's 30-day truncation cannot reach it. This is also why the analogue to"
+            " a TX lease survives the fan-out rather than being weakened by it: SB-01 §6.2 keys"
+            " canonical.leases on (oil_gas_code, district_no, lease_no), so a TX lease is"
+            " stream-scoped in exactly the same way. podwc carries no termination date, so a POD"
+            " once crosswalked is not withdrawn by the artifact and this rule does not invent a"
+            " withdrawal; the effective predicate is one-sided for that reason. 17 pod_idn values"
+            " have no row in the pod registry and are still carried, for the reason"
+            " cr_nm_wchistory_lease_identifier_1 gives."
+        ),
+        evidence_url=OCD_FTP_DESCRIPTIONS_URL,
+    ),
+    _declaration(
+        "cr_nm_ogrid_registry_1",
+        source_id="nm_ocd_ogrid",
+        stage="join",
+        fields=["ogrid_cde", "ogrid_nam"],
+        spec={
+            "alias_table": "operator_aliases",
+            "operator_raw_field": "ogrid_cde",
+            "operator_field": "ogrid_nam",
+            "method": "exact_key",
+            "confidence": "1.000",
+            "fuzzy_matching": "prohibited",
+            "effective_from_field": "stat_eff_dte",
+            "join_rule_id": "cr_nm_ogrid_operator_1",
+            "measured": {
+                "ogrid_rows": 31696,
+                "duplicate_ogrid_codes": 0,
+                "distinct_ogrid_in_wchistory": 2223,
+                "wchistory_ogrids_absent_from_registry": 0,
+            },
+        },
+        rule=(
+            "lineage.operator_aliases is loaded from the ogrid registry: the code is the key, the"
+            " registered name is the operator, confidence is 1.000 and the method is exact_key."
+        ),
+        rationale=(
+            "SB-01 §5.3: a fuzzy operator match is an unlabelled estimate in the identity layer,"
+            " which is the one place this system cannot afford one. OGRID is the OCD's own"
+            " registered operator identifier, so the load is a key copy and the confidence is 1"
+            " by construction rather than by scoring - there is no normalised-name pass and no"
+            " threshold to tune. The registry holds 31,696 codes with 0 duplicates, which matters"
+            " because lineage.operator_aliases is read whole with no source filter and"
+            " _alias_join refuses duplicate keys above min_confidence. All 2,223 OGRID codes"
+            " wchistory cites resolve, so alias_unresolved is empty on this corpus; the exit"
+            " exists anyway because an unmatched code is counted and quarantined, never dropped,"
+            " and a later artifact may cite a code the registry has not caught up with."
+            " lineage.operator_aliases carries no method column, so exact_key is recorded here"
+            " and in cr_nm_ogrid_operator_1's spec rather than on the alias row."
+        ),
+        evidence_url=OCD_FTP_DESCRIPTIONS_URL,
+    ),
+    _declaration(
+        "cr_nm_wcproduction_lease_equivalent_1",
+        source_id="nm_ocd_wcproduction",
+        stage="join",
+        fields=["source_operator_key", "pool_idn", "pod_id", "spacing_unit_id", "property_id"],
+        spec={
+            "consumer": "SB-01 §8.6 Validator B",
+            "grouping_key": [
+                "source_operator_key",
+                "pool_idn",
+                "pod_id | spacing_unit_id | property_id",
+            ],
+            "grouping_source": "canonical.well_completions",
+            "geometry_available": False,
+            "resampling": "post_hoc_group_selection_reweighting",
+            "residual_mismatch": "must_be_published",
+            "transferability": "lease_composition_covariates_only",
+            "measured_wells_per_group": {
+                "basis": (
+                    "canonical.well_completions, the latest observation per completion:"
+                    " 147,975 completions, 121,940 wells"
+                ),
+                # POD is counted on the fanned completion x POD grain, which is why it holds
+                # more groups than the completions it reaches; the other two are counted once
+                # per completion. One label cannot cover both grains honestly.
+                "basis_pod": "the fanned completion x POD grain",
+                "basis_spacing_unit_and_property": "one row per completion",
+                "pod": {"groups": 141479, "well_slots": 204498, "mean": "1.445",
+                        "p50": 1, "p90": 2, "max": 269, "singletons": 126676},
+                "spacing_unit": {"groups": 49994, "well_slots": 81100, "mean": "1.622",
+                                 "p50": 1, "p90": 3, "max": 62, "singletons": 34697},
+                "property": {"groups": 52406, "well_slots": 147975, "mean": "2.824",
+                             "p50": 1, "p90": 4, "max": 641, "singletons": 34114},
+                "completions_reached": {"pod": 83814, "spacing_unit": 81100,
+                                        "property": 147975, "total": 147975},
+                # Every POD ever crosswalked, ignoring cr_nm_podwc_pod_1's effective predicate.
+                # The gap is what the predicate withholds, and it is stated rather than tuned.
+                "pod_ignoring_effective_predicate": {"groups": 151201, "well_slots": 224711},
+                "tx_target_distribution": "unmeasured - canonical.leases has no producer yet",
+            },
+        },
+        rule=(
+            "Validator B groups NM synthetic lease-equivalents on (source_operator_key, pool_idn,"
+            " pod_id | spacing_unit_id | property_id), read from canonical.well_completions."
+        ),
+        rationale=(
+            "SB-01 §8.6 step 2 groups NM synthetic lease-equivalents on operator, pool and"
+            " spatial contiguity within a stated distance in geom_compute. NM OCD's FTP ships no"
+            " coordinates - confirmed in the bytes: latitude and longitude appear on wellhistory"
+            " alone, blank on ~1,892 of its 321,510 rows, and on none of the eight other in-scope"
+            " artifacts, so no coordinate reaches the completion grain at all. Validator B as"
+            " written cannot be built from D1's data."
+            " The substitute is better on one axis and worse on another, and both are recorded"
+            " here. Better: a TX lease is a legal unit, not a distance, and NM publishes its own"
+            " legal units - spacingunit, pod/podwc (NM's own aggregation unit, its closest"
+            " analogue to a lease) and property (the unit NM reports flaring against). Grouping"
+            " on (OGRID, pool, POD | spacing unit | property) is a closer analogue than proximity"
+            " and needs no geometry."
+            " Worse: it removes the resampling knob. SB-01 §8.6 step 2 resamples synthetic groups"
+            " to match the TX joint distribution of wells-per-lease; legal units come in the"
+            " sizes they come in and cannot be tuned continuously. The honest substitute is"
+            " post-hoc group-selection reweighting - select and weight from the observed"
+            " legal-unit population to approximate the TX distribution, and publish the residual"
+            " mismatch rather than claiming a match."
+            " The observed population is measured here, on the promoted rows rather than on"
+            " staging, so the reweighting has something to reweight. Over the 147,975"
+            " completions at their latest observation: (OGRID, pool, POD) gives 141,479 groups,"
+            " mean 1.445 wells, median 1, p90 2, max 269, and 126,676 of them - 89.5% - hold a"
+            " single well, and it reaches 83,814 completions; (OGRID, pool, spacing unit) gives"
+            " 49,994 groups over 81,100 well-slots, mean 1.622, median 1, p90 3, max 62, and"
+            " reaches 81,100 completions; (OGRID, pool, property) gives 52,406 groups, mean"
+            " 2.824, median 1, p90 4, max 641, and reaches all 147,975. Property is the only key"
+            " with full coverage, and every key's median group is one well - a group of one is"
+            " not a lease-equivalent for an allocation validator, because it tests no"
+            " allocation. That is the ceiling on what reweighting can reach and it is published"
+            " rather than smoothed. The TX side of the residual cannot be computed in D1:"
+            " canonical.leases has no producer yet, so the target distribution is unmeasured and"
+            " D3 must publish the residual once D2 lands it."
+            " The transferability caveat, from SB-01 §8.6: bounds established on synthetic"
+            " lease-equivalents transfer on lease-composition covariates, not on rock. NM"
+            " Delaware is not TX Midland. A bound calibrated here describes how much error"
+            " aggregating wells into a legal unit can hide; it does not describe how a Midland"
+            " well produces."
+        ),
+        evidence_url=OCD_FTP_DESCRIPTIONS_URL,
+    ),
+)
+
 NM_RULES: tuple[dict[str, object], ...] = (
     *(
         family(table)
@@ -1032,6 +1444,7 @@ NM_RULES: tuple[dict[str, object], ...] = (
     _mod_dte(),
     _month(),
     *NM_PROMOTION_RULES,
+    *NM_DIMENSION_RULES,
 )
 
 _INSERT = """
