@@ -12,10 +12,23 @@ User=glasswell
 Group=glasswell
 EnvironmentFile=/etc/glasswell/db.env
 EnvironmentFile=/etc/glasswell/app.env
-# Loopback only: Caddy fronts this (DIR-13). --proxy-headers is what makes the request scheme
-# https behind it, which is what puts upgrade-insecure-requests in the CSP.
-ExecStart=/opt/glasswell/venv/bin/uvicorn glasswell.api:app --host 127.0.0.1 --port 8000 \
-    --workers 2 --proxy-headers --forwarded-allow-ips 127.0.0.1
+# uvicorn binds the socket and chmods it 0666 with no knob to change that, so /run/glasswell
+# at 0750 glasswell:caddy is the entire access control. The directory is NOT a
+# RuntimeDirectory=: systemd re-applies exec-directory ownership on every exec invocation, so
+# an ExecStartPre chgrp is undone before ExecStart runs. ../tmpfiles.d/glasswell.conf owns it
+# instead, and systemd never touches it.
+#
+# uvicorn does not unlink a stale socket — bind() returns EADDRINUSE and it exits — so what
+# RuntimeDirectory= used to guarantee by deleting the directory is now explicit.
+ExecStartPre=/usr/bin/rm -f /run/glasswell/api.sock
+# No TCP listener at all: Caddy dials the socket (DIR-13), and AF_UNIX has no Nagle, which is
+# the ~40 ms every sub-MSS proxied response used to pay (work-output/tileperf-r2-status.md §1).
+# --forwarded-allow-ips must be * here and not 127.0.0.1: a unix peer has no address, uvicorn
+# leaves scope["client"] None, and a numeric allow-list would stop trusting X-Forwarded-Proto —
+# silently dropping upgrade-insecure-requests from every CSP. The socket's only reachable peer
+# is Caddy, so * grants nothing the directory mode has not already decided.
+ExecStart=/opt/glasswell/venv/bin/uvicorn glasswell.api:app --uds /run/glasswell/api.sock \
+    --workers 2 --proxy-headers --forwarded-allow-ips '*'
 Restart=on-failure
 RestartSec=5
 
@@ -33,7 +46,9 @@ LockPersonality=yes
 CapabilityBoundingSet=
 StateDirectory=glasswell
 # The raw zone is deliberately absent: only glasswell-ingest may write /data/raw.
-ReadWritePaths=/var/lib/glasswell
+# /run/glasswell has to be listed because ProtectSystem=strict makes /run read-only and the
+# socket is no longer a RuntimeDirectory= that systemd would open up on its own.
+ReadWritePaths=/var/lib/glasswell /run/glasswell
 
 [Install]
 WantedBy=multi-user.target

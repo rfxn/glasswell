@@ -1,7 +1,9 @@
 # infra/caddy — the TLS front door
 
 DIR-13. Caddy terminates `https://glasswell.lab.rpx.sh` on VM 111 and reverse-proxies
-uvicorn on `127.0.0.1:8000`. The certificate is a Let's Encrypt host certificate obtained
+uvicorn over `unix//run/glasswell/api.sock` — not a loopback port, because the TCP hop cost
+~40 ms on every response under the loopback MSS (`../README.md` "Why the API has no port").
+The certificate is a Let's Encrypt host certificate obtained
 through the **DNS-01** challenge against the Cloudflare `rpx.sh` zone: the name resolves to
 `192.168.2.111`, so no ACME server can reach an HTTP challenge on this host, and DNS-01 does
 not care that the record is RFC1918 or two labels deep.

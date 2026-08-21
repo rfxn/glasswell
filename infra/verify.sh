@@ -4,7 +4,10 @@
 set -uo pipefail
 
 INFRA_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-API=http://127.0.0.1:8000
+# The API has no TCP listener; `api_curl` dials the socket and $API is only the authority curl
+# needs to build a URL. It stays a http:// prefix so ${url/#$API/$SITE} still finds it.
+API_SOCKET=/run/glasswell/api.sock
+API=http://localhost
 MARTIN=http://127.0.0.1:3000
 SITE_HOST=glasswell.lab.rpx.sh
 SITE="https://$SITE_HOST"
@@ -55,6 +58,7 @@ assert_false() {
 
 listening_on() { ss -ltn | grep -q "$1"; }
 glob_matches() { compgen -G "$1" >/dev/null; }
+api_curl() { curl --unix-socket "$API_SOCKET" "$@"; }
 
 printf 'services\n'
 for unit in glasswell-api martin postgresql caddy; do
@@ -62,11 +66,11 @@ for unit in glasswell-api martin postgresql caddy; do
 done
 
 printf 'api\n'
-assert "GET /healthz" 200 "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/healthz")"
+assert "GET /healthz" 200 "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/healthz")"
 assert "GET /v1 without a key is refused" 403 \
-    "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/v1/wells?limit=1")"
+    "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/v1/wells?limit=1")"
 assert "GET /v1 with a wrong key is refused" 403 \
-    "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+    "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
         -H 'X-Glasswell-Key: not-the-owner-key' "$API/v1/wells?limit=1")"
 
 owner_key="$(sed -n 's/^GLASSWELL_OWNER_KEY=//p' /etc/glasswell/app.env)"
@@ -75,14 +79,14 @@ if [[ -z $owner_key ]]; then
 else
     ok "owner key present in app.env"
     assert "GET /v1/wells with the owner key" 200 \
-        "$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+        "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
             -H "X-Glasswell-Key: $owner_key" "$API/v1/wells?limit=1")"
     assert "GET /v1/health with the owner key" 200 \
-        "$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+        "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
             -H "X-Glasswell-Key: $owner_key" "$API/v1/health")"
     # B-1: a query string reaches the access log verbatim, so a key is refused there.
     assert "a key in the query string is refused" 422 \
-        "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+        "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
             --get --data-urlencode "key=$owner_key" "$API/v1/health")"
     assert_false "the owner key is absent from the journal" "found in glasswell-api's journal" \
         journalctl -u glasswell-api --no-pager -q --grep "$owner_key"
@@ -95,7 +99,7 @@ assert_true "hashed bundle present" "no assets/index-*.js" \
 # M-6: the source is proprietary and StaticFiles serves whatever is in the webroot.
 assert_false "no source map is deployed" "assets/*.js.map is published" \
     glob_matches "$WEB_ROOT/assets/*.map"
-assert "GET / serves the app" 200 "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/")"
+assert "GET / serves the app" 200 "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/")"
 
 printf 'tiles\n'
 assert "martin /health" 200 \
@@ -126,7 +130,7 @@ if [[ -z ${zoom:-} ]]; then
     bad "feature-derived tile" "marts.nd_laterals_tile is empty"
 else
     tile_url="$API/v1/tiles/nd_laterals/$zoom/$tile_x/$tile_y.pbf"
-    read -r tile_status tile_bytes < <(curl -s -o /dev/null \
+    read -r tile_status tile_bytes < <(api_curl -s -o /dev/null \
         -w '%{http_code} %{size_download}' --max-time 20 \
         -H "X-Glasswell-Key: $owner_key" "$tile_url")
     assert "tile $zoom/$tile_x/$tile_y status" 200 "$tile_status"
@@ -136,7 +140,7 @@ fi
 # M-1: martin auto-publishes staging, so the proxy's allowlist is the control that holds
 # "staging never serves". The catalogue still lists the layer; the product API must not serve it.
 assert "a staging layer through the proxy is refused" 404 \
-    "$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+    "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
         -H "X-Glasswell-Key: $owner_key" "$API/v1/tiles/nd_gis_wells/8/54/89.pbf")"
 
 # DIR-13. The edge is checked through the name a browser uses, pinned to this host so a
@@ -241,7 +245,15 @@ assert "no git-excluded working file on the deploy root" "" "${stray% }"
 
 printf 'exposure\n'
 assert_true "martin is loopback-only" "not bound to 127.0.0.1:3000" listening_on '127.0.0.1:3000'
-assert_true "api is loopback-only" "not bound to 127.0.0.1:8000" listening_on '127.0.0.1:8000'
+assert_true "the api socket exists" "no socket at $API_SOCKET" test -S "$API_SOCKET"
+assert_true "the api answers on its socket" "no answer on $API_SOCKET" \
+    api_curl -sf -o /dev/null --max-time 10 "$API/healthz"
+# uvicorn chmods the socket 0666, so the directory is the access control and this is the check
+# that says so. glasswell owns it, caddy's group traverses it, nobody else gets in.
+assert "the api socket directory is caddy-only" "glasswell caddy 750" \
+    "$(stat -c '%U %G %a' "${API_SOCKET%/*}")"
+assert_false "the api holds no TCP listener" "still bound to 127.0.0.1:8000 — uvicorn moved to $API_SOCKET" \
+    listening_on '127.0.0.1:8000'
 assert_false "api is not on the LAN" "still bound to 0.0.0.0:8000 — the pre-DIR-13 bind" \
     listening_on '0.0.0.0:8000'
 assert_true "caddy listens on the LAN" "nothing is bound to :443" listening_on ':443'

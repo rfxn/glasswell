@@ -12,7 +12,9 @@ glasswell.lab.rpx.sh {
 		resolvers 1.1.1.1 1.0.0.1
 	}
 
-	reverse_proxy 127.0.0.1:8000
+	# A socket, not 127.0.0.1:8000: the loopback hop cost ~40 ms of Nagle on every response
+	# under the MSS, and AF_UNIX cannot have the defect (../README.md "Why the API has no port").
+	reverse_proxy unix//run/glasswell/api.sock
 
 	# No `encode`: the origin owns compression. It gzips text over 1 KiB, passes martin's
 	# zstd tiles through, and leaves basemap.pmtiles identity so range reads work.

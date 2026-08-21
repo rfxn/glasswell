@@ -23,6 +23,7 @@ CADDY_BIN=/usr/local/bin/caddy
 CADDY_ENV="$CADDY_CONF_DIR/cloudflare.env"
 CADDY_USER=caddy
 RUN_USER=glasswell
+TMPFILES_DIR=/etc/tmpfiles.d
 
 with_postgres=0
 with_martin_config=0
@@ -81,6 +82,19 @@ if ! grep -q '^GLASSWELL_OWNER_KEY=.\{16,\}' "$ETC_DIR/app.env"; then
     exit 1
 fi
 
+# tmpfiles.d/glasswell.conf names this group, and systemd-tmpfiles fails the whole line on an
+# unknown one — which would leave glasswell-api with nowhere to put its socket. Created here
+# rather than under --with-caddy: the API has no TCP listener, so an install without Caddy has
+# no way in either.
+getent group "$CADDY_USER" >/dev/null || {
+    groupadd --system "$CADDY_USER"
+    printf 'created system group %s — it owns the group on the api socket directory\n' "$CADDY_USER"
+}
+
+install -o root -g root -m 0644 "$INFRA_DIR/tmpfiles.d/glasswell.conf" "$TMPFILES_DIR/glasswell.conf"
+systemd-tmpfiles --create "$TMPFILES_DIR/glasswell.conf"
+printf 'placed %s/glasswell.conf and created /run/glasswell\n' "$TMPFILES_DIR"
+
 for unit in glasswell-api.service glasswell-ingest.service glasswell-ingest.timer \
             glasswell-alert@.service glasswell-backup.service glasswell-backup.timer; do
     install -o root -g root -m 0644 "$INFRA_DIR/systemd/$unit" "$UNIT_DIR/$unit"
@@ -136,7 +150,10 @@ if [[ $with_caddy -eq 1 ]]; then
     }
 
     id "$CADDY_USER" >/dev/null 2>&1 || {  # the check is the condition; a missing user is the branch
-        useradd --system --home-dir /var/lib/caddy --shell /usr/sbin/nologin "$CADDY_USER"
+        # -g explicitly: the group is created earlier for glasswell-api's socket, and useradd
+        # would otherwise try to create one of the same name and fail.
+        useradd --system --home-dir /var/lib/caddy --shell /usr/sbin/nologin \
+            -g "$CADDY_USER" "$CADDY_USER"
         printf 'created system user %s\n' "$CADDY_USER"
     }
     install -d -o root -g root -m 0755 "$CADDY_CONF_DIR"
