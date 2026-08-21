@@ -4488,6 +4488,41 @@
         "tags": [
           "quality"
         ],
+        "x-glasswell-dataset": {
+          "anchors": [],
+          "collection_pointer": "",
+          "columns": {
+            "default": [
+              "/rule_id",
+              "/source_id",
+              "/rule_kind",
+              "/rule_family",
+              "/stage",
+              "/effective_from",
+              "/rationale"
+            ],
+            "hidden": [],
+            "hidden_reason": {},
+            "sort": "/effective_from"
+          },
+          "detail_operation": "get_conformance_rule",
+          "facets": [
+            "source_id",
+            "kind",
+            "family",
+            "stage",
+            "field",
+            "effective_at"
+          ],
+          "group": "kitchen",
+          "id": "conformance",
+          "intro": "nb_dataset_conformance",
+          "order": 21,
+          "row_id": [
+            "/rule_id"
+          ],
+          "title": "Conformance rules"
+        },
         "x-glasswell-request-example": {
           "path": {},
           "query": {
@@ -4808,6 +4843,37 @@
         "tags": [
           "lineage"
         ],
+        "x-glasswell-dataset": {
+          "anchors": [],
+          "collection_pointer": "",
+          "columns": {
+            "default": [
+              "/derivation_id",
+              "/operation",
+              "/status",
+              "/output_dataset",
+              "/output_rows",
+              "/created_at",
+              "/determinism_class"
+            ],
+            "hidden": [],
+            "hidden_reason": {},
+            "sort": "/created_at"
+          },
+          "detail_operation": "get_derivation",
+          "facets": [
+            "operation",
+            "status"
+          ],
+          "group": "kitchen",
+          "id": "derivations",
+          "intro": "nb_dataset_derivations",
+          "order": 24,
+          "row_id": [
+            "/derivation_id"
+          ],
+          "title": "Derivations"
+        },
         "x-glasswell-request-example": {
           "path": {},
           "query": {
@@ -5378,6 +5444,35 @@
         "tags": [
           "glossary"
         ],
+        "x-glasswell-dataset": {
+          "anchors": [],
+          "collection_pointer": "",
+          "columns": {
+            "default": [
+              "/term_id",
+              "/term",
+              "/short_definition",
+              "/domain_tags",
+              "/aliases"
+            ],
+            "hidden": [],
+            "hidden_reason": {},
+            "sort": "/term"
+          },
+          "detail_operation": "get_glossary_term",
+          "facets": [
+            "q",
+            "domain_tag"
+          ],
+          "group": "vocabulary",
+          "id": "glossary",
+          "intro": "nb_dataset_glossary",
+          "order": 40,
+          "row_id": [
+            "/term_id"
+          ],
+          "title": "Glossary"
+        },
         "x-glasswell-request-example": {
           "path": {},
           "query": {
@@ -6887,6 +6982,47 @@
         "tags": [
           "quality"
         ],
+        "x-glasswell-dataset": {
+          "anchors": [],
+          "collection_pointer": "",
+          "columns": {
+            "default": [
+              "/quarantine_id",
+              "/reason_code",
+              "/rule_id",
+              "/state",
+              "/stage",
+              "/occurrence_count",
+              "/last_seen_at"
+            ],
+            "hidden": [
+              "/row_fingerprint",
+              "/notes"
+            ],
+            "hidden_reason": {
+              "/notes": "Free text a reviewer left on release; empty on almost every row and not a dimension anything is filtered by.",
+              "/row_fingerprint": "A content address over the rejected row's bytes, useful for joining two fetches of the same row and unreadable as a column."
+            },
+            "sort": "/last_seen_at"
+          },
+          "detail_operation": "get_quarantine_row",
+          "facets": [
+            "source_id",
+            "reason_code",
+            "rule_id",
+            "state",
+            "stage"
+          ],
+          "group": "kitchen",
+          "id": "quarantine",
+          "intro": "nb_dataset_quarantine",
+          "order": 20,
+          "row_id": [
+            "/quarantine_id"
+          ],
+          "summary_operation": "get_quarantine_summary",
+          "title": "Quarantine"
+        },
         "x-glasswell-request-example": {
           "path": {},
           "query": {
@@ -7765,6 +7901,39 @@
         "tags": [
           "wells"
         ],
+        "x-glasswell-dataset": {
+          "anchors": [],
+          "collection_pointer": "",
+          "columns": {
+            "default": [
+              "/api10",
+              "/well_name",
+              "/operator_name_reported",
+              "/status_canonical",
+              "/county_code_at_permit",
+              "/spud_date"
+            ],
+            "hidden": [],
+            "hidden_reason": {},
+            "sort": "/api10"
+          },
+          "detail_operation": "get_well",
+          "facets": [
+            "status",
+            "operator",
+            "county",
+            "bbox",
+            "q"
+          ],
+          "group": "wells",
+          "id": "wells",
+          "intro": "nb_dataset_wells",
+          "order": 10,
+          "row_id": [
+            "/api10"
+          ],
+          "title": "Wells"
+        },
         "x-glasswell-request-example": {
           "path": {},
           "query": {

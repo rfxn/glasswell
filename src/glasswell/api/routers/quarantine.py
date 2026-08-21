@@ -15,6 +15,7 @@ from glasswell.api.examples import (
     CONTENT_ADDRESS_NOTE,
     EXAMPLE_QUARANTINE_ID,
     GLOSSARY_KEY,
+    dataset,
     request_example,
 )
 from glasswell.api.pagination import (
@@ -118,7 +119,44 @@ def _row(row: dict[str, Any]) -> dict[str, Any]:
         " an empty quarantine means the rules are not firing, not that the data is clean."
     ),
     response_model=EnvelopeModel[list[QuarantineRow]],
-    openapi_extra=request_example(query={"limit": 5}),
+    openapi_extra={
+        **request_example(query={"limit": 5}),
+        **dataset(
+            id="quarantine",
+            title="Quarantine",
+            group="kitchen",
+            collection_pointer="",
+            row_id=["/quarantine_id"],
+            detail_operation="get_quarantine_row",
+            summary_operation="get_quarantine_summary",
+            facets=["source_id", "reason_code", "rule_id", "state", "stage"],
+            columns={
+                "default": [
+                    "/quarantine_id",
+                    "/reason_code",
+                    "/rule_id",
+                    "/state",
+                    "/stage",
+                    "/occurrence_count",
+                    "/last_seen_at",
+                ],
+                "hidden": ["/row_fingerprint", "/notes"],
+                "hidden_reason": {
+                    "/row_fingerprint": (
+                        "A content address over the rejected row's bytes, useful for joining"
+                        " two fetches of the same row and unreadable as a column."
+                    ),
+                    "/notes": (
+                        "Free text a reviewer left on release; empty on almost every row and"
+                        " not a dimension anything is filtered by."
+                    ),
+                },
+                "sort": "/last_seen_at",
+            },
+            intro="nb_dataset_quarantine",
+            order=20,
+        ),
+    },
     responses=problem_responses(
         "validation_failed", "cursor_malformed", "cursor_query_mismatch", "service_degraded"
     ),

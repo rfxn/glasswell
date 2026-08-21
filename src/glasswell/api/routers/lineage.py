@@ -25,6 +25,7 @@ from glasswell.api.examples import (
     EXAMPLE_MANIFEST_ID,
     EXAMPLE_VINTAGE_ID,
     VINTAGE_ID_NOTE,
+    dataset,
     request_example,
 )
 from glasswell.api.pagination import (
@@ -553,7 +554,32 @@ def get_manifest(
         " with `GET /v1/derivations/{derivation_id}`."
     ),
     response_model=EnvelopeModel[list[DerivationSummary]],
-    openapi_extra=request_example(query={"limit": 5}),
+    openapi_extra={
+        **request_example(query={"limit": 5}),
+        **dataset(
+            id="derivations",
+            title="Derivations",
+            group="kitchen",
+            collection_pointer="",
+            row_id=["/derivation_id"],
+            detail_operation="get_derivation",
+            facets=["operation", "status"],
+            columns={
+                "default": [
+                    "/derivation_id",
+                    "/operation",
+                    "/status",
+                    "/output_dataset",
+                    "/output_rows",
+                    "/created_at",
+                    "/determinism_class",
+                ],
+                "sort": "/created_at",
+            },
+            intro="nb_dataset_derivations",
+            order=24,
+        ),
+    },
     responses=problem_responses(
         "validation_failed", "cursor_malformed", "cursor_query_mismatch", "service_degraded"
     ),

@@ -12,7 +12,7 @@ from starlette.responses import JSONResponse
 
 from glasswell.api.deps import AsOf, Connection, Cursor, WellsLimit, rows
 from glasswell.api.errors import ProblemError, problem_responses
-from glasswell.api.examples import EXAMPLE_API10, GLOSSARY_KEY, request_example
+from glasswell.api.examples import EXAMPLE_API10, GLOSSARY_KEY, dataset, request_example
 from glasswell.api.pagination import (
     DEFAULT_LIMIT,
     decode_cursor,
@@ -267,7 +267,31 @@ def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
         " It does not return production — see /v1/wells/{api10}/production."
     ),
     response_model=EnvelopeModel[list[WellSummary]],
-    openapi_extra=request_example(query={"limit": 5}),
+    openapi_extra={
+        **request_example(query={"limit": 5}),
+        **dataset(
+            id="wells",
+            title="Wells",
+            group="wells",
+            collection_pointer="",
+            row_id=["/api10"],
+            detail_operation="get_well",
+            facets=["status", "operator", "county", "bbox", "q"],
+            columns={
+                "default": [
+                    "/api10",
+                    "/well_name",
+                    "/operator_name_reported",
+                    "/status_canonical",
+                    "/county_code_at_permit",
+                    "/spud_date",
+                ],
+                "sort": "/api10",
+            },
+            intro="nb_dataset_wells",
+            order=10,
+        ),
+    },
     responses=problem_responses(
         "validation_failed", "cursor_malformed", "cursor_query_mismatch", "service_degraded"
     ),

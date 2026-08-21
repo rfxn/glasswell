@@ -11,7 +11,7 @@ from starlette.responses import JSONResponse
 
 from glasswell.api.deps import Connection, Cursor, SpineLimit, rows
 from glasswell.api.errors import ProblemError, problem_responses
-from glasswell.api.examples import EXAMPLE_RULE_ID, GLOSSARY_KEY, request_example
+from glasswell.api.examples import EXAMPLE_RULE_ID, GLOSSARY_KEY, dataset, request_example
 from glasswell.api.pagination import (
     DEFAULT_LIMIT,
     decode_cursor,
@@ -100,7 +100,32 @@ def _rule(row: dict[str, Any]) -> dict[str, Any]:
         " the old one, so a past decision stays readable."
     ),
     response_model=EnvelopeModel[list[ConformanceRule]],
-    openapi_extra=request_example(query={"limit": 5}),
+    openapi_extra={
+        **request_example(query={"limit": 5}),
+        **dataset(
+            id="conformance",
+            title="Conformance rules",
+            group="kitchen",
+            collection_pointer="",
+            row_id=["/rule_id"],
+            detail_operation="get_conformance_rule",
+            facets=["source_id", "kind", "family", "stage", "field", "effective_at"],
+            columns={
+                "default": [
+                    "/rule_id",
+                    "/source_id",
+                    "/rule_kind",
+                    "/rule_family",
+                    "/stage",
+                    "/effective_from",
+                    "/rationale",
+                ],
+                "sort": "/effective_from",
+            },
+            intro="nb_dataset_conformance",
+            order=21,
+        ),
+    },
     responses=problem_responses(
         "validation_failed", "cursor_malformed", "cursor_query_mismatch", "service_degraded"
     ),

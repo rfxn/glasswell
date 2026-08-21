@@ -11,7 +11,7 @@ from starlette.responses import JSONResponse
 
 from glasswell.api.deps import Connection, Cursor, SpineLimit, rows
 from glasswell.api.errors import ProblemError, problem_responses
-from glasswell.api.examples import EXAMPLE_TERM_ID, request_example
+from glasswell.api.examples import EXAMPLE_TERM_ID, dataset, request_example
 from glasswell.api.pagination import (
     DEFAULT_LIMIT,
     decode_cursor,
@@ -122,7 +122,30 @@ def _term(row: dict[str, Any]) -> dict[str, Any]:
         " through the same rules as everything else, not markup embedded in views."
     ),
     response_model=EnvelopeModel[list[GlossaryTerm]],
-    openapi_extra=request_example(query={"limit": 5}),
+    openapi_extra={
+        **request_example(query={"limit": 5}),
+        **dataset(
+            id="glossary",
+            title="Glossary",
+            group="vocabulary",
+            collection_pointer="",
+            row_id=["/term_id"],
+            detail_operation="get_glossary_term",
+            facets=["q", "domain_tag"],
+            columns={
+                "default": [
+                    "/term_id",
+                    "/term",
+                    "/short_definition",
+                    "/domain_tags",
+                    "/aliases",
+                ],
+                "sort": "/term",
+            },
+            intro="nb_dataset_glossary",
+            order=40,
+        ),
+    },
     responses=problem_responses(
         "validation_failed", "cursor_malformed", "cursor_query_mismatch", "service_degraded"
     ),
