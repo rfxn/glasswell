@@ -3738,6 +3738,19 @@
             "description": "Basin the well is assigned to.",
             "title": "Basin"
           },
+          "completion_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Most recent completion date on file; not a spud and not first production.",
+            "title": "Completion Date"
+          },
           "compute_crs": {
             "anyOf": [
               {
@@ -3815,7 +3828,7 @@
             "x-glasswell-glossary": "gt_wellbore"
           },
           "length_method": {
-            "description": "How lateral length was measured, from the active cr_nd_compute_crs rule: geodesic on the WGS84 ellipsoid, or projected into a named CRS.",
+            "description": "How lateral length was measured, from the compute-CRS rule the well's basin names: geodesic on the WGS84 ellipsoid, or projected into a named CRS.",
             "title": "Length Method",
             "type": "string",
             "x-glasswell-glossary": "gt_crs_compute_crs"
@@ -3886,7 +3899,7 @@
                 "type": "null"
               }
             ],
-            "description": "Status mapped through cr_nd_status_vocab_1.",
+            "description": "Status mapped through the source's status vocabulary rule \u2014 cr_nd_status_vocab_1 in North Dakota, cr_tx_status_vocab_1 in Texas. Null where the source reported no status at all, which is not the same as an unknown one.",
             "title": "Status Canonical"
           },
           "status_reported": {
@@ -3916,6 +3929,18 @@
               }
             ],
             "description": "Surface hole location, if recorded."
+          },
+          "total_depth_ft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FigureModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total wellbore depth as the regulator reported it, with its handle.",
+            "x-glasswell-glossary": "gt_wellbore"
           },
           "well_name": {
             "anyOf": [
@@ -3964,6 +3989,8 @@
           "compute_crs",
           "length_method",
           "storage_crs",
+          "total_depth_ft",
+          "completion_date",
           "geometry",
           "surface_point"
         ],
@@ -4058,7 +4085,7 @@
                 "type": "null"
               }
             ],
-            "description": "Status mapped through cr_nd_status_vocab_1.",
+            "description": "Status mapped through the source's status vocabulary rule \u2014 cr_nd_status_vocab_1 in North Dakota, cr_tx_status_vocab_1 in Texas. Null where the source reported no status at all, which is not the same as an unknown one.",
             "title": "Status Canonical"
           },
           "well_name": {

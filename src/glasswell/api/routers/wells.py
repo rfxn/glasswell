@@ -23,6 +23,7 @@ from glasswell.api.pagination import (
 )
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, iso
 from glasswell.lengths import STORAGE_EPSG, resolve_length_method
+from glasswell.lineage.conformance import lease_reporting_rule
 from glasswell.lineage.envelope import figure
 from glasswell.marts.tiles import TILE_BUFFER, TILE_EXTENT, TILE_MAX_ZOOM, WEB_MERCATOR
 from glasswell.units import metres_to_feet
@@ -37,12 +38,14 @@ WELL_LABELS = {
     "/land_unit_label": "gt_land_unit",
     "/confidential_flag": "gt_confidential_well",
     "/lateral_length_ft": "gt_wellbore",
+    "/total_depth_ft": "gt_wellbore",
 }
 
 _COLUMNS = (
     "api10, api14, state_code, county_code_at_permit, ndic_file_no, operator_name_reported,"
     " operator_id, well_name, status_canonical, status_reported, well_type_reported, spud_date,"
-    " confidential_flag, basin, land_unit_label, effective_from, source_manifest_id, derivation_id"
+    " confidential_flag, basin, land_unit_label, total_depth_ft, completion_date,"
+    " effective_from, source_manifest_id, derivation_id"
 )
 
 RANKED_WELLS = f"""
@@ -104,7 +107,13 @@ class WellSummary(BaseModel):
         GLOSSARY_KEY: "gt_api_10_api_12_api_14"})
     well_name: str | None = Field(description="Well name as reported by the operator.")
     operator_name_reported: str | None = Field(description="Operator name exactly as reported.")
-    status_canonical: str | None = Field(description="Status mapped through cr_nd_status_vocab_1.")
+    status_canonical: str | None = Field(
+        description=(
+            "Status mapped through the source's status vocabulary rule — cr_nd_status_vocab_1"
+            " in North Dakota, cr_tx_status_vocab_1 in Texas. Null where the source reported"
+            " no status at all, which is not the same as an unknown one."
+        )
+    )
     county_code_at_permit: str | None = Field(description="County code recorded at permit.")
     land_unit_label: str | None = Field(description="PLSS land unit label.", json_schema_extra={
         GLOSSARY_KEY: "gt_land_unit"})
@@ -149,12 +158,19 @@ class WellDetail(WellSummary):
     )
     length_method: str = Field(
         description=(
-            "How lateral length was measured, from the active cr_nd_compute_crs rule:"
+            "How lateral length was measured, from the compute-CRS rule the well's basin names:"
             " geodesic on the WGS84 ellipsoid, or projected into a named CRS."
         ),
         json_schema_extra={GLOSSARY_KEY: "gt_crs_compute_crs"},
     )
     storage_crs: str = Field(description="CRS geometry is stored in; always EPSG:4326.")
+    total_depth_ft: FigureModel | None = Field(
+        description="Total wellbore depth as the regulator reported it, with its handle.",
+        json_schema_extra={GLOSSARY_KEY: "gt_wellbore"},
+    )
+    completion_date: date | None = Field(
+        description="Most recent completion date on file; not a spud and not first production."
+    )
     geometry: list[Geometry] = Field(description="Geometry rows held for this well.")
     surface_point: SurfacePoint | None = Field(description="Surface hole location, if recorded.")
 
@@ -174,6 +190,22 @@ def _summary(row: dict[str, Any]) -> dict[str, Any]:
             "self": f"/v1/wells/{row['api10']}",
             "production": f"/v1/wells/{row['api10']}/production",
         },
+    }
+
+
+def pending_allocation(rule: dict[str, str]) -> dict[str, Any]:
+    """DIR-3 made visible: a lease-reporting state has no observed well-level series, and an
+    empty chart would say the opposite of what is true. The rule is named so a reader can
+    resolve it at /v1/conformance."""
+    return {
+        "code": "production_pending_allocation",
+        "detail": (
+            f"This well's regulator reports production at the {rule['reporting_level']}"
+            f" ({rule['rule_id']}), so no well-level series has been observed. A well-level"
+            " figure would be an allocation artifact, and allocation is not served yet; the"
+            " well-to-lease keys it will need are already recorded."
+        ),
+        "pointer": "/production",
     }
 
 
@@ -353,8 +385,12 @@ def get_well(
 
     crs = rows(connection, _STORAGE_CRS, {"basin": row["basin"] or "williston"})
     storage_epsg = crs[0]["storage_epsg"] if crs else STORAGE_EPSG
-    method = resolve_length_method(connection)
+    # The basin's own rule, so a TX length's handle resolves to a rule about TX geometry.
+    method = resolve_length_method(connection, basin=row["basin"])
     warnings: list[dict[str, Any]] = []
+    lease_reported = lease_reporting_rule(connection, row["state_code"])
+    if lease_reported:
+        warnings.append(pending_allocation(lease_reported))
     geometry = rows(
         connection,
         _SPATIAL.format(length_metres=method.metres_sql()),
@@ -406,6 +442,17 @@ def get_well(
         "basin": row["basin"],
         "lateral_count": len(laterals),
         "lateral_length_ft": length_figure,
+        "total_depth_ft": (
+            figure(
+                str(Decimal(str(row["total_depth_ft"])).quantize(Decimal("0.1"))),
+                unit="ft",
+                derivation=row["derivation_id"],
+                selector=f"api10={api10}&col=total_depth_ft",
+            )
+            if row["total_depth_ft"] is not None
+            else None
+        ),
+        "completion_date": iso(row["completion_date"]),
         "compute_crs": method.compute_crs,
         "length_method": method.method,
         "storage_crs": f"EPSG:{storage_epsg}",
@@ -426,5 +473,12 @@ def get_well(
         as_of_requested=iso(as_of) or "latest",
         labels=WELL_LABELS,
         warnings=warnings,
-        links={"production": f"/v1/wells/{api10}/production"},
+        links={
+            "production": f"/v1/wells/{api10}/production",
+            **(
+                {"reporting_rule": f"/v1/conformance/{lease_reported['rule_id']}"}
+                if lease_reported
+                else {}
+            ),
+        },
     )

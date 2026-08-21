@@ -16,7 +16,8 @@ from glasswell.api.deps import AsOf, Connection, rows, today
 from glasswell.api.errors import ProblemError, problem_responses
 from glasswell.api.examples import EXAMPLE_API10, GLOSSARY_KEY, request_example
 from glasswell.api.responses import EnvelopeModel, enveloped, freshness_state, iso, month_label
-from glasswell.api.routers.wells import API10_PATTERN, RANKED_WELLS
+from glasswell.api.routers.wells import API10_PATTERN, RANKED_WELLS, pending_allocation
+from glasswell.lineage.conformance import lease_reporting_rule
 from glasswell.lineage.envelope import series
 from glasswell.lineage.ids import format_handle
 from glasswell.lineage.vintages import select_production
@@ -196,6 +197,12 @@ def _months(raw: str | None, name: str) -> date | None:
         ) from None
 
 
+def _state_code(connection, api10: str) -> str | None:
+    found = rows(connection, RANKED_WELLS + " and api10 = %(api10)s", {"as_of": None,
+                                                                       "api10": api10})
+    return found[0]["state_code"] if found else None
+
+
 @router.get(
     "/wells/{api10}/production",
     operation_id="get_well_production",
@@ -267,12 +274,17 @@ def get_well_production(
         requested=requested,
         window=window,
     )
+    # A lease-reporting jurisdiction has no observed well-level series. An empty envelope here
+    # reads as "nothing was produced"; the disclosure says what is actually true (DIR-3).
+    lease_reported = lease_reporting_rule(connection, _state_code(connection, api10))
 
     withheld = _withheld_months(connection, api10, window, as_of)
     pending = _multi_pool_pending(connection, api10, window, as_of)
     months = sorted({row["production_month"] for row in observed} | set(withheld))
     payload: dict[str, Any] = {"pm": [month_label(month) for month in months]}
     warnings: list[dict[str, Any]] = _withheld_warning(withheld)
+    if lease_reported:
+        warnings.append(pending_allocation(lease_reported))
     columns: list[str] = []
     for name in STREAM_COLUMNS:
         if name not in requested:
@@ -341,6 +353,8 @@ def get_well_production(
         "series": payload,
     }
     links = {"well": f"/v1/wells/{api10}"}
+    if lease_reported:
+        links["reporting_rule"] = f"/v1/conformance/{lease_reported['rule_id']}"
     if aggregated:
         links["pools"] = f"/v1/wells/{api10}/production/pools"
         links["aggregation_rule"] = f"/v1/conformance/{ROLLUP_RULE}"

@@ -48,7 +48,11 @@ EARLIER_VINTAGE = date(2026, 7, 1)
 RESTATED_MONTH = date(2026, 3, 1)
 PRODUCTION_MONTHS = tuple(date(2026, month, 1) for month in range(1, 7))
 OTHER_API10S = tuple(f"330530000{index}" for index in range(1, 7))
-ALL_API10S = (EXAMPLE_API10, *OTHER_API10S)
+# One Texas well, so the walkers see the surfaces only TX reaches: a depth figure, a null
+# status, and a production endpoint whose honest answer is "pending allocation" rather than an
+# empty series. A fixture that makes those impossible is how a gate goes quietly vacuous (N-1).
+TX_API10 = "4200345818"
+ALL_API10S = (EXAMPLE_API10, *OTHER_API10S, TX_API10)
 STREAM_UNITS = {"oil": "bbl", "gas": "mcf", "water": "bbl"}
 TILE_BODY = b"\x1a\x2fcontract-fixture-tile"
 
@@ -305,6 +309,36 @@ def seeded(db: psycopg.Connection, raw_zone: Path) -> psycopg.Connection:
             status_canonical="plugged" if index % 2 else "active",
             operator_name_reported="CONTINENTAL RESOURCES, INC" if index % 2 else "HESS",
         )
+    seed_well(
+        db,
+        api10=TX_API10,
+        manifest_id=gis_manifest,
+        derivation_id=spatial,
+        state_code="42",
+        county_code_at_permit="003",
+        ndic_file_no=None,
+        basin="permian",
+        land_unit_label=None,
+        well_name="UNIVERSITY 12-1",
+        operator_name_reported="PIONEER NATURAL RESOURCES USA INC",
+        operator_id="663854",
+        status_canonical="active",
+        status_reported="PRODUCING",
+        well_type_reported="PRODUCING",
+        spud_date=None,
+        total_depth_ft=Decimal("11450.0"),
+        completion_date=date(2019, 4, 12),
+    )
+    seed_well_spatial(
+        db,
+        api10=TX_API10,
+        geom_type="surface",
+        wkt="POINT(-102.7644756 32.3578353)",
+        source_datum="EPSG:4267",
+        transform_rule_id="cr_tx_nad27_1",
+        manifest_id=gis_manifest,
+        derivation_id=spatial,
+    )
     seed_well_spatial(
         db, api10=EXAMPLE_API10, manifest_id=gis_manifest, derivation_id=spatial
     )

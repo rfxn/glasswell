@@ -568,3 +568,33 @@ def apply_registry_rules(
 ) -> RuleApplication:
     """SB-07 §11 apply_rules(): load from the registry, then execute."""
     return apply_rules(frame, load_rules(connection, source_id=source_id, stage=stage, as_of=as_of))
+
+
+_LEASE_REPORTING = """
+select rule_id, rule, spec ->> 'reporting_level' as reporting_level
+  from lineage.conformance_rules
+ where spec ->> 'state_code' = %s
+   and spec ->> 'reporting_level' = 'lease'
+   and (spec -> 'allocation_required')::boolean
+   and (effective_to is null or effective_to > current_date)
+ order by effective_from desc
+ limit 1
+"""
+
+
+def lease_reporting_rule(
+    connection: psycopg.Connection, state_code: str | None
+) -> dict[str, str] | None:
+    """The rule saying a jurisdiction reports production at the lease, or None.
+
+    R8 again: which states need allocation is a registry fact with a date and a rationale, not
+    a list of state codes in a serving path. A well in such a state has no observed well-level
+    series, and the honest answer on its card is that one is pending — not that none was
+    reported (DIR-3).
+    """
+    if not state_code:
+        return None
+    with connection.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(_LEASE_REPORTING, (state_code,))
+        row = cursor.fetchone()
+    return dict(row) if row else None
