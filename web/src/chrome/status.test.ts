@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { mountStatus, setKeyState, setStatus, setVintage, toast } from "./status.ts";
@@ -142,5 +144,21 @@ describe("the four status channels are not interchangeable (harvest item 10)", (
     setKeyState("ok");
 
     expect(keyState.hidden).toBe(true);
+  });
+});
+
+// gate-v m-2: `status.ts` justifies keying BRIEF on main.ts's literals with "main.ts is
+// frozen". Nothing asserted the two still matched, so a rename would have silently restored
+// the long form at the width the brief one exists for. vitest roots at web/.
+const MAIN_SOURCE = readFileSync("src/main.ts", "utf8");
+const STATUS_SOURCE = readFileSync("src/chrome/status.ts", "utf8");
+
+describe("the brief rail copy is keyed on strings the frozen call site actually sets", () => {
+  it("finds every BRIEF key verbatim in main.ts", () => {
+    const table = /const BRIEF: Record<string, string> = \{([\s\S]*?)\n\};/.exec(STATUS_SOURCE);
+    const keys = [...(table?.[1] ?? "").matchAll(/^\s*"([^"]*)":/gm)].map((match) => match[1]);
+
+    expect(keys).toHaveLength(2);
+    for (const key of keys) expect(MAIN_SOURCE, key).toContain(`setStatus("${key}"`);
   });
 });

@@ -17,8 +17,8 @@ REPORT_ONLY_ENV = "GLASSWELL_CSP_REPORT_ONLY"
 DOCS_PATH = "/docs"
 
 # Swagger UI is served from jsdelivr by FastAPI's own template, so /docs cannot hold the
-# app's `script-src 'self'`. The exception is one path and two origins; self-hosting
-# swagger-ui-dist would remove it and is recorded as a follow-up.
+# app's `script-src 'self'`. The exception is one path, two origins and a style-src
+# 'unsafe-inline'; self-hosting swagger-ui-dist would remove all three and is a follow-up.
 DOCS_SCRIPT_ORIGIN = "https://cdn.jsdelivr.net"
 DOCS_IMAGE_ORIGIN = "https://fastapi.tiangolo.com"
 

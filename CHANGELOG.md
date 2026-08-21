@@ -507,9 +507,9 @@ rather than a flag. `tests/fixtures/nm_ocd/SOURCE.md` carries the measurements.
       anonymous, invalid, revoked, guest, agent and owner, with a coverage check that
       fails when an endpoint arrives without an entry
 - [Remove] `/v1/explain?ref=` is refused with `parameter_removed` instead of being
-         accepted and ignored, and `storage_uri` is absent from every manifest response
-         below owner scope. Both are removals, so both had to happen before the S1
-         freeze published the surface (S-A, S-K, DR-02, DR-33)
+      accepted and ignored, and `storage_uri` is absent from every manifest response
+      below owner scope. Both are removals, so both had to happen before the S1
+      freeze published the surface (S-A, S-K, DR-02, DR-33)
 - [Change] `problem.type` is origin-relative, so it resolves on the LAN name, the
          tunnel name and localhost alike; the previous absolute host answered on
          only one of the three and was a dead link from the other two (N-9)
@@ -664,7 +664,7 @@ rather than a flag. `tests/fixtures/nm_ocd/SOURCE.md` carries the measurements.
 - [Fix] One `:focus-visible` rule for the whole app, and a quieter dashed ring for
       the `tabindex="-1"` headings that are focus landing spots rather than controls
 - [Remove] The `.gw-legend` rules, dead since the legend moved to `map.css` under
-         `.gw-lg*`. `.gw-swatch` stays — the chart legend still uses it
+      `.gw-lg*`. `.gw-swatch` stays — the chart legend still uses it
 
 ### 2026-08-20 — wave 1: map legibility and the client's half of the tile contract
 
