@@ -180,13 +180,14 @@ groups = data["groups"]
 sys.exit(0 if data["total"] > 0 and groups and all(group["key"] for group in groups) else 1)
 ' "$work_dir/body.json"
 body "/v1/health"
-assert_true "every source is current and none is degraded" "a stale source is a served lie" \
+assert_true "no source is stale and every pending one is named" "a stale source is a served lie" \
     python3 -c '
 import json, sys
 data = json.load(open(sys.argv[1]))["data"]
-sources = data["sources"]
+sources, pending = data["sources"], set(data["pending_sources"])
 sys.exit(0 if sources and not data["degraded_sources"]
-         and all(source["state"] == "current" for source in sources) else 1)
+         and all(source["state"] in ("current", "pending") for source in sources)
+         and pending == {s["source_id"] for s in sources if s["state"] == "pending"} else 1)
 ' "$work_dir/body.json"
 
 printf 'tiles and the contract\n'

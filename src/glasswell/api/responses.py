@@ -124,11 +124,14 @@ def source_freshness(rows: Sequence[Mapping[str, Any]], *, today: date) -> dict[
 
 
 STALE_AFTER_DAYS = 45
+# A registered source with no manifest has not gone stale — nobody has fetched it yet. The
+# distinction is the endpoint's whole job: `stale` is a defect, `pending` is a plan.
+PENDING = "pending"
 
 
 def freshness_state(retrieval_vintage: date | None, *, today: date) -> str:
     if retrieval_vintage is None:
-        return "never_fetched"
+        return PENDING
     return "current" if (today - retrieval_vintage).days <= STALE_AFTER_DAYS else "stale"
 
 

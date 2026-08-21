@@ -61,6 +61,9 @@ PROBE_FRAMES: dict[str, pl.DataFrame] = {
     "cr_nm_wcproduction_units_1": pl.DataFrame(
         {"prod_amt": [Decimal("79.000")]}, schema={"prod_amt": pl.Decimal(18, 3)}
     ),
+    "cr_nm_wcproduction_volume_range_1": pl.DataFrame(
+        {"prod_amt": [Decimal("79.000")]}, schema={"prod_amt": pl.Decimal(18, 3)}
+    ),
     "cr_nm_ogrid_operator_1": pl.DataFrame({"operator_raw": [PROBE_OGRID[0]]}),
     "cr_nm_wcproduction_amend_ind_1": DECLARATION_FRAME,
     "cr_nm_wcproduction_flare_property_1": DECLARATION_FRAME,
@@ -68,6 +71,9 @@ PROBE_FRAMES: dict[str, pl.DataFrame] = {
     "cr_nm_wcproduction_null_semantics_1": DECLARATION_FRAME,
     "cr_nm_wcproduction_restatement_1": DECLARATION_FRAME,
     "cr_nm_wcproduction_status_vocab_1": DECLARATION_FRAME,
+    "cr_nm_wcproduction_collision_1": DECLARATION_FRAME,
+    "cr_nm_wcproduction_days_1": DECLARATION_FRAME,
+    "cr_nm_wcproduction_window_1": DECLARATION_FRAME,
     "cr_nm_pool_vocab_1": DECLARATION_FRAME,
     "cr_nm_wchistory_status_vocab_1": DECLARATION_FRAME,
 }
@@ -240,7 +246,15 @@ def test_an_even_county_code_promotes_because_the_rule_forbids_parity_filtering(
     """E9. Cibola is 30-006 and Los Alamos 30-028; the evidence that NM county codes are odd
     is LIKELY, not VERIFIED, so the rule asserts the shape and admits every code the shape
     admits. A parity filter would look correct on the spine and delete Cibola in silence."""
-    frame = pl.DataFrame({"api_st_cde": ["30"], "api_cnty_cde": ["6"], "api_well_idn": ["1028"]})
+    frame = pl.DataFrame(
+        {
+            "api_st_cde": ["30"],
+            "api_cnty_cde": ["6"],
+            "api_well_idn": ["1028"],
+            "prod_amt": [Decimal("79.000")],
+        },
+        schema_overrides={"prod_amt": pl.Decimal(18, 3)},
+    )
 
     validated = apply_registry_rules(seeded, frame, source_id=SPINE_SOURCE, stage="validate")
     keyed = apply_rules(validated.frame, [load_one(seeded, "cr_nm_wcproduction_api10_1")])
@@ -250,7 +264,14 @@ def test_an_even_county_code_promotes_because_the_rule_forbids_parity_filtering(
 
 
 def test_an_api_that_is_not_new_mexicos_leaves_under_the_reason_the_state_gives_it(seeded):
-    frame = pl.DataFrame({"api_st_cde": ["33", "30"], "api_cnty_cde": ["053", "5"]})
+    frame = pl.DataFrame(
+        {
+            "api_st_cde": ["33", "30"],
+            "api_cnty_cde": ["053", "5"],
+            "prod_amt": [Decimal("1.000"), Decimal("79.000")],
+        },
+        schema_overrides={"prod_amt": pl.Decimal(18, 3)},
+    )
 
     application = apply_registry_rules(seeded, frame, source_id=SPINE_SOURCE, stage="validate")
 
@@ -358,3 +379,18 @@ def test_the_permian_compute_crs_is_registered_so_no_nm_path_defaults_to_willist
         )
 
         assert cursor.fetchone() == (32613, 4326)
+
+
+def test_the_collision_rule_names_the_base_each_measurement_was_taken_on(seeded):
+    """`12,351` is measured over the pairs that disagree on the *amount*, not over all 22,591
+    that disagree on the amount or the day count. A key that says only "disagreeing" reads as
+    the wider base, and the spec is served at /v1/conformance."""
+    measured = load_one(seeded, "cr_nm_wcproduction_collision_1").spec["measured"]
+    rationale = load_one(seeded, "cr_nm_wcproduction_collision_1").rationale
+
+    assert measured["disagreeing_groups"] == 22591
+    assert measured["amount_disagreeing_groups"] == 19465
+    assert measured["amount_disagreeing_with_both_producing"] == 12351
+    assert measured["amount_disagreeing_separated_by_amend_ind"] == 5106
+    assert "disagreeing_with_both_producing" not in measured
+    assert "of the 19,465 pairs that disagree on the amount, 12,351" in rationale

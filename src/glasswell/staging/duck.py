@@ -16,7 +16,8 @@ import hashlib
 import os
 import shutil
 import tempfile
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -135,6 +136,37 @@ def scan_partition(
     return reader.read_parquet(str(uri))
 
 
+@contextmanager
+def partition_reader(
+    partitions: Mapping[str, Path | str],
+    *,
+    memory_limit: str = DEFAULT_MEMORY_LIMIT,
+    scratch_root: Path | str | None = None,
+) -> Iterator[duckdb.DuckDBPyConnection]:
+    """Each named partition as a view, under the same pins the writer runs with.
+
+    The promotion reads a month at a time out of a 245 MB partition and compares it against
+    another; both stay in DuckDB, and the spill goes to a scratch directory beside the data
+    rather than to whatever `/tmp` happens to have (N-3).
+    """
+    anchor = Path(scratch_root) if scratch_root else Path(next(iter(partitions.values()))).parent
+    anchor.mkdir(parents=True, exist_ok=True)
+    scratch = Path(tempfile.mkdtemp(dir=anchor, prefix=".read-"))
+    connection = duckdb.connect()
+    try:
+        connection.execute(f"SET threads={THREADS}")
+        connection.execute(f"SET temp_directory='{scratch}'")
+        connection.execute(f"SET memory_limit='{memory_limit}'")
+        for name, uri in partitions.items():
+            connection.execute(
+                f"create view {identifier(name)} as select * from read_parquet('{Path(uri)}')"
+            )
+        yield connection
+    finally:
+        connection.close()
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def register_head(
     connection: duckdb.DuckDBPyConnection,
     frames: Iterable[pl.DataFrame],
@@ -146,13 +178,37 @@ def register_head(
     for frame in frames:
         batch = _ArrowStream(frame)  # noqa: F841 — duckdb resolves it by name
         if created:
-            connection.execute(f"insert into {_identifier(name)} select * from batch")
+            connection.execute(f"insert into {identifier(name)} select * from batch")
         else:
-            connection.execute(f"create temp table {_identifier(name)} as select * from batch")
+            connection.execute(f"create temp table {identifier(name)} as select * from batch")
             created = True
     if not created:
         raise ValueError(f"{name}: no batches to register")
     return connection.table(name)
+
+
+_POLARS_TYPES: dict[str, pl.DataType] = {
+    "VARCHAR": pl.String,
+    "BIGINT": pl.Int64,
+    "INTEGER": pl.Int32,
+    "DOUBLE": pl.Float64,
+    "BOOLEAN": pl.Boolean,
+    "DATE": pl.Date,
+}
+
+
+def frame_of(relation: duckdb.DuckDBPyRelation) -> pl.DataFrame:
+    """A DuckDB result as a polars frame, without pyarrow.
+
+    `relation.pl()` goes through an Arrow table and imports pyarrow, which is deliberately
+    absent from the lockfile (SB-01 §3.6, M13). A column type this map does not name is read as
+    text, which is what staging holds anyway.
+    """
+    schema = {
+        name: _POLARS_TYPES.get(str(dtype), pl.String)
+        for name, dtype in zip(relation.columns, relation.types, strict=True)
+    }
+    return pl.DataFrame(relation.fetchall(), schema=schema, orient="row")
 
 
 def file_sha256(path: Path | str) -> str:
@@ -177,7 +233,7 @@ def _column(name: str, columns: Sequence[str]) -> str:
     return f'"{name}"'
 
 
-def _identifier(name: str) -> str:
+def identifier(name: str) -> str:
     if not name.replace("_", "").isalnum() or not name[0].isalpha():
         raise ValueError(f"{name!r} is not a valid relation name")
     return name

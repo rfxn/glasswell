@@ -12,10 +12,13 @@ from starlette.responses import JSONResponse
 from glasswell.api.deps import Connection, rows, today
 from glasswell.api.errors import problem_responses
 from glasswell.api.examples import GLOSSARY_KEY, dataset, not_a_figure, request_example
-from glasswell.api.responses import EnvelopeModel, enveloped, freshness_state, iso
+from glasswell.api.responses import PENDING, EnvelopeModel, enveloped, freshness_state, iso
 
 liveness = APIRouter(tags=["service"])
 router = APIRouter(tags=["service"])
+
+# Anything not on this list degrades the service, so a state added later fails closed.
+SERVING_STATES = ("current", PENDING)
 
 _SOURCES = """
 select s.source_id,
@@ -44,7 +47,7 @@ class SourceHealth(BaseModel):
         json_schema_extra={GLOSSARY_KEY: "gt_source"},
     )
     name: str = Field(description="Human-readable source name.")
-    state: str = Field(description="current, stale or never_fetched.")
+    state: str = Field(description="current, stale or pending.")
     # `format: date` so the explorer's grid classifies these as dates rather than as prose,
     # which is what every other date on the surface gets from its own type (C7 §8).
     retrieval_vintage: str | None = Field(
@@ -65,10 +68,13 @@ class SourceHealth(BaseModel):
 
 
 class Health(BaseModel):
-    state: str = Field(description="ok when every source is current, otherwise degraded.")
+    state: str = Field(description="ok when no source is stale, otherwise degraded.")
     stores: dict[str, str] = Field(description="Reachability per backing store.")
     sources: list[SourceHealth] = Field(description="Freshness per registered source.")
-    degraded_sources: list[str] = Field(description="Sources that are not current, named.")
+    degraded_sources: list[str] = Field(description="Sources whose data has gone stale, named.")
+    pending_sources: list[str] = Field(
+        description="Registered sources that have never been fetched, named."
+    )
 
 
 @liveness.get(
@@ -94,8 +100,11 @@ def get_healthz() -> Liveness:
     summary="Source freshness and store reachability",
     description=(
         "Per-source retrieval and declared vintages, the state of each store, and an"
-        " overall `ok`/`degraded`. A source that has never been fetched is reported as"
-        " `never_fetched` and degrades the service state rather than being hidden."
+        " overall `ok`/`degraded`. A source whose newest manifest has gone stale degrades"
+        " the service. A source that is registered but has never been fetched is `pending`"
+        " and is named in `pending_sources`: registration says the pipeline knows about a"
+        " source, not that a pull has happened, and reporting a planned ingest as a defect"
+        " would leave the endpoint unable to say when there is a real one."
     ),
     response_model=EnvelopeModel[Health],
     openapi_extra={
@@ -145,11 +154,13 @@ def get_health(request: Request, connection: Connection) -> JSONResponse:
             "declared_vintage": iso(row["declared_vintage"]),
             "state": state,
         }
-    degraded = [item["source_id"] for item in served if item["state"] != "current"]
+    degraded = [item["source_id"] for item in served if item["state"] not in SERVING_STATES]
+    pending = [item["source_id"] for item in served if item["state"] == PENDING]
     data = {
         "state": "degraded" if degraded else "ok",
         "stores": {"postgres": "ok"},
         "sources": served,
         "degraded_sources": degraded,
+        "pending_sources": pending,
     }
     return enveloped(request, data, source_freshness=freshness)

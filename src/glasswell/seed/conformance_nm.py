@@ -37,6 +37,8 @@ OCD_FTP_DESCRIPTIONS_URL = (
 EFFECTIVE_FROM = date(2026, 8, 20)
 # The promotion decisions were taken against the staged corpus, a day after the pull they read.
 PROMOTION_FROM = date(2026, 8, 21)
+# DIR-12's window, applied at promotion as a re-runnable predicate (cr_nm_wcproduction_window_1).
+PROMOTION_WINDOW_START = date(2015, 1, 1)
 
 FTP_HOST = "164.64.106.6"
 FTP_ROOT = "/Public/OCD/OCD Interface v1.1"
@@ -842,6 +844,149 @@ NM_PROMOTION_RULES: tuple[dict[str, object], ...] = (
             " express and a partial vocabulary is not."
         ),
     ),
+    _declaration(
+        "cr_nm_wcproduction_window_1",
+        source_id="nm_ocd_wcproduction",
+        stage="conform",
+        fields=["prodn_yr", "prodn_mth"],
+        spec={
+            "promotion_window_start": PROMOTION_WINDOW_START.isoformat(),
+            "promotion_window_end": None,
+            "re_runnable": True,
+            "widening": "a re-run under a later vintage, recorded in lineage.vintages",
+        },
+        rule=(
+            "The spine promotes production months from 2015-01 onward. The window is a"
+            " promotion parameter, not a property of the artifact: staging holds all 635"
+            " months and widening it is a re-run."
+        ),
+        rationale=(
+            "DIR-12's ruling. The staged corpus runs 1973-07 to 2026-07 and the deliverables"
+            " D1 exists for - the allocation validator's substrate and a modern Permian spine -"
+            " need 2015 onward, where 17,645,580 of the 48,104,334 staged rows and 80,624 of the"
+            " 106,717 well x pool entities live. The measurement that would have decided it"
+            " otherwise was taken: a month is 126,947 rows on average and never more than"
+            " 147,714, so full history is 635 batches rather than a different design, and the"
+            " bounded window costs nothing structural. What it does cost is stated rather than"
+            " hidden: D3's validator sees a shallower vintage spread and SB-01 §8.2's"
+            " wells-per-lease distribution is measured over eleven years instead of fifty-three."
+            " The effective window is stamped on every promotion derivation, so a figure served"
+            " from a widened run is distinguishable from one served before it."
+        ),
+    ),
+    _declaration(
+        "cr_nm_wcproduction_days_1",
+        source_id="nm_ocd_wcproduction",
+        stage="conform",
+        fields=["prodn_day_num"],
+        spec={
+            "source_field": "prodn_day_num",
+            "canonical_column": "days_produced",
+            "minimum": 0,
+            "maximum": "days_in_production_month",
+            "on_out_of_domain": "withhold",
+            "withhold_scope": "days_produced",
+            "measured": {
+                "rows_past_the_month_length": 244025,
+                "rows_past_the_month_length_in_window": 41593,
+                "value_99": 131531,
+                "observed_range": [0, 99],
+            },
+        },
+        rule=(
+            "prodn_day_num promotes as days_produced only when it is between zero and the"
+            " length of the month it is filed for. Anything else is withheld, and the volume"
+            " beside it still promotes."
+        ),
+        rationale=(
+            "Measured over all 48,104,334 rows: prodn_day_num runs 0 to 99, and 244,025 rows"
+            " (41,593 inside the window) carry a count longer than the month they are filed"
+            " for - mostly 31 in a thirty-day month, but also 32, 40, 66 and 99. 99 alone is on"
+            " 131,531 rows and reads like a sentinel, which is a LIKELY reading and not a"
+            " documented one, so nothing is inferred from it. A day count longer than its own"
+            " month is not a day count, and serving one as a figure would be a naked number with"
+            " a derivation handle attached to it. It is withheld rather than corrected, and the"
+            " raw value stays in staging where a later rule with a codebook can map it. The"
+            " volume is a separate measurement and is unaffected: withholding it too would"
+            " delete 41,593 real filings over a defect in a different column."
+        ),
+    ),
+    _declaration(
+        "cr_nm_wcproduction_collision_1",
+        source_id="nm_ocd_wcproduction",
+        stage="conform",
+        fields=["ogrid_cde", "amend_ind", "prod_amt", "prodn_day_num"],
+        spec={
+            "grain": ["entity_key", "production_month", "stream"],
+            "agreeing_rows": "promote the lowest source_row_ordinal, quarantine the rest",
+            "agreeing_reason_code": "duplicate_row",
+            "disagreeing_rows": "promote nothing, quarantine every row",
+            "disagreeing_reason_code": "key_collision",
+            "summing": "prohibited",
+            "amend_ind_tiebreak": "prohibited",
+            "measured": {
+                "groups_in_window": 25029,
+                "group_size": 2,
+                "groups_with_two_ogrids": 24838,
+                "agreeing_groups": 2438,
+                "disagreeing_groups": 22591,
+                "amount_disagreeing_groups": 19465,
+                "amount_disagreeing_with_both_producing": 12351,
+                "amount_disagreeing_separated_by_amend_ind": 5106,
+                "day_totals_past_the_month_length": 5059,
+            },
+        },
+        rule=(
+            "Where the artifact files two rows for one well completion, pool, month and stream,"
+            " an identical measurement promotes once and a differing one promotes not at all."
+        ),
+        rationale=(
+            "25,029 in-window well-completion-months carry two rows, every group is exactly two,"
+            " and 24,838 of them carry two different OGRIDs - an operator change filed by both"
+            " operators. Summing them is refuted by the artifact rather than disliked: 5,059"
+            " pairs already report more producing days between them than the month has, so they"
+            " are not two halves of one month, and 5,564 pairs report the identical amount"
+            " twice, which summing would double. Choosing between them is refuted the same way:"
+            " of the 19,465 pairs that disagree on the amount, 12,351 have both rows producing"
+            " and 801 differ more than tenfold, while amend_ind separates only 5,106 of them,"
+            " and picking the first by file order is how a served figure becomes a coin toss"
+            " (fp-audit D1). So the S-E row is withheld and both filings are quarantined as"
+            " key_collision, where the count is visible and the rows are recoverable; 45,182"
+            " in-window rows sit there, 0.26 percent of the window. Where both rows say the same"
+            " thing there is nothing to choose between, so one promotes and the second is a"
+            " duplicate_row. The resolution this defers - which operator's filing is the month -"
+            " needs operator effectivity from wchistory or podwc and is a rule row a later phase"
+            " writes, not an inference this one makes."
+        ),
+    ),
+    {
+        "rule_id": "cr_nm_wcproduction_volume_range_1",
+        "source_id": "nm_ocd_wcproduction",
+        "stage": "validate",
+        "rule_kind": "validity_filter",
+        "applies_to_fields": ["prod_amt"],
+        "spec": {
+            "predicate_ast": {"cmp": [{"col": "prod_amt"}, ">=", {"lit": 0}]},
+            "on_fail": "quarantine",
+            "reason_code": "impossible_volume",
+            "measured": {"negative_rows": 3, "negative_rows_in_window": 0},
+        },
+        "rule": "A produced volume is never negative; a row that reports one is quarantined.",
+        "rationale": (
+            "Three rows in 48,104,334 report a negative amount: -39 mcf of gas in 1993-12 and"
+            " -104 and -97 barrels of oil in 1993-05, all three carrying amend_ind Y, which"
+            " reads like an amendment filed as a correction against a prior month rather than a"
+            " measurement. Whatever it is, it is not a volume produced, and canonical carries"
+            " observations. None of the three is inside the 2015-01 window, and that is exactly"
+            " why the rule is seeded now: a validity rule measured on the window would admit"
+            " them silently on the day the window widens, which is the trap"
+            " cr_nm_wcproduction_stream_vocab_1's fourth code already had to avoid. The bound is"
+            " zero rather than a positive floor because a reported zero is a real filing that"
+            " 6,812,255 rows make (cr_nm_wcproduction_null_semantics_1)."
+        ),
+        "evidence_url": OCD_FTP_PAGE_URL,
+        "effective_from": PROMOTION_FROM,
+    },
     {
         "rule_id": "cr_nm_ogrid_operator_1",
         "source_id": "nm_ocd_ogrid",
