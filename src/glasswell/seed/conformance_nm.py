@@ -930,7 +930,9 @@ NM_PROMOTION_RULES: tuple[dict[str, object], ...] = (
                 "groups_with_two_ogrids": 24838,
                 "agreeing_groups": 2438,
                 "disagreeing_groups": 22591,
-                "disagreeing_with_both_producing": 12351,
+                "amount_disagreeing_groups": 19465,
+                "amount_disagreeing_with_both_producing": 12351,
+                "amount_disagreeing_separated_by_amend_ind": 5106,
                 "day_totals_past_the_month_length": 5059,
             },
         },
@@ -945,8 +947,8 @@ NM_PROMOTION_RULES: tuple[dict[str, object], ...] = (
             " pairs already report more producing days between them than the month has, so they"
             " are not two halves of one month, and 5,564 pairs report the identical amount"
             " twice, which summing would double. Choosing between them is refuted the same way:"
-            " 12,351 disagreeing pairs have both rows producing and 801 differ more than"
-            " tenfold, amend_ind separates only 5,106 of the 19,465 that disagree on the amount,"
+            " of the 19,465 pairs that disagree on the amount, 12,351 have both rows producing"
+            " and 801 differ more than tenfold, while amend_ind separates only 5,106 of them,"
             " and picking the first by file order is how a served figure becomes a coin toss"
             " (fp-audit D1). So the S-E row is withheld and both filings are quarantined as"
             " key_collision, where the count is visible and the rows are recoverable; 45,182"

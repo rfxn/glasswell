@@ -728,6 +728,7 @@ class PromotionPolicy:
     trim: Mapping[str, Any]
     month_expression: str
     rule_ids: Mapping[str, str]
+    collision_evidence: Sequence[str]
 
     @classmethod
     def from_rules(cls, rules: Sequence[ConformanceRule]) -> PromotionPolicy:
@@ -761,6 +762,12 @@ class PromotionPolicy:
             trim=dict(pinned(PAD_FAMILY).spec["trim"]),
             month_expression=_month_expression(month.spec),
             rule_ids={family: pinned(family).rule_id for family in cited},
+            # The cells the collision rule says it ruled on, carried through so a withheld
+            # filing is readable out of the ledger rather than only out of staging, which
+            # SB-01 §3.2 truncates at 30 days (gate-nm-fp O1).
+            collision_evidence=[
+                str(column) for column in pinned(COLLISION_FAMILY).spec["declares_fields"]
+            ],
         )
 
     def cite(self, family: str) -> str:
@@ -835,7 +842,12 @@ def promotion_records(frame: pl.DataFrame, *, policy: PromotionPolicy) -> pl.Dat
         # null_semantics is what separates it from a reported one (nd_mpr.py's precedent).
         pl.col("reported_volume").fill_null(Decimal(0)).alias("volume"),
     )
-    return hashed.select("source_row_ordinal", *CANONICAL_COLUMNS)
+    carried = [
+        column
+        for column in policy.collision_evidence
+        if column in hashed.columns and column not in CANONICAL_COLUMNS
+    ]
+    return hashed.select("source_row_ordinal", *CANONICAL_COLUMNS, *carried)
 
 
 @dataclass(frozen=True, slots=True)
@@ -940,6 +952,18 @@ select count(*) from nm_promotion_batch b
 """
 )
 
+# The literal complement of _APPEND's predicate, so promoted + suppressed is measured against
+# the head rather than derived as `kept - promoted` — which cancels `promoted` out of the
+# reconciliation identity and leaves a mis-split unfalsifiable (gate-nm-fp O6).
+_COUNT_SUPPRESSED = (
+    _HEAD
+    + """
+select count(*) from nm_promotion_batch b
+  left join head h using (entity_type, entity_key, stream)
+ where h.value_hash is not distinct from b.value_hash
+"""
+)
+
 _APPEND = (
     _HEAD
     + f"""
@@ -989,6 +1013,7 @@ def promote_month(
     manifest: ManifestRecord,
     month: date,
     policy: PromotionPolicy,
+    window_start: date,
     frame: pl.DataFrame,
     validate_rules: Sequence[ConformanceRule],
     conform_rules: Sequence[ConformanceRule],
@@ -1001,7 +1026,10 @@ def promote_month(
     staged_rows = frame.height
     params: dict[str, Any] = {
         "production_month": month.isoformat(),
-        "window_start": policy.window_start.isoformat(),
+        # The window the run actually applied, not the rule's default: a figure served from a
+        # widened run is distinguishable from one served before it only if this is the effective
+        # one (cr_nm_wcproduction_window_1's rationale).
+        "window_start": window_start.isoformat(),
         "liquids_policy": policy.liquids_policy,
         "staged_rows": staged_rows,
         "skipped_unchanged_mod_dte": skipped_unchanged,
@@ -1065,11 +1093,10 @@ def promote_month(
         _refuse_vintage_rewrite(
             connection, month=month, report_vintage=run.as_of, complete=skipped_unchanged == 0
         )
-        restated = _scalar(
-            connection,
-            _COUNT_RESTATED,
-            {"source_id": source_id_for(SPINE_TABLE), "production_month": month},
-        )
+        head_parameters = {"source_id": source_id_for(SPINE_TABLE), "production_month": month}
+        restated = _scalar(connection, _COUNT_RESTATED, head_parameters)
+        # Both counts read the head, so both are taken before the append moves it.
+        suppressed = _scalar(connection, _COUNT_SUPPRESSED, head_parameters)
 
         stamped: dict[str, int] = {}
         for application in (validated, conformed):
@@ -1098,7 +1125,6 @@ def promote_month(
         report_vintage=run.as_of,
     )
     rejected = sum(counts.values())
-    suppressed = routing.kept.height - promoted
     if staged_rows != promoted + rejected + suppressed:
         raise RowCountMismatch(
             f"{CANONICAL_TABLE} {month}: read {staged_rows} rows but promoted {promoted},"
@@ -1172,7 +1198,11 @@ def _scalar(connection: psycopg.Connection, statement: str, parameters: Mapping[
 def _refuse_vintage_rewrite(
     connection: psycopg.Connection, *, month: date, report_vintage: date, complete: bool
 ) -> None:
-    """A re-run at a vintage that already answers is a no-op or an error, never a partial land.
+    """No month rewrites an answer its own vintage already gave: it recomputes it or it refuses.
+
+    The scope is the month, not the run. `promote_all` commits each month as it passes, so a
+    refusal here aborts the run without withdrawing the months before it — what those appended
+    stays, and `_record_vintage` is what keeps the ledger equal to it (gate-nm-fp D1).
 
     A1b's landed semantics at the canonical grain (gate-a1b Defect A), which DIR-2's four arms
     do not cover: they are about bytes across days. This is one day, twice.
@@ -1258,58 +1288,111 @@ def promote_all(
     restatement: dict[str, int] = {}
     touched: list[str] = []
     views = {"staged": partition} | ({"prior": prior} if prior else {})
-    with partition_reader(views) as reader:
-        wanted = months or staged_months(reader, policy=policy, window_start=window)
-        for month in wanted:
-            frame, skipped = staged_month(
-                reader, policy=policy, month=month, compare_prior=prior is not None
-            )
-            if frame.is_empty() and not skipped:
-                continue
-            outcome = promote_month(
-                run,
-                manifest=head,
-                month=month,
-                policy=policy,
-                frame=frame,
-                validate_rules=validate_rules,
-                conform_rules=conform_rules,
-                vocabulary=vocabulary,
-                skipped_unchanged=skipped,
-            )
-            connection.commit()
-            totals["staged"] += outcome.staged_rows + skipped
-            totals["promoted"] += outcome.promoted_rows
-            totals["restated"] += outcome.restated_rows
-            totals["suppressed"] += outcome.suppressed_unchanged
-            totals["skipped"] += skipped
-            touched.append(month.isoformat())
-            if outcome.restated_rows:
-                restatement[month.isoformat()] = outcome.restated_rows
-            for reason, rows in outcome.quarantined.items():
-                counts[reason] = counts.get(reason, 0) + rows
 
-    report = PromotionReport(
-        manifest_id=head.manifest_id,
-        report_vintage=run.as_of,
-        window_start=window,
-        months=touched,
-        staged_rows=totals["staged"],
-        promoted_rows=totals["promoted"],
-        restated_rows=totals["restated"],
-        suppressed_unchanged=totals["suppressed"],
-        skipped_unchanged_mod_dte=totals["skipped"],
-        quarantined=counts,
+    def snapshot() -> PromotionReport:
+        return PromotionReport(
+            manifest_id=head.manifest_id,
+            report_vintage=run.as_of,
+            window_start=window,
+            months=list(touched),
+            staged_rows=totals["staged"],
+            promoted_rows=totals["promoted"],
+            restated_rows=totals["restated"],
+            suppressed_unchanged=totals["suppressed"],
+            skipped_unchanged_mod_dte=totals["skipped"],
+            quarantined=dict(counts),
+            restatement_summary=dict(restatement),
+        )
+
+    try:
+        with partition_reader(views) as reader:
+            wanted = months or staged_months(reader, policy=policy, window_start=window)
+            for month in wanted:
+                frame, skipped = staged_month(
+                    reader, policy=policy, month=month, compare_prior=prior is not None
+                )
+                if frame.is_empty() and not skipped:
+                    continue
+                outcome = promote_month(
+                    run,
+                    manifest=head,
+                    month=month,
+                    policy=policy,
+                    window_start=window,
+                    frame=frame,
+                    validate_rules=validate_rules,
+                    conform_rules=conform_rules,
+                    vocabulary=vocabulary,
+                    skipped_unchanged=skipped,
+                )
+                connection.commit()
+                totals["staged"] += outcome.staged_rows + skipped
+                totals["promoted"] += outcome.promoted_rows
+                totals["restated"] += outcome.restated_rows
+                totals["suppressed"] += outcome.suppressed_unchanged
+                totals["skipped"] += skipped
+                touched.append(month.isoformat())
+                if outcome.restated_rows:
+                    restatement[month.isoformat()] = outcome.restated_rows
+                for reason, rows in outcome.quarantined.items():
+                    counts[reason] = counts.get(reason, 0) + rows
+    except VintageAlreadyPromoted:
+        # The diverging month is discarded, but months commit one at a time and the ones before
+        # it stay. Leaving the ledger unwritten is what made rows_appended understate canonical
+        # at the vintage (gate-nm-fp D1); the run still refuses.
+        connection.rollback()
+        _record_vintage(run, snapshot())
+        connection.commit()
+        raise
+
+    return _close_vintage(run, snapshot())
+
+
+_VINTAGE_COUNTERS = """
+select rows_examined, rows_appended, manifest_ids, months_touched, restatement_summary
+  from lineage.vintages where source_id = %s and vintage_date = %s
+"""
+
+
+def _record_vintage(run: IngestRun, report: PromotionReport) -> None:
+    """The vintage row is the ledger of the vintage-day, not the report of one run.
+
+    `open_vintage` upserts on (source, day) and canonical accumulates across same-day runs, so
+    a widening performed on the day of the first promotion would otherwise record its own
+    counters over the ones that made the rows (gate-nm-fp D2).
+    """
+    connection = run.connection
+    with connection.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(_VINTAGE_COUNTERS, (source_id_for(SPINE_TABLE), run.as_of))
+        prior = cursor.fetchone()
+    # A re-run that computed what was already recorded has nothing to add, and must not overwrite
+    # the pass that did the work with its own zeroes (gate-a1b §4 minor).
+    if prior is not None and not report.promoted_rows:
+        return
+    restatement = dict(prior["restatement_summary"] if prior else {})
+    for month, rows in report.restatement_summary.items():
+        restatement[month] = restatement.get(month, 0) + rows
+    open_vintage(
+        connection,
+        source_id=source_id_for(SPINE_TABLE),
+        vintage_date=run.as_of,
+        manifest_ids=list(
+            dict.fromkeys([*(prior["manifest_ids"] if prior else []), report.manifest_id])
+        ),
+        opened_at=run.session.clock.now(),
+        rows_examined=(prior["rows_examined"] if prior else 0) + report.staged_rows,
+        rows_appended=(prior["rows_appended"] if prior else 0) + report.promoted_rows,
+        months_touched=sorted({*(prior["months_touched"] if prior else []), *report.months}),
         restatement_summary=restatement,
     )
-    return _close_vintage(run, report)
 
 
 def _close_vintage(run: IngestRun, report: PromotionReport) -> PromotionReport:
-    """One vintage row for the whole run: `open_vintage` upserts on (source, day), so a batched
-    run that called it per month would leave the last batch's counters as the record."""
+    """The counters are the vintage-day's (`_record_vintage`); the events are this run's."""
     connection = run.connection
     source_id = source_id_for(SPINE_TABLE)
+    if not report.months:
+        return report
     payload = {
         "manifest_id": report.manifest_id,
         "window_start": report.window_start.isoformat(),
@@ -1320,20 +1403,7 @@ def _close_vintage(run: IngestRun, report: PromotionReport) -> PromotionReport:
         "rows_skipped_unchanged_mod_dte": report.skipped_unchanged_mod_dte,
         "quarantined": dict(report.quarantined),
     }
-    if not report.months:
-        return report
-    if report.promoted_rows or not _vintage_exists(connection, run.as_of):
-        open_vintage(
-            connection,
-            source_id=source_id,
-            vintage_date=run.as_of,
-            manifest_ids=[report.manifest_id],
-            opened_at=run.session.clock.now(),
-            rows_examined=report.staged_rows,
-            rows_appended=report.promoted_rows,
-            months_touched=report.months,
-            restatement_summary=report.restatement_summary,
-        )
+    _record_vintage(run, report)
     emit(
         connection,
         "canonical.promotion_completed",
@@ -1355,15 +1425,6 @@ def _close_vintage(run: IngestRun, report: PromotionReport) -> PromotionReport:
         )
     connection.commit()
     return replace(report, vintage_id=f"vin_{source_id}_{run.as_of.isoformat()}")
-
-
-def _vintage_exists(connection: psycopg.Connection, vintage_date: date) -> bool:
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "select 1 from lineage.vintages where source_id = %s and vintage_date = %s",
-            (source_id_for(SPINE_TABLE), vintage_date),
-        )
-        return cursor.fetchone() is not None
 
 
 def _prior_partition(connection: psycopg.Connection, manifest: ManifestRecord) -> str | None:
@@ -1577,8 +1638,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     code_version=arguments.code_version,
                 )
         except VintageAlreadyPromoted as refused:
-            # Months commit one at a time, so the rollback is of the month that diverged; the
-            # ones before it computed what was already recorded and appended nothing.
+            # promote_all discarded the diverging month and recorded the vintage for what the
+            # months before it committed, so this is a safety net and not the withdrawal.
             connection.rollback()
             print(f"refused: {refused}", flush=True)
             return 2

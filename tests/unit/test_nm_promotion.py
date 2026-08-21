@@ -83,14 +83,17 @@ def records(frame: pl.DataFrame) -> list[dict]:
 def test_the_canonical_tuple_is_the_one_the_composition_check_admits() -> None:
     """Migration 020 admits well_completion_pool only with granularity well_observed and a
     non-null pool; `granularity = 'observed'` is rejected (entry gate G6)."""
-    record = records(staged())[0]
+    frame = staged()
+    record = records(frame)[0]
 
     assert record["entity_type"] == "well_completion_pool"
     assert record["reporting_level"] == "well_completion_pool"
     assert record["granularity"] == "well_observed"
-    assert record["well_completion_pool"] == "8559"
     assert record["aggregation"] is None
-    assert record["entity_key"] == "3000501028:8559"
+    # The pool comes off the column the entity-key rule names, not a literal this fixture set.
+    # `entity_key` is not this function's to compute — test_nm_promote.py asserts it where the
+    # conform rules that build it run.
+    assert record["well_completion_pool"] == frame[POLICY.pool_column].item()
 
 
 def test_the_unit_is_decided_by_the_stream_because_nm_files_one_amount_column() -> None:

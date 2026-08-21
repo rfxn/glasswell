@@ -9,7 +9,7 @@ measured shape of the 48.1M-row corpus.
 
 from __future__ import annotations
 
-from collections import defaultdict
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -283,6 +283,63 @@ def test_the_reconciliation_identity_holds_for_every_month(db, staged_day_one) -
     assert report.staged_rows == report.promoted_rows + quarantined + report.suppressed_unchanged
     assert report.suppressed_unchanged == 0
     assert quarantined == 0
+
+
+def test_a_month_reconciles_with_a_quarantine_and_a_suppression_at_once(
+    db, seeded, raw_root, staging_root, tmp_path, monkeypatch
+) -> None:
+    """The identity's two correction terms, both non-zero in one month. Pinned separately at
+    zero, they never constrain each other (gate-nm-fp O6)."""
+    stage(db, raw_root, tmp_path, monkeypatch, at=DAY_ONE, document=collided_document())
+    first = promote(db)
+
+    second = promote(db, at=DAY_TWO)
+
+    assert first.promoted_rows == 1
+    assert second.promoted_rows == 0
+    assert sum(second.quarantined.values()) == 3
+    assert second.suppressed_unchanged == 1
+    assert second.staged_rows == (
+        second.promoted_rows + sum(second.quarantined.values()) + second.suppressed_unchanged
+    )
+
+
+def test_a_row_counted_as_promoted_and_suppressed_at_once_does_not_reconcile(
+    db, staged_day_one, monkeypatch
+) -> None:
+    """O6: with `suppressed` computed as `kept - promoted` the identity cancels `promoted` and
+    a mis-split is unfalsifiable by construction. Suppression is measured against the head, so
+    an append that over-reports what it landed is caught."""
+    landed = nm_ocd._append_promoted
+    monkeypatch.setattr(
+        nm_ocd, "_append_promoted", lambda *args, **keywords: landed(*args, **keywords) + 1
+    )
+
+    with pytest.raises(nm_ocd.RowCountMismatch, match="is exactly one of those"):
+        promote(db)
+    db.rollback()
+
+
+def test_a_promotion_that_loses_a_row_before_the_append_is_refused(
+    db, staged_day_one, monkeypatch
+) -> None:
+    """SB-01 §5.1's guard, shown firing. A row dropped between the routing and the append is
+    neither promoted, quarantined nor suppressed, and the month refuses rather than recording
+    a promoted count that does not reconcile."""
+    routed = nm_ocd.route_collisions
+
+    def losing(records: pl.DataFrame) -> nm_ocd.CollisionRouting:
+        routing = routed(records)
+        return replace(routing, kept=routing.kept.head(max(routing.kept.height - 1, 0)))
+
+    monkeypatch.setattr(nm_ocd, "route_collisions", losing)
+
+    with pytest.raises(nm_ocd.RowCountMismatch, match="is exactly one of those"):
+        promote(db)
+    db.rollback()
+
+    assert scalar(db, "select count(*) from canonical.production_monthly where source_id = %s",
+                  SPINE_SOURCE) == 0
 
 
 def test_the_quarantine_share_is_measured_rather_than_required(db, staged_day_one) -> None:
@@ -565,10 +622,22 @@ def test_a_month_outside_the_window_is_promotable_by_naming_it(db, staged_day_on
 
 def test_the_ledger_keeps_the_source_row_that_was_refused(db, seeded, raw_root, staging_root,
                                                           tmp_path, monkeypatch) -> None:
-    """A quarantine row an auditor cannot read the filing out of is a count, not a record."""
+    """A quarantine row an auditor cannot read the filing out of is a count, not a record.
+
+    The deferred resolution needs the cell that says which operator filed which row, so what
+    the payload has to carry is what the rule declares it decided on — not the derived
+    canonical row, which is what it carried before gate-nm-fp O1.
+    """
     stage(db, raw_root, tmp_path, monkeypatch, at=DAY_ONE, document=collided_document())
     promote(db)
 
+    declared = set(
+        scalar(
+            db,
+            "select spec -> 'declares_fields' from lineage.conformance_rules where rule_id = %s",
+            "cr_nm_wcproduction_collision_1",
+        )
+    )
     payloads = query(
         db,
         "select row_payload from lineage.quarantine_rows where source_id = %s"
@@ -577,8 +646,14 @@ def test_the_ledger_keeps_the_source_row_that_was_refused(db, seeded, raw_root, 
     )
 
     assert len(payloads) == 2
+    assert declared == {"ogrid_cde", "amend_ind", "prod_amt", "prodn_day_num"}
+    assert all(declared <= set(payload[0]) for payload in payloads)
     assert {payload[0]["volume"] for payload in payloads} == {"100.000", "900.000"}
     assert {payload[0]["entity_key"] for payload in payloads} == {"3000501028:8559"}
+    assert {payload[0]["ogrid_cde"] for payload in payloads} == {"111111", "222222"}
+    assert {payload[0]["prod_amt"] for payload in payloads} == {"100.000", "900.000"}
+    assert {payload[0]["amend_ind"] for payload in payloads} == {"N"}
+    assert {payload[0]["prodn_day_num"] for payload in payloads} == {"31"}
 
 
 def test_the_promotion_reads_the_head_manifest_and_names_it_on_every_row(db, staged_day_one):
@@ -594,16 +669,22 @@ def test_the_promotion_reads_the_head_manifest_and_names_it_on_every_row(db, sta
     assert report.manifest_id == nm_ocd.head_manifest(db, SPINE_SOURCE).manifest_id
 
 
-def test_the_shortcut_and_the_full_comparison_promote_the_same_rows(db, staged_day_one) -> None:
-    """M10: the mod_dte shortcut is an optimisation, so it has to be indistinguishable from
-    the comparison it skips. On a first run there is no prior partition and it falls back."""
-    with_shortcut = promote(db)
-    db.execute("delete from lineage.vintages where source_id = %s", (SPINE_SOURCE,))
-    db.commit()
-    baseline = defaultdict(list)
-    for row in promoted_rows(db):
-        baseline[row[1]].append(row)
+def test_a_widened_run_stamps_the_window_it_ran_under_on_every_derivation(
+    db, staged_day_one
+) -> None:
+    """cr_nm_wcproduction_window_1's served rationale promises a figure from a widened run is
+    distinguishable from one served before it, and `params` is where that is readable. A
+    derivation for 1973-07 claiming a 2015-01 window falsifies the rule row verbatim."""
+    promote(db, window_start=FULL_HISTORY)
 
-    assert with_shortcut.skipped_unchanged_mod_dte == 0
-    assert with_shortcut.promoted_rows == IN_WINDOW_ROWS
-    assert len(baseline) == 2
+    windows = query(
+        db,
+        "select distinct d.params ->> 'window_start'"
+        "  from canonical.production_monthly p"
+        "  join lineage.derivations d on d.derivation_id = p.derivation_id"
+        " where p.source_id = %s and p.production_month < %s",
+        SPINE_SOURCE,
+        date(2015, 1, 1),
+    )
+
+    assert windows == [(FULL_HISTORY.isoformat(),)]

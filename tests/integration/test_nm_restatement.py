@@ -21,6 +21,7 @@ from tests.integration.test_nm_promote import (
     DAY_TWO,
     FIXTURE_ROWS,
     FULL_HISTORY,
+    IN_WINDOW_ROWS,
     SPINE_SOURCE,
     promote,
     query,
@@ -245,10 +246,75 @@ def test_a_second_promotion_inside_one_vintage_that_disagrees_is_refused(
     assert AMENDED_KEY in str(refused.value)
     assert "re-run on a day after the newest report_vintage" in str(refused.value)
     assert refused.value.report_vintage == DAY_ONE.date()
-    # Months are committed one at a time, so what a refusal guarantees is that no canonical row
-    # moved and no vintage was rewritten - not that the months already computed were forgotten.
+    # Nothing moved here because every month before the diverging one recomputed what was
+    # already recorded. A month that had something to append would have kept it - see
+    # test_a_refusal_on_a_later_month_keeps_what_an_earlier_one_committed.
     for measure in ("canonical_rows", "canonical_volume", "quarantine_rows", "rows_appended"):
         assert after[measure] == before[measure], measure
+
+
+def test_a_refusal_on_a_later_month_keeps_what_an_earlier_one_committed(
+    db, seeded, raw_root, staging_root, tmp_path, monkeypatch
+) -> None:
+    """Months commit one at a time, so a refusal is not a run-level withdrawal: the months
+    before the diverging one keep what they appended. What the ledger may not do is understate
+    it - `rows_appended` at a vintage is what canonical holds at that vintage."""
+    early = spine_record(prod_amt="100")
+    late = spine_record(api_well_idn="1030", prodn_mth="3", prod_amt="200")
+    stage(db, raw_root, tmp_path, monkeypatch, at=DAY_ONE,
+          document=synthetic_document([early, late]))
+    promote(db)
+    added = spine_record(api_well_idn="1032", prod_amt="300")
+    diverged = spine_record(api_well_idn="1030", prodn_mth="3", prod_amt="999",
+                            mod_dte="2026-08-19T00:00:00.000")
+    stage(db, raw_root, tmp_path, monkeypatch, at=DAY_ONE,
+          document=synthetic_document([early, added, diverged]))
+    before = ledger_fingerprint(db)
+
+    with pytest.raises(VintageAlreadyPromoted, match="3000501030"):
+        promote(db)
+    db.rollback()
+
+    after = ledger_fingerprint(db)
+
+    assert before["canonical_rows"] == 2
+    assert after["canonical_rows"] == 3
+    assert scalar(
+        db,
+        "select count(*) from canonical.production_monthly where entity_key = %s",
+        "3000501032:8559",
+    ) == 1
+    assert after["rows_appended"] == after["canonical_rows"]
+
+
+def test_a_same_day_widening_accumulates_the_vintage_counters(db, staged_day_one) -> None:
+    """DIR-12's widening performed on the day of the first promotion: exit 0, refusing nothing,
+    because widening only adds months. `open_vintage` upserts on (source, day), so the counters
+    have to be the vintage-day's rather than the last run's."""
+    first = promote(db)
+
+    widened = promote(db, window_start=FULL_HISTORY)
+
+    landed = scalar(
+        db,
+        "select count(*) from canonical.production_monthly"
+        " where source_id = %s and report_vintage = %s",
+        SPINE_SOURCE,
+        DAY_ONE.date(),
+    )
+
+    assert first.promoted_rows == IN_WINDOW_ROWS
+    assert widened.promoted_rows == FIXTURE_ROWS - IN_WINDOW_ROWS
+    assert landed == FIXTURE_ROWS
+    # sum(rows_appended) at the vintage is what canonical holds at it, not the second run's 271.
+    assert query(
+        db,
+        "select rows_examined, sum(rows_appended)::int, array_length(months_touched, 1)"
+        " from lineage.vintages where source_id = %s and vintage_date = %s"
+        " group by rows_examined, months_touched",
+        SPINE_SOURCE,
+        DAY_ONE.date(),
+    ) == [(IN_WINDOW_ROWS + FIXTURE_ROWS, landed, 27)]
 
 
 def test_a_vintage_may_not_withdraw_a_row_it_already_published(

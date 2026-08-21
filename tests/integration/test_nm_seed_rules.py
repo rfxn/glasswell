@@ -379,3 +379,18 @@ def test_the_permian_compute_crs_is_registered_so_no_nm_path_defaults_to_willist
         )
 
         assert cursor.fetchone() == (32613, 4326)
+
+
+def test_the_collision_rule_names_the_base_each_measurement_was_taken_on(seeded):
+    """`12,351` is measured over the pairs that disagree on the *amount*, not over all 22,591
+    that disagree on the amount or the day count. A key that says only "disagreeing" reads as
+    the wider base, and the spec is served at /v1/conformance."""
+    measured = load_one(seeded, "cr_nm_wcproduction_collision_1").spec["measured"]
+    rationale = load_one(seeded, "cr_nm_wcproduction_collision_1").rationale
+
+    assert measured["disagreeing_groups"] == 22591
+    assert measured["amount_disagreeing_groups"] == 19465
+    assert measured["amount_disagreeing_with_both_producing"] == 12351
+    assert measured["amount_disagreeing_separated_by_amend_ind"] == 5106
+    assert "disagreeing_with_both_producing" not in measured
+    assert "of the 19,465 pairs that disagree on the amount, 12,351" in rationale

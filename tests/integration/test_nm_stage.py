@@ -9,6 +9,7 @@ codebase where one ingest writes two stores.
 from __future__ import annotations
 
 import zipfile
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -355,6 +356,27 @@ def test_a_batch_that_lost_a_declared_column_is_quarantined_not_staged(
         db,
         "select reason_code, rule_id, staging_table from lineage.quarantine_rows",
     ) == [("schema_mismatch", "cr_nm_wcproduction_parse_1", nm_ocd.PARTITION_TABLE)] * 2
+
+
+def test_a_parsed_row_that_is_neither_staged_nor_quarantined_halts_the_load(
+    db, seeded, raw_root, staging_root, tmp_path, monkeypatch
+):
+    """SB-01 §3.5's invariant, shown firing rather than narrated: a row that leaves the frame
+    without a reason code is the silent loss the whole ledger is built to make impossible."""
+    applied = nm_ocd.apply_rules
+
+    def losing(frame: pl.DataFrame, rules):
+        application = applied(frame, rules)
+        kept = application.frame
+        return replace(application, frame=kept.head(max(kept.height - 1, 0)))
+
+    monkeypatch.setattr(nm_ocd, "apply_rules", losing)
+
+    with pytest.raises(nm_ocd.RowCountMismatch, match="every parsed row is one or the other"):
+        stage(db, raw_root, tmp_path, monkeypatch)
+    db.rollback()
+
+    assert scalar(db, f"select count(*) from {nm_ocd.PARTITION_TABLE}") == 0
 
 
 def test_a_column_nobody_declared_halts_the_load(

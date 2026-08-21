@@ -21,7 +21,9 @@ def served(client: TestClient) -> str:
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "Track D1 adds `pending_sources` to /v1/health and rewrites two descriptions. The"
+        "Track D1 adds `pending_sources` to /v1/health and rewrites four descriptions:"
+        " Health.state, Health.degraded_sources, SourceHealth.state and the GET /v1/health"
+        " operation. Nothing outside `Health`, `SourceHealth` and `/v1/health` moves. The"
         " explorer track was holding openapi_snapshot.json modified in its worktree when this"
         " branch was cut, so D1 changes the schema and not the snapshot. The integrator runs"
         " `make snapshot` after the last src-touching merge (gate-a2 M-4 carries the same"
