@@ -12,7 +12,8 @@ ANVIL_ENV      := DOCKER_HOST=$(ANVIL_HOST) DOCKER_TLS_VERIFY=1 DOCKER_CERT_PATH
 TEST_LABEL ?= glasswell.test
 
 .PHONY: help venv install test test-anvil test-local test-unit test-integration test-e2e \
-        dbtier-preflight serve-branch changelog \
+        dbtier-preflight serve-branch changelog changelog-page changelog-lint build-web \
+        release release-check deploy ship \
         lint fmt clean prune-test-volumes check-workstation snapshot
 
 help:
@@ -29,6 +30,13 @@ help:
 	@echo "check-workstation   flag glasswell persistent state on a workstation"
 	@echo "serve-branch      ephemeral PostGIS + seeds + uvicorn for a branch (GW_ROOT=...)"
 	@echo "changelog         fold changelog.d/ fragments into CHANGELOG.md (TITLE=\"...\")"
+	@echo "changelog-page    render CHANGELOG.md to web/dist/changelog/index.html"
+	@echo "changelog-lint    grammar-check changelog.d/ fragments and CHANGELOG.md"
+	@echo "release           turn the odometer one notch and tag it (DRY=1, MAJOR=1, SET=1.05)"
+	@echo "release-check     every release precondition and the render gate; exits 1 if blocked"
+	@echo "build-web         npm run build, changelog page included"
+	@echo "deploy            ship HEAD's tag to \$$GW_DEPLOY_HOST and run verify + smoke"
+	@echo "ship              check, build, release, rebuild, deploy — first failure stops it"
 	@echo "lint              ruff"
 	@echo "fmt               ruff --fix"
 	@echo "snapshot          rewrite tests/contract/openapi_snapshot.json from the document"
@@ -87,6 +95,43 @@ serve-branch:
 # Tracks write changelog.d/<branch>-<slug>.md; only the integrator folds. changelog.d/README.md.
 changelog:
 	$(PY) scripts/changelog-assemble.py --title "$(TITLE)"
+
+# The page the header stamp links to. `npm run build` runs this itself through a vite plugin,
+# so this target exists to render it without a full bundle, not to be a step anyone must remember.
+changelog-page:
+	$(PY) scripts/render-changelog.py --out web/dist/changelog
+
+# One notch of the odometer, tagged and annotated. RELEASING.md is the whole scheme.
+release:
+	$(PY) scripts/release.py $(if $(DRY),--dry-run) $(if $(MAJOR),--major) $(if $(SET),--set $(SET))
+
+# Every precondition plus the render gate, writing nothing, exiting 1 if anything blocks.
+# `release DRY=1` prints the same verdict but always exits 0, so it cannot gate `ship`.
+release-check:
+	$(PY) scripts/release.py --check $(if $(MAJOR),--major) $(if $(SET),--set $(SET))
+
+# Fragments are grammar-checked at merge by CI; this is the same check for a local tree.
+changelog-lint:
+	$(PY) scripts/changelog-assemble.py --lint
+	$(PY) scripts/render-changelog.py --check
+
+build-web:
+	@[ -d web/node_modules ] || npm --prefix web ci --no-audit --no-fund
+	npm --prefix web run build
+
+# Refuses a dirty tree and an untagged HEAD; GW_DEPLOY_HOST names the target.
+deploy:
+	scripts/deploy.sh
+
+# Nothing may tag what will not build, and nothing may deploy a bundle older than its tag.
+# So: prove it can be released, prove it builds, only then cut, then rebuild so the stamp and
+# the changelog page carry the version that was just cut, and only then ship.
+ship:
+	$(MAKE) release-check
+	$(MAKE) build-web
+	$(MAKE) release
+	$(MAKE) build-web
+	$(MAKE) deploy
 
 # A generated artifact with no in-tree regeneration path is one an agent repairs by hand.
 snapshot:

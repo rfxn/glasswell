@@ -106,6 +106,15 @@ jobs:
       - name: Install libxml2-utils
         run: sudo apt-get update && sudo apt-get install -y libxml2-utils
 
+      # gate-rel B1: a fragment outside the grammar used to survive the fold and only be
+      # refused by the build that ran *after* the tag was cut. It fails the pull request now.
+      # Same parser as the page and the release gate — one grammar, three callers.
+      - name: changelog.d fragments and CHANGELOG.md parse
+        run: |
+          set -euo pipefail
+          python3 scripts/changelog-assemble.py --lint
+          python3 scripts/render-changelog.py --check
+
       - name: SVG well-formedness
         run: |
           set -euo pipefail
