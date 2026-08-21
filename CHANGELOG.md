@@ -7,6 +7,272 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.20"></a>
+## v0.20 — 2026-08-21
+
+- [New] GET /v1/wells/status-summary: per-status well counts for a WGS84 box, from
+      canonical rather than from drawn features, so the map legend stops shrinking as the
+      viewport grows (status classes are zoom-gated and the tile tier thins points, so a
+      queryRenderedFeatures count fell exactly when the viewed area rose); every count is a
+      figure with its own derivation handle, wells with no reported status are their own
+      bucket and are never folded into a class, counts split per basin naming the vocabulary
+      rule that mapped them (cr_nd_status_vocab_1, cr_tx_status_vocab_1), geometry with no
+      well row at the requested vintage is disclosed as a warning rather than dropped, and
+      the box is uncapped — measured at 399,280 seeded well points: 19 ms for a screen,
+      237 ms for the whole of North Dakota, 1.4 s for the whole world
+- [New] /v1/wells/status-summary discloses an explain-link truncation instead of an ellipsis:
+      where a box produces more counts than /v1/explain accepts handles in one call,
+      explain_link_truncated states exactly how many links.explain left out, and every count
+      still resolves through its own handle
+- [New] The rail says which build it is: `build <short sha>` under `as_of` in the top-right
+      read column, injected at build time by a vite define (`dev` when there is no git to
+      ask, a trailing `+` when the tree was dirty), full stamp and build date in the title
+- [New] The ⌾ lesson is coached once rather than reported forever: a popover under Help that
+      goes on the first lineage click, on Escape, on dismissal or on the next click
+      elsewhere, and never returns; Help documents the glyph permanently
+- [Change] The read column holds only the vintage and the build stamp; the status readout and
+         the key chip moved to the rail's free space, so search and help start 172 px
+         further right at 1600 and no control moves when a source degrades or a key fails
+- [Change] Below 520 px the read column leaves the rail instead of overlapping the controls,
+         and the help panel carries the vintage and the build stamp at every width
+- [Fix] The 390 px rail no longer overflows its viewport: it asked for 472 px of content, and
+      the browser paid by drawing help on top of search and clipping the vintage's last digit
+- [Fix] NM promotion derivations record the window the run actually applied. A run
+      widened with `--window-start` stamped the rule's 2015-01 default on every month,
+      so a derivation for production month 1973-07 claimed a 2015-01 promotion window
+      and falsified `cr_nm_wcproduction_window_1`'s served rationale verbatim
+- [Fix] `lineage.vintages` counts the vintage-day rather than the last run on it.
+      Canonical accumulates across same-day runs while `open_vintage` upserts on
+      (source_id, vintage_date), so a DIR-12 widening performed on the day of the first
+      promotion recorded 271 rows appended against the 300 that had landed
+- [Fix] A refused promotion records the vintage for what the months before it committed.
+      Months commit one at a time, so a run that exits 2 on a later month can leave an
+      earlier month's rows appended; `rows_appended` no longer understates canonical at
+      that vintage
+- [Fix] The promotion's suppressed-unchanged count is measured against the canonical
+      head instead of derived as kept-minus-promoted, which cancelled `promoted` out of
+      SB-01 §5.1's reconciliation identity and left a promoted/suppressed mis-split
+      unfalsifiable by construction
+- [Fix] A filing withheld as `key_collision` or `duplicate_row` carries the cells its
+      rule declares it decided on — `ogrid_cde`, `amend_ind`, `prod_amt`,
+      `prodn_day_num` — so the deferred operator-effectivity resolution reads the
+      quarantine ledger rather than re-staging after SB-01 §3.2's 30-day truncation
+- [Fix] `cr_nm_wcproduction_collision_1` names the base each measurement was taken on:
+      the 12,351 pairs with both rows producing are 12,351 of the 19,465 that disagree
+      on the amount, not of the 22,591 that disagree on the amount or the day count
+- [Fix] `RowCountMismatch` is exercised at both raise sites, so the staging and
+      promotion reconciliation guards are shown to fire rather than asserted to exist
+- [New] `canonical.well_completions` carries OGRID, pool, POD, spacing unit and property
+      for every New Mexico completion: 763,473 effective-dated observations over 147,975
+      completions and 121,940 wells, promoted from `wchistory` under the crosswalk
+      `podwc` states, append-only and never updated
+- [New] `cr_nm_wcproduction_lease_equivalent_1` records D3's Validator B grouping key as a
+      rule row rather than a note. SB-01 8.6 groups NM synthetic leases on spatial
+      contiguity and NM OCD's FTP ships no coordinates, so POD, spacing unit and property
+      — legal areal units, which is what a TX lease actually is — stand in. The substitute
+      is closer on the legal-analogue axis and strictly worse on transferability: it
+      removes the resampling knob, so the rule specifies post-hoc group-selection
+      reweighting and requires the residual mismatch to be published rather than claimed
+      away
+- [New] The wells-per-group distribution every candidate key produces, measured on the
+      promoted rows: POD 141,479 groups over 83,814 completions, mean 1.445, 89.5%
+      singletons; spacing unit 49,994 groups over 81,100, mean 1.622; property 52,406
+      groups over all 147,975, mean 2.824. Property is the only key with full coverage and
+      every key's median group holds one well, which is the ceiling on what reweighting
+      can reach
+- [New] The evidence for the POD fan-out is served at the granularity the join uses:
+      80,663 (completion, effective date) groups in `podwc` name two to seven distinct
+      PODs on one date, and the fan-out is 763,473 rows. `podwc` timestamps every row
+      and the join truncates to the date, so the rule row carries the timestamp-grained
+      variants beside them — 71,435 groups and 762,522 rows — rather than leaving the
+      difference unstated
+- [New] `cr_nm_wchistory_wellbore_policy_1` records SB-01 4.3's multi-wellbore share as
+      vacuous rather than as 0%. No in-scope NM artifact carries a column past the
+      api_st/api_cnty/api_well triple, so NM cannot express a sidetrack; `well_nbr_idn` is
+      the operator's well number, 4,854 values over 121,940 wells, not a wellbore suffix
+- [New] OGRID loads `lineage.operator_aliases` as an exact key at confidence 1.000 —
+      31,696 rows, no fuzzy pass, no normalised-name fallback — and an unmatched code is
+      quarantined as `alias_unresolved` with its payload rather than joined to the nearest
+      name
+- [New] `spc_unit_idn` '0' is the regulator's absent marker on 119,662 of 426,529 records
+      and lands null; a completion that reaches none of POD, spacing unit or property is
+      quarantined as `orphan_fk`, counted, never dropped
+- [Change] Migration 029 gives `canonical.well_completions` a second grain. An
+         effective-dated dimension observation has no production month, so
+         `production_month` is nullable, the two grains are two partial unique indexes and
+         a CHECK requires one of them; ND's completion-month rows and their conflict
+         behaviour are untouched
+- [Fix] The ND well card still index-scans with canonical 122 times larger: the served
+      query filters `api10` inside the vintage window, measured at 0.9 ms against
+      17,597,960 rows on VM 111. `canonical.production_monthly_latest` cannot — `api10` is
+      not in its PARTITION BY — and re-ranks the whole table for one well, 2.7 s before NM
+      and 73-156 s after. It is not the serving path; the finding is recorded rather than
+      silently carried
+- [New] The explorer's API guide pane (SB-08 §4): REQUEST, OPERATION and RESPONSE, each
+      collapsible with its state in `api=`; the request block renders curl, httpie and
+      fetch from the one object `requestFor` returns, so the URL a reader copies is the
+      URL the grid issued — asserted at the client seam, not at fetch
+- [New] Parameter semantics from A-8: WHAT from the OpenAPI description, WHY from the
+      bound glossary term's expanded definition, SO from `x-glasswell-semantics`, SEE from
+      the term's related terms; a parameter A-8 has not reached renders WHAT only with the
+      unbound column's muted `?` and is counted in a coverage line
+- [New] RESPONSE labels `data`, `meta` and `links` in place, names the `_lineage`,
+      `_units` and `_basis` sidecars where the response carries them, and states an exact
+      byte count on both sides of a truncation; status, timing and cache class come from
+      the response itself, and the pane says so where `x-glasswell-cache` is unimplemented
+- [New] Cursor pages are copyable individually, and the walk-all-pages snippet follows
+      `links.next` rather than assembling a cursor
+- [New] guardrails.test.ts arm 4: no domain-prose literal over 120 characters under
+      `explore/`, with the vocabulary derived from the glossary terms the served document
+      binds rather than from a list in the test
+- [Change] The key placeholder, the curl builder and the breadcrumb's command list moved
+           to `explore/api/request.ts`; `detail/chips.ts` re-exports them so the
+           breadcrumb and the pane cannot drift apart
+- [Fix] The stacked explorer layout at 1024-1365 gave the pane's row `auto`, so a pane
+      with content took the window and left the grid a zero-height row; the row is capped
+      with `fit-content(40%)` instead, because a percentage max-height cannot resolve
+      against a row the item is sizing
+- [Fix] Map legend: the per-class well counts are read from GET /v1/wells/status-summary for
+      the viewport's box instead of counting map.queryRenderedFeatures(), so they no longer
+      fall as the viewed area grows; measured over a seeded North Dakota population, the same
+      box asked at two zooms returns one set of counts and no class count drops between z11
+      and z5
+- [New] Map legend: every count carries the derivation handle the summary served it with, so
+      a class row opens the lineage drawer on the count itself rather than borrowing a drawn
+      feature's geometry build; the conformance rules that classed the answer are named per
+      response and link to /v1/conformance
+- [New] Map legend: while a viewport's counts are in flight the rows show a wait rather than
+      the previous viewport's numbers, and a summary that fails or times out shows an em dash
+      on every class with the failure stated in the transient channel — never a stale or
+      partial count; a late answer is matched to its viewport by request order and by the
+      response's own bbox echo, so an answer for a viewport the reader has left cannot paint
+- [New] Map legend: a "showing X of Y in view" line states the canvas census against the
+      classes still drawn, so zoom culling and tile thinning cannot be read as the counts
+      disagreeing with the dots (MAP-ROADMAP M1-1, partial half)
+- [Change] The two lateral rows are one `Laterals` toggle over both style layers, off by
+         default and gated at zoom 8 on the registry row and on each layer, so neither
+         lateral source is fetched below it — the z7 tile measures 2,037,023 B and the tile
+         tier already thins the layer to one feature per half CSS pixel at and below z7,
+         which makes anything drawn there a sample of itself rather than the row's claim
+- [Change] One toggle does not cost the reader the two regulators: the row carries a
+         provenance line per source (ND DMR GIS · 23,228 lines, TX RRC arcs · 69,897 lines)
+         naming the mart each is served from, says "bore geometry, not a directional survey
+         trace" once instead of once per state, and the legend's geometry note names both.
+         The panel's filter reads the sources, so "tx" still finds the row
+- [Change] A row declares a list of sources and a swatch a list of colours. The laterals
+         mark is green-to-grey because both layers paint from `statusColourExpression()` at
+         draw time and no lateral status mix is measured in this build — a single colour
+         would be a frequency claim nothing here supports, which is what the ND green and
+         the TX grey each were
+- [Change] `laterals` and `tx-laterals` resolve to no row rather than to the combined one.
+         They named a layer that drew one state at every zoom, so a stored bit for them is
+         not a preference about this one; `{on,known}` is the whole migration, and a
+         returning reader gets the new default once and keeps their own answer after
+- [Fix] `tx-laterals` carried no click-router priority, so a Texas lateral was unselectable
+      while a North Dakota one was not — under one row that is the toggle contradicting
+      itself
+- [New] `make release` turns a two-digit odometer one notch and tags it: `0.20`, `0.21`, …
+      `0.99`, then `1.0`, `1.01`, … `1.99`, `2.0`. There is no minor and no patch level, so
+      the target takes no argument — a fix and a redesign are both one notch, because the
+      changelog and not the number is where a reader finds out which it was. `MAJOR=1` jumps
+      a major for a `/v2` contract event (blueprint §3.6.1) and is the only exception
+- [New] `VERSION` carries the owner literal and pyproject carries the PEP 440 equivalent,
+      because a release segment with a leading zero is not canonical and packaging collapses
+      `1.01` to `1.1` whether or not the file says so. The mapping is injective and
+      order-preserving, so the two spellings can never name different releases; the tag, the
+      `## v<version>` heading, its `<a id="v...">` anchor and the header stamp are one string.
+      `tests/unit/test_release_tooling.py` walks 0.99→1.0→1.01, holds `1.01` apart from
+      `1.10`, and holds the pattern's four copies — Python, the page, the stamp, the vite
+      define — to the same verdict on the same eighteen strings
+- [New] The release refuses, naming every reason at once: a dirty tree, a topic branch, a
+      `HEAD` the remote has not seen, an existing tag, nothing pending in `changelog.d`, or a
+      fold the page would not render. It then folds the pending fragments and every dated
+      section still under `## Unreleased` into one version section, and puts those same
+      entries in the commit body and in an annotated tag. `DRY=1` prints all of it — preflight
+      verdict included — and writes nothing; `make release-check` prints the same verdict and
+      exits non-zero, which is what lets `make ship` stop before it builds
+- [New] Nothing can tag a changelog that will not render. Every line of every fragment goes
+      through the page's own parser and renderer, and the whole candidate `CHANGELOG.md` goes
+      through them again, before `VERSION`, the file, the commit or the tag is touched — and
+      CI runs the same check on every pull request, so a bad fragment fails at merge rather
+      than at release. `make ship` orders it check → build → release → rebuild → deploy, so a
+      build failure cannot strand a fresh tag and a deploy cannot carry a bundle older than
+      the release it is named for
+- [New] `/changelog/`: the changelog rendered to a static page in the app's own shell, with
+      the palette, type ramp and font faces lifted out of `web/src/style.css` at render time
+      rather than copied, and the theme read from the same `glasswell.theme` key the rail
+      writes. `npm run build` renders it through a vite plugin, so CI's web job and the deploy
+      runbook's frontend rebuild both produce it; behind a Make target both would have shipped
+      a header stamp pointing at a 404
+- [New] The page's parser is the house grammar and nothing else — four tags, indented
+      continuations, anchored version headings, dated subsections, paragraphs — and it
+      **refuses** a bullet in another flavour, a table, a fence, an unknown tag or an anchor
+      that names a different version, naming the file and the line. One implementation, three
+      callers: the fragment check, the release gate and the page itself. A changelog with a
+      mistake in it stops the release instead of rendering the mistake as prose
+- [Change] The rail's build stamp is a link: `v0.20+3b83fcb` pointing at
+         `/changelog/#v0.20`, same-origin, still one writer, still inside the fixed read
+         column. The `build` eyebrow goes when a version is present — the value names itself
+         and the column is 132 px at 1024 — and stays on an unreleased build, which links to
+         the page without a fragment because `#v0.0-dev` is an anchor that does not exist
+- [New] `make deploy` scripts the runbook rather than describing it: `git archive HEAD` over
+      ssh, `tests/` tarred separately because `.gitattributes` export-ignores it and
+      `smoke.sh` reads its snapshot on the host, `web/dist` to the web root, dependencies
+      only when `requirements.lock` moved, then `install.sh`, `glasswell-api` and `martin`
+      restarted, `verify.sh` and `smoke.sh`. It refuses a dirty tree, an untagged `HEAD`
+      unless `GW_DEPLOY_ALLOW_UNTAGGED=1`, and a `web/dist` older than `VERSION` or
+      `CHANGELOG.md` — a stale bundle ships the previous release's page under this one's tag
+- [New] `verify.sh` asserts the changelog page is on the host and answers 200. There is no
+      SPA fallback (DR-57), so `/changelog/` resolves only because it is a real directory
+      behind the existing `StaticFiles(html=True)` mount — no API and no Caddy change
+- [Fix] The fold moves what was pending and rewrites nothing: `difflib` reports it as a pure
+      insertion, and the moved region is asserted byte-identical and contiguous — 1,388 lines
+      at the same sha256. The previous version's anchor stays with its own heading rather than
+      being dragged into the new section, which a twice-folded document now proves
+- [Fix] `changelog-assemble.py` accepts `[Remove]`, which `CHANGELOG.md` has used five times
+      and the fragment check would have rejected on the first line of a fragment that used it
+- [Fix] `release.py` refuses a `--set` outside the grammar and a `VERSION` file left at the
+      pre-scheme `0.1.0` in prose rather than with a traceback, and names a modified file by
+      its whole name — git's porcelain opens every line with two status columns, and stripping
+      them off by eye turned `Makefile` into `akefile`
+- [New] changelog.d/ per-branch changelog fragments with scripts/changelog-assemble.py and
+      `make changelog TITLE=...`: tracks stop editing CHANGELOG.md (60 of the prior 200
+      commits touched it) and the integrator folds fragments under a dated heading at the
+      merge train; `--check` fails while fragments pend so a release cannot strand them
+- [New] tests/e2e/lib.mjs: the browser-gate machinery every DIR-11 pass re-derived in
+      work-output — chromium discovery, instrumented page journal, the 1600/1366/1024/820/390
+      breakpoint ladder, WCAG contrast sampling, frame probe — committed and import-safe;
+      smoke.mjs now shares its chromium discovery instead of carrying a copy
+- [New] tests/support/serve_branch.py and `make serve-branch`: ephemeral PostGIS +
+      migrations + contract-tier seeds + uvicorn for any branch (GW_ROOT points at a
+      worktree, GW_SEED extends the seeds), replacing the per-track serve scripts;
+      verified live — health 200, keyed wells payload, fail-closed 403, labeled teardown
+- [New] `pattern` is a fact kind in `tests/contract/openapi_diff.py`, emitted per parameter
+      and per schema property and through `anyOf` branches, so a relaxed identifier grammar
+      is reported as the old constraint leaving rather than passing the freeze gate with no
+      fact at all (UDM-SPEC §5.3 ground one, closed as a class)
+- [New] Contract test pinning `API10_PATTERN` to `^\d{10}$`, that every served `{api10}`
+      path declares that grammar rather than one of its own, and that a 16-character UWI is
+      refused by the United States path instead of answered (UDM-SPEC §5.3, risk R-2)
+- [New] Client test pinning the wells dataset's `row_id` to `["/api10"]`, with the
+      counterfactual that makes the reason travel: at `["/well_id"]` every derived api10 hop
+      in the explorer dies at once (UDM-SPEC §6.4, risk R-3)
+- [New] Integration measurement of API-10 permanence: no well answers to two api10s and no
+      api10 answers to two wells across vintages, reported with the offending api10 and the
+      vintages it was seen at, and with the rows the check cannot speak for counted rather
+      than hidden — §4.3(d) is an observation about ingested vintages, not a property PPDM
+      certifies
+- [Change] The search type guard reads the general key `(authority, native_id)` and its
+           other surfaced names, so a well with no API-10 is no longer dropped silently; a
+           result's `api10` is null rather than carrying a non-API-10, and the label falls
+           back to the identifier the well does answer to instead of rendering `undefined`
+- [Change] The explorer grid classifies `well_id`, `native_id`, `authority` and `uwi` as
+           identifier columns, so the general key renders as identity rather than as prose
+- [Fix] A row whose `api10` was an empty string passed the search type guard and rendered a
+      blank option in the dropdown; where a second identifier kept such a row alive the empty
+      string was emitted as the result's `api10`, which is neither a well nor the `null` the
+      selection bus reads as deselect
+
 ### 2026-08-21 — explorer P-A + NM D1 conformance
 
 (tracks append entries under this heading; consolidated at integration)
