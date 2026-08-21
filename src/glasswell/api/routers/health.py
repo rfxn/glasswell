@@ -11,7 +11,7 @@ from starlette.responses import JSONResponse
 
 from glasswell.api.deps import Connection, rows, today
 from glasswell.api.errors import problem_responses
-from glasswell.api.examples import request_example
+from glasswell.api.examples import dataset, request_example
 from glasswell.api.responses import EnvelopeModel, enveloped, freshness_state, iso
 
 liveness = APIRouter(tags=["service"])
@@ -82,7 +82,29 @@ def get_healthz() -> Liveness:
         " `never_fetched` and degrades the service state rather than being hidden."
     ),
     response_model=EnvelopeModel[Health],
-    openapi_extra=request_example(),
+    openapi_extra={
+        **request_example(),
+        **dataset(
+            id="sources",
+            title="Sources & freshness",
+            group="service",
+            collection_pointer="/sources",
+            row_id=["/source_id"],
+            columns={
+                "default": [
+                    "/source_id",
+                    "/name",
+                    "/state",
+                    "/retrieval_vintage",
+                    "/declared_vintage",
+                    "/manifest_count",
+                ],
+                "sort": "/source_id",
+            },
+            intro="nb_dataset_sources",
+            order=50,
+        ),
+    },
     responses=problem_responses("service_degraded"),
 )
 def get_health(request: Request, connection: Connection) -> JSONResponse:

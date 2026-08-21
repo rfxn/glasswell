@@ -422,7 +422,36 @@ def _manifest(row: dict[str, Any], *, principal: ResolvedPrincipal) -> dict[str,
         " an auditor re-fetch from the regulator and hash it themselves (SB-07 §9.6)."
     ),
     response_model=EnvelopeModel[list[Manifest]],
-    openapi_extra=request_example(query={"limit": 5}),
+    openapi_extra={
+        **request_example(query={"limit": 5}),
+        **dataset(
+            id="manifests",
+            title="Manifests",
+            group="kitchen",
+            collection_pointer="",
+            row_id=["/manifest_id"],
+            detail_operation="get_manifest",
+            facets=["source_id", "source_key", "vintage_from", "vintage_to", "head_only"],
+            columns={
+                "default": [
+                    "/manifest_id",
+                    "/source_id",
+                    "/source_key",
+                    "/fetch_vintage",
+                    "/bytes",
+                    "/sha256",
+                ],
+                "hidden": ["/decompressed_inventory", "/license_note"],
+                "hidden_reason": {
+                    "/decompressed_inventory": "an archive's member list — rows, not a cell",
+                    "/license_note": "long prose; the manifest detail is where it reads",
+                },
+                "sort": "/fetched_at",
+            },
+            intro="nb_dataset_manifests",
+            order=22,
+        ),
+    },
     responses=problem_responses(
         "validation_failed", "cursor_malformed", "cursor_query_mismatch", "service_degraded"
     ),
@@ -675,7 +704,38 @@ def _vintage(row: dict[str, Any]) -> dict[str, Any]:
         " the index behind `as_of` — every vintage here is a value `as_of` can select."
     ),
     response_model=EnvelopeModel[list[Vintage]],
-    openapi_extra=request_example(query={"limit": 10}),
+    openapi_extra={
+        **request_example(query={"limit": 10}),
+        # `source_id` is the only facet because it is the only query parameter besides `limit`:
+        # this operation declares no `cursor`, and §3.6's uncursored form is the honest render.
+        **dataset(
+            id="vintages",
+            title="Vintages",
+            group="kitchen",
+            collection_pointer="",
+            row_id=["/vintage_id"],
+            detail_operation="get_vintage",
+            facets=["source_id"],
+            columns={
+                "default": [
+                    "/vintage_id",
+                    "/source_id",
+                    "/vintage_date",
+                    "/opened_at",
+                    "/rows_examined",
+                    "/rows_appended",
+                ],
+                "hidden": ["/months_touched", "/restatement_summary"],
+                "hidden_reason": {
+                    "/months_touched": "one entry per production month — rows, not a cell",
+                    "/restatement_summary": "per-reason counts; the detail row renders the object",
+                },
+                "sort": "/vintage_date",
+            },
+            intro="nb_dataset_vintages",
+            order=23,
+        ),
+    },
     responses=problem_responses("validation_failed", "service_degraded"),
 )
 def list_vintages(

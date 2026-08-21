@@ -60,6 +60,27 @@ its own version in its header, and its history is summarised in §3.1.
       pointers are relative to `series_pointer`, and the axis is exempt from suffix expansion
 - [New] The R6 walker asserts every browsable dataset is an operation it already exercises, so a
       generated catalogue cannot outrun the naked-number gate
+- [New] `x-glasswell-dataset` on the two production operations, declared as pivots: `series_pointer`
+      names the object of aligned arrays, `row_projection.axis` is the month axis every column
+      aligns to, and `suffixes` expand each value column onto its report vintage and null
+      semantics. Projection pointers are relative to the series, so one grammar reads `/oil_bbl` as
+      `/series/oil_bbl` per well and `/pools/*/series/oil_bbl` per pool, and `anchors[]` carries the
+      scalars beside the array onto every projected row so a production row states its own
+      granularity. These two are the only P-A datasets that carry real figures
+- [New] The remaining four declarations — Sources & freshness reading `/v1/health`'s `sources[]`
+      and Problems reading the service index's `error_codes[]` through `collection_pointer`, plus
+      manifests and vintages. Eleven operations now declare themselves browsable, each with an
+      explicit five-to-seven-pointer `columns.default` and its own rail position
+- [New] Four more lint arms, for the shapes only a served operation shows: a non-empty
+      `collection_pointer` resolves to an array, a projection axis is an array because its length
+      is the row count, a `series_pointer` with no `row_projection` is a half-declared pivot, and
+      every required path parameter is named in `anchors[]` — `/v1/wells/{api10}/production` cannot
+      be browsed until the reader supplies the well, and the rail says so instead of letting the UI
+      discover a 404
+- [New] `scripts/regen-snapshot.py` and `make snapshot`: the one in-tree path that rewrites the
+      OpenAPI snapshot, with a `--check` arm that reports drift and writes nothing. A contract test
+      runs the script and holds its output to the bytes the byte-equality gate demands, so a
+      scratch renderer cannot half-repair a generated artifact
 
 ### 2026-08-21 — increment-3 merge train
 

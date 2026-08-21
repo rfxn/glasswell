@@ -12,7 +12,7 @@ ANVIL_ENV      := DOCKER_HOST=$(ANVIL_HOST) DOCKER_TLS_VERIFY=1 DOCKER_CERT_PATH
 TEST_LABEL ?= glasswell.test
 
 .PHONY: help venv install test test-anvil test-local test-unit test-integration test-e2e \
-        lint fmt clean prune-test-volumes check-workstation
+        lint fmt clean prune-test-volumes check-workstation snapshot
 
 help:
 	@echo "venv              create $(VENV)"
@@ -27,6 +27,7 @@ help:
 	@echo "check-workstation   flag glasswell persistent state on a workstation"
 	@echo "lint              ruff"
 	@echo "fmt               ruff --fix"
+	@echo "snapshot          rewrite tests/contract/openapi_snapshot.json from the document"
 
 venv:
 	python3 -m venv $(VENV)
@@ -69,6 +70,10 @@ lint:
 
 fmt:
 	$(PY) -m ruff check . --fix
+
+# A generated artifact with no in-tree regeneration path is one an agent repairs by hand.
+snapshot:
+	$(PY) scripts/regen-snapshot.py
 
 clean:
 	rm -rf .pytest_cache .ruff_cache
