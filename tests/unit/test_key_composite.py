@@ -73,6 +73,27 @@ def test_a_component_is_zero_padded_to_the_declared_width():
     assert kept["entity_key"].to_list() == ["3000512345", "0300512345"]
 
 
+def test_each_nm_segment_pads_to_its_own_width_before_the_concatenation():
+    """M3, on the exact string. NM ships the three API segments unpadded, so the widths are
+    2, 3 and 5 per column: padding the concatenation instead builds 0030520178, an API-10 for
+    a well that is not this one, and it would have mis-keyed every New Mexico row."""
+    frame = pl.DataFrame(
+        {"api_st_cde": ["30"], "api_cnty_cde": ["5"], "api_well_idn": ["20178"]}
+    )
+
+    kept, quarantined = run(
+        frame,
+        source_cols=["api_st_cde", "api_cnty_cde", "api_well_idn"],
+        pad={"api_st_cde": 2, "api_cnty_cde": 3, "api_well_idn": 5},
+        separator="",
+        target_col="api10",
+    )
+
+    assert kept["api10"].to_list() == ["3000520178"]
+    assert "30520178".zfill(10) == "0030520178"
+    assert quarantined == []
+
+
 def test_a_pool_key_composes_the_well_with_the_pool_it_filed_in():
     frame = pl.DataFrame(
         {"api10": ["3305302532", "3305302532"], "pool": ["BIRDBEAR", "DUPEROW"]}

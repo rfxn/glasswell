@@ -11,6 +11,37 @@ its own version in its header, and its history is summarised in §3.1.
 
 (tracks append entries under this heading; consolidated at integration)
 
+- [New] Fourteen promotion rule rows, each naming one `source_id` because `rule_id` is a
+      primary key and `load_rules` reads one source per call.
+      `cr_nm_wcproduction_api10_1` pads every API segment to its own width — 2, 3 and 5 —
+      because concatenating them unpadded and padding the result builds `0030520178` where
+      the well is `3000520178`. A segment wider than its pad is refused rather than
+      truncated: the one six-character `api_well_idn` in 48,104,334 records would otherwise
+      emit an eleven-character API-10, while SQL's `lpad` truncates it onto a real well
+      carrying 487 rows of its own
+- [New] `cr_nm_wcproduction_entity_key_1` keys the spine at well completion × pool, the
+      grain the source reports at. 48.1M rows hold 106,717 well × pool entities against
+      89,136 wells, so an API-10 key collapses 17,581 of them; the source carries no
+      completion suffix, which supersedes SB-01 §6.3's API-14 example
+- [New] `cr_nm_wcproduction_county_parity_1` prohibits parity filtering rather than
+      enumerating even-coded counties. Cibola (30-006) and Los Alamos (30-028) are LIKELY
+      and not VERIFIED, and a prohibition is correct under either truth: `wellhistory`
+      carries one even county code on 23 wells, so a parity predicate would look right
+      against the production spine and delete Cibola the month one of them produced
+- [New] `lineage.nm_stream_map` carries all four `prd_knd_cde` codes, including the `C` no
+      first promotion can see — condensate is 3,398 rows and every one of them falls in
+      1986-1993, so a vocabulary measured on the window would quarantine them the day it
+      widened. The map is keyed on the trimmed code, which is the whole of B5
+- [New] The policies the promotion reads are rows as well: units by stream with the gas
+      conditions folded in as a note, the liquids policy NM's own condensate stream forces,
+      the null-semantics vocabulary migration 009's CHECK admits, `amend_ind`'s ten values
+      staged and promoted to nothing, the C-115 status code staged with no canonical
+      mapping because the OCD publishes no codebook for it, restatement as an append, and
+      NM flaring as a Property-grain fact that is not derivable at the spine's grain
+- [New] `cr_nm_ogrid_operator_1` resolves the operator on OGRID at confidence 1.0 — an
+      exact key rather than a name match, because a fuzzy operator match is an unlabelled
+      estimate in the identity layer (SB-01 §5.3)
+
 ### 2026-08-21 — increment-3 merge train
 
 - [Fix] The `collateral` job's link check allows this product's own `gw:` scheme beside

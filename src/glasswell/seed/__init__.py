@@ -8,13 +8,21 @@ from glasswell.seed.conformance_nd import ND_RULES, seed_conformance_nd
 from glasswell.seed.conformance_nm import NM_RULES, seed_conformance_nm
 from glasswell.seed.conformance_tx import TX_RULES, seed_conformance_tx
 from glasswell.seed.glossary import GLOSSARY_SEED_PATH, load_glossary_seed, seed_glossary, slug
-from glasswell.seed.reference import CRS_ROWS, SOURCES, seed_crs, seed_sources
+from glasswell.seed.reference import (
+    CRS_ROWS,
+    NM_STREAM_ROWS,
+    SOURCES,
+    seed_crs,
+    seed_nm_streams,
+    seed_sources,
+)
 
 __all__ = [
     "CRS_ROWS",
     "GLOSSARY_SEED_PATH",
     "ND_RULES",
     "NM_RULES",
+    "NM_STREAM_ROWS",
     "SOURCES",
     "TX_RULES",
     "load_glossary_seed",
@@ -24,6 +32,7 @@ __all__ = [
     "seed_conformance_tx",
     "seed_crs",
     "seed_glossary",
+    "seed_nm_streams",
     "seed_sources",
     "slug",
 ]
@@ -40,5 +49,6 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
         "crs_registry": seed_crs(connection),
         "conformance_rules": seed_conformance_nd(connection),
         "conformance_rules_nm": seed_conformance_nm(connection),
+        "nm_stream_map": seed_nm_streams(connection),
         "glossary_terms": seed_glossary(connection),
     }

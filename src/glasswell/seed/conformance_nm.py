@@ -3,12 +3,20 @@
 Phase 1 seeds the retrieval decisions: what the artifact is called, where it comes from, and
 why glasswell stamps its own vintage on it. Phase 2 adds the parse decisions: the record tag and
 namespace, the encoding, the header each source declares, and the CHAR widths that make a code
-look like a code only after a declared trim. Rule ids are immutable — a correction is a new row
-with `supersedes_rule_id`, never an edit (R8).
+look like a code only after a declared trim. Phase 3 adds the promotion decisions: the key, the
+stream vocabulary, the units and the policies the spine will cite. Rule ids are immutable — a
+correction is a new row with `supersedes_rule_id`, never an edit (R8).
 
 `load_rules` reads one `source_id` per call, so every family is instantiated per source: a row
 seeded on `nm_ocd_wcproduction` is invisible to a `nm_ocd_pool` load, and a derivation citing
 another source's rule id would be a lineage claim glasswell cannot resolve.
+
+A policy with no executor is a `parse_directive` carrying `asserts_header: false`, not a
+`code_ref`: a `code_ref` names a symbol that must resolve (SB-07 §6 contract (a)), and the
+functions these policies configure land with the promotion. Such a row declares its fields in
+`spec.declares_fields` and leaves `applies_to_fields` at `all`, because a `parse_directive`
+whose fields are frame columns is a header assertion, and a header assertion quarantines the
+whole batch on the day a later phase projects one of those columns away.
 """
 
 from __future__ import annotations
@@ -27,6 +35,8 @@ OCD_FTP_DESCRIPTIONS_URL = (
 )
 
 EFFECTIVE_FROM = date(2026, 8, 20)
+# The promotion decisions were taken against the staged corpus, a day after the pull they read.
+PROMOTION_FROM = date(2026, 8, 21)
 
 FTP_HOST = "164.64.106.6"
 FTP_ROOT = "/Public/OCD/OCD Interface v1.1"
@@ -367,6 +377,507 @@ def _month() -> dict[str, object]:
     }
 
 
+def _declaration(
+    rule_id: str,
+    *,
+    source_id: str,
+    stage: str,
+    fields: list[str],
+    spec: dict[str, object],
+    rule: str,
+    rationale: str,
+    evidence_url: str = OCD_FTP_PAGE_URL,
+) -> dict[str, object]:
+    return {
+        "rule_id": rule_id,
+        "source_id": source_id,
+        "stage": stage,
+        "rule_kind": "parse_directive",
+        "applies_to_fields": ["all"],
+        "spec": {**spec, "declares_fields": fields, "asserts_header": False},
+        "rule": rule,
+        "rationale": rationale,
+        "evidence_url": evidence_url,
+        "effective_from": PROMOTION_FROM,
+    }
+
+
+NM_PROMOTION_RULES: tuple[dict[str, object], ...] = (
+    {
+        "rule_id": "cr_nm_wcproduction_api10_1",
+        "source_id": "nm_ocd_wcproduction",
+        "stage": "conform",
+        "rule_kind": "key_composite",
+        "applies_to_fields": ["api_st_cde", "api_cnty_cde", "api_well_idn"],
+        "spec": {
+            "source_cols": ["api_st_cde", "api_cnty_cde", "api_well_idn"],
+            "pad": {"api_st_cde": 2, "api_cnty_cde": 3, "api_well_idn": 5},
+            "min_width": {"api_st_cde": 2},
+            "charset": {
+                "api_st_cde": "digits",
+                "api_cnty_cde": "digits",
+                "api_well_idn": "digits",
+            },
+            "pad_char": "0",
+            "pad_side": "left",
+            "separator": "",
+            "target_col": "api10",
+            "state_code": "30",
+            "on_missing": "quarantine",
+            "reason_code": "key_incomplete",
+        },
+        "rule": (
+            "The NM API-10 is state code 30, the county code padded to three and the well"
+            " number padded to five, concatenated as SSCCCUUUUU."
+        ),
+        "rationale": (
+            "NM ships the three segments unpadded, and each pads to its own width: over"
+            " 48,104,334 records api_cnty_cde is one or two characters and api_well_idn one to"
+            " six, with exactly one record reaching six."
+            " Concatenating them first and padding the result is a different and wrong key -"
+            " '30' + '5' + '20178' padded to ten is 0030520178, not 3000520178 - so the widths"
+            " are declared per column. 30 is the API state code for New Mexico and not its FIPS"
+            " code (35), which is why the prefix is a rule rather than a slice of a field that"
+            " looks like it already carries one. The one over-wide record, 30-15-256350 at"
+            " ordinal 15,226,075, is refused as key_incomplete rather than padded: zfill does"
+            " not truncate and would emit an eleven-character API-10, while SQL's lpad(5)"
+            " truncates it to 25635, a real well with 487 rows of its own, and would file this"
+            " row's volume under another well's identity. Both were measured. charset is the"
+            " other half of the same guarantee, because a run of letters satisfies a width as"
+            " well as a run of digits does;"
+            " min_width is declared only on the state segment, which is '30' on every one"
+            " of the 48.1M rows; the other two are genuinely short, so padding them is width"
+            " normalisation rather than invention."
+        ),
+        "evidence_url": OCD_FTP_PAGE_URL,
+    },
+    {
+        "rule_id": "cr_nm_wcproduction_entity_key_1",
+        "source_id": "nm_ocd_wcproduction",
+        "stage": "conform",
+        "rule_kind": "key_composite",
+        "applies_to_fields": ["api10", "pool_idn"],
+        "spec": {
+            "source_cols": ["api10", "pool_idn"],
+            "separator": ":",
+            "target_col": "entity_key",
+            "entity_type": "well_completion_pool",
+            "reporting_level": "well_completion_pool",
+            "granularity": "well_observed",
+            "requires_rule_id": "cr_nm_wcproduction_api10_1",
+            "on_missing": "quarantine",
+            "reason_code": "key_incomplete",
+        },
+        "rule": (
+            "NM's entity is the well completion in a pool: the API-10 joined to the pool"
+            " identifier the operator filed under."
+        ),
+        "rationale": (
+            "The source carries no completion suffix - the identity is api_st_cde, api_cnty_cde"
+            " and api_well_idn times pool_idn, and nothing else - so SB-01 §6.3's API-14 example"
+            " is superseded by the bytes. The grain is not decorative: 48.1M rows hold 106,717"
+            " distinct well x pool entities against 89,136 distinct wells, so a key of the"
+            " API-10 alone would collapse 17,581 of them and the collided volumes would be"
+            " quarantined as duplicates or, worse, silently promoted as one series."
+            " reporting_level and entity_type are both well_completion_pool and granularity is"
+            " well_observed, which is what migration 020's composition CHECK admits for that"
+            " level. api10 is built by cr_nm_wcproduction_api10_1, which registry order puts"
+            " first because rules execute by rule_id. pool_idn carries no charset bound: only"
+            " its width was measured (5), and a class the corpus was never checked against"
+            " would be an assertion rather than a measurement - the identity guarantee sits on"
+            " the API segments, which were checked."
+        ),
+        "evidence_url": OCD_FTP_PAGE_URL,
+    },
+    {
+        "rule_id": "cr_nm_wcproduction_county_parity_1",
+        "source_id": "nm_ocd_wcproduction",
+        "stage": "validate",
+        "rule_kind": "validity_filter",
+        "applies_to_fields": ["api_st_cde", "api_cnty_cde"],
+        "spec": {
+            "predicate_ast": {
+                "and": [
+                    {"cmp": [{"col": "api_st_cde"}, "==", {"lit": "30"}]},
+                    {"not": {"is_null": {"col": "api_cnty_cde"}}},
+                    {"cmp": [{"col": "api_cnty_cde"}, "!=", {"lit": ""}]},
+                ]
+            },
+            "on_fail": "quarantine",
+            "reason_code": "parse_error",
+            "parity_filtering": "prohibited",
+            "county_shape_rule_id": "cr_nm_wcproduction_api10_1",
+            "evidence_grade": "LIKELY",
+        },
+        "rule": (
+            "A New Mexico API begins with state code 30 and carries a county segment. County"
+            " codes are never filtered on parity."
+        ),
+        "rationale": (
+            "This rule is a prohibition, not a list of admissible counties. The evidence that"
+            " NM county codes are odd is LIKELY and not VERIFIED (reconciliation.md:591, E9):"
+            " Cibola is 30-006 and Los Alamos 30-028, and wellhistory carries 31 distinct county"
+            " codes of which exactly one - 6, on 23 wells - is even. A parity predicate would"
+            " therefore look correct against the production spine, where no even-coded county"
+            " currently produces, and would delete Cibola in silence the month one did. A shape"
+            " assertion is correct under either truth, so this rule asserts what can be checked"
+            " here - the state segment is 30 and the county segment is present - and leaves the"
+            " digits-and-width bound to cr_nm_wcproduction_api10_1's charset and pad, because"
+            " the predicate AST is an allowlist of comparisons with no regular expression in it"
+            " and restating the bound in a second place is how two rules drift. The reason code"
+            " is parse_error, following nd_mpr.py:53's precedent for an identity that cannot be"
+            " read, and the row is quarantined with it rather than dropped."
+        ),
+        "evidence_url": OCD_FTP_PAGE_URL,
+    },
+    {
+        "rule_id": "cr_nm_wcproduction_stream_vocab_1",
+        "source_id": "nm_ocd_wcproduction",
+        "stage": "conform",
+        "rule_kind": "vocab_map",
+        "applies_to_fields": ["stream_raw"],
+        "spec": {
+            "mapping_table": "nm_stream_promoted_map",
+            "key_col": "stream_raw",
+            "value_col": "stream_canonical",
+            "source_field": "prd_knd_cde",
+            "trim_rule_id": "cr_nm_wcproduction_pad_1",
+            "unmapped_action": "quarantine",
+            "reason_code": "stream_not_promoted",
+        },
+        "rule": (
+            "Map the trimmed prd_knd_cde to the canonical stream; a code the map does not carry"
+            " is quarantined rather than guessed."
+        ),
+        "rationale": (
+            "Four codes exist and all four are seeded: over 48,104,334 records, 'G ' 21,365,001,"
+            " 'O ' 13,708,465, 'W ' 13,027,470 and 'C ' 3,398. The map is keyed on the trimmed"
+            " value because prd_knd_cde is CHAR(2) and staging keeps what the source shipped;"
+            " the trim is cr_nm_wcproduction_pad_1's declared mapping decision, and an exact"
+            " match against the padded value would quarantine 100 percent of the spine as"
+            " stream_not_promoted while every rule reported success. 'C ' is condensate and"
+            " every one of its rows falls in 1986-1993, with none inside the 2015-01 promotion"
+            " window: a vocabulary measured on the window would have quarantined all 3,398 on"
+            " the day the window widened, which is why the seed carries the code the first"
+            " promotion will never see. canonical.production_monthly has admitted condensate"
+            " since migration 021. The reading of 'C' as condensate is the petroleum-convention"
+            " one and the OCD publishes no codebook for prd_knd_cde, so it is stated here where"
+            " a reader can check it rather than left implicit: the alternative is not caution"
+            " but holding back 3,398 volumes the regulator did file, under a code that is"
+            " undocumented rather than unknown."
+        ),
+        "evidence_url": OCD_FTP_PAGE_URL,
+    },
+    {
+        "rule_id": "cr_nm_wcproduction_units_1",
+        "source_id": "nm_ocd_wcproduction",
+        "stage": "conform",
+        "rule_kind": "unit_conform",
+        "applies_to_fields": ["prod_amt"],
+        "spec": {
+            "units_by_stream": {
+                "oil": "bbl",
+                "condensate": "bbl",
+                "gas": "mcf",
+                "water": "bbl",
+            },
+            "volume_field": "prod_amt",
+            "factor": "1",
+            "rounding": "half_even",
+            "scale": 3,
+            "conditions_note": (
+                "mcf at the regulator's stated conditions; conditions recorded, not normalised"
+            ),
+        },
+        "rule": (
+            "NM files one amount column whose unit the stream decides: bbl for oil, condensate"
+            " and water, mcf for gas. No conversion, declared units."
+        ),
+        "rationale": (
+            "Blueprint §3.0.3's gas-conditions rule and the A-13 unit-declaration obligation."
+            " The declaration is keyed by stream rather than by column because NM ships a single"
+            " prod_amt discriminated by prd_knd_cde, where ND ships three named columns - the"
+            " same obligation, a different shape. The factor is 1 because the reported units"
+            " already are the canonical ones; the rule exists to record that, and to pin the"
+            " rounding mode and scale rather than inherit whatever the runtime defaults to. The"
+            " gas-conditions statement is folded in here as a note because a standalone"
+            " unit_conform carrying only conditions has no factor, rounding or scale and would"
+            " raise RuleSpecError at conformance.py:82-86; ND folds it the same way. prod_amt is"
+            " staged as text and cast before this rule runs: it is never null and never blank"
+            " across 48.1M rows, and 6,812,255 of them report zero."
+        ),
+        "evidence_url": OCD_FTP_PAGE_URL,
+    },
+    _declaration(
+        "cr_nm_wcproduction_liquids_1",
+        source_id="nm_ocd_wcproduction",
+        stage="conform",
+        fields=["prd_knd_cde", "prod_amt"],
+        spec={
+            "liquids_policy": "oil_and_condensate_reported_separately",
+            "oil_includes_condensate": False,
+            "condensate_stream": "condensate",
+            "condensate_months_observed": "1986-01 through 1993-12",
+        },
+        rule=(
+            "NM reports condensate as its own stream, so an NM oil figure is oil as filed and"
+            " any liquids figure that adds condensate to it says so."
+        ),
+        rationale=(
+            "T1-b asked whether NM has a condensate discriminator and assumed the answer was no,"
+            " in which case NM would have carried stream = oil with"
+            " liquids_policy = oil_plus_condensate, as ND does. The artifact answers otherwise:"
+            " prd_knd_cde carries 'C ' on 3,398 rows, so for those months oil and condensate are"
+            " two filings and adding them silently would restate the operator. Liquid without"
+            " qualification means oil plus condensate in this product, which is exactly why the"
+            " policy travels with the figure: an NM liquids rollup is the labelled sum of the"
+            " oil and condensate streams, never an oil row quietly containing both. Where the"
+            " operator filed no condensate row - every month after 1993 - the oil row is what"
+            " was filed and nothing is added to it."
+        ),
+    ),
+    _declaration(
+        "cr_nm_wcproduction_null_semantics_1",
+        source_id="nm_ocd_wcproduction",
+        stage="conform",
+        fields=["prod_amt"],
+        spec={
+            "canonical_column": "null_semantics",
+            "vocabulary": ["reported", "reported_zero", "no_report", "withheld"],
+            "collapse": "never",
+            "measured": {"null_prod_amt": 0, "reported_zero": 6812255},
+        },
+        rule=(
+            "Why a volume is absent is a fact with its own vocabulary; a reported zero is not an"
+            " absence, and neither is ever collapsed into the other."
+        ),
+        rationale=(
+            "prod_amt is never null and never blank across 48,104,334 records and 6,812,255 rows"
+            " report zero, so NM's live distinction is reported against reported_zero and the"
+            " absent states are defensive rather than observed. The vocabulary written here is"
+            " the one migration 009's CHECK admits - reported, reported_zero, no_report,"
+            " withheld. PLAN-NM P3.3 named withheld_confidential and not_applicable, which that"
+            " CHECK rejects; D1 writes what the constraint admits and does not alter another"
+            " track's constraint to fit its own rule (entry gate G6). A filter would delete the"
+            " row that carries the absence, which is the distinction this rule exists to keep"
+            " (§3.0.3)."
+        ),
+    ),
+    _declaration(
+        "cr_nm_wcproduction_amend_ind_1",
+        source_id="nm_ocd_wcproduction",
+        stage="conform",
+        fields=["amend_ind"],
+        spec={
+            "domain": ["N", "Y", "1", "2", "3", "4", "6", "7", "9", "X"],
+            "counts": {
+                "N": 34812326, "Y": 13280514, "1": 5959, "2": 5252, "4": 185,
+                "6": 72, "9": 10, "3": 8, "X": 6, "7": 2,
+            },
+            "boolean_reading": "prohibited",
+            "promoted": False,
+            "change_detection_rule_id": "cr_nm_wcproduction_mod_dte_1",
+        },
+        rule=(
+            "amend_ind is a ten-value vocabulary carried verbatim into staging, promoted to no"
+            " canonical column, and never read as a Y/N flag."
+        ),
+        rationale=(
+            "Measured identically on the XML side and off the staged Parquet: N 34,812,326,"
+            " Y 13,280,514, then 1, 2, 4, 6, 9, 3, X and 7 across 11,494 rows. A boolean reading"
+            " mis-classifies every one of those 11,494, and it is the reading a column named"
+            " _ind invites. The eight numeric and X codes are undocumented - the OCD publishes"
+            " no codebook for them - so nothing is promoted from this column and the raw value"
+            " stays staged where a later phase holding a codebook can map it under a new rule"
+            " row. Its part in change detection belongs to cr_nm_wcproduction_mod_dte_1:"
+            " amend_ind is the regulator's evidence that a row was amended, not the trigger,"
+            " because the trigger is a value change."
+        ),
+    ),
+    _declaration(
+        "cr_nm_wcproduction_status_vocab_1",
+        source_id="nm_ocd_wcproduction",
+        stage="conform",
+        fields=["c115_wc_stat_cde"],
+        spec={
+            "domain": ["P", "F", "S", "T", "G", "I", "A", " ", "D", "p", "L"],
+            "counts": {
+                "P": 23532167, "F": 20557177, "S": 2686669, "T": 734301, "G": 391371,
+                "I": 97456, "A": 47439, " ": 42366, "D": 15375, "p": 7, "L": 6,
+            },
+            "promoted": False,
+            "target_map": "nm_status_map",
+        },
+        rule=(
+            "The C-115 well-completion status code is staged verbatim and promoted to no"
+            " canonical status until its codebook is in evidence."
+        ),
+        rationale=(
+            "Eleven values were measured over all 48.1M records, and two of them are traps: a"
+            " lowercase p on 7 rows and a single space on 42,366. An exact-match vocabulary"
+            " seeded from a hand-copied distinct-value list that lost either would quarantine"
+            " 42,373 rows as unknown_status, which is why the domain is recorded here with its"
+            " counts. What the letters mean is a different question, and the OCD publishes no"
+            " codebook mapping them to a well status: lineage.nm_status_map is therefore left"
+            " empty rather than filled with a plausible guess, because a canonical status"
+            " invented for an undocumented single-letter code is a mapping that exists only in"
+            " the head of whoever guessed it, which is what R8 exists to prevent. When the"
+            " codebook is in evidence the map is populated and a vocab_map row supersedes this"
+            " declaration."
+        ),
+    ),
+    _declaration(
+        "cr_nm_wcproduction_restatement_1",
+        source_id="nm_ocd_wcproduction",
+        stage="conform",
+        fields=["prod_amt", "amend_ind", "mod_dte"],
+        spec={
+            "on_change": "append_new_report_vintage",
+            "in_place_update": "prohibited",
+            "detection": (
+                "value_hash change for the same entity_key, production_month and stream across"
+                " report vintages"
+            ),
+            "amend_ind_role": "evidence",
+            "mod_dte_role": "promotion_shortcut",
+            "vintage_rule_id": "cr_nm_wcproduction_undated_vintage_1",
+        },
+        rule=(
+            "A restated NM month is appended under a new report vintage. Nothing in canonical is"
+            " ever updated in place."
+        ),
+        rationale=(
+            "DIR-2 makes the vintage a dimension rather than an overwrite, and migration 008's"
+            " append-only trigger (008:29-31) makes a canonical UPDATE an error rather than a"
+            " warning, so this rule states what the trigger enforces and what the promotion must"
+            " therefore do. The trigger for an append is a value change and not the regulator's"
+            " flag: the export re-publishes all 48.1M rows nightly, 34,812,326 of them carrying"
+            " amend_ind N, so reading the flag as the signal would treat a re-publication as a"
+            " statement that nothing changed. amend_ind is kept as evidence beside the appended"
+            " row, and mod_dte is a promotion shortcut compared against the staged prior"
+            " partition; neither enters value_hash (cr_nm_wcproduction_mod_dte_1). The vintage"
+            " itself is glasswell's own stamp because the artifact is undated and overwritten in"
+            " place upstream (cr_nm_wcproduction_undated_vintage_1)."
+        ),
+    ),
+    _declaration(
+        "cr_nm_wcproduction_flare_property_1",
+        source_id="nm_ocd_wcproduction",
+        stage="conform",
+        fields=[],
+        spec={
+            "flare_reporting_grain": "property",
+            "well_completion_flare_series": "not_derivable",
+            "sources_out_of_scope": ["othervolume", "podvolume", "podstorage", "wcinjection"],
+            "served": False,
+        },
+        rule=(
+            "NM flaring is filed against a Property, not a well completion, so no NM flare"
+            " volume is derived at the spine's grain and none is served."
+        ),
+        rationale=(
+            "The disposition artifacts that carry it - othervolume, podvolume, podstorage and"
+            " wcinjection, 738 MB combined - are deliberately not fetched, because the volume"
+            " they hold attaches to a Property while this spine's grain is well completion x"
+            " pool. Splitting a Property's flare volume across its completions would put an"
+            " estimate into canonical, and DIR-3 keeps canonical at native granularity with"
+            " estimates named as such elsewhere. The decision is a row rather than a note so"
+            " that a reader asking for NM flaring finds the reason, and so that a later phase"
+            " which does fetch the disposition tables supersedes a stated decision instead of"
+            " discovering an unstated one."
+        ),
+        evidence_url=OCD_DATA_URL,
+    ),
+    _declaration(
+        "cr_nm_pool_vocab_1",
+        source_id="nm_ocd_pool",
+        stage="conform",
+        fields=["pool_idn", "pool_nam"],
+        spec={
+            "identity": "pool_idn",
+            "label": "pool_nam",
+            "label_trim_rule_id": "cr_nm_pool_pad_1",
+            "target_map": "nm_pool_map",
+            "populated_by": "dimension_promotion",
+            "unknown_pool": "orphan_fk",
+        },
+        rule=(
+            "pool_idn is the pool's identity and pool_nam only its label; the label is resolved"
+            " from the staged registry, never from a literal."
+        ),
+        rationale=(
+            "The registry holds 5,084 pools and the spine 106,717 well x pool entities, so the"
+            " entity key carries the identifier: a name is the regulator's prose, arrives"
+            " CHAR(35)-padded, and is trimmed under cr_nm_pool_pad_1 before anyone reads it."
+            " lineage.nm_pool_map is populated from the staged registry when the dimension is"
+            " promoted rather than seeded from the test fixture, because that fixture holds 300"
+            " of the 5,084 pools and a vocabulary seeded from it would quarantine the other"
+            " 94 percent. A pool_idn the registry does not carry is an orphan_fk quarantine,"
+            " counted and kept, never dropped."
+        ),
+    ),
+    _declaration(
+        "cr_nm_wchistory_status_vocab_1",
+        source_id="nm_ocd_wchistory",
+        stage="conform",
+        fields=["wc_stat_cde"],
+        spec={
+            "promoted": False,
+            "domain_measured": False,
+            "measured_by": "dimension_promotion",
+            "target_map": "nm_status_map",
+        },
+        rule=(
+            "The well-completion status code is staged verbatim; this slice asserts no canonical"
+            " status for it."
+        ),
+        rationale=(
+            "Phase 2 measured this source's column widths but not this column's domain over its"
+            " 426,529 rows, and the 300-record fixture cannot establish a vocabulary: the"
+            " spine's own c115_wc_stat_cde is the cautionary case, where a lowercase p on 7 rows"
+            " and a single space on 42,366 would both have been missed by a sample. The"
+            " dimension promotion reads this source in full, so it measures the domain there and"
+            " seeds the mapping as a superseding row with that measurement as its evidence."
+            " Until then the code is staged and unmapped, which is a state this registry can"
+            " express and a partial vocabulary is not."
+        ),
+    ),
+    {
+        "rule_id": "cr_nm_ogrid_operator_1",
+        "source_id": "nm_ocd_ogrid",
+        "stage": "join",
+        "rule_kind": "alias_join",
+        "applies_to_fields": ["operator_raw"],
+        "spec": {
+            "alias_table": "operator_aliases",
+            "key_cols": ["operator_raw"],
+            "target_col": "operator",
+            "min_confidence": "1.0",
+            "method": "exact_key",
+            "source_field": "ogrid_cde",
+            "unmatched_action": "quarantine",
+            "reason_code": "alias_unresolved",
+        },
+        "rule": "OGRID is an exact operator key: it joins at confidence 1.0 or it does not join.",
+        "rationale": (
+            "OGRID is the OCD's own registered operator identifier and the ogrid registry, 31,696"
+            " rows of it, is its authority - so this is a key lookup, not a name match, and it"
+            " carries confidence 1.0 by construction rather than by scoring. ND's operator"
+            " arrives as free text and its alias table records fuzzy confidences; NM's does not"
+            " need to. SB-01 §5.3 is the reason the difference matters: a fuzzy operator match is"
+            " an unlabelled estimate in the identity layer, which is the one place this system"
+            " cannot afford one. An OGRID with no registry row is alias_unresolved, counted,"
+            " never dropped. The frame's ogrid_cde is renamed to operator_raw before the join"
+            " because the executor keys the alias table by the frame's own column name"
+            " (conformance.py:158), and lineage.operator_aliases is read whole with no source"
+            " filter - so the registry must be loaded with OGRID codes that cannot collide with"
+            " another jurisdiction's operator keys, or the executor refuses the duplicate."
+        ),
+        "evidence_url": OCD_FTP_DESCRIPTIONS_URL,
+        "effective_from": PROMOTION_FROM,
+    },
+)
+
 NM_RULES: tuple[dict[str, object], ...] = (
     *(
         family(table)
@@ -375,6 +886,7 @@ NM_RULES: tuple[dict[str, object], ...] = (
     ),
     _mod_dte(),
     _month(),
+    *NM_PROMOTION_RULES,
 )
 
 _INSERT = """
