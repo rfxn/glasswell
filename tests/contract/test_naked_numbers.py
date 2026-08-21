@@ -16,7 +16,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from glasswell.api.examples import REQUEST_EXAMPLE_KEY
+from glasswell.api.examples import DATASET_KEY, REQUEST_EXAMPLE_KEY
 from glasswell.lineage.ids import parse_handle
 from tests.contract.conftest import TX_API10
 
@@ -156,6 +156,20 @@ def exercised(client: TestClient) -> list[tuple[str, dict[str, Any]]]:
             url = url.replace("{" + name + "}", str(value))
         calls.append((operation["operationId"], {"url": url, "params": example.get("query", {})}))
     return [*calls, *JURISDICTION_ARMS]
+
+
+def test_every_browsable_dataset_is_an_operation_the_walker_exercises(client: TestClient) -> None:
+    """SB-08 §6.1: the catalogue is generated from operations, so it cannot outrun the R6 gate."""
+    document = client.get("/openapi.json").json()
+    declared = {
+        operation["operationId"]
+        for item in document["paths"].values()
+        for operation in item.values()
+        if isinstance(operation, dict) and DATASET_KEY in operation
+    }
+
+    assert declared
+    assert declared <= {operation_id for operation_id, _ in exercised(client)}
 
 
 def test_the_walker_reaches_a_depth_figure_and_a_second_jurisdiction(client: TestClient) -> None:

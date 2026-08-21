@@ -11,6 +11,26 @@ its own version in its header, and its history is summarised in §3.1.
 
 (tracks append entries under this heading; consolidated at integration)
 
+- [New] `x-glasswell-dataset` (SB-08 A-1) on the five collections whose `data` is already the
+      array — wells, quarantine, conformance rules, derivations and glossary. The explorer's
+      catalogue is generated from the served document rather than from a list in the client, so
+      a dataset that is not an operation cannot appear and an operation that stops existing takes
+      its dataset with it. Each declaration names its row identity, its facets, its detail
+      operation and an explicit five-to-seven-pointer `columns.default`; those defaults are the
+      binding ratchet's denominator, so they are a reviewable list rather than an emergent
+      property of the schema-order fallback
+- [New] The A-1 lint in `tests/contract/test_dataset_extension.py`, run against the served
+      document and then against a mutant per rule: ids unique and never one of the four reserved
+      shell routes, group one of four, every `row_id`, `columns.default`, `columns.hidden` and
+      `columns.sort` pointer resolving in the operation's own response schema, every facet a real
+      query parameter, every hidden column carrying its reason, and `detail_operation` /
+      `summary_operation` naming operations that exist. The pivot grammar — `series_pointer`,
+      `row_projection{axis,columns,suffixes}`, `anchors[]` — is checked against the production
+      schemas it will be declared on, including the two rules that complete it: projection
+      pointers are relative to `series_pointer`, and the axis is exempt from suffix expansion
+- [New] The R6 walker asserts every browsable dataset is an operation it already exercises, so a
+      generated catalogue cannot outrun the naked-number gate
+
 ### 2026-08-21 — increment-3 merge train
 
 - [Fix] The `collateral` job's link check allows this product's own `gw:` scheme beside
