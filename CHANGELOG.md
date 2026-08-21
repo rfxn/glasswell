@@ -9,6 +9,21 @@ its own version in its header, and its history is summarised in §3.1.
 
 ### 2026-08-20 — increment-3 closeout
 
+- [Fix] The satellite basemap's declared graticule fallback executes. `BasemapDef.fallback`
+      had no consumer at all — `resolveStyle`'s non-vector branch set no failure path — so a
+      reader whose imagery could not be fetched got an empty canvas, no banner and no
+      graticule. The client now asks the imagery origin for one tile before committing to it,
+      and degrades locally when the answer does not come (gate-inc3 R3.1)
+- [Fix] The failure banner names the source that failed. The raster style reused the vector
+      source id, so a USGS outage reported itself as `Tiles for protomaps did not load`; the
+      imagery style now carries its own source and `sourceLabel()` turns a MapLibre
+      `sourceId` into the locator a reader can act on — a host, or the archive path (R3.2)
+- [Fix] The imagery attribution goes down with the imagery. A credit over a canvas with no
+      imagery on it is a false statement about what was drawn (R3.3)
+- [Remove] The hosted OpenFreeMap fallback, which `connect-src 'self'` had always refused;
+      every basemap now degrades to the graticule, locally, through the one declared-fallback
+      path both the vector and the imagery branches run
+
 - [Change] The CSP names one external origin, `https://basemap.nationalmap.gov`, in
          `connect-src` and `img-src` and in no directive that loads code. USGS National Map
          imagery is public domain and keyless and has no self-hosted equivalent, so the

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { tileUrl } from "../api/client.ts";
 import { graticuleStyle, vectorStyle, basemapDef } from "./basemap.ts";
+import { resolveBasemapStyle } from "./map.ts";
 import { absoluteTileUrl, dataLayers, sourceSpecs } from "./style.ts";
 
 describe("every style this app can load", () => {
@@ -34,6 +35,88 @@ describe("every style this app can load", () => {
     const style = graticuleStyle();
     expect(style.layers.map((layer) => layer.id)).toEqual(["canvas", "graticule"]);
     expect(Object.keys(style.sources)).toEqual(["graticule"]);
+  });
+});
+
+describe("when the imagery basemap cannot be fetched", () => {
+  const withFetch = async (
+    id: string,
+    handler: (url: string) => Response | Promise<Response>,
+  ): Promise<{ resolved: Awaited<ReturnType<typeof resolveBasemapStyle>>; seen: string[] }> => {
+    const seen: string[] = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      seen.push(url);
+      return handler(url);
+    }) as typeof fetch;
+    try {
+      return { resolved: await resolveBasemapStyle(id), seen };
+    } finally {
+      globalThis.fetch = original;
+    }
+  };
+
+  const refuseImagery = (url: string): Response | Promise<Response> =>
+    url.includes("nationalmap.gov")
+      ? Promise.reject(new TypeError("Failed to fetch"))
+      : new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+
+  const layerIdsOf = (style: unknown): string[] =>
+    (style as { layers: { id: string }[] }).layers.map((layer) => layer.id);
+
+  it("runs the declared graticule fallback rather than leaving an empty canvas", async () => {
+    // The satellite option declared `fallback: "graticule"` and nothing executed it: under the
+    // production CSP the gate measured 122 refusals and 97.4% bare app background (R3.1).
+    const { resolved } = await withFetch("satellite", refuseImagery);
+
+    expect(layerIdsOf(resolved.style)).toEqual(["canvas", "graticule"]);
+    expect(resolved.failure).toEqual({
+      source: "basemap.nationalmap.gov",
+      fallback: "the graticule",
+    });
+  });
+
+  it("takes the attribution down with the imagery it belonged to", async () => {
+    // R3.3: "USGS National Map — imagery, public domain" was rendering over a canvas with no
+    // imagery on it. The credit ships with the style that carries the tiles, so it goes too.
+    const { resolved } = await withFetch("satellite", refuseImagery);
+
+    expect(JSON.stringify(resolved.style)).not.toContain("USGS");
+  });
+
+  it("asks the imagery origin one question before committing the reader to it", async () => {
+    const { seen } = await withFetch("satellite", refuseImagery);
+    const external = seen.filter((url) => url.includes("nationalmap.gov"));
+
+    expect(external).toHaveLength(1);
+    expect(external[0]).not.toContain("{z}");
+  });
+
+  it("keeps the imagery, and its credit, when the origin answers", async () => {
+    const { resolved } = await withFetch("satellite", (url) =>
+      url.includes("nationalmap.gov")
+        ? new Response(null, { status: 200 })
+        : new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
+    );
+
+    expect(resolved.failure).toBeUndefined();
+    expect(Object.keys((resolved.style as { sources: object }).sources)).toEqual(["satellite"]);
+    expect(JSON.stringify(resolved.style)).toContain("USGS");
+  });
+
+  it("keeps every other basemap zero-external, in what it fetches and in what it hands back", async () => {
+    // The archive is absent in this arm, which is the state that used to reach for
+    // https://tiles.openfreemap.org — a hosted substitute `connect-src 'self'` refuses, so the
+    // banner promised a recovery the reader could not receive. Asserting only on the requests
+    // this function makes would miss it: the style it returns is fetched by MapLibre, not here.
+    for (const id of ["dark", "light", "none"]) {
+      const { resolved, seen } = await withFetch(id, () => new Response(null, { status: 404 }));
+
+      expect(seen.filter((url) => /^https?:\/\//i.test(url)), id).toEqual([]);
+      expect(JSON.stringify(resolved.style), id).not.toMatch(/https?:\/\/(?!www\.openstreetmap|protomaps\.com)/);
+      expect(layerIdsOf(resolved.style), id).toEqual(["canvas", "graticule"]);
+    }
   });
 });
 

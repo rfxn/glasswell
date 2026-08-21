@@ -5,6 +5,7 @@ import "../map.css";
 import { connectMap, selectWell, setUrlParam } from "../bus.ts";
 import type { FlyTarget } from "../bus.ts";
 import type { Viewport } from "../app/state.ts";
+import type { BasemapDef } from "./basemap.ts";
 import {
   BASEMAP_SOURCE,
   GLYPHS_URL,
@@ -12,11 +13,13 @@ import {
   applyBasemapVariant,
   basemapDef,
   chooseBasemap,
+  fallbackStyle,
   firstLabelLayerId,
   graticuleStyle,
-  openFreeMapStyle,
   rasterStyle,
   rememberBasemap,
+  sourceLabel,
+  tileProbeUrl,
   vectorStyle,
 } from "./basemap.ts";
 import { installClickRouter } from "./click-router.ts";
@@ -40,6 +43,9 @@ import { applyVariantStyling } from "./variant-style.ts";
 
 export { absoluteTileUrl } from "./style.ts";
 export { graticuleStyle as baseStyle } from "./basemap.ts";
+// Exported for the archive-failure test: the degradation path is the one part of the map
+// module that only runs when something is broken, so it is the part most likely to rot.
+export { resolveStyle as resolveBasemapStyle };
 
 export interface MapCallbacks {
   onViewport(viewport: Viewport): void;
@@ -88,6 +94,21 @@ async function archiveServesRanges(path: string): Promise<boolean> {
   }
 }
 
+/**
+ * Imagery is somebody else's origin, so "can it be reached" is a question with an answer
+ * before anything is drawn — and the answer decides whether the reader is shown a basemap or
+ * a fallback, rather than an empty canvas with an attribution over it.
+ */
+async function tilesReachable(base: BasemapDef): Promise<boolean> {
+  const probe = tileProbeUrl(base);
+  if (!probe) return false;
+  try {
+    return (await fetch(probe)).ok;
+  } catch {
+    return false; // A refused origin and an unreachable one are one failure to the reader.
+  }
+}
+
 async function readManifest(): Promise<BasemapManifest | null> {
   try {
     const response = await fetch(MANIFEST_PATH, { headers: { Accept: "application/json" } });
@@ -110,12 +131,19 @@ async function resolveStyle(id: string): Promise<ResolvedStyle> {
   const base = basemapDef(id) ?? basemapDef("none")!;
   if (base.kind !== "vector") {
     const assets = await readManifest();
-    const style = base.kind === "raster" ? rasterStyle(base) : graticuleStyle();
     // Glyphs are served from this origin whatever the basemap is, and without the url every
     // symbol layer is dropped — which is why the spacing-unit label did not exist at all on
     // satellite or on none, the two variants VF-5 calls hardest to read.
-    if (assets?.labels === true) style.glyphs = GLYPHS_URL;
-    return { style };
+    const labelled = (style: maplibregl.StyleSpecification): maplibregl.StyleSpecification => {
+      if (assets?.labels === true) style.glyphs = GLYPHS_URL;
+      return style;
+    };
+    if (base.kind !== "raster") return { style: labelled(graticuleStyle()) };
+    const declared = fallbackStyle(base);
+    if (declared && !(await tilesReachable(base))) {
+      return { style: labelled(declared.style), failure: declared.failure };
+    }
+    return { style: labelled(rasterStyle(base)) };
   }
 
   const manifest = await readManifest();
@@ -130,11 +158,10 @@ async function resolveStyle(id: string): Promise<ResolvedStyle> {
     return result;
   }
 
-  const hosted = base.fallback === "openfreemap" ? openFreeMapStyle(id) : null;
-  if (hosted) {
-    return { style: hosted, failure: { source: archive, fallback: "OpenFreeMap" } };
-  }
-  return { style: graticuleStyle(), failure: { source: archive, fallback: "the graticule" } };
+  // The same declared fallback the imagery path runs, named for the archive that failed.
+  const declared = fallbackStyle(base);
+  if (declared) return { style: declared.style, failure: { ...declared.failure, source: archive } };
+  return { style: graticuleStyle() };
 }
 
 export function createMap(
@@ -418,7 +445,7 @@ export function createMap(
 
   map.on("error", (event) => {
     const source = (event as unknown as { sourceId?: string }).sourceId;
-    if (source) banner.report(source);
+    if (source) banner.report(sourceLabel(source));
     // MapLibre logs errors itself only when nothing is listening. Having a listener and
     // dropping the ones it cannot attribute to a source is how a style-validation failure
     // becomes an empty map over a clean console.

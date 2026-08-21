@@ -4,16 +4,20 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { BASE_STORAGE_KEY } from "./persist.ts";
 import {
   BASEMAPS,
+  BASEMAP_SOURCE,
   BASEMAP_VARIANTS,
   DEFAULT_BASEMAP,
+  PMTILES_PATH,
   applyBasemapVariant,
   basemapDef,
   basemapIds,
   basemapVariant,
   chooseBasemap,
+  fallbackStyle,
   graticuleStyle,
   pmtilesUrl,
   rasterStyle,
+  sourceLabel,
   vectorStyle,
 } from "./basemap.ts";
 
@@ -91,9 +95,44 @@ describe("the basemap catalogue", () => {
     });
   });
 
-  it("names a coded fallback for every option that could fail to load", () => {
-    expect(basemapDef("dark")?.fallback).toBe("openfreemap");
-    expect(basemapDef("none")?.fallback).toBe(null);
+  it("degrades the imagery basemap to the graticule, locally, when its tiles cannot be had", () => {
+    // Not the declaration — the behaviour. The satellite option declared a graticule fallback
+    // that nothing executed, and a green assertion on a field with no consumer read as
+    // coverage for a recovery that never ran (gate-inc3 R3.1/R3.5).
+    const fallback = fallbackStyle(basemapDef("satellite")!);
+
+    expect(fallback?.style.layers.map((layer) => layer.id)).toEqual(["canvas", "graticule"]);
+    expect(fallback?.failure).toEqual({
+      source: "basemap.nationalmap.gov",
+      fallback: "the graticule",
+    });
+    expect(JSON.stringify(fallback?.style)).not.toContain("USGS");
+  });
+
+  it("has nothing to fall back to where nothing was declared, and says so by returning null", () => {
+    expect(fallbackStyle(basemapDef("none")!)).toBe(null);
+    expect(fallbackStyle({ ...basemapDef("satellite")!, fallback: null })).toBe(null);
+  });
+
+  it("names the locator that failed, not the module that happens to serve the style", () => {
+    // R3.2: the raster style reused the vector source id, so a USGS outage was reported as
+    // "Tiles for protomaps did not load".
+    expect(sourceLabel("satellite")).toBe("basemap.nationalmap.gov");
+    expect(sourceLabel(BASEMAP_SOURCE)).toBe(PMTILES_PATH);
+    expect(sourceLabel("nd_wells")).toBe("nd_wells");
+  });
+
+  it("gives the imagery style a source of its own, so an error can be attributed to it", () => {
+    const style = rasterStyle(basemapDef("satellite")!);
+    expect(Object.keys(style.sources)).toEqual(["satellite"]);
+    expect(Object.keys(style.sources)).not.toContain(BASEMAP_SOURCE);
+  });
+
+  it("fetches its imagery from exactly one external origin, and names it", () => {
+    // The CSP allow-lists this host by name (`glasswell.api.security`). Any second origin
+    // added here is a request the browser will make and the policy will refuse.
+    const origins = BASEMAPS.flatMap((base) => base.tiles ?? []).map((url) => new URL(url).origin);
+    expect([...new Set(origins)]).toEqual(["https://basemap.nationalmap.gov"]);
   });
 
   it("draws the graticule when no basemap is chosen, so 'none' is a view not a blank", () => {

@@ -59,8 +59,8 @@ reverse proxy is required for the basemap to work.
 
 The client refuses the archive unless a ranged GET returns exactly `206`
 (`web/src/map/map.ts`, `archiveServesRanges`). A server that ignores `Range` and returns a
-whole `200` would make every tile read pull the entire archive, so that case falls back to
-OpenFreeMap rather than quietly costing 48 MB per read.
+whole `200` would make every tile read pull the entire archive, so that case degrades to the
+graticule rather than quietly costing 48 MB per read.
 
 The app applies the cache classes itself: `public, max-age=86400` on everything under
 `/basemap/`, except `manifest.json`, which stays `no-cache` because it is how the client
@@ -97,8 +97,27 @@ when the basemap enters the source manifest.
 
 1. `/basemap/manifest.json` is read; a missing manifest is a normal pre-deploy state.
 2. A ranged GET of the archive must return `206`.
-3. Otherwise the dark and light options fall back to OpenFreeMap (`positron` / `dark`,
-   keyless, attribution required, no SLA) and a banner names what failed and what replaced
-   it.
-4. If that is unreachable too, the map draws the one-degree graticule, which is also the
-   `?base=none` option a reader can choose deliberately.
+3. Otherwise the map draws the one-degree graticule — the same view `?base=none` offers
+   deliberately — and a banner names what failed and what replaced it.
+
+There is no hosted runtime fallback. The client used to reach for
+`https://tiles.openfreemap.org` at step 3 and it had never once worked: `connect-src 'self'`
+refuses it. A fallback the policy forbids is a second failure wearing the label of a recovery.
+
+## Satellite imagery, and the one origin the policy names
+
+The satellite option is USGS National Map imagery — public domain, keyless, and inherently
+somebody else's origin. `glasswell.api.security` allow-lists exactly
+`https://basemap.nationalmap.gov` in `connect-src` and `img-src`, by name and never as a
+wildcard. Nothing else external is allowed, and the dark, light and none options remain
+provably zero-external (`web/src/map/map.test.ts`).
+
+The requests happen only when a reader selects satellite, and the client asks the origin for
+one tile before committing to it: if that tile does not arrive — the origin is down, the
+policy refuses it, the network is gone — the map degrades to the graticule and the banner
+names `basemap.nationalmap.gov` as what failed. The imagery credit goes with it, because an
+attribution over a canvas with no imagery on it is a false statement about what was drawn.
+
+Adding a second imagery origin means adding it to that allow-list in the same change. If the
+list ever needs to exceed two hosts, that is a decision to take deliberately, not a widening
+to slip in with a basemap.
