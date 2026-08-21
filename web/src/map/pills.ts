@@ -23,7 +23,9 @@ export function createPillStrip(options: PillStripOptions): PillStripHandle {
   const add = document.createElement("button");
   add.type = "button";
   add.className = "gw-pill gw-pill-add";
-  add.textContent = "＋";
+  // ASCII `+`, not `＋` (U+FF0B): the fullwidth form is in no declared unicode-range, so it drew
+  // from the reader's system font rather than from Inter beside the `✕` it pairs with.
+  add.textContent = "+";
   add.setAttribute("aria-label", "Open the layer panel");
   add.addEventListener("click", () => options.onOpen());
 
@@ -62,7 +64,7 @@ function pill(id: string, label: string, on: boolean, options: PillStripOptions)
   const remove = document.createElement("button");
   remove.type = "button";
   remove.className = "gw-pill-x";
-  remove.textContent = on ? "✕" : "＋";
+  remove.textContent = on ? "✕" : "+";
   remove.setAttribute("aria-label", `${on ? "Hide" : "Show"} ${label}`);
   remove.addEventListener("click", () => options.onRemove(id));
   node.appendChild(remove);

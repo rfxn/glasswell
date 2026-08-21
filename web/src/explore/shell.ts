@@ -5,6 +5,7 @@ import { readState } from "../app/state.ts";
 import type { AppState, ExploreTab } from "../app/state.ts";
 import { buildCatalogue } from "./catalogue.ts";
 import type { Catalogue, CatalogueDataset } from "./catalogue.ts";
+import { mountGrid } from "./grid/grid.ts";
 import { renderRail } from "./rail.ts";
 import { requestFor } from "./router.ts";
 
@@ -33,6 +34,12 @@ let pending: Promise<unknown> | null = null;
 let mounted: { host: HTMLElement; abort: AbortController; hooks: ExplorerHooks } | null = null;
 let state: AppState | null = null;
 let catalogue: Catalogue | null = null;
+// The document the catalogue was built from: C7 reads response schemas and parameters out of it
+// rather than fetching it a second time (C6 MUST-KNOW K2).
+let apiDocument: unknown = null;
+// One render, one in-flight grid: a filter changed twice quickly must not race two responses
+// into the same host, and the loser has to be cancelled rather than merely ignored.
+let gridAbort: AbortController | null = null;
 
 /** SB-08 §2.3's one exemption: /openapi.json is not an envelope, so `getEnvelope` cannot type it. */
 async function openapiDocument(): Promise<unknown> {
@@ -46,6 +53,8 @@ async function openapiDocument(): Promise<unknown> {
 
 export function unmountExplorer(): void {
   if (!mounted) return;
+  gridAbort?.abort();
+  gridAbort = null;
   mounted.abort.abort();
   mounted.host.replaceChildren();
   mounted.host.removeAttribute("data-tab");
@@ -64,7 +73,8 @@ export async function mountExplorer(
   state = next;
 
   try {
-    catalogue = buildCatalogue(await openapiDocument());
+    apiDocument = await openapiDocument();
+    catalogue = buildCatalogue(apiDocument);
   } catch (error) {
     // Never rethrow: main.ts unhides this host only after the mount resolves, so a failed
     // document would otherwise leave the reader on a surface with nothing on it at all.
@@ -118,6 +128,27 @@ function render(next: AppState): void {
 
   root.append(rail, centre, pane);
   host.replaceChildren(root);
+  renderGrid(next);
+}
+
+function renderGrid(next: AppState): void {
+  gridAbort?.abort();
+  gridAbort = null;
+  const dataset = selected(next);
+  const grid = document.getElementById(GRID_HOST_ID);
+  const facets = document.getElementById(FACET_HOST_ID);
+  if (!dataset || !grid || !facets || next.tab !== "datasets") return;
+
+  gridAbort = new AbortController();
+  void mountGrid(grid, {
+    dataset,
+    document: apiDocument,
+    datasets: catalogue?.datasets ?? [],
+    state: next,
+    facetHost: facets,
+    commit,
+    signal: gridAbort.signal,
+  });
 }
 
 function selected(next: AppState): CatalogueDataset | undefined {
@@ -188,13 +219,8 @@ function datasetHeader(dataset: CatalogueDataset, next: AppState): HTMLElement {
   identity.textContent = `Row identity ${dataset.row_id.join(" + ")}`;
   header.append(identity);
 
-  if (request.missing.length > 0) {
-    header.append(
-      note(
-        `This dataset is read one anchor at a time: ${request.missing.join(", ")} has no value yet, so there is nothing to list until you supply one.`,
-      ),
-    );
-  }
+  // C2: the grid's own anchor prompt says this, names the 404 and offers the input. Two
+  // paraphrases of one fact 110 px apart is one more than the reader needs.
   return header;
 }
 
