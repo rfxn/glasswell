@@ -1,10 +1,12 @@
 import { ApiError, getEnvelope } from "../api/client.ts";
 import { derivationFor, labelFor, unwrap } from "../api/envelope.ts";
 import type { Envelope, Figure } from "../api/envelope.ts";
+import { readState } from "../app/state.ts";
 import { renderChart } from "../chart/chart.ts";
 import { toChartSeries } from "../chart/series.ts";
 import type { ProductionData } from "../chart/series.ts";
 import { focusPanel } from "../chrome/overlays.ts";
+import { crossingLink, openThisSeries, rowsForThisWell } from "../explore/bridge.ts";
 import { labelElement } from "../glossary/gw-term.ts";
 import { highlight } from "../glossary/index.ts";
 import { termIndex } from "../glossary/store.ts";
@@ -88,6 +90,14 @@ export async function renderWellCard(
   apiValue.textContent = ` ${detail.api10}`;
   api.appendChild(apiValue);
   header.appendChild(api);
+
+  // SB-08 §2.6 row 1, after the api10 line and ahead of the close button: the crossing
+  // reads as part of the identity block rather than as one more control in the corner.
+  const rows = rowsForThisWell(detail.api10, {
+    state: readState(),
+    resolved: well.meta.as_of.resolved,
+  });
+  if (rows) header.appendChild(crossingLink(rows));
 
   const close = document.createElement("button");
   close.type = "button";
@@ -211,6 +221,14 @@ export async function renderWellCard(
     chartTitle.replaceChildren(
       labelElement("Monthly production", labelFor(production, "/series")),
     );
+    // SB-08 §2.6 row 2, in the chart's own header and after that replaceChildren rather
+    // than before it: the title is rebuilt when the series lands, so an earlier append
+    // goes with the placeholder. The vintage pinned is the series' own, not the card's.
+    const series = openThisSeries(detail.api10, {
+      state: readState(),
+      resolved: production.meta.as_of.resolved,
+    });
+    if (series) chartTitle.appendChild(crossingLink(series));
     renderChart(chartHost, toChartSeries(data), {
       onExplain: callbacks.onExplain,
       labelTermFor: (pointer) => labelFor(production, pointer),

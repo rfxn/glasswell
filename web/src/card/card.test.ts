@@ -172,7 +172,11 @@ describe("well card", () => {
     await renderWellCard(host, API10, callbacks);
 
     const frame = host.querySelector(".gw-card-chart") as HTMLElement;
-    expect(frame.querySelector(".gw-frame-title")?.textContent).toBe("Monthly production");
+    const title = frame.querySelector(".gw-frame-title") as HTMLElement;
+    // §2.6's crossing sits in this header too, so the label is the title's own text and not
+    // everything the header carries.
+    expect(title.firstElementChild?.textContent).toBe("Monthly production");
+    expect(title.querySelector('[data-crossing="open-this-series"]')).not.toBeNull();
     expect(renderChart.mock.calls[0]?.[0]).toBe(frame.querySelector(".gw-frame-body"));
   });
 
