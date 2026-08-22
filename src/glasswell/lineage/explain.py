@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Any, Literal, Protocol
@@ -15,8 +16,11 @@ from glasswell.lineage.models import Frozen
 from glasswell.lineage.serialization import json_ready
 
 MAX_DEPTH = 8
+# SB-07 §9.4's request grammar: how many `h=` a caller may send in one call. It is not a
+# statement about how many chains may be resolved, and `?explain=true` does not raise it.
 MAX_HANDLES = 20
 DEFAULT_DEPTH = 3
+DOT_MEDIA_TYPE = "text/vnd.graphviz"
 
 NodeType = Literal["derivation", "manifest", "rule", "model", "external"]
 
@@ -316,6 +320,87 @@ def resolve_chains(
         raise ValueError(f"at most {MAX_HANDLES} handles per request, not {len(handles)}")
     graph = PostgresGraph(connection)
     return [resolve_chain_from(graph, handle, depth=depth) for handle in handles]
+
+
+_DOT_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+_DOT_SHAPES: Mapping[str, str] = {
+    "derivation": "box",
+    "manifest": "note",
+    "rule": "ellipse",
+    "model": "component",
+    "external": "octagon",
+}
+
+
+def to_dot(chains: Sequence[Chain]) -> str:
+    """SB-07 §9.4's second rendering: one digraph over the same resolution `to_json` returns.
+
+    Conformance rules become nodes rather than staying fields, because R8's claim is that a
+    mapping decision is part of the picture; an edge typed `rule` is what makes it visible.
+    """
+    nodes: dict[str, dict[str, str]] = {}
+    edges: dict[tuple[str, str], dict[str, str]] = {}
+    for chain in chains:
+        for node in chain.nodes:
+            nodes.setdefault(node.id, _dot_node(node))
+            for rule in node.attributes.get("conformance_rules") or ():
+                rule_id = str(rule["rule_id"])
+                nodes.setdefault(
+                    rule_id,
+                    {"type": "rule", "shape": _DOT_SHAPES["rule"], "label": _label(rule_id)},
+                )
+                edges.setdefault((node.id, rule_id), {"role": "rule", "style": "dashed"})
+        for edge in chain.edges:
+            attributes = {"role": edge.role}
+            if edge.as_of_vintage is not None:
+                attributes["as_of_vintage"] = edge.as_of_vintage.isoformat()
+            edges.setdefault((edge.source, edge.target), attributes)
+
+    lines = ["digraph lineage {", '  rankdir="LR";']
+    lines += [f"  {_quote(name)} {_attributes(body)};" for name, body in nodes.items()]
+    lines += [
+        f"  {_quote(source)} -> {_quote(target)} {_attributes(body)};"
+        for (source, target), body in edges.items()
+    ]
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+def _dot_node(node: ChainNode) -> dict[str, str]:
+    attributes = node.attributes
+    if node.type == "derivation":
+        output = attributes.get("output") or {}
+        label = _label(
+            str(attributes.get("operation") or node.id), str(output.get("dataset") or "")
+        )
+    elif node.type == "manifest":
+        label = _label(
+            str(attributes.get("source_id") or ""), str(attributes.get("source_key") or "")
+        )
+    else:
+        label = _label(node.id)
+    return {"type": node.type, "shape": _DOT_SHAPES.get(node.type, "box"), "label": label}
+
+
+def _attributes(body: Mapping[str, str]) -> str:
+    """`label` is pre-quoted; every other value is data and is quoted here."""
+    rendered = ", ".join(
+        f"{key}={value if key == 'label' else _quote(value)}" for key, value in body.items()
+    )
+    return f"[{rendered}]"
+
+
+def _escape(value: str) -> str:
+    return _DOT_CONTROL.sub(" ", value).replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _quote(value: str) -> str:
+    return f'"{_escape(value)}"'
+
+
+def _label(*parts: str) -> str:
+    r"""A quoted DOT id whose line breaks are the language's `\n`, not bytes from the data."""
+    return '"' + "\\n".join(_escape(part) for part in parts if part) + '"'
 
 
 def to_json(chain: Chain) -> dict[str, Any]:

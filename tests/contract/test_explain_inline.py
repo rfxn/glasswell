@@ -1,0 +1,290 @@
+"""DR-63: `?explain=true` on the figure-bearing GETs (SB-07 §9.2).
+
+§9.2's GET row: *"Response gains `_explain: {handle: chain}` for every handle it contains.
+Default depth 3, max 8."* and *"`?explain=true` never changes the values in a response — only
+adds `_explain`."* Both halves are asserted here, the second as byte identity rather than as
+value identity, because a cached or replayed comparison is what the sentence exists to protect.
+
+`_explain` sits beside `data`, not inside it: §9.2 says *response*, §9.1(b)'s sidecars say
+*resource*, and the map is keyed by handle — a string carrying `#`, `&` and `=` — where a
+sidecar is keyed by dotted pointer. Keeping it out of `data` also keeps the R6 walker's
+population exactly the served figures rather than admitting graph bookkeeping into it.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+from urllib.parse import parse_qsl
+
+import pytest
+from fastapi.testclient import TestClient
+from httpx import Response
+
+from glasswell.api.errors import TYPE_BASE
+from glasswell.api.examples import EXAMPLE_API10, EXAMPLE_BBOX
+from glasswell.lineage.envelope import InlinedExplain, attach_lineage, figure
+from glasswell.lineage.explain import DEFAULT_DEPTH, MAX_DEPTH
+from tests.contract.test_naked_numbers import naked_numbers
+
+# The three figure-bearing GETs SB-07 §9.2 reaches first: a header, a series and an aggregate.
+SURFACES: tuple[tuple[str, dict[str, Any]], ...] = (
+    ("get_well", {"url": f"/v1/wells/{EXAMPLE_API10}", "params": {}}),
+    ("get_well_production", {"url": f"/v1/wells/{EXAMPLE_API10}/production", "params": {}}),
+    (
+        "get_well_status_summary",
+        {"url": "/v1/wells/status-summary", "params": {"bbox": EXAMPLE_BBOX}},
+    ),
+)
+SURFACE_IDS = [name for name, _ in SURFACES]
+
+
+def _call(client: TestClient, call: dict[str, Any], **extra: Any) -> Response:
+    response = client.get(call["url"], params={**call["params"], **extra})
+    assert response.status_code == 200, response.text
+    return response
+
+
+def _normalised(response: Response) -> bytes:
+    """The bytes, with the one field that is a new ULID on every request pinned."""
+    request_id = response.json()["meta"]["request_id"]
+    return response.content.replace(request_id.encode(), b"<request_id>")
+
+
+def _without_explain(response: Response) -> bytes:
+    body = json.loads(response.content)
+    del body["_explain"]
+    request_id = body["meta"]["request_id"]
+    # starlette's own rendering, so what is compared is bytes and not a normalised form.
+    rendered = json.dumps(body, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+    return rendered.encode("utf-8").replace(request_id.encode(), b"<request_id>")
+
+
+@pytest.mark.parametrize(("name", "call"), SURFACES, ids=SURFACE_IDS)
+def test_the_flag_absent_and_the_flag_false_are_the_same_bytes(
+    client: TestClient, name: str, call: dict[str, Any]
+) -> None:
+    """The additive guarantee, at byte level: a client that never sends the parameter cannot
+    tell it was added."""
+    absent = _call(client, call)
+    explicitly_off = _call(client, call, explain="false")
+
+    assert _normalised(absent) == _normalised(explicitly_off)
+    assert "_explain" not in absent.json()
+    assert set(absent.json()) == {"data", "meta", "links"}
+
+
+@pytest.mark.parametrize(("name", "call"), SURFACES, ids=SURFACE_IDS)
+def test_explain_true_adds_the_block_and_moves_nothing_else(
+    client: TestClient, name: str, call: dict[str, Any]
+) -> None:
+    """§9.2: *never changes the values in a response — only adds `_explain`*. Strip the block
+    back off and the bytes are the bytes of the request that never asked for it."""
+    plain = _call(client, call)
+    explained = _call(client, call, explain="true")
+
+    assert set(explained.json()) == {"data", "meta", "links", "_explain"}
+    assert _without_explain(explained) == _normalised(plain)
+
+
+@pytest.mark.parametrize(("name", "call"), SURFACES, ids=SURFACE_IDS)
+def test_the_inlined_chain_is_what_explain_returns_for_that_handle(
+    client: TestClient, name: str, call: dict[str, Any]
+) -> None:
+    """Equality, not shape. One resolver, reached two ways — a second traversal that merely
+    looked similar is the failure this asserts against."""
+    inlined = _call(client, call, explain="true").json()["_explain"]
+
+    assert inlined
+    for handle, chain in inlined.items():
+        served = client.get(
+            "/v1/explain", params={"h": handle, "depth": str(DEFAULT_DEPTH)}
+        )
+        assert served.status_code == 200, handle
+        assert chain == served.json()["data"]["chains"][0]
+
+
+@pytest.mark.parametrize(("name", "call"), SURFACES, ids=SURFACE_IDS)
+def test_the_inlined_set_is_the_set_links_explain_names(
+    client: TestClient, name: str, call: dict[str, Any]
+) -> None:
+    """One answer to "which handles will you resolve for me", not two that can disagree
+    (§3.6.2). `_explain` is `links.explain` already called."""
+    body = _call(client, call, explain="true").json()
+    linked = [
+        value for key, value in parse_qsl(body["links"]["explain"].split("?", 1)[1]) if key == "h"
+    ]
+
+    assert set(body["_explain"]) == set(linked)
+
+
+@pytest.mark.parametrize(("name", "call"), SURFACES, ids=SURFACE_IDS)
+def test_the_depth_the_caller_asked_for_is_the_depth_it_resolved_at(
+    client: TestClient, name: str, call: dict[str, Any]
+) -> None:
+    inlined = _call(client, call, explain="true", explain_depth=1).json()["_explain"]
+
+    assert inlined
+    for handle, chain in inlined.items():
+        served = client.get("/v1/explain", params={"h": handle, "depth": "1"})
+        assert chain == served.json()["data"]["chains"][0]
+
+
+def test_the_default_depth_is_three(client: TestClient) -> None:
+    """§9.2 names the default; the document has to say the same number the code uses."""
+    document = client.get("/openapi.json").json()
+    parameter = next(
+        item
+        for item in document["paths"]["/v1/wells/{api10}"]["get"]["parameters"]
+        if item["name"] == "explain_depth"
+    )
+
+    assert parameter["schema"]["default"] == DEFAULT_DEPTH == 3
+    assert parameter["schema"]["maximum"] == MAX_DEPTH == 8
+
+
+@pytest.mark.parametrize("depth", ["9", "0", "-1", "full"])
+def test_a_depth_outside_the_declared_range_is_refused_not_clamped(
+    client: TestClient, depth: str
+) -> None:
+    """SB-04 §2.3: over the cap is 422. `full` is `/v1/explain`'s own grammar, not this one —
+    an inlining flag that quietly meant eight would be a cap nobody declared."""
+    response = client.get(
+        f"/v1/wells/{EXAMPLE_API10}", params={"explain": "true", "explain_depth": depth}
+    )
+
+    assert response.status_code == 422
+    assert response.json()["type"] == f"{TYPE_BASE}/validation_failed"
+    assert any(item["pointer"].endswith("/explain_depth") for item in response.json()["errors"])
+
+
+def test_a_response_carrying_no_handle_gains_an_empty_block_and_not_a_missing_one(
+    client: TestClient,
+) -> None:
+    """Absent would be indistinguishable from "the flag did nothing"; empty is a statement."""
+    body = client.get(
+        "/v1/wells/status-summary", params={"bbox": "-1,-1,-0.9,-0.9", "explain": "true"}
+    ).json()
+
+    assert body["data"]["statuses"] == []
+    assert body["_explain"] == {}
+
+
+@pytest.mark.parametrize(("name", "call"), SURFACES, ids=SURFACE_IDS)
+def test_nothing_is_truncated_quietly_at_this_scale(
+    client: TestClient, name: str, call: dict[str, Any]
+) -> None:
+    """The fixture is inside the cap, so no bound is claimed. The over-cap arm is the
+    integration tier's, where a population big enough to cross it can be seeded."""
+    body = _call(client, call, explain="true").json()
+    codes = {item["code"] for item in body["meta"]["warnings"]}
+
+    assert "explain_inline_truncated" not in codes
+
+
+@pytest.mark.parametrize("scope", ["guest", "agent"])
+def test_the_flag_is_reachable_by_every_principal_the_host_endpoint_is(
+    client: TestClient, guest_client: TestClient, agent_client: TestClient, scope: str
+) -> None:
+    """DR-63 adds no gate of its own: a parameter with its own auth answer would be a second,
+    undeclared access rule on a surface the matrix already covers."""
+    caller = {"guest": guest_client, "agent": agent_client}[scope]
+
+    response = caller.get(f"/v1/wells/{EXAMPLE_API10}", params={"explain": "true"})
+
+    assert response.status_code == 200
+    assert response.json()["_explain"]
+
+
+def test_the_document_declares_the_parameters_on_every_surface_that_takes_them(
+    client: TestClient,
+) -> None:
+    document = client.get("/openapi.json").json()
+    paths = {
+        "/v1/wells/{api10}",
+        "/v1/wells/{api10}/production",
+        "/v1/wells/status-summary",
+    }
+
+    for path in paths:
+        names = {item["name"] for item in document["paths"][path]["get"]["parameters"]}
+        assert {"explain", "explain_depth"} <= names, path
+
+
+def test_every_new_parameter_carries_its_semantics(client: TestClient) -> None:
+    """A-8: the C9 pane renders WHAT from the description, WHY and SEE from the bound term,
+    and SO from here. A parameter with no entry renders as unannotated, which is a real state
+    but not one a parameter added on purpose should be in."""
+    document = client.get("/openapi.json").json()
+    annotated: dict[str, set[str]] = {}
+    for path in ("/v1/wells/{api10}", "/v1/wells/{api10}/production", "/v1/wells/status-summary"):
+        operation = document["paths"][path]["get"]
+        annotated[path] = set(operation.get("x-glasswell-semantics", {}))
+
+    for path, names in annotated.items():
+        assert {"explain", "explain_depth"} <= names, path
+
+    explain_semantics = document["paths"]["/v1/explain"]["get"]["x-glasswell-semantics"]
+    assert {"h", "depth", "format"} <= set(explain_semantics)
+
+
+@pytest.mark.parametrize(("name", "call"), SURFACES, ids=SURFACE_IDS)
+def test_the_block_stays_outside_the_population_the_r6_walker_reads(
+    client: TestClient, name: str, call: dict[str, Any]
+) -> None:
+    """The placement is load-bearing, not convenient.
+
+    A chain carries a graph depth, a recorded row count and a manifest byte length, and none of
+    the three is a served figure — they are exempted at `/chains/*/...` on /v1/explain's own
+    response. Inside `data` they would need the same exemptions again under every host surface,
+    and allowlist breadth is precisely what turns the R6 gate into decoration (A-2's minimality
+    rule). The second assertion is what stops this from being a claim: it shows the walker does
+    call those numbers naked, so `data` staying clean is a consequence of where the block sits.
+    """
+    body = _call(client, call, explain="true").json()
+
+    assert naked_numbers(body["data"]) == []
+    assert naked_numbers({**body["data"], "_explain": body["_explain"]}), (
+        "the chain carries no number the walker objects to, so this proves nothing"
+    )
+
+
+def test_a_handle_that_does_not_resolve_is_named_rather_than_dropped() -> None:
+    """R6 says every served handle resolves; when one does not, the honest answer is to say
+    which and why. Failing the whole request would let an optional diagnostic flag take down
+    a working figure, which §9.2 forbids in the same breath as it adds the block."""
+    figure_object = figure("1", unit="ft", derivation="drv_gone", selector="col=x")
+
+    envelope = attach_lineage(
+        {"length_ft": figure_object},
+        as_of=None,
+        request_id="01TEST",
+        explain=lambda handles: InlinedExplain(
+            chains={}, unresolved=dict.fromkeys(handles, "derivation_swept")
+        ),
+    )
+    body = envelope.to_dict()
+    warning = next(
+        item for item in body["meta"]["warnings"] if item["code"] == "explain_unresolved"
+    )
+
+    assert body["_explain"] == {}
+    assert figure_object.handle in warning["detail"]
+    assert "derivation_swept" in warning["detail"]
+    assert body["data"]["length_ft"]["value"] == "1"
+
+
+def test_the_envelope_schema_publishes_the_optional_block(client: TestClient) -> None:
+    document = client.get("/openapi.json").json()
+    envelopes = [
+        name for name in document["components"]["schemas"] if name.startswith("EnvelopeModel")
+    ]
+
+    assert envelopes
+    assert all(
+        "_explain" in document["components"]["schemas"][name]["properties"] for name in envelopes
+    )
+    assert all(
+        "_explain" not in document["components"]["schemas"][name].get("required", ())
+        for name in envelopes
+    )

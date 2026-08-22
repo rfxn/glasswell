@@ -44,7 +44,14 @@ MATRIX: tuple[tuple[str, str, str], ...] = (
     ("GET", f"/v1/wells/{EXAMPLE_API10}", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production/pools", READ),
+    # DR-63/DR-64 add parameters, never gates: an optional flag that carried its own auth
+    # answer would be a second access rule on a surface this table already covers, and it
+    # would be invisible here because the table keys on the path.
+    ("GET", f"/v1/wells/status-summary?bbox={EXAMPLE_BBOX}&explain=true", READ),
+    ("GET", f"/v1/wells/{EXAMPLE_API10}?explain=true&explain_depth=8", READ),
+    ("GET", f"/v1/wells/{EXAMPLE_API10}/production?explain=true", READ),
     ("GET", f"/v1/explain?h={EXAMPLE_DERIVATION_ID}", READ),
+    ("GET", f"/v1/explain?h={EXAMPLE_DERIVATION_ID}&format=dot", READ),
     ("GET", "/v1/derivations", READ),
     ("GET", f"/v1/derivations/{EXAMPLE_DERIVATION_ID}", READ),
     ("GET", "/v1/manifests", READ),

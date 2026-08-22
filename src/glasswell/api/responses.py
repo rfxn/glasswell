@@ -10,11 +10,20 @@ from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from typing import Any
 
+import psycopg
 from fastapi import Request
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import JSONResponse
 
-from glasswell.lineage.envelope import attach_lineage
+from glasswell.api.deps import ExplainFlags
+from glasswell.lineage.envelope import (
+    EXPLAIN_BLOCK,
+    ExplainInliner,
+    InlinedExplain,
+    attach_lineage,
+)
+from glasswell.lineage.errors import LineageUnresolved
+from glasswell.lineage.explain import PostgresGraph, resolve_chain_from, to_json
 
 
 class FigureModel(BaseModel):
@@ -78,9 +87,49 @@ class LinksModel(BaseModel):
 class EnvelopeModel[DataT](BaseModel):
     """SB-04 §2.2. `data` is the payload itself — a collection is the array, not `{items}`."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     data: DataT
     meta: MetaModel
     links: LinksModel
+    explain: dict[str, Any] | None = Field(
+        default=None,
+        alias=EXPLAIN_BLOCK,
+        description=(
+            "Present only when `?explain=true` was sent: one SB-07 §9.3 chain per derivation"
+            " handle in this response, keyed by the handle itself. It sits beside `data`"
+            " rather than inside it because it is keyed by handle, not by pointer, and"
+            " because the flag must add nothing to the payload it explains (SB-07 §9.2)."
+        ),
+    )
+
+
+def inline_for(
+    connection: psycopg.Connection, flags: ExplainFlags
+) -> ExplainInliner | None:
+    """The §9.2 resolver, or None when the caller did not ask.
+
+    One graph object for the whole response, and one handle's failure is that handle's: an
+    optional diagnostic that can 404 a working figure would change the response, which is the
+    single thing §9.2 says the flag never does.
+    """
+    if not flags.explain:
+        return None
+
+    def inline(handles: Sequence[str]) -> InlinedExplain:
+        graph = PostgresGraph(connection)
+        chains: dict[str, Any] = {}
+        unresolved: dict[str, str] = {}
+        for handle in handles:
+            try:
+                chains[handle] = to_json(
+                    resolve_chain_from(graph, handle, depth=flags.explain_depth)
+                )
+            except LineageUnresolved as stopped:
+                unresolved[handle] = stopped.reason
+        return InlinedExplain(chains=chains, unresolved=unresolved)
+
+    return inline
 
 
 def enveloped(
@@ -95,6 +144,7 @@ def enveloped(
     links: Mapping[str, str | None] | None = None,
     warnings: Sequence[Mapping[str, Any] | str] = (),
     status_code: int = 200,
+    explain: ExplainInliner | None = None,
 ) -> JSONResponse:
     resolved_links = {"self": request.url.path, **dict(links or {})}
     envelope = attach_lineage(
@@ -107,6 +157,7 @@ def enveloped(
         next_cursor=next_cursor,
         as_of_requested=as_of_requested,
         warnings=warnings,
+        explain=explain,
     )
     return JSONResponse(envelope.to_dict(), status_code=status_code)
 

@@ -27,6 +27,7 @@ from glasswell.api.principal import (
 from glasswell.api.principal import (
     Principal as ResolvedPrincipal,
 )
+from glasswell.lineage.explain import DEFAULT_DEPTH, MAX_DEPTH
 
 OWNER_KEY_ENV = "GLASSWELL_OWNER_KEY"
 ALLOW_ANON_ENV = "GLASSWELL_ALLOW_ANON"
@@ -135,6 +136,44 @@ def post_flags(
 
 
 PostEffect = Annotated[PostFlags, Depends(post_flags)]
+
+
+class ExplainFlags(BaseModel):
+    """SB-07 §9.2's GET row, as the two parameters that carry it."""
+
+    explain: bool = Field(description="Inline a chain for every handle the response carries.")
+    explain_depth: int = Field(description="Levels the inlined walk goes back.")
+
+
+def explain_flags(
+    explain: Annotated[
+        bool,
+        Query(
+            description=(
+                "Resolve every derivation handle this response carries and inline the chains"
+                " under `_explain`, keyed by handle. Values are unchanged: the flag adds a"
+                " block and moves nothing else, so a cached or replayed comparison is"
+                " unaffected by it (SB-07 §9.2)."
+            )
+        ),
+    ] = False,
+    explain_depth: Annotated[
+        int,
+        Query(
+            ge=1,
+            le=MAX_DEPTH,
+            description=(
+                f"How many levels back an inlined chain walks: {DEFAULT_DEPTH} by default,"
+                f" {MAX_DEPTH} at most. Over the cap is refused, never clamped. A chain that"
+                " stops short says so in its own `truncated` field."
+            ),
+        ),
+    ] = DEFAULT_DEPTH,
+) -> ExplainFlags:
+    return ExplainFlags(explain=explain, explain_depth=explain_depth)
+
+
+ExplainEffect = Annotated[ExplainFlags, Depends(explain_flags)]
 
 AsOf = Annotated[
     date | None,

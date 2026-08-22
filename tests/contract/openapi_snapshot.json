@@ -1098,6 +1098,19 @@
       },
       "EnvelopeModel_Chains_": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "$ref": "#/components/schemas/Chains"
           },
@@ -1118,6 +1131,19 @@
       },
       "EnvelopeModel_ConformanceRuleDetail_": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "$ref": "#/components/schemas/ConformanceRuleDetail"
           },
@@ -1138,6 +1164,19 @@
       },
       "EnvelopeModel_Derivation_": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "$ref": "#/components/schemas/Derivation"
           },
@@ -1158,6 +1197,19 @@
       },
       "EnvelopeModel_ErrorType_": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "$ref": "#/components/schemas/ErrorType"
           },
@@ -1178,6 +1230,19 @@
       },
       "EnvelopeModel_GlossaryIndex_": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "$ref": "#/components/schemas/GlossaryIndex"
           },
@@ -1198,6 +1263,19 @@
       },
       "EnvelopeModel_GlossaryTermDetail_": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "$ref": "#/components/schemas/GlossaryTermDetail"
           },
@@ -1218,6 +1296,19 @@
       },
       "EnvelopeModel_Health_": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "$ref": "#/components/schemas/Health"
           },
@@ -1238,6 +1329,19 @@
       },
       "EnvelopeModel_IssuedKey_": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "$ref": "#/components/schemas/IssuedKey"
           },
@@ -1258,6 +1362,19 @@
       },
       "EnvelopeModel_KeyRecordModel_": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "$ref": "#/components/schemas/KeyRecordModel"
           },
@@ -1278,6 +1395,19 @@
       },
       "EnvelopeModel_Manifest_": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "$ref": "#/components/schemas/Manifest"
           },
@@ -1298,6 +1428,19 @@
       },
       "EnvelopeModel_ProductionPools_": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "$ref": "#/components/schemas/ProductionPools"
           },
@@ -1318,6 +1461,19 @@
       },
       "EnvelopeModel_Production_": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "$ref": "#/components/schemas/Production"
           },
@@ -1338,6 +1494,19 @@
       },
       "EnvelopeModel_QuarantineDetail_": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "$ref": "#/components/schemas/QuarantineDetail"
           },
@@ -1358,6 +1527,19 @@
       },
       "EnvelopeModel_QuarantineSummary_": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "$ref": "#/components/schemas/QuarantineSummary"
           },
@@ -1378,6 +1560,19 @@
       },
       "EnvelopeModel_ServiceIndex_": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "$ref": "#/components/schemas/ServiceIndex"
           },
@@ -1398,6 +1593,19 @@
       },
       "EnvelopeModel_Vintage_": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "$ref": "#/components/schemas/Vintage"
           },
@@ -1418,6 +1626,19 @@
       },
       "EnvelopeModel_WellDetail_": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "$ref": "#/components/schemas/WellDetail"
           },
@@ -1438,6 +1659,19 @@
       },
       "EnvelopeModel_WellStatusSummary_": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "$ref": "#/components/schemas/WellStatusSummary"
           },
@@ -1458,6 +1692,19 @@
       },
       "EnvelopeModel_list_ConformanceRule__": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "items": {
               "$ref": "#/components/schemas/ConformanceRule"
@@ -1482,6 +1729,19 @@
       },
       "EnvelopeModel_list_DerivationSummary__": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "items": {
               "$ref": "#/components/schemas/DerivationSummary"
@@ -1506,6 +1766,19 @@
       },
       "EnvelopeModel_list_GlossaryTerm__": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "items": {
               "$ref": "#/components/schemas/GlossaryTerm"
@@ -1530,6 +1803,19 @@
       },
       "EnvelopeModel_list_KeyRecordModel__": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "items": {
               "$ref": "#/components/schemas/KeyRecordModel"
@@ -1554,6 +1840,19 @@
       },
       "EnvelopeModel_list_Manifest__": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "items": {
               "$ref": "#/components/schemas/Manifest"
@@ -1578,6 +1877,19 @@
       },
       "EnvelopeModel_list_QuarantineRow__": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "items": {
               "$ref": "#/components/schemas/QuarantineRow"
@@ -1602,6 +1914,19 @@
       },
       "EnvelopeModel_list_Vintage__": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "items": {
               "$ref": "#/components/schemas/Vintage"
@@ -1626,6 +1951,19 @@
       },
       "EnvelopeModel_list_WellSummary__": {
         "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
           "data": {
             "items": {
               "$ref": "#/components/schemas/WellSummary"
@@ -5459,7 +5797,7 @@
     },
     "/v1/explain": {
       "get": {
-        "description": "Walks each handle back through the derivation graph to the manifests it came from, returning nodes, edges, terminals and a one-sentence explanation per node. This is the call that turns a number on a chart into a checksummed government file. Up to twenty handles per request and eight levels deep; both caps are refused rather than clamped. A handle that cannot be resolved returns `lineage_unresolved` naming the last node that did resolve \u2014 never a bare 404. The example id is the contract fixture's. `drv_`, `man_` and `qr_` ids are content addresses over bytes and run parameters, so they differ per deployment by construction \u2014 take a live one from the `d` handle on any served figure, or from `/v1/manifests`.",
+        "description": "Walks each handle back through the derivation graph to the manifests it came from, returning nodes, edges, terminals and a one-sentence explanation per node. This is the call that turns a number on a chart into a checksummed government file. Up to twenty handles per request and eight levels deep; both caps are refused rather than clamped. A handle that cannot be resolved returns `lineage_unresolved` naming the last node that did resolve \u2014 never a bare 404. `format=dot` returns the same resolution as a Graphviz digraph instead of JSON: derivations, manifests and the conformance rules they cited as nodes, and every edge labelled with the role the input played. The example id is the contract fixture's. `drv_`, `man_` and `qr_` ids are content addresses over bytes and run parameters, so they differ per deployment by construction \u2014 take a live one from the `d` handle on any served figure, or from `/v1/manifests`.",
         "operationId": "get_explain",
         "parameters": [
           {
@@ -5489,14 +5827,17 @@
             }
           },
           {
-            "description": "Response format. Only json ships in this slice.",
+            "description": "Response format: the SB-07 \u00a79.3 chain JSON, or a Graphviz DOT digraph of the same resolution. Anything else is refused.",
             "in": "query",
             "name": "format",
             "required": false,
             "schema": {
-              "const": "json",
               "default": "json",
-              "description": "Response format. Only json ships in this slice.",
+              "description": "Response format: the SB-07 \u00a79.3 chain JSON, or a Graphviz DOT digraph of the same resolution. Anything else is refused.",
+              "enum": [
+                "json",
+                "dot"
+              ],
               "title": "Format",
               "type": "string"
             }
@@ -5508,6 +5849,12 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/EnvelopeModel_Chains_"
+                }
+              },
+              "text/vnd.graphviz": {
+                "example": "digraph lineage {\n  rankdir=\"LR\";\n  \"drv_7QK3M2XR4V9B\" [type=\"derivation\", shape=box, label=\"alloc.apply\\nmarts.well_month_allocated\"];\n  \"man_9c3f\" [type=\"manifest\", shape=note, label=\"tx_pdq_dsv\\nPDQ_DSV.zip\"];\n  \"drv_7QK3M2XR4V9B\" -> \"man_9c3f\" [role=\"primary\"];\n}\n",
+                "schema": {
+                  "type": "string"
                 }
               }
             },
@@ -5616,6 +5963,19 @@
             "h": [
               "drv_obqajdni25f25zmxcz7a"
             ]
+          }
+        },
+        "x-glasswell-semantics": {
+          "depth": {
+            "so": "How far back the walk goes before it stops. `full` means the maximum this endpoint allows, not 'however far it takes' \u2014 a chain that stopped short reports `truncated` rather than presenting a partial graph as a whole one.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "format": {
+            "so": "`json` is the machine-readable chain an agent and an auditor read; `dot` is the same resolution as a Graphviz digraph, for a rendering tool or a drawer that wants a picture. Both come from one traversal, so they cannot disagree about what the chain is."
+          },
+          "h": {
+            "so": "Repeat it to resolve up to twenty chains in one call, which is what keeps a whole response's provenance inside the S9 one-call budget. Over twenty is refused rather than trimmed, so a caller never gets a partial answer that looks complete.",
+            "x-glasswell-glossary": "gt_derivation_handle"
           }
         }
       }
@@ -8532,6 +8892,32 @@
               "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
               "title": "As Of"
             }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -8619,6 +9005,14 @@
           "bbox": {
             "so": "WGS84 degrees, and the only scope this endpoint has \u2014 it is required, so a count always says which box it is a count of. It matches a well any of whose recorded geometry overlaps the box, so a lateral crossing one corner is counted while its surface hole sits outside. Uncapped, unlike the collection's: a whole-state box is the case the endpoint exists for.",
             "x-glasswell-glossary": "gt_crs_compute_crs"
+          },
+          "explain": {
+            "so": "Inlines the chain behind every count under `_explain`, which is the one surface where following each `d` by hand is impractical: a wide box produces a count per class per basin, and each is a separate call. Where there are more counts than one /v1/explain call carries handles, the response says how many it left out rather than trimming quietly.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "explain_depth": {
+            "so": "A count resolves to the status promotion and the file the statuses came from, so three levels reaches the manifest here. Raising it costs one graph read per level per count, which on this operation is the widest multiplier on the surface.",
+            "x-glasswell-glossary": "gt_derivation_handle"
           }
         }
       }
@@ -8657,6 +9051,32 @@
               ],
               "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
               "title": "As Of"
+            }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
             }
           }
         ],
@@ -8761,6 +9181,16 @@
             "api10": "3305310451"
           },
           "query": {}
+        },
+        "x-glasswell-semantics": {
+          "explain": {
+            "so": "Resolves this header's figures \u2014 the lateral length and the total depth \u2014 to the geometry rows and the checksummed file behind them, in the request that served them. It is the `d` on each figure, already followed.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "explain_depth": {
+            "so": "A header figure is one promotion away from its manifest, so the default three already terminates here. Depth matters on figures whose chain runs through a mart, and an inlined chain that stopped short says so itself.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          }
         }
       }
     },
@@ -8862,6 +9292,32 @@
               ],
               "description": "Last production month, YYYY-MM.",
               "title": "To"
+            }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
             }
           }
         ],
@@ -9033,6 +9489,14 @@
           "as_of": {
             "so": "Selects the vintage of every point in the series. Two requests a month apart can return different volumes for the same production month, and both are correct.",
             "x-glasswell-glossary": "gt_report_vintage"
+          },
+          "explain": {
+            "so": "ND promotes one workbook a month, so `_lineage` here keys a handle per point and the chart's provenance is dozens of separate calls. This returns them with the series, so a month that looks wrong is one hop from the workbook that reported it.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "explain_depth": {
+            "so": "Every point's chain is walked to the same depth, so raising it multiplies by the number of distinct handles rather than by the number of months. Three reaches the promotion and its manifest for an observed series.",
+            "x-glasswell-glossary": "gt_derivation_handle"
           },
           "from": {
             "so": "Windows on the production month, not on the report vintage, so it changes which months you see and never which restatement of them you get. Pair it with as_of to hold both still.",

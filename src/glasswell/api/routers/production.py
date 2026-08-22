@@ -12,7 +12,7 @@ from fastapi import APIRouter, Path, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import JSONResponse
 
-from glasswell.api.deps import AsOf, Connection, rows, today
+from glasswell.api.deps import AsOf, Connection, ExplainEffect, rows, today
 from glasswell.api.errors import ProblemError, problem_responses
 from glasswell.api.examples import (
     EXAMPLE_API10,
@@ -22,7 +22,14 @@ from glasswell.api.examples import (
     request_example,
     semantics,
 )
-from glasswell.api.responses import EnvelopeModel, enveloped, freshness_state, iso, month_label
+from glasswell.api.responses import (
+    EnvelopeModel,
+    enveloped,
+    freshness_state,
+    inline_for,
+    iso,
+    month_label,
+)
 from glasswell.api.routers.wells import API10_PATTERN, RANKED_WELLS, pending_allocation
 from glasswell.lineage.conformance import lease_reporting_rule
 from glasswell.lineage.envelope import series
@@ -334,6 +341,23 @@ def _state_code(connection, api10: str) -> str | None:
                     ),
                 },
             },
+            explain={
+                "glossary": "gt_derivation_handle",
+                "so": (
+                    "ND promotes one workbook a month, so `_lineage` here keys a handle per"
+                    " point and the chart's provenance is dozens of separate calls. This"
+                    " returns them with the series, so a month that looks wrong is one hop"
+                    " from the workbook that reported it."
+                ),
+            },
+            explain_depth={
+                "glossary": "gt_derivation_handle",
+                "so": (
+                    "Every point's chain is walked to the same depth, so raising it multiplies"
+                    " by the number of distinct handles rather than by the number of months."
+                    " Three reaches the promotion and its manifest for an observed series."
+                ),
+            },
         ),
     },
     responses=problem_responses(
@@ -344,6 +368,7 @@ def get_well_production(
     request: Request,
     connection: Connection,
     api10: Annotated[str, Path(description="Ten-digit API well number.", pattern=API10_PATTERN)],
+    explain: ExplainEffect,
     as_of: AsOf = None,
     stream: Annotated[
         list[Literal["oil", "gas", "water"]] | None,
@@ -472,6 +497,7 @@ def get_well_production(
         source_freshness=_freshness(connection, source_ids),
         warnings=warnings,
         links=links,
+        explain=inline_for(connection, explain),
     )
 
 

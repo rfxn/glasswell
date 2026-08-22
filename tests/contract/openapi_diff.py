@@ -43,6 +43,9 @@ _RULES: dict[str, tuple[Verdict, Verdict]] = {
     # UDM-SPEC §5.3/§5.2a (N-5): a relaxed identifier grammar produced no fact at all before
     # this kind existed, so the classifier answered `additive` having examined nothing.
     "pattern": ("additive", "breaking"),
+    # A single-valued `Literal` renders as `const`, not `enum`, so the same blind spot reached
+    # `format` on /v1/explain (DR-64). Pinning a value narrows; unpinning it relaxes.
+    "const": ("breaking", "additive"),
 }
 
 
@@ -161,6 +164,8 @@ def _constraints(schema: dict[str, Any], label: str, container: str) -> Iterator
     """What a field admits, beyond its type. `str | None` carries both one branch down."""
     for value in schema.get("enum", ()):
         yield f"{label} = {value!r}", Fact("enum-value", container)
+    if "const" in schema:
+        yield f"{label} is {schema['const']!r}", Fact("const", container)
     pattern = schema.get("pattern")
     if isinstance(pattern, str):
         yield f"{label} =~ {pattern}", Fact("pattern", container)
