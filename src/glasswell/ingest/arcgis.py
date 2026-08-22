@@ -101,7 +101,13 @@ class LayerInfo:
 
 
 def _require_allowlisted(service_url: str) -> None:
-    host = urlsplit(service_url).hostname or ""
+    parts = urlsplit(service_url)
+    if parts.scheme != "https":
+        raise HostNotAllowlisted(
+            f"{service_url} is not https; the allowlist authorises the TLS endpoint,"
+            " not the host name"
+        )
+    host = parts.hostname or ""
     if host not in ALLOWED_HOSTS:
         raise HostNotAllowlisted(
             f"{host} is not on the SB-01 §1.2.1 allowlist; hosts move by amendment, not code"
@@ -168,18 +174,21 @@ def _page(
     order_by: str,
     offset: int,
     page_size: int,
+    out_sr: int | None,
 ) -> list[dict[str, Any]]:
-    response = client.get(
-        f"{service_url}/{layer_id}/query",
-        params={
-            "where": where,
-            "outFields": "*",
-            "orderByFields": order_by,
-            "resultOffset": str(offset),
-            "resultRecordCount": str(page_size),
-            "f": PAGE_FORMAT,
-        },
-    )
+    params = {
+        "where": where,
+        "outFields": "*",
+        "orderByFields": order_by,
+        "resultOffset": str(offset),
+        "resultRecordCount": str(page_size),
+        "f": PAGE_FORMAT,
+    }
+    # Sent, not merely recorded: without outSR the BLM service returns WGS84-shifted geojson
+    # (~1 m datum shift), and the manifest's out_sr claim would be false (gate-m14 C1).
+    if out_sr is not None:
+        params["outSR"] = str(out_sr)
+    response = client.get(f"{service_url}/{layer_id}/query", params=params)
     payload = _payload_json(response)
     features = payload.get("features")
     if not isinstance(features, list):
@@ -309,6 +318,7 @@ def _walk(
                 order_by=order_by,
                 offset=page_index * size,
                 page_size=size,
+                out_sr=layer.spatial_reference_wkid,
             )
             if not features:
                 break

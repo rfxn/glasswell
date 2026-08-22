@@ -19,6 +19,9 @@ SERVICE_URL = (
 )
 TOWNSHIPS = ("ND051520N0950W0", "ND051530N0950W0")
 SECTIONS = ("1", "2", "13", "36")
+# Sent as the paginator sends it (gate-m14 C1): without outSR the service returns
+# WGS84-shifted geometry, not the layer-SR bytes the fixtures claim to be.
+OUT_SR = "4269"
 HERE = Path(__file__).resolve().parent
 
 
@@ -45,6 +48,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "where": f"PLSSID IN ({plssids})",
                     "outFields": "*",
                     "orderByFields": "OBJECTID ASC",
+                    "outSR": OUT_SR,
                     "f": "geojson",
                 },
             ).content,
@@ -57,6 +61,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "where": f"PLSSID IN ({plssids}) AND FRSTDIVNO IN ({divisions})",
                     "outFields": "*",
                     "orderByFields": "OBJECTID ASC",
+                    "outSR": OUT_SR,
                     "f": "geojson",
                 },
             ).content,

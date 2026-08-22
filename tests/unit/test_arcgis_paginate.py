@@ -53,6 +53,9 @@ def test_the_walk_is_paged_ordered_and_fully_accounted(tmp_path):
     ]
     assert [request.url.params["orderByFields"] for request in pages] == ["OBJECTID ASC"] * 2
     assert [request.url.params["resultOffset"] for request in pages] == ["0", "2"]
+    # Sent, not merely recorded (gate-m14 C1): the manifest's out_sr claim must be the
+    # datum the bytes actually arrived in.
+    assert [request.url.params["outSR"] for request in pages] == ["4269", "4269"]
 
 
 def test_identical_upstream_state_assembles_to_identical_bytes(tmp_path):
@@ -119,6 +122,19 @@ def test_an_unallowlisted_host_is_refused_before_any_request():
             "blm_plss_sections",
             "nd_sections.geojsonl",
             service_url="https://evil.example/arcgis/rest/services/X/MapServer",
+            layer_id=2,
+            where="1=1",
+        )
+
+
+def test_a_plain_http_url_on_an_allowlisted_host_is_refused():
+    # The allowlist authorises the TLS endpoint, not the host name (gate-m14 observation a).
+    with pytest.raises(HostNotAllowlisted):
+        arcgis_rest_paginate(
+            None,  # type: ignore[arg-type] — refused before the connection is touched
+            "blm_plss_sections",
+            "nd_sections.geojsonl",
+            service_url=f"http://gis.blm.gov{SERVICE_PATH}",
             layer_id=2,
             where="1=1",
         )
