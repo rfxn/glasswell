@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { DISPOSAL_COLOUR } from "./disposal.ts";
 import { LAYERS, defaultLayerSet, layerDef, layerIds, layerRowState } from "./registry.ts";
 import { SELECTION_COLOUR, STATUS_CLASSES, UNMAPPED_STATUS, statusColour } from "./status.ts";
 import { TRACE_COLOUR, dataLayers } from "./style.ts";
@@ -158,6 +159,45 @@ describe("the layer registry", () => {
       expect(status.colour, `${status.id} shares the trace colour`).not.toBe(TRACE_COLOUR);
     }
     expect(TRACE_COLOUR).not.toBe(SELECTION_COLOUR);
+  });
+
+  it("registers the disposal ring as a served ND row, off until the reader asks for it", () => {
+    // 4.5% of the basin drawn unasked would read as emphasis; the class is one row away.
+    const disposal = layerDef("disposal-wells")!;
+    expect(disposal.pendingSource).toBeFalsy();
+    expect(disposal.defaultOn).toBe(false);
+    expect(defaultLayerSet()).not.toContain("disposal-wells");
+    expect(disposal.provenance).toEqual([{ kind: "official", source: "marts.nd_wells_tile" }]);
+    expect(disposal.styleLayers).toEqual(["disposal-wells"]);
+  });
+
+  it("states the disposal coverage in the regulator's codes, never a decode of them", () => {
+    // A well_type fact, not an interpretation: the row names the eight codes verbatim and
+    // the count they carry. Expanding SWD in prose would be a vocabulary decision the
+    // conformance register has not made (cr_nd_well_type_disposal_1 asserts no decode).
+    const subtitle = layerDef("disposal-wells")!.subtitle;
+    expect(subtitle).toMatch(/SWD, WI, CO2I, AI, GI, SFI, MWUI or INJP/);
+    expect(subtitle).toMatch(/1,989 of 43,824/);
+    expect(subtitle).toMatch(/4\.5%/);
+    expect(subtitle).toMatch(/as filed/i);
+    expect(subtitle).not.toMatch(/saltwater|reserves/i);
+  });
+
+  it("holds the disposal ring to the thinning gate, like every layer the tile tier samples", () => {
+    // Below z8 the wells tile keeps one feature per half CSS pixel with no regard for type,
+    // so the class down there would be a random sample presented as its geography.
+    expect(layerDef("disposal-wells")?.minZoom).toBe(8);
+    expect(layerDef("disposal-wells")?.zoomHint).toMatch(/zoom 8 and above/i);
+  });
+
+  it("draws the disposal swatch as the ring the canvas draws, in a colour statuses do not use", () => {
+    const swatch = layerDef("disposal-wells")!.swatch;
+    expect(swatch.kind).toBe("ring");
+    expect(swatch.colours).toEqual([DISPOSAL_COLOUR]);
+    for (const status of [...STATUS_CLASSES, UNMAPPED_STATUS]) {
+      expect(status.colour, `${status.id} shares the disposal colour`).not.toBe(DISPOSAL_COLOUR);
+    }
+    expect(DISPOSAL_COLOUR).not.toBe(SELECTION_COLOUR);
   });
 
   it("reports a row for a retired layer as null instead of throwing", () => {

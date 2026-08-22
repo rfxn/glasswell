@@ -2,6 +2,7 @@ import type { LayerSpecification, SourceSpecification } from "maplibre-gl";
 
 import { tileUrl } from "../api/client.ts";
 import type { BasemapVariant } from "./basemap.ts";
+import { DISPOSAL_COLOUR, disposalFilter } from "./disposal.ts";
 import {
   any,
   coalesce,
@@ -127,6 +128,13 @@ export function sourceSpecs(origin?: string, search?: string): Record<string, So
 const STATUS_GATE = "gw:status-gate";
 const STATUS_GATED = { [STATUS_GATE]: true } as const;
 
+/**
+ * Names the paint property a row's opacity slider drives where the type's default is wrong:
+ * the disposal ring's `circle-opacity` paints a fill that is transparent by design, so a
+ * slider writing it would move nothing the reader can see.
+ */
+export const OPACITY_OVERRIDE = "gw:opacity-property";
+
 export function statusStyledLayerIds(
   layers: readonly LayerSpecification[] = dataLayers({ labels: true }),
 ): string[] {
@@ -200,6 +208,18 @@ function wellRadius(): Expr {
     [10, selectable(6, 3)],
     [13, selectable(9, 5)],
     [15, selectable(11, 6.5)],
+  ]);
+}
+
+/**
+ * Outside the wellhead at every stop, selected or not: the ring marks the same feature the
+ * dot draws, so the selection radius must never swallow it.
+ */
+function disposalRingRadius(): Expr {
+  return step(zoom, selectable(6.5, 3.5), [
+    [10, selectable(7.5, 4.5)],
+    [13, selectable(10.5, 6.5)],
+    [15, selectable(12.5, 8.5)],
   ]);
 }
 
@@ -312,6 +332,31 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
           [11, 0.55],
           [15, 1],
         ]) as unknown as number,
+      },
+    },
+    {
+      // A ring over the wellhead, not a second dot: the status colour stays visible inside
+      // it, because a disposal well still has a status. Type-keyed, so the legend's status
+      // filter has no claim on its filter slot — the slot carries the class instead. z8 for
+      // the thinning reason the laterals state: below it the wells tile keeps one feature
+      // per half CSS pixel with no regard for type, and a ring layer down there would be a
+      // random sample of the class presented as its geography.
+      id: "disposal-wells",
+      type: "circle",
+      source: wells,
+      "source-layer": wells,
+      minzoom: 8,
+      filter: disposalFilter(),
+      metadata: { [OPACITY_OVERRIDE]: "circle-stroke-opacity" },
+      paint: {
+        "circle-color": "rgba(0, 0, 0, 0)",
+        "circle-stroke-color": selectable(SELECTION_COLOUR, DISPOSAL_COLOUR),
+        "circle-stroke-width": interpolate(zoom, [
+          [8, 1.2],
+          [12, 1.6],
+          [15, 2.2],
+        ]),
+        "circle-radius": disposalRingRadius(),
       },
     },
     // Texas, drawn from the same expressions as North Dakota. The status vocabulary is

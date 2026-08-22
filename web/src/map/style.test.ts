@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import type { LayerSpecification } from "maplibre-gl";
 
 import type { BasemapVariant } from "./basemap.ts";
+import { DISPOSAL_COLOUR } from "./disposal.ts";
 import { LAYERS } from "./registry.ts";
 import { variantStyle } from "./variant-style.ts";
 import {
   LATERALS_SOURCE,
+  OPACITY_OVERRIDE,
   SOURCE_ID,
   SPACING_SOURCE,
   TRACES_SOURCE,
@@ -161,6 +163,50 @@ describe("the data layers", () => {
     expect(statusStyledLayerIds()).not.toContain("survey-traces");
     const trace = dataLayers().find((layer) => layer.id === "survey-traces");
     expect(JSON.stringify(paintOf(trace))).not.toContain("status_canonical");
+  });
+
+  it("rings the disposal class from the wells source, filtered on the regulator's codes", () => {
+    const ring = dataLayers().find((layer) => layer.id === "disposal-wells");
+    expect(ring?.type).toBe("circle");
+    expect(ring && "source" in ring ? ring.source : "").toBe(WELLS_SOURCE);
+    expect(ring?.minzoom).toBe(8);
+    const inClass = (code: string | null): boolean =>
+      featureFilter((ring && "filter" in ring ? ring.filter : ["==", 1, 2]) as never).filter(
+        { zoom: 12 } as never,
+        { type: 1, properties: { well_type_reported: code } } as never,
+        undefined as never,
+      );
+    expect(inClass("SWD")).toBe(true);
+    expect(inClass("WI")).toBe(true);
+    expect(inClass("OG")).toBe(false);
+    expect(inClass(null)).toBe(false);
+  });
+
+  it("keeps the ring hollow with the selection branch on its stroke, over a visible status dot", () => {
+    const ring = dataLayers().find((layer) => layer.id === "disposal-wells");
+    const paint = paintOf(ring);
+    // The fill is transparent by design: the wells row's status colour stays legible inside.
+    expect(paint["circle-color"]).toBe("rgba(0, 0, 0, 0)");
+    const stroke = JSON.stringify(paint["circle-stroke-color"]);
+    expect(stroke).toContain("feature-state");
+    expect(stroke).toContain(SELECTION_COLOUR);
+    expect(stroke).toContain(DISPOSAL_COLOUR);
+  });
+
+  it("hands the opacity slider the ring's stroke, because its default slot paints nothing", () => {
+    // OPACITY_PROPERTY maps circle to circle-opacity — the transparent fill. The metadata
+    // override is what keeps the panel's slider from being a control that does nothing.
+    const ring = dataLayers().find((layer) => layer.id === "disposal-wells");
+    const metadata = (ring && "metadata" in ring ? ring.metadata : {}) as Record<string, unknown>;
+    expect(metadata[OPACITY_OVERRIDE]).toBe("circle-stroke-opacity");
+  });
+
+  it("keeps the ring outside the status gate: it paints a well type, not a status", () => {
+    // Deliberate, the trace's own reasoning one layer over: the filter slot carries the
+    // class, and the status filter has no claim on it.
+    expect(statusStyledLayerIds()).not.toContain("disposal-wells");
+    const ring = dataLayers().find((layer) => layer.id === "disposal-wells");
+    expect(JSON.stringify(paintOf(ring))).not.toContain("status_canonical");
   });
 
   it("promotes api10 on the traces source, so selecting a well lights its trace too", () => {

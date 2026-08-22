@@ -70,4 +70,15 @@ describe("the click router", () => {
       expect(PICKABLE_LAYERS, `${styleLayer} is not pickable`).toContain(styleLayer);
     }
   });
+
+  it("keeps a well pickable through its disposal ring when the wells row is off", () => {
+    // The ring is the ink on top and both hits carry the same api10, so the rank changes
+    // which layer answers, never which well is selected.
+    for (const styleLayer of layerDef("disposal-wells")!.styleLayers) {
+      expect(PICKABLE_LAYERS, `${styleLayer} is not pickable`).toContain(styleLayer);
+    }
+    expect(topHit([hit("disposal-wells", "a"), hit("laterals", "b")])?.layer.id).toBe("disposal-wells");
+    const both = topHit([hit("disposal-wells", "3305300001"), hit("wells", "3305300001")]);
+    expect(both?.properties["api10"]).toBe("3305300001");
+  });
 });

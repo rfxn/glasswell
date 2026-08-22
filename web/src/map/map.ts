@@ -49,6 +49,7 @@ import { LAYERS, defaultLayerSet, layerDef, layerIds } from "./registry.ts";
 import { createSelection } from "./selection.ts";
 import { filterableStatusIds } from "./status.ts";
 import {
+  OPACITY_OVERRIDE,
   WELL_POINT_LAYERS,
   dataLayers,
   sourceSpecs,
@@ -89,6 +90,12 @@ const OPACITY_PROPERTY: Readonly<Record<string, string>> = {
   fill: "fill-opacity",
   symbol: "icon-opacity",
 };
+
+/** The type's default slot, unless the layer names its own — the disposal ring's stroke. */
+function opacityProperty(layer: { type: string; metadata?: unknown }): string | undefined {
+  const override = (layer.metadata as Record<string, unknown> | undefined)?.[OPACITY_OVERRIDE];
+  return typeof override === "string" ? override : OPACITY_PROPERTY[layer.type];
+}
 
 let protocolRegistered = false;
 
@@ -313,7 +320,7 @@ export function createMap(
     if (!layer) return;
     for (const styleLayer of layer.styleLayers) {
       const spec = map.getLayer(styleLayer);
-      const property = spec && OPACITY_PROPERTY[spec.type];
+      const property = spec && opacityProperty(spec);
       if (property) map.setPaintProperty(styleLayer, property, opacities.get(id) ?? 1);
     }
   }
@@ -431,7 +438,7 @@ export function createMap(
         layer.layout = { ...layer.layout, visibility: "none" } as typeof layer.layout;
       }
       if (owner) {
-        const property = OPACITY_PROPERTY[layer.type];
+        const property = opacityProperty(layer);
         const opacity = opacities.get(owner.id);
         if (property && opacity !== undefined) {
           layer.paint = { ...layer.paint, [property]: opacity } as typeof layer.paint;

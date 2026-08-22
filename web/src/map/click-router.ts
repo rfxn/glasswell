@@ -9,6 +9,9 @@ import type { MapGeoJSONFeature, MapMouseEvent, Map as MapLibreMap, PointLike } 
 export const PICK_RADIUS_PX = 6;
 
 const PRIORITY: Readonly<Record<string, number>> = {
+  // Above the wellhead it rings: the ink on top, and the pickable mark when the wells row
+  // is off. Both hits carry the same api10, so the rank never changes what is selected.
+  "disposal-wells": 41,
   wells: 40,
   "wells-struck": 40,
   // Both of the laterals row's style layers, at one rank: the two never overlap — they are

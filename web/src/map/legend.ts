@@ -340,7 +340,9 @@ export function createLegend(options: LegendOptions): LegendHandle {
     note.appendChild(
       document.createTextNode(
         ". Laterals are ND DMR and TX RRC GIS bore geometry — not a directional survey trace." +
-          " The orchid line is that trace: the bore path ND filed as survey stations.",
+          " The orchid line is that trace: the bore path ND filed as survey stations." +
+          " The teal ring is NDIC's own well_type — disposal and injection wells of any" +
+          " injected stream, classed by cr_nd_well_type_disposal_1, the code drawn as filed.",
       ),
     );
   }

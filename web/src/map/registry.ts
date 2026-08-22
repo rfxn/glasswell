@@ -3,6 +3,7 @@
  * and the persisted capability set all read this table — adding a layer is one entry, and
  * nothing downstream keeps a second list to drift against it.
  */
+import { DISPOSAL_COLOUR } from "./disposal.ts";
 import { statusColour } from "./status.ts";
 import { TRACE_COLOUR } from "./style.ts";
 
@@ -11,7 +12,7 @@ export type LayerGroup = "reference" | "wells" | "model";
 export type ProvenanceKind = "official" | "derived" | "basemap" | "pending";
 
 export interface LayerSwatch {
-  kind: "dot" | "line" | "fill" | "outline";
+  kind: "dot" | "line" | "fill" | "outline" | "ring";
   /** More than one only where the row paints from an expression instead of a fixed colour. */
   colours: readonly [string, ...string[]];
 }
@@ -166,6 +167,32 @@ export const LAYERS: readonly LayerDef[] = [
     provenance: [{ kind: "official", source: "marts.nd_wells_tile" }],
     styleLayers: ["wells", "wells-struck"],
     drawOrder: 40,
+    collection: { dataset: "wells", bbox: "bbox" },
+  },
+  {
+    // A well_type fact from the regulator, not an interpretation: the ring marks the wells
+    // NDIC itself types as injection class, over the status dot the wells row still draws.
+    // The membership is a conformance row, not this file's — see disposal.ts.
+    id: "disposal-wells",
+    group: "wells",
+    label: "Disposal & injection (ND)",
+    subtitle:
+      "Wells NDIC types SWD, WI, CO2I, AI, GI, SFI, MWUI or INJP · 1,989 of 43,824 wells " +
+      "(4.5%) — the well_type code as filed, drawn as a ring over the status dot",
+    swatch: { kind: "ring", colours: [DISPOSAL_COLOUR] },
+    // 4.5% of the basin drawn unasked would read as emphasis; the class is one panel row away.
+    defaultOn: false,
+    // The wells tile below z8 keeps one feature per half CSS pixel with no regard for type,
+    // so a ring layer down there is a random sample of the class presented as its geography.
+    minZoom: 8,
+    zoomHint: "Visible at zoom 8 and above",
+    opacity: 1,
+    provenance: [{ kind: "official", source: "marts.nd_wells_tile" }],
+    styleLayers: ["disposal-wells"],
+    drawOrder: 41,
+    // The same spine the wells rows land on. /v1/wells takes no well-type predicate yet, so
+    // the crossing narrows by the box alone, exactly as it does for the status filter — the
+    // missing predicate is a recorded seam (work-output/m17-status.md), not a silent claim.
     collection: { dataset: "wells", bbox: "bbox" },
   },
   {

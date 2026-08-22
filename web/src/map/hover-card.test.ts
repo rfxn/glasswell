@@ -77,6 +77,37 @@ describe("the hover card", () => {
     expect(card.element.textContent).not.toContain("Survey trace");
   });
 
+  it("states the disposal class from the code as ND filed it, never an English decode", () => {
+    const card = createHoverCard();
+    card.show(
+      { api10: "3305305527", status_canonical: "active", well_type_reported: "SWD" },
+      { x: 0, y: 0 },
+    );
+    expect(card.element.textContent).toContain("Disposal / injection");
+    expect(card.element.textContent).toContain("well_type SWD as ND filed it");
+    // Which words SWD abbreviates is the regulator's footnote to own (cr_nd_well_type_disposal_1).
+    expect(card.element.textContent?.toLowerCase()).not.toContain("saltwater");
+  });
+
+  it("says nothing about disposal for a well typed outside the class, OG included", () => {
+    const card = createHoverCard();
+    card.show(
+      { api10: "3305305527", status_canonical: "active", well_type_reported: "OG" },
+      { x: 0, y: 0 },
+    );
+    expect(card.element.textContent).not.toContain("Disposal");
+    card.show({ api10: "3305305527", status_canonical: "active" }, { x: 0, y: 0 });
+    expect(card.element.textContent).not.toContain("Disposal");
+  });
+
+  it("drops the disposal line the moment the cursor moves onto an OG well", () => {
+    const card = createHoverCard();
+    card.show({ api10: "a", well_type_reported: "WI" }, { x: 0, y: 0 });
+    expect(card.element.textContent).toContain("well_type WI");
+    card.show({ api10: "b", well_type_reported: "OG" }, { x: 0, y: 0 });
+    expect(card.element.textContent).not.toContain("well_type WI");
+  });
+
   it("names a status the vocabulary does not cover instead of leaving it blank", () => {
     const card = createHoverCard();
     card.show({ api10: "33053", status_canonical: "brand_new_code" }, { x: 0, y: 0 });

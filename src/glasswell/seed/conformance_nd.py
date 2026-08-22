@@ -19,6 +19,12 @@ SUPERSESSION_FROM = date(2026, 8, 20)
 # M1-5's evidence date: the day OGD_Directionals.zip was fetched and its 52,579 stations,
 # 525 wells and 586 segments were counted.
 SURVEYS_FROM = date(2026, 8, 21)
+# M1-7's decision date; the distribution it cites was verified against the FeatureServer.
+DISPOSAL_FROM = date(2026, 8, 22)
+GIS_WELLS_FEATURESERVER_URL = (
+    "https://gis.dmr.nd.gov/dmrpublicservices/rest/services/"
+    "OilGasPublicMapDataVectorTiles/Wells/FeatureServer/0"
+)
 
 # Per field, because the reject is the value and the ledger has to name which one broke.
 SURVEY_STATION_BOUNDS: tuple[dict[str, object], ...] = (
@@ -708,6 +714,39 @@ ND_RULES: tuple[dict[str, object], ...] = (
             " rule records as missing, and ND already published the positions."
         ),
         "evidence_url": GIS_SURVEYS_URL,
+    },
+    {
+        "rule_id": "cr_nd_well_type_disposal_1",
+        "effective_from": DISPOSAL_FROM,
+        "source_id": "nd_gis_wells",
+        "stage": "conform",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["well_type"],
+        "spec": {
+            "module_function": "glasswell.marts.tiles:ND_LAYERS",
+            "version": "1",
+            "classification": "disposal_injection",
+            "well_type_codes": ["SWD", "WI", "CO2I", "AI", "GI", "SFI", "MWUI", "INJP"],
+            "code_semantics": "verbatim NDIC well_type codes; no per-code decode is asserted",
+            "contract_note": "the map's disposal-wells layer draws exactly these eight codes"
+            " as a ring; the attribute reaches the tile verbatim from"
+            " canonical.wells.well_type_reported (web/src/map/disposal.ts is the filter)",
+        },
+        "rule": "Class a well as disposal/injection where NDIC's well_type code is SWD, WI,"
+        " CO2I, AI, GI, SFI, MWUI or INJP.",
+        "rationale": (
+            "Measured by groupBy on the NDIC Wells FeatureServer (43,824 wells): OG 40,180,"
+            " SWD 1,059, Confidential 964, WI 848, GASD 279, ST 183, GASC 106, WS 95, CO2I 43,"
+            " AI 22, GI 10, SFI 4, MWUI 2, INJP 1. The eight listed codes are the injection"
+            " class the survey verified, 1,989 wells; the excluded codes are not asserted to"
+            " be injection wells by any NDIC statement held here. The SWD / EXP-SWD / PANF-SWD"
+            " labels on NDIC's own vector tiles are status-type composites, not distinct types"
+            " — status independently carries EXP (18) and PANF (27) — so the class is keyed to"
+            " well_type alone. The codes are drawn verbatim; which words each abbreviates is"
+            " the regulator's decoder to own, and this rule asserts no decode."
+        ),
+        "evidence_url": GIS_WELLS_FEATURESERVER_URL,
+        "code_ref": "web/src/map/disposal.ts",
     },
 )
 

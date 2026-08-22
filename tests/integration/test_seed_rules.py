@@ -20,6 +20,7 @@ POLICY_RULES = (
     "cr_nd_liquids_policy_1",
     "cr_nd_null_semantics_1",
     "cr_nd_pool_rollup_1",
+    "cr_nd_well_type_disposal_1",
     # One host pin per NM source: the pin is a policy declaration the fetcher implements, and
     # a rule row loads only for the source_id it names (M5).
     *sorted(f"cr_nm_{table}_host_pin_1" for table, _ in NM_TABLES),
@@ -212,7 +213,15 @@ def test_the_status_vocabulary_maps_a_measured_code_and_quarantines_an_unknown_o
             "longitude": [-103.5, -102.9, -103.1],
         }
     )
-    application = apply_registry_rules(db, frame, source_id="nd_gis_wells", stage="conform")
+    rules = [
+        rule
+        for rule in load_rules(db, source_id="nd_gis_wells", stage="conform")
+        # cr_nd_well_type_disposal_1 is a code_ref policy row with no executor; every real
+        # consumer of this source drops the kind before applying (ingest/nd_gis.py), and the
+        # forgets-to-drop failure mode has its own test above.
+        if rule.rule_kind != "code_ref"
+    ]
+    application = apply_rules(frame, rules)
     assert application.frame["status_canonical"].to_list() == ["active", "confidential"]
     assert [batch.reason_code for batch in application.quarantined] == ["unknown_status"]
 
