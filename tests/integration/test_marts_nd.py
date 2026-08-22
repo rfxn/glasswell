@@ -28,7 +28,7 @@ from glasswell.marts.nd_wells import main
 from glasswell.marts.tiles import simplify_tolerance, thin_key_sql
 from glasswell.seed import seed_all
 from glasswell.units import METRES_PER_FOOT
-from tests.support.mvt import feature_count, layers
+from tests.support.mvt import attribute_keys, attribute_values, feature_count, layers
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "nd_gis"
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -166,6 +166,59 @@ def test_refresh_projects_canonical_into_every_tile_mart(canonical_nd, refreshed
         "  from marts.nd_laterals_tile",
     )[0]
     assert all(count > 0 for count in styled), "styling attributes never reached the tile mart"
+
+
+def test_the_wells_mart_carries_the_regulator_well_type_onto_the_wire(canonical_nd, refreshed):
+    """M1-7: the disposal layer keys on well_type_reported, so the column must survive every
+    stage — mart, published view, and the MVT itself. The fixture slice holds SWD and WI
+    wells, so the class is non-empty here rather than vacuously green."""
+    mismatched = scalar(
+        canonical_nd,
+        "select count(*) from marts.nd_wells_tile t"
+        " join canonical.wells_latest w on w.api10 = t.api10"
+        " where t.well_type_reported is distinct from w.well_type_reported",
+    )
+    assert mismatched == 0, "the mart's well_type disagrees with canonical"
+
+    injection = scalar(
+        canonical_nd,
+        "select count(*) from marts.nd_wells_tile where well_type_reported in"
+        " ('SWD', 'WI', 'CO2I', 'AI', 'GI', 'SFI', 'MWUI', 'INJP')",
+    )
+    assert injection > 0, "no injection-class well reached the mart"
+    # The publication boundary: martin reads the view and no base relation (DR-05).
+    assert scalar(
+        canonical_nd,
+        "select count(*) from marts.tile_nd_wells where well_type_reported is not null",
+    ) == scalar(
+        canonical_nd,
+        "select count(*) from marts.nd_wells_tile where well_type_reported is not null",
+    )
+
+    swd = rows(
+        canonical_nd,
+        "select ST_X(geom), ST_Y(geom) from marts.nd_wells_tile"
+        " where well_type_reported = 'SWD' limit 1",
+    )[0]
+    zoom, x, y = covering_tile((swd[0], swd[1], swd[0], swd[1]))
+    tile = scalar(canonical_nd, "select marts.nd_wells(%s, %s, %s, null)", (zoom, x, y))
+    drawn = layers(bytes(tile))
+    assert drawn, "the tile covering an SWD well is empty"
+    assert "well_type_reported" in attribute_keys(drawn[0])
+    assert ("string", "SWD") in attribute_values(drawn[0])
+
+
+def test_the_disposal_class_is_a_conformance_row_not_a_web_constant(canonical_nd):
+    """R8: which well_type codes the disposal layer draws is a mapping decision, so it is a
+    row served at /v1/conformance, and the web filter cites it rather than owning it."""
+    spec = scalar(
+        canonical_nd,
+        "select spec from lineage.conformance_rules"
+        " where rule_id = 'cr_nd_well_type_disposal_1'",
+    )
+    assert spec is not None, "the classing rule is not seeded"
+    assert spec["well_type_codes"] == ["SWD", "WI", "CO2I", "AI", "GI", "SFI", "MWUI", "INJP"]
+    assert spec["classification"] == "disposal_injection"
 
 
 def test_the_well_card_mart_is_deliberately_empty(canonical_nd, refreshed):

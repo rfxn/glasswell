@@ -30,7 +30,8 @@ STATE_CODE = "33"
 
 _WELLS_AS_OF = """
 with wells_as_of as (
-    select distinct on (api10) api10, operator_name_reported, status_canonical, spud_date
+    select distinct on (api10) api10, operator_name_reported, status_canonical, spud_date,
+           well_type_reported
       from canonical.wells
      where state_code = %(state_code)s
        and (%(as_of)s::date is null or effective_from <= %(as_of)s::date)
@@ -70,6 +71,7 @@ select s.api10,
        w.operator_name_reported as operator_name,
        w.status_canonical,
        extract(year from w.spud_date)::int as spud_year,
+       w.well_type_reported,
        s.geom
   from canonical.well_spatial s
   left join wells_as_of w on w.api10 = s.api10
@@ -155,7 +157,14 @@ _PROJECTIONS: tuple[_Projection, ...] = (
     ),
     _Projection(
         table="nd_wells_tile",
-        columns=("api10", "operator_name", "status_canonical", "spud_year", "geom"),
+        columns=(
+            "api10",
+            "operator_name",
+            "status_canonical",
+            "spud_year",
+            "well_type_reported",
+            "geom",
+        ),
         select=_WELLS_SELECT,
     ),
     _Projection(

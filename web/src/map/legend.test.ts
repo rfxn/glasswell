@@ -166,6 +166,17 @@ describe("the legend", () => {
     legend.setVocabulary([{ rule: "cr_nd_status_vocab_1", href: null }]);
     expect(legend.element.textContent).toMatch(/orchid line is that trace/i);
   });
+
+  it("names the blue ring as the regulator's own well_type, and the rule that classes it", () => {
+    // The ring is a data colour over a key that opens with "data colours, not severity colours",
+    // and the sentence keeps the hue from claiming the class injects only water.
+    const legend = createLegend({ onFilter: () => {} });
+    expect(legend.element.textContent).toMatch(/teal ring is NDIC's own well_type/i);
+    expect(legend.element.textContent).toMatch(/any injected stream/i);
+    expect(legend.element.textContent).toContain("cr_nd_well_type_disposal_1");
+    legend.setVocabulary([{ rule: "cr_nd_status_vocab_1", href: null }]);
+    expect(legend.element.textContent).toMatch(/teal ring is NDIC's own well_type/i);
+  });
 });
 
 describe("the legend's all/none control", () => {

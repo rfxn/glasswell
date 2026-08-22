@@ -92,6 +92,7 @@ ND_LAYERS: tuple[TileLayer, ...] = (
             ("operator_name", "text"),
             ("status_canonical", "text"),
             ("spud_year", "int4"),
+            ("well_type_reported", "text"),
             ("derivation_id", "text"),
         ),
         thin=True,

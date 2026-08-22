@@ -73,11 +73,24 @@ export function statusSwatch(colour: string, glyph: StatusGlyph, size = 14): SVG
 export function layerSwatch(swatch: LayerSwatch, size = 14): SVGSVGElement {
   const node = svg(size);
   const c = size / 2;
-  // A dot, a fill and an outline each have one ink; only the line divides. The registry test
-  // holds a multi-colour swatch to the line kind so nothing is dropped here in silence.
+  // A dot, a ring, a fill and an outline each have one ink; only the line divides. The registry
+  // test holds a multi-colour swatch to the line kind so nothing is dropped here in silence.
   const [ink] = swatch.colours;
   if (swatch.kind === "dot") {
     node.appendChild(el("circle", { cx: String(c), cy: String(c), r: String(size * 0.3), fill: ink }));
+  } else if (swatch.kind === "ring") {
+    // Hollow on purpose: the canvas mark encircles a status dot it does not repaint, and a
+    // filled swatch would predict a canvas where the ring replaces it.
+    node.appendChild(
+      el("circle", {
+        cx: String(c),
+        cy: String(c),
+        r: String(size * 0.32),
+        fill: "none",
+        stroke: ink,
+        "stroke-width": "1.8",
+      }),
+    );
   } else if (swatch.kind === "line") {
     const [x1, y1, x2, y2] = [1, size - 3, size - 1, 3];
     const stops = swatch.colours.length;

@@ -1,3 +1,4 @@
+import { disposalType } from "./disposal.ts";
 import { statusClass } from "./status.ts";
 import { statusSwatch } from "./swatch.ts";
 
@@ -30,6 +31,11 @@ export function createHoverCard(): HoverCardHandle {
   trace.hidden = true;
   element.appendChild(trace);
 
+  const disposal = document.createElement("p");
+  disposal.className = "gw-hover-meta gw-hover-disposal";
+  disposal.hidden = true;
+  element.appendChild(disposal);
+
   return {
     element,
     show(properties, point) {
@@ -56,6 +62,11 @@ export function createHoverCard(): HoverCardHandle {
         }
         trace.textContent = facts.join(" · ");
       }
+      // The verbatim code, never an English decode: which words SWD abbreviates is the
+      // regulator's PDF footnote to own, and cr_nd_well_type_disposal_1 asserts none.
+      const wellType = disposalType(properties);
+      disposal.hidden = wellType === null;
+      disposal.textContent = disposal.hidden ? "" : `Disposal / injection · well_type ${wellType} as ND filed it`;
       element.style.transform = `translate(${point.x + 14}px, ${point.y + 14}px)`;
       element.hidden = false;
     },

@@ -566,7 +566,14 @@ def _promote_wells(
     datum: ConformanceRule,
 ) -> LoadResult:
     frame = _staging_frame(connection, _WELLS_SELECT, manifest_id, _WELLS_SCHEMA)
-    rules = load_rules(connection, source_id=spec.source_id, stage="conform")
+    rules = [
+        rule
+        for rule in load_rules(connection, source_id=spec.source_id, stage="conform")
+        # The code_ref executor is unimplemented in this slice: those rows are policy
+        # records the serving surfaces cite (cr_nd_well_type_disposal_1), not frame
+        # transforms — the same carve-out nd_mpr makes for its rollup rule.
+        if rule.rule_kind != "code_ref"
+    ]
     applied = apply_rules(frame, rules)
 
     counts = dict.fromkeys(spec.reason_codes, 0)
