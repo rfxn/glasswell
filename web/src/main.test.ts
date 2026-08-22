@@ -125,3 +125,54 @@ describe("one dispatch on view, two surfaces (SB-08 §2.1)", () => {
     expect(select).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("the as_of chip honours a pinned route at boot (gate-c12 R5 / visual F3)", () => {
+  const LATEST = "2026-08-22";
+  const PINNED = "2026-08-20";
+
+  // Two published vintages, so the pin and the service-latest date genuinely differ — the
+  // single-vintage harness is exactly what masked F3.
+  beforeEach(() => {
+    vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
+      const path = String(input).split("?")[0];
+      if (path === "/v1") {
+        const body = {
+          data: { published_vintages: [{ vintage_date: LATEST }, { vintage_date: PINNED }] },
+          meta: {},
+          links: {},
+        };
+        return Promise.resolve(
+          new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ type: "about:blank", title: "Not found", status: 404 }), {
+          status: 404,
+          headers: { "content-type": "application/problem+json" },
+        }),
+      );
+    });
+  });
+
+  it("shows the pinned as_of on a pinned explorer route, not the latest published vintage", async () => {
+    await bootAt(`/?view=explore&ds=wells&as_of=${PINNED}`);
+
+    await vi.waitFor(() => expect(host("gw-asof").textContent).toContain(PINNED));
+    expect(host("gw-asof").textContent).not.toContain(LATEST);
+  });
+
+  it("keeps the latest published vintage for an unpinned route", async () => {
+    await bootAt("/");
+
+    await vi.waitFor(() => expect(host("gw-asof").textContent).toContain(LATEST));
+  });
+
+  it("reads a bare as_of= as nobody's pin, the same as bridge.ts", async () => {
+    await bootAt("/?view=explore&ds=wells&as_of=");
+
+    await vi.waitFor(() => expect(host("gw-asof").textContent).toContain(LATEST));
+  });
+});

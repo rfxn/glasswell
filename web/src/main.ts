@@ -155,7 +155,8 @@ async function renderView(): Promise<void> {
 async function boot(): Promise<void> {
   try {
     const index = await getEnvelope<{ published_vintages: { vintage_date: string }[] }>("/v1");
-    setVintage(index.data.published_vintages[0]?.vintage_date ?? null);
+    const pinned = state.extra["as_of"]?.[0];
+    setVintage(pinned && pinned.length > 0 ? pinned : index.data.published_vintages[0]?.vintage_date ?? null);
     setKeyState("ok");
     setStatus("Click any ⌾ to see where a number came from.");
   } catch (error) {

@@ -442,6 +442,21 @@ describe("the geographic filter is the document's, and the server's cap is honou
     expect(crossing?.title).toContain("too wide");
   });
 
+  // gate-m12 F1: with Map view unticked the box is whole-world by the reader's own choice, and
+  // a title blaming the view's width would name the wrong cause.
+  it("blames the Map view toggle, not the view's width, when the extent node is off", () => {
+    const crossing = whatsBehindThisLayer(
+      layerDef("wells")?.collection ?? null,
+      WORLD_BBOX,
+      context(),
+      true,
+    );
+
+    expect(crossing?.next.extra["f.bbox"]).toBeUndefined();
+    expect(crossing?.title).toContain("Map view is unticked");
+    expect(crossing?.title).not.toContain("too wide");
+  });
+
   it("checks both sides of the box, because the server checks them independently", () => {
     const collection = layerDef("wells")?.collection ?? null;
     // A tall, narrow viewport: one degree of longitude, ten of latitude. A cap that only
