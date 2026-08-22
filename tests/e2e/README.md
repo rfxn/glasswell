@@ -24,6 +24,8 @@ GLASSWELL_BASE_URL=http://127.0.0.1:8000 make test-e2e    # on the VM, against t
 | `GW_CHROME` | chromium executable; otherwise the newest build under `/root/.cache/ms-playwright` |
 | `GW_SHOTS` | a directory to write screenshots to; unset writes none |
 | `GLASSWELL_REQUIRE_E2E` | `1` turns "no browser" from a skip into a failure |
+| `GW_RUNS` | `perf.mjs` only: runs per scenario (default 5). One run is an anecdote |
+| `GW_PERF_JSON` | `perf.mjs` only: a path to write the full per-run distribution to |
 
 ## lib.mjs — the shared gate library
 
@@ -45,6 +47,21 @@ runs it; the printed key-file path carries the owner key.
 Running `smoke.mjs` against a serve-branch instance is a useful boot check, but two of its
 assertions read real ND data the fixture does not carry (viewport tile coverage and the
 `dmr.nd.gov` acquisition url) — expect 11/13 there, 13/13 only against a deployed instance.
+
+## perf.mjs — the frame harness
+
+`perf.mjs` is SB-05 §8.5's harness pointed at the surfaces P-A built: an in-page
+`requestAnimationFrame` sampler across a scripted deterministic interaction, reported as
+p50/p95/max, dropped frames and the time spent beyond the display's cadence, over `GW_RUNS`
+runs. It is not part of `make test-e2e` — it is a measurement a human takes and records in
+`web/PERF.md`, which is also where the reference client, the honest reading of a
+vsync-quantised distribution, and the reasons the map's S2 number is not in it are written
+down.
+
+```bash
+GLASSWELL_BASE_URL=http://127.0.0.1:8161 GLASSWELL_OWNER_KEY=$(cat /tmp/gw-c11/owner.key) \
+  GW_RUNS=5 GW_PERF_JSON=/tmp/perf.json node tests/e2e/perf.mjs
+```
 
 ## Why this is its own npm project
 

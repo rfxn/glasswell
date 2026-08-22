@@ -142,26 +142,36 @@ export async function contrastAudit(page, targets, fallbackBackground = "rgb(11,
   );
 }
 
+// The sampler, as source, so it can also be installed into a document that does not exist yet
+// (`addInitScript`) — a measurement that spans a navigation loses any sampler evaluated into
+// the page it started from.
+export const FRAME_SAMPLER = `() => {
+  window.__gwFrames = [];
+  window.__gwStop = false;
+  let last = performance.now();
+  const tick = (t) => {
+    window.__gwFrames.push(t - last);
+    last = t;
+    if (!window.__gwStop) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}`;
+
+/** Stops the sampler and hands back what it collected; [] when a navigation took it. */
+export function readFrames(page) {
+  return page.evaluate(() => {
+    window.__gwStop = true;
+    return window.__gwFrames ?? [];
+  });
+}
+
 // Raw frame lengths in ms while `action` runs plus `ms` of settle; the caller judges them
 // against its budget (SB-05 E-3: p95 <= 22 ms, none > 100 ms).
 export async function frameProbe(page, action, ms = 3000) {
-  await page.evaluate(() => {
-    window.__gwFrames = [];
-    window.__gwStop = false;
-    let last = performance.now();
-    const tick = (t) => {
-      window.__gwFrames.push(t - last);
-      last = t;
-      if (!window.__gwStop) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  });
+  await page.evaluate(`(${FRAME_SAMPLER})()`);
   await action();
   await page.waitForTimeout(ms);
-  return page.evaluate(() => {
-    window.__gwStop = true;
-    return window.__gwFrames;
-  });
+  return readFrames(page);
 }
 
 export function tally(items, key = "status") {

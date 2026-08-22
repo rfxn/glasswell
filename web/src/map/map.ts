@@ -45,6 +45,7 @@ import {
 } from "./persist.ts";
 import { createPillStrip } from "./pills.ts";
 import { LAYERS, defaultLayerSet, layerDef, layerIds } from "./registry.ts";
+import { createSelection } from "./selection.ts";
 import { filterableStatusIds } from "./status.ts";
 import {
   WELL_POINT_LAYERS,
@@ -227,7 +228,6 @@ export function createMap(
   // Built once: `zoom` fires on every animation frame of a pinch, and the gated set is a
   // property of the style, not of the viewport.
   const statusGated = statusStyledLayerIds();
-  let selected: string | null = null;
 
   const legend = createLegend({
     on: statuses,
@@ -455,16 +455,11 @@ export function createMap(
     return Object.keys(sourceSpecs()).map((source) => ({ source, sourceLayer: source, id: api10 }));
   }
 
-  function applySelection(api10: string | null): void {
-    for (const previous of selected ? featureRefs(selected) : []) {
-      if (map.getSource(previous.source)) map.removeFeatureState(previous, "selected");
-    }
-    selected = api10;
-    if (!api10) return;
-    for (const reference of featureRefs(api10)) {
-      if (map.getSource(reference.source)) map.setFeatureState(reference, { selected: true });
-    }
-  }
+  const selection = createSelection(featureRefs, {
+    hasSource: (source) => Boolean(map.getSource(source)),
+    set: (reference) => map.setFeatureState(reference, { selected: true }),
+    remove: (reference) => map.removeFeatureState(reference, "selected"),
+  });
 
   async function setBasemap(id: string): Promise<void> {
     basemap = id;
@@ -478,9 +473,10 @@ export function createMap(
       diff: false,
       transformStyle: (_previous, next) => withDataLayers(next),
     });
+    // The new style's sources do not exist yet, here or at boot; `styledata` is where they do.
+    selection.forget();
     installStrikeGlyph();
     applyVisibility();
-    if (selected) applySelection(selected);
   }
 
   map.on("load", () => {
@@ -521,9 +517,11 @@ export function createMap(
     else console.error("map error", event.error ?? event);
   });
 
+  map.on("styledata", () => selection.resync());
+
   const handle: MapHandle = {
     select(api10) {
-      applySelection(api10);
+      selection.select(api10);
     },
     flyTo(point) {
       // Land the well in the strip the card does not cover, not under it.
