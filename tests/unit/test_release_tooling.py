@@ -199,20 +199,30 @@ class TestTheFold:
 
     def test_a_twice_folded_document_still_parses_as_the_page_grammar(self, tmp_path):
         # Nothing re-parsed a twice-folded changelog before, which is why N1 was invisible.
-        first = release.fold(CHANGELOG.read_text(), ["- [New] a"], Version(0, 20), "2026-08-21")
-        second = release.fold(first, ["- [Fix] b"], Version(0, 21), "2026-08-22")
-        third = release.fold(second, ["- [Change] c"], Version(0, 22), "2026-08-23")
+        # Versions derive from the live document's own head: folding a version the real
+        # CHANGELOG already carries would fabricate a duplicate release (broke at v0.20).
+        base = render.parse(CHANGELOG)
+        if len(base.releases) > 1:
+            head = Version.parse(base.releases[1].label.lstrip("v"))
+        else:
+            head = Version(0, 19)
+        one, two, three = head.next(), head.next().next(), head.next().next().next()
+        first = release.fold(CHANGELOG.read_text(), ["- [New] a"], one, "2026-08-21")
+        second = release.fold(first, ["- [Fix] b"], two, "2026-08-22")
+        third = release.fold(second, ["- [Change] c"], three, "2026-08-23")
         target = tmp_path / "CHANGELOG.md"
         target.write_text(third)
 
         doc = render.parse(target)
-        assert [holder.label for holder in doc.releases] == [
+        assert [holder.label for holder in doc.releases[:4]] == [
             "Unreleased",
-            "v0.22",
-            "v0.21",
-            "v0.20",
+            f"v{three.owner}",
+            f"v{two.owner}",
+            f"v{one.owner}",
         ]
-        assert render.render_html(doc, target).count('<h2 id="v0.2') == 3
+        html = render.render_html(doc, target)
+        for version in (one, two, three):
+            assert html.count(f'<h2 id="v{version.owner}"') == 1
 
     def test_the_fold_is_a_pure_insertion_and_rewrites_no_moved_line(self):
         """The highest-consequence property in the change set (gate-rel F5)."""
@@ -259,16 +269,29 @@ class TestTheFold:
             release.fold("# Changelog\n", [], Version(0, 20), "2026-08-21")
 
     def test_the_folded_document_still_parses_as_the_page_grammar(self, tmp_path):
+        # Fold at the version AFTER the live document's head — see the twice-folded test.
+        base = render.parse(CHANGELOG)
+        if len(base.releases) > 1:
+            head = Version.parse(base.releases[1].label.lstrip("v"))
+        else:
+            head = Version(0, 19)
+        nxt = head.next()
         folded = release.fold(
-            CHANGELOG.read_text(), ["- [New] the release tooling"], Version(0, 20), "2026-08-21"
+            CHANGELOG.read_text(), ["- [New] the release tooling"], nxt, "2026-08-21"
         )
         target = tmp_path / "CHANGELOG.md"
         target.write_text(folded)
 
         doc = render.parse(target)
-        assert [r.label for r in doc.releases] == ["Unreleased", "v0.20"]
+        assert doc.releases[0].label == "Unreleased"
         assert doc.releases[0].empty
-        assert len(doc.releases[1].trains) == 25
+        assert doc.releases[1].label == f"v{nxt.owner}"
+        # The folded entry must land in the new release, whether Unreleased held dated
+        # trains (pre-v0.20 shape) or only flat entries (post-v0.20 shape).
+        folded_texts = [entry.text for entry in doc.releases[1].blocks] + [
+            entry.text for train in doc.releases[1].trains for entry in train.blocks
+        ]
+        assert "the release tooling" in folded_texts
 
     def test_bumps_pyproject_to_the_pep440_spelling(self):
         text = '[project]\nname = "glasswell"\nversion = "0.1.0"\n'
