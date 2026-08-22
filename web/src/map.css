@@ -100,8 +100,10 @@
   overscroll-behavior: contain;
 }
 
-/* A legend row is a filter control: checkbox, swatch, label, live count. */
-.gw-lg-row {
+/* A legend row is a filter control: checkbox, swatch, label, live count. The extent node
+   (M1-2) shares the anatomy — it is a filter row over geography rather than status. */
+.gw-lg-row,
+.gw-lg-extent {
   display: flex;
   align-items: center;
   gap: 0;
@@ -109,10 +111,32 @@
   cursor: pointer;
 }
 
-.gw-lg-row input {
+.gw-lg-row input,
+.gw-lg-extent input {
   flex: 0 0 auto;
   margin: 0 0.3rem 0 0;
   accent-color: var(--cyan);
+}
+
+/* The visible joins of the filter tree: `and` to the extent node, `any of` over the rows. */
+.gw-lg-join {
+  margin: 0.1rem 0;
+  color: var(--muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The population statement the off state owes: counts cover everything, not the canvas. */
+.gw-lg-scope {
+  margin: 0.2rem 0 0;
+  color: var(--slate);
+  font-size: 0.66rem;
+  line-height: 1.4;
+}
+
+.gw-lg-scope[hidden] {
+  display: none;
 }
 
 .gw-lg-swatch {

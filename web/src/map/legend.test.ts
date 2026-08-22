@@ -157,6 +157,15 @@ describe("the legend", () => {
     expect(legend.element.textContent).toContain("ND DMR");
     expect(legend.element.textContent).toContain("TX RRC");
   });
+
+  it("names the orchid trace beside the thing it says the laterals are not", () => {
+    // visual-m15web N2: "not a directional survey trace" while the trace sat on the canvas
+    // unnamed by the key was a half-contrast — the other half is one sentence.
+    const legend = createLegend({ onFilter: () => {} });
+    expect(legend.element.textContent).toMatch(/orchid line is that trace/i);
+    legend.setVocabulary([{ rule: "cr_nd_status_vocab_1", href: null }]);
+    expect(legend.element.textContent).toMatch(/orchid line is that trace/i);
+  });
 });
 
 describe("the legend's all/none control", () => {
@@ -567,6 +576,161 @@ describe("the canvas beside the counts", () => {
     expect(partial(legend.element).hidden).toBe(false);
     legend.setPending(6);
     expect(partial(legend.element).hidden).toBe(true);
+  });
+});
+
+describe("the map-extent filter node (M1-2)", () => {
+  const TOTAL = {
+    wells: 27_959,
+    handle: "drv_xret5nw2hhouqi5mfvda#col=wells&bbox=-104.5:47.2:-102.1:48.6",
+  };
+  const node = (root: HTMLElement): HTMLElement => root.querySelector<HTMLElement>(".gw-lg-extent")!;
+  const nodeBox = (root: HTMLElement): HTMLInputElement =>
+    node(root).querySelector<HTMLInputElement>("input")!;
+  const nodeCount = (root: HTMLElement): string =>
+    node(root).querySelector<HTMLElement>(".gw-lg-count")!.textContent ?? "";
+  const nodeHandle = (root: HTMLElement): HTMLButtonElement =>
+    node(root).querySelector<HTMLButtonElement>(".gw-lg-handle")!;
+  const scope = (root: HTMLElement): HTMLElement => root.querySelector<HTMLElement>(".gw-lg-scope")!;
+  const title = (root: HTMLElement): string =>
+    root.querySelector<HTMLElement>(".gw-lg-title")!.textContent!;
+  const flip = (root: HTMLElement, next: boolean): void => {
+    nodeBox(root).checked = next;
+    nodeBox(root).dispatchEvent(new Event("change", { bubbles: true }));
+  };
+
+  it("lists the viewport as a named, counted, switch-off-able row above the classes", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    expect(node(legend.element).textContent).toContain("Map view");
+    expect(nodeBox(legend.element).checked).toBe(true);
+    expect(nodeCount(legend.element)).toBe("—");
+    const children = [...legend.element.querySelector(".gw-lg-body")!.children];
+    expect(children.indexOf(node(legend.element))).toBeLessThan(
+      children.indexOf(rows(legend.element)[0]!),
+    );
+  });
+
+  it("joins the tree visibly: and to the extent node, any of over the class rows", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    const joins = legend.element.querySelector<HTMLElement>(".gw-lg-join")!;
+    expect(joins.textContent).toContain("and");
+    expect(joins.textContent).toContain("any of");
+    const children = [...legend.element.querySelector(".gw-lg-body")!.children];
+    expect(children.indexOf(joins)).toBeGreaterThan(children.indexOf(node(legend.element)));
+    expect(children.indexOf(joins)).toBeLessThan(children.indexOf(rows(legend.element)[0]!));
+  });
+
+  it("carries the population's own count and its own derivation handle", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 20_643, plugged: 7_316 }, 12, {}, TOTAL);
+    expect(nodeCount(legend.element)).toBe("27,959");
+    expect(nodeHandle(legend.element).hidden).toBe(false);
+    expect(nodeHandle(legend.element).dataset["handle"]).toBe(TOTAL.handle);
+  });
+
+  it("shows an em dash, never a zero, when the answer carried no total", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 3 }, 12);
+    expect(nodeCount(legend.element)).toBe("—");
+    expect(nodeHandle(legend.element).hidden).toBe(true);
+  });
+
+  it("waits and withdraws with the class counts, never keeping a stale population", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 3 }, 12, {}, TOTAL);
+    legend.setPending(12);
+    expect(nodeCount(legend.element)).toBe("…");
+    expect(nodeHandle(legend.element).hidden).toBe(true);
+    legend.setUnavailable(12);
+    expect(nodeCount(legend.element)).toBe("—");
+    expect(nodeHandle(legend.element).hidden).toBe(true);
+  });
+
+  it("opens the drawer for the population count without toggling the node", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    document.body.appendChild(legend.element);
+    const seen: string[] = [];
+    document.addEventListener(EXPLAIN_EVENT, (event) => {
+      seen.push((event as CustomEvent<{ handle: string }>).detail.handle);
+    });
+    legend.setCounts({ active: 3 }, 12, {}, TOTAL);
+    nodeHandle(legend.element).click();
+    expect(seen).toEqual([TOTAL.handle]);
+    expect(nodeBox(legend.element).checked).toBe(true);
+    legend.element.remove();
+  });
+
+  it("reports the toggle and states the widened population while it is off", () => {
+    const seen: boolean[] = [];
+    const legend = createLegend({ onFilter: () => {}, onExtent: (on) => seen.push(on) });
+    expect(shown(scope(legend.element))).toBe(false);
+    flip(legend.element, false);
+    expect(seen).toEqual([false]);
+    expect(shown(scope(legend.element))).toBe(true);
+    expect(scope(legend.element).textContent).toMatch(/every ingested well/i);
+    flip(legend.element, true);
+    expect(seen).toEqual([false, true]);
+    expect(shown(scope(legend.element))).toBe(false);
+  });
+
+  it("opens switched off when the URL said so, with the population statement standing", () => {
+    const legend = createLegend({ onFilter: () => {}, extentOn: false });
+    expect(nodeBox(legend.element).checked).toBe(false);
+    expect(shown(scope(legend.element))).toBe(true);
+    expect(title(legend.element)).toBe("Well status · everywhere");
+  });
+
+  it("says everywhere on the collapsed pill, beside the class fraction it already states", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    expect(title(legend.element)).toBe("Well status");
+    flip(legend.element, false);
+    expect(title(legend.element)).toBe("Well status · everywhere");
+    boxFor(legend.element, "active").checked = false;
+    boxFor(legend.element, "active").dispatchEvent(new Event("change", { bubbles: true }));
+    expect(title(legend.element)).toBe(
+      `Well status · ${statusIds().length - 1}/${statusIds().length} · everywhere`,
+    );
+  });
+
+  it("stays out of the class filter: no onFilter call, no change to the active set", () => {
+    const seen: string[][] = [];
+    const legend = createLegend({ onFilter: (on) => seen.push([...on]) });
+    flip(legend.element, false);
+    expect(seen).toEqual([]);
+    expect(legend.activeStatuses().size).toBe(filterableStatusIds().length);
+  });
+
+  it("is not touched by All or None — they speak for the status classes only", () => {
+    const seen: boolean[] = [];
+    const legend = createLegend({ onFilter: () => {}, onExtent: (on) => seen.push(on) });
+    expand(legend.element);
+    flip(legend.element, false);
+    control(legend.element, "all").click();
+    expect(nodeBox(legend.element).checked).toBe(false);
+    flip(legend.element, true);
+    control(legend.element, "none").click();
+    expect(nodeBox(legend.element).checked).toBe(true);
+    expect(seen).toEqual([false, true]);
+  });
+
+  it("suppresses the drawn-versus-in-view line while the node is off", () => {
+    // "Showing X of Y in view" compares the canvas with the counted population; with the node
+    // off the population is two basins and the sentence would be false on its face.
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 20_643, plugged: 7_316 }, 6);
+    legend.setDrawn(1_204);
+    expect(partial(legend.element).hidden).toBe(false);
+    flip(legend.element, false);
+    expect(partial(legend.element).hidden).toBe(true);
+    flip(legend.element, true);
+    expect(partial(legend.element).hidden).toBe(false);
+  });
+
+  it("does not collapse the key — the node is a control, like a class row", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    expand(legend.element);
+    node(legend.element).click();
+    expect(legend.element.classList.contains("gw-open")).toBe(true);
   });
 });
 
