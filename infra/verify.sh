@@ -115,7 +115,7 @@ catalog="$(curl -s --max-time 10 "$MARTIN/catalog")"
 # The roster is the code's, not a list here: a layer added to TILE_LAYERS and installed by
 # install_tile_functions must reach the catalogue, and a stale list here would say it had.
 expected_layers="$("$VENV_PY" -c 'from glasswell.marts.tiles import TILE_LAYERS
-print(" ".join(sorted(layer.name for layer in TILE_LAYERS)))' 2>/dev/null)"
+print(" ".join(sorted(layer.name for layer in TILE_LAYERS)))' 2>/dev/null)"  # a venv that cannot import the marts yields an empty roster, and the asserts below say so
 for layer in $expected_layers; do
     assert_true "martin publishes $layer" "absent from /catalog" \
         grep -q "\"$layer\"" <<<"$catalog"
@@ -285,6 +285,10 @@ fi
 
 printf 'secrets and sandbox\n'
 assert "app.env ownership and mode" "root:root 600" "$(stat -c '%U:%G %a' /etc/glasswell/app.env)"
+# Without the stamp, lineage code_version falls back to pkg:0.1.0 (v0.30 saga).
+assert_true "code-version.env carries a code identity" \
+    "no GLASSWELL_CODE_VERSION — deploy.sh step 5c stamps it" \
+    grep -qs '^GLASSWELL_CODE_VERSION=.' /etc/glasswell/code-version.env  # -s: a missing file is the failure the assert reports, not a grep diagnostic
 api_rw="$(systemctl show glasswell-api -p ReadWritePaths --value)"
 assert_false "api cannot write the raw zone" "ReadWritePaths carries /data/raw" \
     grep -q '/data/raw' <<<"$api_rw"

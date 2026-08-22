@@ -12,6 +12,9 @@ User=glasswell
 Group=glasswell
 EnvironmentFile=/etc/glasswell/db.env
 EnvironmentFile=/etc/glasswell/app.env
+# Deploy-stamped code identity (scripts/deploy.sh step 5c); listed last so it wins over any
+# stale copy in owner-edited app.env. `-`: absent until the first deploy stamps it.
+EnvironmentFile=-/etc/glasswell/code-version.env
 # uvicorn binds the socket and chmods it 0666 with no knob to change that, so /run/glasswell
 # at 0750 glasswell:caddy is the entire access control. The directory is NOT a
 # RuntimeDirectory=: systemd re-applies exec-directory ownership on every exec invocation, so
