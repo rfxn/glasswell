@@ -77,6 +77,42 @@ select s.api10,
 """
 )
 
+# An inner join on the stations, not a left one: a trace is written in the same transaction as
+# the stations it was assembled from, so a trace with no station row is a broken promotion and
+# must fail visibly here rather than tile as a line with no station count under it.
+#
+# No length column, on purpose. The trace is the plan view of a three-dimensional path, so
+# ST_Length over it measures horizontal travel and would read as hole length. The deepest
+# station's measured depth is what the source filed, so that is what is published.
+_SURVEY_TRACES_SELECT = (
+    _WELLS_AS_OF
+    + """
+select s.api10,
+       s.geom_key as trace_key,
+       w.operator_name_reported as operator_name,
+       w.status_canonical,
+       extract(year from w.spud_date)::int as spud_year,
+       station.wellbore_segment,
+       station.segment_kind,
+       station.station_count,
+       station.deepest_station_md_ft,
+       station.deepest_station_tvd_ft,
+       s.geom_type as geometry_provenance,
+       s.geom
+  from canonical.well_spatial s
+  left join wells_as_of w on w.api10 = s.api10
+  join (select api10, api14, wellbore_segment, segment_kind,
+               count(*)::int as station_count,
+               max(measured_depth_ft) as deepest_station_md_ft,
+               max(true_vertical_depth_ft) as deepest_station_tvd_ft
+          from canonical.well_survey_stations
+         group by api10, api14, wellbore_segment, segment_kind) station
+    on station.api10 = s.api10
+   and s.geom_key = station.api14 || '_' || station.wellbore_segment
+ where s.geom_type = 'survey_trace' and left(s.api10, 2) = %(state_code)s
+"""
+)
+
 # Spacing units never restate, so the tile source is a view: current for free, no refresh cost.
 _SPACING_UNITS_VIEW = """
 create or replace view marts.nd_spacing_units_tile as
@@ -121,6 +157,24 @@ _PROJECTIONS: tuple[_Projection, ...] = (
         table="nd_wells_tile",
         columns=("api10", "operator_name", "status_canonical", "spud_year", "geom"),
         select=_WELLS_SELECT,
+    ),
+    _Projection(
+        table="nd_survey_traces_tile",
+        columns=(
+            "api10",
+            "trace_key",
+            "operator_name",
+            "status_canonical",
+            "spud_year",
+            "wellbore_segment",
+            "segment_kind",
+            "station_count",
+            "deepest_station_md_ft",
+            "deepest_station_tvd_ft",
+            "geometry_provenance",
+            "geom",
+        ),
+        select=_SURVEY_TRACES_SELECT,
     ),
 )
 

@@ -67,6 +67,21 @@ PROBE_FRAMES: dict[str, pl.DataFrame] = {
     "cr_nd_multilateral_1": pl.DataFrame(
         {"linekey": ["33011003910000_LAT1"], "lateral_ordinal": [1]}
     ),
+    "cr_nd_survey_api_identity_1": pl.DataFrame({"api_wellno": ["33007001460000"]}),
+    "cr_nd_survey_segment_vocab_1": pl.DataFrame({"well_sub": ["DIR"]}),
+    "cr_nd_survey_station_order_1": pl.DataFrame(
+        {"measdpth": ["4520.0"], "geom": ["POINT(-103.5027379 47.2394938)"]}
+    ),
+    "cr_nd_survey_station_range_1": pl.DataFrame(
+        {
+            "inclination_deg": [0.87],
+            "azimuth_deg": [21.5],
+            "true_vertical_depth_ft": [4519.56],
+            "measured_depth_ft": [4520.0],
+        }
+    ),
+    "cr_nd_survey_min_stations_1": pl.DataFrame({"station_count": [2]}),
+    "cr_nd_survey_azimuth_reference_1": pl.DataFrame({"azimuth": [21.5]}),
 }
 
 
@@ -221,17 +236,37 @@ def test_the_compute_crs_for_the_williston_basin_is_pinned_to_utm_14n(db, seeded
         assert cursor.fetchone() == (32614, 4326)
 
 
-def test_the_four_nd_sources_the_ingest_phases_fetch_are_registered(db, seeded):
+def test_the_five_nd_sources_the_ingest_phases_fetch_are_registered(db, seeded):
     with db.cursor() as cursor:
         cursor.execute(
             "select source_id from lineage.sources where source_id like 'nd_%' order by source_id"
         )
         assert [row[0] for row in cursor.fetchall()] == [
+            "nd_gis_directionals",
             "nd_gis_horizontals_line",
             "nd_gis_spacing_units",
             "nd_gis_wells",
             "nd_mpr_xlsx",
         ]
+
+
+def test_the_survey_source_registers_the_publisher_s_own_licence_text(db, seeded):
+    """SB-01 §1.1: the register carries the terms, not a summary of them — this one is quoted
+    from the metadata inside the archive, which is the copy that travels with the bytes."""
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select license_note, redistributable from lineage.sources where source_id = %s",
+            ("nd_gis_directionals",),
+        )
+        note, redistributable = cursor.fetchone()
+
+    assert "warrants the accuracy, reliability or timeliness" in note
+    assert "does so at his or her own risk" in note
+    # The honest reading: a warranty disclaimer grants nothing.
+    assert redistributable is False
+    # The 313.6 MB geodatabase is redundant with this artifact and is not on the pull schedule.
+    assert "NDOGD_Surveys.gdb.zip" in note
+    assert "confidential" in note
 
 
 def test_the_glossary_reaches_the_database_with_its_cut_line_floor(db, seeded):

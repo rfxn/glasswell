@@ -74,7 +74,9 @@ def test_the_tx_marts_hold_texas_only(both_basins, seeded) -> None:  # noqa: F81
 
 def test_neither_refresh_reports_the_other_basin_as_its_own(both_basins) -> None:
     """The refresh's own row counts are what a deployer reads; they must not double either."""
-    assert both_basins["nd"].row_counts == {"nd_wells_tile": 1, "nd_laterals_tile": 1}
+    assert both_basins["nd"].row_counts == {
+        "nd_wells_tile": 1, "nd_laterals_tile": 1, "nd_survey_traces_tile": 0
+    }
     assert both_basins["tx"].row_counts["tx_wells_tile"] == (
         both_basins["tx_load"].geometries["surface"]
     )

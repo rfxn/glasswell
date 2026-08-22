@@ -45,6 +45,8 @@ BASE_URL = "https://gis.dmr.nd.gov/downloads/oilgas/shapefile"
 DATUM_RULE_SOURCE = "nd_gis_wells"
 LAND_UNIT_RULE_ID = "cr_nd_land_unit_1"
 SEGMENT_FAMILY = "cr_nd_segment_vocab"
+SURVEY_SEGMENT_FAMILY = "cr_nd_survey_segment_vocab"
+SURVEY_TRACE_GEOM_TYPE = "survey_trace"
 _LINEKEY = re.compile(r"\A(?P<api14>\d{14})_(?P<segment>[A-Za-z]+)(?P<ordinal>\d*)\Z")
 
 
@@ -66,6 +68,9 @@ class LayerSpec:
     columns: tuple[str, ...]
     geometry_type: str
     reason_codes: tuple[str, ...] = ()
+    # OGD_Directionals.zip ships two shapefiles; picking one by stem suffix is a declaration,
+    # where relying on the reader's member scan order would be an accident that holds.
+    layer_suffix: str | None = None
 
 
 LAYERS: Mapping[str, LayerSpec] = {
@@ -109,6 +114,24 @@ LAYERS: Mapping[str, LayerSpec] = {
         geometry_type="MultiPolygon",
         reason_codes=("parse_error", "duplicate_row"),
     ),
+    "surveys": LayerSpec(
+        layer="surveys",
+        source_id="nd_gis_directionals",
+        source_key="OGD_Directionals.zip",
+        staging_table="staging.nd_gis_directionals",
+        canonical_table="canonical.well_spatial",
+        columns=(
+            "wl_permit", "api_wellno", "api_format", "long", "lat", "well_sub", "measdpth",
+            "inclinatio", "azimuth", "tvd", "coordns", "coordnsdir", "coordew", "coordewdir",
+            "surveytype",
+        ),
+        geometry_type="Point",
+        reason_codes=(
+            "parse_error", "key_incomplete", "segment_not_promoted", "unreliable_numeric",
+            "insufficient_stations", "orphan_fk",
+        ),
+        layer_suffix="directionals",
+    ),
 }
 
 
@@ -144,6 +167,9 @@ class LoadResult:
     length_rule_id: str | None = None
     length_stats: Mapping[str, float] = field(default_factory=dict)
     multi_lateral_rate: float | None = None
+    # Surveys promote at two grains under one derivation: promoted_rows counts the traces in
+    # canonical.well_spatial, station_rows the stations behind them.
+    station_rows: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -151,6 +177,7 @@ class LoadResult:
             "manifest_id": self.manifest_id,
             "staged_rows": self.staged_rows,
             "promoted_rows": self.promoted_rows,
+            "station_rows": self.station_rows,
             "quarantined": dict(self.quarantined),
             "unchanged": self.unchanged,
             "length_stats": dict(self.length_stats),
@@ -207,6 +234,20 @@ def load_spacing_units(
 ) -> LoadResult:
     """Fetch OGD_DrillingSpacingUnits, stage it, and promote canonical.spacing_units."""
     return _load(connection, LAYERS["spacing_units"], url=url, raw_root=raw_root, client=client)
+
+
+def load_surveys(
+    connection: psycopg.Connection,
+    *,
+    url: str | None = None,
+    raw_root: Path | str | None = None,
+    client: httpx.Client | None = None,
+    restage: bool = False,
+) -> LoadResult:
+    """Fetch OGD_Directionals, stage its stations, and promote stations plus survey traces."""
+    return _load(
+        connection, LAYERS["surveys"], url=url, raw_root=raw_root, client=client, restage=restage
+    )
 
 
 def load_layer(connection: psycopg.Connection, layer: str, **kwargs: Any) -> LoadResult:
@@ -338,7 +379,7 @@ def _stage(
     source_epsg: int,
     storage_epsg: int,
 ) -> tuple[str, int, dict[str, int]]:
-    with ZippedShapefile(payload_path) as layer:
+    with ZippedShapefile(payload_path, layer_suffix=spec.layer_suffix) as layer:
         if layer.source_epsg != source_epsg:
             raise DatumMismatch(
                 f"{spec.source_key} ships EPSG:{layer.source_epsg}; the registry declares"
@@ -948,10 +989,392 @@ def _promote_spacing_units(
     )
 
 
+_SURVEYS_SELECT = """
+select source_row_ordinal, api_wellno, well_sub,
+       surveytype                              as station_type,
+       nullif(measdpth, '')::double precision   as measured_depth_ft,
+       nullif(tvd, '')::double precision        as true_vertical_depth_ft,
+       nullif(inclinatio, '')::double precision as inclination_deg,
+       nullif(azimuth, '')::double precision    as azimuth_deg,
+       nullif(coordns, '')::double precision    as ns_offset_ft,
+       coordnsdir                              as ns_offset_dir,
+       nullif(coordew, '')::double precision    as ew_offset_ft,
+       coordewdir                              as ew_offset_dir,
+       ST_X(geom)                              as longitude,
+       ST_Y(geom)                              as latitude
+  from staging.nd_gis_directionals
+ where manifest_id = %s and geom is not null
+ order by source_row_ordinal
+"""
+
+_SURVEYS_SCHEMA = {
+    "source_row_ordinal": pl.Int32,
+    "api_wellno": pl.String,
+    "well_sub": pl.String,
+    "station_type": pl.String,
+    "measured_depth_ft": pl.Float64,
+    "true_vertical_depth_ft": pl.Float64,
+    "inclination_deg": pl.Float64,
+    "azimuth_deg": pl.Float64,
+    "ns_offset_ft": pl.Float64,
+    "ns_offset_dir": pl.String,
+    "ew_offset_ft": pl.Float64,
+    "ew_offset_dir": pl.String,
+    "longitude": pl.Float64,
+    "latitude": pl.Float64,
+}
+
+# The identity columns cr_nd_survey_api_identity_1 adds, declared so an empty layer still
+# presents the columns the vocabulary rule maps, and then the column that rule writes.
+_KEYED_SURVEY_SCHEMA = {**_SURVEYS_SCHEMA, "api14": pl.String, "api10": pl.String}
+_ADMITTED_SURVEY_SCHEMA = {**_KEYED_SURVEY_SCHEMA, "segment_kind": pl.String}
+
+_INSERT_STATION = """
+insert into canonical.well_survey_stations (
+    api10, api14, wellbore_segment, segment_kind, station_ordinal, measured_depth_ft,
+    true_vertical_depth_ft, inclination_deg, azimuth_deg, ns_offset_ft, ns_offset_dir,
+    ew_offset_ft, ew_offset_dir, station_type, geom, source_datum, transform_rule_id,
+    source_manifest_id, derivation_id)
+values (%(api10)s, %(api14)s, %(wellbore_segment)s, %(segment_kind)s, %(station_ordinal)s,
+        %(measured_depth_ft)s, %(true_vertical_depth_ft)s, %(inclination_deg)s, %(azimuth_deg)s,
+        %(ns_offset_ft)s, %(ns_offset_dir)s, %(ew_offset_ft)s, %(ew_offset_dir)s,
+        %(station_type)s,
+        ST_SetSRID(ST_MakePoint(%(longitude)s, %(latitude)s), %(storage_epsg)s),
+        %(source_datum)s, %(transform_rule_id)s, %(manifest_id)s, %(derivation_id)s)
+on conflict (api10, wellbore_segment, station_ordinal) do nothing
+"""
+
+_INSERT_TRACE = """
+insert into canonical.well_spatial (
+    api10, geom_type, geom_key, geom, source_datum, transform_rule_id, source_manifest_id,
+    derivation_id)
+values (%(api10)s, %(geom_type)s, %(geom_key)s,
+        ST_SetSRID(ST_GeomFromText(%(wkt)s), %(storage_epsg)s),
+        %(source_datum)s, %(transform_rule_id)s, %(manifest_id)s, %(derivation_id)s)
+on conflict (api10, geom_type, geom_key) do nothing
+"""
+
+
+def keyed_stations(
+    frame: pl.DataFrame, rule: ConformanceRule
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split on identity: the slice and the digit count are the rule's, not this function's."""
+    digits = int(rule.spec["digits"])
+    start, stop = (int(bound) for bound in rule.spec["api10_slice"])
+    keyed: list[dict[str, Any]] = []
+    unkeyed: list[dict[str, Any]] = []
+    for row in frame.iter_rows(named=True):
+        api14 = (row["api_wellno"] or "").strip()
+        if len(api14) != digits or not api14.isdigit():
+            unkeyed.append(row)
+            continue
+        keyed.append({**row, "api14": api14, "api10": api14[start:stop]})
+    return keyed, unkeyed
+
+
+def withheld_measurements(
+    stations: Sequence[Mapping[str, Any]], rule: ConformanceRule
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Null every measurement outside its bound and return one reject record per value.
+
+    The row survives with a hole in it because the reject is the value: ND computed the
+    published position itself, and a 437-degree azimuth is no evidence against the coordinate
+    beside it (cr_nd_survey_station_range_1).
+    """
+    bounds = list(rule.spec["bounds"])
+    kept: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    for station in stations:
+        row = dict(station)
+        for bound in bounds:
+            field = str(bound["field"])
+            value = row.get(field)
+            ceiling = row.get(str(bound["max_field"])) if "max_field" in bound else bound.get("max")
+            floor = bound.get("min")
+            if value is None:
+                continue
+            if not ((floor is not None and value < floor) or
+                    (ceiling is not None and value > ceiling)):
+                continue
+            rejected.append(
+                {
+                    "api10": row["api10"],
+                    "api14": row["api14"],
+                    "wellbore_segment": row["well_sub"],
+                    "source_row_ordinal": row["source_row_ordinal"],
+                    "field": field,
+                    "value": value,
+                    "admissible": _bound_text(field, bound, floor, ceiling),
+                }
+            )
+            row[field] = None
+        kept.append(row)
+    return kept, rejected
+
+
+def _bound_text(field: str, bound: Mapping[str, Any], floor: Any, ceiling: Any) -> str:
+    if "max_field" in bound:
+        return f"{field} <= {bound['max_field']} ({ceiling})"
+    return f"{floor} <= {field} <= {ceiling} {bound.get('unit', '')}".strip()
+
+
+def survey_trace_wkt(stations: Sequence[Mapping[str, Any]]) -> str:
+    """The LineString through the stations in the order they are given."""
+    vertices = ", ".join(f"{row['longitude']!r} {row['latitude']!r}" for row in stations)
+    return f"LINESTRING({vertices})"
+
+
+def ordered_segments(
+    stations: Sequence[Mapping[str, Any]], rule: ConformanceRule
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Group into `(api14, well_sub)` segments and order each one the way the rule says.
+
+    A station with no measured depth has no place in that order, so it is returned as a reject
+    rather than parked at whichever end a null sorts to.
+    """
+    order_by = str(rule.spec["order_by"])
+    tie_break = str(rule.spec["tie_break"])
+    first_ordinal = int(rule.spec["ordinal_from"])
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    unorderable: list[dict[str, Any]] = []
+    for station in stations:
+        if station[order_by] is None:
+            unorderable.append(dict(station))
+            continue
+        grouped.setdefault((station["api14"], station["well_sub"]), []).append(dict(station))
+
+    segments = []
+    for (api14, well_sub), rows in sorted(grouped.items()):
+        rows.sort(key=lambda row: (row[order_by], row[tie_break]))
+        for ordinal, row in enumerate(rows, start=first_ordinal):
+            row["station_ordinal"] = ordinal
+        segments.append(
+            {
+                "api10": rows[0]["api10"],
+                "api14": api14,
+                "wellbore_segment": well_sub,
+                "segment_kind": rows[0]["segment_kind"],
+                "geom_key": f"{api14}_{well_sub}",
+                "station_count": len(rows),
+                "stations": rows,
+            }
+        )
+    return segments, unorderable
+
+
+def _promote_surveys(
+    connection: psycopg.Connection,
+    spec: LayerSpec,
+    *,
+    manifest_id: str,
+    vintage: date,
+    parse_derivation_id: str,
+    staged_rows: int,
+    datum: ConformanceRule,
+) -> LoadResult:
+    identity = _rule(connection, spec.source_id, "cr_nd_survey_api_identity_1")
+    ordering = _rule(connection, spec.source_id, "cr_nd_survey_station_order_1")
+    ranges = _rule(connection, spec.source_id, "cr_nd_survey_station_range_1")
+    minimum = _rule(connection, spec.source_id, "cr_nd_survey_min_stations_1")
+    azimuth = _rule(connection, spec.source_id, "cr_nd_survey_azimuth_reference_1")
+    segment_rule = rule_for_family(
+        load_rules(connection, source_id=spec.source_id, stage="conform"), SURVEY_SEGMENT_FAMILY
+    )
+
+    frame = _staging_frame(connection, _SURVEYS_SELECT, manifest_id, _SURVEYS_SCHEMA)
+    counts = dict.fromkeys(spec.reason_codes, 0)
+
+    keyed, unkeyed = keyed_stations(frame, identity)
+    counts[str(identity.spec["reason_code"])] += _quarantine(
+        connection,
+        pl.DataFrame(unkeyed, schema=_SURVEYS_SCHEMA),
+        spec,
+        manifest_id=manifest_id,
+        reason_code=str(identity.spec["reason_code"]),
+        stage="parse",
+        rule_id=identity.rule_id,
+    )
+
+    selected = apply_rules(pl.DataFrame(keyed, schema=_KEYED_SURVEY_SCHEMA), [segment_rule])
+    for batch in selected.quarantined:
+        counts[batch.reason_code] = counts.get(batch.reason_code, 0) + _quarantine(
+            connection,
+            batch.frame,
+            spec,
+            manifest_id=manifest_id,
+            reason_code=batch.reason_code,
+            stage="conform",
+            rule_id=batch.rule_id,
+        )
+
+    admitted, rejected_values = withheld_measurements(selected.frame.to_dicts(), ranges)
+    counts[str(ranges.spec["reason_code"])] += _quarantine(
+        connection,
+        pl.DataFrame(rejected_values),
+        spec,
+        manifest_id=manifest_id,
+        reason_code=str(ranges.spec["reason_code"]),
+        stage="validate",
+        rule_id=ranges.rule_id,
+    )
+
+    segments, unorderable = ordered_segments(admitted, ordering)
+    counts[str(ordering.spec["reason_code"])] += _quarantine(
+        connection,
+        pl.DataFrame(unorderable, schema=_ADMITTED_SURVEY_SCHEMA),
+        spec,
+        manifest_id=manifest_id,
+        reason_code=str(ordering.spec["reason_code"]),
+        stage="conform",
+        rule_id=ordering.rule_id,
+    )
+
+    sized = apply_rules(
+        pl.DataFrame([_segment_payload(s) for s in segments], schema=_SEGMENT_SCHEMA), [minimum]
+    )
+    traceable_keys = set(sized.frame["geom_key"].to_list())
+    traceable = [segment for segment in segments if segment["geom_key"] in traceable_keys]
+    for batch in sized.quarantined:
+        counts[batch.reason_code] = counts.get(batch.reason_code, 0) + _quarantine(
+            connection,
+            batch.frame,
+            spec,
+            manifest_id=manifest_id,
+            reason_code=batch.reason_code,
+            stage="validate",
+            rule_id=batch.rule_id,
+        )
+
+    known = _known_api10s(connection, {segment["api10"] for segment in traceable})
+    kept = [segment for segment in traceable if segment["api10"] in known]
+    counts["orphan_fk"] += _quarantine(
+        connection,
+        pl.DataFrame(
+            [_segment_payload(s) for s in traceable if s["api10"] not in known]
+        ),
+        spec,
+        manifest_id=manifest_id,
+        reason_code="orphan_fk",
+        stage="join",
+    )
+
+    storage_epsg = int(datum.spec["target_epsg"])
+    source_datum = f"EPSG:{int(datum.spec['source_epsg'])}"
+    stations = [station for segment in kept for station in segment["stations"]]
+
+    output = OutputSpec(
+        store="postgis", dataset=spec.canonical_table, partition={"manifest_id": manifest_id}
+    )
+    with derive(
+        "canonical.promote",
+        output=output,
+        params={
+            "layer": spec.layer,
+            "storage_epsg": storage_epsg,
+            "source_datum": source_datum,
+            "geom_type": SURVEY_TRACE_GEOM_TYPE,
+            "station_grain": "api10 + wellbore_segment + station_ordinal",
+        },
+        inputs=[
+            InputRef(kind="derivation", ref_id=parse_derivation_id),
+            InputRef(kind="manifest", ref_id=manifest_id, as_of_vintage=vintage),
+        ],
+        rules=sorted(
+            {
+                identity.rule_id, segment_rule.rule_id, ordering.rule_id, ranges.rule_id,
+                minimum.rule_id, azimuth.rule_id, datum.rule_id,
+            }
+        ),
+    ) as context:
+        context.set_rows(len(kept))
+        context.set_output_hash(
+            hash_payload(
+                json_ready(
+                    {
+                        "geom_keys": sorted(segment["geom_key"] for segment in kept),
+                        "stations": len(stations),
+                    }
+                )
+            )
+        )
+
+    derivation_id = context.derivation_id
+    shared = {
+        "storage_epsg": storage_epsg,
+        "source_datum": source_datum,
+        "transform_rule_id": datum.rule_id,
+        "manifest_id": manifest_id,
+        "derivation_id": derivation_id,
+    }
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            _INSERT_STATION,
+            [
+                {
+                    **shared,
+                    **{key: station[key] for key in _STATION_COLUMNS},
+                    "wellbore_segment": segment["wellbore_segment"],
+                    "api14": segment["api14"],
+                }
+                for segment in kept
+                for station in segment["stations"]
+            ],
+        )
+        cursor.executemany(
+            _INSERT_TRACE,
+            [
+                {
+                    **shared,
+                    "api10": segment["api10"],
+                    "geom_type": SURVEY_TRACE_GEOM_TYPE,
+                    "geom_key": segment["geom_key"],
+                    "wkt": survey_trace_wkt(segment["stations"]),
+                }
+                for segment in kept
+            ],
+        )
+    _open_vintage(connection, spec, manifest_id, vintage, derivation_id, staged_rows, len(kept))
+
+    return LoadResult(
+        layer=spec.layer,
+        source_id=spec.source_id,
+        manifest_id=manifest_id,
+        parse_derivation_id=parse_derivation_id,
+        promote_derivation_id=derivation_id,
+        staged_rows=staged_rows,
+        promoted_rows=len(kept),
+        quarantined=counts,
+        station_rows=len(stations),
+    )
+
+
+_STATION_COLUMNS = (
+    "api10", "segment_kind", "station_ordinal", "measured_depth_ft", "true_vertical_depth_ft",
+    "inclination_deg", "azimuth_deg", "ns_offset_ft", "ns_offset_dir", "ew_offset_ft",
+    "ew_offset_dir", "station_type", "longitude", "latitude",
+)
+
+_SEGMENT_SCHEMA = {
+    "api10": pl.String,
+    "api14": pl.String,
+    "wellbore_segment": pl.String,
+    "segment_kind": pl.String,
+    "geom_key": pl.String,
+    "station_count": pl.Int64,
+}
+
+
+def _segment_payload(segment: Mapping[str, Any]) -> dict[str, Any]:
+    """What a held-back segment says about itself: never the station list, which is 1,167 rows
+    at its longest and would blow the 8 KB quarantine payload cap into an `oversized` stub."""
+    return {key: value for key, value in segment.items() if key != "stations"}
+
+
 _PROMOTERS = {
     "wells": _promote_wells,
     "laterals": _promote_laterals,
     "spacing_units": _promote_spacing_units,
+    "surveys": _promote_surveys,
 }
 
 
@@ -991,7 +1414,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     arguments = parser.parse_args(argv)
 
-    # Wells first: a lateral whose api10 has no well row quarantines as orphan_fk.
+    # Wells first: a lateral or a survey trace whose api10 has no well row is an orphan_fk.
     layers = list(LAYERS) if arguments.layer == "all" else [arguments.layer]
     with psycopg.connect(arguments.dsn) as connection:
         environment = resolve_environment(

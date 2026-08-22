@@ -7,6 +7,28 @@ from datetime import date
 import psycopg
 
 ND_LICENSE_NOTE = "Free GIS download, NAD83, standard ND accuracy disclaimer"
+# The disclaimer itself, quoted from the <useconst> element of OGD_Directionals.shp.xml inside
+# the archive rather than paraphrased from the download page — the shipped metadata is the copy
+# that travels with the bytes, so it is the one a manifest can be checked against. It is a
+# warranty disclaimer and grants nothing, which is why redistributable stays False.
+ND_SURVEY_LICENSE_NOTE = (
+    "Disclaimer only; no grant. Verbatim from OGD_Directionals.shp.xml <useconst>: “Although"
+    " we try to keep this information up-to-date and accurate, neither the State of North"
+    " Dakota, nor any agency, officer, or employee of the State of North Dakota warrants the"
+    " accuracy, reliability or timeliness of any information published by this system, nor"
+    " endorses any content, viewpoints, products, or services linked from this system, and"
+    " shall not be held responsible for any losses caused by reliance on the accuracy,"
+    " reliability or timeliness of such information. Portions of such information may be"
+    " incorrect or out of date. Any person or entity that relies on any information obtained"
+    " from this system does so at his or her own risk.” <accconst>: “The State of"
+    " North Dakota makes every effort to provide virus-free files but does not guarantee"
+    " uncorrupted files”. Coverage caveat: the public extracts are served through"
+    " non-confidential views (the geodatabase catalog exposes directionals_confidential and"
+    " vw_SDE_GetNonConDirSurveys_Layer), so confidential-well surveys are excluded by"
+    " construction. Redundancy finding: NDOGD_Surveys.gdb.zip is 313.6 MB and holds exactly"
+    " OGD_Directionals and OGD_Horizontals plus editor-tracking columns, so it is not fetched"
+    " (data-sources-wellops.md §4.2)."
+)
 # The honest note, and it stays honest: absence of a restriction is not a grant, so every NM
 # manifest carries redistributable = False until someone publishes terms (SB-01 §1.3).
 NM_LICENSE_NOTE = (
@@ -57,6 +79,13 @@ SOURCES: tuple[dict[str, object], ...] = (
         "name": "ND DMR GIS drilling spacing units (OGD_DrillingSpacingUnits)",
         "jurisdiction": "ND",
         "license_note": ND_LICENSE_NOTE,
+        "redistributable": False,
+    },
+    {
+        "source_id": "nd_gis_directionals",
+        "name": "ND DMR GIS directional survey stations (OGD_Directionals)",
+        "jurisdiction": "ND",
+        "license_note": ND_SURVEY_LICENSE_NOTE,
         "redistributable": False,
     },
     *(
