@@ -1002,6 +1002,12 @@ def _deployable(tmp_path: Path) -> Path:
     (root / "web" / "dist" / "changelog").mkdir(parents=True)
     (root / "web" / "dist" / "index.html").write_text("<!doctype html>")
     (root / "web" / "dist" / "changelog" / "index.html").write_text("<!doctype html>")
+    # Two numbered migrations make the repo head 2 — without them the "not a glasswell
+    # tree" refusal fires first and masks every case below it.
+    migrations = root / "src" / "glasswell" / "db" / "migrations"
+    migrations.mkdir(parents=True)
+    (migrations / "001_init.sql").write_text("select 1;\n")
+    (migrations / "002_wells.sql").write_text("select 2;\n")
     (root / ".gitignore").write_text("web/dist/\n")
     for args in (
         ("init", "-b", "main"),
@@ -1040,6 +1046,43 @@ def _run_deploy(root: Path, tmp_path: Path, *args: str, **env: str):
         text=True,
         env={**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", **env},
     )
+
+
+def _run_deploy_against_a_stub_host(root: Path, tmp_path: Path, *args: str, db_head: str = ""):
+    """Runs deploy.sh against a cooperative `ssh` stub, the gate-reldeploy harness shape.
+
+    The stub logs every composed remote command, drains tar pipes so the producer is not
+    SIGPIPEd, and answers the schema_migrations head query with `db_head` — so tests can
+    pose gap, no-gap and garbage answers. Returns (result, call log). The host is pinned
+    to an .invalid name: if the shim ever fails to intercept, nothing reaches a real box.
+    """
+    bin_dir = tmp_path / "stub-bin"
+    bin_dir.mkdir(exist_ok=True)
+    log = tmp_path / "ssh-calls.log"
+    log.write_text("")
+    fake = bin_dir / "ssh"
+    fake.write_text(
+        "#!/bin/sh\n"
+        f'printf \'%s\\n\' "$2" >> "{log}"\n'
+        "cat >/dev/null\n"
+        'case "$2" in *schema_migrations*) printf \'%s\\n\' "$GW_STUB_DB_HEAD" ;; esac\n'
+        "exit 0\n"
+    )
+    fake.chmod(0o755)
+    result = subprocess.run(
+        ["bash", str(root / "scripts" / "deploy.sh"), *args],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        env={
+            **os.environ,
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+            "GW_DEPLOY_HOST": "root@stub.invalid",
+            "GW_STUB_DB_HEAD": db_head,
+        },
+    )
+    return result, log.read_text()
 
 
 class TestTheDeployRefusals:
@@ -1143,12 +1186,58 @@ class TestTheDeployRefusals:
         assert "rsync" not in result.stderr
 
     def test_migrations_are_opt_in(self, tmp_path):
+        # v0.31 retired the silent skip: a bare deploy over a gap refuses naming both
+        # heads, applying is --with-migrations, and skipping is loud and never queries.
         root = _deployable(tmp_path)
         _tag(root)
 
-        without = _run_deploy(root, tmp_path, "--dry-run")
-        with_them = _run_deploy(root, tmp_path, "--dry-run", "--with-migrations")
+        bare, bare_log = _run_deploy_against_a_stub_host(root, tmp_path, db_head="1")
+        assert bare.returncode == 1
+        assert "deploy refused: the repo carries migrations ahead of the database" in bare.stderr
+        assert "(repo head 2, database 1)" in bare.stderr
+        assert "pass --with-migrations to apply them" in bare.stderr
+        assert "--skip-migrations to state the gap and proceed" in bare.stderr
+        assert "glasswell-migrate" not in bare_log
 
-        assert "glasswell-migrate" not in without.stderr
-        assert "migrations skipped" in without.stdout
-        assert "glasswell-migrate" in with_them.stderr
+        applied, applied_log = _run_deploy_against_a_stub_host(
+            root, tmp_path, "--with-migrations", db_head="1"
+        )
+        assert applied.returncode == 0
+        assert "glasswell-migrate" in applied_log
+
+        skipped, skipped_log = _run_deploy_against_a_stub_host(
+            root, tmp_path, "--skip-migrations", db_head="1"
+        )
+        assert skipped.returncode == 0
+        assert "--skip-migrations: repo migration head is 002" in skipped.stdout
+        assert "was NOT consulted" in skipped.stdout
+        assert "schema_migrations" not in skipped_log, "the banner promises zero head queries"
+
+    def test_a_current_schema_head_deploys_and_says_so(self, tmp_path):
+        root = _deployable(tmp_path)
+        _tag(root)
+
+        result, log = _run_deploy_against_a_stub_host(root, tmp_path, db_head="2")
+
+        assert result.returncode == 0
+        assert "schema is current at head 002" in result.stdout
+        assert "schema_migrations" in log
+
+    def test_a_head_answer_that_is_not_a_number_is_refused_verbatim(self, tmp_path):
+        root = _deployable(tmp_path)
+        _tag(root)
+
+        result, _ = _run_deploy_against_a_stub_host(root, tmp_path, db_head="garbage")
+
+        assert result.returncode == 1
+        assert "schema_migrations head answered 'garbage', not a number" in result.stderr
+
+    def test_the_two_migration_flags_together_contradict_and_exit_2(self, tmp_path):
+        root = _deployable(tmp_path)
+        _tag(root)
+
+        result = _run_deploy(root, tmp_path, "--with-migrations", "--skip-migrations")
+
+        assert result.returncode == 2
+        assert "--with-migrations and --skip-migrations contradict each other" in result.stderr
+        assert MARKER not in result.stderr
