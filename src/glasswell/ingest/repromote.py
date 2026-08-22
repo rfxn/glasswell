@@ -17,11 +17,10 @@ from datetime import date
 import psycopg
 from psycopg.rows import dict_row
 
-from glasswell.ingest.base import IngestRun, open_ingest_run
+from glasswell.ingest.base import IngestRun, open_ingest_run, record_vintage_day
 from glasswell.ingest.nd_mpr import SOURCE_ID, STAGING_TABLE, promote_manifest
 from glasswell.lineage.audit import emit
 from glasswell.lineage.errors import VintageAlreadyPromoted
-from glasswell.lineage.vintages import open_vintage
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,21 +115,19 @@ def repromote(
             quarantined[reason] = quarantined.get(reason, 0) + count
 
     manifest_ids = [manifest.manifest_id for manifest in manifests]
-    # open_vintage upserts, so a re-run that appended nothing would overwrite the record of what
-    # the first pass did with a row of zeroes. A no-op run leaves the ledger alone.
-    if manifests and (appended or not _vintage_exists(run.connection, run.as_of)):
-        open_vintage(
-            run.connection,
-            source_id=SOURCE_ID,
-            vintage_date=run.as_of,
-            manifest_ids=manifest_ids,
-            opened_at=run.session.clock.now(),
-            promotion_derivation_id=None,
-            rows_examined=examined,
-            rows_appended=appended,
-            months_touched=sorted(months),
-            restatement_summary=restatement,
-        )
+    # The ledger row is the vintage-day's, so a second same-day repromotion accumulates onto
+    # the first pass instead of overwriting it, and a no-op run leaves it alone (DR-78).
+    if manifests and record_vintage_day(
+        run.connection,
+        source_id=SOURCE_ID,
+        vintage_date=run.as_of,
+        manifest_ids=manifest_ids,
+        opened_at=run.session.clock.now(),
+        rows_examined=examined,
+        rows_appended=appended,
+        months_touched=sorted(months),
+        restatement_summary=restatement,
+    ):
         emit(
             run.connection,
             "canonical.vintage_opened",
@@ -161,13 +158,6 @@ def repromote(
     )
 
 
-def _vintage_exists(connection: psycopg.Connection, vintage_date: date) -> bool:
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "select 1 from lineage.vintages where source_id = %s and vintage_date = %s",
-            (SOURCE_ID, vintage_date),
-        )
-        return cursor.fetchone() is not None
 
 
 def main(argv: Sequence[str] | None = None) -> int:

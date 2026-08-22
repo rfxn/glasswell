@@ -238,8 +238,13 @@ def test_g8_the_serving_path_partitions_on_the_key_it_is_promoted_under(db):
 
     view = str(scalar(db, "select pg_get_viewdef('canonical.production_monthly_latest', true)"))
     windowed = " ".join(view.split()).lower()
-    print(f"\nG8 view window: {re.search(r'partition by[^)]*', windowed).group(0)}")
-    assert "partition by p.entity_type, p.entity_key, p.production_month" in windowed
+    window = re.search(r"partition by[^)]*", windowed).group(0)
+    print(f"\nG8 view window: {window}")
+    # 031 adds api10 to the window for predicate pushdown (DR-79); B2's property is that the
+    # promoted entity key stays in the partition, not that it stands alone.
+    for column in ("p.entity_type", "p.entity_key", "p.production_month", "p.stream",
+                   "p.source_id"):
+        assert column in window, window
     assert "created_at desc" not in windowed
 
 

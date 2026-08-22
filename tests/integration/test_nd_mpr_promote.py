@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -10,6 +11,7 @@ from glasswell.ingest import nd_mpr
 from glasswell.ingest.base import open_ingest_run
 from glasswell.lineage.explain import resolve_chain
 from glasswell.seed import seed_all
+from tests.support.mpr_workbook import filing, write_workbook
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "nd_mpr"
 TRUNCATED = FIXTURES / "2026_03_truncated.xlsx"
@@ -260,3 +262,39 @@ def test_the_promote_stage_stamps_what_each_rule_judged(db, promoted):
     assert stamped["cr_nd_confidential_1"] == DATA_ROWS
     assert stamped["cr_nd_days_range_1"] == CLEAN_ROWS
     assert stamped["cr_nd_stream_vocab_1"] == CLEAN_ROWS * 5
+
+
+def test_a_same_day_second_month_accumulates_the_vintage_ledger(
+    db, raw_root, lineage_env, promoted, tmp_path
+):
+    """DR-78's backfill half: every month ingested on one calendar day upserts the same
+    (source, day) ledger row, so the counters must be the day's sum — which is what canonical
+    holds for the source — not the last month's report."""
+    path = write_workbook(
+        tmp_path / "2026_04.xlsx",
+        [
+            filing(api14="33053026680000", month=datetime(2026, 4, 1), pool="BAKKEN",
+                   oil=100, water=10, gas=50, days=30),
+        ],
+    )
+    with open_ingest_run(
+        db, source_id=nd_mpr.SOURCE_ID, raw_root=raw_root, environment=lineage_env
+    ) as run, client_for(path) as client:
+        second = nd_mpr.ingest_month(run, year=YEAR, month=4, client=client)
+    db.commit()
+
+    rows = query(
+        db,
+        "select rows_appended, months_touched from lineage.vintages where source_id = %s",
+        nd_mpr.SOURCE_ID,
+    )
+    assert second.rows_appended > 0
+    assert len(rows) == 1
+    appended, months = rows[0]
+    assert appended == promoted.rows_appended + second.rows_appended
+    assert appended == scalar(
+        db,
+        "select count(*) from canonical.production_monthly where source_id = %s",
+        nd_mpr.SOURCE_ID,
+    )
+    assert set(months) == {"2026-03-01", "2026-04-01"}

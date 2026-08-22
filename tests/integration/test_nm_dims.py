@@ -593,12 +593,13 @@ def test_a_registry_with_no_staged_rows_is_reported_as_zero_rather_than_assumed_
 # ---------------------------------------------------------------- 5.7 the ND serving path
 
 
-def test_the_served_production_query_filters_before_the_window_and_the_view_does_not(db, seeded):
+def test_both_the_served_query_and_the_latest_view_filter_below_the_window(db, seeded):
     """P5.7's structural half, the half a fixture-sized container can prove. The served path
     (`select_production`) pushes api10 inside the window subquery, so the planner can use
-    production_monthly_api10_idx; canonical.production_monthly_latest cannot, because api10 is
-    not in its PARTITION BY, and it re-ranks the whole table for every well card. Measured on
-    VM 111 at 17,597,960 rows: 1.3 ms against 156,370 ms — see work-output/d1-p5-status.md."""
+    production_monthly_api10_idx. The view could not — api10 was missing from its PARTITION BY
+    and it re-ranked the whole table for one well: 156,370 ms at 17,597,960 rows against
+    1.3 ms served (work-output/d1-p5-status.md §7). Migration 031 put api10 in the PARTITION
+    BY (DR-79), so the same size-independent property now holds for both paths."""
     served = _plan(db, nm_dims.SERVED_PRODUCTION_PROBE)
     view = _plan(
         db,
@@ -606,7 +607,7 @@ def test_the_served_production_query_filters_before_the_window_and_the_view_does
     )
 
     assert _api10_below_window(served), served
-    assert not _api10_below_window(view), view
+    assert _api10_below_window(view), view
 
 
 def _plan(db: psycopg.Connection, sql: str) -> dict:
