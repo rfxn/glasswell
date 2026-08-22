@@ -38,6 +38,7 @@ from glasswell.lineage import (
     quarantine,
 )
 from glasswell.lineage.conformance import rule_for_family
+from glasswell.lineage.errors import RuleSpecError
 from glasswell.lineage.serialization import hash_payload, json_ready
 from glasswell.units import METRES_PER_FOOT
 
@@ -1072,20 +1073,42 @@ def keyed_stations(
     return keyed, unkeyed
 
 
+# What a rule may ask for when a measurement leaves its bound. `null_field` withholds the
+# value and promotes the position; `drop_row` rejects the whole station. Which one applies is
+# the rule row's decision — see withheld_measurements.
+FIELD_ACTIONS = ("null_field", "drop_row")
+
+
 def withheld_measurements(
     stations: Sequence[Mapping[str, Any]], rule: ConformanceRule
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Null every measurement outside its bound and return one reject record per value.
+    """Apply the rule's declared `field_action` to every measurement outside its bound.
 
-    The row survives with a hole in it because the reject is the value: ND computed the
-    published position itself, and a 437-degree azimuth is no evidence against the coordinate
-    beside it (cr_nd_survey_station_range_1).
+    What happens to a row that breaks a bound is read from the rule row, not decided here:
+    `null_field` withholds the value and keeps the surveyed position, `drop_row` rejects the
+    station. Under `cr_nd_survey_station_range_1` the action is `null_field`, because ND
+    computed the published position itself and a 437-degree azimuth is no evidence against the
+    coordinate beside it — but that reasoning lives in the rule's rationale, and changing the
+    decision has to be a new rule row rather than an edit here.
+
+    Each reject carries the action and the disposition it was filed under, so the ledger can
+    tell a withheld value from a lost row without joining back to the registry.
     """
     bounds = list(rule.spec["bounds"])
+    action = str(rule.spec.get("field_action", ""))
+    if action not in FIELD_ACTIONS:
+        raise RuleSpecError(
+            f"{rule.rule_id}: field_action {action!r} is not one of {', '.join(FIELD_ACTIONS)}"
+        )
+    filed_as = {"field_action": action}
+    if "disposition" in rule.spec:
+        filed_as["disposition"] = str(rule.spec["disposition"])
+
     kept: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
     for station in stations:
         row = dict(station)
+        broke_a_bound = False
         for bound in bounds:
             field = str(bound["field"])
             value = row.get(field)
@@ -1096,6 +1119,7 @@ def withheld_measurements(
             if not ((floor is not None and value < floor) or
                     (ceiling is not None and value > ceiling)):
                 continue
+            broke_a_bound = True
             rejected.append(
                 {
                     "api10": row["api10"],
@@ -1105,9 +1129,13 @@ def withheld_measurements(
                     "field": field,
                     "value": value,
                     "admissible": _bound_text(field, bound, floor, ceiling),
+                    **filed_as,
                 }
             )
-            row[field] = None
+            if action == "null_field":
+                row[field] = None
+        if broke_a_bound and action == "drop_row":
+            continue
         kept.append(row)
     return kept, rejected
 

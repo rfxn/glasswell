@@ -11,7 +11,14 @@
       rationale, the well_sub vocabulary, the ascending-measured-depth assembly with its
       tie-break, per-field physical bounds that withhold the value and keep the position,
       a two-station floor, and the unstated azimuth north reference recorded as a gap
+- [New] a station whose measurement leaves its physical bound is handled the way its rule
+      row says: the loader reads `field_action`, so `null_field` withholds the value and
+      keeps the surveyed position while `drop_row` rejects the station, and a value the
+      loader cannot honour is refused rather than quietly defaulted
 - [Change] canonical.well_spatial.geom_type admits `survey_trace`; quarantine reason
            vocabulary admits `insufficient_stations`
+- [Change] every survey reject records the `field_action` and `disposition` it was filed
+           under, so the ledger tells six withheld values from six lost rows without
+           joining back to the rule registry
 - [Fix] ND GIS layer selection is declared rather than incidental: OGD_Directionals.zip
       ships two shapefiles and the loader now names the stem it reads

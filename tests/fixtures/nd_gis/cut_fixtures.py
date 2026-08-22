@@ -29,7 +29,7 @@ SURVEY_SEGMENTS: tuple[tuple[str, str], ...] = (
     ("33053019370000", "DIR"),   # in OGD_Wells_300
     ("33053021020000", "DIR"),   # in OGD_Wells_300
     ("33007003310000", "STK1"),  # inclination 436 deg at station 8 of 199
-    ("33007006800000", "DIR"),   # three stations whose TVD exceeds their own measured depth
+    ("33007006800000", "DIR"),   # four stations whose TVD exceeds their own measured depth
     ("33075014950000", "DIR"),   # azimuth 437 deg, and it is the deepest station of the 150
     ("33075011520000", "DIR"),   # the shortest segment in the file: two stations
     ("33105903760000", "STK1"),  # sidetracks and a vertical with no DIR segment at all

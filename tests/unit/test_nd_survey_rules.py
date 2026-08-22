@@ -17,6 +17,7 @@ from glasswell.ingest.nd_gis import (
     withheld_measurements,
 )
 from glasswell.lineage.conformance import apply_rules
+from glasswell.lineage.errors import RuleSpecError
 from glasswell.lineage.models import ConformanceRule
 from glasswell.marts.tiles import TILE_LAYERS, tile_function_sql, tile_geometry_sql
 from glasswell.seed import ND_RULES
@@ -130,6 +131,78 @@ def test_every_bound_in_the_rule_is_enforced_and_none_of_them_is_in_the_code(fie
     assert bounds == {"inclination_deg", "azimuth_deg", "true_vertical_depth_ft"}
     assert rows[0][field] is None
     assert len(rejected) == 1
+
+
+def rule_with(rule_id: str, **spec_overrides) -> ConformanceRule:
+    """The seeded row with its spec amended — how a supersession would arrive in production."""
+    seeded = rule(rule_id)
+    return seeded.model_copy(update={"spec": {**seeded.spec, **spec_overrides}})
+
+
+def test_what_happens_to_an_out_of_bound_row_follows_the_rule_row_not_the_code():
+    """R8's whole point: flipping field_action in the registry changes what the loader does.
+    A spec key the code never reads is a decision disclosed as data and implemented in code."""
+    station = keyed(azimuth_deg=437.0)
+
+    withheld, withheld_rejects = withheld_measurements(
+        [station], rule_with("cr_nd_survey_station_range_1", field_action="null_field")
+    )
+    dropped, dropped_rejects = withheld_measurements(
+        [station], rule_with("cr_nd_survey_station_range_1", field_action="drop_row")
+    )
+
+    assert len(withheld) == 1
+    assert withheld[0]["azimuth_deg"] is None
+    assert withheld[0]["longitude"] == -103.50273792
+    assert dropped == []
+    assert len(withheld_rejects) == len(dropped_rejects) == 1
+    assert withheld_rejects[0]["field_action"] == "null_field"
+    assert dropped_rejects[0]["field_action"] == "drop_row"
+
+
+def test_the_seeded_row_is_the_one_the_gate_approved_and_it_says_null_field():
+    assert rule("cr_nd_survey_station_range_1").spec["field_action"] == "null_field"
+
+
+def test_a_row_that_breaks_no_bound_survives_even_under_drop_row():
+    """`drop_row` rejects the stations that broke a bound, not the batch they arrived in."""
+    stations = [keyed(source_row_ordinal=0), keyed(source_row_ordinal=1, azimuth_deg=437.0)]
+
+    kept, rejected = withheld_measurements(
+        stations, rule_with("cr_nd_survey_station_range_1", field_action="drop_row")
+    )
+
+    assert [row["source_row_ordinal"] for row in kept] == [0]
+    assert [r["source_row_ordinal"] for r in rejected] == [1]
+
+
+@pytest.mark.parametrize("declared", ["", "quarantine", "null_row", None])
+def test_a_field_action_the_loader_cannot_honour_is_refused_rather_than_defaulted(declared):
+    """Silently falling back to the current behaviour would make the rule row decorative
+    again, and the fallback would be invisible in the ledger."""
+    spec = dict(rule("cr_nd_survey_station_range_1").spec)
+    if declared is None:
+        spec.pop("field_action")
+    else:
+        spec["field_action"] = declared
+    amended = rule("cr_nd_survey_station_range_1").model_copy(update={"spec": spec})
+
+    with pytest.raises(RuleSpecError, match="field_action"):
+        withheld_measurements([keyed(azimuth_deg=437.0)], amended)
+
+
+def test_every_reject_says_what_was_done_to_it_and_under_what_disposition():
+    """The ledger has to answer "were these seven values withheld, or seven rows lost?"
+    without joining back to the registry."""
+    _, rejected = withheld_measurements(
+        [keyed(azimuth_deg=437.0, inclination_deg=436.0)],
+        rule("cr_nd_survey_station_range_1"),
+    )
+
+    assert len(rejected) == 2
+    for record in rejected:
+        assert record["field_action"] == "null_field"
+        assert record["disposition"] == "measure_only"
 
 
 def test_an_in_range_measurement_is_left_exactly_as_the_source_filed_it():

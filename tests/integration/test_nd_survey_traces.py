@@ -242,6 +242,20 @@ def test_the_well_sub_vocabulary_is_read_from_the_registry_and_covers_every_labe
     ) == {**SEGMENT_KINDS, "LAT": "lateral"}
 
 
+def test_reading_field_action_from_the_rule_row_left_the_promoted_output_where_it_was(
+    surveys_loaded, wells_seeded
+):
+    """gate-m15d cleared the R8 fix on condition it move no promoted number. The seeded row
+    says `null_field`, so every count here is the one the gate reproduced."""
+    assert surveys_loaded.staged_rows == STATION_RECORDS
+    assert surveys_loaded.station_rows == PROMOTED_STATIONS
+    assert surveys_loaded.promoted_rows == PROMOTED_SEGMENTS
+    assert surveys_loaded.quarantined["unreliable_numeric"] == WITHHELD_VALUES
+    assert scalar(
+        wells_seeded, "select count(*) from canonical.well_survey_stations"
+    ) == PROMOTED_STATIONS
+
+
 def test_an_impossible_measurement_is_withheld_and_the_station_still_carries_its_position(
     surveys_loaded, wells_seeded
 ):
@@ -279,6 +293,40 @@ def test_an_impossible_measurement_is_withheld_and_the_station_still_carries_its
         "select ST_NPoints(geom) from canonical.well_spatial"
         " where geom_key = '33075014950000_DIR'",
     ) == SEGMENT_STATIONS["33075014950000_DIR"]
+
+
+def test_the_ledger_tells_a_withheld_value_from_a_lost_row(surveys_loaded, wells_seeded):
+    """Six `unreliable_numeric` rows and one `orphan_fk` row are both rejects, and they mean
+    opposite things: six values were withheld from stations that promoted, one segment was
+    lost entirely. A count alone cannot say which, so each reject carries what was done to it."""
+    filed = rows(
+        wells_seeded,
+        "select reason_code, row_payload ->> 'field_action', row_payload ->> 'disposition',"
+        "       count(*)::int"
+        "  from lineage.quarantine_rows where source_id = 'nd_gis_directionals'"
+        " group by 1, 2, 3 order by 1",
+    )
+
+    assert filed == [
+        ("orphan_fk", None, None, ORPHAN_SEGMENTS),
+        ("unreliable_numeric", "null_field", "measure_only", WITHHELD_VALUES),
+    ]
+
+    # measure_only is a claim about the data, so it has to be true: the stations behind those
+    # six withheld values are all in canonical, and the segment behind the lost row is not.
+    withheld_from = rows(
+        wells_seeded,
+        "select distinct row_payload ->> 'api14', row_payload ->> 'wellbore_segment'"
+        "  from lineage.quarantine_rows"
+        " where source_id = 'nd_gis_directionals' and reason_code = 'unreliable_numeric'",
+    )
+    for api14, segment in withheld_from:
+        assert scalar(
+            wells_seeded,
+            "select count(*) from canonical.well_survey_stations"
+            " where api14 = %s and wellbore_segment = %s",
+            (api14, segment),
+        ) == SEGMENT_STATIONS[f"{api14}_{segment}"]
 
 
 def test_a_trace_whose_well_has_no_row_quarantines_instead_of_promoting_unattached(
