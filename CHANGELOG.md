@@ -7,6 +7,17 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.25"></a>
+## v0.25 — 2026-08-21
+
+- [New] map: ND directional-survey traces as a toggleable layer — the bore path ND
+      filed as MD/INC/AZI/TVD stations, drawn from marts.nd_survey_traces_tile in a
+      provenance colour of its own so the filed path reads apart from the GIS
+      centreline; the row states its coverage (525 of 43,824 wells, 1.2%, confidential
+      wells excluded at source), a trace is clickable and selectable like any well
+      geometry, and its hover names station count and deepest measured depth — never
+      a length
+
 <a id="v0.24"></a>
 ## v0.24 — 2026-08-21
 
