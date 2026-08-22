@@ -37,7 +37,12 @@ import polars as pl
 import psycopg
 from psycopg.rows import dict_row
 
-from glasswell.ingest.base import IngestRun, open_ingest_run, resolve_environment
+from glasswell.ingest.base import (
+    IngestRun,
+    open_ingest_run,
+    record_vintage_day,
+    resolve_environment,
+)
 from glasswell.ingest.xml_stream import stream_records
 from glasswell.lineage.audit import emit
 from glasswell.lineage.capture import derive
@@ -54,7 +59,6 @@ from glasswell.lineage.ftp import FTP, FtpTransferFailed, close_ftp, connect_ftp
 from glasswell.lineage.models import InputRef, ManifestRecord, OutputSpec
 from glasswell.lineage.quarantine import quarantine
 from glasswell.lineage.serialization import hash_payload
-from glasswell.lineage.vintages import open_vintage
 from glasswell.staging.duck import (
     PartitionWrite,
     frame_of,
@@ -1348,42 +1352,18 @@ def promote_all(
     return _close_vintage(run, snapshot())
 
 
-_VINTAGE_COUNTERS = """
-select rows_examined, rows_appended, manifest_ids, months_touched, restatement_summary
-  from lineage.vintages where source_id = %s and vintage_date = %s
-"""
-
-
 def _record_vintage(run: IngestRun, report: PromotionReport) -> None:
-    """The vintage row is the ledger of the vintage-day, not the report of one run.
-
-    `open_vintage` upserts on (source, day) and canonical accumulates across same-day runs, so
-    a widening performed on the day of the first promotion would otherwise record its own
-    counters over the ones that made the rows (gate-nm-fp D2).
-    """
-    connection = run.connection
-    with connection.cursor(row_factory=dict_row) as cursor:
-        cursor.execute(_VINTAGE_COUNTERS, (source_id_for(SPINE_TABLE), run.as_of))
-        prior = cursor.fetchone()
-    # A re-run that computed what was already recorded has nothing to add, and must not overwrite
-    # the pass that did the work with its own zeroes (gate-a1b §4 minor).
-    if prior is not None and not report.promoted_rows:
-        return
-    restatement = dict(prior["restatement_summary"] if prior else {})
-    for month, rows in report.restatement_summary.items():
-        restatement[month] = restatement.get(month, 0) + rows
-    open_vintage(
-        connection,
+    """The vintage row is the ledger of the vintage-day; `record_vintage_day` accumulates."""
+    record_vintage_day(
+        run.connection,
         source_id=source_id_for(SPINE_TABLE),
         vintage_date=run.as_of,
-        manifest_ids=list(
-            dict.fromkeys([*(prior["manifest_ids"] if prior else []), report.manifest_id])
-        ),
+        manifest_ids=[report.manifest_id],
         opened_at=run.session.clock.now(),
-        rows_examined=(prior["rows_examined"] if prior else 0) + report.staged_rows,
-        rows_appended=(prior["rows_appended"] if prior else 0) + report.promoted_rows,
-        months_touched=sorted({*(prior["months_touched"] if prior else []), *report.months}),
-        restatement_summary=restatement,
+        rows_examined=report.staged_rows,
+        rows_appended=report.promoted_rows,
+        months_touched=report.months,
+        restatement_summary=report.restatement_summary,
     )
 
 

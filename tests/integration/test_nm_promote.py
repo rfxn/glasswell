@@ -24,6 +24,7 @@ from glasswell.lineage.conformance import load_rules
 from glasswell.seed import seed_all
 from tests.integration.test_nm_stage import (
     FakeFtp,
+    fixture_for,
     full_record,
     stage,
     synthetic_document,
@@ -597,6 +598,68 @@ def test_the_vintage_records_what_the_run_examined_and_appended(db, staged_day_o
             {},
             [report.manifest_id],
         )
+    ]
+
+
+SAME_DAY_WIDENING = datetime(2026, 8, 21, 12, 15, 0, tzinfo=UTC)
+SAME_DAY_RERUN = datetime(2026, 8, 21, 18, 15, 0, tzinfo=UTC)
+
+
+def vintage_ledger(db: psycopg.Connection) -> list[tuple]:
+    return query(
+        db,
+        "select vintage_id, rows_examined, rows_appended, months_touched,"
+        "       restatement_summary, manifest_ids, opened_at, promotion_derivation_id"
+        " from lineage.vintages where source_id = %s order by vintage_date",
+        SPINE_SOURCE,
+    )
+
+
+def test_the_ledger_row_two_same_day_passes_produce_is_the_days_sum_exactly(
+    db, staged_day_one, raw_root, staging_root, tmp_path, monkeypatch
+) -> None:
+    """DR-87 characterization: pins the exact ledger row so the consolidation onto
+    `ingest.base.record_vintage_day` is provably byte-for-byte (gate-nm-fp D2 accumulate,
+    gate-a1b §4 no-op guard, manifest dedup, month union, restatement per-month map)."""
+    first = promote(db)
+    widened = promote(db, at=SAME_DAY_WIDENING, window_start=FULL_HISTORY)
+
+    day_one_row = (
+        f"vin_{SPINE_SOURCE}_2026-08-21",
+        first.staged_rows + widened.staged_rows,
+        first.promoted_rows + widened.promoted_rows,
+        sorted({*first.months, *widened.months}),
+        {},
+        [staged_day_one.manifest_id],
+        DAY_ONE,
+        None,
+    )
+    assert (first.staged_rows, first.promoted_rows) == (IN_WINDOW_ROWS, IN_WINDOW_ROWS)
+    assert widened.promoted_rows == FIXTURE_ROWS - IN_WINDOW_ROWS
+    assert vintage_ledger(db) == [day_one_row]
+
+    rerun = promote(db, at=SAME_DAY_RERUN, window_start=FULL_HISTORY)
+    assert rerun.promoted_rows == 0
+    assert vintage_ledger(db) == [day_one_row], (
+        "a pass that appended nothing must not overwrite the pass that did the work"
+    )
+
+    amended = (fixture_for(SPINE).parent / "nm_wcproduction_300_amended.xml").read_bytes()
+    restaged = stage(db, raw_root, tmp_path, monkeypatch, at=DAY_TWO, document=amended)
+    restated = promote(db, at=DAY_TWO, window_start=FULL_HISTORY)
+    assert restated.restatement_summary == {"2014-03-01": 1}
+    assert vintage_ledger(db) == [
+        day_one_row,
+        (
+            f"vin_{SPINE_SOURCE}_2026-08-22",
+            restated.staged_rows,
+            restated.promoted_rows,
+            sorted(set(restated.months)),
+            {"2014-03-01": 1},
+            [restaged.manifest_id],
+            DAY_TWO,
+            None,
+        ),
     ]
 
 
