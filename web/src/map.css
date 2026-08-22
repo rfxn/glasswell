@@ -219,11 +219,52 @@
   color: var(--muted);
 }
 
+/* The vocabulary sits under the scroll body, not inside it (visual-m12/m13): its
+   disclosure is always in frame with the key open, so the note is found, not scrolled to. */
+.gw-lg:not(.gw-open) .gw-lg-vocab {
+  display: none;
+}
+
+.gw-lg-vocab {
+  margin-top: 0.35rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--hairline);
+}
+
+.gw-lg-vocab-title {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--slate);
+  font: inherit;
+  font-size: 0.66rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.gw-lg-vocab-title::after {
+  content: " ▸";
+  color: var(--cyan);
+  font-weight: 700;
+}
+
+.gw-lg-vocab-title[aria-expanded="true"]::after {
+  content: " ▾";
+  color: var(--muted);
+}
+
 .gw-lg-note {
-  margin: 0.35rem 0 0;
+  margin: 0.25rem 0 0;
+  max-height: min(24vh, 10rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   color: var(--muted);
   font-size: 0.66rem;
   line-height: 1.4;
+}
+
+.gw-lg-note[hidden] {
+  display: none;
 }
 
 /* ── layer panel ─────────────────────────────────────────────────────────── */
@@ -564,6 +605,23 @@
   font-size: 0.66rem;
 }
 
+/* The cell card carries a live ⌾, so it alone takes the pointer: entering it stops the
+   canvas's mousemove, which is what holds the card still long enough to click. */
+.gw-hover-cell {
+  padding-right: 1.7rem;
+  pointer-events: auto;
+}
+
+.gw-hover-handle {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.3rem;
+}
+
+.gw-hover-handle[hidden] {
+  display: none;
+}
+
 .gw-banner {
   position: absolute;
   top: 0.6rem;
@@ -669,6 +727,15 @@
 
   .gw-lg {
     max-width: 11rem;
+  }
+}
+
+/* visual-m23 V-3: at this width the ⌾ coach mark is viewport-fixed just under the rail
+   (style.css), exactly the band the pill strip opens in. The strip yields until the
+   lesson is dismissed; 4rem clears the mark even when its sentence wraps to two lines. */
+@media (width <= 520px) {
+  body:has(.gw-hint:not([hidden])) .gw-pills {
+    top: 4rem;
   }
 }
 

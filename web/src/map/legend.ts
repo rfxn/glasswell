@@ -169,9 +169,25 @@ export function createLegend(options: LegendOptions): LegendHandle {
   fault.setAttribute("role", "status");
   body.appendChild(fault);
 
+  // Outside the scroll body (visual-m12/m13): the note's tail sat below the fold at every
+  // breakpoint, so the vocabulary gets an always-in-frame disclosure of its own instead.
+  const vocab = document.createElement("div");
+  vocab.className = "gw-lg-vocab";
+  const vocabTitle = document.createElement("button");
+  vocabTitle.type = "button";
+  vocabTitle.className = "gw-lg-vocab-title";
+  vocabTitle.textContent = "Vocabulary";
+  vocabTitle.setAttribute("aria-expanded", "false");
+  vocab.appendChild(vocabTitle);
   const note = document.createElement("p");
   note.className = "gw-lg-note";
-  body.appendChild(note);
+  note.hidden = true;
+  vocab.appendChild(note);
+  element.appendChild(vocab);
+  vocabTitle.addEventListener("click", () => {
+    note.hidden = !note.hidden;
+    vocabTitle.setAttribute("aria-expanded", String(!note.hidden));
+  });
 
   const checked = (row: HTMLElement): boolean =>
     row.querySelector<HTMLInputElement>("input")?.checked === true;
@@ -225,8 +241,9 @@ export function createLegend(options: LegendOptions): LegendHandle {
   none.addEventListener("click", () => setAll(false));
 
   element.addEventListener("click", (event) => {
-    // A filter row and the bulk control are controls, not the expand target.
-    if ((event.target as HTMLElement).closest(".gw-lg-row, .gw-lg-extent, .gw-lg-actions")) return;
+    // A filter row, the bulk control and the vocabulary disclosure are controls, not the
+    // expand target.
+    if ((event.target as HTMLElement).closest(".gw-lg-row, .gw-lg-extent, .gw-lg-actions, .gw-lg-vocab")) return;
     const open = element.classList.toggle("gw-open");
     title.setAttribute("aria-expanded", String(open));
     actions.hidden = !open;

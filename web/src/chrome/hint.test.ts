@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Test-only import: hint.ts keys on the event name rather than importing the card, so the rail
@@ -154,5 +155,39 @@ describe("it is a one-time lesson across visits, not a recurring interruption", 
 
     expect(hint.hidden).toBe(false);
     expect(first.hidden).toBe(true);
+  });
+});
+
+describe("at phone width it does not sit on the pill strip (visual-m23 V-3)", () => {
+  // happy-dom does no layout, so the pact is pinned in the shipped CSS: style.css fixes the
+  // hint to the viewport band under the rail at <=520px, and map.css moves the pill strip
+  // out of that band for exactly as long as the hint is showing.
+  const GLOBAL = readFileSync("src/style.css", "utf8");
+  const MAP = readFileSync("src/map.css", "utf8");
+
+  function mediaBlock(css: string, query: RegExp): string {
+    const start = css.search(query);
+    if (start === -1) return "";
+    let depth = 0;
+    for (let index = css.indexOf("{", start); index < css.length; index += 1) {
+      if (css[index] === "{") depth += 1;
+      if (css[index] === "}") {
+        depth -= 1;
+        if (depth === 0) return css.slice(start, index + 1);
+      }
+    }
+    return "";
+  }
+
+  it("is viewport-fixed under the rail in the 520px posture — the band the pact is about", () => {
+    const posture = mediaBlock(GLOBAL, /@media \(max-width: 520px\)/);
+    expect(posture).toMatch(/\.gw-hint\s*\{[^}]*position:\s*fixed/);
+  });
+
+  it("moves the pills below it while it shows, and only at that width", () => {
+    const clearance = mediaBlock(MAP, /@media \(width <= 520px\)/);
+    expect(clearance).toMatch(/body:has\(\.gw-hint:not\(\[hidden\]\)\)\s+\.gw-pills\s*\{[^}]*top/);
+    // Unkeyed to the hint's visibility, the strip would sit 4rem low forever.
+    expect(MAP).not.toMatch(/^\s*\.gw-pills\s*\{[^}]*top:\s*4rem/m);
   });
 });

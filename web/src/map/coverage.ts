@@ -10,8 +10,21 @@ export const ND_SNAPSHOT = {
   wells: 43_817,
   disposal: 1_989,
   traced: 525,
-  /** The mart refresh the counts were read from (v0.30 deploy). */
-  refresh: "drv_lp7yzfash7mft2cdohba",
+  /** marts.nd_wells_tile refresh the counts were read from (VM 111 mart at v0.37+dd49f63, read 2026-08-22). */
+  refresh: "drv_gh5zhnea4trtofypofbq",
+} as const;
+
+/**
+ * The served PLSS land snapshot, same discipline: promoted grid units per
+ * cr_blm_plss_publisher_1 and the metric cells binned over them (M2-3).
+ */
+export const LAND_SNAPSHOT = {
+  townships: 2_057,
+  sections: 71_455,
+  /** 1,152 township + 12,800 section rows in marts.land_metrics_tile. */
+  cells: 13_952,
+  /** marts.land_metrics_tile refresh the cell count was read from (VM 111 mart at v0.37+dd49f63, read 2026-08-22). */
+  refresh: "drv_u6ntpnulcqf7kfij3t5a",
 } as const;
 
 const NUMBER = new Intl.NumberFormat("en-US");

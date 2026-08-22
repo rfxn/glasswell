@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { createHoverCard } from "./hover-card.ts";
+import { EXPLAIN_EVENT } from "../card/gw-figure.ts";
+import { createHoverCard, placeCard } from "./hover-card.ts";
 import { createTileBanner } from "./tile-banner.ts";
 
 describe("the hover card", () => {
@@ -206,6 +207,97 @@ describe("the hover card", () => {
     const card = createHoverCard();
     card.show({ api10: "33053", status_canonical: "brand_new_code" }, { x: 0, y: 0 });
     expect(card.element.textContent).toMatch(/unmapped/i);
+  });
+
+  it("carries the cell figures' own ⌾, raising the one event the drawer opens on", () => {
+    // gate-m23 cycle-1 item 8: a cropped screenshot of the card keeps the affordance.
+    const card = createHoverCard();
+    card.show(
+      { land_unit_id: "x", unit_type: "section", label: "2", well_count: 1,
+        prod_well_count: 1, liquid_cum_bbl: 10, gas_cum_mcf: 0, water_cum_bbl: 0,
+        derivation_id: "drv_thematics" },
+      { x: 0, y: 0 },
+    );
+    const handle = card.element.querySelector<HTMLButtonElement>(".gw-hover-handle")!;
+    expect(handle.hidden).toBe(false);
+    expect(handle.getAttribute("aria-label")).toContain("drv_thematics");
+    // The live ⌾ is why the cell card alone takes the pointer (map.css pairs with this).
+    expect(card.element.classList.contains("gw-hover-cell")).toBe(true);
+    const seen = vi.fn();
+    card.element.addEventListener(EXPLAIN_EVENT, (event) =>
+      seen((event as CustomEvent).detail.handle),
+    );
+    handle.click();
+    expect(seen).toHaveBeenCalledWith("drv_thematics");
+  });
+
+  it("hides the ⌾ for a cell whose tile carries no handle, rather than raising nothing", () => {
+    const card = createHoverCard();
+    card.show(
+      { land_unit_id: "x", unit_type: "section", label: "2", well_count: 1,
+        prod_well_count: 1, liquid_cum_bbl: 10, gas_cum_mcf: 0, water_cum_bbl: 0 },
+      { x: 0, y: 0 },
+    );
+    expect(card.element.querySelector<HTMLButtonElement>(".gw-hover-handle")!.hidden).toBe(true);
+  });
+
+  it("drops the ⌾ and the pointer claim the moment the hover is a well again", () => {
+    const card = createHoverCard();
+    card.show(
+      { land_unit_id: "x", unit_type: "section", label: "2", well_count: 1,
+        prod_well_count: 1, liquid_cum_bbl: 10, gas_cum_mcf: 0, water_cum_bbl: 0,
+        derivation_id: "drv_thematics" },
+      { x: 0, y: 0 },
+    );
+    card.show({ api10: "3305305527", status_canonical: "active" }, { x: 0, y: 0 });
+    expect(card.element.querySelector<HTMLButtonElement>(".gw-hover-handle")!.hidden).toBe(true);
+    expect(card.element.classList.contains("gw-hover-cell")).toBe(false);
+  });
+});
+
+describe("edge-aware placement (visual-m13 / visual-m23 V-1)", () => {
+  const SIZE = { width: 200, height: 80 };
+  const VIEW = { width: 1440, height: 900 };
+
+  it("anchors below-right of the cursor when nothing clips", () => {
+    expect(placeCard({ x: 100, y: 100 }, SIZE, VIEW)).toEqual({ x: 114, y: 114 });
+  });
+
+  it("flips left of the cursor at the right edge", () => {
+    expect(placeCard({ x: 1350, y: 100 }, SIZE, VIEW)).toEqual({ x: 1136, y: 114 });
+  });
+
+  it("flips above the cursor at the bottom edge — the hover-low-dark-1440 pose", () => {
+    expect(placeCard({ x: 100, y: 860 }, SIZE, VIEW)).toEqual({ x: 114, y: 766 });
+  });
+
+  it("flips both ways in the corner", () => {
+    expect(placeCard({ x: 1350, y: 860 }, SIZE, VIEW)).toEqual({ x: 1136, y: 766 });
+  });
+
+  it("steps around the on-canvas key when another corner clears it", () => {
+    const key = { left: 1200, top: 700, right: 1420, bottom: 880 };
+    // Below-right lands on the key; below-left fits the canvas and clears it.
+    expect(placeCard({ x: 1150, y: 750 }, SIZE, VIEW, key)).toEqual({ x: 936, y: 764 });
+  });
+
+  it("keeps the edge-fitting corner when no corner can avoid the key", () => {
+    const everywhere = { left: 0, top: 0, right: 1440, bottom: 900 };
+    expect(placeCard({ x: 100, y: 100 }, SIZE, VIEW, everywhere)).toEqual({ x: 114, y: 114 });
+  });
+
+  it("clamps into the canvas when the card is bigger than it", () => {
+    const spot = placeCard({ x: 100, y: 100 }, { width: 2000, height: 1000 }, VIEW);
+    expect(spot).toEqual({ x: 0, y: 0 });
+  });
+
+  it("never places past the top or left even at a 390-wide viewport", () => {
+    // The narrow breakpoint the m23 status queued: a centre hover at 390 must not clip.
+    const spot = placeCard({ x: 200, y: 400 }, { width: 256, height: 120 }, { width: 390, height: 844 });
+    expect(spot.x).toBeGreaterThanOrEqual(0);
+    expect(spot.x + 256).toBeLessThanOrEqual(390);
+    expect(spot.y).toBeGreaterThanOrEqual(0);
+    expect(spot.y + 120).toBeLessThanOrEqual(844);
   });
 });
 

@@ -464,3 +464,22 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
     expect(publishedSource("wells", WELLS_SOURCE)).toBe(WELLS_SOURCE);
   });
 });
+
+describe("the disposal ring's selected state", () => {
+  it("adds weight over the base ring at every zoom stop (visual-m17 judgment 3)", () => {
+    // The cyan flip alone is a close hue pair against teal at small radii; width is the
+    // register hue does not carry, so selection must outweigh the base at each stop.
+    const ring = dataLayers().find((layer) => layer.id === "disposal-wells");
+    const width = paintOf(ring)["circle-stroke-width"] as unknown[];
+    expect(width[0]).toBe("interpolate");
+    const outputs = width.slice(3).filter((_, index) => index % 2 === 1) as unknown[][];
+    expect(outputs.length).toBeGreaterThanOrEqual(3);
+    for (const output of outputs) {
+      const [kind, , selected, base] = output as [string, unknown, number, number];
+      expect(kind).toBe("case");
+      expect(typeof selected).toBe("number");
+      expect(typeof base).toBe("number");
+      expect(selected).toBeGreaterThan(base);
+    }
+  });
+});
