@@ -118,7 +118,17 @@ describe("a facet control is chosen from the parameter's own schema (SB-08 §3.1
     ].map(operationOf);
     const vintages = controlsFor(operationOf("list_vintages"), ["source_id"], siblings);
 
-    expect(vintages.controls.map((control) => control.name)).toEqual(["source_id", "limit"]);
+    // Derived from the snapshot's own head rather than hand-listed, so an additive served
+    // parameter (explain and explain_depth landed with v0.27's snapshot) moves this expectation
+    // instead of reddening it — the same reason line 8 reads the committed document.
+    const query = (operationOf("list_vintages").parameters ?? [])
+      .filter((parameter) => parameter.in === "query")
+      .map((parameter) => parameter.name);
+    expect(query).toEqual(expect.arrayContaining(["source_id", "limit"]));
+    expect(vintages.controls.map((control) => control.name)).toEqual([
+      "source_id",
+      ...query.filter((name) => name !== "source_id"),
+    ]);
     // §3.1 rule 3: list_vintages accepts no cursor at all, and the reader is told so.
     expect(vintages.unsupported).toContain("cursor");
     expect(vintages.unsupported).not.toContain("source_id");

@@ -9,3 +9,6 @@
 - [Fix] map: the extent row's tooltip flips with the node — in-view coverage
       while it is on, everything ingested while it is off — instead of
       asserting in-view coverage in both states (gate-m12 F2)
+- [Fix] web: the vintages facet test derives its control list from the committed
+      snapshot instead of a hand-written copy, so v0.27's additive explain and
+      explain_depth parameters no longer redden the suite
