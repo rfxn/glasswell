@@ -77,7 +77,7 @@ LAYERS: Mapping[str, LayerSpec] = {
             "plssid", "twnshpno", "twnshpdir", "rangeno", "rangedir", "twnshplab", "prinmer",
             "survtyp",
         ),
-        reason_codes=("parse_error", "key_incomplete", "duplicate_row"),
+        reason_codes=("parse_error", "key_incomplete", "duplicate_row", "key_collision"),
     ),
     "sections": LayerSpec(
         layer="sections",
@@ -87,7 +87,9 @@ LAYERS: Mapping[str, LayerSpec] = {
         unit_type="section",
         staging_table="staging.blm_plss_sections",
         columns=("plssid", "frstdivid", "frstdivno", "frstdivlab", "frstdivtyp", "survtyp"),
-        reason_codes=("parse_error", "key_incomplete", "duplicate_row", "orphan_fk"),
+        reason_codes=(
+            "parse_error", "key_incomplete", "duplicate_row", "orphan_fk", "key_collision",
+        ),
     ),
 }
 
@@ -173,7 +175,7 @@ def _load(
 
     if restage:
         _clear_staging(connection, spec, manifest.manifest_id)
-    elif _already_promoted(connection, manifest.manifest_id):
+    elif fetched.unchanged and _already_staged(connection, spec, manifest.manifest_id):
         parse_id, promote_id = _existing_derivations(connection, manifest.manifest_id)
         return LoadResult(
             layer=spec.layer,
@@ -222,7 +224,16 @@ def _rule(
     raise LookupError(f"no {kind or rule_id} rule is seeded for {RULE_SOURCE}")
 
 
-def _already_promoted(connection: psycopg.Connection, manifest_id: str) -> bool:
+def _already_staged(connection: psycopg.Connection, spec: LayerSpec, manifest_id: str) -> bool:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"select 1 from {spec.staging_table} where manifest_id = %s limit 1",
+            (manifest_id,),
+        )
+        return cursor.fetchone() is not None
+
+
+def _owns_canonical(connection: psycopg.Connection, manifest_id: str) -> bool:
     with connection.cursor() as cursor:
         cursor.execute(
             f"select 1 from {CANONICAL_TABLE} where source_manifest_id = %s limit 1",
@@ -409,6 +420,11 @@ _DUPLICATE_TOWNSHIPS = (
     + "select source_row_ordinal, plssid, twnshplab from keyed where occurrence > 1"
 )
 
+_REFUSED_TOWNSHIPS = (
+    _TOWNSHIPS_KEYED
+    + "select source_row_ordinal, plssid, twnshplab from keyed where occurrence = 1"
+)
+
 _INCOMPLETE_TOWNSHIPS = """
 select source_row_ordinal, twnshplab
   from staging.blm_plss_townships
@@ -452,6 +468,18 @@ _DUPLICATE_SECTIONS = (
     + "select source_row_ordinal, frstdivid, frstdivlab from keyed where occurrence > 1"
 )
 
+_REFUSED_SECTIONS = (
+    _SECTIONS_KEYED
+    + """
+select source_row_ordinal, plssid, frstdivid, frstdivlab
+  from keyed
+ where occurrence = 1
+   and exists (select 1 from canonical.land_units township
+                where township.land_unit_id = keyed.plssid
+                  and township.unit_type = 'township')
+"""
+)
+
 _INCOMPLETE_SECTIONS = """
 select source_row_ordinal, plssid, frstdivid, frstdivlab
   from staging.blm_plss_sections
@@ -477,6 +505,8 @@ class _PromotionSql:
     insert: str
     duplicates: str
     incomplete: str
+    # The rows the insert would attempt, for the DR-89 all-conflict quarantine.
+    refused: str
     orphans: str | None = None
 
 
@@ -485,11 +515,13 @@ _PROMOTIONS: Mapping[str, _PromotionSql] = {
         insert=_INSERT_TOWNSHIPS,
         duplicates=_DUPLICATE_TOWNSHIPS,
         incomplete=_INCOMPLETE_TOWNSHIPS,
+        refused=_REFUSED_TOWNSHIPS,
     ),
     "sections": _PromotionSql(
         insert=_INSERT_SECTIONS,
         duplicates=_DUPLICATE_SECTIONS,
         incomplete=_INCOMPLETE_SECTIONS,
+        refused=_REFUSED_SECTIONS,
         orphans=_ORPHAN_SECTIONS,
     ),
 }
@@ -563,7 +595,20 @@ def _promote(
                 "derivation_id": derivation_id,
             },
         )
-        inserted = cursor.rowcount
+        inserted = max(cursor.rowcount, 0)
+    # DR-89: an all-conflict revision owns nothing and must become a ledger fact, not a no-op.
+    if promotable and not inserted and not _owns_canonical(connection, manifest_id):
+        with connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(sql.refused, parameters)
+            refused = cursor.fetchall()
+        counts["key_collision"] += _quarantine(
+            connection,
+            pl.DataFrame(refused),
+            spec,
+            manifest_id=manifest_id,
+            reason_code="key_collision",
+            stage="join",
+        )
     record_vintage_day(
         connection,
         source_id=spec.source_id,

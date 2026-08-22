@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import zipfile
 from pathlib import Path
 
 import httpx
@@ -42,13 +43,23 @@ def client_for(archive: Path) -> httpx.Client:
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
-def load(db, raw_root: Path, lineage_env, layer: str):
+def load(db, raw_root: Path, lineage_env, layer: str, archive: Path | None = None):
     with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env), client_for(
-        ARCHIVES[layer]
+        archive or ARCHIVES[layer]
     ) as client:
         result = LOADERS[layer](db, raw_root=raw_root, client=client)
     db.commit()
     return result
+
+
+def revised_zip(target_path: Path, layer: str) -> Path:
+    """The layer archive with new bytes and identical members: a revision whose every
+    canonical key already belongs to the first manifest."""
+    with zipfile.ZipFile(ARCHIVES[layer]) as source, zipfile.ZipFile(target_path, "w") as target:
+        target.comment = b"dr89 all-conflict revision"
+        for name in source.namelist():
+            target.writestr(name, source.read(name))
+    return target_path
 
 
 def scalar(db, sql: str, parameters: tuple = ()):
@@ -328,6 +339,85 @@ def test_reloading_the_identical_file_is_a_no_op(seeded, raw_root, lineage_env):
     assert scalar(seeded, "select count(*) from staging.nd_gis_wells") == WELL_RECORDS
     # raw.fetch is content-addressed, so the repeat fetch reconciles onto the same row.
     assert scalar(seeded, "select count(*) from lineage.derivations") == before
+
+
+def test_a_revised_wells_file_whose_rows_all_conflict_is_detected_not_silently_promoted(
+    wells_loaded, seeded, raw_root, lineage_env, tmp_path
+):
+    """DR-89: canonical.wells' key carries no manifest, so a same-day revision whose rows
+    all conflict owned nothing and was invisible to the canonical-ownership guard —
+    reported as promoted with attempted counts, its ledger row inflated, and the whole
+    pipeline re-run on every reload. The refusal is now a quarantine fact and the reload
+    short-circuits honestly."""
+    revised = revised_zip(tmp_path / "OGD_Wells_dr89.zip", "wells")
+    second = load(seeded, raw_root, lineage_env, "wells", archive=revised)
+
+    assert second.manifest_id != wells_loaded.manifest_id
+    assert second.unchanged is False
+    assert second.promoted_rows == 0
+    assert second.quarantined["key_collision"] == WELL_RECORDS
+    assert scalar(seeded, "select count(*) from canonical.wells") == WELL_RECORDS
+    assert scalar(
+        seeded,
+        "select count(*) from lineage.quarantine_rows"
+        " where reason_code = 'key_collision' and stage = 'join'"
+        " and first_seen_manifest_id = %s",
+        (second.manifest_id,),
+    ) == WELL_RECORDS
+    assert rows(
+        seeded,
+        "select rows_examined, rows_appended from lineage.vintages where source_id = %s",
+        (LAYERS["wells"].source_id,),
+    ) == [(WELL_RECORDS, WELL_RECORDS)], "a pass that appended nothing must not inflate the ledger"
+
+    again = load(seeded, raw_root, lineage_env, "wells", archive=revised)
+    assert again.unchanged is True, "a detected all-conflict revision reloads as unchanged"
+    assert scalar(seeded, "select count(*) from canonical.wells") == WELL_RECORDS
+
+
+def test_a_revised_laterals_file_whose_rows_all_conflict_is_detected_not_silently_promoted(
+    wells_loaded, seeded, raw_root, lineage_env, tmp_path
+):
+    """DR-89, the executemany half: every linekey already belongs to the first manifest,
+    on-conflict-do-nothing lands zero rows, and the report must say so."""
+    first = load(seeded, raw_root, lineage_env, "laterals")
+    revised = revised_zip(tmp_path / "OGD_Horizontals_Line_dr89.zip", "laterals")
+    second = load(seeded, raw_root, lineage_env, "laterals", archive=revised)
+
+    assert second.manifest_id != first.manifest_id
+    assert second.unchanged is False
+    assert second.promoted_rows == 0
+    assert second.quarantined["key_collision"] == LATERAL_SEGMENTS
+    assert scalar(
+        seeded, "select count(*) from canonical.well_spatial where geom_type = 'lateral'"
+    ) == LATERAL_SEGMENTS
+
+    again = load(seeded, raw_root, lineage_env, "laterals", archive=revised)
+    assert again.unchanged is True, "a detected all-conflict revision reloads as unchanged"
+    assert scalar(
+        seeded, "select count(*) from canonical.well_spatial where geom_type = 'lateral'"
+    ) == LATERAL_SEGMENTS
+
+
+def test_a_revised_spacing_units_file_whose_rows_all_conflict_is_detected(
+    seeded, raw_root, lineage_env, tmp_path
+):
+    """DR-89, the insert-select half: the spacing_unit_id hashes the geometry, so identical
+    members key identically and the revision's every row is refused — a quarantine fact,
+    never a silent drop."""
+    first = load(seeded, raw_root, lineage_env, "spacing_units")
+    revised = revised_zip(tmp_path / "OGD_DrillingSpacingUnits_dr89.zip", "spacing_units")
+    second = load(seeded, raw_root, lineage_env, "spacing_units", archive=revised)
+
+    assert second.manifest_id != first.manifest_id
+    assert second.unchanged is False
+    assert second.promoted_rows == 0
+    assert second.quarantined["key_collision"] == SPACING_UNITS
+    assert scalar(seeded, "select count(*) from canonical.spacing_units") == SPACING_UNITS
+
+    again = load(seeded, raw_root, lineage_env, "spacing_units", archive=revised)
+    assert again.unchanged is True, "a detected all-conflict revision reloads as unchanged"
+    assert scalar(seeded, "select count(*) from canonical.spacing_units") == SPACING_UNITS
 
 
 def test_the_compute_crs_directive_is_read_from_the_registry_not_hard_coded(

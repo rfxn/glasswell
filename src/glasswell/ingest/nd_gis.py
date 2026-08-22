@@ -86,7 +86,10 @@ LAYERS: Mapping[str, LayerSpec] = {
             "well_type", "status", "api", "county", "symbol",
         ),
         geometry_type="Point",
-        reason_codes=("datum_undetermined", "unknown_vocab", "out_of_range_date", "parse_error"),
+        reason_codes=(
+            "datum_undetermined", "unknown_vocab", "out_of_range_date", "parse_error",
+            "key_collision",
+        ),
     ),
     "laterals": LayerSpec(
         layer="laterals",
@@ -99,6 +102,7 @@ LAYERS: Mapping[str, LayerSpec] = {
         geometry_type="Geometry",
         reason_codes=(
             "parse_error", "segment_not_promoted", "multi_wellbore_policy", "orphan_fk",
+            "key_collision",
         ),
     ),
     "spacing_units": LayerSpec(
@@ -112,7 +116,7 @@ LAYERS: Mapping[str, LayerSpec] = {
             "dstype",
         ),
         geometry_type="MultiPolygon",
-        reason_codes=("parse_error", "duplicate_row"),
+        reason_codes=("parse_error", "duplicate_row", "key_collision"),
     ),
     "surveys": LayerSpec(
         layer="surveys",
@@ -128,7 +132,7 @@ LAYERS: Mapping[str, LayerSpec] = {
         geometry_type="Point",
         reason_codes=(
             "parse_error", "key_incomplete", "segment_not_promoted", "unreliable_numeric",
-            "insufficient_stations", "orphan_fk",
+            "insufficient_stations", "orphan_fk", "key_collision",
         ),
         layer_suffix="directionals",
     ),
@@ -281,7 +285,7 @@ def _load(
         # Re-derivation after a rule or schema change: staging is rebuildable from the raw
         # bytes, and the insert is conflict-skipping, so the old rows have to go first.
         _clear_staging(connection, spec, manifest.manifest_id)
-    elif _already_promoted(connection, spec, manifest.manifest_id):
+    elif fetched.unchanged and _already_staged(connection, spec, manifest.manifest_id):
         parse_id, promote_id = _existing_derivations(connection, manifest.manifest_id)
         return LoadResult(
             layer=spec.layer,
@@ -333,11 +337,19 @@ def _rule(connection: psycopg.Connection, source_id: str, rule_id: str) -> Confo
     raise LookupError(f"rule {rule_id} is not seeded for {source_id}")
 
 
-def _already_promoted(connection: psycopg.Connection, spec: LayerSpec, manifest_id: str) -> bool:
+def _already_staged(connection: psycopg.Connection, spec: LayerSpec, manifest_id: str) -> bool:
     with connection.cursor() as cursor:
         cursor.execute(
-            f"select 1 from {spec.canonical_table} where source_manifest_id = %s limit 1",
+            f"select 1 from {spec.staging_table} where manifest_id = %s limit 1",
             (manifest_id,),
+        )
+        return cursor.fetchone() is not None
+
+
+def _owns_canonical(connection: psycopg.Connection, table: str, manifest_id: str) -> bool:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"select 1 from {table} where source_manifest_id = %s limit 1", (manifest_id,)
         )
         return cursor.fetchone() is not None
 
@@ -655,10 +667,23 @@ def _promote_wells(
     derivation_id = context.derivation_id
     with connection.cursor() as cursor:
         cursor.executemany(_INSERT_WELL, [{**row, "derivation_id": derivation_id} for row in wells])
+        inserted = max(cursor.rowcount, 0)
         cursor.executemany(
             _INSERT_SURFACE, [{**row, "derivation_id": derivation_id} for row in wells]
         )
-    _open_vintage(connection, spec, manifest_id, vintage, derivation_id, staged_rows, len(wells))
+    # DR-89: an all-conflict revision owns nothing and must become a ledger fact, not a no-op.
+    if wells and not inserted and not _owns_canonical(
+        connection, spec.canonical_table, manifest_id
+    ):
+        counts["key_collision"] += _quarantine(
+            connection,
+            pl.DataFrame(wells, infer_schema_length=None),
+            spec,
+            manifest_id=manifest_id,
+            reason_code="key_collision",
+            stage="join",
+        )
+    _open_vintage(connection, spec, manifest_id, vintage, derivation_id, staged_rows, inserted)
 
     return LoadResult(
         layer=spec.layer,
@@ -667,7 +692,7 @@ def _promote_wells(
         parse_derivation_id=parse_derivation_id,
         promote_derivation_id=derivation_id,
         staged_rows=staged_rows,
-        promoted_rows=len(wells),
+        promoted_rows=inserted,
         quarantined=counts,
     )
 
@@ -848,7 +873,18 @@ def _promote_laterals(
                 for row in kept
             ],
         )
-    _open_vintage(connection, spec, manifest_id, vintage, derivation_id, staged_rows, len(kept))
+        inserted = max(cursor.rowcount, 0)
+    # DR-89: an all-conflict revision owns nothing and must become a ledger fact, not a no-op.
+    if kept and not inserted and not _owns_canonical(connection, spec.canonical_table, manifest_id):
+        counts["key_collision"] += _quarantine(
+            connection,
+            pl.DataFrame(kept, infer_schema_length=None),
+            spec,
+            manifest_id=manifest_id,
+            reason_code="key_collision",
+            stage="join",
+        )
+    _open_vintage(connection, spec, manifest_id, vintage, derivation_id, staged_rows, inserted)
 
     return LoadResult(
         layer=spec.layer,
@@ -857,7 +893,7 @@ def _promote_laterals(
         parse_derivation_id=parse_derivation_id,
         promote_derivation_id=derivation_id,
         staged_rows=staged_rows,
-        promoted_rows=len(kept),
+        promoted_rows=inserted,
         quarantined=counts,
         compute_epsg=method.compute_epsg,
         length_rule_id=method.rule_id,
@@ -936,6 +972,11 @@ _DUPLICATE_UNITS = (
     + "select source_row_ordinal, spacing_unit_id, mapsymbol from keyed where occurrence > 1"
 )
 
+_REFUSED_UNITS = (
+    _UNITS_KEYED
+    + "select source_row_ordinal, spacing_unit_id, mapsymbol from keyed where occurrence = 1"
+)
+
 
 def _promote_spacing_units(
     connection: psycopg.Connection,
@@ -981,7 +1022,22 @@ def _promote_spacing_units(
         cursor.execute(
             _INSERT_UNITS, {"manifest_id": manifest_id, "derivation_id": derivation_id}
         )
-        inserted = cursor.rowcount
+        inserted = max(cursor.rowcount, 0)
+    # DR-89: an all-conflict revision owns nothing and must become a ledger fact, not a no-op.
+    if promoted and not inserted and not _owns_canonical(
+        connection, spec.canonical_table, manifest_id
+    ):
+        with connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(_REFUSED_UNITS, {"manifest_id": manifest_id})
+            refused = cursor.fetchall()
+        counts["key_collision"] += _quarantine(
+            connection,
+            pl.DataFrame(refused),
+            spec,
+            manifest_id=manifest_id,
+            reason_code="key_collision",
+            stage="join",
+        )
     _open_vintage(connection, spec, manifest_id, vintage, derivation_id, staged_rows, inserted)
 
     return LoadResult(
@@ -1354,6 +1410,7 @@ def _promote_surveys(
                 for station in segment["stations"]
             ],
         )
+        station_rows = max(cursor.rowcount, 0)
         cursor.executemany(
             _INSERT_TRACE,
             [
@@ -1367,7 +1424,18 @@ def _promote_surveys(
                 for segment in kept
             ],
         )
-    _open_vintage(connection, spec, manifest_id, vintage, derivation_id, staged_rows, len(kept))
+        inserted = max(cursor.rowcount, 0)
+    # DR-89: an all-conflict revision owns nothing and must become a ledger fact, not a no-op.
+    if kept and not inserted and not _owns_canonical(connection, spec.canonical_table, manifest_id):
+        counts["key_collision"] += _quarantine(
+            connection,
+            pl.DataFrame([_segment_payload(s) for s in kept], schema=_SEGMENT_SCHEMA),
+            spec,
+            manifest_id=manifest_id,
+            reason_code="key_collision",
+            stage="join",
+        )
+    _open_vintage(connection, spec, manifest_id, vintage, derivation_id, staged_rows, inserted)
 
     return LoadResult(
         layer=spec.layer,
@@ -1376,9 +1444,9 @@ def _promote_surveys(
         parse_derivation_id=parse_derivation_id,
         promote_derivation_id=derivation_id,
         staged_rows=staged_rows,
-        promoted_rows=len(kept),
+        promoted_rows=inserted,
         quarantined=counts,
-        station_rows=len(stations),
+        station_rows=station_rows,
     )
 
 
