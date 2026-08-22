@@ -33,7 +33,7 @@ from glasswell.api.pagination import (
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, inline_for, iso
 from glasswell.lengths import STORAGE_EPSG, resolve_length_method
 from glasswell.lineage.conformance import lease_reporting_rule
-from glasswell.lineage.envelope import Figure, distinct_handles, figure
+from glasswell.lineage.envelope import Figure, collect_handles, distinct_handles, figure
 from glasswell.lineage.explain import MAX_HANDLES
 from glasswell.marts.tiles import TILE_BUFFER, TILE_EXTENT, TILE_MAX_ZOOM, WEB_MERCATOR
 from glasswell.units import metres_to_feet
@@ -468,6 +468,15 @@ def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
                     " to the county it was permitted in."
                 ),
             },
+            well_type={
+                "so": (
+                    "Matches the well type code exactly as the regulator filed it — SWD, WI,"
+                    " OG — with no decode and no classing, the same verbatim code the well"
+                    " record serves. Which codes make up a class is a conformance rule's"
+                    " declaration (cr_nd_well_type_disposal_1 for ND injection), so scoping"
+                    " the spine to a class means asking for each code the rule names."
+                ),
+            },
             bbox={
                 "glossary": "gt_crs_compute_crs",
                 "so": (
@@ -506,6 +515,10 @@ def list_wells(
     county: Annotated[
         str | None, Query(description="County code as recorded at permit.")
     ] = None,
+    well_type: Annotated[
+        str | None,
+        Query(description="Well type code exactly as the source reported it, e.g. SWD."),
+    ] = None,
     bbox: Annotated[
         str | None, Query(description="minx,miny,maxx,maxy in WGS84; capped at 4 degrees.")
     ] = None,
@@ -516,6 +529,7 @@ def list_wells(
         "status": status,
         "operator": operator,
         "county": county,
+        "well_type": well_type,
         "bbox": bbox,
         "q": q,
     }
@@ -532,6 +546,9 @@ def list_wells(
     if county is not None:
         clauses.append("and county_code_at_permit = %(county)s")
         params["county"] = county
+    if well_type is not None:
+        clauses.append("and well_type_reported = %(well_type)s")
+        params["well_type"] = well_type
     if q is not None:
         clauses.append("and well_name ilike '%%' || %(q)s || '%%'")
         params["q"] = q
@@ -763,22 +780,9 @@ def _summary_labels(basins: list[dict[str, Any]]) -> dict[str, str]:
 
 
 def _handles(node: Any) -> int:
-    """How many handles `links.explain` is being asked to carry, counted by the selection that
+    """How many handles `links.explain` is being asked to carry, counted by the walk that
     builds it — a count taken any other way can disagree with the link about truncation."""
-    found: list[str] = []
-    _collect(node, found)
-    return len(distinct_handles(found))
-
-
-def _collect(node: Any, found: list[str]) -> None:
-    if isinstance(node, Figure):
-        found.append(node.handle)
-    elif isinstance(node, dict):
-        for value in node.values():
-            _collect(value, found)
-    elif isinstance(node, list):
-        for value in node:
-            _collect(value, found)
+    return len(distinct_handles(collect_handles(node)))
 
 
 def _summary_warnings(

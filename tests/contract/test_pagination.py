@@ -59,6 +59,28 @@ def test_a_cursor_presented_against_different_filters_is_refused(client: TestCli
     assert response.json()["type"] == f"{TYPE_BASE}/cursor_query_mismatch"
 
 
+def test_the_well_type_filter_cannot_rescope_a_page_mid_traversal(client: TestClient) -> None:
+    """F-3, replayed for R-1: a filter that escapes the cursor fingerprint lets a client open
+    a page under one population and continue it under another. Both directions must refuse,
+    and the served next link must carry the filter it was minted under."""
+    unfiltered = client.get("/v1/wells", params={"limit": 2}).json()
+    filtered = client.get("/v1/wells", params={"limit": 2, "well_type": "OG"}).json()
+
+    added = client.get(
+        "/v1/wells",
+        params={"limit": 2, "cursor": unfiltered["meta"]["next_cursor"], "well_type": "OG"},
+    )
+    dropped = client.get(
+        "/v1/wells", params={"limit": 2, "cursor": filtered["meta"]["next_cursor"]}
+    )
+
+    assert added.status_code == 422
+    assert added.json()["type"] == f"{TYPE_BASE}/cursor_query_mismatch"
+    assert dropped.status_code == 422
+    assert dropped.json()["type"] == f"{TYPE_BASE}/cursor_query_mismatch"
+    assert "well_type=OG" in filtered["links"]["next"]
+
+
 def test_a_corrupt_cursor_is_refused(client: TestClient) -> None:
     response = client.get("/v1/wells", params={"cursor": "not-a-cursor"})
 

@@ -230,6 +230,18 @@ def test_a_hand_authored_explain_link_is_refused_not_honoured():
         )
 
 
+def test_a_fragment_smuggled_handle_is_refused_like_a_query_one():
+    """gate-apiconv §9.3: `#h=x` is not query, so it slipped the refusal on a handle-less
+    response. A link that names a handle in any position is a second author and is refused."""
+    with pytest.raises(ValueError, match="envelope-authored"):
+        attach_lineage(
+            {"api_version": "v1"},
+            as_of=AS_OF,
+            request_id="req_02",
+            links={"self": "/v1", "explain": "/v1/explain#h=drv_other01"},
+        )
+
+
 def test_a_handle_less_template_passes_and_is_overwritten_the_moment_handles_exist():
     """The service index links `/v1/explain?h=` as a navigation template. Naming no handle,
     it can disagree with nothing — but on a response that does carry handles, the envelope's

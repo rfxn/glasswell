@@ -299,7 +299,8 @@ def test_a_handle_that_does_not_resolve_is_named_rather_than_dropped() -> None:
 
 def test_the_converged_link_is_the_link_the_router_used_to_author(client: TestClient) -> None:
     """gate-apix ADV-1's fix must not move the published link: the envelope now builds what
-    `/v1/derivations/{id}` and the vintages pair hand-built, byte for byte."""
+    `/v1/derivations/{id}` and the vintages pair hand-built, byte for byte — the page link
+    included, since the one seeded promotion dedups to the same single handle."""
     derivation = client.get(f"/v1/derivations/{EXAMPLE_DERIVATION_ID}").json()
     vintage = client.get(f"/v1/vintages/{EXAMPLE_VINTAGE_ID}").json()
     page = client.get("/v1/vintages").json()
@@ -307,7 +308,7 @@ def test_the_converged_link_is_the_link_the_router_used_to_author(client: TestCl
     expected = f"/v1/explain?h={EXAMPLE_DERIVATION_ID}&depth=full"
     assert derivation["links"]["explain"] == expected
     assert vintage["links"]["explain"] == expected
-    assert expected.split("?", 1)[1].split("&depth")[0] in page["links"]["explain"]
+    assert page["links"]["explain"] == expected
 
 
 def test_a_vintage_with_no_promotion_inlines_nothing_and_links_nothing(

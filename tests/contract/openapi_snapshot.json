@@ -8762,6 +8762,24 @@
             }
           },
           {
+            "description": "Well type code exactly as the source reported it, e.g. SWD.",
+            "in": "query",
+            "name": "well_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Well type code exactly as the source reported it, e.g. SWD.",
+              "title": "Well Type"
+            }
+          },
+          {
             "description": "minx,miny,maxx,maxy in WGS84; capped at 4 degrees.",
             "in": "query",
             "name": "bbox",
@@ -8960,6 +8978,9 @@
           "status": {
             "so": "Filters on the canonical value rather than the code the state published, so `active` here means every source's version of active. A reported code with no mapping is quarantined, so it matches no status at all.",
             "x-glasswell-glossary": "gt_well_status"
+          },
+          "well_type": {
+            "so": "Matches the well type code exactly as the regulator filed it \u2014 SWD, WI, OG \u2014 with no decode and no classing, the same verbatim code the well record serves. Which codes make up a class is a conformance rule's declaration (cr_nd_well_type_disposal_1 for ND injection), so scoping the spine to a class means asking for each code the rule names."
           }
         }
       }

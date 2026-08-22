@@ -56,6 +56,17 @@ class InlinedExplain:
 ExplainInliner = Callable[[Sequence[str]], InlinedExplain]
 
 
+def collect_handles(data: Any) -> list[str]:
+    """Every handle `attach_lineage` would find in `data`, in walk order, duplicates kept.
+
+    The one walker: a router that counts handles with its own walk can disagree with the
+    selection that builds `links.explain` about truncation (gate-apiconv §9.2).
+    """
+    handles: list[str] = []
+    _walk(data, "", None, handles)
+    return handles
+
+
 def distinct_handles(handles: Sequence[str]) -> list[str]:
     """The response's handle set, deduplicated in first-appearance order.
 
@@ -402,11 +413,14 @@ def _warning(item: Mapping[str, Any] | str) -> Mapping[str, Any]:
 
 def _names_handles(link: str | None) -> bool:
     """Whether a supplied explain link claims a handle set — the thing only the envelope may
-    author. A bare template pointing at the resolver claims nothing and may pass."""
+    author. Query and fragment both count (`#h=` smuggling); a bare template claims nothing."""
     if link is None:
         return False
-    query = urlsplit(link).query
-    return any(value for key, value in parse_qsl(query, keep_blank_values=True) if key == "h")
+    parts = urlsplit(link)
+    pairs = parse_qsl(parts.query, keep_blank_values=True) + parse_qsl(
+        parts.fragment, keep_blank_values=True
+    )
+    return any(value for key, value in pairs if key == "h")
 
 
 def _explain_link(handles: Sequence[str]) -> str:
