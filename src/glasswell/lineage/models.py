@@ -34,7 +34,9 @@ InputRole = Literal["primary", "crosswalk", "validator", "calibration", "grid"]
 DeterminismClass = Literal["D1", "D2", "D3"]
 TtlClass = Literal["permanent", "ephemeral"]
 DerivationStatus = Literal["ok", "failed"]
-AcquisitionMethod = Literal["https_get", "ftp_anon", "mft_guid_resolve", "click_wall_accept"]
+AcquisitionMethod = Literal[
+    "https_get", "ftp_anon", "mft_guid_resolve", "click_wall_accept", "arcgis_rest_paginate"
+]
 RuleStage = Literal["parse", "validate", "conform", "join"]
 QuarantineState = Literal["open", "released", "accepted_loss", "superseded"]
 

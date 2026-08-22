@@ -35,6 +35,8 @@ export const SPACING_SOURCE = "nd_spacing_units";
 export const TX_WELLS_SOURCE = "tx_wells";
 export const TX_LATERALS_SOURCE = "tx_laterals";
 export const TRACES_SOURCE = "nd_survey_traces";
+export const TOWNSHIPS_SOURCE = "land_townships";
+export const SECTIONS_SOURCE = "land_sections";
 
 /**
  * Provenance-keyed, not status-keyed: what this layer distinguishes is the filed survey path
@@ -43,6 +45,22 @@ export const TRACES_SOURCE = "nd_survey_traces";
  * status palette nor the selection cyan; 6.2:1 on the dark substrate.
  */
 export const TRACE_COLOUR = "#C878D2";
+
+/**
+ * Reference linework, so a neutral that cannot read as a data claim: BRAND.md's Muted, an
+ * achromatic grey (1.13:1 against oil green and gas red, 1.03:1 against water blue — too
+ * close to any stream colour to be mistaken for one, and in neither the status palette nor
+ * the selection cyan). The only palette neutral clearing the 3:1 non-text minimum on both
+ * substrates: 5.25:1 on dark #0E151B, 3.20:1 on light #F2F5F8 (Slate Light manages 2.04:1
+ * on light, Slate 3.08:1 on dark — each fails one).
+ */
+export const LAND_GRID_COLOUR = "#7C8B96";
+
+/** Published zoom thresholds: geometry at 8/10, labels at 9/12 — stated on the registry rows. */
+export const TOWNSHIP_MIN_ZOOM = 8;
+export const SECTION_MIN_ZOOM = 10;
+const TOWNSHIP_LABEL_MIN_ZOOM = 9;
+const SECTION_LABEL_MIN_ZOOM = 12;
 
 /** The point layers the legend counts from. Both basins, because the legend counts what is drawn. */
 export const WELL_POINT_LAYERS = ["wells", "tx-wells"] as const;
@@ -97,13 +115,16 @@ function lowestDrawnZoom(source: string, search?: string): number {
 
 export function sourceSpecs(origin?: string, search?: string): Record<string, SourceSpecification> {
   const specs: Record<string, SourceSpecification> = {};
-  for (const [parameter, fallback] of [
-    ["wells", WELLS_SOURCE],
-    ["laterals", LATERALS_SOURCE],
-    ["spacing", SPACING_SOURCE],
-    ["tx_wells", TX_WELLS_SOURCE],
-    ["tx_laterals", TX_LATERALS_SOURCE],
-    ["traces", TRACES_SOURCE],
+  for (const [parameter, fallback, featureId] of [
+    ["wells", WELLS_SOURCE, "api10"],
+    ["laterals", LATERALS_SOURCE, "api10"],
+    ["spacing", SPACING_SOURCE, "api10"],
+    ["tx_wells", TX_WELLS_SOURCE, "api10"],
+    ["tx_laterals", TX_LATERALS_SOURCE, "api10"],
+    ["traces", TRACES_SOURCE, "api10"],
+    // The land grid's identity is the publisher's unit id, not a well spine key.
+    ["townships", TOWNSHIPS_SOURCE, "land_unit_id"],
+    ["sections", SECTIONS_SOURCE, "land_unit_id"],
   ] as const) {
     const name = publishedSource(parameter, fallback, search);
     specs[name] = {
@@ -111,10 +132,10 @@ export function sourceSpecs(origin?: string, search?: string): Record<string, So
       tiles: [absoluteTileUrl(tileUrl(name), origin)],
       minzoom: lowestDrawnZoom(name, search),
       maxzoom: 14,
-      // API-10 is a string, so MapLibre cannot use it as a feature id without promoteId,
-      // and without a feature id there is no feature-state and no selection without a
+      // The feature id is a string, so MapLibre cannot use it without promoteId, and
+      // without a feature id there is no feature-state and no selection without a
       // duplicate filter layer per source.
-      promoteId: { [name]: "api10" },
+      promoteId: { [name]: featureId },
     };
   }
   return specs;
@@ -244,8 +265,45 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
   const txWells = publishedSource("tx_wells", TX_WELLS_SOURCE, options.search);
   const txLaterals = publishedSource("tx_laterals", TX_LATERALS_SOURCE, options.search);
   const traces = publishedSource("traces", TRACES_SOURCE, options.search);
+  const townships = publishedSource("townships", TOWNSHIPS_SOURCE, options.search);
+  const sections = publishedSource("sections", SECTIONS_SOURCE, options.search);
 
   const built: LayerSpecification[] = [
+    {
+      // Reference linework under everything: the grid is what the data sits on, never over.
+      id: "land-townships-line",
+      type: "line",
+      source: townships,
+      "source-layer": townships,
+      minzoom: TOWNSHIP_MIN_ZOOM,
+      paint: {
+        "line-color": LAND_GRID_COLOUR,
+        "line-width": interpolate(zoom, [
+          [TOWNSHIP_MIN_ZOOM, 0.5],
+          [12, 1],
+          [15, 1.6],
+        ]),
+        "line-opacity": 0.9,
+      },
+    },
+    {
+      // Finer than the township it subdivides, and gated two zooms deeper: a z8 tile over
+      // the basin holds thousands of sections and nothing at that scale can read them.
+      id: "land-sections-line",
+      type: "line",
+      source: sections,
+      "source-layer": sections,
+      minzoom: SECTION_MIN_ZOOM,
+      paint: {
+        "line-color": LAND_GRID_COLOUR,
+        "line-width": interpolate(zoom, [
+          [SECTION_MIN_ZOOM, 0.3],
+          [13, 0.8],
+          [15, 1.2],
+        ]),
+        "line-opacity": 0.7,
+      },
+    },
     {
       id: "spacing-units-fill",
       type: "fill",
@@ -413,6 +471,44 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
   ];
 
   if (options.labels) {
+    built.push(
+      {
+        id: "land-townships-label",
+        type: "symbol",
+        source: townships,
+        "source-layer": townships,
+        minzoom: TOWNSHIP_LABEL_MIN_ZOOM,
+        layout: {
+          "text-field": ["coalesce", ["get", "label"], ""],
+          "text-font": ["Noto Sans Regular"],
+          "text-size": SPACING_LABEL_SIZE,
+          "symbol-placement": "point",
+        },
+        paint: {
+          "text-color": tokens.primary.colour,
+          "text-halo-color": tokens.primary.halo,
+          "text-halo-width": tokens.primary.haloWidth,
+        },
+      },
+      {
+        id: "land-sections-label",
+        type: "symbol",
+        source: sections,
+        "source-layer": sections,
+        minzoom: SECTION_LABEL_MIN_ZOOM,
+        layout: {
+          "text-field": ["coalesce", ["get", "label"], ""],
+          "text-font": ["Noto Sans Regular"],
+          "text-size": SPACING_LABEL_SIZE - 1,
+          "symbol-placement": "point",
+        },
+        paint: {
+          "text-color": tokens.primary.colour,
+          "text-halo-color": tokens.primary.halo,
+          "text-halo-width": tokens.primary.haloWidth,
+        },
+      },
+    );
     built.push({
       id: "spacing-units-label",
       type: "symbol",

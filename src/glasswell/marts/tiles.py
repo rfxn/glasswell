@@ -142,6 +142,38 @@ ND_LAYERS: tuple[TileLayer, ...] = (
     ),
 )
 
+# The land grid publishes as two layers over one mart: a z8 tile over the basin holds
+# hundreds of townships but thousands of sections, and a split publication lets the section
+# source start deeper so its tiles are never fetched where nothing draws them. Not simplified:
+# a PLSS polygon is a handful of vertices. Not thinned: the gate's rank is md5(api10) and a
+# land unit has none — and reference linework has no overplot case.
+LAND_LAYERS: tuple[TileLayer, ...] = (
+    TileLayer(
+        name="land_townships",
+        source="marts.tile_land_townships",
+        geometry_type="MULTIPOLYGON",
+        properties=(
+            ("land_unit_id", "text"),
+            ("unit_type", "text"),
+            ("plssid", "text"),
+            ("label", "text"),
+            ("derivation_id", "text"),
+        ),
+    ),
+    TileLayer(
+        name="land_sections",
+        source="marts.tile_land_sections",
+        geometry_type="MULTIPOLYGON",
+        properties=(
+            ("land_unit_id", "text"),
+            ("unit_type", "text"),
+            ("plssid", "text"),
+            ("label", "text"),
+            ("derivation_id", "text"),
+        ),
+    ),
+)
+
 # TX carries no spud date — the RRC's free identity export publishes a completion date and not
 # a spud — so the point layer styles on status and says what the wellbore is for instead.
 TX_LAYERS: tuple[TileLayer, ...] = (
@@ -177,7 +209,7 @@ TX_LAYERS: tuple[TileLayer, ...] = (
     ),
 )
 
-TILE_LAYERS: tuple[TileLayer, ...] = (*ND_LAYERS, *TX_LAYERS)
+TILE_LAYERS: tuple[TileLayer, ...] = (*ND_LAYERS, *LAND_LAYERS, *TX_LAYERS)
 
 # `stable parallel safe` is what martin's function discovery expects, and the argument names
 # are part of the contract: it looks for (z, x, y) plus an optional json `query`.

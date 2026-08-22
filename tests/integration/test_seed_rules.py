@@ -17,6 +17,9 @@ MINIMUM_RULES = 17
 MINIMUM_TERMS = 30
 MEASURED_ND_STATUSES = 19
 POLICY_RULES = (
+    # The land-grid publisher choice: the executor is the ingest module the spec names, and
+    # the measured cross-publisher divergence rides in spec.divergence_measured (M1-4).
+    "cr_blm_plss_publisher_1",
     "cr_nd_geometry_provenance_1",
     "cr_nd_liquids_policy_1",
     "cr_nd_null_semantics_1",
