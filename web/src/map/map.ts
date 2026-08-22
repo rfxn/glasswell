@@ -314,6 +314,9 @@ export function createMap(
 
   let countTimer: ReturnType<typeof setTimeout> | undefined;
   let countsFailing = false;
+  // The map's only reading of the served vintage: the rail's chip is main.ts's, and a crossing
+  // off this surface has to pin something the reader was actually looking at (SB-08 M6).
+  let resolvedVintage: string | null = null;
 
   const countSource = createCountSource({
     load: (bbox, signal) =>
@@ -337,7 +340,11 @@ export function createMap(
    */
   function refreshCounts(): void {
     panel.setZoom(map.getZoom());
-    countSource.request(viewportBbox());
+    const bbox = viewportBbox();
+    // The crossing narrows by the box, so it is rebuilt with the box and not with the answer:
+    // a reader who pans and clicks before the counts settle must not get the last viewport.
+    panel.setCrossing(bbox, resolvedVintage);
+    countSource.request(bbox);
     refreshDrawn();
   }
 
@@ -375,6 +382,8 @@ export function createMap(
       return;
     }
     countsFailing = false;
+    resolvedVintage = state.resolved;
+    panel.setCrossing(state.bbox, resolvedVintage);
     legend.setCounts(state.counts, zoom, state.handles);
     legend.setVocabulary(state.vocabulary);
     refreshDrawn();

@@ -107,3 +107,28 @@
   font-size: var(--gw-fs-micro);
   cursor: pointer;
 }
+
+/* §2.5's 820 sheet. The controls live in this sheet, so their postures do too — the same rules
+   written in layout.css lost the cascade to the four above and silently did nothing. */
+@media (max-width: 820px) {
+  .gw-facet-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--gw-space-2);
+  }
+
+  .gw-facet-input {
+    max-width: none;
+  }
+}
+
+/* 390: the per-column controls narrow a grid that is not being drawn, so they would be a filter
+   over nothing. The knowledge-time strip stays — it changes the request the pane teaches, and
+   the pane is the surface the reader has been sent to. */
+@media (max-width: 520px) {
+  .gw-facet-row,
+  .gw-facet-note,
+  .gw-facet-clear-line {
+    display: none;
+  }
+}

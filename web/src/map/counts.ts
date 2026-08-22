@@ -59,6 +59,12 @@ export interface CountsReady {
   total: number | null;
   totalHandle: string | null;
   vocabulary: VocabularyLink[];
+  /**
+   * The vintage this answer resolved to. The map has no other reading of it — the rail's chip
+   * is written by main.ts — and a crossing off this surface pins it so the link a reader
+   * shares reproduces the numbers they were looking at (SB-08 M6).
+   */
+  resolved: string | null;
 }
 
 export interface CountsError {
@@ -266,6 +272,7 @@ function ready(bbox: Bbox, envelope: Envelope<WellStatusSummary>): CountsReady {
     total: data.wells ? Number(data.wells.value) : null,
     totalHandle: data.wells?.d ?? null,
     vocabulary: vocabularyLinks(data, envelope.links),
+    resolved: envelope.meta.as_of.resolved,
   };
 }
 

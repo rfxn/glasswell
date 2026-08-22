@@ -180,7 +180,7 @@ function render(host: HTMLElement, options: GridOptions, loaded: Loaded): void {
     paginationOf(options.dataset, options.document, loaded.envelope, rows.length, loaded.total),
     { onNext: (href) => followNext(href, options) },
   );
-  host.replaceChildren(strap(columns, loaded), table, more, pagination);
+  host.replaceChildren(strap(columns, loaded), narrowNotice(), table, more, pagination);
   // A chip hop lands on a row this page need not contain, so the panel stands on its own above
   // the grid rather than the link dead-ending in "not found here".
   if (options.state.row !== null && expanded < 0) {
@@ -230,6 +230,18 @@ export function overflowNote(cut: number): HTMLElement | null {
       ? "1 more column is off the right edge of this panel — scroll the grid sideways to read it. Nothing is hidden; the panel is narrower than the row."
       : `${cut} more columns are off the right edge of this panel — scroll the grid sideways to read them. Nothing is hidden; the panel is narrower than the row.`,
     "gw-grid-offscreen",
+  );
+}
+
+/**
+ * §2.5's 390 posture, and the inversion it is: on a phone the API guide is the whole product
+ * and a twelve-column grid is not. The refusal is `display: none` until the media query says
+ * otherwise, so at every other width it is absent from the page rather than merely invisible.
+ */
+function narrowNotice(): HTMLElement {
+  return note(
+    "The result grid needs a wider window — the API guide below works everywhere.",
+    "gw-grid-narrow",
   );
 }
 
@@ -329,6 +341,9 @@ function bodyRow(
     const cell = document.createElement("div");
     cell.className = `gw-grid-td gw-grid-td-${column.kind}`;
     cell.setAttribute("role", "cell");
+    // §2.5's card list is a CSS posture, not a second renderer: below 820 the header row is
+    // not painted, so each cell carries the name it would have been read under.
+    cell.dataset["name"] = column.name;
     cell.append(
       renderCell(column, {
         data: loaded.envelope.data,

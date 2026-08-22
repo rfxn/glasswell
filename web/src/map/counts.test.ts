@@ -244,6 +244,21 @@ describe("a viewport that settles", () => {
     expect(state.totalHandle).toContain("col=wells");
   });
 
+  it("carries the vintage the answer resolved at, which is what a crossing pins (M6)", async () => {
+    const { calls, load } = deferredLoader();
+    const { seen, onState } = collector();
+    createCountSource({ load, onState }).request(ND);
+    calls[0]!.settle(envelope(summary(ND)));
+    await flush();
+
+    const state = last(seen);
+    expect(state.kind).toBe("ready");
+    if (state.kind !== "ready") return;
+    // The map has no other reading of it: the rail's chip is main.ts's, and a crossing off
+    // this surface with no pin is a link that answers differently after the next promotion.
+    expect(state.resolved).toBe("2026-08-01");
+  });
+
   it("publishes no explain link, truncated or otherwise — every count addresses itself", async () => {
     // §2.3 rule 4: the prebuilt call is capped at 20 handles and a whole-of-ND box exceeds it
     // routinely, so a published link would be a promise the response cannot keep. The

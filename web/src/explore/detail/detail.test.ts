@@ -387,3 +387,62 @@ describe("the detail operation is read as a dataset of one", () => {
     expect(detail.keys.length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * SB-08 §2.6's one explorer-to-map row. `cells.ts` refuses to print a coordinate, so the
+ * crossing is what the cell offers instead of a value — never a control competing with one.
+ */
+describe("a record with geometry crosses to the map", () => {
+  const located = (over: Record<string, unknown> = {}) => {
+    const source = wellDetailEnvelope as { data: Record<string, unknown>; meta: unknown };
+    return {
+      ...source,
+      data: { ...source.data, surface_point: { lon: -102.8123, lat: 47.8456 }, ...over },
+    };
+  };
+
+  const linkIn = (detail: { root: HTMLElement }) =>
+    detail.root.querySelector<HTMLAnchorElement>('[data-crossing="show-on-map"]');
+
+  it("offers the crossing on the geometry field, carrying the well and the viewport", async () => {
+    overrides["/v1/wells/3305310451"] = located();
+    const link = linkIn(await mount("wells", { row: "3305310451" }, WELL_ROW));
+
+    expect(link?.textContent).toBe("Show on map");
+    expect(link?.getAttribute("href")).toContain("well=3305310451");
+    expect(link?.getAttribute("href")).toContain("map=12.00%2F47.84560%2F-102.81230");
+  });
+
+  it("pins the vintage the record resolved at, so the shared link reproduces it (M6)", async () => {
+    overrides["/v1/wells/3305310451"] = located();
+    const link = linkIn(await mount("wells", { row: "3305310451" }, WELL_ROW));
+
+    // The recorded envelope resolves `latest` to 2026-08-01; the crossing names it rather than
+    // leaving the map to resolve `latest` again on whatever day the link is opened.
+    expect(link?.getAttribute("href")).toContain("as_of=2026-08-01");
+  });
+
+  it("offers nothing when the point is present but not a pair of numbers", async () => {
+    // A shape drift, not an absence: the field is there and the coordinates are not usable.
+    // A crossing built from this would fly the reader to null island and call it the well.
+    overrides["/v1/wells/3305310451"] = located({ surface_point: { lon: "x", lat: null } });
+
+    expect(linkIn(await mount("wells", { row: "3305310451" }, WELL_ROW))).toBeNull();
+  });
+
+  it("offers nothing when the regulator filed no surface point, and states the absence", async () => {
+    // The recorded record: `surface_point` is null, which is the common case in this vintage.
+    const detail = await mount("wells", { row: "3305310451" }, WELL_ROW);
+
+    expect(linkIn(detail)).toBeNull();
+    expect(detail.valueOf("surface_point")?.textContent).toContain("—");
+  });
+
+  it("leaves the geometry value unprinted either way — a coordinate is never a cell (§3.2)", async () => {
+    overrides["/v1/wells/3305310451"] = located();
+    const detail = await mount("wells", { row: "3305310451" }, WELL_ROW);
+
+    expect(detail.valueOf("surface_point")?.textContent).toContain("on the map");
+    expect(detail.valueOf("surface_point")?.textContent).not.toContain("-102.81");
+  });
+});

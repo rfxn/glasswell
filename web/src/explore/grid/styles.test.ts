@@ -66,6 +66,37 @@ describe("the explorer's stylesheets obey the rules C6 wrote down for its own (G
     }
   });
 
+  /**
+   * §2.5's two narrow postures are CSS, not a second renderer, so this is where they are pinned.
+   * A resize listener re-rendering the grid would be the alternative, and it would tear the open
+   * row's panel out from under the reader every time the keyboard opened.
+   */
+  it("turns the grid into a card list at 820, with the column name beside each value", () => {
+    const grid = SHEETS.find((sheet) => sheet.path.endsWith("grid/grid.css"))?.css ?? "";
+    const posture = /@media \(max-width: 820px\) \{([\s\S]*?)\n\}/.exec(grid)?.[1] ?? "";
+
+    expect(posture, "820 arm is missing").not.toBe("");
+    // The <dt> half comes off the cell, so grid.ts must be putting the name there.
+    expect(posture).toContain("content: attr(data-name)");
+    expect(posture).toMatch(/\.gw-explore-grid-head \{\s*display: none/);
+    expect(posture).toMatch(/\.gw-grid-table \{[\s\S]*?display: block/);
+    expect(readFileSync("src/explore/grid/grid.ts", "utf8")).toContain(
+      'cell.dataset["name"] = column.name',
+    );
+  });
+
+  it("refuses the grid at 390 and says so, rather than rendering twelve columns into 390px", () => {
+    const grid = SHEETS.find((sheet) => sheet.path.endsWith("grid/grid.css"))?.css ?? "";
+    const refusal = /@media \(max-width: 520px\) \{([\s\S]*?)\n\}/.exec(grid)?.[1] ?? "";
+
+    expect(refusal, "390 arm is missing").not.toBe("");
+    expect(refusal).toMatch(/\.gw-grid-narrow \{\s*display: block/);
+    expect(refusal).toMatch(/\.gw-grid-table,[\s\S]*?display: none/);
+    // Absent at every other width, not merely invisible: nothing reads out a refusal that does
+    // not apply. The unconditional rule below the media block is what makes that true.
+    expect(grid).toMatch(/\.gw-grid-narrow \{\s*display: none;\s*\}/);
+  });
+
   it("keeps that list honest by counting what the source actually hides", () => {
     const hidden = new Set(
       sources("src/explore").flatMap((path) =>

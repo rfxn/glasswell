@@ -6,6 +6,8 @@ import { isFigure, valueAt } from "../../api/envelope.ts";
 import type { AppState } from "../../app/state.ts";
 import { labelElement } from "../../glossary/gw-term.ts";
 import { publishCall } from "../api/context.ts";
+import { crossingLink, showOnMap } from "../bridge.ts";
+import type { Point } from "../bridge.ts";
 import type { CatalogueDataset } from "../catalogue.ts";
 import { renderCell } from "../grid/cells.ts";
 import { columnsFor } from "../grid/columns.ts";
@@ -112,6 +114,8 @@ export async function mountDetail(host: HTMLElement, options: DetailOptions): Pr
       data: envelope.data,
       source: `${detail.operationId} — the fuller record, ${columns.length} fields`,
       omitted: omittedFrom(envelope.data, columns),
+      resolved: (envelope as { meta?: { as_of?: { resolved?: string | null } } }).meta?.as_of
+        ?.resolved,
     });
     step(options, detail.operationId, request);
     root.append(...trailNodes(options));
@@ -147,6 +151,8 @@ interface RecordView {
   data: unknown;
   source: string;
   omitted?: string[];
+  /** The vintage this record resolved at, so a crossing off it pins one (SB-08 M6). */
+  resolved?: string | null;
 }
 
 function renderRecord(body: HTMLElement, options: DetailOptions, view: RecordView): void {
@@ -205,6 +211,9 @@ function valueNodes(
   if (column.kind !== "geometry" && isStructural(raw)) {
     return [jsonView(column, raw, view.row)];
   }
+  if (column.kind === "geometry") {
+    return [renderCell(column, { data: view.data, row: view.row }), ...mapCrossing(raw, view, options)];
+  }
   // m12: kind is decided per response, not per schema. A `FigureModel` reaches the detail
   // behind an `anyOf` nullable, which the schema walk cannot see through — but the value
   // carries its own unit and handle, and that is the classification.
@@ -234,6 +243,35 @@ function valueNodes(
     }
   }
   return chips.childElementCount > 0 ? [rendered, chips] : [rendered];
+}
+
+/** API-10 is the identity spine, so it is what the map is asked to select (project vocabulary). */
+const IDENTITY = "/api10";
+
+function pointOf(value: unknown): Point | null {
+  if (typeof value !== "object" || value === null) return null;
+  const { lon, lat } = value as { lon?: unknown; lat?: unknown };
+  // One guard, not two: `Number.isFinite` does not coerce, so it rejects a string and a null
+  // as well as a NaN. A `typeof` check in front of it would be the only reachable half, and
+  // the half behind it would be a rule no test could ever break.
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) return null;
+  return { lon: lon as number, lat: lat as number };
+}
+
+/**
+ * §2.6's one explorer-to-map row, and C7's own hand-off: `cells.ts` refuses to print a
+ * coordinate, so the crossing is the whole of what this cell can offer rather than a control
+ * competing with a value beside it (C10's D1 ruling).
+ */
+function mapCrossing(raw: unknown, view: RecordView, options: DetailOptions): Node[] {
+  const point = pointOf(raw);
+  const api10 = view.row.cells[IDENTITY]?.value;
+  if (!point || typeof api10 !== "string" || api10 === "") return [];
+  const crossing = showOnMap(api10, point, {
+    state: options.state,
+    resolved: view.resolved ?? null,
+  });
+  return crossing ? [crossingLink(crossing, { signal: options.signal })] : [];
 }
 
 function isStructural(value: unknown): boolean {

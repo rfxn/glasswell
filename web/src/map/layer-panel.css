@@ -1,0 +1,37 @@
+/*
+ * The layer row's own two lines: §2.6's crossing to the collection behind a layer, and the
+ * statement that stands where a layer has none. `map.css` carries the rest of the row; these
+ * are C10's and live beside the module that renders them.
+ */
+/* `:not([hidden])` because a bare `display` outranks the UA's `[hidden] { display: none }`, and
+   the arrow below then painted on every tile-only row — a crossing offered where there is
+   none. Same defect explore/grid/styles.test.ts guards for, on the sheet it does not scan. */
+.gw-layer-crossing:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gw-space-1);
+  margin-top: var(--gw-space-1);
+  color: var(--cyan-text);
+  font-size: var(--gw-fs-micro);
+  text-decoration: none;
+  border-bottom: 1px solid var(--cyan);
+  width: fit-content;
+}
+
+.gw-layer-crossing::before {
+  content: "\2192";
+  opacity: 0.7;
+}
+
+.gw-layer-crossing:hover,
+.gw-layer-crossing:focus-visible {
+  color: var(--paper);
+  background: var(--tint-accent);
+}
+
+/* Not a disabled control: a statement that the geometry is drawn from tiles and nothing else. */
+.gw-layer-nocollection {
+  margin: var(--gw-space-1) 0 0;
+  color: var(--muted);
+  font-size: var(--gw-fs-micro);
+}

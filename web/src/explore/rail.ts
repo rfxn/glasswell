@@ -31,6 +31,9 @@ export const CLASS_B_DATASETS: readonly GapEntry[] = [
   { title: "League", path: "/v1/operators/league", section: "SB-04 §4.6", phase: null },
   { title: "Permits", path: "/v1/permits", section: "SB-04 §4.6", phase: null },
   { title: "Activity / DUC", path: "/v1/activity/duc", section: "SB-04 §4.6", phase: null },
+  // §2.6's "Show N on map" is built on this and nothing else, so the refusal in bridge.ts and
+  // this entry name one operation between them (10.2).
+  { title: "Well sets", path: "/v1/wellsets", section: "SB-04 §4.8", phase: null },
   { title: "Land units", path: "/v1/landunits", section: "SB-04 §4.7", phase: null },
   { title: "Formations", path: "/v1/formations", section: "SB-04 §4.7", phase: null },
   { title: "Spacing units", path: "/v1/spacingunits", section: "SB-04 §4.7", phase: null },

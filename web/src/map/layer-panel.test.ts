@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { createLayerPanel } from "./layer-panel.ts";
@@ -195,5 +197,96 @@ describe("the active-layer pill strip", () => {
     strip.setOn(new Set([...defaultLayerSet(), "spacing-units"]));
     strip.element.querySelector<HTMLButtonElement>(".gw-pill-add")!.click();
     expect(open).toHaveBeenCalled();
+  });
+});
+
+describe("SB-08 §2.6 — the crossing from a layer to the collection behind it", () => {
+  const TIGHT = [-103.5, 47.5, -102.5, 48.2] as const;
+  const WORLD = [-180, -85, 180, 85] as const;
+
+  const crossingIn = (root: HTMLElement, id: string) =>
+    rowFor(root, id)?.querySelector<HTMLAnchorElement>(".gw-layer-crossing");
+
+  it("offers no crossing until a viewport has been reported", () => {
+    const { handle } = panel();
+    expect(crossingIn(handle.element, "wells")?.hidden).toBe(true);
+  });
+
+  it("lands the wells row on the wells collection, narrowed to the current box", () => {
+    const { handle } = panel();
+    handle.setCrossing(TIGHT, "2026-08-20");
+    const link = crossingIn(handle.element, "wells")!;
+
+    expect(link.hidden).toBe(false);
+    expect(link.getAttribute("href")).toContain("ds=wells");
+    expect(link.getAttribute("href")).toContain("f.bbox=-103.5%2C47.5%2C-102.5%2C48.2");
+    expect(link.getAttribute("href")).toContain("as_of=2026-08-20");
+  });
+
+  it("rebuilds the link when the reader pans, so it never names the viewport they left", () => {
+    const { handle } = panel();
+    handle.setCrossing(TIGHT, "2026-08-20");
+    const first = crossingIn(handle.element, "wells")!.getAttribute("href");
+    handle.setCrossing([-104, 47, -103, 48], "2026-08-20");
+
+    expect(crossingIn(handle.element, "wells")!.getAttribute("href")).not.toBe(first);
+  });
+
+  it("drops the box rather than sending one the server caps, and says the view is too wide", () => {
+    const { handle } = panel();
+    handle.setCrossing(WORLD, "2026-08-20");
+    const link = crossingIn(handle.element, "wells")!;
+
+    expect(link.getAttribute("href")).not.toContain("f.bbox");
+    expect(link.title).toContain("too wide");
+  });
+
+  it("states the absence on a layer no served collection carries, and offers no link", () => {
+    const { handle } = panel();
+    handle.setCrossing(TIGHT, "2026-08-20");
+    const laterals = rowFor(handle.element, "lateral-bores")!;
+
+    expect(crossingIn(handle.element, "lateral-bores")?.hidden).toBe(true);
+    expect(laterals.querySelector(".gw-layer-nocollection")?.textContent).toContain(
+      "No served collection",
+    );
+  });
+
+  it("carries the reader's own pin over the resolved one", () => {
+    window.history.replaceState(null, "", "/?view=map&as_of=2026-07-01");
+    const { handle } = panel();
+    handle.setCrossing(TIGHT, "2026-08-20");
+
+    expect(crossingIn(handle.element, "wells")!.getAttribute("href")).toContain("as_of=2026-07-01");
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("lets the hidden attribute win, so no arrow paints on a row with no collection", () => {
+    // vitest loads no stylesheet, so the rule is read off the shipped sheet — the same idiom
+    // explore/grid/styles.test.ts uses, applied to the sheet it does not scan. The frames
+    // caught this one: `display: inline-flex` outranked `[hidden]` and every tile-only row
+    // drew a crossing arrow above the line saying it has nowhere to cross to.
+    const css = readFileSync("src/map/layer-panel.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const owning = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .map((match) => ({ selector: (match[1] ?? "").trim(), body: match[2] ?? "" }))
+      .filter((rule) => rule.selector.startsWith(".gw-layer-crossing"));
+
+    expect(owning.length).toBeGreaterThan(0);
+    for (const rule of owning) {
+      if (!/display\s*:/.test(rule.body)) continue;
+      expect(rule.selector, rule.selector).toContain(":not([hidden])");
+    }
+  });
+
+  it("crosses in place on a plain click rather than reloading the document", () => {
+    const { handle } = panel();
+    handle.setCrossing(TIGHT, "2026-08-20");
+    const link = crossingIn(handle.element, "wells")!;
+    const push = vi.spyOn(window.history, "pushState");
+
+    link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+    expect(push).toHaveBeenCalledTimes(1);
+    push.mockRestore();
   });
 });
