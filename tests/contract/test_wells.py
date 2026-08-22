@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_API10
-from tests.contract.conftest import ALL_API10S
+from tests.contract.conftest import ALL_API10S, TX_API10
 
 
 def test_the_collection_lists_every_seeded_well(client: TestClient) -> None:
@@ -40,6 +40,18 @@ def test_the_collection_filters_on_a_bounding_box(client: TestClient) -> None:
 
     assert [item["api10"] for item in inside] == [EXAMPLE_API10]
     assert outside == []
+
+
+def test_the_collection_filters_on_the_well_type_code_verbatim(client: TestClient) -> None:
+    """R-1 after M1-7: the disposal layer scopes the spine by the code as filed — no decode,
+    no classing, and no case-folding, because the code is the regulator's spelling."""
+    producing = client.get("/v1/wells", params={"well_type": "PRODUCING"}).json()["data"]
+    og = client.get("/v1/wells", params={"well_type": "OG"}).json()["data"]
+
+    assert [item["api10"] for item in producing] == [TX_API10]
+    assert [item["api10"] for item in og] == sorted(set(ALL_API10S) - {TX_API10})
+    assert client.get("/v1/wells", params={"well_type": "producing"}).json()["data"] == []
+    assert client.get("/v1/wells", params={"well_type": "SWD"}).json()["data"] == []
 
 
 def test_an_oversized_bounding_box_is_refused(client: TestClient) -> None:

@@ -5,6 +5,9 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_DERIVATION_ID, EXAMPLE_RULE_ID
+from glasswell.seed.conformance_nd import ND_RULES
+from glasswell.seed.conformance_nm import NM_RULES
+from glasswell.seed.conformance_tx import TX_RULES
 
 SEEDED_RULES = 14
 
@@ -75,30 +78,27 @@ def test_an_unknown_rule_is_not_found(client: TestClient) -> None:
     assert client.get("/v1/conformance/cr_nope_1").status_code == 404
 
 
+def _seeded_policy_rule_ids() -> set[str]:
+    return {
+        str(rule["rule_id"])
+        for registry in (ND_RULES, NM_RULES, TX_RULES)
+        for rule in registry
+        if rule.get("rule_kind") == "code_ref"
+    }
+
+
 def test_the_policy_declarations_are_visible_as_such(client: TestClient) -> None:
-    """The code_ref rows are registry data with no executor; they are not hidden."""
+    """The code_ref rows are registry data with no executor; they are not hidden. The
+    expectation derives from the seed registries, so a new policy declaration changes seeding
+    and serving as one act (gate-m17 R-4); the one deliberate membership pin is POLICY_RULES
+    in tests/integration/test_seed_rules.py. The floor keeps the derivation non-vacuous."""
     data = client.get("/v1/conformance", params={"kind": "code_ref"}).json()["data"]
 
-    assert {item["rule_id"] for item in data} == {
+    expected = _seeded_policy_rule_ids()
+    assert {
         "cr_nd_liquids_policy_1",
-        "cr_nd_null_semantics_1",
-        "cr_nd_pool_rollup_1",
         "cr_nd_well_type_disposal_1",
-        # One FTP host pin per NM source: a policy the fetcher implements and the registry
-        # states, so it is served as a declaration rather than executed.
-        "cr_nm_ogrid_host_pin_1",
-        "cr_nm_pod_host_pin_1",
-        "cr_nm_podwc_host_pin_1",
-        "cr_nm_pool_host_pin_1",
-        "cr_nm_property_host_pin_1",
-        "cr_nm_spacingunit_host_pin_1",
-        "cr_nm_wchistory_host_pin_1",
         "cr_nm_wcproduction_host_pin_1",
-        "cr_nm_wellhistory_host_pin_1",
         "cr_tx_allocation_scope_1",
-        "cr_tx_ewa_role_1",
-        "cr_tx_geometry_survivor_1",
-        "cr_tx_identity_collapse_1",
-        "cr_tx_lateral_bounds_1",
-        "cr_tx_multi_wellbore_1",
-    }
+    } <= expected
+    assert {item["rule_id"] for item in data} == expected
