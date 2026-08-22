@@ -26,9 +26,13 @@ from typing import Any
 
 import polars as pl
 import psycopg
-from psycopg.rows import dict_row
 
-from glasswell.ingest.base import IngestRun, open_ingest_run, resolve_environment
+from glasswell.ingest.base import (
+    IngestRun,
+    open_ingest_run,
+    record_vintage_day,
+    resolve_environment,
+)
 from glasswell.ingest.nm_ocd import (
     UNREGISTERED_REASON,
     head_manifest,
@@ -48,7 +52,6 @@ from glasswell.lineage.errors import RuleSpecError, VintageAlreadyPromoted
 from glasswell.lineage.models import InputRef, ManifestRecord, OutputSpec
 from glasswell.lineage.quarantine import quarantine
 from glasswell.lineage.serialization import hash_payload
-from glasswell.lineage.vintages import open_vintage
 from glasswell.seed.conformance_nm import NM_COLUMNS
 
 __rule_version__ = "1"
@@ -850,19 +853,10 @@ def _reason_vocabulary(connection: psycopg.Connection) -> frozenset[str]:
 
 
 def _close_vintage(run: IngestRun, report: DimensionReport) -> DimensionReport:
-    """One vintage row per (source, day). A re-run that appended nothing does not overwrite the
-    pass that did the work with its own zeroes (gate-nm-fp D2)."""
+    """One ledger row per (source, day): same-day passes accumulate onto it (DR-85), and a
+    re-run that appended nothing leaves the pass that did the work alone (gate-nm-fp D2)."""
     connection = run.connection
-    with connection.cursor(row_factory=dict_row) as cursor:
-        cursor.execute(
-            "select rows_appended from lineage.vintages"
-            " where source_id = %s and vintage_date = %s",
-            (report.source_id, report.report_vintage),
-        )
-        prior = cursor.fetchone()
-    if prior is not None and not report.promoted_rows:
-        return report
-    record = open_vintage(
+    record = record_vintage_day(
         connection,
         source_id=report.source_id,
         vintage_date=report.report_vintage,
@@ -871,9 +865,9 @@ def _close_vintage(run: IngestRun, report: DimensionReport) -> DimensionReport:
         promotion_derivation_id=report.derivation_id,
         rows_examined=report.staged_rows,
         rows_appended=report.promoted_rows,
-        months_touched=[],
-        restatement_summary={},
     )
+    if record is None:
+        return report
     emit(
         connection,
         "canonical.promotion_completed",

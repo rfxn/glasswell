@@ -29,7 +29,7 @@ import polars as pl
 import psycopg
 from psycopg.rows import dict_row
 
-from glasswell.ingest.base import resolve_environment
+from glasswell.ingest.base import record_vintage_day, resolve_environment
 from glasswell.ingest.shapefile import ShapefileRecord, ZippedShapefile
 from glasswell.ingest.tx_mft import MftClient
 from glasswell.lengths import LengthMethod, compute_crs_rule, length_method
@@ -44,7 +44,6 @@ from glasswell.lineage import (
     fetch_raw,
     lineage_session,
     load_rules,
-    open_vintage,
     quarantine,
 )
 from glasswell.lineage.serialization import hash_payload, json_ready
@@ -1083,7 +1082,9 @@ def load_county(
         counts=counts,
     )
 
-    open_vintage(
+    # A backfill loads many counties in one day, all upserting one (source, day) ledger row —
+    # accumulate onto it rather than letting each county overwrite the last (DR-85).
+    record_vintage_day(
         connection,
         source_id=SOURCE_ID,
         vintage_date=manifest.fetch_vintage,

@@ -18,7 +18,7 @@ from psycopg.rows import dict_row
 from glasswell.lineage.capture import LineageSession, lineage_session
 from glasswell.lineage.clock import Clock
 from glasswell.lineage.fetch import resolve_raw_root
-from glasswell.lineage.models import DeriveEnvironment
+from glasswell.lineage.models import DeriveEnvironment, VintageRecord
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.lineage.vintages import open_vintage
 
@@ -89,23 +89,24 @@ def record_vintage_day(
     rows_appended: int = 0,
     months_touched: Sequence[str] = (),
     restatement_summary: Mapping[str, int] | None = None,
-) -> bool:
+) -> VintageRecord | None:
     """The vintage row is the ledger of the vintage-day, not the report of one run.
 
     `open_vintage` upserts on (source, day) while canonical accumulates across same-day runs,
     so prior counters are read back and summed (DR-78, the shape gate-nm-fp D2 closed for NM).
-    Returns whether the ledger was written; a run that appended nothing leaves an existing row
-    alone rather than overwriting the pass that did the work with its own zeroes.
+    Returns the written record, or None when a run that appended nothing left an existing row
+    alone rather than overwriting the pass that did the work with its own zeroes (DR-85 widened
+    the return from bool so callers can cite the vintage_id).
     """
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(_VINTAGE_DAY_COUNTERS, (source_id, vintage_date))
         prior = cursor.fetchone()
     if prior is not None and not rows_appended:
-        return False
+        return None
     restatement = dict(prior["restatement_summary"] if prior else {})
     for month, rows in (restatement_summary or {}).items():
         restatement[month] = restatement.get(month, 0) + rows
-    open_vintage(
+    return open_vintage(
         connection,
         source_id=source_id,
         vintage_date=vintage_date,
@@ -119,7 +120,6 @@ def record_vintage_day(
         months_touched=sorted({*(prior["months_touched"] if prior else []), *months_touched}),
         restatement_summary=restatement,
     )
-    return True
 
 
 @contextmanager

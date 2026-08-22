@@ -579,6 +579,48 @@ def test_the_vintage_records_what_the_run_examined_and_appended(db, staged):
     assert row == [(report.staged_rows, report.promoted_rows)]
 
 
+def test_a_same_day_second_manifest_accumulates_the_vintage_ledger(
+    db, staged, raw_root, staging_root, tmp_path, monkeypatch
+):
+    """DR-85: every same-day promotion upserts one (source, day) ledger row, so the counters
+    must be the day's sum — which is what canonical holds for the source — not the last
+    run's report."""
+    first = promote(db)
+    stage(
+        db, raw_root, tmp_path, monkeypatch,
+        table="wchistory",
+        document=_wchistory_with(api_well_idn="90210"),
+        at=DAY_ONE,
+    )
+    second = promote(db)
+
+    rows = query(
+        db,
+        "select rows_examined, rows_appended, manifest_ids from lineage.vintages"
+        " where source_id = %s",
+        DIM_SOURCE,
+    )
+    assert second.promoted_rows > 0
+    assert len(rows) == 1
+    examined, appended, manifests = rows[0]
+    assert examined == first.staged_rows + second.staged_rows
+    assert appended == first.promoted_rows + second.promoted_rows
+    assert appended == scalar(
+        db,
+        "select count(*) from canonical.well_completions where source_id = %s",
+        DIM_SOURCE,
+    )
+    assert set(manifests) == set(first.manifest_ids.values()) | set(second.manifest_ids.values())
+
+    third = promote(db)
+    assert third.promoted_rows == 0
+    assert query(
+        db,
+        "select rows_examined, rows_appended from lineage.vintages where source_id = %s",
+        DIM_SOURCE,
+    ) == [(examined, appended)], "a re-run that appended nothing must leave the ledger alone"
+
+
 def test_a_registry_with_no_staged_rows_is_reported_as_zero_rather_than_assumed_resolved(db,
                                                                                           staged):
     """`pod` has no 300-record fixture, so this run resolves none of its PODs against it. The

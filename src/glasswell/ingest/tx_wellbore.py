@@ -24,7 +24,7 @@ import httpx
 import polars as pl
 import psycopg
 
-from glasswell.ingest.base import resolve_environment
+from glasswell.ingest.base import record_vintage_day, resolve_environment
 from glasswell.ingest.tx_mft import MftClient
 from glasswell.lineage import (
     ConformanceRule,
@@ -37,7 +37,6 @@ from glasswell.lineage import (
     fetch_raw,
     lineage_session,
     load_rules,
-    open_vintage,
     quarantine,
 )
 from glasswell.lineage.audit import emit
@@ -529,7 +528,9 @@ def load(
         role_rule=role_rule,
         lease_rule=lease_rule,
     )
-    open_vintage(
+    # A same-day restage upserts the same (source, day) ledger row — accumulate onto it
+    # rather than overwriting the pass that did the work (DR-85).
+    record_vintage_day(
         connection,
         source_id=SOURCE_ID,
         vintage_date=manifest.fetch_vintage,
