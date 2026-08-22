@@ -24,7 +24,7 @@ export interface LayerPanelHandle {
   setBasemap(id: string): void;
   setProvenance(id: string, derivationId: string): void;
   /** §2.6: the crossing is rebuilt per viewport, because the box it narrows by moved. */
-  setCrossing(box: Bbox, resolved: string | null): void;
+  setCrossing(box: Bbox, resolved: string | null, extentOff?: boolean): void;
   open(): void;
   close(): void;
   toggle(): void;
@@ -135,8 +135,8 @@ export function createLayerPanel(options: LayerPanelOptions): LayerPanelHandle {
     setProvenance(id, derivationId) {
       rows.get(id)?.setProvenance(derivationId);
     },
-    setCrossing(box, resolved) {
-      for (const row of rows.values()) row.setCrossing(box, resolved);
+    setCrossing(box, resolved, extentOff) {
+      for (const row of rows.values()) row.setCrossing(box, resolved, extentOff ?? false);
     },
     open() {
       element.hidden = false;
@@ -159,7 +159,7 @@ interface LayerRow {
   setOn(on: boolean): void;
   setZoom(zoom: number): void;
   setProvenance(derivationId: string): void;
-  setCrossing(box: Bbox, resolved: string | null): void;
+  setCrossing(box: Bbox, resolved: string | null, extentOff: boolean): void;
 }
 
 function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
@@ -283,11 +283,11 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
       derivation.hidden = false;
       derivation.textContent = `geometry build ${derivationId}`;
     },
-    setCrossing(box, resolved) {
+    setCrossing(box, resolved, extentOff) {
       // Rebuilt rather than patched: the box is half the destination, so a stale href would be
       // a link to the viewport the reader left. The row is a <label>-free container, so the
       // anchor keeps its own click and never reaches the toggle beside it.
-      landing = whatsBehindThisLayer(layer.collection, box, { state: readState(), resolved });
+      landing = whatsBehindThisLayer(layer.collection, box, { state: readState(), resolved }, extentOff);
       crossing.hidden = landing === null;
       if (!landing) return;
       applyCrossing(crossing, landing);

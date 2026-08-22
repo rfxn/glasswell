@@ -102,11 +102,17 @@ export function createLegend(options: LegendOptions): LegendHandle {
   // are of — and a tree reads root-first.
   const extentRow = document.createElement("label");
   extentRow.className = "gw-lg-extent";
-  extentRow.title = "Counts cover the wells the map view holds. Untick to count everything ingested.";
 
   const extentBox = document.createElement("input");
   extentBox.type = "checkbox";
   extentBox.checked = options.extentOn ?? true;
+  // State-aware, not static (gate-m12 F2): the on-state sentence is false while the node is off.
+  const syncExtentTitle = (): void => {
+    extentRow.title = extentBox.checked
+      ? "Counts cover the wells the map view holds. Untick to count everything ingested."
+      : "Counts cover everything ingested. Tick to count only the wells the map view holds.";
+  };
+  syncExtentTitle();
   extentBox.setAttribute("aria-label", "Count only the wells the map view holds");
   extentRow.appendChild(extentBox);
 
@@ -232,6 +238,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
 
   extentBox.addEventListener("change", () => {
     scope.hidden = extentBox.checked;
+    syncExtentTitle();
     syncTitle();
     // The drawn-versus-in-view line compares the canvas with the counted population; with the
     // node off the population is not "in view" and the comparison would be a false sentence.

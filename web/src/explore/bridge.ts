@@ -180,13 +180,18 @@ export function whatsBehindThisLayer(
   collection: LayerCollectionRef | null,
   box: Bbox,
   context: BridgeContext,
+  extentOff = false,
 ): Crossing | null {
   if (!collection) return null;
   const target = layerTarget(collection);
   const narrows = collection.bbox !== null && withinCap(box);
+  // Two causes, two sentences (gate-m12 F1): an unticked Map view node widens the box itself,
+  // so blaming the view's width there would name the wrong cause.
   const title = narrows
     ? "Open the collection this layer draws from, narrowed to the current view."
-    : `Open the collection this layer draws from. The view is too wide to narrow by — the box is capped at ${BBOX_DEGREE_CAP} degrees a side — so the whole collection is listed.`;
+    : extentOff
+      ? "Open the collection this layer draws from. Map view is unticked — the counts cover everything ingested — so the whole collection is listed."
+      : `Open the collection this layer draws from. The view is too wide to narrow by — the box is capped at ${BBOX_DEGREE_CAP} degrees a side — so the whole collection is listed.`;
 
   return crossing(
     "whats-behind-this-layer",

@@ -241,6 +241,21 @@ describe("SB-08 §2.6 — the crossing from a layer to the collection behind it"
     expect(link.title).toContain("too wide");
   });
 
+  // gate-m12 F1, the wired path: the map passes the extent node's state through, so the
+  // off-state title names the toggle and not the view's width — on every row that lands on
+  // the wells collection, ND and TX both (visual-m12).
+  it("blames the Map view toggle when the extent node widened the box, not the view", () => {
+    const { handle } = panel();
+    handle.setCrossing(WORLD, "2026-08-20", true);
+
+    for (const id of ["wells", "tx-wells"]) {
+      const link = crossingIn(handle.element, id)!;
+      expect(link.getAttribute("href"), id).not.toContain("f.bbox");
+      expect(link.title, id).toContain("Map view is unticked");
+      expect(link.title, id).not.toContain("too wide");
+    }
+  });
+
   it("states the absence on a layer no served collection carries, and offers no link", () => {
     const { handle } = panel();
     handle.setCrossing(TIGHT, "2026-08-20");

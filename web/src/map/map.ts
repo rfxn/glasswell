@@ -358,7 +358,7 @@ export function createMap(
     const bbox = countedBbox(extentOn, viewportBbox());
     // The crossing narrows by the box, so it is rebuilt with the box and not with the answer:
     // a reader who pans and clicks before the counts settle must not get the last viewport.
-    panel.setCrossing(bbox, resolvedVintage);
+    panel.setCrossing(bbox, resolvedVintage, !extentOn);
     countSource.request(bbox);
     refreshDrawn();
   }
@@ -400,7 +400,7 @@ export function createMap(
       return;
     }
     countsFailing = false;
-    panel.setCrossing(state.bbox, resolvedVintage);
+    panel.setCrossing(state.bbox, resolvedVintage, !extentOn);
     legend.setCounts(state.counts, zoom, state.handles, {
       wells: state.total,
       handle: state.totalHandle,

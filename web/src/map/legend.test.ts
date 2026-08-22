@@ -620,6 +620,22 @@ describe("the map-extent filter node (M1-2)", () => {
     expect(children.indexOf(joins)).toBeLessThan(children.indexOf(rows(legend.element)[0]!));
   });
 
+  // gate-m12 F2: a static tooltip asserted in-view coverage even while the node was off.
+  it("flips the row's tooltip with the node, so the hover is true in both states", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    expect(node(legend.element).title).toContain("Counts cover the wells the map view holds");
+    flip(legend.element, false);
+    expect(node(legend.element).title).toContain("Counts cover everything ingested");
+    expect(node(legend.element).title).not.toContain("Counts cover the wells the map view holds");
+    flip(legend.element, true);
+    expect(node(legend.element).title).toContain("Counts cover the wells the map view holds");
+  });
+
+  it("opens with the off-state tooltip when the URL restored the node off", () => {
+    const legend = createLegend({ onFilter: () => {}, extentOn: false });
+    expect(node(legend.element).title).toContain("Counts cover everything ingested");
+  });
+
   it("carries the population's own count and its own derivation handle", () => {
     const legend = createLegend({ onFilter: () => {} });
     legend.setCounts({ active: 20_643, plugged: 7_316 }, 12, {}, TOTAL);
