@@ -57,4 +57,17 @@ describe("the click router", () => {
       expect(PICKABLE_LAYERS, `${styleLayer} is not pickable`).toContain(styleLayer);
     }
   });
+
+  it("ranks a survey trace above the lateral it overlies, and below the wellhead", () => {
+    // The trace draws on top of its lateral, so the click follows the ink; a wellhead under
+    // the cursor stays the most specific thing there.
+    expect(topHit([hit("survey-traces", "a"), hit("laterals", "b")])?.layer.id).toBe("survey-traces");
+    expect(topHit([hit("survey-traces", "a"), hit("wells", "b")])?.layer.id).toBe("wells");
+  });
+
+  it("makes every style layer the survey-trace row drives pickable", () => {
+    for (const styleLayer of layerDef("survey-traces")!.styleLayers) {
+      expect(PICKABLE_LAYERS, `${styleLayer} is not pickable`).toContain(styleLayer);
+    }
+  });
 });

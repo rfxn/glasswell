@@ -9,6 +9,8 @@ import {
   LATERALS_SOURCE,
   SOURCE_ID,
   SPACING_SOURCE,
+  TRACES_SOURCE,
+  TRACE_COLOUR,
   TX_LATERALS_SOURCE,
   TX_WELLS_SOURCE,
   WELLS_SOURCE,
@@ -143,6 +145,31 @@ describe("the data layers", () => {
     expect(width).toContain("zoom");
   });
 
+  it("draws the survey trace as its own line, selection branch over the provenance colour", () => {
+    const trace = dataLayers().find((layer) => layer.id === "survey-traces");
+    expect(trace?.type).toBe("line");
+    expect(trace?.minzoom).toBe(8);
+    const colour = JSON.stringify(paintOf(trace)["line-color"]);
+    expect(colour).toContain("feature-state");
+    expect(colour).toContain(SELECTION_COLOUR);
+    expect(colour).toContain(TRACE_COLOUR);
+  });
+
+  it("keeps the trace outside the status gate: it paints provenance, not status", () => {
+    // Deliberate, not an omission: what the layer distinguishes is the filed survey path
+    // from the GIS centreline, and a status-keyed trace would vanish into its own lateral.
+    expect(statusStyledLayerIds()).not.toContain("survey-traces");
+    const trace = dataLayers().find((layer) => layer.id === "survey-traces");
+    expect(JSON.stringify(paintOf(trace))).not.toContain("status_canonical");
+  });
+
+  it("promotes api10 on the traces source, so selecting a well lights its trace too", () => {
+    const spec = sourceSpecs()[TRACES_SOURCE];
+    expect(spec && "promoteId" in spec ? spec.promoteId : undefined).toEqual({
+      nd_survey_traces: "api10",
+    });
+  });
+
   it("registers every style layer the registry claims to drive", () => {
     const rendered = new Set(dataLayers({ labels: true }).map((layer) => layer.id));
     for (const layer of LAYERS) {
@@ -189,6 +216,8 @@ describe("the data layers", () => {
     // below z8 rather than paying for geometry the canvas cannot resolve.
     expect(floor(LATERALS_SOURCE)).toBe(8);
     expect(floor(TX_LATERALS_SOURCE)).toBe(8);
+    // The traces publish from z4 server-side; the client draws from z8, so it fetches from z8.
+    expect(floor(TRACES_SOURCE)).toBe(8);
     for (const layer of dataLayers({ labels: true })) {
       const source = "source" in layer ? String(layer.source) : "";
       expect(Number(floor(source)), `${layer.id} draws below its source floor`).toBeLessThanOrEqual(
@@ -304,10 +333,17 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
     // that only guarded the url would still hand the other two an attacker's string.
     const search =
       "?wells=..%2F..%2Fetc%2Fpasswd&laterals=gw-evil-layer&spacing=%2Fetc%2Fpasswd" +
-      "&tx_wells=..%2F..%2Fetc%2Fshadow&tx_laterals=gw-evil-layer";
+      "&tx_wells=..%2F..%2Fetc%2Fshadow&tx_laterals=gw-evil-layer&traces=..%2F..%2Fetc%2Fpasswd";
     const specs = sourceSpecs("https://gw.example", search);
     expect(Object.keys(specs).sort()).toEqual(
-      [WELLS_SOURCE, LATERALS_SOURCE, SPACING_SOURCE, TX_WELLS_SOURCE, TX_LATERALS_SOURCE].sort(),
+      [
+        WELLS_SOURCE,
+        LATERALS_SOURCE,
+        SPACING_SOURCE,
+        TX_WELLS_SOURCE,
+        TX_LATERALS_SOURCE,
+        TRACES_SOURCE,
+      ].sort(),
     );
     const serialised = JSON.stringify(specs);
     expect(serialised).not.toContain("etc/passwd");

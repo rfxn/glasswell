@@ -33,6 +33,15 @@ export const LATERALS_SOURCE = "nd_laterals";
 export const SPACING_SOURCE = "nd_spacing_units";
 export const TX_WELLS_SOURCE = "tx_wells";
 export const TX_LATERALS_SOURCE = "tx_laterals";
+export const TRACES_SOURCE = "nd_survey_traces";
+
+/**
+ * Provenance-keyed, not status-keyed: what this layer distinguishes is the filed survey path
+ * from the GIS centreline, and painting it from the status vocabulary would erase exactly
+ * that distinction wherever a trace overlies its own lateral. Orchid is in neither the
+ * status palette nor the selection cyan; 6.2:1 on the dark substrate.
+ */
+export const TRACE_COLOUR = "#C878D2";
 
 /** The point layers the legend counts from. Both basins, because the legend counts what is drawn. */
 export const WELL_POINT_LAYERS = ["wells", "tx-wells"] as const;
@@ -93,6 +102,7 @@ export function sourceSpecs(origin?: string, search?: string): Record<string, So
     ["spacing", SPACING_SOURCE],
     ["tx_wells", TX_WELLS_SOURCE],
     ["tx_laterals", TX_LATERALS_SOURCE],
+    ["traces", TRACES_SOURCE],
   ] as const) {
     const name = publishedSource(parameter, fallback, search);
     specs[name] = {
@@ -174,6 +184,15 @@ function lateralWidth(): Expr {
   ]);
 }
 
+/** Finer than a lateral at every stop: the trace is the precise path, not the emphasis. */
+function traceWidth(): Expr {
+  return interpolate(zoom, [
+    [8, selectable(2.5, 1)],
+    [12, selectable(4, 1.8)],
+    [15, selectable(6, 3)],
+  ]);
+}
+
 function wellRadius(): Expr {
   return step(zoom, selectable(3, 0.9), [
     [6, selectable(4, 1.2)],
@@ -204,6 +223,7 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
   const spacing = publishedSource("spacing", SPACING_SOURCE, options.search);
   const txWells = publishedSource("tx_wells", TX_WELLS_SOURCE, options.search);
   const txLaterals = publishedSource("tx_laterals", TX_LATERALS_SOURCE, options.search);
+  const traces = publishedSource("traces", TRACES_SOURCE, options.search);
 
   const built: LayerSpecification[] = [
     {
@@ -240,6 +260,21 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
         "line-color": selectable(SELECTION_COLOUR, statusColourExpression()),
         "line-width": lateralWidth(),
         "line-opacity": selectable(1, 0.85),
+      },
+    },
+    {
+      // Over the lateral it refines, under the wellhead that identifies it. Not status-gated:
+      // it paints provenance, so the legend's status filter has no claim on its filter slot.
+      id: "survey-traces",
+      type: "line",
+      source: traces,
+      "source-layer": traces,
+      minzoom: 8,
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": selectable(SELECTION_COLOUR, TRACE_COLOUR),
+        "line-width": traceWidth(),
+        "line-opacity": selectable(1, 0.9),
       },
     },
     {
