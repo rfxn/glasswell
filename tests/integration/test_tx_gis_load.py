@@ -287,6 +287,96 @@ def test_the_same_manifest_twice_is_idempotent_and_says_so(county, seeded, raw_r
     assert scalar(seeded, "select count(*) from canonical.well_spatial") == before
 
 
+def test_a_same_day_revised_archive_accumulates_the_vintage_ledger(
+    county, seeded, raw_root, lineage_env, tmp_path
+):
+    """DR-85: every county archive loaded on one day upserts the same (source, day) ledger
+    row, so the counters must be the day's sum, not the last load's report."""
+    revised = tmp_path / f"well{COUNTY}_revised.zip"
+    with zipfile.ZipFile(COUNTY_ARCHIVE) as source, zipfile.ZipFile(revised, "w") as target:
+        target.comment = b"dr85 same-day revision"
+        for name in source.namelist():
+            target.writestr(name, source.read(name))
+    with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env), client_for(
+        {"us_noaa_conus": GRID, f"well{COUNTY}": revised}
+    ) as client:
+        second = tx_gis.load_county(
+            seeded, COUNTY, raw_root=raw_root, client=client, grid_client=client
+        )
+    seeded.commit()
+
+    ledger = rows(
+        seeded,
+        "select rows_examined, rows_appended, manifest_ids from lineage.vintages"
+        " where source_id = %s",
+        (tx_gis.SOURCE_ID,),
+    )
+    assert second.unchanged is False
+    assert sum(second.geometries.values()) > 0
+    assert len(ledger) == 1
+    examined, appended, manifests = ledger[0]
+    assert examined == sum(county.staged.values()) + sum(second.staged.values())
+    assert appended == sum(county.geometries.values()) + sum(second.geometries.values())
+    assert set(manifests) == {county.manifest_id, second.manifest_id}
+
+    # The unchanged path is proved on the first archive: its manifest owns canonical rows, so
+    # the reload returns before ever reaching the ledger.
+    with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env), client_for(
+        {"us_noaa_conus": GRID, f"well{COUNTY}": COUNTY_ARCHIVE}
+    ) as client:
+        again = tx_gis.load_county(
+            seeded, COUNTY, raw_root=raw_root, client=client, grid_client=client
+        )
+    seeded.commit()
+    assert again.unchanged is True
+    assert rows(
+        seeded,
+        "select rows_examined, rows_appended from lineage.vintages where source_id = %s",
+        (tx_gis.SOURCE_ID,),
+    ) == [(examined, appended)], "an unchanged reload must leave the ledger alone"
+
+
+def test_a_same_day_second_export_accumulates_the_wellbore_vintage_ledger(
+    identity, seeded, raw_root, lineage_env
+):
+    """DR-85: same shape as the GIS half — a second same-day export upserts the one
+    (source, day) ledger row, so its counters accumulate onto the pass that did the work."""
+    sibling = FIXTURES / "tx_ewa" / "OG_WELLBORE_EWA_plugged_sibling.csv"
+    with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env), client_for(
+        {"OG_WELLBORE": sibling}
+    ) as client:
+        second = tx_wellbore.load(seeded, raw_root=raw_root, client=client)
+    seeded.commit()
+
+    ledger = rows(
+        seeded,
+        "select rows_examined, rows_appended, manifest_ids from lineage.vintages"
+        " where source_id = %s",
+        (tx_wellbore.SOURCE_ID,),
+    )
+    assert second.wells > 0
+    assert len(ledger) == 1
+    examined, appended, manifests = ledger[0]
+    assert examined == identity.staged_rows + second.staged_rows
+    assert appended == identity.wells + second.wells
+    assert appended == scalar(
+        seeded, "select count(*) from canonical.wells where state_code = '42'"
+    )
+    assert set(manifests) == {identity.manifest_id, second.manifest_id}
+
+    with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env), client_for(
+        {"OG_WELLBORE": sibling}
+    ) as client:
+        again = tx_wellbore.load(seeded, raw_root=raw_root, client=client)
+    seeded.commit()
+    assert again.unchanged is True
+    assert rows(
+        seeded,
+        "select rows_examined, rows_appended from lineage.vintages where source_id = %s",
+        (tx_wellbore.SOURCE_ID,),
+    ) == [(examined, appended)], "an unchanged reload must leave the ledger alone"
+
+
 def test_a_county_with_no_horizontal_wells_ships_no_arcs_layer_and_that_is_not_an_error(
     seeded, identity, raw_root, lineage_env, tmp_path
 ):
