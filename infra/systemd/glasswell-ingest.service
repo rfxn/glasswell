@@ -10,6 +10,9 @@ Type=oneshot
 User=glasswell
 Group=glasswell
 EnvironmentFile=/etc/glasswell/app.env
+# Deploy-stamped code identity (scripts/deploy.sh step 5c); listed last so it wins over any
+# stale copy in owner-edited app.env. `-`: absent until the first deploy stamps it.
+EnvironmentFile=-/etc/glasswell/code-version.env
 # Peer auth over the socket: no password reaches the process table.
 Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql
 # NDIC publishes a production month roughly two months in arrears; three is the safe lag.

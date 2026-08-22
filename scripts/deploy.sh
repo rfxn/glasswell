@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The deploy runbook (infra/README.md steps 1, 2 and 4) as a script rather than as prose.
-# Read-write on the host and read-only here. Two refusals are the point of it: a dirty tree
-# deploys bytes that are in no commit, and an untagged HEAD deploys a release nobody can name.
+# Read-write on the host and read-only here. The refusals are the point of it: a dirty tree
+# deploys bytes that are in no commit, an untagged HEAD deploys a release nobody can name,
+# and a migration gap deploys code its schema cannot carry.
 set -uo pipefail
 
 REPO_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -10,22 +11,36 @@ DEPLOY_SRC=/opt/glasswell/src
 WEB_ROOT=/opt/glasswell/web
 VENV=/opt/glasswell/venv
 LOCK=requirements.lock
+SOCKET_DSN='postgresql:///glasswell?host=/var/run/postgresql'
+MIGRATIONS_DIR=src/glasswell/db/migrations
+CODE_ENV_FILE=/etc/glasswell/code-version.env
 
 dry_run=0
 with_migrations=0
+skip_migrations=0
 
 usage() {
     cat <<'EOF'
-usage: deploy.sh [--dry-run] [--with-migrations]
+usage: deploy.sh [--dry-run] [--with-migrations | --skip-migrations]
 
   --dry-run           run the refusals, print every remote command, change nothing
   --with-migrations   also run runbook step 3 (migrations, as the postgres superuser)
+  --skip-migrations   deploy even when the repo carries migrations the database has not
+                      applied; the gap is stated in a banner instead of refused
 
   $GW_DEPLOY_HOST            ssh destination (default root@192.168.2.111, VM 111)
   $GW_DEPLOY_ALLOW_UNTAGGED  1 deploys a HEAD that carries no tag; rolling releases deploy tags
 
 Runbook step 4's tile-function reinstall is deliberately not scripted: it is needed only when
 src/glasswell/marts/tiles.py moved, and infra/README.md carries the command.
+
+Runbook step 3b, the mart refresh after a migration that touched a tile mart, is not scripted
+either. Its canonical form runs as postgres — the tile views are postgres-owned, and uid
+glasswell gets InsufficientPrivilege — and carries the code identity this deploy stamped:
+  systemd-run --uid=postgres --pipe --wait \
+      --setenv=GLASSWELL_CODE_VERSION=<tag>+<short-commit> \
+      /opt/glasswell/venv/bin/python -m glasswell.marts.nd_wells \
+      --dsn 'postgresql:///glasswell?host=/var/run/postgresql'
 EOF
 }
 
@@ -33,10 +48,16 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --dry-run) dry_run=1; shift ;;
         --with-migrations) with_migrations=1; shift ;;
+        --skip-migrations) skip_migrations=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) printf 'unknown argument: %s\n' "$1" >&2; exit 2 ;;
     esac
 done
+
+if (( with_migrations && skip_migrations )); then
+    printf -- '--with-migrations and --skip-migrations contradict each other\n' >&2
+    exit 2
+fi
 
 refuse() { printf 'deploy refused: %s\n' "$1" >&2; exit 1; }
 step() { printf '\n== %s\n' "$1"; }
@@ -49,13 +70,26 @@ if [[ -n $dirty ]]; then
     refuse "the working tree is not clean — a deploy ships a commit, not a desk"
 fi
 
+short_commit="$(git rev-parse --short HEAD)"
 tag="$(git describe --exact-match --tags HEAD 2>/dev/null)"  # no tag here is the signal, not an error
 if [[ -z $tag ]]; then
     if [[ ${GW_DEPLOY_ALLOW_UNTAGGED:-0} != 1 ]]; then
         refuse "HEAD carries no tag — cut one with \`make release\`, or set GW_DEPLOY_ALLOW_UNTAGGED=1"
     fi
-    tag="(untagged $(git rev-parse --short HEAD))"
+    code_version="untagged+$short_commit"
+    tag="(untagged $short_commit)"
+else
+    code_version="$tag+$short_commit"
 fi
+
+repo_head=0
+for migration_file in "$MIGRATIONS_DIR"/[0-9][0-9][0-9]_*.sql; do
+    [[ -e $migration_file ]] || continue
+    version="${migration_file##*/}"
+    version="${version%%_*}"
+    if (( 10#$version > repo_head )); then repo_head=$((10#$version)); fi
+done
+(( repo_head > 0 )) || refuse "no migrations under $MIGRATIONS_DIR — this is not a glasswell tree"
 
 [[ -d tests ]] || refuse "tests/ is missing — smoke.sh reads its openapi snapshot on the host"
 [[ -f web/dist/index.html ]] || refuse "web/dist is not built — run \`npm --prefix web run build\`"
@@ -73,7 +107,7 @@ for baked in VERSION CHANGELOG.md; do
 done
 
 printf 'host      %s\n' "$HOST"
-printf 'deploying %s (%s)\n' "$tag" "$(git rev-parse --short HEAD)"
+printf 'deploying %s (%s)\n' "$tag" "$short_commit"
 
 remote() {
     if (( dry_run )); then
@@ -129,13 +163,58 @@ fi
 step "5. config and units (idempotent)"
 remote "cd $DEPLOY_SRC/infra && ./install.sh" || refuse "install.sh failed"
 
+# install.sh places this only under --with-martin-config, which a routine deploy never
+# passes — so the live file drifted until verify.sh's equality check caught it (v0.21 saga).
+step "5b. martin tile config from the tree"
+remote "install -D -o root -g root -m 0644 $DEPLOY_SRC/infra/martin/config.yaml /etc/martin/config.yaml" \
+    || refuse "could not install /etc/martin/config.yaml"
+printf '  tree copy installed — the martin restart below adopts it\n'
+
+# Lineage stamps code_version from this; without it derive() falls back to pkg:0.1.0 and
+# code-addressed ids collide across releases (v0.30 saga's DeterminismViolation). Both units
+# source this file after app.env, so the deploy stamp survives owner edits there.
+step "5c. code identity for lineage"
+remote "printf 'GLASSWELL_CODE_VERSION=%s\nGLASSWELL_LOCKFILE_SHA256=%s\n' '$code_version' '$lock_here' > $CODE_ENV_FILE && chmod 0644 $CODE_ENV_FILE" \
+    || refuse "could not stamp $CODE_ENV_FILE"
+printf '  GLASSWELL_CODE_VERSION=%s\n' "$code_version"
+printf '  GLASSWELL_LOCKFILE_SHA256=%s...\n' "${lock_here:0:12}"
+
+code_env="GLASSWELL_CODE_VERSION=$code_version GLASSWELL_LOCKFILE_SHA256=$lock_here"
+head_query="sudo -u postgres psql -d glasswell -tAc \"select case when to_regclass('public.schema_migrations') is null then 0 else (select coalesce(max(version), 0) from public.schema_migrations) end\""
+integer_re='^[0-9]+$'
+
 if (( with_migrations )); then
     step "6. migrations, as the postgres superuser"
-    remote "sudo -u postgres $VENV/bin/glasswell-migrate \
-            --dsn 'postgresql:///glasswell?host=/var/run/postgresql'" || refuse "migrations failed"
+    remote "sudo -u postgres env $code_env $VENV/bin/glasswell-migrate \
+            --dsn '$SOCKET_DSN'" || refuse "migrations failed"
+elif (( skip_migrations )); then
+    step "6. migrations SKIPPED by explicit request"
+    printf '  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n'
+    printf '  !!  --skip-migrations: repo migration head is %03d and the database\n' "$repo_head"
+    printf '  !!  was NOT consulted — the deployed code may outrun its schema.\n'
+    printf '  !!  Runbook step 3 by hand, or redeploy with --with-migrations.\n'
+    printf '  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n'
 else
-    printf '\n   (migrations skipped — pass --with-migrations, or runbook step 3 by hand)\n'
+    step "6. migration head, repo vs database"
+    if (( dry_run )); then
+        remote "$head_query"
+        printf '  [dry-run] repo head is %03d; the live comparison needs a database\n' "$repo_head"
+    else
+        db_head="$(remote "$head_query")" || refuse "cannot read the schema_migrations head"
+        db_head="${db_head//[[:space:]]/}"
+        [[ $db_head =~ $integer_re ]] || refuse "schema_migrations head answered '$db_head', not a number"
+        if (( repo_head > db_head )); then
+            refuse "the repo carries migrations ahead of the database (repo head $repo_head, database $db_head) — pass --with-migrations to apply them, or --skip-migrations to state the gap and proceed"
+        fi
+        printf '  schema is current at head %03d\n' "$db_head"
+    fi
 fi
+
+# Idempotent by contract (seed_all's docstring), so every deploy runs it: a release whose new
+# conformance rules never reach the registry FK-fails its first ingest (v0.21 saga, item 2).
+step "6b. seed registries, as postgres"
+remote "sudo -u postgres env $code_env $VENV/bin/python -c 'import psycopg; from glasswell.seed import seed_all; connection = psycopg.connect(\"$SOCKET_DSN\"); print(\"   \", seed_all(connection)); connection.commit(); connection.close()'" \
+    || refuse "seed_all failed"
 
 # Both, as runbook step 4 has it. martin reads its source catalogue at startup and install.sh
 # above can have just placed infra/martin/config.yaml, so without this the new config is inert
