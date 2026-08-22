@@ -19,6 +19,15 @@ export interface LegendOptions {
   /** The classes to open with; absent means every one of them. */
   on?: ReadonlySet<string>;
   onFilter(on: Set<string>): void;
+  /** Whether the map-extent node opens on. Absent means on: counts cover the viewport. */
+  extentOn?: boolean;
+  onExtent?(on: boolean): void;
+}
+
+/** The counted population's own figure, kept beside the per-class counts it is the sum over. */
+export interface TotalCount {
+  wells: number | null;
+  handle: string | null;
 }
 
 /**
@@ -33,7 +42,12 @@ export function legendEnabled(search: string): boolean {
 export interface LegendHandle {
   element: HTMLElement;
   /** The wells the box holds, from `/v1/wells/status-summary` — not from what was drawn. */
-  setCounts(counts: Record<string, number>, zoom: number, handles?: Record<string, string>): void;
+  setCounts(
+    counts: Record<string, number>,
+    zoom: number,
+    handles?: Record<string, string>,
+    total?: TotalCount,
+  ): void;
   /** A request is out for the current viewport; the previous one's numbers are gone. */
   setPending(zoom: number): void;
   /** No count could be had. Every cell reads absent, and the key says why. */
@@ -83,6 +97,49 @@ export function createLegend(options: LegendOptions): LegendHandle {
 
   const wanted = (id: string): boolean => options.on?.has(id) ?? true;
 
+  // M1-2: the viewport as a named node in the filter list, above the classes it conjoins
+  // with. Ahead of them because it is the outer predicate — the population the class counts
+  // are of — and a tree reads root-first.
+  const extentRow = document.createElement("label");
+  extentRow.className = "gw-lg-extent";
+  extentRow.title = "Counts cover the wells the map view holds. Untick to count everything ingested.";
+
+  const extentBox = document.createElement("input");
+  extentBox.type = "checkbox";
+  extentBox.checked = options.extentOn ?? true;
+  extentBox.setAttribute("aria-label", "Count only the wells the map view holds");
+  extentRow.appendChild(extentBox);
+
+  const extentLabel = document.createElement("span");
+  extentLabel.className = "gw-lg-label";
+  extentLabel.textContent = "Map view";
+  extentRow.appendChild(extentLabel);
+
+  const extentCount = document.createElement("span");
+  extentCount.className = "gw-lg-count";
+  extentCount.textContent = ABSENT_MARK;
+  extentRow.appendChild(extentCount);
+
+  const extentHandle = provenanceHandle("Lineage for the well count");
+  extentRow.appendChild(extentHandle);
+  body.appendChild(extentRow);
+
+  // The population statement the off state owes the reader: without it every count on the
+  // key silently widens from the canvas to two basins.
+  const scope = document.createElement("p");
+  scope.className = "gw-lg-scope";
+  scope.hidden = extentBox.checked;
+  scope.textContent = "Counting every ingested well — the map view is not narrowing these numbers.";
+  body.appendChild(scope);
+
+  // The joins, visible (M1-2): the extent node is ANDed with the status predicate, and the
+  // status rows underneath are one disjunction, not ten conjuncts.
+  const join = document.createElement("p");
+  join.className = "gw-lg-join";
+  join.textContent = "and · any of";
+  join.title = "A counted well is inside the map view (while it is on) and carries any status left ticked.";
+  body.appendChild(join);
+
   const rows = new Map<string, HTMLElement>();
   for (const status of STATUS_CLASSES) {
     rows.set(status.id, appendRow(body, status, wanted(status.id)));
@@ -125,12 +182,15 @@ export function createLegend(options: LegendOptions): LegendHandle {
    * Collapsed, the key is a pill with no rows on it — and with the filter now surviving a
    * reload, a reader can arrive at a map missing classes with nothing on the canvas saying
    * so. The count is that statement, and it is why the pill is not silent about a filter.
+   * The extent node gets the same disclosure: a collapsed key over counts that cover two
+   * basins rather than the canvas must say so on the pill.
    */
   function syncTitle(): void {
     const rendered = listed();
     const count = rendered.filter(checked).length;
-    const total = rendered.length;
-    title.textContent = count === total ? "Well status" : `Well status · ${count}/${total}`;
+    const base =
+      count === rendered.length ? "Well status" : `Well status · ${count}/${rendered.length}`;
+    title.textContent = extentBox.checked ? base : `${base} · everywhere`;
   }
 
   const report = (): void => {
@@ -159,7 +219,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
 
   element.addEventListener("click", (event) => {
     // A filter row and the bulk control are controls, not the expand target.
-    if ((event.target as HTMLElement).closest(".gw-lg-row, .gw-lg-actions")) return;
+    if ((event.target as HTMLElement).closest(".gw-lg-row, .gw-lg-extent, .gw-lg-actions")) return;
     const open = element.classList.toggle("gw-open");
     title.setAttribute("aria-expanded", String(open));
     actions.hidden = !open;
@@ -170,9 +230,19 @@ export function createLegend(options: LegendOptions): LegendHandle {
     report();
   });
 
+  extentBox.addEventListener("change", () => {
+    scope.hidden = extentBox.checked;
+    syncTitle();
+    // The drawn-versus-in-view line compares the canvas with the counted population; with the
+    // node off the population is not "in view" and the comparison would be a false sentence.
+    renderPartial();
+    options.onExtent?.(extentBox.checked);
+  });
+
   let mode: CountMode = "ready";
   let counts: Record<string, number> = {};
   let handles: Record<string, string> = {};
+  let totalCount: TotalCount | null = null;
   let drawn: number | null = null;
   let zoomNow = 0;
 
@@ -182,6 +252,13 @@ export function createLegend(options: LegendOptions): LegendHandle {
     const count = counts[id];
     // Absent, not zero: a class the box does not hold has no count to report.
     return count === undefined ? ABSENT_MARK : NUMBER.format(count);
+  }
+
+  function extentCellText(): string {
+    if (mode === "pending") return PENDING_MARK;
+    if (mode === "unavailable") return ABSENT_MARK;
+    const wells = totalCount?.wells;
+    return wells === null || wells === undefined ? ABSENT_MARK : NUMBER.format(wells);
   }
 
   function renderRows(): void {
@@ -211,6 +288,11 @@ export function createLegend(options: LegendOptions): LegendHandle {
         row.title = status.note;
       }
     }
+    extentCount.textContent = extentCellText();
+    const population = mode === "ready" ? (totalCount?.handle ?? null) : null;
+    extentHandle.hidden = population === null;
+    extentHandle.dataset["handle"] = population ?? "";
+    extentHandle.title = population ? `Show where this count came from: ${population}` : "";
     fault.hidden = mode !== "unavailable";
     fault.textContent = mode === "unavailable" ? FAULT_COPY : "";
   }
@@ -224,7 +306,9 @@ export function createLegend(options: LegendOptions): LegendHandle {
     const inView = [...rows]
       .filter(([, row]) => checked(row))
       .reduce((sum, [id]) => sum + (counts[id] ?? 0), 0);
-    if (mode !== "ready" || drawn === null || inView === 0 || drawn >= inView) {
+    // With the extent node off, the counts are not "in view" and the comparison with the
+    // canvas would be false on its face; the scope line above carries the statement instead.
+    if (!extentBox.checked || mode !== "ready" || drawn === null || inView === 0 || drawn >= inView) {
       partial.hidden = true;
       partial.textContent = "";
       return;
@@ -248,7 +332,8 @@ export function createLegend(options: LegendOptions): LegendHandle {
     }
     note.appendChild(
       document.createTextNode(
-        ". Laterals are ND DMR and TX RRC GIS bore geometry — not a directional survey trace.",
+        ". Laterals are ND DMR and TX RRC GIS bore geometry — not a directional survey trace." +
+          " The orchid line is that trace: the bore path ND filed as survey stations.",
       ),
     );
   }
@@ -257,10 +342,12 @@ export function createLegend(options: LegendOptions): LegendHandle {
     next: Record<string, number>,
     zoom: number,
     derivations?: Record<string, string>,
+    total?: TotalCount,
   ): void {
     mode = "ready";
     counts = next;
     handles = derivations ?? {};
+    totalCount = total ?? null;
     zoomNow = zoom;
     const unmapped = rows.get(UNMAPPED_STATUS.id);
     if (counts[UNMAPPED_STATUS.id] !== undefined && unmapped && unmapped.parentNode !== body) {
@@ -275,6 +362,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
     mode = next;
     counts = {};
     handles = {};
+    totalCount = null;
     zoomNow = zoom;
     render();
   }
@@ -351,14 +439,21 @@ function buildRow(status: StatusClass, on: boolean): HTMLElement {
   count.textContent = ABSENT_MARK;
   row.appendChild(count);
 
-  // The count is a served figure now, so it carries the app's own provenance affordance and
-  // raises the one event main.ts already opens the drawer on.
+  row.appendChild(provenanceHandle(`Lineage for the ${status.label} count`));
+  return row;
+}
+
+/**
+ * The count is a served figure, so it carries the app's own provenance affordance and raises
+ * the one event main.ts already opens the drawer on.
+ */
+function provenanceHandle(description: string): HTMLButtonElement {
   const handle = document.createElement("button");
   handle.type = "button";
   handle.className = "gw-handle gw-lg-handle";
   handle.hidden = true;
   handle.textContent = "⌾";
-  handle.setAttribute("aria-label", `Lineage for the ${status.label} count`);
+  handle.setAttribute("aria-label", description);
   handle.addEventListener("click", (event) => {
     // Inside a <label>: without this the browser forwards the activation to the checkbox, and
     // asking where a number came from would switch its class off. happy-dom does not implement
@@ -371,6 +466,5 @@ function buildRow(status: StatusClass, on: boolean): HTMLElement {
       );
     }
   });
-  row.appendChild(handle);
-  return row;
+  return handle;
 }

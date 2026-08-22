@@ -33,6 +33,7 @@ import {
   retainVintage,
 } from "./counts.ts";
 import type { Bbox, CountsState, WellStatusSummary } from "./counts.ts";
+import { EXTENT_PARAM, countedBbox, extentFilterOn } from "./extent.ts";
 import { createHoverCard } from "./hover-card.ts";
 import { createLayerPanel } from "./layer-panel.ts";
 import { createLegend, legendEnabled } from "./legend.ts";
@@ -225,6 +226,9 @@ export function createMap(
     filterableStatusIds(),
   );
   const opacities = new Map(LAYERS.map((layer) => [layer.id, layer.opacity]));
+  // The URL is the extent predicate's only home (M1-2): a shared link reconstructs the
+  // population, and no session state can disagree with what the link says.
+  let extentOn = extentFilterOn(window.location.search);
   // Built once: `zoom` fires on every animation frame of a pinch, and the gated set is a
   // property of the style, not of the viewport.
   const statusGated = statusStyledLayerIds();
@@ -238,6 +242,14 @@ export function createMap(
       writeCapabilitySet(STATUS_STORAGE_KEY, statuses, filterableStatusIds());
       applyStatusFilter();
       invalidateDrawn();
+    },
+    extentOn,
+    // The canvas does not move — it is the viewport either way. What moves is the question
+    // the counts ask, so only the counts are re-asked.
+    onExtent: (next) => {
+      extentOn = next;
+      setUrlParam(EXTENT_PARAM, next ? null : "0");
+      refreshCounts();
     },
   });
 
@@ -341,7 +353,9 @@ export function createMap(
    */
   function refreshCounts(): void {
     panel.setZoom(map.getZoom());
-    const bbox = viewportBbox();
+    // The counted population, not always the viewport: with the extent node off the counts
+    // cover everything ingested, and the crossing has to name that same population.
+    const bbox = countedBbox(extentOn, viewportBbox());
     // The crossing narrows by the box, so it is rebuilt with the box and not with the answer:
     // a reader who pans and clicks before the counts settle must not get the last viewport.
     panel.setCrossing(bbox, resolvedVintage);
@@ -387,7 +401,10 @@ export function createMap(
     }
     countsFailing = false;
     panel.setCrossing(state.bbox, resolvedVintage);
-    legend.setCounts(state.counts, zoom, state.handles);
+    legend.setCounts(state.counts, zoom, state.handles, {
+      wells: state.total,
+      handle: state.totalHandle,
+    });
     legend.setVocabulary(state.vocabulary);
     refreshDrawn();
   }

@@ -151,6 +151,26 @@ describe("what the map remembers about the selected well", () => {
     ]);
   });
 
+  it("skips the source that vanished between the write and the removal", () => {
+    // DR-81: a source removed without a style swap — removeSource, not setStyle — is a route
+    // on which forget() is never called, so the removal pass walks a written reference whose
+    // source is gone. Removing against it is N3's uncaught TypeError again; the hasSource
+    // guard on the removal loop is what stands between them.
+    const stub = target();
+    const selection = createSelection(refsFor, stub.gateway);
+    selection.select("3305310451");
+    stub.calls.length = 0;
+    stub.clear();
+    stub.add("nd_wells");
+    stub.add("nd_laterals");
+    selection.select(null);
+
+    expect(stub.calls).toEqual([
+      "remove nd_wells/3305310451",
+      "remove nd_laterals/3305310451",
+    ]);
+  });
+
   it("skips the sources a style does not carry and paints the ones it does", () => {
     const stub = target(["nd_wells"]);
     const selection = createSelection(refsFor, stub.gateway);
