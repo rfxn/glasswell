@@ -77,7 +77,9 @@ prune-test-volumes:
 	-@$(DOCKER) volume prune -af --filter label=$(TEST_LABEL) 2>/dev/null | tail -1  # no docker is not a test failure
 
 # Its own npm project on purpose: playwright-core must not enter the web bundle's lockfile.
+# The guard suite runs first, browserless and install-free, so it still runs when smoke skips.
 test-e2e:
+	node --test tests/e2e
 	@[ -d tests/e2e/node_modules ] || npm --prefix tests/e2e ci --no-audit --no-fund
 	node tests/e2e/smoke.mjs
 

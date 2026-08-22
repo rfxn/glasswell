@@ -4,9 +4,79 @@
 //
 // Import-safe: nothing here touches the filesystem, the network or playwright until a
 // function is called, so smoke.mjs can import it before deciding whether to skip.
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 
 export const PLAYWRIGHT_CACHE = "/root/.cache/ms-playwright";
+
+export const KEY_HEADER = "X-Glasswell-Key";
+const KEY_RULE =
+  "the owner key travels only as the X-Glasswell-Key header, read from GLASSWELL_KEY_FILE " +
+  "or GLASSWELL_OWNER_KEY — never a script argument, never any part of a url";
+
+export function baseUrl() {
+  // GW_BASE is the retired name, still honoured so an old invocation targets what it names.
+  return (process.env.GLASSWELL_BASE_URL ?? process.env.GW_BASE ?? "https://glasswell.lab.rpx.sh")
+    .replace(/\/$/, "");
+}
+
+/** The one way in: a key file named by GLASSWELL_KEY_FILE, else GLASSWELL_OWNER_KEY. */
+export function ownerKey() {
+  const file = process.env.GLASSWELL_KEY_FILE;
+  const key = (file ? readFileSync(file, "utf8") : (process.env.GLASSWELL_OWNER_KEY ?? "")).trim();
+  return key || null;
+}
+
+/** Returns the key after refusing to run with one visible in process.argv. */
+export function keyGuard() {
+  const key = ownerKey();
+  if (key && process.argv.some((argument) => argument.includes(key)))
+    throw new Error(`owner key found in process.argv — ${KEY_RULE}`);
+  return key;
+}
+
+/** Refuses any navigation target carrying the key (case-insensitively); unchanged otherwise. */
+export function guardTarget(url) {
+  const key = ownerKey();
+  if (key && String(url).toLowerCase().includes(key.toLowerCase()))
+    throw new Error(`owner key found in a target url — ${KEY_RULE}`);
+  return url;
+}
+
+export function redact(text) {
+  const key = ownerKey();
+  if (!key) return String(text);
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return String(text).replace(new RegExp(escaped, "gi"), "REDACTED");
+}
+
+export function originOf(url) {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+// Route-scoped rather than extraHTTPHeaders: a direct off-origin request gets no header. A
+// same-origin 302 leaving the origin DOES re-attach it on the redirect leg (Chromium follows
+// without re-routing); instrumentedPage journals that shape — a detector, not a preventer —
+// and the served API issues no redirects at all.
+export async function authenticate(context, { origin = new URL(baseUrl()).origin } = {}) {
+  const key = keyGuard();
+  if (!key) throw new Error("no owner key (set GLASSWELL_KEY_FILE or GLASSWELL_OWNER_KEY)");
+  await context.route("**/*", (route) => {
+    const request = route.request();
+    let sameOrigin = false;
+    try {
+      sameOrigin = new URL(request.url()).origin === origin;
+    } catch {
+      // unparseable scheme (about:, data:) is by definition not the target origin
+    }
+    if (sameOrigin)
+      return route.continue({ headers: { ...request.headers(), [KEY_HEADER.toLowerCase()]: key } });
+    return route.continue();
+  });
+}
 
 // The DIR-11 ladder. Gates screenshot at three or more of these.
 export const BREAKPOINTS = [
@@ -30,10 +100,6 @@ export function chromeExecutable() {
   return null;
 }
 
-export function redactor(key) {
-  return (text) => (key ? String(text).replaceAll(key, "REDACTED") : String(text));
-}
-
 export async function launch({ executablePath = chromeExecutable(), args = [] } = {}) {
   const { chromium } = await import("playwright-core");
   if (!executablePath) throw new Error("no chromium build found (set GW_CHROME)");
@@ -44,16 +110,29 @@ export async function launch({ executablePath = chromeExecutable(), args = [] } 
 }
 
 // A page whose journal answers the questions every gate asks: page errors, console noise,
-// non-2xx responses, tile and API traffic, and whether the key ever left the fragment.
-export async function instrumentedPage(browser, { viewport, dsf, key = "", contextOpts } = {}) {
+// non-2xx responses, tile and API traffic, and whether the key ever reached a url.
+// `auth: true` (the default) injects the key header on every same-origin request.
+export async function instrumentedPage(browser, { viewport, dsf, auth = true, origin, contextOpts } = {}) {
   const context = await browser.newContext({
     viewport: viewport ?? { width: 1600, height: 1000 },
     deviceScaleFactor: dsf ?? 1,
     ...(contextOpts ?? {}),
   });
+  if (auth) await authenticate(context, origin ? { origin } : {});
   const page = await context.newPage();
-  const redact = redactor(key);
-  const journal = { pageerror: [], console: [], nonok: [], tiles: [], api: [], sentKey: [] };
+  const key = keyGuard();
+  const rawGoto = page.goto.bind(page);
+  page.goto = async (url, options) => rawGoto(guardTarget(url), options);
+  const targetOrigin = origin ?? originOf(baseUrl());
+  const journal = {
+    pageerror: [],
+    console: [],
+    nonok: [],
+    tiles: [],
+    api: [],
+    sentKey: [],
+    offOriginRedirects: [],
+  };
   page.on("pageerror", (error) => journal.pageerror.push(redact(error.message)));
   page.on("console", (message) => {
     if (message.type() === "error" || message.type() === "warning")
@@ -61,6 +140,9 @@ export async function instrumentedPage(browser, { viewport, dsf, key = "", conte
   });
   page.on("request", (request) => {
     if (key && request.url().includes(key)) journal.sentKey.push(redact(request.url()));
+    const prior = request.redirectedFrom();
+    if (prior && originOf(prior.url()) === targetOrigin && originOf(request.url()) !== targetOrigin)
+      journal.offOriginRedirects.push(redact(`${prior.url()} -> ${request.url()}`));
   });
   page.on("response", (response) => {
     const url = response.url();

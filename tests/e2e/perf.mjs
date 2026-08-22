@@ -3,11 +3,11 @@
 // interaction; the intervals are reported as p50/p95/max and a count of frames over 100 ms,
 // over N runs, because a single run is an anecdote.
 //
-//   GLASSWELL_BASE_URL=http://127.0.0.1:8161 GLASSWELL_OWNER_KEY=$(cat /tmp/gw-c11/owner.key) \
+//   GLASSWELL_BASE_URL=http://127.0.0.1:8161 GLASSWELL_KEY_FILE=/tmp/gw-c11/owner.key \
 //     GW_RUNS=5 node tests/e2e/perf.mjs
 //
 // Read-only, like smoke.mjs: it navigates, scrolls and clicks; it never writes through the
-// API. The key rides the fragment and is redacted out of everything printed.
+// API. The key rides the X-Glasswell-Key header only and is redacted out of everything printed.
 //
 // The numbers this prints are of the instance it was pointed at. Against a seeded harness they
 // are harness numbers and web/PERF.md labels them as such — the deployed instance answers a
@@ -20,15 +20,15 @@ import {
   chromeExecutable,
   frameProbe,
   instrumentedPage,
+  keyGuard,
   launch,
   mapReady,
   readFrames,
-  redactor,
+  redact,
 } from "./lib.mjs";
 
 const BASE = (process.env.GLASSWELL_BASE_URL ?? process.env.GW_BASE ?? "http://127.0.0.1:8161")
   .replace(/\/$/, "");
-const KEY = (process.env.GLASSWELL_OWNER_KEY ?? process.env.GW_KEY ?? "").trim();
 const RUNS = Number(process.env.GW_RUNS ?? 5);
 const AS_OF = process.env.GW_AS_OF ?? "2026-08-01";
 const JSON_OUT = process.env.GW_PERF_JSON ?? "";
@@ -37,7 +37,6 @@ const REQUIRE = process.env.GLASSWELL_REQUIRE_E2E === "1";
 // run may be read as a verdict on it.
 const BUDGET = { p95: 22, max: 100 };
 const VIEWPORT = BREAKPOINTS[0];
-const redact = redactor(KEY);
 
 function unavailable(reason) {
   if (REQUIRE) {
@@ -49,7 +48,7 @@ function unavailable(reason) {
 }
 
 if (!chromeExecutable()) unavailable("no chromium build found (set GW_CHROME)");
-if (!KEY) unavailable("no owner key (set GLASSWELL_OWNER_KEY)");
+if (!keyGuard()) unavailable("no owner key (set GLASSWELL_KEY_FILE or GLASSWELL_OWNER_KEY)");
 
 function quantile(sorted, fraction) {
   if (sorted.length === 0) return NaN;
@@ -203,22 +202,22 @@ for (const scenario of SCENARIOS) {
   for (let run = 0; run < RUNS; run += 1) {
     const { context, page, journal } = await instrumentedPage(browser, {
       viewport: scenario.viewport ?? VIEWPORT,
-      key: KEY,
+      origin: new URL(BASE).origin,
     });
     const url = scenario.url();
     let frames;
     if (scenario.probeAcrossEntry) {
       // Installed before the document exists, so the sampler survives the navigation the
-      // measurement is of. The key is planted first, on its own load, because the measured
-      // navigation has to be an authenticated one rather than a key panel.
-      await page.goto(`${BASE}/?view=map#key=${KEY}`, { waitUntil: "load" });
+      // measurement is of. The warm-up load stays: the measured navigation must start from
+      // a booted app, and every request already carries the key header.
+      await page.goto(`${BASE}/?view=map`, { waitUntil: "load" });
       await page.waitForTimeout(1500);
       await page.addInitScript({ content: `(${FRAME_SAMPLER})()` });
       await scenario.act(page, url);
       await page.waitForTimeout(1500);
       frames = await readFrames(page);
     } else {
-      await page.goto(`${url}#key=${KEY}`, { waitUntil: "load" });
+      await page.goto(url, { waitUntil: "load" });
       await scenario.settle(page);
       frames = await frameProbe(page, () => scenario.act(page), 1500);
     }
