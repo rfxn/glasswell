@@ -42,7 +42,14 @@ from glasswell.api.pagination import (
 from glasswell.api.principal import Principal as ResolvedPrincipal
 from glasswell.api.responses import EnvelopeModel, enveloped, iso
 from glasswell.lineage.envelope import LINEAGE_SIDECAR, _explain_link
-from glasswell.lineage.explain import MAX_DEPTH, MAX_HANDLES, resolve_chains, to_json
+from glasswell.lineage.explain import (
+    DOT_MEDIA_TYPE,
+    MAX_DEPTH,
+    MAX_HANDLES,
+    resolve_chains,
+    to_dot,
+    to_json,
+)
 from glasswell.lineage.fetch import resolve_raw_root
 from glasswell.lineage.ids import format_handle
 
@@ -335,13 +342,62 @@ def _depth(raw: str) -> int | Literal["full"]:
         " file. Up to twenty handles per request and eight levels deep; both caps are"
         " refused rather than clamped. A handle that cannot be resolved returns"
         " `lineage_unresolved` naming the last node that did resolve — never a bare 404."
+        " `format=dot` returns the same resolution as a Graphviz digraph instead of JSON:"
+        " derivations, manifests and the conformance rules they cited as nodes, and every"
+        " edge labelled with the role the input played."
         + CONTENT_ADDRESS_NOTE
     ),
     response_model=EnvelopeModel[Chains],
-    openapi_extra=request_example(query={"h": [EXAMPLE_DERIVATION_ID], "depth": "full"}),
-    responses=problem_responses(
-        "lineage_unresolved", "selector_ambiguous", "validation_failed", "service_degraded"
-    ),
+    openapi_extra={
+        **request_example(query={"h": [EXAMPLE_DERIVATION_ID], "depth": "full"}),
+        **semantics(
+            h={
+                "glossary": "gt_derivation_handle",
+                "so": (
+                    "Repeat it to resolve up to twenty chains in one call, which is what keeps"
+                    " a whole response's provenance inside the S9 one-call budget. Over twenty"
+                    " is refused rather than trimmed, so a caller never gets a partial answer"
+                    " that looks complete."
+                ),
+            },
+            depth={
+                "glossary": "gt_derivation_handle",
+                "so": (
+                    "How far back the walk goes before it stops. `full` means the maximum this"
+                    " endpoint allows, not 'however far it takes' — a chain that stopped short"
+                    " reports `truncated` rather than presenting a partial graph as a whole one."
+                ),
+            },
+            format={
+                "so": (
+                    "`json` is the machine-readable chain an agent and an auditor read; `dot`"
+                    " is the same resolution as a Graphviz digraph, for a rendering tool or a"
+                    " drawer that wants a picture. Both come from one traversal, so they cannot"
+                    " disagree about what the chain is."
+                ),
+            },
+        ),
+    },
+    responses={
+        **problem_responses(
+            "lineage_unresolved", "selector_ambiguous", "validation_failed", "service_degraded"
+        ),
+        200: {
+            "content": {
+                DOT_MEDIA_TYPE: {
+                    "schema": {"type": "string"},
+                    "example": (
+                        'digraph lineage {\n  rankdir="LR";\n'
+                        '  "drv_7QK3M2XR4V9B" [type="derivation", shape=box,'
+                        ' label="alloc.apply\\nmarts.well_month_allocated"];\n'
+                        '  "man_9c3f" [type="manifest", shape=note,'
+                        ' label="tx_pdq_dsv\\nPDQ_DSV.zip"];\n'
+                        '  "drv_7QK3M2XR4V9B" -> "man_9c3f" [role="primary"];\n}\n'
+                    ),
+                }
+            }
+        },
+    },
     dependencies=[
         Depends(removed_query_parameters(ref="use h, which is repeatable 1 to 20 per request"))
     ],
@@ -357,9 +413,15 @@ def get_explain(
         str, Query(description=f"Levels to walk: an integer up to {MAX_DEPTH}, or 'full'.")
     ] = "3",
     format: Annotated[
-        Literal["json"], Query(description="Response format. Only json ships in this slice.")
+        Literal["json", "dot"],
+        Query(
+            description=(
+                "Response format: the SB-07 §9.3 chain JSON, or a Graphviz DOT digraph of the"
+                " same resolution. Anything else is refused."
+            )
+        ),
     ] = "json",
-) -> JSONResponse:
+) -> Response:
     if len(h) > MAX_HANDLES:
         raise ProblemError(
             "validation_failed",
@@ -367,6 +429,8 @@ def get_explain(
             errors=[{"pointer": "/query/h", "code": "handle_cap", "detail": str(len(h))}],
         )
     chains = resolve_chains(connection, h, depth=_depth(depth))
+    if format == "dot":
+        return Response(to_dot(chains), media_type=DOT_MEDIA_TYPE)
     return enveloped(request, {"chains": [to_json(chain) for chain in chains]})
 
 

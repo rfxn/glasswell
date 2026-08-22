@@ -11,7 +11,7 @@ from fastapi import APIRouter, Path, Query, Request
 from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 
-from glasswell.api.deps import AsOf, Connection, Cursor, WellsLimit, rows
+from glasswell.api.deps import AsOf, Connection, Cursor, ExplainEffect, WellsLimit, rows
 from glasswell.api.errors import ProblemError, problem_responses
 from glasswell.api.examples import (
     EXAMPLE_API10,
@@ -30,7 +30,7 @@ from glasswell.api.pagination import (
     page,
     query_fingerprint,
 )
-from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, iso
+from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, inline_for, iso
 from glasswell.lengths import STORAGE_EPSG, resolve_length_method
 from glasswell.lineage.conformance import lease_reporting_rule
 from glasswell.lineage.envelope import Figure, figure
@@ -890,6 +890,25 @@ def _summary_warnings(
                     " disclosed as geometry without a well row."
                 ),
             },
+            explain={
+                "glossary": "gt_derivation_handle",
+                "so": (
+                    "Inlines the chain behind every count under `_explain`, which is the one"
+                    " surface where following each `d` by hand is impractical: a wide box"
+                    " produces a count per class per basin, and each is a separate call."
+                    " Where there are more counts than one /v1/explain call carries handles,"
+                    " the response says how many it left out rather than trimming quietly."
+                ),
+            },
+            explain_depth={
+                "glossary": "gt_derivation_handle",
+                "so": (
+                    "A count resolves to the status promotion and the file the statuses came"
+                    " from, so three levels reaches the manifest here. Raising it costs one"
+                    " graph read per level per count, which on this operation is the widest"
+                    " multiplier on the surface."
+                ),
+            },
         ),
     },
     responses=problem_responses("validation_failed", "service_degraded"),
@@ -900,6 +919,7 @@ def get_well_status_summary(
     bbox: Annotated[
         str, Query(description="minx,miny,maxx,maxy in WGS84. Required; there is no cap.")
     ],
+    explain: ExplainEffect,
     as_of: AsOf = None,
 ) -> JSONResponse:
     envelope = _status_bbox(bbox)
@@ -946,6 +966,7 @@ def get_well_status_summary(
             counted, orphans=orphans, states=unregistered, handles=_handles(data)
         ),
         links=links,
+        explain=inline_for(connection, explain),
     )
 
 
@@ -961,13 +982,34 @@ def get_well_status_summary(
         " production, forecasts or economics."
     ),
     response_model=EnvelopeModel[WellDetail],
-    openapi_extra=request_example(path={"api10": EXAMPLE_API10}),
+    openapi_extra={
+        **request_example(path={"api10": EXAMPLE_API10}),
+        **semantics(
+            explain={
+                "glossary": "gt_derivation_handle",
+                "so": (
+                    "Resolves this header's figures — the lateral length and the total depth —"
+                    " to the geometry rows and the checksummed file behind them, in the"
+                    " request that served them. It is the `d` on each figure, already followed."
+                ),
+            },
+            explain_depth={
+                "glossary": "gt_derivation_handle",
+                "so": (
+                    "A header figure is one promotion away from its manifest, so the default"
+                    " three already terminates here. Depth matters on figures whose chain runs"
+                    " through a mart, and an inlined chain that stopped short says so itself."
+                ),
+            },
+        ),
+    },
     responses=problem_responses("not_found", "validation_failed", "service_degraded"),
 )
 def get_well(
     request: Request,
     connection: Connection,
     api10: Annotated[str, Path(description="Ten-digit API well number.", pattern=API10_PATTERN)],
+    explain: ExplainEffect,
     as_of: AsOf = None,
 ) -> JSONResponse:
     found = rows(
@@ -1077,4 +1119,5 @@ def get_well(
                 else {}
             ),
         },
+        explain=inline_for(connection, explain),
     )

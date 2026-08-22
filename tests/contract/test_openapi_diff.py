@@ -5,9 +5,10 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, Literal
 
 import pytest
+from fastapi import FastAPI, Query
 from fastapi.testclient import TestClient
 
 from tests.contract.openapi_diff import Change, breaking, classify, facts, main
@@ -234,6 +235,69 @@ def test_a_pattern_inside_an_anyof_branch_is_still_a_fact() -> None:
     assert [change.fact for change in breaking(before, after)] == [
         r"GET /v1/things ?limit =~ ^\d{4}-\d{2}$"
     ]
+
+
+def test_swapping_one_const_for_another_is_breaking_and_not_silence() -> None:
+    """The `pattern` blind spot again, one keyword over, found by DR-64.
+
+    A single-valued `Literal` renders as `const`, not `enum`. Before this kind existed the
+    differ produced no fact for it in either direction, so `const: "json"` becoming
+    `const: "dot"` — every caller sending the old value now gets a 422 — classified as *no
+    change at all*.
+    """
+    before = copy.deepcopy(BASE)
+    before["paths"]["/v1/things"]["get"]["parameters"][1]["schema"] = {
+        "type": "string",
+        "const": "json",
+    }
+    after = copy.deepcopy(before)
+    after["paths"]["/v1/things"]["get"]["parameters"][1]["schema"]["const"] = "dot"
+
+    assert [change.fact for change in breaking(before, after)] == [
+        "GET /v1/things ?kind is 'dot'"
+    ]
+
+
+def test_widening_a_const_into_an_enum_is_the_relaxation_it_looks_like() -> None:
+    """DR-64's own change: `Literal["json"]` becoming `Literal["json", "dot"]`. The verdict was
+    already `additive`, but it was reached by examining nothing — this is what makes it a
+    reading of the document rather than a gap in it."""
+    before = copy.deepcopy(BASE)
+    before["paths"]["/v1/things"]["get"]["parameters"][1]["schema"] = {
+        "type": "string",
+        "const": "json",
+    }
+    after = copy.deepcopy(before)
+    after["paths"]["/v1/things"]["get"]["parameters"][1]["schema"] = {
+        "type": "string",
+        "enum": ["json", "dot"],
+    }
+
+    assert breaking(before, after) == []
+    assert {change.kind for change in classify(before, after)} == {"const", "enum-value"}
+    assert breaking(after, before) != []
+
+
+def test_the_const_kind_reads_what_this_stack_actually_renders() -> None:
+    """A kind proven only against BASE is a kind that may see nothing in the real document.
+
+    The committed snapshot declares no `const` — DR-64 widened the last one into an enum — so
+    the grounding here is the generator rather than the artefact: pydantic renders a
+    single-valued `Literal` as `const`, and every future one-value parameter will arrive that
+    way. Asserting on the snapshot instead would have gone vacuous the moment it emptied.
+    """
+    application = FastAPI()
+
+    @application.get("/probe")
+    def probe(mode: Annotated[Literal["json"], Query(description="one value")] = "json") -> dict:
+        return {"mode": mode}
+
+    document = application.openapi()
+    parameter = document["paths"]["/probe"]["get"]["parameters"][0]
+
+    assert parameter["schema"]["const"] == "json"
+    assert "enum" not in parameter["schema"]
+    assert facts(document)["GET /probe ?mode is 'json'"].kind == "const"
 
 
 def test_the_pattern_kind_reads_the_document_this_product_actually_serves() -> None:

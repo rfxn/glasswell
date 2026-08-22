@@ -8,7 +8,8 @@ first, and SB-07 §10's naked-number harness walks the in-band form.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 from urllib.parse import quote
@@ -41,6 +42,27 @@ ENVELOPE_META_KEYS: tuple[str, ...] = (
 LINEAGE_SIDECAR = "_lineage"
 UNITS_SIDECAR = "_units"
 BASIS_SIDECAR = "_basis"
+EXPLAIN_BLOCK = "_explain"
+
+
+@dataclass(frozen=True, slots=True)
+class InlinedExplain:
+    """What a resolver hands back for SB-07 §9.2: the chains, and what would not resolve."""
+
+    chains: Mapping[str, Any] = field(default_factory=dict)
+    unresolved: Mapping[str, str] = field(default_factory=dict)
+
+
+ExplainInliner = Callable[[Sequence[str]], InlinedExplain]
+
+
+def inline_handles(handles: Sequence[str]) -> list[str]:
+    """The handles one `/v1/explain` call carries, in first-appearance order (SB-07 §9.4).
+
+    `links.explain` and `_explain` both draw from here so the response cannot advertise one
+    set of resolvable handles in the link and a different set in the block.
+    """
+    return list(dict.fromkeys(handles))[:MAX_HANDLES]
 
 
 class Figure(Frozen):
@@ -120,11 +142,15 @@ class Envelope(Frozen):
     meta: EnvelopeMeta
     links: Mapping[str, str | None]
     handles: Sequence[str] = ()
+    explain: Mapping[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return json_ready(
+        body = json_ready(
             {"data": self.data, "meta": self.meta.model_dump(), "links": dict(self.links)}
         )
+        if self.explain is not None:
+            body[EXPLAIN_BLOCK] = json_ready(dict(self.explain))
+        return body
 
 
 def _validate(
@@ -268,13 +294,25 @@ def attach_lineage(
     next_cursor: str | None = None,
     as_of_requested: str = "latest",
     deprecations: Sequence[Mapping[str, Any]] = (),
+    explain: ExplainInliner | None = None,
 ) -> Envelope:
-    """Serialize every figure and series in `data` and wrap it in the SB-04 §2.2 envelope."""
+    """Serialize every figure and series in `data` and wrap it in the SB-04 §2.2 envelope.
+
+    `explain` is SB-07 §9.2: given a resolver, the envelope gains `_explain` beside `data` and
+    nothing inside `data` moves. Absent, the response is the byte it was before the flag existed.
+    """
     handles: list[str] = []
     body = _walk(data, "", None, handles)
     resolved_links = {"self": None, "next": None, "explain": None, **dict(links or {})}
     if resolved_links["explain"] is None and handles:
         resolved_links["explain"] = _explain_link(handles)
+    collected = [_warning(item) for item in warnings]
+    inlined = None
+    if explain is not None:
+        selected = inline_handles(handles)
+        resolved = explain(selected)
+        inlined = dict(resolved.chains)
+        collected.extend(_explain_warnings(handles, selected, resolved))
     return Envelope(
         data=body,
         meta=EnvelopeMeta(
@@ -283,12 +321,51 @@ def attach_lineage(
             source_freshness=dict(source_freshness or {}),
             labels=dict(labels or {}),
             next_cursor=next_cursor,
-            warnings=[_warning(item) for item in warnings],
+            warnings=collected,
             deprecations=list(deprecations),
         ),
         links=resolved_links,
         handles=handles,
+        explain=inlined,
     )
+
+
+def _explain_warnings(
+    handles: Sequence[str], selected: Sequence[str], resolved: InlinedExplain
+) -> list[Mapping[str, Any]]:
+    """What `_explain` did not carry, with the count rather than an ellipsis."""
+    unique = list(dict.fromkeys(handles))
+    found: list[Mapping[str, Any]] = []
+    if len(unique) > len(selected):
+        found.append(
+            {
+                "code": "explain_inline_truncated",
+                "detail": (
+                    f"This response carries {len(unique)} handles and _explain inlines the"
+                    f" first {MAX_HANDLES}, so {len(unique) - MAX_HANDLES} are absent from it."
+                    " Every figure still resolves on its own: read the figure's `d` and call"
+                    " /v1/explain?h=<d>&depth=full. The cap is /v1/explain's own"
+                    " (SB-07 §9.4), not this operation's."
+                ),
+                "pointer": f"/{EXPLAIN_BLOCK}",
+            }
+        )
+    if resolved.unresolved:
+        named = "; ".join(
+            f"{handle} ({reason})" for handle, reason in sorted(resolved.unresolved.items())
+        )
+        found.append(
+            {
+                "code": "explain_unresolved",
+                "detail": (
+                    f"{len(resolved.unresolved)} of {len(selected)} handles did not resolve and"
+                    f" are absent from _explain: {named}. The response's values are unaffected;"
+                    " a handle that will not resolve is a lineage defect, not a serving one."
+                ),
+                "pointer": f"/{EXPLAIN_BLOCK}",
+            }
+        )
+    return found
 
 
 def _warning(item: Mapping[str, Any] | str) -> Mapping[str, Any]:
@@ -301,6 +378,5 @@ def _explain_link(handles: Sequence[str]) -> str:
     Cell handles carry `#`, so the value is percent-encoded: unencoded, a client following
     the link verbatim sends the selector and `depth` as a fragment the server never receives.
     """
-    unique = list(dict.fromkeys(handles))[:MAX_HANDLES]
-    query = "&".join(f"h={quote(handle, safe='')}" for handle in unique)
+    query = "&".join(f"h={quote(handle, safe='')}" for handle in inline_handles(handles))
     return f"/v1/explain?{query}&depth=full"
