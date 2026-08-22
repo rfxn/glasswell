@@ -144,6 +144,19 @@ step "7. restart"
 remote "systemctl restart glasswell-api" || refuse "glasswell-api did not restart"
 remote "systemctl restart martin" || refuse "martin did not restart"
 
+# uvicorn re-binds its unix socket after restart; verify.sh probes it immediately and a
+# not-yet-bound socket reads as six 000s (seen live on the v0.20 deploy). Wait for readiness.
+step "7b. wait for the api socket"
+ready=""
+for _ in $(seq 1 30); do
+    if remote "curl -sf -o /dev/null --unix-socket /run/glasswell/api.sock --max-time 2 http://localhost/healthz"; then
+        ready=1
+        break
+    fi
+    sleep 1
+done
+[[ -n "$ready" ]] || refuse "the api did not answer /healthz within 30s of restart"
+
 step "8. verify.sh"
 remote "$DEPLOY_SRC/infra/verify.sh"
 verify_status=$?
