@@ -33,7 +33,7 @@ from glasswell.api.pagination import (
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, inline_for, iso
 from glasswell.lengths import STORAGE_EPSG, resolve_length_method
 from glasswell.lineage.conformance import lease_reporting_rule
-from glasswell.lineage.envelope import Figure, figure
+from glasswell.lineage.envelope import Figure, distinct_handles, figure
 from glasswell.lineage.explain import MAX_HANDLES
 from glasswell.marts.tiles import TILE_BUFFER, TILE_EXTENT, TILE_MAX_ZOOM, WEB_MERCATOR
 from glasswell.units import metres_to_feet
@@ -763,14 +763,22 @@ def _summary_labels(basins: list[dict[str, Any]]) -> dict[str, str]:
 
 
 def _handles(node: Any) -> int:
-    """How many handles `links.explain` is being asked to carry, counted the way it counts."""
+    """How many handles `links.explain` is being asked to carry, counted by the selection that
+    builds it — a count taken any other way can disagree with the link about truncation."""
+    found: list[str] = []
+    _collect(node, found)
+    return len(distinct_handles(found))
+
+
+def _collect(node: Any, found: list[str]) -> None:
     if isinstance(node, Figure):
-        return 1
-    if isinstance(node, dict):
-        return sum(_handles(value) for value in node.values())
-    if isinstance(node, list):
-        return sum(_handles(value) for value in node)
-    return 0
+        found.append(node.handle)
+    elif isinstance(node, dict):
+        for value in node.values():
+            _collect(value, found)
+    elif isinstance(node, list):
+        for value in node:
+            _collect(value, found)
 
 
 def _summary_warnings(

@@ -600,6 +600,25 @@ class ProductionPools(BaseModel):
                     " requested stream keeps its row and loses the column."
                 ),
             },
+            explain={
+                "glossary": "gt_derivation_handle",
+                "so": (
+                    "Inlines the chain behind every pool column under `_explain`. ND files one"
+                    " workbook per month, so a pool column can carry a handle per point rather"
+                    " than one per series; where the response holds more handles than one"
+                    " /v1/explain call carries, it says how many it left out rather than"
+                    " trimming quietly."
+                ),
+            },
+            explain_depth={
+                "glossary": "gt_derivation_handle",
+                "so": (
+                    "A pool point resolves to its month's promotion and that month's workbook,"
+                    " so three levels reaches the manifest. The cost multiplies per pool, per"
+                    " stream and — under per-point handles — per month, so this is the surface"
+                    " where a shallower depth pays."
+                ),
+            },
         ),
     },
     responses=problem_responses(
@@ -610,6 +629,7 @@ def get_well_production_pools(
     request: Request,
     connection: Connection,
     api10: Annotated[str, Path(description="Ten-digit API well number.", pattern=API10_PATTERN)],
+    explain: ExplainEffect,
     as_of: AsOf = None,
     stream: Annotated[
         list[Literal["oil", "gas", "water"]] | None,
@@ -693,6 +713,7 @@ def get_well_production_pools(
             "production": f"/v1/wells/{api10}/production",
             "aggregation_rule": f"/v1/conformance/{ROLLUP_RULE}",
         },
+        explain=inline_for(connection, explain),
     )
 
 

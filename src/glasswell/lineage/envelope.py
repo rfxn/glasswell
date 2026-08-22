@@ -12,7 +12,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, urlsplit
 
 from pydantic import Field
 
@@ -56,13 +56,22 @@ class InlinedExplain:
 ExplainInliner = Callable[[Sequence[str]], InlinedExplain]
 
 
+def distinct_handles(handles: Sequence[str]) -> list[str]:
+    """The response's handle set, deduplicated in first-appearance order.
+
+    The one definition of "how many handles does this response carry" — a caller that counts
+    them any other way can disagree with the selection about whether anything was left out.
+    """
+    return list(dict.fromkeys(handles))
+
+
 def inline_handles(handles: Sequence[str]) -> list[str]:
     """The handles one `/v1/explain` call carries, in first-appearance order (SB-07 §9.4).
 
     `links.explain` and `_explain` both draw from here so the response cannot advertise one
     set of resolvable handles in the link and a different set in the block.
     """
-    return list(dict.fromkeys(handles))[:MAX_HANDLES]
+    return distinct_handles(handles)[:MAX_HANDLES]
 
 
 class Figure(Frozen):
@@ -265,10 +274,15 @@ def _walk(node: Any, path: str, sidecars: _Sidecars | None, handles: list[str]) 
     if isinstance(node, Mapping):
         # Sidecars hang off the outermost object of a branch; a list has no key to hold them.
         host = sidecars or _Sidecars()
-        body = {
-            str(key): _walk(value, _join(path, str(key), sidecars), host, handles)
-            for key, value in node.items()
-        }
+        body: dict[str, Any] = {}
+        for key, value in node.items():
+            name = str(key)
+            if name == LINEAGE_SIDECAR and isinstance(value, Mapping):
+                # A sidecar the router wrote itself: its handles are the response's too.
+                handles.extend(str(handle) for handle in value.values())
+                body[name] = dict(value)
+                continue
+            body[name] = _walk(value, _join(path, name, sidecars), host, handles)
         return body if sidecars is not None else host.apply(body)
     if isinstance(node, (list, tuple)):
         return [
@@ -295,16 +309,30 @@ def attach_lineage(
     as_of_requested: str = "latest",
     deprecations: Sequence[Mapping[str, Any]] = (),
     explain: ExplainInliner | None = None,
+    extra_handles: Sequence[str] = (),
 ) -> Envelope:
     """Serialize every figure and series in `data` and wrap it in the SB-04 §2.2 envelope.
 
     `explain` is SB-07 §9.2: given a resolver, the envelope gains `_explain` beside `data` and
     nothing inside `data` moves. Absent, the response is the byte it was before the flag existed.
+    `extra_handles` is for a response whose subject is itself a derivation: the record spells no
+    figure, so the walk finds nothing, but the handle is still the response's to advertise.
     """
+    supplied = dict(links or {})
+    if _names_handles(supplied.get("explain")):
+        # One carrier: a router-authored link and inline_handles() were shown to disagree
+        # (gate-apix ADV-1). Pass extra_handles and let the envelope build the link.
+        raise ValueError(
+            "links.explain is envelope-authored, from the same selection _explain inlines;"
+            " pass the handles via data or extra_handles, never a hand-built link"
+        )
     handles: list[str] = []
     body = _walk(data, "", None, handles)
-    resolved_links = {"self": None, "next": None, "explain": None, **dict(links or {})}
-    if resolved_links["explain"] is None and handles:
+    handles.extend(extra_handles)
+    resolved_links = {"self": None, "next": None, "explain": None, **supplied}
+    if handles:
+        # A handle-less template (`/v1/explain?h=`, the service index's) may pass through,
+        # but where the response carries handles the envelope's own link is the only carrier.
         resolved_links["explain"] = _explain_link(handles)
     collected = [_warning(item) for item in warnings]
     inlined = None
@@ -334,7 +362,7 @@ def _explain_warnings(
     handles: Sequence[str], selected: Sequence[str], resolved: InlinedExplain
 ) -> list[Mapping[str, Any]]:
     """What `_explain` did not carry, with the count rather than an ellipsis."""
-    unique = list(dict.fromkeys(handles))
+    unique = distinct_handles(handles)
     found: list[Mapping[str, Any]] = []
     if len(unique) > len(selected):
         found.append(
@@ -370,6 +398,15 @@ def _explain_warnings(
 
 def _warning(item: Mapping[str, Any] | str) -> Mapping[str, Any]:
     return {"code": "warning", "detail": item} if isinstance(item, str) else dict(item)
+
+
+def _names_handles(link: str | None) -> bool:
+    """Whether a supplied explain link claims a handle set — the thing only the envelope may
+    author. A bare template pointing at the resolver claims nothing and may pass."""
+    if link is None:
+        return False
+    query = urlsplit(link).query
+    return any(value for key, value in parse_qsl(query, keep_blank_values=True) if key == "h")
 
 
 def _explain_link(handles: Sequence[str]) -> str:

@@ -11,13 +11,20 @@ from datetime import date, datetime
 from pathlib import Path as PathType
 from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal
-from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Path, Query, Request
 from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse, Response
 
-from glasswell.api.deps import AsOf, Connection, Cursor, Principal, SpineLimit, rows
+from glasswell.api.deps import (
+    AsOf,
+    Connection,
+    Cursor,
+    ExplainEffect,
+    Principal,
+    SpineLimit,
+    rows,
+)
 from glasswell.api.errors import ProblemError, problem_responses, removed_query_parameters
 from glasswell.api.examples import (
     CONTENT_ADDRESS_NOTE,
@@ -40,8 +47,8 @@ from glasswell.api.pagination import (
     query_fingerprint,
 )
 from glasswell.api.principal import Principal as ResolvedPrincipal
-from glasswell.api.responses import EnvelopeModel, enveloped, iso
-from glasswell.lineage.envelope import LINEAGE_SIDECAR, _explain_link
+from glasswell.api.responses import EnvelopeModel, enveloped, inline_for, iso
+from glasswell.lineage.envelope import LINEAGE_SIDECAR
 from glasswell.lineage.explain import (
     DOT_MEDIA_TYPE,
     MAX_DEPTH,
@@ -446,15 +453,37 @@ def get_explain(
         + CONTENT_ADDRESS_NOTE
     ),
     response_model=EnvelopeModel[Derivation],
-    openapi_extra=request_example(
-        path={"derivation_id": EXAMPLE_DERIVATION_ID}, query={"include": ["inputs", "rules"]}
-    ),
+    openapi_extra={
+        **request_example(
+            path={"derivation_id": EXAMPLE_DERIVATION_ID}, query={"include": ["inputs", "rules"]}
+        ),
+        **semantics(
+            explain={
+                "glossary": "gt_derivation_handle",
+                "so": (
+                    "Inlines this record's own chain under `_explain` — the record states what"
+                    " ran, the chain states what that ran on, back to the manifests. One call"
+                    " instead of following links.explain, on the surface whose subject already"
+                    " is a derivation."
+                ),
+            },
+            explain_depth={
+                "glossary": "gt_derivation_handle",
+                "so": (
+                    "This record is the chain's first node, so the default of three reaches two"
+                    " levels behind what the page already shows. A fetch derivation terminates"
+                    " at depth one; deep mart chains are the case for raising it."
+                ),
+            },
+        ),
+    },
     responses=problem_responses("not_found", "validation_failed", "service_degraded"),
 )
 def get_derivation(
     request: Request,
     connection: Connection,
     derivation_id: Annotated[str, Path(description="Content-addressed derivation id.")],
+    explain: ExplainEffect,
     include: Annotated[
         list[Literal["inputs", "rules"]] | None,
         Query(description="Expand the derivation's inputs or its cited rules; repeatable."),
@@ -508,7 +537,8 @@ def get_derivation(
         request,
         data,
         as_of=row["created_vintage"],
-        links={"explain": f"/v1/explain?h={quote(derivation_id, safe='')}&depth=full"},
+        extra_handles=[derivation_id],
+        explain=inline_for(connection, explain),
     )
 
 
@@ -917,18 +947,6 @@ def _vintage(row: dict[str, Any]) -> dict[str, Any]:
     return record
 
 
-def _vintage_explain(records: list[dict[str, Any]]) -> str | None:
-    """The S9 one-call path for a sidecar-carried page, read back off the sidecars so it
-    cannot advertise a handle the records do not carry.
-
-    `attach_lineage` builds this itself for figures and series; a sidecar the router wrote
-    never reaches its walk, so the link is built here — from the spine's own function,
-    which owns the percent-encoding and the `MAX_HANDLES` cap a hundred-row page needs.
-    """
-    found = [handle for record in records for handle in record.get(LINEAGE_SIDECAR, {}).values()]
-    return _explain_link(found) if found else None
-
-
 @router.get(
     "/vintages",
     operation_id="list_vintages",
@@ -986,6 +1004,23 @@ def _vintage_explain(records: list[dict[str, Any]]) -> str | None:
                     " inside the source that stamped it."
                 ),
             },
+            explain={
+                "glossary": "gt_derivation_handle",
+                "so": (
+                    "Inlines the promotion chain behind every row's sidecar under `_explain` —"
+                    " one chain per promotion on the page, not per sidecar key, because the"
+                    " three counts a vintage states were written by the same run. A vintage no"
+                    " derivation promoted carries no handle and inlines nothing."
+                ),
+            },
+            explain_depth={
+                "glossary": "gt_derivation_handle",
+                "so": (
+                    "A promotion chain reaches its manifests in two levels, so the default"
+                    " covers this page. The cost scales with the rows on the page: one resolved"
+                    " chain per promotion, at every depth asked for."
+                ),
+            },
         ),
     },
     responses=problem_responses("validation_failed", "service_degraded"),
@@ -993,6 +1028,7 @@ def _vintage_explain(records: list[dict[str, Any]]) -> str | None:
 def list_vintages(
     request: Request,
     connection: Connection,
+    explain: ExplainEffect,
     limit: SpineLimit = DEFAULT_LIMIT,
     source_id: Annotated[str | None, Query(description="Filter to one source.")] = None,
 ) -> JSONResponse:
@@ -1004,7 +1040,7 @@ def list_vintages(
     clauses.append("order by vintage_date desc, source_id limit %(limit)s")
     found = rows(connection, "\n".join(clauses), params)
     records = [_vintage(row) for row in found]
-    return enveloped(request, records, links={"explain": _vintage_explain(records)})
+    return enveloped(request, records, explain=inline_for(connection, explain))
 
 
 @router.get(
@@ -1017,13 +1053,35 @@ def list_vintages(
         + VINTAGE_ID_NOTE
     ),
     response_model=EnvelopeModel[Vintage],
-    openapi_extra=request_example(path={"vintage_id": EXAMPLE_VINTAGE_ID}),
+    openapi_extra={
+        **request_example(path={"vintage_id": EXAMPLE_VINTAGE_ID}),
+        **semantics(
+            explain={
+                "glossary": "gt_derivation_handle",
+                "so": (
+                    "Inlines the chain of the promotion that opened this vintage: the run, the"
+                    " manifests it read, and the rules it cited — the audit answer to `as_of`"
+                    " resolving here, in the same response. A vintage opened with no promotion"
+                    " has no chain and gains an empty block."
+                ),
+            },
+            explain_depth={
+                "glossary": "gt_derivation_handle",
+                "so": (
+                    "One promotion chain, so depth is the only cost lever: the default of three"
+                    " reaches the manifests, and deeper only matters when the promotion itself"
+                    " read derived inputs."
+                ),
+            },
+        ),
+    },
     responses=problem_responses("not_found", "service_degraded"),
 )
 def get_vintage(
     request: Request,
     connection: Connection,
     vintage_id: Annotated[str, Path(description="Id of the (source, vintage) promotion.")],
+    explain: ExplainEffect,
 ) -> JSONResponse:
     found = rows(
         connection, _VINTAGES + " and vintage_id = %(vintage_id)s", {"vintage_id": vintage_id}
@@ -1036,10 +1094,8 @@ def get_vintage(
         request,
         record,
         as_of=row["vintage_date"],
-        links={
-            "source": f"/v1/vintages?source_id={row['source_id']}",
-            "explain": _vintage_explain([record]),
-        },
+        links={"source": f"/v1/vintages?source_id={row['source_id']}"},
+        explain=inline_for(connection, explain),
     )
 
 
