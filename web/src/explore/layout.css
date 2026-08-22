@@ -316,22 +316,102 @@
   }
 }
 
-/* Below 1024 the three columns stop being columns. The card-list and phone postures §2.5
-   specifies are C10's; this arm only keeps the surface readable in the meantime. */
+/* Below 1024 the three columns stop being columns. */
 @media (max-width: 1023px) {
   .gw-explore {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr) fit-content(40%);
+    /* The row is capped, not the item — C9's lesson at the other end of the ladder. An `auto`
+       row is sized by its item's *content*, and the rail's content is the whole class B
+       register: the row claimed 674 px, `max-height` painted 202 of them, and the centre
+       column was left with the 0 px the measurement showed. */
+    grid-template-rows: fit-content(30%) minmax(0, 1fr) fit-content(40%);
   }
 
   .gw-explore-rail {
     grid-row: auto;
-    max-height: 30%;
     border-right: 0;
     border-bottom: 1px solid var(--hairline);
   }
 
   .gw-explore-panel {
     padding: var(--gw-space-4);
+  }
+}
+
+/* 820 — §2.5: the grid becomes a card list (grid.css) and the facets become a sheet. A sheet
+   rather than a bar because eight controls across 820 px is four legible ones and four
+   truncated: stacked, each keeps its name, and the strip that says what is filtered stays put. */
+@media (max-width: 820px) {
+  /* The data is the subject here and the rail is a picker. Measured at 820, the 1023 arm left
+     the cards 337 px between a 337 px rail and a 449 px pane — the grid giving way to two
+     things that are not the answer. The bands the reader is not reading are capped harder. */
+  .gw-explore {
+    grid-template-rows: fit-content(20%) minmax(0, 1fr) fit-content(30%);
+  }
+
+  /* No z-index: a positioned element among static siblings already paints over them, and the
+     one numeric rung this sheet is allowed belongs to the grid header (G-3). */
+  .gw-explore-facets {
+    position: sticky;
+    top: 0;
+    padding: var(--gw-space-3);
+    border: 1px solid var(--hairline);
+    border-radius: var(--gw-radius-sm);
+    background: var(--panel);
+  }
+
+}
+
+/* 390 — §2.5's deliberate inversion. The grid has said it needs a wider window; the pane is
+   the product here, so it takes the surface instead of a capped band under a hidden table. */
+@media (max-width: 520px) {
+  /* The pane takes the flexible row here and the grid's band is capped, which is the 1023 arm
+     inverted — the same "cap the row" rule, applied to the surface that is now the product. */
+  .gw-explore {
+    grid-template-rows: fit-content(16%) fit-content(38%) minmax(0, 1fr);
+  }
+
+  .gw-explore-pane {
+    border-top: 1px solid var(--hairline);
+  }
+
+  /* The refusal names the API guide as the thing *below* it, so it has to be read before the
+     reader gets there. Measured at 390 it began at y=456 in a band that ended at 482 — true,
+     rendered, and under the fold. Reordered rather than shrunk: nothing is hidden to make room. */
+  .gw-explore-panel {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* `flex-shrink: 0`, because the panel's band is shorter than these three and the default
+     shrank the middle one to 10 px while its children went on painting their full 88 — the
+     refusal overlapping the sheet below it. They keep their heights and the panel scrolls,
+     which is what a scrollport is for. */
+  .gw-explore-head,
+  .gw-explore-grid,
+  .gw-explore-facets {
+    flex: 0 0 auto;
+  }
+
+  .gw-explore-head {
+    order: 1;
+  }
+
+  .gw-explore-grid {
+    order: 2;
+  }
+
+  /* Static, not sticky: the 820 sheet pins itself to the top of the scrollport, and reordered
+     below the refusal it would pin itself over it. */
+  .gw-explore-facets {
+    order: 3;
+    position: static;
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
+  .gw-explore-facets {
+    position: static;
   }
 }

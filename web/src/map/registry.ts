@@ -24,6 +24,17 @@ export interface LayerProvenance {
   label?: string;
 }
 
+/**
+ * Where §2.6's "what's behind this layer" lands. `bridge.test.ts` checks both members against
+ * the committed document, so a renamed dataset or facet reddens rather than drifting into a
+ * dead link. A tile mart with no browsable collection declares `null` and says so on the row.
+ */
+export interface LayerCollection {
+  dataset: string;
+  /** The query parameter that narrows it to a viewport, where the operation takes one. */
+  bbox: string | null;
+}
+
 export interface LayerDef {
   id: string;
   group: LayerGroup;
@@ -42,6 +53,7 @@ export interface LayerDef {
   drawOrder: number;
   /** True when the source is not ingested yet: the row renders, disabled, and says why. */
   pendingSource?: boolean;
+  collection: LayerCollection | null;
 }
 
 /**
@@ -70,6 +82,8 @@ export const LAYERS: readonly LayerDef[] = [
     provenance: [{ kind: "official", source: "marts.nd_spacing_units_tile" }],
     styleLayers: ["spacing-units-fill", "spacing-units-line"],
     drawOrder: 10,
+    // SB-04 §4.7's /v1/spacingunits is class B — the rail already lists it as not served.
+    collection: null,
   },
   {
     id: "plss-labels",
@@ -84,6 +98,7 @@ export const LAYERS: readonly LayerDef[] = [
     provenance: [{ kind: "official", source: "marts.nd_spacing_units_tile" }],
     styleLayers: ["spacing-units-label"],
     drawOrder: 20,
+    collection: null,
   },
   {
     // A different capability under a different id, which is the whole migration: a stored set
@@ -109,6 +124,9 @@ export const LAYERS: readonly LayerDef[] = [
     ],
     styleLayers: ["laterals", "tx-laterals"],
     drawOrder: 30,
+    // The bore geometry is drawn from two tile marts and is carried by no served collection:
+    // /v1/wells counts a well's laterals, it does not list the lines.
+    collection: null,
   },
   {
     id: "wells",
@@ -123,6 +141,7 @@ export const LAYERS: readonly LayerDef[] = [
     provenance: [{ kind: "official", source: "marts.nd_wells_tile" }],
     styleLayers: ["wells", "wells-struck"],
     drawOrder: 40,
+    collection: { dataset: "wells", bbox: "bbox" },
   },
   {
     id: "tx-wells",
@@ -141,6 +160,8 @@ export const LAYERS: readonly LayerDef[] = [
     provenance: [{ kind: "official", source: "marts.tx_wells_tile" }],
     styleLayers: ["tx-wells", "tx-wells-struck"],
     drawOrder: 42,
+    // One spine, two tile marts: /v1/wells is state-agnostic, so both rows land on it.
+    collection: { dataset: "wells", bbox: "bbox" },
   },
   {
     id: "play-outline",
@@ -155,6 +176,7 @@ export const LAYERS: readonly LayerDef[] = [
     styleLayers: [],
     drawOrder: 50,
     pendingSource: true,
+    collection: null,
   },
   {
     id: "geology-au",
@@ -169,6 +191,7 @@ export const LAYERS: readonly LayerDef[] = [
     styleLayers: [],
     drawOrder: 60,
     pendingSource: true,
+    collection: null,
   },
 ];
 

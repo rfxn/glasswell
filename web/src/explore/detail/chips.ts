@@ -12,13 +12,27 @@ export { curlFor } from "../api/request.ts";
 /** SB-08 §3.3: a hop lands on a row, or on the collection narrowed to this id. Never on a chain. */
 export type HopKind = "row" | "filtered";
 
-export interface Join {
-  field: string;
+/**
+ * Everything `stateFor` reads off a destination. A map crossing is the same shape as a chip
+ * (C8 N4) but is built on a surface that never fetched the document, so it names its target
+ * structurally rather than carrying a whole `CatalogueDataset` it has no way to obtain.
+ */
+export interface HopTarget {
+  id: string;
+  pathParameters: readonly string[];
+}
+
+export interface Hop {
   value: string;
-  target: CatalogueDataset;
+  target: HopTarget;
   kind: HopKind;
   /** The query parameter the target narrows by, where the document declares one. */
   filter: string | null;
+}
+
+export interface Join extends Hop {
+  field: string;
+  target: CatalogueDataset;
 }
 
 export interface JoinContext {
@@ -121,22 +135,26 @@ function identityFilter(document: unknown, target: CatalogueDataset): string | n
  * cursor do not travel — they narrowed a different population — but the target's path
  * parameters do, because without them there is nothing to read.
  */
-export function stateFor(join: Join, from: AppState): AppState {
+export function stateFor(hop: Hop, from: AppState): AppState {
   const extra: Record<string, string[]> = {};
   const asOf = from.extra["as_of"];
   if (asOf && asOf.length > 0) extra["as_of"] = [...asOf];
-  for (const name of join.target.pathParameters) {
+  for (const name of hop.target.pathParameters) {
     const carried = from.extra[`${FILTER_PREFIX}${name}`];
     if (carried && carried.length > 0) extra[`${FILTER_PREFIX}${name}`] = [...carried];
   }
-  if (join.filter) extra[`${FILTER_PREFIX}${join.filter}`] = [join.value];
+  if (hop.filter) extra[`${FILTER_PREFIX}${hop.filter}`] = [hop.value];
 
   return {
     ...from,
     view: "explore",
     tab: "datasets",
-    ds: join.target.id,
-    row: join.kind === "row" ? join.value : null,
+    // A hop that lands in the explorer leaves the map's two overlays behind: the card and the
+    // drawer belong to the well the reader was on, not to the collection they asked for.
+    well: null,
+    explain: null,
+    ds: hop.target.id,
+    row: hop.kind === "row" ? hop.value : null,
     extra,
   };
 }

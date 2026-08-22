@@ -1,3 +1,8 @@
+import "./layer-panel.css";
+
+import { readState } from "../app/state.ts";
+import { applyCrossing, cross, whatsBehindThisLayer } from "../explore/bridge.ts";
+import type { Bbox, Crossing } from "../explore/bridge.ts";
 import { BASEMAPS } from "./basemap.ts";
 import { LAYERS, defaultLayerSet } from "./registry.ts";
 import type { LayerDef } from "./registry.ts";
@@ -18,6 +23,8 @@ export interface LayerPanelHandle {
   setZoom(zoom: number): void;
   setBasemap(id: string): void;
   setProvenance(id: string, derivationId: string): void;
+  /** §2.6: the crossing is rebuilt per viewport, because the box it narrows by moved. */
+  setCrossing(box: Bbox, resolved: string | null): void;
   open(): void;
   close(): void;
   toggle(): void;
@@ -128,6 +135,9 @@ export function createLayerPanel(options: LayerPanelOptions): LayerPanelHandle {
     setProvenance(id, derivationId) {
       rows.get(id)?.setProvenance(derivationId);
     },
+    setCrossing(box, resolved) {
+      for (const row of rows.values()) row.setCrossing(box, resolved);
+    },
     open() {
       element.hidden = false;
     },
@@ -149,6 +159,7 @@ interface LayerRow {
   setOn(on: boolean): void;
   setZoom(zoom: number): void;
   setProvenance(derivationId: string): void;
+  setCrossing(box: Bbox, resolved: string | null): void;
 }
 
 function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
@@ -206,6 +217,25 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
   derivation.className = "gw-layer-derivation";
   derivation.hidden = true;
   text.appendChild(derivation);
+
+  // §2.6's fourth row. `ⓘ` is in none of the three faces this product ships, so the affordance
+  // is the sentence rather than a glyph that would render as tofu (guardrails.test.ts F5).
+  let landing: Crossing | null = null;
+  const crossing = document.createElement("a");
+  crossing.className = "gw-layer-crossing";
+  crossing.hidden = true;
+  crossing.addEventListener("click", (event) => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+    event.preventDefault();
+    if (landing) cross(landing);
+  });
+  text.appendChild(crossing);
+
+  const behind = document.createElement("p");
+  behind.className = "gw-layer-nocollection";
+  behind.hidden = layer.collection !== null;
+  behind.textContent = "No served collection carries this layer — it is drawn from tiles only.";
+  text.appendChild(behind);
   element.appendChild(text);
 
   const toggle = document.createElement("button");
@@ -252,6 +282,15 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
     setProvenance(derivationId) {
       derivation.hidden = false;
       derivation.textContent = `geometry build ${derivationId}`;
+    },
+    setCrossing(box, resolved) {
+      // Rebuilt rather than patched: the box is half the destination, so a stale href would be
+      // a link to the viewport the reader left. The row is a <label>-free container, so the
+      // anchor keeps its own click and never reaches the toggle beside it.
+      landing = whatsBehindThisLayer(layer.collection, box, { state: readState(), resolved });
+      crossing.hidden = landing === null;
+      if (!landing) return;
+      applyCrossing(crossing, landing);
     },
   };
 }

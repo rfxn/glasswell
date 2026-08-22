@@ -139,6 +139,12 @@
   align-items: baseline;
 }
 
+/* Absent above 820, where the column header says it once for the whole column. Announcing it
+   per cell as well would be the same name twice on every value in the grid. */
+.gw-grid-td-name {
+  display: none;
+}
+
 .gw-cell {
   display: flex;
   align-items: baseline;
@@ -425,5 +431,99 @@ gw-count {
 @media (max-width: 1365px) {
   .gw-cursor-token {
     max-width: 40ch;
+  }
+}
+
+/* The 390 refusal is absent, not hidden: at every wider width it is not in the page at all, so
+   nothing reads it out and nothing has to be told to skip it. */
+.gw-grid-narrow {
+  display: none;
+}
+
+/* 820 — §2.5's card list. One card per row, the column name beside each value, and no
+   horizontal scroll. It is a posture rather than a second renderer: the same DOM the grid
+   already built, re-laid out, so a row keeps its click, its panel and its aria-expanded. */
+@media (max-width: 820px) {
+  .gw-grid-table {
+    display: block;
+    overflow-x: visible;
+  }
+
+  /* Removed from the a11y tree with it: each cell carries its own name below, and a header
+     announced twice is worse than a header announced once. */
+  .gw-explore-grid-head {
+    display: none;
+  }
+
+  .gw-grid-body {
+    display: block;
+  }
+
+  .gw-grid-tr {
+    display: grid;
+    grid-template-columns: minmax(7rem, 10rem) minmax(0, 1fr);
+    gap: 0 var(--gw-space-3);
+    margin-bottom: var(--gw-space-3);
+    padding: var(--gw-space-3);
+    border: 1px solid var(--hairline);
+    border-radius: var(--gw-radius-sm);
+    background: var(--panel);
+  }
+
+  .gw-grid-td {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    padding: var(--gw-space-1) 0;
+  }
+
+  /* The label half of §2.5's pair, in the track the header would have used. It is a rendered
+     span rather than generated content, so it is selectable, copyable, and read out with the
+     value it names once the header row above is gone (D12). */
+  .gw-grid-td-name {
+    display: block;
+    color: var(--muted);
+    font-size: var(--gw-fs-micro);
+    overflow-wrap: anywhere;
+  }
+
+  /* A figure's cell spans the table's two tracks so a state chip cannot displace a number
+     (F2). There are no such tracks in a card: spanning two here would span the label and the
+     value, and the number would drop to a line of its own under its own name. It keeps the
+     value-then-marks order inside the value half instead, which is the same rule at card size.
+     Column alignment is what right-aligning bought, and a card has no column. */
+  .gw-cell-figure {
+    grid-column: auto;
+    grid-template-columns: max-content auto;
+  }
+
+  .gw-cell-figure > * {
+    justify-self: start;
+  }
+
+  .gw-grid-th-spacer,
+  .gw-grid-offscreen {
+    display: none;
+  }
+}
+
+/* 390 — the grid says it cannot be read here, and the pane below is the product. */
+@media (max-width: 520px) {
+  .gw-grid-narrow {
+    display: block;
+    margin: 0 0 var(--gw-space-3);
+    color: var(--amber-text);
+  }
+
+  .gw-grid-table,
+  .gw-page,
+  .gw-cursor {
+    display: none;
+  }
+
+  /* `:not([hidden])` because the window-extender is hidden by property when the page is fully
+     shown, and a bare `display` here would outrank that — the defect styles.test.ts guards. */
+  .gw-grid-more:not([hidden]) {
+    display: none;
   }
 }

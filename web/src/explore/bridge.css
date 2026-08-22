@@ -1,0 +1,46 @@
+/*
+ * SB-08 §2.6. A crossing is a hop between surfaces, so it reads as a hop: the chip's shape from
+ * detail.css, with an arrow that says which way it goes. No z-index and no new rung — it sits
+ * inline in whatever cell or row raised it.
+ */
+.gw-crossing {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gw-space-1);
+  padding: 0 var(--gw-space-2);
+  border: 1px solid var(--cyan);
+  border-radius: var(--gw-radius-pill);
+  color: var(--cyan-text);
+  font-size: var(--gw-fs-micro);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.gw-crossing::before {
+  content: "\2192";
+  opacity: 0.7;
+}
+
+a.gw-crossing:hover,
+a.gw-crossing:focus-visible {
+  background: var(--tint-accent);
+  color: var(--paper);
+}
+
+/* M6's refusal. Not a disabled control and not a link either — there is no href to copy, so it
+   reads as the statement it is: no arrow, because there is no hop to offer yet. */
+.gw-crossing[data-unpinned] {
+  border-style: dashed;
+  border-color: var(--hairline);
+  color: var(--muted);
+  cursor: default;
+}
+
+.gw-crossing[data-unpinned]::before {
+  content: none;
+}
+
+.gw-crossing[data-unpinned]:hover {
+  background: none;
+  color: var(--muted);
+}

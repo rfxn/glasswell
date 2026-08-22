@@ -30,6 +30,7 @@ import {
   bboxParam,
   censusOfDrawn,
   createCountSource,
+  retainVintage,
 } from "./counts.ts";
 import type { Bbox, CountsState, WellStatusSummary } from "./counts.ts";
 import { createHoverCard } from "./hover-card.ts";
@@ -314,6 +315,9 @@ export function createMap(
 
   let countTimer: ReturnType<typeof setTimeout> | undefined;
   let countsFailing = false;
+  // The map's only reading of the served vintage: the rail's chip is main.ts's, and a crossing
+  // off this surface has to pin something the reader was actually looking at (SB-08 M6).
+  let resolvedVintage: string | null = null;
 
   const countSource = createCountSource({
     load: (bbox, signal) =>
@@ -337,7 +341,11 @@ export function createMap(
    */
   function refreshCounts(): void {
     panel.setZoom(map.getZoom());
-    countSource.request(viewportBbox());
+    const bbox = viewportBbox();
+    // The crossing narrows by the box, so it is rebuilt with the box and not with the answer:
+    // a reader who pans and clicks before the counts settle must not get the last viewport.
+    panel.setCrossing(bbox, resolvedVintage);
+    countSource.request(bbox);
     refreshDrawn();
   }
 
@@ -362,6 +370,9 @@ export function createMap(
 
   function paintCounts(state: CountsState): void {
     const zoom = map.getZoom();
+    // Ahead of the two early returns, so a failing or in-flight answer cannot leave the panel
+    // offering a crossing that names no vintage for the rest of the session (SB-08 M6).
+    resolvedVintage = retainVintage(resolvedVintage, state);
     if (state.kind === "loading") {
       legend.setPending(zoom);
       return;
@@ -375,6 +386,7 @@ export function createMap(
       return;
     }
     countsFailing = false;
+    panel.setCrossing(state.bbox, resolvedVintage);
     legend.setCounts(state.counts, zoom, state.handles);
     legend.setVocabulary(state.vocabulary);
     refreshDrawn();

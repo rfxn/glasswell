@@ -9,6 +9,7 @@ import {
   createCountSource,
   normaliseBbox,
   parseBbox,
+  retainVintage,
   sameBbox,
   statusCounts,
   statusHandles,
@@ -242,6 +243,21 @@ describe("a viewport that settles", () => {
     expect(state.counts).toEqual({ active: 3, plugged: 2, dry: 1, [UNMAPPED_STATUS.id]: 2 });
     expect(state.total).toBe(10);
     expect(state.totalHandle).toContain("col=wells");
+  });
+
+  it("carries the vintage the answer resolved at, which is what a crossing pins (M6)", async () => {
+    const { calls, load } = deferredLoader();
+    const { seen, onState } = collector();
+    createCountSource({ load, onState }).request(ND);
+    calls[0]!.settle(envelope(summary(ND)));
+    await flush();
+
+    const state = last(seen);
+    expect(state.kind).toBe("ready");
+    if (state.kind !== "ready") return;
+    // The map has no other reading of it: the rail's chip is main.ts's, and a crossing off
+    // this surface with no pin is a link that answers differently after the next promotion.
+    expect(state.resolved).toBe("2026-08-01");
   });
 
   it("publishes no explain link, truncated or otherwise — every count addresses itself", async () => {
@@ -489,6 +505,48 @@ describe("the census of what the canvas drew", () => {
 
   it("is zero, and says nothing about a build, when nothing was drawn", () => {
     expect(censusOfDrawn([])).toEqual({ wells: 0, derivation: null });
+  });
+});
+
+/**
+ * gate-c10 B1: on a degraded instance the counts error branch is not a race, it is the whole
+ * session. What the map already resolved has to survive it, or the crossing built off this
+ * surface is unpinned for as long as the reader stays.
+ */
+describe("the vintage a crossing pins, across a run of answers", () => {
+  const ready = (resolved: string | null): CountsState => ({
+    kind: "ready",
+    bbox: ND,
+    counts: {},
+    handles: {},
+    total: null,
+    totalHandle: null,
+    vocabulary: [],
+    resolved,
+  });
+
+  it("takes the vintage a ready answer resolved", () => {
+    expect(retainVintage(null, ready("2026-08-01"))).toBe("2026-08-01");
+  });
+
+  it("keeps it through a failure, because the canvas is still drawing that answer", () => {
+    expect(retainVintage("2026-08-01", { kind: "error", bbox: ND, message: "502" })).toBe(
+      "2026-08-01",
+    );
+  });
+
+  it("keeps it while the next request is in flight, so a pan cannot unpin the link", () => {
+    expect(retainVintage("2026-08-01", { kind: "loading", bbox: ND })).toBe("2026-08-01");
+  });
+
+  it("has none to keep when the first answer is the one that failed", () => {
+    // The permanent case: nothing ever resolved, so there is nothing to fall back to and the
+    // row has to say so rather than invent one.
+    expect(retainVintage(null, { kind: "error", bbox: ND, message: "502" })).toBeNull();
+  });
+
+  it("drops it when a ready answer claims no vintage, rather than pinning a stale one", () => {
+    expect(retainVintage("2026-08-01", ready(null))).toBeNull();
   });
 });
 

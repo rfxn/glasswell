@@ -66,6 +66,52 @@ describe("the explorer's stylesheets obey the rules C6 wrote down for its own (G
     }
   });
 
+  /**
+   * §2.5's two narrow postures are CSS, not a second renderer, so this is where they are pinned.
+   * A resize listener re-rendering the grid would be the alternative, and it would tear the open
+   * row's panel out from under the reader every time the keyboard opened.
+   */
+  it("turns the grid into a card list at 820, with the column name beside each value", () => {
+    const grid = SHEETS.find((sheet) => sheet.path.endsWith("grid/grid.css"))?.css ?? "";
+    const posture = /@media \(max-width: 820px\) \{([\s\S]*?)\n\}/.exec(grid)?.[1] ?? "";
+
+    expect(posture, "820 arm is missing").not.toBe("");
+    expect(posture).toMatch(/\.gw-grid-td-name \{\s*display: block/);
+    expect(posture).toMatch(/\.gw-explore-grid-head \{\s*display: none/);
+    expect(posture).toMatch(/\.gw-grid-table \{[\s\S]*?display: block/);
+    expect(readFileSync("src/explore/grid/grid.ts", "utf8")).toContain(
+      'cell.dataset["name"] = column.name',
+    );
+  });
+
+  /**
+   * gate-c10 R3. `content: attr(data-name)` painted the label and carried it nowhere else: a
+   * pseudo-element cannot be selected, cannot be copied, and is not reliably exposed to
+   * assistive technology as the value's label. At 820 the header row is gone, so that was the
+   * only label the cell had.
+   */
+  it("carries that name in a real element, not in generated content", () => {
+    const grid = SHEETS.find((sheet) => sheet.path.endsWith("grid/grid.css"))?.css ?? "";
+
+    expect(grid).not.toContain("attr(data-name)");
+    expect(grid).toMatch(/\.gw-grid-td-name \{\s*display: none;\s*\}/);
+    expect(readFileSync("src/explore/grid/grid.ts", "utf8")).toContain(
+      'name.className = "gw-grid-td-name"',
+    );
+  });
+
+  it("refuses the grid at 390 and says so, rather than rendering twelve columns into 390px", () => {
+    const grid = SHEETS.find((sheet) => sheet.path.endsWith("grid/grid.css"))?.css ?? "";
+    const refusal = /@media \(max-width: 520px\) \{([\s\S]*?)\n\}/.exec(grid)?.[1] ?? "";
+
+    expect(refusal, "390 arm is missing").not.toBe("");
+    expect(refusal).toMatch(/\.gw-grid-narrow \{\s*display: block/);
+    expect(refusal).toMatch(/\.gw-grid-table,[\s\S]*?display: none/);
+    // Absent at every other width, not merely invisible: nothing reads out a refusal that does
+    // not apply. The unconditional rule below the media block is what makes that true.
+    expect(grid).toMatch(/\.gw-grid-narrow \{\s*display: none;\s*\}/);
+  });
+
   it("keeps that list honest by counting what the source actually hides", () => {
     const hidden = new Set(
       sources("src/explore").flatMap((path) =>
