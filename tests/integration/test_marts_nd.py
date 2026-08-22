@@ -221,6 +221,72 @@ def test_the_disposal_class_is_a_conformance_row_not_a_web_constant(canonical_nd
     assert spec["classification"] == "disposal_injection"
 
 
+def test_every_nd_layer_carries_its_geometry_provenance_onto_the_wire(canonical_nd, refreshed):
+    """M1-3: geom_type is served verbatim as geometry_provenance on all three ND layers, so
+    the laterals row's "not a directional survey trace" caveat has a machine-readable
+    backing. The traces mart has carried it since 030; wells and laterals join here."""
+    for table, expected in (
+        ("nd_wells_tile", "surface"),
+        ("nd_laterals_tile", "lateral"),
+        ("nd_survey_traces_tile", "survey_trace"),
+    ):
+        total = scalar(canonical_nd, f"select count(*) from marts.{table}")
+        assert total > 0, f"{table} is empty; the provenance assertion would be vacuous"
+        assert (
+            scalar(
+                canonical_nd,
+                f"select count(*) from marts.{table} where geometry_provenance = %s",
+                (expected,),
+            )
+            == total
+        ), f"{table} is not homogeneous in geometry_provenance = {expected!r}"
+
+    # The publication boundary: martin reads the views and no base relation (DR-05).
+    for view in ("tile_nd_wells", "tile_nd_laterals"):
+        assert scalar(
+            canonical_nd,
+            f"select count(*) from marts.{view} where geometry_provenance is not null",
+        ) == scalar(canonical_nd, f"select count(*) from marts.{view}")
+
+    surface = rows(
+        canonical_nd, "select ST_X(geom), ST_Y(geom) from marts.nd_wells_tile limit 1"
+    )[0]
+    zoom, x, y = covering_tile((surface[0], surface[1], surface[0], surface[1]))
+    tile = scalar(canonical_nd, "select marts.nd_wells(%s, %s, %s, null)", (zoom, x, y))
+    drawn = layers(bytes(tile))
+    assert drawn, "the tile covering a surface well is empty"
+    assert "geometry_provenance" in attribute_keys(drawn[0])
+    assert ("string", "surface") in attribute_values(drawn[0])
+
+    lateral = rows(
+        canonical_nd,
+        "select ST_X(ST_PointOnSurface(geom)), ST_Y(ST_PointOnSurface(geom))"
+        " from marts.nd_laterals_tile limit 1",
+    )[0]
+    zoom, x, y = covering_tile((lateral[0], lateral[1], lateral[0], lateral[1]))
+    tile = scalar(canonical_nd, "select marts.nd_laterals(%s, %s, %s, null)", (zoom, x, y))
+    drawn = layers(bytes(tile))
+    assert drawn, "the tile covering a lateral is empty"
+    assert "geometry_provenance" in attribute_keys(drawn[0])
+    assert ("string", "lateral") in attribute_values(drawn[0])
+
+
+def test_the_provenance_classing_is_a_conformance_row_not_a_web_constant(canonical_nd):
+    """R8: which ND filing each geometry family's coordinates come from is a mapping
+    decision, so it is a row served at /v1/conformance, and the tiles cite it through the
+    refresh derivation rather than owning it (rules=[..., PROVENANCE_RULE])."""
+    spec = scalar(
+        canonical_nd,
+        "select spec from lineage.conformance_rules"
+        " where rule_id = 'cr_nd_geometry_provenance_1'",
+    )
+    assert spec is not None, "the provenance classing rule is not seeded"
+    assert sorted(spec["classes"]) == ["lateral", "surface", "survey_trace"]
+    assert spec["classification"] == "geometry_provenance"
+    # The ND-only scope ruling is stated where a reader would look for the TX half (RF-1).
+    assert "RF-1" in spec["tx_exclusion"]
+
+
 def test_the_well_card_mart_is_deliberately_empty(canonical_nd, refreshed):
     """M6 demoted the card mart: it lands when the API reads it, and no sooner."""
     assert scalar(canonical_nd, "select count(*) from marts.nd_well_card") == 0

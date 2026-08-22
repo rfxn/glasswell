@@ -169,6 +169,27 @@ describe("the counts the legend is given", () => {
     expect("expired" in counts).toBe(false);
   });
 
+  it("drops a class served at zero, so the legend has one render for none-in-view", () => {
+    // visual-m17 noted in-view zeros render as the em dash because the summary omits the
+    // class; this pins the other arm, so a summary that starts serving explicit zeros
+    // cannot split the render into "—" for some empty classes and "0" for others.
+    const data = summary(ND, {
+      statuses: [
+        { status: "active", wells: figure("3", "col=wells&status=active") },
+        { status: "permitted", wells: figure("0", "col=wells&status=permitted") },
+      ],
+      unmapped_wells: figure("0", "col=wells&status=unmapped"),
+    });
+    const counts = statusCounts(data);
+    expect(counts).toEqual({ active: 3 });
+    expect("permitted" in counts).toBe(false);
+    expect(UNMAPPED_STATUS.id in counts).toBe(false);
+    // The handle goes with the count: no lineage affordance beside an em dash.
+    const handles = statusHandles(data);
+    expect("permitted" in handles).toBe(false);
+    expect(UNMAPPED_STATUS.id in handles).toBe(false);
+  });
+
   it("keys the absence bucket onto the legend's own class, which the API never publishes", () => {
     // §2.3 rule 1: the API must not publish "unmapped" as if it were in the vocabulary.
     const data = summary(ND);

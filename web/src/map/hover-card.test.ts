@@ -31,6 +31,59 @@ describe("the hover card", () => {
     expect(card.element.hidden).toBe(true);
   });
 
+  it("states the wellhead's provenance-of-record at hover, the class verbatim", () => {
+    // M1-3: provenance in the default tooltip, unasked — the class as the wire serves it,
+    // never a decode into "surveyed"/"actual" the register has not asserted.
+    const card = createHoverCard();
+    card.show(
+      { api10: "3305305527", status_canonical: "active", geometry_provenance: "surface" },
+      { x: 0, y: 0 },
+    );
+    expect(card.element.textContent).toContain("Surface location as ND DMR filed it");
+    expect(card.element.textContent).toContain("geometry_provenance surface");
+    expect(card.element.textContent?.toLowerCase()).not.toContain("surveyed");
+  });
+
+  it("gives the lateral's caveat a machine-readable backing — the wire class, not a caption", () => {
+    const card = createHoverCard();
+    card.show(
+      { api10: "3305305527", status_canonical: "active", geometry_provenance: "lateral" },
+      { x: 0, y: 0 },
+    );
+    expect(card.element.textContent).toContain("not a directional survey trace");
+    expect(card.element.textContent).toContain("geometry_provenance lateral");
+    expect(card.element.textContent).not.toContain("Survey trace ·");
+  });
+
+  it("stays silent on provenance for a feature that serves none — Texas, until RF-1", () => {
+    const card = createHoverCard();
+    card.show({ api10: "4231733333", status_canonical: "plugged" }, { x: 0, y: 0 });
+    expect(card.element.textContent).not.toContain("geometry_provenance");
+    // Cleared, not just hidden, when the pointer moves off an ND feature onto a TX one.
+    card.show(
+      { api10: "3305305527", status_canonical: "active", geometry_provenance: "surface" },
+      { x: 0, y: 0 },
+    );
+    card.show({ api10: "4231733333", status_canonical: "plugged" }, { x: 0, y: 0 });
+    expect(card.element.textContent).not.toContain("geometry_provenance");
+  });
+
+  it("keeps the trace hover as the trace's own provenance line, not two sentences", () => {
+    const card = createHoverCard();
+    card.show(
+      {
+        api10: "3305305527",
+        status_canonical: "active",
+        geometry_provenance: "survey_trace",
+        station_count: 82,
+        deepest_station_md_ft: 21_340.5,
+      },
+      { x: 0, y: 0 },
+    );
+    expect(card.element.textContent).toContain("Survey trace");
+    expect(card.element.textContent).not.toContain("geometry_provenance survey_trace");
+  });
+
   it("identifies a survey trace by what ND filed — stations and measured depth, never a length", () => {
     const card = createHoverCard();
     card.show(

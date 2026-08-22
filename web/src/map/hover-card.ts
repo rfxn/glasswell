@@ -1,4 +1,5 @@
 import { disposalType } from "./disposal.ts";
+import { geometryProvenance, provenanceLine } from "./provenance.ts";
 import { statusClass } from "./status.ts";
 import { statusSwatch } from "./swatch.ts";
 
@@ -36,6 +37,11 @@ export function createHoverCard(): HoverCardHandle {
   disposal.hidden = true;
   element.appendChild(disposal);
 
+  const provenance = document.createElement("p");
+  provenance.className = "gw-hover-meta gw-hover-provenance";
+  provenance.hidden = true;
+  element.appendChild(provenance);
+
   return {
     element,
     show(properties, point) {
@@ -67,6 +73,13 @@ export function createHoverCard(): HoverCardHandle {
       const wellType = disposalType(properties);
       disposal.hidden = wellType === null;
       disposal.textContent = disposal.hidden ? "" : `Disposal / injection · well_type ${wellType} as ND filed it`;
+      // M1-3: provenance-of-record at hover, the class verbatim. The trace line above
+      // already states its own; a TX feature carries no property and the line stays hidden
+      // (the TX half is licence-gated on RF-1 — the legend states it where the reader looks).
+      const provenanceClass = geometryProvenance(properties);
+      const sentence = provenanceClass === null ? null : provenanceLine(provenanceClass);
+      provenance.hidden = sentence === null;
+      provenance.textContent = sentence ?? "";
       element.style.transform = `translate(${point.x + 14}px, ${point.y + 14}px)`;
       element.hidden = false;
     },

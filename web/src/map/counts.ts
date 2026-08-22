@@ -125,21 +125,35 @@ export function sameBbox(a: Bbox | null, b: Bbox | null): boolean {
   return a.every((value, index) => value === b[index]);
 }
 
-/** Present classes only. A class the box does not hold has no count, which is not a zero. */
+/**
+ * Present classes only. A class the box does not hold has no count, which is not a zero —
+ * and a class the API serves *at* zero is dropped here so the legend has exactly one render
+ * for "none in view", the em dash, whichever way the summary chose to say it.
+ */
 export function statusCounts(data: WellStatusSummary): Record<string, number> {
   const counts: Record<string, number> = Object.fromEntries(
-    data.statuses.map((row) => [row.status, Number(row.wells.value)]),
+    data.statuses
+      .map((row) => [row.status, Number(row.wells.value)] as const)
+      .filter(([, wells]) => wells !== 0),
   );
-  if (data.unmapped_wells) counts[UNMAPPED_STATUS.id] = Number(data.unmapped_wells.value);
+  if (data.unmapped_wells && Number(data.unmapped_wells.value) !== 0) {
+    counts[UNMAPPED_STATUS.id] = Number(data.unmapped_wells.value);
+  }
   return counts;
 }
 
-/** One handle per class, each addressing its own count rather than a neighbour's. */
+/** One handle per class, each addressing its own count rather than a neighbour's. Dropped
+ *  with the count where it is zero: a lineage affordance beside an em dash would claim a
+ *  figure the cell is not showing. */
 export function statusHandles(data: WellStatusSummary): Record<string, string> {
   const handles: Record<string, string> = Object.fromEntries(
-    data.statuses.map((row) => [row.status, row.wells.d]),
+    data.statuses
+      .filter((row) => Number(row.wells.value) !== 0)
+      .map((row) => [row.status, row.wells.d]),
   );
-  if (data.unmapped_wells) handles[UNMAPPED_STATUS.id] = data.unmapped_wells.d;
+  if (data.unmapped_wells && Number(data.unmapped_wells.value) !== 0) {
+    handles[UNMAPPED_STATUS.id] = data.unmapped_wells.d;
+  }
   return handles;
 }
 

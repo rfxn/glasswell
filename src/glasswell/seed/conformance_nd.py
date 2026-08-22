@@ -21,6 +21,8 @@ SUPERSESSION_FROM = date(2026, 8, 20)
 SURVEYS_FROM = date(2026, 8, 21)
 # M1-7's decision date; the distribution it cites was verified against the FeatureServer.
 DISPOSAL_FROM = date(2026, 8, 22)
+# M1-3's decision date: geometry provenance became a served wire field on every ND layer.
+PROVENANCE_FROM = date(2026, 8, 22)
 GIS_WELLS_FEATURESERVER_URL = (
     "https://gis.dmr.nd.gov/dmrpublicservices/rest/services/"
     "OilGasPublicMapDataVectorTiles/Wells/FeatureServer/0"
@@ -747,6 +749,53 @@ ND_RULES: tuple[dict[str, object], ...] = (
         ),
         "evidence_url": GIS_WELLS_FEATURESERVER_URL,
         "code_ref": "web/src/map/disposal.ts",
+    },
+    {
+        "rule_id": "cr_nd_geometry_provenance_1",
+        "effective_from": PROVENANCE_FROM,
+        "source_id": "nd_gis_wells",
+        "stage": "conform",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["geom"],
+        "spec": {
+            "module_function": "glasswell.marts.nd_wells:_PROJECTIONS",
+            "version": "1",
+            "classification": "geometry_provenance",
+            "classes": {
+                "surface": "reported wellhead point from OGD_Wells.zip",
+                "lateral": "filed horizontal centreline from OGD_Horizontals_Line.zip —"
+                " not a directional survey trace",
+                "survey_trace": "plan-view path assembled from OGD_Directionals.zip"
+                " MD/INC/AZI/TVD stations",
+            },
+            "code_semantics": "verbatim canonical geom_type values; served unchanged as"
+            " geometry_provenance on every ND tile layer, no per-class decode beyond this map",
+            "tx_exclusion": "TX RRC publishes GIS_LOCATION_SOURCE (data-sources-wellops.md"
+            " §6.2) but the field is RRC content and sits under the RF-1 licence question"
+            " (data-sources-infra.md §10); the TX half of M1-3 is not served until RF-1 is"
+            " answered",
+            "contract_note": "the nd_wells, nd_laterals and nd_survey_traces tiles each carry"
+            " geometry_provenance verbatim from canonical.well_spatial.geom_type; each layer"
+            " is homogeneous in it, so the layer toggles are the provenance filter and the"
+            " per-layer paints are the style channel (web/src/map/provenance.ts is the"
+            " consumer)",
+        },
+        "rule": "Serve canonical.well_spatial.geom_type verbatim as geometry_provenance on"
+        " every ND tile layer: surface, lateral or survey_trace.",
+        "rationale": (
+            "Each ND geometry family's coordinates come from a distinct DMR filing: OGD_Wells"
+            " publishes the reported wellhead point, OGD_Horizontals_Line the filed centreline"
+            " (explicitly not a survey — its linekeys are LAT/STK/VERT segments), and"
+            " OGD_Directionals the survey stations a trace is assembled from. Mapping each"
+            " filing to one geom_type class at ingest is the provenance decision, and serving"
+            " the class verbatim gives the laterals row's hand-written caveat (\"not a"
+            " directional survey trace\") a machine-readable backing. The classes are"
+            " homogeneous within each layer, so no within-layer filter is asserted: the layer"
+            " toggle is the filter. TX is excluded on licence, not on reach — see"
+            " spec.tx_exclusion."
+        ),
+        "evidence_url": GIS_WELLS_URL,
+        "code_ref": "web/src/map/provenance.ts",
     },
 )
 
