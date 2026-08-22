@@ -190,4 +190,15 @@ describe("at phone width it does not sit on the pill strip (visual-m23 V-3)", ()
     // Unkeyed to the hint's visibility, the strip would sit 4rem low forever.
     expect(MAP).not.toMatch(/^\s*\.gw-pills\s*\{[^}]*top:\s*4rem/m);
   });
+
+  it("moves the zoom controls below it the same way, so the + stays reachable (O1)", () => {
+    // The same pact as the pills, for the same band: the top-right cluster yields only
+    // while the hint shows, and only in the 520px posture.
+    const clearance = mediaBlock(MAP, /@media \(width <= 520px\)/);
+    expect(clearance).toMatch(
+      /body:has\(\.gw-hint:not\(\[hidden\]\)\)\s+\.maplibregl-ctrl-top-right\s*\{[^}]*top/,
+    );
+    // Unkeyed to the hint's visibility, the cluster would sit 3.4rem low forever.
+    expect(MAP).not.toMatch(/^\s*\.maplibregl-ctrl-top-right\s*\{[^}]*top/m);
+  });
 });

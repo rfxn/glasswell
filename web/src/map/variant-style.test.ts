@@ -7,10 +7,10 @@ import type { BasemapVariant } from "./basemap.ts";
 import { CONTRAST_FLOOR, NON_TEXT_FLOOR, contrastRatio } from "./contrast.ts";
 import { dataLayers, sourceSpecs } from "./style.ts";
 import {
-  CONTEXT_LINES,
   VARIANT_STYLES,
   applyVariantStyling,
   labelRole,
+  lineRole,
   rgba,
   textLayers,
   variantStyle,
@@ -109,7 +109,7 @@ describe("the variant token table", () => {
   it("keeps every context line above the non-text floor on its own substrate", () => {
     for (const variant of BASEMAP_VARIANTS) {
       const tokens = variantStyle(variant);
-      for (const line of [tokens.boundary, tokens.spacing, tokens.graticule]) {
+      for (const line of [tokens.boundary, tokens.spacing, tokens.grid, tokens.graticule]) {
         const ratio = contrastRatio(line, tokens.substrate);
         expect(ratio, `${variant}: ${line} on ${tokens.substrate} is ${ratio.toFixed(2)}:1`)
           .toBeGreaterThanOrEqual(NON_TEXT_FLOOR);
@@ -149,13 +149,20 @@ describe("the variant styling pass", () => {
     }
   });
 
-  it("recolours every context line the table names, in every variant that draws one", () => {
+  it("recolours every line that declares a role, in every variant that draws one", () => {
     for (const variant of BASEMAP_VARIANTS) {
       const tokens = variantStyle(variant);
       const styled = applyVariantStyling(styleFor(variant), variant, DATA_SOURCES);
       for (const layer of styled) {
-        const role = CONTEXT_LINES[layer.id];
+        const role = lineRole(layer);
         if (!role) continue;
+        if (role === "grid") {
+          expect(paintOf(layer)["line-color"], `${variant}/${layer.id}`).toBe(tokens.grid);
+          // The grid sits under the data at its own authored opacity; the pass keys the
+          // colour and must not flatten the township/section register to opaque.
+          expect(paintOf(layer)["line-opacity"], `${variant}/${layer.id} opacity`).not.toBe(1);
+          continue;
+        }
         expect(paintOf(layer)["line-color"], `${variant}/${layer.id}`).toBe(
           role === "graticule" ? tokens.graticule : tokens.boundary,
         );
@@ -164,11 +171,31 @@ describe("the variant styling pass", () => {
         expect(paintOf(layer)["line-opacity"], `${variant}/${layer.id} opacity`).toBe(1);
       }
     }
-    // The county line is the layer VF-5 names by hand; it must be in the swept set.
-    const counties = applyVariantStyling(styleFor("light"), "light", DATA_SOURCES).find(
-      (layer) => layer.id === "gw-boundaries-county",
-    );
-    expect(paintOf(counties!)["line-color"]).toBe(variantStyle("light").boundary);
+    // The county line is the layer VF-5 names by hand; it must be in the swept set — and the
+    // land-grid lines are the layers M1-4 added outside the sweep, which is the class recurring.
+    const styledLight = applyVariantStyling(styleFor("light"), "light", DATA_SOURCES);
+    const byId = (id: string) => styledLight.find((layer) => layer.id === id);
+    expect(paintOf(byId("gw-boundaries-county")!)["line-color"]).toBe(variantStyle("light").boundary);
+    expect(paintOf(byId("land-townships-line")!)["line-color"]).toBe(variantStyle("light").grid);
+    expect(paintOf(byId("land-sections-line")!)["line-color"]).toBe(variantStyle("light").grid);
+  });
+
+  it("leaves no literal-coloured line undeclared — a line is data-coloured or role-marked", () => {
+    // The class guarantee VF-5 asks for, for lines, the way the text sweep gives it for
+    // labels: a layer added later with a hardcoded colour and no role fails here, not at a
+    // gate three cycles on. Data-coloured lines (status, selection, thematic ramp) are
+    // expressions on the wire; a reference line is a literal and must name its role.
+    for (const variant of BASEMAP_VARIANTS) {
+      for (const layer of dataLayers({ labels: true, variant })) {
+        if (layer.type !== "line") continue;
+        const colour = paintOf(layer)["line-color"];
+        const dataColoured = Array.isArray(colour);
+        expect(
+          dataColoured || lineRole(layer) !== undefined,
+          `${variant}/${layer.id} draws a literal line-color outside the variant table`,
+        ).toBe(true);
+      }
+    }
   });
 
   it("bumps a plain text size on satellite and leaves a zoom-driven one alone", () => {

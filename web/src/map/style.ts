@@ -35,7 +35,8 @@ import {
   liquidFillColour,
   observedFilter,
 } from "./thematics.ts";
-import { rgba, variantStyle } from "./variant-style.ts";
+import { LINE_ROLE, VARIANT_STYLES, rgba, variantStyle } from "./variant-style.ts";
+import type { VariantStyle } from "./variant-style.ts";
 
 export const WELLS_SOURCE = "nd_wells";
 export const LATERALS_SOURCE = "nd_laterals";
@@ -58,17 +59,18 @@ export const TRACE_COLOUR = "#C878D2";
  * Reference linework, so a neutral that cannot read as a data claim: BRAND.md's Muted, an
  * achromatic grey (1.13:1 against oil green and gas red, 1.03:1 against water blue — too
  * close to any stream colour to be mistaken for one, and in neither the status palette nor
- * the selection cyan). The only palette neutral clearing the 3:1 non-text minimum on both
- * substrates: 5.25:1 on dark #0E151B, 3.20:1 on light #F2F5F8 (Slate Light manages 2.04:1
- * on light, Slate 3.08:1 on dark — each fails one).
+ * the selection cyan). Clears the 3:1 non-text minimum on the dark and light substrates
+ * (5.25:1 and 3.20:1); the per-variant `grid` token in variant-style.ts carries the
+ * variants this one colour could not (satellite), and this export is the swatch's colour.
  */
-export const LAND_GRID_COLOUR = "#7C8B96";
+export const LAND_GRID_COLOUR = VARIANT_STYLES.dark.grid;
 
 /** Published zoom thresholds: geometry at 8/10, labels at 9/12 — stated on the registry rows. */
 export const TOWNSHIP_MIN_ZOOM = 8;
 export const SECTION_MIN_ZOOM = 10;
 const TOWNSHIP_LABEL_MIN_ZOOM = 9;
 const SECTION_LABEL_MIN_ZOOM = 12;
+const SPACING_UNIT_LABEL_MIN_ZOOM = 11;
 
 /** The point layers the legend counts from. Both basins, because the legend counts what is drawn. */
 export const WELL_POINT_LAYERS = ["wells", "tx-wells"] as const;
@@ -316,8 +318,9 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       source: townships,
       "source-layer": townships,
       minzoom: TOWNSHIP_MIN_ZOOM,
+      metadata: { [LINE_ROLE]: "grid" },
       paint: {
-        "line-color": LAND_GRID_COLOUR,
+        "line-color": tokens.grid,
         "line-width": interpolate(zoom, [
           [TOWNSHIP_MIN_ZOOM, 0.5],
           [12, 1],
@@ -334,8 +337,9 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       source: sections,
       "source-layer": sections,
       minzoom: SECTION_MIN_ZOOM,
+      metadata: { [LINE_ROLE]: "grid" },
       paint: {
-        "line-color": LAND_GRID_COLOUR,
+        "line-color": tokens.grid,
         "line-width": interpolate(zoom, [
           [SECTION_MIN_ZOOM, 0.3],
           [13, 0.8],
@@ -513,70 +517,49 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
   ];
 
   if (options.labels) {
-    // Every polygon label binds to the tile's `_label` sublayer: one anchor point per unit,
-    // emitted by the tile function in the one tile that owns it. Bound to the polygons,
-    // MapLibre placed a symbol per tile fragment and every unit crossing a seam wore its
-    // name twice (visual-m14 F1).
     built.push(
-      {
-        id: "land-townships-label",
-        type: "symbol",
-        source: townships,
-        "source-layer": `${townships}_label`,
-        minzoom: TOWNSHIP_LABEL_MIN_ZOOM,
-        layout: {
-          "text-field": ["coalesce", ["get", "label"], ""],
-          "text-font": ["Noto Sans Regular"],
-          "text-size": SPACING_LABEL_SIZE,
-          "symbol-placement": "point",
-        },
-        paint: {
-          "text-color": tokens.primary.colour,
-          "text-halo-color": tokens.primary.halo,
-          "text-halo-width": tokens.primary.haloWidth,
-        },
-      },
-      {
-        id: "land-sections-label",
-        type: "symbol",
-        source: sections,
-        "source-layer": `${sections}_label`,
-        minzoom: SECTION_LABEL_MIN_ZOOM,
-        layout: {
-          "text-field": ["coalesce", ["get", "label"], ""],
-          "text-font": ["Noto Sans Regular"],
-          "text-size": SPACING_LABEL_SIZE - 1,
-          "symbol-placement": "point",
-        },
-        paint: {
-          "text-color": tokens.primary.colour,
-          "text-halo-color": tokens.primary.halo,
-          "text-halo-width": tokens.primary.haloWidth,
-        },
-      },
+      unitLabelLayer("land-townships-label", townships, TOWNSHIP_LABEL_MIN_ZOOM, SPACING_LABEL_SIZE, tokens),
+      unitLabelLayer("land-sections-label", sections, SECTION_LABEL_MIN_ZOOM, SPACING_LABEL_SIZE - 1, tokens),
+      unitLabelLayer("spacing-units-label", spacing, SPACING_UNIT_LABEL_MIN_ZOOM, SPACING_LABEL_SIZE, tokens),
     );
-    built.push({
-      id: "spacing-units-label",
-      type: "symbol",
-      source: spacing,
-      "source-layer": `${spacing}_label`,
-      minzoom: 11,
-      layout: {
-        "text-field": ["coalesce", ["get", "label"], ""],
-        "text-font": ["Noto Sans Regular"],
-        // The base size; applyVariantStyling owns the per-variant bump, for this label and
-        // the basemap's alike, so the two cannot compound into a size neither declares.
-        "text-size": SPACING_LABEL_SIZE,
-        "symbol-placement": "point",
-      },
-      paint: {
-        "text-color": tokens.primary.colour,
-        "text-halo-color": tokens.primary.halo,
-        "text-halo-width": tokens.primary.haloWidth,
-      },
-    });
   }
   return built;
+}
+
+/**
+ * Every unit label is this one layer shape — VF-5 is a class, so a labelled layer added
+ * later inherits the treatment instead of forking it. Binds to the tile's `_label`
+ * sublayer: one anchor point per unit, emitted by the tile function in the one tile that
+ * owns it; bound to the polygons instead, MapLibre placed a symbol per tile fragment and
+ * every unit crossing a seam wore its name twice (visual-m14 F1). `text-size` is the base;
+ * applyVariantStyling owns the per-variant bump, for these labels and the basemap's alike,
+ * so the two cannot compound into a size neither declares.
+ */
+function unitLabelLayer(
+  id: string,
+  source: string,
+  minzoom: number,
+  size: number,
+  tokens: VariantStyle,
+): LayerSpecification {
+  return {
+    id,
+    type: "symbol",
+    source,
+    "source-layer": `${source}_label`,
+    minzoom,
+    layout: {
+      "text-field": ["coalesce", ["get", "label"], ""],
+      "text-font": ["Noto Sans Regular"],
+      "text-size": size,
+      "symbol-placement": "point",
+    },
+    paint: {
+      "text-color": tokens.primary.colour,
+      "text-halo-color": tokens.primary.halo,
+      "text-halo-width": tokens.primary.haloWidth,
+    },
+  } as LayerSpecification;
 }
 
 /** The struck-through modifier, drawn once into a canvas rather than shipped as a sprite. */

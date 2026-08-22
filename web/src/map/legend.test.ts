@@ -185,6 +185,19 @@ describe("the legend", () => {
     expect(legend.element.textContent).toContain("RF-1");
   });
 
+  it("leads the note with both licence-class sentences, ahead of the symbology prose", () => {
+    // visual-webpolish O2: what each basin's wire carries must sit above the note's own
+    // scroll fold on open at 390, so the pair precedes the laterals/trace/ring detail.
+    const legend = createLegend({ onFilter: () => {} });
+    const text = legend.element.textContent ?? "";
+    const nd = text.indexOf("Every ND feature carries its geometry provenance");
+    const tx = text.indexOf("TX geometry carries no provenance field");
+    const symbology = text.indexOf("Laterals are ND DMR and TX RRC GIS bore geometry");
+    expect(nd).toBeGreaterThan(-1);
+    expect(tx).toBeGreaterThan(nd);
+    expect(symbology).toBeGreaterThan(tx);
+  });
+
   it("names the blue ring as the regulator's own well_type, and the rule that classes it", () => {
     // The ring is a data colour over a key that opens with "data colours, not severity colours",
     // and the sentence keeps the hue from claiming the class injects only water.
