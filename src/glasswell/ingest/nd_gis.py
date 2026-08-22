@@ -20,7 +20,7 @@ import polars as pl
 import psycopg
 from psycopg.rows import dict_row
 
-from glasswell.ingest.base import resolve_environment
+from glasswell.ingest.base import record_vintage_day, resolve_environment
 from glasswell.ingest.shapefile import ShapefileRecord, ZippedShapefile
 from glasswell.lengths import LengthMethod, compute_crs_rule, length_method
 from glasswell.lineage import (
@@ -34,7 +34,6 @@ from glasswell.lineage import (
     fetch_raw,
     lineage_session,
     load_rules,
-    open_vintage,
     quarantine,
 )
 from glasswell.lineage.conformance import rule_for_family
@@ -1415,7 +1414,9 @@ def _open_vintage(
     examined: int,
     appended: int,
 ) -> None:
-    open_vintage(
+    # Accumulates onto the (source, day) ledger row so a same-day re-load of a revised
+    # extract adds to the first pass instead of overwriting it (DR-78).
+    record_vintage_day(
         connection,
         source_id=spec.source_id,
         vintage_date=vintage,

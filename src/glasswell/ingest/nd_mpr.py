@@ -20,7 +20,7 @@ import openpyxl
 import polars as pl
 import psycopg
 
-from glasswell.ingest.base import IngestRun, open_ingest_run
+from glasswell.ingest.base import IngestRun, open_ingest_run, record_vintage_day
 from glasswell.lineage.audit import emit
 from glasswell.lineage.capture import derive
 from glasswell.lineage.conformance import QuarantineBatch, apply_rules, load_rules
@@ -29,7 +29,6 @@ from glasswell.lineage.fetch import fetch_raw
 from glasswell.lineage.models import ConformanceRule, InputRef, OutputSpec
 from glasswell.lineage.quarantine import quarantine
 from glasswell.lineage.serialization import hash_payload
-from glasswell.lineage.vintages import open_vintage
 
 __rule_version__ = "1"
 
@@ -1027,7 +1026,9 @@ def ingest_month(
         partition={"month": f"{year:04d}-{month:02d}", "manifest_id": manifest.manifest_id},
         payload_path=fetched.payload_path,
     )
-    open_vintage(
+    # A backfill ingests many months in one day, all upserting one (source, day) ledger row —
+    # accumulate onto it rather than letting each month overwrite the last (DR-78).
+    record_vintage_day(
         connection,
         source_id=SOURCE_ID,
         vintage_date=run.as_of,

@@ -219,7 +219,13 @@ def newest_vintage(db: psycopg.Connection) -> date:
         return cursor.fetchone()[0]
 
 
-def run_repromotion(db: psycopg.Connection, lineage_env, *, at: date | None = None):
+def run_repromotion(
+    db: psycopg.Connection,
+    lineage_env,
+    *,
+    at: date | None = None,
+    source_keys: list[str] | None = None,
+):
     day = at or (newest_vintage(db) + timedelta(days=1))
     with open_ingest_run(
         db,
@@ -227,7 +233,7 @@ def run_repromotion(db: psycopg.Connection, lineage_env, *, at: date | None = No
         environment=lineage_env,
         clock=FixedClock(datetime(day.year, day.month, day.day, 6, 0, 0, tzinfo=UTC)),
     ) as run:
-        report = repromote.repromote(run)
+        report = repromote.repromote(run, source_keys=source_keys)
     db.commit()
     return report
 
@@ -422,6 +428,68 @@ def test_a_no_op_re_run_does_not_erase_the_record_of_what_the_first_pass_did(
         "select rows_appended from lineage.vintages where vintage_date = %s",
         repromoted.report_vintage,
     ) == repromoted.rows_appended
+
+
+def test_every_nd_completion_row_is_pinned_to_the_month_grain(db, repromoted):
+    """Gate-nm-p5 round-2 O1 / residual R1 (DR-80): migration 029 relaxed production_month's
+    NOT NULL into a two-grain CHECK, leaving ND's month grain guaranteed only by a code
+    property — `_INSERT_COMPLETION` names no effective_from. Pin that contract to rows the
+    writer actually lands: the multi-pool wells here fan out into well_completions."""
+    total, with_month, with_effective = query(
+        db,
+        "select count(*), count(production_month), count(effective_from)"
+        " from canonical.well_completions where source_id = %s",
+        nd_mpr.SOURCE_ID,
+    )[0]
+
+    assert total > 0
+    assert with_month == total
+    assert with_effective == 0
+
+
+def test_a_second_same_day_repromotion_accumulates_the_vintage_ledger(
+    db, legacy, lineage_env, tmp_path
+):
+    """DR-78, the ND half of gate-nm-fp D2: `open_vintage` upserts on (source, day), so the
+    ledger row has to be the vintage-day's, not the last run's. January is re-promoted alone,
+    a February manifest is staged, and the day's second run picks it up; the ledger must hold
+    the sum of both passes — which is what canonical holds at the vintage."""
+    day = newest_vintage(db) + timedelta(days=1)
+    first = run_repromotion(db, lineage_env, at=day, source_keys=["2026_01.xlsx"])
+
+    february = seed_manifest(db, sha256="8" * 64, source_key="2026_02.xlsx")
+    path = write_workbook(
+        tmp_path / "2026_02.xlsx",
+        [
+            filing(api14=f"{MULTI_POOL}0000", month=datetime(2026, 2, 1), pool="DUPEROW",
+                   oil=100, water=10, gas=50, days=28),
+        ],
+    )
+    nd_mpr.load_staging(db, nd_mpr.parse_workbook(path, sheet="Oil"), manifest_id=february)
+    db.commit()
+
+    second = run_repromotion(db, lineage_env, at=day)
+
+    landed = scalar(
+        db,
+        "select count(*) from canonical.production_monthly"
+        " where source_id = %s and report_vintage = %s",
+        nd_mpr.SOURCE_ID,
+        day,
+    )
+    ledger = query(
+        db,
+        "select rows_appended, manifest_ids from lineage.vintages"
+        " where source_id = %s and vintage_date = %s",
+        nd_mpr.SOURCE_ID,
+        day,
+    )
+    assert first.rows_appended > 0
+    assert second.rows_appended > 0
+    assert len(ledger) == 1
+    # sum(rows_appended) at the vintage is what canonical holds at it, not the second run's.
+    assert ledger[0][0] == first.rows_appended + second.rows_appended == landed
+    assert set(ledger[0][1]) == {legacy["manifest"], february}
 
 
 def test_re_promoting_at_a_vintage_that_already_answers_is_refused(db, legacy, lineage_env):
