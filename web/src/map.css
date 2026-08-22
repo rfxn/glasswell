@@ -255,7 +255,9 @@
 
 .gw-lg-note {
   margin: 0.25rem 0 0;
-  max-height: min(24vh, 10rem);
+  /* visual-webpolish O2: deep enough that both licence-class sentences — the ND provenance
+     statement and the TX exclusion — sit above the internal fold on open at 390. */
+  max-height: min(28vh, 12rem);
   overflow-y: auto;
   overscroll-behavior: contain;
   color: var(--muted);
@@ -732,10 +734,15 @@
 
 /* visual-m23 V-3: at this width the ⌾ coach mark is viewport-fixed just under the rail
    (style.css), exactly the band the pill strip opens in. The strip yields until the
-   lesson is dismissed; 4rem clears the mark even when its sentence wraps to two lines. */
+   lesson is dismissed; 4rem clears the mark even when its sentence wraps to two lines.
+   visual-webpolish O1: the zoom control shares that band, so it yields the same way. */
 @media (width <= 520px) {
   body:has(.gw-hint:not([hidden])) .gw-pills {
     top: 4rem;
+  }
+
+  body:has(.gw-hint:not([hidden])) .maplibregl-ctrl-top-right {
+    top: 3.4rem;
   }
 }
 

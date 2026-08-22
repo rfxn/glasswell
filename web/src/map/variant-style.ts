@@ -37,6 +37,8 @@ export interface VariantStyle {
   spacingFill: string;
   spacingFillAlpha: number;
   boundary: string;
+  /** PLSS reference linework: the paper the data sits on, quieter than a boundary. */
+  grid: string;
   graticule: string;
 }
 
@@ -53,6 +55,7 @@ export const VARIANT_STYLES: Readonly<Record<BasemapVariant, VariantStyle>> = {
     spacingFill: "#4B6472",
     spacingFillAlpha: 0.015,
     boundary: "#7C93A1",
+    grid: "#7C8B96",
     graticule: "#55707D",
   },
   light: {
@@ -63,6 +66,7 @@ export const VARIANT_STYLES: Readonly<Record<BasemapVariant, VariantStyle>> = {
     spacingFill: "#557085",
     spacingFillAlpha: 0.015,
     boundary: "#557085",
+    grid: "#7C8B96",
     graticule: "#557085",
   },
   satellite: {
@@ -74,6 +78,7 @@ export const VARIANT_STYLES: Readonly<Record<BasemapVariant, VariantStyle>> = {
     spacingFill: "#0B1014",
     spacingFillAlpha: 0.015,
     boundary: "#FFFFFF",
+    grid: "#FFFFFF",
     graticule: "#FFFFFF",
   },
   none: {
@@ -84,16 +89,23 @@ export const VARIANT_STYLES: Readonly<Record<BasemapVariant, VariantStyle>> = {
     spacingFill: "#4B6472",
     spacingFillAlpha: 0.015,
     boundary: "#7C93A1",
+    grid: "#7C8B96",
     graticule: "#55707D",
   },
 };
 
-/** The context lines VF-5 names, plus the graticule that stands in for a basemap at `none`. */
-export const CONTEXT_LINES: Readonly<Record<string, "boundary" | "graticule">> = {
-  "gw-boundaries-county": "boundary",
-  "gw-boundaries-state": "boundary",
-  graticule: "graticule",
-};
+/**
+ * A context line names its own role where it is defined, and the pass styles whatever is
+ * marked — VF-5's class failure was a hand-kept id list going stale as layers were added.
+ */
+export type LineRole = "boundary" | "grid" | "graticule";
+export const LINE_ROLE = "gw:line-role";
+
+export function lineRole(layer: LayerSpecification): LineRole | undefined {
+  const metadata = layer.metadata as Record<string, unknown> | undefined;
+  const role = metadata?.[LINE_ROLE];
+  return role === "boundary" || role === "grid" || role === "graticule" ? role : undefined;
+}
 
 export function rgba(colour: string, alpha: number): string {
   const digits = colour.replace("#", "");
@@ -170,8 +182,16 @@ export function applyVariantStyling(
         },
       } as LayerSpecification;
     }
-    const line = CONTEXT_LINES[layer.id];
+    const line = lineRole(layer);
     if (!line) return layer;
+    if (line === "grid") {
+      // Colour only: the township/section weights and opacities are the layer's own register
+      // — the grid sits under the data — and the pass must not flatten that hierarchy.
+      return {
+        ...layer,
+        paint: { ...("paint" in layer ? layer.paint : {}), "line-color": tokens.grid },
+      } as LayerSpecification;
+    }
     return {
       ...layer,
       paint: {

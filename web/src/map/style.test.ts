@@ -204,6 +204,28 @@ describe("the data layers", () => {
     expect(metadata[OPACITY_OVERRIDE]).toBe("circle-stroke-opacity");
   });
 
+  it("pins the ring's stroke weights, so base drift fails a test (gate-webpolish R3)", () => {
+    // Selection adds weight, not just the cyan (visual-m17 judgment 3); both registers are
+    // load-bearing, so both ladders are pinned, not only the hue.
+    const ring = dataLayers().find((layer) => layer.id === "disposal-wells");
+    const width = paintOf(ring)["circle-stroke-width"] as unknown[];
+    expect(width.slice(0, 3)).toEqual(["interpolate", ["linear"], ["zoom"]]);
+    const stops = width.slice(3);
+    const zooms: unknown[] = [];
+    const selected: unknown[] = [];
+    const bases: unknown[] = [];
+    for (let at = 0; at < stops.length; at += 2) {
+      zooms.push(stops[at]);
+      const value = stops[at + 1] as unknown[];
+      expect(value[0]).toBe("case");
+      selected.push(value[2]);
+      bases.push(value[3]);
+    }
+    expect(zooms).toEqual([8, 12, 15]);
+    expect(bases).toEqual([1.2, 1.6, 2.2]);
+    expect(selected).toEqual([2.4, 3, 3.8]);
+  });
+
   it("keeps the ring outside the status gate: it paints a well type, not a status", () => {
     // Deliberate, the trace's own reasoning one layer over: the filter slot carries the
     // class, and the status filter has no claim on it.
@@ -339,11 +361,15 @@ describe("the land grid (M1-4)", () => {
     expect(byId.get("land-sections-line")?.minzoom).toBe(10);
   });
 
-  it("paints both grid layers the neutral, not a stream or status colour", () => {
+  it("paints both grid layers the variant's neutral, not one constant for every substrate", () => {
+    // The M2-4 / VF-5 class fix: the one colour that cleared dark and light measured ~1.1:1
+    // over the satellite mid-tone, so the grid keys to the variant like every other line.
     for (const id of ["land-townships-line", "land-sections-line"]) {
-      const layer = dataLayers().find((built) => built.id === id);
-      const paint = (layer?.paint ?? {}) as Record<string, unknown>;
-      expect(paint["line-color"], `${id} colour`).toBe("#7C8B96");
+      for (const variant of ["dark", "light", "satellite", "none"] as BasemapVariant[]) {
+        const layer = dataLayers({ variant }).find((built) => built.id === id);
+        const paint = (layer?.paint ?? {}) as Record<string, unknown>;
+        expect(paint["line-color"], `${id} on ${variant}`).toBe(variantStyle(variant).grid);
+      }
     }
   });
 

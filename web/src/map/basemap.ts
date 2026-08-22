@@ -3,6 +3,8 @@ import type { Flavor } from "@protomaps/basemaps";
 import type { LayerSpecification, StyleSpecification } from "maplibre-gl";
 
 import { BASE_STORAGE_KEY, readGuarded, writeGuarded } from "./persist.ts";
+// No cycle at runtime: variant-style's import from this module is type-only.
+import { LINE_ROLE } from "./variant-style.ts";
 
 /**
  * Basemap options, all keyless and all attributable. The vector flavours read a PMTiles
@@ -213,6 +215,7 @@ function splitBoundaries(built: LayerSpecification[], flavor: Flavor): LayerSpec
       "source-layer": "boundaries",
       filter: [">", ["get", "kind_detail"], 4],
       minzoom: 7,
+      metadata: { [LINE_ROLE]: "boundary" },
       paint: { "line-color": colour, "line-width": 0.5, "line-opacity": 0.7 },
     });
     out.push({
@@ -221,6 +224,7 @@ function splitBoundaries(built: LayerSpecification[], flavor: Flavor): LayerSpec
       source: BASEMAP_SOURCE,
       "source-layer": "boundaries",
       filter: ["==", ["get", "kind_detail"], 4],
+      metadata: { [LINE_ROLE]: "boundary" },
       paint: { "line-color": colour, "line-width": 1.2 },
     });
   }
@@ -298,6 +302,7 @@ export function graticuleStyle(): StyleSpecification {
         id: "graticule",
         type: "line",
         source: "graticule",
+        metadata: { [LINE_ROLE]: "graticule" },
         paint: { "line-color": "#1d2a33", "line-width": 1 },
       },
     ],

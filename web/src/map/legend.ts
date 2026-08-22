@@ -355,16 +355,18 @@ export function createLegend(options: LegendOptions): LegendHandle {
       if (index > 0) note.appendChild(document.createTextNode(", "));
       note.appendChild(ruleNode(entry));
     }
+    // The two licence-class sentences lead (visual-webpolish O2): what each basin's wire
+    // carries is the claim a reader must see without finding the note's own scrollbar.
     note.appendChild(
       document.createTextNode(
-        ". Laterals are ND DMR and TX RRC GIS bore geometry — not a directional survey trace." +
-          " The orchid line is that trace: the bore path ND filed as survey stations." +
-          " The teal ring is NDIC's own well_type — disposal and injection wells of any" +
-          " injected stream, classed by cr_nd_well_type_disposal_1, the code drawn as filed." +
-          " Every ND feature carries its geometry provenance on the wire — surface, lateral" +
+        ". Every ND feature carries its geometry provenance on the wire — surface, lateral" +
           ` or survey_trace, classed by ${PROVENANCE_RULE}, the class served verbatim.` +
           " TX geometry carries no provenance field: the RRC's coordinate-source attribute" +
-          " is licence-gated (RF-1) and is not served until that is answered.",
+          " is licence-gated (RF-1) and is not served until that is answered." +
+          " Laterals are ND DMR and TX RRC GIS bore geometry — not a directional survey trace." +
+          " The orchid line is that trace: the bore path ND filed as survey stations." +
+          " The teal ring is NDIC's own well_type — disposal and injection wells of any" +
+          " injected stream, classed by cr_nd_well_type_disposal_1, the code drawn as filed.",
       ),
     );
   }
