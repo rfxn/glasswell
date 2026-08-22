@@ -11,6 +11,7 @@ import {
   BBOX_DEGREE_CAP,
   DEFERRED_WELLSET,
   TARGETS,
+  UNPINNED_LABEL,
   crossingLink,
   cross,
   openThisSeries,
@@ -173,10 +174,74 @@ describe("invariant one — as_of survives every crossing", () => {
     ]);
   });
 
-  it("leaves as_of absent rather than inventing one when the surface resolved nothing", () => {
+  it("names the vintage its own href carries, so the flag and the link cannot disagree", () => {
+    for (const crossing of everyCrossing()) {
+      expect(crossing.pinned, crossing.id).toBe("2026-08-20");
+      expect(crossing.href, crossing.id).toContain("as_of=2026-08-20");
+    }
+  });
+
+  /**
+   * The half this used to assert on its own — "nothing is invented" — is right and is still
+   * here. It was never the whole contract: leaving `as_of` absent and *still offering the
+   * crossing* hands the reader a URL that answers differently after the next vintage lands,
+   * which is the drift M6 exists to stop. Both halves, together, or neither is worth much.
+   */
+  it("invents no as_of when the surface resolved nothing, and offers no link either (M6)", () => {
     for (const crossing of everyCrossing({ resolved: null })) {
       expect(asOfOf(crossing), crossing.id).toEqual([]);
+      expect(crossing.pinned, crossing.id).toBeNull();
+
+      const link = crossingLink(crossing, { signal: new AbortController().signal });
+
+      expect(link.getAttribute("href"), crossing.id).toBeNull();
+      expect(link.getAttribute("aria-disabled"), crossing.id).toBe("true");
+      expect(link.textContent, crossing.id).toContain(UNPINNED_LABEL);
+      expect(link.title, crossing.id).toContain("would answer differently");
     }
+  });
+
+  /**
+   * The address bar is a copy surface like any other, so refusing the href is only half of it:
+   * a route that pushed the same state would put the drifting URL in front of the reader by
+   * another door. `cross` is the one door, so the refusal lives there.
+   */
+  it("refuses to navigate an unpinned crossing, so no route can write a drifting URL", () => {
+    window.history.replaceState(null, "", "/?view=map");
+    const crossing = whatsBehindThisLayer(
+      layerDef("wells")?.collection ?? null,
+      TIGHT_BBOX,
+      context({ resolved: null }),
+    ) as Crossing;
+    const push = vi.spyOn(window.history, "pushState");
+    const seen = vi.fn();
+    window.addEventListener("popstate", seen);
+
+    cross(crossing);
+
+    expect(push).not.toHaveBeenCalled();
+    expect(seen).not.toHaveBeenCalled();
+    expect(window.location.search).toBe("?view=map");
+    window.removeEventListener("popstate", seen);
+  });
+
+  it("still offers the link when the reader pinned one and the surface resolved nothing", () => {
+    const state: AppState = { ...DEFAULT_STATE, view: "map", extra: { as_of: ["2026-07-01"] } };
+
+    for (const crossing of everyCrossing({ state, resolved: null })) {
+      const link = crossingLink(crossing, { signal: new AbortController().signal });
+
+      expect(crossing.pinned, crossing.id).toBe("2026-07-01");
+      expect(link.getAttribute("href"), crossing.id).toBe(crossing.href);
+      expect(link.hasAttribute("aria-disabled"), crossing.id).toBe(false);
+    }
+  });
+
+  it("reads a bare as_of= as nobody's pin, rather than as one that outranks the surface's", () => {
+    const state: AppState = { ...DEFAULT_STATE, view: "map", extra: { as_of: [""] } };
+
+    expect(pinnedState({ state, resolved: "2026-08-20" }).extra["as_of"]).toEqual(["2026-08-20"]);
+    expect(rowsForThisWell(API10, { state, resolved: null })?.pinned).toBeNull();
   });
 
   it("survives the round trip through the URL, which is what a shared link actually carries", () => {
@@ -227,6 +292,22 @@ describe("invariant two — every crossing is a pushState", () => {
     link.dispatchEvent(new MouseEvent("click", { metaKey: true, cancelable: true, bubbles: true }));
 
     expect(push).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The owed mounts (§7 E1) live in a host that replaces its whole subtree and holds no
+   * controller. The listener is on the anchor, so it goes when the anchor does — requiring a
+   * signal there would be asking a host to invent one for a teardown it already performs.
+   */
+  it("crosses from a link built without a signal, for a host that discards its own subtree", () => {
+    const crossing = rowsForThisWell(API10, context()) as Crossing;
+    const link = crossingLink(crossing);
+    const push = vi.spyOn(window.history, "pushState");
+
+    link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+    expect(push).toHaveBeenCalledTimes(1);
+    push.mockRestore();
   });
 
   it("renders the crossing as a link whose href is the state it lands on", () => {

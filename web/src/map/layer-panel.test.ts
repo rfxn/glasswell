@@ -278,6 +278,60 @@ describe("SB-08 §2.6 — the crossing from a layer to the collection behind it"
     }
   });
 
+  /**
+   * The counts request is the map's only reading of the vintage, and its error branch leaves
+   * the map with none. On a degraded instance that is not a race — it is every rebuild for the
+   * rest of the session — so the row states the absence rather than handing over a link that
+   * answers differently after the next vintage lands (gate-c10 B1, SB-08 M6).
+   */
+  it("offers no link at all while the map has resolved no vintage, and says why", () => {
+    const { handle } = panel();
+    handle.setCrossing(TIGHT, null);
+    const link = crossingIn(handle.element, "wells")!;
+
+    expect(link.hidden).toBe(false);
+    expect(link.getAttribute("href")).toBeNull();
+    expect(link.getAttribute("aria-disabled")).toBe("true");
+    expect(link.textContent).toContain("no vintage yet");
+    expect(link.title).toContain("would answer differently");
+  });
+
+  it("does not cross on a click while it has no vintage, so the address bar cannot drift", () => {
+    const { handle } = panel();
+    handle.setCrossing(TIGHT, null);
+    const push = vi.spyOn(window.history, "pushState");
+
+    crossingIn(handle.element, "wells")!.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+
+    expect(push).not.toHaveBeenCalled();
+    push.mockRestore();
+  });
+
+  it("becomes a real link the moment a vintage lands, which is the pre-settle window closing", () => {
+    const { handle } = panel();
+    handle.setCrossing(TIGHT, null);
+    handle.setCrossing(TIGHT, "2026-08-20");
+    const link = crossingIn(handle.element, "wells")!;
+
+    expect(link.getAttribute("href")).toContain("as_of=2026-08-20");
+    expect(link.hasAttribute("aria-disabled")).toBe(false);
+    expect(link.hasAttribute("data-unpinned")).toBe(false);
+    expect(link.textContent).toBe("What is behind this layer");
+  });
+
+  it("keeps the reader's own pin working on a degraded map, which resolves nothing at all", () => {
+    window.history.replaceState(null, "", "/?view=map&as_of=2026-07-01");
+    const { handle } = panel();
+    handle.setCrossing(TIGHT, null);
+    const link = crossingIn(handle.element, "wells")!;
+
+    expect(link.getAttribute("href")).toContain("as_of=2026-07-01");
+    expect(link.hasAttribute("aria-disabled")).toBe(false);
+    window.history.replaceState(null, "", "/");
+  });
+
   it("crosses in place on a plain click rather than reloading the document", () => {
     const { handle } = panel();
     handle.setCrossing(TIGHT, "2026-08-20");

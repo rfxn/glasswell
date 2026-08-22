@@ -29,6 +29,13 @@ export interface Crossing {
   title: string;
   next: AppState;
   href: string;
+  /**
+   * The vintage this crossing's own `href` carries, read back off `next` rather than taken
+   * from the context, so the flag and the link cannot disagree. Null means the link would
+   * answer differently after the next vintage lands, and M6 says that is not a link to hand a
+   * reader — see `applyCrossing` and `cross`.
+   */
+  pinned: string | null;
   /** Set only where the crossing also asks the camera to move (§2.6's explorer row). */
   camera?: FlyTarget;
 }
@@ -95,14 +102,19 @@ function layerTarget(collection: LayerCollectionRef): CrossingTarget {
   return { id: collection.dataset, pathParameters: [], filter: collection.bbox };
 }
 
+/** The `as_of` a state carries. An empty one is nobody's pin: it serialises to a bare `as_of=`. */
+function asOfIn(state: AppState): string | null {
+  const value = state.extra[ASOF]?.[0];
+  return value && value.length > 0 ? value : null;
+}
+
 /**
  * M6, applied before the hop rather than inside it: `stateFor` carries whatever `as_of` the
  * source state holds, so pinning is a transformation of the source and the router stays the
  * one place a crossing's URL is decided.
  */
 export function pinnedState(context: BridgeContext): AppState {
-  const own = context.state.extra[ASOF];
-  if (own && own.length > 0) return context.state;
+  if (asOfIn(context.state)) return context.state;
   const resolved = context.resolved;
   if (!resolved) return context.state;
   return { ...context.state, extra: { ...context.state.extra, [ASOF]: [resolved] } };
@@ -116,7 +128,7 @@ function crossing(
   context: BridgeContext,
 ): Crossing {
   const next = stateFor(hop, pinnedState(context));
-  return { id, label, title, next, href: serializeState(next) };
+  return { id, label, title, next, href: serializeState(next), pinned: asOfIn(next) };
 }
 
 /**
@@ -223,6 +235,7 @@ export function showOnMap(api10: string, point: Point, context: BridgeContext): 
     title: "Open this row's geometry on the map, at the same as-of.",
     next,
     href: serializeState(next),
+    pinned: asOfIn(next),
     camera: { lon: point.lon, lat: point.lat, zoom: WELL_ZOOM },
   };
 }
@@ -236,27 +249,64 @@ export function showOnMap(api10: string, point: Point, context: BridgeContext): 
  * so both paths land on the same viewport and neither needs to know which one ran.
  */
 export function cross(crossing: Crossing): void {
+  // The one refusal, at the one route: an unpinned crossing would write its own drifting URL
+  // into the address bar, which is a copy surface like any other (M6).
+  if (!crossing.pinned) return;
   writeState(crossing.next, "push");
   window.dispatchEvent(new PopStateEvent("popstate"));
   if (crossing.camera) flyTo(crossing.camera);
 }
 
+export const UNPINNED_LABEL = "no vintage yet";
+
+/** Short by obligation, not by taste: §2.3 arm 4 bars the client from authoring domain prose. */
+export const UNPINNED_TITLE =
+  "This view has not resolved a vintage yet, so a link from here would answer differently tomorrow.";
+
+/**
+ * M6 at the affordance rather than only in the state. A crossing whose href names no vintage is
+ * written as HTML's own placeholder-for-a-link — an anchor with no `href` — so there is nothing
+ * to copy, nothing to open in a new tab, and nothing announced as a link. It says why instead of
+ * vanishing: a reader who cannot see the difference between a pinned link and a drifting one is
+ * the reader M6 exists to protect.
+ */
+export function applyCrossing(link: HTMLAnchorElement, crossing: Crossing): void {
+  link.dataset["crossing"] = crossing.id;
+  if (crossing.pinned) {
+    link.href = crossing.href;
+    link.textContent = crossing.label;
+    link.title = crossing.title;
+    link.removeAttribute("aria-disabled");
+    link.removeAttribute("data-unpinned");
+    return;
+  }
+  link.removeAttribute("href");
+  link.textContent = `${crossing.label} — ${UNPINNED_LABEL}`;
+  link.title = `${crossing.title} ${UNPINNED_TITLE}`;
+  link.setAttribute("aria-disabled", "true");
+  link.dataset["unpinned"] = "true";
+}
+
 export interface CrossingLinkOptions {
-  signal: AbortSignal;
+  /**
+   * Optional because the listener is on the anchor itself: a host that discards the element
+   * discards the listener with it. Hosts that re-render into a live container (the record
+   * panel) pass one; hosts that replace their whole subtree (the well card) need not.
+   */
+  signal?: AbortSignal;
   className?: string;
 }
 
 /** A chip's shape (C8 N4): a real href, a plain left click intercepted, a modified one left. */
 export function crossingLink(
   crossing: Crossing,
-  options: CrossingLinkOptions,
+  options: CrossingLinkOptions = {},
 ): HTMLAnchorElement {
   const link = document.createElement("a");
   link.className = options.className ?? "gw-crossing";
-  link.href = crossing.href;
-  link.dataset["crossing"] = crossing.id;
-  link.textContent = crossing.label;
-  link.title = crossing.title;
+  applyCrossing(link, crossing);
+  const listener: AddEventListenerOptions = {};
+  if (options.signal) listener.signal = options.signal;
   link.addEventListener(
     "click",
     (event) => {
@@ -264,7 +314,7 @@ export function crossingLink(
       event.preventDefault();
       cross(crossing);
     },
-    { signal: options.signal },
+    listener,
   );
   return link;
 }

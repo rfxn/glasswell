@@ -1,7 +1,7 @@
 import "./layer-panel.css";
 
 import { readState } from "../app/state.ts";
-import { cross, whatsBehindThisLayer } from "../explore/bridge.ts";
+import { applyCrossing, cross, whatsBehindThisLayer } from "../explore/bridge.ts";
 import type { Bbox, Crossing } from "../explore/bridge.ts";
 import { BASEMAPS } from "./basemap.ts";
 import { LAYERS, defaultLayerSet } from "./registry.ts";
@@ -290,10 +290,7 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
       landing = whatsBehindThisLayer(layer.collection, box, { state: readState(), resolved });
       crossing.hidden = landing === null;
       if (!landing) return;
-      crossing.href = landing.href;
-      crossing.textContent = landing.label;
-      crossing.title = landing.title;
-      crossing.dataset["crossing"] = landing.id;
+      applyCrossing(crossing, landing);
     },
   };
 }

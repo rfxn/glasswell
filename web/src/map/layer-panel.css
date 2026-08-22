@@ -29,6 +29,24 @@
   background: var(--tint-accent);
 }
 
+/* M6: the row still says what is behind the layer, but the surface has no vintage to pin, so
+   there is no href on it and nothing that looks like one. */
+.gw-layer-crossing[data-unpinned] {
+  color: var(--muted);
+  border-bottom-style: dashed;
+  border-bottom-color: var(--hairline);
+  cursor: default;
+}
+
+.gw-layer-crossing[data-unpinned]::before {
+  content: none;
+}
+
+.gw-layer-crossing[data-unpinned]:hover {
+  color: var(--muted);
+  background: none;
+}
+
 /* Not a disabled control: a statement that the geometry is drawn from tiles and nothing else. */
 .gw-layer-nocollection {
   margin: var(--gw-space-1) 0 0;

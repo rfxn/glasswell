@@ -124,6 +124,26 @@ describe("the grid renders a collection off one state object (§3.1 rule 2)", ()
     );
   });
 
+  /**
+   * §2.5's card list: at 820 the header row is not painted, so the only thing that says what a
+   * value is, is the label the cell carries itself. It has to be a node — generated content is
+   * paint and nothing else (gate-c10 R3).
+   */
+  it("gives every cell the column name as a real element, one it can be read and copied from", async () => {
+    await mount("quarantine");
+    const columns = (dataset("quarantine").columns.default ?? []) as string[];
+    const row = host.querySelector(".gw-grid-tr") as HTMLElement;
+    const names = [...row.querySelectorAll(".gw-grid-td")].map(
+      (cell) => cell.querySelector(".gw-grid-td-name")?.textContent,
+    );
+
+    expect(names).toHaveLength(columns.length);
+    expect(names.every((name) => typeof name === "string" && name !== "")).toBe(true);
+    expect(names[0]).toBe(
+      (row.querySelector(".gw-grid-td") as HTMLElement).dataset["name"],
+    );
+  });
+
   it("puts a filter on the wire under the parameter's own name", async () => {
     await mount("quarantine", { extra: { "f.state": ["open"], "f.stage": ["conform"] } });
 

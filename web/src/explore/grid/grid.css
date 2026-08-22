@@ -139,6 +139,12 @@
   align-items: baseline;
 }
 
+/* Absent above 820, where the column header says it once for the whole column. Announcing it
+   per cell as well would be the same name twice on every value in the grid. */
+.gw-grid-td-name {
+  display: none;
+}
+
 .gw-cell {
   display: flex;
   align-items: baseline;
@@ -471,10 +477,11 @@ gw-count {
     padding: var(--gw-space-1) 0;
   }
 
-  /* The <dt> half of §2.5's pair. Generated rather than rendered, because the alternative is a
-     resize listener and a second pass over the same rows. */
-  .gw-grid-td::before {
-    content: attr(data-name);
+  /* The label half of §2.5's pair, in the track the header would have used. It is a rendered
+     span rather than generated content, so it is selectable, copyable, and read out with the
+     value it names once the header row above is gone (D12). */
+  .gw-grid-td-name {
+    display: block;
     color: var(--muted);
     font-size: var(--gw-fs-micro);
     overflow-wrap: anywhere;

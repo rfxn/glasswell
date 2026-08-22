@@ -76,12 +76,27 @@ describe("the explorer's stylesheets obey the rules C6 wrote down for its own (G
     const posture = /@media \(max-width: 820px\) \{([\s\S]*?)\n\}/.exec(grid)?.[1] ?? "";
 
     expect(posture, "820 arm is missing").not.toBe("");
-    // The <dt> half comes off the cell, so grid.ts must be putting the name there.
-    expect(posture).toContain("content: attr(data-name)");
+    expect(posture).toMatch(/\.gw-grid-td-name \{\s*display: block/);
     expect(posture).toMatch(/\.gw-explore-grid-head \{\s*display: none/);
     expect(posture).toMatch(/\.gw-grid-table \{[\s\S]*?display: block/);
     expect(readFileSync("src/explore/grid/grid.ts", "utf8")).toContain(
       'cell.dataset["name"] = column.name',
+    );
+  });
+
+  /**
+   * gate-c10 R3. `content: attr(data-name)` painted the label and carried it nowhere else: a
+   * pseudo-element cannot be selected, cannot be copied, and is not reliably exposed to
+   * assistive technology as the value's label. At 820 the header row is gone, so that was the
+   * only label the cell had.
+   */
+  it("carries that name in a real element, not in generated content", () => {
+    const grid = SHEETS.find((sheet) => sheet.path.endsWith("grid/grid.css"))?.css ?? "";
+
+    expect(grid).not.toContain("attr(data-name)");
+    expect(grid).toMatch(/\.gw-grid-td-name \{\s*display: none;\s*\}/);
+    expect(readFileSync("src/explore/grid/grid.ts", "utf8")).toContain(
+      'name.className = "gw-grid-td-name"',
     );
   });
 

@@ -30,6 +30,7 @@ import {
   bboxParam,
   censusOfDrawn,
   createCountSource,
+  retainVintage,
 } from "./counts.ts";
 import type { Bbox, CountsState, WellStatusSummary } from "./counts.ts";
 import { createHoverCard } from "./hover-card.ts";
@@ -369,6 +370,9 @@ export function createMap(
 
   function paintCounts(state: CountsState): void {
     const zoom = map.getZoom();
+    // Ahead of the two early returns, so a failing or in-flight answer cannot leave the panel
+    // offering a crossing that names no vintage for the rest of the session (SB-08 M6).
+    resolvedVintage = retainVintage(resolvedVintage, state);
     if (state.kind === "loading") {
       legend.setPending(zoom);
       return;
@@ -382,7 +386,6 @@ export function createMap(
       return;
     }
     countsFailing = false;
-    resolvedVintage = state.resolved;
     panel.setCrossing(state.bbox, resolvedVintage);
     legend.setCounts(state.counts, zoom, state.handles);
     legend.setVocabulary(state.vocabulary);

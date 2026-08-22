@@ -26,3 +26,21 @@ a.gw-crossing:focus-visible {
   background: var(--tint-accent);
   color: var(--paper);
 }
+
+/* M6's refusal. Not a disabled control and not a link either — there is no href to copy, so it
+   reads as the statement it is: no arrow, because there is no hop to offer yet. */
+.gw-crossing[data-unpinned] {
+  border-style: dashed;
+  border-color: var(--hairline);
+  color: var(--muted);
+  cursor: default;
+}
+
+.gw-crossing[data-unpinned]::before {
+  content: none;
+}
+
+.gw-crossing[data-unpinned]:hover {
+  background: none;
+  color: var(--muted);
+}

@@ -342,8 +342,15 @@ function bodyRow(
     cell.className = `gw-grid-td gw-grid-td-${column.kind}`;
     cell.setAttribute("role", "cell");
     // §2.5's card list is a CSS posture, not a second renderer: below 820 the header row is
-    // not painted, so each cell carries the name it would have been read under.
+    // not painted, so each cell carries the name it would have been read under. A rendered
+    // element rather than `content: attr(data-name)`, because a pseudo-element is neither
+    // selectable nor reliably a label to assistive technology (D12); the attribute stays as
+    // the machine-readable hook the shot pack and the probes select on.
     cell.dataset["name"] = column.name;
+    const name = document.createElement("span");
+    name.className = "gw-grid-td-name";
+    name.textContent = column.name;
+    cell.append(name);
     cell.append(
       renderCell(column, {
         data: loaded.envelope.data,

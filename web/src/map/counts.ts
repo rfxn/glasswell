@@ -262,6 +262,17 @@ export function createCountSource(options: CountSourceOptions): CountSource {
   };
 }
 
+/**
+ * The vintage a crossing off this surface pins, across a sequence of answers. A failure or a
+ * request in flight does not un-resolve what is already on the canvas — the same tiles and the
+ * same counts are still painted — so the last ready envelope's vintage stands until another
+ * ready envelope replaces it. A ready envelope that resolved nothing replaces it with nothing:
+ * pinning a vintage the current answer does not claim is the drift M6 is about, one step later.
+ */
+export function retainVintage(previous: string | null, state: CountsState): string | null {
+  return state.kind === "ready" ? state.resolved : previous;
+}
+
 function ready(bbox: Bbox, envelope: Envelope<WellStatusSummary>): CountsReady {
   const data = envelope.data;
   return {

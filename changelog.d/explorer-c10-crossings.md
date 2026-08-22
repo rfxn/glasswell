@@ -8,6 +8,12 @@
 - [New] M6, applied where a link is made rather than where one is read: a crossing off a
       surface that resolved a vintage pins that vintage, so a shared link reproduces the
       numbers the sharer saw; a vintage the reader pinned themselves always wins
+- [New] A crossing knows whether its own URL names a vintage, read back off the state it
+      serialises rather than taken on trust, and one that names none is written as a
+      statement instead of a link: no `href` to copy, no navigation, and a line saying the
+      view has not resolved one yet. The map keeps the vintage its last answer resolved
+      across a failing or in-flight one, so the refusal appears only where nothing has ever
+      resolved — and a reader who pinned their own is never affected
 - [New] `x-glasswell-dataset` destinations are declared in `bridge.ts` and checked against
       the committed OpenAPI snapshot — four of the five crossings are built on the map,
       which never fetches the document, so the declaration is proven rather than trusted
@@ -32,3 +38,7 @@
       degrees a side `list_wells` rejects, and says the view is too wide to narrow by
 - [Fix] The layer row's crossing let `display` outrank `[hidden]`, painting an arrow on
       every tile-only row above the line saying it has nowhere to cross to
+- [Fix] The 820 card list labelled each value with `content: attr(data-name)`, which paints
+      a name and carries it nowhere: the label was neither selectable nor exposed to
+      assistive technology, and at that width the column header it would otherwise come
+      from is not rendered. The label is a real element now

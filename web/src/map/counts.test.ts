@@ -9,6 +9,7 @@ import {
   createCountSource,
   normaliseBbox,
   parseBbox,
+  retainVintage,
   sameBbox,
   statusCounts,
   statusHandles,
@@ -504,6 +505,48 @@ describe("the census of what the canvas drew", () => {
 
   it("is zero, and says nothing about a build, when nothing was drawn", () => {
     expect(censusOfDrawn([])).toEqual({ wells: 0, derivation: null });
+  });
+});
+
+/**
+ * gate-c10 B1: on a degraded instance the counts error branch is not a race, it is the whole
+ * session. What the map already resolved has to survive it, or the crossing built off this
+ * surface is unpinned for as long as the reader stays.
+ */
+describe("the vintage a crossing pins, across a run of answers", () => {
+  const ready = (resolved: string | null): CountsState => ({
+    kind: "ready",
+    bbox: ND,
+    counts: {},
+    handles: {},
+    total: null,
+    totalHandle: null,
+    vocabulary: [],
+    resolved,
+  });
+
+  it("takes the vintage a ready answer resolved", () => {
+    expect(retainVintage(null, ready("2026-08-01"))).toBe("2026-08-01");
+  });
+
+  it("keeps it through a failure, because the canvas is still drawing that answer", () => {
+    expect(retainVintage("2026-08-01", { kind: "error", bbox: ND, message: "502" })).toBe(
+      "2026-08-01",
+    );
+  });
+
+  it("keeps it while the next request is in flight, so a pan cannot unpin the link", () => {
+    expect(retainVintage("2026-08-01", { kind: "loading", bbox: ND })).toBe("2026-08-01");
+  });
+
+  it("has none to keep when the first answer is the one that failed", () => {
+    // The permanent case: nothing ever resolved, so there is nothing to fall back to and the
+    // row has to say so rather than invent one.
+    expect(retainVintage(null, { kind: "error", bbox: ND, message: "502" })).toBeNull();
+  });
+
+  it("drops it when a ready answer claims no vintage, rather than pinning a stale one", () => {
+    expect(retainVintage("2026-08-01", ready(null))).toBeNull();
   });
 });
 
