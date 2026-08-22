@@ -122,7 +122,10 @@ describe("the build stamp (owner observation 1)", () => {
 
     expect(build.closest(".gw-meta")).toBeTruthy();
     expect(build.previousElementSibling?.id).toBe("gw-asof");
-    expect(build.textContent).toMatch(/^build (dev|[0-9a-f]{7,40}\+?)$/);
+    // The stamp grammar moved from `build <hash>` to the release literal `v<M.NN>+<hash>`
+    // when the odometer landed; `dev` survives as the no-git fallback (stamp.test.ts owns
+    // the grammar's own coverage — this only pins placement plus a sane reading).
+    expect(build.textContent).toMatch(/^(v\d+\.\d{1,2}\+[0-9a-f]{7,40}\+?|dev)$/);
   });
 
   it("leaves the vintage slot reading as_of <date>, which is what reads it", () => {
