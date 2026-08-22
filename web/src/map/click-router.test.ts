@@ -71,6 +71,22 @@ describe("the click router", () => {
     }
   });
 
+  it("picks a Texas well dot — 355,463 points were unpickable while the map ranked none of them", () => {
+    // gate-m17 R-5, red on every build before this one: tx-wells and tx-wells-struck were
+    // absent from PRIORITY, so topHit returned null over the whole basin's points.
+    expect(topHit([hit("tx-wells", "4231700001")])?.properties["api10"]).toBe("4231700001");
+    expect(topHit([hit("tx-wells-struck", "4231700002")])?.properties["api10"]).toBe("4231700002");
+    expect(PICKABLE_LAYERS).toContain("tx-wells");
+    expect(PICKABLE_LAYERS).toContain("tx-wells-struck");
+  });
+
+  it("ranks a Texas wellhead above the Texas lateral under it, as North Dakota's is", () => {
+    expect(topHit([hit("tx-laterals", "a"), hit("tx-wells", "b")])?.layer.id).toBe("tx-wells");
+    expect(topHit([hit("spacing-units-fill", "a"), hit("tx-wells-struck", "b")])?.layer.id).toBe(
+      "tx-wells-struck",
+    );
+  });
+
   it("keeps a well pickable through its disposal ring when the wells row is off", () => {
     // The ring is the ink on top and both hits carry the same api10, so the rank changes
     // which layer answers, never which well is selected.

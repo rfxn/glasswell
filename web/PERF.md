@@ -225,3 +225,4 @@ single green check. Append; do not overwrite.
 | 2026-08-21 | C0 | 38,498 | — | 302,369 | map moved behind a dynamic import |
 | 2026-08-21 | C11 | 44,192 | 62,817 | 313,823 | first measurement of the explorer route |
 | 2026-08-22 | M1-7 | 44,245 | 62,867 | 315,287 | disposal layer: +538 gz on the map chunk (base cda2e51 measured 314,749); entry unchanged |
+| 2026-08-22 | M1-3 | 44,014 | 62,615 | 314,293 | provenance wire field + snapshot coverage: +383 gz on the map chunk (base 88105aa measured 313,910 on this toolchain); entry +10, jitter class |

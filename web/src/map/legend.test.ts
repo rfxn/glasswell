@@ -167,6 +167,24 @@ describe("the legend", () => {
     expect(legend.element.textContent).toMatch(/orchid line is that trace/i);
   });
 
+  it("names the served provenance vocabulary and the rule that classes it", () => {
+    // M1-3: the provenance line stops being prose about two rows and becomes the statement
+    // of a served field — the three classes verbatim, the R8 row that maps them.
+    const legend = createLegend({ onFilter: () => {} });
+    expect(legend.element.textContent).toMatch(/surface, lateral or survey_trace/);
+    expect(legend.element.textContent).toContain("cr_nd_geometry_provenance_1");
+    legend.setVocabulary([{ rule: "cr_nd_status_vocab_1", href: null }]);
+    expect(legend.element.textContent).toContain("cr_nd_geometry_provenance_1");
+  });
+
+  it("says why Texas serves no provenance field, where a reader would look for it", () => {
+    // The ND-only scope is a licence ruling (RF-1), not an oversight; the surface that
+    // states the provenance vocabulary is the surface that owes the reader the exclusion.
+    const legend = createLegend({ onFilter: () => {} });
+    expect(legend.element.textContent).toMatch(/TX geometry carries no provenance field/i);
+    expect(legend.element.textContent).toContain("RF-1");
+  });
+
   it("names the blue ring as the regulator's own well_type, and the rule that classes it", () => {
     // The ring is a data colour over a key that opens with "data colours, not severity colours",
     // and the sentence keeps the hue from claiming the class injects only water.

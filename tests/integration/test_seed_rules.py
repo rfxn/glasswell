@@ -17,6 +17,7 @@ MINIMUM_RULES = 17
 MINIMUM_TERMS = 30
 MEASURED_ND_STATUSES = 19
 POLICY_RULES = (
+    "cr_nd_geometry_provenance_1",
     "cr_nd_liquids_policy_1",
     "cr_nd_null_semantics_1",
     "cr_nd_pool_rollup_1",

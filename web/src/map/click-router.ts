@@ -12,8 +12,13 @@ const PRIORITY: Readonly<Record<string, number>> = {
   // Above the wellhead it rings: the ink on top, and the pickable mark when the wells row
   // is off. Both hits carry the same api10, so the rank never changes what is selected.
   "disposal-wells": 41,
+  // Texas at North Dakota's rank, for the laterals' reason: the two basins never overlap,
+  // and TX dots absent from this map were genuinely unpickable — topHit returned null over
+  // 355,463 points (gate-m17 R-5, pre-existing on every build since the TX layers landed).
   wells: 40,
   "wells-struck": 40,
+  "tx-wells": 40,
+  "tx-wells-struck": 40,
   // Both of the laterals row's style layers, at one rank: the two never overlap — they are
   // different basins — and one row that selected in North Dakota and did nothing in the
   // Permian would be the toggle contradicting itself.

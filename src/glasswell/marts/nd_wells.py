@@ -25,6 +25,8 @@ from glasswell.marts.tiles import ND_LAYERS, install_tile_functions
 from glasswell.units import METRES_PER_FOOT
 
 DATUM_RULE = "cr_nd_datum_1"
+# M1-3: geom_type served verbatim as geometry_provenance on every ND layer (R8).
+PROVENANCE_RULE = "cr_nd_geometry_provenance_1"
 
 STATE_CODE = "33"
 
@@ -57,6 +59,7 @@ select s.api10,
        extract(year from w.spud_date)::int as spud_year,
        {length_metres}::numeric / %(metres_per_foot)s as lateral_length_ft_exact,
        round({length_metres}::numeric / %(metres_per_foot)s, 2)::float8 as lateral_length_ft,
+       s.geom_type as geometry_provenance,
        s.geom
   from canonical.well_spatial s
   left join wells_as_of w on w.api10 = s.api10
@@ -72,6 +75,7 @@ select s.api10,
        w.status_canonical,
        extract(year from w.spud_date)::int as spud_year,
        w.well_type_reported,
+       s.geom_type as geometry_provenance,
        s.geom
   from canonical.well_spatial s
   left join wells_as_of w on w.api10 = s.api10
@@ -151,6 +155,7 @@ _PROJECTIONS: tuple[_Projection, ...] = (
             "spud_year",
             "lateral_length_ft_exact",
             "lateral_length_ft",
+            "geometry_provenance",
             "geom",
         ),
         select=_LATERALS_SELECT,
@@ -163,6 +168,7 @@ _PROJECTIONS: tuple[_Projection, ...] = (
             "status_canonical",
             "spud_year",
             "well_type_reported",
+            "geometry_provenance",
             "geom",
         ),
         select=_WELLS_SELECT,
@@ -228,7 +234,7 @@ def refresh_all(connection: psycopg.Connection, *, as_of: date | None = None) ->
             "layers": [layer.name for layer in ND_LAYERS],
         },
         inputs=_canonical_inputs(connection),
-        rules=[method.rule_id, DATUM_RULE],
+        rules=[method.rule_id, DATUM_RULE, PROVENANCE_RULE],
     ) as context:
         context.set_rows(sum(rows for rows, _ in measured.values()))
         context.set_output_hash(hash_payload({table: d for table, (_, d) in measured.items()}))

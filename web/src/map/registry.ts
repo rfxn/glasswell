@@ -3,6 +3,7 @@
  * and the persisted capability set all read this table — adding a layer is one entry, and
  * nothing downstream keeps a second list to drift against it.
  */
+import { ND_SNAPSHOT, ndCoverage, ndWellCount } from "./coverage.ts";
 import { DISPOSAL_COLOUR } from "./disposal.ts";
 import { statusColour } from "./status.ts";
 import { TRACE_COLOUR } from "./style.ts";
@@ -138,7 +139,7 @@ export const LAYERS: readonly LayerDef[] = [
     group: "wells",
     label: "Survey traces (ND)",
     subtitle:
-      "The bore path ND filed as MD/INC/AZI/TVD stations · 525 of 43,824 wells (1.2%) — " +
+      `The bore path ND filed as MD/INC/AZI/TVD stations · ${ndCoverage(ND_SNAPSHOT.traced)} — ` +
       "confidential wells excluded at source",
     swatch: { kind: "line", colours: [TRACE_COLOUR] },
     // 1.2% coverage drawn by default over 43.8k wells reads as "almost no wells drilled out".
@@ -158,7 +159,7 @@ export const LAYERS: readonly LayerDef[] = [
     id: "wells",
     group: "wells",
     label: "Wells",
-    subtitle: "ND DMR GIS surface locations · 43,817 points · culled by status below zoom 9",
+    subtitle: `ND DMR GIS surface locations · ${ndWellCount()} points · culled by status below zoom 9`,
     swatch: { kind: "dot", colours: ["#3FA55E"] },
     defaultOn: true,
     minZoom: 4,
@@ -177,8 +178,8 @@ export const LAYERS: readonly LayerDef[] = [
     group: "wells",
     label: "Disposal & injection (ND)",
     subtitle:
-      "Wells NDIC types SWD, WI, CO2I, AI, GI, SFI, MWUI or INJP · 1,989 of 43,824 wells " +
-      "(4.5%) — the well_type code as filed, drawn as a ring over the status dot",
+      `Wells NDIC types SWD, WI, CO2I, AI, GI, SFI, MWUI or INJP · ${ndCoverage(ND_SNAPSHOT.disposal)} ` +
+      "— the well_type code as filed, drawn as a ring over the status dot",
     swatch: { kind: "ring", colours: [DISPOSAL_COLOUR] },
     // 4.5% of the basin drawn unasked would read as emphasis; the class is one panel row away.
     defaultOn: false,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { ND_SNAPSHOT, ndCoverage, ndWellCount } from "./coverage.ts";
 import { DISPOSAL_COLOUR } from "./disposal.ts";
 import { LAYERS, defaultLayerSet, layerDef, layerIds, layerRowState } from "./registry.ts";
 import { SELECTION_COLOUR, STATUS_CLASSES, UNMAPPED_STATUS, statusColour } from "./status.ts";
@@ -114,7 +115,7 @@ describe("the layer registry", () => {
   });
 
   it("registers the ND survey traces as a served row, off until the reader asks for it", () => {
-    // 525 of 43,824 wells carry a trace. Drawn by default it reads as "almost no wells",
+    // 525 of the snapshot's 43,817 wells carry a trace. Drawn by default it reads as "almost no wells",
     // which is the coverage hole presented as a drilling fact.
     const traces = layerDef("survey-traces")!;
     expect(traces.pendingSource).toBeFalsy();
@@ -131,7 +132,7 @@ describe("the layer registry", () => {
     // commonest fact, and the hole has a reason — confidential surveys never enter the
     // public extract. A row that said neither would overstate what ND filed.
     const subtitle = layerDef("survey-traces")!.subtitle;
-    expect(subtitle).toMatch(/525 of 43,824/);
+    expect(subtitle).toContain(ndCoverage(ND_SNAPSHOT.traced));
     expect(subtitle).toMatch(/1\.2%/);
     expect(subtitle).toMatch(/confidential wells excluded/i);
     expect(subtitle).toMatch(/MD\/INC\/AZI\/TVD/);
@@ -177,10 +178,26 @@ describe("the layer registry", () => {
     // conformance register has not made (cr_nd_well_type_disposal_1 asserts no decode).
     const subtitle = layerDef("disposal-wells")!.subtitle;
     expect(subtitle).toMatch(/SWD, WI, CO2I, AI, GI, SFI, MWUI or INJP/);
-    expect(subtitle).toMatch(/1,989 of 43,824/);
+    expect(subtitle).toContain(ndCoverage(ND_SNAPSHOT.disposal));
     expect(subtitle).toMatch(/4\.5%/);
     expect(subtitle).toMatch(/as filed/i);
     expect(subtitle).not.toMatch(/saltwater|reserves/i);
+  });
+
+  it("reads every ND count on the panel from one served snapshot, so two rows cannot disagree", () => {
+    // gate-m17 R-6: "1,989 of 43,824" sat beside "43,817 points" in the same panel — a
+    // FeatureServer vintage against the served mart. The mart is what the map draws, so its
+    // snapshot is the one denominator, named with the refresh it was read from, and no row
+    // may carry a hand-written wells total of its own.
+    expect(ND_SNAPSHOT.refresh).toMatch(/^drv_[a-z0-9]+$/);
+    expect(layerDef("wells")!.subtitle).toContain(`${ndWellCount()} points`);
+    for (const id of ["survey-traces", "disposal-wells"]) {
+      expect(layerDef(id)!.subtitle).toContain(`of ${ndWellCount()} wells`);
+    }
+    for (const layer of LAYERS) {
+      const denominator = layer.subtitle.match(/of ([\d,]+) wells/);
+      if (denominator) expect(denominator[1]).toBe(ndWellCount());
+    }
   });
 
   it("holds the disposal ring to the thinning gate, like every layer the tile tier samples", () => {
