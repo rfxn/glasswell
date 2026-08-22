@@ -1,3 +1,4 @@
+import { EXPLAIN_EVENT } from "../card/gw-figure.ts";
 import { disposalType } from "./disposal.ts";
 import { geometryProvenance, provenanceLine } from "./provenance.ts";
 import { statusClass } from "./status.ts";
@@ -5,6 +6,76 @@ import { statusSwatch } from "./swatch.ts";
 import { LIQUIDS_BASIS_COPY, MEMBERSHIP_COPY, MEMBERSHIP_RULE } from "./thematics.ts";
 
 const NUMBER = new Intl.NumberFormat("en-US");
+
+export const CURSOR_OFFSET = 14;
+
+export interface Rect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+interface Point {
+  x: number;
+  y: number;
+}
+
+interface Size {
+  width: number;
+  height: number;
+}
+
+function clamp(value: number, low: number, high: number): number {
+  return Math.min(Math.max(value, low), Math.max(low, high));
+}
+
+function overlaps(x: number, y: number, size: Size, avoid: Rect | null): boolean {
+  return (
+    avoid !== null &&
+    x < avoid.right &&
+    x + size.width > avoid.left &&
+    y < avoid.bottom &&
+    y + size.height > avoid.top
+  );
+}
+
+/**
+ * Edge-aware cursor anchoring (visual-m13 / visual-m23 V-1): below-right of the cursor
+ * until that clips, then flipped left of it and/or above it; among the corners that fit
+ * the canvas, one that clears `avoid` — the on-canvas key — wins. Only a card too big
+ * for any corner is clamped to the canvas instead.
+ */
+export function placeCard(
+  point: Point,
+  size: Size,
+  viewport: Size,
+  avoid: Rect | null = null,
+): Point {
+  const fitsX = (x: number): boolean => x >= 0 && x + size.width <= viewport.width;
+  const fitsY = (y: number): boolean => y >= 0 && y + size.height <= viewport.height;
+  const right = point.x + CURSOR_OFFSET;
+  const left = point.x - CURSOR_OFFSET - size.width;
+  const below = point.y + CURSOR_OFFSET;
+  const above = point.y - CURSOR_OFFSET - size.height;
+  const xs = fitsX(right) ? [right, left] : [left, right];
+  const ys = fitsY(below) ? [below, above] : [above, below];
+  const corners = [
+    { x: xs[0]!, y: ys[0]! },
+    { x: xs[1]!, y: ys[0]! },
+    { x: xs[0]!, y: ys[1]! },
+    { x: xs[1]!, y: ys[1]! },
+  ];
+  const fitting = corners.filter((corner) => fitsX(corner.x) && fitsY(corner.y));
+  for (const corner of fitting) {
+    if (!overlaps(corner.x, corner.y, size, avoid)) return corner;
+  }
+  const base = fitting[0] ?? corners[0]!;
+  return {
+    x: clamp(base.x, 0, viewport.width - size.width),
+    y: clamp(base.y, 0, viewport.height - size.height),
+  };
+}
 
 /** A land-grid metrics cell, not a well: the discriminator is the pair no well carries. */
 function isMetricsCell(properties: Record<string, unknown>): boolean {
@@ -22,11 +93,16 @@ export interface HoverCardHandle {
   hide(): void;
 }
 
+export interface HoverCardOptions {
+  /** The on-canvas rect placement must dodge when it can — the thematic key. */
+  avoid?: () => Rect | null;
+}
+
 /**
  * Hover identifies, click inspects. Everything shown here is already in the tile, so a
  * hover costs one lookup — never a request, and never the full card.
  */
-export function createHoverCard(): HoverCardHandle {
+export function createHoverCard(options: HoverCardOptions = {}): HoverCardHandle {
   const element = document.createElement("div");
   element.className = "gw-hover";
   element.hidden = true;
@@ -65,9 +141,39 @@ export function createHoverCard(): HoverCardHandle {
   policy.hidden = true;
   element.appendChild(policy);
 
+  // gate-m23 cycle-1 item 8: the cell figures resolve on the card itself, so a cropped
+  // screenshot of it still carries the affordance the key holds.
+  const handle = document.createElement("button");
+  handle.type = "button";
+  handle.className = "gw-handle gw-hover-handle";
+  handle.textContent = "⌾";
+  handle.hidden = true;
+  handle.addEventListener("click", () => {
+    const derivation = handle.dataset["handle"];
+    if (derivation) {
+      handle.dispatchEvent(
+        new CustomEvent(EXPLAIN_EVENT, { detail: { handle: derivation }, bubbles: true }),
+      );
+    }
+  });
+  element.appendChild(handle);
+
   const place = (point: { x: number; y: number }): void => {
-    element.style.transform = `translate(${point.x + 14}px, ${point.y + 14}px)`;
+    // Shown before measuring: a hidden element has no offset box to measure.
     element.hidden = false;
+    const host = element.parentElement;
+    const size = { width: element.offsetWidth, height: element.offsetHeight };
+    // happy-dom and a pre-mount card measure zero; the plain cursor anchor stands in.
+    const spot =
+      host && host.clientWidth > 0 && size.width > 0
+        ? placeCard(
+            point,
+            size,
+            { width: host.clientWidth, height: host.clientHeight },
+            options.avoid?.() ?? null,
+          )
+        : { x: point.x + CURSOR_OFFSET, y: point.y + CURSOR_OFFSET };
+    element.style.transform = `translate(${spot.x}px, ${spot.y}px)`;
   };
 
   /** M2-3: the cell's figures with their basis and support — never a naked sum. */
@@ -87,6 +193,16 @@ export function createHoverCard(): HoverCardHandle {
     policy.hidden = false;
     policy.textContent =
       `Liquid is ${LIQUIDS_BASIS_COPY}; ${MEMBERSHIP_COPY} (${MEMBERSHIP_RULE}).`;
+    const derivation = properties["derivation_id"];
+    const handleId = typeof derivation === "string" && derivation !== "" ? derivation : null;
+    handle.hidden = handleId === null;
+    handle.dataset["handle"] = handleId ?? "";
+    handle.setAttribute(
+      "aria-label",
+      handleId ? `Show where these figures came from: ${handleId}` : "",
+    );
+    // The live ⌾ needs the pointer, so only the cell card takes it (see map.css).
+    element.classList.add("gw-hover-cell");
     place(point);
   };
 
@@ -97,8 +213,11 @@ export function createHoverCard(): HoverCardHandle {
         showCell(properties, point);
         return;
       }
-      figures.hidden = policy.hidden = true;
-      figures.textContent = policy.textContent = "";
+      figures.hidden = policy.hidden = handle.hidden = true;
+      figures.textContent = "";
+      policy.textContent = "";
+      handle.dataset["handle"] = "";
+      element.classList.remove("gw-hover-cell");
       const api10 = String(properties["api10"] ?? "");
       const wellName = String(properties["well_name"] ?? "").trim();
       const status = statusClass(properties["status_canonical"] as string | undefined);
@@ -134,8 +253,7 @@ export function createHoverCard(): HoverCardHandle {
       const sentence = provenanceClass === null ? null : provenanceLine(provenanceClass);
       provenance.hidden = sentence === null;
       provenance.textContent = sentence ?? "";
-      element.style.transform = `translate(${point.x + 14}px, ${point.y + 14}px)`;
-      element.hidden = false;
+      place(point);
     },
     hide() {
       element.hidden = true;

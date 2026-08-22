@@ -221,8 +221,21 @@ export function createMap(
   container.appendChild(chrome);
 
   const banner = createTileBanner();
-  const hover = createHoverCard();
   const thematics = createThematicsKey();
+  const hover = createHoverCard({
+    // The key's box in the chrome's own coordinates, so the card can dodge it (m23 V-1).
+    avoid: () => {
+      if (thematics.element.hidden || !thematics.element.isConnected) return null;
+      const key = thematics.element.getBoundingClientRect();
+      const origin = chrome.getBoundingClientRect();
+      return {
+        left: key.left - origin.left,
+        top: key.top - origin.top,
+        right: key.right - origin.left,
+        bottom: key.bottom - origin.top,
+      };
+    },
+  });
   chrome.append(banner.element, hover.element);
 
   let basemap = chooseBasemap();

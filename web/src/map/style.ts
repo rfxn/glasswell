@@ -449,10 +449,12 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       paint: {
         "circle-color": "rgba(0, 0, 0, 0)",
         "circle-stroke-color": selectable(SELECTION_COLOUR, DISPOSAL_COLOUR),
+        // Selection adds weight, not just the cyan: the hue pair is close at small radii
+        // (visual-m17 judgment 3), and width is the register hue does not carry.
         "circle-stroke-width": interpolate(zoom, [
-          [8, 1.2],
-          [12, 1.6],
-          [15, 2.2],
+          [8, selectable(2.4, 1.2)],
+          [12, selectable(3, 1.6)],
+          [15, selectable(3.8, 2.2)],
         ]),
         "circle-radius": disposalRingRadius(),
       },

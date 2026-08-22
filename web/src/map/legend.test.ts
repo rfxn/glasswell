@@ -819,3 +819,42 @@ describe("the vocabulary the counts were classed by", () => {
     expect(legend.element.querySelectorAll(".gw-lg-rule")).toHaveLength(0);
   });
 });
+
+describe("the vocabulary disclosure (visual-m12/m13: the note sat below the scroll fold)", () => {
+  const vocab = (root: HTMLElement): HTMLElement => root.querySelector<HTMLElement>(".gw-lg-vocab")!;
+  const title = (root: HTMLElement): HTMLButtonElement =>
+    root.querySelector<HTMLButtonElement>(".gw-lg-vocab-title")!;
+  const noteOf = (root: HTMLElement): HTMLElement => root.querySelector<HTMLElement>(".gw-lg-note")!;
+
+  it("lives outside the scroll body, so the affordance is in frame whenever the key is open", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    expect(vocab(legend.element).closest(".gw-lg-body")).toBeNull();
+    expect(noteOf(legend.element).closest(".gw-lg-vocab")).not.toBeNull();
+  });
+
+  it("opens collapsed and discloses the note on its own title, stating the state", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    expect(shown(noteOf(legend.element))).toBe(false);
+    expect(title(legend.element).getAttribute("aria-expanded")).toBe("false");
+    title(legend.element).click();
+    expect(shown(noteOf(legend.element))).toBe(true);
+    expect(title(legend.element).getAttribute("aria-expanded")).toBe("true");
+    title(legend.element).click();
+    expect(shown(noteOf(legend.element))).toBe(false);
+  });
+
+  it("does not collapse the legend — the disclosure is a control, not the expand target", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.element.querySelector<HTMLElement>(".gw-lg-title")?.click();
+    expect(legend.element.classList.contains("gw-open")).toBe(true);
+    title(legend.element).click();
+    expect(legend.element.classList.contains("gw-open")).toBe(true);
+  });
+
+  it("keeps carrying the full vocabulary text, disclosure or not", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setVocabulary([{ rule: "cr_nd_status_vocab_1", href: null }]);
+    expect(noteOf(legend.element).textContent).toContain("cr_nd_status_vocab_1");
+    expect(noteOf(legend.element).textContent).toMatch(/TX geometry carries no provenance field/i);
+  });
+});
