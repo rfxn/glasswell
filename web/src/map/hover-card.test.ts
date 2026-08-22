@@ -31,6 +31,52 @@ describe("the hover card", () => {
     expect(card.element.hidden).toBe(true);
   });
 
+  it("identifies a survey trace by what ND filed — stations and measured depth, never a length", () => {
+    const card = createHoverCard();
+    card.show(
+      {
+        api10: "3305305527",
+        status_canonical: "active",
+        geometry_provenance: "survey_trace",
+        station_count: 82,
+        deepest_station_md_ft: 21_340.5,
+      },
+      { x: 0, y: 0 },
+    );
+    expect(card.element.textContent).toContain("Survey trace");
+    expect(card.element.textContent).toContain("82 stations");
+    // Measured depth is what the source filed; a "length" over the plan view would be
+    // horizontal travel presented as hole length (m15d-status §7 obligation 3).
+    expect(card.element.textContent).toContain("deepest station 21,341 ft MD");
+    expect(card.element.textContent?.toLowerCase()).not.toContain("length");
+  });
+
+  it("reads the trace facts in the wire types martin serves, string or number alike", () => {
+    // Postgres numeric reaches the MVT as a string (see LATERAL_LENGTH in style.ts).
+    const card = createHoverCard();
+    card.show(
+      {
+        api10: "3305305527",
+        geometry_provenance: "survey_trace",
+        station_count: "82",
+        deepest_station_md_ft: "21340.5",
+      },
+      { x: 0, y: 0 },
+    );
+    expect(card.element.textContent).toContain("82 stations");
+    expect(card.element.textContent).toContain("21,341 ft MD");
+  });
+
+  it("drops the trace line the moment the cursor moves onto a well or lateral", () => {
+    const card = createHoverCard();
+    card.show(
+      { api10: "x", geometry_provenance: "survey_trace", station_count: 5, deepest_station_md_ft: 100 },
+      { x: 0, y: 0 },
+    );
+    card.show({ api10: "3305305527", status_canonical: "active" }, { x: 0, y: 0 });
+    expect(card.element.textContent).not.toContain("Survey trace");
+  });
+
   it("names a status the vocabulary does not cover instead of leaving it blank", () => {
     const card = createHoverCard();
     card.show({ api10: "33053", status_canonical: "brand_new_code" }, { x: 0, y: 0 });

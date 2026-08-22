@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { LAYERS, defaultLayerSet, layerDef, layerIds, layerRowState } from "./registry.ts";
-import { UNMAPPED_STATUS, statusColour } from "./status.ts";
-import { dataLayers } from "./style.ts";
+import { SELECTION_COLOUR, STATUS_CLASSES, UNMAPPED_STATUS, statusColour } from "./status.ts";
+import { TRACE_COLOUR, dataLayers } from "./style.ts";
 
 describe("the layer registry", () => {
   it("registers the four tiled rows this build actually serves", () => {
@@ -110,6 +110,54 @@ describe("the layer registry", () => {
     // CSS pixel, so the layer below z8 is a sample of itself and not what the row claims.
     expect(layerDef("lateral-bores")?.minZoom).toBe(8);
     expect(layerDef("lateral-bores")?.zoomHint).toMatch(/zoom 8 and above/i);
+  });
+
+  it("registers the ND survey traces as a served row, off until the reader asks for it", () => {
+    // 525 of 43,824 wells carry a trace. Drawn by default it reads as "almost no wells",
+    // which is the coverage hole presented as a drilling fact.
+    const traces = layerDef("survey-traces")!;
+    expect(traces.pendingSource).toBeFalsy();
+    expect(traces.defaultOn).toBe(false);
+    expect(defaultLayerSet()).not.toContain("survey-traces");
+    expect(traces.provenance).toEqual([
+      { kind: "official", source: "marts.nd_survey_traces_tile" },
+    ]);
+    expect(traces.styleLayers).toEqual(["survey-traces"]);
+  });
+
+  it("states the trace coverage and its reason on the row itself", () => {
+    // Obligations 1 and 2 of the seam contract (m15d-status §7): absence is the layer's
+    // commonest fact, and the hole has a reason — confidential surveys never enter the
+    // public extract. A row that said neither would overstate what ND filed.
+    const subtitle = layerDef("survey-traces")!.subtitle;
+    expect(subtitle).toMatch(/525 of 43,824/);
+    expect(subtitle).toMatch(/1\.2%/);
+    expect(subtitle).toMatch(/confidential wells excluded/i);
+    expect(subtitle).toMatch(/MD\/INC\/AZI\/TVD/);
+  });
+
+  it("never labels the trace row with a length", () => {
+    // Obligation 3: the trace is the plan view of a 3-D path, so any length over it
+    // measures horizontal travel, not hole length. The mart publishes no length column
+    // and the row may not invent one.
+    expect(layerDef("survey-traces")!.subtitle).not.toMatch(/length|\bmi\b|\bft\b/i);
+  });
+
+  it("holds the traces to the laterals' gate, so the two line layers share one scale", () => {
+    // The tiles publish from z4, but at z≤7 the layer draws 586 features against ~43.8k
+    // laterals. Gating at the laterals' own floor is the UI call §7 left to this track.
+    expect(layerDef("survey-traces")?.minZoom).toBe(8);
+    expect(layerDef("survey-traces")?.zoomHint).toMatch(/zoom 8 and above/i);
+  });
+
+  it("paints the trace by provenance, in a colour neither a status nor the selection uses", () => {
+    const swatch = layerDef("survey-traces")!.swatch;
+    expect(swatch.kind).toBe("line");
+    expect(swatch.colours).toEqual([TRACE_COLOUR]);
+    for (const status of [...STATUS_CLASSES, UNMAPPED_STATUS]) {
+      expect(status.colour, `${status.id} shares the trace colour`).not.toBe(TRACE_COLOUR);
+    }
+    expect(TRACE_COLOUR).not.toBe(SELECTION_COLOUR);
   });
 
   it("reports a row for a retired layer as null instead of throwing", () => {

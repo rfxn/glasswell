@@ -4,6 +4,7 @@
  * nothing downstream keeps a second list to drift against it.
  */
 import { statusColour } from "./status.ts";
+import { TRACE_COLOUR } from "./style.ts";
 
 export type LayerGroup = "reference" | "wells" | "model";
 
@@ -126,6 +127,30 @@ export const LAYERS: readonly LayerDef[] = [
     drawOrder: 30,
     // The bore geometry is drawn from two tile marts and is carried by no served collection:
     // /v1/wells counts a well's laterals, it does not list the lines.
+    collection: null,
+  },
+  {
+    // The other half of the laterals row's "not a directional survey trace": this is the one
+    // that is. Coverage is stated on the row because a trace is absent 98.8% of the time,
+    // absence here is not "no lateral", and the hole has a reason the subtitle names.
+    id: "survey-traces",
+    group: "wells",
+    label: "Survey traces (ND)",
+    subtitle:
+      "The bore path ND filed as MD/INC/AZI/TVD stations · 525 of 43,824 wells (1.2%) — " +
+      "confidential wells excluded at source",
+    swatch: { kind: "line", colours: [TRACE_COLOUR] },
+    // 1.2% coverage drawn by default over 43.8k wells reads as "almost no wells drilled out".
+    defaultOn: false,
+    // The tiles publish from z4; the map holds the layer to the laterals' gate so the two
+    // line layers a reader will compare are never on the canvas at different scales.
+    minZoom: 8,
+    zoomHint: "Visible at zoom 8 and above",
+    opacity: 1,
+    provenance: [{ kind: "official", source: "marts.nd_survey_traces_tile" }],
+    styleLayers: ["survey-traces"],
+    drawOrder: 35,
+    // Drawn from tiles only; station attributes stay queryable server-side, unserved here.
     collection: null,
   },
   {

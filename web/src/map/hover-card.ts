@@ -25,6 +25,11 @@ export function createHoverCard(): HoverCardHandle {
   meta.className = "gw-hover-meta";
   element.appendChild(meta);
 
+  const trace = document.createElement("p");
+  trace.className = "gw-hover-meta gw-hover-trace";
+  trace.hidden = true;
+  element.appendChild(trace);
+
   return {
     element,
     show(properties, point) {
@@ -36,6 +41,21 @@ export function createHoverCard(): HoverCardHandle {
       // The tile carries no well name today, so repeating the api10 under itself would be
       // the only thing this line said.
       meta.appendChild(document.createTextNode(wellName ? ` ${status.label} · ${api10}` : ` ${status.label}`));
+      trace.hidden = properties["geometry_provenance"] !== "survey_trace";
+      // Cleared, not just hidden: textContent reads through `hidden`, and so do tests.
+      trace.textContent = "";
+      if (!trace.hidden) {
+        // Deepest *measured depth*, never a length: the trace is the plan view of a 3-D
+        // path, so a length over it would measure horizontal travel and understate the hole.
+        const stations = Number(properties["station_count"]);
+        const deepest = Number(properties["deepest_station_md_ft"]);
+        const facts = ["Survey trace"];
+        if (Number.isFinite(stations) && stations > 0) facts.push(`${stations} stations`);
+        if (Number.isFinite(deepest) && deepest > 0) {
+          facts.push(`deepest station ${Math.round(deepest).toLocaleString("en-US")} ft MD`);
+        }
+        trace.textContent = facts.join(" · ");
+      }
       element.style.transform = `translate(${point.x + 14}px, ${point.y + 14}px)`;
       element.hidden = false;
     },

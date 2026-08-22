@@ -14,6 +14,9 @@ const PRIORITY: Readonly<Record<string, number>> = {
   // Both of the laterals row's style layers, at one rank: the two never overlap — they are
   // different basins — and one row that selected in North Dakota and did nothing in the
   // Permian would be the toggle contradicting itself.
+  // Above the lateral it overlies — the trace is drawn on top, so the click follows the ink —
+  // and below the wellhead, which stays the most specific thing under a cursor.
+  "survey-traces": 35,
   laterals: 30,
   "tx-laterals": 30,
   "spacing-units-line": 20,
