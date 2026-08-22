@@ -54,6 +54,10 @@ COUNT_UNIT = "wells"
 # test_well_status_summary.py holds every id to a seeded registry row.
 STATUS_VOCABULARY_RULES = {"33": "cr_nd_status_vocab_1", "42": "cr_tx_status_vocab_1"}
 
+# Same pinning rationale as above: geometry_provenance is geom_type served verbatim, and the
+# row that says so is held to the seeded registry by test_well_status_summary.py.
+PROVENANCE_RULE = "cr_nd_geometry_provenance_1"
+
 # SB-07 §2.1 fixes the selector charset. A status outside it would raise at serve time, which
 # is a 500 on data the conformance rules are supposed to have already refused.
 _NOT_SELECTOR_SAFE = re.compile(r"[^A-Za-z0-9_.:+-]")
@@ -76,7 +80,9 @@ _COLUMNS = (
     "api10, api14, state_code, county_code_at_permit, ndic_file_no, operator_name_reported,"
     " operator_id, well_name, status_canonical, status_reported, well_type_reported, spud_date,"
     " confidential_flag, basin, land_unit_label, total_depth_ft, completion_date,"
-    " effective_from, source_manifest_id, derivation_id"
+    " effective_from, source_manifest_id, derivation_id,"
+    " (select coalesce(array_agg(distinct s.geom_type order by s.geom_type), '{}'::text[])"
+    "    from canonical.well_spatial s where s.api10 = ranked.api10) as geometry_provenance"
 )
 
 RANKED_WELLS = f"""
@@ -129,17 +135,31 @@ with in_view as (
                          st_makeenvelope(%(minx)s, %(miny)s, %(maxx)s, %(maxy)s, 4326))),
      latest as (
     select distinct on (v.api10)
-           v.api10, w.status_canonical, w.basin, w.state_code, w.derivation_id, w.effective_from
+           v.api10, w.status_canonical, w.basin, w.state_code, w.well_type_reported,
+           w.derivation_id, w.effective_from
       from in_view v
       left join canonical.wells w
              on w.api10 = v.api10
             and (%(as_of)s::date is null or w.effective_from <= %(as_of)s::date)
      order by v.api10, w.effective_from desc nulls last, w.created_at desc nulls last)
-select basin, state_code, status_canonical, derivation_id is null as no_well_row,
+select basin, state_code, status_canonical, well_type_reported,
+       derivation_id is null as no_well_row,
        count(*) as wells, max(derivation_id) as derivation_id,
        max(effective_from) as effective_from
   from latest
- group by 1, 2, 3, 4
+ group by 1, 2, 3, 4, 5
+"""
+
+# The geometry population itself, classed. Counts wells, not geometry rows; spine-free on
+# purpose — geometry is not effective-dated, and an orphan still draws on the map (its
+# absence from the status classes is already the geometry_without_a_well_row warning).
+PROVENANCE_SUMMARY_SQL = """
+select geom_type as geometry_provenance, count(distinct api10) as wells,
+       max(derivation_id) as derivation_id
+  from canonical.well_spatial
+ where st_intersects(geom,
+                     st_makeenvelope(%(minx)s, %(miny)s, %(maxx)s, %(maxy)s, 4326))
+ group by 1
 """
 
 _STORAGE_CRS = """
@@ -206,6 +226,14 @@ class WellSummary(BaseModel):
                                     json_schema_extra={GLOSSARY_KEY: "gt_confidential_well"})
     effective_from: date = Field(description="Effective date of this well row (M13).",
                                  json_schema_extra={GLOSSARY_KEY: "gt_effective_date"})
+    geometry_provenance: list[str] = Field(
+        description=(
+            "Distinct provenance classes of this well's recorded geometry, alphabetical —"
+            " canonical geom_type served verbatim under cr_nd_geometry_provenance_1:"
+            " surface, bottomhole, lateral or survey_trace. Empty where no geometry is"
+            " recorded."
+        ),
+    )
     links: dict[str, str] = Field(description="Sub-resource paths for this well.")
 
 
@@ -315,6 +343,7 @@ def _summary(row: dict[str, Any]) -> dict[str, Any]:
         "spud_date": iso(row["spud_date"]),
         "confidential_flag": row["confidential_flag"],
         "effective_from": iso(row["effective_from"]),
+        "geometry_provenance": row["geometry_provenance"],
         "links": {
             "self": f"/v1/wells/{row['api10']}",
             "production": f"/v1/wells/{row['api10']}/production",
@@ -477,6 +506,16 @@ def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
                     " the spine to a class means asking for each code the rule names."
                 ),
             },
+            geometry_provenance={
+                "so": (
+                    "Matches the provenance class of the well's recorded geometry — surface,"
+                    " bottomhole, lateral or survey_trace — verbatim, with no decode: the"
+                    " same canonical geom_type the tiles serve as geometry_provenance under"
+                    " cr_nd_geometry_provenance_1. A well matches when any of its geometry"
+                    " carries the class, and the payload column lists every class it carries,"
+                    " so a match still shows what else the well holds."
+                ),
+            },
             bbox={
                 "glossary": "gt_crs_compute_crs",
                 "so": (
@@ -519,6 +558,15 @@ def list_wells(
         str | None,
         Query(description="Well type code exactly as the source reported it, e.g. SWD."),
     ] = None,
+    geometry_provenance: Annotated[
+        str | None,
+        Query(
+            description=(
+                "Provenance class of the well's recorded geometry, verbatim, e.g. lateral"
+                " or survey_trace."
+            )
+        ),
+    ] = None,
     bbox: Annotated[
         str | None, Query(description="minx,miny,maxx,maxy in WGS84; capped at 4 degrees.")
     ] = None,
@@ -530,6 +578,7 @@ def list_wells(
         "operator": operator,
         "county": county,
         "well_type": well_type,
+        "geometry_provenance": geometry_provenance,
         "bbox": bbox,
         "q": q,
     }
@@ -549,6 +598,12 @@ def list_wells(
     if well_type is not None:
         clauses.append("and well_type_reported = %(well_type)s")
         params["well_type"] = well_type
+    if geometry_provenance is not None:
+        clauses.append(
+            "and exists (select 1 from canonical.well_spatial s where s.api10 = ranked.api10"
+            " and s.geom_type = %(geometry_provenance)s)"
+        )
+        params["geometry_provenance"] = geometry_provenance
     if q is not None:
         clauses.append("and well_name ilike '%%' || %(q)s || '%%'")
         params["q"] = q
@@ -625,6 +680,25 @@ class BasinStatusCounts(BaseModel):
     statuses: list[StatusCount] = Field(description="One entry per class present, largest first.")
 
 
+class ProvenanceCount(BaseModel):
+    geometry_provenance: str = Field(
+        description=(
+            "Provenance class, verbatim canonical geom_type under"
+            " cr_nd_geometry_provenance_1: surface, bottomhole, lateral or survey_trace."
+        ),
+    )
+    wells: FigureModel = Field(
+        description="Wells in the box with recorded geometry of this class, with its handle."
+    )
+
+
+class WellTypeCount(BaseModel):
+    well_type_reported: str = Field(
+        description="Well type code exactly as the source filed it — no decode, no classing."
+    )
+    wells: FigureModel = Field(description="Wells filed under this code inside the box.")
+
+
 class WellStatusSummary(BaseModel):
     bbox: str = Field(
         description="The box the counts were taken over, normalised to minx,miny,maxx,maxy."
@@ -648,6 +722,22 @@ class WellStatusSummary(BaseModel):
     )
     basins: list[BasinStatusCounts] = Field(
         description="The same counts split by basin and jurisdiction, ordered by basin."
+    )
+    geometry_provenance: list[ProvenanceCount] = Field(
+        description=(
+            "Wells in the box per provenance class of their recorded geometry, largest"
+            " first. Classes overlap — a well with a surface hole and a lateral is in both —"
+            " so these do not sum to `wells`. Counted over the geometry itself, which is not"
+            " effective-dated, so a geometry whose well row is absent at the vintage still"
+            " counts here and is disclosed by the orphan warning."
+        ),
+    )
+    well_types: list[WellTypeCount] = Field(
+        description=(
+            "Wells per reported well type code, verbatim, largest first. A well whose"
+            " source reported no type is in no row here — absent, not zero — and is still"
+            " counted in `wells`."
+        ),
     )
     vocabulary_rules: list[str] = Field(
         description="Every status vocabulary rule that shaped these counts; each one is linked.",
@@ -737,6 +827,42 @@ def _classes(found: list[dict[str, Any]], *, box: str, scope: str = "") -> list[
             ),
         }
         for status, group in ordered
+    ]
+
+
+def _provenance_classes(found: list[dict[str, Any]], *, box: str) -> list[dict[str, Any]]:
+    ordered = sorted(found, key=lambda row: (-row["wells"], row["geometry_provenance"]))
+    return [
+        {
+            "geometry_provenance": row["geometry_provenance"],
+            "wells": figure(
+                str(row["wells"]),
+                unit=COUNT_UNIT,
+                derivation=row["derivation_id"],
+                selector=(
+                    f"col=wells&geometry_provenance={_token(row['geometry_provenance'])}"
+                    f"&bbox={box}"
+                ),
+            ),
+        }
+        for row in ordered
+    ]
+
+
+def _well_types(found: list[dict[str, Any]], *, box: str) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in found:
+        if row["well_type_reported"] is not None:
+            grouped.setdefault(row["well_type_reported"], []).append(row)
+    ordered = sorted(
+        grouped.items(), key=lambda item: (-sum(row["wells"] for row in item[1]), item[0])
+    )
+    return [
+        {
+            "well_type_reported": code,
+            "wells": _count(group, selector=f"col=wells&well_type={_token(code)}&bbox={box}"),
+        }
+        for code, group in ordered
     ]
 
 
@@ -876,7 +1002,14 @@ def _summary_warnings(
         " class it could have been folded into. Counts are split per basin with the vocabulary"
         " rule that mapped that jurisdiction's codes (cr_nd_status_vocab_1 in North Dakota,"
         " cr_tx_status_vocab_1 in Texas), because a status class means what its rule says it"
-        " means. It does not return the wells themselves — see /v1/wells."
+        " means. The same box is classed two more ways: per provenance of the recorded"
+        " geometry — canonical geom_type verbatim, under the classing rule"
+        " cr_nd_geometry_provenance_1 — and per reported well type code, verbatim. Both are"
+        " figures with handles, so a coverage statement — how many wells are traced, how many"
+        " filed under a disposal code — derives from this endpoint rather than from a pinned"
+        " constant. Provenance classes overlap where a well holds several geometry kinds, and"
+        " they are counted over the geometry itself, which is not effective-dated, so they do"
+        " not move with as_of. It does not return the wells themselves — see /v1/wells."
     ),
     response_model=EnvelopeModel[WellStatusSummary],
     openapi_extra={
@@ -942,6 +1075,11 @@ def get_well_status_summary(
     )
     counted = [row for row in found if not row["no_well_row"]]
     orphans = sum(row["wells"] for row in found if row["no_well_row"])
+    classed = rows(
+        connection,
+        PROVENANCE_SUMMARY_SQL,
+        dict(zip(("minx", "miny", "maxx", "maxy"), envelope, strict=True)),
+    )
     box = _rendered_bbox(envelope, ",")
     selector_box = _rendered_bbox(envelope, ":")
     basins = _basins(counted, box=selector_box)
@@ -962,9 +1100,13 @@ def get_well_status_summary(
         ),
         "statuses": _classes(counted, box=selector_box),
         "basins": basins,
+        "geometry_provenance": _provenance_classes(classed, box=selector_box),
+        "well_types": _well_types(counted, box=selector_box),
         "vocabulary_rules": rules,
     }
     links = {rule: f"/v1/conformance/{rule}" for rule in rules}
+    if classed:
+        links[PROVENANCE_RULE] = f"/v1/conformance/{PROVENANCE_RULE}"
     minx, miny, maxx, maxy = envelope
     if maxx - minx <= BBOX_DEGREE_CAP and maxy - miny <= BBOX_DEGREE_CAP:
         links["wells"] = f"/v1/wells?bbox={box}"

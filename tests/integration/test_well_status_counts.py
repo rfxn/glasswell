@@ -250,7 +250,8 @@ CLASSES = (
 
 @pytest.fixture
 def crowded(db: psycopg.Connection) -> psycopg.Connection:
-    """Two jurisdictions carrying every class plus an absence — 33 counts, over the cap."""
+    """Two jurisdictions carrying every class plus an absence — 35 counts (33 status-side,
+    one provenance class, one well type code), over the cap."""
     seed_all(db)
     manifest = seed_manifest(db, sha256="d" * 64, source_id="nd_gis_wells")
     for index, (state, basin) in enumerate((("33", "williston"), ("42", "permian"))):
@@ -291,11 +292,11 @@ def test_a_box_with_more_counts_than_explain_takes_says_how_many_it_left_out(
 
     assert len(carried) == MAX_HANDLES
     assert warning["detail"].startswith(
-        f"This box produced 33 counts and links.explain carries the first {MAX_HANDLES}"
-        f" handles, so {33 - MAX_HANDLES} are absent from it."
+        f"This box produced 35 counts and links.explain carries the first {MAX_HANDLES}"
+        f" handles, so {35 - MAX_HANDLES} are absent from it."
     )
     omitted = sorted(handles(body["data"]) - set(carried))
-    assert len(omitted) == 33 - MAX_HANDLES
+    assert len(omitted) == 35 - MAX_HANDLES
     for handle in omitted:
         resolved = api_client.get("/v1/explain", params={"h": handle, "depth": "full"})
         assert resolved.status_code == 200, handle

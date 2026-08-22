@@ -68,6 +68,8 @@ def test_a_box_with_no_wells_reports_no_class_rather_than_a_zero(client: TestCli
     assert data["statuses"] == []
     assert data["basins"] == []
     assert data["unmapped_wells"] is None
+    assert data["geometry_provenance"] == []
+    assert data["well_types"] == []
 
 
 def test_a_well_on_the_boundary_is_inside_the_box(client: TestClient) -> None:
@@ -125,6 +127,67 @@ def test_the_named_rules_are_linked_where_a_reader_can_open_them(client: TestCli
     assert body["data"]["vocabulary_rules"] == ["cr_nd_status_vocab_1", "cr_tx_status_vocab_1"]
     assert body["links"]["cr_nd_status_vocab_1"] == "/v1/conformance/cr_nd_status_vocab_1"
     assert body["links"]["cr_tx_status_vocab_1"] == "/v1/conformance/cr_tx_status_vocab_1"
+
+
+def test_the_box_is_classed_by_geometry_provenance_with_handles(client: TestClient) -> None:
+    """m13 residual / m17 R-3: the legend count for a provenance class is a served figure
+    with a handle, so a coverage statement derives from the API rather than from a pinned
+    constant. Largest first, ties alphabetical; classes overlap where a well holds several
+    geometry kinds, so they do not sum to `wells`."""
+    both = summary(client, BOTH_BOX)["data"]["geometry_provenance"]
+    north = summary(client, ND_BOX)["data"]["geometry_provenance"]
+
+    assert [(row["geometry_provenance"], row["wells"]["value"]) for row in both] == [
+        ("surface", "2"),
+        ("lateral", "1"),
+    ]
+    assert [(row["geometry_provenance"], row["wells"]["value"]) for row in north] == [
+        ("lateral", "1"),
+        ("surface", "1"),
+    ]
+    for row in both:
+        assert row["wells"]["unit"] == "wells"
+        assert f"geometry_provenance={row['geometry_provenance']}" in row["wells"]["d"]
+
+
+def test_the_box_is_classed_by_reported_well_type_with_handles(client: TestClient) -> None:
+    """The other half of the coverage derivation: wells per code as filed, verbatim, so a
+    disposal-class statement sums the codes its rule names instead of pinning a total."""
+    both = summary(client, BOTH_BOX)["data"]["well_types"]
+
+    assert [(row["well_type_reported"], row["wells"]["value"]) for row in both] == [
+        ("OG", "1"),
+        ("PRODUCING", "1"),
+    ]
+    for row in both:
+        assert row["wells"]["unit"] == "wells"
+        assert f"well_type={row['well_type_reported']}" in row["wells"]["d"]
+
+
+def test_the_provenance_classing_rule_is_linked_and_is_a_registry_row(client: TestClient) -> None:
+    """The pinned rule id is held to the seeded registry, and the response links it where a
+    reader can open it — same discipline as the status vocabularies."""
+    body = summary(client)
+    rule = client.get("/v1/conformance/cr_nd_geometry_provenance_1")
+
+    assert body["links"]["cr_nd_geometry_provenance_1"] == (
+        "/v1/conformance/cr_nd_geometry_provenance_1"
+    )
+    assert rule.status_code == 200
+    assert rule.json()["data"]["rule_kind"] == "code_ref"
+
+
+def test_provenance_counts_the_geometry_not_the_vintage(client: TestClient) -> None:
+    """Geometry rows are not effective-dated: at a knowledge time before the spine the
+    provenance classes still count what draws — the orphan warning disclosed the gap —
+    while the spine-derived well_types are honestly empty."""
+    data = summary(client, BOTH_BOX, as_of="2019-01-01")["data"]
+
+    assert [
+        (row["geometry_provenance"], row["wells"]["value"])
+        for row in data["geometry_provenance"]
+    ] == [("surface", "2"), ("lateral", "1")]
+    assert data["well_types"] == []
 
 
 def test_the_collection_link_is_offered_only_where_the_collection_can_answer(
