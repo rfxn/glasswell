@@ -59,6 +59,14 @@ GLASSWELL_BASE_URL=http://127.0.0.1:8161 GLASSWELL_OWNER_KEY=$(cat /tmp/gw-c11/o
 interaction, and reports the interval distribution — SB-05 §8.5's harness, pointed at the
 surfaces P-A built.
 
+**Harness change (e2e-key-hardening):** the harness now authenticates by injecting the
+`X-Glasswell-Key` header through a Playwright route on every same-origin request, which adds
+~0.95 ms per intercepted request (~38 ms across a 41-request load). Invisible in the
+vsync-pinned frame distributions, but present in the scenarios that probe across a navigation
+(`explore-entry`, `explore-entry-390`) and in tile-heavy probe windows (`map-pan-z9`). Every
+number recorded before that commit was taken without route interception — do not compare
+across it silently.
+
 ---
 
 ## 3. Shell bytes — measured, then budgeted

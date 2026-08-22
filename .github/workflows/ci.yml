@@ -76,6 +76,24 @@ jobs:
       - name: Build
         run: npm run build
 
+  e2e-guards:
+    name: E2E — the browserless guard suite (tests/e2e/lib.test.mjs)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # lib.mjs is the security boundary for every visual QA run; its guard tests must not
+      # depend on a browser, an npm install or a deployed instance — and they do not:
+      # playwright is imported lazily and never reached by lib.test.mjs.
+      - name: node --test
+        run: node --test tests/e2e
+
   shell:
     name: Shell — bash -n and shellcheck on everything that ships
     runs-on: ubuntu-latest

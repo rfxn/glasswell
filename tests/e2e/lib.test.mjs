@@ -128,6 +128,23 @@ test("redact is a passthrough when no key is configured", () => {
   assert.equal(redact("plain text"), "plain text");
 });
 
+test("redact strips case-mutated keys too", () => {
+  process.env.GLASSWELL_OWNER_KEY = FAKE_KEY;
+  const upper = FAKE_KEY.toUpperCase();
+  const mixed = FAKE_KEY.slice(0, 32) + FAKE_KEY.slice(32).toUpperCase();
+  const captured = redact(`saw ${upper} and ${mixed}`);
+  assert.ok(!captured.toLowerCase().includes(FAKE_KEY));
+  assert.equal(captured.match(/REDACTED/g).length, 2);
+});
+
+test("guardTarget refuses a case-mutated key in a url", () => {
+  process.env.GLASSWELL_OWNER_KEY = FAKE_KEY;
+  assert.throws(
+    () => guardTarget(`https://example.test/#key=${FAKE_KEY.toUpperCase()}`),
+    /target url/,
+  );
+});
+
 test("authenticate injects the header on same-origin requests only", async () => {
   process.env.GLASSWELL_OWNER_KEY = FAKE_KEY;
   process.env.GLASSWELL_BASE_URL = "https://example.test";
@@ -178,6 +195,29 @@ test("an instrumented page refuses to navigate to a url carrying the key", async
   assert.equal(seen.gotos.length, 0);
   await page.goto("https://example.test/");
   assert.deepEqual(seen.gotos, ["https://example.test/"]);
+});
+
+test("an instrumented page journals a same-origin request redirecting off-origin", async () => {
+  process.env.GLASSWELL_OWNER_KEY = FAKE_KEY;
+  process.env.GLASSWELL_BASE_URL = "https://example.test";
+  const { browser, seen } = fakeBrowser();
+  const { journal } = await instrumentedPage(browser, {});
+  const fakeRequest = (url, prior = null) => ({
+    url: () => url,
+    redirectedFrom: () => prior,
+  });
+
+  seen.handlers.request(
+    fakeRequest("https://elsewhere.example/land", fakeRequest("https://example.test/redir")),
+  );
+  assert.equal(journal.offOriginRedirects.length, 1);
+  assert.match(journal.offOriginRedirects[0], /example\.test\/redir -> .*elsewhere\.example/);
+
+  seen.handlers.request(fakeRequest("https://elsewhere.example/direct"));
+  seen.handlers.request(
+    fakeRequest("https://example.test/two", fakeRequest("https://example.test/one")),
+  );
+  assert.equal(journal.offOriginRedirects.length, 1);
 });
 
 test("auth: false builds a context with no route and no header", async () => {

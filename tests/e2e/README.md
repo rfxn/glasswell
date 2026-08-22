@@ -34,9 +34,17 @@ The lib is the only auth path: it reads the key from the file named by
 `GLASSWELL_KEY_FILE` (else from an already-populated `GLASSWELL_OWNER_KEY`) and injects it
 as the `X-Glasswell-Key` header on every same-origin request a page makes — never as a
 script argument, never in any url, fragment included. Every capture the lib journals or
-prints passes through its redactor, which strips the key value wherever it appears. The
-lib refuses to run, loudly and naming this rule, if the key is visible in `process.argv`
-or in a navigation target.
+prints passes through its redactor, which strips the key value (case-insensitively)
+wherever it appears. The lib refuses to run, loudly and naming this rule, if the key is
+visible in `process.argv` or in a navigation target.
+
+One bound on the header scoping, stated precisely: a *direct* off-origin request carries
+no header, but a same-origin response that redirects off-origin would carry it on the
+redirect leg — Chromium follows the 302 itself and re-attaches the header without
+consulting the route handler. The served API issues no redirects (no 3xx anywhere in
+`src/glasswell/api/`), so exposure today is nil; `instrumentedPage` journals any
+same-origin request that redirects off-origin as `journal.offOriginRedirects` — a
+detector for gates to assert empty, not a preventer.
 
 The standing dispatch line: **visual runs authenticate header-only via lib.mjs**.
 

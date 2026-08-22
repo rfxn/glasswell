@@ -34,20 +34,33 @@ export function keyGuard() {
   return key;
 }
 
-/** Refuses any navigation target carrying the key; returns the url unchanged otherwise. */
+/** Refuses any navigation target carrying the key (case-insensitively); unchanged otherwise. */
 export function guardTarget(url) {
   const key = ownerKey();
-  if (key && String(url).includes(key))
+  if (key && String(url).toLowerCase().includes(key.toLowerCase()))
     throw new Error(`owner key found in a target url — ${KEY_RULE}`);
   return url;
 }
 
 export function redact(text) {
   const key = ownerKey();
-  return key ? String(text).replaceAll(key, "REDACTED") : String(text);
+  if (!key) return String(text);
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return String(text).replace(new RegExp(escaped, "gi"), "REDACTED");
 }
 
-// Route-scoped rather than extraHTTPHeaders: the header must never ride an off-origin request.
+export function originOf(url) {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+// Route-scoped rather than extraHTTPHeaders: a direct off-origin request gets no header. A
+// same-origin 302 leaving the origin DOES re-attach it on the redirect leg (Chromium follows
+// without re-routing); instrumentedPage journals that shape — a detector, not a preventer —
+// and the served API issues no redirects at all.
 export async function authenticate(context, { origin = new URL(baseUrl()).origin } = {}) {
   const key = keyGuard();
   if (!key) throw new Error("no owner key (set GLASSWELL_KEY_FILE or GLASSWELL_OWNER_KEY)");
@@ -110,7 +123,16 @@ export async function instrumentedPage(browser, { viewport, dsf, auth = true, or
   const key = keyGuard();
   const rawGoto = page.goto.bind(page);
   page.goto = async (url, options) => rawGoto(guardTarget(url), options);
-  const journal = { pageerror: [], console: [], nonok: [], tiles: [], api: [], sentKey: [] };
+  const targetOrigin = origin ?? originOf(baseUrl());
+  const journal = {
+    pageerror: [],
+    console: [],
+    nonok: [],
+    tiles: [],
+    api: [],
+    sentKey: [],
+    offOriginRedirects: [],
+  };
   page.on("pageerror", (error) => journal.pageerror.push(redact(error.message)));
   page.on("console", (message) => {
     if (message.type() === "error" || message.type() === "warning")
@@ -118,6 +140,9 @@ export async function instrumentedPage(browser, { viewport, dsf, auth = true, or
   });
   page.on("request", (request) => {
     if (key && request.url().includes(key)) journal.sentKey.push(redact(request.url()));
+    const prior = request.redirectedFrom();
+    if (prior && originOf(prior.url()) === targetOrigin && originOf(request.url()) !== targetOrigin)
+      journal.offOriginRedirects.push(redact(`${prior.url()} -> ${request.url()}`));
   });
   page.on("response", (response) => {
     const url = response.url();
