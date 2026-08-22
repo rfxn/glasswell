@@ -7,6 +7,7 @@ every count below is the file's own truth and not a shape this test invented —
 
 from __future__ import annotations
 
+import zipfile
 from pathlib import Path
 
 import httpx
@@ -435,6 +436,45 @@ def test_reloading_the_identical_archive_appends_nothing(
             wells_seeded,
             f"select count(*) from lineage.{relation} where source_id = 'nd_gis_directionals'",
         ) == 1
+
+
+def test_a_revised_archive_whose_segments_all_conflict_is_detected_not_silently_promoted(
+    surveys_loaded, wells_seeded, raw_root, lineage_env, tmp_path
+):
+    """DR-89: a revision with identical members re-keys nothing — every trace and every
+    station already belongs to the first manifest, so the pass lands zero rows and must say
+    so with a quarantine fact instead of reporting the attempted counts."""
+    revised = tmp_path / "OGD_Directionals_dr89.zip"
+    with zipfile.ZipFile(SURVEY_ARCHIVE) as source, zipfile.ZipFile(revised, "w") as target:
+        target.comment = b"dr89 all-conflict revision"
+        for name in source.namelist():
+            target.writestr(name, source.read(name))
+
+    with lineage_session(
+        recorder=PostgresRecorder(wells_seeded), environment=lineage_env
+    ), client_for(revised) as client:
+        second = load_surveys(wells_seeded, raw_root=raw_root, client=client)
+    wells_seeded.commit()
+
+    assert second.manifest_id != surveys_loaded.manifest_id
+    assert second.unchanged is False
+    assert second.promoted_rows == 0
+    assert second.station_rows == 0
+    assert second.quarantined["key_collision"] == PROMOTED_SEGMENTS
+    assert scalar(
+        wells_seeded,
+        "select count(*) from canonical.well_spatial where geom_type = 'survey_trace'",
+    ) == PROMOTED_SEGMENTS
+    assert scalar(
+        wells_seeded, "select count(*) from canonical.well_survey_stations"
+    ) == PROMOTED_STATIONS
+
+    with lineage_session(
+        recorder=PostgresRecorder(wells_seeded), environment=lineage_env
+    ), client_for(revised) as client:
+        again = load_surveys(wells_seeded, raw_root=raw_root, client=client)
+    wells_seeded.commit()
+    assert again.unchanged is True, "a detected all-conflict revision reloads as unchanged"
 
 
 def test_a_wells_load_beside_the_surveys_leaves_the_two_geometries_distinguishable(

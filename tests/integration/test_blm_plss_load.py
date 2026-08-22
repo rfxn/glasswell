@@ -190,6 +190,53 @@ def test_reloading_identical_bytes_is_a_recorded_noop(seeded, raw_root, lineage_
     assert scalar(seeded, "select count(*) from canonical.land_units") == TOWNSHIPS
 
 
+class RevisedArcGis(FakeArcGis):
+    """The same service, same keys, new bytes: every feature gains one extra property, so
+    the assembled artifact hashes to a new manifest while every land_unit_id conflicts."""
+
+    def features(self, layer_id: int) -> list[dict]:
+        return [
+            {**feature, "properties": {**feature["properties"], "DR89_REVISION": "1"}}
+            for feature in super().features(layer_id)
+        ]
+
+
+def test_a_revised_pull_whose_rows_all_conflict_is_detected_not_silently_promoted(
+    seeded, raw_root, lineage_env
+):
+    """DR-89: land_units is keyed on land_unit_id alone, so a revised monthly pull whose
+    rows all conflict owned nothing and was invisible to the canonical-ownership guard —
+    re-staged and re-promoted on every poll with the refusal never recorded."""
+    first = load(seeded, raw_root, lineage_env, "townships")
+    second = load(seeded, raw_root, lineage_env, "townships", fake=RevisedArcGis())
+
+    assert second.manifest_id != first.manifest_id
+    assert second.unchanged is False
+    assert second.staged_rows == TOWNSHIPS
+    assert second.promoted_rows == 0
+    assert second.quarantined["key_collision"] == TOWNSHIPS
+    assert scalar(seeded, "select count(*) from canonical.land_units") == TOWNSHIPS
+    assert (
+        scalar(
+            seeded,
+            "select count(*) from lineage.quarantine_rows"
+            " where reason_code = 'key_collision' and stage = 'join'"
+            " and first_seen_manifest_id = %s",
+            (second.manifest_id,),
+        )
+        == TOWNSHIPS
+    )
+    assert rows(
+        seeded,
+        "select rows_examined, rows_appended from lineage.vintages"
+        " where source_id = 'blm_plss_townships'",
+    ) == [(TOWNSHIPS, TOWNSHIPS)], "a pass that appended nothing must not inflate the ledger"
+
+    third = load(seeded, raw_root, lineage_env, "townships", fake=RevisedArcGis())
+    assert third.unchanged is True, "a detected all-conflict revision reloads as unchanged"
+    assert scalar(seeded, "select count(*) from canonical.land_units") == TOWNSHIPS
+
+
 def test_sections_without_townships_are_quarantined_as_orphans(seeded, raw_root, lineage_env):
     result = load(seeded, raw_root, lineage_env, "sections")
     assert result.promoted_rows == 0
