@@ -12,15 +12,19 @@ ND_TABLES = [
     ("staging", "nd_gis_wells"),
     ("staging", "nd_gis_laterals"),
     ("staging", "nd_gis_spacing_units"),
+    ("staging", "nd_gis_directionals"),
     ("canonical", "wells"),
     ("canonical", "well_spatial"),
     ("canonical", "spacing_units"),
+    ("canonical", "well_survey_stations"),
     ("canonical", "glossary_terms"),
     ("lineage", "nd_status_map"),
     ("lineage", "nd_stream_map"),
+    ("lineage", "nd_survey_segment_map"),
     ("marts", "nd_well_card"),
     ("marts", "nd_laterals_tile"),
     ("marts", "nd_wells_tile"),
+    ("marts", "nd_survey_traces_tile"),
 ]
 
 GEOMETRY_COLUMNS = [
@@ -28,10 +32,13 @@ GEOMETRY_COLUMNS = [
     # The layer ships multi-part centrelines; refusing them dropped six laterals (A5-F8).
     ("staging", "nd_gis_laterals", "GEOMETRY"),
     ("staging", "nd_gis_spacing_units", "MULTIPOLYGON"),
+    ("staging", "nd_gis_directionals", "POINT"),
     ("canonical", "well_spatial", "GEOMETRY"),
     ("canonical", "spacing_units", "MULTIPOLYGON"),
+    ("canonical", "well_survey_stations", "POINT"),
     ("marts", "nd_laterals_tile", "GEOMETRY"),
     ("marts", "nd_wells_tile", "POINT"),
+    ("marts", "nd_survey_traces_tile", "LINESTRING"),
 ]
 
 STAGING_LINEAGE_COLUMNS = ("manifest_id", "source_row_ordinal", "ingested_at")

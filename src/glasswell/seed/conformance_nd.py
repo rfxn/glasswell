@@ -11,10 +11,43 @@ MPR_INDEX_URL = "https://www.dmr.nd.gov/oilgas/mprindex.asp"
 MPR_FILE_URL = "https://www.dmr.nd.gov/oilgas/mpr/2026_03.xlsx"
 GIS_WELLS_URL = "https://gis.dmr.nd.gov/downloads/oilgas/shapefile/OGD_Wells.zip"
 GIS_LATERALS_URL = "https://gis.dmr.nd.gov/downloads/oilgas/shapefile/OGD_Horizontals_Line.zip"
+GIS_SURVEYS_URL = "https://gis.dmr.nd.gov/downloads/oilgas/shapefile/OGD_Directionals.zip"
 
 EFFECTIVE_FROM = date(2026, 1, 1)
 # A superseding row carries the date its evidence was established, never the seed epoch.
 SUPERSESSION_FROM = date(2026, 8, 20)
+# M1-5's evidence date: the day OGD_Directionals.zip was fetched and its 52,579 stations,
+# 525 wells and 586 segments were counted.
+SURVEYS_FROM = date(2026, 8, 21)
+
+# Per field, because the reject is the value and the ledger has to name which one broke.
+SURVEY_STATION_BOUNDS: tuple[dict[str, object], ...] = (
+    {"field": "inclination_deg", "min": 0, "max": 180, "unit": "deg"},
+    {"field": "azimuth_deg", "min": 0, "max": 360, "unit": "deg"},
+    {"field": "true_vertical_depth_ft", "max_field": "measured_depth_ft", "unit": "ft"},
+)
+
+
+def _bounds_predicate(bounds: tuple[dict[str, object], ...]) -> dict[str, object]:
+    """The row-level form of the same bounds, generated so the two cannot drift apart.
+
+    A null is admissible in both forms: an absent measurement is not an out-of-range one, and
+    `_validity_filter` reads a null comparison as a failure unless the AST says otherwise.
+    """
+    clauses: list[dict[str, object]] = []
+    for bound in bounds:
+        column = {"col": bound["field"]}
+        tests: list[dict[str, object]] = []
+        if "min" in bound:
+            tests.append({"cmp": [column, ">=", {"lit": bound["min"]}]})
+        if "max" in bound:
+            tests.append({"cmp": [column, "<=", {"lit": bound["max"]}]})
+        if "max_field" in bound:
+            tests.append({"cmp": [column, "<=", {"col": bound["max_field"]}]})
+        # The conjunction is inside the null branch, not beside it: a bound with both ends
+        # spread across the `or` would admit anything above its floor.
+        clauses.append({"or": [{"is_null": column}, {"and": tests}]})
+    return {"and": clauses}
 
 ND_RULES: tuple[dict[str, object], ...] = (
     {
@@ -487,6 +520,194 @@ ND_RULES: tuple[dict[str, object], ...] = (
             " trigger rather than rejecting data, which is why the spec is marked measure_only."
         ),
         "evidence_url": GIS_LATERALS_URL,
+    },
+    {
+        "rule_id": "cr_nd_survey_api_identity_1",
+        "effective_from": SURVEYS_FROM,
+        "source_id": "nd_gis_directionals",
+        "stage": "parse",
+        "rule_kind": "parse_directive",
+        "applies_to_fields": ["api_wellno"],
+        "spec": {
+            "source_field": "api_wellno",
+            "digits": 14,
+            "api10_slice": [0, 10],
+            "trailing_unused_slice": [10, 14],
+            "on_short_value": "quarantine",
+            "reason_code": "key_incomplete",
+        },
+        "rule": "API-10 is the first ten digits of api_wellno; the trailing four are dropped.",
+        "rationale": (
+            "cr_nd_api_identity_1 makes the same slice on the MPR and rests on the PPDM"
+            " observation that digits 13-14 are convention. This layer supplies the regulator's"
+            " own statement of it: the attribute definition for api_wellno in"
+            " OGD_Directionals.shp.xml reads verbatim \"First 2 numbers are State ID, next 3"
+            " numbers are County ID, next 4 numbers are Unique Index Number, last 4 numbers are"
+            " not used by the State of North Dakota\". All 52,579 station records carry 14"
+            " digits and every one of them ends 0000, so the drop discards nothing ND uses. A"
+            " row whose api_wellno is not 14 digits has no identity to promote and quarantines"
+            " as key_incomplete rather than being keyed on a guess."
+        ),
+        "evidence_url": GIS_SURVEYS_URL,
+    },
+    {
+        "rule_id": "cr_nd_survey_segment_vocab_1",
+        "effective_from": SURVEYS_FROM,
+        "source_id": "nd_gis_directionals",
+        "stage": "conform",
+        "rule_kind": "vocab_map",
+        "applies_to_fields": ["well_sub"],
+        "spec": {
+            "mapping_table": "nd_survey_segment_promoted_map",
+            "key_col": "well_sub",
+            "value_col": "segment_kind",
+            "unmapped_action": "quarantine",
+            "reason_code": "segment_not_promoted",
+        },
+        "rule": "Every known well_sub is a surveyed bore segment and every one is promoted; an"
+        " unlisted label is held back as a disposition rather than traced.",
+        "rationale": (
+            "ND's own attribute definition for well_sub reads \"categorized well bore portions"
+            " are assigned a description as Lateral (LAT), Vertical (VERT), or Sidetrack (STK)\","
+            " and the layer then ships DIR for 40,138 of 52,579 stations - a value the"
+            " publisher's metadata does not list, explained by this layer's abstract, \"deviated"
+            " well bore but not at the severity of a horizontal\". Measured vocabulary: DIR"
+            " 40,138, VERT 10,648, STK1 1,522, STK2 221, STK3 38, STK4 12. Unlike"
+            " cr_nd_segment_vocab_1, which promotes only the producing centreline, every"
+            " segment here is promoted: the whole point of a survey trace is the path the hole"
+            " actually took, and a vertical hole has one. LAT is seeded with no station behind"
+            " it because ND documents the value; a vocabulary seeded only from one file's"
+            " contents quarantines every row on the day the publisher uses it."
+        ),
+        "evidence_url": GIS_SURVEYS_URL,
+    },
+    {
+        "rule_id": "cr_nd_survey_station_order_1",
+        "effective_from": SURVEYS_FROM,
+        "source_id": "nd_gis_directionals",
+        "stage": "conform",
+        "rule_kind": "parse_directive",
+        "applies_to_fields": ["measdpth", "geom"],
+        "spec": {
+            "source_field": "measdpth",
+            "order_by": "measured_depth_ft",
+            "direction": "ascending",
+            "tie_break": "source_row_ordinal",
+            "assembly": "linestring_through_stations",
+            "ordinal_from": 0,
+            "on_missing_order_key": "quarantine",
+            "reason_code": "unreliable_numeric",
+        },
+        "rule": "Assemble the trace by joining the stations of one segment in ascending measured"
+        " depth, breaking ties on source row order.",
+        "rationale": (
+            "The layer ships no station sequence column, so the order the vertices are joined in"
+            " is a decision and not a reading. Measured depth is the only monotone quantity a"
+            " survey has: TVD is not monotone in a horizontal and the coordinate offsets are"
+            " not ordered at all. The file happens to arrive in that order already for all 586"
+            " segments, which is why the sort is stated rather than assumed - a future vintage"
+            " that arrives unsorted must produce the same trace. Two segments carry a repeated"
+            " measured depth (33007016430000 VERT at 2050 ft, 33053026840000 VERT at 6945 ft),"
+            " so the tie-break is named: without it those two traces would depend on Postgres"
+            " row order and the artifact would not be D1-reproducible. A station with no"
+            " measured depth has no place in the order at all - parking it at whichever end a"
+            " null sorts to would put a vertex somewhere the source did not - so it is"
+            " quarantined as unreliable_numeric instead of being ordered on a guess. No station"
+            " in the measured vintage is missing one."
+        ),
+        "evidence_url": GIS_SURVEYS_URL,
+    },
+    {
+        "rule_id": "cr_nd_survey_station_range_1",
+        "effective_from": SURVEYS_FROM,
+        "source_id": "nd_gis_directionals",
+        "stage": "validate",
+        "rule_kind": "validity_filter",
+        "applies_to_fields": ["inclination_deg", "azimuth_deg", "true_vertical_depth_ft"],
+        "spec": {
+            "bounds": list(SURVEY_STATION_BOUNDS),
+            "predicate_ast": _bounds_predicate(SURVEY_STATION_BOUNDS),
+            "on_fail": "quarantine",
+            "field_action": "null_field",
+            "reason_code": "unreliable_numeric",
+            "disposition": "measure_only",
+        },
+        "rule": "A measurement outside its physical range is withheld from the station row and"
+        " recorded as a rejected value; the station's own position still promotes.",
+        "rationale": (
+            "Seven values in 52,579 stations cannot be true: inclination 436 deg at"
+            " 33007003310000 STK1, azimuth 437 deg at 33075014950000 DIR, and five stations"
+            " whose TVD exceeds their own measured depth by up to 0.77 ft. The reject is the"
+            " value, not the row: ND computed the published long/lat itself and a defective"
+            " azimuth is no evidence against the coordinate beside it. Dropping the station"
+            " would have truncated two traces at an end - the 33075014950000 defect is on the"
+            " deepest of its 150 stations - which is the honesty gap this layer exists to close."
+            " So the field is nulled, the station promotes, and one quarantine row per rejected"
+            " value carries the number and the bound it broke. Marked measure_only for the"
+            " reason cr_nd_multilateral_1 is: the batch is a measurement, not a rejection of"
+            " data, and no geometry is lost to it. field_action and disposition are read by the"
+            " loader rather than described by it - flipping field_action to drop_row in this row"
+            " changes what the promotion does, and both values are stamped on every reject so"
+            " the ledger can tell a withheld value from a lost row without joining back here."
+            " The spec carries the same bounds twice on"
+            " purpose - predicate_ast is the row-level form every validity_filter executor"
+            " runs, bounds is the per-field breakdown that lets the ledger name the column -"
+            " and the AST is generated from the bounds list so the two cannot drift."
+        ),
+        "evidence_url": GIS_SURVEYS_URL,
+    },
+    {
+        "rule_id": "cr_nd_survey_min_stations_1",
+        "effective_from": SURVEYS_FROM,
+        "source_id": "nd_gis_directionals",
+        "stage": "validate",
+        "rule_kind": "validity_filter",
+        "applies_to_fields": ["station_count"],
+        "spec": {
+            "predicate_ast": {"cmp": [{"col": "station_count"}, ">=", {"lit": 2}]},
+            "min_stations": 2,
+            "on_fail": "quarantine",
+            "reason_code": "insufficient_stations",
+        },
+        "rule": "A segment needs two stations before it is a trace; its stations still promote.",
+        "rationale": (
+            "A LineString needs two vertices. The shallowest segment in the measured vintage is"
+            " 33075011520000 DIR with exactly two, so no segment is held back today - but a"
+            " single-station segment is a shape the source can file and the alternative to this"
+            " rule is a trace that silently does not appear. The stations are promoted either"
+            " way: what is quarantined is the trace that could not be drawn, which is why the"
+            " payload is the segment and not a station row."
+        ),
+        "evidence_url": GIS_SURVEYS_URL,
+    },
+    {
+        "rule_id": "cr_nd_survey_azimuth_reference_1",
+        "effective_from": SURVEYS_FROM,
+        "source_id": "nd_gis_directionals",
+        "stage": "conform",
+        "rule_kind": "parse_directive",
+        "applies_to_fields": ["azimuth"],
+        "spec": {
+            "north_reference": "unstated_by_publisher",
+            "conversion": "none",
+            "canonical_column": "azimuth_deg",
+            "served_as": "reported",
+        },
+        "rule": "Serve azimuth exactly as ND filed it; state that the north reference is"
+        " unpublished rather than assume true, grid or magnetic north.",
+        "rationale": (
+            "OGD_Directionals.shp.xml carries an attribute definition for api_wellno, well_sub,"
+            " measdpth, tvd and wl_permit and none at all for azimuth, inclinatio, coordns or"
+            " coordew. A survey azimuth is meaningless without its north reference, and true,"
+            " grid and magnetic north differ by degrees in the Williston basin, so converting"
+            " under an assumed reference would put a fabricated number into a column a reader"
+            " treats as a measurement. The honest form is the filed number plus this row saying"
+            " what is not known about it, which is what ?explain resolves. Also the reason the"
+            " canonical column is a plan-view coordinate and not a computed minimum-curvature"
+            " position: recomputing station positions from MD/INC/AZI needs the reference this"
+            " rule records as missing, and ND already published the positions."
+        ),
+        "evidence_url": GIS_SURVEYS_URL,
     },
 )
 

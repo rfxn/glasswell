@@ -14,7 +14,12 @@ import yaml
 
 from glasswell.api.routers.tiles import PUBLISHED_LAYERS
 from glasswell.ingest.base import LOCKFILE_SHA256_ENV
-from glasswell.ingest.nd_gis import load_laterals, load_spacing_units, load_wells
+from glasswell.ingest.nd_gis import (
+    load_laterals,
+    load_spacing_units,
+    load_surveys,
+    load_wells,
+)
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.explain import resolve_chain
 from glasswell.lineage.store import PostgresRecorder
@@ -33,15 +38,17 @@ ARCHIVES = {
     "wells": FIXTURES / "OGD_Wells_300.zip",
     "laterals": FIXTURES / "OGD_Horizontals_Line_300.zip",
     "spacing_units": FIXTURES / "OGD_DrillingSpacingUnits_300.zip",
+    "surveys": FIXTURES / "OGD_Directionals_stations.zip",
 }
 LOADERS = {
     "wells": load_wells,
     "laterals": load_laterals,
     "spacing_units": load_spacing_units,
+    "surveys": load_surveys,
 }
 
 MAX_PROBE_ZOOM = 14
-PROJECTED_MARTS = ("nd_laterals_tile", "nd_wells_tile")
+PROJECTED_MARTS = ("nd_laterals_tile", "nd_wells_tile", "nd_survey_traces_tile")
 
 
 def client_for(archive: Path) -> httpx.Client:
@@ -113,10 +120,15 @@ def load_layer(connection: psycopg.Connection, raw_root, lineage_env, layer: str
 
 @pytest.fixture
 def canonical_nd(db: psycopg.Connection, raw_root, lineage_env) -> psycopg.Connection:
-    """P3's fixture load: wells first, then the laterals that reference them."""
+    """P3's fixture load: wells first, then the geometry layers that reference them.
+
+    The survey fixture and the wells fixture were cut independently and overlap on three
+    API-10s, so this database carries both mart geometries for the same slice — which is the
+    condition the survey layer has to hold up under, not a clean-room one.
+    """
     seed_all(db)
     db.commit()
-    for layer in ("wells", "laterals", "spacing_units"):
+    for layer in ("wells", "laterals", "spacing_units", "surveys"):
         load_layer(db, raw_root, lineage_env, layer)
     return db
 
@@ -129,19 +141,22 @@ def refreshed(canonical_nd: psycopg.Connection, lineage_env):
     return report
 
 
-def test_refresh_projects_canonical_into_both_tile_marts(canonical_nd, refreshed):
-    laterals = scalar(
-        canonical_nd, "select count(*) from canonical.well_spatial where geom_type = 'lateral'"
-    )
-    surfaces = scalar(
-        canonical_nd, "select count(*) from canonical.well_spatial where geom_type = 'surface'"
-    )
-    assert laterals > 0
-    assert surfaces > 0
+def test_refresh_projects_canonical_into_every_tile_mart(canonical_nd, refreshed):
+    counts = {
+        f"nd_{name}_tile": scalar(
+            canonical_nd,
+            "select count(*) from canonical.well_spatial where geom_type = %s",
+            (geom_type,),
+        )
+        for name, geom_type in (
+            ("laterals", "lateral"), ("wells", "surface"), ("survey_traces", "survey_trace")
+        )
+    }
+    assert all(count > 0 for count in counts.values())
 
-    assert scalar(canonical_nd, "select count(*) from marts.nd_laterals_tile") == laterals
-    assert scalar(canonical_nd, "select count(*) from marts.nd_wells_tile") == surfaces
-    assert refreshed.row_counts == {"nd_laterals_tile": laterals, "nd_wells_tile": surfaces}
+    for table, expected in counts.items():
+        assert scalar(canonical_nd, f"select count(*) from marts.{table}") == expected
+    assert refreshed.row_counts == counts
 
     styled = rows(
         canonical_nd,

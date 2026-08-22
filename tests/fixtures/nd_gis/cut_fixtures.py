@@ -17,14 +17,36 @@ from pathlib import Path
 
 import shapefile
 
-LAYERS = ("OGD_Wells", "OGD_Horizontals_Line", "OGD_DrillingSpacingUnits")
+LAYERS = ("OGD_Wells", "OGD_Horizontals_Line", "OGD_DrillingSpacingUnits", "OGD_Directionals")
 RECORD_COUNT = 300
 BASE_URL = "https://gis.dmr.nd.gov/downloads/oilgas/shapefile"
 
+# Whole `(api_wellno, well_sub)` segments, never a partial one: a segment cut mid-string would
+# be a bore path this repository invented. Each row is here for what it lets a test assert, and
+# SOURCE.md carries the same table with the counts.
+SURVEY_SEGMENTS: tuple[tuple[str, str], ...] = (
+    ("33007011660000", "DIR"),   # in OGD_Wells_300, so the mart tier gets real traces
+    ("33053019370000", "DIR"),   # in OGD_Wells_300
+    ("33053021020000", "DIR"),   # in OGD_Wells_300
+    ("33007003310000", "STK1"),  # inclination 436 deg at station 8 of 199
+    ("33007006800000", "DIR"),   # four stations whose TVD exceeds their own measured depth
+    ("33075014950000", "DIR"),   # azimuth 437 deg, and it is the deepest station of the 150
+    ("33075011520000", "DIR"),   # the shortest segment in the file: two stations
+    ("33105903760000", "STK1"),  # sidetracks and a vertical with no DIR segment at all
+    ("33105903760000", "STK2"),
+    ("33105903760000", "STK3"),
+    ("33105903760000", "VERT"),
+    ("33089006260000", "STK4"),  # the only STK4 upstream; completes the well_sub vocabulary
+    ("33053105500000", "VERT"),  # deliberately left out of every well fixture: the orphan case
+)
 
-def open_layer(archive: Path) -> tuple[shapefile.Reader, bytes]:
+
+def open_layer(archive: Path, stem: str | None = None) -> tuple[shapefile.Reader, bytes]:
+    """`stem` picks one shapefile where an archive ships several: OGD_Directionals.zip carries
+    the station points and ND's own per-segment line rendering of them under two stems."""
     with zipfile.ZipFile(archive) as bundle:
-        members = {name.rsplit(".", 1)[-1].lower(): name for name in bundle.namelist()}
+        names = [name for name in bundle.namelist() if stem is None or Path(name).stem == stem]
+        members = {name.rsplit(".", 1)[-1].lower(): name for name in names}
         reader = shapefile.Reader(
             shp=io.BytesIO(bundle.read(members["shp"])),
             shx=io.BytesIO(bundle.read(members["shx"])),
@@ -34,10 +56,17 @@ def open_layer(archive: Path) -> tuple[shapefile.Reader, bytes]:
 
 
 def write_subset(
-    reader: shapefile.Reader, prj: bytes, ordinals: Sequence[int], destination: Path
+    reader: shapefile.Reader,
+    prj: bytes,
+    ordinals: Sequence[int],
+    destination: Path,
+    member_stem: str | None = None,
 ) -> None:
+    """`member_stem` keeps the upstream member names when the archive name says how it was
+    cut: the survey loader selects its layer by stem suffix, so the stem is part of the read."""
+    inner = member_stem or destination.stem
     with tempfile.TemporaryDirectory() as scratch:
-        stem = Path(scratch) / destination.stem
+        stem = Path(scratch) / inner
         writer = shapefile.Writer(target=str(stem), shapeType=reader.shapeType)
         writer.fields = reader.fields[1:]
         for ordinal in ordinals:
@@ -48,7 +77,7 @@ def write_subset(
         stem.with_suffix(".prj").write_bytes(prj)
         with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
             for extension in (".shp", ".shx", ".dbf", ".prj"):
-                bundle.write(stem.with_suffix(extension), destination.stem + extension)
+                bundle.write(stem.with_suffix(extension), inner + extension)
 
 
 def lateral_ordinals(reader: shapefile.Reader) -> list[int]:
@@ -71,6 +100,21 @@ def well_ordinals(reader: shapefile.Reader, api10s: set[str]) -> list[int]:
     return sorted(selected)[:RECORD_COUNT]
 
 
+def survey_ordinals(reader: shapefile.Reader) -> list[int]:
+    """Every station of every segment in SURVEY_SEGMENTS, in upstream order.
+
+    Upstream order is ascending measured depth within a segment, so keeping it means the
+    fixture cannot accidentally prove that the loader sorts when the file already was sorted.
+    """
+    wanted = set(SURVEY_SEGMENTS)
+    selected = []
+    for ordinal in range(len(reader)):
+        row = reader.record(ordinal)
+        if (row["api_wellno"].strip(), row["well_sub"].strip()) in wanted:
+            selected.append(ordinal)
+    return selected
+
+
 def cut(downloads: Path, destination: Path) -> dict[str, int]:
     destination.mkdir(parents=True, exist_ok=True)
     laterals, lateral_prj = open_layer(downloads / "OGD_Horizontals_Line.zip")
@@ -90,7 +134,20 @@ def cut(downloads: Path, destination: Path) -> dict[str, int]:
         list(range(RECORD_COUNT)),
         destination / "OGD_DrillingSpacingUnits_300.zip",
     )
-    return {layer: RECORD_COUNT for layer in LAYERS}
+
+    surveys, surveys_prj = open_layer(downloads / "OGD_Directionals.zip", stem="OGD_Directionals")
+    survey_rows = survey_ordinals(surveys)
+    write_subset(
+        surveys,
+        surveys_prj,
+        survey_rows,
+        destination / "OGD_Directionals_stations.zip",
+        member_stem="OGD_Directionals",
+    )
+    return {
+        **dict.fromkeys(LAYERS[:3], RECORD_COUNT),
+        "OGD_Directionals": len(survey_rows),
+    }
 
 
 def main() -> None:

@@ -108,6 +108,35 @@ ND_LAYERS: tuple[TileLayer, ...] = (
             ("derivation_id", "text"),
         ),
     ),
+    # Simplified for the reason the laterals are — Douglas-Peucker pays on lines, and these
+    # are the highest-vertex lines the map has: 52,579 stations over 586 traces, a median of
+    # 89 vertices where a lateral centreline carries a handful.
+    #
+    # Not thinned, and that is a decision rather than an omission. The gate approved a rank
+    # inside a half-pixel cell for the well and lateral layers because they draw more features
+    # than the zoom has pixels for; 586 traces over the whole of North Dakota is not overplot
+    # at any zoom, and applying an approved remedy to a layer outside its approval would put a
+    # sampling rule on data that has no case for one.
+    TileLayer(
+        name="nd_survey_traces",
+        source="marts.tile_nd_survey_traces",
+        geometry_type="LINESTRING",
+        properties=(
+            ("api10", "text"),
+            ("trace_key", "text"),
+            ("operator_name", "text"),
+            ("status_canonical", "text"),
+            ("spud_year", "int4"),
+            ("wellbore_segment", "text"),
+            ("segment_kind", "text"),
+            ("station_count", "int4"),
+            ("deepest_station_md_ft", "float8"),
+            ("deepest_station_tvd_ft", "float8"),
+            ("geometry_provenance", "text"),
+            ("derivation_id", "text"),
+        ),
+        simplify=True,
+    ),
 )
 
 # TX carries no spud date — the RRC's free identity export publishes a completion date and not

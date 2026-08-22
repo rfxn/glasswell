@@ -23,6 +23,9 @@ postgres:
     nd_spacing_units:
       schema: marts
       function: nd_spacing_units
+    nd_survey_traces:
+      schema: marts
+      function: nd_survey_traces
     tx_laterals:
       schema: marts
       function: tx_laterals
