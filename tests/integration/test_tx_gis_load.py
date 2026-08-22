@@ -287,16 +287,23 @@ def test_the_same_manifest_twice_is_idempotent_and_says_so(county, seeded, raw_r
     assert scalar(seeded, "select count(*) from canonical.well_spatial") == before
 
 
-def test_a_same_day_revised_archive_accumulates_the_vintage_ledger(
-    county, seeded, raw_root, lineage_env, tmp_path
-):
-    """DR-85: every county archive loaded on one day upserts the same (source, day) ledger
-    row, so the counters must be the day's sum, not the last load's report."""
-    revised = tmp_path / f"well{COUNTY}_revised.zip"
-    with zipfile.ZipFile(COUNTY_ARCHIVE) as source, zipfile.ZipFile(revised, "w") as target:
-        target.comment = b"dr85 same-day revision"
+def revised_zip(target_path: Path, comment: bytes) -> Path:
+    """The county archive with new bytes and identical members: a revision whose every
+    canonical key already belongs to the first manifest."""
+    with zipfile.ZipFile(COUNTY_ARCHIVE) as source, zipfile.ZipFile(target_path, "w") as target:
+        target.comment = comment
         for name in source.namelist():
             target.writestr(name, source.read(name))
+    return target_path
+
+
+def test_a_same_day_revised_archive_leaves_the_vintage_ledger_honest(
+    county, seeded, raw_root, lineage_env, tmp_path
+):
+    """DR-85 kept honest by DR-88: the revised archive's rows all conflict and land nothing,
+    so it must not inflate the (source, day) ledger row with counts that never reached
+    canonical — the row stays the pass that did the work."""
+    revised = revised_zip(tmp_path / f"well{COUNTY}_revised.zip", b"dr85 same-day revision")
     with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env), client_for(
         {"us_noaa_conus": GRID, f"well{COUNTY}": revised}
     ) as client:
@@ -312,15 +319,14 @@ def test_a_same_day_revised_archive_accumulates_the_vintage_ledger(
         (tx_gis.SOURCE_ID,),
     )
     assert second.unchanged is False
-    assert sum(second.geometries.values()) > 0
+    assert sum(second.geometries.values()) == 0
     assert len(ledger) == 1
     examined, appended, manifests = ledger[0]
-    assert examined == sum(county.staged.values()) + sum(second.staged.values())
-    assert appended == sum(county.geometries.values()) + sum(second.geometries.values())
-    assert set(manifests) == {county.manifest_id, second.manifest_id}
+    assert examined == sum(county.staged.values())
+    assert appended == sum(county.geometries.values())
+    assert appended == scalar(seeded, "select count(*) from canonical.well_spatial")
+    assert set(manifests) == {county.manifest_id}
 
-    # The unchanged path is proved on the first archive: its manifest owns canonical rows, so
-    # the reload returns before ever reaching the ledger.
     with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env), client_for(
         {"us_noaa_conus": GRID, f"well{COUNTY}": COUNTY_ARCHIVE}
     ) as client:
@@ -334,6 +340,89 @@ def test_a_same_day_revised_archive_accumulates_the_vintage_ledger(
         "select rows_examined, rows_appended from lineage.vintages where source_id = %s",
         (tx_gis.SOURCE_ID,),
     ) == [(examined, appended)], "an unchanged reload must leave the ledger alone"
+
+
+def test_a_revised_archive_whose_rows_all_conflict_is_detected_not_silently_promoted(
+    county, seeded, raw_root, lineage_env, tmp_path
+):
+    """DR-88: well_spatial's key carries no vintage, so a revised archive with unchanged
+    geometry keys conflicts on every row, owns nothing, and was invisible to the old
+    canonical-ownership guard — reported as promoted, re-promoted on every reload. The
+    refusal is now a quarantine fact and the reload short-circuits honestly."""
+    revised = revised_zip(tmp_path / f"well{COUNTY}_dr88.zip", b"dr88 all-conflict revision")
+    spatial_before = scalar(seeded, "select count(*) from canonical.well_spatial")
+
+    with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env), client_for(
+        {"us_noaa_conus": GRID, f"well{COUNTY}": revised}
+    ) as client:
+        second = tx_gis.load_county(
+            seeded, COUNTY, raw_root=raw_root, client=client, grid_client=client
+        )
+    seeded.commit()
+
+    assert second.manifest_id != county.manifest_id
+    assert second.unchanged is False
+    assert second.geometries == {"surface": 0, "bottomhole": 0, "lateral": 0}
+    assert second.quarantined["key_collision"] == sum(county.geometries.values())
+    assert scalar(seeded, "select count(*) from canonical.well_spatial") == spatial_before
+    assert scalar(
+        seeded,
+        "select count(*) from lineage.quarantine_rows"
+        " where reason_code = 'key_collision' and first_seen_manifest_id = %s",
+        (second.manifest_id,),
+    ) == sum(county.geometries.values())
+
+    with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env), client_for(
+        {"us_noaa_conus": GRID, f"well{COUNTY}": revised}
+    ) as client:
+        again = tx_gis.load_county(
+            seeded, COUNTY, raw_root=raw_root, client=client, grid_client=client
+        )
+    seeded.commit()
+    assert again.unchanged is True, "a detected all-conflict revision reloads as unchanged"
+    assert scalar(seeded, "select count(*) from canonical.well_spatial") == spatial_before
+
+
+def test_a_revised_export_whose_rows_all_conflict_is_detected_not_silently_promoted(
+    identity, seeded, raw_root, lineage_env, tmp_path
+):
+    """DR-88, the wellbore half: a same-day revised export re-keys nothing — every
+    (api10, effective_from) belongs to the first manifest and on-conflict-do-nothing lands
+    zero rows. The old guard could neither see the manifest nor say what became of it."""
+    revised = tmp_path / "OG_WELLBORE_EWA_revised.csv"
+    revised.write_text(
+        EWA_CSV.read_text(encoding="utf-8").replace('"06"', "06", 1), encoding="utf-8"
+    )
+    wells_before = scalar(seeded, "select count(*) from canonical.wells where state_code = '42'")
+
+    with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env), client_for(
+        {"OG_WELLBORE": revised}
+    ) as client:
+        second = tx_wellbore.load(seeded, raw_root=raw_root, client=client)
+    seeded.commit()
+
+    assert second.manifest_id != identity.manifest_id
+    assert second.unchanged is False
+    assert second.wells == 0
+    assert second.quarantined["key_collision"] == identity.wells
+    assert scalar(
+        seeded, "select count(*) from canonical.wells where state_code = '42'"
+    ) == wells_before
+    assert rows(
+        seeded,
+        "select rows_appended from lineage.vintages where source_id = %s",
+        (tx_wellbore.SOURCE_ID,),
+    ) == [(identity.wells,)], "a pass that appended nothing must not inflate the ledger"
+
+    with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env), client_for(
+        {"OG_WELLBORE": revised}
+    ) as client:
+        again = tx_wellbore.load(seeded, raw_root=raw_root, client=client)
+    seeded.commit()
+    assert again.unchanged is True, "a detected all-conflict revision reloads as unchanged"
+    assert scalar(
+        seeded, "select count(*) from canonical.wells where state_code = '42'"
+    ) == wells_before
 
 
 def test_a_same_day_second_export_accumulates_the_wellbore_vintage_ledger(

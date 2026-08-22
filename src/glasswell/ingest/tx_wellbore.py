@@ -58,7 +58,7 @@ STATUS_FAMILY = "cr_tx_status_vocab"
 BATCH_ROWS = 20_000
 
 REASON_CODES = (
-    "schema_mismatch", "key_incomplete", "unknown_status", "multi_completion",
+    "schema_mismatch", "key_incomplete", "unknown_status", "multi_completion", "key_collision",
 )
 
 
@@ -425,7 +425,7 @@ def load(
             cursor.execute(
                 f"delete from {STAGING_TABLE} where manifest_id = %s", (manifest.manifest_id,)
             )
-    elif _already_promoted(connection, manifest.manifest_id):
+    elif fetched.unchanged and _already_staged(connection, manifest.manifest_id):
         return WellboreLoad(
             manifest_id=manifest.manifest_id,
             parse_derivation_id="",
@@ -500,7 +500,7 @@ def load(
         *[{**row, "status_canonical": None} for row in silent],
     ]
 
-    identity_id = _promote_identity(
+    identity_id, wells_added = _promote_identity(
         connection,
         promoted,
         manifest_id=manifest.manifest_id,
@@ -509,6 +509,15 @@ def load(
         rules=[*keyed.applied_rule_ids, *mapped.applied_rule_ids, precedence.rule_id],
         state_code=str(api10_rule.spec["state_code"]),
     )
+    # DR-88: an all-conflict revision owns nothing and must become a ledger fact, not a no-op.
+    if promoted and not wells_added and not _owns_canonical(connection, manifest.manifest_id):
+        counts["key_collision"] = counts.get("key_collision", 0) + _quarantine(
+            connection,
+            _quarantine_frame(promoted),
+            manifest_id=manifest.manifest_id,
+            reason_code="key_collision",
+            stage="join",
+        )
     leased = apply_rules(keyed.frame, [lease_rule])
     for batch in leased.quarantined:
         counts[batch.reason_code] = counts.get(batch.reason_code, 0) + _quarantine(
@@ -538,7 +547,7 @@ def load(
         opened_at=current_session().clock.now(),
         promotion_derivation_id=identity_id,
         rows_examined=staged,
-        rows_appended=len(promoted),
+        rows_appended=wells_added,
     )
     with_status = sum(1 for row in promoted if row.get("status_canonical"))
     return WellboreLoad(
@@ -548,7 +557,7 @@ def load(
         links_derivation_id=links_id,
         staged_rows=staged,
         excluded_rows=excluded,
-        wells=len(promoted),
+        wells=wells_added,
         lease_links=links,
         quarantined=counts,
         status_coverage=with_status / len(promoted) if promoted else 0.0,
@@ -556,7 +565,15 @@ def load(
     )
 
 
-def _already_promoted(connection: psycopg.Connection, manifest_id: str) -> bool:
+def _already_staged(connection: psycopg.Connection, manifest_id: str) -> bool:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"select 1 from {STAGING_TABLE} where manifest_id = %s limit 1", (manifest_id,)
+        )
+        return cursor.fetchone() is not None
+
+
+def _owns_canonical(connection: psycopg.Connection, manifest_id: str) -> bool:
     with connection.cursor() as cursor:
         cursor.execute(
             "select 1 from canonical.wells where source_manifest_id = %s limit 1", (manifest_id,)
@@ -573,7 +590,7 @@ def _promote_identity(
     parse_derivation_id: str,
     rules: Sequence[str],
     state_code: str,
-) -> str:
+) -> tuple[str, int]:
     payload = [
         {
             "api10": row["api10"],
@@ -621,7 +638,8 @@ def _promote_identity(
             _INSERT_WELL,
             [{**row, "derivation_id": context.derivation_id} for row in payload],
         )
-    return context.derivation_id
+        inserted = max(cursor.rowcount, 0)
+    return context.derivation_id, inserted
 
 
 def _promote_lease_links(
@@ -682,7 +700,8 @@ def _promote_lease_links(
         cursor.executemany(
             _INSERT_LINK, [{**row, "derivation_id": context.derivation_id} for row in payload]
         )
-    return context.derivation_id, len(payload)
+        inserted = max(cursor.rowcount, 0)
+    return context.derivation_id, inserted
 
 
 def main(argv: Sequence[str] | None = None) -> int:
