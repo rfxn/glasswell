@@ -34,6 +34,7 @@ from glasswell.lineage.envelope import InlinedExplain, attach_lineage, figure
 from glasswell.lineage.explain import DEFAULT_DEPTH, MAX_DEPTH
 from glasswell.lineage.vintages import open_vintage
 from tests.contract.test_naked_numbers import naked_numbers
+from tests.support.seed import seed_derivation
 
 # Every handle-carrying GET: the three §9.2 reached first (a header, a series, an aggregate),
 # then the spine surfaces the convergence brought in — a sidecar page, a sidecar record and a
@@ -297,18 +298,48 @@ def test_a_handle_that_does_not_resolve_is_named_rather_than_dropped() -> None:
     assert body["data"]["length_ft"]["value"] == "1"
 
 
-def test_the_converged_link_is_the_link_the_router_used_to_author(client: TestClient) -> None:
+def test_the_converged_link_is_the_link_the_router_used_to_author(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
     """gate-apix ADV-1's fix must not move the published link: the envelope now builds what
-    `/v1/derivations/{id}` and the vintages pair hand-built, byte for byte — the page link
-    included, since the one seeded promotion dedups to the same single handle."""
+    `/v1/derivations/{id}` and the vintages pair hand-built, byte for byte. The page link is
+    asserted against the page's own promotions rather than pinned to the one seeded handle,
+    and a second promotion is seeded mid-test so the assertion is proven to survive fixture
+    growth instead of depending on it (RN-2)."""
     derivation = client.get(f"/v1/derivations/{EXAMPLE_DERIVATION_ID}").json()
     vintage = client.get(f"/v1/vintages/{EXAMPLE_VINTAGE_ID}").json()
-    page = client.get("/v1/vintages").json()
 
     expected = f"/v1/explain?h={EXAMPLE_DERIVATION_ID}&depth=full"
     assert derivation["links"]["explain"] == expected
     assert vintage["links"]["explain"] == expected
-    assert page["links"]["explain"] == expected
+
+    def page_link_built_by_hand() -> str:
+        page = client.get("/v1/vintages").json()
+        promotions = [row["promotion_derivation_id"] for row in page["data"]]
+        distinct = list(dict.fromkeys(handle for handle in promotions if handle))
+        assert distinct, "the page must carry at least one promotion handle"
+        hand_built = "/v1/explain?" + "&".join(f"h={handle}" for handle in distinct)
+        assert page["links"]["explain"] == f"{hand_built}&depth=full"
+        return page["links"]["explain"]
+
+    assert page_link_built_by_hand() == expected
+
+    second = seed_derivation(seeded, partition={"source_id": "tx_pdq_dsv"})
+    open_vintage(
+        seeded,
+        source_id="tx_pdq_dsv",
+        vintage_date=date(2026, 8, 3),
+        manifest_ids=[],
+        opened_at=datetime(2026, 8, 3, 5, 2, 11, tzinfo=UTC),
+        promotion_derivation_id=second,
+        rows_examined=5,
+        rows_appended=5,
+    )
+
+    grown = page_link_built_by_hand()
+    assert second != EXAMPLE_DERIVATION_ID
+    assert f"h={second}" in grown
+    assert f"h={EXAMPLE_DERIVATION_ID}" in grown
 
 
 def test_a_vintage_with_no_promotion_inlines_nothing_and_links_nothing(

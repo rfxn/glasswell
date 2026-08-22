@@ -81,6 +81,33 @@ def test_the_well_type_filter_cannot_rescope_a_page_mid_traversal(client: TestCl
     assert "well_type=OG" in filtered["links"]["next"]
 
 
+def test_the_provenance_filter_cannot_rescope_a_page_mid_traversal(client: TestClient) -> None:
+    """F-3, replayed a third time for the m13 residual: both refusal directions, and the
+    served next link carries the filter the cursor was minted under."""
+    unfiltered = client.get("/v1/wells", params={"limit": 2}).json()
+    filtered = client.get(
+        "/v1/wells", params={"limit": 1, "geometry_provenance": "surface"}
+    ).json()
+
+    added = client.get(
+        "/v1/wells",
+        params={
+            "limit": 2,
+            "cursor": unfiltered["meta"]["next_cursor"],
+            "geometry_provenance": "surface",
+        },
+    )
+    dropped = client.get(
+        "/v1/wells", params={"limit": 1, "cursor": filtered["meta"]["next_cursor"]}
+    )
+
+    assert added.status_code == 422
+    assert added.json()["type"] == f"{TYPE_BASE}/cursor_query_mismatch"
+    assert dropped.status_code == 422
+    assert dropped.json()["type"] == f"{TYPE_BASE}/cursor_query_mismatch"
+    assert "geometry_provenance=surface" in filtered["links"]["next"]
+
+
 def test_a_corrupt_cursor_is_refused(client: TestClient) -> None:
     response = client.get("/v1/wells", params={"cursor": "not-a-cursor"})
 

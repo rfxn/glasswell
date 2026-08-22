@@ -54,6 +54,38 @@ def test_the_collection_filters_on_the_well_type_code_verbatim(client: TestClien
     assert client.get("/v1/wells", params={"well_type": "SWD"}).json()["data"] == []
 
 
+def test_the_collection_filters_on_geometry_provenance_verbatim(client: TestClient) -> None:
+    """m13 residual, the R-1 pattern replayed for provenance: the class as canonical records
+    it — no decode, no case-folding — and a well matches on any of its geometry."""
+    lateral = client.get("/v1/wells", params={"geometry_provenance": "lateral"}).json()["data"]
+    surface = client.get("/v1/wells", params={"geometry_provenance": "surface"}).json()["data"]
+
+    assert [item["api10"] for item in lateral] == [EXAMPLE_API10]
+    assert [item["api10"] for item in surface] == sorted((EXAMPLE_API10, TX_API10))
+    assert (
+        client.get("/v1/wells", params={"geometry_provenance": "LATERAL"}).json()["data"] == []
+    )
+    assert (
+        client.get("/v1/wells", params={"geometry_provenance": "survey_trace"}).json()["data"]
+        == []
+    )
+
+
+def test_the_collection_serves_each_wells_provenance_classes(client: TestClient) -> None:
+    """The payload column beside the filter: every class the well's geometry carries,
+    alphabetical, and an empty list where no geometry is recorded at all."""
+    by_api10 = {
+        item["api10"]: item["geometry_provenance"]
+        for item in client.get("/v1/wells", params={"limit": 200}).json()["data"]
+    }
+
+    assert by_api10[EXAMPLE_API10] == ["lateral", "surface"]
+    assert by_api10[TX_API10] == ["surface"]
+    assert [classes for classes in by_api10.values() if classes == []], (
+        "a well with no geometry must serve an empty list, not vanish"
+    )
+
+
 def test_an_oversized_bounding_box_is_refused(client: TestClient) -> None:
     response = client.get("/v1/wells", params={"bbox": "-110,40,-100,50"})
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, urlsplit
 
 import pytest
 
@@ -240,6 +240,41 @@ def test_a_fragment_smuggled_handle_is_refused_like_a_query_one():
             request_id="req_02",
             links={"self": "/v1", "explain": "/v1/explain#h=drv_other01"},
         )
+
+
+def test_the_shapes_that_pass_the_guard_are_exactly_the_ones_no_parser_reads():
+    """RN-1 closed. `%23h=`, `#h%3D` and `##h=` pass `_names_handles` — and must: `parse_qsl`
+    reads no `h` key in any of them, so a resolver handed the same link finds no handle set
+    either. Parser-symmetric means no divergence channel. The guard's input is
+    router-authored (never client-supplied) and fragments never cross HTTP, so the only
+    server-reachable reading of each shape is its one-step-decoded neighbour — refused."""
+    shapes = (
+        ("/v1/explain?%23h=drv_other01", "/v1/explain?#h=drv_other01"),
+        ("/v1/explain#h%3Ddrv_other01", "/v1/explain#h=drv_other01"),
+        ("/v1/explain##h=drv_other01", "/v1/explain#h=drv_other01"),
+    )
+    for smuggled, decoded in shapes:
+        parts = urlsplit(smuggled)
+        pairs = parse_qsl(parts.query, keep_blank_values=True) + parse_qsl(
+            parts.fragment, keep_blank_values=True
+        )
+        assert not [value for key, value in pairs if key == "h"], smuggled
+
+        passed = attach_lineage(
+            {"api_version": "v1"},
+            as_of=AS_OF,
+            request_id="req_02",
+            links={"self": "/v1", "explain": smuggled},
+        ).to_dict()
+        assert passed["links"]["explain"] == smuggled
+
+        with pytest.raises(ValueError, match="envelope-authored"):
+            attach_lineage(
+                {"api_version": "v1"},
+                as_of=AS_OF,
+                request_id="req_02",
+                links={"self": "/v1", "explain": decoded},
+            )
 
 
 def test_a_handle_less_template_passes_and_is_overwritten_the_moment_handles_exist():
