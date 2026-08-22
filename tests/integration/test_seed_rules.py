@@ -20,6 +20,9 @@ POLICY_RULES = (
     # The land-grid publisher choice: the executor is the ingest module the spec names, and
     # the measured cross-publisher divergence rides in spec.divergence_measured (M1-4).
     "cr_blm_plss_publisher_1",
+    # M2-3's membership decision: which section a well belongs to, chosen with measured
+    # evidence and executed by the metrics mart the spec names.
+    "cr_land_agg_membership_1",
     "cr_nd_geometry_provenance_1",
     "cr_nd_liquids_policy_1",
     "cr_nd_null_semantics_1",

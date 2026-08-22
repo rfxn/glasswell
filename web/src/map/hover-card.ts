@@ -2,6 +2,19 @@ import { disposalType } from "./disposal.ts";
 import { geometryProvenance, provenanceLine } from "./provenance.ts";
 import { statusClass } from "./status.ts";
 import { statusSwatch } from "./swatch.ts";
+import { LIQUIDS_BASIS_COPY, MEMBERSHIP_COPY, MEMBERSHIP_RULE } from "./thematics.ts";
+
+const NUMBER = new Intl.NumberFormat("en-US");
+
+/** A land-grid metrics cell, not a well: the discriminator is the pair no well carries. */
+function isMetricsCell(properties: Record<string, unknown>): boolean {
+  return typeof properties["land_unit_id"] === "string" && "well_count" in properties;
+}
+
+function volume(value: unknown): string {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? NUMBER.format(Math.round(parsed)) : "—";
+}
 
 export interface HoverCardHandle {
   element: HTMLElement;
@@ -42,9 +55,50 @@ export function createHoverCard(): HoverCardHandle {
   provenance.hidden = true;
   element.appendChild(provenance);
 
+  const figures = document.createElement("p");
+  figures.className = "gw-hover-meta gw-hover-figures";
+  figures.hidden = true;
+  element.appendChild(figures);
+
+  const policy = document.createElement("p");
+  policy.className = "gw-hover-meta gw-hover-policy";
+  policy.hidden = true;
+  element.appendChild(policy);
+
+  const place = (point: { x: number; y: number }): void => {
+    element.style.transform = `translate(${point.x + 14}px, ${point.y + 14}px)`;
+    element.hidden = false;
+  };
+
+  /** M2-3: the cell's figures with their basis and support — never a naked sum. */
+  const showCell = (properties: Record<string, unknown>, point: { x: number; y: number }): void => {
+    const grain = properties["unit_type"] === "township" ? "Township" : "Section";
+    name.textContent = `${grain} ${String(properties["label"] ?? "")}`.trim();
+    const wells = volume(properties["well_count"]);
+    const producing = volume(properties["prod_well_count"]);
+    meta.textContent = `${wells} wells · ${producing} producing`;
+    trace.hidden = disposal.hidden = provenance.hidden = true;
+    trace.textContent = disposal.textContent = provenance.textContent = "";
+    figures.hidden = false;
+    figures.textContent =
+      `Liquid ${volume(properties["liquid_cum_bbl"])} bbl · ` +
+      `gas ${volume(properties["gas_cum_mcf"])} mcf · ` +
+      `water ${volume(properties["water_cum_bbl"])} bbl — observed sums`;
+    policy.hidden = false;
+    policy.textContent =
+      `Liquid is ${LIQUIDS_BASIS_COPY}; ${MEMBERSHIP_COPY} (${MEMBERSHIP_RULE}).`;
+    place(point);
+  };
+
   return {
     element,
     show(properties, point) {
+      if (isMetricsCell(properties)) {
+        showCell(properties, point);
+        return;
+      }
+      figures.hidden = policy.hidden = true;
+      figures.textContent = policy.textContent = "";
       const api10 = String(properties["api10"] ?? "");
       const wellName = String(properties["well_name"] ?? "").trim();
       const status = statusClass(properties["status_canonical"] as string | undefined);

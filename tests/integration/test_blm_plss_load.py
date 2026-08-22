@@ -18,7 +18,7 @@ from glasswell.marts.land_units import refresh_land_units
 from glasswell.seed import seed_all
 from tests.integration.test_marts_nd import covering_tile, extent_of, rows, scalar
 from tests.support.arcgis_fake import SERVICE_PATH, FakeArcGis
-from tests.support.mvt import attribute_keys, feature_count, layers
+from tests.support.mvt import attribute_keys, feature_count, layer_name, layers
 
 SERVICE_URL = f"https://gis.blm.gov{SERVICE_PATH}"
 TOWNSHIPS = 2
@@ -239,10 +239,13 @@ def test_the_mart_serves_both_grains_as_decodable_tiles(seeded, raw_root, lineag
     for function, expected in (("land_townships", TOWNSHIPS), ("land_sections", SECTIONS)):
         tile = scalar(seeded, f"select marts.{function}(%s, %s, %s)", (zoom, x, y))
         assert tile is not None, f"{function} returned no tile at z{zoom}"
-        decoded = layers(bytes(tile))
-        assert len(decoded) == 1
-        assert feature_count(decoded[0]) == expected
-        assert set(attribute_keys(decoded[0])) == {
+        decoded = {layer_name(layer): layer for layer in layers(bytes(tile))}
+        # Two sublayers since M2-3/F1: the polygons, and one anchor point per unit for the
+        # symbol layer to bind to — a tile containing every unit carries every label once.
+        assert set(decoded) == {function, f"{function}_label"}
+        assert feature_count(decoded[function]) == expected
+        assert feature_count(decoded[f"{function}_label"]) == expected
+        assert set(attribute_keys(decoded[function])) == {
             "land_unit_id", "unit_type", "plssid", "label", "derivation_id",
         }
     # Every served figure carries a derivation handle: the tile rows carry the refresh's.
@@ -250,3 +253,35 @@ def test_the_mart_serves_both_grains_as_decodable_tiles(seeded, raw_root, lineag
         scalar(seeded, "select distinct derivation_id from marts.land_units_tile")
         == refresh.derivation_id
     )
+
+
+def test_a_label_crossing_a_tile_seam_is_emitted_exactly_once(seeded, raw_root, lineage_env):
+    """The F1 defect: a polygon split across tiles grew one label per fragment. The anchor
+    point is owned by exactly one tile, so the sum over any tiling is the unit count."""
+    load_all(seeded, raw_root, lineage_env)
+    with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env):
+        refresh_land_units(seeded)
+    seeded.commit()
+
+    zoom, x, y = covering_tile(extent_of(seeded, "marts.land_units_tile"))
+    # Two zooms deeper: sixteen descendant tiles, so the fixture polygons are fragmented
+    # across seams while every anchor still lands in exactly one descendant.
+    children = [
+        (zoom + 2, 4 * x + dx, 4 * y + dy) for dx in range(4) for dy in range(4)
+    ]
+    for function, expected in (("land_townships", TOWNSHIPS), ("land_sections", SECTIONS)):
+        fragments = 0
+        labels = 0
+        for z, cx, cy in children:
+            tile = scalar(seeded, f"select marts.{function}(%s, %s, %s)", (z, cx, cy))
+            if tile is None:
+                continue
+            named = {layer_name(layer): layer for layer in layers(bytes(tile))}
+            fragments += feature_count(named.get(function, b""))
+            labels += feature_count(named.get(f"{function}_label", b""))
+        assert fragments >= expected
+        # A township spans several z+2 tiles, so the polygon side genuinely duplicates —
+        # which is exactly what the anchor side must not do.
+        if function == "land_townships":
+            assert fragments > expected, "the tiling did not fragment the polygons"
+        assert labels == expected

@@ -124,6 +124,99 @@ LAND_RULES: tuple[dict[str, object], ...] = (
         ),
         "evidence_url": SERVICE_URL + "/2",
     },
+    {
+        "rule_id": "cr_land_agg_membership_1",
+        "source_id": "blm_plss_sections",
+        "stage": "join",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["geom", "land_unit_id", "api10"],
+        "spec": {
+            "module_function": "glasswell.marts.land_metrics:refresh_land_metrics",
+            "version": "1",
+            "assign_by": "lateral_midpoint_else_surface",
+            "anchor": {
+                "lateral": "the newest filed lateral row (created_at desc, ties broken by"
+                " geom_key): 695 ND wells carry more than one filed lateral in a single"
+                " promotion batch, 256 of them with midpoints in different sections, so the"
+                " pick is stated rather than plan-dependent. Its midpoint is"
+                " ST_LineInterpolatePoint(ST_LineMerge(lateral), 0.5) when the merge yields"
+                " a single LineString; ST_ClosestPoint(lateral, ST_Centroid(lateral)) for"
+                " the multi-part remainder (5 of 22,263 measured)",
+                "no_lateral": "the surface hole point, which for a vertical well is the"
+                " producing location itself",
+                "midpoint_orphan": "a midpoint resolving no section falls back to the"
+                " surface hole: 163 ND wells measured (state-line and grid-edge laterals)"
+                " carrying 2,071,625 bbl of observed liquid that would otherwise appear in"
+                " no cell",
+            },
+            "tie_break": "min(land_unit_id) when the anchor intersects more than one section"
+            " (0 measured today; the dedupe is structural, not observed)",
+            "township_membership": "the parent township of the assigned section via the"
+            " plssid join, never an independent point test — a well is in the township of"
+            " its section",
+            "unassigned": "a well whose midpoint and surface hole both resolve no land"
+            " unit is excluded from every cell; the refresh derivation params count the"
+            " exclusions twice over — in total (Texas is expected to be wholly unassigned"
+            " until a TX land grid exists) and for the grid's own states, where any nonzero"
+            " count is an anomaly (0 ND wells measured today under the surface fallback)",
+            "observed_only": "whole-well observed sums: each well lands in exactly one"
+            " section, no length-weighted apportionment, no interpolation, no estimate."
+            " Fractional allocation is a superseding rule with Protocol 4D obligations,"
+            " not an edit",
+            "contract_note": "marts.land_metrics_tile and both metric tile layers carry"
+            " whole-well sums under this membership; the mart module is the executor, and a"
+            " different membership (apportionment, bottomhole) is a superseding row, not a"
+            " code change",
+            "evidence_measured": {
+                "measured_on": "2026-08-22, VM 111 canonical (73,512 land units, 398,403"
+                " production rows)",
+                "nd_wells": 43817,
+                "with_surface_point": 43817,
+                "with_lateral": 22263,
+                "with_bottomhole": 0,
+                "laterals_crossing_2plus_sections": {
+                    "count": 18903, "of": 22261, "share": "84.9%"},
+                "midpoint_section_differs_from_surface": {
+                    "count": 10464, "of": 22100, "share": "47.3%"},
+                "liquid_volume_on_differing_wells_bbl": {
+                    "bbl": 107776020, "of_bbl": 187984167, "share": "57.33%",
+                    "population": "well-entity production rows only, under the"
+                    " deterministic lateral pick"},
+                "township_grain_differs": {"count": 1798, "of": 22100, "share": "8.1%"},
+                "multi_lateral_wells": {"count": 695, "with_differing_midpoints": 256},
+                "midpoint_orphans": {
+                    "count": 163, "liquid_bbl": 2071625,
+                    "disposition": "fallback to surface hole"},
+            },
+        },
+        "rule": "A well belongs to the section holding its lateral midpoint when it has a"
+        " filed lateral, and the section holding its surface hole otherwise; townships"
+        " inherit through the section's parent. Sums are whole-well and observed-only.",
+        "rationale": (
+            "Three candidate memberships were measured before choosing (M2-3). Bottomhole"
+            " is unavailable for the grid's wells: canonical.well_spatial holds zero ND"
+            " bottomhole geometries (the 360,434 on file are all Texas)."
+            " Surface-point membership is complete (43,817/43,817) but misplaces the"
+            " producing footprint: 84.9% of ND laterals cross two or more sections, the"
+            " lateral midpoint sits in a different section than the surface hole for 47.3%"
+            " of laterals — and volume-weighted that is 57.33% of every observed ND liquid"
+            " barrel (107.78M of 187.98M, well-entity rows only), because pads cluster"
+            " surface holes in one"
+            " section while the rock that produced sits under the next. At section grain a"
+            " surface-point choropleth is a pad map wearing a production map's title. The"
+            " lateral midpoint is the arc-length centre of the filed bore — a"
+            " producing-interval proxy that keeps each well whole in one cell,"
+            " observed-only, with the surface hole as the exact answer for verticals."
+            " Length-weighted apportionment across crossed sections was rejected for v1: it"
+            " manufactures fractional well-months nothing observed, which is allocation"
+            " modelling and takes a superseding rule carrying its spacing assumption per"
+            " Protocol 4D. At township grain the same choice moves only 8.1% of laterals,"
+            " so the township surface is robust to it either way."
+        ),
+        "evidence_url": "https://gis.dmr.nd.gov/downloads/oilgas/shapefile/"
+        "OGD_Horizontals_Line.zip",
+        "code_ref": "src/glasswell/marts/land_metrics.py",
+    },
 )
 
 _INSERT_SOURCE = """
@@ -150,6 +243,7 @@ def _row(rule: dict[str, object]) -> dict[str, object]:
         "rule_family": rule_id.rsplit("_", 1)[0],
         "spec": Jsonb(rule["spec"]),
         "code_ref": rule.get("code_ref"),
+        "evidence_url": rule.get("evidence_url"),
         "supersedes_rule_id": rule.get("supersedes_rule_id"),
         "effective_from": rule.get("effective_from", EFFECTIVE_FROM),
     }
@@ -167,6 +261,7 @@ def seed_conformance_land(connection: psycopg.Connection) -> int:
     with connection.cursor() as cursor:
         cursor.executemany(_INSERT_RULE, [_row(rule) for rule in LAND_RULES])
         cursor.execute(
-            "select count(*) from lineage.conformance_rules where rule_id like 'cr_blm\\_%'"
+            "select count(*) from lineage.conformance_rules"
+            " where rule_id like 'cr_blm\\_%' or rule_id like 'cr_land\\_%'"
         )
         return int(cursor.fetchone()[0])

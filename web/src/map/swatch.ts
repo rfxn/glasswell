@@ -114,6 +114,21 @@ export function layerSwatch(swatch: LayerSwatch, size = 14): SVGSVGElement {
         }),
       );
     }
+  } else if (swatch.kind === "fill" && swatch.colours.length > 1) {
+    // A ramp-painted fill row predicts a banded canvas, so the swatch is the bands: every
+    // declared colour is drawn, none dropped in silence.
+    const width = (size - 4) / swatch.colours.length;
+    for (const [step, colour] of swatch.colours.entries()) {
+      node.appendChild(
+        el("rect", {
+          x: String(2 + step * width),
+          y: "2",
+          width: String(width),
+          height: String(size - 4),
+          fill: colour,
+        }),
+      );
+    }
   } else {
     node.appendChild(
       el("rect", {

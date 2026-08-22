@@ -57,6 +57,8 @@ import {
   statusStyledLayerIds,
   strikeGlyph,
 } from "./style.ts";
+import { METRIC_FILL_LAYERS } from "./thematics.ts";
+import { createThematicsKey } from "./thematics-key.ts";
 import { createTileBanner } from "./tile-banner.ts";
 import { tileRequest } from "./tile-request.ts";
 import { applyVariantStyling } from "./variant-style.ts";
@@ -220,6 +222,7 @@ export function createMap(
 
   const banner = createTileBanner();
   const hover = createHoverCard();
+  const thematics = createThematicsKey();
   chrome.append(banner.element, hover.element);
 
   let basemap = chooseBasemap();
@@ -281,7 +284,12 @@ export function createMap(
   // The handle stays live either way: refreshCounts() writes to a detached legend without
   // knowing it is off-canvas, so nothing has to test for the suppressed case at every call.
   const showLegend = legendEnabled(window.location.search);
-  chrome.append(...(showLegend ? [pills.element, legend.element] : [pills.element]), panel.element);
+  // `?legend=0` suppresses the thematic key with the status key: both are legends, and an
+  // embed that asked for a clean canvas asked for both to go.
+  chrome.append(
+    ...(showLegend ? [pills.element, legend.element, thematics.element] : [pills.element]),
+    panel.element,
+  );
   map.addControl(new LayerButton(() => panel.toggle()), "top-right");
 
   function persist(): void {
@@ -312,6 +320,7 @@ export function createMap(
     }
     panel.setOn(on);
     pills.setOn(on);
+    refreshThematics();
     invalidateDrawn();
   }
 
@@ -378,6 +387,7 @@ export function createMap(
 
   /** The pixel census, demoted to the one thing it can honestly answer. */
   function refreshDrawn(): void {
+    refreshThematics();
     const layers = WELL_POINT_LAYERS.filter((id) => map.getLayer(id) && on.has(id));
     if (layers.length === 0) {
       // Not a partial plot: the reader switched the layer off, and the panel already says so.
@@ -387,6 +397,29 @@ export function createMap(
     const census = censusOfDrawn(map.queryRenderedFeatures({ layers: [...layers] }));
     legend.setDrawn(census.wells);
     if (census.derivation) for (const id of layers) panel.setProvenance(id, census.derivation);
+  }
+
+  /**
+   * The thematic key restates the frame the rendered cells carry — bins are cut at refresh
+   * and ride the tile, so the key reads them off the canvas rather than recomputing, and an
+   * empty canvas (or the row off) is a hidden key, never a stale one.
+   */
+  function refreshThematics(): void {
+    if (!on.has("land-metrics")) {
+      thematics.clear();
+      return;
+    }
+    const layers = METRIC_FILL_LAYERS.filter((id) => map.getLayer(id));
+    if (layers.length === 0) {
+      thematics.clear();
+      return;
+    }
+    const rendered = map.queryRenderedFeatures({ layers: [...layers] });
+    thematics.set(rendered.map((feature) => feature.properties as Record<string, unknown>));
+    const derivation = rendered
+      .map((feature) => feature.properties?.["derivation_id"])
+      .find((handle): handle is string => typeof handle === "string" && handle !== "");
+    if (derivation) panel.setProvenance("land-metrics", derivation);
   }
 
   function paintCounts(state: CountsState): void {

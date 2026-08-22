@@ -24,6 +24,47 @@ describe("the hover card", () => {
     expect(card.element.textContent?.match(/3305305527/g)?.length).toBe(1);
   });
 
+  it("reads a land-grid cell as figures with their basis and support, never naked (M2-3)", () => {
+    const card = createHoverCard();
+    card.show(
+      {
+        land_unit_id: "ND051520N0950W0SN130",
+        unit_type: "section",
+        label: "13",
+        well_count: 1,
+        prod_well_count: 1,
+        liquid_cum_bbl: 1500,
+        gas_cum_mcf: 3000,
+        water_cum_bbl: 0,
+        liquid_bin: 6,
+        derivation_id: "drv_thematics",
+      },
+      { x: 10, y: 10 },
+    );
+    const text = card.element.textContent ?? "";
+    expect(text).toContain("Section 13");
+    expect(text).toContain("1 wells · 1 producing");
+    expect(text).toContain("Liquid 1,500 bbl");
+    expect(text).toContain("gas 3,000 mcf");
+    expect(text).toContain("observed sums");
+    expect(text).toContain("oil + condensate as ND files it");
+    expect(text).toContain("cr_land_agg_membership_1");
+  });
+
+  it("clears the cell figures when the next hover is a well again", () => {
+    const card = createHoverCard();
+    card.show(
+      { land_unit_id: "x", unit_type: "township", label: "152N 95W", well_count: 2,
+        prod_well_count: 2, liquid_cum_bbl: 1700, gas_cum_mcf: 3000, water_cum_bbl: 100 },
+      { x: 0, y: 0 },
+    );
+    card.show({ api10: "3305305527", status_canonical: "active" }, { x: 0, y: 0 });
+    const text = card.element.textContent ?? "";
+    expect(text).not.toContain("Liquid");
+    expect(text).not.toContain("cr_land_agg_membership_1");
+    expect(text).toContain("3305305527");
+  });
+
   it("hides when nothing is under the cursor", () => {
     const card = createHoverCard();
     card.show({ api10: "33053" }, { x: 0, y: 0 });

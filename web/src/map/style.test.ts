@@ -5,6 +5,7 @@ import type { LayerSpecification } from "maplibre-gl";
 import type { BasemapVariant } from "./basemap.ts";
 import { DISPOSAL_COLOUR } from "./disposal.ts";
 import { LAYERS } from "./registry.ts";
+import { METRICS_SECTIONS_SOURCE, METRICS_TOWNSHIPS_SOURCE } from "./thematics.ts";
 import { variantStyle } from "./variant-style.ts";
 import {
   LATERALS_SOURCE,
@@ -324,8 +325,12 @@ describe("the data layers", () => {
 describe("the land grid (M1-4)", () => {
   it("draws the grid beneath every data layer — reference linework, never over", () => {
     const built = ids();
-    expect(built[0]).toBe("land-townships-line");
-    expect(built[1]).toBe("land-sections-line");
+    // The thematic wash sits under even the reference grid (M2-3): the grid must stay
+    // readable over the fill, and the fill is context beneath everything.
+    expect(built[0]).toBe("land-township-metrics-fill");
+    expect(built[1]).toBe("land-section-metrics-fill");
+    expect(built[2]).toBe("land-townships-line");
+    expect(built[3]).toBe("land-sections-line");
   });
 
   it("gates sections two zooms deeper than the townships they subdivide", () => {
@@ -427,7 +432,8 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
     const search =
       "?wells=..%2F..%2Fetc%2Fpasswd&laterals=gw-evil-layer&spacing=%2Fetc%2Fpasswd" +
       "&tx_wells=..%2F..%2Fetc%2Fshadow&tx_laterals=gw-evil-layer&traces=..%2F..%2Fetc%2Fpasswd" +
-      "&townships=..%2F..%2Fetc%2Fpasswd&sections=gw-evil-layer";
+      "&townships=..%2F..%2Fetc%2Fpasswd&sections=gw-evil-layer" +
+      "&township_metrics=..%2F..%2Fetc%2Fpasswd&section_metrics=gw-evil-layer";
     const specs = sourceSpecs("https://gw.example", search);
     expect(Object.keys(specs).sort()).toEqual(
       [
@@ -439,6 +445,8 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
         TRACES_SOURCE,
         TOWNSHIPS_SOURCE,
         SECTIONS_SOURCE,
+        METRICS_TOWNSHIPS_SOURCE,
+        METRICS_SECTIONS_SOURCE,
       ].sort(),
     );
     const serialised = JSON.stringify(specs);
