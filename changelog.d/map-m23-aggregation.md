@@ -7,9 +7,11 @@
       (cr_nd_liquids_policy_1) and says so wherever the number appears
 - [New] cr_land_agg_membership_1, the section-membership decision as a conformance row:
       a well belongs to the section holding its lateral midpoint, else its surface hole —
-      chosen against measured evidence (84.9% of ND laterals cross 2+ sections; 57.3% of
-      observed ND liquid volume sits on wells whose midpoint and surface sections differ),
-      with bottomhole ruled out by absence and apportionment deferred to a superseding
+      chosen against measured evidence (84.9% of ND laterals cross 2+ sections; 57.33% of
+      well-reported ND liquid sits on wells whose midpoint and surface sections differ);
+      the newest filing wins with geom_key breaking ties, grid-edge midpoint orphans
+      (163 wells, 2.07M bbl) fall back to the surface hole rather than vanishing, ND
+      bottomhole is ruled out by absence, and apportionment is deferred to a superseding
       rule with its Protocol 4D obligations
 - [Fix] polygon labels no longer duplicate at tile seams: the land-grid and spacing-unit
       tile functions emit one anchor point per unit in the one tile that owns it, and the

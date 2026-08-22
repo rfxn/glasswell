@@ -2,7 +2,10 @@
 
 The geometry is arranged so the membership decision is what the assertions read: one
 horizontal well whose surface hole and lateral midpoint sit in different sections, one
-vertical whose surface hole is the answer, one well with nothing observed, one off-grid.
+vertical whose surface hole is the answer, one midpoint-orphan whose lateral midpoint
+resolves no section and must fall back to its surface hole (gate-m23 F-B), one well with
+two tied lateral filings whose pick must be deterministic (gate-m23 F-A), one well with
+nothing observed, one off-grid.
 """
 
 from __future__ import annotations
@@ -41,6 +44,8 @@ HORIZONTAL = "3305399001"
 VERTICAL = "3305399002"
 UNPRODUCED = "3305399003"
 OFF_GRID = "3305399004"
+ORPHAN = "3305399005"
+TWO_FILINGS = "3305399006"
 
 # Surface in section A (y 47.940), toe two sections north: the arc-length midpoint lands at
 # y 47.985, inside section B — the divergent case the membership rule exists for.
@@ -49,6 +54,15 @@ HORIZONTAL_LATERAL = "LINESTRING(-102.7850 47.9400, -102.7850 48.0300)"
 VERTICAL_SURFACE = "POINT(-102.7800 47.9420)"
 UNPRODUCED_SURFACE = "POINT(-102.8390 48.0310)"
 OFF_GRID_SURFACE = "POINT(-103.5000 47.5000)"
+# Surface in section A; the midpoint (y 47.9650) lands in the fixture's unfixtured gap —
+# no section holds it, so the well must fall back to its surface hole, volume and all.
+ORPHAN_SURFACE = "POINT(-102.7820 47.9440)"
+ORPHAN_LATERAL = "LINESTRING(-102.7820 47.9440, -102.7820 47.9860)"
+# Two filed laterals, tied created_at (one transaction — the live 695-well shape): filing A
+# midpoints in section Z, filing B midpoints in 153N section 13. geom_key breaks the tie.
+TWO_FILINGS_SURFACE = "POINT(-102.8390 48.0310)"
+TWO_FILINGS_LATERAL_A = "LINESTRING(-102.8460 48.0310, -102.8320 48.0310)"
+TWO_FILINGS_LATERAL_B = "LINESTRING(-102.8390 48.0670, -102.8390 48.0818)"
 
 MONTH = date(2024, 1, 1)
 VINTAGE = date(2024, 3, 14)
@@ -71,10 +85,18 @@ def gridded(db, raw_root, lineage_env):
         (VERTICAL, VERTICAL_SURFACE),
         (UNPRODUCED, UNPRODUCED_SURFACE),
         (OFF_GRID, OFF_GRID_SURFACE),
+        (ORPHAN, ORPHAN_SURFACE),
+        (TWO_FILINGS, TWO_FILINGS_SURFACE),
     ):
         seed_well(db, api10=api10)
         seed_well_spatial(db, api10=api10, geom_type="surface", wkt=surface)
     seed_well_spatial(db, api10=HORIZONTAL, geom_type="lateral", wkt=HORIZONTAL_LATERAL)
+    seed_well_spatial(db, api10=ORPHAN, geom_type="lateral", wkt=ORPHAN_LATERAL)
+    for geom_key, wkt in (
+        (f"{TWO_FILINGS}0000_A", TWO_FILINGS_LATERAL_A),
+        (f"{TWO_FILINGS}0000_B", TWO_FILINGS_LATERAL_B),
+    ):
+        seed_well_spatial(db, api10=TWO_FILINGS, geom_type="lateral", geom_key=geom_key, wkt=wkt)
 
     manifest_id = seed_manifest(db, sha256="f" * 64)
     derivation_id = seed_derivation(db)
@@ -84,6 +106,8 @@ def gridded(db, raw_root, lineage_env):
         (HORIZONTAL, "gas", MONTH, Decimal("3000")),
         (VERTICAL, "oil", MONTH, Decimal("200")),
         (VERTICAL, "water", MONTH, Decimal("100")),
+        # The orphan's barrels must land via the fallback, not vanish from every cell.
+        (ORPHAN, "oil", MONTH, Decimal("300")),
     )
     for api10, stream, month, volume in production:
         seed_production(
@@ -129,15 +153,50 @@ def test_membership_is_the_lateral_midpoint_not_the_surface_hole(gridded):
     assert (unit_type, wells, producing) == ("section", 1, 1)
     assert (liquid, gas, water) == (1500.0, 3000.0, 0.0)
 
+    # The vertical by its surface hole, and the orphan by fallback — 500 = 200 + 300.
     unit_type, wells, producing, liquid, gas, water, _, _, _ = cell(db, SECTION_A)
-    assert (unit_type, wells, producing) == ("section", 1, 1)
-    assert (liquid, gas, water) == (200.0, 0.0, 100.0)
+    assert (unit_type, wells, producing) == ("section", 2, 2)
+    assert (liquid, gas, water) == (500.0, 0.0, 100.0)
+
+
+def test_a_midpoint_outside_the_grid_falls_back_to_the_surface_hole(gridded):
+    """gate-m23 F-B: 163 live ND wells' lateral midpoints resolve no section. Their barrels
+    land in the surface hole's cell rather than vanishing from every cell — so the
+    grid-state unassigned counter stays a true anomaly signal (only the off-grid well)."""
+    db, refresh = gridded
+    found = rows(
+        db,
+        "select land_unit_id from marts.land_metrics_tile"
+        " where unit_type = 'section' and land_unit_id = %s",
+        (SECTION_A,),
+    )
+    assert found, "the orphan's surface section is missing"
+    assert refresh.unassigned_grid_state_wells == 1  # the off-grid well, not the orphan
+    _, _, _, liquid, _, _, _, _, _ = cell(db, SECTION_A)
+    assert liquid == 500.0  # 200 vertical + 300 orphan — nothing vanished
+
+
+def test_two_tied_lateral_filings_pick_deterministically(gridded):
+    """gate-m23 F-A: 695 live ND wells carry >1 lateral row with tied created_at. The rule
+    picks the newest filing, ties broken by geom_key — filing A wins, so the well lands in
+    section Z and filing B's section stays absent from the mart entirely."""
+    db, _ = gridded
+    _, wells, _, _, _, _, _, _, _ = cell(db, SECTION_Z)
+    assert wells == 2  # the unproduced well and the two-filing well, by filing A
+    assert (
+        scalar(
+            db,
+            "select count(*) from marts.land_metrics_tile where land_unit_id = %s",
+            ("ND051530N0950W0SN130",),
+        )
+        == 0
+    )
 
 
 def test_a_cell_with_nothing_observed_is_present_and_unpainted(gridded):
     db, _ = gridded
     unit_type, wells, producing, liquid, _, _, bin_index, _, _ = cell(db, SECTION_Z)
-    assert (unit_type, wells, producing) == ("section", 1, 0)
+    assert (unit_type, wells, producing) == ("section", 2, 0)
     assert liquid == 0.0
     assert bin_index == -1
     # A section nobody's anchor reached is absent — bare grid, not an interpolated zero.
@@ -154,10 +213,10 @@ def test_a_cell_with_nothing_observed_is_present_and_unpainted(gridded):
 def test_townships_inherit_through_their_sections(gridded):
     db, _ = gridded
     unit_type, wells, producing, liquid, gas, water, _, _, _ = cell(db, TOWNSHIP_152)
-    assert (unit_type, wells, producing) == ("township", 2, 2)
-    assert (liquid, gas, water) == (1700.0, 3000.0, 100.0)
+    assert (unit_type, wells, producing) == ("township", 3, 3)
+    assert (liquid, gas, water) == (2000.0, 3000.0, 100.0)
     unit_type, wells, producing, liquid, _, _, bin_index, _, _ = cell(db, TOWNSHIP_153)
-    assert (unit_type, wells, producing) == ("township", 1, 0)
+    assert (unit_type, wells, producing) == ("township", 2, 0)
     assert bin_index == -1
 
 
@@ -167,7 +226,7 @@ def test_the_bin_frame_is_refresh_frozen_and_carried_on_every_cell(gridded):
     assert frame["population"] == 2
     edges = frame["edges"]
     assert len(edges) == 8
-    assert edges[0] == 200.0
+    assert edges[0] == 500.0
     assert edges[-1] == 1500.0
     _, _, _, _, _, _, low_bin, low_edges, low_population = cell(db, SECTION_A)
     _, _, _, _, _, _, high_bin, high_edges, high_population = cell(db, SECTION_B)

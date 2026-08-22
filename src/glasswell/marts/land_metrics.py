@@ -39,37 +39,52 @@ LIQUIDS_BASIS = "oil+condensate"
 BIN_QUANTILES = (0.02, 0.20, 0.40, 0.60, 0.80, 0.98)
 UNPAINTED_BIN = -1
 
-# One anchor point per well, one section per anchor. distinct-on over created_at because
-# well_spatial is append-only; the tie-break and fallbacks are the rule's spec, restated
-# nowhere else.
+# One anchor per well, one section per well. The universe is every well with a surface
+# point (a lateral-only row is invisible — gate-m23 F-E, all TX today). The lateral pick,
+# tie-breaks and the surface fallback are the rule's spec, restated nowhere else: newest
+# filed geometry first, ties broken by geom_key — 695 ND wells carry >1 lateral row in one
+# promotion batch, so created_at alone is plan-dependent (gate-m23 F-A) — and a midpoint
+# resolving no section falls back to the surface hole (gate-m23 F-B).
 _MEMBERSHIP = """
 with lat as (
     select distinct on (api10) api10, geom
       from canonical.well_spatial
      where geom_type = 'lateral'
-     order by api10, created_at desc),
+     order by api10, created_at desc, geom_key),
 sp as (
     select distinct on (api10) api10, geom
       from canonical.well_spatial
      where geom_type = 'surface'
-     order by api10, created_at desc),
+     order by api10, created_at desc, geom_key),
 anchor as (
     select sp.api10,
-           coalesce(
-               case when lat.geom is null then null
-                    when GeometryType(ST_LineMerge(lat.geom)) = 'LINESTRING'
-                        then ST_LineInterpolatePoint(ST_LineMerge(lat.geom), 0.5)
-                    else ST_ClosestPoint(lat.geom, ST_Centroid(lat.geom))
-               end,
-               sp.geom) as pt
+           case when lat.geom is null then null
+                when GeometryType(ST_LineMerge(lat.geom)) = 'LINESTRING'
+                    then ST_LineInterpolatePoint(ST_LineMerge(lat.geom), 0.5)
+                else ST_ClosestPoint(lat.geom, ST_Centroid(lat.geom))
+           end as midpoint,
+           sp.geom as surface
       from sp
       left join lat using (api10)),
-member as (
+by_midpoint as (
     select distinct on (anchor.api10) anchor.api10, unit.land_unit_id, unit.plssid
       from anchor
       join canonical.land_units unit
-        on unit.unit_type = 'section' and ST_Intersects(unit.geom, anchor.pt)
+        on unit.unit_type = 'section' and ST_Intersects(unit.geom, anchor.midpoint)
      order by anchor.api10, unit.land_unit_id),
+by_surface as (
+    select distinct on (anchor.api10) anchor.api10, unit.land_unit_id, unit.plssid
+      from anchor
+      join canonical.land_units unit
+        on unit.unit_type = 'section' and ST_Intersects(unit.geom, anchor.surface)
+     order by anchor.api10, unit.land_unit_id),
+member as (
+    select * from by_midpoint
+    union all
+    select by_surface.*
+      from by_surface
+     where not exists (select 1 from by_midpoint
+                        where by_midpoint.api10 = by_surface.api10)),
 prod as (
     select api10,
            sum(volume) filter (where stream in ('oil', 'condensate')) as liquid_bbl,
@@ -104,9 +119,10 @@ select member.plssid as land_unit_id,
  group by member.plssid
 """
 
-# The universe is every well with geometry, both basins: Texas is expected to be wholly
-# unassigned until a TX land grid exists, so the anomaly signal is the grid-state count.
-# Widening the grid is a superseding membership rule, same as widening the PLSS scope.
+# Texas is expected to be wholly unassigned until a TX land grid exists, so the anomaly
+# signal is the grid-state count — with the surface fallback it is expected 0 and any
+# nonzero is a well the grid cannot hold at all. Widening the grid is a superseding
+# membership rule, same as widening the PLSS scope.
 GRID_STATE_API_PREFIXES = ("33",)
 
 _UNASSIGNED = _MEMBERSHIP + """

@@ -28,7 +28,7 @@ from glasswell.marts.nd_wells import main
 from glasswell.marts.tiles import simplify_tolerance, thin_key_sql
 from glasswell.seed import seed_all
 from glasswell.units import METRES_PER_FOOT
-from tests.support.mvt import attribute_keys, attribute_values, feature_count, layers
+from tests.support.mvt import attribute_keys, attribute_values, feature_count, layer_name, layers
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "nd_gis"
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -654,3 +654,27 @@ def test_the_overplot_gate_keeps_wells_that_share_one_coordinate_above_the_band(
 
     assert on_the_tile >= 2, "the tile chosen does not carry the coincident pair"
     assert _features_in(canonical_nd, "nd_wells", zoom, zoom_x, zoom_y) == on_the_tile
+
+
+def test_a_spacing_unit_label_is_emitted_exactly_once_across_any_tiling(canonical_nd, refreshed):
+    """The spacing function shares the labelled template, so its anchors get the same seam
+    guarantee the land layers assert (visual-m14 F1; ported per gate-m23 residual 7)."""
+    units = scalar(canonical_nd, "select count(*) from marts.nd_spacing_units_tile")
+    assert units > 0
+    zoom, x, y = covering_tile(extent_of(canonical_nd, "marts.nd_spacing_units_tile"))
+    fragments = 0
+    labels = 0
+    for dx in range(4):
+        for dy in range(4):
+            tile = scalar(
+                canonical_nd,
+                "select marts.nd_spacing_units(%s, %s, %s)",
+                (zoom + 2, 4 * x + dx, 4 * y + dy),
+            )
+            if tile is None:
+                continue
+            named = {layer_name(layer): layer for layer in layers(bytes(tile))}
+            fragments += feature_count(named.get("nd_spacing_units", b""))
+            labels += feature_count(named.get("nd_spacing_units_label", b""))
+    assert fragments >= units
+    assert labels == units

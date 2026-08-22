@@ -135,22 +135,30 @@ LAND_RULES: tuple[dict[str, object], ...] = (
             "version": "1",
             "assign_by": "lateral_midpoint_else_surface",
             "anchor": {
-                "lateral": "ST_LineInterpolatePoint(ST_LineMerge(lateral), 0.5) when the"
-                " merge yields a single LineString; ST_ClosestPoint(lateral,"
-                " ST_Centroid(lateral)) for the multi-part remainder (5 of 22,263 measured)",
+                "lateral": "the newest filed lateral row (created_at desc, ties broken by"
+                " geom_key): 695 ND wells carry more than one filed lateral in a single"
+                " promotion batch, 256 of them with midpoints in different sections, so the"
+                " pick is stated rather than plan-dependent. Its midpoint is"
+                " ST_LineInterpolatePoint(ST_LineMerge(lateral), 0.5) when the merge yields"
+                " a single LineString; ST_ClosestPoint(lateral, ST_Centroid(lateral)) for"
+                " the multi-part remainder (5 of 22,263 measured)",
                 "no_lateral": "the surface hole point, which for a vertical well is the"
                 " producing location itself",
+                "midpoint_orphan": "a midpoint resolving no section falls back to the"
+                " surface hole: 163 ND wells measured (state-line and grid-edge laterals)"
+                " carrying 2,071,625 bbl of observed liquid that would otherwise appear in"
+                " no cell",
             },
             "tie_break": "min(land_unit_id) when the anchor intersects more than one section"
             " (0 measured today; the dedupe is structural, not observed)",
             "township_membership": "the parent township of the assigned section via the"
             " plssid join, never an independent point test — a well is in the township of"
             " its section",
-            "unassigned": "a well whose anchor falls in no land unit is excluded from"
-            " every cell; the refresh derivation params count the exclusions twice over —"
-            " in total (Texas is expected to be wholly unassigned until a TX land grid"
-            " exists) and for the grid's own states, where a nonzero count is an anomaly"
-            " (0 ND wells measured today)",
+            "unassigned": "a well whose midpoint and surface hole both resolve no land"
+            " unit is excluded from every cell; the refresh derivation params count the"
+            " exclusions twice over — in total (Texas is expected to be wholly unassigned"
+            " until a TX land grid exists) and for the grid's own states, where any nonzero"
+            " count is an anomaly (0 ND wells measured today under the surface fallback)",
             "observed_only": "whole-well observed sums: each well lands in exactly one"
             " section, no length-weighted apportionment, no interpolation, no estimate."
             " Fractional allocation is a superseding rule with Protocol 4D obligations,"
@@ -171,21 +179,29 @@ LAND_RULES: tuple[dict[str, object], ...] = (
                 "midpoint_section_differs_from_surface": {
                     "count": 10464, "of": 22100, "share": "47.3%"},
                 "liquid_volume_on_differing_wells_bbl": {
-                    "bbl": 107785686, "of_bbl": 188213452, "share": "57.3%"},
+                    "bbl": 107776020, "of_bbl": 187984167, "share": "57.33%",
+                    "population": "well-entity production rows only, under the"
+                    " deterministic lateral pick"},
                 "township_grain_differs": {"count": 1798, "of": 22100, "share": "8.1%"},
+                "multi_lateral_wells": {"count": 695, "with_differing_midpoints": 256},
+                "midpoint_orphans": {
+                    "count": 163, "liquid_bbl": 2071625,
+                    "disposition": "fallback to surface hole"},
             },
         },
         "rule": "A well belongs to the section holding its lateral midpoint when it has a"
         " filed lateral, and the section holding its surface hole otherwise; townships"
         " inherit through the section's parent. Sums are whole-well and observed-only.",
         "rationale": (
-            "Three candidate memberships were measured before choosing (M2-3). Bottomhole is"
-            " unavailable: canonical.well_spatial holds zero bottomhole geometries."
+            "Three candidate memberships were measured before choosing (M2-3). Bottomhole"
+            " is unavailable for the grid's wells: canonical.well_spatial holds zero ND"
+            " bottomhole geometries (the 360,434 on file are all Texas)."
             " Surface-point membership is complete (43,817/43,817) but misplaces the"
             " producing footprint: 84.9% of ND laterals cross two or more sections, the"
             " lateral midpoint sits in a different section than the surface hole for 47.3%"
-            " of laterals — and volume-weighted that is 57.3% of every observed ND liquid"
-            " barrel (107.8M of 188.2M bbl), because pads cluster surface holes in one"
+            " of laterals — and volume-weighted that is 57.33% of every observed ND liquid"
+            " barrel (107.78M of 187.98M, well-entity rows only), because pads cluster"
+            " surface holes in one"
             " section while the rock that produced sits under the next. At section grain a"
             " surface-point choropleth is a pad map wearing a production map's title. The"
             " lateral midpoint is the arc-length centre of the filed bore — a"
