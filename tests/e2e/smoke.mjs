@@ -4,17 +4,14 @@
 // hostile query string cannot make the page ask for something outside the tile allowlist.
 //
 // Read-only. It navigates and reads; it never writes through the API.
-// The key rides the fragment, is never logged, and is redacted out of every url printed.
+// The key rides the X-Glasswell-Key header only (lib.mjs authenticate), never a url, and is
+// redacted out of everything printed.
 import { mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { chromeExecutable } from "./lib.mjs";
+import { authenticate, baseUrl, chromeExecutable, guardTarget, keyGuard, redact } from "./lib.mjs";
 
-// GW_BASE is the retired name, still read so an old invocation targets what it names rather
-// than silently running against the default.
-const BASE = (process.env.GLASSWELL_BASE_URL ?? process.env.GW_BASE ?? "https://glasswell.lab.rpx.sh")
-  .replace(/\/$/, "");
-const KEY = (process.env.GLASSWELL_OWNER_KEY ?? process.env.GW_KEY ?? "").trim();
+const BASE = baseUrl();
 const WELL = process.env.GW_WELL ?? "3305310451";
 const SHOTS = process.env.GW_SHOTS ?? "";
 const REQUIRE = process.env.GLASSWELL_REQUIRE_E2E === "1";
@@ -30,7 +27,6 @@ if (ALLOWED_TILE_LAYERS.length === 0) throw new Error(`no tile layers parsed fro
 // nothing about the app, and the map still draws — every other page error is real.
 const SOFTWARE_GL = /shader|webgl|swiftshader|GPU stall/i;
 
-const redact = (text) => String(text).replace(/key=[0-9a-fA-F]{8,}/g, "key=REDACTED");
 const sameOrigin = (url) =>
   url.startsWith(BASE) || url.startsWith("blob:") || url.startsWith("data:") || url === "about:blank";
 
@@ -64,7 +60,7 @@ try {
 }
 const executablePath = chromeExecutable();
 if (!executablePath) unavailable("no chromium build found (set GW_CHROME)");
-if (!KEY) unavailable("no owner key (set GLASSWELL_OWNER_KEY)");
+if (!keyGuard()) unavailable("no owner key (set GLASSWELL_KEY_FILE or GLASSWELL_OWNER_KEY)");
 
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
@@ -73,6 +69,7 @@ const browser = await chromium.launch({
   args: ["--no-sandbox", "--enable-unsafe-swiftshader", "--hide-scrollbars"],
 });
 const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
+await authenticate(context);
 const page = await context.newPage();
 
 const journal = { errors: [], requests: [], responses: [] };
@@ -82,14 +79,11 @@ page.on("pageerror", (error) => {
 page.on("request", (request) => journal.requests.push(request.url()));
 page.on("response", (response) => journal.responses.push([response.status(), response.url()]));
 
-async function visit(query, { key = false, settle = 6000 } = {}) {
+async function visit(query, { settle = 6000 } = {}) {
   journal.errors = [];
   journal.requests = [];
   journal.responses = [];
-  await page.goto(`${BASE}/${query}${key ? `#key=${KEY}` : ""}`, {
-    waitUntil: "load",
-    timeout: 60000,
-  });
+  await page.goto(guardTarget(`${BASE}/${query}`), { waitUntil: "load", timeout: 60000 });
   await page.waitForTimeout(settle);
 }
 
@@ -105,9 +99,9 @@ const offOrigin = () => journal.requests.filter((url) => !sameOrigin(url));
 
 console.log(`e2e: ${BASE} (well ${WELL})`);
 
-// 1-3 — the app boots, draws, and asks nobody but this origin. The key is adopted here, from
-// the fragment, exactly as SMOKE.md 2 tells the owner to do it.
-await visit("", { key: true, settle: 8000 });
+// 1-3 — the app boots, draws, and asks nobody but this origin. Every same-origin request the
+// page makes already carries the key header; no fragment, no storage, no key in any url.
+await visit("", { settle: 8000 });
 assert(
   (await page.locator("#gw-map canvas.maplibregl-canvas").count()) > 0,
   "the map canvas is on the page",

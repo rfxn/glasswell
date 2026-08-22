@@ -11,14 +11,15 @@ Read-only: it navigates and reads. It never writes through the API.
 ## Running it
 
 ```bash
-export GLASSWELL_OWNER_KEY=...        # read it on the VM; it is never logged
+export GLASSWELL_KEY_FILE=/etc/glasswell/owner.key   # a path, so the key itself never appears in a command
 make test-e2e                         # against https://glasswell.lab.rpx.sh
 GLASSWELL_BASE_URL=http://127.0.0.1:8000 make test-e2e    # on the VM, against the origin
 ```
 
 | variable | meaning |
 |---|---|
-| `GLASSWELL_OWNER_KEY` | the key, adopted through the `#key=` fragment exactly as SMOKE.md §2 tells the owner to |
+| `GLASSWELL_KEY_FILE` | a file whose content is the key; wins over `GLASSWELL_OWNER_KEY` |
+| `GLASSWELL_OWNER_KEY` | the key, already in the environment; sent only as the `X-Glasswell-Key` header |
 | `GLASSWELL_BASE_URL` | API root (default `https://glasswell.lab.rpx.sh`). The same name `scripts/smoke.sh` reads; `GW_BASE` is the retired alias |
 | `GW_WELL` | the well every well-level assertion reads (default `3305310451`) |
 | `GW_CHROME` | chromium executable; otherwise the newest build under `/root/.cache/ms-playwright` |
@@ -27,15 +28,35 @@ GLASSWELL_BASE_URL=http://127.0.0.1:8000 make test-e2e    # on the VM, against t
 | `GW_RUNS` | `perf.mjs` only: runs per scenario (default 5). One run is an anecdote |
 | `GW_PERF_JSON` | `perf.mjs` only: a path to write the full per-run distribution to |
 
+## Authentication — the contract
+
+The lib is the only auth path: it reads the key from the file named by
+`GLASSWELL_KEY_FILE` (else from an already-populated `GLASSWELL_OWNER_KEY`) and injects it
+as the `X-Glasswell-Key` header on every same-origin request a page makes — never as a
+script argument, never in any url, fragment included. Every capture the lib journals or
+prints passes through its redactor, which strips the key value wherever it appears. The
+lib refuses to run, loudly and naming this rule, if the key is visible in `process.argv`
+or in a navigation target.
+
+The standing dispatch line: **visual runs authenticate header-only via lib.mjs**.
+
+The header suffices for the web app too, not just the API: the app raises its key panel
+only on a 403 (`web/src/main.ts`), so a context whose requests already carry a valid
+header boots authenticated — the `#key=` fragment remains the *human* adoption path
+SMOKE.md §2 describes, and automation never uses it.
+
 ## lib.mjs — the shared gate library
 
 The machinery every DIR-11 visual gate used to re-derive under `work-output/` now lives in
-`lib.mjs`: chromium discovery, `launch`, an instrumented page whose journal records page
-errors, console noise, non-2xx responses, tile/API traffic and key leaks, the `BREAKPOINTS`
-ladder (1600/1366/1024/820/390), screenshot helpers, a WCAG `contrastAudit` sampler and a
-`frameProbe`. Gate scripts import it (`import { launch, instrumentedPage, BREAKPOINTS } from
-"<repo>/tests/e2e/lib.mjs"`) and carry only their scenario. It is import-safe: playwright is
-loaded lazily, so `smoke.mjs` shares it and still skips cleanly when no browser exists.
+`lib.mjs`: chromium discovery, `launch`, header auth (`authenticate`, `keyGuard`,
+`guardTarget`, `redact` — the contract above), an instrumented page whose journal records
+page errors, console noise, non-2xx responses, tile/API traffic and key leaks, the
+`BREAKPOINTS` ladder (1600/1366/1024/820/390), screenshot helpers, a WCAG `contrastAudit`
+sampler and a `frameProbe`. Gate scripts import it (`import { launch, instrumentedPage,
+BREAKPOINTS } from "<repo>/tests/e2e/lib.mjs"`) and carry only their scenario. It is
+import-safe: playwright is loaded lazily, so `smoke.mjs` shares it and still skips cleanly
+when no browser exists. `lib.test.mjs` covers the auth path, the redactor and the guards;
+`node --test` in this directory (or `npm test`) runs it with no browser and no install.
 
 To judge a branch's own bundle against its own API (rather than the deployed instance),
 `tests/support/serve_branch.py` stands up an ephemeral PostGIS, runs the branch's
@@ -59,7 +80,7 @@ vsync-quantised distribution, and the reasons the map's S2 number is not in it a
 down.
 
 ```bash
-GLASSWELL_BASE_URL=http://127.0.0.1:8161 GLASSWELL_OWNER_KEY=$(cat /tmp/gw-c11/owner.key) \
+GLASSWELL_BASE_URL=http://127.0.0.1:8161 GLASSWELL_KEY_FILE=/tmp/gw-c11/owner.key \
   GW_RUNS=5 GW_PERF_JSON=/tmp/perf.json node tests/e2e/perf.mjs
 ```
 
