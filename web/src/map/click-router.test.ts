@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { PICKABLE_LAYERS, PICK_RADIUS_PX, pickBox, topHit } from "./click-router.ts";
+import { PICKABLE_LAYERS, PICK_RADIUS_PX, api10Of, pickBox, topHit } from "./click-router.ts";
 import { layerDef } from "./registry.ts";
 
 const hit = (layer: string, api10: string): { layer: { id: string }; properties: Record<string, unknown> } => ({
@@ -96,5 +96,21 @@ describe("the click router", () => {
     expect(topHit([hit("disposal-wells", "a"), hit("laterals", "b")])?.layer.id).toBe("disposal-wells");
     const both = topHit([hit("disposal-wells", "3305300001"), hit("wells", "3305300001")]);
     expect(both?.properties["api10"]).toBe("3305300001");
+  });
+});
+
+describe("the land-grid metrics cells (M2-3)", () => {
+  it("fall through to context: every mark and the spacing unit outrank the cell", () => {
+    const cell = { layer: { id: "land-section-metrics-fill" }, properties: {} };
+    const spacing = { layer: { id: "spacing-units-fill" }, properties: {} };
+    const well = { layer: { id: "wells" }, properties: { api10: "3305305527" } };
+    expect(topHit([cell, spacing, well])).toBe(well);
+    expect(topHit([cell, spacing])).toBe(spacing);
+    expect(topHit([cell])).toBe(cell);
+  });
+
+  it("are hover surfaces, not selections: a cell resolves no api10", () => {
+    const cell = { layer: { id: "land-township-metrics-fill" }, properties: { land_unit_id: "x" } };
+    expect(api10Of(topHit([cell]))).toBeNull();
   });
 });

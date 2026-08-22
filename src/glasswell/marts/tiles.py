@@ -57,6 +57,11 @@ class TileLayer:
     # and because the gate approved the rule for the well and lateral layers, not for anything
     # that later joins the roster.
     thin: bool = False
+    # Emits a second `{name}_label` MVT layer holding one interior anchor point per feature,
+    # in the one tile whose envelope holds the point. MapLibre places a symbol per tile
+    # fragment of a polygon, so binding text to the polygon layer duplicates every label
+    # that crosses a tile seam (visual-m14 F1); a point owned by exactly one tile cannot.
+    label_points: bool = False
 
     @property
     def columns(self) -> tuple[str, ...]:
@@ -110,6 +115,7 @@ ND_LAYERS: tuple[TileLayer, ...] = (
             ("ds_size_acres", "float8"),
             ("derivation_id", "text"),
         ),
+        label_points=True,
     ),
     # Simplified for the reason the laterals are — Douglas-Peucker pays on lines, and these
     # are the highest-vertex lines the map has: 52,579 stations over 586 traces, a median of
@@ -159,6 +165,7 @@ LAND_LAYERS: tuple[TileLayer, ...] = (
             ("label", "text"),
             ("derivation_id", "text"),
         ),
+        label_points=True,
     ),
     TileLayer(
         name="land_sections",
@@ -169,6 +176,57 @@ LAND_LAYERS: tuple[TileLayer, ...] = (
             ("unit_type", "text"),
             ("plssid", "text"),
             ("label", "text"),
+            ("derivation_id", "text"),
+        ),
+        label_points=True,
+    ),
+)
+
+# M2-3: observed well and production rollups on the land grid, one layer per grain so the
+# township surface hands off to the section surface at the zoom where sections are readable.
+# Numeric columns are int4/float8 on the wire deliberately: a Postgres numeric serves as an
+# MVT string and every style interpolation over it silently falls back (the N-2 hazard the
+# land layers avoided by being all-text). bin_edges is a JSON array serialized once per
+# refresh; MVT interns repeated property values, so it costs one entry per tile, not one
+# per feature.
+METRIC_LAYERS: tuple[TileLayer, ...] = (
+    TileLayer(
+        name="land_township_metrics",
+        source="marts.tile_land_township_metrics",
+        geometry_type="MULTIPOLYGON",
+        properties=(
+            ("land_unit_id", "text"),
+            ("unit_type", "text"),
+            ("plssid", "text"),
+            ("label", "text"),
+            ("well_count", "int4"),
+            ("prod_well_count", "int4"),
+            ("liquid_cum_bbl", "float8"),
+            ("gas_cum_mcf", "float8"),
+            ("water_cum_bbl", "float8"),
+            ("liquid_bin", "int4"),
+            ("bin_edges", "text"),
+            ("bin_population", "int4"),
+            ("derivation_id", "text"),
+        ),
+    ),
+    TileLayer(
+        name="land_section_metrics",
+        source="marts.tile_land_section_metrics",
+        geometry_type="MULTIPOLYGON",
+        properties=(
+            ("land_unit_id", "text"),
+            ("unit_type", "text"),
+            ("plssid", "text"),
+            ("label", "text"),
+            ("well_count", "int4"),
+            ("prod_well_count", "int4"),
+            ("liquid_cum_bbl", "float8"),
+            ("gas_cum_mcf", "float8"),
+            ("water_cum_bbl", "float8"),
+            ("liquid_bin", "int4"),
+            ("bin_edges", "text"),
+            ("bin_population", "int4"),
             ("derivation_id", "text"),
         ),
     ),
@@ -209,7 +267,7 @@ TX_LAYERS: tuple[TileLayer, ...] = (
     ),
 )
 
-TILE_LAYERS: tuple[TileLayer, ...] = (*ND_LAYERS, *LAND_LAYERS, *TX_LAYERS)
+TILE_LAYERS: tuple[TileLayer, ...] = (*ND_LAYERS, *LAND_LAYERS, *METRIC_LAYERS, *TX_LAYERS)
 
 # `stable parallel safe` is what martin's function discovery expects, and the argument names
 # are part of the contract: it looks for (z, x, y) plus an optional json `query`.
@@ -232,6 +290,44 @@ as $tile$
     select ST_AsMVT(feature, '{name}', {extent}, 'geom')
       from feature
      where feature.geom is not null
+$tile$
+"""
+
+# One anchor per feature, in the one tile whose envelope holds it: the bounds test is
+# half-open ([min, max) on both axes) so a point landing exactly on a shared tile edge —
+# ST_TileEnvelope computes both neighbours' shared bound from the same expression, so the
+# floats are identical — belongs to exactly one of them. An anchor inside its polygon always
+# has its polygon on the same tile, so the label sublayer never outlives the geometry one.
+_LABELLED_TILE_FUNCTION = """
+create or replace function marts.{name}(z integer, x integer, y integer, query json default null)
+returns bytea
+language sql
+stable
+parallel safe
+as $tile$
+    with feature as materialized (
+        select ST_AsMVTGeom({geom}, ST_TileEnvelope(z, x, y), {extent}, {buffer}, true) as geom,
+               {columns}
+          from {source} t
+         where t.geom && ST_Transform(ST_TileEnvelope(z, x, y), 4326)),
+    anchor as materialized (
+        select ST_Transform(ST_PointOnSurface(t.geom), {mercator}) as pt,
+               {columns}
+          from {source} t
+         where t.geom && ST_Transform(ST_TileEnvelope(z, x, y), 4326)),
+    owned as materialized (
+        select ST_AsMVTGeom(anchor.pt, ST_TileEnvelope(z, x, y), {extent}, {buffer}, true)
+                   as geom,
+               {bare_columns}
+          from anchor
+         where ST_X(anchor.pt) >= ST_XMin(ST_TileEnvelope(z, x, y))
+           and ST_X(anchor.pt) <  ST_XMax(ST_TileEnvelope(z, x, y))
+           and ST_Y(anchor.pt) >= ST_YMin(ST_TileEnvelope(z, x, y))
+           and ST_Y(anchor.pt) <  ST_YMax(ST_TileEnvelope(z, x, y)))
+    select (select ST_AsMVT(feature, '{name}', {extent}, 'geom')
+              from feature where feature.geom is not null)
+           || coalesce((select ST_AsMVT(owned, '{name}_label', {extent}, 'geom')
+                          from owned where owned.geom is not null), ''::bytea)
 $tile$
 """
 
@@ -298,13 +394,16 @@ def tile_function_sql(layer: TileLayer) -> str:
     """The `create or replace function` statement one layer installs."""
     if layer.thin and "api10" not in layer.columns:
         raise ValueError(f"{layer.name} is thinned but publishes no api10 to rank by")
-    return _TILE_FUNCTION.format(
+    template = _LABELLED_TILE_FUNCTION if layer.label_points else _TILE_FUNCTION
+    return template.format(
         name=layer.name,
         source=tile_source_sql(layer),
         geom=tile_geometry_sql(layer),
+        mercator=WEB_MERCATOR,
         extent=TILE_EXTENT,
         buffer=TILE_BUFFER,
         columns=", ".join(f"t.{column}" for column in layer.columns),
+        bare_columns=", ".join(layer.columns),
     )
 
 

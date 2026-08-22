@@ -487,7 +487,9 @@ def test_the_geometry_expression_is_evaluated_once_per_row(canonical_nd, refresh
     aggregate: 246 ms against 134 ms on the live z4 laterals tile."""
     for name, body in _function_bodies(canonical_nd).items():
         assert "as materialized" in body, f"{name} would evaluate ST_AsMVTGeom twice per row"
-        assert body.count("st_asmvtgeom") == 1
+        # Exactly one geometry evaluation per emitted sublayer: a label-emitting function
+        # (M2-3/F1) encodes two layers from two geometries, never the same geometry twice.
+        assert body.count("st_asmvtgeom") == body.count("st_asmvt(") >= 1
 
 
 @pytest.mark.parametrize("zoom", [4, 9, 13])

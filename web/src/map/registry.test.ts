@@ -268,10 +268,11 @@ describe("the layer registry", () => {
     expect(swatch.colours).not.toContain(UNMAPPED_STATUS.colour);
   });
 
-  it("keeps a multi-colour swatch to the kind that can draw one", () => {
-    // A dot has one ink. Handing three to it would silently drop two of them.
+  it("keeps a multi-colour swatch to the kinds that can draw one", () => {
+    // A dot has one ink. Handing three to it would silently drop two of them; the line
+    // divides into segments and the fill into bands (M2-3), so only those two may carry more.
     for (const layer of LAYERS) {
-      if (layer.swatch.colours.length > 1) expect(layer.swatch.kind).toBe("line");
+      if (layer.swatch.colours.length > 1) expect(["line", "fill"]).toContain(layer.swatch.kind);
     }
   });
 });

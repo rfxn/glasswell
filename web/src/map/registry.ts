@@ -7,6 +7,7 @@ import { ND_SNAPSHOT, ndCoverage, ndWellCount } from "./coverage.ts";
 import { DISPOSAL_COLOUR } from "./disposal.ts";
 import { statusColour } from "./status.ts";
 import { LAND_GRID_COLOUR, TRACE_COLOUR } from "./style.ts";
+import { LIQUID_RAMP } from "./thematics.ts";
 
 export type LayerGroup = "reference" | "wells" | "model";
 
@@ -73,15 +74,44 @@ const STATUS_KEYED_LINE: readonly [string, ...string[]] = [
 
 export const LAYERS: readonly LayerDef[] = [
   {
+    // M2-3: the Grid Map done honestly — observed rollups binned on the land grid, every
+    // cell carrying its support, bins frozen at refresh with a resolvable handle. Which
+    // wells belong to a section is cr_land_agg_membership_1, chosen with measured evidence
+    // (57.3% of ND liquid volume sits on wells whose lateral midpoint and surface hole are
+    // in different sections), never this file's claim.
+    id: "land-metrics",
+    group: "wells",
+    label: "Liquid on the land grid (ND)",
+    subtitle:
+      "Observed cumulative liquid — oil plus condensate as ND files it — summed per PLSS" +
+      " unit · wells assigned by lateral midpoint, else surface hole" +
+      " (cr_land_agg_membership_1) · unpainted = nothing observed",
+    // Three ramp steps, because the row paints from a binned expression and one amber would
+    // promise a canvas the support-modulated wash does not deliver.
+    swatch: { kind: "fill", colours: [LIQUID_RAMP[1], LIQUID_RAMP[3], LIQUID_RAMP[5]] },
+    // An aggregate wash drawn unasked would read as geology under every dot on the map.
+    defaultOn: false,
+    minZoom: 5,
+    zoomHint: "Townships from zoom 5; sections take over at zoom 10",
+    opacity: 1,
+    provenance: [{ kind: "derived", source: "marts.land_metrics_tile" }],
+    styleLayers: ["land-township-metrics-fill", "land-section-metrics-fill"],
+    drawOrder: 5,
+    collection: null,
+  },
+  {
     // Real PLSS geometry, vector and queryable — not a raster picture of a grid. ND slice of
     // the BLM national CadNSDI; the publisher choice and the measured cross-publisher grid
     // divergence are conformance rows (cr_blm_plss_publisher_1), not this file's claim.
     id: "land-grid",
     group: "reference",
     label: "PLSS land grid (ND)",
+    // Counts as published by BLM (F2): the promoted rows run 10-to-31 lower per the
+    // quarantine's duplicate ledger, and the register quotes the publisher it names rather
+    // than a number that moves with every re-poll.
     subtitle:
       "BLM CadNSDI townships and sections, clickable geometry · 2,067 townships · " +
-      "71,486 sections · ND only",
+      "71,486 sections as published by BLM · ND only",
     swatch: { kind: "line", colours: [LAND_GRID_COLOUR] },
     // Basin-wide reference linework drawn unasked would read as structure in the data.
     defaultOn: false,

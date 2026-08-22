@@ -32,6 +32,12 @@ postgres:
     land_sections:
       schema: marts
       function: land_sections
+    land_township_metrics:
+      schema: marts
+      function: land_township_metrics
+    land_section_metrics:
+      schema: marts
+      function: land_section_metrics
     tx_laterals:
       schema: marts
       function: tx_laterals

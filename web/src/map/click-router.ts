@@ -29,6 +29,11 @@ const PRIORITY: Readonly<Record<string, number>> = {
   "tx-laterals": 30,
   "spacing-units-line": 20,
   "spacing-units-fill": 10,
+  // Under the spacing unit that overlies them: an aggregate is the context a reader falls
+  // through to, never what intercepts a mark. Hover-only in practice — a cell carries no
+  // api10, so a click resolves nothing, exactly like the spacing fill (M2-3).
+  "land-section-metrics-fill": 8,
+  "land-township-metrics-fill": 6,
 };
 
 export const PICKABLE_LAYERS: string[] = Object.keys(PRIORITY);

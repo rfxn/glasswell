@@ -27,6 +27,14 @@ import {
   statusIds,
   statusProperty,
 } from "./status.ts";
+import {
+  METRICS_HANDOFF_ZOOM,
+  METRICS_SECTIONS_SOURCE,
+  METRICS_TOWNSHIPS_SOURCE,
+  TOWNSHIP_METRICS_MIN_ZOOM,
+  liquidFillColour,
+  observedFilter,
+} from "./thematics.ts";
 import { rgba, variantStyle } from "./variant-style.ts";
 
 export const WELLS_SOURCE = "nd_wells";
@@ -125,6 +133,8 @@ export function sourceSpecs(origin?: string, search?: string): Record<string, So
     // The land grid's identity is the publisher's unit id, not a well spine key.
     ["townships", TOWNSHIPS_SOURCE, "land_unit_id"],
     ["sections", SECTIONS_SOURCE, "land_unit_id"],
+    ["township_metrics", METRICS_TOWNSHIPS_SOURCE, "land_unit_id"],
+    ["section_metrics", METRICS_SECTIONS_SOURCE, "land_unit_id"],
   ] as const) {
     const name = publishedSource(parameter, fallback, search);
     specs[name] = {
@@ -267,8 +277,38 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
   const traces = publishedSource("traces", TRACES_SOURCE, options.search);
   const townships = publishedSource("townships", TOWNSHIPS_SOURCE, options.search);
   const sections = publishedSource("sections", SECTIONS_SOURCE, options.search);
+  const townshipMetrics = publishedSource(
+    "township_metrics", METRICS_TOWNSHIPS_SOURCE, options.search,
+  );
+  const sectionMetrics = publishedSource(
+    "section_metrics", METRICS_SECTIONS_SOURCE, options.search,
+  );
 
   const built: LayerSpecification[] = [
+    {
+      // The thematic wash under every mark and line: an aggregate is context, never cover.
+      // Support rides in the colour's own alpha (thematics.ts), so the row's opacity slider
+      // keeps the fill-opacity slot and dims the whole surface without erasing the support
+      // signal. Township grain to the handoff zoom, then sections; filters keep unobserved
+      // cells unpainted rather than bottom-binned.
+      id: "land-township-metrics-fill",
+      type: "fill",
+      source: townshipMetrics,
+      "source-layer": townshipMetrics,
+      minzoom: TOWNSHIP_METRICS_MIN_ZOOM,
+      maxzoom: METRICS_HANDOFF_ZOOM,
+      filter: observedFilter(),
+      paint: { "fill-color": liquidFillColour() },
+    },
+    {
+      id: "land-section-metrics-fill",
+      type: "fill",
+      source: sectionMetrics,
+      "source-layer": sectionMetrics,
+      minzoom: METRICS_HANDOFF_ZOOM,
+      filter: observedFilter(),
+      paint: { "fill-color": liquidFillColour() },
+    },
     {
       // Reference linework under everything: the grid is what the data sits on, never over.
       id: "land-townships-line",
@@ -471,12 +511,16 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
   ];
 
   if (options.labels) {
+    // Every polygon label binds to the tile's `_label` sublayer: one anchor point per unit,
+    // emitted by the tile function in the one tile that owns it. Bound to the polygons,
+    // MapLibre placed a symbol per tile fragment and every unit crossing a seam wore its
+    // name twice (visual-m14 F1).
     built.push(
       {
         id: "land-townships-label",
         type: "symbol",
         source: townships,
-        "source-layer": townships,
+        "source-layer": `${townships}_label`,
         minzoom: TOWNSHIP_LABEL_MIN_ZOOM,
         layout: {
           "text-field": ["coalesce", ["get", "label"], ""],
@@ -494,7 +538,7 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
         id: "land-sections-label",
         type: "symbol",
         source: sections,
-        "source-layer": sections,
+        "source-layer": `${sections}_label`,
         minzoom: SECTION_LABEL_MIN_ZOOM,
         layout: {
           "text-field": ["coalesce", ["get", "label"], ""],
@@ -513,7 +557,7 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       id: "spacing-units-label",
       type: "symbol",
       source: spacing,
-      "source-layer": spacing,
+      "source-layer": `${spacing}_label`,
       minzoom: 11,
       layout: {
         "text-field": ["coalesce", ["get", "label"], ""],

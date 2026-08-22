@@ -87,6 +87,14 @@ def attribute_values(layer: bytes) -> list[tuple[str, object]]:
     return decoded
 
 
+def layer_name(layer: bytes) -> str:
+    """Layer.name is field 1 — how a two-layer tile says which bytes are the labels."""
+    for field in fields(layer):
+        if field.number == 1 and field.wire_type == 2:
+            return bytes(field.payload).decode("utf-8")
+    raise ValueError("layer carries no name")
+
+
 def attribute_keys(layer: bytes) -> list[str]:
     return [
         bytes(field.payload).decode("utf-8")

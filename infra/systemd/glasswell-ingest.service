@@ -22,6 +22,7 @@ ExecStart=/bin/bash -c '/opt/glasswell/venv/bin/python -m glasswell.ingest.nd_mp
 ExecStart=/opt/glasswell/venv/bin/python -m glasswell.ingest.blm_plss --layer all --dsn ${GLASSWELL_DSN}
 ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.nd_wells --dsn ${GLASSWELL_DSN}
 ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.land_units --dsn ${GLASSWELL_DSN}
+ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.land_metrics --dsn ${GLASSWELL_DSN}
 TimeoutStartSec=3600
 MemoryMax=6G
 

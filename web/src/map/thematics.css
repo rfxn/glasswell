@@ -1,0 +1,55 @@
+/* The thematic key: what the choropleth means, on the canvas where it is read. */
+
+.gw-thm {
+  position: absolute;
+  right: 0.6rem;
+  bottom: 2.6rem;
+  max-width: 16rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: rgb(18 26 33 / 94%);
+  color: var(--paper);
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.gw-thm[hidden] {
+  display: none;
+}
+
+.gw-thm p {
+  margin: 0 0 0.2rem;
+}
+
+.gw-thm-title {
+  font-weight: 650;
+}
+
+.gw-thm-scope,
+.gw-thm-note {
+  color: var(--slate-light, #9fb0bc);
+}
+
+.gw-thm-ramp {
+  display: flex;
+  height: 0.55rem;
+  margin: 0.15rem 0;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.gw-thm-bin {
+  flex: 1 1 auto;
+}
+
+.gw-thm-edges {
+  font-variant-numeric: tabular-nums;
+  color: var(--slate-light, #9fb0bc);
+}
+
+.gw-thm-handle {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.4rem;
+}
