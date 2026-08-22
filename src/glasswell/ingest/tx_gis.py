@@ -134,7 +134,7 @@ LAYERS: Mapping[str, TxLayer] = {
 
 REASON_CODES = (
     "parse_error", "key_incomplete", "out_of_scope", "duplicate_row", "datum_undetermined",
-    "multi_wellbore_policy", "unreliable_numeric",
+    "multi_wellbore_policy", "unreliable_numeric", "key_collision",
 )
 
 
@@ -584,7 +584,7 @@ def _promote_points(
     api10_rule: ConformanceRule,
     scope_rule: ConformanceRule,
     counts: dict[str, int],
-) -> tuple[str, int, int, dict[str, float]]:
+) -> tuple[str, int, int, dict[str, float], list[dict[str, Any]]]:
     extra = {"stcode": None} if layer.layer == "bottomhole" else {}
     columns = "stcode," if layer.layer == "bottomhole" else ""
     rows = _read(
@@ -711,7 +711,8 @@ def _promote_points(
             _INSERT_SPATIAL,
             [{**row, "derivation_id": context.derivation_id} for row in payload],
         )
-    return context.derivation_id, len(payload), added, residuals
+        landed = max(cursor.rowcount, 0)
+    return context.derivation_id, landed, added, residuals, payload
 
 
 def _promote_lines(
@@ -730,7 +731,7 @@ def _promote_lines(
     bounds_rule: ConformanceRule,
     method: LengthMethod,
     counts: dict[str, int],
-) -> tuple[str, int]:
+) -> tuple[str, int, list[dict[str, Any]]]:
     from shapely import ops
     from shapely import wkt as shapely_wkt
 
@@ -847,7 +848,8 @@ def _promote_lines(
             _INSERT_SPATIAL,
             [{**row, "derivation_id": context.derivation_id} for row in payload],
         )
-    return context.derivation_id, len(payload)
+        landed = max(cursor.rowcount, 0)
+    return context.derivation_id, landed, payload
 
 
 _WELLBORE_CODES = """
@@ -929,7 +931,19 @@ def _length_stats(
     }
 
 
-def _already_promoted(connection: psycopg.Connection, manifest_id: str) -> bool:
+def _already_staged(connection: psycopg.Connection, manifest_id: str) -> bool:
+    with connection.cursor() as cursor:
+        for layer in LAYERS.values():
+            cursor.execute(
+                f"select 1 from {layer.staging_table} where manifest_id = %s limit 1",
+                (manifest_id,),
+            )
+            if cursor.fetchone() is not None:
+                return True
+    return False
+
+
+def _owns_canonical(connection: psycopg.Connection, manifest_id: str) -> bool:
     with connection.cursor() as cursor:
         cursor.execute(
             "select 1 from canonical.well_spatial where source_manifest_id = %s limit 1",
@@ -1009,7 +1023,7 @@ def load_county(
                     f"delete from {layer.staging_table} where manifest_id = %s",
                     (manifest.manifest_id,),
                 )
-    elif _already_promoted(connection, manifest.manifest_id):
+    elif fetched.unchanged and _already_staged(connection, manifest.manifest_id):
         return CountyLoad(
             county_code=county_code,
             manifest_id=manifest.manifest_id,
@@ -1035,10 +1049,11 @@ def load_county(
         counts["parse_error"] += held
 
     geometries: dict[str, int] = {}
+    payloads: dict[str, list[dict[str, Any]]] = {}
     residuals: dict[str, float] = {}
     wells_added = 0
     for name_ in ("surface", "bottomhole"):
-        _, promoted, added, measured = _promote_points(
+        _, promoted, added, measured, attempted = _promote_points(
             connection,
             LAYERS[name_],
             manifest_id=manifest.manifest_id,
@@ -1053,11 +1068,12 @@ def load_county(
             counts=counts,
         )
         geometries[name_] = promoted
+        payloads[name_] = attempted
         wells_added += added
         if name_ == "surface":
             residuals = measured
 
-    lateral_id, laterals = _promote_lines(
+    lateral_id, laterals, lateral_payload = _promote_lines(
         connection,
         manifest_id=manifest.manifest_id,
         county_code=county_code,
@@ -1074,6 +1090,16 @@ def load_county(
         counts=counts,
     )
     geometries["lateral"] = laterals
+    payloads["lines"] = lateral_payload
+    # DR-88: an all-conflict revision owns nothing and must become a ledger fact, not a no-op.
+    if any(payloads.values()) and not sum(geometries.values()) and not _owns_canonical(
+        connection, manifest.manifest_id
+    ):
+        for layer_name, refused in payloads.items():
+            counts["key_collision"] = counts.get("key_collision", 0) + _quarantine(
+                connection, _quarantine_frame(refused), layer=LAYERS[layer_name],
+                manifest_id=manifest.manifest_id, reason_code="key_collision", stage="join",
+            )
     multi_wellbore = _flag_multi_wellbore(
         connection,
         manifest_id=manifest.manifest_id,
