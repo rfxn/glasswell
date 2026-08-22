@@ -237,6 +237,77 @@ def test_a_revised_pull_whose_rows_all_conflict_is_detected_not_silently_promote
     assert scalar(seeded, "select count(*) from canonical.land_units") == TOWNSHIPS
 
 
+class RevisedWithOrphanArcGis(RevisedArcGis):
+    """The revision plus one section whose township is nowhere. The orphan pins the
+    township-exists half of the refused mirror: it must stay an orphan_fk fact and never
+    be double-counted into the key_collision set."""
+
+    ORPHAN_PLSSID = "ND051700N0900W0"
+    ORPHAN_FRSTDIVID = "ND051700N0900W0SN010"
+
+    def features(self, layer_id: int) -> list[dict]:
+        features = super().features(layer_id)
+        if layer_id == 2:
+            template = features[0]
+            features.append(
+                {
+                    **template,
+                    "properties": {
+                        **template["properties"],
+                        "PLSSID": self.ORPHAN_PLSSID,
+                        "FRSTDIVID": self.ORPHAN_FRSTDIVID,
+                        "FRSTDIVNO": "1",
+                        "FRSTDIVLAB": "1",
+                    },
+                }
+            )
+        return features
+
+
+def test_a_revised_sections_pull_whose_rows_all_conflict_is_detected_not_silently_promoted(
+    seeded, raw_root, lineage_env
+):
+    """DR-89 C1: pins _REFUSED_SECTIONS to _INSERT_SECTIONS' admission clause. The refused
+    set must be exactly the rows the insert would have attempted — occurrence = 1 with a
+    parent township present — so mutating either half of the mirror breaks this count:
+    flipping the occurrence test empties it, dropping the exists test sweeps the orphan in."""
+    load(seeded, raw_root, lineage_env, "townships")
+    first = load(seeded, raw_root, lineage_env, "sections")
+    admitted = first.promoted_rows
+    assert admitted == SECTIONS
+
+    second = load(seeded, raw_root, lineage_env, "sections", fake=RevisedWithOrphanArcGis())
+
+    assert second.manifest_id != first.manifest_id
+    assert second.unchanged is False
+    assert second.staged_rows == SECTIONS + 1
+    assert second.promoted_rows == 0
+    assert second.quarantined["orphan_fk"] == 1
+    assert second.quarantined["key_collision"] == admitted
+    assert (
+        scalar(
+            seeded,
+            "select count(*) from lineage.quarantine_rows"
+            " where reason_code = 'key_collision' and stage = 'join'"
+            " and first_seen_manifest_id = %s",
+            (second.manifest_id,),
+        )
+        == admitted
+    )
+    assert scalar(
+        seeded,
+        "select count(*) from lineage.quarantine_rows"
+        " where reason_code = 'key_collision' and row_payload ->> 'frstdivid' = %s",
+        (RevisedWithOrphanArcGis.ORPHAN_FRSTDIVID,),
+    ) == 0, "the orphan belongs to orphan_fk, never to the refused set"
+    assert scalar(
+        seeded, "select count(*) from canonical.land_units where unit_type = 'section'"
+    ) == admitted
+
+    third = load(seeded, raw_root, lineage_env, "sections", fake=RevisedWithOrphanArcGis())
+    assert third.unchanged is True, "a detected all-conflict revision reloads as unchanged"
+
+
 def test_sections_without_townships_are_quarantined_as_orphans(seeded, raw_root, lineage_env):
     result = load(seeded, raw_root, lineage_env, "sections")
     assert result.promoted_rows == 0
