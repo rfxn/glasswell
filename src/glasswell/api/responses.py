@@ -145,6 +145,7 @@ def enveloped(
     warnings: Sequence[Mapping[str, Any] | str] = (),
     status_code: int = 200,
     explain: ExplainInliner | None = None,
+    extra_handles: Sequence[str] = (),
 ) -> JSONResponse:
     resolved_links = {"self": request.url.path, **dict(links or {})}
     envelope = attach_lineage(
@@ -158,6 +159,7 @@ def enveloped(
         as_of_requested=as_of_requested,
         warnings=warnings,
         explain=explain,
+        extra_handles=extra_handles,
     )
     return JSONResponse(envelope.to_dict(), status_code=status_code)
 

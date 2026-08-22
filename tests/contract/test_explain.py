@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import psycopg
 from fastapi.testclient import TestClient
 
 from glasswell.api.errors import TYPE_BASE
 from glasswell.api.examples import EXAMPLE_API10, EXAMPLE_DERIVATION_ID, EXAMPLE_MANIFEST_ID
+from glasswell.lineage.capture import derive, lineage_session
+from glasswell.lineage.models import InputRef, OutputSpec
+from glasswell.lineage.store import PostgresRecorder
+from tests.contract.conftest import REPORT_VINTAGE as VINTAGE
+from tests.support.fakes import FixedClock
+from tests.support.seed import FIXTURE_ENV, seed_manifest
 
 
 def a_production_handle(client: TestClient) -> str:
@@ -147,3 +154,57 @@ def test_the_prebuilt_explain_link_is_callable_verbatim(client: TestClient) -> N
     chains = client.get(link).json()["data"]["chains"]
     assert {chain["handle"] for chain in chains} == set(body["data"]["_lineage"].values())
     assert all(chain["truncated"] is False for chain in chains)
+
+
+def test_the_terminal_manifest_closes_the_chain_even_as_the_roots_direct_input(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """DR-83: R2 says the chain terminates at a checksummed regulator file, and `nodes` must
+    read that way. Discovery order put a root's direct manifest input mid-list — live ND served
+    [promote, manifest, parse] and the drawer's bottom node was a derivation under a header
+    claiming a terminal manifest. This chain reproduces that exact input ordering: the manifest
+    is the root's first-ord input and a deeper derivation follows it."""
+    manifest_id = seed_manifest(seeded, sha256="f" * 64, source_key="2026_07.xlsx")
+    with lineage_session(
+        recorder=PostgresRecorder(seeded),
+        environment=FIXTURE_ENV,
+        clock=FixedClock(),
+        correlation_id="run_dr83",
+    ), derive(
+        "canonical.promote",
+        output=OutputSpec(
+            store="postgres",
+            dataset="canonical.production_monthly",
+            partition={"source_id": "nd_mpr_xlsx", "probe": "dr83"},
+        ),
+        params={"source_id": "nd_mpr_xlsx", "probe": "dr83"},
+        inputs=[
+            InputRef(
+                kind="manifest", ref_id=manifest_id, role="primary", as_of_vintage=VINTAGE
+            )
+        ],
+    ) as promote:
+        with derive(
+            "stage.parse",
+            output=OutputSpec(store="postgres", dataset="staging.nd_mpr_oil"),
+            params={"sheet": "Oil", "probe": "dr83"},
+            inputs=[
+                InputRef(
+                    kind="manifest", ref_id=manifest_id, role="primary", as_of_vintage=VINTAGE
+                )
+            ],
+        ) as parse:
+            parse.set_output_hash("e" * 64)
+        promote.set_output_hash("d" * 64)
+    seeded.commit()
+
+    chain = client.get(
+        "/v1/explain", params={"h": promote.derivation_id, "depth": "full"}
+    ).json()["data"]["chains"][0]
+    types = [node["type"] for node in chain["nodes"]]
+
+    assert len(chain["nodes"]) >= 3
+    assert chain["nodes"][0]["id"] == promote.derivation_id
+    assert chain["nodes"][-1]["type"] == "manifest"
+    assert chain["nodes"][-1]["id"] in chain["terminals"]
+    assert max(i for i, t in enumerate(types) if t == "derivation") < types.index("manifest")

@@ -217,16 +217,77 @@ def test_the_explain_link_is_prebuilt_from_the_handles_in_the_response():
     assert "#" not in envelope["links"]["explain"]
 
 
-def test_an_explicit_explain_link_is_never_overwritten():
+def test_a_hand_authored_explain_link_is_refused_not_honoured():
+    """gate-apix ADV-1: a router-authored link and `inline_handles()` are two carriers of
+    "which handles will you resolve", demonstrated to disagree. The envelope is the only
+    author now, so the divergence is unconstructible rather than merely untriggered."""
+    with pytest.raises(ValueError, match="envelope-authored"):
+        attach_lineage(
+            {"cum12_oil": oil_figure()},
+            as_of=AS_OF,
+            request_id="req_02",
+            links={"self": "/v1/wells/3305301234", "explain": "/v1/explain?h=drv_other01"},
+        )
+
+
+def test_a_handle_less_template_passes_and_is_overwritten_the_moment_handles_exist():
+    """The service index links `/v1/explain?h=` as a navigation template. Naming no handle,
+    it can disagree with nothing — but on a response that does carry handles, the envelope's
+    own link is the only carrier and the template loses."""
+    template = {"self": "/v1", "explain": "/v1/explain?h="}
+    index_like = attach_lineage(
+        {"api_version": "v1"}, as_of=AS_OF, request_id="req_02", links=template
+    ).to_dict()
+    handle_bearing = attach_lineage(
+        {"cum12_oil": oil_figure()}, as_of=AS_OF, request_id="req_02", links=template
+    ).to_dict()
+    handle = quote(f"{DERIVATION}#{SELECTOR}", safe="")
+
+    assert index_like["links"]["explain"] == "/v1/explain?h="
+    assert handle_bearing["links"]["explain"] == f"/v1/explain?h={handle}&depth=full"
+
+
+def test_a_link_mapping_with_a_null_explain_is_not_a_hand_authored_link():
     envelope = attach_lineage(
         {"cum12_oil": oil_figure()},
         as_of=AS_OF,
         request_id="req_02",
-        links={"self": "/v1/wells/3305301234", "explain": "/v1/explain?h=drv_other01"},
+        links={"self": "/v1/wells/3305301234", "explain": None},
     ).to_dict()
-    assert envelope["links"]["explain"] == "/v1/explain?h=drv_other01"
+    handle = quote(f"{DERIVATION}#{SELECTOR}", safe="")
+    assert envelope["links"]["explain"] == f"/v1/explain?h={handle}&depth=full"
     assert envelope["links"]["self"] == "/v1/wells/3305301234"
     assert envelope["links"]["next"] is None
+
+
+def test_extra_handles_reach_the_link_through_the_same_selection():
+    """A record whose subject is a derivation spells no figure, so the walk finds nothing;
+    `extra_handles` feeds the one selection both carriers read instead of a second link."""
+    envelope = attach_lineage(
+        {"derivation_id": "drv_subject01"},
+        as_of=AS_OF,
+        request_id="req_02",
+        extra_handles=["drv_subject01"],
+    ).to_dict()
+    assert envelope["links"]["explain"] == "/v1/explain?h=drv_subject01&depth=full"
+
+
+def test_a_router_written_sidecar_feeds_the_link_the_walk_builds():
+    """`/v1/vintages` writes §9.1(b) sidecars by hand; their handles are the response's, so
+    the envelope collects them — the router builds no link of its own."""
+    envelope = attach_lineage(
+        [
+            {"rows_appended": 19, "_lineage": {"rows_appended": "drv_promotion1"}},
+            {"rows_appended": 3, "_lineage": {"rows_appended": "drv_promotion2"}},
+            {"rows_appended": 7},
+        ],
+        as_of=AS_OF,
+        request_id="req_02",
+    ).to_dict()
+    assert (
+        envelope["links"]["explain"] == "/v1/explain?h=drv_promotion1&h=drv_promotion2&depth=full"
+    )
+    assert envelope["data"][0]["_lineage"] == {"rows_appended": "drv_promotion1"}
 
 
 def test_meta_carries_labels_warnings_deprecations_and_freshness():

@@ -243,7 +243,13 @@ def resolve_chain_from(
     for row in rows:
         adjacency.setdefault(row["derivation_id"], []).append(row)
 
-    nodes: list[ChainNode] = [_derivation_node(derivation_rows[root])]
+    # DR-83: `nodes` reads root-first, terminals last. Discovery order put a root's direct
+    # manifest input mid-list, ahead of deeper derivations, and the walk §9.3 claims runs
+    # *to* its terminal manifests — so derivations keep BFS order and terminals close the
+    # list. `edges` remains the structural truth either way.
+    derivation_nodes: list[ChainNode] = [_derivation_node(derivation_rows[root])]
+    reference_nodes: list[ChainNode] = []
+    manifest_nodes: list[ChainNode] = []
     edges: list[ChainEdge] = []
     terminals: list[str] = []
     seen = {root}
@@ -266,15 +272,15 @@ def resolve_chain_from(
             if row["kind"] == "derivation":
                 if reference not in derivation_rows:
                     raise LineageUnresolved(handle, reason="derivation_swept", last_resolved=parent)
-                nodes.append(_derivation_node(derivation_rows[reference]))
+                derivation_nodes.append(_derivation_node(derivation_rows[reference]))
                 queue.append(reference)
             elif row["kind"] == "manifest":
                 if reference not in manifest_rows:
                     raise LineageUnresolved(handle, reason="unknown_id", last_resolved=parent)
-                nodes.append(_manifest_node(manifest_rows[reference]))
+                manifest_nodes.append(_manifest_node(manifest_rows[reference]))
                 terminals.append(reference)
             else:
-                nodes.append(
+                reference_nodes.append(
                     ChainNode(
                         id=reference,
                         type=row["kind"],
@@ -283,6 +289,7 @@ def resolve_chain_from(
                     )
                 )
                 warnings.append(f"{reference} is a {row['kind']} reference, not a manifest")
+    nodes = derivation_nodes + reference_nodes + manifest_nodes
 
     frontier = [r["ref_id"] for r in rows if r["level"] == limit and r["kind"] == "derivation"]
     root_row = derivation_rows[root]

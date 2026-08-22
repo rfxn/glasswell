@@ -14,20 +14,32 @@ population exactly the served figures rather than admitting graph bookkeeping in
 from __future__ import annotations
 
 import json
+from datetime import UTC, date, datetime
 from typing import Any
 from urllib.parse import parse_qsl
 
+import psycopg
 import pytest
 from fastapi.testclient import TestClient
 from httpx import Response
 
 from glasswell.api.errors import TYPE_BASE
-from glasswell.api.examples import EXAMPLE_API10, EXAMPLE_BBOX
+from glasswell.api.examples import (
+    EXAMPLE_API10,
+    EXAMPLE_BBOX,
+    EXAMPLE_DERIVATION_ID,
+    EXAMPLE_VINTAGE_ID,
+)
 from glasswell.lineage.envelope import InlinedExplain, attach_lineage, figure
 from glasswell.lineage.explain import DEFAULT_DEPTH, MAX_DEPTH
+from glasswell.lineage.vintages import open_vintage
 from tests.contract.test_naked_numbers import naked_numbers
 
-# The three figure-bearing GETs SB-07 §9.2 reaches first: a header, a series and an aggregate.
+# Every handle-carrying GET: the three §9.2 reached first (a header, a series, an aggregate),
+# then the spine surfaces the convergence brought in — a sidecar page, a sidecar record and a
+# record whose subject is itself a derivation. Pools carry handles only when a well filed in
+# more than one pool, which this fixture's wells did not — test_explain_inline_pools.py seeds
+# that arm.
 SURFACES: tuple[tuple[str, dict[str, Any]], ...] = (
     ("get_well", {"url": f"/v1/wells/{EXAMPLE_API10}", "params": {}}),
     ("get_well_production", {"url": f"/v1/wells/{EXAMPLE_API10}/production", "params": {}}),
@@ -35,8 +47,23 @@ SURFACES: tuple[tuple[str, dict[str, Any]], ...] = (
         "get_well_status_summary",
         {"url": "/v1/wells/status-summary", "params": {"bbox": EXAMPLE_BBOX}},
     ),
+    ("get_derivation", {"url": f"/v1/derivations/{EXAMPLE_DERIVATION_ID}", "params": {}}),
+    ("list_vintages", {"url": "/v1/vintages", "params": {}}),
+    ("get_vintage", {"url": f"/v1/vintages/{EXAMPLE_VINTAGE_ID}", "params": {}}),
 )
 SURFACE_IDS = [name for name, _ in SURFACES]
+
+# The frozen paths the two parameters are declared on — every SURFACES row plus pools, whose
+# fixture arm lives in its own module.
+DECLARED_PATHS = (
+    "/v1/wells/{api10}",
+    "/v1/wells/{api10}/production",
+    "/v1/wells/status-summary",
+    "/v1/wells/{api10}/production/pools",
+    "/v1/derivations/{derivation_id}",
+    "/v1/vintages",
+    "/v1/vintages/{vintage_id}",
+)
 
 
 def _call(client: TestClient, call: dict[str, Any], **extra: Any) -> Response:
@@ -200,13 +227,8 @@ def test_the_document_declares_the_parameters_on_every_surface_that_takes_them(
     client: TestClient,
 ) -> None:
     document = client.get("/openapi.json").json()
-    paths = {
-        "/v1/wells/{api10}",
-        "/v1/wells/{api10}/production",
-        "/v1/wells/status-summary",
-    }
 
-    for path in paths:
+    for path in DECLARED_PATHS:
         names = {item["name"] for item in document["paths"][path]["get"]["parameters"]}
         assert {"explain", "explain_depth"} <= names, path
 
@@ -217,7 +239,7 @@ def test_every_new_parameter_carries_its_semantics(client: TestClient) -> None:
     but not one a parameter added on purpose should be in."""
     document = client.get("/openapi.json").json()
     annotated: dict[str, set[str]] = {}
-    for path in ("/v1/wells/{api10}", "/v1/wells/{api10}/production", "/v1/wells/status-summary"):
+    for path in DECLARED_PATHS:
         operation = document["paths"][path]["get"]
         annotated[path] = set(operation.get("x-glasswell-semantics", {}))
 
@@ -242,9 +264,10 @@ def test_the_block_stays_outside_the_population_the_r6_walker_reads(
     call those numbers naked, so `data` staying clean is a consequence of where the block sits.
     """
     body = _call(client, call, explain="true").json()
+    data = body["data"] if isinstance(body["data"], dict) else {"rows": body["data"]}
 
     assert naked_numbers(body["data"]) == []
-    assert naked_numbers({**body["data"], "_explain": body["_explain"]}), (
+    assert naked_numbers({**data, "_explain": body["_explain"]}), (
         "the chain carries no number the walker objects to, so this proves nothing"
     )
 
@@ -272,6 +295,44 @@ def test_a_handle_that_does_not_resolve_is_named_rather_than_dropped() -> None:
     assert figure_object.handle in warning["detail"]
     assert "derivation_swept" in warning["detail"]
     assert body["data"]["length_ft"]["value"] == "1"
+
+
+def test_the_converged_link_is_the_link_the_router_used_to_author(client: TestClient) -> None:
+    """gate-apix ADV-1's fix must not move the published link: the envelope now builds what
+    `/v1/derivations/{id}` and the vintages pair hand-built, byte for byte."""
+    derivation = client.get(f"/v1/derivations/{EXAMPLE_DERIVATION_ID}").json()
+    vintage = client.get(f"/v1/vintages/{EXAMPLE_VINTAGE_ID}").json()
+    page = client.get("/v1/vintages").json()
+
+    expected = f"/v1/explain?h={EXAMPLE_DERIVATION_ID}&depth=full"
+    assert derivation["links"]["explain"] == expected
+    assert vintage["links"]["explain"] == expected
+    assert expected.split("?", 1)[1].split("&depth")[0] in page["links"]["explain"]
+
+
+def test_a_vintage_with_no_promotion_inlines_nothing_and_links_nothing(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """No handle, no carrier: the link is null and the block is empty, and neither invents a
+    handle the record does not carry."""
+    open_vintage(
+        seeded,
+        source_id="tx_pdq_dsv",
+        vintage_date=date(2026, 8, 2),
+        manifest_ids=[],
+        opened_at=datetime(2026, 8, 2, 5, 2, 11, tzinfo=UTC),
+        promotion_derivation_id=None,
+        rows_examined=7,
+        rows_appended=3,
+    )
+
+    body = client.get(
+        "/v1/vintages/vin_tx_pdq_dsv_2026-08-02", params={"explain": "true"}
+    ).json()
+
+    assert "_lineage" not in body["data"]
+    assert body["links"]["explain"] is None
+    assert body["_explain"] == {}
 
 
 def test_the_envelope_schema_publishes_the_optional_block(client: TestClient) -> None:

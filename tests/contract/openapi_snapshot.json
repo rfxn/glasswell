@@ -5603,6 +5603,32 @@
               "description": "Expand the derivation's inputs or its cited rules; repeatable.",
               "title": "Include"
             }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -5710,6 +5736,16 @@
               "inputs",
               "rules"
             ]
+          }
+        },
+        "x-glasswell-semantics": {
+          "explain": {
+            "so": "Inlines this record's own chain under `_explain` \u2014 the record states what ran, the chain states what that ran on, back to the manifests. One call instead of following links.explain, on the surface whose subject already is a derivation.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "explain_depth": {
+            "so": "This record is the chain's first node, so the default of three reaches two levels behind what the page already shows. A fetch derivation terminates at depth one; deep mart chains are the case for raising it.",
+            "x-glasswell-glossary": "gt_derivation_handle"
           }
         }
       }
@@ -8314,6 +8350,32 @@
               "description": "Filter to one source.",
               "title": "Source Id"
             }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -8429,6 +8491,14 @@
           }
         },
         "x-glasswell-semantics": {
+          "explain": {
+            "so": "Inlines the promotion chain behind every row's sidecar under `_explain` \u2014 one chain per promotion on the page, not per sidecar key, because the three counts a vintage states were written by the same run. A vintage no derivation promoted carries no handle and inlines nothing.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "explain_depth": {
+            "so": "A promotion chain reaches its manifests in two levels, so the default covers this page. The cost scales with the rows on the page: one resolved chain per promotion, at every depth asked for.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
           "limit": {
             "so": "Capped at 200, and this collection has no cursor. A source with a long promotion history is read newest-first and narrowed with source_id rather than paged through."
           },
@@ -8453,6 +8523,32 @@
               "description": "Id of the (source, vintage) promotion.",
               "title": "Vintage Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
             }
           }
         ],
@@ -8542,6 +8638,16 @@
             "vintage_id": "vin_nd_mpr_xlsx_2026-08-01"
           },
           "query": {}
+        },
+        "x-glasswell-semantics": {
+          "explain": {
+            "so": "Inlines the chain of the promotion that opened this vintage: the run, the manifests it read, and the rules it cited \u2014 the audit answer to `as_of` resolving here, in the same response. A vintage opened with no promotion has no chain and gains an empty block.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "explain_depth": {
+            "so": "One promotion chain, so depth is the only cost lever: the default of three reaches the manifests, and deeper only matters when the promotion itself read derived inputs.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          }
         }
       }
     },
@@ -9574,6 +9680,32 @@
               "description": "Stream to include; repeatable. Defaults to oil, gas and water.",
               "title": "Stream"
             }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -9739,6 +9871,14 @@
           "as_of": {
             "so": "Selects the vintage each pool row is read at. A restatement can move one pool's month and leave the other's alone, so pools that do not add up to the well's series are usually two vintages being compared rather than an arithmetic error.",
             "x-glasswell-glossary": "gt_report_vintage"
+          },
+          "explain": {
+            "so": "Inlines the chain behind every pool column under `_explain`. ND files one workbook per month, so a pool column can carry a handle per point rather than one per series; where the response holds more handles than one /v1/explain call carries, it says how many it left out rather than trimming quietly.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "explain_depth": {
+            "so": "A pool point resolves to its month's promotion and that month's workbook, so three levels reaches the manifest. The cost multiplies per pool, per stream and \u2014 under per-point handles \u2014 per month, so this is the surface where a shallower depth pays.",
+            "x-glasswell-glossary": "gt_derivation_handle"
           },
           "stream": {
             "so": "Filters the columns inside every pool at once \u2014 there is no way to ask for oil from one pool and gas from another. A pool that filed nothing for the requested stream keeps its row and loses the column.",

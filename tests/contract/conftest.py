@@ -362,6 +362,9 @@ def seeded(db: psycopg.Connection, raw_zone: Path) -> psycopg.Connection:
         rows_examined=24,
         rows_appended=19,
         months_touched=[month.isoformat() for month in PRODUCTION_MONTHS],
+        # DR-82: the fixture restates a month, so its vintage must say so — an empty summary
+        # left the restatement-exemption arm of the R6 walker with nothing to defend.
+        restatement_summary={RESTATED_MONTH.isoformat(): 1},
     )
     return db
 
