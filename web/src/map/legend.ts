@@ -348,22 +348,24 @@ export function createLegend(options: LegendOptions): LegendHandle {
   }
 
   function setVocabulary(vocabulary: VocabularyLink[]): void {
+    // The licence pair opens the note, ahead even of the colours preamble (visual-m24 O2):
+    // what each basin's wire carries must sit above the note's own fold on open at 390.
     note.replaceChildren(
-      document.createTextNode("Status colours are data colours, not severity colours. Vocabulary: "),
+      document.createTextNode(
+        "Every ND feature carries its geometry provenance on the wire — surface, lateral" +
+          ` or survey_trace, classed by ${PROVENANCE_RULE}, the class served verbatim.` +
+          " TX geometry carries no provenance field: the RRC's coordinate-source attribute" +
+          " is licence-gated (RF-1) and is not served until that is answered." +
+          " Status colours are data colours, not severity colours. Vocabulary: ",
+      ),
     );
     for (const [index, entry] of vocabulary.entries()) {
       if (index > 0) note.appendChild(document.createTextNode(", "));
       note.appendChild(ruleNode(entry));
     }
-    // The two licence-class sentences lead (visual-webpolish O2): what each basin's wire
-    // carries is the claim a reader must see without finding the note's own scrollbar.
     note.appendChild(
       document.createTextNode(
-        ". Every ND feature carries its geometry provenance on the wire — surface, lateral" +
-          ` or survey_trace, classed by ${PROVENANCE_RULE}, the class served verbatim.` +
-          " TX geometry carries no provenance field: the RRC's coordinate-source attribute" +
-          " is licence-gated (RF-1) and is not served until that is answered." +
-          " Laterals are ND DMR and TX RRC GIS bore geometry — not a directional survey trace." +
+        ". Laterals are ND DMR and TX RRC GIS bore geometry — not a directional survey trace." +
           " The orchid line is that trace: the bore path ND filed as survey stations." +
           " The teal ring is NDIC's own well_type — disposal and injection wells of any" +
           " injected stream, classed by cr_nd_well_type_disposal_1, the code drawn as filed.",

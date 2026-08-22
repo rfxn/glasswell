@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
+
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { EXPLAIN_EVENT } from "../card/gw-figure.ts";
@@ -185,17 +187,34 @@ describe("the legend", () => {
     expect(legend.element.textContent).toContain("RF-1");
   });
 
-  it("leads the note with both licence-class sentences, ahead of the symbology prose", () => {
-    // visual-webpolish O2: what each basin's wire carries must sit above the note's own
-    // scroll fold on open at 390, so the pair precedes the laterals/trace/ring detail.
+  it("opens the note with both licence-class sentences, ahead of even the colours preamble", () => {
+    // visual-m24 O2: the note's cap holds ~13 lines at 390x844 against a taller scrollHeight,
+    // so only what leads is visible on open — the licence pair may spend none of that budget
+    // on the status-colours preamble, let alone the laterals/trace/ring detail.
     const legend = createLegend({ onFilter: () => {} });
-    const text = legend.element.textContent ?? "";
-    const nd = text.indexOf("Every ND feature carries its geometry provenance");
-    const tx = text.indexOf("TX geometry carries no provenance field");
-    const symbology = text.indexOf("Laterals are ND DMR and TX RRC GIS bore geometry");
-    expect(nd).toBeGreaterThan(-1);
-    expect(tx).toBeGreaterThan(nd);
-    expect(symbology).toBeGreaterThan(tx);
+    const order = (root: HTMLElement): void => {
+      const text = root.querySelector<HTMLElement>(".gw-lg-note")!.textContent ?? "";
+      const nd = text.indexOf("Every ND feature carries its geometry provenance");
+      const tx = text.indexOf("TX geometry carries no provenance field");
+      const preamble = text.indexOf("Status colours are data colours");
+      const symbology = text.indexOf("Laterals are ND DMR and TX RRC GIS bore geometry");
+      expect(nd).toBe(0);
+      expect(tx).toBeGreaterThan(nd);
+      expect(preamble).toBeGreaterThan(tx);
+      expect(symbology).toBeGreaterThan(preamble);
+    };
+    order(legend.element);
+    legend.setVocabulary([{ rule: "cr_nd_status_vocab_1", href: null }]);
+    order(legend.element);
+  });
+
+  it("keeps the note's fold cap where the order fix was measured against it", () => {
+    // happy-dom lays nothing out, so the fold itself is the browser tier's to measure; what
+    // is pinnable here is the cap the visual-m24 arithmetic used (192px at 844h) — a cap
+    // change silently re-opens the question of whether the TX sentence tail clears the fold.
+    const css = readFileSync("src/map.css", "utf8");
+    const note = /\.gw-lg-note\s*\{[^}]*\}/.exec(css)?.[0] ?? "";
+    expect(note).toContain("max-height: min(28vh, 12rem);");
   });
 
   it("names the blue ring as the regulator's own well_type, and the rule that classes it", () => {

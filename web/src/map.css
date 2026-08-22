@@ -255,8 +255,8 @@
 
 .gw-lg-note {
   margin: 0.25rem 0 0;
-  /* visual-webpolish O2: deep enough that both licence-class sentences — the ND provenance
-     statement and the TX exclusion — sit above the internal fold on open at 390. */
+  /* visual-m24 O2: the licence-pair-first order in legend.ts is what keeps both licence
+     sentences above this fold on open at 390; legend.test.ts pins the cap against it. */
   max-height: min(28vh, 12rem);
   overflow-y: auto;
   overscroll-behavior: contain;
