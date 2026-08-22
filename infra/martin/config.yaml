@@ -26,6 +26,12 @@ postgres:
     nd_survey_traces:
       schema: marts
       function: nd_survey_traces
+    land_townships:
+      schema: marts
+      function: land_townships
+    land_sections:
+      schema: marts
+      function: land_sections
     tx_laterals:
       schema: marts
       function: tx_laterals

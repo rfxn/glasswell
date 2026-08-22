@@ -6,7 +6,7 @@
 import { ND_SNAPSHOT, ndCoverage, ndWellCount } from "./coverage.ts";
 import { DISPOSAL_COLOUR } from "./disposal.ts";
 import { statusColour } from "./status.ts";
-import { TRACE_COLOUR } from "./style.ts";
+import { LAND_GRID_COLOUR, TRACE_COLOUR } from "./style.ts";
 
 export type LayerGroup = "reference" | "wells" | "model";
 
@@ -73,6 +73,44 @@ const STATUS_KEYED_LINE: readonly [string, ...string[]] = [
 
 export const LAYERS: readonly LayerDef[] = [
   {
+    // Real PLSS geometry, vector and queryable — not a raster picture of a grid. ND slice of
+    // the BLM national CadNSDI; the publisher choice and the measured cross-publisher grid
+    // divergence are conformance rows (cr_blm_plss_publisher_1), not this file's claim.
+    id: "land-grid",
+    group: "reference",
+    label: "PLSS land grid (ND)",
+    subtitle:
+      "BLM CadNSDI townships and sections, clickable geometry · 2,067 townships · " +
+      "71,486 sections · ND only",
+    swatch: { kind: "line", colours: [LAND_GRID_COLOUR] },
+    // Basin-wide reference linework drawn unasked would read as structure in the data.
+    defaultOn: false,
+    minZoom: 8,
+    zoomHint: "Townships at zoom 8 and above; sections from zoom 10",
+    opacity: 1,
+    provenance: [{ kind: "official", source: "marts.land_units_tile" }],
+    styleLayers: ["land-townships-line", "land-sections-line"],
+    drawOrder: 6,
+    collection: null,
+  },
+  {
+    // Geometry and labels split per the land-grid convention EVA holds across all eleven of
+    // its grid layers: the linework at one zoom band, the text two bands finer.
+    id: "land-grid-labels",
+    group: "reference",
+    label: "PLSS grid labels (ND)",
+    subtitle: "Township-range and section numbers carried on the land grid itself",
+    swatch: { kind: "line", colours: [LAND_GRID_COLOUR] },
+    defaultOn: false,
+    minZoom: 9,
+    zoomHint: "Township labels at zoom 9 and above; section numbers from zoom 12",
+    opacity: 1,
+    provenance: [{ kind: "official", source: "marts.land_units_tile" }],
+    styleLayers: ["land-townships-label", "land-sections-label"],
+    drawOrder: 8,
+    collection: null,
+  },
+  {
     id: "spacing-units",
     group: "reference",
     label: "Spacing units",
@@ -92,7 +130,9 @@ export const LAYERS: readonly LayerDef[] = [
     id: "plss-labels",
     group: "reference",
     label: "Spacing-unit labels",
-    subtitle: "Township-range description carried on the spacing unit · not a PLSS survey grid",
+    subtitle:
+      "Township-range description carried on the spacing unit · the surveyed grid itself is" +
+      " the PLSS land grid row",
     swatch: { kind: "line", colours: ["#9FB0BC"] },
     defaultOn: false,
     minZoom: 11,

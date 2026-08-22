@@ -9,8 +9,10 @@ import { variantStyle } from "./variant-style.ts";
 import {
   LATERALS_SOURCE,
   OPACITY_OVERRIDE,
+  SECTIONS_SOURCE,
   SOURCE_ID,
   SPACING_SOURCE,
+  TOWNSHIPS_SOURCE,
   TRACES_SOURCE,
   TRACE_COLOUR,
   TX_LATERALS_SOURCE,
@@ -319,6 +321,51 @@ describe("the data layers", () => {
   });
 });
 
+describe("the land grid (M1-4)", () => {
+  it("draws the grid beneath every data layer — reference linework, never over", () => {
+    const built = ids();
+    expect(built[0]).toBe("land-townships-line");
+    expect(built[1]).toBe("land-sections-line");
+  });
+
+  it("gates sections two zooms deeper than the townships they subdivide", () => {
+    const byId = new Map(dataLayers().map((layer) => [layer.id, layer]));
+    expect(byId.get("land-townships-line")?.minzoom).toBe(8);
+    expect(byId.get("land-sections-line")?.minzoom).toBe(10);
+  });
+
+  it("paints both grid layers the neutral, not a stream or status colour", () => {
+    for (const id of ["land-townships-line", "land-sections-line"]) {
+      const layer = dataLayers().find((built) => built.id === id);
+      const paint = (layer?.paint ?? {}) as Record<string, unknown>;
+      expect(paint["line-color"], `${id} colour`).toBe("#7C8B96");
+    }
+  });
+
+  it("splits geometry and labels: the label layers exist only when glyphs do", () => {
+    const withoutLabels = ids();
+    expect(withoutLabels).not.toContain("land-townships-label");
+    expect(withoutLabels).not.toContain("land-sections-label");
+    const withLabels = dataLayers({ labels: true }).map((layer) => layer.id);
+    expect(withLabels).toContain("land-townships-label");
+    expect(withLabels).toContain("land-sections-label");
+  });
+
+  it("derives each land source's floor from its own layers, not a shared gate", () => {
+    const specs = sourceSpecs("https://gw.example", "?");
+    expect((specs[TOWNSHIPS_SOURCE] as { minzoom?: number }).minzoom).toBe(8);
+    expect((specs[SECTIONS_SOURCE] as { minzoom?: number }).minzoom).toBe(10);
+  });
+
+  it("promotes the land unit id, not a well spine key, as the feature id", () => {
+    const specs = sourceSpecs("https://gw.example", "?");
+    const townships = specs[TOWNSHIPS_SOURCE] as { promoteId?: Record<string, string> };
+    const sections = specs[SECTIONS_SOURCE] as { promoteId?: Record<string, string> };
+    expect(townships.promoteId).toEqual({ [TOWNSHIPS_SOURCE]: "land_unit_id" });
+    expect(sections.promoteId).toEqual({ [SECTIONS_SOURCE]: "land_unit_id" });
+  });
+});
+
 describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
   const named = (search: string, parameter = "wells"): string =>
     publishedSource(parameter, WELLS_SOURCE, search);
@@ -379,7 +426,8 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
     // that only guarded the url would still hand the other two an attacker's string.
     const search =
       "?wells=..%2F..%2Fetc%2Fpasswd&laterals=gw-evil-layer&spacing=%2Fetc%2Fpasswd" +
-      "&tx_wells=..%2F..%2Fetc%2Fshadow&tx_laterals=gw-evil-layer&traces=..%2F..%2Fetc%2Fpasswd";
+      "&tx_wells=..%2F..%2Fetc%2Fshadow&tx_laterals=gw-evil-layer&traces=..%2F..%2Fetc%2Fpasswd" +
+      "&townships=..%2F..%2Fetc%2Fpasswd&sections=gw-evil-layer";
     const specs = sourceSpecs("https://gw.example", search);
     expect(Object.keys(specs).sort()).toEqual(
       [
@@ -389,6 +437,8 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
         TX_WELLS_SOURCE,
         TX_LATERALS_SOURCE,
         TRACES_SOURCE,
+        TOWNSHIPS_SOURCE,
+        SECTIONS_SOURCE,
       ].sort(),
     );
     const serialised = JSON.stringify(specs);
