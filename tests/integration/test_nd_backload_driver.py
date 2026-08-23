@@ -11,18 +11,22 @@ from __future__ import annotations
 import importlib.util
 import sys
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from glasswell.ingest.base import record_vintage_day
 from glasswell.ingest.nd_mpr import SOURCE_ID, IngestReport
 from glasswell.lineage.vintages import open_vintage
+from tests.support.fakes import FixedClock
 from tests.support.seed import seed_manifest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "infra" / "load-nd-months.py"
 
 PRIOR_ROWS = 394_278
 MONTH_ROWS = 1_000
+
+BEFORE_MIDNIGHT = datetime(2026, 8, 21, 23, 59, 40, tzinfo=UTC)
+AFTER_MIDNIGHT = datetime(2026, 8, 22, 0, 0, 20, tzinfo=UTC)
 
 
 def _load():
@@ -46,20 +50,20 @@ def _stage_row(connection, manifest_id: str) -> None:
         )
 
 
-def _report(year: int, month: int) -> IngestReport:
+def _report(year: int, month: int, vintage: date | None = None) -> IngestReport:
     return IngestReport(
         manifest_id=f"man_{year:04d}_{month:02d}",
         source_key=loader.source_key(year, month),
-        report_vintage=datetime.now(UTC).date(),
+        report_vintage=vintage or datetime.now(UTC).date(),
         unchanged=False,
         rows_examined=MONTH_ROWS,
         rows_appended=MONTH_ROWS,
     )
 
 
-def _walk(db, months, *, resume: bool = False) -> None:
+def _walk(db, months, *, resume: bool = False):
     with loader.ProgressLog(None) as progress:
-        loader.run_backload(
+        return loader.run_backload(
             db,
             months,
             progress=progress,
@@ -92,6 +96,54 @@ def test_a_resume_run_skips_exactly_the_staged_workbooks(db, monkeypatch, raw_ro
     _walk(db, loader.months_between("2015-05", "2015-07"), resume=True)
 
     assert walked == [(2015, 6), (2015, 7)]
+
+
+def test_a_walk_across_utc_midnight_keeps_a_ledger_row_per_knowledge_day(
+    db, monkeypatch, raw_root
+):
+    """Each month opens its own session, so a multi-hour walk legitimately spans two vintages.
+    The ledger has to keep both, each carrying only the months that landed under it."""
+    opens = iter([BEFORE_MIDNIGHT, AFTER_MIDNIGHT])
+    open_run = loader.open_ingest_run
+
+    def clocked_run(connection, **options):
+        return open_run(connection, clock=FixedClock(start=next(opens)), **options)
+
+    def ingest(run, *, year: int, month: int, **_: object) -> IngestReport:
+        report = _report(year, month, vintage=run.as_of)
+        record_vintage_day(
+            db,
+            source_id=SOURCE_ID,
+            vintage_date=run.as_of,
+            manifest_ids=[report.manifest_id],
+            opened_at=run.session.clock.now(),
+            rows_examined=report.rows_examined,
+            rows_appended=report.rows_appended,
+            months_touched=[f"{year:04d}-{month:02d}-01"],
+        )
+        return report
+
+    monkeypatch.setattr(loader, "open_ingest_run", clocked_run)
+    monkeypatch.setattr(loader, "ingest_month", ingest)
+    summary = _walk(db, [(2015, 5), (2015, 6)])
+
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select vintage_date, manifest_ids, months_touched, rows_appended"
+            "  from lineage.vintages where source_id = %s order by vintage_date",
+            (SOURCE_ID,),
+        )
+        ledger = cursor.fetchall()
+
+    assert ledger == [
+        (BEFORE_MIDNIGHT.date(), ["man_2015_05"], ["2015-05-01"], MONTH_ROWS),
+        (AFTER_MIDNIGHT.date(), ["man_2015_06"], ["2015-06-01"], MONTH_ROWS),
+    ]
+    assert [row["vintage_date"] for row in summary.vintages] == [
+        BEFORE_MIDNIGHT.date(),
+        AFTER_MIDNIGHT.date(),
+    ]
+    assert [row["months_touched"] for row in summary.vintages] == [1, 1]
 
 
 def test_the_walk_accumulates_the_ledger_row_and_never_rewrites_it(db, monkeypatch, raw_root):
