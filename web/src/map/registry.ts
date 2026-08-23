@@ -124,8 +124,7 @@ export const LAYERS: readonly LayerDef[] = [
     collection: null,
   },
   {
-    // Geometry and labels split per the land-grid convention EVA holds across all eleven of
-    // its grid layers: the linework at one zoom band, the text two bands finer.
+    // Geometry and labels split: the linework at one zoom band, the text two bands finer.
     id: "land-grid-labels",
     group: "reference",
     label: "PLSS grid labels (ND)",

@@ -38,8 +38,8 @@ def test_bins_clamp_through_the_percentile_frame():
     assert liquid_bin(-5.0, edges) == UNPAINTED_BIN
     # Below P2 and at the minimum: the first bin, never invisible.
     assert liquid_bin(1.0, edges) == 0
-    # A ComboCurve-scale artefact (their Cum GOR max: 5,628,503,000) stays in the last bin
-    # instead of stretching the ramp — the P98 clamp is what the bins exist for.
+    # A far-outlier artefact stays in the last bin instead of stretching the ramp — the
+    # P98 clamp is what the bins exist for.
     assert liquid_bin(5_628_503_000.0, edges) == 6
     assert liquid_bin(50.0, edges) == 3
 
