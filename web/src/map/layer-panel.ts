@@ -1,6 +1,8 @@
 import "./layer-panel.css";
 
 import { readState } from "../app/state.ts";
+import { EXPLAIN_EVENT } from "../card/gw-figure.ts";
+import { registerOverlay } from "../chrome/overlays.ts";
 import { applyCrossing, cross, whatsBehindThisLayer } from "../explore/bridge.ts";
 import type { Bbox, Crossing } from "../explore/bridge.ts";
 import { BASEMAPS } from "./basemap.ts";
@@ -38,6 +40,7 @@ export interface LayerPanelHandle {
 export function createLayerPanel(options: LayerPanelOptions): LayerPanelHandle {
   const element = document.createElement("section");
   element.className = "gw-layers";
+  element.id = "gw-layers";
   element.hidden = true;
   element.setAttribute("aria-label", "Map layers");
 
@@ -115,9 +118,30 @@ export function createLayerPanel(options: LayerPanelOptions): LayerPanelHandle {
       // the rows would otherwise have made "tx" find nothing on a row that draws Texas.
       const sources = (layer?.provenance ?? []).map((source) => `${source.label} ${source.source}`);
       const haystack = `${layer?.label} ${layer?.subtitle} ${sources.join(" ")}`.toLowerCase();
-      row.element.hidden = term.length > 0 && !haystack.includes(term);
+      const matched = term.length === 0 || haystack.includes(term);
+      row.element.hidden = !matched;
+      // The strings the filter matches on live inside the disclosure now, so a hit that stays
+      // collapsed is a hit the reader cannot see.
+      row.setForcedOpen(term.length > 0 && matched);
     }
   });
+
+  // The MapLibre control that opens this panel is built by map.ts and never handed here, and
+  // main.ts's Escape ladder closes the element rather than calling the handle — so the state
+  // it announces is read back off the attribute rather than pushed at every open site.
+  function syncTrigger(): void {
+    for (const trigger of document.querySelectorAll<HTMLElement>(".gw-layers-button")) {
+      trigger.setAttribute("aria-expanded", String(!element.hidden));
+      trigger.setAttribute("aria-controls", element.id);
+    }
+  }
+  new MutationObserver(syncTrigger).observe(element, {
+    attributes: true,
+    attributeFilter: ["hidden"],
+  });
+  // Deferred once: map.ts adds the control after this call returns, in the same task.
+  queueMicrotask(syncTrigger);
+  registerOverlay(element);
 
   const handle: LayerPanelHandle = {
     element,
@@ -160,6 +184,25 @@ interface LayerRow {
   setZoom(zoom: number): void;
   setProvenance(derivationId: string): void;
   setCrossing(box: Bbox, resolved: string | null, extentOff: boolean): void;
+  setForcedOpen(open: boolean): void;
+}
+
+/** The app's one provenance affordance, as the legend and the thematic key already build it. */
+function explainHandle(className: string, description: string): HTMLButtonElement {
+  const handle = document.createElement("button");
+  handle.type = "button";
+  handle.className = `gw-handle ${className}`;
+  handle.textContent = "⌾";
+  handle.setAttribute("aria-label", description);
+  handle.addEventListener("click", () => {
+    const derivation = handle.dataset["handle"];
+    if (derivation) {
+      handle.dispatchEvent(
+        new CustomEvent(EXPLAIN_EVENT, { detail: { handle: derivation }, bubbles: true }),
+      );
+    }
+  });
+  return handle;
 }
 
 function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
@@ -172,11 +215,15 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
   swatch.appendChild(layerSwatch(layer.swatch));
   element.appendChild(swatch);
 
-  const text = document.createElement("div");
-  text.className = "gw-layer-text";
-  const label = document.createElement("p");
+  // The disclosure, not a <label>: the row deliberately forwards no activation to the toggle,
+  // and this control asks what a layer is made of rather than switching it.
+  const name = document.createElement("button");
+  name.type = "button";
+  name.className = "gw-layer-name";
+  const label = document.createElement("span");
   label.className = "gw-layer-label";
   label.textContent = layer.label;
+  name.appendChild(label);
 
   const badge = document.createElement("span");
   badge.className = "gw-layer-badge";
@@ -184,14 +231,34 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
   const kind = layer.provenance[0]?.kind ?? "pending";
   badge.dataset["kind"] = kind;
   badge.textContent = kind;
-  label.appendChild(badge);
-  text.appendChild(label);
+  name.appendChild(badge);
+
+  // The out-of-scale *state* stays in the collapsed row; the sentence explaining it goes in
+  // the disclosure with the rest of the prose. Six of twelve rows are out of scale at the
+  // opening zoom, and their two-line hints were 43 px of row each.
+  const scale = document.createElement("span");
+  scale.className = "gw-layer-scale";
+  scale.hidden = true;
+  scale.textContent = `zoom ${layer.minZoom}+`;
+  name.appendChild(scale);
+  element.appendChild(name);
+
+  const text = document.createElement("div");
+  text.className = "gw-layer-detail";
+  text.id = `gw-layer-detail-${layer.id}`;
+  text.hidden = true;
+  name.setAttribute("aria-controls", text.id);
 
   const subtitle = document.createElement("p");
   subtitle.className = "gw-layer-sub";
   subtitle.textContent = layer.pendingSource
     ? `${layer.subtitle} — source not ingested`
     : layer.subtitle;
+  if (layer.snapshot) {
+    const snapshot = explainHandle("gw-layer-snapshot", `Where ${layer.label} counts came from`);
+    snapshot.dataset["handle"] = layer.snapshot;
+    subtitle.appendChild(snapshot);
+  }
   text.appendChild(subtitle);
 
   // Only where the row draws more than one. With a single source the subtitle already names
@@ -207,14 +274,9 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
     }
   }
 
-  const hint = document.createElement("p");
-  hint.className = "gw-layer-hint";
-  hint.hidden = true;
-  hint.textContent = layer.zoomHint ?? "";
-  text.appendChild(hint);
-
-  const derivation = document.createElement("p");
-  derivation.className = "gw-layer-derivation";
+  // The same handle the legend and the thematic key resolve in one click, on the surface a
+  // reader reaches a layer's provenance from.
+  const derivation = explainHandle("gw-layer-derivation", `Where ${layer.label} geometry came from`);
   derivation.hidden = true;
   text.appendChild(derivation);
 
@@ -236,7 +298,12 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
   behind.hidden = layer.collection !== null;
   behind.textContent = "No served collection carries this layer — it is drawn from tiles only.";
   text.appendChild(behind);
-  element.appendChild(text);
+
+  const hint = document.createElement("p");
+  hint.className = "gw-layer-hint";
+  hint.hidden = true;
+  hint.textContent = layer.zoomHint ?? "";
+  text.appendChild(hint);
 
   const toggle = document.createElement("button");
   toggle.type = "button";
@@ -260,10 +327,30 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
   opacity.addEventListener("input", () => {
     options.onOpacity(layer.id, Number(opacity.value) / 100);
   });
-  element.appendChild(opacity);
+  text.appendChild(opacity);
+  element.appendChild(text);
+
+  // Two independent reasons a row can be open, so the filter closing again cannot shut a row
+  // the reader opened themselves.
+  let chosen = false;
+  let forced = false;
+  function applyDisclosure(): void {
+    const open = chosen || forced;
+    text.hidden = !open;
+    name.setAttribute("aria-expanded", String(open));
+  }
+  name.addEventListener("click", () => {
+    chosen = !chosen;
+    applyDisclosure();
+  });
+  applyDisclosure();
 
   return {
     element,
+    setForcedOpen(open) {
+      forced = open;
+      applyDisclosure();
+    },
     setOn(on) {
       toggle.setAttribute("aria-pressed", String(on));
       element.dataset["on"] = String(on);
@@ -271,6 +358,7 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
     setZoom(zoom) {
       const outOfScale = layer.minZoom > 0 && zoom < layer.minZoom;
       hint.hidden = !outOfScale;
+      scale.hidden = !outOfScale;
       if (outOfScale) {
         element.setAttribute("data-out-of-scale", "true");
         element.title = layer.zoomHint ?? `Visible at zoom ${layer.minZoom} and above`;
@@ -281,7 +369,8 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
     },
     setProvenance(derivationId) {
       derivation.hidden = false;
-      derivation.textContent = `geometry build ${derivationId}`;
+      derivation.dataset["handle"] = derivationId;
+      derivation.textContent = `⌾ geometry build ${derivationId}`;
     },
     setCrossing(box, resolved, extentOff) {
       // Rebuilt rather than patched: the box is half the destination, so a stale href would be

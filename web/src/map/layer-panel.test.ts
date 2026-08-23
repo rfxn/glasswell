@@ -359,3 +359,263 @@ describe("SB-08 §2.6 — the crossing from a layer to the collection behind it"
     push.mockRestore();
   });
 });
+
+describe("the row shows one line until it is asked for more", () => {
+  const detailOf = (root: HTMLElement, id: string) =>
+    rowFor(root, id)!.querySelector<HTMLElement>(".gw-layer-detail")!;
+  const discloseOf = (root: HTMLElement, id: string) =>
+    rowFor(root, id)!.querySelector<HTMLButtonElement>(".gw-layer-name")!;
+
+  it("collapses the prose and the slider, and keeps what a glance is for", () => {
+    // Measured before this landed, at 390x844: scrollHeight 1806 against clientHeight 505,
+    // mean row 144 px, two rows of twelve fully above the fold — both default-on layers
+    // below it. The row was the length, not the list.
+    const { handle } = panel();
+    const wells = rowFor(handle.element, "wells")!;
+    const detail = detailOf(handle.element, "wells");
+
+    expect(detail.hidden).toBe(true);
+    for (const collapsed of [".gw-layer-sub", ".gw-layer-opacity", ".gw-layer-nocollection"]) {
+      expect(detail.querySelector(collapsed), collapsed).not.toBeNull();
+    }
+    // The one-glance provenance claim, the switch and the label stay out of the disclosure.
+    for (const kept of [".gw-layer-swatch", ".gw-layer-label", ".gw-layer-badge", ".gw-layer-toggle"]) {
+      expect(wells.querySelector(kept), kept).not.toBeNull();
+      expect(detail.contains(wells.querySelector(kept)), kept).toBe(false);
+    }
+  });
+
+  it("keeps the out-of-scale state in the collapsed row and its reason one click in", () => {
+    // Zoom gating is the panel's one working "why is this not on screen" signal, so the state
+    // has to survive collapsing. The sentence does not: six of twelve rows are out of scale at
+    // the opening zoom and each hint wrapped to two lines, 43 px of row apiece.
+    const { handle } = panel();
+    handle.setZoom(6);
+    const row = rowFor(handle.element, "lateral-bores")!;
+    const detail = detailOf(handle.element, "lateral-bores");
+    const mark = row.querySelector<HTMLElement>(".gw-layer-scale")!;
+
+    expect(mark.hidden).toBe(false);
+    expect(detail.contains(mark)).toBe(false);
+    expect(mark.textContent).toBe("zoom 8+");
+    expect(row.getAttribute("data-out-of-scale")).toBe("true");
+    // The sentence, and the row title that carries it, still say the whole thing.
+    expect(detail.querySelector<HTMLElement>(".gw-layer-hint")!.hidden).toBe(false);
+    expect(row.title).toBe("Visible at zoom 8 and above");
+
+    handle.setZoom(9);
+    expect(mark.hidden).toBe(true);
+  });
+
+  it("opens the detail from the row's own name, and says so on it", () => {
+    const { handle } = panel();
+    const disclose = discloseOf(handle.element, "wells");
+    const detail = detailOf(handle.element, "wells");
+
+    expect(disclose.getAttribute("aria-expanded")).toBe("false");
+    expect(disclose.getAttribute("aria-controls")).toBe(detail.id);
+    expect(detail.id).toBeTruthy();
+
+    disclose.click();
+    expect(detail.hidden).toBe(false);
+    expect(disclose.getAttribute("aria-expanded")).toBe("true");
+
+    disclose.click();
+    expect(detail.hidden).toBe(true);
+  });
+
+  it("does not switch the layer when the reader asks what it is made of", () => {
+    const { handle, events } = panel();
+    discloseOf(handle.element, "spacing-units").click();
+    expect(events).toEqual([]);
+  });
+
+  it("opens every row the filter matched, so search still surfaces what it matched on", () => {
+    // The filter reads the per-source strings, which now live inside the disclosure — a
+    // match a reader cannot see is a match that did not happen.
+    const { handle } = panel();
+    const search = handle.element.querySelector<HTMLInputElement>(".gw-layer-search")!;
+    search.value = "tx_laterals";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const row = rowFor(handle.element, "lateral-bores")!;
+    expect(row.hidden).toBe(false);
+    expect(detailOf(handle.element, "lateral-bores").hidden).toBe(false);
+    expect(discloseOf(handle.element, "lateral-bores").getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("re-collapses what the filter opened, and keeps what the reader opened", () => {
+    const { handle } = panel();
+    discloseOf(handle.element, "wells").click();
+    const search = handle.element.querySelector<HTMLInputElement>(".gw-layer-search")!;
+    search.value = "spacing";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    search.value = "";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+
+    expect(detailOf(handle.element, "spacing-units").hidden).toBe(true);
+    expect(detailOf(handle.element, "wells").hidden).toBe(false);
+  });
+
+  it("builds the disclosure once and patches it, like every other part of the row", () => {
+    const { handle } = panel();
+    const detail = detailOf(handle.element, "wells");
+    handle.setOn(new Set(["lateral-bores"]));
+    handle.setZoom(3);
+    expect(detailOf(handle.element, "wells")).toBe(detail);
+  });
+});
+
+describe("the panel joins the app's overlay discipline", () => {
+  const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+  it("registers itself, so focus lands inside it and returns where it came from", async () => {
+    const { releaseOverlays } = await import("../chrome/overlays.ts");
+    releaseOverlays();
+    document.body.replaceChildren();
+    const opener = document.createElement("button");
+    opener.className = "gw-layers-button";
+    document.body.appendChild(opener);
+
+    const { handle } = panel();
+    document.body.appendChild(handle.element);
+    opener.focus();
+
+    // The observer that drives focus for every overlay runs on a microtask, so an open is
+    // not focused until the turn it was requested in ends. Four other clients behave this way.
+    handle.open();
+    await tick();
+    expect(handle.element.contains(document.activeElement)).toBe(true);
+
+    handle.close();
+    await tick();
+    expect(document.activeElement).toBe(opener);
+    releaseOverlays();
+  });
+
+  it("reports its open state on the control that opens it", async () => {
+    const { releaseOverlays } = await import("../chrome/overlays.ts");
+    releaseOverlays();
+    document.body.replaceChildren();
+    const opener = document.createElement("button");
+    opener.className = "gw-layers-button";
+    document.body.appendChild(opener);
+
+    const { handle } = panel();
+    document.body.appendChild(handle.element);
+    // The control is a MapLibre IControl the panel is never handed, so the first sync waits
+    // for the task that adds it to finish.
+    await tick();
+    expect(opener.getAttribute("aria-expanded")).toBe("false");
+    expect(opener.getAttribute("aria-controls")).toBe(handle.element.id);
+
+    handle.toggle();
+    await tick();
+    expect(opener.getAttribute("aria-expanded")).toBe("true");
+
+    // Escape closes it from main.ts's ladder, which reaches the element rather than the
+    // handle — the announcement has to follow the attribute, not the call.
+    handle.element.hidden = true;
+    await tick();
+    expect(opener.getAttribute("aria-expanded")).toBe("false");
+    releaseOverlays();
+  });
+});
+
+describe("the row's provenance handles are the app's, not a third dialect", () => {
+  it("raises the explain event from the geometry derivation, as the legend and the key do", () => {
+    const { handle } = panel();
+    const seen: string[] = [];
+    handle.element.addEventListener("gw-explain", (event) =>
+      seen.push((event as CustomEvent<{ handle: string }>).detail.handle),
+    );
+
+    handle.setProvenance("wells", "drv_01J9");
+    const node = rowFor(handle.element, "wells")!.querySelector<HTMLButtonElement>(".gw-layer-derivation")!;
+    expect(node.tagName).toBe("BUTTON");
+    expect(node.className).toContain("gw-handle");
+    node.click();
+    expect(seen).toEqual(["drv_01J9"]);
+  });
+
+  it("resolves the snapshot the row's own counts were read at", () => {
+    const { handle } = panel();
+    const seen: string[] = [];
+    handle.element.addEventListener("gw-explain", (event) =>
+      seen.push((event as CustomEvent<{ handle: string }>).detail.handle),
+    );
+
+    for (const id of ["wells", "disposal-wells", "survey-traces", "land-metrics"]) {
+      const node = rowFor(handle.element, id)!.querySelector<HTMLButtonElement>(".gw-layer-snapshot");
+      expect(node, id).not.toBeNull();
+      node!.click();
+    }
+    expect([...seen].sort()).toEqual(
+      LAYERS.filter((layer) => layer.snapshot)
+        .map((layer) => layer.snapshot)
+        .sort(),
+    );
+    // Two refreshes, four rows: the wells mart's and the land mart's, neither hand-written.
+    expect(new Set(seen).size).toBe(2);
+  });
+
+  it("offers no snapshot handle on a row whose counts have none", () => {
+    const { handle } = panel();
+    expect(rowFor(handle.element, "tx-wells")!.querySelector(".gw-layer-snapshot")).toBeNull();
+  });
+});
+
+describe("the panel's own layout contract, read off the shipped sheets", () => {
+  // happy-dom lays nothing out; what is pinnable here is the declaration each measured
+  // defect was fixed by. tests/e2e measures the result. The idiom is surfaces.test.ts's.
+  const MAP = readFileSync("src/map.css", "utf8");
+  const PANEL = readFileSync("src/map/layer-panel.css", "utf8");
+  const rule = (css: string, selector: string): string => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|\\})[^{}]*?${escaped}\\s*\\{[^}]*\\}`, "m").exec(css)?.[0] ?? "";
+  };
+
+  it("stops capping the panel at 34rem on a screen with room for the list", () => {
+    // 544 px against 1,849 px of rows threw away 390 px of available height at 1600x1000.
+    expect(rule(MAP, ".gw-layers")).toContain("max-height: calc(100% - 1.2rem)");
+    expect(rule(MAP, ".gw-layers")).not.toContain("34rem");
+  });
+
+  it("clears the map's own control column instead of covering the button that opens it", () => {
+    // Measured at 1600x1000: a 19.6 x 29 px intersection with .gw-layers-button, which is
+    // also the close control — the frame read "ayers".
+    const offset = /\.gw-layers\s*\{[^}]*right:\s*([\d.]+)rem/.exec(MAP)?.[1];
+    expect(offset).toBeTruthy();
+    expect(Number(offset)).toBeGreaterThan(4.625);
+  });
+
+  it("meets the target floor on the switch, which the row's min-height never was", () => {
+    // layer-panel.ts keeps the row out of a <label> on purpose, so the row's 44 px is not a
+    // hit area and the switch is the whole target. It measured 34 x 20.
+    const toggle = rule(MAP, ".gw-layer-toggle");
+    expect(Number(/width:\s*(\d+)px/.exec(toggle)?.[1])).toBeGreaterThanOrEqual(24);
+    expect(Number(/height:\s*(\d+)px/.exec(toggle)?.[1])).toBeGreaterThanOrEqual(24);
+  });
+
+  it("lets the basemap focus ring out of the switcher that holds its radius", () => {
+    expect(rule(MAP, ".gw-base-switcher")).not.toMatch(/overflow:\s*hidden/);
+    expect(rule(MAP, ".gw-base-switcher")).toMatch(/overflow:\s*clip/);
+  });
+
+  it("keeps the bottom sheet off the home indicator, as the card and the drawer do", () => {
+    const sheet = /@media \(width <= 768px\) \{[\s\S]*?\n\}/.exec(MAP)?.[0] ?? "";
+    expect(sheet).toContain("env(safe-area-inset-bottom)");
+  });
+
+  it("lets the hidden attribute win on the disclosure, so a collapsed row stays collapsed", () => {
+    // The defect .gw-layer-crossing already carries a note about: a bare `display` outranks
+    // the UA's `[hidden] { display: none }`.
+    const css = `${MAP}\n${PANEL}`.replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const selector = (match[1] ?? "").trim();
+      if (!selector.startsWith(".gw-layer-detail")) continue;
+      if (!/display\s*:/.test(match[2] ?? "")) continue;
+      expect(selector, selector).toContain(":not([hidden])");
+    }
+  });
+});

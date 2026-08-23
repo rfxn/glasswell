@@ -275,14 +275,16 @@
 
 /* ── layer panel ─────────────────────────────────────────────────────────── */
 
+/* Clear of the map's own control column: at 3.4rem the panel covered 19.6 px of the Layers
+   button, which is also its close control — the frame read "ayers". */
 .gw-layers {
   position: absolute;
   top: 0.6rem;
-  right: 3.4rem;
+  right: 5.5rem;
   display: flex;
   flex-direction: column;
-  width: min(22rem, calc(100% - 4rem));
-  max-height: min(calc(100% - 1.2rem), 34rem);
+  width: min(22rem, calc(100% - 7rem));
+  max-height: calc(100% - 1.2rem);
   border: 1px solid var(--hairline);
   border-radius: 6px;
   background: rgb(18 26 33 / 97%);
@@ -359,12 +361,15 @@
   text-transform: uppercase;
 }
 
+/* `clip` with a margin, not `hidden`: the radius still needs holding, but an outline on the
+   first or last segment is drawn outside the parent and `hidden` cut it. */
 .gw-base-switcher {
   display: flex;
   margin-bottom: 0.5rem;
   border: 1px solid var(--hairline);
   border-radius: 999px;
-  overflow: hidden;
+  overflow: clip;
+  overflow-clip-margin: 4px;
 }
 
 .gw-base-option {
@@ -389,16 +394,16 @@
   font-weight: 650;
 }
 
+/* Auto-placed rather than templated: a collapsed row must occupy one track, and a named area
+   whose only item is `display: none` still costs its gap. */
 .gw-layer-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
-  grid-template-areas:
-    "swatch text toggle"
-    ". opacity opacity";
-  align-items: start;
-  gap: 0.25rem 0.4rem;
+  align-items: center;
+  align-content: center;
+  gap: 0.2rem 0.4rem;
   min-height: 44px;
-  padding: 0.35rem 0;
+  padding: 0.2rem 0;
   border-top: 1px solid var(--hairline);
 }
 
@@ -407,22 +412,55 @@
 }
 
 .gw-layer-swatch {
-  grid-area: swatch;
+  grid-column: 1;
   display: inline-flex;
-  padding-top: 0.1rem;
 }
 
-.gw-layer-text {
-  grid-area: text;
-  min-width: 0;
-}
-
-.gw-layer-label {
+/* The disclosure. Not a <label> — the row forwards no activation to the switch beside it. */
+.gw-layer-name {
+  grid-column: 2;
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  margin: 0;
+  min-width: 0;
+  padding: 0.35rem 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* --slate, not --muted: this is the affordance the whole collapsed row depends on, and
+   against the panel it measures 7.90:1 rather than 5.03:1. Both clear AA; only one reads as
+   a control rather than as decoration. */
+.gw-layer-name::after {
+  content: "\25BE";
+  margin-left: auto;
+  padding-left: 0.3rem;
+  color: var(--slate);
+  font-size: 0.78rem;
+}
+
+.gw-layer-name[aria-expanded="true"]::after {
+  content: "\25B4";
+}
+
+.gw-layer-name:hover::after,
+.gw-layer-name:focus-visible::after {
+  color: var(--paper);
+}
+
+.gw-layer-label {
+  min-width: 0;
   font-weight: 600;
+}
+
+.gw-layer-detail {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding-bottom: 0.3rem;
 }
 
 .gw-layer-badge {
@@ -443,8 +481,7 @@
 
 .gw-layer-sub,
 .gw-layer-hint,
-.gw-layer-source,
-.gw-layer-derivation {
+.gw-layer-source {
   margin: 0.1rem 0 0;
   color: var(--muted);
   font-size: 0.66rem;
@@ -461,15 +498,39 @@
   color: var(--amber);
 }
 
-.gw-layer-derivation {
-  font-family: var(--gw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+/* The collapsed row's out-of-scale mark: the state, in the amber the sentence uses. */
+.gw-layer-scale {
+  flex: 0 0 auto;
+  padding: 0 0.25rem;
+  border: 1px solid var(--amber);
+  border-radius: 3px;
+  color: var(--amber);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
+/* A `gw-handle`, so it inherits the app's one explain treatment; only the face is the row's. */
+.gw-layer-derivation:not([hidden]) {
+  display: inline-block;
+  margin-top: 0.2rem;
+  font-family: var(--gw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.66rem;
+}
+
+.gw-layer-snapshot {
+  margin-left: 0.25rem;
+  vertical-align: baseline;
+}
+
+/* 44 x 24, not 34 x 20: the row is deliberately not a <label>, so the switch is the whole
+   target and 20 px failed WCAG 2.5.8 on the short axis. */
 .gw-layer-toggle {
-  grid-area: toggle;
+  grid-column: 3;
   position: relative;
-  width: 34px;
-  height: 20px;
+  width: 44px;
+  height: 24px;
   border: 1px solid var(--hairline);
   border-radius: 999px;
   background: var(--ink);
@@ -479,10 +540,10 @@
 .gw-layer-toggle::after {
   content: "";
   position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: var(--muted);
   transition: left 120ms ease, background 120ms ease;
@@ -493,7 +554,7 @@
 }
 
 .gw-layer-toggle[aria-pressed="true"]::after {
-  left: 16px;
+  left: 23px;
   background: var(--cyan);
 }
 
@@ -504,8 +565,8 @@
 }
 
 .gw-layer-opacity {
-  grid-area: opacity;
   width: 100%;
+  margin-top: 0.35rem;
   accent-color: var(--cyan);
 }
 
@@ -746,8 +807,11 @@ body:has(.gw-hint:not([hidden])) .gw-banner {
     left: 0;
     width: 100%;
     max-width: none;
-    max-height: 70dvh;
+    max-height: 78dvh;
     border-radius: 10px 10px 0 0;
+    /* #gw-card and #gw-drawer already do this (style.css); the sheet was the one that did not,
+       so its last row sat under the home indicator. */
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .gw-lg {

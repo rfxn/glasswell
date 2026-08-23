@@ -213,3 +213,54 @@ jobs:
             exit 1
           fi
           exit 0
+
+  map-chrome:
+    name: Map chrome — the layer panel's fold ratio (tests/e2e/chrome-fold.mjs)
+    runs-on: ubuntu-latest
+    # The panel's rows come from the static registry, so its geometry is a property of the
+    # bundle and not of the data: the built bundle on a static server yields the same numbers
+    # a serve_branch run does, and this job needs no database, no key and no deployed
+    # instance. GLASSWELL_REQUIRE_E2E turns "no browser" and "instance predates the row
+    # disclosure" from notes into failures, which is what keeps the guard from going inert.
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright
+      GLASSWELL_BASE_URL: http://127.0.0.1:8139
+      GLASSWELL_REQUIRE_E2E: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build the bundle
+        run: |
+          set -euo pipefail
+          npm --prefix web ci
+          npm --prefix web run build
+
+      - name: Install playwright-core and the chromium it is matched to
+        run: |
+          set -euo pipefail
+          npm --prefix tests/e2e ci --no-audit --no-fund
+          tests/e2e/node_modules/.bin/playwright-core install --with-deps chromium
+          chrome=$(find "$PLAYWRIGHT_BROWSERS_PATH" -type f -path '*/chrome-linux64/chrome' | head -1)
+          [ -n "$chrome" ] || { echo "no chromium under $PLAYWRIGHT_BROWSERS_PATH"; exit 1; }
+          printf 'GW_CHROME=%s\n' "$chrome" >> "$GITHUB_ENV"
+
+      - name: Serve the bundle and measure the chrome
+        run: |
+          set -euo pipefail
+          python3 -m http.server 8139 --bind 127.0.0.1 --directory web/dist >/dev/null 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 30); do
+            curl -sf "$GLASSWELL_BASE_URL/" >/dev/null && break
+            sleep 1
+          done
+          curl -sf "$GLASSWELL_BASE_URL/" >/dev/null || { echo "static server never came up"; exit 1; }
+          node tests/e2e/chrome-fold.mjs

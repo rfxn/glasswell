@@ -3,13 +3,11 @@
  * and the persisted capability set all read this table — adding a layer is one entry, and
  * nothing downstream keeps a second list to drift against it.
  */
-import { ND_SNAPSHOT, ndCoverage, ndWellCount } from "./coverage.ts";
+import { LAND_SNAPSHOT, ND_SNAPSHOT, landCellCount, ndCoverage, ndWellCount } from "./coverage.ts";
 import { DISPOSAL_COLOUR } from "./disposal.ts";
 import { statusColour } from "./status.ts";
 import { LAND_GRID_COLOUR, TRACE_COLOUR } from "./style.ts";
 import { LIQUID_RAMP } from "./thematics.ts";
-
-export type LayerGroup = "reference" | "wells" | "model";
 
 export type ProvenanceKind = "official" | "derived" | "basemap" | "pending";
 
@@ -41,7 +39,6 @@ export interface LayerCollection {
 
 export interface LayerDef {
   id: string;
-  group: LayerGroup;
   label: string;
   subtitle: string;
   swatch: LayerSwatch;
@@ -49,6 +46,12 @@ export interface LayerDef {
   minZoom: number;
   zoomHint?: string;
   opacity: number;
+  /**
+   * The refresh the counts stated in this row's subtitle were read at, as a handle the
+   * panel resolves through the same explain drawer every other figure in the app uses.
+   * Omitted where a row's numbers are literals with no snapshot behind them.
+   */
+  snapshot?: string;
   /** One entry per source the row draws, in draw order. Never empty. */
   provenance: readonly LayerProvenance[];
   /** MapLibre layer ids this row shows and hides. Empty for a stub. */
@@ -80,12 +83,11 @@ export const LAYERS: readonly LayerDef[] = [
     // (57.3% of ND liquid volume sits on wells whose lateral midpoint and surface hole are
     // in different sections), never this file's claim.
     id: "land-metrics",
-    group: "wells",
     label: "Liquid on the land grid (ND)",
     subtitle:
       "Observed cumulative liquid — oil plus condensate as ND files it — summed per PLSS" +
-      " unit · wells assigned by lateral midpoint, else surface hole" +
-      " (cr_land_agg_membership_1) · unpainted = nothing observed",
+      ` unit · ${landCellCount()} binned cells · wells assigned by lateral midpoint, else` +
+      " surface hole (cr_land_agg_membership_1) · unpainted = nothing observed",
     // Three ramp steps, because the row paints from a binned expression and one amber would
     // promise a canvas the support-modulated wash does not deliver.
     swatch: { kind: "fill", colours: [LIQUID_RAMP[1], LIQUID_RAMP[3], LIQUID_RAMP[5]] },
@@ -94,6 +96,7 @@ export const LAYERS: readonly LayerDef[] = [
     minZoom: 5,
     zoomHint: "Townships from zoom 5; sections take over at zoom 10",
     opacity: 1,
+    snapshot: LAND_SNAPSHOT.refresh,
     provenance: [{ kind: "derived", source: "marts.land_metrics_tile" }],
     styleLayers: ["land-township-metrics-fill", "land-section-metrics-fill"],
     drawOrder: 5,
@@ -104,7 +107,6 @@ export const LAYERS: readonly LayerDef[] = [
     // the BLM national CadNSDI; the publisher choice and the measured cross-publisher grid
     // divergence are conformance rows (cr_blm_plss_publisher_1), not this file's claim.
     id: "land-grid",
-    group: "reference",
     label: "PLSS land grid (ND)",
     // Counts as published by BLM (F2): the promoted rows run 10-to-31 lower per the
     // quarantine's duplicate ledger, and the register quotes the publisher it names rather
@@ -126,7 +128,6 @@ export const LAYERS: readonly LayerDef[] = [
   {
     // Geometry and labels split: the linework at one zoom band, the text two bands finer.
     id: "land-grid-labels",
-    group: "reference",
     label: "PLSS grid labels (ND)",
     subtitle: "Township-range and section numbers carried on the land grid itself",
     swatch: { kind: "line", colours: [LAND_GRID_COLOUR] },
@@ -141,7 +142,6 @@ export const LAYERS: readonly LayerDef[] = [
   },
   {
     id: "spacing-units",
-    group: "reference",
     label: "Spacing units",
     subtitle: "ND DMR drilling-unit polygons · 10,571 units · the unit an operator thinks in",
     swatch: { kind: "outline", colours: ["#4B6472"] },
@@ -157,7 +157,6 @@ export const LAYERS: readonly LayerDef[] = [
   },
   {
     id: "plss-labels",
-    group: "reference",
     label: "Spacing-unit labels",
     subtitle:
       "Township-range description carried on the spacing unit · the surveyed grid itself is" +
@@ -177,7 +176,6 @@ export const LAYERS: readonly LayerDef[] = [
     // written against `laterals` or `tx-laterals` never knew this row, so it arrives at the
     // default below rather than inheriting a bit about a layer that drew one state at z0.
     id: "lateral-bores",
-    group: "wells",
     label: "Laterals",
     subtitle: "Horizontal bore geometry as each regulator filed it · not a directional survey trace",
     swatch: { kind: "line", colours: STATUS_KEYED_LINE },
@@ -205,7 +203,6 @@ export const LAYERS: readonly LayerDef[] = [
     // that is. Coverage is stated on the row because a trace is absent 98.8% of the time,
     // absence here is not "no lateral", and the hole has a reason the subtitle names.
     id: "survey-traces",
-    group: "wells",
     label: "Survey traces (ND)",
     subtitle:
       `The bore path ND filed as MD/INC/AZI/TVD stations · ${ndCoverage(ND_SNAPSHOT.traced)} — ` +
@@ -218,6 +215,7 @@ export const LAYERS: readonly LayerDef[] = [
     minZoom: 8,
     zoomHint: "Visible at zoom 8 and above",
     opacity: 1,
+    snapshot: ND_SNAPSHOT.refresh,
     provenance: [{ kind: "official", source: "marts.nd_survey_traces_tile" }],
     styleLayers: ["survey-traces"],
     drawOrder: 35,
@@ -226,7 +224,6 @@ export const LAYERS: readonly LayerDef[] = [
   },
   {
     id: "wells",
-    group: "wells",
     label: "Wells",
     subtitle: `ND DMR GIS surface locations · ${ndWellCount()} points · culled by status below zoom 9`,
     swatch: { kind: "dot", colours: ["#3FA55E"] },
@@ -234,6 +231,7 @@ export const LAYERS: readonly LayerDef[] = [
     minZoom: 4,
     zoomHint: "Visible at zoom 4 and above",
     opacity: 1,
+    snapshot: ND_SNAPSHOT.refresh,
     provenance: [{ kind: "official", source: "marts.nd_wells_tile" }],
     styleLayers: ["wells", "wells-struck"],
     drawOrder: 40,
@@ -244,7 +242,6 @@ export const LAYERS: readonly LayerDef[] = [
     // NDIC itself types as injection class, over the status dot the wells row still draws.
     // The membership is a conformance row, not this file's — see disposal.ts.
     id: "disposal-wells",
-    group: "wells",
     label: "Disposal & injection (ND)",
     subtitle:
       `Wells NDIC types SWD, WI, CO2I, AI, GI, SFI, MWUI or INJP · ${ndCoverage(ND_SNAPSHOT.disposal)} ` +
@@ -257,6 +254,7 @@ export const LAYERS: readonly LayerDef[] = [
     minZoom: 8,
     zoomHint: "Visible at zoom 8 and above",
     opacity: 1,
+    snapshot: ND_SNAPSHOT.refresh,
     provenance: [{ kind: "official", source: "marts.nd_wells_tile" }],
     styleLayers: ["disposal-wells"],
     drawOrder: 41,
@@ -267,7 +265,6 @@ export const LAYERS: readonly LayerDef[] = [
   },
   {
     id: "tx-wells",
-    group: "wells",
     label: "Wells (TX)",
     subtitle: "TX RRC GIS surface locations, 55 Permian-district counties · 355,463 points",
     // Not ND's green. Both basins share one status vocabulary and one set of status colours,
@@ -287,7 +284,6 @@ export const LAYERS: readonly LayerDef[] = [
   },
   {
     id: "play-outline",
-    group: "reference",
     label: "Play outlines",
     subtitle: "EIA shale-play boundaries · no ingest recipe yet, so nothing is drawn",
     swatch: { kind: "outline", colours: ["#7C8B96"] },
@@ -302,7 +298,6 @@ export const LAYERS: readonly LayerDef[] = [
   },
   {
     id: "geology-au",
-    group: "model",
     label: "Assessment units",
     subtitle: "USGS Williston assessment-unit boundaries · no ingest recipe yet",
     swatch: { kind: "outline", colours: ["#7C8B96"] },

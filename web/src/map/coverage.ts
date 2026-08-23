@@ -38,3 +38,7 @@ export function ndCoverage(part: number): string {
 export function ndWellCount(): string {
   return NUMBER.format(ND_SNAPSHOT.wells);
 }
+
+export function landCellCount(): string {
+  return NUMBER.format(LAND_SNAPSHOT.cells);
+}

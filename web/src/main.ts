@@ -130,7 +130,15 @@ document.addEventListener(
       openExplain(null);
       return;
     }
-    if (!cardHost.hidden) selectWell(null, "url");
+    if (!cardHost.hidden) {
+      selectWell(null, "url");
+      return;
+    }
+    // Map chrome, so it is under the panels on the ladder and last here. The element rather
+    // than a handle: the panel is built inside createMap and never reaches this module, and
+    // it announces its own state off this attribute.
+    const layers = document.querySelector<HTMLElement>(".gw-layers:not([hidden])");
+    if (layers) layers.hidden = true;
   },
   true,
 );

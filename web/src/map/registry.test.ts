@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ND_SNAPSHOT, ndCoverage, ndWellCount } from "./coverage.ts";
+import { LAND_SNAPSHOT, ND_SNAPSHOT, landCellCount, ndCoverage, ndWellCount } from "./coverage.ts";
 import { DISPOSAL_COLOUR } from "./disposal.ts";
 import { LAYERS, defaultLayerSet, layerDef, layerIds, layerRowState } from "./registry.ts";
 import { SELECTION_COLOUR, STATUS_CLASSES, UNMAPPED_STATUS, statusColour } from "./status.ts";
@@ -274,5 +274,34 @@ describe("the layer registry", () => {
     for (const layer of LAYERS) {
       if (layer.swatch.colours.length > 1) expect(["line", "fill"]).toContain(layer.swatch.kind);
     }
+  });
+});
+
+describe("the registry declares no vocabulary nothing reads", () => {
+  it("carries no grouping field, since the panel renders a flat list", () => {
+    // `LayerGroup` was declared, required and assigned twelve times, and read by nothing in
+    // the repo. A required unread field is how a later track builds a taxonomy tree by
+    // accident because the data model appeared to be asking for one — and the taxonomy it
+    // held was a lineage cut, not a task one: `model` had a single disabled member, and it
+    // put a derived choropleth beside the well points because both are well-derived.
+    for (const layer of LAYERS) {
+      expect(Object.keys(layer), layer.id).not.toContain("group");
+    }
+  });
+
+  it("hands the rows that state a snapshot's counts that snapshot's own handle", () => {
+    // Both handles resolved against the deployed instance before they were wired:
+    // /v1/explain?h=...&depth=full returns a chain of depth 3 for each.
+    expect(layerDef("land-metrics")!.snapshot).toBe(LAND_SNAPSHOT.refresh);
+    for (const id of ["wells", "disposal-wells", "survey-traces"]) {
+      expect(layerDef(id)!.snapshot, id).toBe(ND_SNAPSHOT.refresh);
+    }
+    // A row whose numbers are literals with nothing behind them claims no handle.
+    expect(layerDef("tx-wells")!.snapshot).toBeUndefined();
+    expect(layerDef("land-grid")!.snapshot).toBeUndefined();
+  });
+
+  it("states the land mart's cell count on the row drawn from it, from the snapshot", () => {
+    expect(layerDef("land-metrics")!.subtitle).toContain(`${landCellCount()} binned cells`);
   });
 });
