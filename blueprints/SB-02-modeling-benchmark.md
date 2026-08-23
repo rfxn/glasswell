@@ -2146,7 +2146,7 @@ re-measured on real history (`work-output/pre-p3-gate-results.md`).
 | OQ-4: which parent-child encoding wins | SB-02, from the §7.6 ablation arms | Answered by the harness, not by argument |
 | OQ-8: Euclidean versus learned analog metric | SB-02, once E3 is stable | Comparison arm designed (§6.2); result pending |
 | Per-basin reporting lags used in `holdout_def` | SB-01 | Ingest cadence is SB-01/SB-06 (v0.6 §3.7.4) |
-| **The ND MPR back-load (E-0)** — 2015-05 … 2025-09, 134 workbooks, 349 MB | SB-01 ingest, **before P3 opens** | Not a decision and not a measurement: an ingest job. Six of the nine gate experiments depend on it, and P3's entry gate is now stated in terms of it (v0.6 §7.1) |
+| **The ND MPR back-load (E-0)** — 2015-05 … 2025-09, 125 workbooks, 336.6 MB | SB-01 ingest, **before P3 opens** | Not a decision and not a measurement: an ingest job. Six of the nine gate experiments depend on it, and P3's entry gate is now stated in terms of it (v0.6 §7.1). **Landed 2026-08-23**: 125 of 125 months, 336,567,364 bytes summed over `lineage.manifests.bytes`, leaving 131 distinct production months in canonical |
 | Which pools roll up to which `formation_group` (G-13) | Owner ratification, per §11 | The mechanism is settled — a LOOKUP rule, `__other__` below 100 wells, `__confidential__` where the pool is withheld — but the ND assignments are 33 geology judgments, recorded row by row with evidence |
 | Whether `ledger_restatement_drift` is published on the scorecard | E11 / SB-04 | SB-02 computes it and accepts ownership (§8.3); placement is the scorecard's |
 | TX allocated-label training experiment | SB-02, after 4F.5 error bounds exist | Blocked on the allocation study (v0.6 §4F.4) |
