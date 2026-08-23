@@ -7,6 +7,47 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.45"></a>
+## v0.45 — 2026-08-23
+
+- [New] NM OCD C-115B natural gas waste capture (M1-9): glasswell/ingest/nm_c115b.py
+      walks the well-level flaring and venting layer through arcgis_rest_paginate,
+      preserves the assembly as one manifested raw artifact, and loads
+      staging.nm_c115b_upstream; migration 036, staging terminus by design
+- [New] glasswell-c115b.service and .timer, monthly on the 12th with Persistent=true;
+      reporting_period is a rolling ~13-month window and a month that rolls out is
+      unrecoverable from the endpoint, so a missed fire is caught on the next boot
+- [New] five conformance rows for nm_c115b_upstream: source selection over the stale
+      OCDView/Venting_Flaring demo layer, the walk order, the dashed-API-10 to API-10
+      normalisation, the F/V waste vocabulary in lineage.nm_waste_type_map, and the
+      NAD83 to EPSG:4326 transform
+- [Fix] arcgis_rest_paginate walked every layer ordered by OBJECTID, which the C-115B
+      layer assigns per query rather than storing; a resultOffset walk over it re-read
+      and skipped rows while count_before, count_after and features_written all
+      reconciled. Callers may now declare a stable total order; the default is
+      unchanged, and a repeated identity key inside one harvest quarantines as
+      duplicate_row
+- [Change] infra/verify.sh asserts every glasswell-* unit in the tree is installed and
+           byte-identical to it, so a unit added to infra/systemd but not to
+           install.sh's placement loop fails verification instead of silently never
+           running
+- [Fix] DR-17: infra/load-nd-months.py no longer writes a vintage row of its own at
+      the end of the walk — ingest_month's record_vintage_day already checkpoints the
+      knowledge-day row after every month, so the driver's union overwrote accumulated
+      counters and, on a walk that crosses UTC midnight, filed both days under the last
+      one; the summary now reads the ledger back instead of reporting from memory
+- [New] the back-load driver survives an unattended multi-hour run: --resume skips
+      workbooks already staged for this source (asked of lineage.manifests and
+      staging.nd_mpr_oil, not a state file), --log-file appends every progress record
+      to a file that outlives a dropped ssh session, and --raw-root states in the log
+      where the fetched bytes landed rather than inheriting a CWD-relative default
+- [Fix] one unreachable or malformed workbook no longer ends the walk: the month is
+      rolled back, reported with its error on the progress stream, and the remaining
+      months continue, with a non-zero exit naming what failed
+- [Fix] SIGTERM and SIGINT stop the back-load at a month boundary rather than mid
+      transaction — the polite pause waits on an event, which a signal clears, instead
+      of time.sleep, which PEP 475 restarts for the remainder of the interval
+
 <a id="v0.44"></a>
 ## v0.44 — 2026-08-22
 
