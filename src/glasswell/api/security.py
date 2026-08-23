@@ -22,11 +22,12 @@ DOCS_PATH = "/docs"
 DOCS_SCRIPT_ORIGIN = "https://cdn.jsdelivr.net"
 DOCS_IMAGE_ORIGIN = "https://fastapi.tiangolo.com"
 
-# Satellite imagery is inherently external: USGS National Map is public domain and keyless,
-# and there is no self-hosted equivalent to point at. One named origin, never a wildcard;
-# requests to it happen only when a reader selects the satellite basemap, and dark, light and
-# none stay provably zero-external (`web/src/map/map.test.ts`, `infra/basemap/README.md`).
-SATELLITE_IMAGERY_ORIGIN = "https://basemap.nationalmap.gov"
+# Satellite imagery is inherently external: it is keyless, but there is no self-hosted
+# equivalent to point at. One named origin, never a wildcard; requests to it happen only when
+# a reader selects the satellite or hybrid basemap, and dark, light and none stay provably
+# zero-external (`web/src/map/map.test.ts`, `infra/basemap/README.md`). The hybrid's labels
+# are read from this app's own origin, so composing them adds no origin to this list.
+SATELLITE_IMAGERY_ORIGIN = "https://services.arcgisonline.com"
 
 STATIC_SECURITY_HEADERS: Mapping[str, str] = {
     "X-Content-Type-Options": "nosniff",

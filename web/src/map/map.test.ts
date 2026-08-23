@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 
 import { tileUrl } from "../api/client.ts";
-import { graticuleStyle, vectorStyle, basemapDef } from "./basemap.ts";
+import { IMAGERY_HOST, graticuleStyle, vectorStyle, basemapDef } from "./basemap.ts";
 import { resolveBasemapStyle } from "./map.ts";
 import { absoluteTileUrl, dataLayers, sourceSpecs } from "./style.ts";
 
@@ -58,7 +58,7 @@ describe("when a basemap's tiles cannot be had", () => {
   };
 
   const refuseImagery = (url: string): Response | Promise<Response> =>
-    url.includes("nationalmap.gov")
+    url.includes(IMAGERY_HOST)
       ? Promise.reject(new TypeError("Failed to fetch"))
       : new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
 
@@ -99,22 +99,22 @@ describe("when a basemap's tiles cannot be had", () => {
 
     expect(layerIdsOf(resolved.style)).toEqual(["canvas", "graticule"]);
     expect(resolved.failure).toEqual({
-      source: "basemap.nationalmap.gov",
+      source: IMAGERY_HOST,
       fallback: "the graticule",
     });
   });
 
   it("takes the attribution down with the imagery it belonged to", async () => {
-    // R3.3: "USGS National Map — imagery, public domain" was rendering over a canvas with no
-    // imagery on it. The credit ships with the style that carries the tiles, so it goes too.
+    // R3.3: the imagery credit was rendering over a canvas with no imagery on it. The credit
+    // ships with the style that carries the tiles, so it goes down with them.
     const { resolved } = await withFetch("satellite", refuseImagery);
 
-    expect(JSON.stringify(resolved.style)).not.toContain("USGS");
+    expect(JSON.stringify(resolved.style)).not.toContain("Earthstar");
   });
 
   it("asks the imagery origin one question before committing the reader to it", async () => {
     const { seen } = await withFetch("satellite", refuseImagery);
-    const external = seen.filter((url) => url.includes("nationalmap.gov"));
+    const external = seen.filter((url) => url.includes(IMAGERY_HOST));
 
     expect(external).toHaveLength(1);
     expect(external[0]).not.toContain("{z}");
@@ -122,14 +122,14 @@ describe("when a basemap's tiles cannot be had", () => {
 
   it("keeps the imagery, and its credit, when the origin answers", async () => {
     const { resolved } = await withFetch("satellite", (url) =>
-      url.includes("nationalmap.gov")
+      url.includes(IMAGERY_HOST)
         ? new Response(null, { status: 200 })
         : new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
     );
 
     expect(resolved.failure).toBeUndefined();
     expect(Object.keys((resolved.style as { sources: object }).sources)).toEqual(["satellite"]);
-    expect(JSON.stringify(resolved.style)).toContain("USGS");
+    expect(JSON.stringify(resolved.style)).toContain("Earthstar");
   });
 
   it("keeps every other basemap zero-external, in what it fetches and in what it hands back", async () => {

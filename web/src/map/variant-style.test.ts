@@ -29,6 +29,12 @@ function styleFor(variant: BasemapVariant): LayerSpecification[] {
   return [...base.layers, ...dataLayers({ labels: true, variant })];
 }
 
+/** The hybrid is an option, not a substrate: it is read against `satellite`'s token row. */
+const hybridLayers = (): LayerSpecification[] => [
+  ...vectorStyle(basemapDef("hybrid")!, { labels: true, origin: "https://x" }).layers,
+  ...dataLayers({ labels: true, variant: "satellite" }),
+];
+
 const paintOf = (layer: LayerSpecification): Record<string, unknown> =>
   ("paint" in layer && layer.paint ? layer.paint : {}) as Record<string, unknown>;
 
@@ -86,6 +92,26 @@ describe("the variant token table", () => {
     }
     expect(satellite.primary.haloWidth).toBeGreaterThanOrEqual(2);
     expect(satellite.primary.sizeDelta).toBe(1);
+  });
+
+  it("pairs the imagery label with a halo no substrate can defeat, measured over all of them", () => {
+    // Imagery has no single colour, so the sample-based floors above cannot speak for it.
+    // What can: white and black are complementary, so wherever one falls the other rises.
+    // Their crossover — the substrate luminance at which both measure the same — is the
+    // worst case that exists, and it is above the text floor. Measured tiles agree: over
+    // Bakken and Permian imagery at z16-z19 the white-on-substrate median falls as low as
+    // 2.42:1 on its own, and the pairing never drops below the number this asserts.
+    const { colour, halo } = variantStyle("satellite").context;
+    const ramp = Array.from({ length: 256 }, (_, step) => {
+      const hex = step.toString(16).padStart(2, "0");
+      return `#${hex}${hex}${hex}`;
+    });
+    for (const substrate of ramp) {
+      const best = Math.max(contrastRatio(colour, substrate), contrastRatio(halo, substrate));
+      expect(best, `neither label nor halo reads on ${substrate}: ${best.toFixed(2)}:1`)
+        .toBeGreaterThanOrEqual(CONTRAST_FLOOR);
+    }
+    expect(contrastRatio(colour, halo)).toBeCloseTo(21, 1);
   });
 
   it("keeps the spacing-unit fill a wash, because the units stack on the same acreage", () => {
@@ -217,9 +243,38 @@ describe("the variant styling pass", () => {
     expect(sizeOf(dataLayers({ labels: true, variant: "dark" }), "spacing-units-label")).toBe(10);
   });
 
+  it("styles every real basemap label the hybrid composes, at the imagery tokens", () => {
+    // The layers this asserts are the ones `layers()` actually emits, not a stand-in: the
+    // hybrid is the first option to put Protomaps symbols on a raster substrate, and the
+    // white-on-black row is what makes them legible over it.
+    const tokens = variantStyle("satellite").context;
+    const styled = applyVariantStyling(hybridLayers(), "satellite", DATA_SOURCES);
+    const basemapText = textLayers(styled).filter(
+      (layer) => labelRole(layer, DATA_SOURCES) === "context",
+    );
+
+    expect(basemapText.length, "the hybrid composed no basemap label at all").toBeGreaterThan(4);
+    for (const layer of basemapText) {
+      const paint = paintOf(layer);
+      expect(paint["text-color"], `hybrid/${layer.id}`).toBe(tokens.colour);
+      expect(paint["text-halo-color"], `hybrid/${layer.id}`).toBe(tokens.halo);
+      expect(paint["text-halo-width"], `hybrid/${layer.id}`).toBe(tokens.haloWidth);
+    }
+    // A label the pass cannot reach must not be composed in the first place: `roads_oneway`
+    // carries an icon and no text-field, so it would draw outside the token table.
+    expect(styled.map((layer) => layer.id)).not.toContain("roads_oneway");
+  });
+
+  it("keeps the hybrid's own data labels above its basemap labels in the register", () => {
+    const styled = applyVariantStyling(hybridLayers(), "satellite", DATA_SOURCES);
+    const spacing = styled.find((layer) => layer.id === "spacing-units-label");
+    expect(paintOf(spacing!)["text-color"]).toBe(variantStyle("satellite").primary.colour);
+    expect(paintOf(spacing!)["text-halo-width"]).toBe(variantStyle("satellite").primary.haloWidth);
+  });
+
   it("bumps a context label too, not only this app's own", () => {
     // Six of the thirteen Protomaps label layers carry a plain numeric size, so the context
-    // delta is a live contract even though today's satellite basemap is raster and ships none.
+    // delta is a live contract — and since the hybrid, one the shipped basemaps exercise.
     const basemapLabel: LayerSpecification = {
       id: "roads_labels_major",
       type: "symbol",

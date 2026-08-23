@@ -76,7 +76,7 @@ def test_the_policy_admits_the_maplibre_worker_and_its_blob_url(client: TestClie
 def test_the_policy_admits_same_origin_range_fetches_and_one_named_imagery_origin(
     client: TestClient,
 ) -> None:
-    """PMTiles reads /basemap from this origin; USGS imagery is the one external tile source."""
+    """PMTiles reads /basemap from this origin; imagery is the one external tile source."""
     policy = directives(client.get("/v1").headers[CSP_HEADER])
 
     assert policy["connect-src"] == f"'self' {SATELLITE_IMAGERY_ORIGIN}"

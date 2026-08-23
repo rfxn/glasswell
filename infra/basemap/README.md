@@ -192,18 +192,81 @@ Steps 1 and 2 together are the whole change. Neither belongs in the shipped defa
 
 ## Satellite imagery, and the one origin the policy names
 
-The satellite option is USGS National Map imagery — public domain, keyless, and inherently
-somebody else's origin. `glasswell.api.security` allow-lists exactly
-`https://basemap.nationalmap.gov` in `connect-src` and `img-src`, by name and never as a
-wildcard. Nothing else external is allowed, and the dark, light and none options remain
-provably zero-external (`web/src/map/map.test.ts`).
+The satellite option is Esri World Imagery — keyless, and inherently somebody else's origin.
+`glasswell.api.security` allow-lists exactly `https://services.arcgisonline.com` in
+`connect-src` and `img-src`, by name and never as a wildcard. Nothing else external is
+allowed, and the dark, light and none options remain provably zero-external
+(`web/src/map/map.test.ts`). Terms of use are the owner's call, not this document's; what is
+engineering's to get right is that the credit the service declares actually renders.
 
-The requests happen only when a reader selects satellite, and the client asks the origin for
-one tile before committing to it: if that tile does not arrive — the origin is down, the
-policy refuses it, the network is gone — the map degrades to the graticule and the banner
-names `basemap.nationalmap.gov` as what failed. The imagery credit goes with it, because an
-attribution over a canvas with no imagery on it is a false statement about what was drawn.
+The requests happen only when a reader selects satellite or hybrid, and on the satellite path
+the client asks the origin for one tile before committing to it: if that tile does not arrive
+— the origin is down, the policy refuses it, the network is gone — the map degrades to the
+graticule and the banner names `services.arcgisonline.com` as what failed. The imagery credit
+goes with it, because an attribution over a canvas with no imagery on it is a false statement
+about what was drawn.
 
 Adding a second imagery origin means adding it to that allow-list in the same change. If the
 list ever needs to exceed two hosts, that is a decision to take deliberately, not a widening
 to slip in with a basemap.
+
+### The zoom ceiling is measured, not read off the service
+
+The service advertises 24 levels and declares no `maxScale`. It does not have 24 levels of
+imagery. **z20 is a grey "Map data not yet available" placeholder — 2,521 B, md5
+`f27d9de7f80c13501f470595e327aa6d`, byte-identical at every location probed across both
+basins.** So `maxzoom` is declared as **19**, which is the last zoom that carries pixels.
+
+That declaration is load-bearing in the same way the previous source's was: a source's
+`maxzoom` is what stops MapLibre requesting tiles above it, so it overzooms real imagery
+instead of painting a placeholder across the basin. Re-probe before changing it:
+
+```bash
+E=https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile
+for t in 20/365361/223460 20/425829/226964 20/182680/111730; do curl -sS "$E/$t" | md5sum; done
+```
+
+Coverage at z19 is not universal — outside CONUS the same placeholder appears one level
+lower. Both basins in scope return real imagery at z19; a future region does not inherit that.
+
+## The hybrid: imagery with the archive's own labels over it
+
+The hybrid option draws the same imagery with the symbol layers of the PMTiles archive
+composited on top. **It adds no origin and no key**: the labels are the ones already in
+`basemap.pmtiles`, served from this app's own origin, and the glyphs and sprites are the
+assets `--with-labels` already ships.
+
+It is declared `kind: "vector"` even though it draws raster imagery, and that is deliberate:
+only the vector branch of `resolveStyle` registers the `pmtiles://` protocol and requires the
+archive's `206`. A raster-kinded hybrid would hand MapLibre a `pmtiles://` url through a
+protocol nothing had registered, and would do so only for readers whose first basemap of the
+session was the hybrid.
+
+**Two substrates, two independent failure modes, and they are not the same failure:**
+
+| what fails | what the reader gets | what names it |
+|---|---|---|
+| the archive (no `206`) | the graticule | the banner, naming the archive path |
+| the imagery | labels and data over the app canvas | the banner, naming the imagery host |
+| the archive has no label assets | imagery alone, as the satellite option | nothing — this is a deploy state, not a fault |
+
+The imagery source carries its own MapLibre source id, which is what lets a tile error be
+attributed to the imagery rather than to the archive that happens to share the style.
+
+**Three zoom ceilings meet in this option and none of them is the map's.** Labels come from an
+archive capped at z13, imagery stops at z19, and the map's own `maxZoom` is 18. Overzooming a
+raster stretches finished pixels; overzooming a vector re-renders geometry and re-rasterises
+glyphs, so past z13 the labels lose *content*, never sharpness. What the reader sees:
+
+| zoom | imagery | labels |
+|---|---|---|
+| z13 | native | native — the last zoom with new label content |
+| z16 | native | z13 overzoomed 8×, still pixel-crisp; the arterial network, no new streets |
+| z18 | native (the swap's gain — it was z16 stretched 4× before) | crisp, z13 content |
+| z19 | native, and the last zoom that has any | crisp, z13 content — but unreachable at `maxZoom: 18` |
+
+At z13 the archive carries the arterial skeleton: through-streets, highways, county and state
+routes, the locality name and named water. Not every residential street, and **lease roads are
+not in OSM at any zoom**, so no archive depth would add them. For orienting a pad against the
+county road, the highway and the nearest town that is the right content; say so plainly rather
+than letting a reader discover the density by looking for a street that was never there.
