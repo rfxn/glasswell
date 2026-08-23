@@ -13,8 +13,7 @@
 -- Why two published tile layers over one mart. A z8 tile over the basin holds hundreds of
 -- townships but thousands of sections; splitting the publication lets the section source
 -- start at a deeper zoom so its tiles are never fetched where nothing draws them (the same
--- source-floor reasoning as web/src/map/style.ts lowestDrawnZoom). EVA publishes its land
--- grid split the same way (peer-map-novi-eva.md §B3).
+-- source-floor reasoning as web/src/map/style.ts lowestDrawnZoom).
 
 -- SB-01 §1.2.1 / SB-07 H11: the fifth acquisition method. The enum lives in this check and
 -- in glasswell.lineage.models.AcquisitionMethod, updated together.
