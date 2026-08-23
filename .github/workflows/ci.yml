@@ -187,3 +187,20 @@ jobs:
             exit 1
           fi
           exit 0
+
+      # Blueprint 8.2 carve-out: the research corpus is git-excluded, so a name or a pointer
+      # to it in source both leaks and dangles. Every token below names something the
+      # tracked blueprints already carry, which is the ceiling — extend it only from those.
+      # Short acronyms and anything colliding with petroleum vocabulary or with operator
+      # names in the public regulatory fixtures are left out on purpose: a guard people
+      # learn to ignore is worse than none. `docs/product-[a-z]` is a real filename, so the
+      # `docs/product-*.md` glob that SMOKE.md and infra/ deploy hygiene name still passes.
+      - name: No IP carve-out material in tracked source
+        run: |
+          set -euo pipefail
+          if git grep -nEi '\b(novi|enverus|combocurve|welldatabase|petroai)\b|petro\.ai|turing analytics|peer-map-|docs/product-[a-z]' \
+              -- . ':!blueprint.md' ':!blueprint-v0.6-draft.md' ':!blueprints/' ':!.github/workflows/ci.yml' ; then
+            echo "carve-out material found — state the property in glasswell's own voice instead"
+            exit 1
+          fi
+          exit 0

@@ -34,8 +34,8 @@ PUBLISHER_RULE = "cr_blm_plss_publisher_1"
 
 LIQUIDS_BASIS = "oil+condensate"
 
-# The percentile frame the bins are cut on: the ComboCurve-legend shape (min/P2/…/P98/max),
-# where the P2/P98 clamp is what keeps one divide-by-tiny artefact from collapsing the ramp.
+# The percentile frame the bins are cut on (min/P2/…/P98/max): the P2/P98 clamp is what
+# keeps one divide-by-tiny artefact from collapsing the ramp.
 BIN_QUANTILES = (0.02, 0.20, 0.40, 0.60, 0.80, 0.98)
 UNPAINTED_BIN = -1
 

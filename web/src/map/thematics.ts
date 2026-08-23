@@ -4,8 +4,7 @@
  * The bins arrive on the wire: every cell carries its `liquid_bin` (cut at refresh over the
  * grain's whole population), the frame it was cut on (`bin_edges`, `bin_population`) and the
  * refresh's derivation handle. Nothing here recomputes an edge, so the same colour cannot
- * mean different things at different moments — the Enverus failure the roadmap names — and
- * the key restates only what the tile says.
+ * mean different things at different moments, and the key restates only what the tile says.
  */
 import { get, step, toNumber } from "./expr.ts";
 import type { Expr } from "./expr.ts";
@@ -30,7 +29,7 @@ export const METRIC_FILL_LAYERS = [
  * OKLCH hue 75° throughout; lightness runs 0.42 → 0.925 strictly monotone with adjacent
  * step separation ΔE 8.0–9.6 (OKLab×100); the top step is 13.6:1 against the dark
  * substrate #0E151B and no step is within 3:1 of a stream colour's role because fills and
- * dots are different marks. Never spectral (BRAND.md; peer-map-enverus.md §4).
+ * dots are different marks. Never spectral (BRAND.md).
  */
 export const LIQUID_RAMP = [
   "#654617",
@@ -43,9 +42,9 @@ export const LIQUID_RAMP = [
 ] as const;
 
 /**
- * Support modulates ink, so a 2-well cell cannot look like a 200-well cell (the
- * WellDatabase failure, peer-map-tier2.md). The classes match the support_distribution the
- * refresh records — what is served and what is rendered are the same cut.
+ * Support modulates ink, so a 2-well cell cannot look like a 200-well cell. The classes
+ * match the support_distribution the refresh records — what is served and what is rendered
+ * are the same cut.
  */
 export const SUPPORT_ALPHA = [
   [1, 0.38],

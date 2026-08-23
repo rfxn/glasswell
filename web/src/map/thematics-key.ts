@@ -25,10 +25,9 @@ export interface ThematicsKeyHandle {
 }
 
 /**
- * The key states the metric, the unit, the population and the frozen edges — the legend
- * discipline the roadmap copies from ComboCurve's `First 6 GOR / 1 Mile Grid` and denies
- * to Enverus's silently re-computing quantiles. Every figure resolves: the handle button
- * raises the same explain event the status legend's counts do.
+ * The key states the metric, the unit, the population and the frozen edges — the edges are
+ * never silently re-computed. Every figure resolves: the handle button raises the same
+ * explain event the status legend's counts do.
  */
 export function createThematicsKey(): ThematicsKeyHandle {
   const element = document.createElement("div");
