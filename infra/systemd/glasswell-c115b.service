@@ -1,0 +1,38 @@
+[Unit]
+Description=glasswell NM C-115B natural gas waste capture (staging terminus)
+Documentation=file:/opt/glasswell/src/infra/README.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+OnFailure=glasswell-alert@%n.service
+
+[Service]
+Type=oneshot
+User=glasswell
+Group=glasswell
+EnvironmentFile=/etc/glasswell/app.env
+# Deploy-stamped code identity (scripts/deploy.sh step 5c); listed last so it wins over any
+# stale copy in owner-edited app.env. `-`: absent until the first deploy stamps it.
+EnvironmentFile=-/etc/glasswell/code-version.env
+# Peer auth over the socket: no password reaches the process table.
+Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql
+ExecStart=/opt/glasswell/venv/bin/python -m glasswell.ingest.nm_c115b --dsn ${GLASSWELL_DSN}
+TimeoutStartSec=3600
+MemoryMax=6G
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+StateDirectory=glasswell
+ReadWritePaths=/var/lib/glasswell /data/raw /data/staging
+
+[Install]
+WantedBy=multi-user.target

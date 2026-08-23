@@ -10,10 +10,10 @@ from fastapi.testclient import TestClient
 from glasswell.api.examples import EXAMPLE_MANIFEST_ID
 from tests.support.seed import seed_manifest
 
-# Five ND, nine NM, three TX and two land (BLM PLSS) sources from seed_all, plus the three
-# the shared test template carries — nd_mpr_xlsx and nm_ocd_wcproduction are in both, so
-# only tx_pdq_dsv adds to the total.
-SOURCE_COUNT = 20
+# Five ND, nine NM, three TX, two land (BLM PLSS) and one NM C-115B source from seed_all, plus
+# the three the shared test template carries — nd_mpr_xlsx and nm_ocd_wcproduction are in both,
+# so only tx_pdq_dsv adds to the total.
+SOURCE_COUNT = 21
 
 
 def test_healthz_is_cheap_and_unenveloped(client: TestClient) -> None:

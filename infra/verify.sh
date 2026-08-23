@@ -21,6 +21,7 @@ LAN_ADDRESS=192.168.2.111
 PG_TUNING="$INFRA_DIR/postgres/postgresql.conf.d/glasswell.conf"
 PSQL=(sudo -u postgres psql -d glasswell -tAc)
 VENV_PY=/opt/glasswell/venv/bin/python
+UNIT_DIR=/etc/systemd/system
 
 passed=0
 failed=0
@@ -64,6 +65,17 @@ api_curl() { curl --unix-socket "$API_SOCKET" "$@"; }
 printf 'services\n'
 for unit in glasswell-api martin postgresql caddy; do
     assert "$unit active" active "$(systemctl is-active "$unit")"
+done
+
+# The roster is the tree's, not a list here: a glasswell-* unit added to infra/systemd but not
+# to install.sh's placement loop is never installed, and a timer that was never installed is a
+# monthly capture that silently never runs (M1-9). Equality, not existence — the live file
+# drifting from the tree is the v0.21 saga.
+printf 'units\n'
+for unit in "$INFRA_DIR"/systemd/glasswell-*.service "$INFRA_DIR"/systemd/glasswell-*.timer; do
+    name="${unit##*/}"
+    assert_true "$name installed and identical to the tree" "missing or drifted at $UNIT_DIR" \
+        cmp -s "$unit" "$UNIT_DIR/$name"
 done
 
 printf 'api\n'

@@ -29,6 +29,7 @@ with_postgres=0
 with_martin_config=0
 with_caddy=0
 enable_ingest=0
+enable_c115b=0
 enable_backup=0
 for argument in "$@"; do
     case "$argument" in
@@ -36,9 +37,10 @@ for argument in "$@"; do
         --with-martin-config) with_martin_config=1 ;;
         --with-caddy) with_caddy=1 ;;
         --enable-ingest) enable_ingest=1 ;;
+        --enable-c115b) enable_c115b=1 ;;
         --enable-backup) enable_backup=1 ;;
         -h|--help)
-            printf 'usage: %s [--with-postgres] [--with-martin-config] [--with-caddy] [--enable-ingest] [--enable-backup]\n' "${0##*/}"
+            printf 'usage: %s [--with-postgres] [--with-martin-config] [--with-caddy] [--enable-ingest] [--enable-c115b] [--enable-backup]\n' "${0##*/}"
             exit 0
             ;;
         *)
@@ -96,6 +98,7 @@ systemd-tmpfiles --create "$TMPFILES_DIR/glasswell.conf"
 printf 'placed %s/glasswell.conf and created /run/glasswell\n' "$TMPFILES_DIR"
 
 for unit in glasswell-api.service glasswell-ingest.service glasswell-ingest.timer \
+            glasswell-c115b.service glasswell-c115b.timer \
             glasswell-alert@.service glasswell-backup.service glasswell-backup.timer; do
     install -o root -g root -m 0644 "$INFRA_DIR/systemd/$unit" "$UNIT_DIR/$unit"
 done
@@ -189,6 +192,13 @@ if [[ $enable_ingest -eq 1 ]]; then
     printf 'enabled glasswell-ingest.timer — it will fetch from NDIC monthly\n'
 else
     printf 'glasswell-ingest.timer installed but NOT enabled (--enable-ingest to arm it)\n'
+fi
+
+if [[ $enable_c115b -eq 1 ]]; then
+    systemctl enable glasswell-c115b.timer
+    printf 'enabled glasswell-c115b.timer — it will capture NM C-115B monthly\n'
+else
+    printf 'glasswell-c115b.timer installed but NOT enabled (--enable-c115b to arm it)\n'
 fi
 
 if [[ $enable_backup -eq 1 ]]; then

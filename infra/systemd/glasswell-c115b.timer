@@ -1,0 +1,17 @@
+[Unit]
+Description=Monthly glasswell NM C-115B capture
+Documentation=file:/opt/glasswell/src/infra/README.md
+OnFailure=glasswell-alert@%n.service
+
+[Timer]
+# The 12th, not the 5th: glasswell-ingest.timer already holds that morning, and the window
+# rolls by month rather than by day, so a week of slack costs nothing and a missed month is
+# unrecoverable. Persistent=true is the part that matters — a host down on the 12th fetches
+# on boot, before the oldest month can roll out of the ~13-month window.
+OnCalendar=*-*-12 05:30:00 UTC
+RandomizedDelaySec=1800
+Persistent=true
+Unit=glasswell-c115b.service
+
+[Install]
+WantedBy=timers.target

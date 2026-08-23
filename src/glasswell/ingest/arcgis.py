@@ -208,6 +208,7 @@ def arcgis_rest_paginate(
     client: httpx.Client | None = None,
     page_size: int | None = None,
     page_delay_seconds: float = PAGE_DELAY_SECONDS,
+    order_by: str | None = None,
     rules: tuple[str, ...] = (),
     license_note: str | None = None,
     redistributable: bool = False,
@@ -240,6 +241,7 @@ def arcgis_rest_paginate(
                 where=where,
                 page_size=page_size,
                 page_delay_seconds=page_delay_seconds,
+                order_by=order_by,
             )
         except (ArcGisFetchError, httpx.HTTPError, OSError, ValueError, KeyError) as error:
             emit(
@@ -288,17 +290,20 @@ def _walk(
     where: str,
     page_size: int | None,
     page_delay_seconds: float,
+    order_by: str | None = None,
 ) -> _Walk:
     layer = _layer_info(client, service_url, layer_id)
     if not layer.supports_pagination:
         raise LayerNotPaginable(f"{service_url}/{layer_id} does not advertise supportsPagination")
-    if not layer.object_id_field:
+    if not (order_by or layer.object_id_field):
         raise ArcGisFetchError(f"{service_url}/{layer_id} names no object-id field to order by")
     if layer.max_record_count < 1:
         raise ArcGisFetchError(f"{service_url}/{layer_id} advertises maxRecordCount < 1")
     # Read from the layer JSON, never guessed and never exceeded (§1.2.1).
     size = layer.max_record_count if page_size is None else min(page_size, layer.max_record_count)
-    order_by = f"{layer.object_id_field} ASC"
+    # `resultOffset` re-runs the query per page, so the order must be a stable total order over
+    # the source rows. A view-backed layer assigns OBJECTID per query and is not one (M1-9).
+    order_by = order_by or f"{layer.object_id_field} ASC"
 
     count_before = _count(client, service_url, layer_id, where)
     expected_pages = math.ceil(count_before / size) if count_before else 0
