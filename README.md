@@ -236,7 +236,7 @@ drawer renders. There is no private endpoint behind the UI.
 
 ## Build phases
 
-<p align="center"><img src="assets/roadmap.svg" alt="Build phases P0 through P7 with exit criteria, the pre-committed cut order, and the never-cut list" width="1000"></p>
+<p align="center"><img src="assets/roadmap.svg" alt="Build phases P0 through P8 with exit criteria, the pre-committed cut order, and the never-cut list" width="1000"></p>
 
 Each phase exits on a stated criterion. The cut order under compression is decided
 in advance — that is what stops a schedule slip from quietly eating the load-bearing
@@ -325,7 +325,7 @@ records each file's checksum and refuses a changed migration.
 | [SMOKE.md](SMOKE.md) | Walkthrough of the running ND slice, its gaps, and the morning queue |
 | [blueprint.md](blueprint.md) | The product and engineering contract. Anything not in scope there is out until it changes. |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Layers, components, boundaries, and the rules R1–R8 |
-| [ROADMAP.md](ROADMAP.md) | Build phases P0–P7 with exit criteria and cut order |
+| [ROADMAP.md](ROADMAP.md) | Build phases P0–P8 with exit criteria, current status and cut order |
 | [BRAND.md](BRAND.md) | Visual system, palette, and asset regeneration |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How changes are made, and what review rejects |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting |
