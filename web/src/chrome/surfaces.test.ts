@@ -95,4 +95,14 @@ describe("the z-index ladder has no raw numbers outside style.css", () => {
   it("takes the map chrome's layer from the ladder", () => {
     expect(rule(MAP, ".gw-map-chrome")).toContain("z-index: var(--gw-z-map-chrome)");
   });
+
+  // The banner's rung is sealed inside .gw-map-chrome's stacking context, so it orders the
+  // banner against its chrome siblings only — the explore/layout.css precedent for a raw value
+  // that does not join the ladder. Anything else in this sheet is a rung claimed off-ladder.
+  it("leaves no raw rung in map.css outside a sealed stacking context", () => {
+    const raw = [...MAP.matchAll(/z-index:\s*([^;]+);/g)]
+      .map((match) => (match[1] ?? "").trim())
+      .filter((value) => !value.startsWith("var(--gw-z-") && value !== "1");
+    expect(raw).toEqual([]);
+  });
 });

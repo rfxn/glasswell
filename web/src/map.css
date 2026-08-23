@@ -647,7 +647,8 @@
   color: var(--paper);
   font-size: 0.72rem;
   transform: translateX(-50%);
-  z-index: 8;
+  /* Sealed inside .gw-map-chrome's stacking context — a local rung, not a ladder value. */
+  z-index: 1;
 }
 
 .gw-banner[hidden] {
