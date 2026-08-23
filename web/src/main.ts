@@ -107,19 +107,33 @@ document.addEventListener(EXPLAIN_EVENT, (event) => {
   if (handle) openExplain(handle);
 });
 
+// The rail's popouts and the glossary popover sit above the panels on the z ladder and each
+// owns its own dismissal, so this handler has to see them still open to yield to them —
+// which is why it reads at capture, ahead of the listeners that close them.
+const ABOVE_PANELS = [
+  ".gw-popover:not([hidden])",
+  ".gw-help-panel:not([hidden])",
+  ".gw-search-panel:not([hidden])",
+].join(", ");
+
 /** SB-05 §7: Escape closes the topmost layer, and one place decides what that is. */
-document.addEventListener("keydown", (event) => {
-  if (event.key !== "Escape") return;
-  if (!keyHost.hidden) {
-    keyHost.hidden = true;
-    return;
-  }
-  if (!drawerHost.hidden) {
-    openExplain(null);
-    return;
-  }
-  if (!cardHost.hidden) selectWell(null, "url");
-});
+document.addEventListener(
+  "keydown",
+  (event) => {
+    if (event.key !== "Escape") return;
+    if (document.querySelector(ABOVE_PANELS)) return;
+    if (!keyHost.hidden) {
+      keyHost.hidden = true;
+      return;
+    }
+    if (!drawerHost.hidden) {
+      openExplain(null);
+      return;
+    }
+    if (!cardHost.hidden) selectWell(null, "url");
+  },
+  true,
+);
 
 window.addEventListener("popstate", () => {
   // Captured before the assignment: comparing next.view with state.view after it would be

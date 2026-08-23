@@ -184,11 +184,16 @@ describe("at phone width it does not sit on the pill strip (visual-m23 V-3)", ()
     expect(posture).toMatch(/\.gw-hint\s*\{[^}]*position:\s*fixed/);
   });
 
-  it("moves the pills below it while it shows, and only at that width", () => {
+  it("moves the band below it while it shows, and only at that width", () => {
+    // The pill strip is no longer alone in that band — the fault banner opens in it too — so
+    // the clearance is taken by the column the two of them are laid out in rather than by the
+    // strip's own offset. Same pact, one row up.
     const clearance = mediaBlock(MAP, /@media \(width <= 520px\)/);
-    expect(clearance).toMatch(/body:has\(\.gw-hint:not\(\[hidden\]\)\)\s+\.gw-pills\s*\{[^}]*top/);
-    // Unkeyed to the hint's visibility, the strip would sit 4rem low forever.
-    expect(MAP).not.toMatch(/^\s*\.gw-pills\s*\{[^}]*top:\s*4rem/m);
+    expect(clearance).toMatch(
+      /body:has\(\.gw-hint:not\(\[hidden\]\)\)\s+\.gw-map-chrome\s*\{[^}]*padding-top:\s*4rem/,
+    );
+    // Unkeyed to the hint's visibility, the band would sit 4rem low forever.
+    expect(MAP).not.toMatch(/^\s*\.gw-map-chrome\s*\{[^}]*padding-top:\s*4rem/m);
   });
 
   it("moves the zoom controls below it the same way, so the + stays reachable (O1)", () => {

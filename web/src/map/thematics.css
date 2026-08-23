@@ -53,3 +53,14 @@
   top: 0.3rem;
   right: 0.4rem;
 }
+
+/* 11rem of status key beside 16rem of this one is 432 px of legend in a 390 px viewport, and
+   this key is appended after the other, so it was drawn over the open status key — its rows'
+   ⌾ handles included. The reservation is --gw-key-col (map.css) plus the two keys' own
+   0.6rem insets and the 0.6rem between them. Declared here rather than in map.css because
+   the base width above is this sheet's, and sheet order would otherwise decide which wins. */
+@media (width <= 520px) {
+  .gw-thm {
+    max-width: calc(100% - var(--gw-key-col) - 1.8rem);
+  }
+}

@@ -1,3 +1,4 @@
+import { placePopover } from "../chrome/popover.ts";
 import { termDetail, termSummary } from "./store.ts";
 
 const OPEN_DELAY_MS = 150;
@@ -108,14 +109,14 @@ function show(term: GwTerm, expanded: boolean): void {
           where.textContent = `appears in ${detail.appears_in.map((site) => site.ref).join(", ")}`;
           element.appendChild(where);
         }
-        place(element, term);
+        placePopover(element, term);
       })
       .catch((error: unknown) => {
         loading.textContent = `could not load this definition: ${String(error)}`;
       });
   }
 
-  place(element, term);
+  placePopover(element, term);
 }
 
 function relatedChips(related: string[]): HTMLElement {
@@ -129,17 +130,6 @@ function relatedChips(related: string[]): HTMLElement {
     wrapper.appendChild(chip);
   }
   return wrapper;
-}
-
-function place(element: HTMLElement, term: GwTerm): void {
-  const box = term.getBoundingClientRect();
-  const width = element.offsetWidth || 320;
-  const left = Math.min(Math.max(8, box.left), window.innerWidth - width - 8);
-  const below = box.bottom + 8;
-  const height = element.offsetHeight || 160;
-  const top = below + height > window.innerHeight ? Math.max(8, box.top - height - 8) : below;
-  element.style.left = `${left + window.scrollX}px`;
-  element.style.top = `${top + window.scrollY}px`;
 }
 
 function scheduleClose(): void {

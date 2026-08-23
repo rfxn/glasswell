@@ -4,7 +4,11 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 6;
+  z-index: var(--gw-z-map-chrome);
+
+  /* The status key's column at phone width, declared once so the thematic key can reserve it
+     out of its own width instead of landing on it. */
+  --gw-key-col: 11rem;
 }
 
 .gw-map-chrome > * {
@@ -624,6 +628,9 @@
   display: none;
 }
 
+/* `width: max-content` because the shrink-to-fit width of an absolute box anchored at
+   `left: 50%` is what is left of the line — half the viewport — so the cap below was
+   unreachable and the sentence wrapped to three lines in 195 px of a 358 px allowance at 390. */
 .gw-banner {
   position: absolute;
   top: 0.6rem;
@@ -631,6 +638,7 @@
   display: flex;
   gap: 0.5rem;
   align-items: flex-start;
+  width: max-content;
   max-width: min(32rem, calc(100% - 2rem));
   padding: 0.35rem 0.55rem;
   border: 1px solid var(--amber);
@@ -646,6 +654,13 @@
   display: none;
 }
 
+/* One line per failing source, so the list is unbounded; the dismiss stays in frame. */
+.gw-banner-lines {
+  max-height: min(40vh, 12rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .gw-banner-line {
   margin: 0;
 }
@@ -657,6 +672,13 @@
   color: var(--muted);
   font-size: 0.7rem;
   cursor: pointer;
+}
+
+/* The coach mark is a rail popout at --gw-z-rail-pop and the banner is map chrome beneath it,
+   so a tile fault raised while the lesson is up was drawn behind it at every width but 1600.
+   4rem is the clearance the pill strip already takes, and it holds for a two-line sentence. */
+body:has(.gw-hint:not([hidden])) .gw-banner {
+  top: 4rem;
 }
 
 /* ── variant-keyed chrome ────────────────────────────────────────────────────
@@ -728,7 +750,7 @@
   }
 
   .gw-lg {
-    max-width: 11rem;
+    max-width: var(--gw-key-col);
   }
 }
 
@@ -737,8 +759,27 @@
    lesson is dismissed; 4rem clears the mark even when its sentence wraps to two lines.
    visual-webpolish O1: the zoom control shares that band, so it yields the same way. */
 @media (width <= 520px) {
-  body:has(.gw-hint:not([hidden])) .gw-pills {
-    top: 4rem;
+  /* The fault line and the pill strip both open in that band, so at this width the chrome
+     lays them out as one column instead of on the same spot, and the right padding is the
+     zoom column's — neither can reach it, so only the coach mark moves the controls. The
+     rest of the chrome is absolutely positioned and stays out of this flow. */
+  .gw-map-chrome {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gw-space-1);
+    padding: 0.6rem 8rem 0 0.6rem;
+  }
+
+  .gw-banner,
+  .gw-pills {
+    position: static;
+    width: auto;
+    max-width: none;
+    transform: none;
+  }
+
+  body:has(.gw-hint:not([hidden])) .gw-map-chrome {
+    padding-top: 4rem;
   }
 
   body:has(.gw-hint:not([hidden])) .maplibregl-ctrl-top-right {

@@ -1,4 +1,5 @@
 import { formatValue } from "../card/format.ts";
+import { placePopover } from "../chrome/popover.ts";
 
 // The same rule `gw-figure.ts:6` states for a missing handle: dev makes the defect visible,
 // test makes it fatal. A number nobody wrote an exemption for is the defect either way.
@@ -37,7 +38,7 @@ function openReason(mark: HTMLElement, text: string): void {
   openMark = mark;
   mark.setAttribute("aria-expanded", "true");
   mark.setAttribute("aria-describedby", REASON_ID);
-  place(popover, mark);
+  placePopover(popover, mark);
 }
 
 function hideReason(): void {
@@ -45,18 +46,6 @@ function hideReason(): void {
   openMark?.removeAttribute("aria-describedby");
   openMark = null;
   if (popover) popover.hidden = true;
-}
-
-/** `gw-term.ts:134` places the glossary panel this way; a count's reason is the same object. */
-function place(element: HTMLElement, mark: HTMLElement): void {
-  const box = mark.getBoundingClientRect();
-  const width = element.offsetWidth || 320;
-  const left = Math.min(Math.max(8, box.left), window.innerWidth - width - 8);
-  const below = box.bottom + 8;
-  const height = element.offsetHeight || 120;
-  const top = below + height > window.innerHeight ? Math.max(8, box.top - height - 8) : below;
-  element.style.left = `${left + window.scrollX}px`;
-  element.style.top = `${top + window.scrollY}px`;
 }
 
 document.addEventListener("keydown", (event) => {
