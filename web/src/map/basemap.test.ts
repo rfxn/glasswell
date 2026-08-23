@@ -155,10 +155,10 @@ describe("the basemap catalogue", () => {
     expect(external).toEqual([]);
   });
 
-  it("stops the imagery at the last zoom that carries any, not the one the service advertises", () => {
-    // Measured: z20 is a byte-identical grey "no data" placeholder everywhere it was probed,
-    // while the service metadata advertises 24 levels. Declaring 20 would paint that across
-    // the basin; declaring 19 makes MapLibre overzoom real pixels instead.
+  it("stops the imagery where the regions in scope stop carrying it, not where the service claims", () => {
+    // A regional property asserted globally, deliberately: the deepest level with real pixels
+    // ranges z17 to z20 across the service, so 19 is a measurement of both basins in scope and
+    // not a fact about the service. Declaring 20 paints the grey placeholder across the basin.
     for (const base of BASEMAPS.filter((candidate) => candidate.tiles?.length)) {
       expect(base.maxzoom, `${base.id} imagery ceiling`).toBe(19);
     }

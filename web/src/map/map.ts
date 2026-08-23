@@ -21,6 +21,7 @@ import {
   rasterStyle,
   rememberBasemap,
   sourceLabel,
+  tileOrigin,
   tileProbeUrl,
   vectorStyle,
 } from "./basemap.ts";
@@ -86,6 +87,15 @@ interface BasemapManifest {
 }
 
 const MANIFEST_PATH = "/basemap/manifest.json";
+
+/**
+ * The deepest zoom the imagery was measured to carry over the regions this deploys against.
+ * Above it the service answers 200 with a grey placeholder rather than a 404, which nothing
+ * in the client can tell from imagery — so this tracks `BasemapDef.maxzoom` and is re-probed,
+ * never raised on the 24 levels the service advertises (`infra/basemap/README.md`).
+ */
+export const MAP_MAX_ZOOM = 19;
+
 const OPACITY_PROPERTY: Readonly<Record<string, string>> = {
   circle: "circle-opacity",
   line: "line-opacity",
@@ -151,7 +161,8 @@ async function readManifest(): Promise<BasemapManifest | null> {
 
 interface ResolvedStyle {
   style: maplibregl.StyleSpecification | string;
-  failure?: { source: string; fallback: string };
+  /** No `fallback` where nothing replaced what failed: the banner then states only the loss. */
+  failure?: { source: string; fallback?: string };
   vintage?: string;
 }
 
@@ -178,11 +189,16 @@ async function resolveStyle(id: string): Promise<ResolvedStyle> {
   const archive = manifest?.archive ?? PMTILES_PATH;
   if (await archiveServesRanges(archive)) {
     await registerPmtilesProtocol();
-    const style = vectorStyle(base, { labels: manifest?.labels === true });
+    // A hybrid draws a second substrate that can fail on its own. Dropping the source is what
+    // keeps its credit from outliving it, and it is also what silences MapLibre — an absent
+    // source requests no tile and raises no `error` — so this is the only place left to say so.
+    const imagery = base.tiles?.length ? await tilesReachable(base) : true;
+    const style = vectorStyle(base, { labels: manifest?.labels === true, imagery });
     const source = style.sources[BASEMAP_SOURCE];
     if (source && "url" in source) source.url = `pmtiles://${archive}`;
     const result: ResolvedStyle = { style };
     if (manifest?.vintage) result.vintage = manifest.vintage;
+    if (!imagery) result.failure = { source: tileOrigin(base) };
     return result;
   }
 
@@ -203,7 +219,7 @@ export function createMap(
     center: [viewport.lon, viewport.lat],
     zoom: viewport.zoom,
     attributionControl: false,
-    maxZoom: 18,
+    maxZoom: MAP_MAX_ZOOM,
     transformRequest: (url, resourceType) => tileRequest(url, resourceType),
   });
 

@@ -35,6 +35,11 @@ export interface BasemapDef {
   /** Imagery tiles. Present on `vector` too: that is what makes an option a hybrid. */
   tiles?: string[];
   maxzoom?: number;
+  /**
+   * The credit for what this option's own `tiles` serve. The PMTiles archive always carries
+   * OSM's regardless, so a future vector option on differently-licensed data needs its credit
+   * put on that source in `vectorStyle`, not here.
+   */
   attribution: string;
   /** What the map degrades to when this option's tiles cannot be had. `fallbackStyle` runs it. */
   fallback: "graticule" | null;
@@ -58,9 +63,11 @@ const IMAGERY_TILES = [
 ];
 
 /**
- * Measured, not taken from the service: its metadata advertises 24 levels and clamps nothing,
- * but z20 is a byte-identical grey "no data" placeholder at every location probed across both
- * basins, so 19 is the last zoom that carries pixels.
+ * Measured per region, not read off the service: its metadata advertises 24 levels and clamps
+ * nothing, while the deepest level carrying real pixels varies by location — z17 over remote
+ * interiors, z20 over some cities — and is not even monotonic. 19 is what both basins in scope
+ * carry; above it the service answers 200 with a grey placeholder rather than a 404, so a
+ * region added here has to be re-probed (`infra/basemap/README.md`).
  */
 const IMAGERY_MAXZOOM = 19;
 
