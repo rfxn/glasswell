@@ -189,12 +189,21 @@ jobs:
           exit 0
 
       # Blueprint 8.2 carve-out: the research corpus is git-excluded, so a name or a pointer
-      # to it in source both leaks and dangles. Every token below names something the
-      # tracked blueprints already carry, which is the ceiling — extend it only from those.
-      # Short acronyms and anything colliding with petroleum vocabulary or with operator
-      # names in the public regulatory fixtures are left out on purpose: a guard people
-      # learn to ignore is worse than none. `docs/product-[a-z]` is a real filename, so the
-      # `docs/product-*.md` glob that SMOKE.md and infra/ deploy hygiene name still passes.
+      # to it in source both leaks and dangles. The pattern has two halves held to different
+      # rules — check which half a token belongs to before editing the list.
+      #   Vendor names are capped at the ceiling the tracked blueprints set: a name may enter
+      #   only if those documents already carry it, because naming one they do not is itself
+      #   the leak this step exists to prevent.
+      #   Structural patterns (peer-map-, docs/product-[a-z]) match the *shape* of a corpus
+      #   pointer and name nobody, so the ceiling rule does not apply to them. They are the
+      #   only vendor-free coverage here; do not delete them as unsupported by that rule.
+      # Known blind spot: acronym-only references are out of scope. Short tokens collide with
+      # petroleum vocabulary and with operator names in the public regulatory fixtures, and a
+      # guard people learn to ignore is worse than none — so a green run means "clean of the
+      # classes below", not "clean". That class needs review by eye; measured against the
+      # scrub that added this step, the pattern caught 7 of 8 real sites.
+      # `docs/product-[a-z]` is a real filename, so the `docs/product-*.md` glob that
+      # SMOKE.md and infra/ deploy hygiene name still passes.
       - name: No IP carve-out material in tracked source
         run: |
           set -euo pipefail
