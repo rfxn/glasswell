@@ -282,7 +282,11 @@ export async function renderWellCard(
   const chartHost = document.createElement("div");
   chartHost.className = "gw-frame-body";
   chartHost.appendChild(placeholder("Loading production…"));
-  chartFrame.append(chartTitle, chartHost);
+  // The chart owns .gw-frame-body and replaces it on every span change and theme repaint, so
+  // the series' warnings — R8's disclosure of the derivations behind a column — sit beside it.
+  const chartNotes = document.createElement("div");
+  chartNotes.className = "gw-chart-notes";
+  chartFrame.append(chartTitle, chartHost, chartNotes);
   body.appendChild(chartFrame);
 
   container.replaceChildren(card);
@@ -315,8 +319,8 @@ export async function renderWellCard(
         onExplain: callbacks.onExplain,
         labelTermFor: (pointer) => labelFor(production, pointer),
       });
-      for (const panel of warningPanels(production.meta.warnings)) chartHost.appendChild(panel);
-      highlight(chartHost, termIndex());
+      for (const panel of warningPanels(production.meta.warnings)) chartNotes.appendChild(panel);
+      highlight(chartFrame, termIndex());
     } catch (error) {
       chartHost.replaceChildren(errorPanel(error, callbacks));
     }

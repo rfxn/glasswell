@@ -10,12 +10,14 @@ import type { CatalogueDataset } from "../catalogue.ts";
 import { mountDetail } from "../detail/detail.ts";
 import { renderFacets } from "../facets/facets.ts";
 import { filtersOf, requestFor, withFilter } from "../router.ts";
+import { renderSeriesPanel } from "../series/series.ts";
 import { renderCell, vintagesIn } from "./cells.ts";
 import { columnsFor, coverageOf, renderHeader } from "./columns.ts";
 import type { Column } from "./columns.ts";
 import { paginationOf, renderPagination, summaryTotalFor } from "./paging.ts";
 import { extractRows } from "./rows.ts";
 import type { Row } from "./rows.ts";
+import { SORT_KEY, directionOf, ordered, renderSort, sortColumnOf } from "./sort.ts";
 import { anchorPrompt, emptyState, failure, note } from "./states.ts";
 
 /** The server caps a page at 200 or 1000; this is how many of them reach the DOM at once. */
@@ -124,7 +126,8 @@ function publish(
 }
 
 function render(host: HTMLElement, options: GridOptions, loaded: Loaded): void {
-  const { columns, rows } = loaded;
+  const { columns } = loaded;
+  const rows = ordered(loaded.rows, directionOf(options.state));
   if (rows.length === 0) {
     // C3: the coverage line counts headers, and there are none on screen to count.
     host.replaceChildren(emptyState(options.state));
@@ -180,7 +183,11 @@ function render(host: HTMLElement, options: GridOptions, loaded: Loaded): void {
     paginationOf(options.dataset, options.document, loaded.envelope, rows.length, loaded.total),
     { onNext: (href) => followNext(href, options) },
   );
-  host.replaceChildren(strap(columns, loaded), narrowNotice(), table, more, pagination);
+  host.replaceChildren(strap(columns, loaded, options), narrowNotice());
+  // The wider redraw §2.6's crossing was for, from the response the grid already has — never a
+  // second request for the series the reader is looking at.
+  renderSeriesPanel(host, { envelope: loaded.envelope });
+  host.append(table, more, pagination);
   // A chip hop lands on a row this page need not contain, so the panel stands on its own above
   // the grid rather than the link dead-ending in "not found here".
   if (options.state.row !== null && expanded < 0) {
@@ -407,7 +414,7 @@ function detailSlot(
 }
 
 /** One line above the grid: what every value here reports at, and how much of it is bound. */
-function strap(columns: readonly Column[], loaded: Loaded): HTMLElement {
+function strap(columns: readonly Column[], loaded: Loaded, options: GridOptions): HTMLElement {
   const wrapper = document.createElement("div");
   wrapper.className = "gw-grid-strap";
   const [only] = [...loaded.vintages];
@@ -418,7 +425,28 @@ function strap(columns: readonly Column[], loaded: Loaded): HTMLElement {
     wrapper.append(vintage);
   }
   wrapper.append(coverageLine(columns));
+  const sort = sortControl(loaded, options);
+  if (sort) wrapper.append(sort);
   return wrapper;
+}
+
+function sortControl(loaded: Loaded, options: GridOptions): HTMLElement | null {
+  const pointer = sortColumnOf(options.dataset, loaded.envelope);
+  if (pointer === null) return null;
+  const named = loaded.all.find((column) => column.pointer === pointer);
+  return renderSort(
+    pointer,
+    named?.name ?? pointer.replace(/^\//, ""),
+    directionOf(options.state),
+    (direction) => {
+      const extra = { ...options.state.extra };
+      // The server's own order is the absence of the parameter, so it is never written into a
+      // link: an explicit default in every URL is a claim the reader did not make.
+      if (direction === "asc") delete extra[SORT_KEY];
+      else extra[SORT_KEY] = [direction];
+      options.commit({ extra });
+    },
+  );
 }
 
 /** §3.2's counted-unbound treatment is a percentage, so the percentage is on the surface. */
