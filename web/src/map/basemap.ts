@@ -15,14 +15,31 @@ import { LINE_ROLE } from "./variant-style.ts";
  */
 export type BasemapKind = "vector" | "raster" | "graticule";
 
+/** The four substrates a label, a line or a chrome surface has to stay legible against. */
+export const BASEMAP_VARIANTS = ["dark", "light", "satellite", "none"] as const;
+
+export type BasemapVariant = (typeof BASEMAP_VARIANTS)[number];
+
 export interface BasemapDef {
   id: string;
   label: string;
   kind: BasemapKind;
+  /**
+   * The substrate this option is read against, declared rather than inferred from the id.
+   * More options than substrates: the hybrid draws the same imagery satellite does, so it
+   * takes the same token row and the same `data-basemap` value map.css already keys on.
+   */
+  variant: BasemapVariant;
   /** `@protomaps/basemaps` flavour name for the vector options. */
   flavor?: "dark" | "light" | "grayscale" | "white" | "black";
+  /** Imagery tiles. Present on `vector` too: that is what makes an option a hybrid. */
   tiles?: string[];
   maxzoom?: number;
+  /**
+   * The credit for what this option's own `tiles` serve. The PMTiles archive always carries
+   * OSM's regardless, so a future vector option on differently-licensed data needs its credit
+   * put on that source in `vectorStyle`, not here.
+   */
   attribution: string;
   /** What the map degrades to when this option's tiles cannot be had. `fallbackStyle` runs it. */
   fallback: "graticule" | null;
@@ -36,6 +53,26 @@ export const GLYPHS_URL = "/basemap/fonts/{fontstack}/{range}.pbf";
 
 const OSM_CREDIT =
   '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · basemap <a href="https://protomaps.com">Protomaps</a>';
+
+/** The one external origin the CSP names, in `glasswell.api.security` and the Caddy copy. */
+export const IMAGERY_HOST = "services.arcgisonline.com";
+
+// ArcGIS MapServer writes y before x. Written any other way, every tile 404s.
+const IMAGERY_TILES = [
+  `https://${IMAGERY_HOST}/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}`,
+];
+
+/**
+ * Measured per region, not read off the service: its metadata advertises 24 levels and clamps
+ * nothing, while the deepest level carrying real pixels varies by location — z17 over remote
+ * interiors, z20 over some cities — and is not even monotonic. 19 is what both basins in scope
+ * carry; above it the service answers 200 with a grey placeholder rather than a 404, so a
+ * region added here has to be re-probed (`infra/basemap/README.md`).
+ */
+const IMAGERY_MAXZOOM = 19;
+
+/** The string the service declares as its own `copyrightText`, which is what it obliges. */
+const IMAGERY_CREDIT = "Imagery: Esri, Vantor, Earthstar Geographics, and the GIS User Community";
 
 /** Ink, Panel, Slate and the deep-cyan ramp from BRAND.md, so the substrate is on-brand. */
 const DARK_PALETTE: Record<string, string> = {
@@ -83,6 +120,7 @@ export const BASEMAPS: readonly BasemapDef[] = [
     id: "dark",
     label: "Dark",
     kind: "vector",
+    variant: "dark",
     flavor: "dark",
     attribution: OSM_CREDIT,
     fallback: "graticule",
@@ -92,6 +130,7 @@ export const BASEMAPS: readonly BasemapDef[] = [
     id: "light",
     label: "Light",
     kind: "vector",
+    variant: "light",
     flavor: "grayscale",
     attribution: OSM_CREDIT,
     fallback: "graticule",
@@ -101,18 +140,30 @@ export const BASEMAPS: readonly BasemapDef[] = [
     id: "satellite",
     label: "Satellite",
     kind: "raster",
-    // ArcGIS MapServer writes y before x. Written any other way, every tile 404s.
-    tiles: [
-      "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}",
-    ],
-    maxzoom: 16,
-    attribution: "USGS National Map — imagery, public domain",
+    variant: "satellite",
+    tiles: IMAGERY_TILES,
+    maxzoom: IMAGERY_MAXZOOM,
+    attribution: IMAGERY_CREDIT,
+    fallback: "graticule",
+  },
+  {
+    // `vector`, though it draws imagery: the labels are PMTiles, and resolveStyle registers
+    // the pmtiles protocol and requires the archive's 206 only on the vector branch.
+    id: "hybrid",
+    label: "Hybrid",
+    kind: "vector",
+    variant: "satellite",
+    flavor: "dark",
+    tiles: IMAGERY_TILES,
+    maxzoom: IMAGERY_MAXZOOM,
+    attribution: IMAGERY_CREDIT,
     fallback: "graticule",
   },
   {
     id: "none",
     label: "None",
     kind: "graticule",
+    variant: "none",
     attribution: "Geometry: regulator GIS · one-degree graticule, no basemap",
     fallback: null,
   },
@@ -120,13 +171,9 @@ export const BASEMAPS: readonly BasemapDef[] = [
 
 export const DEFAULT_BASEMAP = "dark";
 
-/** The four substrates a label, a line or a chrome surface has to stay legible against. */
-export const BASEMAP_VARIANTS = ["dark", "light", "satellite", "none"] as const;
-
-export type BasemapVariant = (typeof BASEMAP_VARIANTS)[number];
-
+/** An unknown id still has to land somewhere; a known one lands where it declared. */
 export function basemapVariant(id: string | undefined): BasemapVariant {
-  return BASEMAP_VARIANTS.find((variant) => variant === id) ?? DEFAULT_BASEMAP;
+  return (id === undefined ? undefined : BY_ID.get(id)?.variant) ?? DEFAULT_BASEMAP;
 }
 
 /**
@@ -168,27 +215,62 @@ export function pmtilesUrl(path: string = PMTILES_PATH): string {
 export interface StyleOptions {
   /** Font and sprite assets are a separate deploy artifact; without them, no symbol layers. */
   labels: boolean;
+  /**
+   * Whether the imagery origin answered. False drops the imagery source, its layer and its
+   * credit together, leaving the labels — which are a different source and still drawn.
+   */
+  imagery?: boolean;
   /** MapLibre rejects a relative sprite url outright, so the origin has to be written in. */
   origin?: string;
 }
 
+/**
+ * An icon-only arrow `textLayers()` never selects, so the variant pass cannot colour it, and
+ * POI pins that turn dense over aerial at z17. Both are dropped rather than drawn unmeasured.
+ */
+const IMAGERY_LABEL_OMIT = new Set(["roads_oneway", "pois"]);
+
 export function vectorStyle(base: BasemapDef, options: StyleOptions): StyleSpecification {
   const flavor = { ...namedFlavor(base.flavor ?? "dark"), ...(base.palette ?? {}) } as Flavor;
   const built = layers(BASEMAP_SOURCE, flavor, { lang: "en" }) as LayerSpecification[];
-  const styled = splitBoundaries(
-    options.labels ? built : built.filter((layer) => layer.type !== "symbol"),
-    flavor,
-  );
+  // A hybrid is an option that declares imagery, whether or not the imagery answered: the
+  // flavour's earth, water and landuse fills are opaque rectangles drawn where the picture
+  // belongs, so it stays symbols-over-canvas either way rather than falling back to a fill.
+  const hybrid = Boolean(base.tiles?.length);
   const style: StyleSpecification = {
     version: 8,
     sources: {
-      [BASEMAP_SOURCE]: { type: "vector", url: pmtilesUrl(), attribution: base.attribution },
+      // The archive's own credit, not the option's: on a hybrid the option's credit is the
+      // imagery's, and each source has to carry the one that covers the bytes it serves.
+      [BASEMAP_SOURCE]: { type: "vector", url: pmtilesUrl(), attribution: OSM_CREDIT },
     },
-    layers: styled,
+    layers: [],
   };
+  if (hybrid) {
+    const drawn = options.imagery !== false;
+    if (drawn) {
+      // Its own source id, so a tile error carries it and the banner names the imagery rather
+      // than the archive — the two substrates fail independently (R3.2).
+      style.sources[base.id] = imagerySource(base);
+    }
+    style.layers = [
+      canvasLayer(),
+      ...(drawn
+        ? [{ id: base.id, type: "raster", source: base.id } as LayerSpecification]
+        : []),
+      ...(options.labels
+        ? built.filter((layer) => layer.type === "symbol" && !IMAGERY_LABEL_OMIT.has(layer.id))
+        : []),
+    ];
+  } else {
+    style.layers = splitBoundaries(
+      options.labels ? built : built.filter((layer) => layer.type !== "symbol"),
+      flavor,
+    );
+  }
   // Assigned rather than declared: MapLibre validates a property that is present, so an
   // undefined `glyphs` fails validation and the whole style — every layer — never loads.
-  if (options.labels) {
+  if (options.labels && style.layers.some((layer) => layer.type === "symbol")) {
     const origin = options.origin ?? (typeof window === "undefined" ? "" : window.location.origin);
     style.glyphs = GLYPHS_URL;
     style.sprite = `${origin}/basemap/sprites/${base.flavor ?? "dark"}`;
@@ -231,24 +313,30 @@ function splitBoundaries(built: LayerSpecification[], flavor: Flavor): LayerSpec
   return out;
 }
 
+/** What shows through where imagery has not arrived, so a gap reads as the app and not as a hole. */
+function canvasLayer(): LayerSpecification {
+  return { id: "canvas", type: "background", paint: { "background-color": "#0B1014" } };
+}
+
+function imagerySource(base: BasemapDef): StyleSpecification["sources"][string] {
+  return {
+    type: "raster",
+    tiles: base.tiles ?? [],
+    tileSize: 256,
+    maxzoom: base.maxzoom ?? IMAGERY_MAXZOOM,
+    attribution: base.attribution,
+  };
+}
+
 export function rasterStyle(base: BasemapDef): StyleSpecification {
   return {
     version: 8,
     sources: {
       // Its own id, not the vector one: a tile error carries `sourceId`, and reusing
-      // `protomaps` here made a USGS outage report itself as a Protomaps one (R3.2).
-      [base.id]: {
-        type: "raster",
-        tiles: base.tiles ?? [],
-        tileSize: 256,
-        maxzoom: base.maxzoom ?? 16,
-        attribution: base.attribution,
-      },
+      // `protomaps` here made an imagery outage report itself as a Protomaps one (R3.2).
+      [base.id]: imagerySource(base),
     },
-    layers: [
-      { id: "canvas", type: "background", paint: { "background-color": "#0B1014" } },
-      { id: base.id, type: "raster", source: base.id },
-    ],
+    layers: [canvasLayer(), { id: base.id, type: "raster", source: base.id }],
   };
 }
 

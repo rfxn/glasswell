@@ -40,7 +40,7 @@ glasswell.lab.rpx.sh {
 			X-Frame-Options DENY
 			Referrer-Policy no-referrer
 			X-Robots-Tag "noindex, nofollow"
-			Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' data: blob: https://basemap.nationalmap.gov; font-src 'self'; connect-src 'self' https://basemap.nationalmap.gov; worker-src 'self' blob:; child-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; upgrade-insecure-requests"
+			Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' data: blob: https://services.arcgisonline.com; font-src 'self'; connect-src 'self' https://services.arcgisonline.com; worker-src 'self' blob:; child-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; upgrade-insecure-requests"
 		}
 
 		file_server
