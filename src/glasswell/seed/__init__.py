@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import psycopg
 
+from glasswell.seed.conformance_c115b import (
+    C115B_RULES,
+    seed_conformance_c115b,
+    seed_nm_waste_types,
+)
 from glasswell.seed.conformance_land import LAND_RULES, seed_conformance_land
 from glasswell.seed.conformance_nd import ND_RULES, seed_conformance_nd
 from glasswell.seed.conformance_nm import NM_RULES, seed_conformance_nm
@@ -19,6 +24,7 @@ from glasswell.seed.reference import (
 )
 
 __all__ = [
+    "C115B_RULES",
     "CRS_ROWS",
     "GLOSSARY_SEED_PATH",
     "LAND_RULES",
@@ -29,6 +35,7 @@ __all__ = [
     "TX_RULES",
     "load_glossary_seed",
     "seed_all",
+    "seed_conformance_c115b",
     "seed_conformance_land",
     "seed_conformance_nd",
     "seed_conformance_nm",
@@ -36,6 +43,7 @@ __all__ = [
     "seed_crs",
     "seed_glossary",
     "seed_nm_streams",
+    "seed_nm_waste_types",
     "seed_sources",
     "slug",
 ]
@@ -50,10 +58,12 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
     return {
         "conformance_rules_tx": seed_conformance_tx(connection),
         "conformance_rules_land": seed_conformance_land(connection),
+        "conformance_rules_c115b": seed_conformance_c115b(connection),
         "sources": seed_sources(connection),
         "crs_registry": seed_crs(connection),
         "conformance_rules": seed_conformance_nd(connection),
         "conformance_rules_nm": seed_conformance_nm(connection),
         "nm_stream_map": seed_nm_streams(connection),
+        "nm_waste_type_map": seed_nm_waste_types(connection),
         "glossary_terms": seed_glossary(connection),
     }
