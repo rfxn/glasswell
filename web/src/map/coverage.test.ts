@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { LAND_SNAPSHOT, ND_SNAPSHOT, ndCoverage, ndWellCount } from "./coverage.ts";
+import { LAND_SNAPSHOT, ND_SNAPSHOT, landCellCount, ndCoverage, ndWellCount } from "./coverage.ts";
 
 describe("the served ND snapshot", () => {
   it("pins the v0.37 refresh's own numbers — the one deliberate place they are written", () => {
@@ -31,5 +31,11 @@ describe("the served ND snapshot", () => {
     expect(ndCoverage(ND_SNAPSHOT.disposal)).toBe("1,989 of 43,817 wells (4.5%)");
     expect(ndCoverage(ND_SNAPSHOT.traced)).toBe("525 of 43,817 wells (1.2%)");
     expect(ndWellCount()).toBe("43,817");
+  });
+});
+
+describe("the land snapshot is read by the product, not only by this test", () => {
+  it("formats its cell count through the module, so no row hand-writes it", () => {
+    expect(landCellCount()).toBe("13,952");
   });
 });
