@@ -244,7 +244,7 @@ Anti-stories: prior list stands; additionally no slot generation outside 4D cons
 
 Timebox: P1-P5 roughly ten to eleven focused weekends (harvest adds one to two); P6 three to four; P7 two plus waiting. Cut order under compression: E14, then E17 (inventory), then alerts and league table, then E8, then E7 polish, then field-notes UI. Never cut E4, E5, E11, E12 validators, derivation capture, or the conformance registry; the registry is cheap and load-bearing for S11.
 
-*Phase-model note. The consolidated [v0.6 draft](blueprint-v0.6-draft.md) rewrites this table into nine phases (P0-P8), splitting serving and map away from forecasting and benchmark and re-estimating the timebox. That draft is in review and its own change control makes the review of its re-derived items the gate at which it becomes final; until that gate closes, the eight phases above are the committed numbering and derived documents tracking the nine-phase set say so where they use it. Adopting the nine-phase model here is a version promotion, not an editorial fix, and is the owner's call.*
+*Phase-model note. The consolidated [v0.6 draft](blueprint-v0.6-draft.md) rewrites this table into nine phases (P0-P8), carving serving and map out of the ND spine above (P1) into a phase of its own ahead of forecasting, and re-estimating the timebox. That draft is in review and its own change control makes the review of its re-derived items the gate at which it becomes final; until that gate closes, the eight phases above are the committed numbering and derived documents tracking the nine-phase set say so where they use it. Adopting the nine-phase model here is a version promotion, not an editorial fix, and is the owner's call.*
 
 ---
 

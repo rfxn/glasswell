@@ -117,7 +117,7 @@ manifest key and appears in every partition path. Renaming one is a migration, n
 
 | `source_id` | Agency / dataset | Access | Format | Upstream cadence | Pull cadence | Size (compressed) | Licence | Evidence |
 |---|---|---|---|---|---|---|---|---|
-| `nd_mpr_xlsx` | NDIC monthly production report | `https_get` | XLSX | monthly, +1 mo 15 d | weekly poll | 349 MB / 134 files | none found; accuracy disclaimer | `ad:37-46` |
+| `nd_mpr_xlsx` | NDIC monthly production report | `https_get` | XLSX | monthly, +1 mo 15 d | weekly poll | 336.6 MB / 125 files (measured) | none found; accuracy disclaimer | `ad:37-46` |
 | `nd_mpr_pdf` | NDIC MPR, PDF era | `https_get` | text-layer PDF | monthly | **deferred** (§2.11) | 354 MB / 282 files | as above | `ad:40,50` |
 | `nd_gis_wells` | `OGD_Wells.zip` | `https_get` | shapefile, NAD83 | daily | weekly | 3.6 MB | disclaimer only | `ad:64-70,80` |
 | `nd_gis_horizontals_line` | `OGD_Horizontals_Line.zip` | `https_get` | shapefile | daily | weekly | 15.2 MB | as above | `ad:78` |
@@ -347,7 +347,7 @@ stable pattern `https://www.dmr.nd.gov/oilgas/mpr/YYYY_MM.xlsx` (`ad:38`). Per p
 
 **Cadence.** Upstream monthly at roughly +1 month 15 days, publication irregular within the
 month (`ad:43`); pull weekly (v0.6 §3.7.4). Backfill 2015-05 → present is a one-time bounded
-harvest of 134 files, run once at P1, one file per 5 s.
+harvest of 125 files, run once at P1, one file per 5 s.
 
 **Staging schema** `stg_nd_mpr_xlsx__monthly` — all `Utf8`, column names taken verbatim from the
 sheet's header row after `cr_nd_mpr_header_1` locates it:
@@ -1800,7 +1800,7 @@ requirement, which conveniently makes it a poor neighbour to nothing.
 
 ### 9.4 Backfills
 
-Three bounded, resumable backfills, each a job with a cursor in `jobs.progress`: ND MPR 134
+Three bounded, resumable backfills, each a job with a cursor in `jobs.progress`: ND MPR 125
 files; TX completion feed daily zips from the resolvable floor; TX county GIS 248+246 zips. Each
 rate-limits itself, records the earliest resolvable artifact in the source register, and can be
 stopped and resumed without re-fetching (content addressing makes a resumed fetch a no-op).
