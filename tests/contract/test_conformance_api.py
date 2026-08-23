@@ -14,6 +14,7 @@ from glasswell.seed.conformance_fracfocus import FRACFOCUS_RULES
 from glasswell.seed.conformance_land import LAND_RULES
 from glasswell.seed.conformance_nd import ND_RULES
 from glasswell.seed.conformance_nm import NM_RULES
+from glasswell.seed.conformance_producing import PRODUCING_RULES
 from glasswell.seed.conformance_tx import TX_RULES
 
 SEEDED_RULES = 14
@@ -90,7 +91,14 @@ def test_an_unknown_rule_is_not_found(client: TestClient) -> None:
 def _seeded_policy_rule_ids() -> set[str]:
     return {
         str(rule["rule_id"])
-        for registry in (FRACFOCUS_RULES, LAND_RULES, ND_RULES, NM_RULES, TX_RULES)
+        for registry in (
+            FRACFOCUS_RULES,
+            LAND_RULES,
+            ND_RULES,
+            NM_RULES,
+            PRODUCING_RULES,
+            TX_RULES,
+        )
         for rule in registry
         if rule.get("rule_kind") == "code_ref"
     }

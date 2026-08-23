@@ -3917,6 +3917,69 @@
         "title": "Problem",
         "type": "object"
       },
+      "ProducingCount": {
+        "properties": {
+          "producing": {
+            "description": "producing, not_producing or unknown, as the producing rules define them.",
+            "title": "Producing",
+            "type": "string",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "wells": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Wells of this class inside the box, with the handle the count resolves by."
+          }
+        },
+        "required": [
+          "producing",
+          "wells"
+        ],
+        "title": "ProducingCount",
+        "type": "object"
+      },
+      "ProducingWindow": {
+        "properties": {
+          "from": {
+            "description": "First production month the window admits, inclusive.",
+            "title": "From",
+            "type": "string"
+          },
+          "liquids_basis": {
+            "description": "What the liquids figure behind these classes is composed of. ND reports oil plus condensate as one column (cr_nd_liquids_policy_1), and the basis is stated here because it is stated wherever one of these numbers appears.",
+            "title": "Liquids Basis",
+            "type": "string",
+            "x-glasswell-glossary": "gt_stream"
+          },
+          "months": {
+            "description": "How many months the window spans, from cr_producing_window_1.",
+            "title": "Months",
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Length of the producing window in months, read from cr_producing_window_1. A parameter of the classing, not an observation it stands behind."
+          },
+          "streams": {
+            "description": "Streams that count as producing, from cr_producing_streams_1. Water is excluded: it is a byproduct, not evidence of a hydrocarbon well.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Streams",
+            "type": "array"
+          },
+          "to": {
+            "description": "Newest production month anybody has filed; the window's anchor.",
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "months",
+          "from",
+          "to",
+          "streams",
+          "liquids_basis"
+        ],
+        "title": "ProducingWindow",
+        "type": "object"
+      },
       "Production": {
         "properties": {
           "_basis": {
@@ -5548,6 +5611,18 @@
             "title": "Operator Name Reported",
             "x-glasswell-glossary": "gt_operator_of_record"
           },
+          "producing": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether the well is producing on the evidence held, which is a different fact from its status: `producing` where a positive oil or gas month was filed inside the window, `not_producing` where the well filed but no such month, and `unknown` where it filed nothing, where the regulator withheld the months, or where the jurisdiction reports at the lease and no well-level series exists. Defined by cr_producing_window_1, cr_producing_streams_1 and cr_producing_evidence_1; liquids are oil plus condensate. Null where the definition is not registered, which is disclosed as a warning.",
+            "title": "Producing"
+          },
           "spud_date": {
             "anyOf": [
               {
@@ -5665,6 +5740,7 @@
           "confidential_flag",
           "effective_from",
           "geometry_provenance",
+          "producing",
           "links",
           "api14",
           "state_code",
@@ -5781,6 +5857,34 @@
             "title": "Geometry Provenance",
             "type": "array"
           },
+          "producing": {
+            "description": "The same box classed by whether each well is actually producing, largest first. Disjoint and exhaustive over the wells with a spine row, so unlike the provenance classes these do sum to `wells`. A well the regulator calls active can be in any of the three: the classes are asked of the production filings, not of the status. Absent entirely where the definition is not registered.",
+            "items": {
+              "$ref": "#/components/schemas/ProducingCount"
+            },
+            "title": "Producing",
+            "type": "array"
+          },
+          "producing_rules": {
+            "description": "The rules that define producing here; each one is linked.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Producing Rules",
+            "type": "array",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "producing_window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProducingWindow"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The window the classes were judged over and the streams that counted, so a producing number is never read without the definition that produced it. Null where the definition is not registered or no production has been loaded."
+          },
           "statuses": {
             "description": "One entry per canonical class present in the box, largest first.",
             "items": {
@@ -5838,6 +5942,9 @@
           "basins",
           "geometry_provenance",
           "well_types",
+          "producing",
+          "producing_window",
+          "producing_rules",
           "vocabulary_rules"
         ],
         "title": "WellStatusSummary",
@@ -5921,6 +6028,18 @@
             "title": "Operator Name Reported",
             "x-glasswell-glossary": "gt_operator_of_record"
           },
+          "producing": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether the well is producing on the evidence held, which is a different fact from its status: `producing` where a positive oil or gas month was filed inside the window, `not_producing` where the well filed but no such month, and `unknown` where it filed nothing, where the regulator withheld the months, or where the jurisdiction reports at the lease and no well-level series exists. Defined by cr_producing_window_1, cr_producing_streams_1 and cr_producing_evidence_1; liquids are oil plus condensate. Null where the definition is not registered, which is disclosed as a warning.",
+            "title": "Producing"
+          },
           "spud_date": {
             "anyOf": [
               {
@@ -5973,6 +6092,7 @@
           "confidential_flag",
           "effective_from",
           "geometry_provenance",
+          "producing",
           "links"
         ],
         "title": "WellSummary",
@@ -10503,6 +10623,24 @@
             }
           },
           {
+            "description": "producing, not_producing or unknown \u2014 the class, not the status.",
+            "in": "query",
+            "name": "producing",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "producing, not_producing or unknown \u2014 the class, not the status.",
+              "title": "Producing"
+            }
+          },
+          {
             "description": "minx,miny,maxx,maxy in WGS84; capped at 4 degrees.",
             "in": "query",
             "name": "bbox",
@@ -10651,6 +10789,7 @@
           "detail_operation": "get_well",
           "facets": [
             "status",
+            "producing",
             "operator",
             "county",
             "bbox",
@@ -10696,6 +10835,10 @@
           "operator": {
             "so": "Substring-matches the reported spelling. A company that files under several spellings needs several searches, and a parent's subsidiaries do not roll up \u2014 that join is a conformance rule, not a search behaviour.",
             "x-glasswell-glossary": "gt_operator_of_record"
+          },
+          "producing": {
+            "so": "Scopes the spine by whether a well is actually producing, which is not what its status says. `active` is the regulator's word about a permit; this is a reading of the production filings, and the two disagree in both directions \u2014 on the 2026-08 load 896 wells North Dakota calls inactive filed a positive hydrocarbon month inside the window, and 437 it calls active filed nothing but zeros. Combine it with `status` to ask the Active-Producing question specifically. `unknown` is a real answer and not a residue: it is where the well filed nothing, where the regulator withheld the months, and where the jurisdiction reports at the lease so no well-level series exists at all. A value outside the three is refused rather than returning an empty page, because the vocabulary is closed \u2014 cr_producing_window_1, cr_producing_streams_1 and cr_producing_evidence_1 define it, and they are what a supersession would change.",
+            "x-glasswell-glossary": "gt_conformance_rule"
           },
           "q": {
             "so": "Substring-matches the name the operator filed. Names repeat across operators and change with the lease, so this narrows a list to read; it does not identify a well. Use api10 for that.",

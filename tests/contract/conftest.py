@@ -270,6 +270,18 @@ def _seed_production(connection: psycopg.Connection, manifest_id: str, derivatio
             manifest_id=manifest_id,
             derivation_id=derivation_id,
         )
+    # An active well that filed a zero in the newest month: the case the producing filter turns
+    # on, and the only one that separates a fact from an absence at this tier.
+    _insert_production(
+        connection,
+        api10=OTHER_API10S[4],
+        production_month=PRODUCTION_MONTHS[-1],
+        stream="oil",
+        volume=Decimal("0"),
+        manifest_id=manifest_id,
+        derivation_id=derivation_id,
+        null_semantics="reported_zero",
+    )
 
 
 def _seed_completion_context(
