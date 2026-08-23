@@ -7,6 +7,38 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.46"></a>
+## v0.46 — 2026-08-23
+
+- [Fix] source comments in the land-grid thematics, the layer registry, the land
+      metrics mart, its unit test and migration 034 carried research provenance
+      from the blueprint 8.2 carve-out corpus, which is git-excluded — the
+      pointers dangled as well as leaked; the properties they justified are
+      restated in the project's own voice, with no behaviour change
+- [Change] migration 034's comment scrub changes the file's sha256, which
+         `public.schema_migrations` records; an environment that already applied
+         034 needs its recorded sha updated or `glasswell-migrate` refuses the
+         run, by design — no DDL changed and no re-run is required
+- [New] the `collateral` CI job rejects carve-out material in tracked source,
+      beside the AI-attribution check; the token list is deliberately narrow to
+      stay false-positive free and carries a note on extending it
+- [Fix] DR-17: ND promotion no longer reads canonical.production_monthly whole. The head
+      map behind change-only append, and the same-vintage map behind the divergence
+      refusal, were both keyed by every row the table holds and both were rebuilt for
+      each of the 125 back-load workbooks; each is now scoped to the entity-months being
+      promoted, which is exactly the set the lookups ask about. Measured at 397,041
+      resident heads: 394.3 MB against 102.4 MB, and flat rather than linear as further
+      months land
+- [New] tests/integration/test_nd_heads_scope.py pins the scope: the map holds only the
+      month being promoted, does not grow as further months land, answers what a read of
+      the whole table answered, and refuses a lookup it never covered rather than
+      reporting that head as absent — which would append a restatement as a first
+      observation
+- [New] the UTC-midnight straddle is pinned at both tiers: months whose sessions open
+      either side of midnight keep a lineage.vintages row per knowledge day, each
+      carrying only the months that landed under it, and the driver summary reads both
+      rows back rather than filing the walk under the day it started
+
 <a id="v0.45"></a>
 ## v0.45 — 2026-08-23
 
