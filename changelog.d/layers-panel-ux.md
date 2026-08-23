@@ -24,4 +24,4 @@
       occlusion, Escape and focus restore across the breakpoint ladder — geometry no
       gate in the repository measured
 - [Remove] Layer registry: the LayerGroup field, declared and assigned on all twelve
-        layers and read by nothing
+         layers and read by nothing

@@ -432,16 +432,24 @@
   cursor: pointer;
 }
 
+/* --slate, not --muted: this is the affordance the whole collapsed row depends on, and
+   against the panel it measures 7.90:1 rather than 5.03:1. Both clear AA; only one reads as
+   a control rather than as decoration. */
 .gw-layer-name::after {
   content: "\25BE";
   margin-left: auto;
   padding-left: 0.3rem;
-  color: var(--muted);
-  font-size: 0.7rem;
+  color: var(--slate);
+  font-size: 0.78rem;
 }
 
 .gw-layer-name[aria-expanded="true"]::after {
   content: "\25B4";
+}
+
+.gw-layer-name:hover::after,
+.gw-layer-name:focus-visible::after {
+  color: var(--paper);
 }
 
 .gw-layer-label {

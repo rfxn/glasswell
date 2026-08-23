@@ -4,6 +4,12 @@
 // above the fold" was a number no gate computed, which is how a reviewer-judged pass graded
 // this panel clean while two rows of twelve were reachable without scrolling.
 //
+// What it measures is a property of the *bundle*, not of the data: the rows come from the
+// static registry, so `python3 -m http.server web/dist` is a complete fixture and the numbers
+// it yields are identical to a serve_branch run (635/635, 12/12, mean 46.4 at 1600x1000).
+// That is what lets this run in CI on every push with no database, no key and no deployed
+// instance — see the `map-chrome` job. A key is used when one is present and never required.
+//
 // Read-only. The key rides the X-Glasswell-Key header (lib.mjs), never a url, and every
 // printed line goes through the redactor.
 import { readFileSync } from "node:fs";
@@ -53,7 +59,8 @@ try {
   unavailable("playwright-core is not installed (npm --prefix tests/e2e install)");
 }
 if (!chromeExecutable()) unavailable("no chromium build found (set GW_CHROME)");
-if (!keyGuard()) unavailable("no owner key (set GLASSWELL_KEY_FILE or GLASSWELL_OWNER_KEY)");
+// Still called with no key: its job is to refuse a key visible in argv, which holds either way.
+const KEY = keyGuard();
 
 /** Everything the fold arithmetic needs, read in the page against the painted layout. */
 const MEASURE = () => {
@@ -73,6 +80,7 @@ const MEASURE = () => {
   const span = (lo1, hi1, lo2, hi2) => Math.max(0, Math.min(hi1, hi2) - Math.max(lo1, lo2));
   return {
     disclosed: document.querySelector(".gw-layer-name") !== null,
+    keyPanelUp: document.getElementById("gw-key-host")?.hidden === false,
     scrollHeight: body.scrollHeight,
     clientHeight: body.clientHeight,
     rows,
@@ -88,7 +96,7 @@ let skipped = false;
 
 for (const viewport of BREAKPOINTS) {
   const at = `${viewport.width}x${viewport.height}`;
-  const { context, page } = await instrumentedPage(browser, { viewport });
+  const { context, page } = await instrumentedPage(browser, { viewport, auth: Boolean(KEY) });
   await page.goto(`${BASE}/?view=map`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await mapReady(page, 3000);
   // The coach mark reserves the control band at <=520 and moves the button the moment it is
@@ -101,6 +109,14 @@ for (const viewport of BREAKPOINTS) {
   const seen = await page.evaluate(MEASURE);
   if (seen.missing) {
     bad(`${at} the layer panel opens`, "no .gw-layers / .gw-layers-body in the document");
+    await context.close();
+    continue;
+  }
+  if (seen.keyPanelUp) {
+    // A keyless run against an instance that demands one measures a panel under a modal
+    // overlay. Fail naming the cause rather than reporting whatever that geometry was.
+    bad(`${at} the instance is reachable without a key panel`,
+      "the app raised its key panel — set GLASSWELL_KEY_FILE, or point at a static bundle");
     await context.close();
     continue;
   }
