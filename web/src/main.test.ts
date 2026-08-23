@@ -176,3 +176,64 @@ describe("the as_of chip honours a pinned route at boot (gate-c12 R5 / visual F3
     await vi.waitFor(() => expect(host("gw-asof").textContent).toContain(LATEST));
   });
 });
+
+describe("one Escape closes one layer (SB-05 §7)", () => {
+  const escape = (): void => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  };
+
+  const openPanel = (id: string): HTMLElement => {
+    const panel = host(id);
+    panel.hidden = false;
+    return panel;
+  };
+
+  // The rail's popouts and the glossary popover all sit above the panels on the z ladder and
+  // all own their own dismissal, but each was a second document listener beside this one: a
+  // reader who pressed Escape over an open popover lost the well card under it as well.
+  it("leaves the card standing while a layer above it is open", async () => {
+    await bootAt("/");
+    const card = openPanel("gw-card");
+    const popover = document.createElement("div");
+    popover.className = "gw-popover";
+    document.body.appendChild(popover);
+
+    escape();
+
+    expect(card.hidden).toBe(false);
+    popover.remove();
+  });
+
+  it("leaves the card standing while the help panel is open", async () => {
+    await bootAt("/");
+    const card = openPanel("gw-card");
+    openPanel("gw-help-panel");
+
+    escape();
+
+    expect(card.hidden).toBe(false);
+  });
+
+  it("closes the card once nothing is above it", async () => {
+    await bootAt("/?well=3305310451");
+    const card = openPanel("gw-card");
+
+    escape();
+
+    await vi.waitFor(() => expect(card.hidden).toBe(true));
+  });
+
+  it("takes a hidden popover as no layer at all", async () => {
+    await bootAt("/?well=3305310451");
+    const card = openPanel("gw-card");
+    const popover = document.createElement("div");
+    popover.className = "gw-popover";
+    popover.hidden = true;
+    document.body.appendChild(popover);
+
+    escape();
+
+    await vi.waitFor(() => expect(card.hidden).toBe(true));
+    popover.remove();
+  });
+});

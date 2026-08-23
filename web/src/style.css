@@ -823,6 +823,15 @@ main[data-drawer="open"] #gw-card {
   display: none;
 }
 
+/* The card renders its head and body inside an <article>, so the shell's cap has to reach
+   through that wrapper: left to size itself it grew to its content, .gw-panel-body never got
+   a height to scroll against, and the card's tail ran off the viewport at 1366, 1024 and 390. */
+.gw-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .gw-panel-head {
   position: relative;
   flex: 0 0 auto;
@@ -1189,10 +1198,16 @@ a {
   border-bottom-color: var(--cyan);
 }
 
+/* An expanded definition is as long as the glossary says it is, so the surface owes a fold
+   rather than a silent crop: chrome/popover.ts hands it the room it may use, and the cap
+   falls back to the viewport for a popover placed before that lands. */
 .gw-popover {
   position: absolute;
   z-index: var(--gw-z-popover);
   max-width: 22rem;
+  max-height: var(--gw-popover-room, min(60vh, 26rem));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: var(--gw-space-3) var(--gw-space-3);
   font-size: var(--gw-fs-body);
   background: var(--panel);
