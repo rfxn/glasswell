@@ -3,7 +3,7 @@
 **Product and engineering blueprint. v0.5 (canonical model thesis, competitor harvest, rename)**
 Formerly basinforge. Personal platform: well-level upstream analytics on public data, API-first, map-first, agent-ready, multi-basin, fully self-explaining.
 
-Owner: Ryan MacDonald. Status: pre-build. This document is the contract to spec against; anything not in scope here is out until this doc changes.
+Owner: Ryan MacDonald. Status: in build — the North Dakota slice is deployed and serving. This document is the contract to spec against; anything not in scope here is out until this doc changes.
 
 v0.5 changes: project renamed glasswell (naming note, 1.3). Canonical data model promoted from implicit to thesis (Section 3.0) with rule R8 and a conformance registry seeded by real cross-source gotchas. Competitor feature harvest folded in: three-stream forecasting, analog finder, type-curve builder UI, econ tornado, operator league table, AOI alerts, portfolio sets, and inventory v0 (E17). Econ assumptions gain water handling cost and per-state tax defaults.
 
@@ -243,6 +243,8 @@ Anti-stories: prior list stands; additionally no slot generation outside 4D cons
 | P7 Living systems | E13 graded cycle; E17 inventory; E14 stretch; E16 matrix | S7, S10, S12; publish decision vs IP status |
 
 Timebox: P1-P5 roughly ten to eleven focused weekends (harvest adds one to two); P6 three to four; P7 two plus waiting. Cut order under compression: E14, then E17 (inventory), then alerts and league table, then E8, then E7 polish, then field-notes UI. Never cut E4, E5, E11, E12 validators, derivation capture, or the conformance registry; the registry is cheap and load-bearing for S11.
+
+*Phase-model note. The consolidated [v0.6 draft](blueprint-v0.6-draft.md) rewrites this table into nine phases (P0-P8), splitting serving and map away from forecasting and benchmark and re-estimating the timebox. That draft is in review and its own change control makes the review of its re-derived items the gate at which it becomes final; until that gate closes, the eight phases above are the committed numbering and derived documents tracking the nine-phase set say so where they use it. Adopting the nine-phase model here is a version promotion, not an editorial fix, and is the owner's call.*
 
 ---
 
