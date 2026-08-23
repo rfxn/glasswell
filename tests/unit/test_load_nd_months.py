@@ -15,10 +15,14 @@ import sys
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
+
+from glasswell.lineage.capture import lineage_session
+from glasswell.lineage.models import DeriveEnvironment
+from tests.support.fakes import FixedClock, MemoryRecorder
 
 pytestmark = pytest.mark.unit
 
@@ -27,6 +31,10 @@ SCRIPT = Path(__file__).resolve().parents[2] / "infra" / "load-nd-months.py"
 FIRST_MONTH = "2015-05"
 LAST_MONTH = "2025-09"
 BACKLOAD_MONTHS = 125
+
+BEFORE_MIDNIGHT = datetime(2026, 8, 21, 23, 59, 40, tzinfo=UTC)
+AFTER_MIDNIGHT = datetime(2026, 8, 22, 0, 0, 20, tzinfo=UTC)
+UNIT_ENV = DeriveEnvironment(code_version="git:0000test", code_dirty=False, env_id="env_unit")
 
 
 def _load():
@@ -116,6 +124,20 @@ def _patch_ingest(monkeypatch: pytest.MonkeyPatch, ingest) -> list[tuple[int, in
     monkeypatch.setattr(loader, "open_ingest_run", fake_run)
     monkeypatch.setattr(loader, "ingest_month", wrapper)
     return seen
+
+
+def _patch_sessions(monkeypatch: pytest.MonkeyPatch, opened_at: list[datetime]) -> None:
+    """Give each month its own session, opened at the next scripted instant."""
+    opens = iter(opened_at)
+
+    @contextmanager
+    def fake_run(*_: object, **__: object):
+        with lineage_session(
+            recorder=MemoryRecorder(), environment=UNIT_ENV, clock=FixedClock(start=next(opens))
+        ) as session:
+            yield FakeRun(as_of=session.vintage)
+
+    monkeypatch.setattr(loader, "open_ingest_run", fake_run)
 
 
 def test_the_backload_range_is_the_xlsx_era():
@@ -255,6 +277,33 @@ def test_a_resume_run_walks_only_what_is_missing(monkeypatch):
 
     assert seen == [(2015, 7), (2015, 8)]
     assert summary.skipped == 2
+
+
+def test_a_walk_that_crosses_utc_midnight_reads_both_knowledge_days_back(monkeypatch):
+    """A session's vintage is its own open time, so a walk over midnight spans two of them and
+    the summary has to name both; folding them into the day the walk started loses one."""
+    _patch_sessions(monkeypatch, [BEFORE_MIDNIGHT, AFTER_MIDNIGHT])
+    monkeypatch.setattr(loader, "ingest_month", lambda run, **_: FakeReport())
+    connection = FakeConnection(
+        [(BEFORE_MIDNIGHT.date(), 1, 10, 10, 1), (AFTER_MIDNIGHT.date(), 1, 10, 10, 1)]
+    )
+
+    with loader.ProgressLog(None) as progress:
+        summary = loader.run_backload(
+            connection,
+            [(2015, 5), (2015, 6)],
+            progress=progress,
+            stop=threading.Event(),
+            polite_seconds=0,
+        )
+
+    parameters = connection.cursors[0].executed[0][1]
+    assert parameters == (loader.SOURCE_ID, [BEFORE_MIDNIGHT.date(), AFTER_MIDNIGHT.date()])
+    assert [row["vintage_date"] for row in summary.vintages] == [
+        BEFORE_MIDNIGHT.date(),
+        AFTER_MIDNIGHT.date(),
+    ]
+    assert [row["rows_appended"] for row in summary.vintages] == [10, 10]
 
 
 def test_the_driver_writes_no_vintage_row_of_its_own():

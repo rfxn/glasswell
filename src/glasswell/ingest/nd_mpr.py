@@ -463,32 +463,95 @@ def _change_key(record: Mapping[str, Any]) -> tuple[str, str | None, str | None]
     return (record["value_hash"], record["reporting_level"], record["aggregation"])
 
 
-def _current_heads(
-    connection: psycopg.Connection,
-) -> dict[tuple[str, str, date, str], tuple[str, str | None, str | None]]:
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "select entity_type, entity_key, production_month, stream, value_hash,"
-            "       reporting_level, aggregation"
-            " from canonical.production_monthly_latest where source_id = %s",
-            (SOURCE_ID,),
-        )
-        return {(r[0], r[1], r[2], r[3]): (r[4], r[5], r[6]) for r in cursor.fetchall()}
+@dataclass(frozen=True, slots=True)
+class _ScopedHeads:
+    """The heads for one promotion's entity-months. A lookup outside them refuses (DR-17)."""
+
+    by_key: dict[tuple[str, str, date, str], tuple[str, str | None, str | None]]
+    entity_months: frozenset[tuple[str, date]]
+
+    def head_of(self, record: Mapping[str, Any]) -> tuple[str, str | None, str | None] | None:
+        pair = (record["entity_key"], record["production_month"])
+        if pair not in self.entity_months:
+            raise LookupError(
+                f"{pair} is outside the head scope this read covered; answering it as absent"
+                " would append a restatement as a first observation"
+            )
+        return self.by_key.get(_head_key(record))
+
+    def holds(self, record: Mapping[str, Any]) -> bool:
+        return self.head_of(record) is not None
 
 
-def _unchanged(records: Sequence[Mapping[str, Any]], heads: Mapping[tuple, tuple]) -> list[dict]:
-    """Change-only append (SB-07 §3.2): the PK carries the vintage, so the head check is here."""
-    return [
-        dict(record) for record in records if heads.get(_head_key(record)) != _change_key(record)
-    ]
-
+_HEADS_IN_SCOPE = """
+select entity_type, entity_key, production_month, stream, value_hash, reporting_level,
+       aggregation
+  from canonical.production_monthly_latest
+ where source_id = %(source_id)s and entity_key = any(%(entity_keys)s::text[])
+   and production_month = any(%(months)s::date[])
+"""
 
 _ROWS_AT_VINTAGE = """
 select entity_type, entity_key, production_month, stream, value_hash, reporting_level,
        aggregation
   from canonical.production_monthly
  where source_id = %(source_id)s and report_vintage = %(report_vintage)s
+   and entity_key = any(%(entity_keys)s::text[])
+   and production_month = any(%(months)s::date[])
 """
+
+
+def _scoped_heads(
+    connection: psycopg.Connection,
+    statement: str,
+    records: Sequence[Mapping[str, Any]],
+    **parameters: Any,
+) -> _ScopedHeads:
+    """Read heads for exactly the entity-months `records` covers, never for all of canonical.
+
+    A 125-workbook back-load promotes every month in one process against one knowledge day, so a
+    map of every head the table holds grows with the run rather than with the month (DR-17). Both
+    quals are head-key columns and both partition the view's window, so the read is a superset of
+    what the lookups ask for and pushes into the view rather than ranking the table.
+    """
+    entity_months = frozenset(
+        (record["entity_key"], record["production_month"]) for record in records
+    )
+    if not entity_months:
+        return _ScopedHeads(by_key={}, entity_months=entity_months)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            statement,
+            {
+                "source_id": SOURCE_ID,
+                "entity_keys": sorted({key for key, _ in entity_months}),
+                "months": sorted({month for _, month in entity_months}),
+                **parameters,
+            },
+        )
+        # Iterated rather than fetchall(): the list would hold every row a second time.
+        by_key = {(r[0], r[1], r[2], r[3]): (r[4], r[5], r[6]) for r in cursor}
+    return _ScopedHeads(by_key=by_key, entity_months=entity_months)
+
+
+def _current_heads(
+    connection: psycopg.Connection, records: Sequence[Mapping[str, Any]]
+) -> _ScopedHeads:
+    return _scoped_heads(connection, _HEADS_IN_SCOPE, records)
+
+
+def _rows_at_vintage(
+    connection: psycopg.Connection,
+    records: Sequence[Mapping[str, Any]],
+    *,
+    report_vintage: date,
+) -> _ScopedHeads:
+    return _scoped_heads(connection, _ROWS_AT_VINTAGE, records, report_vintage=report_vintage)
+
+
+def _unchanged(records: Sequence[Mapping[str, Any]], heads: _ScopedHeads) -> list[dict]:
+    """Change-only append (SB-07 §3.2): the PK carries the vintage, so the head check is here."""
+    return [dict(record) for record in records if heads.head_of(record) != _change_key(record)]
 
 
 def reject_same_vintage_divergence(
@@ -506,16 +569,12 @@ def reject_same_vintage_divergence(
     """
     if not records:
         return []
-    with connection.cursor() as cursor:
-        cursor.execute(
-            _ROWS_AT_VINTAGE, {"source_id": SOURCE_ID, "report_vintage": report_vintage}
-        )
-        occupied = {(r[0], r[1], r[2], r[3]): (r[4], r[5], r[6]) for r in cursor.fetchall()}
+    occupied = _rows_at_vintage(connection, records, report_vintage=report_vintage)
 
     landable: list[dict[str, Any]] = []
     divergent: list[str] = []
     for record in records:
-        existing = occupied.get(_head_key(record))
+        existing = occupied.head_of(record)
         if existing is None:
             landable.append(dict(record))
         elif existing != _change_key(record):
@@ -789,7 +848,7 @@ def promote_manifest(
                 vocabulary=vocabulary,
                 counts=quarantined,
             )
-        heads = _current_heads(connection)
+        heads = _current_heads(connection, [*promoted.records, *promoted.aggregates])
         # Two filters, in this order. The head check decides what is worth appending; the
         # vintage check decides what this vintage is still allowed to say, and refuses rather
         # than letting a conflicting row be swallowed on insert.
@@ -801,7 +860,7 @@ def promote_manifest(
         )
         restatement: dict[str, int] = {}
         for record in appended + aggregates:
-            if _head_key(record) in heads:
+            if heads.holds(record):
                 month_key = record["production_month"].isoformat()
                 restatement[month_key] = restatement.get(month_key, 0) + 1
 
@@ -887,7 +946,7 @@ def promote_manifest(
     disclosed = {
         (record["api10"], record["production_month"])
         for record in promoted.aggregates
-        if _head_key(record) in landed_keys or heads.get(_head_key(record)) == _change_key(record)
+        if _head_key(record) in landed_keys or heads.head_of(record) == _change_key(record)
     }
     superseded = supersede_pool_collisions(
         run, pairs=sorted(disclosed), derivation_id=aggregate_derivation_id
