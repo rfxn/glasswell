@@ -24,7 +24,9 @@ Four things are **not** here, so do not go looking for them:
 
 - **No forecasts.** No decline curves, no EUR, no type curve, no ML.
 - **No dollars.** No economics, no NPV, no scenarios, no inventory.
-- **No Permian, no Texas, no New Mexico.** North Dakota only.
+- **No Permian production, and no allocation.** Texas wells and wellbore identity are
+  on the map; New Mexico ingest exists with nothing promoted. Production, and the
+  allocation work that would make it comparable, are North Dakota only.
 - **No tunnel and no Access.** HTTPS is up on the LAN name (DIR-13); reaching it from
   outside the LAN is not — see §2.
 
