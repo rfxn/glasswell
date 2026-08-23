@@ -7,6 +7,59 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.47"></a>
+## v0.47 — 2026-08-23
+
+- [New] Hybrid basemap: the archive's own road, place and water labels composited over
+      satellite imagery, from the PMTiles extract already shipped — no new origin, no key
+      and no CSP change, since the label data was always there and no symbol layer was ever
+      constructed on the raster path
+- [Change] Satellite imagery now reads from Esri World Imagery rather than USGS National
+         Map, a swap and not an addition, so exactly one external origin stays named in the
+         policy; measured, USGS serves nothing above z16 while the map reaches z18, so every
+         z17-z18 view was a z16 tile stretched 4x
+- [Change] The imagery source declares `maxzoom` 19 because that is the deepest level both
+         basins in scope were measured to carry, not because the service stops there: the
+         deepest level with real pixels ranges z17 to z20 by location and is not monotonic,
+         so a region added later has to be re-probed rather than inheriting 19
+- [Change] The map's own `maxZoom` rises from 18 to 19 to reach the level the imagery now
+         serves, halving ground resolution to 0.2 m per pixel in both basins; a test holds
+         it equal to the imagery ceiling, since below it a served level is unreachable and
+         above it the map paints the service's grey placeholder with no error anywhere
+- [Change] Every basemap option declares the substrate it is read against instead of having
+         one inferred from its id; an option whose id is not a variant name used to resolve
+         silently to the dark token row, which is slate labels over bright aerial
+- [New] The hybrid's two substrates fail independently and are named separately: imagery
+      unreachable keeps the labels and names the imagery host, an archive that cannot serve
+      ranges degrades to the graticule and names the archive
+- [Fix] The imagery credit is dropped together with the imagery it covers, so an attribution
+      never renders over a canvas with nothing of that source drawn on it; the hybrid probes
+      the origin before drawing either, and reports the loss from the resolve path, because
+      a source that was never added raises no tile error for the banner to read
+- [Fix] Well card: a served figure's provenance could not be reached by any user action. The card
+      clipped its own tail with no scroll affordance at 1366, 1024 and 390, and the tail was the
+      derivation disclosure — the `series_spans_derivations` warning naming the seven derivations
+      behind the production column — along with the chart's axis and the null-semantics key. The
+      shell caps and the body scrolls, but `card.ts` renders both inside an `<article>` that sized
+      to its content, so the body never had a height to scroll against; the cap now reaches
+      through it and every handle is reachable at every breakpoint. A handle nobody can get to is
+      a naked number with a footnote
+- [Fix] Escape closes one layer: an open glossary popover, help panel or search panel now
+      keeps the well card and the lineage drawer beneath it standing, instead of spending one
+      key on two surfaces at every breakpoint
+- [Fix] Tile-failure banner: sized to its sentence rather than to half the viewport, and
+      dropped clear of the ⌾ coach mark, which covered the fault line at every width but 1600;
+      at phone width the banner and the pill strip stack in one column clear of the zoom column
+- [Fix] Thematic key reserves the status key's column at phone width, where the two keys
+      overlapped and the choropleth key covered nine status counts and their ⌾ handles
+- [Fix] Glossary and exempt-count popovers share one placement helper that clamps them into
+      the viewport and states the height they may use, so a long definition folds rather than
+      running past the bottom edge
+- [Change] Map chrome takes its layer from the z-index ladder token rather than a literal, and the
+           fault banner's raw rung drops to the local value its sealed stacking context actually
+           needs: 8 read as a ladder rung between the chrome's 5 and the panels' 10 while ordering
+           nothing but the banner against its own chrome siblings
+
 <a id="v0.46"></a>
 ## v0.46 — 2026-08-23
 
