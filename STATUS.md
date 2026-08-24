@@ -1,10 +1,10 @@
 # Current status
 
-Reconciled on **2026-08-24** against the v0.47 release line, the two layer-panel UX
-commits merged after that tag, the checked-in OpenAPI snapshot, and git history through
-`c77b7b1`. This is the short current-state ledger; [`ROADMAP.md`](ROADMAP.md) owns phase
-scope and exit criteria, while [`blueprint.md`](blueprint.md) remains the committed v0.5
-contract and [`blueprint-v0.6-draft.md`](blueprint-v0.6-draft.md) is the rc4 amendment set.
+Reconciled on **2026-08-24** against the v0.47 release line, the layer-panel UX merged
+after that tag, the checked-in OpenAPI snapshot, and current `main` history. This is the
+short current-state ledger; [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria,
+while [`blueprint.md`](blueprint.md) remains the committed v0.5 contract and
+[`blueprint-v0.6-draft.md`](blueprint-v0.6-draft.md) is the rc4 amendment set.
 
 ## Shipped baseline
 
@@ -34,7 +34,7 @@ contract and [`blueprint-v0.6-draft.md`](blueprint-v0.6-draft.md) is the rc4 ame
 | **P3** Forecasting and benchmark | Entry met; build not started | Feature builder, baseline, models, calibration, registry writer, analog index, and benchmark harness |
 | **P4** Dollars and scenarios | Not started | Entire phase |
 | **P5** Intelligence, agents and alerts | Not started | Entire phase |
-| **P6** Hardening and glass-box proof | Partial | Hosted green run after the CI selector fix; tunnel/Access, outsider guest exercise, live restore drill, determinism and tool-equivalence gates |
+| **P6** Hardening and glass-box proof | Partial | Tunnel/Access, outsider guest exercise, live restore drill, determinism and tool-equivalence gates |
 | **P7** Permian | Started, unpromoted/incomplete | NM deployment; TX production, allocation, and validators |
 | **P8** Living systems | Not started | Entire phase |
 
@@ -60,6 +60,7 @@ contract and [`blueprint-v0.6-draft.md`](blueprint-v0.6-draft.md) is the rc4 ame
   35-assertion headless-Chromium map-chrome gate pass locally.
 - The dependency lock exactly matches the installed environment and the generated OpenAPI
   snapshot reports current.
-- The latest hosted workflow observed during reconciliation was red because CI named a
-  removed tile-contract test. The workflow now names the current test; a new upstream run
-  is still required before calling hosted CI green.
+- Hosted CI run `32756994380` passed all six jobs on 2026-08-24 after the stale
+  tile-contract selector was corrected.
+- GitHub annotates `actions/checkout@v4` and `actions/setup-node@v4` for their deprecated
+  Node 20 action runtime, currently forced to Node 24. This is non-failing maintenance debt.

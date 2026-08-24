@@ -1,5 +1,5 @@
 - [Fix] Python CI's tile preflight names the current Martin publication contract
-      instead of a removed test, so the full suite can run
+      instead of a removed test; the next hosted run passed all six jobs
 - [Fix] The locked development environment includes Starlette's supported httpx2
       test transport instead of emitting its deprecated-httpx warning
 - [New] STATUS.md is the tracked current-state ledger: shipped release and data
