@@ -61,4 +61,5 @@ snapshot, and current `main` history. This is the short current-state ledger;
 - The dependency lock exactly matches the installed environment and the generated OpenAPI
   snapshot reports current.
 - Hosted pre-release `main` CI run `32779964976` passed all six jobs on 2026-08-24 at
-  merge commit `9fe2712`, with 2,430 tests, 2 explicit skips, and zero annotations.
+  merge commit `9fe2712`, before this branch added three release-tooling tests: 2,430
+  passed, 2 explicitly skipped, and zero annotations.
