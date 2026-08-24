@@ -4812,7 +4812,7 @@
     }
   },
   "info": {
-    "description": "Glass-box upstream analytics on public data. Every number this API serves carries a\nderivation handle in band, and `GET /v1/explain` walks that handle back to the\nchecksummed government file it came from.\n\nConventions that hold everywhere: responses are `data` / `meta` / `links`; collections\nare cursor-paginated with no offset parameter; failures are RFC 9457 problem documents\nwhose `type` resolves at `/v1/errors/{code}`; and `as_of` selects knowledge time, with\nthe resolved vintage reported back in `meta.as_of`.\n\nThis deployment is the North Dakota slice: wells, geometry, monthly production, the\nlineage spine, the conformance registry, quarantine and the glossary. Forecasts,\neconomics and other basins are not served.",
+    "description": "Glass-box upstream analytics on public data. Every number this API serves carries a\nderivation handle in band, and `GET /v1/explain` walks that handle back to the\nchecksummed government file it came from.\n\nConventions that hold everywhere: responses are `data` / `meta` / `links`; collections\nare cursor-paginated with no offset parameter; failures are RFC 9457 problem documents\nwhose `type` resolves at `/v1/errors/{code}`; and `as_of` selects knowledge time, with\nthe resolved vintage reported back in `meta.as_of`.\n\nThis deployment serves North Dakota wells, geometry and monthly production, plus Texas\nwells and bore geometry with well-level production held pending allocation. The lineage\nspine, conformance registry, quarantine and glossary are live. Forecasts, economics,\nscenarios, agents and inventory are not served; New Mexico promotion is not claimed.",
     "title": "glasswell",
     "version": "0.1.0",
     "x-glasswell-freeze": {

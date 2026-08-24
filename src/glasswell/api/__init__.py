@@ -80,9 +80,10 @@ are cursor-paginated with no offset parameter; failures are RFC 9457 problem doc
 whose `type` resolves at `/v1/errors/{code}`; and `as_of` selects knowledge time, with
 the resolved vintage reported back in `meta.as_of`.
 
-This deployment is the North Dakota slice: wells, geometry, monthly production, the
-lineage spine, the conformance registry, quarantine and the glossary. Forecasts,
-economics and other basins are not served.
+This deployment serves North Dakota wells, geometry and monthly production, plus Texas
+wells and bore geometry with well-level production held pending allocation. The lineage
+spine, conformance registry, quarantine and glossary are live. Forecasts, economics,
+scenarios, agents and inventory are not served; New Mexico promotion is not claimed.
 """.strip()
 
 

@@ -29,13 +29,13 @@ jobs:
       - name: ruff
         run: python -m ruff check .
 
-      # DR-05: the tile allowlist the proxy enforces and the source list martin is configured
-      # to publish must be the same set, with the same property types. Needs no database, so
-      # it fails fast and it fails even when the docker tier cannot start.
+      # DR-05: the tile allowlist the proxy enforces and the function list martin is configured
+      # to publish must be the same set. Property types come from each function's select list,
+      # so there is no second declaration to compare. This fails fast without a database.
       - name: martin config equals the tile allowlist
         run: >
           python -m pytest -q
-          tests/integration/test_tile_wire_types.py::test_the_martin_config_and_the_allowlist_declare_the_same_property_types
+          tests/integration/test_tile_wire_types.py::test_the_martin_config_publishes_the_functions_the_allowlist_names
 
       # The integration and contract tiers start their own PostGIS container through the
       # docker CLI, so no `services:` block applies here. The runner's daemon is local, so the

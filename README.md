@@ -9,7 +9,8 @@
 <p align="center"><strong>Glass-box upstream analytics on public data</strong></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/status-ND_slice_running-3FA55E?style=flat-square" alt="Status: North Dakota slice running">
+  <img src="https://img.shields.io/badge/status-in_build-3FA55E?style=flat-square" alt="Status: in build">
+  <img src="https://img.shields.io/badge/release-v0.47-2A9BB5?style=flat-square" alt="Release: v0.47">
   <img src="https://img.shields.io/badge/blueprint-v0.5-2A9BB5?style=flat-square" alt="Blueprint v0.5">
   <img src="https://img.shields.io/badge/license-proprietary-7C8B96?style=flat-square" alt="License: proprietary">
   <img src="https://img.shields.io/badge/data-public_only-3FA55E?style=flat-square" alt="Public data only">
@@ -33,8 +34,8 @@ derivation handle back to a checksummed regulator file, or it does not ship.
 
 > [!IMPORTANT]
 > **Early build, private, and not a product.** The repository holds the blueprint,
-> the collateral built from it, and the first code: the lineage and reproducibility
-> spine every other layer will import. glasswell is a personal single-operator build on public regulator
+> the collateral built from it, and a deployed North Dakota production slice with a
+> North Dakota/Texas map. glasswell is a personal single-operator build on public regulator
 > data. It is not commercial, not multi-tenant, not investment advice, and not a
 > source of verified reserves or ownership. Public release is gated on the IP
 > review in [`blueprint.md`](blueprint.md) §8.2.
@@ -77,9 +78,9 @@ NADCON grid. Texas production is **not** there, because the Railroad Commission
 reports it by lease: a Texas well card says production is pending allocation and
 names the rule, rather than drawing an empty chart.
 
-Forecasts, economics, scenarios, inventory, the Permian, and the agent gateway are
-**not** in it. [SMOKE.md](SMOKE.md) is the fifteen-minute walkthrough, including
-what is missing and what is queued next.
+Forecasts, economics, scenarios, inventory, Texas production/allocation, New Mexico
+promotion, and the agent gateway are **not** in it. [SMOKE.md](SMOKE.md) is the
+fifteen-minute deployment walkthrough; [STATUS.md](STATUS.md) is the current ledger.
 
 ## Why it exists
 
@@ -178,10 +179,10 @@ quarantined share is published in the scorecard.
 
 <p align="center"><img src="assets/forecast-to-dollars.svg" alt="Features feed a quantile model and a type-curve control, both scored on one temporal holdout, producing three-stream forecasts that drive discounted cash flow economics" width="1000"></p>
 
-A gradient-boosted quantile model with conformal calibration produces P10/P50/P90
-on three streams — oil as the headline, gas and water as secondary targets under
-identical split, censoring, and control rules. GOR and water cut are derived
-surfaces, never targets.
+The planned modeling path uses a gradient-boosted quantile model with conformal
+calibration to produce P10/P50/P90 on three streams — oil as the headline, gas and
+water as secondary targets under identical split, censoring, and control rules. GOR
+and water cut are derived surfaces, never targets.
 
 The type curve is not a straw man in this design; it is the control group, built
 from the same rows on the same split, and it is allowed to win. The benchmark
@@ -214,25 +215,22 @@ bounds get measured against two independent validators and published.
 
 ## API surface
 
-API-first, and the agent is a first-class consumer: if the agent cannot do it, the
-API is incomplete. Every endpoint obeys the derivation, recipe, and explain rules.
+API-first, with 30 operations in the frozen v1 snapshot. The current surface serves
+health, wells, North Dakota production, lineage, manifests, conformance, quarantine,
+glossary, key administration, and tiles:
 
 ```
-GET  /wells/{api10}                     GET  /wells/{api10}/analogs?n=10
-GET  /wells/{api10}/production          GET  /wells/{api10}/neighbors
-POST /forecasts                         GET  /typecurves
-POST /valuations                        POST /sensitivities
-POST /scenarios                         POST /inventory/runs
-POST /wellsets                          GET  /operators/league
-POST /aois                              GET  /aois/{id}/digest
-GET  /conformance                       GET  /conformance/{rule_id}
-GET  /explain/{artifact_id}             GET  /recipes/{artifact_id}
-GET  /quality/scorecard                 GET  /quality/quarantine
-GET  /audit
+GET  /v1/wells                          GET  /v1/wells/{api10}
+GET  /v1/wells/{api10}/production       GET  /v1/wells/{api10}/production/pools
+GET  /v1/explain?h={handle}              GET  /v1/manifests/{manifest_id}
+GET  /v1/conformance                    GET  /v1/conformance/{rule_id}
+GET  /v1/quarantine                     GET  /v1/quarantine/summary
+GET  /v1/glossary                       GET  /v1/tiles/{layer}/{z}/{x}/{y}.pbf
 ```
 
-Add `?explain=true` to any of them and the response gains the lineage block the UI
-drawer renders. There is no private endpoint behind the UI.
+Forecast, valuation, sensitivity, scenario, agent, and inventory operations remain
+designed scope, not live routes. The UI consumes the same public API documented by the
+checked-in OpenAPI snapshot; there is no private endpoint behind it.
 
 ## Build phases
 
@@ -282,7 +280,7 @@ src/glasswell/lineage/   the lineage and reproducibility spine every layer impor
 src/glasswell/db/        migration runner and NNN_name.sql migrations
 tests/unit/              pure functions; no database, no docker
 tests/integration/       ephemeral PostGIS container, one database per test
-tests/contract/          FastAPI/OpenAPI surface (empty until the API lands)
+tests/contract/          FastAPI/OpenAPI surface and frozen snapshot checks
 ```
 
 ```bash
@@ -322,7 +320,8 @@ records each file's checksum and refuses a changed migration.
 
 | Document | Contents |
 |----------|----------|
-| [SMOKE.md](SMOKE.md) | Walkthrough of the running ND slice, its gaps, and the morning queue |
+| [STATUS.md](STATUS.md) | Current release, phase ledger, verified gaps, and validation state |
+| [SMOKE.md](SMOKE.md) | Dated walkthrough of the deployed slice and its observed gaps |
 | [blueprint.md](blueprint.md) | The product and engineering contract. Anything not in scope there is out until it changes. |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Layers, components, boundaries, and the rules R1–R8 |
 | [ROADMAP.md](ROADMAP.md) | Build phases P0–P8 with exit criteria, current status and cut order |

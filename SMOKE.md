@@ -5,9 +5,9 @@ running instance on 2026-08-20; the screenshots named in each step are on the bu
 host under `work-output/smoke-shots/` (untracked, not in git).
 
 Every figure here was re-read from the deployed instance after migrations 014-019 and the
-re-derivation, so the numbers are the ones the API serves now, not the ones it served the
-night this file was written. `scripts/smoke.sh` is the machine-checkable twin: if a number
-below has moved, that script is what tells you.
+re-derivation on 2026-08-20, so this is a dated walkthrough rather than the current-state
+ledger. `scripts/smoke.sh` is the machine-checkable twin; [`STATUS.md`](STATUS.md) records
+what has landed since.
 
 ---
 
@@ -300,7 +300,10 @@ refused the whole style (blank canvas, no layers, no tile requests); the tile UR
 template was percent-encoded so every tile returned 422; and the chart clipped its
 six-figure axis labels. Each has a regression test.
 
-## 7. Morning queue, in priority order
+## 7. Follow-up queue recorded with the walkthrough
+
+This was the queue on 2026-08-20. Closed items stay visible as history; current priorities
+live in [`STATUS.md`](STATUS.md).
 
 1. **Cloudflare Tunnel + Access.** Needs your dashboard. ~~A real certificate~~ is done
    (DIR-13): Caddy fronts the LAN name with a Let's Encrypt certificate and uvicorn is
@@ -311,8 +314,8 @@ six-figure axis labels. Each has a regression test.
    Never run both publishing mechanisms at once: the config publishes the functions, so
    a `tables:` block naming the views they read would collide on the same ids.
 3. ~~**Fold the hand-applied `marts` grant into a migration**~~ (gap 4) — done.
-4. **Full production back-load** beyond six months, then re-check the quarantine
-   shares.
+4. ~~**Full production back-load** beyond six months~~ — done: all 125 back-load
+   workbooks landed, producing 131 distinct canonical months from 2015-05-01.
 5. ~~**`scripts/smoke.sh`**~~ (gap 14) — done, with a browser tier beside it.
 6. **IP carve-out review** — the top risk item, and the gate on anything public.
 

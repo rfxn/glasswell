@@ -1,0 +1,65 @@
+# Current status
+
+Reconciled on **2026-08-24** against the v0.47 release line, the two layer-panel UX
+commits merged after that tag, the checked-in OpenAPI snapshot, and git history through
+`c77b7b1`. This is the short current-state ledger; [`ROADMAP.md`](ROADMAP.md) owns phase
+scope and exit criteria, while [`blueprint.md`](blueprint.md) remains the committed v0.5
+contract and [`blueprint-v0.6-draft.md`](blueprint-v0.6-draft.md) is the rc4 amendment set.
+
+## Shipped baseline
+
+- **Release line:** 28 tagged releases, v0.20 through v0.47, cut 2026-08-21 through
+  2026-08-23.
+- **North Dakota:** ingest, bitemporal promotion, quarantine, conformance, wells,
+  geometry, monthly production, lineage, explain, glossary, API, tiles, and map are built.
+- **Production history:** the 125-workbook back-load is complete. Canonical holds 131
+  distinct months from 2015-05-01 and 7,223,544 rows; the P3 entry gate is met.
+- **Texas:** Permian-district GIS wells, wellbore identity, operators, and bore geometry
+  are on the map. Lease production, well allocation, and its validators are not built.
+- **New Mexico:** ingest and promotion code exist, but promotion remains deployment- and
+  owner-gated; no resident NM production is claimed here.
+- **Serving surface:** the frozen v1 snapshot contains 30 operations covering health,
+  wells, ND production, lineage, manifests, conformance, quarantine, glossary, keys, and
+  tiles. Forecast, valuation, scenario, agent, and inventory operations are not served.
+- **Frontend:** MapLibre map, ND/TX layers, well card, production chart, lineage drawer,
+  glossary, explorer, satellite/hybrid modes, and searchable layer panel are shipped.
+
+## Phase ledger
+
+| Phase | Status | Remaining boundary |
+|-------|--------|--------------------|
+| **P0** Scaffold and contracts | Met | `/v1/audit` is not served, but is not a P0 exit requirement |
+| **P1** ND spine | Met with named deferrals | PDF-era production and FracFocus remain absent |
+| **P2** Serving and map | Substantially met | Missing completions, neighbours, permits, land/spacing units and formations routes; no GOR/water-cut card |
+| **P3** Forecasting and benchmark | Entry met; build not started | Feature builder, baseline, models, calibration, registry writer, analog index, and benchmark harness |
+| **P4** Dollars and scenarios | Not started | Entire phase |
+| **P5** Intelligence, agents and alerts | Not started | Entire phase |
+| **P6** Hardening and glass-box proof | Partial | Hosted green run after the CI selector fix; tunnel/Access, outsider guest exercise, live restore drill, determinism and tool-equivalence gates |
+| **P7** Permian | Started, unpromoted/incomplete | NM deployment; TX production, allocation, and validators |
+| **P8** Living systems | Not started | Entire phase |
+
+## Immediate gaps
+
+1. Start P3 only from the now-met back-load gate: land the feature availability contract,
+   type-curve control, and benchmark split before model code.
+2. Close the highest-value P2 serving gaps or explicitly defer them before adding another
+   UI surface.
+3. Prove P6 operationally: obtain a fresh hosted CI pass, execute and record the restore
+   drill, then exercise a non-interactive guest path with an outsider.
+4. Promote New Mexico before implementing Texas lease allocation so the well-level
+   Permian spine can act as the intended control.
+5. Resolve the owner-gated v0.6 §11 review and public IP carve-out decision separately
+   from implementation work.
+
+## Verification state
+
+- The full locked Python suite passes **2,403 tests with 2 explicit skips**, including the
+  Docker-backed integration and contract tiers; Ruff passes.
+- The web suite passes **1,149 tests across 77 files**; typecheck and production build pass.
+- Browserless E2E guards, shell checks, collateral checks, changelog lint, and the
+  35-assertion headless-Chromium map-chrome gate pass locally.
+- The dependency lock exactly matches the installed environment and the generated OpenAPI
+  snapshot reports current.
+- The latest hosted workflow observed during reconciliation was red because CI named a
+  removed tile-contract test. The workflow now names the current test; a new upstream run
+  is still required before calling hosted CI green.

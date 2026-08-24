@@ -66,6 +66,14 @@ describe("the header is a control surface, not a paragraph", () => {
     expect(element("gw-help-panel").textContent).toContain("derivation");
   });
 
+  it("states the two-basin boundary without claiming Texas production", () => {
+    const help = element("gw-help-panel").textContent ?? "";
+
+    expect(help).toContain("North Dakota wells and production");
+    expect(help).toContain("Texas wells and bore geometry");
+    expect(help).toContain("pending allocation");
+  });
+
   it("mounts the search box into the header's control cluster", () => {
     expect(element("gw-search-slot").querySelector("input")).toBeTruthy();
   });

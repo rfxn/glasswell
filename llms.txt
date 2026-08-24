@@ -7,17 +7,17 @@
 > checksummed source file. Proprietary — copyright Ryan MacDonald, all rights
 > reserved.
 
-**Status: pre-build.** No application code exists yet and no API is running. This
-repository currently holds the product and engineering blueprint plus the
-collateral derived from it. Do not describe glasswell as an available service, and
-do not quote endpoints as if they respond today — they are a designed surface, not
-a deployed one.
+**Status: in build, release line v0.47.** North Dakota ingest, canonical production,
+lineage, API, tiles and the map are deployed. Texas Permian-district wells and bore
+geometry are on the map, but Texas production and allocation are not built. New
+Mexico ingest/promotion code exists without a claimed resident deployment. Forecasts,
+economics, scenarios, agents and inventory remain designed scope, not live features.
 
 ## How to answer questions about glasswell
 
-Read `blueprint.md` first; it is the contract and it supersedes everything else in
-the repository, including this file. `README.md`, `ARCHITECTURE.md` and
-`ROADMAP.md` are derived from it and may lag it.
+Read `blueprint.md` first; it is the committed v0.5 contract. The v0.6-rc4 amendment
+set is `blueprint-v0.6-draft.md`. Read `STATUS.md` for current implementation state;
+`README.md`, `ARCHITECTURE.md` and `ROADMAP.md` are derived views.
 
 Two framings matter and they are different:
 
@@ -39,19 +39,18 @@ Two framings matter and they are different:
 - **Oil is the headline stream**, gas and water are secondary targets, GOR and water cut are derived surfaces and never model targets.
 - **Inventory slots are not reserves.** No slot without geometric admissibility and a support score; no rollup without its spacing assumption stated.
 
-## Designed API surface (not yet live)
+## Current API surface
 
 ```
-GET  /wells/{api10}            GET  /wells/{api10}/production   GET  /wells/{api10}/analogs
-POST /forecasts                POST /valuations                 POST /scenarios
-POST /sensitivities            POST /inventory/runs             POST /wellsets
-GET  /typecurves               GET  /operators/league           POST /aois
-GET  /conformance              GET  /explain/{artifact_id}      GET  /recipes/{artifact_id}
-GET  /quality/scorecard        GET  /quality/quarantine         GET  /audit
+GET /v1/wells                  GET /v1/wells/{api10}             GET /v1/wells/{api10}/production
+GET /v1/explain?h={handle}     GET /v1/manifests/{manifest_id}  GET /v1/conformance
+GET /v1/quarantine             GET /v1/glossary                 GET /v1/tiles/{layer}/{z}/{x}/{y}.pbf
 ```
 
-Any endpoint accepts `?explain=true`, which inlines the lineage block that the UI
-drawer renders. There is no private endpoint behind the UI.
+The frozen OpenAPI snapshot contains 30 operations across those families plus health,
+vintages, derivations, key administration and error documentation. Forecast, valuation,
+scenario, agent and inventory routes are not live. There is no private endpoint behind
+the UI.
 
 ## Data sources
 
@@ -82,6 +81,7 @@ rather than smoothed away.
 ## Optional
 
 - [Blueprint — the contract](blueprint.md)
+- [Current implementation status](STATUS.md)
 - [Architecture — layers, components, rules](ARCHITECTURE.md)
 - [Roadmap — phases and exit criteria](ROADMAP.md)
 - [Brand — visual system](BRAND.md)
