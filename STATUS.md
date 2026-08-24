@@ -53,7 +53,7 @@ snapshot, and current `main` history. This is the short current-state ledger;
 
 ## Verification state
 
-- The full locked Python suite passes **2,433 tests with 2 explicit skips**, including the
+- The full locked Python suite passes **2,434 tests with 2 explicit skips**, including the
   Docker-backed integration and contract tiers; Ruff passes.
 - The web suite passes **1,149 tests across 77 files**; typecheck and production build pass.
 - Browserless E2E guards, shell checks, collateral checks, changelog lint, and the
@@ -61,5 +61,5 @@ snapshot, and current `main` history. This is the short current-state ledger;
 - The dependency lock exactly matches the installed environment and the generated OpenAPI
   snapshot reports current.
 - Hosted pre-release `main` CI run `32779964976` passed all six jobs on 2026-08-24 at
-  merge commit `9fe2712`, before this branch added three release-tooling tests: 2,430
-  passed, 2 explicitly skipped, and zero annotations.
+  merge commit `9fe2712`, before the v0.48 train added four release and deterministic-fixture
+  tests: 2,430 passed, 2 explicitly skipped, and zero annotations.

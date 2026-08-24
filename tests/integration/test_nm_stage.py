@@ -42,7 +42,9 @@ def fixture_for(table: str) -> Path:
 def zipped(tmp_path: Path, table: str, document: bytes) -> bytes:
     archive = tmp_path / f"{table}.zip"
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
-        bundle.writestr(f"{table}.xml", document)
+        member = zipfile.ZipInfo(f"{table}.xml", date_time=(1980, 1, 1, 0, 0, 0))
+        member.compress_type = zipfile.ZIP_DEFLATED
+        bundle.writestr(member, document)
     return archive.read_bytes()
 
 
@@ -66,6 +68,16 @@ def full_record(**overrides: str) -> str:
     cells.update(prd_knd_cde="O ", prodn_yr="2015", prodn_mth="7")
     cells.update(overrides)
     return record_text(**cells)
+
+
+def test_fixture_archives_have_stable_content_identity(tmp_path, monkeypatch):
+    wall_clock = iter(((2026, 8, 24, 10, 0, 0), (2026, 8, 24, 10, 0, 2)))
+    monkeypatch.setattr(zipfile.time, "localtime", lambda *_: next(wall_clock))
+
+    first = zipped(tmp_path, "pool", b"same document")
+    second = zipped(tmp_path, "pool", b"same document")
+
+    assert second == first
 
 
 class FakeFtp:
