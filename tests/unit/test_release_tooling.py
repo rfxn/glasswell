@@ -304,6 +304,84 @@ class TestTheFold:
             release.bump_pyproject("[project]\n", Version(0, 20))
 
 
+# -------------------------------------------------------- duplicated release surfaces
+
+
+def _write_release_surfaces(root: Path, version: str = "v0.47") -> None:
+    (root / "README.md").write_text(
+        f'<img src="https://img.shields.io/badge/release-{version}-blue" '
+        f'alt="Release: {version}">\nHistorical note: {version} stays historical.\n'
+    )
+    (root / "STATUS.md").write_text(
+        "# Current status\n\n"
+        f"Reconciled on **2026-08-23** against the {version} release line, the checked-in "
+        "OpenAPI\nsnapshot, and current `main` history. This is the short current-state "
+        "ledger.\n\n"
+        "## Shipped baseline\n\n"
+        f"- **Release line:** 28 tagged releases, v0.20 through {version}, cut 2026-08-21 "
+        "through\n  2026-08-23.\n"
+    )
+    (root / "ROADMAP.md").write_text(
+        "# Roadmap\n\n"
+        f"28 tagged releases, v0.20 through {version}, cut from 2026-08-21 through "
+        "2026-08-23, run\nthe deployed slice.\n"
+    )
+    (root / "llms.txt").write_text(
+        f"**Status: in build, release line {version}.** Current capabilities follow.\n"
+    )
+
+
+class TestReleaseSurfaceSynchronization:
+    def test_updates_owned_markers_without_rewriting_historical_mentions(
+        self, tmp_path, monkeypatch
+    ):
+        _write_release_surfaces(tmp_path)
+        monkeypatch.setattr(release, "tagged_release_count", lambda root: 28)
+
+        updates, blockers = release.sync_release_surfaces(
+            tmp_path, Version(0, 47), Version(0, 48), "2026-08-24"
+        )
+
+        assert blockers == []
+        assert 'release-v0.48-blue" alt="Release: v0.48"' in updates[
+            tmp_path / "README.md"
+        ]
+        assert "Historical note: v0.47 stays historical." in updates[tmp_path / "README.md"]
+        assert "against the v0.48 release line" in updates[tmp_path / "STATUS.md"]
+        assert "29 tagged releases, v0.20 through v0.48" in updates[tmp_path / "STATUS.md"]
+        assert "through\n  2026-08-24." in updates[tmp_path / "STATUS.md"]
+        assert "29 tagged releases, v0.20 through v0.48" in updates[tmp_path / "ROADMAP.md"]
+        assert "release line v0.48" in updates[tmp_path / "llms.txt"]
+        assert "v0.48" not in (tmp_path / "README.md").read_text(), "rendering must be pure"
+
+    def test_refuses_an_ambiguous_marker_instead_of_guessing(self, tmp_path, monkeypatch):
+        _write_release_surfaces(tmp_path)
+        llms = tmp_path / "llms.txt"
+        llms.write_text(llms.read_text() * 2)
+        monkeypatch.setattr(release, "tagged_release_count", lambda root: 28)
+
+        updates, blockers = release.sync_release_surfaces(
+            tmp_path, Version(0, 47), Version(0, 48), "2026-08-24"
+        )
+
+        assert updates == {}
+        assert blockers == [
+            "llms.txt: expected exactly one machine-readable release status; found 2"
+        ]
+
+    def test_refuses_a_partial_collateral_set(self, tmp_path):
+        (tmp_path / "README.md").write_text("only one surface\n")
+
+        updates, blockers = release.sync_release_surfaces(
+            tmp_path, Version(0, 47), Version(0, 48), "2026-08-24"
+        )
+
+        assert updates == {}
+        assert blockers == [
+            "release collateral is incomplete; missing STATUS.md, ROADMAP.md, llms.txt"
+        ]
+
+
 # ---------------------------------------------------------------- preconditions
 
 
@@ -460,6 +538,7 @@ class TestTheReleaseRun:
         root = _repo(tmp_path)
         release.main(["--root", str(root), "--date", "2026-08-21"])
         subprocess.run(["git", "push", "-q", "origin", "main"], cwd=root, check=True)
+        _write_release_surfaces(root, "v0.20")
         (root / "changelog.d" / "b-track.md").write_text("- [Fix] a later thing\n")
         subprocess.run(["git", "add", "-A"], cwd=root, check=True)
         subprocess.run(["git", "commit", "-qm", "next"], cwd=root, check=True)
@@ -467,6 +546,16 @@ class TestTheReleaseRun:
 
         assert release.main(["--root", str(root), "--date", "2026-08-22"]) == 0
         assert (root / "VERSION").read_text() == "0.21\n"
+        assert "release-v0.21-blue" in (root / "README.md").read_text()
+        assert "2 tagged releases, v0.20 through v0.21" in (root / "STATUS.md").read_text()
+        committed = subprocess.run(
+            ["git", "show", "--format=", "--name-only", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.splitlines()
+        assert set(release.RELEASE_SURFACE_FILES) <= set(committed)
 
     def test_refuses_to_turn_the_odometer_backwards(self, tmp_path):
         root = _repo(tmp_path)
