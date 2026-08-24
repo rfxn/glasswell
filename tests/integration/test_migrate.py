@@ -23,6 +23,7 @@ SPINE_TABLES = [
     ("lineage", "recipes"),
     ("lineage", "sources"),
     ("canonical", "production_monthly"),
+    ("features", "feature_specs"),
 ]
 
 
