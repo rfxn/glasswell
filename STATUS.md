@@ -31,7 +31,7 @@ while [`blueprint.md`](blueprint.md) remains the committed v0.5 contract and
 | **P0** Scaffold and contracts | Met | `/v1/audit` is not served, but is not a P0 exit requirement |
 | **P1** ND spine | Met with named deferrals | PDF-era production and FracFocus remain absent |
 | **P2** Serving and map | Substantially met | Missing completions, neighbours, permits, land/spacing units and formations routes; no GOR/water-cut card |
-| **P3** Forecasting and benchmark | Entry met; build not started | Feature builder, baseline, models, calibration, registry writer, analog index, and benchmark harness |
+| **P3** Forecasting and benchmark | Foundation started | Feature registry table and contracts, availability guard, grouped temporal split, and benchmark artifact schema are built; feature computation, controls, models, calibration, registry writer, analog index, and harness remain |
 | **P4** Dollars and scenarios | Not started | Entire phase |
 | **P5** Intelligence, agents and alerts | Not started | Entire phase |
 | **P6** Hardening and glass-box proof | Partial | Tunnel/Access, outsider guest exercise, live restore drill, determinism and tool-equivalence gates |
@@ -40,8 +40,8 @@ while [`blueprint.md`](blueprint.md) remains the committed v0.5 contract and
 
 ## Immediate gaps
 
-1. Start P3 only from the now-met back-load gate: land the feature availability contract,
-   type-curve control, and benchmark split before model code.
+1. Continue P3 from the contract foundation: populate the feature registry, build features
+   through the availability guard, then implement the type-curve control before model code.
 2. Close the highest-value P2 serving gaps or explicitly defer them before adding another
    UI surface.
 3. Prove P6 operationally: obtain a fresh hosted CI pass, execute and record the restore
@@ -53,14 +53,13 @@ while [`blueprint.md`](blueprint.md) remains the committed v0.5 contract and
 
 ## Verification state
 
-- The full locked Python suite passes **2,403 tests with 2 explicit skips**, including the
+- The full locked Python suite passes **2,430 tests with 2 explicit skips**, including the
   Docker-backed integration and contract tiers; Ruff passes.
 - The web suite passes **1,149 tests across 77 files**; typecheck and production build pass.
 - Browserless E2E guards, shell checks, collateral checks, changelog lint, and the
   35-assertion headless-Chromium map-chrome gate pass locally.
 - The dependency lock exactly matches the installed environment and the generated OpenAPI
   snapshot reports current.
-- Hosted CI run `32756994380` passed all six jobs on 2026-08-24 after the stale
-  tile-contract selector was corrected.
-- GitHub annotates `actions/checkout@v4` and `actions/setup-node@v4` for their deprecated
-  Node 20 action runtime, currently forced to Node 24. This is non-failing maintenance debt.
+- Hosted CI run `32758605990` passed all six jobs on 2026-08-24 at current `main` before
+  this branch. The workflow now declares the official Node 24 action majors; the pull
+  request run is the verification gate for that maintenance change.
