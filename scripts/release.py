@@ -34,6 +34,7 @@ OWNER_LITERAL = re.compile(r"^(0|[1-9][0-9]*)\.(0|0[1-9]|[1-9][0-9])$")
 PYPROJECT_VERSION = re.compile(r'^version = "[^"]*"$', re.MULTILINE)
 # `anchor()` builds every anchor from this, so recognising one needs no second grammar.
 ANCHOR_PREFIX = '<a id="v'
+RELEASE_SURFACE_FILES = ("README.md", "STATUS.md", "ROADMAP.md", "llms.txt")
 
 
 @dataclass(frozen=True, order=True)
@@ -236,6 +237,126 @@ def bump_pyproject(text: str, version: Version) -> str:
     return replaced
 
 
+def _replace_one(
+    text: str,
+    pattern: str,
+    replacement: str,
+    path: Path,
+    marker: str,
+    *,
+    flags: int = 0,
+) -> tuple[str, list[str]]:
+    expression = re.compile(pattern, flags)
+    matches = list(expression.finditer(text))
+    if len(matches) == 1:
+        return expression.sub(replacement, text, count=1), []
+    return text, [f"{path.name}: expected exactly one {marker}; found {len(matches)}"]
+
+
+def tagged_release_count(root: Path) -> int:
+    """Count only tags that belong to this project's odometer grammar."""
+    count = 0
+    for tag in git(root, "tag", "--list", "v*").splitlines():
+        try:
+            Version.parse(tag.removeprefix("v"))
+        except ValueError:
+            continue
+        count += 1
+    return count
+
+
+def sync_release_surfaces(
+    root: Path, current: Version, target: Version, today: str
+) -> tuple[dict[Path, str], list[str]]:
+    """Render the duplicated release facts, refusing ambiguous or partial collateral."""
+    paths = [root / name for name in RELEASE_SURFACE_FILES]
+    present = [path for path in paths if path.is_file()]
+    if not present:
+        return {}, []
+    missing = [path.name for path in paths if not path.is_file()]
+    if missing:
+        return {}, [f"release collateral is incomplete; missing {', '.join(missing)}"]
+
+    release_count = tagged_release_count(root) + 1
+    updates: dict[Path, str] = {}
+    blockers: list[str] = []
+
+    readme = root / "README.md"
+    text = readme.read_text()
+    text, refusals = _replace_one(
+        text,
+        re.escape(f"release-{current.tag}-"),
+        f"release-{target.tag}-",
+        readme,
+        "release badge URL",
+    )
+    blockers += refusals
+    text, refusals = _replace_one(
+        text,
+        re.escape(f'alt="Release: {current.tag}"'),
+        f'alt="Release: {target.tag}"',
+        readme,
+        "release badge label",
+    )
+    blockers += refusals
+    updates[readme] = text
+
+    status = root / "STATUS.md"
+    text = status.read_text()
+    text, refusals = _replace_one(
+        text,
+        rf"(?m)^Reconciled on \*\*\d{{4}}-\d{{2}}-\d{{2}}\*\* against the "
+        rf"{re.escape(current.tag)} release line, the checked-in OpenAPI$",
+        f"Reconciled on **{today}** against the {target.tag} release line, the checked-in "
+        "OpenAPI",
+        status,
+        "current-status release preamble",
+    )
+    blockers += refusals
+    text, refusals = _replace_one(
+        text,
+        rf"(?m)^- \*\*Release line:\*\* \d+ tagged releases, (v\d+\.\d+) through "
+        rf"{re.escape(current.tag)}, cut (\d{{4}}-\d{{2}}-\d{{2}}) through\n  "
+        r"\d{4}-\d{2}-\d{2}\.$",
+        rf"- **Release line:** {release_count} tagged releases, \1 through {target.tag}, cut "
+        rf"\2 through\n  {today}.",
+        status,
+        "shipped release-line ledger",
+    )
+    blockers += refusals
+    updates[status] = text
+
+    roadmap = root / "ROADMAP.md"
+    text = roadmap.read_text()
+    text, refusals = _replace_one(
+        text,
+        rf"(?m)^\d+ tagged releases, (v\d+\.\d+) through {re.escape(current.tag)}, cut from "
+        r"(\d{4}-\d{2}-\d{2}) through \d{4}-\d{2}-\d{2}, run$",
+        rf"{release_count} tagged releases, \1 through {target.tag}, cut from \2 through "
+        f"{today}, run",
+        roadmap,
+        "roadmap release ledger",
+    )
+    blockers += refusals
+    updates[roadmap] = text
+
+    llms = root / "llms.txt"
+    text = llms.read_text()
+    text, refusals = _replace_one(
+        text,
+        re.escape(f"**Status: in build, release line {current.tag}.**"),
+        f"**Status: in build, release line {target.tag}.**",
+        llms,
+        "machine-readable release status",
+    )
+    blockers += refusals
+    updates[llms] = text
+
+    if blockers:
+        return {}, blockers
+    return updates, []
+
+
 def section(folded: str, version: Version) -> str:
     """The version's own slice of the folded changelog, anchor line included."""
     start = folded.index(anchor(version))
@@ -340,6 +461,12 @@ def main(argv: list[str] | None = None) -> int:
     # The last gate before anything is written: the page's own parser over the document this
     # release would commit. A tag must never name a changelog the next build cannot render.
     blockers += render_blockers(assembler.grammar(), folded, changelog)
+    surface_updates: dict[Path, str] = {}
+    if current is not None:
+        surface_updates, surface_blockers = sync_release_surfaces(
+            root, current, target, arguments.date
+        )
+        blockers += surface_blockers
 
     if arguments.check:
         if blockers:
@@ -362,6 +489,9 @@ def main(argv: list[str] | None = None) -> int:
     pyproject.write_text(bumped)
     changelog.write_text(folded)
     paths = ["VERSION", "pyproject.toml", "CHANGELOG.md"]
+    for path, rendered in surface_updates.items():
+        path.write_text(rendered)
+        paths.append(str(path.relative_to(root)))
     for fragment in fragments:
         paths.append(str(fragment.relative_to(root)))
         fragment.unlink()

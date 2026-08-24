@@ -1,9 +1,9 @@
 # Current status
 
-Reconciled on **2026-08-24** against the v0.47 release line, the layer-panel UX merged
-after that tag, the checked-in OpenAPI snapshot, and current `main` history. This is the
-short current-state ledger; [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria,
-while [`blueprint.md`](blueprint.md) remains the committed v0.5 contract and
+Reconciled on **2026-08-24** against the v0.47 release line, the checked-in OpenAPI
+snapshot, and current `main` history. This is the short current-state ledger;
+[`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria, while
+[`blueprint.md`](blueprint.md) remains the committed v0.5 contract and
 [`blueprint-v0.6-draft.md`](blueprint-v0.6-draft.md) is the rc4 amendment set.
 
 ## Shipped baseline
@@ -53,13 +53,12 @@ while [`blueprint.md`](blueprint.md) remains the committed v0.5 contract and
 
 ## Verification state
 
-- The full locked Python suite passes **2,430 tests with 2 explicit skips**, including the
+- The full locked Python suite passes **2,433 tests with 2 explicit skips**, including the
   Docker-backed integration and contract tiers; Ruff passes.
 - The web suite passes **1,149 tests across 77 files**; typecheck and production build pass.
 - Browserless E2E guards, shell checks, collateral checks, changelog lint, and the
   35-assertion headless-Chromium map-chrome gate pass locally.
 - The dependency lock exactly matches the installed environment and the generated OpenAPI
   snapshot reports current.
-- Hosted CI run `32758605990` passed all six jobs on 2026-08-24 at current `main` before
-  this branch. The workflow now declares the official Node 24 action majors; the pull
-  request run is the verification gate for that maintenance change.
+- Hosted pre-release `main` CI run `32779964976` passed all six jobs on 2026-08-24 at
+  merge commit `9fe2712`, with 2,430 tests, 2 explicit skips, and zero annotations.
