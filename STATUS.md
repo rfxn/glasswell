@@ -53,7 +53,7 @@ while [`blueprint.md`](blueprint.md) remains the committed v0.5 contract and
 
 ## Verification state
 
-- The full locked Python suite passes **2,429 tests with 2 explicit skips**, including the
+- The full locked Python suite passes **2,430 tests with 2 explicit skips**, including the
   Docker-backed integration and contract tiers; Ruff passes.
 - The web suite passes **1,149 tests across 77 files**; typecheck and production build pass.
 - Browserless E2E guards, shell checks, collateral checks, changelog lint, and the

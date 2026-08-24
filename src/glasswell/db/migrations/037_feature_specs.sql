@@ -28,7 +28,8 @@ create table features.feature_specs (
                                     retired_in_fv ~ '^fv(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'),
     created_at                  timestamptz not null default now(),
     primary key (feature_id, introduced_in_fv),
-    check (feature_id ~ '^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$')
+    check (feature_id ~ '^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$'),
+    check (split_part(feature_id, '.', 1) = family)
 );
 
 comment on table features.feature_specs is

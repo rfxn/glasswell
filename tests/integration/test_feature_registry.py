@@ -51,6 +51,17 @@ def test_a_terminal_successor_retires_without_rewriting_the_prior_spec(db):
     assert rows == [("fv1.0", None), ("fv1.1", "fv1.1")]
 
 
+def test_feature_family_must_match_the_slug_prefix(db):
+    mismatched = INSERT.replace(
+        "'geology.formation_group', 'geology'", "'geology.formation_group', 'design'"
+    )
+
+    with pytest.raises(psycopg.errors.CheckViolation):
+        with db.cursor() as cursor:
+            cursor.execute(mismatched)
+    db.rollback()
+
+
 def test_runtime_role_grants_match_the_registry_boundary(db):
     checks = [
         ("glasswell_pipeline", "SELECT", True),
