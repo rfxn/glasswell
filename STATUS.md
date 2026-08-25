@@ -54,7 +54,7 @@ snapshot, and current `main` history. This is the short current-state ledger;
 
 ## Verification state
 
-- The full locked Python suite passes **2,445 tests with 2 explicit skips**, including the
+- The full locked Python suite passes **2,448 tests with 2 explicit skips**, including the
   Docker-backed integration and contract tiers; Ruff passes.
 - The web suite passes **1,149 tests across 77 files**; typecheck and production build pass.
 - Browserless E2E guards, shell checks, collateral checks, changelog lint, and the

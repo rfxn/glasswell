@@ -8,7 +8,7 @@ import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from uuid import uuid4
 
@@ -287,14 +287,27 @@ def _validate_specs(specs: Sequence[FeatureSpec]) -> None:
 
 
 def _formation_min_confidence(specs: Sequence[FeatureSpec]) -> Decimal:
-    values = {str(spec.params.get("min_confidence")) for spec in specs}
+    values: set[Decimal] = set()
+    for spec in specs:
+        raw = spec.params.get("min_confidence")
+        try:
+            value = Decimal(str(raw))
+        except (InvalidOperation, ValueError) as error:
+            raise UnsupportedFeatureSpecError(
+                f"{spec.feature_id} has invalid min_confidence {raw!r}"
+            ) from error
+        if not value.is_finite() or not Decimal("0") <= value <= Decimal("1"):
+            raise UnsupportedFeatureSpecError(
+                f"{spec.feature_id} has invalid min_confidence {raw!r}"
+            )
+        values.add(value)
     if len(values) != 1:
         raise UnsupportedFeatureSpecError("formation alias transforms disagree on min_confidence")
     aliases = {spec.params.get("alias_table") for spec in specs}
     fields = {spec.params.get("reported_pool_field") for spec in specs}
     if aliases != {"lineage.formation_aliases"} or fields != {"pool_reported"}:
         raise UnsupportedFeatureSpecError("formation alias transform parameters are not supported")
-    return Decimal(values.pop())
+    return values.pop()
 
 
 def _formation_source_id(specs: Sequence[FeatureSpec]) -> str:
