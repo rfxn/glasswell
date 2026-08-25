@@ -31,7 +31,7 @@ snapshot, and current `main` history. This is the short current-state ledger;
 | **P0** Scaffold and contracts | Met | `/v1/audit` is not served, but is not a P0 exit requirement |
 | **P1** ND spine | Met with named deferrals | PDF-era production and FracFocus remain absent |
 | **P2** Serving and map | Substantially met | Missing completions, neighbours, permits, land/spacing units and formations routes; no GOR/water-cut card |
-| **P3** Forecasting and benchmark | Foundation started | Feature registry table and contracts, availability guard, grouped temporal split, and benchmark artifact schema are built; feature computation, controls, models, calibration, registry writer, analog index, and harness remain |
+| **P3** Forecasting and benchmark | Foundation advanced | The `fv1.0` formation-group declaration, two-clock feature materializer, D1 content-addressed matrix artifact, availability guard, grouped temporal split, and benchmark artifact schema are built. No live ND matrix: all 43,817 current ND well rows lack `completion_date`, and `formation_aliases` has no resident rows. The type-curve control, models, calibration, model-registry writer, analog index, and harness remain |
 | **P4** Dollars and scenarios | Not started | Entire phase |
 | **P5** Intelligence, agents and alerts | Not started | Entire phase |
 | **P6** Hardening and glass-box proof | Partial | Tunnel/Access, outsider guest exercise, live restore drill, determinism and tool-equivalence gates |
@@ -40,8 +40,9 @@ snapshot, and current `main` history. This is the short current-state ledger;
 
 ## Immediate gaps
 
-1. Continue P3 from the contract foundation: populate the feature registry, build features
-   through the availability guard, then implement the type-curve control before model code.
+1. Close the measured P3 data seam: populate ND completion-date anchors and conformed
+   formation aliases, materialize the first live `fv1.0` matrix, then implement the
+   type-curve control before model code.
 2. Close the highest-value P2 serving gaps or explicitly defer them before adding another
    UI surface.
 3. Prove P6 operationally: obtain a fresh hosted CI pass, execute and record the restore
@@ -53,7 +54,7 @@ snapshot, and current `main` history. This is the short current-state ledger;
 
 ## Verification state
 
-- The full locked Python suite passes **2,434 tests with 2 explicit skips**, including the
+- The full locked Python suite passes **2,448 tests with 2 explicit skips**, including the
   Docker-backed integration and contract tiers; Ruff passes.
 - The web suite passes **1,149 tests across 77 files**; typecheck and production build pass.
 - Browserless E2E guards, shell checks, collateral checks, changelog lint, and the

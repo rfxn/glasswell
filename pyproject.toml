@@ -36,6 +36,7 @@ dev = [
 
 [project.scripts]
 glasswell-migrate = "glasswell.db.migrate:main"
+glasswell-features = "glasswell.modeling.feature_matrix:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

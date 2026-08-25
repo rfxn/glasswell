@@ -120,10 +120,10 @@ def is_active(spec: FeatureSpec, feature_version: str) -> bool:
     )
 
 
-def feature_set_hash(
+def active_feature_specs(
     specs: Iterable[FeatureSpec], *, set_name: str, feature_version: str
-) -> str:
-    """Hash the latest active revision of every member in stable feature-id order."""
+) -> tuple[FeatureSpec, ...]:
+    """Resolve append-only revisions into one ordered named feature set."""
     target = _version_key(feature_version)
     latest: dict[str, FeatureSpec] = {}
     revisions: set[tuple[str, str]] = set()
@@ -139,17 +139,27 @@ def feature_set_hash(
             current.introduced_in_fv
         ):
             latest[spec.feature_id] = spec
-    selected = sorted(
-        (
-            spec.model_dump(mode="json")
-            for spec in latest.values()
-            if set_name in spec.member_of and is_active(spec, feature_version)
-        ),
-        key=lambda row: row["feature_id"],
+    selected = tuple(
+        sorted(
+            (
+                spec
+                for spec in latest.values()
+                if set_name in spec.member_of and is_active(spec, feature_version)
+            ),
+            key=lambda spec: spec.feature_id,
+        )
     )
     if not selected:
         raise ValueError(f"feature set {set_name!r} is empty at {feature_version}")
-    return "sha256:" + hash_payload(selected)
+    return selected
+
+
+def feature_set_hash(
+    specs: Iterable[FeatureSpec], *, set_name: str, feature_version: str
+) -> str:
+    """Hash the latest active revision of every member in stable feature-id order."""
+    selected = active_feature_specs(specs, set_name=set_name, feature_version=feature_version)
+    return "sha256:" + hash_payload([spec.model_dump(mode="json") for spec in selected])
 
 
 def observe_feature(

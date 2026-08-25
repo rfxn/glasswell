@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from glasswell.lineage.capture import derive, lineage_session
-from glasswell.lineage.models import OutputSpec
+from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.recipes import build_recipe
 from glasswell.lineage.store import PostgresRecorder
 from tests.support.seed import seed_manifest
@@ -52,6 +52,45 @@ def test_a_changed_parameter_addresses_a_different_recipe(db):
         db, "canonical.promote", **{**CLOSURE, "params": {"month_convention": "report_month"}}
     )
     assert first != second
+
+
+def test_a_recipe_can_bind_non_manifest_inputs_and_the_expected_output(db):
+    recipe_id = build_recipe(
+        db,
+        "features.build",
+        **{
+            **CLOSURE,
+            "input_manifest_ids": (),
+            "input_refs": [
+                InputRef(
+                    kind="derivation",
+                    ref_id="drv_input",
+                    as_of_vintage="2026-08-01",
+                )
+            ],
+            "output": {
+                "dataset": "features.well_features",
+                "sha256": "f" * 64,
+                "determinism_class": "D1",
+            },
+        },
+    )
+    db.commit()
+
+    with db.cursor() as cursor:
+        cursor.execute("select document from lineage.recipes where recipe_id = %s", (recipe_id,))
+        document = cursor.fetchone()[0]
+    assert document["inputs"] == [
+        {
+            "as_of_vintage": "2026-08-01",
+            "kind": "derivation",
+            "ord": 0,
+            "ref_id": "drv_input",
+            "role": "primary",
+            "selector": None,
+        }
+    ]
+    assert document["output"]["sha256"] == "f" * 64
 
 
 @pytest.mark.parametrize(

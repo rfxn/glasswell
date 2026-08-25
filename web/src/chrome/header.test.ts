@@ -72,6 +72,8 @@ describe("the header is a control surface, not a paragraph", () => {
     expect(help).toContain("North Dakota wells and production");
     expect(help).toContain("Texas wells and bore geometry");
     expect(help).toContain("pending allocation");
+    expect(help).toContain("Forecasts are not live");
+    expect(help).toContain("completion anchors");
   });
 
   it("mounts the search box into the header's control cluster", () => {

@@ -10,8 +10,11 @@
 **Status: in build, release line v0.48.** North Dakota ingest, canonical production,
 lineage, API, tiles and the map are deployed. Texas Permian-district wells and bore
 geometry are on the map, but Texas production and allocation are not built. New
-Mexico ingest/promotion code exists without a claimed resident deployment. Forecasts,
-economics, scenarios, agents and inventory remain designed scope, not live features.
+Mexico ingest/promotion code exists without a claimed resident deployment. The first
+versioned feature declaration and deterministic as-of matrix builder are implemented, but
+no live ND matrix is claimed because completion anchors and conformed formation aliases are
+not resident. Forecasts, economics, scenarios, agents and inventory remain designed scope,
+not live features.
 
 ## How to answer questions about glasswell
 

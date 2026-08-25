@@ -3,12 +3,15 @@ from __future__ import annotations
 import psycopg
 import pytest
 
+from glasswell.modeling.feature_matrix import load_feature_specs
+from glasswell.seed.features import FEATURE_SPECS
+
 INSERT = """
 insert into features.feature_specs
     (feature_id, family, dtype, unit, knowable_at_rule, publication_lag_days_p50,
      transform_id, source_refs, missing_policy, member_of, introduced_in_fv)
 values
-    ('geology.formation_group', 'geology', 'categorical', 'category', 'completion_date', 0,
+    ('geology.registry_test', 'geology', 'categorical', 'category', 'completion_date', 0,
      'lookup_formation_alias', array['canonical.well_completions',
                                      'cr_formation_group_rollup'],
      'native_nan', array['full', 'rock_location_only'], 'fv1.0')
@@ -24,7 +27,7 @@ def test_feature_specs_are_append_only(db):
         with db.cursor() as cursor:
             cursor.execute(
                 "update features.feature_specs set unit = 'text' "
-                "where feature_id = 'geology.formation_group'"
+                "where feature_id = 'geology.registry_test'"
             )
     db.rollback()
 
@@ -40,11 +43,11 @@ def test_a_terminal_successor_retires_without_rewriting_the_prior_spec(db):
             "select feature_id, family, dtype, unit, knowable_at_rule, "
             "publication_lag_days_p50, transform_id, params, source_refs, missing_policy, "
             "member_of, 'fv1.1', 'fv1.1' "
-            "from features.feature_specs where feature_id = 'geology.formation_group'"
+            "from features.feature_specs where feature_id = 'geology.registry_test'"
         )
         cursor.execute(
             "select introduced_in_fv, retired_in_fv from features.feature_specs "
-            "where feature_id = 'geology.formation_group' order by introduced_in_fv"
+            "where feature_id = 'geology.registry_test' order by introduced_in_fv"
         )
         rows = cursor.fetchall()
 
@@ -53,7 +56,7 @@ def test_a_terminal_successor_retires_without_rewriting_the_prior_spec(db):
 
 def test_feature_family_must_match_the_slug_prefix(db):
     mismatched = INSERT.replace(
-        "'geology.formation_group', 'geology'", "'geology.formation_group', 'design'"
+        "'geology.registry_test', 'geology'", "'geology.registry_test', 'design'"
     )
 
     with pytest.raises(psycopg.errors.CheckViolation):
@@ -85,3 +88,7 @@ def test_runtime_role_grants_match_the_registry_boundary(db):
     assert [(role, privilege, granted) for role, privilege, granted, _ in actual] == [
         (role, privilege, expected) for role, privilege, _, expected in actual
     ]
+
+
+def test_fv1_registry_row_matches_the_checked_in_declaration(db):
+    assert load_feature_specs(db) == FEATURE_SPECS

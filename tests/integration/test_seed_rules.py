@@ -302,6 +302,7 @@ def test_seeding_a_database_that_is_already_seeded_changes_nothing(db, seeded):
         "lineage.sources",
         "lineage.crs_registry",
         "canonical.glossary_terms",
+        "features.feature_specs",
     )
     with db.cursor() as cursor:
         cursor.execute(" union all ".join(f"select count(*) from {t}" for t in tables))
