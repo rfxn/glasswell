@@ -1,6 +1,6 @@
 # Current status
 
-Reconciled on **2026-08-24** against the v0.48 release line, the checked-in OpenAPI
+Reconciled on **2026-08-25** against the v0.49 release line, the checked-in OpenAPI
 snapshot, and current `main` history. This is the short current-state ledger;
 [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria, while
 [`blueprint.md`](blueprint.md) remains the committed v0.5 contract and
@@ -8,8 +8,8 @@ snapshot, and current `main` history. This is the short current-state ledger;
 
 ## Shipped baseline
 
-- **Release line:** 29 tagged releases, v0.20 through v0.48, cut 2026-08-21 through
-  2026-08-24.
+- **Release line:** 30 tagged releases, v0.20 through v0.49, cut 2026-08-21 through
+  2026-08-25.
 - **North Dakota:** ingest, bitemporal promotion, quarantine, conformance, wells,
   geometry, monthly production, lineage, explain, glossary, API, tiles, and map are built.
 - **Production history:** the 125-workbook back-load is complete. Canonical holds 131

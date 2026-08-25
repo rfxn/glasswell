@@ -7,6 +7,15 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.49"></a>
+## v0.49 — 2026-08-25
+
+- [New] P3 feature matrix foundation: the first `fv1.0` registry declaration,
+      completion-anchor availability enforcement, pinned knowledge-time reads and a
+      byte-reproducible content-addressed Parquet artifact with recipe and derivation
+- [Fix] The matrix builder refuses empty, all-missing and conflicting partitions instead
+      of publishing an artifact that overstates ND feature readiness
+
 <a id="v0.48"></a>
 ## v0.48 — 2026-08-24
 
