@@ -179,6 +179,12 @@ quarantined share is published in the scorecard.
 
 <p align="center"><img src="assets/forecast-to-dollars.svg" alt="Features feed a quantile model and a type-curve control, both scored on one temporal holdout, producing three-stream forecasts that drive discounted cash flow economics" width="1000"></p>
 
+The first modeling artifact boundary is implemented: `fv1.0` declares the conformed
+formation-group feature, and the builder enforces both well-time availability and a pinned
+knowledge vintage before writing a byte-reproducible, content-addressed Parquet matrix with
+its recipe and derivation. It does not claim a live ND matrix yet: the current ND well rows
+carry no completion-date anchors and the formation-alias registry has no resident rows.
+
 The planned modeling path uses a gradient-boosted quantile model with conformal
 calibration to produce P10/P50/P90 on three streams — oil as the headline, gas and
 water as secondary targets under identical split, censoring, and control rules. GOR
