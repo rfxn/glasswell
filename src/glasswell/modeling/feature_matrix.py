@@ -123,8 +123,6 @@ def build_feature_matrix(
     environment: DeriveEnvironment,
     feature_version: str = DEFAULT_FEATURE_VERSION,
     set_name: str = DEFAULT_FEATURE_SET,
-    state_code: str = DEFAULT_STATE_CODE,
-    basin: str = DEFAULT_BASIN,
     root: Path | str | None = None,
     clock: Clock | None = None,
 ) -> FeatureMatrixBuild:
@@ -134,8 +132,6 @@ def build_feature_matrix(
         as_of=as_of,
         feature_version=feature_version,
         set_name=set_name,
-        state_code=state_code,
-        basin=basin,
     )
     partition = {"feature_version": feature_version, "as_of_vintage": as_of.isoformat()}
     planned_output = OutputSpec(
@@ -216,8 +212,6 @@ def _prepare_plan(
     as_of: date,
     feature_version: str,
     set_name: str,
-    state_code: str,
-    basin: str,
 ) -> _FeaturePlan:
     if set_name != DEFAULT_FEATURE_SET:
         raise UnsupportedFeatureSpecError(
@@ -233,8 +227,8 @@ def _prepare_plan(
         snapshot = read_feature_snapshot(
             connection,
             as_of=as_of,
-            state_code=state_code,
-            basin=basin,
+            state_code=DEFAULT_STATE_CODE,
+            basin=DEFAULT_BASIN,
             min_confidence=min_confidence,
             formation_source_id=formation_source_id,
         )
@@ -242,7 +236,8 @@ def _prepare_plan(
         raise FeatureMatrixError(str(error)) from error
     if not snapshot.rows:
         raise EmptyFeatureMatrixError(
-            f"no {state_code}/{basin} wells have a completion_date anchor at {as_of}"
+            f"no {DEFAULT_STATE_CODE}/{DEFAULT_BASIN} wells have a completion_date anchor"
+            f" at {as_of}"
         )
     inputs = _feature_inputs(snapshot.inputs, set_hash=set_hash)
     observations = tuple(_observe_row(row, specs) for row in snapshot.rows)
@@ -252,15 +247,16 @@ def _prepare_plan(
         for observation in subject_observations
     ):
         raise EmptyFeatureMatrixError(
-            f"no registered feature value resolves for {state_code}/{basin} at {as_of}"
+            "no registered feature value resolves for"
+            f" {DEFAULT_STATE_CODE}/{DEFAULT_BASIN} at {as_of}"
         )
     params: dict[str, object] = {
         "as_of_vintage": as_of.isoformat(),
         "feature_version": feature_version,
         "feature_set": set_name,
         "feature_set_hash": set_hash,
-        "state_code": state_code,
-        "basin": basin,
+        "state_code": DEFAULT_STATE_CODE,
+        "basin": DEFAULT_BASIN,
         "anchor": "completion_date",
         "sort_order": ["api10"],
         "parquet": {"compression": "zstd", "compression_level": 3},
@@ -425,8 +421,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--as-of", required=True, help="knowledge-time cut, YYYY-MM-DD")
     parser.add_argument("--feature-version", default=DEFAULT_FEATURE_VERSION)
     parser.add_argument("--feature-set", default=DEFAULT_FEATURE_SET)
-    parser.add_argument("--state-code", default=DEFAULT_STATE_CODE)
-    parser.add_argument("--basin", default=DEFAULT_BASIN)
     parser.add_argument("--root", default=None)
     parser.add_argument("--env-id", default=None)
     parser.add_argument("--code-version", default=None)
@@ -441,8 +435,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             environment=environment,
             feature_version=arguments.feature_version,
             set_name=arguments.feature_set,
-            state_code=arguments.state_code,
-            basin=arguments.basin,
             root=arguments.root,
         )
         connection.commit()

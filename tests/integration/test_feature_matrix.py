@@ -5,6 +5,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import polars as pl
+import psycopg
 import pytest
 
 from glasswell.modeling.feature_matrix import (
@@ -214,3 +215,22 @@ def test_unvintaged_aliases_are_rejected_instead_of_treated_as_historical_knowle
         build_feature_matrix(
             db, as_of=AS_OF, environment=lineage_env, root=tmp_path / "features"
         )
+
+
+def test_formation_alias_knowledge_history_is_append_only(db):
+    seed_all(db)
+    with db.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.formation_aliases"
+            " (formation_raw, formation, confidence, effective_from, source_id, created_vintage)"
+            " values ('BAKKEN', 'bakken', 0.990, '2020-01-01', 'nd_mpr_xlsx', '2026-08-01')"
+        )
+    db.commit()
+
+    with pytest.raises(psycopg.errors.RestrictViolation, match="append_only_violation"):
+        with db.cursor() as cursor:
+            cursor.execute(
+                "update lineage.formation_aliases set formation = 'three_forks'"
+                " where formation_raw = 'BAKKEN'"
+            )
+    db.rollback()
