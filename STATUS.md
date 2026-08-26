@@ -37,7 +37,7 @@ snapshot, and current `main` history. This is the short current-state ledger;
 | **P0** Scaffold and contracts | Met | `/v1/audit` is not served, but is not a P0 exit requirement |
 | **P1** ND spine | Met with named deferrals | PDF-era production and FracFocus chemistry remain absent; the disclosure-header anchor path is built |
 | **P2** Serving and map | Substantially met | Missing completions, neighbours, permits, land/spacing units and formations routes; no GOR/water-cut card |
-| **P3** Forecasting and benchmark | Model-ready dataset built and replayed | Immutable `fv1.0` and semantic-major `fv2.0` remain available. The resident `fv2.0` matrix and `mdv1.4` model dataset replay byte-identically: 105,378 three-stream labels, 1,172,586 producing-month curve rows, 3,272 explicit rejection reasons, measured censoring/intermittency coverage, and eight DB-backed rolling splits. The split population is 15,749 and 15,355 retain complete type-curve context. The pinned type-curve control, models, calibration, model-registry writer, analog index, and harness remain |
+| **P3** Forecasting and benchmark | Pinned control built; coverage gate red | Immutable `fv1.0`, semantic-major `fv2.0`, `mdv1.4`, and control-major `tcv1.0` remain separate identities. The resident-scale candidate replays 2,300,400 three-stream, two-normalization control rows byte-identically on all eight exact splits. Rung-one coverage passes at 81.7089%, but control unavailability is 12.9484% against the pinned 5% ceiling, driven by 318 unique TEST subjects missing formation and 38 missing lateral length; only one unique subject lacks enough peers. Models, calibration, the model-registry writer, analog index, and harness remain |
 | **P4** Dollars and scenarios | Not started | Entire phase |
 | **P5** Intelligence, agents and alerts | Not started | Entire phase |
 | **P6** Hardening and glass-box proof | Partial | Tunnel/Access, outsider guest exercise, live restore drill, determinism and tool-equivalence gates |
@@ -46,8 +46,8 @@ snapshot, and current `main` history. This is the short current-state ledger;
 
 ## Immediate gaps
 
-1. Build the pinned type-curve control from `mdv1.4`, enforce the identical split ids, and
-   replay both normalization arms byte-identically before any model training.
+1. Repair the 318 TEST formation gaps and 38 lateral gaps without inference, then replay
+   `tcv1.0` on the same split hashes until its explicit 5% unavailability gate is green.
 2. Close the highest-value P2 serving gaps or explicitly defer them before adding another
    UI surface.
 3. Prove P6 operationally: execute and record the restore drill, then exercise a

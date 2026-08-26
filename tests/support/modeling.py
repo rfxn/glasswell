@@ -20,7 +20,11 @@ def shift_month(value: date, months: int) -> date:
 
 
 def seed_model_population(
-    db, *, extra_recent_peers: int = 0, one_peer_gas_gap: bool = False
+    db,
+    *,
+    extra_recent_peers: int = 0,
+    one_peer_gas_gap: bool = False,
+    one_test_missing_lateral: bool = False,
 ) -> None:
     seed_all(db)
     manifest_id = seed_manifest(db, sha256="7" * 64)
@@ -53,14 +57,15 @@ def seed_model_population(
             manifest_id=manifest_id,
             derivation_id=derivation_id,
         )
-        seed_well_spatial(
-            db,
-            api10=api10,
-            geom_type="lateral",
-            wkt=f"LINESTRING({longitude} 47.5, {longitude + 0.025} 47.5)",
-            manifest_id=manifest_id,
-            derivation_id=derivation_id,
-        )
+        if not (one_test_missing_lateral and ordinal == 45):
+            seed_well_spatial(
+                db,
+                api10=api10,
+                geom_type="lateral",
+                wkt=f"LINESTRING({longitude} 47.5, {longitude + 0.025} 47.5)",
+                manifest_id=manifest_id,
+                derivation_id=derivation_id,
+            )
         with db.cursor() as cursor:
             cursor.execute(
                 "insert into canonical.well_completions"

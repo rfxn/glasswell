@@ -20,7 +20,12 @@ ORIGIN = date(2022, 1, 1)
 def test_typecurve_control_registers_identical_split_arms_and_replays_d1(
     db, lineage_env, tmp_path: Path
 ):
-    seed_model_population(db, extra_recent_peers=10, one_peer_gas_gap=True)
+    seed_model_population(
+        db,
+        extra_recent_peers=10,
+        one_peer_gas_gap=True,
+        one_test_missing_lateral=True,
+    )
     feature = build_feature_matrix(
         db,
         as_of=AS_OF,
@@ -80,26 +85,43 @@ def test_typecurve_control_registers_identical_split_arms_and_replays_d1(
     )
     assert peer_sets["peer_sets"].unique().to_list() == [1]
     assert peer_sets["arms"].unique().to_list() == [2]
-    assert control["fallback_level"].unique().to_list() == ["formation_area_length"]
-    assert control["control_unavailable_reasons"].null_count() == first.rows
-    assert set(control["peer_count"].unique()) == {24, 25}
-    assert set(control["cumulative_peer_count"].unique()) == {24, 25}
+    assert set(control["fallback_level"].unique()) == {
+        "control_unavailable",
+        "formation_area_length",
+    }
+    assert control["control_unavailable_reasons"].null_count() == first.rows - 216
+    assert control["control_unavailable_reasons"].drop_nulls().unique().to_list() == [
+        "missing_lateral_length"
+    ]
+    assert set(control["peer_count"].unique()) == {0, 24, 25}
+    assert set(control["cumulative_peer_count"].unique()) == {0, 24, 25}
     gas_month_one = control.filter((pl.col("stream") == "gas") & (pl.col("month_index") == 1))
-    assert gas_month_one["peer_count"].unique().to_list() == [24]
-    assert gas_month_one["fallback_level"].unique().to_list() == ["formation_area_length"]
-    assert control["status"].unique().to_list() == ["ok"]
-    assert control["cumulative_status"].unique().to_list() == ["ok"]
+    available_gas_month_one = gas_month_one.filter(
+        pl.col("fallback_level") == "formation_area_length"
+    )
+    assert available_gas_month_one["peer_count"].unique().to_list() == [24]
+    assert set(control["status"].unique()) == {"control_unavailable", "ok"}
+    assert set(control["cumulative_status"].unique()) == {"control_unavailable", "ok"}
     assert control.filter(pl.col("monthly_p10") > pl.col("monthly_p50")).is_empty()
     assert control.filter(pl.col("monthly_p50") > pl.col("monthly_p90")).is_empty()
 
     coverage = json.loads(Path(first.coverage_uri).read_bytes())
     assert coverage["counts"]["test_subject_instances"] == 28
-    assert coverage["counts"]["control_unavailable_subject_instances"] == 0
-    assert coverage["counts"]["fallback_by_level"] == {"formation_area_length": 28}
-    assert coverage["counts"]["control_unavailable_reason_mentions"] == {}
+    assert coverage["counts"]["control_unavailable_subject_instances"] == 2
+    assert coverage["counts"]["control_unavailable_share"] == "0.071429"
+    assert coverage["counts"]["fallback_by_level"] == {
+        "control_unavailable": 2,
+        "formation_area_length": 26,
+    }
+    assert coverage["counts"]["control_unavailable_reason_mentions"] == {
+        "missing_lateral_length": 2
+    }
     assert coverage["acceptance"]["pooled_rung1_share"]["status"] == "pass"
-    assert coverage["acceptance"]["pooled_control_unavailable_share"]["status"] == "pass"
-    assert coverage["plausibility_flags"] == []
+    assert coverage["acceptance"]["pooled_control_unavailable_share"]["status"] == "fail"
+    assert coverage["plausibility_flags"] == [
+        "pooled_control_unavailable_share_above_0.05",
+        "split_control_unavailable_share_above_0.05",
+    ]
     assert coverage["control_contract"]["normalizations"] == [
         "typecurve_per_kft",
         "typecurve_absolute",

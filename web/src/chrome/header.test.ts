@@ -81,6 +81,11 @@ describe("the header is a control surface, not a paragraph", () => {
     expect(help).toContain("mdv1.4");
     expect(help).toContain("105,378 three-stream");
     expect(help).toContain("eight shared rolling splits");
+    expect(help).toContain("tcv1.0");
+    expect(help).toContain("2,300,400");
+    expect(help).toContain("12.9484%");
+    expect(help).toContain("5% ceiling");
+    expect(help).toContain("not widened");
   });
 
   it("mounts the search box into the header's control cluster", () => {
