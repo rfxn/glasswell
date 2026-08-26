@@ -6,7 +6,7 @@ vintage. An old content-addressed partition is never overwritten.
 
 ## Formation repair policy
 
-The 318 TEST subjects reported as missing formation have no row in
+Before migration 042, the 318 TEST subjects reported as missing formation had no row in
 `canonical.well_completions`, but every one has a source `BAKKEN` pool observation in
 `staging.nd_mpr_oil`. Migration 040 backfilled only production rows that already carried
 `well_completion_pool`; historical single-pool rows predate that field.
@@ -45,8 +45,8 @@ The accepted replay must:
 4. report control unavailability at or below 5%; and
 5. publish residual missing/conflict counts without relabelling unavailable source facts.
 
-Resident hashes and measured counts are appended here only after the migration is applied and
-the two-run replay completes.
+Published resident hashes and measured counts replace the rollback rehearsal only after the
+migration is applied and the two-run replay completes at a new evaluation vintage.
 
 ## Rollback rehearsal
 
