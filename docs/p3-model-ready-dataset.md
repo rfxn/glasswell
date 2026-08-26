@@ -58,10 +58,10 @@ The 2026-08-26 Williston build consumes 17,563 anchored `fv2.0` subjects and wri
 
 | Artifact | Rows | SHA-256 |
 |---|---:|---|
-| `mdv1.2` labels | 105,378 | pending final resident replay |
-| producing-month curves | 1,172,586 | pending final resident replay |
+| `mdv1.2` labels | 105,378 | `c45f863307d4e0e804886bc3c274a17154e0aee41b2de83990faa83592130d01` |
+| producing-month curves | 1,172,586 | `cc2894f36e5dc4e475e75002e156e14ee4339f8b5faaf0f397900d4ea008ccd5` |
 | rejections | 3,272 reason rows | `0b0434281a02f30c3b2ac94e6ebabbf579ab4e3cb362b1db3797ac47d02eb771` |
-| coverage | one canonical JSON document | pending final resident replay |
+| coverage | one canonical JSON document | `50c5c921efaedf7cb49d8d338da4f7dabb979a5bf2d0502c51c715ce2fbea710` |
 
 Per stream, cum12 has 15,957 complete, 705 incomplete, 364 intermittent, 272
 no-production, and 265 withheld labels. Cum24 has 15,130 complete, 1,552 incomplete, 344
