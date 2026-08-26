@@ -69,7 +69,7 @@ an implied capability.
 
 ## Resident replay
 
-The 2026-08-26 Williston candidate consumes `mdv1.4` bundle
+The resident 2026-08-26 Williston artifact consumes `mdv1.4` bundle
 `sset_c7bbb9a6932db76b` and was built twice from implementation commit `19f754c` in the
 pinned VM environment. Both runs produced byte-identical results:
 
@@ -80,7 +80,8 @@ pinned VM environment. Both runs produced byte-identical results:
 
 The identity is `tc_ima4gxkkhy5hvhhxdhyq`, derivation
 `drv_tbye5ygbgmhgeuktsxiq`, and recipe `rcp_1a8669bb7ee5e61d9393f4857a70227b`.
-The two-run gate completed in 3:06 wall time, peaked at 2.57 GiB RSS, and did not swap.
+The committed two-run resident gate completed in 3:02 wall time, peaked at 2.64 GiB RSS,
+and did not swap.
 
 Across 21,300 TEST subject/split instances, 17,404 resolve at rung one (81.7089%), 226
 at formation + county, 912 at formation + basin, and 2,758 are unavailable. All available

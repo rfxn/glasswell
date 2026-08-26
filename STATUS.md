@@ -37,7 +37,7 @@ snapshot, and current `main` history. This is the short current-state ledger;
 | **P0** Scaffold and contracts | Met | `/v1/audit` is not served, but is not a P0 exit requirement |
 | **P1** ND spine | Met with named deferrals | PDF-era production and FracFocus chemistry remain absent; the disclosure-header anchor path is built |
 | **P2** Serving and map | Substantially met | Missing completions, neighbours, permits, land/spacing units and formations routes; no GOR/water-cut card |
-| **P3** Forecasting and benchmark | Pinned control built; coverage gate red | Immutable `fv1.0`, semantic-major `fv2.0`, `mdv1.4`, and control-major `tcv1.0` remain separate identities. The resident-scale candidate replays 2,300,400 three-stream, two-normalization control rows byte-identically on all eight exact splits. Rung-one coverage passes at 81.7089%, but control unavailability is 12.9484% against the pinned 5% ceiling, driven by 318 unique TEST subjects missing formation and 38 missing lateral length; only one unique subject lacks enough peers. Models, calibration, the model-registry writer, analog index, and harness remain |
+| **P3** Forecasting and benchmark | Pinned control built; coverage gate red | Immutable `fv1.0`, semantic-major `fv2.0`, `mdv1.4`, and control-major `tcv1.0` remain separate identities. The resident artifact replays 2,300,400 three-stream, two-normalization control rows byte-identically on all eight exact splits. Rung-one coverage passes at 81.7089%, but control unavailability is 12.9484% against the pinned 5% ceiling, driven by 318 unique TEST subjects missing formation and 38 missing lateral length; only one unique subject lacks enough peers. Models, calibration, the model-registry writer, analog index, and harness remain |
 | **P4** Dollars and scenarios | Not started | Entire phase |
 | **P5** Intelligence, agents and alerts | Not started | Entire phase |
 | **P6** Hardening and glass-box proof | Partial | Tunnel/Access, outsider guest exercise, live restore drill, determinism and tool-equivalence gates |
@@ -59,13 +59,12 @@ snapshot, and current `main` history. This is the short current-state ledger;
 
 ## Verification state
 
-- The full locked Python suite passes **2,486 tests with 2 explicit skips**, including the
+- The full locked Python suite passes **2,494 tests with 2 explicit skips**, including the
   Docker-backed integration and contract tiers; Ruff passes.
 - The web suite passes **1,149 tests across 77 files**; typecheck and production build pass.
 - Browserless E2E guards, shell checks, collateral checks, changelog lint, and the
   35-assertion headless-Chromium map-chrome gate pass locally.
 - The dependency lock exactly matches the installed environment and the generated OpenAPI
   snapshot reports current.
-- Hosted pre-release `main` CI run `32779964976` passed all six jobs on 2026-08-24 at
-  merge commit `9fe2712`, before the v0.48 train added four release and deterministic-fixture
-  tests: 2,430 passed, 2 explicitly skipped, and zero annotations.
+- Hosted PR CI run `33013817153` passed all six jobs on 2026-08-26 at implementation-review
+  head `978e2fc`: 2,494 passed, 2 explicitly skipped, and zero annotations.

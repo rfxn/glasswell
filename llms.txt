@@ -12,7 +12,7 @@ lineage, API, tiles and the map are deployed. Texas Permian-district wells and b
 geometry are on the map, but Texas production and allocation are not built. New
 Mexico ingest/promotion code exists without a claimed resident deployment. P3 has an
 immutable `fv2.0` feature matrix, `mdv1.4` model-ready labels and curves, eight shared
-rolling splits, and a D1 `tcv1.0` type-curve control candidate. The control replays
+rolling splits, and a resident D1 `tcv1.0` type-curve control artifact. The control replays
 2,300,400 three-stream rows over both normalization arms, but its explicit availability
 gate is red at 12.9484% against 5%; missing formation and lateral context, not peer count,
 drives the miss. Forecasts, models, calibration, economics, scenarios, agents and inventory
