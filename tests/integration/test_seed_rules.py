@@ -167,6 +167,22 @@ def test_alias_rule_hydration_does_not_leak_another_sources_mapping(db, seeded):
     ] == "bakken"
 
 
+def test_alias_rule_hydration_prefers_its_source_over_a_newer_unscoped_fallback(db, seeded):
+    with db.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.formation_aliases"
+            " (formation_raw, formation, formation_group, confidence, effective_from, source_id,"
+            " created_vintage) values"
+            " ('BAKKEN', 'unscoped', 'unscoped', 1.000, '2026-08-29', null, '2026-08-29')"
+        )
+
+    rule = load_rules(db, source_id="nd_mpr_xlsx", stage="join", as_of=date(2026, 8, 29))[0]
+
+    assert next(row for row in rule.lookup if row["formation_raw"] == "BAKKEN")[
+        "formation_group"
+    ] == "bakken"
+
+
 def load_one(connection: psycopg.Connection, rule_id: str):
     declared = next(rule for rule in ND_RULES if rule["rule_id"] == rule_id)
     loaded = load_rules(

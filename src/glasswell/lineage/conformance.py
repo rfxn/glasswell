@@ -608,7 +608,7 @@ def _hydrate(
                     "select formation_raw, formation, formation_group, confidence,"
                     " effective_from, source_id, created_vintage"
                     " from (select a.*, row_number() over ("
-                    "   partition by formation_raw order by (source_id = %s) desc,"
+                    "   partition by formation_raw order by (source_id = %s) desc nulls last,"
                     "   effective_from desc, formation) rank"
                     " from lineage.formation_aliases a"
                     " where effective_from <= %s"
@@ -621,7 +621,7 @@ def _hydrate(
                 cursor.execute(
                     "select operator_raw, operator, confidence, effective_from, source_id"
                     " from (select a.*, row_number() over ("
-                    "   partition by operator_raw order by (source_id = %s) desc,"
+                    "   partition by operator_raw order by (source_id = %s) desc nulls last,"
                     "   effective_from desc, operator) rank"
                     " from lineage.operator_aliases a where effective_from <= %s"
                     "   and (source_id = %s or source_id is null)) ranked"
