@@ -166,6 +166,32 @@ def test_knowledge_cutoff_is_the_latest_non_test_label_completion():
     ) > expected
 
 
+def test_incomplete_wells_stay_in_split_without_moving_knowledge_cutoff():
+    population = split_population()
+    population[0] = population[0].model_copy(update={"label_completeness_date": None})
+
+    split = build_temporal_split(
+        population,
+        basin="nd",
+        boundary=date(2024, 1, 1),
+        horizon_months=12,
+        reporting_lags={"nd_mpr_xlsx": 45},
+    )
+
+    assert population[0].api10 in {item.api10 for item in split.assignments}
+    assert split.holdout_def.knowledge_cutoff == max(
+        item.label_completeness_date
+        for item in population
+        if item.label_completeness_date is not None
+        and next(
+            assignment.partition
+            for assignment in split.assignments
+            if assignment.api10 == item.api10
+        )
+        != "test"
+    )
+
+
 def test_split_id_is_deterministic_under_input_order():
     args = {
         "basin": "nd",
