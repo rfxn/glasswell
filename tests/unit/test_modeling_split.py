@@ -177,18 +177,14 @@ def test_incomplete_wells_stay_in_split_without_moving_knowledge_cutoff():
         horizon_months=12,
         reporting_lags={"nd_mpr_xlsx": 45},
     )
+    partition_by_api = {assignment.api10: assignment.partition for assignment in split.assignments}
 
     assert population[0].api10 in {item.api10 for item in split.assignments}
     assert split.holdout_def.knowledge_cutoff == max(
         item.label_completeness_date
         for item in population
         if item.label_completeness_date is not None
-        and next(
-            assignment.partition
-            for assignment in split.assignments
-            if assignment.api10 == item.api10
-        )
-        != "test"
+        and partition_by_api[item.api10] != "test"
     )
 
 
