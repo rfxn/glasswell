@@ -3,7 +3,11 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from glasswell.modeling.model_dataset import lateral_length_bucket, materialize_labels
+from glasswell.modeling.model_dataset import (
+    lateral_length_bucket,
+    materialize_labels,
+    split_set_id,
+)
 
 
 def month(
@@ -177,3 +181,9 @@ def test_lateral_bucket_edges_are_closed_exactly_as_documented():
     assert lateral_length_bucket(10000) == "10000_to_10500"
     assert lateral_length_bucket(10500) == "10000_to_10500"
     assert lateral_length_bucket(10500.001) == "gt_10500"
+
+
+def test_split_set_identity_is_order_independent_and_origin_sensitive():
+    first = split_set_id((date(2022, 1, 1), date(2021, 1, 1)))
+    assert split_set_id((date(2021, 1, 1), date(2022, 1, 1))) == first
+    assert split_set_id((date(2021, 1, 1),)) != first

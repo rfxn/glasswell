@@ -28,7 +28,7 @@ from glasswell.lineage.clock import Clock
 from glasswell.lineage.ids import derivation_id
 from glasswell.lineage.models import DeriveEnvironment, InputRef, OutputSpec
 from glasswell.lineage.recipes import build_recipe
-from glasswell.lineage.serialization import canonical_json, sha256_hex
+from glasswell.lineage.serialization import canonical_json, hash_payload, sha256_hex
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.modeling.split import SplitObject, WellTimeline, build_temporal_split
 from glasswell.staging.duck import PARTITION_FILENAME, file_sha256, write_partition
@@ -36,7 +36,7 @@ from glasswell.staging.duck import PARTITION_FILENAME, file_sha256, write_partit
 MODEL_ROOT_ENV = "GLASSWELL_MODEL_ROOT"
 DEFAULT_MODEL_ROOT = Path("data/models")
 MODEL_DATASET = "modeling.model_ready_labels"
-MODEL_DATASET_VERSION = "mdv1.2"
+MODEL_DATASET_VERSION = "mdv1.3"
 MODEL_SCHEMA_VERSION = "1"
 COVERAGE_SCHEMA_VERSION = "1"
 REJECTION_SCHEMA_VERSION = "1"
@@ -104,6 +104,7 @@ class ModelDatasetBuild:
     rejections_sha256: str
     eval_vintage: date
     dataset_version: str
+    split_set_id: str
     feature_version: str
     rows: int
     curve_rows: int
@@ -124,6 +125,7 @@ class ModelDatasetBuild:
             "rejections_sha256": self.rejections_sha256,
             "eval_vintage": self.eval_vintage.isoformat(),
             "dataset_version": self.dataset_version,
+            "split_set_id": self.split_set_id,
             "feature_version": self.feature_version,
             "rows": self.rows,
             "curve_rows": self.curve_rows,
@@ -159,6 +161,15 @@ def lateral_length_bucket(length_ft: Decimal | float | int | None) -> str | None
     if value <= 10500:
         return "10000_to_10500"
     return "gt_10500"
+
+
+def split_set_id(origins: Sequence[date]) -> str:
+    payload = {
+        "origins": sorted(set(origins)),
+        "horizons": HORIZONS,
+        "calibration_window_months": 12,
+    }
+    return "sset_" + hash_payload(payload)[:16]
 
 
 def _calendar_month_gap(later: date, earlier: date) -> int:
@@ -526,6 +537,8 @@ def _persist_primary(
     basin: str,
     eval_vintage: date,
     feature_version: str,
+    vintage_basis: VintageBasis,
+    split_set: str,
 ) -> tuple[str, str]:
     partition = (
         root
@@ -534,6 +547,8 @@ def _persist_primary(
         / f"basin={basin}"
         / f"eval_vintage={eval_vintage.isoformat()}"
         / f"feature_version={feature_version}"
+        / f"vintage_basis={vintage_basis}"
+        / f"split_set_id={split_set}"
     )
     partition.mkdir(parents=True, exist_ok=True)
     pending = partition / f".pending-{uuid4().hex}.parquet"
@@ -639,6 +654,7 @@ def _coverage_document(
     rejections: Sequence[Mapping[str, object]],
     persisted_splits: Sequence[PersistedSplit],
     vintage_basis: VintageBasis,
+    split_set: str,
 ) -> Mapping[str, object]:
     status_counts: dict[str, Counter[str]] = defaultdict(Counter)
     matrix_by_api = {str(row["api10"]): row for row in matrix_rows}
@@ -664,6 +680,7 @@ def _coverage_document(
         "derivation_id": derivation,
         "eval_vintage": eval_vintage,
         "dataset_version": MODEL_DATASET_VERSION,
+        "split_set_id": split_set,
         "feature_version": feature_version,
         "feature_inputs": {
             "artifact_sha256": feature_artifact_sha256,
@@ -920,61 +937,9 @@ def build_model_dataset(
                 }
             )
 
-    params = {
-        "basin": basin,
-        "dataset_version": MODEL_DATASET_VERSION,
-        "eval_vintage": eval_vintage,
-        "feature_version": feature_version,
-        "feature_set_hash": feature_set_hash,
-        "feature_artifact_sha256": matrix_hash,
-        "feature_coverage_sha256": matrix_coverage_hash,
-        "origins": sorted(origins),
-        "streams": STREAMS,
-        "horizons": HORIZONS,
-        "horizon_calendar_guard_months": HORIZON_CALENDAR_GUARD_MONTHS,
-        "production_source_id": PRODUCTION_SOURCE_ID,
-        "production_source_lag_days": PRODUCTION_SOURCE_LAG_DAYS,
-        "vintage_basis": vintage_basis,
-        "length_buckets_ft": [8000, 10000, 10500],
-    }
-    output_spec = OutputSpec(
-        store="parquet",
-        dataset=MODEL_DATASET,
-        partition={
-            "basin": basin,
-            "dataset_version": MODEL_DATASET_VERSION,
-            "eval_vintage": eval_vintage.isoformat(),
-            "feature_version": feature_version,
-        },
-        schema_version=MODEL_SCHEMA_VERSION,
-    )
-    planned_id = derivation_id(
-        operation="features.build",
-        inputs=inputs,
-        params=params,
-        code_version=environment.code_version,
-        env_id=environment.env_id,
-        rule_ids=(),
-        output=output_spec,
-    )
-
-    label_frame = _label_frame(labels, planned_id)
-    curve_frame = _curve_frame(curves, planned_id)
-    rejection_frame = _rejection_frame(rejections)
+    normalized_origins = tuple(sorted(set(origins)))
+    resolved_split_set = split_set_id(normalized_origins)
     model_root = resolve_model_root(root)
-    artifact_uri, artifact_hash = _persist_primary(
-        label_frame,
-        root=model_root,
-        basin=basin,
-        eval_vintage=eval_vintage,
-        feature_version=feature_version,
-    )
-    artifact_dir = Path(artifact_uri).parent
-    curves_uri = artifact_dir / "curves.parquet"
-    curves_hash = _persist_frame_sidecar(curve_frame, curves_uri)
-    rejections_uri = artifact_dir / "rejections.parquet"
-    rejections_hash = _persist_frame_sidecar(rejection_frame, rejections_uri)
-
     split_objects: list[SplitObject] = []
     for horizon in HORIZONS:
         timelines: list[WellTimeline] = []
@@ -1006,7 +971,7 @@ def build_model_dataset(
                     ),
                 )
             )
-        for origin in sorted(set(origins)):
+        for origin in normalized_origins:
             split_objects.append(
                 build_temporal_split(
                     timelines,
@@ -1017,6 +982,65 @@ def build_model_dataset(
                 )
             )
     persisted_splits = _persist_splits(model_root, split_objects)
+
+    params = {
+        "basin": basin,
+        "dataset_version": MODEL_DATASET_VERSION,
+        "split_set_id": resolved_split_set,
+        "eval_vintage": eval_vintage,
+        "feature_version": feature_version,
+        "feature_set_hash": feature_set_hash,
+        "feature_artifact_sha256": matrix_hash,
+        "feature_coverage_sha256": matrix_coverage_hash,
+        "origins": normalized_origins,
+        "streams": STREAMS,
+        "horizons": HORIZONS,
+        "horizon_calendar_guard_months": HORIZON_CALENDAR_GUARD_MONTHS,
+        "production_source_id": PRODUCTION_SOURCE_ID,
+        "production_source_lag_days": PRODUCTION_SOURCE_LAG_DAYS,
+        "vintage_basis": vintage_basis,
+        "length_buckets_ft": [8000, 10000, 10500],
+    }
+    output_spec = OutputSpec(
+        store="parquet",
+        dataset=MODEL_DATASET,
+        partition={
+            "basin": basin,
+            "dataset_version": MODEL_DATASET_VERSION,
+            "eval_vintage": eval_vintage.isoformat(),
+            "feature_version": feature_version,
+            "vintage_basis": vintage_basis,
+            "split_set_id": resolved_split_set,
+        },
+        schema_version=MODEL_SCHEMA_VERSION,
+    )
+    planned_id = derivation_id(
+        operation="features.build",
+        inputs=inputs,
+        params=params,
+        code_version=environment.code_version,
+        env_id=environment.env_id,
+        rule_ids=(),
+        output=output_spec,
+    )
+
+    label_frame = _label_frame(labels, planned_id)
+    curve_frame = _curve_frame(curves, planned_id)
+    rejection_frame = _rejection_frame(rejections)
+    artifact_uri, artifact_hash = _persist_primary(
+        label_frame,
+        root=model_root,
+        basin=basin,
+        eval_vintage=eval_vintage,
+        feature_version=feature_version,
+        vintage_basis=vintage_basis,
+        split_set=resolved_split_set,
+    )
+    artifact_dir = Path(artifact_uri).parent
+    curves_uri = artifact_dir / "curves.parquet"
+    curves_hash = _persist_frame_sidecar(curve_frame, curves_uri)
+    rejections_uri = artifact_dir / "rejections.parquet"
+    rejections_hash = _persist_frame_sidecar(rejection_frame, rejections_uri)
 
     coverage = _coverage_document(
         derivation=planned_id,
@@ -1032,6 +1056,7 @@ def build_model_dataset(
         rejections=rejections,
         persisted_splits=persisted_splits,
         vintage_basis=vintage_basis,
+        split_set=resolved_split_set,
     )
     coverage_uri = artifact_dir / "coverage.json"
     coverage_hash = _persist_json(canonical_json(coverage), coverage_uri)
@@ -1106,6 +1131,7 @@ def build_model_dataset(
         rejections_sha256=rejections_hash,
         eval_vintage=eval_vintage,
         dataset_version=MODEL_DATASET_VERSION,
+        split_set_id=resolved_split_set,
         feature_version=feature_version,
         rows=label_frame.height,
         curve_rows=curve_frame.height,

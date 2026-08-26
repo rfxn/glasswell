@@ -146,6 +146,15 @@ def test_model_dataset_registers_artifacts_and_replays_byte_identically(
         origins=(ORIGIN,),
         root=tmp_path / "models",
     )
+    alternate = build_model_dataset(
+        db,
+        feature_matrix_uri=feature.artifact_uri,
+        feature_coverage_uri=feature.coverage_uri,
+        eval_vintage=AS_OF,
+        environment=lineage_env,
+        origins=(date(2021, 1, 1), ORIGIN),
+        root=tmp_path / "models",
+    )
     db.commit()
 
     assert first.derivation_id == second.derivation_id
@@ -154,13 +163,15 @@ def test_model_dataset_registers_artifacts_and_replays_byte_identically(
     assert first.curves_sha256 == second.curves_sha256
     assert first.coverage_sha256 == second.coverage_sha256
     assert first.rejections_sha256 == second.rejections_sha256
+    assert first.split_set_id != alternate.split_set_id
+    assert first.artifact_uri != alternate.artifact_uri
     assert first.rows == 60 * 2 * 3
     assert first.curve_rows == 60 * 24 * 3
     assert first.rejection_rows == 1
     assert len(first.splits) == 2
 
     labels = pl.read_parquet(first.artifact_uri)
-    assert labels["dataset_version"].unique().to_list() == ["mdv1.2"]
+    assert labels["dataset_version"].unique().to_list() == ["mdv1.3"]
     assert labels["formation_group_source_available_on"].null_count() == 0
     assert set(labels["label_status"].unique()) == {"complete", "withheld"}
     assert labels.filter(pl.col("api10") == "3305300059")["label_status"].unique().to_list() == [
@@ -172,7 +183,7 @@ def test_model_dataset_registers_artifacts_and_replays_byte_identically(
         & (pl.col("label_status") == "complete")
     )["label_value"].unique().to_list() == [Decimal("1200.000")]
     curves = pl.read_parquet(first.curves_uri)
-    assert curves["dataset_version"].unique().to_list() == ["mdv1.2"]
+    assert curves["dataset_version"].unique().to_list() == ["mdv1.3"]
     assert curves["source_reconstructed_available_on"].null_count() == 0
     assert curves["producing_month_index"].max() == 24
     assert curves["reported"].all()
@@ -183,6 +194,7 @@ def test_model_dataset_registers_artifacts_and_replays_byte_identically(
     assert coverage["retrospective_vintage"]["split_basis"] == (
         "source_reconstructed_not_glasswell_history"
     )
+    assert coverage["split_set_id"] == first.split_set_id
     assert all(item["streams"] == ["oil", "gas", "water"] for item in coverage["splits"])
     assert {
         assignment.partition
