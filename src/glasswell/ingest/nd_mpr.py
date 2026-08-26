@@ -335,6 +335,16 @@ def _sum_over_pools(filings: Sequence[Mapping[str, Any]]) -> tuple[Decimal, int 
     return total, (max(days) if days else None), _rollup_semantics(volumes, total)
 
 
+def _deduplicate_completions(completions: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    unique: dict[tuple[str, date], dict[str, Any]] = {}
+    for completion in completions:
+        key = (completion["completion_key"], completion["production_month"])
+        existing = unique.setdefault(key, completion)
+        if existing != completion:
+            raise ValueError(f"inconsistent completion observations for {key!r}")
+    return list(unique.values())
+
+
 def pool_promotion_records(frame: pl.DataFrame) -> PoolPromotion:
     """cr_nd_pool_rollup_1, the legislated replacement for D1's interim withdrawal.
 
@@ -448,7 +458,10 @@ def pool_promotion_records(frame: pl.DataFrame) -> PoolPromotion:
 
     rejected = indexed.filter(pl.col(_PROMOTION_INDEX).is_in(collided)).drop(_PROMOTION_INDEX)
     return PoolPromotion(
-        records=records, aggregates=aggregates, completions=completions, collided=rejected
+        records=records,
+        aggregates=aggregates,
+        completions=_deduplicate_completions(completions),
+        collided=rejected,
     )
 
 

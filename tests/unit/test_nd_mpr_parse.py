@@ -143,6 +143,22 @@ def test_a_well_reporting_two_pools_promotes_both_and_a_well_row_that_sums_them(
     assert promoted.collided.is_empty()
 
 
+def test_completion_entities_are_emitted_once_across_production_streams():
+    keys = ["3303300241:BIRDBEAR", "3303300241:RED RIVER", "3303300213:BIRDBEAR"]
+    oil = _pool_frame(keys)
+    frame = pl.concat(
+        [
+            oil,
+            oil.with_columns(pl.lit("gas").alias("stream_canonical")),
+            oil.with_columns(pl.lit("water").alias("stream_canonical")),
+        ]
+    )
+
+    promoted = nd_mpr.pool_promotion_records(frame)
+
+    assert [row["completion_key"] for row in promoted.completions] == keys
+
+
 def test_without_the_key_rule_in_force_the_pipeline_behaves_as_it_did_before_it():
     """R7: replaying a vintage that predates cr_nd_entity_key_1 reproduces that vintage."""
     promoted = nd_mpr.pool_promotion_records(_pool_frame())
