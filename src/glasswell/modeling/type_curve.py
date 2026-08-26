@@ -12,6 +12,7 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Literal, cast
 from uuid import uuid4
@@ -44,6 +45,8 @@ CONTROL_DATASET = "modeling.typecurve_control"
 CONTROL_SCHEMA_VERSION = "1"
 TC_MIN_N = 20
 VINTAGE_WINDOW_MONTHS = 36
+TC_RUNG1_SHARE_MIN = Decimal("0.60")
+TC_UNAVAILABLE_SHARE_MAX = Decimal("0.05")
 NORMALIZATIONS = ("typecurve_per_kft", "typecurve_absolute")
 QUANTILE_CONVENTION = "statistical_ascending"
 BATCH_ROWS = 50_000
@@ -173,10 +176,17 @@ class ControlStats:
     subject_stream_instances: int = 0
     unavailable_subject_stream_instances: int = 0
     fallback_counts: Counter[str] = field(default_factory=Counter)
+    unavailable_reason_counts: Counter[str] = field(default_factory=Counter)
     monthly_status_counts: Counter[str] = field(default_factory=Counter)
     cumulative_status_counts: Counter[str] = field(default_factory=Counter)
     split_subjects: dict[str, int] = field(default_factory=lambda: defaultdict(int))
     split_unavailable_subjects: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    split_fallback_counts: dict[str, Counter[str]] = field(
+        default_factory=lambda: defaultdict(Counter)
+    )
+    split_unavailable_reason_counts: dict[str, Counter[str]] = field(
+        default_factory=lambda: defaultdict(Counter)
+    )
 
 
 CONTROL_SCHEMA = {
@@ -200,6 +210,7 @@ CONTROL_SCHEMA = {
     "month_index": pl.Int16,
     "normalization": pl.String,
     "fallback_level": pl.String,
+    "control_unavailable_reasons": pl.String,
     "peer_set_id": pl.String,
     "peer_count": pl.Int32,
     "cumulative_peer_count": pl.Int32,
@@ -669,6 +680,17 @@ def _quantile_values(values: Quantiles | None) -> tuple[float | None, float | No
     return values.p10, values.p50, values.p90
 
 
+def _context_unavailable_reasons(context: SubjectContext, basin: str) -> tuple[str, ...]:
+    reasons: list[str] = []
+    if context.formation_group is None:
+        reasons.append("missing_formation")
+    if context.basin != basin:
+        reasons.append("basin_mismatch")
+    if context.lateral_length_ft is None or context.lateral_length_ft <= 0:
+        reasons.append("missing_lateral_length")
+    return tuple(sorted(reasons))
+
+
 def _control_rows(
     *,
     contexts: Mapping[str, SubjectContext],
@@ -753,12 +775,8 @@ def _control_rows(
         for subject_api10 in test_api10s:
             subject = contexts[subject_api10]
             subject_pad = assignment_by_api[subject_api10].pad_group_id
-            if (
-                subject.formation_group is None
-                or subject.basin != split.basin
-                or subject.lateral_length_ft is None
-                or subject.lateral_length_ft <= 0
-            ):
+            unavailable_reasons = _context_unavailable_reasons(subject, split.basin)
+            if unavailable_reasons:
                 choice = FallbackChoice(level="control_unavailable", key=None, peer_api10s=())
             else:
                 choice = resolve_fallback(
@@ -766,11 +784,19 @@ def _control_rows(
                     peer_indices,
                     excluded_api10s=pad_members[subject_pad],
                 )
+                if choice.level == "control_unavailable":
+                    unavailable_reasons = ("insufficient_peers",)
             peer_set_id = choice.peer_set_id
             stats.fallback_counts[choice.level] += 1
+            stats.split_fallback_counts[split.split_id][choice.level] += 1
             if choice.level == "control_unavailable":
+                if not unavailable_reasons:
+                    raise TypeCurveError("unavailable control has no recorded reason")
                 stats.unavailable_subject_instances += 1
                 stats.split_unavailable_subjects[split.split_id] += 1
+                for unavailable_reason in unavailable_reasons:
+                    stats.unavailable_reason_counts[unavailable_reason] += 1
+                    stats.split_unavailable_reason_counts[split.split_id][unavailable_reason] += 1
             for stream in STREAMS:
                 stats.subject_stream_instances += 1
                 if choice.level == "control_unavailable":
@@ -850,6 +876,7 @@ def _control_rows(
                             "month_index": month.month_index,
                             "normalization": normalization,
                             "fallback_level": choice.level,
+                            "control_unavailable_reasons": ("|".join(unavailable_reasons) or None),
                             "peer_set_id": peer_set_id,
                             "peer_count": month.peer_count,
                             "cumulative_peer_count": month.cumulative_peer_count,
@@ -960,7 +987,17 @@ def _merge_inputs(groups: Sequence[Sequence[InputRef]]) -> tuple[InputRef, ...]:
 
 
 def _ratio(numerator: int, denominator: int) -> str:
-    return "0.000000" if not denominator else f"{numerator / denominator:.6f}"
+    if not denominator:
+        return "0.000000"
+    return f"{Decimal(numerator) / Decimal(denominator):.6f}"
+
+
+def _gate_status(numerator: int, denominator: int, *, threshold: Decimal, minimum: bool) -> str:
+    if not denominator:
+        return "not_evaluable"
+    observed = Decimal(numerator) / Decimal(denominator)
+    passed = observed >= threshold if minimum else observed <= threshold
+    return "pass" if passed else "fail"
 
 
 def _coverage_document(
@@ -979,6 +1016,35 @@ def _coverage_document(
     stats: ControlStats,
     splits: Sequence[PersistedSplitInput],
 ) -> Mapping[str, object]:
+    rung1_instances = stats.fallback_counts["formation_area_length"]
+    pooled_rung1_status = _gate_status(
+        rung1_instances,
+        stats.test_subject_instances,
+        threshold=TC_RUNG1_SHARE_MIN,
+        minimum=True,
+    )
+    pooled_unavailable_status = _gate_status(
+        stats.unavailable_subject_instances,
+        stats.test_subject_instances,
+        threshold=TC_UNAVAILABLE_SHARE_MAX,
+        minimum=False,
+    )
+    split_unavailable_statuses = {
+        item.split.split_id: _gate_status(
+            stats.split_unavailable_subjects[item.split.split_id],
+            stats.split_subjects[item.split.split_id],
+            threshold=TC_UNAVAILABLE_SHARE_MAX,
+            minimum=False,
+        )
+        for item in splits
+    }
+    plausibility_flags: list[str] = []
+    if pooled_rung1_status == "fail":
+        plausibility_flags.append("pooled_rung1_share_below_0.60")
+    if pooled_unavailable_status == "fail":
+        plausibility_flags.append("pooled_control_unavailable_share_above_0.05")
+    if "fail" in split_unavailable_statuses.values():
+        plausibility_flags.append("split_control_unavailable_share_above_0.05")
     return {
         "schema_version": CONTROL_SCHEMA_VERSION,
         "dataset": CONTROL_DATASET,
@@ -1011,9 +1077,28 @@ def _coverage_document(
                 stats.unavailable_subject_stream_instances, stats.subject_stream_instances
             ),
             "fallback_by_level": dict(sorted(stats.fallback_counts.items())),
+            "control_unavailable_reason_mentions": dict(
+                sorted(stats.unavailable_reason_counts.items())
+            ),
             "monthly_rows_by_status": dict(sorted(stats.monthly_status_counts.items())),
             "cumulative_rows_by_status": dict(sorted(stats.cumulative_status_counts.items())),
         },
+        "acceptance": {
+            "scope": "subject_instances_across_identical_persisted_splits",
+            "pooled_rung1_share": {
+                "observed": _ratio(rung1_instances, stats.test_subject_instances),
+                "minimum": f"{TC_RUNG1_SHARE_MIN:.6f}",
+                "status": pooled_rung1_status,
+            },
+            "pooled_control_unavailable_share": {
+                "observed": _ratio(
+                    stats.unavailable_subject_instances, stats.test_subject_instances
+                ),
+                "maximum": f"{TC_UNAVAILABLE_SHARE_MAX:.6f}",
+                "status": pooled_unavailable_status,
+            },
+        },
+        "plausibility_flags": plausibility_flags,
         "control_contract": {
             "peer_population": "TRAIN_union_CAL_only",
             "pad_mates": "excluded_and_split_partition_indivisibility_enforced",
@@ -1031,6 +1116,7 @@ def _coverage_document(
             "cumulative_quantiles": "empirical_quantile_of_each_peers_own_cumulative",
             "per_month_counts": ["peer_count", "cumulative_peer_count"],
             "quantile_convention": QUANTILE_CONVENTION,
+            "unavailable_reason_format": "pipe_delimited_sorted_reason_set",
         },
         "determinism_gate": {
             "class": "D1",
@@ -1046,6 +1132,17 @@ def _coverage_document(
                 "control_unavailable_subjects": stats.split_unavailable_subjects[
                     item.split.split_id
                 ],
+                "control_unavailable_share": _ratio(
+                    stats.split_unavailable_subjects[item.split.split_id],
+                    stats.split_subjects[item.split.split_id],
+                ),
+                "control_unavailable_status": split_unavailable_statuses[item.split.split_id],
+                "fallback_by_level": dict(
+                    sorted(stats.split_fallback_counts[item.split.split_id].items())
+                ),
+                "control_unavailable_reason_mentions": dict(
+                    sorted(stats.split_unavailable_reason_counts[item.split.split_id].items())
+                ),
                 "streams": list(STREAMS),
                 "normalizations": list(NORMALIZATIONS),
             }
@@ -1155,6 +1252,8 @@ def build_type_curve_control(
         "streams": STREAMS,
         "normalizations": NORMALIZATIONS,
         "tc_min_n": TC_MIN_N,
+        "rung1_share_min": str(TC_RUNG1_SHARE_MIN),
+        "control_unavailable_share_max": str(TC_UNAVAILABLE_SHARE_MAX),
         "vintage_window_months": VINTAGE_WINDOW_MONTHS,
         "vintage_basis": typed_vintage_basis,
         "quantile_method": "equal_weight_percentile_cont_linear",

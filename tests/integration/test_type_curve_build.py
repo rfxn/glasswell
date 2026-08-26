@@ -81,6 +81,7 @@ def test_typecurve_control_registers_identical_split_arms_and_replays_d1(
     assert peer_sets["peer_sets"].unique().to_list() == [1]
     assert peer_sets["arms"].unique().to_list() == [2]
     assert control["fallback_level"].unique().to_list() == ["formation_area_length"]
+    assert control["control_unavailable_reasons"].null_count() == first.rows
     assert set(control["peer_count"].unique()) == {24, 25}
     assert set(control["cumulative_peer_count"].unique()) == {24, 25}
     gas_month_one = control.filter((pl.col("stream") == "gas") & (pl.col("month_index") == 1))
@@ -95,6 +96,10 @@ def test_typecurve_control_registers_identical_split_arms_and_replays_d1(
     assert coverage["counts"]["test_subject_instances"] == 28
     assert coverage["counts"]["control_unavailable_subject_instances"] == 0
     assert coverage["counts"]["fallback_by_level"] == {"formation_area_length": 28}
+    assert coverage["counts"]["control_unavailable_reason_mentions"] == {}
+    assert coverage["acceptance"]["pooled_rung1_share"]["status"] == "pass"
+    assert coverage["acceptance"]["pooled_control_unavailable_share"]["status"] == "pass"
+    assert coverage["plausibility_flags"] == []
     assert coverage["control_contract"]["normalizations"] == [
         "typecurve_per_kft",
         "typecurve_absolute",

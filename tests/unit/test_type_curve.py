@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 import pytest
@@ -8,6 +9,7 @@ from glasswell.modeling.type_curve import (
     CurveObservation,
     SubjectContext,
     _available_series,
+    _context_unavailable_reasons,
     aggregate_peer_curves,
     empirical_quantile,
     resolve_fallback,
@@ -95,6 +97,21 @@ def test_typecurve_fallback_is_ordered_closed_and_records_the_resolved_level():
     assert resolved.peer_set_id is not None
     assert unavailable.level == "control_unavailable"
     assert unavailable.peer_api10s == ()
+
+
+def test_typecurve_names_missing_context_instead_of_calling_it_peer_insufficiency():
+    context = subject()
+
+    assert _context_unavailable_reasons(context, "williston") == ()
+    assert _context_unavailable_reasons(
+        replace(
+            context,
+            formation_group=None,
+            lateral_length_ft=None,
+            formation_group_source_available_on=None,
+        ),
+        "williston",
+    ) == ("missing_formation", "missing_lateral_length")
 
 
 def test_curve_availability_obeys_the_selected_retrospective_vintage_basis():
