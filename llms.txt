@@ -7,14 +7,15 @@
 > checksummed source file. Proprietary — copyright Ryan MacDonald, all rights
 > reserved.
 
-**Status: in build, release line v0.50.** North Dakota ingest, canonical production,
+**Status: in build, release line v0.51.** North Dakota ingest, canonical production,
 lineage, API, tiles and the map are deployed. Texas Permian-district wells and bore
 geometry are on the map, but Texas production and allocation are not built. New
 Mexico ingest/promotion code exists without a claimed resident deployment. The first
 versioned feature declaration and deterministic as-of matrix builder are implemented. P3
 readiness now includes ND basin conformance, an append-only FracFocus hydraulic-fracturing
 job-end anchor path with no spud fallback, and reviewed vintaged aliases for all 40 current
-MPR pool labels. No live ND matrix is claimed until the initial resident load is measured and
+MPR pool labels. The resident load assigns all 43,817 ND wells to Williston and anchors 17,563
+API-10s; the 26,254 uncovered wells remain null. No live ND matrix is claimed until it is
 materialized. Forecasts, economics, scenarios, agents and inventory remain designed scope,
 not live features.
 

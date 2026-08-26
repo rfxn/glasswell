@@ -154,11 +154,12 @@ tar -C web/dist -cf - . | pipe_remote "tar -x -C $WEB_ROOT" || refuse "web/dist 
 
 step "4. python dependencies"
 if [[ $lock_here == "$lock_before" ]]; then
-    printf '  %s unchanged — nothing to install\n' "$LOCK"
+    printf '  %s unchanged — dependency install skipped\n' "$LOCK"
 else
-    remote "$VENV/bin/pip install -q -r $DEPLOY_SRC/$LOCK && \
-            $VENV/bin/pip install -q -e $DEPLOY_SRC --no-deps" || refuse "dependency install failed"
+    remote "$VENV/bin/pip install -q -r $DEPLOY_SRC/$LOCK" || refuse "dependency install failed"
 fi
+remote "$VENV/bin/pip install -q -e $DEPLOY_SRC --no-deps" \
+    || refuse "project install failed — console entry points may be stale"
 
 step "5. config and units (idempotent)"
 remote "cd $DEPLOY_SRC/infra && ./install.sh" || refuse "install.sh failed"

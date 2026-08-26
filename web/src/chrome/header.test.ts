@@ -75,6 +75,7 @@ describe("the header is a control surface, not a paragraph", () => {
     expect(help).toContain("Forecasts are not live");
     expect(help).toContain("completion anchors");
     expect(help).toContain("without a spud fallback");
+    expect(help).toContain("17,563 of 43,817");
     expect(help).toContain("first live matrix");
   });
 
