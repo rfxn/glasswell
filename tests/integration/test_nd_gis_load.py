@@ -148,6 +148,18 @@ def test_wells_land_in_canonical_with_a_surface_geometry(wells_loaded, seeded):
     assert scalar(
         seeded, "select land_unit_label from canonical.wells where api10 = %s", ("3304300002",)
     ) == "140N-73W-2"
+    assert scalar(seeded, "select count(*) from canonical.wells where basin = 'williston'") == (
+        WELL_RECORDS
+    )
+
+
+def test_the_nd_basin_assignment_is_a_recorded_conformance_rule(wells_loaded, seeded):
+    assert scalar(
+        seeded,
+        "select count(*) from lineage.derivation_rules"
+        " where derivation_id = %s and rule_id = 'cr_nd_basin_1'",
+        (wells_loaded.promote_derivation_id,),
+    ) == 1
 
 
 def test_well_status_is_mapped_through_the_seeded_vocabulary(wells_loaded, seeded):

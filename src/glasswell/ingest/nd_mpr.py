@@ -388,6 +388,16 @@ def pool_promotion_records(frame: pl.DataFrame) -> PoolPromotion:
                     semantics=classify_null_semantics(head["volume"]),
                 )
             )
+            if head["entity_key"] is not None and head["pool"] is not None:
+                completions.append(
+                    {
+                        "completion_key": head["entity_key"],
+                        "api10": api10,
+                        "well_completion_pool": head["pool"],
+                        "pool_reported": head["pool"],
+                        "production_month": month,
+                    }
+                )
             continue
         for entity_key, filing in by_pool.items():
             records.append(

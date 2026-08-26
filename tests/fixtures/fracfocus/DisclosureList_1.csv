@@ -1,0 +1,9 @@
+DisclosureId,JobStartDate,JobEndDate,APINumber,StateName,CountyName,OperatorName,WellName,Latitude,Longitude,Projection,TVD,TotalBaseWaterVolume,TotalBaseNonWaterVolume,FFVersion,FederalWell,IndianWell
+d1,1/10/2012 12:00:00 AM,1/20/2012 12:00:00 AM,33043000020000,North Dakota,Kidder,Example Operator,Armstrong 1,46.9671,-99.8664,NAD83,,,,1,False,False
+d2,1/5/2015 7:24:00 AM,1/15/2015 10:58:00 PM,33-043-00002-00-00,North Dakota,Kidder,Example Operator,Armstrong 1,46.9671,-99.8664,NAD83,,,,2,False,False
+d3,2/1/2020,2/15/2020,33053039010000,North Dakota,Williams,Example Operator,Bill 14-23 1H,47.9075,-103.5803,NAD83,,,,3,False,False
+d4,not-a-date,also-not-a-date,33043000040000,North Dakota,Kidder,Example Operator,Bad Date,46.9,-99.8,NAD83,,,,4,False,False
+d5,3/20/2020,3/19/2020,33043000030000,North Dakota,Kidder,Example Operator,Backwards Date,46.9,-99.8,NAD83,,,,4,False,False
+d6,4/1/2020,4/10/2020,33099999990000,North Dakota,Unknown,Example Operator,Missing OGD Well,47.0,-102.0,NAD83,,,,4,False,False
+d7,5/1/2020,5/10/2020,42001000010000,Texas,Anderson,Example Operator,Texas Well,31.8,-95.6,NAD83,,,,4,False,False
+d3,2/2/2020,2/16/2020,33053039010000,North Dakota,Williams,Example Operator,Duplicate Disclosure,47.9075,-103.5803,NAD83,,,,4,False,False

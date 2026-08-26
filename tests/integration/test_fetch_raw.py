@@ -204,6 +204,30 @@ def test_the_fetch_vintage_follows_the_injected_clock(db, raw_root, lineage_env)
     assert result.payload_path.parent.name.startswith("2026-05-14T")
 
 
+def test_a_fetch_can_record_archive_members_and_policy_evidence(
+    db, raw_root, lineage_env
+):
+    inventory = [{"member": "DisclosureList_1.csv", "bytes": 42, "sha256": "a" * 64}]
+    with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env), client_for(
+        PAYLOAD
+    ) as client:
+        result = fetch_raw(
+            db,
+            SOURCE_ID,
+            SOURCE_KEY,
+            url=URL,
+            raw_root=raw_root,
+            client=client,
+            acquisition_method="click_wall_accept",
+            extra_acquisition_params={"terms_url": "https://example.test/terms"},
+            decompressed_inventory=lambda _: inventory,
+        )
+    db.commit()
+
+    assert result.manifest.decompressed_inventory == inventory
+    assert result.manifest.acquisition_params["terms_url"] == "https://example.test/terms"
+
+
 def test_the_run_as_of_and_the_manifest_fetch_vintage_converge(db, raw_root, lineage_env):
     """B2: one clock per run. A divergence here republishes a restatement under the wrong day."""
     clock = FixedClock(start=datetime(2026, 5, 14, 13, 12, tzinfo=UTC))

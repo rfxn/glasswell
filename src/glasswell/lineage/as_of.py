@@ -64,10 +64,11 @@ completion_versions as (
        and (d.created_vintage is null or d.created_vintage <= %(as_of)s)
 ),
 alias_versions as (
-    select formation_raw, formation, effective_from, created_vintage,
+    select formation_raw, coalesce(formation_group, formation) as formation_group,
+           effective_from, created_vintage,
            row_number() over (
                partition by formation_raw
-               order by effective_from desc, formation) as vintage_rank
+               order by effective_from desc, coalesce(formation_group, formation)) as vintage_rank
       from lineage.formation_aliases
      where effective_from <= %(as_of)s
        and created_vintage <= %(as_of)s
@@ -76,8 +77,8 @@ alias_versions as (
 ),
 formation_groups as (
     select c.api10,
-           array_agg(distinct a.formation order by a.formation)
-               filter (where a.formation is not null) as formations
+           array_agg(distinct a.formation_group order by a.formation_group)
+               filter (where a.formation_group is not null) as formations
       from completion_versions c
       left join alias_versions a
         on a.formation_raw = c.pool_reported

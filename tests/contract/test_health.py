@@ -8,12 +8,21 @@ import psycopg
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_MANIFEST_ID
+from glasswell.seed.conformance_c115b import C115B_SOURCES
+from glasswell.seed.conformance_land import LAND_SOURCES
+from glasswell.seed.conformance_tx import TX_SOURCES
+from glasswell.seed.reference import SOURCES
 from tests.support.seed import seed_manifest
 
-# Five ND, nine NM, three TX, two land (BLM PLSS) and one NM C-115B source from seed_all, plus
-# the three the shared test template carries — nd_mpr_xlsx and nm_ocd_wcproduction are in both,
-# so only tx_pdq_dsv adds to the total.
-SOURCE_COUNT = 21
+# The shared test template also carries tx_pdq_dsv; its other sources are seed-registry members.
+SOURCE_COUNT = len(
+    {
+        source["source_id"]
+        for registry in (SOURCES, C115B_SOURCES, LAND_SOURCES, TX_SOURCES)
+        for source in registry
+    }
+    | {"tx_pdq_dsv"}
+)
 
 
 def test_healthz_is_cheap_and_unenveloped(client: TestClient) -> None:

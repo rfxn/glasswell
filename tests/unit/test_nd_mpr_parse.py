@@ -135,6 +135,11 @@ def test_a_well_reporting_two_pools_promotes_both_and_a_well_row_that_sums_them(
         ("3303300241", Decimal("3705.000"), "sum_over_pools")
     ]
     assert promoted.aggregates[0]["days_produced"] == 31
+    assert [(row["completion_key"], row["pool_reported"]) for row in promoted.completions] == [
+        ("3303300241:BIRDBEAR", "BIRDBEAR"),
+        ("3303300241:RED RIVER", "RED RIVER"),
+        ("3303300213:BIRDBEAR", "BIRDBEAR"),
+    ]
     assert promoted.collided.is_empty()
 
 

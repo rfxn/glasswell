@@ -241,6 +241,32 @@ ND_RULES: tuple[dict[str, object], ...] = (
         "effective_from": SUPERSESSION_FROM,
     },
     {
+        "rule_id": "cr_nd_formation_group_1",
+        "effective_from": date(2026, 8, 26),
+        "source_id": "nd_mpr_xlsx",
+        "stage": "join",
+        "rule_kind": "alias_join",
+        "applies_to_fields": ["pool", "formation_group"],
+        "spec": {
+            "alias_table": "formation_aliases",
+            "key_cols": ["formation_raw"],
+            "target_col": "formation_group",
+            "min_confidence": "0.800",
+            "unmatched_action": "quarantine",
+            "reason_code": "alias_unresolved",
+        },
+        "rule": "Resolve each reported ND MPR pool through the vintaged formation alias table.",
+        "rationale": (
+            "The MPR pool vocabulary is a source label, not a model peer group. The reviewed"
+            " crosswalk preserves exact formations, keeps Three Forks distinct from Bakken,"
+            " and sends ambiguous composites or sub-threshold targets to __other__ rather than"
+            " asserting geology the source does not support. The row-by-row mapping remains"
+            " queryable and append-only so a later geological review is a new knowledge"
+            " vintage, not a code edit."
+        ),
+        "evidence_url": MPR_FILE_URL,
+    },
+    {
         "rule_id": "cr_nd_pool_rollup_1",
         "source_id": "nd_mpr_xlsx",
         "stage": "conform",
@@ -419,6 +445,36 @@ ND_RULES: tuple[dict[str, object], ...] = (
             " is the Texas hazard) and not literally WGS84. Storage is always 4326 and the"
             " transform is recorded as a derivation node even though the shift is sub-metre:"
             " the rule is that no coordinate reaches storage untransformed and unrecorded."
+        ),
+        "evidence_url": GIS_WELLS_URL,
+    },
+    {
+        "rule_id": "cr_nd_basin_1",
+        "effective_from": date(2026, 8, 26),
+        "source_id": "nd_gis_wells",
+        "stage": "conform",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["state_code", "basin"],
+        "spec": {
+            "module_function": "glasswell.ingest.nd_gis:_promote_wells",
+            "version": "1",
+            "state_code": "33",
+            "basin": "williston",
+            "scope": "v0 North Dakota modeling basin",
+            "contract_note": (
+                "_promote_wells writes basin=williston on each ND well revision; a future"
+                " boundary source must supersede this rule rather than silently narrow it"
+            ),
+        },
+        "code_ref": "glasswell.ingest.nd_gis:_promote_wells",
+        "rule": "Assign North Dakota OGD wells to the v0 Williston modeling basin.",
+        "rationale": (
+            "The v0 ND product and its fv1.0 feature partition are defined at the Williston"
+            " modeling-basin scope, while OGD_Wells is the statewide identity source and does"
+            " not publish a basin attribute. The assignment is therefore an explicit modeling"
+            " conformance rule, not an inferred source field. Keeping it in the registry makes"
+            " the state-to-model-scope decision visible and replaceable if a future basin"
+            " boundary source supports a narrower spatial classification."
         ),
         "evidence_url": GIS_WELLS_URL,
     },

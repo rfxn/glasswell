@@ -74,6 +74,8 @@ describe("the header is a control surface, not a paragraph", () => {
     expect(help).toContain("pending allocation");
     expect(help).toContain("Forecasts are not live");
     expect(help).toContain("completion anchors");
+    expect(help).toContain("without a spud fallback");
+    expect(help).toContain("first live matrix");
   });
 
   it("mounts the search box into the header's control cluster", () => {
