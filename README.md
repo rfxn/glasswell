@@ -188,13 +188,18 @@ source path: FracFocus `JobEndDate`, defined
 by its bundled dictionary as hydraulic-fracturing job completion, is captured as an append-only
 anchor observation; the earliest valid event per API-10 is selected without a spud-date or
 first-production fallback. All 40 current MPR pool labels have reviewed, vintaged formation
-aliases. The resident matrix and model-ready `mdv1.4` dataset now replay byte-identically:
+aliases. The resident matrix and model-ready `mdv1.4` dataset replay byte-identically:
 105,378 three-stream cum12/cum24 labels, 1,172,586 producing-month curve rows, explicit
-censoring/rejection coverage, and eight content-addressed rolling splits. Forecasts are still
-not live; the next gate is the pinned type-curve control on those exact splits. The strict
-history and reconstructed-source clocks are distinguished in
+censoring/rejection coverage, and eight content-addressed rolling splits. Pinned control-major
+`tcv1.0` now replays 2,300,400 rows over those exact splits, all three streams, and both
+normalization arms. Its rung-one share passes at 81.7089%, but its explicit unavailability
+gate is red at 12.9484% against a 5% ceiling; 318 unique TEST subjects lack formation and 38
+lack lateral length, while only one lacks enough peers. The ladder is not widened and those
+subjects are not dropped. Forecasts are still not live. The strict history and
+reconstructed-source clocks are distinguished in
 [`docs/p3-matrix-integrity.md`](docs/p3-matrix-integrity.md), and the dataset evidence is in
-[`docs/p3-model-ready-dataset.md`](docs/p3-model-ready-dataset.md).
+[`docs/p3-model-ready-dataset.md`](docs/p3-model-ready-dataset.md). The control contract and
+gate evidence are in [`docs/p3-type-curve-control.md`](docs/p3-type-curve-control.md).
 
 The planned modeling path uses a gradient-boosted quantile model with conformal
 calibration to produce P10/P50/P90 on three streams — oil as the headline, gas and
@@ -342,6 +347,7 @@ records each file's checksum and refuses a changed migration.
 | [blueprint.md](blueprint.md) | The product and engineering contract. Anything not in scope there is out until it changes. |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Layers, components, boundaries, and the rules R1–R8 |
 | [ROADMAP.md](ROADMAP.md) | Build phases P0–P8 with exit criteria, current status and cut order |
+| [docs/p3-type-curve-control.md](docs/p3-type-curve-control.md) | Pinned `tcv1.0` control contract, D1 replay evidence, and the explicit red coverage gate |
 | [BRAND.md](BRAND.md) | Visual system, palette, and asset regeneration |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How changes are made, and what review rejects |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting |
