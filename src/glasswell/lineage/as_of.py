@@ -14,6 +14,7 @@ from psycopg.rows import dict_row
 
 from glasswell.lineage.models import InputRef
 from glasswell.lineage.serialization import hash_payload
+from glasswell.units import METRES_PER_FOOT
 
 
 class AsOfViolation(RuntimeError):
@@ -331,7 +332,9 @@ surfaces as (
       from spatial_rows where geom_type = 'surface' group by api10
 ),
 laterals as (
-    select api10, sum(ST_Length(geom::geography) / 0.3048) as lateral_length_ft
+    select api10,
+           sum(ST_Length(geom::geography)::numeric / %(metres_per_foot)s)
+               as lateral_length_ft
       from spatial_rows where geom_type = 'lateral' group by api10
 )
 """
@@ -429,7 +432,12 @@ def read_model_context_snapshot(
     """Read well and spatial control context without crossing the knowledge cut."""
     if not api10s:
         return ModelContextSnapshot(rows=(), inputs=())
-    params = {"api10s": list(api10s), "basin": basin, "as_of": as_of}
+    params = {
+        "api10s": list(api10s),
+        "basin": basin,
+        "as_of": as_of,
+        "metres_per_foot": METRES_PER_FOOT,
+    }
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(_MODEL_CONTEXT_ROWS, params)
         rows = tuple(cursor.fetchall())

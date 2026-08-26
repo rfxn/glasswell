@@ -527,7 +527,7 @@ def _rejection_frame(rows: Sequence[Mapping[str, object]]) -> pl.DataFrame:
         "reason": pl.String,
         "detail": pl.String,
     }
-    return pl.DataFrame(rows, schema=schema, orient="row").sort("row_key")
+    return pl.from_dicts(rows, schema=schema).sort("row_key")
 
 
 def _persist_primary(

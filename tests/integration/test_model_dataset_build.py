@@ -18,7 +18,7 @@ from tests.support.seed import (
     seed_well_spatial,
 )
 
-AS_OF = date(2026, 8, 27)
+AS_OF = date(2026, 8, 26)
 ORIGIN = date(2022, 1, 1)
 
 
