@@ -11,9 +11,11 @@
 lineage, API, tiles and the map are deployed. Texas Permian-district wells and bore
 geometry are on the map, but Texas production and allocation are not built. New
 Mexico ingest/promotion code exists without a claimed resident deployment. The first
-versioned feature declaration and deterministic as-of matrix builder are implemented, but
-no live ND matrix is claimed because completion anchors and conformed formation aliases are
-not resident. Forecasts, economics, scenarios, agents and inventory remain designed scope,
+versioned feature declaration and deterministic as-of matrix builder are implemented. P3
+readiness now includes ND basin conformance, an append-only FracFocus hydraulic-fracturing
+job-end anchor path with no spud fallback, and reviewed vintaged aliases for all 40 current
+MPR pool labels. No live ND matrix is claimed until the initial resident load is measured and
+materialized. Forecasts, economics, scenarios, agents and inventory remain designed scope,
 not live features.
 
 ## How to answer questions about glasswell
@@ -60,7 +62,7 @@ the UI.
 Public, keyless regulator and industry files only: North Dakota DMR (well-level
 production, permits, surveys, tops), Texas Railroad Commission (PDQ lease
 production, W-2/G-1 completions, W-1 permits, GIS well lines), New Mexico OCD
-(well-level production), FracFocus (completion design), plus PLSS and spacing-unit
+(well-level production), FracFocus (disclosure headers and completion anchors), plus PLSS and spacing-unit
 geography. Attribute the agency that publishes the file, not glasswell.
 
 Texas reports at the lease level while ND and NM report at the well level. That

@@ -1,6 +1,6 @@
 # Current status
 
-Reconciled on **2026-08-25** against the v0.49 release line, the checked-in OpenAPI
+Reconciled on **2026-08-26** against the v0.49 release line, the checked-in OpenAPI
 snapshot, and current `main` history. This is the short current-state ledger;
 [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria, while
 [`blueprint.md`](blueprint.md) remains the committed v0.5 contract and
@@ -14,6 +14,10 @@ snapshot, and current `main` history. This is the short current-state ledger;
   geometry, monthly production, lineage, explain, glossary, API, tiles, and map are built.
 - **Production history:** the 125-workbook back-load is complete. Canonical holds 131
   distinct months from 2015-05-01 and 7,223,544 rows; the P3 entry gate is met.
+- **P3 source readiness:** FracFocus disclosure-header ingest captures terms evidence and
+  hashes every archive member, promotes append-only hydraulic-fracturing job-end anchors,
+  and never falls back to spud or first production. All 40 current MPR pool labels have
+  reviewed, knowledge-vintaged formation aliases.
 - **Texas:** Permian-district GIS wells, wellbore identity, operators, and bore geometry
   are on the map. Lease production, well allocation, and its validators are not built.
 - **New Mexico:** ingest and promotion code exist, but promotion remains deployment- and
@@ -29,9 +33,9 @@ snapshot, and current `main` history. This is the short current-state ledger;
 | Phase | Status | Remaining boundary |
 |-------|--------|--------------------|
 | **P0** Scaffold and contracts | Met | `/v1/audit` is not served, but is not a P0 exit requirement |
-| **P1** ND spine | Met with named deferrals | PDF-era production and FracFocus remain absent |
+| **P1** ND spine | Met with named deferrals | PDF-era production and FracFocus chemistry remain absent; the disclosure-header anchor path is built |
 | **P2** Serving and map | Substantially met | Missing completions, neighbours, permits, land/spacing units and formations routes; no GOR/water-cut card |
-| **P3** Forecasting and benchmark | Foundation advanced | The `fv1.0` formation-group declaration, two-clock feature materializer, D1 content-addressed matrix artifact, availability guard, grouped temporal split, and benchmark artifact schema are built. No live ND matrix: all 43,817 current ND well rows lack `completion_date`, and `formation_aliases` has no resident rows. The type-curve control, models, calibration, model-registry writer, analog index, and harness remain |
+| **P3** Forecasting and benchmark | Data seam implemented, live materialization pending | The `fv1.0` declaration and two-clock D1 materializer are built; ND basin conformance, a FracFocus completion-anchor source, single-pool completion observations, and 40 reviewed formation aliases now close the code/schema seam. A 2026-08-26 source probe matched 17,564 of 43,817 current ND API-10s (40.1%); the initial resident load and first live matrix still have to prove that measured coverage. The type-curve control, models, calibration, model-registry writer, analog index, and harness remain |
 | **P4** Dollars and scenarios | Not started | Entire phase |
 | **P5** Intelligence, agents and alerts | Not started | Entire phase |
 | **P6** Hardening and glass-box proof | Partial | Tunnel/Access, outsider guest exercise, live restore drill, determinism and tool-equivalence gates |
@@ -40,13 +44,13 @@ snapshot, and current `main` history. This is the short current-state ledger;
 
 ## Immediate gaps
 
-1. Close the measured P3 data seam: populate ND completion-date anchors and conformed
-   formation aliases, materialize the first live `fv1.0` matrix, then implement the
-   type-curve control before model code.
+1. Run and measure the initial FracFocus anchor load, materialize the first live `fv1.0`
+   matrix, publish coverage and missingness, then implement the type-curve control before
+   model code.
 2. Close the highest-value P2 serving gaps or explicitly defer them before adding another
    UI surface.
-3. Prove P6 operationally: obtain a fresh hosted CI pass, execute and record the restore
-   drill, then exercise a non-interactive guest path with an outsider.
+3. Prove P6 operationally: execute and record the restore drill, then exercise a
+   non-interactive guest path with an outsider.
 4. Promote New Mexico before implementing Texas lease allocation so the well-level
    Permian spine can act as the intended control.
 5. Resolve the owner-gated v0.6 §11 review and public IP carve-out decision separately

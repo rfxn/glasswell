@@ -582,24 +582,52 @@ def load_rules(
     as_of: date | None = None,
 ) -> list[ConformanceRule]:
     """Read the registry and materialize the lookup rows each rule's spec names."""
+    effective_at = as_of or date.today()
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(
             _LOAD_RULES,
-            {"source_id": source_id, "stage": stage, "as_of": as_of or date.today()},
+            {"source_id": source_id, "stage": stage, "as_of": effective_at},
         )
         rows = cursor.fetchall()
     loaded = active_rules([ConformanceRule(**row) for row in rows])
-    return [_hydrate(connection, rule) for rule in loaded]
+    return [_hydrate(connection, rule, effective_at) for rule in loaded]
 
 
-def _hydrate(connection: psycopg.Connection, rule: ConformanceRule) -> ConformanceRule:
+def _hydrate(
+    connection: psycopg.Connection, rule: ConformanceRule, as_of: date
+) -> ConformanceRule:
     for key in _LOOKUP_TABLES:
         table = rule.spec.get(key)
         if not table:
             continue
         with connection.cursor(row_factory=dict_row) as cursor:
             # Table name comes from a registry row, so it is validated as an identifier.
-            cursor.execute(f"select * from lineage.{_identifier(table)}")
+            identifier = _identifier(table)
+            if identifier == "formation_aliases":
+                cursor.execute(
+                    "select formation_raw, formation, formation_group, confidence,"
+                    " effective_from, source_id, created_vintage"
+                    " from (select a.*, row_number() over ("
+                    "   partition by formation_raw order by effective_from desc, formation) rank"
+                    " from lineage.formation_aliases a"
+                    " where effective_from <= %s"
+                    "   and (created_vintage is null or created_vintage <= %s)"
+                    "   and source_id = %s) ranked"
+                    " where rank = 1",
+                    (as_of, as_of, rule.source_id),
+                )
+            elif identifier == "operator_aliases":
+                cursor.execute(
+                    "select operator_raw, operator, confidence, effective_from, source_id"
+                    " from (select a.*, row_number() over ("
+                    "   partition by operator_raw order by effective_from desc, operator) rank"
+                    " from lineage.operator_aliases a where effective_from <= %s"
+                    "   and source_id = %s) ranked"
+                    " where rank = 1",
+                    (as_of, rule.source_id),
+                )
+            else:
+                cursor.execute(f"select * from lineage.{identifier}")
             rule = rule.model_copy(update={"lookup": cursor.fetchall()})
     return rule
 

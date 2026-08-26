@@ -44,6 +44,7 @@ from glasswell.units import METRES_PER_FOOT
 BASE_URL = "https://gis.dmr.nd.gov/downloads/oilgas/shapefile"
 DATUM_RULE_SOURCE = "nd_gis_wells"
 LAND_UNIT_RULE_ID = "cr_nd_land_unit_1"
+BASIN_RULE_ID = "cr_nd_basin_1"
 SEGMENT_FAMILY = "cr_nd_segment_vocab"
 SURVEY_SEGMENT_FAMILY = "cr_nd_survey_segment_vocab"
 SURVEY_TRACE_GEOM_TYPE = "survey_trace"
@@ -542,11 +543,12 @@ _INSERT_WELL = """
 insert into canonical.wells (
     api10, api14, state_code, county_code_at_permit, ndic_file_no, operator_name_reported,
     well_name, status_canonical, status_reported, well_type_reported, spud_date,
-    confidential_flag, land_unit_label, effective_from, source_manifest_id, derivation_id)
+    confidential_flag, basin, land_unit_label, effective_from, source_manifest_id, derivation_id,
+    completion_date)
 values (%(api10)s, %(api14)s, %(state_code)s, %(county_code)s, %(ndic_file_no)s, %(operator)s,
         %(well_name)s, %(status_canonical)s, %(status_reported)s, %(well_type)s, %(spud_date)s,
-        %(confidential)s, %(land_unit_label)s, %(effective_from)s, %(manifest_id)s,
-        %(derivation_id)s)
+        %(confidential)s, %(basin)s, %(land_unit_label)s, %(effective_from)s, %(manifest_id)s,
+        %(derivation_id)s, %(completion_date)s)
 on conflict (api10, effective_from) do nothing
 """
 
@@ -601,6 +603,21 @@ def _promote_wells(
         )
 
     label_format = str(_rule(connection, "nd_mpr_xlsx", LAND_UNIT_RULE_ID).spec["label_format"])
+    basin_rule = _rule(connection, spec.source_id, BASIN_RULE_ID)
+    basin = str(basin_rule.spec["basin"])
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "with versions as ("
+            " select a.*, row_number() over ("
+            "   partition by disclosure_id, source_id"
+            "   order by report_vintage desc, derivation_id desc) as vintage_rank"
+            " from canonical.well_completion_anchors a"
+            " where source_id = 'fracfocus_csv' and report_vintage <= %s)"
+            " select api10, min(completion_date) from versions"
+            " where vintage_rank = 1 group by api10",
+            (vintage,),
+        )
+        completion_anchors = dict(cursor.fetchall())
     confidential = _confidential_statuses(connection)
     storage_epsg = int(datum.spec["target_epsg"])
     source_datum = f"EPSG:{int(datum.spec['source_epsg'])}"
@@ -628,6 +645,8 @@ def _promote_wells(
                 "well_type": row["well_type"],
                 "spud_date": spud,
                 "confidential": confidential.get(row["status"], False),
+                "basin": basin,
+                "completion_date": completion_anchors.get(api14[:10]),
                 "land_unit_label": _land_unit_label(label_format, row),
                 "effective_from": vintage,
                 "manifest_id": manifest_id,
@@ -654,15 +673,41 @@ def _promote_wells(
     with derive(
         "canonical.promote",
         output=output,
-        params={"layer": spec.layer, "storage_epsg": storage_epsg, "source_datum": source_datum},
+        params={
+            "layer": spec.layer,
+            "storage_epsg": storage_epsg,
+            "source_datum": source_datum,
+            "basin": basin,
+        },
         inputs=[
             InputRef(kind="derivation", ref_id=parse_derivation_id),
             InputRef(kind="manifest", ref_id=manifest_id, as_of_vintage=vintage),
+            InputRef(
+                kind="external",
+                ref_id="canonical.well_completion_anchors_latest",
+                as_of_vintage=vintage,
+                role="crosswalk",
+            ),
         ],
-        rules=[*applied.applied_rule_ids, LAND_UNIT_RULE_ID],
+        rules=[*applied.applied_rule_ids, LAND_UNIT_RULE_ID, basin_rule.rule_id],
     ) as context:
         context.set_rows(len(wells))
-        context.set_output_hash(hash_payload(json_ready({"api10s": [w["api10"] for w in wells]})))
+        context.set_output_hash(
+            hash_payload(
+                json_ready(
+                    {
+                        "wells": [
+                            {
+                                "api10": well["api10"],
+                                "basin": well["basin"],
+                                "completion_date": well["completion_date"],
+                            }
+                            for well in wells
+                        ]
+                    }
+                )
+            )
+        )
 
     derivation_id = context.derivation_id
     with connection.cursor() as cursor:

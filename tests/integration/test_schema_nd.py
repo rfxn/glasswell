@@ -96,6 +96,10 @@ def test_wells_latest_resolves_to_the_greatest_effective_from(db):
         assert cursor.fetchall() == [("3305303901", "active")]
 
 
+def test_wells_latest_exposes_later_well_schema_columns(db):
+    assert {"total_depth_ft", "completion_date"} <= columns(db, "canonical", "wells_latest")
+
+
 def test_a_wells_row_cannot_be_edited_in_place(db):
     seed_well(db, api10="3305303901")
     with pytest.raises(psycopg.errors.RestrictViolation, match="append_only_violation"), db.cursor() as cursor:  # noqa: E501

@@ -167,7 +167,7 @@ every number it shaped, and seeded from real gotchas rather than invented ones:
 | Condensate versus oil classification differs by state. | Regulator classification is preserved in staging; canonical carries the stream plus a `liquids_policy` tag. Oil-plus-condensate is the default modelling liquid, stated everywhere it appears. |
 | Gas volumes are reported at the regulator's stated conditions. | Conformed to mcf with the conditions recorded, not silently normalised. |
 | Production month versus report month differs by source. | Resolved per source and recorded. |
-| Formation names are inconsistent across operators and eras. | Conformed through `formation_aliases` (reported name, canonical formation, basin, confidence); tops and landing zones pass through it. |
+| Formation names are inconsistent across operators and eras. | Conformed through `formation_aliases` (reported name, canonical formation, benchmark group, confidence, and knowledge vintage); tops and landing zones pass through it. |
 | Well status vocabularies differ everywhere. | Mapped to a small canonical set — as rows, not code. |
 
 Identity policy: API-10 is the spine, API-14 normalises to it for joins. One
@@ -182,8 +182,12 @@ quarantined share is published in the scorecard.
 The first modeling artifact boundary is implemented: `fv1.0` declares the conformed
 formation-group feature, and the builder enforces both well-time availability and a pinned
 knowledge vintage before writing a byte-reproducible, content-addressed Parquet matrix with
-its recipe and derivation. It does not claim a live ND matrix yet: the current ND well rows
-carry no completion-date anchors and the formation-alias registry has no resident rows.
+its recipe and derivation. P3 readiness now has a source path: FracFocus `JobEndDate`, defined
+by its bundled dictionary as hydraulic-fracturing job completion, is captured as an append-only
+anchor observation; the earliest valid event per API-10 is selected without a spud-date or
+first-production fallback. All 40 current MPR pool labels have reviewed, vintaged formation
+aliases. Forecasts are still not live: the next gates are the first resident `fv1.0` matrix and
+the pinned type-curve control on its identical split.
 
 The planned modeling path uses a gradient-boosted quantile model with conformal
 calibration to produce P10/P50/P90 on three streams — oil as the headline, gas and
@@ -209,10 +213,10 @@ and recorded in a manifest before anything reads it.
 
 | Basin | Sources |
 |-------|---------|
-| **North Dakota** (Bakken / Three Forks) | DMR well-level monthly production, permits, well index, surveys, formation tops |
+| **North Dakota** (Bakken / Three Forks) | DMR well-level monthly production and public GIS wells, laterals, surveys and spacing units; FracFocus hydraulic-fracturing completion anchors |
 | **Texas** (Midland, TX Delaware) | RRC county GIS wells and well arcs, wellbore query export *(landed)*; PDQ lease production, W-2 / G-1 completions, W-1 permits, wellbore master |
 | **New Mexico** (Delaware) | OCD well-level production — a third spine, and the allocation validator |
-| **Cross-cutting** | FracFocus completion design, PLSS and spacing units, operator registries |
+| **Cross-cutting** | FracFocus disclosure headers, PLSS and spacing units, operator registries |
 
 Texas reports at the lease level while North Dakota and New Mexico report at the
 well level. That asymmetry is not an inconvenience to be smoothed over — it is the

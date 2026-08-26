@@ -27,10 +27,10 @@ a number from six months ago still reproducible today.
 
 ### Staging — source-faithful
 
-One schema per regulator file type. `stg_nd_production`, `stg_tx_pdq`,
-`stg_nm_ocd`, `stg_fracfocus`, `stg_permits`, `stg_gis`. Parsers write here and
-nowhere else. They hold no opinions: a column that is a string in the file is a
-string in staging.
+One schema per regulator file type. Current tables include `staging.nd_mpr_oil`, the
+`staging.nd_gis_*` family, `staging.tx_gis_wells`, `staging.nm_ocd_*`, and
+`staging.fracfocus_disclosures`. Parsers write here and nowhere else. They hold no opinions:
+a FracFocus timestamp remains source text until the conformance step validates it.
 
 Rows that fail parsing or validation go to **quarantine** with a reason code, not
 to `/dev/null`. Quarantine is served at `/quality/quarantine` and its size is a
@@ -46,7 +46,7 @@ reference into every derivation it produces.
 
 **Entities:** well (API-10), wellbore (API-12/14), operator, lease (TX),
 production observation (well, month, stream, volume, granularity, allocation ref),
-completion event, spatial features (surface point, bottomhole, lateral), formation
+completion event and completion anchor, spatial features (surface point, bottomhole, lateral), formation
 top, permit, land unit, spacing unit, well status.
 
 **Identity policy.** API-10 identifies the well and is the spine. API-14 normalises
@@ -79,7 +79,7 @@ the model and exposing every decision inside it is the work, not the plumbing un
 it.
 
 Registry tables: `conformance_rules`, `formation_aliases` (reported name, canonical
-formation, basin, confidence), `crs_registry` (compute CRS per basin — ND in UTM
+formation, benchmark formation group, confidence and knowledge vintage), `crs_registry` (compute CRS per basin — ND in UTM
 14N, Permian in UTM 13N).
 
 Seed rules, drawn from real cross-source gotchas:
@@ -91,7 +91,8 @@ Seed rules, drawn from real cross-source gotchas:
 | **Liquids** | Condensate versus oil classification differs by state. Regulator classification stays in staging; canonical carries the stream plus a `liquids_policy` tag. Oil-plus-condensate is the default modelling liquid, stated everywhere it appears. |
 | **Gas conditions** | Volumes conform to mcf at the regulator's stated conditions. The conditions are recorded, not silently normalised. |
 | **Month convention** | Production month versus report month is resolved per source and recorded. |
-| **Formation names** | Conformed through `formation_aliases`. Tops and landing zones pass through it. |
+| **Formation names** | Current ND MPR pool labels resolve through append-only, knowledge-vintaged `formation_aliases`; ambiguous composites remain `__other__`, and explicit Three Forks never collapses into Bakken. |
+| **Completion anchor** | FracFocus `JobEndDate` is retained as a hydraulic-fracturing completion event. The earliest valid event per API-10 anchors fv1.0; spud and first production are forbidden fallbacks. |
 | **Well status** | Regulator vocabularies map to a small canonical set — as rows, not code. |
 
 **Registry rot is the named risk.** Mitigation: the promotion step reads rules from
@@ -158,7 +159,7 @@ Tables introduced or amended at v0.5:
 | Table | Purpose |
 |-------|---------|
 | `conformance_rules` | rule_id, source, field, rule, rationale, effective_from |
-| `formation_aliases` | reported name, canonical formation, basin, confidence |
+| `formation_aliases` | reported name, canonical formation, benchmark group, confidence, knowledge vintage |
 | `crs_registry` | Compute CRS per basin (projected, metres) |
 | `production_monthly` | Gains stream normalisation notes via conformance refs; oil, gas and water all first-class targets |
 | `econ_assumptions` | Gains `opex_water_per_bbl` and severance defaults keyed by state |

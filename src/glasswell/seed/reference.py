@@ -88,6 +88,17 @@ SOURCES: tuple[dict[str, object], ...] = (
         "license_note": ND_SURVEY_LICENSE_NOTE,
         "redistributable": False,
     },
+    {
+        "source_id": "fracfocus_csv",
+        "name": "FracFocus bulk CSV disclosure archive",
+        "jurisdiction": "US",
+        "license_note": (
+            "FracFocus Terms and Conditions are fetched and hashed for every acquisition."
+            " Raw bytes remain unaltered; transformed canonical rows retain source lineage."
+            " Redistribution is not asserted."
+        ),
+        "redistributable": False,
+    },
     *(
         {
             "source_id": f"nm_ocd_{table}",

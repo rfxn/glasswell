@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 import polars as pl
@@ -11,6 +12,7 @@ from glasswell.lengths import resolve_length_method
 from glasswell.lineage.conformance import RULE_KINDS, apply_registry_rules, apply_rules, load_rules
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_nd import ND_RULES
+from glasswell.seed.formations_nd import FORMATION_ALIASES
 from glasswell.seed.reference import NM_TABLES
 
 MINIMUM_RULES = 17
@@ -20,9 +22,11 @@ POLICY_RULES = (
     # The land-grid publisher choice: the executor is the ingest module the spec names, and
     # the measured cross-publisher divergence rides in spec.divergence_measured (M1-4).
     "cr_blm_plss_publisher_1",
+    "cr_ff_completion_anchor_1",
     # M2-3's membership decision: which section a well belongs to, chosen with measured
     # evidence and executed by the metrics mart the spec names.
     "cr_land_agg_membership_1",
+    "cr_nd_basin_1",
     "cr_nd_geometry_provenance_1",
     "cr_nd_liquids_policy_1",
     "cr_nd_null_semantics_1",
@@ -64,6 +68,7 @@ PROBE_FRAMES: dict[str, pl.DataFrame] = {
     "cr_nd_confidential_1": pl.DataFrame({"pool": ["BAKKEN"]}),
     "cr_nd_days_range_1": pl.DataFrame({"days": [31]}),
     "cr_nd_entity_key_1": pl.DataFrame({"api10": ["3305302532"], "pool": ["DUPEROW"]}),
+    "cr_nd_formation_group_1": pl.DataFrame({"formation_raw": ["BAKKEN"]}),
     "cr_nd_stream_vocab_1": pl.DataFrame({"api10": ["3305303901"], "stream_raw": ["Oil"]}),
     "cr_nd_units_1": pl.DataFrame(VOLUMES, schema=VOLUME_SCHEMA),
     "cr_nd_status_vocab_1": pl.DataFrame({"api": ["33043000020000"], "status": ["A"]}),
@@ -108,6 +113,58 @@ def registry_rows(connection: psycopg.Connection) -> list[dict]:
             " from lineage.conformance_rules order by rule_id"
         )
         return cursor.fetchall()
+
+
+def test_all_measured_nd_pool_labels_have_reviewed_vintaged_aliases(db, seeded):
+    assert len(FORMATION_ALIASES) == 40
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select formation_raw, formation, formation_group, confidence, created_vintage"
+            " from lineage.formation_aliases where source_id = 'nd_mpr_xlsx'"
+        )
+        aliases = {row[0]: row[1:] for row in cursor.fetchall()}
+    assert set(aliases) == {row[0] for row in FORMATION_ALIASES}
+    assert aliases["BAKKEN"][1] == "bakken"
+    assert aliases["THREE FORKS"][1] == "three_forks"
+    assert aliases["BAKKEN/THREE FORKS"][1] == "__other__"
+    assert all(row[3] == date(2026, 8, 26) for row in aliases.values())
+
+
+def test_alias_rule_hydration_resolves_the_latest_mapping_as_of_knowledge_time(db, seeded):
+    with db.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.formation_aliases"
+            " (formation_raw, formation, formation_group, confidence, effective_from, source_id,"
+            " created_vintage) values"
+            " ('BAKKEN', 'bakken', 'revised_bakken', 1.000, '2026-08-27', 'nd_mpr_xlsx',"
+            " '2026-08-27')"
+        )
+    before = load_rules(db, source_id="nd_mpr_xlsx", stage="join", as_of=date(2026, 8, 26))[0]
+    after = load_rules(db, source_id="nd_mpr_xlsx", stage="join", as_of=date(2026, 8, 27))[0]
+
+    assert next(row for row in before.lookup if row["formation_raw"] == "BAKKEN")[
+        "formation_group"
+    ] == "bakken"
+    assert next(row for row in after.lookup if row["formation_raw"] == "BAKKEN")[
+        "formation_group"
+    ] == "revised_bakken"
+
+
+def test_alias_rule_hydration_does_not_leak_another_sources_mapping(db, seeded):
+    with db.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.formation_aliases"
+            " (formation_raw, formation, formation_group, confidence, effective_from, source_id,"
+            " created_vintage) values"
+            " ('BAKKEN', 'not_bakken', 'not_bakken', 1.000, '2026-08-28', 'tx_pdq_dsv',"
+            " '2026-08-28')"
+        )
+
+    rule = load_rules(db, source_id="nd_mpr_xlsx", stage="join", as_of=date(2026, 8, 28))[0]
+
+    assert next(row for row in rule.lookup if row["formation_raw"] == "BAKKEN")[
+        "formation_group"
+    ] == "bakken"
 
 
 def load_one(connection: psycopg.Connection, rule_id: str):

@@ -200,13 +200,14 @@ def test_each_pool_is_registered_as_a_completion_entity(db, promoted):
     ) == [
         (f"{MULTI_POOL}:BIRDBEAR", MULTI_POOL, "BIRDBEAR", PRODUCTION_MONTH),
         (f"{MULTI_POOL}:DUPEROW", MULTI_POOL, "DUPEROW", PRODUCTION_MONTH),
+        (f"{SINGLE_POOL}:BAKKEN", SINGLE_POOL, "BAKKEN", PRODUCTION_MONTH),
     ]
 
 
-def test_a_single_pool_well_registers_no_completion_entity(db, promoted):
+def test_a_single_pool_well_registers_its_completion_entity(db, promoted):
     assert (
         scalar(db, "select count(*) from canonical.well_completions where api10 = %s", SINGLE_POOL)
-        == 0
+        == 1
     )
 
 

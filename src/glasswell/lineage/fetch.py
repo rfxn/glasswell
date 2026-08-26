@@ -10,7 +10,7 @@ import hashlib
 import os
 import re
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from email.utils import parsedate_to_datetime
@@ -219,6 +219,8 @@ def fetch_raw(
     media_type: str | None = None,
     license_note: str | None = None,
     redistributable: bool = False,
+    extra_acquisition_params: Mapping[str, Any] | None = None,
+    decompressed_inventory: Callable[[Path], Sequence[Mapping[str, Any]]] | None = None,
 ) -> FetchResult:
     """Fetch an artifact idempotently by content hash; identical bytes re-register as a check."""
     root = resolve_raw_root(raw_root)
@@ -233,6 +235,7 @@ def fetch_raw(
         "acquisition_method": acquisition_method,
         "source_id": source_id,
         "source_key": source_key,
+        **dict(extra_acquisition_params or {}),
     }
 
     try:
@@ -262,6 +265,7 @@ def fetch_raw(
         session = current_session()
         fetched_at = session.clock.now()
         vintage = session.vintage
+        inventory = list(decompressed_inventory(download.path)) if decompressed_inventory else []
 
         # The bytes that arrived are part of this fetch's address; changed upstream bytes are
         # the common path (§2.1), and a spec blind to them would read as a determinism failure.
@@ -291,13 +295,17 @@ def fetch_raw(
                 source_key=source_key,
                 acquisition_url=url,
                 acquisition_method=acquisition_method,
-                acquisition_params=download.acquisition_params,
+                acquisition_params={
+                    **download.acquisition_params,
+                    **dict(extra_acquisition_params or {}),
+                },
                 fetched_at=fetched_at,
                 fetch_vintage=vintage,
                 storage_uri=str(payload_path),
                 media_type=media_type or download.media_type,
                 upstream_mtime=download.upstream_mtime,
                 upstream_etag=download.upstream_etag,
+                decompressed_inventory=inventory,
                 license_note=license_note,
                 redistributable=redistributable,
             )

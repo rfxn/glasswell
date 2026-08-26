@@ -335,6 +335,16 @@ def _sum_over_pools(filings: Sequence[Mapping[str, Any]]) -> tuple[Decimal, int 
     return total, (max(days) if days else None), _rollup_semantics(volumes, total)
 
 
+def _deduplicate_completions(completions: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    unique: dict[tuple[str, date], dict[str, Any]] = {}
+    for completion in completions:
+        key = (completion["completion_key"], completion["production_month"])
+        existing = unique.setdefault(key, completion)
+        if existing != completion:
+            raise ValueError(f"inconsistent completion observations for {key!r}")
+    return list(unique.values())
+
+
 def pool_promotion_records(frame: pl.DataFrame) -> PoolPromotion:
     """cr_nd_pool_rollup_1, the legislated replacement for D1's interim withdrawal.
 
@@ -388,6 +398,16 @@ def pool_promotion_records(frame: pl.DataFrame) -> PoolPromotion:
                     semantics=classify_null_semantics(head["volume"]),
                 )
             )
+            if head["entity_key"] is not None and head["pool"] is not None:
+                completions.append(
+                    {
+                        "completion_key": head["entity_key"],
+                        "api10": api10,
+                        "well_completion_pool": head["pool"],
+                        "pool_reported": head["pool"],
+                        "production_month": month,
+                    }
+                )
             continue
         for entity_key, filing in by_pool.items():
             records.append(
@@ -438,7 +458,10 @@ def pool_promotion_records(frame: pl.DataFrame) -> PoolPromotion:
 
     rejected = indexed.filter(pl.col(_PROMOTION_INDEX).is_in(collided)).drop(_PROMOTION_INDEX)
     return PoolPromotion(
-        records=records, aggregates=aggregates, completions=completions, collided=rejected
+        records=records,
+        aggregates=aggregates,
+        completions=_deduplicate_completions(completions),
+        collided=rejected,
     )
 
 

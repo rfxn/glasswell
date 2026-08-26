@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_DERIVATION_ID, EXAMPLE_RULE_ID
+from glasswell.seed.conformance_fracfocus import FRACFOCUS_RULES
 from glasswell.seed.conformance_land import LAND_RULES
 from glasswell.seed.conformance_nd import ND_RULES
 from glasswell.seed.conformance_nm import NM_RULES
@@ -82,7 +83,7 @@ def test_an_unknown_rule_is_not_found(client: TestClient) -> None:
 def _seeded_policy_rule_ids() -> set[str]:
     return {
         str(rule["rule_id"])
-        for registry in (LAND_RULES, ND_RULES, NM_RULES, TX_RULES)
+        for registry in (FRACFOCUS_RULES, LAND_RULES, ND_RULES, NM_RULES, TX_RULES)
         for rule in registry
         if rule.get("rule_kind") == "code_ref"
     }
