@@ -608,23 +608,25 @@ def _hydrate(
                     "select formation_raw, formation, formation_group, confidence,"
                     " effective_from, source_id, created_vintage"
                     " from (select a.*, row_number() over ("
-                    "   partition by formation_raw order by effective_from desc, formation) rank"
+                    "   partition by formation_raw order by (source_id = %s) desc,"
+                    "   effective_from desc, formation) rank"
                     " from lineage.formation_aliases a"
                     " where effective_from <= %s"
                     "   and (created_vintage is null or created_vintage <= %s)"
-                    "   and source_id = %s) ranked"
+                    "   and (source_id = %s or source_id is null)) ranked"
                     " where rank = 1",
-                    (as_of, as_of, rule.source_id),
+                    (rule.source_id, as_of, as_of, rule.source_id),
                 )
             elif identifier == "operator_aliases":
                 cursor.execute(
                     "select operator_raw, operator, confidence, effective_from, source_id"
                     " from (select a.*, row_number() over ("
-                    "   partition by operator_raw order by effective_from desc, operator) rank"
+                    "   partition by operator_raw order by (source_id = %s) desc,"
+                    "   effective_from desc, operator) rank"
                     " from lineage.operator_aliases a where effective_from <= %s"
-                    "   and source_id = %s) ranked"
+                    "   and (source_id = %s or source_id is null)) ranked"
                     " where rank = 1",
-                    (as_of, rule.source_id),
+                    (rule.source_id, as_of, rule.source_id),
                 )
             else:
                 cursor.execute(f"select * from lineage.{identifier}")
