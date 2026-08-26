@@ -74,14 +74,20 @@ current_completions as (
       from completion_versions
      where vintage_rank = 1
 ),
+eligible_completions as (
+    select *
+      from current_completions
+     where %(formation_observation_policy)s = 'all_observed'
+        or (source_id = %(formation_source_id)s and pool_reported is not null)
+),
 first_completion_months as (
     select api10, min(production_month) as production_month
-      from current_completions
+      from eligible_completions
      group by api10
 ),
 selected_completions as (
     select c.*
-      from current_completions c
+      from eligible_completions c
       join first_completion_months f using (api10)
      where %(formation_observation_policy)s = 'all_observed'
         or c.production_month = f.production_month

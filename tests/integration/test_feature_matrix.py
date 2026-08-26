@@ -229,6 +229,60 @@ def test_initial_month_conflict_is_null_and_published_without_changing_fv1(
         )
 
 
+def test_initial_month_ignores_null_pools_and_other_sources(db, lineage_env, tmp_path: Path):
+    manifest_id, _ = _seed_subject(db)
+    foreign_manifest_id = seed_manifest(
+        db,
+        sha256="c" * 64,
+        source_id="tx_pdq_dsv",
+        source_key="foreign.csv",
+    )
+    contaminant_derivation_id = seed_derivation(
+        db,
+        params={"source_key": "foreign.csv"},
+        partition={"source_id": "tx_pdq_dsv"},
+    )
+    with db.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.formation_aliases"
+            " (formation_raw, formation, confidence, effective_from, source_id,"
+            " created_vintage) values"
+            " ('MADISON', 'madison', 0.990, '2026-08-01', 'nd_mpr_xlsx', '2026-08-01')"
+        )
+        cursor.execute(
+            "insert into canonical.well_completions"
+            " (completion_key, api10, well_completion_pool, pool_reported, source_id,"
+            " production_month, report_vintage, source_manifest_id, derivation_id) values"
+            " ('3305300001:UNKNOWN', %s, 'UNKNOWN', null, 'nd_mpr_xlsx',"
+            " '2019-11-01', '2026-08-01', %s, %s),"
+            " ('3305300001:FOREIGN', %s, 'MADISON', 'MADISON', 'tx_pdq_dsv',"
+            " '2019-12-01', '2026-08-01', %s, %s)",
+            (
+                API10,
+                manifest_id,
+                contaminant_derivation_id,
+                API10,
+                foreign_manifest_id,
+                contaminant_derivation_id,
+            ),
+        )
+
+    built = build_feature_matrix(
+        db, as_of=AS_OF, environment=lineage_env, root=tmp_path / "features"
+    )
+    frame = pl.read_parquet(built.artifact_uri)
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select ref_id from lineage.derivation_inputs where derivation_id = %s",
+            (built.derivation_id,),
+        )
+        input_ids = {row[0] for row in cursor.fetchall()}
+
+    assert frame["geology.formation_group"].item() == "bakken"
+    assert frame["geology.formation_group__source_available_on"].item() == date(2020, 3, 17)
+    assert contaminant_derivation_id not in input_ids
+
+
 def test_future_knowledge_does_not_enter_an_older_matrix(db, lineage_env, tmp_path: Path):
     _seed_subject(db)
     root = tmp_path / "features"
