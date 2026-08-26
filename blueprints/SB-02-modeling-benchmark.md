@@ -145,7 +145,7 @@ is re-decided by the same rule once the MPR back-load lands (`work-output/pre-p3
 | `PAD_RADIUS_M` | 150 | §3.4 | **measured** (E-1) | largest radius that groups without chaining; `pad_group_max_share` 0.0008 at 150 m, 0.0018 at 400 m |
 | `PAD_WINDOW_DAYS` | 180 | §3.4 | **measured** (E-1) | co-completion window; the grid moves the component distribution by 1 well at p99 |
 | `PAD_GROUP_MAX_SHARE` | 0.02 | §3.4 | asserted | above it a component is a field, not a pad, and the split is rejected |
-| `HORIZON_CALENDAR_GUARD_MONTHS` | 18 | §2.2, §2.6 | **provisional** (E-6) | no ND well reaches a twelfth producing month in the loaded window; the proxy p95 is 14.4 months and cannot see a multi-year shut-in |
+| `HORIZON_CALENDAR_GUARD_MONTHS` | 16 | §2.2, §2.6 | **measured** (E-6) | p95 calendar-months-to-twelve-producing-months, rounded up, over 22,023 matured ND wells after the MPR back-load |
 | `COVERAGE_PASS_BAND` | [0.72, 0.88] pooled | §4.6, §10.2 | asserted | promotion gate |
 | `COVERAGE_SLICE_BAND` | [0.65, 0.92] per slice with n ≥ 200 | §4.6 | asserted | promotion gate |
 | `CROSSING_RATE_MAX` | 0.02 pre-rearrangement | §4.2 | asserted | mis-specification flag |
@@ -491,10 +491,12 @@ The well (API-10), per v0.6 §4A.1. Multi-wellbore API-10s are quarantined upstr
 **Producing month, defined once** (this is undefined in v0.6 — §16 ER-09):
 
 > A **producing month** for a well is a canonical `production_observations` month for that
-> well, at the applicable vintage, with `null_semantics = reported_zero` **and**
-> `days_produced > 0`, **or** with `volume > 0`. Months with `null_semantics = no_report` or
-> `withheld` are **not** producing months and do not advance the horizon counter. Months
-> with `days_produced = 0` and zero volume (shut-in) are **not** producing months.
+> well, at the applicable vintage, where at least one oil, gas, or water observation has
+> `null_semantics = reported_zero` **and** `days_produced > 0`, **or** has `volume > 0`.
+> Months represented only by `null_semantics = no_report` or `withheld` do **not** advance
+> the shared horizon counter. Months with `days_produced = 0` and zero volume (shut-in) do
+> **not** advance it. A missing target-stream observation inside a matured well horizon is
+> `missing_stream_observation`; it does not create a different month index for that stream.
 
 Consequences, all deliberate:
 
@@ -508,11 +510,10 @@ Consequences, all deliberate:
   pooling the two is the failure mode producing-month counting hides. Excluded as a label,
   retained as a feature input and as a type-curve member, counted in the denominator, with
   `intermittent_share` published beside `censored_share` (v0.6 §4A.4). The constant is
-  **provisionally 18 and is set by E-6**, which cannot run until the MPR back-load lands: on
-  the six months loaded today no ND well reaches a twelfth producing month at all. The
-  runnable proxy — producing-month rate over the loaded window, scaled to twelve — puts p95 at
-  14.4 months with 6.6% of wells showing a gap, and is explicitly **not** used to lower the
-  guard, because a six-month window cannot observe a multi-year shut-in.
+  **16, measured by E-6** after the MPR back-load: the p95 calendar span is 16.00 months over
+  22,023 wells that reach a twelfth producing month. The experiment uses the canonical
+  three-stream producing-month definition above; its floor of 14 and cap of 24 were fixed
+  before the result was seen.
 - `cum12(w, stream) = Σ` volume over the first 12 producing months from
   `first_production_month`. `cum24` likewise. Both in the stream's canonical unit (bbl for
   oil and water, mcf for gas), DECIMAL throughout per SB-07 §4.4.

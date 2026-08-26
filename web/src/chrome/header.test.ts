@@ -78,7 +78,9 @@ describe("the header is a control surface, not a paragraph", () => {
     expect(help).toContain("17,563 of 43,817");
     expect(help).toContain("fv2.0");
     expect(help).toContain("82-day median source lag");
-    expect(help).toContain("resident replay");
+    expect(help).toContain("mdv1.4");
+    expect(help).toContain("105,378 three-stream");
+    expect(help).toContain("eight shared rolling splits");
   });
 
   it("mounts the search box into the header's control cluster", () => {

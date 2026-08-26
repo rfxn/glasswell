@@ -18,14 +18,18 @@ rows="$(mktemp)"
 trap 'rm -f "$rows"' EXIT
 
 gw_psql <<'SQL' >"$rows"
-with pm as (
+with monthly as (
+  select api10, production_month,
+         bool_or((null_semantics = 'reported_zero' and days_produced > 0) or volume > 0)
+             as producing
+    from canonical.production_monthly_latest
+   where entity_type = 'well' and source_id = 'nd_mpr_xlsx'
+   group by api10, production_month
+), pm as (
   select api10, production_month,
          row_number() over (partition by api10 order by production_month) as k,
          min(production_month) over (partition by api10) as t_fp
-    from canonical.production_monthly_latest
-   where stream = 'oil'
-     and null_semantics in ('reported', 'reported_zero')
-     and (volume > 0 or days_produced > 0)
+    from monthly where producing
 )
 select 'primary', count(*),
        coalesce(round(percentile_cont(0.50) within group (order by cal)::numeric, 2)::text, 'n/a'),
@@ -35,14 +39,18 @@ select 'primary', count(*),
   from (select extract(year from age(production_month, t_fp)) * 12
              + extract(month from age(production_month, t_fp)) as cal
           from pm where k = 12) x;
-with win as (
-  select min(production_month) as lo, max(production_month) as hi
-    from canonical.production_monthly_latest where stream = 'oil'
-), p as (
+with monthly as (
   select api10, production_month,
-         (null_semantics in ('reported', 'reported_zero')
-          and (volume > 0 or days_produced > 0)) as producing
-    from canonical.production_monthly_latest where stream = 'oil'
+         bool_or((null_semantics = 'reported_zero' and days_produced > 0) or volume > 0)
+             as producing
+    from canonical.production_monthly_latest
+   where entity_type = 'well' and source_id = 'nd_mpr_xlsx'
+   group by api10, production_month
+), win as (
+  select min(production_month) as lo, max(production_month) as hi
+    from monthly
+), p as (
+  select api10, production_month, producing from monthly
 ), agg as (
   select p.api10, count(*) as months_observed,
          count(*) filter (where p.producing) as months_producing,

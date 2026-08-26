@@ -40,7 +40,7 @@ class WellTimeline(Frozen):
     api10: str
     first_production_month: date
     completion_date: date
-    label_completeness_date: date
+    label_completeness_date: date | None
     surface_x_m: float | None = None
     surface_y_m: float | None = None
     spacing_unit_id: str | None = None
@@ -279,10 +279,12 @@ def build_temporal_split(
         assignment.api10 for assignment in assignments if assignment.partition != "test"
     }
     knowledge_dates = [
-        well.label_completeness_date for well in wells if well.api10 in training_api10s
+        well.label_completeness_date
+        for well in wells
+        if well.api10 in training_api10s and well.label_completeness_date is not None
     ]
     if not knowledge_dates:
-        raise SplitDefinitionError("TRAIN and CAL are both empty")
+        raise SplitDefinitionError("TRAIN and CAL have no complete labels")
     knowledge_cutoff = max(knowledge_dates)
     holdout = HoldoutDefinition(
         boundary=boundary,

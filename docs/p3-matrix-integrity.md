@@ -69,3 +69,11 @@ missing, and the two conflicts above. Two builds produced identical Parquet byte
 (`c02a9ccb4487b2b8784f38e8b6c305c22eff2cecab9d2503014903a06567f5a8`). The migration and
 lineage writes ran in a transaction that was rolled back after the comparison; the scratch
 files were removed, so the proof did not persist pre-deploy branch state.
+
+After merged migration 041 reached the VM, the persisted resident partition replayed with
+the same 17,563-row coverage and byte-identical hashes: Parquet
+`7b1031d2235a23e59b3743ff311ce30f3c79328b19634906bf5042c426170636` and coverage
+`d9109dc7d6496bf399a8bbdf6148f48df02c9ea60a96cb77d76f122f70dfdb89`. The different
+hashes from the scratch proof are expected: the derivation id embedded in the Parquet records
+the persisted build identity. Replays compare like-for-like build identities, not just source
+rows.

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -13,6 +14,7 @@ from psycopg.rows import dict_row
 
 from glasswell.lineage.models import InputRef
 from glasswell.lineage.serialization import hash_payload
+from glasswell.units import METRES_PER_FOOT
 
 
 class AsOfViolation(RuntimeError):
@@ -21,6 +23,12 @@ class AsOfViolation(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class FeatureSourceSnapshot:
+    rows: tuple[Mapping[str, object], ...]
+    inputs: tuple[InputRef, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ModelContextSnapshot:
     rows: tuple[Mapping[str, object], ...]
     inputs: tuple[InputRef, ...]
 
@@ -254,17 +262,7 @@ def _input_refs(
     alias_vintage: date | None,
     alias_selector: str | None,
 ) -> tuple[InputRef, ...]:
-    vintages: dict[str, date] = {}
-    for row in rows:
-        identifier = str(row["derivation_id"])
-        vintage = row["source_vintage"]
-        if not isinstance(vintage, date):
-            raise AsOfViolation(f"canonical input {identifier} has no knowledge vintage")
-        vintages[identifier] = max(vintage, vintages.get(identifier, vintage))
-    refs = [
-        InputRef(kind="derivation", ref_id=identifier, as_of_vintage=vintage)
-        for identifier, vintage in sorted(vintages.items())
-    ]
+    refs = list(_derivation_input_refs(rows))
     refs.append(
         InputRef(
             kind="external",
@@ -275,3 +273,194 @@ def _input_refs(
         )
     )
     return tuple(ref.model_copy(update={"ord": ordinal}) for ordinal, ref in enumerate(refs))
+
+
+def _derivation_input_refs(
+    rows: Sequence[Mapping[str, object]],
+) -> tuple[InputRef, ...]:
+    vintages: dict[str, date] = {}
+    for row in rows:
+        identifier = str(row["derivation_id"])
+        vintage = row["source_vintage"]
+        if not isinstance(vintage, date):
+            raise AsOfViolation(f"canonical input {identifier} has no knowledge vintage")
+        vintages[identifier] = max(vintage, vintages.get(identifier, vintage))
+    refs = tuple(
+        InputRef(kind="derivation", ref_id=identifier, as_of_vintage=vintage)
+        for identifier, vintage in sorted(vintages.items())
+    )
+    return tuple(ref.model_copy(update={"ord": ordinal}) for ordinal, ref in enumerate(refs))
+
+
+_MODEL_CONTEXT_CTES = """
+with well_versions as (
+    select w.api10, w.county_code_at_permit, w.basin, w.completion_date,
+           w.confidential_flag, w.derivation_id,
+           greatest(w.effective_from, m.fetch_vintage,
+                    coalesce(d.created_vintage, m.fetch_vintage)) as source_vintage,
+           row_number() over (
+               partition by w.api10
+               order by w.effective_from desc, w.derivation_id desc) as vintage_rank
+      from canonical.wells w
+      join lineage.manifests m on m.manifest_id = w.source_manifest_id
+      join lineage.derivations d on d.derivation_id = w.derivation_id
+     where w.api10 = any(%(api10s)s)
+       and w.basin = %(basin)s
+       and w.effective_from <= %(as_of)s
+       and m.fetch_vintage <= %(as_of)s
+       and (d.created_vintage is null or d.created_vintage <= %(as_of)s)
+),
+subjects as (
+    select * from well_versions where vintage_rank = 1
+),
+spatial_rows as (
+    select s.api10, s.geom_type, s.geom_key, s.geom, s.derivation_id,
+           greatest(m.fetch_vintage, coalesce(d.created_vintage, m.fetch_vintage))
+               as source_vintage
+      from canonical.well_spatial s
+      join lineage.manifests m on m.manifest_id = s.source_manifest_id
+      join lineage.derivations d on d.derivation_id = s.derivation_id
+     where s.api10 = any(%(api10s)s)
+       and s.geom_type in ('surface', 'lateral')
+       and m.fetch_vintage <= %(as_of)s
+       and (d.created_vintage is null or d.created_vintage <= %(as_of)s)
+),
+surfaces as (
+    select api10, count(*) as surface_count,
+           case when count(*) = 1 then min(ST_X(ST_Transform(geom, 5070))) end as surface_x_m,
+           case when count(*) = 1 then min(ST_Y(ST_Transform(geom, 5070))) end as surface_y_m
+      from spatial_rows where geom_type = 'surface' group by api10
+),
+laterals as (
+    select api10,
+           sum(ST_Length(geom::geography)::numeric / %(metres_per_foot)s)
+               as lateral_length_ft
+      from spatial_rows where geom_type = 'lateral' group by api10
+)
+"""
+
+_MODEL_CONTEXT_ROWS = (
+    _MODEL_CONTEXT_CTES
+    + """
+select s.api10, s.county_code_at_permit as area, s.basin, s.completion_date,
+       s.confidential_flag, coalesce(p.surface_count, 0) as surface_count,
+       p.surface_x_m, p.surface_y_m, l.lateral_length_ft
+  from subjects s
+  left join surfaces p using (api10)
+  left join laterals l using (api10)
+ order by s.api10
+"""
+)
+
+_MODEL_CONTEXT_INPUTS = (
+    _MODEL_CONTEXT_CTES
+    + """
+select derivation_id, source_vintage from subjects
+union
+select derivation_id, source_vintage from spatial_rows
+order by derivation_id, source_vintage
+"""
+)
+
+_MODEL_PRODUCTION_CTES = """
+with production_versions as (
+    select p.api10, p.production_month, p.stream, p.volume, p.unit, p.days_produced,
+           p.null_semantics, p.derivation_id,
+           greatest(p.report_vintage, m.fetch_vintage,
+                    coalesce(d.created_vintage, m.fetch_vintage)) as source_vintage,
+           row_number() over (
+               partition by p.entity_type, p.entity_key, p.production_month, p.stream,
+                            p.source_id
+               order by p.report_vintage desc) as vintage_rank
+      from canonical.production_monthly p
+      join lineage.manifests m on m.manifest_id = p.source_manifest_id
+      join lineage.derivations d on d.derivation_id = p.derivation_id
+     where p.api10 = any(%(api10s)s)
+       and p.entity_type = 'well'
+       and p.source_id = %(source_id)s
+       and p.report_vintage <= %(as_of)s
+       and m.fetch_vintage <= %(as_of)s
+       and (d.created_vintage is null or d.created_vintage <= %(as_of)s)
+),
+selected as (
+    select * from production_versions where vintage_rank = 1
+)
+"""
+
+_MODEL_PRODUCTION_ROWS = (
+    _MODEL_PRODUCTION_CTES
+    + """
+select api10, production_month,
+       max(volume) filter (where stream = 'oil') as oil_volume,
+       max(unit) filter (where stream = 'oil') as oil_unit,
+       max(days_produced) filter (where stream = 'oil') as oil_days_produced,
+       max(null_semantics) filter (where stream = 'oil') as oil_null_semantics,
+       max(volume) filter (where stream = 'gas') as gas_volume,
+       max(unit) filter (where stream = 'gas') as gas_unit,
+       max(days_produced) filter (where stream = 'gas') as gas_days_produced,
+       max(null_semantics) filter (where stream = 'gas') as gas_null_semantics,
+       max(volume) filter (where stream = 'water') as water_volume,
+       max(unit) filter (where stream = 'water') as water_unit,
+       max(days_produced) filter (where stream = 'water') as water_days_produced,
+       max(null_semantics) filter (where stream = 'water') as water_null_semantics,
+       max(source_vintage) as source_vintage,
+       count(*) filter (where stream = 'oil') as oil_rows,
+       count(*) filter (where stream = 'gas') as gas_rows,
+       count(*) filter (where stream = 'water') as water_rows
+  from selected
+ group by api10, production_month
+ order by api10, production_month
+"""
+)
+
+_MODEL_PRODUCTION_INPUTS = (
+    _MODEL_PRODUCTION_CTES
+    + """
+select distinct derivation_id, source_vintage from selected
+order by derivation_id, source_vintage
+"""
+)
+
+
+def read_model_context_snapshot(
+    connection: psycopg.Connection,
+    *,
+    api10s: Sequence[str],
+    basin: str,
+    as_of: date,
+) -> ModelContextSnapshot:
+    """Read well and spatial control context without crossing the knowledge cut."""
+    if not api10s:
+        return ModelContextSnapshot(rows=(), inputs=())
+    params = {
+        "api10s": list(api10s),
+        "basin": basin,
+        "as_of": as_of,
+        "metres_per_foot": METRES_PER_FOOT,
+    }
+    with connection.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(_MODEL_CONTEXT_ROWS, params)
+        rows = tuple(cursor.fetchall())
+        cursor.execute(_MODEL_CONTEXT_INPUTS, params)
+        inputs = _derivation_input_refs(cursor.fetchall())
+    return ModelContextSnapshot(rows=rows, inputs=inputs)
+
+
+@contextmanager
+def read_model_production_snapshot(
+    connection: psycopg.Connection,
+    *,
+    api10s: Sequence[str],
+    source_id: str,
+    as_of: date,
+) -> Iterator[tuple[Iterator[Mapping[str, object]], tuple[InputRef, ...]]]:
+    """Stream canonical well-months and return the exact derivations selected by the read."""
+    params = {"api10s": list(api10s), "source_id": source_id, "as_of": as_of}
+    with connection.cursor(row_factory=dict_row) as input_cursor:
+        input_cursor.execute(_MODEL_PRODUCTION_INPUTS, params)
+        inputs = _derivation_input_refs(input_cursor.fetchall())
+    cursor_name = "glasswell_model_production"
+    with connection.cursor(name=cursor_name, row_factory=dict_row) as cursor:
+        cursor.itersize = 10_000
+        cursor.execute(_MODEL_PRODUCTION_ROWS, params)
+        yield iter(cursor), inputs
