@@ -118,6 +118,24 @@ def test_reported_zero_with_positive_days_advances_but_zero_day_shutdown_does_no
     assert len([row for row in built.curves if row["stream"] == "oil"]) == 12
 
 
+def test_all_streams_share_the_well_level_producing_month_clock():
+    api10 = "3305300007"
+    rows = [month(api10, 2020, month_number) for month_number in range(1, 13)]
+    for row in rows:
+        for stream in ("oil", "water"):
+            row[f"{stream}_volume"] = Decimal("0")
+            row[f"{stream}_days_produced"] = 0
+            row[f"{stream}_null_semantics"] = "reported"
+
+    built = materialize_labels(rows)
+    cum12 = labels_for(built, api10, 12)
+
+    assert {row["label_status"] for row in cum12.values()} == {"complete"}
+    assert cum12["oil"]["label_value"] == Decimal("0")
+    assert cum12["gas"]["label_value"] == Decimal("240")
+    assert cum12["water"]["label_value"] == Decimal("0")
+
+
 def test_rows_without_a_producing_month_are_not_mislabeled_as_incomplete():
     api10 = "3305300006"
     rows = [

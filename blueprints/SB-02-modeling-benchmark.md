@@ -491,10 +491,12 @@ The well (API-10), per v0.6 §4A.1. Multi-wellbore API-10s are quarantined upstr
 **Producing month, defined once** (this is undefined in v0.6 — §16 ER-09):
 
 > A **producing month** for a well is a canonical `production_observations` month for that
-> well, at the applicable vintage, with `null_semantics = reported_zero` **and**
-> `days_produced > 0`, **or** with `volume > 0`. Months with `null_semantics = no_report` or
-> `withheld` are **not** producing months and do not advance the horizon counter. Months
-> with `days_produced = 0` and zero volume (shut-in) are **not** producing months.
+> well, at the applicable vintage, where at least one oil, gas, or water observation has
+> `null_semantics = reported_zero` **and** `days_produced > 0`, **or** has `volume > 0`.
+> Months represented only by `null_semantics = no_report` or `withheld` do **not** advance
+> the shared horizon counter. Months with `days_produced = 0` and zero volume (shut-in) do
+> **not** advance it. A missing target-stream observation inside a matured well horizon is
+> `missing_stream_observation`; it does not create a different month index for that stream.
 
 Consequences, all deliberate:
 
