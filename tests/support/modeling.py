@@ -26,6 +26,8 @@ def seed_model_population(
     one_peer_gas_gap: bool = False,
     one_test_missing_lateral: bool = False,
 ) -> None:
+    if one_peer_gas_gap and extra_recent_peers < 1:
+        raise ValueError("one_peer_gas_gap requires at least one extra recent peer")
     seed_all(db)
     manifest_id = seed_manifest(db, sha256="7" * 64)
     derivation_id = seed_derivation(db)

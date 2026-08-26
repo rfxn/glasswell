@@ -20,6 +20,8 @@ ORIGIN = date(2022, 1, 1)
 def test_typecurve_control_registers_identical_split_arms_and_replays_d1(
     db, lineage_env, tmp_path: Path
 ):
+    with pytest.raises(ValueError, match="requires at least one extra recent peer"):
+        seed_model_population(db, one_peer_gas_gap=True)
     seed_model_population(
         db,
         extra_recent_peers=10,
