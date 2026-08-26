@@ -1,6 +1,6 @@
 # P3 model-ready dataset
 
-`mdv1.3` is the first accepted model-dataset semantic contract. It consumes the immutable `fv2.0`
+`mdv1.4` is the first accepted model-dataset semantic contract. It consumes the immutable `fv2.0`
 feature matrix without changing feature semantics and persists four registered artifacts:
 long-form cumulative labels, producing-month curves, coverage JSON, and row-level rejections.
 The four annual origins each receive one content-addressed split for cum12 and cum24; oil,
@@ -26,7 +26,7 @@ gas, and water consume the same split id literally.
 The artifact carries the minimum pinned peer dimensions: basin, formation group, county as
 area, exact geodesic lateral length, the measured ND length bucket, and first-production
 month. First-production month is split and peer-window metadata, never an ML feature. These
-are `mdv1.3` dataset fields; `fv2.0` remains unchanged. The minor additions make labels and
+are `mdv1.4` dataset fields; `fv2.0` remains unchanged. The minor additions make labels and
 curves self-describing and carry strict plus reconstructed month-level availability without
 changing any label.
 The bundle address also includes its vintage basis and a content-derived split-set id, so a
@@ -60,10 +60,15 @@ The 2026-08-26 Williston build consumes 17,563 anchored `fv2.0` subjects and wri
 
 | Artifact | Rows | SHA-256 |
 |---|---:|---|
-| `mdv1.3` labels | 105,378 | pending final resident replay |
+| `mdv1.4` labels | 105,378 | pending final resident replay |
 | producing-month curves | 1,172,586 | pending final resident replay |
 | rejections | 3,272 reason rows | `0b0434281a02f30c3b2ac94e6ebabbf579ab4e3cb362b1db3797ac47d02eb771` |
 | coverage | one canonical JSON document | pending final resident replay |
+
+The pre-merge `mdv1.3` candidate remains immutable. A column-for-column comparison after the
+review fixes found identical label, curve, rejection, and coverage semantics; only registered
+lineage identity changed. `mdv1.4` therefore advances the dataset identity without changing
+`fv2.0` or relabelling the retained candidate.
 
 Per stream, cum12 has 15,957 complete, 705 incomplete, 364 intermittent, 272
 no-production, and 265 withheld labels. Cum24 has 15,130 complete, 1,552 incomplete, 344

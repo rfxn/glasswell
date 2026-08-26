@@ -36,7 +36,7 @@ from glasswell.staging.duck import PARTITION_FILENAME, file_sha256, write_partit
 MODEL_ROOT_ENV = "GLASSWELL_MODEL_ROOT"
 DEFAULT_MODEL_ROOT = Path("data/models")
 MODEL_DATASET = "modeling.model_ready_labels"
-MODEL_DATASET_VERSION = "mdv1.3"
+MODEL_DATASET_VERSION = "mdv1.4"
 MODEL_SCHEMA_VERSION = "1"
 COVERAGE_SCHEMA_VERSION = "1"
 REJECTION_SCHEMA_VERSION = "1"

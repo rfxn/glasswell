@@ -1,4 +1,4 @@
-- [New] P3 model-ready `mdv1.3` persists three-stream cum12/cum24 labels,
+- [New] P3 model-ready `mdv1.4` persists three-stream cum12/cum24 labels,
       producing-month curves, DB-backed shared splits, and immutable coverage and
       rejection artifacts under one registered D1 recipe
 - [Change] E-6 now measures the intermittency guard at 16 months over 22,023 matured
