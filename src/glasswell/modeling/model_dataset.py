@@ -36,7 +36,7 @@ from glasswell.staging.duck import PARTITION_FILENAME, file_sha256, write_partit
 MODEL_ROOT_ENV = "GLASSWELL_MODEL_ROOT"
 DEFAULT_MODEL_ROOT = Path("data/models")
 MODEL_DATASET = "modeling.model_ready_labels"
-MODEL_DATASET_VERSION = "mdv1.0"
+MODEL_DATASET_VERSION = "mdv1.1"
 MODEL_SCHEMA_VERSION = "1"
 COVERAGE_SCHEMA_VERSION = "1"
 REJECTION_SCHEMA_VERSION = "1"
@@ -452,6 +452,7 @@ def _label_frame(rows: Sequence[Mapping[str, object]], derivation: str) -> pl.Da
         pl.col("horizon_months").cast(pl.Int16),
         pl.col("label_value").cast(pl.Decimal(18, 3)),
         pl.col("lateral_length_ft").cast(pl.Float64),
+        pl.lit(MODEL_DATASET_VERSION).alias("dataset_version"),
         pl.lit(derivation).alias("dataset_derivation_id"),
     ).sort("row_key")
 
@@ -489,6 +490,7 @@ def _curve_frame(rows: Sequence[Mapping[str, object]], derivation: str) -> pl.Da
         pl.col("producing_month_index").cast(pl.Int16),
         pl.col("volume").cast(pl.Decimal(18, 3)),
         pl.col("lateral_length_ft").cast(pl.Float64),
+        pl.lit(MODEL_DATASET_VERSION).alias("dataset_version"),
         pl.lit(derivation).alias("dataset_derivation_id"),
     ).sort("row_key")
 
@@ -623,6 +625,7 @@ def _coverage_document(
     matrix_rows: Sequence[Mapping[str, object]],
     rejections: Sequence[Mapping[str, object]],
     persisted_splits: Sequence[PersistedSplit],
+    vintage_basis: VintageBasis,
 ) -> Mapping[str, object]:
     status_counts: dict[str, Counter[str]] = defaultdict(Counter)
     matrix_by_api = {str(row["api10"]): row for row in matrix_rows}
@@ -692,7 +695,7 @@ def _coverage_document(
             "censored": "retained_in_features_and_curves_but_label_value_is_null",
         },
         "retrospective_vintage": {
-            "split_basis": "source_reconstructed_not_glasswell_history",
+            "split_basis": vintage_basis,
             "production_source_lag_days": PRODUCTION_SOURCE_LAG_DAYS,
             "strict_label_availability_field": "label_source_available_on",
             "reconstructed_label_availability_field": "label_completed_on",
@@ -1001,6 +1004,7 @@ def build_model_dataset(
         matrix_rows=matrix_rows,
         rejections=rejections,
         persisted_splits=persisted_splits,
+        vintage_basis=vintage_basis,
     )
     coverage_uri = artifact_dir / "coverage.json"
     coverage_hash = _persist_json(canonical_json(coverage), coverage_uri)

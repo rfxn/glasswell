@@ -160,6 +160,7 @@ def test_model_dataset_registers_artifacts_and_replays_byte_identically(
     assert len(first.splits) == 2
 
     labels = pl.read_parquet(first.artifact_uri)
+    assert labels["dataset_version"].unique().to_list() == ["mdv1.1"]
     assert set(labels["label_status"].unique()) == {"complete", "withheld"}
     assert labels.filter(pl.col("api10") == "3305300059")["label_status"].unique().to_list() == [
         "withheld"
@@ -170,6 +171,7 @@ def test_model_dataset_registers_artifacts_and_replays_byte_identically(
         & (pl.col("label_status") == "complete")
     )["label_value"].unique().to_list() == [Decimal("1200.000")]
     curves = pl.read_parquet(first.curves_uri)
+    assert curves["dataset_version"].unique().to_list() == ["mdv1.1"]
     assert curves["producing_month_index"].max() == 24
     assert curves["reported"].all()
 

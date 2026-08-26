@@ -37,7 +37,7 @@ snapshot, and current `main` history. This is the short current-state ledger;
 | **P0** Scaffold and contracts | Met | `/v1/audit` is not served, but is not a P0 exit requirement |
 | **P1** ND spine | Met with named deferrals | PDF-era production and FracFocus chemistry remain absent; the disclosure-header anchor path is built |
 | **P2** Serving and map | Substantially met | Missing completions, neighbours, permits, land/spacing units and formations routes; no GOR/water-cut card |
-| **P3** Forecasting and benchmark | Matrix integrity built; resident replay pending | Immutable `fv1.0` remains available and semantic-major `fv2.0` now freezes the earliest MPR pool month, publishes simultaneous conflicts and missingness, records the measured 82-day median source lag, and separates strict knowledge history from reconstructed source availability. The 2026-08-26 resident load assigns all 43,817 ND wells to Williston and preserves 18,665 valid FracFocus events across 17,563 API-10s; 26,254 uncovered wells remain explicitly null. The live `fv2.0` replay, model-ready dataset, type-curve control, models, calibration, model-registry writer, analog index, and harness remain |
+| **P3** Forecasting and benchmark | Model-ready dataset built and replayed | Immutable `fv1.0` and semantic-major `fv2.0` remain available. The resident `fv2.0` matrix and `mdv1.1` model dataset replay byte-identically: 105,378 three-stream labels, 1,172,586 producing-month curve rows, 3,272 explicit rejection reasons, measured censoring/intermittency coverage, and eight DB-backed rolling splits. The split population is 15,749 and 15,355 retain complete type-curve context. The pinned type-curve control, models, calibration, model-registry writer, analog index, and harness remain |
 | **P4** Dollars and scenarios | Not started | Entire phase |
 | **P5** Intelligence, agents and alerts | Not started | Entire phase |
 | **P6** Hardening and glass-box proof | Partial | Tunnel/Access, outsider guest exercise, live restore drill, determinism and tool-equivalence gates |
@@ -46,8 +46,8 @@ snapshot, and current `main` history. This is the short current-state ledger;
 
 ## Immediate gaps
 
-1. Replay the live `fv2.0` matrix byte-identically, then materialize three-stream labels and
-   the DB-backed split before implementing the pinned type-curve control.
+1. Build the pinned type-curve control from `mdv1.1`, enforce the identical split ids, and
+   replay both normalization arms byte-identically before any model training.
 2. Close the highest-value P2 serving gaps or explicitly defer them before adding another
    UI surface.
 3. Prove P6 operationally: execute and record the restore drill, then exercise a

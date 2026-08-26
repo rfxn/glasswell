@@ -188,10 +188,13 @@ source path: FracFocus `JobEndDate`, defined
 by its bundled dictionary as hydraulic-fracturing job completion, is captured as an append-only
 anchor observation; the earliest valid event per API-10 is selected without a spud-date or
 first-production fallback. All 40 current MPR pool labels have reviewed, vintaged formation
-aliases. Forecasts are still not live: the next gates are the resident `fv2.0` replay, the
-model-ready three-stream dataset, and the pinned type-curve control on its identical split.
-The strict-history and reconstructed-source vintage clocks are distinguished in
-[`docs/p3-matrix-integrity.md`](docs/p3-matrix-integrity.md).
+aliases. The resident matrix and model-ready `mdv1.1` dataset now replay byte-identically:
+105,378 three-stream cum12/cum24 labels, 1,172,586 producing-month curve rows, explicit
+censoring/rejection coverage, and eight content-addressed rolling splits. Forecasts are still
+not live; the next gate is the pinned type-curve control on those exact splits. The strict
+history and reconstructed-source clocks are distinguished in
+[`docs/p3-matrix-integrity.md`](docs/p3-matrix-integrity.md), and the dataset evidence is in
+[`docs/p3-model-ready-dataset.md`](docs/p3-model-ready-dataset.md).
 
 The planned modeling path uses a gradient-boosted quantile model with conformal
 calibration to produce P10/P50/P90 on three streams — oil as the headline, gas and
