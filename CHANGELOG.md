@@ -7,6 +7,34 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.53"></a>
+## v0.53 — 2026-08-26
+
+- [Fix] Feature matrix `fv2.0` freezes formation at the earliest source month, publishes
+      simultaneous conflicts as null, and makes the mutation-invariance test alter the
+      completion source the feature actually reads
+- [New] Every `fv2.0` partition carries immutable missing, conflict, anchor-timing, lag,
+      and retrospective-vintage coverage whose hash is registered in the build recipe
+- [Change] The formation registry records the measured 82-day median publication lag and
+         keeps strict Glasswell knowledge history separate from reconstructed source time
+- [New] P3 model-ready `mdv1.4` persists three-stream cum12/cum24 labels,
+      producing-month curves, DB-backed shared splits, and immutable coverage and
+      rejection artifacts under one registered D1 recipe
+- [Change] E-6 now measures the intermittency guard at 16 months over 22,023 matured
+         North Dakota wells using the canonical three-stream producing-month rule
+- [Fix] Incomplete labels remain assigned without moving split knowledge cutoffs, while
+      withheld/confidential and completion-after-production subjects are explicitly
+      excluded instead of silently entering train, calibration, or test
+- [New] P3 type-curve control `tcv1.0` runs absolute and per-1,000-foot
+      empirical P10/P50/P90 curves for oil, gas, and water on the exact eight
+      `mdv1.4` rolling splits under one permanent D1 recipe
+- [Fix] The closed peer ladder now records monthly and cumulative peer counts,
+      overlapping unavailability reasons, and explicit 60% rung-one and 5%
+      control-unavailability acceptance results without widening failed cells
+- [Change] P3 status now reports the resident control coverage miss separately
+         from implementation completion; forecasts, models, and calibration
+         remain unserved and unclaimed
+
 <a id="v0.52"></a>
 ## v0.52 — 2026-08-26
 
