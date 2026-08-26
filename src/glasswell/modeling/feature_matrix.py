@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -23,6 +24,7 @@ from glasswell.lineage.clock import Clock
 from glasswell.lineage.ids import derivation_id
 from glasswell.lineage.models import DeriveEnvironment, InputRef, OutputSpec
 from glasswell.lineage.recipes import build_recipe
+from glasswell.lineage.serialization import canonical_json, sha256_hex
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.modeling.features import (
     FeatureEvents,
@@ -37,8 +39,9 @@ from glasswell.staging.duck import PARTITION_FILENAME, file_sha256, write_partit
 FEATURE_ROOT_ENV = "GLASSWELL_FEATURE_ROOT"
 DEFAULT_FEATURE_ROOT = Path("data/features")
 FEATURE_DATASET = "features.well_features"
-FEATURE_SCHEMA_VERSION = "1"
-DEFAULT_FEATURE_VERSION = "fv1.0"
+FEATURE_SCHEMA_VERSION = "2"
+COVERAGE_SCHEMA_VERSION = "1"
+DEFAULT_FEATURE_VERSION = "fv2.0"
 DEFAULT_FEATURE_SET = "full"
 DEFAULT_STATE_CODE = "33"
 DEFAULT_BASIN = "williston"
@@ -73,6 +76,8 @@ class FeatureMatrixBuild:
     as_of_vintage: date
     artifact_uri: str
     artifact_sha256: str
+    coverage_uri: str
+    coverage_sha256: str
     rows: int
     columns: tuple[str, ...]
 
@@ -85,6 +90,8 @@ class FeatureMatrixBuild:
             "as_of_vintage": self.as_of_vintage.isoformat(),
             "artifact_uri": self.artifact_uri,
             "artifact_sha256": self.artifact_sha256,
+            "coverage_uri": self.coverage_uri,
+            "coverage_sha256": self.coverage_sha256,
             "rows": self.rows,
             "columns": list(self.columns),
         }
@@ -93,16 +100,33 @@ class FeatureMatrixBuild:
 @dataclass(frozen=True, slots=True)
 class _FeaturePlan:
     specs: tuple[FeatureSpec, ...]
-    observations: tuple[tuple[str, date, tuple[FeatureObservation, ...]], ...]
+    subjects: tuple[_SubjectObservation, ...]
     inputs: tuple[InputRef, ...]
     params: Mapping[str, object]
     feature_set_hash: str
+
+
+@dataclass(frozen=True, slots=True)
+class _SubjectObservation:
+    api10: str
+    anchor: date
+    observations: tuple[FeatureObservation, ...]
+    source_available_on: date | None
+    source_first_month: date | None
+    reported_pools: tuple[str, ...]
+    formation_groups: tuple[str, ...]
+    resolution: str
+    anchor_status: str
 
 
 def resolve_feature_root(explicit: Path | str | None = None) -> Path:
     if explicit is not None:
         return Path(explicit)
     return Path(os.environ.get(FEATURE_ROOT_ENV) or DEFAULT_FEATURE_ROOT)
+
+
+def _feature_schema_version(feature_version: str) -> str:
+    return "1" if feature_version == "fv1.0" else FEATURE_SCHEMA_VERSION
 
 
 def load_feature_specs(connection: psycopg.Connection) -> tuple[FeatureSpec, ...]:
@@ -134,11 +158,12 @@ def build_feature_matrix(
         set_name=set_name,
     )
     partition = {"feature_version": feature_version, "as_of_vintage": as_of.isoformat()}
+    schema_version = _feature_schema_version(feature_version)
     planned_output = OutputSpec(
         store="parquet",
         dataset=FEATURE_DATASET,
         partition=partition,
-        schema_version=FEATURE_SCHEMA_VERSION,
+        schema_version=schema_version,
     )
     planned_id = derivation_id(
         operation="features.build",
@@ -156,6 +181,16 @@ def build_feature_matrix(
         feature_version=feature_version,
         as_of=as_of,
     )
+    coverage = _coverage_document(
+        plan,
+        derivation=planned_id,
+        feature_version=feature_version,
+        as_of=as_of,
+        artifact_sha256=artifact_sha256,
+    )
+    coverage_uri, coverage_sha256 = _persist_coverage(
+        canonical_json(coverage), artifact_uri=artifact_uri
+    )
     lockfile_sha256 = _lockfile_sha256(connection, environment.env_id)
     recipe_id = build_recipe(
         connection,
@@ -170,8 +205,9 @@ def build_feature_matrix(
             "dataset": FEATURE_DATASET,
             "partition": partition,
             "sha256": artifact_sha256,
+            "coverage": {"filename": "coverage.json", "sha256": coverage_sha256},
             "rows": frame.height,
-            "schema_version": FEATURE_SCHEMA_VERSION,
+            "schema_version": schema_version,
             "determinism_class": "D1",
         },
     )
@@ -201,6 +237,8 @@ def build_feature_matrix(
         as_of_vintage=as_of,
         artifact_uri=artifact_uri,
         artifact_sha256=artifact_sha256,
+        coverage_uri=coverage_uri,
+        coverage_sha256=coverage_sha256,
         rows=frame.height,
         columns=tuple(frame.columns),
     )
@@ -223,6 +261,8 @@ def _prepare_plan(
     set_hash = feature_set_hash(all_specs, set_name=set_name, feature_version=feature_version)
     min_confidence = _formation_min_confidence(specs)
     formation_source_id = _formation_source_id(specs)
+    observation_policy = _formation_observation_policy(specs)
+    publication_lag_days = _formation_source_publication_lag_days(specs)
     try:
         snapshot = read_feature_snapshot(
             connection,
@@ -231,6 +271,8 @@ def _prepare_plan(
             basin=DEFAULT_BASIN,
             min_confidence=min_confidence,
             formation_source_id=formation_source_id,
+            formation_observation_policy=observation_policy,
+            source_publication_lag_days=publication_lag_days,
         )
     except AsOfViolation as error:
         raise FeatureMatrixError(str(error)) from error
@@ -240,12 +282,12 @@ def _prepare_plan(
             f" at {as_of}"
         )
     inputs = _feature_inputs(snapshot.inputs, set_hash=set_hash)
-    observations = tuple(_observe_row(row, specs) for row in snapshot.rows)
+    subjects = tuple(_observe_row(row, specs) for row in snapshot.rows)
     if not any(
         observation.value is not None
-        for _, _, subject_observations in observations
-        for observation in subject_observations
-    ):
+        for subject in subjects
+        for observation in subject.observations
+    ) and observation_policy == "all_observed":
         raise EmptyFeatureMatrixError(
             "no registered feature value resolves for"
             f" {DEFAULT_STATE_CODE}/{DEFAULT_BASIN} at {as_of}"
@@ -261,9 +303,17 @@ def _prepare_plan(
         "sort_order": ["api10"],
         "parquet": {"compression": "zstd", "compression_level": 3},
     }
+    if observation_policy == "initial_observed":
+        params["formation_policy"] = {
+            "observation": observation_policy,
+            "conflict": "null_with_coverage",
+            "source_availability": "first_formation_source_month_plus_days",
+            "source_publication_lag_days": publication_lag_days,
+            "retrospective_vintage": "strict_manifest_with_source_replay_annotation",
+        }
     return _FeaturePlan(
         specs=specs,
-        observations=observations,
+        subjects=subjects,
         inputs=inputs,
         params=params,
         feature_set_hash=set_hash,
@@ -272,7 +322,10 @@ def _prepare_plan(
 
 def _validate_specs(specs: Sequence[FeatureSpec]) -> None:
     for spec in specs:
-        if spec.transform_id != "lookup_formation_alias":
+        if spec.transform_id not in {
+            "lookup_formation_alias",
+            "lookup_initial_formation_alias",
+        }:
             raise UnsupportedFeatureSpecError(
                 f"{spec.feature_id} uses unsupported transform {spec.transform_id!r}"
             )
@@ -317,6 +370,47 @@ def _formation_source_id(specs: Sequence[FeatureSpec]) -> str:
     return "nd_mpr_xlsx"
 
 
+def _formation_observation_policy(specs: Sequence[FeatureSpec]) -> str:
+    transforms = {spec.transform_id for spec in specs}
+    if transforms == {"lookup_formation_alias"}:
+        return "all_observed"
+    if transforms == {"lookup_initial_formation_alias"}:
+        conflicts = {spec.params.get("conflict_policy") for spec in specs}
+        if conflicts != {"null_with_coverage"}:
+            raise UnsupportedFeatureSpecError("initial formation conflict policy is not supported")
+        return "initial_observed"
+    raise UnsupportedFeatureSpecError("formation transforms disagree on observation policy")
+
+
+def _formation_source_publication_lag_days(specs: Sequence[FeatureSpec]) -> int:
+    if _formation_observation_policy(specs) == "all_observed":
+        return 0
+    values = {spec.params.get("source_publication_lag_days") for spec in specs}
+    if len(values) != 1:
+        raise UnsupportedFeatureSpecError(
+            "formation transforms disagree on source publication lag"
+        )
+    value = values.pop()
+    if not isinstance(value, int) or value < 0:
+        raise UnsupportedFeatureSpecError(f"invalid source publication lag {value!r}")
+    return value
+
+
+def _formation_history_floor(specs: Sequence[FeatureSpec]) -> date:
+    if _formation_observation_policy(specs) == "all_observed":
+        return date.min
+    values = {spec.params.get("source_history_floor") for spec in specs}
+    if len(values) != 1:
+        raise UnsupportedFeatureSpecError("formation transforms disagree on source history floor")
+    value = values.pop()
+    if not isinstance(value, str):
+        raise UnsupportedFeatureSpecError(f"invalid source history floor {value!r}")
+    try:
+        return date.fromisoformat(value)
+    except ValueError as error:
+        raise UnsupportedFeatureSpecError(f"invalid source history floor {value!r}") from error
+
+
 def _feature_inputs(inputs: Sequence[InputRef], *, set_hash: str) -> tuple[InputRef, ...]:
     refs = [
         *inputs,
@@ -331,17 +425,18 @@ def _feature_inputs(inputs: Sequence[InputRef], *, set_hash: str) -> tuple[Input
 
 def _observe_row(
     row: Mapping[str, object], specs: Sequence[FeatureSpec]
-) -> tuple[str, date, tuple[FeatureObservation, ...]]:
+) -> _SubjectObservation:
     api10 = str(row["api10"])
     anchor = row["completion_date"]
     if not isinstance(anchor, date):
         raise FeatureMatrixError(f"{api10} has no completion_date anchor")
     formations = tuple(row["formations"] or ())
-    if len(formations) > 1:
+    legacy = {spec.transform_id for spec in specs} == {"lookup_formation_alias"}
+    if len(formations) > 1 and legacy:
         raise ConflictingFeatureValueError(
             f"geology.formation_group for {api10} resolves to {formations!r}"
         )
-    value = formations[0] if formations else None
+    value = formations[0] if len(formations) == 1 else None
     events = FeatureEvents(
         spud_date=row["spud_date"] if isinstance(row["spud_date"], date) else None,
         completion_date=anchor,
@@ -350,7 +445,25 @@ def _observe_row(
     observations = tuple(
         observe_feature(api10=api10, spec=spec, value=value, events=events) for spec in specs
     )
-    return api10, anchor, observations
+    first_month = row["formation_first_month"]
+    available_on = row["formation_available_on"]
+    if first_month is not None and not isinstance(first_month, date):
+        raise FeatureMatrixError(f"{api10} has invalid formation source month")
+    if available_on is not None and not isinstance(available_on, date):
+        raise FeatureMatrixError(f"{api10} has invalid formation availability date")
+    return _SubjectObservation(
+        api10=api10,
+        anchor=anchor,
+        observations=observations,
+        source_available_on=available_on,
+        source_first_month=first_month,
+        reported_pools=tuple(row["formation_pools"] or ()),
+        formation_groups=formations,
+        resolution=(
+            "conflict" if len(formations) > 1 else "missing" if not formations else "resolved"
+        ),
+        anchor_status=_anchor_status(anchor, first_month, specs),
+    )
 
 
 def _matrix_frame(
@@ -367,21 +480,106 @@ def _matrix_frame(
     for spec in plan.specs:
         schema[spec.feature_id] = pl.String
         schema[f"{spec.feature_id}__knowable_at"] = pl.Date
+        if spec.transform_id == "lookup_initial_formation_alias":
+            schema[f"{spec.feature_id}__source_available_on"] = pl.Date
     rows = []
-    for api10, anchor, observations in plan.observations:
+    for subject in plan.subjects:
         output: dict[str, object] = {
-            "api10": api10,
+            "api10": subject.api10,
             "feature_version": feature_version,
             "feature_set_hash": plan.feature_set_hash,
             "as_of_vintage": as_of,
-            "anchor": anchor,
+            "anchor": subject.anchor,
             "derivation_id": derivation,
         }
-        for observation in observations:
+        for observation in subject.observations:
             output[observation.feature_id] = observation.value
             output[f"{observation.feature_id}__knowable_at"] = observation.knowable_at
+            available_column = f"{observation.feature_id}__source_available_on"
+            if available_column in schema:
+                output[available_column] = subject.source_available_on
         rows.append(output)
     return pl.DataFrame(rows, schema=schema, orient="row")
+
+
+def _anchor_status(anchor: date, first_month: date | None, specs: Sequence[FeatureSpec]) -> str:
+    if first_month is None:
+        return "no_formation_source_month"
+    history_floor = _formation_history_floor(specs)
+    if first_month == history_floor and anchor < history_floor:
+        return "source_left_truncated"
+    if first_month.month == 12:
+        next_month = date(first_month.year + 1, 1, 1)
+    else:
+        next_month = date(first_month.year, first_month.month + 1, 1)
+    if anchor >= next_month:
+        return "anchor_after_first_source_month"
+    if anchor.year == first_month.year and anchor.month == first_month.month:
+        return "anchor_same_first_source_month"
+    return "anchor_before_first_source_month"
+
+
+def _coverage_document(
+    plan: _FeaturePlan,
+    *,
+    derivation: str,
+    feature_version: str,
+    as_of: date,
+    artifact_sha256: str,
+) -> dict[str, object]:
+    resolutions = Counter(subject.resolution for subject in plan.subjects)
+    anchor_statuses = Counter(subject.anchor_status for subject in plan.subjects)
+    conflicts = [
+        {
+            "api10": subject.api10,
+            "first_source_month": subject.source_first_month,
+            "reported_pools": subject.reported_pools,
+            "formation_groups": subject.formation_groups,
+        }
+        for subject in plan.subjects
+        if subject.resolution == "conflict"
+    ]
+    policy = _formation_observation_policy(plan.specs)
+    lag_measurement = (
+        plan.specs[0].params.get("publication_lag_measurement")
+        if policy == "initial_observed"
+        else None
+    )
+    return {
+        "schema_version": COVERAGE_SCHEMA_VERSION,
+        "dataset": FEATURE_DATASET,
+        "derivation_id": derivation,
+        "feature_version": feature_version,
+        "feature_set_hash": plan.feature_set_hash,
+        "as_of_vintage": as_of,
+        "artifact_sha256": artifact_sha256,
+        "counts": {
+            "subjects": len(plan.subjects),
+            "resolved": resolutions["resolved"],
+            "missing": resolutions["missing"],
+            "conflicts": resolutions["conflict"],
+            "anchor_status": dict(sorted(anchor_statuses.items())),
+        },
+        "missing_api10s": [
+            subject.api10 for subject in plan.subjects if subject.resolution == "missing"
+        ],
+        "conflicts": conflicts,
+        "formation_policy": {
+            "observation": policy,
+            "conflict": "error" if policy == "all_observed" else "null_with_coverage",
+        },
+        "publication_lag_measurement": lag_measurement,
+        "retrospective_vintage": {
+            "matrix_basis": "strict_manifest_knowledge",
+            "source_replay_field": (
+                None
+                if policy == "all_observed"
+                else "geology.formation_group__source_available_on"
+            ),
+            "source_replay_basis": "source_reconstructed_not_glasswell_history",
+            "pre_history_floor_policy": "unavailable_not_fabricated",
+        },
+    }
 
 
 def _persist_frame(
@@ -415,6 +613,24 @@ def _persist_frame(
         return str(final), digest
     finally:
         pending.unlink(missing_ok=True)
+
+
+def _persist_coverage(payload: bytes, *, artifact_uri: str) -> tuple[str, str]:
+    destination = Path(artifact_uri).with_name("coverage.json")
+    digest = sha256_hex(payload)
+    if destination.exists():
+        if destination.read_bytes() != payload:
+            raise ImmutableFeaturePartitionError(
+                f"stored coverage {destination} differs from replayed bytes"
+            )
+        return str(destination), digest
+    pending = destination.with_name(f".pending-{uuid4().hex}.json")
+    try:
+        pending.write_bytes(payload)
+        os.replace(pending, destination)
+    finally:
+        pending.unlink(missing_ok=True)
+    return str(destination), digest
 
 
 def _lockfile_sha256(connection: psycopg.Connection, env_id: str) -> str | None:
