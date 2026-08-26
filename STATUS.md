@@ -8,7 +8,7 @@ snapshot, and current `main` history. This is the short current-state ledger;
 
 ## Shipped baseline
 
-- **Release line:** 32 tagged releases, v0.20 through v0.51, cut 2026-08-21 through
+- **Release line:** 31 tagged releases, v0.20 through v0.50, cut 2026-08-21 through
   2026-08-26.
 - **North Dakota:** ingest, bitemporal promotion, quarantine, conformance, wells,
   geometry, monthly production, lineage, explain, glossary, API, tiles, and map are built.
