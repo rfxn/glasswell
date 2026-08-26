@@ -36,6 +36,7 @@ from glasswell.staging.duck import PARTITION_FILENAME, file_sha256, write_partit
 MODEL_ROOT_ENV = "GLASSWELL_MODEL_ROOT"
 DEFAULT_MODEL_ROOT = Path("data/models")
 MODEL_DATASET = "modeling.model_ready_labels"
+MODEL_DATASET_VERSION = "mdv1.0"
 MODEL_SCHEMA_VERSION = "1"
 COVERAGE_SCHEMA_VERSION = "1"
 REJECTION_SCHEMA_VERSION = "1"
@@ -102,6 +103,7 @@ class ModelDatasetBuild:
     rejections_uri: str
     rejections_sha256: str
     eval_vintage: date
+    dataset_version: str
     feature_version: str
     rows: int
     curve_rows: int
@@ -121,6 +123,7 @@ class ModelDatasetBuild:
             "rejections_uri": self.rejections_uri,
             "rejections_sha256": self.rejections_sha256,
             "eval_vintage": self.eval_vintage.isoformat(),
+            "dataset_version": self.dataset_version,
             "feature_version": self.feature_version,
             "rows": self.rows,
             "curve_rows": self.curve_rows,
@@ -293,7 +296,9 @@ def materialize_labels(
             )
             for stream in STREAMS:
                 status = "complete"
-                if withheld:
+                if first_month is None:
+                    status = "no_production"
+                elif withheld:
                     status = "withheld"
                 elif not complete:
                     status = "incomplete"
@@ -510,6 +515,7 @@ def _persist_primary(
     partition = (
         root
         / "model_ready_labels"
+        / f"dataset_version={MODEL_DATASET_VERSION}"
         / f"basin={basin}"
         / f"eval_vintage={eval_vintage.isoformat()}"
         / f"feature_version={feature_version}"
@@ -641,6 +647,7 @@ def _coverage_document(
         "dataset": MODEL_DATASET,
         "derivation_id": derivation,
         "eval_vintage": eval_vintage,
+        "dataset_version": MODEL_DATASET_VERSION,
         "feature_version": feature_version,
         "feature_inputs": {
             "artifact_sha256": feature_artifact_sha256,
@@ -857,7 +864,7 @@ def build_model_dataset(
             )
         for label in api_labels:
             resolved = dict(label)
-            if confidential and resolved["label_status"] == "complete":
+            if confidential or withheld:
                 resolved["label_status"] = "withheld"
                 resolved["label_value"] = None
             labels.append(
@@ -885,6 +892,7 @@ def build_model_dataset(
 
     params = {
         "basin": basin,
+        "dataset_version": MODEL_DATASET_VERSION,
         "eval_vintage": eval_vintage,
         "feature_version": feature_version,
         "feature_set_hash": feature_set_hash,
@@ -904,6 +912,7 @@ def build_model_dataset(
         dataset=MODEL_DATASET,
         partition={
             "basin": basin,
+            "dataset_version": MODEL_DATASET_VERSION,
             "eval_vintage": eval_vintage.isoformat(),
             "feature_version": feature_version,
         },
@@ -1065,6 +1074,7 @@ def build_model_dataset(
         rejections_uri=str(rejections_uri),
         rejections_sha256=rejections_hash,
         eval_vintage=eval_vintage,
+        dataset_version=MODEL_DATASET_VERSION,
         feature_version=feature_version,
         rows=label_frame.height,
         curve_rows=curve_frame.height,

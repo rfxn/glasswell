@@ -113,6 +113,28 @@ def test_reported_zero_with_positive_days_advances_but_zero_day_shutdown_does_no
     assert len([row for row in built.curves if row["stream"] == "oil"]) == 12
 
 
+def test_rows_without_a_producing_month_are_not_mislabeled_as_incomplete():
+    api10 = "3305300006"
+    rows = [
+        month(
+            api10,
+            2020,
+            1,
+            oil="0",
+            gas="0",
+            water="0",
+            semantics="reported",
+            days=30,
+        )
+    ]
+
+    built = materialize_labels(rows)
+
+    assert {row["label_status"] for row in built.labels} == {"no_production"}
+    assert built.curves == ()
+    assert built.states[api10].first_production_month is None
+
+
 def test_withheld_and_missing_stream_are_never_converted_to_zero():
     withheld_api = "3305300003"
     missing_api = "3305300004"

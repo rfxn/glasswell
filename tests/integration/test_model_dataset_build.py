@@ -46,6 +46,7 @@ def seed_population(db) -> None:
             db,
             api10=api10,
             completion_date=completion,
+            confidential_flag=ordinal == 59,
             manifest_id=manifest_id,
             derivation_id=derivation_id,
         )
@@ -155,13 +156,18 @@ def test_model_dataset_registers_artifacts_and_replays_byte_identically(
     assert first.rejections_sha256 == second.rejections_sha256
     assert first.rows == 60 * 2 * 3
     assert first.curve_rows == 60 * 24 * 3
-    assert first.rejection_rows == 0, pl.read_parquet(first.rejections_uri).to_dicts()[:3]
+    assert first.rejection_rows == 1
     assert len(first.splits) == 2
 
     labels = pl.read_parquet(first.artifact_uri)
-    assert labels["label_status"].unique().to_list() == ["complete"]
+    assert set(labels["label_status"].unique()) == {"complete", "withheld"}
+    assert labels.filter(pl.col("api10") == "3305300059")["label_status"].unique().to_list() == [
+        "withheld"
+    ]
     assert labels.filter(
-        (pl.col("stream") == "oil") & (pl.col("horizon_months") == 12)
+        (pl.col("stream") == "oil")
+        & (pl.col("horizon_months") == 12)
+        & (pl.col("label_status") == "complete")
     )["label_value"].unique().to_list() == [Decimal("1200.000")]
     curves = pl.read_parquet(first.curves_uri)
     assert curves["producing_month_index"].max() == 24
@@ -169,7 +175,7 @@ def test_model_dataset_registers_artifacts_and_replays_byte_identically(
 
     coverage = json.loads(Path(first.coverage_uri).read_bytes())
     assert coverage["counts"]["subjects"] == 60
-    assert coverage["counts"]["rejections_by_reason"] == {}
+    assert coverage["counts"]["rejections_by_reason"] == {"withheld_or_confidential": 1}
     assert coverage["retrospective_vintage"]["split_basis"] == (
         "source_reconstructed_not_glasswell_history"
     )
@@ -179,6 +185,10 @@ def test_model_dataset_registers_artifacts_and_replays_byte_identically(
         for persisted in first.splits
         for assignment in persisted.split.assignments
     } == {"train", "cal", "test"}
+    assert all(
+        "3305300059" not in {assignment.api10 for assignment in persisted.split.assignments}
+        for persisted in first.splits
+    )
 
     with db.cursor() as cursor:
         cursor.execute(
