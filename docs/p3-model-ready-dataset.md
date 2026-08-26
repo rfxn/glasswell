@@ -60,15 +60,19 @@ The 2026-08-26 Williston build consumes 17,563 anchored `fv2.0` subjects and wri
 
 | Artifact | Rows | SHA-256 |
 |---|---:|---|
-| `mdv1.4` labels | 105,378 | pending final resident replay |
-| producing-month curves | 1,172,586 | pending final resident replay |
+| `mdv1.4` labels | 105,378 | `d2e1c911cf4d58acbe05034ed55a1d48266c801fc48f669916002b029506a38d` |
+| producing-month curves | 1,172,586 | `a39f3d404143669196ed759bb0c48ecc24a56a633a3e113957fb07f647bb9275` |
 | rejections | 3,272 reason rows | `0b0434281a02f30c3b2ac94e6ebabbf579ab4e3cb362b1db3797ac47d02eb771` |
-| coverage | one canonical JSON document | pending final resident replay |
+| coverage | one canonical JSON document | `b3dc5dc5da98f8b28ffec5f3a8bc62a34c89cb8318371c90a402e17f07486d6a` |
 
 The pre-merge `mdv1.3` candidate remains immutable. A column-for-column comparison after the
 review fixes found identical label, curve, rejection, and coverage semantics; only registered
 lineage identity changed. `mdv1.4` therefore advances the dataset identity without changing
 `fv2.0` or relabelling the retained candidate.
+
+The accepted bundle is `sset_c7bbb9a6932db76b`, derivation
+`drv_eh2u6idkf5rtm4wsv3sa`, and recipe `rcp_02a21056b98fce720f960d98d9e97d8c`, built from
+implementation commit `f04a565` under the reconstructed source-vintage basis.
 
 Per stream, cum12 has 15,957 complete, 705 incomplete, 364 intermittent, 272
 no-production, and 265 withheld labels. Cum24 has 15,130 complete, 1,552 incomplete, 344
