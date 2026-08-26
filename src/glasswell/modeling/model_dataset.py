@@ -36,7 +36,7 @@ from glasswell.staging.duck import PARTITION_FILENAME, file_sha256, write_partit
 MODEL_ROOT_ENV = "GLASSWELL_MODEL_ROOT"
 DEFAULT_MODEL_ROOT = Path("data/models")
 MODEL_DATASET = "modeling.model_ready_labels"
-MODEL_DATASET_VERSION = "mdv1.1"
+MODEL_DATASET_VERSION = "mdv1.2"
 MODEL_SCHEMA_VERSION = "1"
 COVERAGE_SCHEMA_VERSION = "1"
 REJECTION_SCHEMA_VERSION = "1"
@@ -267,6 +267,8 @@ def materialize_labels(
                         "reported": known,
                         "null_semantics": _stream_value(row, stream, "null_semantics"),
                         "source_available_on": source_available_on,
+                        "source_reconstructed_available_on": production_month
+                        + timedelta(days=source_lag_days),
                     }
                 )
         for horizon in HORIZONS:
@@ -360,6 +362,8 @@ def _load_feature_matrix(
         "anchor",
         "derivation_id",
         "geology.formation_group",
+        "geology.formation_group__knowable_at",
+        "geology.formation_group__source_available_on",
     }
     missing = required - set(frame.columns)
     if missing:
@@ -437,6 +441,12 @@ def _feature_context(
     return {
         "anchor": matrix_row["anchor"],
         "formation_group": matrix_row["geology.formation_group"],
+        "formation_group_knowable_at": matrix_row[
+            "geology.formation_group__knowable_at"
+        ],
+        "formation_group_source_available_on": matrix_row[
+            "geology.formation_group__source_available_on"
+        ],
         "basin": context["basin"] if context else None,
         "area": context["area"] if context else None,
         "lateral_length_ft": context["lateral_length_ft"] if context else None,
@@ -473,8 +483,11 @@ def _curve_frame(rows: Sequence[Mapping[str, object]], derivation: str) -> pl.Da
                 "reported": pl.Boolean,
                 "null_semantics": pl.String,
                 "source_available_on": pl.Date,
+                "source_reconstructed_available_on": pl.Date,
                 "anchor": pl.Date,
                 "formation_group": pl.String,
+                "formation_group_knowable_at": pl.Date,
+                "formation_group_source_available_on": pl.Date,
                 "basin": pl.String,
                 "area": pl.String,
                 "lateral_length_ft": pl.Float64,
@@ -699,9 +712,16 @@ def _coverage_document(
             "production_source_lag_days": PRODUCTION_SOURCE_LAG_DAYS,
             "strict_label_availability_field": "label_source_available_on",
             "reconstructed_label_availability_field": "label_completed_on",
+            "strict_curve_availability_field": "source_available_on",
+            "reconstructed_curve_availability_field": (
+                "source_reconstructed_available_on"
+            ),
         },
         "control_features": {
             "formation_group": "feature matrix value",
+            "formation_group_availability": (
+                "formation_group_source_available_on from the feature matrix"
+            ),
             "area": "county_code_at_permit",
             "lateral_length_ft": "sum of canonical geodesic lateral segments",
             "lateral_length_bucket": [
@@ -711,6 +731,9 @@ def _coverage_document(
                 "gt_10500",
             ],
             "first_production_month": "split and peer-window metadata, never an ML feature",
+            "area_and_lateral_history": (
+                "read at eval_vintage; source-historical availability is not represented"
+            ),
         },
         "splits": [
             {
@@ -761,6 +784,10 @@ def build_model_dataset(
         feature_matrix_uri, feature_coverage_uri
     )
     feature_version = _single_text(matrix, "feature_version")
+    if feature_version != "fv2.0":
+        raise ModelDatasetError(
+            f"{MODEL_DATASET_VERSION} requires fv2.0 formation semantics, found {feature_version}"
+        )
     feature_set_hash = _single_text(matrix, "feature_set_hash")
     matrix_derivation = _single_text(matrix, "derivation_id")
     matrix_as_of_values = matrix["as_of_vintage"].unique().to_list()

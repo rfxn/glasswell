@@ -76,6 +76,7 @@ def test_cumulative_labels_count_producing_months_and_preserve_decimal_streams()
     assert cum12["gas"]["label_value"] == Decimal("240")
     assert cum12["water"]["label_value"] == Decimal("360")
     assert len([row for row in built.curves if row["stream"] == "oil"]) == 12
+    assert built.curves[0]["source_reconstructed_available_on"] == date(2020, 2, 15)
 
 
 def test_reported_zero_with_positive_days_advances_but_zero_day_shutdown_does_not():

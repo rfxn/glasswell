@@ -188,7 +188,7 @@ source path: FracFocus `JobEndDate`, defined
 by its bundled dictionary as hydraulic-fracturing job completion, is captured as an append-only
 anchor observation; the earliest valid event per API-10 is selected without a spud-date or
 first-production fallback. All 40 current MPR pool labels have reviewed, vintaged formation
-aliases. The resident matrix and model-ready `mdv1.1` dataset now replay byte-identically:
+aliases. The resident matrix and model-ready `mdv1.2` dataset now replay byte-identically:
 105,378 three-stream cum12/cum24 labels, 1,172,586 producing-month curve rows, explicit
 censoring/rejection coverage, and eight content-addressed rolling splits. Forecasts are still
 not live; the next gate is the pinned type-curve control on those exact splits. The strict

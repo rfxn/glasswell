@@ -78,7 +78,7 @@ describe("the header is a control surface, not a paragraph", () => {
     expect(help).toContain("17,563 of 43,817");
     expect(help).toContain("fv2.0");
     expect(help).toContain("82-day median source lag");
-    expect(help).toContain("mdv1.1");
+    expect(help).toContain("mdv1.2");
     expect(help).toContain("105,378 three-stream");
     expect(help).toContain("eight shared rolling splits");
   });
