@@ -8,7 +8,7 @@ snapshot, and current `main` history. This is the short current-state ledger;
 
 ## Shipped baseline
 
-- **Release line:** 31 tagged releases, v0.20 through v0.50, cut 2026-08-21 through
+- **Release line:** 32 tagged releases, v0.20 through v0.51, cut 2026-08-21 through
   2026-08-26.
 - **North Dakota:** ingest, bitemporal promotion, quarantine, conformance, wells,
   geometry, monthly production, lineage, explain, glossary, API, tiles, and map are built.
@@ -16,7 +16,9 @@ snapshot, and current `main` history. This is the short current-state ledger;
   distinct months from 2015-05-01 and 7,223,544 rows; the P3 entry gate is met.
 - **P3 source readiness:** FracFocus disclosure-header ingest captures terms evidence and
   hashes every archive member, promotes append-only hydraulic-fracturing job-end anchors,
-  and never falls back to spud or first production. All 40 current MPR pool labels have
+  and never falls back to spud or first production. The resident load carries 18,665 valid
+  events across 17,563 ND API-10s; all 43,817 current ND wells carry `basin=williston`, while
+  the 26,254 wells without a source anchor remain null. All 40 current MPR pool labels have
   reviewed, knowledge-vintaged formation aliases.
 - **Texas:** Permian-district GIS wells, wellbore identity, operators, and bore geometry
   are on the map. Lease production, well allocation, and its validators are not built.
@@ -35,7 +37,7 @@ snapshot, and current `main` history. This is the short current-state ledger;
 | **P0** Scaffold and contracts | Met | `/v1/audit` is not served, but is not a P0 exit requirement |
 | **P1** ND spine | Met with named deferrals | PDF-era production and FracFocus chemistry remain absent; the disclosure-header anchor path is built |
 | **P2** Serving and map | Substantially met | Missing completions, neighbours, permits, land/spacing units and formations routes; no GOR/water-cut card |
-| **P3** Forecasting and benchmark | Data seam implemented, live materialization pending | The `fv1.0` declaration and two-clock D1 materializer are built; ND basin conformance, a FracFocus completion-anchor source, single-pool completion observations, and 40 reviewed formation aliases now close the code/schema seam. A 2026-08-26 source probe matched 17,564 of 43,817 current ND API-10s (40.1%); the initial resident load and first live matrix still have to prove that measured coverage. The type-curve control, models, calibration, model-registry writer, analog index, and harness remain |
+| **P3** Forecasting and benchmark | Data seam resident; first matrix pending | The `fv1.0` declaration and two-clock D1 materializer are built. The 2026-08-26 resident load assigns all 43,817 ND wells to Williston and preserves 18,665 valid FracFocus events across 17,563 API-10s; 26,254 uncovered wells remain explicitly null. Single-pool completion observations and 40 reviewed formation aliases are resident. The first live matrix, type-curve control, models, calibration, model-registry writer, analog index, and harness remain |
 | **P4** Dollars and scenarios | Not started | Entire phase |
 | **P5** Intelligence, agents and alerts | Not started | Entire phase |
 | **P6** Hardening and glass-box proof | Partial | Tunnel/Access, outsider guest exercise, live restore drill, determinism and tool-equivalence gates |
@@ -44,9 +46,8 @@ snapshot, and current `main` history. This is the short current-state ledger;
 
 ## Immediate gaps
 
-1. Run and measure the initial FracFocus anchor load, materialize the first live `fv1.0`
-   matrix, publish coverage and missingness, then implement the type-curve control before
-   model code.
+1. Materialize the first live `fv1.0` matrix, publish coverage and missingness, then
+   implement the type-curve control before model code.
 2. Close the highest-value P2 serving gaps or explicitly defer them before adding another
    UI surface.
 3. Prove P6 operationally: execute and record the restore drill, then exercise a

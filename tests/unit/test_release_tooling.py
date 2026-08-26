@@ -1137,7 +1137,9 @@ def _run_deploy(root: Path, tmp_path: Path, *args: str, **env: str):
     )
 
 
-def _run_deploy_against_a_stub_host(root: Path, tmp_path: Path, *args: str, db_head: str = ""):
+def _run_deploy_against_a_stub_host(
+    root: Path, tmp_path: Path, *args: str, db_head: str = "", lock_hash: str = ""
+):
     """Runs deploy.sh against a cooperative `ssh` stub, the gate-reldeploy harness shape.
 
     The stub logs every composed remote command, drains tar pipes so the producer is not
@@ -1154,7 +1156,10 @@ def _run_deploy_against_a_stub_host(root: Path, tmp_path: Path, *args: str, db_h
         "#!/bin/sh\n"
         f'printf \'%s\\n\' "$2" >> "{log}"\n'
         "cat >/dev/null\n"
-        'case "$2" in *schema_migrations*) printf \'%s\\n\' "$GW_STUB_DB_HEAD" ;; esac\n'
+        'case "$2" in\n'
+        '  *sha256sum*) printf \'%s\\n\' "$GW_STUB_LOCK_HASH" ;;\n'
+        '  *schema_migrations*) printf \'%s\\n\' "$GW_STUB_DB_HEAD" ;;\n'
+        'esac\n'
         "exit 0\n"
     )
     fake.chmod(0o755)
@@ -1169,6 +1174,7 @@ def _run_deploy_against_a_stub_host(root: Path, tmp_path: Path, *args: str, db_h
             "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
             "GW_DEPLOY_HOST": "root@stub.invalid",
             "GW_STUB_DB_HEAD": db_head,
+            "GW_STUB_LOCK_HASH": lock_hash,
         },
     )
     return result, log.read_text()
@@ -1311,6 +1317,20 @@ class TestTheDeployRefusals:
         assert result.returncode == 0
         assert "schema is current at head 002" in result.stdout
         assert "schema_migrations" in log
+
+    def test_an_unchanged_lock_still_refreshes_project_entry_points(self, tmp_path):
+        root = _deployable(tmp_path)
+        _tag(root)
+        lock_hash = hashlib.sha256((root / "requirements.lock").read_bytes()).hexdigest()
+
+        result, log = _run_deploy_against_a_stub_host(
+            root, tmp_path, db_head="2", lock_hash=lock_hash
+        )
+
+        assert result.returncode == 0
+        assert "dependency install skipped" in result.stdout
+        assert "pip install -q -e /opt/glasswell/src --no-deps" in log
+        assert "pip install -q -r" not in log
 
     def test_a_head_answer_that_is_not_a_number_is_refused_verbatim(self, tmp_path):
         root = _deployable(tmp_path)
