@@ -7,6 +7,12 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.52"></a>
+## v0.52 — 2026-08-26
+
+- [Fix] Alias hydration now accepts legacy unscoped registry rows as fallbacks while
+      preferring the rule's source namespace and rejecting mappings from other sources
+
 <a id="v0.51"></a>
 ## v0.51 — 2026-08-26
 
