@@ -90,5 +90,5 @@ def test_runtime_role_grants_match_the_registry_boundary(db):
     ]
 
 
-def test_fv1_registry_row_matches_the_checked_in_declaration(db):
+def test_registry_rows_match_the_checked_in_declarations(db):
     assert load_feature_specs(db) == FEATURE_SPECS

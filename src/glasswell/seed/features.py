@@ -1,4 +1,4 @@
-"""The first versioned feature declaration (SB-02 §1.5)."""
+"""Versioned feature declarations (SB-02 §1.5)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from psycopg.types.json import Jsonb
 
 from glasswell.modeling.features import FeatureSpec
 
-FEATURE_VERSION = "fv1.0"
+FEATURE_VERSION = "fv2.0"
 
 FEATURE_SPECS: tuple[FeatureSpec, ...] = (
     FeatureSpec(
@@ -23,6 +23,42 @@ FEATURE_SPECS: tuple[FeatureSpec, ...] = (
             "min_confidence": "0.800",
             "reported_pool_field": "pool_reported",
             "source_id": "nd_mpr_xlsx",
+        },
+        source_refs=(
+            "canonical.well_completions.pool_reported",
+            "lineage.formation_aliases",
+        ),
+        missing_policy="native_nan",
+        member_of=("full", "rock_location_only", "design_adjusted", "no_depletion"),
+        introduced_in_fv="fv1.0",
+    ),
+    FeatureSpec(
+        feature_id="geology.formation_group",
+        family="geology",
+        dtype="categorical",
+        unit="category",
+        knowable_at_rule="completion_date",
+        publication_lag_days_p50=82,
+        transform_id="lookup_initial_formation_alias",
+        params={
+            "alias_table": "lineage.formation_aliases",
+            "conflict_policy": "null_with_coverage",
+            "min_confidence": "0.800",
+            "publication_lag_measurement": {
+                "availability_proxy": "first_formation_source_month_plus_45_days",
+                "cohort": "completion_on_or_after_2015-05-01_and_nonnegative_lag",
+                "measured_at": "2026-08-26",
+                "n": 9031,
+                "p25_days": 53,
+                "p50_days": 82,
+                "p75_days": 177,
+                "p95_days": 224,
+                "negative_lag_exclusions": 292,
+            },
+            "reported_pool_field": "pool_reported",
+            "source_history_floor": "2015-05-01",
+            "source_id": "nd_mpr_xlsx",
+            "source_publication_lag_days": 45,
         },
         source_refs=(
             "canonical.well_completions.pool_reported",

@@ -5,7 +5,9 @@ Reviewed **2026-08-26** against every non-null `well_completion_pool` in the dep
 of 23 came from `canonical.well_completions`, whose promoter had registered only multi-pool
 filings. That was a pipeline defect, not a smaller source vocabulary.
 
-`formation` is a lossless normalized label. `formation_group` is the fv1.0 peer group. Exact
+`formation` is a lossless normalized label. `formation_group` is the peer-group vocabulary
+shared by `fv1.0` and `fv2.0`; `fv2.0` changes which source month is eligible, not these alias
+judgments. Exact
 principal targets with measured support retain a group; explicit Three Forks stays distinct
 even though its current support is sparse; ambiguous composites and sub-threshold targets use
 `__other__` rather than inheriting an unsupported geological judgment.

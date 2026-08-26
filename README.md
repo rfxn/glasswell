@@ -179,15 +179,19 @@ quarantined share is published in the scorecard.
 
 <p align="center"><img src="assets/forecast-to-dollars.svg" alt="Features feed a quantile model and a type-curve control, both scored on one temporal holdout, producing three-stream forecasts that drive discounted cash flow economics" width="1000"></p>
 
-The first modeling artifact boundary is implemented: `fv1.0` declares the conformed
-formation-group feature, and the builder enforces both well-time availability and a pinned
-knowledge vintage before writing a byte-reproducible, content-addressed Parquet matrix with
-its recipe and derivation. P3 readiness now has a source path: FracFocus `JobEndDate`, defined
+The first modeling artifact boundary is implemented: immutable `fv1.0` records the original
+all-observed formation semantics, while semantic-major `fv2.0` selects the earliest MPR pool
+month, publishes simultaneous conflicts as null, records the measured 82-day median source
+lag, and writes content-addressed Parquet plus immutable missing/conflict coverage. Both
+well-time availability and pinned knowledge vintage remain enforced. P3 readiness has a
+source path: FracFocus `JobEndDate`, defined
 by its bundled dictionary as hydraulic-fracturing job completion, is captured as an append-only
 anchor observation; the earliest valid event per API-10 is selected without a spud-date or
 first-production fallback. All 40 current MPR pool labels have reviewed, vintaged formation
-aliases. Forecasts are still not live: the next gates are the first resident `fv1.0` matrix and
-the pinned type-curve control on its identical split.
+aliases. Forecasts are still not live: the next gates are the resident `fv2.0` replay, the
+model-ready three-stream dataset, and the pinned type-curve control on its identical split.
+The strict-history and reconstructed-source vintage clocks are distinguished in
+[`docs/p3-matrix-integrity.md`](docs/p3-matrix-integrity.md).
 
 The planned modeling path uses a gradient-boosted quantile model with conformal
 calibration to produce P10/P50/P90 on three streams — oil as the headline, gas and
