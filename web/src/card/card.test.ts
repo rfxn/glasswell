@@ -447,7 +447,7 @@ describe("completion and formation context", () => {
     expect(body?.textContent).toContain(
       "No source-reported completion events or completion-pool mappings are available",
     );
-    expect(body?.textContent).not.toContain("request could not be completed");
+    expect(body?.textContent).not.toContain("response could not be used");
   });
 
   it("shows source-history coverage warnings inside the context section", async () => {
@@ -502,7 +502,7 @@ describe("completion and formation context", () => {
 
     const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("unavailable");
-    expect(body?.textContent).toContain("request could not be completed");
+    expect(body?.textContent).toContain("response could not be used");
     expect(host.querySelector("h2")?.textContent).toBe("Mandaree 50-2008H");
     expect(renderChart).toHaveBeenCalledOnce();
   });
@@ -528,6 +528,7 @@ describe("completion and formation context", () => {
     const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("unavailable");
     expect(body?.dataset["state"]).not.toBe("empty");
+    expect(body?.textContent).toContain("response could not be used");
   });
 
   it("refuses completion context echoed for a different well", async () => {

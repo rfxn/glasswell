@@ -331,7 +331,7 @@ async function loadCompletionContext(
   } catch {
     host.replaceChildren(
       placeholder(
-        "Completion and formation context is unavailable because its request could not be completed.",
+        "Completion and formation context is unavailable because the API response could not be used.",
       ),
     );
     host.dataset["state"] = "unavailable";

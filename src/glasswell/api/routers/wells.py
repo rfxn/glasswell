@@ -32,7 +32,7 @@ from glasswell.api.pagination import (
 )
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, inline_for, iso
 from glasswell.lengths import STORAGE_EPSG, resolve_length_method
-from glasswell.lineage.conformance import lease_reporting_rule
+from glasswell.lineage.conformance import LeaseReportingRule, lease_reporting_rule
 from glasswell.lineage.envelope import Figure, collect_handles, distinct_handles, figure
 from glasswell.lineage.explain import MAX_HANDLES
 from glasswell.marts.tiles import TILE_BUFFER, TILE_EXTENT, TILE_MAX_ZOOM, WEB_MERCATOR
@@ -391,7 +391,7 @@ def _summary(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def pending_allocation(rule: dict[str, str]) -> dict[str, Any]:
+def pending_allocation(rule: LeaseReportingRule) -> dict[str, Any]:
     """DIR-3 made visible: a lease-reporting state has no observed well-level series, and an
     empty chart would say the opposite of what is true. The rule is named so a reader can
     resolve it at /v1/conformance."""
