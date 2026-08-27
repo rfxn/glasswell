@@ -217,6 +217,10 @@ step "6b. seed registries, as postgres"
 remote "sudo -u postgres env $code_env $VENV/bin/python -c 'import psycopg; from glasswell.seed import seed_all; connection = psycopg.connect(\"$SOCKET_DSN\"); print(\"   \", seed_all(connection)); connection.commit(); connection.close()'" \
     || refuse "seed_all failed"
 
+step "6c. current ND physical-neighbour mart"
+remote "sudo -u glasswell env $code_env $VENV/bin/glasswell-neighbors --dsn '$SOCKET_DSN'" \
+    || refuse "ND physical-neighbour refresh failed"
+
 # Both, as runbook step 4 has it. martin reads its source catalogue at startup and install.sh
 # above can have just placed infra/martin/config.yaml, so without this the new config is inert
 # and verify.sh's catalogue check fails the deploy two steps later.
@@ -242,6 +246,10 @@ done
 step "7c. fresh status snapshot"
 remote "systemctl start glasswell-status.timer" \
     || refuse "glasswell-status timer did not start"
+if remote "systemctl is-enabled --quiet glasswell-restore-drill.timer"; then
+    remote "systemctl start glasswell-restore-drill.timer" \
+        || refuse "enabled restore-drill timer did not start"
+fi
 remote "systemctl start glasswell-status.service" \
     || refuse "glasswell-status did not produce a fresh snapshot"
 

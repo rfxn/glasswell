@@ -3,6 +3,7 @@ Description=glasswell nightly logical backup (pg_dump + raw-zone push to forge)
 After=network-online.target postgresql.service
 Wants=network-online.target
 Requires=postgresql@16-main.service
+OnFailure=glasswell-alert@%n.service
 
 [Service]
 Type=oneshot

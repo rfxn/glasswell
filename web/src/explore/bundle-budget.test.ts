@@ -90,14 +90,18 @@ describe("what the explorer's shell costs the reader", () => {
     // entry chunk names every import, so the graph walker must cut both branches explicitly.
     const map = named("map");
     const status = named("surface");
+    const neighbors = named("neighbors");
     const route = reach(
       [...entryChunks(), named("shell")],
-      (name) => name === map || name === status,
+      (name) => name === map || name === status || name === neighbors,
     );
     const measured = route.reduce((sum, name) => sum + gzip(name), 0);
 
     expect(route, "the map chunk is not on the explorer route").not.toContain(map);
     expect(route, "the Status chunk is not on the explorer route").not.toContain(status);
+    expect(route, "the well-card neighbour chunk is not on the explorer route").not.toContain(
+      neighbors,
+    );
     expect(measured, `explorer route ${measured} B gzipped over ${route.join(", ")}`).toBeLessThanOrEqual(
       BUDGET_BYTES.explorerRouteGzip,
     );

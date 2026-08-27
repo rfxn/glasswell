@@ -44,6 +44,7 @@ MATRIX: tuple[tuple[str, str, str], ...] = (
     ("GET", f"/v1/wells/status-summary?bbox={EXAMPLE_BBOX}", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/completions", READ),
+    ("GET", f"/v1/wells/{EXAMPLE_API10}/neighbors", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production/pools", READ),
     # DR-63/DR-64 add parameters, never gates: an optional flag that carried its own auth
@@ -52,6 +53,7 @@ MATRIX: tuple[tuple[str, str, str], ...] = (
     ("GET", f"/v1/wells/status-summary?bbox={EXAMPLE_BBOX}&explain=true", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}?explain=true&explain_depth=8", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/completions?explain=true", READ),
+    ("GET", f"/v1/wells/{EXAMPLE_API10}/neighbors?explain=true", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production?explain=true", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production/pools?explain=true", READ),
     ("GET", f"/v1/derivations/{EXAMPLE_DERIVATION_ID}?explain=true&explain_depth=8", READ),

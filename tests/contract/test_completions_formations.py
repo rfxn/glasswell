@@ -184,6 +184,21 @@ def test_completion_handles_preserve_unsafe_keys_and_effective_grain_pods(
         encoded_key + "=" * (-len(encoded_key) % 4)
     ).decode() == f"{EXAMPLE_API10}:RED RIVER/ALT"
 
+    valid = client.get("/v1/explain", params={"h": handle})
+    missing_key = base64.urlsafe_b64encode(b"missing completion/key").decode().rstrip("=")
+    missing = client.get(
+        "/v1/explain", params={"h": handle.replace(encoded_key, missing_key)}
+    )
+    wrong_column = client.get(
+        "/v1/explain", params={"h": handle.replace("col=effective_from", "col=api10")}
+    )
+
+    assert valid.status_code == 200, valid.text
+    assert missing.status_code == 404
+    assert missing.json()["stop_reason"] == "unknown_id"
+    assert wrong_column.status_code == 422
+    assert wrong_column.json()["type"] == "/v1/errors/selector_ambiguous"
+
 
 def test_a_well_without_completion_context_is_explicitly_empty(client: TestClient) -> None:
     response = client.get("/v1/wells/3305300001/completions").json()

@@ -1,0 +1,14 @@
+[Unit]
+Description=Weekly glasswell production-backup restore drill
+OnFailure=glasswell-alert@%n.service
+
+[Timer]
+# The Sunday backup starts at 02:00 with at most ten minutes of jitter. The full-size restore
+# runs weekly, after that backup, to bound scratch-database storage pressure.
+OnCalendar=Sun *-*-* 04:00:00
+Persistent=true
+RandomizedDelaySec=600
+Unit=glasswell-restore-drill.service
+
+[Install]
+WantedBy=timers.target

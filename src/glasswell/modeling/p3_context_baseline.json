@@ -1,0 +1,71 @@
+{
+  "schema_version": "1",
+  "resident_eval_vintage": "2026-08-26",
+  "resident_recipe_id": "rcp_02a21056b98fce720f960d98d9e97d8c",
+  "migration": {
+    "version": 42,
+    "name": "nd_completion_context_repair",
+    "sha256": "ffe8a88afe5806895558ca180ba381d95e13232ca5459395cb9411d3314b8663"
+  },
+  "basin": "williston",
+  "feature_version": "fv2.0",
+  "feature_set_hash": "sha256:b219de525e2a46c442fd8b480b1dadc25281ea4f051ad2411bb6e9a1912410ca",
+  "model_dataset_version": "mdv1.4",
+  "control_version": "tcv1.0",
+  "vintage_basis": "source_reconstructed_not_glasswell_history",
+  "split_set_id": "sset_c7bbb9a6932db76b",
+  "splits": [
+    {
+      "origin": "2021-01-01",
+      "horizon_months": 12,
+      "split_id": "spl_wnhebb4rhlbb6st45oeq",
+      "sha256": "2f2b2a32f3fd552f9e2c114afdb40da721165a5c069c1fe40ae59dd0de3a23eb"
+    },
+    {
+      "origin": "2021-01-01",
+      "horizon_months": 24,
+      "split_id": "spl_4sja3wqwbvk5mct37rdq",
+      "sha256": "ddb2f874a1d008b2c53e3b3ee2612edc66cb9e35101a2279c8531811973d1400"
+    },
+    {
+      "origin": "2022-01-01",
+      "horizon_months": 12,
+      "split_id": "spl_fvom4i6tfuglim2h2dyq",
+      "sha256": "511d5af3a5c34daca300272773990d258718a4768e87299ad3ad2104070344c9"
+    },
+    {
+      "origin": "2022-01-01",
+      "horizon_months": 24,
+      "split_id": "spl_ehs3git43yhxc2n5ec4a",
+      "sha256": "d7fd6b3ea93ad4e3c1833a4fc2b1171e3d3609b4e5586fb2b5e9de69b3f68cd2"
+    },
+    {
+      "origin": "2023-01-01",
+      "horizon_months": 12,
+      "split_id": "spl_deyoqiivzwogce2sqnwq",
+      "sha256": "2025ef8de5dab23663b320f20654477e05b8a14ed45d96dd712c85140780246f"
+    },
+    {
+      "origin": "2023-01-01",
+      "horizon_months": 24,
+      "split_id": "spl_fzbqtnh3undvhjkelova",
+      "sha256": "7eaf0546d5c6b5128693cc507d03f9c4931df50ec4bdcc757e415deb2b0a4a5b"
+    },
+    {
+      "origin": "2024-01-01",
+      "horizon_months": 12,
+      "split_id": "spl_jjhppcl55r35b6j7kcya",
+      "sha256": "5818a9ff6d92c1bf0bced38cc474581367f8042dd6b649dbcb7cf40d963ed125"
+    },
+    {
+      "origin": "2024-01-01",
+      "horizon_months": 24,
+      "split_id": "spl_5srtehu3gyrmugm4rqqa",
+      "sha256": "7be2c0b82560dfe24536dea67e2232b6a5bb880d54b3633710d37a29e53c7e50"
+    }
+  ],
+  "allowed_residual_reasons": [
+    "insufficient_peers",
+    "missing_lateral_length"
+  ]
+}

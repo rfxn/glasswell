@@ -100,11 +100,12 @@ printf 'placed %s/glasswell.conf and created /run/glasswell\n' "$TMPFILES_DIR"
 for unit in glasswell-api.service glasswell-ingest.service glasswell-ingest.timer \
             glasswell-c115b.service glasswell-c115b.timer \
             glasswell-status.service glasswell-status.timer \
-            glasswell-alert@.service glasswell-backup.service glasswell-backup.timer; do
+            glasswell-alert@.service glasswell-backup.service glasswell-backup.timer \
+            glasswell-restore-drill.service glasswell-restore-drill.timer; do
     install -o root -g root -m 0644 "$INFRA_DIR/systemd/$unit" "$UNIT_DIR/$unit"
 done
 
-# glasswell-backup.service calls these by absolute path.
+# One protection service invokes each script by absolute path.
 for script in glasswell-backup.sh glasswell-restore-drill.sh; do
     install -o root -g root -m 0755 "$INFRA_DIR/backup/$script" "$SBIN_DIR/$script"
 done
@@ -207,11 +208,11 @@ else
     printf 'glasswell-c115b.timer installed but NOT enabled (--enable-c115b to arm it)\n'
 fi
 
-if [[ $enable_backup -eq 1 ]]; then
-    systemctl enable glasswell-backup.timer
-    printf 'enabled glasswell-backup.timer — nightly, and it pushes to forge over ssh\n'
+if [[ $enable_backup -eq 1 ]] || systemctl is-enabled --quiet glasswell-backup.timer; then
+    systemctl enable glasswell-backup.timer glasswell-restore-drill.timer
+    printf 'enabled nightly backup and weekly restore-drill timers (new or previously armed)\n'
 else
-    printf 'glasswell-backup.timer installed but NOT enabled (--enable-backup to arm it)\n'
+    printf 'backup and restore-drill timers installed but NOT enabled (--enable-backup to arm them)\n'
 fi
 
 printf 'install complete. start with: systemctl start glasswell-api\n'

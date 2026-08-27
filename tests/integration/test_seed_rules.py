@@ -29,6 +29,8 @@ POLICY_RULES = (
     "cr_nd_basin_1",
     "cr_nd_geometry_provenance_1",
     "cr_nd_liquids_policy_1",
+    "cr_nd_neighbor_context_1",
+    "cr_nd_neighbor_distance_1",
     "cr_nd_null_semantics_1",
     "cr_nd_pool_rollup_1",
     "cr_nd_well_type_disposal_1",

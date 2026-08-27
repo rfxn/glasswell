@@ -30,6 +30,7 @@ from glasswell.api.routers import (
     index,
     keys,
     lineage,
+    neighbors,
     production,
     quarantine,
     status,
@@ -83,12 +84,13 @@ are cursor-paginated with no offset parameter; failures are RFC 9457 problem doc
 whose `type` resolves at `/v1/errors/{code}`; and `as_of` selects knowledge time, with
 the resolved vintage reported back in `meta.as_of`.
 
-This deployment serves North Dakota wells, geometry, monthly production, completion context
-and canonical formations with current alias counts, plus Texas wells and bore geometry with
-well-level production held pending allocation. The lineage spine, conformance registry,
-quarantine and glossary are live. Forecasts, economics, scenarios, agents and
-undrilled-location inventory are not served; New Mexico promotion is not claimed. `/v1/status`
-adds current application-plane
+This deployment serves North Dakota wells, geometry, monthly production, completion context,
+current physical neighbours and canonical formations with current alias counts, plus Texas
+wells and bore geometry with well-level production held pending allocation. Physical-neighbour
+results require current lateral geometry, use strict earlier-completion cutoffs, and are not
+model analogs. The lineage spine, conformance registry, quarantine and glossary are live.
+Forecasts, economics, scenarios, agents and undrilled-location inventory are not served; New
+Mexico promotion is not claimed. `/v1/status` adds current application-plane
 checks, scheduled-job observations, registered-artifact age and explicitly grained operational
 dataset inventory without treating those counts as forecast inventory or petroleum figures.
 """.strip()
@@ -177,6 +179,7 @@ def create_app() -> FastAPI:
         health.router,
         status.router,
         wells.router,
+        neighbors.router,
         completions.router,
         production.router,
         formations.router,

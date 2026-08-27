@@ -38,6 +38,7 @@ def test_the_index_names_the_version_and_the_resources(client: TestClient) -> No
 
     assert body["data"]["api_version"] == "v1"
     assert body["links"]["wells"] == "/v1/wells"
+    assert body["links"]["well_neighbors"] == "/v1/wells/{api10}/neighbors"
     assert body["links"]["explain"].startswith("/v1/explain")
     assert body["links"]["glossary"] == "/v1/glossary"
 

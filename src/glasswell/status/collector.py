@@ -7,10 +7,11 @@ import json
 import os
 import socket
 import ssl
+import stat
 import subprocess
 import tempfile
 from collections.abc import Callable, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
@@ -20,6 +21,7 @@ import psycopg
 from psycopg import IsolationLevel
 from psycopg.pq import TransactionStatus
 from psycopg.rows import dict_row
+from pydantic import ValidationError
 
 from glasswell.status.models import (
     DATABASE_BYTES_REASON,
@@ -29,6 +31,7 @@ from glasswell.status.models import (
     InventoryMetric,
     JobStatus,
     PlatformStatus,
+    RestoreDrillResult,
     StatusCheck,
     StatusDisclosure,
     StatusSnapshot,
@@ -36,6 +39,8 @@ from glasswell.status.models import (
 
 SNAPSHOT_ENV = "GLASSWELL_STATUS_SNAPSHOT"
 DEFAULT_SNAPSHOT = Path("/var/lib/glasswell/status.json")
+RESTORE_RESULT_ENV = "GLASSWELL_RESTORE_RESULT"
+DEFAULT_RESTORE_RESULT = Path("/var/lib/glasswell/restore-drill.json")
 DSN_ENV = "GLASSWELL_DSN"
 FALLBACK_DSN_ENV = "DATABASE_URL"
 CODE_VERSION_ENV = "GLASSWELL_CODE_VERSION"
@@ -43,6 +48,10 @@ EDGE_HOST_ENV = "GLASSWELL_STATUS_EDGE_HOST"
 DEFAULT_EDGE_HOST = "glasswell.lab.rpx.sh"
 MARTIN_HEALTH = "http://127.0.0.1:3000/health"
 QUERY_TIMEOUT_MS = 120_000
+MAX_RESTORE_RESULT_BYTES = 131_072
+RESTORE_RESULT_STALE_AFTER = timedelta(days=8)
+RESTORE_DUMP_STALE_AFTER = timedelta(days=2)
+RESTORE_RESULT_FUTURE_TOLERANCE = timedelta(minutes=5)
 
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
@@ -156,6 +165,119 @@ def _job(
         state=state,
         last_run_at=last_run,
         next_run_at=next_run,
+        detail=detail,
+    )
+
+
+def _load_restore_result(
+    path: Path, *, expected_uid: int = 0, expected_gid: int | None = None
+) -> tuple[RestoreDrillResult | None, str]:
+    group = os.getgid() if expected_gid is None else expected_gid
+    try:
+        metadata = path.lstat()
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or path.is_symlink()
+            or metadata.st_nlink != 1
+            or metadata.st_uid != expected_uid
+            or metadata.st_gid != group
+            or stat.S_IMODE(metadata.st_mode) != 0o640
+        ):
+            return None, "Durable restore result path, ownership or mode is unsafe."
+        if metadata.st_size > MAX_RESTORE_RESULT_BYTES:
+            return None, "Durable restore result exceeds the accepted size."
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
+            opened = os.fstat(handle.fileno())
+            if (opened.st_dev, opened.st_ino) != (metadata.st_dev, metadata.st_ino):
+                return None, "Durable restore result changed while it was opened."
+            payload = handle.read(MAX_RESTORE_RESULT_BYTES + 1)
+        if len(payload.encode("utf-8")) > MAX_RESTORE_RESULT_BYTES:
+            return None, "Durable restore result exceeds the accepted size."
+        return RestoreDrillResult.model_validate_json(payload), ""
+    except FileNotFoundError:
+        return None, "No durable restore result has been published yet."
+    except (OSError, UnicodeError, ValidationError):
+        return None, "Durable restore result could not be validated."
+
+
+def _restore_drill_job(
+    observed_at: datetime,
+    *,
+    path: Path | None = None,
+    runner: Runner = _run,
+    expected_uid: int = 0,
+    expected_gid: int | None = None,
+) -> JobStatus:
+    scheduled = _job(
+        "restore_drill",
+        "Weekly restore drill",
+        "glasswell-restore-drill.timer",
+        "glasswell-restore-drill.service",
+        runner,
+    )
+    target = path or Path(os.environ.get(RESTORE_RESULT_ENV, DEFAULT_RESTORE_RESULT))
+    proof, error = _load_restore_result(
+        target, expected_uid=expected_uid, expected_gid=expected_gid
+    )
+    if proof is None:
+        if "No durable" in error and scheduled.last_run_at is None:
+            state = "pending" if scheduled.state == "pending" else scheduled.state
+        else:
+            state = "degraded" if "unsafe" in error or "validated" in error else "unavailable"
+        return JobStatus(
+            id="restore_drill",
+            label="Weekly restore drill",
+            state=state,
+            last_run_at=scheduled.last_run_at,
+            next_run_at=scheduled.next_run_at,
+            detail=error,
+        )
+
+    completed_at = proof.completed_at.astimezone(UTC)
+    age = observed_at - completed_at
+    dump_age = observed_at - proof.dump.created_at.astimezone(UTC) if proof.dump else None
+    age_hours = max(0, int(age.total_seconds() // 3600))
+    age_detail = f"age {age_hours}h"
+    if age < -RESTORE_RESULT_FUTURE_TOLERANCE:
+        state = "degraded"
+        detail = "Durable restore result completion time is implausibly in the future."
+    elif proof.result == "failed":
+        state = "degraded"
+        cleanup = "verified" if proof.scratch_removed else "not verified"
+        detail = (
+            f"Latest durable restore drill failed ({proof.failure_detail}); {age_detail};"
+            f" scratch cleanup {cleanup}."
+        )
+    elif age > RESTORE_RESULT_STALE_AFTER:
+        state = "degraded"
+        detail = f"Latest durable restore proof passed but is stale ({age_detail})."
+    elif dump_age is not None and dump_age < -RESTORE_RESULT_FUTURE_TOLERANCE:
+        state = "degraded"
+        detail = "Restored dump creation time is implausibly in the future."
+    elif dump_age is not None and dump_age > RESTORE_DUMP_STALE_AFTER:
+        state = "degraded"
+        dump_age_hours = max(0, int(dump_age.total_seconds() // 3600))
+        detail = f"Latest restore passed, but its backup dump is stale (age {dump_age_hours}h)."
+    elif scheduled.state != "ok":
+        state = scheduled.state
+        detail = (
+            f"Latest durable restore proof passed ({age_detail}), but schedule evidence is"
+            f" {scheduled.state}."
+        )
+    else:
+        state = "ok"
+        detail = (
+            f"Durable restore proof passed ({age_detail}) for {proof.dump.name};"
+            f" schema {proof.restored_schema_version}, {len(proof.critical_row_counts)} critical"
+            " row counts and representative reads matched; scratch cleanup verified."
+        )
+    return JobStatus(
+        id="restore_drill",
+        label="Weekly restore drill",
+        state=state,
+        last_run_at=completed_at,
+        next_run_at=scheduled.next_run_at,
         detail=detail,
     )
 
@@ -329,6 +451,16 @@ def _inventory(
         " (select max(created_at) from lineage.derivations"
         "   where output_dataset = 'marts.tx_tiles' and status = 'ok') as tx_latest_knowledge",
     )
+    neighbors = _one(
+        connection,
+        "select count(*) as subjects,"
+        " count(*) filter (where completion_date is not null) as dated_subjects,"
+        " (select count(*) from marts.nd_neighbor_edges) as directed_edges,"
+        " (select max(d.created_at) from lineage.derivations d"
+        "   where d.output_dataset = 'marts.nd_neighbors' and d.status = 'ok')"
+        "   as latest_knowledge"
+        " from marts.nd_neighbor_subjects",
+    )
     quality = _one(
         connection,
         "select count(*) filter (where state = 'open') as open_rows,"
@@ -499,6 +631,45 @@ def _inventory(
             latest_knowledge=map_rows["tx_latest_knowledge"],
         ),
         dataset(
+            "marts.nd_neighbor_subjects",
+            "North Dakota neighbour subjects",
+            "North Dakota",
+            "one current lateral-bearing subject well",
+            [
+                _metric("subjects", "Lateral-bearing subjects", neighbors["subjects"], "wells"),
+                _metric(
+                    "dated_subjects",
+                    "Subjects with completion anchors",
+                    neighbors["dated_subjects"],
+                    "wells",
+                ),
+            ],
+            (
+                "Current geometry only. Completion-anchor coverage is an event-time inventory;"
+                " no mart validity interval is implied."
+            ),
+            latest_knowledge=neighbors["latest_knowledge"],
+        ),
+        dataset(
+            "marts.nd_neighbor_edges",
+            "North Dakota physical-neighbour edges",
+            "North Dakota",
+            "one directed current-snapshot edge per subject and neighbour API-10 pair",
+            [
+                _metric(
+                    "directed_edges",
+                    "Directed physical-neighbour edges",
+                    neighbors["directed_edges"],
+                    "edges",
+                )
+            ],
+            (
+                "Edges extend through 26,400 feet and are counted as stored, not presented as"
+                " unique undirected pairs."
+            ),
+            latest_knowledge=neighbors["latest_knowledge"],
+        ),
+        dataset(
             "lineage.quarantine_rows",
             "Open quarantine",
             "All ingested sources",
@@ -568,6 +739,7 @@ def collect(connection: psycopg.Connection, *, now: datetime | None = None) -> S
             "glasswell-c115b.service",
         ),
         _job("backup", "Nightly backup", "glasswell-backup.timer", "glasswell-backup.service"),
+        _restore_drill_job(observed_at),
     ]
     disclosures = [
         StatusDisclosure(
@@ -587,12 +759,6 @@ def collect(connection: psycopg.Connection, *, now: datetime | None = None) -> S
                 "The registry carries no source cadence yet; current/stale uses the existing"
                 " conservative shared artifact-age policy."
             ),
-        ),
-        StatusDisclosure(
-            id="restore_drill",
-            label="Restore drill execution",
-            state="not_instrumented",
-            detail="A restore script exists, but no durable execution result is recorded.",
         ),
         StatusDisclosure(
             id="remote_backup_copy",

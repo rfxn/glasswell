@@ -134,14 +134,17 @@ def test_the_detail_links_to_its_sub_resources(client: TestClient) -> None:
 
     assert body["links"]["self"] == f"/v1/wells/{EXAMPLE_API10}"
     assert body["links"]["production"] == f"/v1/wells/{EXAMPLE_API10}/production"
+    assert body["links"]["neighbors"] == f"/v1/wells/{EXAMPLE_API10}/neighbors"
 
 
 def test_a_well_with_no_geometry_still_serves(client: TestClient) -> None:
-    data = client.get("/v1/wells/3305300003").json()["data"]
+    body = client.get("/v1/wells/3305300003").json()
+    data = body["data"]
 
     assert data["lateral_count"] == 0
     assert data["lateral_length_ft"] is None
     assert data["surface_point"] is None
+    assert "neighbors" not in body["links"]
 
 
 def test_an_as_of_before_the_effective_date_hides_the_well(client: TestClient) -> None:

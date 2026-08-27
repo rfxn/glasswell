@@ -4,8 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChartSeries } from "../chart/series.ts";
 
 const renderChart = vi.fn<(container: HTMLElement, chart: ChartSeries) => void>();
+const selectWell = vi.fn<(api10: string | null, source: string) => void>();
 vi.mock("../chart/chart.ts", () => ({
   renderChart: (container: HTMLElement, chart: ChartSeries) => renderChart(container, chart),
+}));
+vi.mock("../bus.ts", () => ({
+  selectWell: (api10: string | null, source: string) => selectWell(api10, source),
 }));
 
 const { renderWellCard } = await import("./card.ts");
@@ -14,6 +18,7 @@ const {
   LENGTH_HANDLE,
   OIL_HANDLE,
   completionContextEnvelope,
+  neighborEnvelope,
   productionEnvelope,
   stubFetch,
   wellEnvelope,
@@ -28,11 +33,13 @@ beforeEach(() => {
   host = document.createElement("aside");
   document.body.appendChild(host);
   renderChart.mockClear();
+  selectWell.mockClear();
   vi.stubGlobal(
     "fetch",
     vi.fn(
       stubFetch({
         [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+        [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
         [`/v1/wells/${API10}/production`]: productionEnvelope,
         [`/v1/wells/${API10}`]: wellEnvelope,
       }),
@@ -133,6 +140,7 @@ describe("well card", () => {
     const requested = vi.fn(
       stubFetch({
         [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+        [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
         [`/v1/wells/${API10}/production`]: productionEnvelope,
         [`/v1/wells/${API10}`]: wellEnvelope,
       }),
@@ -146,6 +154,7 @@ describe("well card", () => {
       [
         `/v1/wells/${API10}?as_of=2026-07-01`,
         `/v1/wells/${API10}/completions?as_of=2026-07-01`,
+        `/v1/wells/${API10}/neighbors?as_of=2026-07-01&limit=5`,
         `/v1/wells/${API10}/production?as_of=2026-07-01`,
       ].sort(),
     );
@@ -165,6 +174,80 @@ describe("well card", () => {
     expect(figure?.getAttribute("unit")).toBe("ft");
     expect(figure?.getAttribute("handle")).toBe(LENGTH_HANDLE);
     expect(figure?.textContent).toContain("15,065.44 ft");
+  });
+
+  it("renders physical neighbours as current-only proximity, not model analogs", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    const frame = host.querySelector<HTMLElement>(".gw-neighbor-context");
+    const links = frame?.querySelectorAll<HTMLAnchorElement>(".gw-neighbor-link");
+    expect(frame?.querySelector(".gw-frame-body")?.getAttribute("data-state")).toBe(
+      "populated",
+    );
+    expect(frame?.textContent).toContain("Physical proximity only — these are not model analogs");
+    expect(links).toHaveLength(2);
+    expect(links?.[0]?.getAttribute("href")).toBe("/?well=3305310998");
+    expect(frame?.querySelector("gw-figure")?.textContent).toContain("1,320.25 ft");
+
+    links?.[0]?.click();
+    expect(selectWell).toHaveBeenCalledWith("3305310998", "card");
+  });
+
+  it("distinguishes no eligible neighbours from an unusable response", async () => {
+    const empty = {
+      ...neighborEnvelope,
+      data: {
+        ...neighborEnvelope.data,
+        neighbors: [],
+        coverage: {
+          ...neighborEnvelope.data.coverage,
+          eligible: { ...neighborEnvelope.data.coverage.eligible, value: "0" },
+          returned: { ...neighborEnvelope.data.coverage.returned, value: "0" },
+        },
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+          [`/v1/wells/${API10}/neighbors`]: empty,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const body = host.querySelector<HTMLElement>(".gw-neighbor-context .gw-frame-body");
+    expect(body?.dataset["state"]).toBe("empty");
+    expect(body?.textContent).toContain("No eligible physical neighbours were found");
+    expect(body?.textContent).not.toContain("unavailable for this well");
+  });
+
+  it("keeps the rest of the card usable when neighbours are unavailable", async () => {
+    const normal = stubFetch({
+      [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+      [`/v1/wells/${API10}/production`]: productionEnvelope,
+      [`/v1/wells/${API10}`]: wellEnvelope,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        if (String(input).startsWith(`/v1/wells/${API10}/neighbors`)) {
+          return Promise.resolve(problem(422, "current_only_geometry"));
+        }
+        return normal(input);
+      }),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const body = host.querySelector<HTMLElement>(".gw-neighbor-context .gw-frame-body");
+    expect(body?.dataset["state"]).toBe("unavailable");
+    expect(body?.textContent).toContain("requested historical view");
+    expect(renderChart).toHaveBeenCalledOnce();
   });
 
   it("opens the drawer from the figure's handle affordance", async () => {
