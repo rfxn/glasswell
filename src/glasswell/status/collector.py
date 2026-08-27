@@ -269,10 +269,10 @@ def _inventory(
     )
     wells = _one(
         connection,
-        "select count(*) filter (where state_code = '38') as nd_rows,"
-        " min(effective_from) filter (where state_code = '38') as nd_valid_from,"
-        " max(effective_from) filter (where state_code = '38') as nd_valid_to,"
-        " max(created_at) filter (where state_code = '38') as nd_latest_knowledge,"
+        "select count(*) filter (where state_code = '33') as nd_rows,"
+        " min(effective_from) filter (where state_code = '33') as nd_valid_from,"
+        " max(effective_from) filter (where state_code = '33') as nd_valid_to,"
+        " max(created_at) filter (where state_code = '33') as nd_latest_knowledge,"
         " count(*) filter (where state_code = '42') as tx_rows,"
         " min(effective_from) filter (where state_code = '42') as tx_valid_from,"
         " max(effective_from) filter (where state_code = '42') as tx_valid_to,"
