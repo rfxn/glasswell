@@ -222,7 +222,7 @@ def _restore_drill_job(
         target, expected_uid=expected_uid, expected_gid=expected_gid
     )
     if proof is None:
-        if "No durable" in error and scheduled.last_run_at is None:
+        if invalid_state == "unavailable" and scheduled.last_run_at is None:
             state = "pending" if scheduled.state == "pending" else scheduled.state
         else:
             state = invalid_state or "unavailable"
