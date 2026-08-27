@@ -258,8 +258,16 @@ def _one(connection: psycopg.Connection, statement: str) -> dict[str, Any]:
     return dict(row or {})
 
 
-def _well_inventory(connection: psycopg.Connection) -> dict[str, Any]:
-    return _one(
+def _inventory(
+    connection: psycopg.Connection, observed_at: datetime
+) -> tuple[list[DatasetInventory], PlatformStatus]:
+    platform = _one(
+        connection,
+        "select coalesce(max(version), 0) as schema_version,"
+        " pg_database_size(current_database()) as database_bytes"
+        " from public.schema_migrations",
+    )
+    wells = _one(
         connection,
         "select count(*) filter (where state_code = '33') as nd_rows,"
         " min(effective_from) filter (where state_code = '33') as nd_valid_from,"
@@ -271,18 +279,6 @@ def _well_inventory(connection: psycopg.Connection) -> dict[str, Any]:
         " max(created_at) filter (where state_code = '42') as tx_latest_knowledge"
         " from canonical.wells_latest",
     )
-
-
-def _inventory(
-    connection: psycopg.Connection, observed_at: datetime
-) -> tuple[list[DatasetInventory], PlatformStatus]:
-    platform = _one(
-        connection,
-        "select coalesce(max(version), 0) as schema_version,"
-        " pg_database_size(current_database()) as database_bytes"
-        " from public.schema_migrations",
-    )
-    wells = _well_inventory(connection)
     production = _one(
         connection,
         "select count(*) as rows, count(distinct api10) as wells,"

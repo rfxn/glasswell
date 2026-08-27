@@ -152,6 +152,17 @@ def test_inventory_queries_the_declared_grains_not_promotion_bookkeeping(
     datasets, platform = _inventory(seeded, observed)
     inventory = {dataset.dataset_id: dataset for dataset in datasets}
 
+    nd_wells = inventory["canonical.wells_latest/nd"].metrics[0].value
+    tx_wells = inventory["canonical.wells_latest/tx"].metrics[0].value
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select state_code, count(*) from canonical.wells_latest"
+            " where state_code in ('33', '42') group by state_code"
+        )
+        direct_well_counts = dict(cursor.fetchall())
+    assert (nd_wells, tx_wells) == (7, 1)
+    assert {"33": nd_wells, "42": tx_wells} == direct_well_counts
+
     production = inventory["canonical.production_monthly"]
     metrics = {metric.metric_id: metric.value for metric in production.metrics}
     assert metrics["rows"] > metrics["wells"]

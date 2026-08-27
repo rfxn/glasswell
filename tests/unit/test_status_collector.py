@@ -16,7 +16,6 @@ from glasswell.status.collector import (
     _job,
     _system_service,
     _systemd_properties,
-    _well_inventory,
 )
 
 
@@ -161,28 +160,3 @@ def test_inventory_collection_refuses_an_existing_incoherent_transaction() -> No
 
     with pytest.raises(RuntimeError, match="idle database connection"):
         _configure_inventory_connection(connection)  # type: ignore[arg-type]
-
-
-def test_well_inventory_uses_api_state_codes_for_nd_and_tx() -> None:
-    statements: list[str] = []
-
-    class Cursor:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args: object) -> None:
-            return None
-
-        def execute(self, statement: str) -> None:
-            statements.append(statement)
-
-        def fetchone(self) -> dict[str, int]:
-            return {"nd_rows": 1, "tx_rows": 1}
-
-    connection = SimpleNamespace(cursor=lambda **_kwargs: Cursor())
-
-    assert _well_inventory(connection)["nd_rows"] == 1  # type: ignore[arg-type]
-    assert len(statements) == 1
-    assert "state_code = '33'" in statements[0]
-    assert "state_code = '42'" in statements[0]
-    assert "state_code = '38'" not in statements[0]
