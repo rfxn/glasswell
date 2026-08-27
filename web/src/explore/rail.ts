@@ -22,7 +22,6 @@ export interface GapEntry {
  * resolving, `rail.test.ts` reddens and it moves into the generated rail where it belongs.
  */
 export const CLASS_B_DATASETS: readonly GapEntry[] = [
-  { title: "Completions", path: "/v1/wells/{api10}/completions", section: "SB-04 §4.2", phase: null },
   { title: "Forecasts", path: "/v1/wells/{api10}/forecast", section: "SB-04 §4.2", phase: "P3" },
   { title: "Models", path: "/v1/models", section: "SB-04 §4.3", phase: "P3" },
   { title: "Benchmarks", path: "/v1/benchmarks", section: "SB-04 §4.3", phase: null },
@@ -35,7 +34,6 @@ export const CLASS_B_DATASETS: readonly GapEntry[] = [
   // this entry name one operation between them (10.2).
   { title: "Well sets", path: "/v1/wellsets", section: "SB-04 §4.8", phase: null },
   { title: "Land units", path: "/v1/landunits", section: "SB-04 §4.7", phase: null },
-  { title: "Formations", path: "/v1/formations", section: "SB-04 §4.7", phase: null },
   { title: "Spacing units", path: "/v1/spacingunits", section: "SB-04 §4.7", phase: null },
   { title: "CRS", path: "/v1/crs", section: "SB-04 §4.7", phase: null },
   { title: "Scorecard", path: "/v1/scorecard", section: "SB-04 §4.10", phase: "P6" },

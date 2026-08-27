@@ -22,7 +22,9 @@ from glasswell.api.deps import BASEMAP_ROOT_ENV, WEB_ROOT_ENV, require_key
 from glasswell.api.errors import install_handlers, problem_response
 from glasswell.api.examples import KEY_HEADER
 from glasswell.api.routers import (
+    completions,
     conformance,
+    formations,
     glossary,
     health,
     index,
@@ -80,10 +82,11 @@ are cursor-paginated with no offset parameter; failures are RFC 9457 problem doc
 whose `type` resolves at `/v1/errors/{code}`; and `as_of` selects knowledge time, with
 the resolved vintage reported back in `meta.as_of`.
 
-This deployment serves North Dakota wells, geometry and monthly production, plus Texas
-wells and bore geometry with well-level production held pending allocation. The lineage
-spine, conformance registry, quarantine and glossary are live. Forecasts, economics,
-scenarios, agents and inventory are not served; New Mexico promotion is not claimed.
+This deployment serves North Dakota wells, geometry, monthly production, completion context
+and canonical formations with current alias counts, plus Texas wells and bore geometry with
+well-level production held pending allocation. The lineage spine, conformance registry,
+quarantine and glossary are live. Forecasts, economics, scenarios, agents and inventory are
+not served; New Mexico promotion is not claimed.
 """.strip()
 
 
@@ -169,7 +172,9 @@ def create_app() -> FastAPI:
         index.router,
         health.router,
         wells.router,
+        completions.router,
         production.router,
+        formations.router,
         tiles.router,
         lineage.router,
         conformance.router,

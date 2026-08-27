@@ -59,6 +59,29 @@ def test_a_cursor_presented_against_different_filters_is_refused(client: TestCli
     assert response.json()["type"] == f"{TYPE_BASE}/cursor_query_mismatch"
 
 
+def test_formation_pages_are_ordered_and_do_not_repeat(client: TestClient) -> None:
+    seen: list[str] = []
+    cursor = None
+    while True:
+        params = {"limit": 3} | ({"cursor": cursor} if cursor else {})
+        body = client.get("/v1/formations", params=params).json()
+        seen.extend(row["formation"] for row in body["data"])
+        cursor = body["meta"]["next_cursor"]
+        if cursor is None:
+            break
+
+    assert seen == sorted(seen)
+    assert len(seen) == len(set(seen))
+
+
+def test_formation_cursor_pins_both_bitemporal_clocks(client: TestClient) -> None:
+    cursor = client.get("/v1/formations", params={"limit": 1}).json()["meta"]["next_cursor"]
+
+    assert set(decode(cursor)) == {"k", "t", "v", "q", "e"}
+    assert decode(cursor)["v"] == "2026-08-26"
+    assert decode(cursor)["e"] >= decode(cursor)["v"]
+
+
 def test_the_well_type_filter_cannot_rescope_a_page_mid_traversal(client: TestClient) -> None:
     """F-3, replayed for R-1: a filter that escapes the cursor fingerprint lets a client open
     a page under one population and continue it under another. Both directions must refuse,

@@ -66,12 +66,12 @@ describe("class A — the rail is the document, grouped and ordered", () => {
 });
 
 describe("class B — the honest-gap register is navigable, and implies nothing (§2.4, §6.5)", () => {
-  it("holds twenty-two entries in one exported const", () => {
-    // m4's corrected count, plus C10's /v1/wellsets — the operation §2.6's deferred multi-select
-    // needs. The register is curated, not derived: a silent deletion is a gap the product stops
-    // admitting to, so the number is asserted rather than measured.
-    expect(CLASS_B_DATASETS).toHaveLength(22);
-    expect(new Set(CLASS_B_DATASETS.map((entry) => entry.title)).size).toBe(22);
+  it("holds twenty entries in one exported const", () => {
+    // Completions and formations moved into the generated catalogue. The register is curated,
+    // not derived: a silent deletion is a gap the product stops admitting to, so the number is
+    // asserted rather than measured.
+    expect(CLASS_B_DATASETS).toHaveLength(20);
+    expect(new Set(CLASS_B_DATASETS.map((entry) => entry.title)).size).toBe(20);
   });
 
   it("names an operation that genuinely does not exist — that is what makes it class B", () => {

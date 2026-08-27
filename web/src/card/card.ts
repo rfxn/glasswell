@@ -34,6 +34,38 @@ export interface WellDetail {
   surface_point: { lon: number; lat: number } | null;
 }
 
+export interface CompletionEvent {
+  event_id: string;
+  event_kind: string;
+  job_start_date: string | null;
+  completion_date: string;
+  source_id: string;
+  report_vintage: string;
+  _lineage: Record<string, string>;
+}
+
+export interface CompletionPool {
+  completion_key: string;
+  well_completion_pool: string;
+  pool_reported: string | null;
+  formation: string | null;
+  formation_group: string | null;
+  formation_null_semantics: "mapped" | "pool_not_reported" | "alias_unavailable";
+  source_id: string;
+  first_production_month: string | null;
+  last_production_month: string | null;
+  effective_from: string | null;
+  latest_report_vintage: string;
+  _lineage: Record<string, string>;
+}
+
+export interface CompletionContext {
+  api10: string;
+  design_availability: "not_promoted";
+  events: CompletionEvent[];
+  pools: CompletionPool[];
+}
+
 export interface CardCallbacks {
   onExplain(handle: string): void;
   onClose(): void;
@@ -58,10 +90,13 @@ export async function renderWellCard(
 ): Promise<void> {
   container.replaceChildren(placeholder(`Loading well ${api10}…`));
   container.hidden = false;
+  const state = readState();
+  const pinnedAsOf = state.extra["as_of"]?.[0];
+  const asOfQuery: Record<string, string> = pinnedAsOf ? { as_of: pinnedAsOf } : {};
 
   let well: Envelope<WellDetail>;
   try {
-    well = await getEnvelope<WellDetail>(`/v1/wells/${api10}`);
+    well = await getEnvelope<WellDetail>(`/v1/wells/${api10}`, asOfQuery);
   } catch (error) {
     container.replaceChildren(errorPanel(error, callbacks));
     return;
@@ -94,7 +129,7 @@ export async function renderWellCard(
   // SB-08 §2.6 row 1, after the api10 line and ahead of the close button: the crossing
   // reads as part of the identity block rather than as one more control in the corner.
   const rows = rowsForThisWell(detail.api10, {
-    state: readState(),
+    state,
     resolved: well.meta.as_of.resolved,
   });
   if (rows) header.appendChild(crossingLink(rows));
@@ -182,6 +217,27 @@ export async function renderWellCard(
   const generic = well.meta.warnings.filter((warning) => !panelled.has(warning.code));
   for (const panel of warningPanels(generic)) body.appendChild(panel);
 
+  const contextFrame = document.createElement("section");
+  contextFrame.className = "gw-card-chart gw-completion-context";
+  const contextTitle = document.createElement("h3");
+  contextTitle.className = "gw-frame-title";
+  contextTitle.textContent = "Completions & formations";
+  const contextHost = document.createElement("div");
+  contextHost.className = "gw-frame-body";
+  contextHost.dataset["state"] = "loading";
+  contextHost.setAttribute("aria-busy", "true");
+  contextHost.setAttribute("aria-live", "polite");
+  contextHost.appendChild(placeholder("Loading completion and formation context…"));
+  contextFrame.append(contextTitle, contextHost);
+  body.appendChild(contextFrame);
+
+  const contextRequest = loadCompletionContext(
+    contextHost,
+    well.links?.["completions"] ?? `/v1/wells/${api10}/completions`,
+    api10,
+    asOfQuery,
+  );
+
   // A lease-reporting jurisdiction has no observed well-level series, so the card says that
   // instead of drawing an empty chart: "no production has been reported" would be false about
   // a Texas well whose lease reports every month (DIR-3, cr_tx_allocation_scope_1).
@@ -191,13 +247,14 @@ export async function renderWellCard(
     card.appendChild(pendingProductionPanel(pending, well.links?.["reporting_rule"] ?? undefined));
     highlight(card, termIndex());
     focusPanel(container);
+    await contextRequest;
     return;
   }
 
   // Title outside the swappable body: the placeholder, the plot and an error all land in
   // .gw-frame-body, so none of them can take the frame's label down with them.
   const chartFrame = document.createElement("section");
-  chartFrame.className = "gw-card-chart";
+  chartFrame.className = "gw-card-chart gw-production-chart";
   const chartTitle = document.createElement("h3");
   chartTitle.className = "gw-frame-title";
   chartTitle.textContent = "Monthly production";
@@ -211,33 +268,275 @@ export async function renderWellCard(
   highlight(card, termIndex());
   focusPanel(container);
 
-  try {
-    const production = await getEnvelope<ProductionData>(`/v1/wells/${api10}/production`);
-    const data = unwrap(production);
-    if (data.streams.length === 0) {
-      chartHost.replaceChildren(placeholder("No production has been reported for this well."));
-      return;
+  const productionRequest = (async () => {
+    try {
+      const production = await getEnvelope<ProductionData>(
+        `/v1/wells/${api10}/production`,
+        asOfQuery,
+      );
+      const data = unwrap(production);
+      if (data.streams.length === 0) {
+        chartHost.replaceChildren(placeholder("No production has been reported for this well."));
+        return;
+      }
+      chartTitle.replaceChildren(
+        labelElement("Monthly production", labelFor(production, "/series")),
+      );
+      // SB-08 §2.6 row 2, in the chart's own header and after that replaceChildren rather
+      // than before it: the title is rebuilt when the series lands, so an earlier append
+      // goes with the placeholder. The vintage pinned is the series' own, not the card's.
+      const series = openThisSeries(detail.api10, {
+        state,
+        resolved: production.meta.as_of.resolved,
+      });
+      if (series) chartTitle.appendChild(crossingLink(series));
+      renderChart(chartHost, toChartSeries(data), {
+        onExplain: callbacks.onExplain,
+        labelTermFor: (pointer) => labelFor(production, pointer),
+      });
+      for (const panel of warningPanels(production.meta.warnings)) chartHost.appendChild(panel);
+      highlight(chartHost, termIndex());
+    } catch (error) {
+      chartHost.replaceChildren(errorPanel(error, callbacks));
     }
-    chartTitle.replaceChildren(
-      labelElement("Monthly production", labelFor(production, "/series")),
+  })();
+
+  await Promise.all([contextRequest, productionRequest]);
+}
+
+async function loadCompletionContext(
+  host: HTMLElement,
+  path: string,
+  expectedApi10: string,
+  query: Record<string, string>,
+): Promise<void> {
+  try {
+    const envelope = await getEnvelope<CompletionContext>(path, query);
+    const context = unwrap(envelope);
+    if (
+      context.api10 !== expectedApi10 ||
+      context.design_availability !== "not_promoted" ||
+      !Array.isArray(context.events) ||
+      !Array.isArray(context.pools)
+    ) {
+      throw new TypeError("Completion context did not match the required well and collections");
+    }
+    host.replaceChildren(completionContextBody(context, envelope));
+    for (const panel of warningPanels(envelope.meta.warnings)) host.appendChild(panel);
+    host.dataset["state"] =
+      context.events.length === 0 && context.pools.length === 0
+        ? "empty"
+        : "populated";
+    highlight(host, termIndex());
+  } catch {
+    host.replaceChildren(
+      placeholder(
+        "Completion and formation context is unavailable because its request could not be completed.",
+      ),
     );
-    // SB-08 §2.6 row 2, in the chart's own header and after that replaceChildren rather
-    // than before it: the title is rebuilt when the series lands, so an earlier append
-    // goes with the placeholder. The vintage pinned is the series' own, not the card's.
-    const series = openThisSeries(detail.api10, {
-      state: readState(),
-      resolved: production.meta.as_of.resolved,
-    });
-    if (series) chartTitle.appendChild(crossingLink(series));
-    renderChart(chartHost, toChartSeries(data), {
-      onExplain: callbacks.onExplain,
-      labelTermFor: (pointer) => labelFor(production, pointer),
-    });
-    for (const panel of warningPanels(production.meta.warnings)) chartHost.appendChild(panel);
-    highlight(chartHost, termIndex());
-  } catch (error) {
-    chartHost.replaceChildren(errorPanel(error, callbacks));
+    host.dataset["state"] = "unavailable";
+  } finally {
+    host.setAttribute("aria-busy", "false");
   }
+}
+
+function completionContextBody(
+  context: CompletionContext,
+  envelope: Envelope<CompletionContext>,
+): DocumentFragment {
+  const fragment = document.createDocumentFragment();
+  if (context.events.length === 0 && context.pools.length === 0) {
+    fragment.appendChild(
+      placeholder(
+        "No source-reported completion events or completion-pool mappings are available for this well.",
+      ),
+    );
+  } else {
+    fragment.append(
+      contextGroup(
+        "Completion events",
+        labelFor(envelope, "/events/0/event_kind"),
+        context.events.map(completionEventItem),
+        "No source-reported completion event is available for this well.",
+      ),
+      contextGroup(
+        "Reported pools",
+        labelFor(envelope, "/pools/0/pool_reported"),
+        context.pools.map(completionPoolItem),
+        "No source-reported completion-pool mapping is available for this well.",
+      ),
+    );
+  }
+
+  const scope = document.createElement("p");
+  scope.className = "gw-context-scope";
+  scope.textContent =
+    "Completion design is not promoted; no design measurements or formation tops are served here.";
+  fragment.appendChild(scope);
+  return fragment;
+}
+
+function contextGroup(
+  heading: string,
+  termId: string | null,
+  items: HTMLElement[],
+  emptyText: string,
+): HTMLElement {
+  const group = document.createElement("section");
+  group.className = "gw-context-group";
+  const title = document.createElement("h4");
+  title.appendChild(labelElement(heading, termId));
+  group.appendChild(title);
+  if (items.length === 0) {
+    group.appendChild(placeholder(emptyText));
+    return group;
+  }
+  const list = document.createElement("ul");
+  list.className = "gw-context-list";
+  list.append(...items);
+  group.appendChild(list);
+  return group;
+}
+
+function completionEventItem(event: CompletionEvent): HTMLElement {
+  const item = document.createElement("li");
+  const facts = document.createElement("dl");
+  facts.className = "gw-context-facts";
+  appendContextFact(facts, "Event", eventLabel(event.event_kind));
+  appendContextDate(facts, "Job start", event.job_start_date, event._lineage["job_start_date"]);
+  appendContextDate(
+    facts,
+    "Job end",
+    event.completion_date,
+    event._lineage["completion_date"],
+  );
+  appendContextFact(facts, "Source", sourceLabel(event.source_id, event.report_vintage), true);
+  item.appendChild(facts);
+  return item;
+}
+
+function completionPoolItem(pool: CompletionPool): HTMLElement {
+  const item = document.createElement("li");
+  const facts = document.createElement("dl");
+  facts.className = "gw-context-facts";
+  appendContextFact(facts, "Pool entity", pool.completion_key, true);
+  appendContextFact(
+    facts,
+    "Reported pool",
+    unavailableReason(pool.pool_reported, pool.formation_null_semantics),
+    false,
+    pool._lineage["pool_reported"],
+  );
+  appendContextFact(
+    facts,
+    "Canonical formation",
+    unavailableReason(pool.formation, pool.formation_null_semantics),
+  );
+  appendContextFact(
+    facts,
+    "Formation group",
+    unavailableReason(pool.formation_group, pool.formation_null_semantics),
+  );
+  appendContextDate(
+    facts,
+    "First observed month",
+    pool.first_production_month,
+    pool._lineage["first_production_month"],
+  );
+  appendContextDate(
+    facts,
+    "Last observed month",
+    pool.last_production_month,
+    pool._lineage["last_production_month"],
+  );
+  if (pool.effective_from !== null) {
+    appendContextDate(
+      facts,
+      "Effective from",
+      pool.effective_from,
+      pool._lineage["effective_from"],
+    );
+  }
+  appendContextFact(
+    facts,
+    "Source",
+    sourceLabel(pool.source_id, pool.latest_report_vintage),
+    true,
+  );
+  item.appendChild(facts);
+  return item;
+}
+
+function appendContextFact(
+  facts: HTMLDListElement,
+  label: string,
+  value: string,
+  literal = false,
+  handle?: string,
+): void {
+  const term = document.createElement("dt");
+  term.textContent = label;
+  const definition = document.createElement("dd");
+  if (literal) definition.setAttribute("data-no-glossary", "");
+  definition.append(value);
+  if (handle) definition.append(" ", lineageButton(handle, label));
+  facts.append(term, definition);
+}
+
+function appendContextDate(
+  facts: HTMLDListElement,
+  label: string,
+  value: string | null,
+  handle?: string,
+): void {
+  const term = document.createElement("dt");
+  term.textContent = label;
+  const definition = document.createElement("dd");
+  definition.setAttribute("data-no-glossary", "");
+  if (value === null) {
+    definition.textContent = "unavailable";
+  } else {
+    const time = document.createElement("time");
+    time.dateTime = value;
+    time.textContent = formatVintage(value);
+    definition.appendChild(time);
+    if (handle) definition.append(" ", lineageButton(handle, label));
+  }
+  facts.append(term, definition);
+}
+
+function eventLabel(kind: string): string {
+  return kind === "hydraulic_frac_job_end" ? "Hydraulic frac job end" : kind;
+}
+
+function sourceLabel(sourceId: string, reportVintage: string): string {
+  return `${sourceId} · report ${formatVintage(reportVintage)}`;
+}
+
+function unavailableReason(
+  value: string | null,
+  semantics: CompletionPool["formation_null_semantics"],
+): string {
+  if (value !== null && value !== "") return value;
+  if (semantics === "pool_not_reported") return "unavailable — pool not reported";
+  if (semantics === "alias_unavailable") return "unavailable — alias unavailable";
+  return "unavailable — no group assigned";
+}
+
+function lineageButton(handle: string, label: string): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "gw-handle";
+  button.dataset["handle"] = handle;
+  button.title = `Show where this value came from: ${handle}`;
+  button.setAttribute("aria-label", `Lineage for ${label.toLowerCase()}`);
+  button.textContent = "⌾";
+  button.addEventListener("click", () => {
+    button.dispatchEvent(
+      new CustomEvent(EXPLAIN_EVENT, { detail: { handle }, bubbles: true }),
+    );
+  });
+  return button;
 }
 
 /** The <dt> beside it is the label, so the chip carries it for assistive tech only. */

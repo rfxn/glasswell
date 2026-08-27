@@ -787,7 +787,7 @@ def test_the_authored_tranche_is_wholly_bound(
     could quietly give up a column and the phase gate would still pass. This is the other half:
     the datasets O-6's first tranche authored are bound end to end, and a column that stops
     being is named. P-B extends the tuple as it authors, rather than lowering anything."""
-    authored = ("production", "production_pools", "wells")
+    authored = ("completions", "formations", "production", "production_pools", "wells")
     table = _binding_table(document, _emitted_labels(client))
 
     assert {name: table[name][2] for name in authored if table[name][2]} == {}

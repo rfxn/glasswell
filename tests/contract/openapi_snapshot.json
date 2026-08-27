@@ -346,6 +346,215 @@
         "title": "Chains",
         "type": "object"
       },
+      "CompletionEvent": {
+        "properties": {
+          "_lineage": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Dotted event-field path to derivation handle.",
+            "title": "Lineage",
+            "type": "object"
+          },
+          "completion_date": {
+            "description": "Source-reported hydraulic-fracturing job end date.",
+            "format": "date",
+            "title": "Completion Date",
+            "type": "string",
+            "x-glasswell-glossary": "gt_completion_event"
+          },
+          "event_id": {
+            "description": "Source-issued disclosure id for this event.",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_kind": {
+            "description": "Source event kind; currently hydraulic_frac_job_end, never a spud-date proxy.",
+            "title": "Event Kind",
+            "type": "string",
+            "x-glasswell-glossary": "gt_completion_event"
+          },
+          "job_start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source-reported job start date, if present.",
+            "title": "Job Start Date"
+          },
+          "report_vintage": {
+            "description": "Knowledge vintage of this event observation.",
+            "format": "date",
+            "title": "Report Vintage",
+            "type": "string",
+            "x-glasswell-glossary": "gt_report_vintage"
+          },
+          "source_id": {
+            "description": "Source that reported the event.",
+            "title": "Source Id",
+            "type": "string",
+            "x-glasswell-glossary": "gt_source"
+          }
+        },
+        "required": [
+          "event_id",
+          "event_kind",
+          "job_start_date",
+          "completion_date",
+          "source_id",
+          "report_vintage",
+          "_lineage"
+        ],
+        "title": "CompletionEvent",
+        "type": "object"
+      },
+      "CompletionPool": {
+        "properties": {
+          "_lineage": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Dotted summary-field path to source derivation handle.",
+            "title": "Lineage",
+            "type": "object"
+          },
+          "completion_key": {
+            "description": "Source-conformed completion entity key.",
+            "title": "Completion Key",
+            "type": "string"
+          },
+          "effective_from": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latest effective date for a dimension-grain completion row.",
+            "title": "Effective From"
+          },
+          "first_production_month": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First source month carrying this pool entity; null on effective-dated rows.",
+            "title": "First Production Month",
+            "x-glasswell-glossary": "gt_production_month"
+          },
+          "formation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Canonical formation from the source-scoped alias registry.",
+            "title": "Formation",
+            "x-glasswell-glossary": "gt_formation"
+          },
+          "formation_group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Benchmark peer group from the same formation alias row.",
+            "title": "Formation Group",
+            "x-glasswell-glossary": "gt_formation"
+          },
+          "formation_null_semantics": {
+            "description": "Why formation fields are populated or null; absence is never inferred.",
+            "enum": [
+              "mapped",
+              "pool_not_reported",
+              "alias_unavailable"
+            ],
+            "title": "Formation Null Semantics",
+            "type": "string"
+          },
+          "last_production_month": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latest source month carrying this pool entity; null on effective-dated rows.",
+            "title": "Last Production Month",
+            "x-glasswell-glossary": "gt_production_month"
+          },
+          "latest_report_vintage": {
+            "description": "Latest knowledge vintage contributing to this summary.",
+            "format": "date",
+            "title": "Latest Report Vintage",
+            "type": "string",
+            "x-glasswell-glossary": "gt_report_vintage"
+          },
+          "pool_reported": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pool label exactly as the regulator reported it.",
+            "title": "Pool Reported",
+            "x-glasswell-glossary": "gt_pool"
+          },
+          "source_id": {
+            "description": "Source that reported the completion-pool entity.",
+            "title": "Source Id",
+            "type": "string",
+            "x-glasswell-glossary": "gt_source"
+          },
+          "well_completion_pool": {
+            "description": "Well-completion-pool identity carried by production.",
+            "title": "Well Completion Pool",
+            "type": "string",
+            "x-glasswell-glossary": "gt_pool"
+          }
+        },
+        "required": [
+          "completion_key",
+          "well_completion_pool",
+          "pool_reported",
+          "formation",
+          "formation_group",
+          "formation_null_semantics",
+          "source_id",
+          "first_production_month",
+          "last_production_month",
+          "effective_from",
+          "latest_report_vintage",
+          "_lineage"
+        ],
+        "title": "CompletionPool",
+        "type": "object"
+      },
       "ConformanceRule": {
         "properties": {
           "applies_to_fields": {
@@ -1624,6 +1833,39 @@
         "title": "EnvelopeModel[Vintage]",
         "type": "object"
       },
+      "EnvelopeModel_WellCompletions_": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "$ref": "#/components/schemas/WellCompletions"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[WellCompletions]",
+        "type": "object"
+      },
       "EnvelopeModel_WellDetail_": {
         "properties": {
           "_explain": {
@@ -1762,6 +2004,43 @@
           "links"
         ],
         "title": "EnvelopeModel[list[DerivationSummary]]",
+        "type": "object"
+      },
+      "EnvelopeModel_list_Formation__": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/Formation"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[list[Formation]]",
         "type": "object"
       },
       "EnvelopeModel_list_GlossaryTerm__": {
@@ -2133,6 +2412,69 @@
           "d"
         ],
         "title": "FigureModel",
+        "type": "object"
+      },
+      "Formation": {
+        "properties": {
+          "alias_count": {
+            "description": "Distinct current reported labels resolving to this formation.",
+            "title": "Alias Count",
+            "type": "integer",
+            "x-glasswell-glossary": "gt_formation_alias",
+            "x-glasswell-not-a-figure": "Reference-row cardinality, not a measured or modelled petroleum figure."
+          },
+          "aliases": {
+            "description": "Current source-reported labels resolving to this formation.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Aliases",
+            "type": "array",
+            "x-glasswell-glossary": "gt_formation_alias"
+          },
+          "basins": {
+            "description": "Basins explicitly registered for the contributing source namespaces.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Basins",
+            "type": "array",
+            "x-glasswell-glossary": "gt_basin"
+          },
+          "formation": {
+            "description": "Lossless canonical formation name and stable collection identity.",
+            "title": "Formation",
+            "type": "string",
+            "x-glasswell-glossary": "gt_formation"
+          },
+          "formation_groups": {
+            "description": "Reviewed benchmark peer groups carried by this formation's aliases.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Formation Groups",
+            "type": "array",
+            "x-glasswell-glossary": "gt_formation"
+          },
+          "source_ids": {
+            "description": "Source namespaces contributing the current aliases.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Ids",
+            "type": "array",
+            "x-glasswell-glossary": "gt_source"
+          }
+        },
+        "required": [
+          "formation",
+          "formation_groups",
+          "basins",
+          "alias_count",
+          "aliases",
+          "source_ids"
+        ],
+        "title": "Formation",
         "type": "object"
       },
       "Geometry": {
@@ -4251,6 +4593,45 @@
         "title": "Vintage",
         "type": "object"
       },
+      "WellCompletions": {
+        "properties": {
+          "api10": {
+            "description": "Ten-digit API well number.",
+            "title": "Api10",
+            "type": "string",
+            "x-glasswell-not-a-figure": "Identifier. A 10-digit API number is an identity string, not a measurement."
+          },
+          "design_availability": {
+            "description": "Completion-design measurements are not canonical in this release; no staging value is served and no missing value is inferred.",
+            "title": "Design Availability",
+            "type": "string"
+          },
+          "events": {
+            "description": "Source-observed completion events, independent of pool assignments.",
+            "items": {
+              "$ref": "#/components/schemas/CompletionEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "pools": {
+            "description": "Source-observed completion-pool entities, independent of events.",
+            "items": {
+              "$ref": "#/components/schemas/CompletionPool"
+            },
+            "title": "Pools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "api10",
+          "design_availability",
+          "events",
+          "pools"
+        ],
+        "title": "WellCompletions",
+        "type": "object"
+      },
       "WellDetail": {
         "properties": {
           "api10": {
@@ -4812,7 +5193,7 @@
     }
   },
   "info": {
-    "description": "Glass-box upstream analytics on public data. Every number this API serves carries a\nderivation handle in band, and `GET /v1/explain` walks that handle back to the\nchecksummed government file it came from.\n\nConventions that hold everywhere: responses are `data` / `meta` / `links`; collections\nare cursor-paginated with no offset parameter; failures are RFC 9457 problem documents\nwhose `type` resolves at `/v1/errors/{code}`; and `as_of` selects knowledge time, with\nthe resolved vintage reported back in `meta.as_of`.\n\nThis deployment serves North Dakota wells, geometry and monthly production, plus Texas\nwells and bore geometry with well-level production held pending allocation. The lineage\nspine, conformance registry, quarantine and glossary are live. Forecasts, economics,\nscenarios, agents and inventory are not served; New Mexico promotion is not claimed.",
+    "description": "Glass-box upstream analytics on public data. Every number this API serves carries a\nderivation handle in band, and `GET /v1/explain` walks that handle back to the\nchecksummed government file it came from.\n\nConventions that hold everywhere: responses are `data` / `meta` / `links`; collections\nare cursor-paginated with no offset parameter; failures are RFC 9457 problem documents\nwhose `type` resolves at `/v1/errors/{code}`; and `as_of` selects knowledge time, with\nthe resolved vintage reported back in `meta.as_of`.\n\nThis deployment serves North Dakota wells, geometry, monthly production, completion context\nand canonical formations with current alias counts, plus Texas wells and bore geometry with\nwell-level production held pending allocation. The lineage spine, conformance registry,\nquarantine and glossary are live. Forecasts, economics, scenarios, agents and inventory are\nnot served; New Mexico promotion is not claimed.",
     "title": "glasswell",
     "version": "0.1.0",
     "x-glasswell-freeze": {
@@ -6086,6 +6467,261 @@
           "h": {
             "so": "Repeat it to resolve up to twenty chains in one call, which is what keeps a whole response's provenance inside the S9 one-call budget. Over twenty is refused rather than trimmed, so a caller never gets a partial answer that looks complete.",
             "x-glasswell-glossary": "gt_derivation_handle"
+          }
+        }
+      }
+    },
+    "/v1/formations": {
+      "get": {
+        "description": "Canonical formations aggregated from the current row in each source-scoped alias history. Alias counts are distinct reported labels, not source-row counts. `q` matches either the canonical name or a current reported alias. Composite or sub-threshold labels remain in reviewed `__other__` peer groups; this route never invents a formation top or landing zone. Confidence is not served because the registry does not carry a derivation for that numeric score.",
+        "operationId": "list_formations",
+        "parameters": [
+          {
+            "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size, 100 by default, 500 at most.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Page size, 100 by default, 500 at most.",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+              "title": "As Of"
+            }
+          },
+          {
+            "description": "Filter to one registered basin.",
+            "in": "query",
+            "name": "basin",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one registered basin.",
+              "title": "Basin"
+            }
+          },
+          {
+            "description": "Match a canonical formation or reported alias.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Match a canonical formation or reported alias.",
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_list_Formation__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "as_of_out_of_range": {
+                    "summary": "as_of precedes the captured history",
+                    "value": {
+                      "detail": "`as_of` is earlier than the earliest captured vintage for every contributing source. An empty result would be indistinguishable from nothing happening.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "as_of precedes the captured history",
+                      "type": "/v1/errors/as_of_out_of_range"
+                    }
+                  },
+                  "cursor_malformed": {
+                    "summary": "Cursor malformed",
+                    "value": {
+                      "detail": "The cursor did not decode to the four declared fields.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor malformed",
+                      "type": "/v1/errors/cursor_malformed"
+                    }
+                  },
+                  "cursor_query_mismatch": {
+                    "summary": "Cursor does not match this query",
+                    "value": {
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor does not match this query",
+                      "type": "/v1/errors/cursor_query_mismatch"
+                    }
+                  },
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "List canonical formations",
+        "tags": [
+          "vocabulary"
+        ],
+        "x-glasswell-dataset": {
+          "anchors": [],
+          "collection_pointer": "",
+          "columns": {
+            "default": [
+              "/formation",
+              "/formation_groups",
+              "/basins",
+              "/alias_count",
+              "/aliases",
+              "/source_ids"
+            ],
+            "hidden": [],
+            "hidden_reason": {},
+            "sort": "/formation"
+          },
+          "facets": [
+            "basin",
+            "q"
+          ],
+          "group": "vocabulary",
+          "id": "formations",
+          "intro": "nb_dataset_formations",
+          "order": 41,
+          "row_id": [
+            "/formation"
+          ],
+          "title": "Formations"
+        },
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {
+            "basin": "williston",
+            "limit": 5,
+            "q": "bakken"
+          }
+        },
+        "x-glasswell-semantics": {
+          "as_of": {
+            "so": "Selects only alias decisions whose effective and knowledge dates are at or before the cut. Legacy unvintaged aliases are excluded rather than leaked backward.",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "basin": {
+            "so": "Counts only aliases whose source namespace has an explicit basin registration. Legacy unscoped aliases never pass a basin filter."
+          },
+          "cursor": {
+            "so": "Pins the page to byte-ordered canonical formation names, the filters that opened it, a concrete alias knowledge date, and the valid-time cut. Later-vintage ingestion and a date rollover cannot shift a traversal."
+          },
+          "limit": {
+            "so": "Capped at 500 as specified for this reference collection; the default remains 100."
+          },
+          "q": {
+            "so": "Case-insensitive substring match across the canonical formation and its current reported aliases; definitions and peer groups are not searched.",
+            "x-glasswell-glossary": "gt_formation"
           }
         }
       }
@@ -9411,6 +10047,231 @@
           },
           "explain_depth": {
             "so": "A header figure is one promotion away from its manifest, so the default three already terminates here. Depth matters on figures whose chain runs through a mart, and an inlined chain that stopped short says so itself.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          }
+        }
+      }
+    },
+    "/v1/wells/{api10}/completions": {
+      "get": {
+        "description": "Two independent source collections for one well: completion events from canonical FracFocus anchors, and regulator completion-pool entities with source-scoped formation aliases. The API does not join an event to a pool because no canonical key proves that relationship. FracFocus design quantities remain staging-only, so this release reports `design_availability=not_promoted` and serves no invented measurements. A missing formation says whether the pool was absent or the alias was unavailable. `as_of` constrains wells, events, completion rows, manifests, derivations, and knowledge-vintaged aliases together.",
+        "operationId": "get_well_completions",
+        "parameters": [
+          {
+            "description": "Ten-digit API well number.",
+            "in": "path",
+            "name": "api10",
+            "required": true,
+            "schema": {
+              "description": "Ten-digit API well number.",
+              "pattern": "^\\d{10}$",
+              "title": "Api10",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+              "title": "As Of"
+            }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_WellCompletions_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "as_of_out_of_range": {
+                    "summary": "as_of precedes the captured history",
+                    "value": {
+                      "detail": "`as_of` is earlier than the earliest captured vintage for every contributing source. An empty result would be indistinguishable from nothing happening.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "as_of precedes the captured history",
+                      "type": "/v1/errors/as_of_out_of_range"
+                    }
+                  },
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Completion context for one well",
+        "tags": [
+          "wells"
+        ],
+        "x-glasswell-dataset": {
+          "anchors": [
+            "/api10",
+            "/design_availability"
+          ],
+          "collection_pointer": "/pools",
+          "columns": {
+            "default": [
+              "/well_completion_pool",
+              "/pool_reported",
+              "/formation",
+              "/formation_group",
+              "/first_production_month",
+              "/last_production_month"
+            ],
+            "hidden": [],
+            "hidden_reason": {},
+            "sort": "/first_production_month"
+          },
+          "facets": [
+            "as_of"
+          ],
+          "group": "wells",
+          "id": "completions",
+          "intro": "nb_dataset_completions",
+          "order": 13,
+          "row_id": [
+            "/completion_key",
+            "/source_id",
+            "/well_completion_pool"
+          ],
+          "title": "Completion pools (per well)"
+        },
+        "x-glasswell-request-example": {
+          "path": {
+            "api10": "3305310451"
+          },
+          "query": {}
+        },
+        "x-glasswell-semantics": {
+          "as_of": {
+            "so": "Holds both event observations and pool-to-formation mappings to what was knowable on the requested date. An unvintaged alias is excluded from an historical read rather than leaked backward. A source whose first captured context is later remains visible in freshness and an explicit coverage warning.",
+            "x-glasswell-glossary": "gt_report_vintage"
+          },
+          "explain": {
+            "so": "Inlines the source chain for each event and the first, latest, and effective observations behind each completion-pool summary.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "explain_depth": {
+            "so": "Three levels reaches the promotion and its source manifest.",
             "x-glasswell-glossary": "gt_derivation_handle"
           }
         }

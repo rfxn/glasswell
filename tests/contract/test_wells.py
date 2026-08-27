@@ -154,7 +154,7 @@ def test_the_resolved_as_of_is_reported(client: TestClient) -> None:
     meta = client.get(f"/v1/wells/{EXAMPLE_API10}").json()["meta"]
 
     assert meta["as_of"]["requested"] == "latest"
-    assert meta["as_of"]["resolved"] == "2026-08-01"
+    assert meta["as_of"]["resolved"] == "2026-08-20"
 
 
 def test_labels_bind_fields_to_glossary_terms(client: TestClient) -> None:

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date
 
 import psycopg
 
@@ -31,6 +32,7 @@ class LengthMethod:
     rule_id: str
     method: str
     compute_epsg: int | None
+    effective_from: date
 
     def metres_sql(self, geom: str = "geom") -> str:
         """`geom` is a code-supplied column reference; nothing here comes from the spec."""
@@ -55,6 +57,7 @@ def length_method(rule: ConformanceRule) -> LengthMethod:
         rule_id=rule.rule_id,
         method=method,
         compute_epsg=int(epsg) if isinstance(epsg, int) else None,
+        effective_from=rule.effective_from,
     )
 
 
@@ -77,18 +80,20 @@ def compute_crs_rule(rules: Sequence[ConformanceRule]) -> ConformanceRule:
 _LENGTH_RULE_SOURCE = """
 select length_rule_source
   from lineage.crs_registry
- where basin = %s and length_rule_source is not null
+ where basin = %s and length_rule_source is not null and effective_from <= %s
  order by effective_from desc
  limit 1
 """
 
 
-def length_rule_source(connection: psycopg.Connection, basin: str | None) -> str:
+def length_rule_source(
+    connection: psycopg.Connection, basin: str | None, *, as_of: date | None = None
+) -> str:
     """Which source's compute-CRS rule governs a basin. The registry answers, not a constant."""
     if not basin:
         return LATERALS_SOURCE_ID
     with connection.cursor() as cursor:
-        cursor.execute(_LENGTH_RULE_SOURCE, (basin,))
+        cursor.execute(_LENGTH_RULE_SOURCE, (basin, as_of or date.today()))
         row = cursor.fetchone()
     if row is None:
         raise LookupError(f"lineage.crs_registry names no length rule source for basin {basin!r}")
@@ -100,7 +105,10 @@ def resolve_length_method(
     *,
     source_id: str | None = None,
     basin: str | None = None,
+    as_of: date | None = None,
 ) -> LengthMethod:
     """The one lookup every length path makes, so no two paths can measure differently."""
-    resolved = source_id or length_rule_source(connection, basin)
-    return length_method(compute_crs_rule(load_rules(connection, source_id=resolved)))
+    resolved = source_id or length_rule_source(connection, basin, as_of=as_of)
+    return length_method(
+        compute_crs_rule(load_rules(connection, source_id=resolved, as_of=as_of))
+    )

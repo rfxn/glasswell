@@ -41,9 +41,11 @@ from tests.support.seed import FIXTURE_ENV, seed_manifest, seed_well, seed_well_
 
 MPR_SHA256 = "e" * 64
 GIS_SHA256 = "d" * 64
+FRACFOCUS_SHA256 = "c" * 64
 # The GIS promote records its compute CRS as a param, so the walker meets a numeric param.
 COMPUTE_EPSG = 32614
 REPORT_VINTAGE = date(2026, 8, 1)
+COMPLETION_REPORT_VINTAGE = date(2026, 8, 26)
 EARLIER_VINTAGE = date(2026, 7, 1)
 RESTATED_MONTH = date(2026, 3, 1)
 PRODUCTION_MONTHS = tuple(date(2026, month, 1) for month in range(1, 7))
@@ -139,6 +141,36 @@ def _spatial_derivation(connection: psycopg.Connection, manifest_id: str) -> str
     return context.derivation_id
 
 
+def _completion_derivation(connection: psycopg.Connection, manifest_id: str) -> str:
+    recorder = PostgresRecorder(connection)
+    with lineage_session(
+        recorder=recorder,
+        environment=FIXTURE_ENV,
+        clock=FixedClock(datetime(2026, 8, 26, 5, 0, 0, tzinfo=UTC)),
+        correlation_id="run_contract",
+    ), derive(
+        "canonical.promote",
+        output=OutputSpec(
+            store="postgres",
+            dataset="canonical.well_completion_anchors",
+            partition={"source_id": "fracfocus_csv"},
+        ),
+        params={"source_id": "fracfocus_csv", "event": "hydraulic_frac_job_end"},
+        inputs=[
+            InputRef(
+                kind="manifest",
+                ref_id=manifest_id,
+                role="primary",
+                as_of_vintage=COMPLETION_REPORT_VINTAGE,
+            )
+        ],
+        rules=["cr_ff_completion_anchor_1"],
+    ) as context:
+        context.set_output_hash("c3" * 32)
+        context.set_rows(1)
+    return context.derivation_id
+
+
 def _insert_production(
     connection: psycopg.Connection,
     *,
@@ -205,6 +237,44 @@ def _seed_production(connection: psycopg.Connection, manifest_id: str, derivatio
             volume=Decimal("500"),
             manifest_id=manifest_id,
             derivation_id=derivation_id,
+        )
+
+
+def _seed_completion_context(
+    connection: psycopg.Connection,
+    *,
+    mpr_manifest_id: str,
+    production_derivation_id: str,
+    fracfocus_manifest_id: str,
+    completion_derivation_id: str,
+) -> None:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "insert into canonical.well_completions"
+            " (completion_key, api10, well_completion_pool, pool_reported, source_id,"
+            " production_month, report_vintage, source_manifest_id, derivation_id)"
+            " values (%s, %s, 'single', 'BAKKEN', 'nd_mpr_xlsx', %s, %s, %s, %s)",
+            (
+                f"{EXAMPLE_API10}:single",
+                EXAMPLE_API10,
+                PRODUCTION_MONTHS[0],
+                REPORT_VINTAGE,
+                mpr_manifest_id,
+                production_derivation_id,
+            ),
+        )
+        cursor.execute(
+            "insert into canonical.well_completion_anchors"
+            " (disclosure_id, api10, job_start_date, completion_date, anchor_kind, source_id,"
+            " report_vintage, source_manifest_id, derivation_id)"
+            " values ('ff-contract-0001', %s, '2025-12-10', '2025-12-20',"
+            " 'hydraulic_frac_job_end', 'fracfocus_csv', %s, %s, %s)",
+            (
+                EXAMPLE_API10,
+                COMPLETION_REPORT_VINTAGE,
+                fracfocus_manifest_id,
+                completion_derivation_id,
+            ),
         )
 
 
@@ -285,6 +355,12 @@ def seeded(db: psycopg.Connection, raw_zone: Path) -> psycopg.Connection:
     gis_manifest = seed_manifest(
         db, sha256=GIS_SHA256, source_id="nd_gis_wells", source_key="OGD_Wells.zip"
     )
+    fracfocus_manifest = seed_manifest(
+        db,
+        sha256=FRACFOCUS_SHA256,
+        source_id="fracfocus_csv",
+        source_key="registryupload.zip",
+    )
     assert mpr_manifest == EXAMPLE_MANIFEST_ID, "the documented manifest example must be seeded"
     with db.cursor() as cursor:
         cursor.execute(
@@ -297,6 +373,7 @@ def seeded(db: psycopg.Connection, raw_zone: Path) -> psycopg.Connection:
         f"the documented derivation example is stale: seeded {promotion}"
     )
     spatial = _spatial_derivation(db, gis_manifest)
+    completion = _completion_derivation(db, fracfocus_manifest)
 
     seed_well(db, api10=EXAMPLE_API10, manifest_id=mpr_manifest, derivation_id=promotion)
     for index, api10 in enumerate(OTHER_API10S):
@@ -350,6 +427,13 @@ def seeded(db: psycopg.Connection, raw_zone: Path) -> psycopg.Connection:
         derivation_id=spatial,
     )
     _seed_production(db, mpr_manifest, promotion)
+    _seed_completion_context(
+        db,
+        mpr_manifest_id=mpr_manifest,
+        production_derivation_id=promotion,
+        fracfocus_manifest_id=fracfocus_manifest,
+        completion_derivation_id=completion,
+    )
     _seed_quarantine(db, mpr_manifest)
     _seed_example_key(db)
     open_vintage(

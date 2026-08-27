@@ -65,6 +65,18 @@
   related_terms: ["Type curve"]
   source_refs: ["blueprint-v0.6 §9"]
 
+- term: Basin
+  aliases: ["Petroleum basin"]
+  short_definition: >-
+    A named geologic region registered for a source namespace.
+  expanded_definition: >-
+    A basin is served only where glasswell has explicitly associated the contributing source
+    namespace with that region. An unscoped legacy alias does not silently inherit a basin,
+    and a formation name alone is not enough to infer one.
+  domain_tags: [geology, data-model]
+  related_terms: ["Formation", "Source"]
+  source_refs: ["SB-04 §4.7", "lineage.sources"]
+
 - term: Bitemporal
   aliases: ["Bitemporality"]
   short_definition: >-
@@ -88,6 +100,20 @@
   domain_tags: [data-model, lineage]
   related_terms: ["Staging", "Marts", "Conformance rule"]
   source_refs: ["blueprint-v0.6 §9", "blueprint-v0.6 §3.4"]
+
+- term: Completion event
+  aliases: ["Completion date", "Frac job end"]
+  short_definition: >-
+    A source-observed operation completed on a well, identified by the kind of event the
+    source actually reports.
+  expanded_definition: >-
+    The current North Dakota anchor is FracFocus JobEndDate: the end of a hydraulic-fracturing
+    job. It is not a spud date, first-production date, or inferred completion date. A pool
+    assignment is a separate source entity and is not joined to an event unless a canonical
+    source key proves the relationship.
+  domain_tags: [completion, time, lineage]
+  related_terms: ["Pool", "Spud date", "First production"]
+  source_refs: ["canonical.well_completion_anchors", "blueprint-v0.6 §3.6 endpoint 7"]
 
 - term: Condensate
   short_definition: >-
@@ -218,6 +244,31 @@
   domain_tags: [production, time]
   related_terms: ["Vintage (well vintage)", "Withheld", "Cum12 / cum24"]
   source_refs: ["blueprint-v0.6 §9"]
+
+- term: Formation
+  aliases: ["Formation group", "Landing formation"]
+  short_definition: >-
+    A conformed rock-unit name resolved from a source-reported pool or formation label.
+  expanded_definition: >-
+    glasswell preserves the reported label, maps it to a lossless canonical formation, and
+    separately records the reviewed peer group used by modeling. Composite or sub-threshold
+    labels remain explicit rather than being forced into Bakken or Three Forks. An alias is
+    not a formation top, measured depth, or inferred landing zone.
+  domain_tags: [geology, conformance, modeling]
+  related_terms: ["Pool", "Conformance rule"]
+  source_refs: ["lineage.formation_aliases", "blueprint-v0.6 §3.0.3"]
+
+- term: Formation alias
+  aliases: ["Alias count", "Reported formation alias"]
+  short_definition: >-
+    A current source-reported label that resolves to one canonical formation.
+  expanded_definition: >-
+    Alias counts are counts of distinct current reported labels, not source rows and not a
+    confidence score. Alias history is append-only and source-scoped; a correction creates a
+    new effective row rather than changing an old decision.
+  domain_tags: [geology, conformance, data-model]
+  related_terms: ["Formation", "Conformance rule", "Source"]
+  source_refs: ["lineage.formation_aliases", "SB-04 §4.7"]
 
 - term: GOR
   aliases: ["Gas-oil ratio"]

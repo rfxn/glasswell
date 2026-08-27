@@ -57,7 +57,11 @@ describe("the wells dataset's row identity is the api10, and that is load-bearin
 
     // A document where nothing else carried an api10 would make the counterfactual below
     // vacuous: no hop would die because none existed.
-    expect(borrowers.map((dataset) => dataset.id)).toEqual(["production", "production_pools"]);
+    expect(borrowers.map((dataset) => dataset.id)).toEqual([
+      "production",
+      "production_pools",
+      "completions",
+    ]);
   });
 
   it("kills every one of those hops the moment the identity becomes `/well_id`", () => {

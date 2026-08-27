@@ -67,10 +67,12 @@ describe("the header is a control surface, not a paragraph", () => {
   });
 
   it("states the two-basin boundary without claiming Texas production", () => {
-    const help = element("gw-help-panel").textContent ?? "";
+    const help = (element("gw-help-panel").textContent ?? "").replace(/\s+/g, " ");
 
     expect(help).toContain("North Dakota wells and production");
     expect(help).toContain("Texas wells and bore geometry");
+    expect(help).toContain("completion events separate from regulator pool-to-formation mappings");
+    expect(help).toContain("design measurements and formation tops remain explicitly unserved");
     expect(help).toContain("pending allocation");
     expect(help).toContain("Forecasts are not live");
     expect(help).toContain("completion anchors");
@@ -82,10 +84,14 @@ describe("the header is a control surface, not a paragraph", () => {
     expect(help).toContain("105,378 three-stream");
     expect(help).toContain("eight shared rolling splits");
     expect(help).toContain("tcv1.0");
-    expect(help).toContain("2,300,400");
-    expect(help).toContain("12.9484%");
+    expect(help).toContain("Source-matched historical formation context is repaired");
+    expect(help).toContain("without cross-manifest inference");
+    expect(help).toContain("Missing lateral context remains explicitly unavailable");
+    expect(help).toContain("rollback rehearsal");
+    expect(help).toContain("no post-deployment live replay is published yet");
     expect(help).toContain("5% ceiling");
     expect(help).toContain("not widened");
+    expect(help).not.toContain("12.9484%");
   });
 
   it("mounts the search box into the header's control cluster", () => {
