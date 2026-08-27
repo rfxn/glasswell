@@ -394,3 +394,33 @@ def test_symlink_or_forged_incomplete_success_result_is_degraded(tmp_path: Path)
     assert "unsafe" in symlink_status.detail
     assert forged_status.state == "degraded"
     assert "validated" in forged_status.detail
+
+
+def test_restore_result_replaced_between_metadata_and_open_is_degraded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    completed_at = datetime(2026, 8, 27, 2, 9, 24, tzinfo=UTC)
+    path = tmp_path / "restore.json"
+    _write_restore_result(path, _restore_payload(completed_at))
+    metadata = path.lstat()
+    changed_metadata = SimpleNamespace(
+        st_mode=metadata.st_mode,
+        st_nlink=metadata.st_nlink,
+        st_uid=metadata.st_uid,
+        st_gid=metadata.st_gid,
+        st_size=metadata.st_size,
+        st_dev=metadata.st_dev,
+        st_ino=metadata.st_ino + 1,
+    )
+    monkeypatch.setattr(Path, "lstat", lambda _path: changed_metadata)
+
+    status = _restore_drill_job(
+        completed_at,
+        path=path,
+        runner=_runner({}),
+        expected_uid=os.getuid(),
+        expected_gid=os.getgid(),
+    )
+
+    assert status.state == "degraded"
+    assert "changed while it was opened" in status.detail

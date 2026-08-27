@@ -615,16 +615,26 @@ def _warnings(coverage: dict[str, int]) -> list[dict[str, str]]:
                 "pointer": "/coverage/missing_completion_anchor",
             }
         )
-    missing_formation = coverage["formation_conflicts"] + coverage["formation_unavailable"]
-    if missing_formation:
+    if coverage["formation_unavailable"]:
         warnings.append(
             {
-                "code": "neighbor_formation_incomplete",
+                "code": "neighbor_formation_unavailable",
                 "detail": (
-                    f"{missing_formation} spatial candidates have unavailable or conflicting"
+                    f"{coverage['formation_unavailable']} spatial candidates have unavailable"
                     " earliest-pool formation context; no formation was inferred."
                 ),
                 "pointer": "/coverage/formation_unavailable",
+            }
+        )
+    if coverage["formation_conflicts"]:
+        warnings.append(
+            {
+                "code": "neighbor_formation_conflict",
+                "detail": (
+                    f"{coverage['formation_conflicts']} spatial candidates have conflicting"
+                    " earliest-pool formation context; no formation was selected."
+                ),
+                "pointer": "/coverage/formation_conflicts",
             }
         )
     return warnings

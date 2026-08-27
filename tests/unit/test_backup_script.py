@@ -42,7 +42,8 @@ grep -q archive "$2"
 while IFS= read -r line; do
   printf 'psql %s\n' "$line" >> "$STUB_LOG"
   case "$line" in
-    *pg_export_snapshot*) printf '00000003-0000001B-1\n' ;;
+    *BEGIN*) printf 'BEGIN\n' ;;
+    *pg_export_snapshot*) printf '00000003-0000001B-1\nSELECT 1\n' ;;
     *json_build_object*)
       printf '%s\n' \
         '{"source_schema_version":44,"critical_row_counts":{'\
@@ -173,7 +174,8 @@ def test_dump_is_not_promoted_when_private_metadata_step_fails(
         "psql": r'''#!/bin/bash
 while IFS= read -r line; do
   case "$line" in
-    *pg_export_snapshot*) printf '00000003-0000001B-1\n' ;;
+    *BEGIN*) printf 'BEGIN\n' ;;
+    *pg_export_snapshot*) printf '00000003-0000001B-1\nSELECT 1\n' ;;
     *json_build_object*)
       printf '%s\n' \
         '{"source_schema_version":44,"critical_row_counts":{'\

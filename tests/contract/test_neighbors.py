@@ -5,10 +5,40 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_API10
+from glasswell.api.routers.neighbors import _warnings
 from glasswell.lineage.serialization import hash_payload
 from glasswell.marts.neighbors import resident_content_identity
 
 PATH = f"/v1/wells/{EXAMPLE_API10}/neighbors"
+
+
+def test_neighbor_formation_warnings_point_to_the_exact_counted_bucket() -> None:
+    warnings = _warnings(
+        {
+            "missing_completion_anchor": 0,
+            "formation_unavailable": 2,
+            "formation_conflicts": 3,
+        }
+    )
+
+    assert warnings == [
+        {
+            "code": "neighbor_formation_unavailable",
+            "detail": (
+                "2 spatial candidates have unavailable earliest-pool formation context;"
+                " no formation was inferred."
+            ),
+            "pointer": "/coverage/formation_unavailable",
+        },
+        {
+            "code": "neighbor_formation_conflict",
+            "detail": (
+                "3 spatial candidates have conflicting earliest-pool formation context;"
+                " no formation was selected."
+            ),
+            "pointer": "/coverage/formation_conflicts",
+        },
+    ]
 
 
 def test_neighbor_fixture_derivation_matches_its_exact_persisted_content(seeded) -> None:

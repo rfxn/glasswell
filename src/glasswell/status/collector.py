@@ -27,6 +27,7 @@ from glasswell.status.models import (
     DATABASE_BYTES_REASON,
     INVENTORY_REASON,
     SCHEMA_VERSION_REASON,
+    CheckState,
     DatasetInventory,
     InventoryMetric,
     JobStatus,
@@ -171,7 +172,7 @@ def _job(
 
 def _load_restore_result(
     path: Path, *, expected_uid: int = 0, expected_gid: int | None = None
-) -> tuple[RestoreDrillResult | None, str]:
+) -> tuple[RestoreDrillResult | None, str, CheckState | None]:
     group = os.getgid() if expected_gid is None else expected_gid
     try:
         metadata = path.lstat()
@@ -183,22 +184,22 @@ def _load_restore_result(
             or metadata.st_gid != group
             or stat.S_IMODE(metadata.st_mode) != 0o640
         ):
-            return None, "Durable restore result path, ownership or mode is unsafe."
+            return None, "Durable restore result path, ownership or mode is unsafe.", "degraded"
         if metadata.st_size > MAX_RESTORE_RESULT_BYTES:
-            return None, "Durable restore result exceeds the accepted size."
+            return None, "Durable restore result exceeds the accepted size.", "degraded"
         descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
             opened = os.fstat(handle.fileno())
             if (opened.st_dev, opened.st_ino) != (metadata.st_dev, metadata.st_ino):
-                return None, "Durable restore result changed while it was opened."
+                return None, "Durable restore result changed while it was opened.", "degraded"
             payload = handle.read(MAX_RESTORE_RESULT_BYTES + 1)
         if len(payload.encode("utf-8")) > MAX_RESTORE_RESULT_BYTES:
-            return None, "Durable restore result exceeds the accepted size."
-        return RestoreDrillResult.model_validate_json(payload), ""
+            return None, "Durable restore result exceeds the accepted size.", "degraded"
+        return RestoreDrillResult.model_validate_json(payload), "", None
     except FileNotFoundError:
-        return None, "No durable restore result has been published yet."
+        return None, "No durable restore result has been published yet.", "unavailable"
     except (OSError, UnicodeError, ValidationError):
-        return None, "Durable restore result could not be validated."
+        return None, "Durable restore result could not be validated.", "degraded"
 
 
 def _restore_drill_job(
@@ -217,14 +218,14 @@ def _restore_drill_job(
         runner,
     )
     target = path or Path(os.environ.get(RESTORE_RESULT_ENV, DEFAULT_RESTORE_RESULT))
-    proof, error = _load_restore_result(
+    proof, error, invalid_state = _load_restore_result(
         target, expected_uid=expected_uid, expected_gid=expected_gid
     )
     if proof is None:
         if "No durable" in error and scheduled.last_run_at is None:
             state = "pending" if scheduled.state == "pending" else scheduled.state
         else:
-            state = "degraded" if "unsafe" in error or "validated" in error else "unavailable"
+            state = invalid_state or "unavailable"
         return JobStatus(
             id="restore_drill",
             label="Weekly restore drill",

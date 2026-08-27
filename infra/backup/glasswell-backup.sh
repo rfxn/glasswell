@@ -66,10 +66,14 @@ printf '%s\n' \
 	"BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;" \
 	"SELECT pg_export_snapshot();" >&"$snapshot_input" \
 	|| fail "start exported database snapshot"
-IFS= read -r snapshot_id <&"$snapshot_output" \
-	|| fail "read exported database snapshot"
-[[ $snapshot_id =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{8}-[[:xdigit:]]+$ ]] \
-	|| fail "database returned an invalid snapshot id"
+snapshot_id=""
+while IFS= read -r snapshot_line <&"$snapshot_output"; do
+	if [[ $snapshot_line =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{8}-[[:xdigit:]]+$ ]]; then
+		snapshot_id=$snapshot_line
+		break
+	fi
+done
+[[ -n $snapshot_id ]] || fail "database returned no valid snapshot id"
 
 # Write to .partial and rename only after the archive and its exact-vintage manifest verify,
 # so a crashed run never leaves a truncated file that looks like a good backup.
@@ -79,8 +83,14 @@ runuser -u postgres -- pg_dump -Fc -Z6 --snapshot="$snapshot_id" -d "$DB" \
 manifest_query="SELECT json_build_object('source_schema_version',(SELECT coalesce(max(version),0) FROM public.schema_migrations),'critical_row_counts',json_build_object('lineage.manifests',(SELECT count(*) FROM lineage.manifests),'canonical.wells_latest',(SELECT count(*) FROM canonical.wells_latest),'canonical.production_monthly',(SELECT count(*) FROM canonical.production_monthly),'marts.nd_wells_tile',(SELECT count(*) FROM marts.nd_wells_tile)))::text;"
 printf '%s\n' "$manifest_query" "COMMIT;" '\q' >&"$snapshot_input" \
 	|| fail "query dump-vintage manifest"
-IFS= read -r snapshot_payload <&"$snapshot_output" \
-	|| fail "read dump-vintage manifest"
+snapshot_payload=""
+while IFS= read -r manifest_line <&"$snapshot_output"; do
+	if [[ $manifest_line =~ ^\{.*\}$ ]]; then
+		snapshot_payload=$manifest_line
+		break
+	fi
+done
+[[ -n $snapshot_payload ]] || fail "database returned no dump-vintage manifest"
 exec {snapshot_input}>&-
 snapshot_input=""
 if ! wait "$snapshot_pid"; then
