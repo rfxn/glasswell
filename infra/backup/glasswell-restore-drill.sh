@@ -4,7 +4,7 @@
 set -uo pipefail
 
 PGDUMP_DIR="${PGDUMP_DIR:-/data/backups/pg}"
-RESULT_PATH="${RESTORE_RESULT_PATH:-/var/lib/glasswell/restore-drill.json}"
+RESULT_PATH="${RESTORE_RESULT_PATH:-/var/lib/glasswell-restore-drill/result.json}"
 RESULT_UID="${RESTORE_RESULT_UID:-root}"
 RESULT_GID="${RESTORE_RESULT_GID:-glasswell}"
 EXPECTED_DUMP_OWNER="${EXPECTED_DUMP_OWNER:-root}"
