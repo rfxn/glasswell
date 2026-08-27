@@ -53,6 +53,8 @@
   reason: Occurrence counter, in a collection item.
 - pointer: /sources/*/manifest_count
   reason: Count of registered manifests per source on the health page.
+- pointer: /*/alias_count
+  reason: Reference-row cardinality, not a measured or modelled petroleum figure.
 # These two outlive their `/v1/vintages` twins, which A-4 retired: `get_service_index`
 # builds `published_vintages` inline and never calls `_vintage()`, so no sidecar reaches
 # them. Delete them and the walker goes naked on the service index.

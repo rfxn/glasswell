@@ -42,6 +42,7 @@ MATRIX: tuple[tuple[str, str, str], ...] = (
     ("GET", "/v1/wells", READ),
     ("GET", f"/v1/wells/status-summary?bbox={EXAMPLE_BBOX}", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}", READ),
+    ("GET", f"/v1/wells/{EXAMPLE_API10}/completions", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production/pools", READ),
     # DR-63/DR-64 add parameters, never gates: an optional flag that carried its own auth
@@ -49,6 +50,7 @@ MATRIX: tuple[tuple[str, str, str], ...] = (
     # would be invisible here because the table keys on the path.
     ("GET", f"/v1/wells/status-summary?bbox={EXAMPLE_BBOX}&explain=true", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}?explain=true&explain_depth=8", READ),
+    ("GET", f"/v1/wells/{EXAMPLE_API10}/completions?explain=true", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production?explain=true", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production/pools?explain=true", READ),
     ("GET", f"/v1/derivations/{EXAMPLE_DERIVATION_ID}?explain=true&explain_depth=8", READ),
@@ -69,6 +71,7 @@ MATRIX: tuple[tuple[str, str, str], ...] = (
     ("GET", "/v1/quarantine/summary", READ),
     ("GET", f"/v1/quarantine/{EXAMPLE_QUARANTINE_ID}", READ),
     ("GET", "/v1/glossary", READ),
+    ("GET", "/v1/formations", READ),
     ("GET", "/v1/glossary/index", READ),
     ("GET", f"/v1/glossary/{EXAMPLE_TERM_ID}", READ),
     ("GET", f"/v1/tiles/{TILE['layer']}/{TILE['z']}/{TILE['x']}/{TILE['y']}.pbf", READ),

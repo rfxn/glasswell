@@ -181,6 +181,19 @@ def test_the_pool_sum_reconciles_with_the_well_figure(wells, api_client):
     assert f"{total:.3f}" == well
 
 
+def test_completion_context_preserves_both_reported_pool_entities(wells, api_client):
+    body = api_client.get(f"/v1/wells/{MULTI_POOL}/completions").json()["data"]
+
+    assert body["events"] == []
+    assert [pool["pool_reported"] for pool in body["pools"]] == ["BIRDBEAR", "DUPEROW"]
+    assert [pool["formation"] for pool in body["pools"]] == ["birdbear", "duperow"]
+    assert [pool["formation_null_semantics"] for pool in body["pools"]] == [
+        "mapped",
+        "mapped",
+    ]
+    assert all(pool["first_production_month"] == "2026-01-01" for pool in body["pools"])
+
+
 def test_a_single_pool_well_has_no_breakdown_to_give(wells, api_client):
     body = api_client.get(f"/v1/wells/{SINGLE_POOL}/production/pools").json()
 

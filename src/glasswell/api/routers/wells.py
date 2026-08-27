@@ -32,7 +32,7 @@ from glasswell.api.pagination import (
 )
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, inline_for, iso
 from glasswell.lengths import STORAGE_EPSG, resolve_length_method
-from glasswell.lineage.conformance import lease_reporting_rule
+from glasswell.lineage.conformance import LeaseReportingRule, lease_reporting_rule
 from glasswell.lineage.envelope import Figure, collect_handles, distinct_handles, figure
 from glasswell.lineage.explain import MAX_HANDLES
 from glasswell.marts.tiles import TILE_BUFFER, TILE_EXTENT, TILE_MAX_ZOOM, WEB_MERCATOR
@@ -81,16 +81,31 @@ _COLUMNS = (
     " operator_id, well_name, status_canonical, status_reported, well_type_reported, spud_date,"
     " confidential_flag, basin, land_unit_label, total_depth_ft, completion_date,"
     " effective_from, source_manifest_id, derivation_id,"
+    " greatest(effective_from, manifest_vintage,"
+    "          coalesce(derivation_vintage, manifest_vintage)) as available_on,"
     " (select coalesce(array_agg(distinct s.geom_type order by s.geom_type), '{}'::text[])"
-    "    from canonical.well_spatial s where s.api10 = ranked.api10) as geometry_provenance"
+    "    from canonical.well_spatial s"
+    "    join lineage.manifests sm on sm.manifest_id = s.source_manifest_id"
+    "    join lineage.derivations sd on sd.derivation_id = s.derivation_id"
+    "   where s.api10 = ranked.api10"
+    "     and (%(as_of)s::date is null or sm.fetch_vintage <= %(as_of)s::date)"
+    "     and (%(as_of)s::date is null or sd.created_vintage is null"
+    "          or sd.created_vintage <= %(as_of)s::date)) as geometry_provenance"
 )
 
 RANKED_WELLS = f"""
 with ranked as (
-    select w.*, row_number() over (
+    select w.*, m.fetch_vintage as manifest_vintage,
+           d.created_vintage as derivation_vintage,
+           row_number() over (
                partition by w.api10 order by w.effective_from desc, w.created_at desc) as rn
       from canonical.wells w
-     where (%(as_of)s::date is null or w.effective_from <= %(as_of)s::date))
+      join lineage.manifests m on m.manifest_id = w.source_manifest_id
+      join lineage.derivations d on d.derivation_id = w.derivation_id
+     where (%(as_of)s::date is null or w.effective_from <= %(as_of)s::date)
+       and (%(as_of)s::date is null or m.fetch_vintage <= %(as_of)s::date)
+       and (%(as_of)s::date is null or d.created_vintage is null
+            or d.created_vintage <= %(as_of)s::date))
 select {_COLUMNS}
   from ranked
  where rn = 1
@@ -99,7 +114,8 @@ select {_COLUMNS}
 # `tiled` asks the tile pipeline's own question of the deepest published zoom: a geometry that
 # ST_AsMVTGeom drops there is on no tile at any zoom, while the card still serves its length.
 _SPATIAL = f"""
-select geom_type, geom_key, derivation_id, source_datum, source_manifest_id,
+select s.geom_type, s.geom_key, s.derivation_id, s.source_datum, s.source_manifest_id,
+       greatest(m.fetch_vintage, coalesce(d.created_vintage, m.fetch_vintage)) as available_on,
        {{length_metres}} as length_m,
        case when st_geometrytype(geom) = 'ST_Point' then st_x(geom) end as lon,
        case when st_geometrytype(geom) = 'ST_Point' then st_y(geom) end as lat,
@@ -111,9 +127,14 @@ select geom_type, geom_key, derivation_id, source_datum, source_manifest_id,
                floor((1 - asinh(tan(radians(st_y(st_centroid(geom)))))
                         / pi()) / 2 * (2 ^ {TILE_MAX_ZOOM}))::int),
            {TILE_EXTENT}, {TILE_BUFFER}, true) is not null as tiled
-  from canonical.well_spatial
- where api10 = %(api10)s
- order by geom_type, geom_key
+  from canonical.well_spatial s
+  join lineage.manifests m on m.manifest_id = s.source_manifest_id
+  join lineage.derivations d on d.derivation_id = s.derivation_id
+ where s.api10 = %(api10)s
+   and (%(as_of)s::date is null or m.fetch_vintage <= %(as_of)s::date)
+   and (%(as_of)s::date is null or d.created_vintage is null
+        or d.created_vintage <= %(as_of)s::date)
+ order by s.geom_type, s.geom_key
 """
 
 # The box narrows first and the spine is resolved over what it returned: `in_view` is an
@@ -163,9 +184,10 @@ select geom_type as geometry_provenance, count(distinct api10) as wells,
 """
 
 _STORAGE_CRS = """
-select storage_epsg
-  from lineage.crs_registry
+select storage_epsg, effective_from
+ from lineage.crs_registry
  where basin = %(basin)s
+   and effective_from <= coalesce(%(as_of)s::date, current_date)
  order by effective_from desc
  limit 1
 """
@@ -174,14 +196,32 @@ select storage_epsg
 # all unless the card says otherwise. Indexed on (source_id, row_payload->>'api10') in 016.
 _HELD_BACK_GEOMETRY = """
 select reason_code, rule_id, count(*) as rows,
+       max(m.fetch_vintage) as available_on,
        string_agg(distinct row_payload ->> 'segment', ', ' order by row_payload ->> 'segment')
            as segments
-  from lineage.quarantine_rows
- where source_id = 'nd_gis_horizontals_line'
-   and row_payload ->> 'api10' = %(api10)s
-   and state = 'open'
+  from lineage.quarantine_rows q
+  join lineage.manifests m on m.manifest_id = q.first_seen_manifest_id
+ where q.source_id = 'nd_gis_horizontals_line'
+   and q.row_payload ->> 'api10' = %(api10)s
+   and (q.state = 'open'
+        or (q.released_at_vintage is not null
+            and %(as_of)s::date is not null
+            and q.released_at_vintage > %(as_of)s::date))
+   and (%(as_of)s::date is null or m.fetch_vintage <= %(as_of)s::date)
  group by reason_code, rule_id
  order by reason_code
+"""
+
+_HELD_BACK_GEOMETRY_VINTAGE = """
+select max(greatest(m.fetch_vintage,
+                    coalesce(q.released_at_vintage, m.fetch_vintage))) as available_on
+  from lineage.quarantine_rows q
+  join lineage.manifests m on m.manifest_id = q.first_seen_manifest_id
+ where q.source_id = 'nd_gis_horizontals_line'
+   and q.row_payload ->> 'api10' = %(api10)s
+   and (%(as_of)s::date is null
+        or greatest(m.fetch_vintage,
+                    coalesce(q.released_at_vintage, m.fetch_vintage)) <= %(as_of)s::date)
 """
 
 
@@ -351,7 +391,7 @@ def _summary(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def pending_allocation(rule: dict[str, str]) -> dict[str, Any]:
+def pending_allocation(rule: LeaseReportingRule) -> dict[str, Any]:
     """DIR-3 made visible: a lease-reporting state has no observed well-level series, and an
     empty chart would say the opposite of what is true. The rule is named so a reader can
     resolve it at /v1/conformance."""
@@ -367,10 +407,14 @@ def pending_allocation(rule: dict[str, str]) -> dict[str, Any]:
     }
 
 
-def _held_back_geometry(connection, api10: str) -> list[dict[str, Any]]:
+def _held_back_geometry(
+    connection, api10: str, *, as_of: date | None = None
+) -> tuple[list[dict[str, Any]], list[date]]:
     """Say what the horizontals layer held back for this well, and under which rule."""
     warnings = []
-    for row in rows(connection, _HELD_BACK_GEOMETRY, {"api10": api10}):
+    available_on = []
+    for row in rows(connection, _HELD_BACK_GEOMETRY, {"api10": api10, "as_of": as_of}):
+        available_on.append(row["available_on"])
         segments = f" ({row['segments']})" if row["segments"] else ""
         warnings.append(
             {
@@ -383,7 +427,12 @@ def _held_back_geometry(connection, api10: str) -> list[dict[str, Any]]:
                 "pointer": "/geometry",
             }
         )
-    return warnings
+    context = rows(
+        connection, _HELD_BACK_GEOMETRY_VINTAGE, {"api10": api10, "as_of": as_of}
+    )[0]
+    if context["available_on"] is not None:
+        available_on.append(context["available_on"])
+    return warnings, available_on
 
 
 def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
@@ -600,8 +649,14 @@ def list_wells(
         params["well_type"] = well_type
     if geometry_provenance is not None:
         clauses.append(
-            "and exists (select 1 from canonical.well_spatial s where s.api10 = ranked.api10"
-            " and s.geom_type = %(geometry_provenance)s)"
+            "and exists (select 1 from canonical.well_spatial s"
+            " join lineage.manifests sm on sm.manifest_id = s.source_manifest_id"
+            " join lineage.derivations sd on sd.derivation_id = s.derivation_id"
+            " where s.api10 = ranked.api10"
+            " and s.geom_type = %(geometry_provenance)s"
+            " and (%(as_of)s::date is null or sm.fetch_vintage <= %(as_of)s::date)"
+            " and (%(as_of)s::date is null or sd.created_vintage is null"
+            "      or sd.created_vintage <= %(as_of)s::date))"
         )
         params["geometry_provenance"] = geometry_provenance
     if q is not None:
@@ -609,8 +664,14 @@ def list_wells(
         params["q"] = q
     if envelope is not None:
         clauses.append(
-            "and exists (select 1 from canonical.well_spatial s where s.api10 = ranked.api10"
-            " and s.geom && st_makeenvelope(%(minx)s, %(miny)s, %(maxx)s, %(maxy)s, 4326))"
+            "and exists (select 1 from canonical.well_spatial s"
+            " join lineage.manifests sm on sm.manifest_id = s.source_manifest_id"
+            " join lineage.derivations sd on sd.derivation_id = s.derivation_id"
+            " where s.api10 = ranked.api10"
+            " and s.geom && st_makeenvelope(%(minx)s, %(miny)s, %(maxx)s, %(maxy)s, 4326)"
+            " and (%(as_of)s::date is null or sm.fetch_vintage <= %(as_of)s::date)"
+            " and (%(as_of)s::date is null or sd.created_vintage is null"
+            "      or sd.created_vintage <= %(as_of)s::date))"
         )
         params |= dict(zip(("minx", "miny", "maxx", "maxy"), envelope, strict=True))
     if cursor is not None:
@@ -1175,21 +1236,28 @@ def get_well(
         raise ProblemError("not_found", detail=f"no well {api10} at this vintage")
     row = found[0]
 
-    crs = rows(connection, _STORAGE_CRS, {"basin": row["basin"] or "williston"})
+    crs = rows(
+        connection,
+        _STORAGE_CRS,
+        {"basin": row["basin"] or "williston", "as_of": as_of},
+    )
     storage_epsg = crs[0]["storage_epsg"] if crs else STORAGE_EPSG
     # The basin's own rule, so a TX length's handle resolves to a rule about TX geometry.
-    method = resolve_length_method(connection, basin=row["basin"])
+    method = resolve_length_method(connection, basin=row["basin"], as_of=as_of)
     warnings: list[dict[str, Any]] = []
-    lease_reported = lease_reporting_rule(connection, row["state_code"])
+    lease_reported = lease_reporting_rule(connection, row["state_code"], as_of=as_of)
     if lease_reported:
         warnings.append(pending_allocation(lease_reported))
     geometry = rows(
         connection,
         _SPATIAL.format(length_metres=method.metres_sql()),
-        {"api10": api10},
+        {"api10": api10, "as_of": as_of},
     )
 
-    warnings.extend(_held_back_geometry(connection, api10))
+    held_back_warnings, held_back_vintages = _held_back_geometry(
+        connection, api10, as_of=as_of
+    )
+    warnings.extend(held_back_warnings)
     laterals = [item for item in geometry if item["geom_type"] == "lateral"]
     untiled = [item["geom_key"] for item in laterals if not item["tiled"]]
     if untiled:
@@ -1258,14 +1326,23 @@ def get_well(
         ],
         "surface_point": {"lon": point["lon"], "lat": point["lat"]} if point else None,
     }
+    resolved_vintages = [row["available_on"], method.effective_from]
+    resolved_vintages.extend(item["available_on"] for item in geometry)
+    resolved_vintages.extend(held_back_vintages)
+    if crs:
+        resolved_vintages.append(crs[0]["effective_from"])
+    if lease_reported:
+        resolved_vintages.append(lease_reported["effective_from"])
     return enveloped(
         request,
         data,
-        as_of=row["effective_from"],
+        as_of=max(resolved_vintages),
         as_of_requested=iso(as_of) or "latest",
         labels=WELL_LABELS,
         warnings=warnings,
         links={
+            "completions": f"/v1/wells/{api10}/completions",
+            "formations": "/v1/formations",
             "production": f"/v1/wells/{api10}/production",
             **(
                 {"reporting_rule": f"/v1/conformance/{lease_reported['rule_id']}"}

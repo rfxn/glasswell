@@ -43,6 +43,10 @@ from tests.support.seed import seed_derivation
 # that arm.
 SURFACES: tuple[tuple[str, dict[str, Any]], ...] = (
     ("get_well", {"url": f"/v1/wells/{EXAMPLE_API10}", "params": {}}),
+    (
+        "get_well_completions",
+        {"url": f"/v1/wells/{EXAMPLE_API10}/completions", "params": {}},
+    ),
     ("get_well_production", {"url": f"/v1/wells/{EXAMPLE_API10}/production", "params": {}}),
     (
         "get_well_status_summary",
@@ -58,6 +62,7 @@ SURFACE_IDS = [name for name, _ in SURFACES]
 # fixture arm lives in its own module.
 DECLARED_PATHS = (
     "/v1/wells/{api10}",
+    "/v1/wells/{api10}/completions",
     "/v1/wells/{api10}/production",
     "/v1/wells/status-summary",
     "/v1/wells/{api10}/production/pools",

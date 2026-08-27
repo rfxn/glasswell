@@ -406,7 +406,9 @@ def get_well_production(
     )
     # A lease-reporting jurisdiction has no observed well-level series. An empty envelope here
     # reads as "nothing was produced"; the disclosure says what is actually true (DIR-3).
-    lease_reported = lease_reporting_rule(connection, _state_code(connection, api10))
+    lease_reported = lease_reporting_rule(
+        connection, _state_code(connection, api10), as_of=as_of
+    )
 
     withheld = _withheld_months(connection, api10, window, as_of)
     pending = _multi_pool_pending(connection, api10, window, as_of)

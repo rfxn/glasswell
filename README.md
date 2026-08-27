@@ -193,9 +193,12 @@ aliases. The resident matrix and model-ready `mdv1.4` dataset replay byte-identi
 censoring/rejection coverage, and eight content-addressed rolling splits. Pinned control-major
 `tcv1.0` now replays 2,300,400 rows over those exact splits, all three streams, and both
 normalization arms. Its rung-one share passes at 81.7089%, but its explicit unavailability
-gate is red at 12.9484% against a 5% ceiling; 318 unique TEST subjects lack formation and 38
-lack lateral length, while only one lacks enough peers. The ladder is not widened and those
-subjects are not dropped. Forecasts are still not live. The strict history and
+gate in the immutable resident artifact is red at 12.9484% against a 5% ceiling. The
+same-manifest repair migration has been rehearsed in a rolled-back transaction: it restores
+all 318 TEST formation gaps without inferring any of the 38 source-absent laterals, preserves
+all eight split hashes, replays unchanged `tcv1.0` byte-identically, and measures 1.0798%
+unavailability (230 / 21,300). A new-vintage live artifact is not published yet. The ladder is
+not widened and those subjects are not dropped. Forecasts are still not live. The strict history and
 reconstructed-source clocks are distinguished in
 [`docs/p3-matrix-integrity.md`](docs/p3-matrix-integrity.md), and the dataset evidence is in
 [`docs/p3-model-ready-dataset.md`](docs/p3-model-ready-dataset.md). The control contract and
@@ -237,13 +240,15 @@ bounds get measured against two independent validators and published.
 
 ## API surface
 
-API-first, with 30 operations in the frozen v1 snapshot. The current surface serves
-health, wells, North Dakota production, lineage, manifests, conformance, quarantine,
-glossary, key administration, and tiles:
+API-first, with 32 operations in the frozen v1 snapshot. The current surface serves
+health, wells, North Dakota production, source-observed completion context, canonical
+formations with alias counts, lineage, manifests, conformance, quarantine, glossary, key
+administration, and tiles:
 
 ```
 GET  /v1/wells                          GET  /v1/wells/{api10}
 GET  /v1/wells/{api10}/production       GET  /v1/wells/{api10}/production/pools
+GET  /v1/wells/{api10}/completions      GET  /v1/formations
 GET  /v1/explain?h={handle}              GET  /v1/manifests/{manifest_id}
 GET  /v1/conformance                    GET  /v1/conformance/{rule_id}
 GET  /v1/quarantine                     GET  /v1/quarantine/summary
@@ -347,6 +352,7 @@ records each file's checksum and refuses a changed migration.
 | [blueprint.md](blueprint.md) | The product and engineering contract. Anything not in scope there is out until it changes. |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Layers, components, boundaries, and the rules R1–R8 |
 | [ROADMAP.md](ROADMAP.md) | Build phases P0–P8 with exit criteria, current status and cut order |
+| [docs/p3-context-repair.md](docs/p3-context-repair.md) | Same-manifest repair policy, source-absent lateral disposition, exact split/hash proof, and rollback rehearsal |
 | [docs/p3-type-curve-control.md](docs/p3-type-curve-control.md) | Pinned `tcv1.0` control contract, D1 replay evidence, and the explicit red coverage gate |
 | [BRAND.md](BRAND.md) | Visual system, palette, and asset regeneration |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How changes are made, and what review rejects |

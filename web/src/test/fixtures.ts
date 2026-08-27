@@ -62,7 +62,9 @@ export const wellEnvelope = {
     "well_type_reported": "OG"
   },
   "links": {
+    "completions": "/v1/wells/3305310451/completions",
     "explain": "/v1/explain?h=drv_ga3f2mao5zgyb5xcniwq%23api10%3D3305310451%26col%3Dlateral_length_ft&depth=full",
+    "formations": "/v1/formations",
     "next": null,
     "production": "/v1/wells/3305310451/production",
     "self": "/v1/wells/3305310451"
@@ -89,6 +91,92 @@ export const wellEnvelope = {
         "pointer": "/geometry"
       }
     ]
+  }
+};
+
+// Constructed for the additive completions contract before its first deployment. These values
+// exercise source-honest rendering and make no claim about the recorded well above.
+export const completionContextEnvelope = {
+  "data": {
+    "api10": "3305310451",
+    "design_availability": "not_promoted",
+    "events": [
+      {
+        "event_id": "ff-3305310451-20250424",
+        "event_kind": "hydraulic_frac_job_end",
+        "job_start_date": "2025-04-11",
+        "completion_date": "2025-04-24",
+        "source_id": "fracfocus_csv",
+        "report_vintage": "2026-08-20",
+        "_lineage": {
+          "job_start_date": "drv_context_event#disclosure_id=ff-3305310451-20250424&col=job_start_date",
+          "completion_date": "drv_context_event#disclosure_id=ff-3305310451-20250424&col=completion_date"
+        }
+      }
+    ],
+    "pools": [
+      {
+        "completion_key": "3305310451:BAKKEN",
+        "well_completion_pool": "3305310451:BAKKEN",
+        "pool_reported": "BAKKEN",
+        "formation": "bakken",
+        "formation_group": "bakken",
+        "formation_null_semantics": "mapped",
+        "source_id": "nd_mpr_xlsx",
+        "first_production_month": "2025-10-01",
+        "last_production_month": "2026-03-01",
+        "effective_from": null,
+        "latest_report_vintage": "2026-08-20",
+        "_lineage": {
+          "pool_reported": "drv_context_pool#completion_key=3305310451:BAKKEN&col=pool_reported&pm=2026-03",
+          "first_production_month": "drv_context_pool#completion_key=3305310451:BAKKEN&col=production_month&pm=2025-10",
+          "last_production_month": "drv_context_pool#completion_key=3305310451:BAKKEN&col=production_month&pm=2026-03",
+          "latest_report_vintage": "drv_context_pool#completion_key=3305310451:BAKKEN&col=report_vintage&pm=2026-03"
+        }
+      }
+    ]
+  },
+  "links": {
+    "next": null,
+    "self": "/v1/wells/3305310451/completions",
+    "well": "/v1/wells/3305310451"
+  },
+  "meta": {
+    "as_of": {
+      "requested": "latest",
+      "resolved": "2026-08-20"
+    },
+    "deprecations": [],
+    "labels": {
+      "/api10": "gt_api_10_api_12_api_14",
+      "/events/0/event_kind": "gt_completion_event",
+      "/events/0/completion_date": "gt_completion_event",
+      "/events/0/source_id": "gt_source",
+      "/events/0/report_vintage": "gt_report_vintage",
+      "/pools/0/well_completion_pool": "gt_pool",
+      "/pools/0/pool_reported": "gt_pool",
+      "/pools/0/formation": "gt_formation",
+      "/pools/0/formation_group": "gt_formation",
+      "/pools/0/source_id": "gt_source",
+      "/pools/0/first_production_month": "gt_production_month",
+      "/pools/0/last_production_month": "gt_production_month",
+      "/pools/0/latest_report_vintage": "gt_report_vintage"
+    },
+    "next_cursor": null,
+    "request_id": "01M0J8C5AFQ9CJRPXCVX3A8A78",
+    "source_freshness": {
+      "fracfocus_csv": {
+        "declared_vintage": "2026-08-20",
+        "retrieval_vintage": "2026-08-20",
+        "state": "current"
+      },
+      "nd_mpr_xlsx": {
+        "declared_vintage": "2026-08-20",
+        "retrieval_vintage": "2026-08-20",
+        "state": "current"
+      }
+    },
+    "warnings": []
   }
 };
 

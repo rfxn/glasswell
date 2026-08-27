@@ -857,6 +857,56 @@ main[data-drawer="open"] #gw-card {
   border-top: 1px solid var(--hairline);
 }
 
+.gw-completion-context .gw-frame-body {
+  display: grid;
+  gap: var(--gw-space-3);
+}
+
+.gw-context-group h4 {
+  margin: 0 0 var(--gw-space-2);
+  color: var(--paper);
+  font-size: var(--gw-fs-body);
+}
+
+.gw-context-list {
+  display: grid;
+  gap: var(--gw-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gw-context-list > li {
+  padding: var(--gw-space-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--gw-radius-xs);
+  background: var(--ink);
+}
+
+.gw-context-facts {
+  display: grid;
+  grid-template-columns: 8.5rem minmax(0, 1fr);
+  gap: var(--gw-space-1) var(--gw-space-2);
+  margin: 0;
+}
+
+.gw-context-facts dt {
+  color: var(--slate);
+}
+
+.gw-context-facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.gw-context-scope {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--gw-fs-micro);
+  line-height: 1.45;
+}
+
 /* A pending state, not an empty one: it reads as a fact about the jurisdiction rather than a
    chart that failed to load, so it takes the panel's own colour and not the warning rail. */
 .gw-pending .gw-frame-body {
@@ -1445,6 +1495,10 @@ a {
 @media (max-width: 620px) {
   .gw-facts {
     grid-template-columns: 7.5rem 1fr;
+  }
+
+  .gw-context-facts {
+    grid-template-columns: 7.5rem minmax(0, 1fr);
   }
 
   .gw-strap {

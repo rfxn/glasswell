@@ -48,10 +48,11 @@ def test_every_served_api10_path_declares_that_grammar_rather_than_one_of_its_ow
     """A route that spelled its own pattern would move independently of the constant above."""
     declared = _api10_parameters()
 
-    # The three templated paths §5.1 freezes. A document that stopped serving them would pass
+    # The templated paths §5.1 freezes. A document that stopped serving them would pass
     # the loop below on an empty dictionary.
     assert sorted(declared) == [
         "GET /v1/wells/{api10}",
+        "GET /v1/wells/{api10}/completions",
         "GET /v1/wells/{api10}/production",
         "GET /v1/wells/{api10}/production/pools",
     ]

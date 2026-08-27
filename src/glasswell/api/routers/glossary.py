@@ -42,12 +42,29 @@ APPEARS_IN: dict[str, tuple[str, ...]] = {
     "gt_wellbore": ("/v1/wells/{api10}#/lateral_length_ft",),
     "gt_effective_date": ("/v1/wells#/effective_from",),
     "gt_crs_compute_crs": ("/v1/wells/{api10}#/compute_crs",),
+    "gt_basin": ("/v1/formations#/*/basins",),
+    "gt_completion_event": (
+        "/v1/wells/{api10}/completions#/events/*/event_kind",
+        "/v1/wells/{api10}/completions#/events/*/completion_date",
+    ),
     "gt_datum": ("/v1/wells/{api10}#/geometry/source_datum",),
     "gt_granularity": ("/v1/wells/{api10}/production#/granularity",),
     "gt_report_vintage": ("/v1/wells/{api10}/production#/series/oil_bbl_report_vintage",),
     "gt_liquids_policy": ("/v1/wells/{api10}/production#/series/oil_bbl",),
     "gt_withheld": ("/v1/wells/{api10}/production#/series/oil_bbl_null_semantics",),
     "gt_stream": ("/v1/wells/{api10}/production#/series/gas_mcf",),
+    "gt_formation": (
+        "/v1/wells/{api10}/completions#/pools/*/formation",
+        "/v1/formations#/*/formation",
+    ),
+    "gt_formation_alias": (
+        "/v1/formations#/*/alias_count",
+        "/v1/formations#/*/aliases",
+    ),
+    "gt_pool": (
+        "/v1/wells/{api10}/production#/pools/*/well_completion_pool",
+        "/v1/wells/{api10}/completions#/pools/*/pool_reported",
+    ),
     "gt_conformance_rule": ("/v1/conformance/{rule_id}#/rule_id",),
     "gt_quarantine": ("/v1/quarantine#/reason_code",),
 }

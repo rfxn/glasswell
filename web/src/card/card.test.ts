@@ -9,13 +9,21 @@ vi.mock("../chart/chart.ts", () => ({
 }));
 
 const { renderWellCard } = await import("./card.ts");
-const { API10, LENGTH_HANDLE, OIL_HANDLE, productionEnvelope, stubFetch, wellEnvelope } =
-  await import("../test/fixtures.ts");
+const {
+  API10,
+  LENGTH_HANDLE,
+  OIL_HANDLE,
+  completionContextEnvelope,
+  productionEnvelope,
+  stubFetch,
+  wellEnvelope,
+} = await import("../test/fixtures.ts");
 
 const callbacks = { onExplain: vi.fn(), onClose: vi.fn() };
 let host: HTMLElement;
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/");
   document.body.innerHTML = "";
   host = document.createElement("aside");
   document.body.appendChild(host);
@@ -24,6 +32,7 @@ beforeEach(() => {
     "fetch",
     vi.fn(
       stubFetch({
+        [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
         [`/v1/wells/${API10}/production`]: productionEnvelope,
         [`/v1/wells/${API10}`]: wellEnvelope,
       }),
@@ -69,6 +78,7 @@ describe("a well whose regulator reports at the lease", () => {
       "/v1/conformance/cr_tx_allocation_scope_1",
     );
     expect(host.textContent).not.toContain("No production has been reported");
+    expect(host.querySelector(".gw-completion-context")).not.toBeNull();
     expect(renderChart).not.toHaveBeenCalled();
   });
 
@@ -119,6 +129,28 @@ describe("a well whose regulator reports at the lease", () => {
 });
 
 describe("well card", () => {
+  it("pins the well, completion, and production requests to the route as_of", async () => {
+    const requested = vi.fn(
+      stubFetch({
+        [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+        [`/v1/wells/${API10}/production`]: productionEnvelope,
+        [`/v1/wells/${API10}`]: wellEnvelope,
+      }),
+    );
+    window.history.replaceState(null, "", `/?well=${API10}&as_of=2026-07-01`);
+    vi.stubGlobal("fetch", requested);
+
+    await renderWellCard(host, API10, callbacks);
+
+    expect(requested.mock.calls.map(([input]) => String(input)).sort()).toEqual(
+      [
+        `/v1/wells/${API10}?as_of=2026-07-01`,
+        `/v1/wells/${API10}/completions?as_of=2026-07-01`,
+        `/v1/wells/${API10}/production?as_of=2026-07-01`,
+      ].sort(),
+    );
+  });
+
   it("renders the header the operator would recognise", async () => {
     await renderWellCard(host, API10, callbacks);
     expect(host.querySelector("h2")?.textContent).toBe("Mandaree 50-2008H");
@@ -171,7 +203,7 @@ describe("well card", () => {
     // it — placeholder, chart, error — used to replaceChildren() the whole frame.
     await renderWellCard(host, API10, callbacks);
 
-    const frame = host.querySelector(".gw-card-chart") as HTMLElement;
+    const frame = host.querySelector(".gw-production-chart") as HTMLElement;
     const title = frame.querySelector(".gw-frame-title") as HTMLElement;
     // §2.6's crossing sits in this header too, so the label is the title's own text and not
     // everything the header carries.
@@ -240,6 +272,298 @@ describe("well card", () => {
     expect(link.textContent).not.toContain("https://");
   });
 });
+
+describe("completion and formation context", () => {
+  it("renders source events and reported pool mappings without design or top claims", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    const frame = host.querySelector(".gw-completion-context") as HTMLElement;
+    const body = frame.querySelector<HTMLElement>(".gw-frame-body");
+    expect(frame.querySelector(".gw-frame-title")?.textContent).toBe("Completions & formations");
+    expect(body?.dataset["state"]).toBe("populated");
+    expect(body?.getAttribute("aria-busy")).toBe("false");
+    const groups = frame.querySelectorAll<HTMLElement>(".gw-context-group");
+    const eventFacts = factsOf(groups[0] as HTMLElement);
+    const formationFacts = factsOf(groups[1] as HTMLElement);
+    expect(eventFacts).toEqual({
+      "Event": "Hydraulic frac job end",
+      "Job start": "2025-04-11",
+      "Job end": "2025-04-24",
+      "Source": "fracfocus_csv · report 2026-08-20",
+    });
+    expect(frame.querySelector("time[datetime='2025-04-11']")?.textContent).toBe("2025-04-11");
+    expect(frame.querySelector("time[datetime='2025-04-24']")?.textContent).toBe("2025-04-24");
+    expect(formationFacts).toEqual({
+      "Pool entity": "3305310451:BAKKEN",
+      "Reported pool": "BAKKEN",
+      "Canonical formation": "bakken",
+      "Formation group": "bakken",
+      "First observed month": "2025-10-01",
+      "Last observed month": "2026-03-01",
+      "Source": "nd_mpr_xlsx · report 2026-08-20",
+    });
+    expect(frame.textContent).toContain(
+      "Completion design is not promoted; no design measurements or formation tops are served here",
+    );
+    expect(frame.textContent).not.toMatch(/proppant|fluid volume|formation depth/i);
+
+    callbacks.onExplain.mockClear();
+    frame.querySelector<HTMLButtonElement>("button[data-handle*='col=completion_date']")?.click();
+    expect(callbacks.onExplain).toHaveBeenCalledWith(
+      "drv_context_event#disclosure_id=ff-3305310451-20250424&col=completion_date",
+    );
+    callbacks.onExplain.mockClear();
+    frame.querySelector<HTMLButtonElement>("button[data-handle*='col=pool_reported']")?.click();
+    expect(callbacks.onExplain).toHaveBeenCalledWith(
+      "drv_context_pool#completion_key=3305310451:BAKKEN&col=pool_reported&pm=2026-03",
+    );
+  });
+
+  it("does not substitute the frac job end when its start date is unavailable", async () => {
+    const contextEvent = completionContextEnvelope.data.events[0]!;
+    const noStart = {
+      ...completionContextEnvelope,
+      data: {
+        ...completionContextEnvelope.data,
+        events: [
+          {
+            ...contextEvent,
+            job_start_date: null,
+            _lineage: {
+              completion_date: contextEvent._lineage.completion_date,
+            },
+          },
+        ],
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: noStart,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const event = host.querySelector(".gw-context-group") as HTMLElement;
+    expect(factsOf(event)["Job start"]).toBe("unavailable");
+    expect(factsOf(event)["Job end"]).toBe("2025-04-24");
+    expect(event.querySelectorAll("time")).toHaveLength(1);
+    expect(event.querySelectorAll("button[data-handle]")).toHaveLength(1);
+  });
+
+  it("keeps pool and alias absence distinct when only completion-pool observations exist", async () => {
+    const mapped = completionContextEnvelope.data.pools[0];
+    const partial = {
+      ...completionContextEnvelope,
+      data: {
+        ...completionContextEnvelope.data,
+        events: [],
+        pools: [
+          {
+            ...mapped,
+            pool_reported: null,
+            formation: null,
+            formation_group: null,
+            formation_null_semantics: "pool_not_reported",
+          },
+          {
+            ...mapped,
+            completion_key: "3305310451:UNKNOWN",
+            well_completion_pool: "3305310451:UNKNOWN",
+            pool_reported: "UNKNOWN",
+            formation: null,
+            formation_group: null,
+            formation_null_semantics: "alias_unavailable",
+          },
+        ],
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: partial,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const frame = host.querySelector(".gw-completion-context") as HTMLElement;
+    expect(frame.textContent).toContain("No source-reported completion event is available");
+    const pools = frame.querySelectorAll<HTMLElement>(".gw-context-list > li");
+    expect(factsOf(pools[0] as HTMLElement)).toEqual({
+      "Pool entity": "3305310451:BAKKEN",
+      "Reported pool": "unavailable — pool not reported",
+      "Canonical formation": "unavailable — pool not reported",
+      "Formation group": "unavailable — pool not reported",
+      "First observed month": "2025-10-01",
+      "Last observed month": "2026-03-01",
+      "Source": "nd_mpr_xlsx · report 2026-08-20",
+    });
+    expect(factsOf(pools[1] as HTMLElement)).toEqual({
+      "Pool entity": "3305310451:UNKNOWN",
+      "Reported pool": "UNKNOWN",
+      "Canonical formation": "unavailable — alias unavailable",
+      "Formation group": "unavailable — alias unavailable",
+      "First observed month": "2025-10-01",
+      "Last observed month": "2026-03-01",
+      "Source": "nd_mpr_xlsx · report 2026-08-20",
+    });
+    expect(frame.textContent).not.toContain("Hydraulic frac job end");
+  });
+
+  it("distinguishes an observed empty response from a failed request", async () => {
+    const empty = {
+      ...completionContextEnvelope,
+      data: {
+        ...completionContextEnvelope.data,
+        events: [],
+        pools: [],
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: empty,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
+    expect(body?.dataset["state"]).toBe("empty");
+    expect(body?.textContent).toContain(
+      "No source-reported completion events or completion-pool mappings are available",
+    );
+    expect(body?.textContent).not.toContain("response could not be used");
+  });
+
+  it("shows source-history coverage warnings inside the context section", async () => {
+    const partialHistory = {
+      ...completionContextEnvelope,
+      meta: {
+        ...completionContextEnvelope.meta,
+        warnings: [
+          {
+            code: "source_history_unavailable",
+            detail: "fracfocus_csv begins after the requested cut.",
+            pointer: "/events",
+          },
+        ],
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: partialHistory,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const warning = host.querySelector(".gw-completion-context .gw-warning");
+    expect(warning?.textContent).toBe(
+      "source_history_unavailable: fracfocus_csv begins after the requested cut. (/events)",
+    );
+  });
+
+  it("leaves the well and production usable when the context request fails", async () => {
+    const normal = stubFetch({
+      [`/v1/wells/${API10}/production`]: productionEnvelope,
+      [`/v1/wells/${API10}`]: wellEnvelope,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        if (String(input).startsWith(`/v1/wells/${API10}/completions`)) {
+          return Promise.resolve(problem(503, "context_unavailable"));
+        }
+        return normal(input);
+      }),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
+    expect(body?.dataset["state"]).toBe("unavailable");
+    expect(body?.textContent).toContain("response could not be used");
+    expect(host.querySelector("h2")?.textContent).toBe("Mandaree 50-2008H");
+    expect(renderChart).toHaveBeenCalledOnce();
+  });
+
+  it("treats a malformed success body as unavailable rather than an empty observation", async () => {
+    const malformed = {
+      ...completionContextEnvelope,
+      data: { api10: API10, design_availability: "not_promoted", events: [] },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: malformed,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
+    expect(body?.dataset["state"]).toBe("unavailable");
+    expect(body?.dataset["state"]).not.toBe("empty");
+    expect(body?.textContent).toContain("response could not be used");
+  });
+
+  it("refuses completion context echoed for a different well", async () => {
+    const wrongWell = {
+      ...completionContextEnvelope,
+      data: { ...completionContextEnvelope.data, api10: "3305319999" },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: wrongWell,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
+    expect(body?.dataset["state"]).toBe("unavailable");
+    expect(body?.textContent).not.toContain("BAKKEN");
+  });
+});
+
+function factsOf(root: HTMLElement): Record<string, string> {
+  return Object.fromEntries(
+    [...root.querySelectorAll("dt")].map((term) => {
+      const definition = term.nextElementSibling?.cloneNode(true) as HTMLElement | undefined;
+      definition?.querySelectorAll("button").forEach((button) => button.remove());
+      return [term.textContent ?? "", definition?.textContent?.trim() ?? ""];
+    }),
+  );
+}
 
 function problem(status: number, code: string): Response {
   return new Response(

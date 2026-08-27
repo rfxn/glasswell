@@ -91,6 +91,8 @@ four origins.
 
 ## Honest gate result
 
+### Published resident artifact
+
 The measured rung-one floor passes: 81.7089% is above 60%. The control-unavailability gate
 does not: 12.9484% is above the pinned 5% ceiling, and every split fails separately, from
 9.8721% at the 2021 origin to 21.1403% at the 2024 origin. `tcv1.0` records both
@@ -100,7 +102,18 @@ This is a context-readiness miss, not evidence that 20 peers or 36 months is too
 coverage artifact records 2,544 missing-formation mentions, 222 missing-lateral mentions,
 and eight insufficient-peer mentions; reason mentions overlap. Over the 3,596 unique TEST
 subjects, 355 are unavailable: 318 lack formation, 38 lack lateral length, one lacks enough
-peers, and two carry both context gaps. The next repair target is therefore those source
-fields, with no inferred formation and no spud-date substitution, followed by the same exact
-replay and 5% gate. Model training may be developed, but P3 cannot claim control readiness
-while this acceptance result is red.
+peers, and two carry both context gaps. That published miss identifies the source-field repair
+target: no inferred formation, no spud-date substitution, and the same exact replay and 5%
+gate. Model training may be developed, but P3 cannot claim control readiness from this
+published result while its acceptance result is red.
+
+### Context-repair rehearsal
+
+Migration 042 has since been exercised inside a rolled-back resident transaction. Its
+same-manifest, same-API source join restores all 318 TEST formation gaps and does not create a
+lateral for any of the 38 source-absent wells. Two complete builds preserve every exact split
+hash and replay unchanged `tcv1.0` byte-identically at 230 / 21,300 unavailable TEST
+subject/split instances (1.0798%), with no missing-formation reason remaining. This proves the
+repair policy and the 5% gate without mutating the immutable resident artifact. Publication
+still requires deployment and a new evaluation vintage; the hashes and measurements are in
+[`p3-context-repair.md`](docs/p3-context-repair.md).

@@ -151,7 +151,7 @@ describe("the explorer's network surface is one call site (SB-08 §2.3 arms 1-3)
     ]);
 
     // A vacuity floor: an explorer that names no operation would pass the loop below. The
-    // register supplies today's twenty-two; the operationId arm is the rule that catches a
+    // register supplies today's twenty; the operationId arm is the rule that catches a
     // hand-written call the moment C7 writes one.
     expect(named.length).toBeGreaterThan(20);
     for (const { file, literal, kind } of named) {

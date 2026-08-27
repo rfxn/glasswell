@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_DOWN, ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal, InvalidOperation
 from functools import lru_cache
-from typing import Any
+from typing import Any, TypedDict, cast
 
 import polars as pl
 import psycopg
@@ -654,20 +654,31 @@ def apply_registry_rules(
 
 
 _LEASE_REPORTING = """
-select rule_id, rule, spec ->> 'reporting_level' as reporting_level
+select rule_id, rule, spec ->> 'reporting_level' as reporting_level, effective_from
   from lineage.conformance_rules
  where spec ->> 'state_code' = %s
    and spec ->> 'reporting_level' = 'lease'
    and (spec -> 'allocation_required')::boolean
-   and (effective_to is null or effective_to > current_date)
+   and effective_from <= %s
+   and (effective_to is null or effective_to > %s)
  order by effective_from desc
  limit 1
 """
 
 
+class LeaseReportingRule(TypedDict):
+    rule_id: str
+    rule: str
+    reporting_level: str
+    effective_from: date
+
+
 def lease_reporting_rule(
-    connection: psycopg.Connection, state_code: str | None
-) -> dict[str, str] | None:
+    connection: psycopg.Connection,
+    state_code: str | None,
+    *,
+    as_of: date | None = None,
+) -> LeaseReportingRule | None:
     """The rule saying a jurisdiction reports production at the lease, or None.
 
     R8 again: which states need allocation is a registry fact with a date and a rationale, not
@@ -677,7 +688,8 @@ def lease_reporting_rule(
     """
     if not state_code:
         return None
+    effective_at = as_of or date.today()
     with connection.cursor(row_factory=dict_row) as cursor:
-        cursor.execute(_LEASE_REPORTING, (state_code,))
+        cursor.execute(_LEASE_REPORTING, (state_code, effective_at, effective_at))
         row = cursor.fetchone()
-    return dict(row) if row else None
+    return cast(LeaseReportingRule, dict(row)) if row else None

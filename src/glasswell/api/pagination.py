@@ -1,8 +1,9 @@
 """Cursor pagination (SB-04 §2.3, M17). No offset parameter exists on any collection.
 
 The cursor is base64url of `{k, t, v, q}`: sort key, tiebreak id, resolved `as_of`, and a
-fingerprint of the rest of the query. Without `q`, changing a filter mid-traversal
-silently returns a page from a different result set.
+fingerprint of the rest of the query. A bitemporal collection may additionally carry `e`,
+its pinned valid-time cut. Without `q`, changing a filter mid-traversal silently returns a
+page from a different result set.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ WELLS_LIMIT_CAP = 1000
 SPINE_LIMIT_CAP = 200
 FINGERPRINT_LENGTH = 8
 _CURSOR_FIELDS = frozenset({"k", "t", "v", "q"})
+_BITEMPORAL_CURSOR_FIELDS = _CURSOR_FIELDS | {"e"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +35,7 @@ class Cursor:
     key: str
     tiebreak: str
     as_of: str | None
+    valid_as_of: str | None = None
 
 
 def query_fingerprint(params: Mapping[str, Any]) -> str:
@@ -47,13 +50,22 @@ def query_fingerprint(params: Mapping[str, Any]) -> str:
     return hashlib.sha256(canonical_json(normalised)).hexdigest()[:FINGERPRINT_LENGTH]
 
 
-def encode_cursor(*, key: Any, tiebreak: Any, as_of: date | None, fingerprint: str) -> str:
+def encode_cursor(
+    *,
+    key: Any,
+    tiebreak: Any,
+    as_of: date | None,
+    fingerprint: str,
+    valid_as_of: date | None = None,
+) -> str:
     payload = {
         "k": _text(key),
         "t": _text(tiebreak),
         "v": as_of.isoformat() if as_of else None,
         "q": fingerprint,
     }
+    if valid_as_of is not None:
+        payload["e"] = valid_as_of.isoformat()
     return base64.urlsafe_b64encode(canonical_json(payload)).decode("ascii").rstrip("=")
 
 
@@ -62,16 +74,48 @@ def decode_cursor(raw: str, *, fingerprint: str) -> Cursor:
         decoded = orjson.loads(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
     except (binascii.Error, orjson.JSONDecodeError, ValueError) as error:
         raise ProblemError("cursor_malformed", detail=f"cursor is not decodable: {error}") from None
-    if not isinstance(decoded, dict) or set(decoded) != _CURSOR_FIELDS:
-        raise ProblemError("cursor_malformed", detail="cursor does not carry k, t, v and q")
+    if not isinstance(decoded, dict):
+        raise ProblemError(
+            "cursor_malformed", detail="cursor does not carry k, t, v and q, plus optional e"
+        )
+    fields = frozenset(decoded)
+    if fields not in {_CURSOR_FIELDS, _BITEMPORAL_CURSOR_FIELDS}:
+        raise ProblemError(
+            "cursor_malformed", detail="cursor does not carry k, t, v and q, plus optional e"
+        )
     if not isinstance(decoded["k"], str) or not isinstance(decoded["t"], str):
         raise ProblemError("cursor_malformed", detail="cursor sort key and tiebreak must be text")
+    if decoded["v"] is not None:
+        if not isinstance(decoded["v"], str):
+            raise ProblemError("cursor_malformed", detail="cursor as_of must be an ISO date")
+        try:
+            date.fromisoformat(decoded["v"])
+        except ValueError:
+            raise ProblemError(
+                "cursor_malformed", detail="cursor as_of must be an ISO date"
+            ) from None
+    if "e" in decoded:
+        if not isinstance(decoded["e"], str):
+            raise ProblemError("cursor_malformed", detail="cursor valid_as_of must be an ISO date")
+        try:
+            date.fromisoformat(decoded["e"])
+        except ValueError:
+            raise ProblemError(
+                "cursor_malformed", detail="cursor valid_as_of must be an ISO date"
+            ) from None
+    if not isinstance(decoded["q"], str):
+        raise ProblemError("cursor_malformed", detail="cursor fingerprint must be text")
     if decoded["q"] != fingerprint:
         raise ProblemError(
             "cursor_query_mismatch",
             detail="this cursor was minted against a different filter set",
         )
-    return Cursor(key=decoded["k"], tiebreak=decoded["t"], as_of=decoded["v"])
+    return Cursor(
+        key=decoded["k"],
+        tiebreak=decoded["t"],
+        as_of=decoded["v"],
+        valid_as_of=decoded.get("e"),
+    )
 
 
 def next_link(path: str, params: Mapping[str, Any], cursor: str) -> str:

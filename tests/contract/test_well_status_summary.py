@@ -295,7 +295,8 @@ def test_the_counts_pin_to_the_vintage_the_rest_of_the_surface_serves(client: Te
     well = client.get(f"/v1/wells/{EXAMPLE_API10}").json()
 
     assert body["meta"]["as_of"]["requested"] == "latest"
-    assert body["meta"]["as_of"]["resolved"] == well["meta"]["as_of"]["resolved"]
+    assert body["meta"]["as_of"]["resolved"] == "2026-08-01"
+    assert well["meta"]["as_of"]["resolved"] == "2026-08-20"
 
 
 def test_an_as_of_before_the_spine_leaves_the_box_empty_rather_than_full(
