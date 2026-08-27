@@ -7,6 +7,12 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.56"></a>
+## v0.56 — 2026-08-27
+
+- [Fix] Status counts North Dakota wells with API state code `33`, matching canonical data,
+        and now pins both ND and TX jurisdiction filters in the collector test suite
+
 <a id="v0.55"></a>
 ## v0.55 — 2026-08-26
 
