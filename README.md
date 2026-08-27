@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-in_build-3FA55E?style=flat-square" alt="Status: in build">
-  <img src="https://img.shields.io/badge/release-v0.56-2A9BB5?style=flat-square" alt="Release: v0.56">
+  <img src="https://img.shields.io/badge/release-v0.57-2A9BB5?style=flat-square" alt="Release: v0.57">
   <img src="https://img.shields.io/badge/blueprint-v0.5-2A9BB5?style=flat-square" alt="Blueprint v0.5">
   <img src="https://img.shields.io/badge/license-proprietary-7C8B96?style=flat-square" alt="License: proprietary">
   <img src="https://img.shields.io/badge/data-public_only-3FA55E?style=flat-square" alt="Public data only">

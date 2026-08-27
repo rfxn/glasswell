@@ -7,7 +7,7 @@
 > checksummed source file. Proprietary — copyright Ryan MacDonald, all rights
 > reserved.
 
-**Status: in build, release line v0.56.** North Dakota ingest, canonical production,
+**Status: in build, release line v0.57.** North Dakota ingest, canonical production,
 lineage, API, tiles and the map are deployed. Texas Permian-district wells and bore
 geometry are on the map, but Texas production and allocation are not built. New
 Mexico ingest/promotion code exists without a claimed resident deployment. P3 has an
