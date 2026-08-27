@@ -7,6 +7,12 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.58"></a>
+## v0.58 — 2026-08-27
+
+- [Fix] Give the restore drill a dedicated root-owned, Glasswell-readable state directory so a
+      validated live restore can atomically publish durable Status evidence under its sandbox
+
 <a id="v0.57"></a>
 ## v0.57 — 2026-08-27
 
