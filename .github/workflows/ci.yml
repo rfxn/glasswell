@@ -215,13 +215,12 @@ jobs:
           exit 0
 
   map-chrome:
-    name: Map chrome — the layer panel's fold ratio (tests/e2e/chrome-fold.mjs)
+    name: UI chrome — map fold and Status geometry
     runs-on: ubuntu-latest
-    # The panel's rows come from the static registry, so its geometry is a property of the
-    # bundle and not of the data: the built bundle on a static server yields the same numbers
-    # a serve_branch run does, and this job needs no database, no key and no deployed
-    # instance. GLASSWELL_REQUIRE_E2E turns "no browser" and "instance predates the row
-    # disclosure" from notes into failures, which is what keeps the guard from going inert.
+    # Map rows come from the static registry and Status receives a mocked valid envelope, so
+    # their geometry is a bundle property. This job needs no database, key, or deployed
+    # instance. GLASSWELL_REQUIRE_E2E turns "no browser" into a failure, keeping the guard
+    # from going inert.
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright
       GLASSWELL_BASE_URL: http://127.0.0.1:8139
@@ -264,3 +263,4 @@ jobs:
           done
           curl -sf "$GLASSWELL_BASE_URL/" >/dev/null || { echo "static server never came up"; exit 1; }
           node tests/e2e/chrome-fold.mjs
+          node tests/e2e/status-surface.mjs

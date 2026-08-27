@@ -1,6 +1,6 @@
 import { readState, writeState } from "../app/state.ts";
 import type { ViewMode } from "../app/state.ts";
-import { crossTo } from "../explore/router.ts";
+import { crossTo } from "../app/router.ts";
 import { mountHint } from "./hint.ts";
 import { registerOverlay } from "./overlays.ts";
 import { mountBuildStamp } from "./stamp.ts";
@@ -30,6 +30,7 @@ export interface HeaderOptions {
 const SURFACES: { view: ViewMode; title: string }[] = [
   { view: "map", title: "Map" },
   { view: "explore", title: "Explore" },
+  { view: "status", title: "Status" },
 ];
 
 let followsHistory = false;

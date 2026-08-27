@@ -83,6 +83,7 @@ test-e2e:
 	@[ -d tests/e2e/node_modules ] || npm --prefix tests/e2e ci --no-audit --no-fund
 	node tests/e2e/smoke.mjs
 	node tests/e2e/chrome-fold.mjs
+	node tests/e2e/status-surface.mjs
 
 lint:
 	$(PY) -m ruff check .
@@ -124,7 +125,7 @@ build-web:
 
 # Refuses a dirty tree and an untagged HEAD; GW_DEPLOY_HOST names the target.
 deploy:
-	scripts/deploy.sh
+	scripts/deploy.sh $(if $(MIGRATIONS),--with-migrations)
 
 # Nothing may tag what will not build, and nothing may deploy a bundle older than its tag.
 # So: prove it can be released, prove it builds, only then cut, then rebuild so the stamp and

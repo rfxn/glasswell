@@ -308,8 +308,8 @@ describe("the mode switch (SB-08 §2.1)", () => {
     wireHeader({ search, onKeyPanel });
   });
 
-  it("offers the two surfaces as one group, between the brand and the controls", () => {
-    expect(modes().map((button) => button.dataset["view"])).toEqual(["map", "explore"]);
+  it("offers the three surfaces as one group, between the brand and the controls", () => {
+    expect(modes().map((button) => button.dataset["view"])).toEqual(["map", "explore", "status"]);
     expect(element("gw-mode-switch").getAttribute("role")).toBe("group");
     expect(element("gw-mode-switch").previousElementSibling?.classList.contains("gw-brand")).toBe(true);
   });
@@ -319,7 +319,11 @@ describe("the mode switch (SB-08 §2.1)", () => {
     document.body.innerHTML = `${MARKUP}<div id="gw-toasts"></div>`;
     wireHeader({ search, onKeyPanel });
 
-    expect(modes().map((button) => button.getAttribute("aria-pressed"))).toEqual(["false", "true"]);
+    expect(modes().map((button) => button.getAttribute("aria-pressed"))).toEqual([
+      "false",
+      "true",
+      "false",
+    ]);
   });
 
   it("crosses with a pushState, so the back button returns the reader to where they were", () => {
@@ -346,7 +350,11 @@ describe("the mode switch (SB-08 §2.1)", () => {
     window.history.replaceState(null, "", "/");
     window.dispatchEvent(new PopStateEvent("popstate"));
 
-    expect(modes().map((button) => button.getAttribute("aria-pressed"))).toEqual(["true", "false"]);
+    expect(modes().map((button) => button.getAttribute("aria-pressed"))).toEqual([
+      "true",
+      "false",
+      "false",
+    ]);
   });
 
   it("does nothing when the reader presses the surface they are already on", () => {
@@ -355,5 +363,24 @@ describe("the mode switch (SB-08 §2.1)", () => {
     modes()[0]?.click();
 
     expect(window.location.href).toBe(url);
+  });
+
+  it("deep-links Status and clears map overlays without dropping route context", () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?well=3305310451&explain=drv_1&as_of=2026-08-01&f.q=bakken",
+    );
+    document.body.innerHTML = `${MARKUP}<div id="gw-toasts"></div>`;
+    wireHeader({ search, onKeyPanel });
+
+    modes()[2]?.click();
+
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get("view")).toBe("status");
+    expect(params.has("well")).toBe(false);
+    expect(params.has("explain")).toBe(false);
+    expect(params.get("as_of")).toBe("2026-08-01");
+    expect(params.get("f.q")).toBe("bakken");
   });
 });

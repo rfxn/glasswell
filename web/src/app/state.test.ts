@@ -42,7 +42,7 @@ describe("URL state codec", () => {
   });
 });
 
-describe("two surfaces, one URL grammar (SB-08 §2.1)", () => {
+describe("three surfaces, one URL grammar (SB-08 §2.1)", () => {
   it("keeps a repeated filter, which a single-valued extra collapses", () => {
     const parsed = parseState("?view=explore&ds=quarantine&f.stream=oil&f.stream=gas");
 
@@ -68,6 +68,14 @@ describe("two surfaces, one URL grammar (SB-08 §2.1)", () => {
   it("omits the viewport from an explorer link at the default view", () => {
     expect(serializeState({ ...DEFAULT_STATE, view: "explore", ds: "wells" })).not.toContain("map=");
     expect(serializeState(DEFAULT_STATE)).toContain("map=");
+  });
+
+  it("round-trips a Status deep link without inventing a viewport", () => {
+    const status = serializeState({ ...DEFAULT_STATE, view: "status" });
+
+    expect(new URLSearchParams(status).get("view")).toBe("status");
+    expect(new URLSearchParams(status).has("map")).toBe(false);
+    expect(parseState(status).view).toBe("status");
   });
 
   // B2: the reader pans, crosses to the explorer, and comes back. popstate rebuilds state from

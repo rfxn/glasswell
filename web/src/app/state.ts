@@ -4,7 +4,7 @@ export interface Viewport {
   lon: number;
 }
 
-export type ViewMode = "map" | "explore";
+export type ViewMode = "map" | "explore" | "status";
 export type ExploreTab = "datasets" | "query" | "learn";
 
 export interface AppState {
@@ -33,7 +33,7 @@ export const DEFAULT_STATE: AppState = {
 };
 
 const KNOWN = new Set(["map", "well", "explain", "view", "tab", "ds", "row", "slug"]);
-const VIEWS: ViewMode[] = ["map", "explore"];
+const VIEWS: ViewMode[] = ["map", "explore", "status"];
 const TABS: ExploreTab[] = ["datasets", "query", "learn"];
 
 /** A stale or hostile link must render the default, never a surface with no centre column. */

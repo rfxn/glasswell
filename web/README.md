@@ -1,4 +1,4 @@
-# web — the ND map, well card, lineage drawer and glossary
+# web — Map, Explore, Status, well card, lineage and glossary
 
 Vite 6 + TypeScript, no UI framework. `<gw-figure>` and `<gw-term>` are native custom
 elements with the attribute surfaces SB-05 §3.1 and §5.5 define, so swapping the base
@@ -38,6 +38,11 @@ are routed before the mount. There is no separate web server in this slice.
 
 ## URL state
 
-`?map=<zoom>/<lat>/<lon>&well=<api10>&explain=<handle>`. Viewport changes use
+`?view=map|explore|status&map=<zoom>/<lat>/<lon>&well=<api10>&explain=<handle>`. Viewport changes use
 `replaceState`; selections and drawer opens use `pushState`. Paths other than `/` are not
 used, because the static mount has no SPA fallback and would 404 them.
+
+Status is a first-class surface backed by keyed `GET /v1/status`. It renders live API and
+PostgreSQL reachability beside a sanitized scheduled host snapshot, exact or explicitly
+estimated dataset inventory, scheduled jobs, and registered-artifact age. Runtime validation
+rejects malformed successful responses, and stale telemetry suppresses prior green states.

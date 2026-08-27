@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_STATE, parseState, serializeState } from "../app/state.ts";
 import type { AppState } from "../app/state.ts";
 import type { CatalogueDataset } from "./catalogue.ts";
-import { FILTER_PREFIX, crossTo, filtersOf, requestFor, withFilter } from "./router.ts";
+import { FILTER_PREFIX, filtersOf, requestFor, withFilter } from "./router.ts";
 
 function state(over: Partial<AppState> = {}): AppState {
   return { ...DEFAULT_STATE, ...over };
@@ -126,52 +126,5 @@ describe("requestFor is the call the reader could paste into curl (§3.1)", () =
     const filtered = withFilter(state(), "api10", ["a/b#c"]);
 
     expect(requestFor(dataset(), filtered).path).toBe("/v1/wells/a%2Fb%23c/production");
-  });
-});
-
-describe("the mode switch keeps the two surfaces agreeing (§2.6, 6.11)", () => {
-  it("carries as_of across in both directions — the one thing the surfaces may not disagree on", () => {
-    const onMap = state({ extra: { as_of: ["2026-08-01"] } });
-
-    const explore = crossTo("explore", onMap);
-    const back = crossTo("map", explore);
-
-    expect(explore.extra["as_of"]).toEqual(["2026-08-01"]);
-    expect(back.extra["as_of"]).toEqual(["2026-08-01"]);
-  });
-
-  it("crosses a selected well as the wells dataset filtered to it, not a card over a grid", () => {
-    const explore = crossTo("explore", state({ well: "3305310451" }));
-
-    expect(explore.view).toBe("explore");
-    expect(explore.ds).toBe("wells");
-    expect(filtersOf(explore)).toEqual({ q: ["3305310451"] });
-    expect(explore.well).toBeNull();
-  });
-
-  it("restores the selection on the way back, so the crossing is symmetric", () => {
-    const back = crossTo("map", crossTo("explore", state({ well: "3305310451" })));
-
-    expect(back.view).toBe("map");
-    expect(back.well).toBe("3305310451");
-    expect(filtersOf(back)).toEqual({});
-  });
-
-  it("leaves a free-text search alone: only an API-10 is a selection", () => {
-    const searching = withFilter(state({ view: "explore", ds: "wells" }), "q", ["bakken federal"]);
-
-    const back = crossTo("map", searching);
-
-    expect(back.well).toBeNull();
-    expect(filtersOf(back)).toEqual({ q: ["bakken federal"] });
-  });
-
-  it("keeps the viewport, so the map the reader comes back to is the map they left", () => {
-    const panned = state({ map: { zoom: 11.5, lat: 47.9, lon: -103.1 } });
-
-    const explore = crossTo("explore", panned);
-
-    expect(explore.map).toEqual(panned.map);
-    expect(new URLSearchParams(serializeState(explore)).get("map")).toBe("11.50/47.90000/-103.10000");
   });
 });

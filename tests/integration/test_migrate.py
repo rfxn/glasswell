@@ -74,6 +74,20 @@ def test_postgis_is_available(empty_db):
     assert row is not None
 
 
+def test_status_runtime_role_can_read_only_the_migration_ledger(empty_db):
+    migrate(empty_db)
+    empty_db.commit()
+    with empty_db.cursor() as cursor:
+        cursor.execute(
+            "select has_table_privilege('glasswell_api', 'public.schema_migrations', 'select'),"
+            " has_table_privilege('glasswell_api', 'public.schema_migrations', 'insert'),"
+            " has_table_privilege('glasswell_api', 'public.schema_migrations', 'update'),"
+            " has_table_privilege('glasswell_api', 'public.schema_migrations', 'delete')"
+        )
+        privileges = cursor.fetchone()
+    assert privileges == (True, False, False, False)
+
+
 def test_an_edited_applied_migration_is_refused(empty_db):
     migrate(empty_db)
     empty_db.commit()

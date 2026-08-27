@@ -1,6 +1,6 @@
 # tests/e2e — the browser path
 
-Thirteen assertions a browser can make and `scripts/smoke.sh` cannot: that the app boots and
+Browser-path assertions `scripts/smoke.sh` cannot make: that the app boots and
 draws, that a deep link is a shareable state, that a figure's derivation handle reaches a
 64-hex checksum and a `dmr.nd.gov` url **on screen**, that a hostile query string cannot put
 the page outside the tile allowlist or off this origin, and that a visitor with no key is
@@ -15,6 +15,11 @@ export GLASSWELL_KEY_FILE=/etc/glasswell/owner.key   # a path, so the key itself
 make test-e2e                         # against https://glasswell.lab.rpx.sh
 GLASSWELL_BASE_URL=http://127.0.0.1:8000 make test-e2e    # on the VM, against the origin
 ```
+
+`make test-e2e` also runs `status-surface.mjs` against a local static bundle with a mocked
+status envelope. That gate covers the 1600/1366/1024/820/390/320 viewport ladder, three-surface
+header geometry, semantic landmarks, direct-arrival lazy loading, and horizontal overflow
+without depending on live infrastructure state.
 
 | variable | meaning |
 |---|---|

@@ -24,13 +24,13 @@ snapshot, and current `main` history. This is the short current-state ledger;
   are on the map. Lease production, well allocation, and its validators are not built.
 - **New Mexico:** ingest and promotion code exist, but promotion remains deployment- and
   owner-gated; no resident NM production is claimed here.
-- **Serving surface:** the frozen v1 snapshot contains 32 operations covering health,
-  wells, ND production, source-observed completion context, canonical formations with alias
+- **Serving surface:** the frozen v1 snapshot contains 33 operations covering health,
+  operational status, wells, ND production, source-observed completion context, canonical formations with alias
   counts, lineage, manifests, conformance, quarantine, glossary, keys, and tiles. Forecast,
   valuation, scenario, agent, and inventory operations are not served.
-- **Frontend:** MapLibre map, ND/TX layers, well card with independent completion-event and
-  pool-to-formation sections, production chart, lineage drawer, glossary, explorer,
-  satellite/hybrid modes, and searchable layer panel are shipped.
+- **Frontend:** URL-backed Map, Explore, and Status surfaces; MapLibre ND/TX layers; a well
+  card with independent completion-event and pool-to-formation sections, production chart,
+  lineage drawer, glossary, explorer, satellite/hybrid modes, and searchable layer panel ship.
 
 ## Phase ledger
 
@@ -42,7 +42,7 @@ snapshot, and current `main` history. This is the short current-state ledger;
 | **P3** Forecasting and benchmark | Pinned control built; resident gate red, repair rehearsal green | Immutable `fv1.0`, semantic-major `fv2.0`, `mdv1.4`, and control-major `tcv1.0` remain separate identities. The immutable resident artifact still records 12.9484% unavailability. A rollback-only migration rehearsal restored all 318 TEST formation gaps through same-manifest source rows, left the 38 source-absent laterals uninferred, replayed unchanged `tcv1.0` byte-identically on all eight exact split hashes, and measured 230 / 21,300 unavailable instances (1.0798%). A new-vintage live artifact is not yet published. Models, calibration, the model-registry writer, analog index, and harness remain |
 | **P4** Dollars and scenarios | Not started | Entire phase |
 | **P5** Intelligence, agents and alerts | Not started | Entire phase |
-| **P6** Hardening and glass-box proof | Partial | Enforce selector identity/cardinality in `/explain`; add independent knowledge-publication time to conformance rules; tunnel/Access, outsider guest exercise, live restore drill, determinism and tool-equivalence gates |
+| **P6** Hardening and glass-box proof | Partial | A sanitized timed Status snapshot now observes core services, bounded probes, storage, scheduled jobs, exact-grain dataset inventory, and source artifact age. Still enforce selector identity/cardinality in `/explain`; add independent rule publication time and durable source-check/cadence evidence; tunnel/Access, outsider guest exercise, recorded restore drill, determinism and tool-equivalence gates |
 | **P7** Permian | Started, unpromoted/incomplete | NM deployment; TX production, allocation, and validators |
 | **P8** Living systems | Not started | Entire phase |
 
@@ -66,11 +66,11 @@ snapshot, and current `main` history. This is the short current-state ledger;
 
 ## Verification state
 
-- The full locked Python suite passes **2,550 tests with 2 explicit skips**, including the
+- The full locked Python suite passes **2,592 tests with 2 explicit skips**, including the
   Docker-backed integration and contract tiers; Ruff passes.
-- The web suite passes **1,158 tests across 77 files**; typecheck and production build pass.
+- The web suite passes **1,181 tests across 79 files**; typecheck and production build pass.
 - Browserless E2E guards, shell checks, collateral checks, changelog lint, and the
-  35-assertion headless-Chromium map-chrome gate pass locally.
+  headless-Chromium gates pass locally: 35 Map assertions and 82 Status assertions.
 - The dependency lock exactly matches the installed environment and the generated OpenAPI
   snapshot reports current.
 - Hosted PR CI run `33013817153` passed all six jobs on 2026-08-26 at implementation-review

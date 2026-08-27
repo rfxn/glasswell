@@ -1,0 +1,16 @@
+[Unit]
+Description=Refresh the sanitized glasswell status snapshot every 15 minutes
+Documentation=file:/opt/glasswell/src/infra/README.md
+OnFailure=glasswell-alert@%n.service
+
+[Timer]
+OnBootSec=2min
+OnCalendar=*:0/15
+AccuracySec=30s
+RandomizedDelaySec=30s
+Persistent=true
+Unit=glasswell-status.service
+
+[Install]
+WantedBy=timers.target
+

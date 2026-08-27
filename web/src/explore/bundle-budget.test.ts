@@ -84,14 +84,20 @@ describe("what the explorer's shell costs the reader", () => {
     expect(measured, `entry chunk ${measured} B gzipped`).toBeLessThanOrEqual(BUDGET_BYTES.entryGzip);
   });
 
-  it("keeps the explorer route, map excluded, inside its budget", () => {
+  it("keeps the explorer route, other surfaces excluded, inside its budget", () => {
     // What a reader who lands on ?view=explore actually downloads: the entry chunk, the shell
-    // chunk it imports, and nothing the map branch pulls in.
+    // chunk it imports, and nothing either sibling surface's dynamic branch pulls in. The
+    // entry chunk names every import, so the graph walker must cut both branches explicitly.
     const map = named("map");
-    const route = reach([...entryChunks(), named("shell")], (name) => name === map);
+    const status = named("surface");
+    const route = reach(
+      [...entryChunks(), named("shell")],
+      (name) => name === map || name === status,
+    );
     const measured = route.reduce((sum, name) => sum + gzip(name), 0);
 
     expect(route, "the map chunk is not on the explorer route").not.toContain(map);
+    expect(route, "the Status chunk is not on the explorer route").not.toContain(status);
     expect(measured, `explorer route ${measured} B gzipped over ${route.join(", ")}`).toBeLessThanOrEqual(
       BUDGET_BYTES.explorerRouteGzip,
     );

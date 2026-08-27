@@ -53,6 +53,14 @@
   reason: Occurrence counter, in a collection item.
 - pointer: /sources/*/manifest_count
   reason: Count of registered manifests per source on the health page.
+- pointer: /datasets/*/metrics/*/value
+  reason: >-
+    Operational inventory from a timed status snapshot; its grain, precision and observation
+    time are stated alongside.
+- pointer: /platform/schema_version
+  reason: Database migration identity, not a measured petroleum quantity.
+- pointer: /platform/database_bytes
+  reason: Physical PostgreSQL storage inventory, not a petroleum figure.
 - pointer: /*/alias_count
   reason: Reference-row cardinality, not a measured or modelled petroleum figure.
 # These two outlive their `/v1/vintages` twins, which A-4 retired: `get_service_index`

@@ -24,11 +24,17 @@ const cardHost = required("gw-card");
 const drawerHost = required("gw-drawer");
 const keyHost = required("gw-key-host");
 const exploreHost = required("gw-explore");
+const statusHost = required("gw-status-page");
 const shell = required("gw-main");
 
 let state: AppState = readState();
 let mapHandle: MapHandle | undefined;
 let pendingSource: SelectSource = "url";
+let historySource: SelectSource | null = null;
+let historyGeneration = 0;
+let renderGeneration = 0;
+let unmountExplorer: (() => void) | undefined;
+let unmountStatusPage: (() => void) | undefined;
 
 function required(id: string): HTMLElement {
   const element = document.getElementById(id);
@@ -82,6 +88,7 @@ function showKeyPanel(reason: "missing" | "rejected"): void {
       onRetry: () => {
         keyHost.hidden = true;
         void boot();
+        if (state.view === "status") void renderView();
       },
     }),
   );
@@ -98,6 +105,12 @@ function handleApiError(error: unknown, context: string): void {
 }
 
 onSelectWell(({ api10, source }) => {
+  if (source === "search" && api10 && state.view !== "map") {
+    historySource = source;
+    writeState({ ...state, view: "map", well: api10, explain: null }, "push");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    return;
+  }
   pendingSource = source;
   showWell(api10);
 });
@@ -143,29 +156,74 @@ document.addEventListener(
   true,
 );
 
-window.addEventListener("popstate", () => {
+window.addEventListener("popstate", () => void followHistory());
+
+async function followHistory(): Promise<void> {
+  const generation = ++historyGeneration;
   // Captured before the assignment: comparing next.view with state.view after it would be
   // comparing next with itself, and a back button across the mode switch would render nothing.
   const previousView = state.view;
   const next = readState();
   state = next;
-  pendingSource = "url";
-  if (next.view !== previousView) void renderView();
-  showWell(next.well, "replace");
-  openExplain(next.explain, "replace");
-});
+  pendingSource = historySource ?? "url";
+  historySource = null;
+  if (next.view !== previousView) await renderView();
+  if (generation !== historyGeneration) return;
+  if (next.view === "map") {
+    showWell(next.well, "replace");
+    openExplain(next.explain, "replace");
+  } else {
+    hideMapOverlays();
+  }
+}
+
+function hideMapOverlays(): void {
+  cardHost.hidden = true;
+  cardHost.replaceChildren();
+  drawerHost.hidden = true;
+  drawerHost.replaceChildren();
+  shell.setAttribute("data-drawer", "closed");
+}
 
 async function renderView(): Promise<void> {
-  if (state.view === "explore") {
-    const { mountExplorer } = await import("./explore/shell.ts");
-    await mountExplorer(exploreHost, state, { commit });
+  const generation = ++renderGeneration;
+  const view = state.view;
+  hideMapOverlays();
+
+  if (view === "explore") {
+    const explorer = await import("./explore/shell.ts");
+    if (generation !== renderGeneration || state.view !== view) return;
+    unmountExplorer = explorer.unmountExplorer;
+    unmountStatusPage?.();
+    statusHost.hidden = true;
     mapHost.hidden = true;
     exploreHost.hidden = false;
+    await explorer.mountExplorer(exploreHost, state, { commit });
+    if (generation !== renderGeneration || state.view !== view) return;
     return;
   }
-  const { createMap } = await import("./map/map.ts");
+  if (view === "status") {
+    const statusPage = await import("./status-page/surface.ts");
+    if (generation !== renderGeneration || state.view !== view) return;
+    unmountStatusPage = statusPage.unmountStatusPage;
+    unmountExplorer?.();
+    mapHost.hidden = true;
+    exploreHost.hidden = true;
+    statusHost.hidden = false;
+    await statusPage.mountStatusPage(statusHost, {
+      onForbidden: (error) => handleApiError(error, "Status"),
+    });
+    if (generation !== renderGeneration || state.view !== view) return;
+    return;
+  }
+
+  unmountExplorer?.();
+  unmountStatusPage?.();
   exploreHost.hidden = true;
+  statusHost.hidden = true;
   mapHost.hidden = false;
+  const { createMap } = await import("./map/map.ts");
+  if (generation !== renderGeneration || state.view !== view) return;
   // createMap is not idempotent and connectMap's disposer is discarded inside it, so a second
   // mount is a second canvas and a second bus handler. Mount once; the map lives behind the
   // explorer after that.
@@ -227,8 +285,8 @@ async function start(): Promise<void> {
   // before that would fire into a bus the map has not joined.
   await renderView();
 
-  if (state.well) showWell(state.well, "replace");
-  if (state.explain) openExplain(state.explain, "replace");
+  if (state.view === "map" && state.well) showWell(state.well, "replace");
+  if (state.view === "map" && state.explain) openExplain(state.explain, "replace");
   if (window.location.search === "") {
     window.history.replaceState(state, "", serializeState({ ...DEFAULT_STATE, ...state }));
   }

@@ -1,4 +1,4 @@
-import type { AppState, ViewMode } from "../app/state.ts";
+import type { AppState } from "../app/state.ts";
 import type { CatalogueDataset } from "./catalogue.ts";
 
 /** §2.1: a filter is named for the API parameter it becomes, so the URL and the curl agree. */
@@ -7,9 +7,6 @@ export const FILTER_PREFIX = "f.";
 // Hoisted by the shell rather than declared as facets (C1 MUST-KNOW M9): they narrow no
 // dimension, they page and pin the walk.
 const HOISTED = ["as_of", "cursor"] as const;
-
-const WELL_FILTER = "q";
-const API10 = /^\d{10}$/;
 
 export interface ExploreRequest {
   operationId: string;
@@ -53,23 +50,4 @@ export function requestFor(dataset: CatalogueDataset, state: AppState): ExploreR
     if (values && values.length > 0) query[name] = values;
   }
   return { operationId: dataset.operationId, path, query, missing };
-}
-
-/**
- * §2.6's two invariants: `as_of` always survives the crossing, and a selection crosses as the
- * narrowing that produced it rather than as a card floating over a grid.
- */
-export function crossTo(view: ViewMode, state: AppState): AppState {
-  if (view === state.view) return state;
-  if (view === "explore") {
-    if (!state.well) return { ...state, view };
-    return withFilter({ ...state, view, well: null, explain: null, ds: state.ds ?? "wells" },
-      WELL_FILTER,
-      [state.well],
-    );
-  }
-  const carried = filtersOf(state)[WELL_FILTER];
-  const api10 = carried?.length === 1 ? carried[0] : undefined;
-  if (state.ds !== "wells" || api10 === undefined || !API10.test(api10)) return { ...state, view };
-  return withFilter({ ...state, view, well: api10 }, WELL_FILTER, []);
 }

@@ -858,6 +858,102 @@
         "title": "ConformanceRuleDetail",
         "type": "object"
       },
+      "DatasetInventory": {
+        "additionalProperties": false,
+        "properties": {
+          "counted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counted At"
+          },
+          "dataset_id": {
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "grain": {
+            "title": "Grain",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "latest_knowledge_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Knowledge At"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/InventoryMetric"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "available",
+              "unavailable"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "valid_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid From"
+          },
+          "valid_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid To"
+          }
+        },
+        "required": [
+          "dataset_id",
+          "label",
+          "scope",
+          "grain",
+          "state",
+          "metrics",
+          "detail"
+        ],
+        "title": "DatasetInventory",
+        "type": "object"
+      },
       "Derivation": {
         "properties": {
           "code_dirty": {
@@ -1798,6 +1894,39 @@
           "links"
         ],
         "title": "EnvelopeModel[ServiceIndex]",
+        "type": "object"
+      },
+      "EnvelopeModel_Status_": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Status"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[Status]",
         "type": "object"
       },
       "EnvelopeModel_Vintage_": {
@@ -2779,6 +2908,51 @@
         "title": "IndexEntry",
         "type": "object"
       },
+      "InventoryMetric": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "metric_id": {
+            "title": "Metric Id",
+            "type": "string"
+          },
+          "precision": {
+            "enum": [
+              "exact",
+              "estimated"
+            ],
+            "title": "Precision",
+            "type": "string"
+          },
+          "reason": {
+            "default": "Operational inventory from a timed status snapshot; its grain, precision and observation time are stated alongside.",
+            "title": "Reason",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "minimum": 0.0,
+            "title": "Value",
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Operational inventory from a timed status snapshot; its grain, precision and observation time are stated alongside."
+          }
+        },
+        "required": [
+          "metric_id",
+          "label",
+          "value",
+          "unit",
+          "precision"
+        ],
+        "title": "InventoryMetric",
+        "type": "object"
+      },
       "IssueRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2942,6 +3116,66 @@
           "secret"
         ],
         "title": "IssuedKey",
+        "type": "object"
+      },
+      "JobStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run At"
+          },
+          "next_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Run At"
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "degraded",
+              "pending",
+              "unavailable",
+              "not_instrumented"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "state",
+          "detail"
+        ],
+        "title": "JobStatus",
         "type": "object"
       },
       "KeyRecordModel": {
@@ -3321,6 +3555,60 @@
           "as_of"
         ],
         "title": "MetaModel",
+        "type": "object"
+      },
+      "PlatformStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "code_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Version"
+          },
+          "database_bytes": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Bytes",
+            "x-glasswell-not-a-figure": "Physical PostgreSQL storage inventory, not a petroleum figure."
+          },
+          "database_bytes_reason": {
+            "default": "Physical PostgreSQL storage inventory, not a petroleum figure.",
+            "title": "Database Bytes Reason",
+            "type": "string"
+          },
+          "schema_version": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Version",
+            "x-glasswell-not-a-figure": "Database migration identity, not a measured petroleum quantity."
+          },
+          "schema_version_reason": {
+            "default": "Database migration identity, not a measured petroleum quantity.",
+            "title": "Schema Version Reason",
+            "type": "string"
+          }
+        },
+        "title": "PlatformStatus",
         "type": "object"
       },
       "PoolProduction": {
@@ -4369,6 +4657,150 @@
         "title": "SourceHealth",
         "type": "object"
       },
+      "Status": {
+        "additionalProperties": false,
+        "properties": {
+          "checks": {
+            "description": "Application-plane infrastructure checks.",
+            "items": {
+              "$ref": "#/components/schemas/StatusCheck"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "datasets": {
+            "description": "Timed dataset inventory whose grain and precision are explicit.",
+            "items": {
+              "$ref": "#/components/schemas/DatasetInventory"
+            },
+            "title": "Datasets",
+            "type": "array"
+          },
+          "disclosures": {
+            "description": "Known limits that prevent a broader health claim.",
+            "items": {
+              "$ref": "#/components/schemas/StatusDisclosure"
+            },
+            "title": "Disclosures",
+            "type": "array"
+          },
+          "jobs": {
+            "description": "Scheduled ingest and protection jobs.",
+            "items": {
+              "$ref": "#/components/schemas/JobStatus"
+            },
+            "title": "Jobs",
+            "type": "array"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the scheduled snapshot observed its host and dataset inventory.",
+            "title": "Observed At"
+          },
+          "platform": {
+            "$ref": "#/components/schemas/PlatformStatus",
+            "description": "Build, schema and database storage identity."
+          },
+          "snapshot_state": {
+            "description": "Whether the sanitized timed snapshot is current and valid.",
+            "enum": [
+              "current",
+              "stale",
+              "unavailable",
+              "invalid"
+            ],
+            "title": "Snapshot State",
+            "type": "string"
+          },
+          "sources": {
+            "description": "Registered-artifact age for every source; not last-checked time.",
+            "items": {
+              "$ref": "#/components/schemas/SourceHealth"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "state": {
+            "description": "degraded for a known failure, partial for an observability or coverage gap.",
+            "enum": [
+              "ok",
+              "degraded",
+              "partial"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "observed_at",
+          "snapshot_state",
+          "state",
+          "checks",
+          "datasets",
+          "jobs",
+          "sources",
+          "platform",
+          "disclosures"
+        ],
+        "title": "Status",
+        "type": "object"
+      },
+      "StatusCheck": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "degraded",
+              "pending",
+              "unavailable",
+              "not_instrumented"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "state",
+          "detail"
+        ],
+        "title": "StatusCheck",
+        "type": "object"
+      },
       "StatusCount": {
         "properties": {
           "status": {
@@ -4387,6 +4819,39 @@
           "wells"
         ],
         "title": "StatusCount",
+        "type": "object"
+      },
+      "StatusDisclosure": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "limited",
+              "not_instrumented"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "state",
+          "detail"
+        ],
+        "title": "StatusDisclosure",
         "type": "object"
       },
       "SummaryGroup": {
@@ -5193,7 +5658,7 @@
     }
   },
   "info": {
-    "description": "Glass-box upstream analytics on public data. Every number this API serves carries a\nderivation handle in band, and `GET /v1/explain` walks that handle back to the\nchecksummed government file it came from.\n\nConventions that hold everywhere: responses are `data` / `meta` / `links`; collections\nare cursor-paginated with no offset parameter; failures are RFC 9457 problem documents\nwhose `type` resolves at `/v1/errors/{code}`; and `as_of` selects knowledge time, with\nthe resolved vintage reported back in `meta.as_of`.\n\nThis deployment serves North Dakota wells, geometry, monthly production, completion context\nand canonical formations with current alias counts, plus Texas wells and bore geometry with\nwell-level production held pending allocation. The lineage spine, conformance registry,\nquarantine and glossary are live. Forecasts, economics, scenarios, agents and inventory are\nnot served; New Mexico promotion is not claimed.",
+    "description": "Glass-box upstream analytics on public data. Every number this API serves carries a\nderivation handle in band, and `GET /v1/explain` walks that handle back to the\nchecksummed government file it came from.\n\nConventions that hold everywhere: responses are `data` / `meta` / `links`; collections\nare cursor-paginated with no offset parameter; failures are RFC 9457 problem documents\nwhose `type` resolves at `/v1/errors/{code}`; and `as_of` selects knowledge time, with\nthe resolved vintage reported back in `meta.as_of`.\n\nThis deployment serves North Dakota wells, geometry, monthly production, completion context\nand canonical formations with current alias counts, plus Texas wells and bore geometry with\nwell-level production held pending allocation. The lineage spine, conformance registry,\nquarantine and glossary are live. Forecasts, economics, scenarios, agents and\nundrilled-location inventory are not served; New Mexico promotion is not claimed. `/v1/status`\nadds current application-plane\nchecks, scheduled-job observations, registered-artifact age and explicitly grained operational\ndataset inventory without treating those counts as forecast inventory or petroleum figures.",
     "title": "glasswell",
     "version": "0.1.0",
     "x-glasswell-freeze": {
@@ -8856,6 +9321,62 @@
           "path": {
             "quarantine_id": "qr_01contract0001"
           },
+          "query": {}
+        }
+      }
+    },
+    "/v1/status": {
+      "get": {
+        "description": "A live API/PostgreSQL signal joined to a sanitized scheduled snapshot of the tile service, HTTPS edge, storage, jobs and exact dataset inventory. Stale snapshots never preserve a green infrastructure state. Source freshness is explicitly the age of the newest registered artifact: unchanged and failed fetch attempts do not have a durable independent ledger yet and are disclosed rather than inferred. This is current operational telemetry, not a historical `as_of` surface.",
+        "operationId": "get_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_Status_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Infrastructure, dataset inventory and source freshness",
+        "tags": [
+          "service"
+        ],
+        "x-glasswell-request-example": {
+          "path": {},
           "query": {}
         }
       }
