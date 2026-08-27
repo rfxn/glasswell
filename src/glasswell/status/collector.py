@@ -41,7 +41,7 @@ from glasswell.status.models import (
 SNAPSHOT_ENV = "GLASSWELL_STATUS_SNAPSHOT"
 DEFAULT_SNAPSHOT = Path("/var/lib/glasswell/status.json")
 RESTORE_RESULT_ENV = "GLASSWELL_RESTORE_RESULT"
-DEFAULT_RESTORE_RESULT = Path("/var/lib/glasswell/restore-drill.json")
+DEFAULT_RESTORE_RESULT = Path("/var/lib/glasswell-restore-drill/result.json")
 DSN_ENV = "GLASSWELL_DSN"
 FALLBACK_DSN_ENV = "DATABASE_URL"
 CODE_VERSION_ENV = "GLASSWELL_CODE_VERSION"

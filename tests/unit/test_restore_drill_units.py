@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SYSTEMD = ROOT / "infra" / "systemd"
 INSTALL = ROOT / "infra" / "install.sh"
 ALERT = "OnFailure=glasswell-alert@%n.service"
+RESTORE_RESULT = "/var/lib/glasswell-restore-drill/result.json"
 
 
 def text(name: str) -> str:
@@ -42,12 +43,28 @@ def test_restore_service_is_bounded_private_and_writes_only_product_state() -> N
     service = text("glasswell-restore-drill.service")
 
     assert "ExecStart=/usr/local/sbin/glasswell-restore-drill.sh" in service
+    assert "User=root" in service
+    assert "Group=glasswell" in service
     assert "TimeoutStartSec=4h" in service
+    assert "StateDirectory=glasswell-restore-drill" in service
+    assert "StateDirectoryMode=0750" in service
     assert "NoNewPrivileges=yes" in service
     assert "ProtectSystem=strict" in service
     assert "ProtectHome=yes" in service
     assert "PrivateTmp=yes" in service
-    assert "ReadWritePaths=/var/lib/glasswell" in service
+    assert "ReadWritePaths=/var/lib/glasswell-restore-drill" in service
+
+
+def test_restore_writer_and_status_reader_share_the_private_state_path() -> None:
+    restore = (ROOT / "infra" / "backup" / "glasswell-restore-drill.sh").read_text(
+        encoding="utf-8"
+    )
+    collector = (ROOT / "src" / "glasswell" / "status" / "collector.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert f"RESTORE_RESULT_PATH:-{RESTORE_RESULT}" in restore
+    assert f'DEFAULT_RESTORE_RESULT = Path("{RESTORE_RESULT}")' in collector
 
 
 def test_installer_places_both_units_and_preserves_an_armed_backup_schedule() -> None:

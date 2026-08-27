@@ -44,7 +44,7 @@ snapshot, and current `main` history. This is the short current-state ledger;
 | **P3** Forecasting and benchmark | Pinned control and publication gate built; resident gate red | Immutable `fv1.0`, semantic-major `fv2.0`, `mdv1.4`, and control-major `tcv1.0` remain separate identities. The immutable resident artifact still records 12.9484% unavailability. A rollback-only migration rehearsal restored all 318 TEST formation gaps through same-manifest source rows, left the 38 source-absent laterals uninferred, replayed unchanged `tcv1.0` byte-identically on all eight exact split hashes, and measured 230 / 21,300 unavailable instances (1.0798%). A fail-closed publisher now pins deployed code and lock identity, verifies two byte-identical builds and persists an immutable family receipt, but a new-vintage live artifact is not yet published. Models, calibration, the model-registry writer, analog index, and harness remain |
 | **P4** Dollars and scenarios | Not started | Entire phase |
 | **P5** Intelligence, agents and alerts | Not started | Entire phase |
-| **P6** Hardening and glass-box proof | Partial | A sanitized timed Status snapshot observes core services, bounded probes, storage, scheduled jobs, exact-grain dataset inventory and source artifact age. Nightly dumps now carry exact-vintage manifests, and a weekly logical restore drill publishes validated, freshness-checked evidence with scratch cleanup. Completion and neighbour lineage selectors are checked against persisted derivation outputs, but that enforcement is not universal. A live passing drill is still unrecorded, and this does not prove full VM/raw-zone recovery. Still add durable source-check/cadence evidence, tunnel/Access, outsider guest exercise, full-system recovery, determinism and tool-equivalence gates |
+| **P6** Hardening and glass-box proof | Partial | A sanitized timed Status snapshot observes core services, bounded probes, storage, scheduled jobs, exact-grain dataset inventory and source artifact age. Nightly dumps now carry exact-vintage manifests, and a weekly logical restore drill validates freshness, schema, counts, representative reads and scratch cleanup. The first v0.57 live drill completed those database checks but exposed a state-directory permission defect before durable evidence could be published; the corrective isolated state directory is built and awaits replay. Completion and neighbour lineage selectors are checked against persisted derivation outputs, but that enforcement is not universal. This does not prove full VM/raw-zone recovery. Still add durable source-check/cadence evidence, tunnel/Access, outsider guest exercise, full-system recovery, determinism and tool-equivalence gates |
 | **P7** Permian | Started, unpromoted/incomplete | NM deployment; TX production, allocation, and validators |
 | **P8** Living systems | Not started | Entire phase |
 
@@ -54,8 +54,9 @@ snapshot, and current `main` history. This is the short current-state ledger;
    at a new evaluation vintage with the same eight split hashes and ≤5% unavailability.
 2. Populate the current ND physical-neighbour mart on the release host and verify card,
    pagination, exact lineage and Status inventory against the resident data.
-3. Execute and record the weekly logical restore drill from a fresh exact-vintage dump, while
-   retaining full VM/raw-zone recovery as a separate P6 exit requirement.
+3. Deploy the corrective restore-result state directory, then replay and record the weekly
+   logical restore drill from the fresh exact-vintage dump; retain full VM/raw-zone recovery as
+   a separate P6 exit requirement.
 4. Extend `/explain` selector-output validation beyond the completion and physical-neighbour
    datasets, retaining strict URL-safe base64 decoding for encoded identities.
 5. Add immutable conformance-rule publication time distinct from `effective_from`, then
@@ -68,7 +69,7 @@ snapshot, and current `main` history. This is the short current-state ledger;
 
 ## Verification state
 
-- The full locked Python suite passes **2,665 tests with 2 explicit skips**, including the
+- The full locked Python suite passes **2,666 tests with 2 explicit skips**, including the
   Docker-backed integration and contract tiers; Ruff passes.
 - The web suite passes **1,184 tests across 79 files**; typecheck and production build pass.
 - Browserless E2E guards, shell checks, collateral checks, changelog lint, and the

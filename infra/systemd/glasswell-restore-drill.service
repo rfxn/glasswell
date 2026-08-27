@@ -8,11 +8,15 @@ OnFailure=glasswell-alert@%n.service
 
 [Service]
 Type=oneshot
+User=root
+Group=glasswell
 ExecStart=/usr/local/sbin/glasswell-restore-drill.sh
 Nice=10
 IOSchedulingClass=idle
 TimeoutStartSec=4h
 UMask=0027
+StateDirectory=glasswell-restore-drill
+StateDirectoryMode=0750
 
 NoNewPrivileges=yes
 ProtectSystem=strict
@@ -35,4 +39,4 @@ LockPersonality=yes
 CapabilityBoundingSet=CAP_SETGID CAP_SETUID
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
-ReadWritePaths=/var/lib/glasswell
+ReadWritePaths=/var/lib/glasswell-restore-drill
