@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 // The chrome/*.test.ts precedent: read the shipped stylesheets, not a fixture of them.
 const SHEETS = [
+  "src/components/gw-count.css",
   "src/explore/grid/grid.css",
   "src/explore/facets/facets.css",
   "src/explore/detail/detail.css",
@@ -15,10 +16,10 @@ const SHEETS = [
 }));
 
 /**
- * Every class the explorer hides with the `hidden` property. A `display` declaration outranks
- * the UA's `[hidden] { display: none }`, so a class in this list that also carries an
- * unconditional `display` renders a closed popover into the layout — which is exactly what
- * made an exempt column's rows 86 px tall before the C7 visual pass caught it.
+ * Every class the explorer or a shared primitive it invokes hides with the `hidden` property.
+ * A `display` declaration outranks the UA's `[hidden] { display: none }`, so a class in this
+ * list that also carries an unconditional `display` renders a closed popover into the layout —
+ * which is exactly what made an exempt column's rows 86 px tall before the C7 visual pass.
  */
 const HIDDEN_CLASSES = [
   "gw-count-reason",
@@ -46,7 +47,7 @@ function rules(css: string): { selector: string; body: string }[] {
   }));
 }
 
-describe("the explorer's stylesheets obey the rules C6 wrote down for its own (G-3)", () => {
+describe("the explorer and its shared styles obey the rules C6 wrote down (G-3)", () => {
   it("declares no z-index at all — the grid and the facet bar do not overlap anything", () => {
     for (const sheet of SHEETS) {
       expect(sheet.css.replace(/\/\*[\s\S]*?\*\//g, ""), sheet.path).not.toMatch(/z-index/);
@@ -113,14 +114,14 @@ describe("the explorer's stylesheets obey the rules C6 wrote down for its own (G
   });
 
   it("keeps that list honest by counting what the source actually hides", () => {
+    const hiddenSources = [...sources("src/explore"), "src/components/gw-count.ts"];
     const hidden = new Set(
-      sources("src/explore").flatMap((path) =>
+      hiddenSources.flatMap((path) =>
         [...readFileSync(path, "utf8").matchAll(/(\w+)\.hidden = /g)].map((match) => match[1]),
       ),
     );
-    // Five elements today — C9's parameter body was the fifth, and this is what caught it. A
-    // sixth has to join HIDDEN_CLASSES or this reddens, which is the only thing that stops the
-    // list above rotting into a comment.
+    // Five elements today, including the count reason now shared with Status. A sixth has to
+    // join HIDDEN_CLASSES or this reddens, which stops the list above rotting into a comment.
     expect(hidden.size).toBe(HIDDEN_CLASSES.length);
   });
 });

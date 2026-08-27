@@ -12,6 +12,7 @@ make release              # bump, fold, commit, annotate the tag
 make build-web            # dist/, changelog page included
 make deploy               # tar over ssh to $GW_DEPLOY_HOST, then verify.sh and smoke.sh
 make ship                 # check, build, release, rebuild, deploy — first failure stops it
+make ship MIGRATIONS=1    # same train when the release carries a new SQL migration
 ```
 
 ## 1. The version is an odometer, not semver
@@ -133,8 +134,9 @@ path. `web/dist` goes to `/opt/glasswell/web`, dependencies are reinstalled only
 `verify.sh` and `smoke.sh` report. Both `glasswell-api` and `martin` are restarted, as runbook
 step 4 has it — `install.sh` can have just placed `infra/martin/config.yaml`, and without the
 restart the new config is inert and `verify.sh`'s catalogue check fails the deploy two steps
-later. Migrations are opt-in (`--with-migrations`); the tile-function reinstall stays a hand
-step because it is conditional on `src/glasswell/marts/tiles.py` having moved.
+later. Migrations are opt-in (`--with-migrations`, or `MIGRATIONS=1` through the Make targets);
+the tile-function reinstall stays a hand step because it is conditional on
+`src/glasswell/marts/tiles.py` having moved.
 
 ## 7. Cadence
 

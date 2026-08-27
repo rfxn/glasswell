@@ -204,7 +204,8 @@ second database that has to be kept in sync with the first.
 ## Deployment
 
 One VM. Parquet plus DuckDB for the analytical path, PostGIS for geometry, martin
-for tiles, systemd timers for the alerting cycle. No distributed infrastructure and
+for tiles, and systemd timers for ingest, protection, alerting, and the sanitized
+operational Status snapshot. No distributed infrastructure and
 no service that cannot be rebuilt from the raw zone by replaying recipes.
 
 Inventory batch runs are the only new load introduced at v0.5, and they run in

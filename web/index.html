@@ -101,7 +101,11 @@
             <p>
               North Dakota wells and production, plus Texas wells and bore geometry.
               Texas well-level production stays pending allocation rather than being
-              inferred. Click any ⌾ derivation handle to trace a served figure to a
+              inferred. The Status surface reports bounded infrastructure checks, scheduled
+              work, exact-grain dataset inventory, and registered-artifact age for every source.
+              It labels stale telemetry unavailable and states the source-check, cadence,
+              backup-copy, and restore-drill evidence the platform does not yet persist. Click
+              any ⌾ derivation handle to trace a served figure to a
               checksummed file. Well cards now keep source-observed completion events separate
               from regulator pool-to-formation mappings; design measurements and formation
               tops remain explicitly unserved. Forecasts are not live: P3 readiness now
@@ -139,6 +143,7 @@
         <aside id="gw-card" aria-label="Well card" hidden></aside>
         <aside id="gw-drawer" aria-label="Lineage" hidden></aside>
         <div id="gw-explore" aria-label="Data explorer" hidden></div>
+        <div id="gw-status-page" aria-label="Service and data status" hidden></div>
         <div id="gw-key-host" hidden></div>
       </main>
       <div id="gw-toasts" class="gw-toasts" aria-live="polite"></div>

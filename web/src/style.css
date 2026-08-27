@@ -271,7 +271,7 @@ body {
   background: var(--cyan);
 }
 
-/* mode switch. Two surfaces, one segmented control, sitting with the brand rather than in the
+/* mode switch. Three surfaces, one segmented control, sitting with the brand rather than in the
    control cluster: it says where you are, and the cluster says what you can do (SB-08 §2.1). */
 .gw-mode-switch {
   display: flex;
@@ -1483,6 +1483,18 @@ a {
     padding: 0 var(--gw-space-2);
   }
 
+  /* Unlike the compact desktop rail, every surface remains a full touch target here. */
+  .gw-mode-switch {
+    height: 48px;
+    padding-block: 1px;
+  }
+
+  .gw-mode-btn {
+    min-width: 44px;
+    min-height: 44px;
+    padding-inline: var(--gw-space-2);
+  }
+
   .gw-search-input {
     width: min(14rem, 34vw);
   }
@@ -1514,9 +1526,8 @@ a {
   }
 }
 
-/* Phone posture. Everything below buys width for the wordmark, because a rail that cannot
-   say the product's name is the VF-1 defect wearing a different size. Search pays: it sits
-   as its own glyph until it is asked for, and takes the rail while it is being used. */
+/* Phone posture. The labelled brand link and mark keep the product identity while the live
+   wordmark yields enough width for all three first-class surfaces and the action controls. */
 @media (max-width: 520px) {
   #gw-header {
     --gw-rail-pad-x: 10px;
@@ -1535,9 +1546,12 @@ a {
     border-left: none;
   }
 
-  .gw-wordmark {
-    font-size: 1.15rem;
-    line-height: 20px;
+  .gw-brand-text {
+    display: none;
+  }
+
+  .gw-mode-btn {
+    padding-inline: var(--gw-space-1);
   }
 
   .gw-mark {
@@ -1610,10 +1624,9 @@ a {
     display: none;
   }
 
-  /* Last resort only: with 17 px of slack the wordmark never shrinks, but a fallback face
-     during font swap must ellipsise the name rather than scroll the whole page sideways. */
+  /* The mark is fixed; the accessible name remains on the link around it. */
   .gw-brand {
-    flex: 0 1 auto;
+    flex: none;
     min-width: 0;
   }
 

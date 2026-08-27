@@ -1,3 +1,5 @@
+import "./gw-count.css";
+
 import { formatValue } from "../card/format.ts";
 import { placePopover } from "../chrome/popover.ts";
 

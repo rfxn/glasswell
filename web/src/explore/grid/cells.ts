@@ -1,7 +1,7 @@
 import { derivationFor, isFigure, sidecarFor } from "../../api/envelope.ts";
 import { formatValue, nullSemantics } from "../../card/format.ts";
 import "../../card/gw-figure.ts";
-import "../gw-count.ts";
+import "../../components/gw-count.ts";
 import type { Column } from "./columns.ts";
 import type { Cell, Row } from "./rows.ts";
 

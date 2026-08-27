@@ -1,0 +1,50 @@
+gw-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.15rem;
+}
+
+.gw-count-value {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: var(--gw-features), "tnum" 1;
+}
+
+/* Three states: a served exemption, an owed exemption, and an unbound column header. */
+.gw-count-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.05em;
+  height: 1.05em;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--amber-text);
+  border-radius: var(--gw-radius-pill);
+  color: var(--amber-text);
+  cursor: pointer;
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-fs-eyebrow);
+  line-height: 1;
+  vertical-align: super;
+}
+
+.gw-count-mark:hover,
+.gw-count-mark:focus-visible {
+  background: var(--tint-accent);
+}
+
+.gw-count-mark-unserved {
+  border-style: dashed;
+}
+
+/* Never let an author display rule outrank the hidden attribute's user-agent rule. */
+.gw-count-reason:not([hidden]) {
+  display: block;
+}
+
+.gw-popover.gw-count-reason {
+  max-width: min(44ch, calc(100vw - 2 * var(--gw-space-4)));
+  color: var(--slate);
+  font-size: var(--gw-fs-micro);
+  white-space: normal;
+}

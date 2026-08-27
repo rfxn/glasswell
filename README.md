@@ -240,22 +240,28 @@ bounds get measured against two independent validators and published.
 
 ## API surface
 
-API-first, with 32 operations in the frozen v1 snapshot. The current surface serves
-health, wells, North Dakota production, source-observed completion context, canonical
+API-first, with 33 operations in the frozen v1 snapshot. The current surface serves
+health and operational status, wells, North Dakota production, source-observed completion context, canonical
 formations with alias counts, lineage, manifests, conformance, quarantine, glossary, key
 administration, and tiles:
 
 ```
-GET  /v1/wells                          GET  /v1/wells/{api10}
-GET  /v1/wells/{api10}/production       GET  /v1/wells/{api10}/production/pools
-GET  /v1/wells/{api10}/completions      GET  /v1/formations
-GET  /v1/explain?h={handle}              GET  /v1/manifests/{manifest_id}
-GET  /v1/conformance                    GET  /v1/conformance/{rule_id}
-GET  /v1/quarantine                     GET  /v1/quarantine/summary
-GET  /v1/glossary                       GET  /v1/tiles/{layer}/{z}/{x}/{y}.pbf
+GET  /v1/status                         GET  /v1/wells
+GET  /v1/wells/{api10}                  GET  /v1/wells/{api10}/production
+GET  /v1/wells/{api10}/production/pools GET  /v1/wells/{api10}/completions
+GET  /v1/formations                     GET  /v1/explain?h={handle}
+GET  /v1/manifests/{manifest_id}         GET  /v1/conformance
+GET  /v1/conformance/{rule_id}           GET  /v1/quarantine
+GET  /v1/quarantine/summary              GET  /v1/glossary
+GET  /v1/tiles/{layer}/{z}/{x}/{y}.pbf
 ```
 
-Forecast, valuation, sensitivity, scenario, agent, and inventory operations remain
+The application has three URL-backed surfaces: Map, Explore, and Status. Status joins live
+API/PostgreSQL signals to a sanitized 15-minute host snapshot, exact inventory counts with
+declared grains, scheduled-job evidence, and registered-artifact age for every source. It does
+not relabel artifact age as last-checked time, and stale snapshots never retain green checks.
+
+Forecast, valuation, sensitivity, scenario, agent, and undrilled-location inventory operations remain
 designed scope, not live routes. The UI consumes the same public API documented by the
 checked-in OpenAPI snapshot; there is no private endpoint behind it.
 

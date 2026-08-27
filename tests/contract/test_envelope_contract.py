@@ -19,6 +19,7 @@ COLLECTIONS = (
 ENVELOPED = (
     "/v1",
     "/v1/health",
+    "/v1/status",
     "/v1/wells",
     f"/v1/wells/{EXAMPLE_API10}",
     f"/v1/wells/{EXAMPLE_API10}/production",

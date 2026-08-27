@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import "./gw-count.ts";
+import "../components/gw-count.ts";
 
 const REASON =
   "An occurrence count is bookkeeping about how many fetches re-presented the row, not a" +

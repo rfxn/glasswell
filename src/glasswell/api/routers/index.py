@@ -17,6 +17,7 @@ API_VERSION = "v1"
 
 RESOURCE_LINKS = {
     "health": "/v1/health",
+    "status": "/v1/status",
     "wells": "/v1/wells",
     "formations": "/v1/formations",
     "explain": "/v1/explain?h=",

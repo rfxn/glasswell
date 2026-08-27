@@ -10,8 +10,14 @@ const INDEX_BODY =
 
 const select = vi.fn();
 const createMap = vi.fn();
+const mountExplorer = vi.fn();
+const unmountExplorer = vi.fn();
+const mountStatusPage = vi.fn();
+const unmountStatusPage = vi.fn();
 
 vi.mock("./map/map.ts", () => ({ createMap }));
+vi.mock("./explore/shell.ts", () => ({ mountExplorer, unmountExplorer }));
+vi.mock("./status-page/surface.ts", () => ({ mountStatusPage, unmountStatusPage }));
 
 // main.ts registers window and document listeners at import. Each boot below is a new module
 // instance, so the previous instance's listeners have to come off or they answer popstate too.
@@ -58,6 +64,9 @@ async function bootAt(url: string): Promise<typeof import("./bus.ts")> {
     return handle;
   });
   await import("./main.ts");
+  // main starts asynchronously by design. Let its fire-and-forget service index and glossary
+  // reads reach the stub before a short routing test can restore the native fetch in afterEach.
+  await new Promise((resolve) => setTimeout(resolve, 0));
   return bus;
 }
 
@@ -69,6 +78,12 @@ function navigate(url: string): void {
 beforeEach(() => {
   createMap.mockClear();
   select.mockClear();
+  mountExplorer.mockReset();
+  unmountExplorer.mockClear();
+  mountExplorer.mockResolvedValue(undefined);
+  mountStatusPage.mockReset();
+  unmountStatusPage.mockClear();
+  mountStatusPage.mockResolvedValue(undefined);
   // Every payload a 404: this file tests mount and subscription order, not rendering.
   vi.stubGlobal("fetch", () =>
     Promise.resolve(
@@ -85,7 +100,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("one dispatch on view, two surfaces (SB-08 §2.1)", () => {
+describe("one dispatch on view, three surfaces (SB-08 §2.1)", () => {
   // B1: createMap is not idempotent and its callee's disposer is discarded, so a second mount
   // is a second canvas and a second bus handler — one click would then select twice.
   it("mounts the map once across map → explore → back, and leaves one subscriber", async () => {
@@ -114,6 +129,81 @@ describe("one dispatch on view, two surfaces (SB-08 §2.1)", () => {
 
     expect(createMap).not.toHaveBeenCalled();
     expect(host("gw-map").hidden).toBe(true);
+  });
+
+  it("never constructs a map for a reader who arrives on Status", async () => {
+    await bootAt("/?view=status");
+    await vi.waitFor(() => expect(host("gw-status-page").hidden).toBe(false));
+
+    expect(mountStatusPage).toHaveBeenCalledOnce();
+    expect(createMap).not.toHaveBeenCalled();
+    expect(host("gw-map").hidden).toBe(true);
+    expect(host("gw-explore").hidden).toBe(true);
+  });
+
+  it("takes a Status search selection to Map before restoring its well", async () => {
+    const bus = await bootAt("/?view=status");
+    await vi.waitFor(() => expect(host("gw-status-page").hidden).toBe(false));
+
+    bus.selectWell("3305310451", "search");
+
+    await vi.waitFor(() => expect(host("gw-map").hidden).toBe(false));
+    await vi.waitFor(() => expect(select).toHaveBeenCalledWith("3305310451"));
+    expect(new URLSearchParams(window.location.search).get("view")).toBeNull();
+    expect(new URLSearchParams(window.location.search).get("well")).toBe("3305310451");
+    expect(host("gw-status-page").hidden).toBe(true);
+  });
+
+  it("supports back-forward transitions across all three surfaces", async () => {
+    await bootAt("/");
+    await vi.waitFor(() => expect(createMap).toHaveBeenCalledOnce());
+
+    navigate("/?view=status");
+    await vi.waitFor(() => expect(host("gw-status-page").hidden).toBe(false));
+
+    navigate("/?view=explore&ds=wells");
+    await vi.waitFor(() => expect(host("gw-explore").hidden).toBe(false));
+    expect(host("gw-status-page").hidden).toBe(true);
+
+    navigate("/?view=status");
+    await vi.waitFor(() => expect(host("gw-status-page").hidden).toBe(false));
+    expect(host("gw-explore").hidden).toBe(true);
+    expect(createMap).toHaveBeenCalledOnce();
+  });
+
+  it("does not restore card or drawer overlays on a hostile Status deep link", async () => {
+    await bootAt("/?view=status&well=3305310451&explain=drv_1");
+    await vi.waitFor(() => expect(host("gw-status-page").hidden).toBe(false));
+
+    expect(host("gw-card").hidden).toBe(true);
+    expect(host("gw-drawer").hidden).toBe(true);
+    expect(createMap).not.toHaveBeenCalled();
+  });
+
+  it("routes a Status 403 through the key panel and remounts Status after key replacement", async () => {
+    await bootAt("/?view=status");
+    await vi.waitFor(() => expect(mountStatusPage).toHaveBeenCalledOnce());
+    const hooks = mountStatusPage.mock.calls[0]?.[1] as { onForbidden(error: unknown): void };
+    const { ApiError } = await import("./api/client.ts");
+
+    hooks.onForbidden(
+      new ApiError({
+        type: "https://glasswell.local/problems/key_rejected",
+        title: "Owner key rejected",
+        status: 403,
+      }),
+    );
+    expect(host("gw-key-host").hidden).toBe(false);
+
+    const input = host("gw-key-host").querySelector("input") as HTMLInputElement;
+    input.value = "a".repeat(64);
+    (host("gw-key-host").querySelector("form") as HTMLFormElement).dispatchEvent(
+      new SubmitEvent("submit", { bubbles: true, cancelable: true }),
+    );
+
+    await vi.waitFor(() => expect(mountStatusPage).toHaveBeenCalledTimes(2));
+    expect(host("gw-key-host").hidden).toBe(true);
+    expect(createMap).not.toHaveBeenCalled();
   });
 
   // The dynamic import reorders boot: the map subscribes inside createMap, so a selection

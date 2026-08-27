@@ -3,6 +3,7 @@ serving current data" (bp:544)."""
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -133,11 +134,27 @@ def get_healthz() -> Liveness:
     responses=problem_responses("service_degraded"),
 )
 def get_health(request: Request, connection: Connection) -> JSONResponse:
-    now = today()
+    served, freshness = source_health_data(connection, as_of_date=today())
+    degraded = [item["source_id"] for item in served if item["state"] not in SERVING_STATES]
+    pending = [item["source_id"] for item in served if item["state"] == PENDING]
+    data = {
+        "state": "degraded" if degraded else "ok",
+        "stores": {"postgres": "ok"},
+        "sources": served,
+        "degraded_sources": degraded,
+        "pending_sources": pending,
+    }
+    return enveloped(request, data, source_freshness=freshness)
+
+
+def source_health_data(
+    connection: Connection, *, as_of_date: date
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """The shared registered-artifact view; it is not a last-fetch-attempt ledger."""
     served: list[dict[str, Any]] = []
     freshness: dict[str, Any] = {}
     for row in rows(connection, _SOURCES):
-        state = freshness_state(row["retrieval_vintage"], today=now)
+        state = freshness_state(row["retrieval_vintage"], today=as_of_date)
         served.append(
             {
                 "source_id": row["source_id"],
@@ -154,13 +171,4 @@ def get_health(request: Request, connection: Connection) -> JSONResponse:
             "declared_vintage": iso(row["declared_vintage"]),
             "state": state,
         }
-    degraded = [item["source_id"] for item in served if item["state"] not in SERVING_STATES]
-    pending = [item["source_id"] for item in served if item["state"] == PENDING]
-    data = {
-        "state": "degraded" if degraded else "ok",
-        "stores": {"postgres": "ok"},
-        "sources": served,
-        "degraded_sources": degraded,
-        "pending_sources": pending,
-    }
-    return enveloped(request, data, source_freshness=freshness)
+    return served, freshness

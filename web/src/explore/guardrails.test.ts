@@ -316,7 +316,7 @@ describe("every glyph this product renders comes from a face it ships", () => {
   it("walks every .ts and .css under src, not one directory of it", () => {
     const paths = RENDERED.map((file) => file.path);
 
-    expect(paths).toContain("src/explore/gw-count.ts");
+    expect(paths).toContain("src/components/gw-count.ts");
     expect(paths).toContain("src/map.css");
     expect(paths).toContain("src/map/pills.ts");
     expect(paths.length).toBeGreaterThan(EXPLORE.length);

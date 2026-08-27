@@ -22,6 +22,7 @@ PG_TUNING="$INFRA_DIR/postgres/postgresql.conf.d/glasswell.conf"
 PSQL=(sudo -u postgres psql -d glasswell -tAc)
 VENV_PY=/opt/glasswell/venv/bin/python
 UNIT_DIR=/etc/systemd/system
+STATUS_SNAPSHOT=/var/lib/glasswell/status.json
 
 passed=0
 failed=0
@@ -62,10 +63,66 @@ listening_on() { ss -ltn | grep -q "$1"; }
 glob_matches() { compgen -G "$1" >/dev/null; }
 api_curl() { curl --unix-socket "$API_SOCKET" "$@"; }
 
+valid_status_snapshot() {
+    "$VENV_PY" -c \
+        'import json, pathlib, sys; value = json.loads(pathlib.Path(sys.argv[1]).read_text()); sys.exit(0 if isinstance(value, dict) else 1)' \
+        "$STATUS_SNAPSHOT" >/dev/null 2>&1
+}
+
+status_snapshot_omits_private_environment() {
+    "$VENV_PY" - "$STATUS_SNAPSHOT" /etc/glasswell/db.env /etc/glasswell/app.env \
+        >/dev/null 2>&1 <<'PY'
+import pathlib
+import sys
+
+snapshot = pathlib.Path(sys.argv[1]).read_text()
+private_markers = ("KEY", "TOKEN", "SECRET", "PASSWORD", "DSN", "DATABASE_URL", "_ROOT", "MARTIN_URL")
+for env_path in sys.argv[2:]:
+    for raw_line in pathlib.Path(env_path).read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        value = value.strip().strip("'\"")
+        if len(value) >= 8 and any(marker in name.upper() for marker in private_markers):
+            if value in snapshot:
+                raise SystemExit(1)
+PY
+}
+
+status_api_serves_current_snapshot() {
+    api_curl -sf --max-time 20 -H "X-Glasswell-Key: $owner_key" "$API/v1/status" \
+        | "$VENV_PY" -c \
+            'import json, sys; data = json.load(sys.stdin)["data"]; checks = data["checks"]; jobs = data["jobs"]; failed = any(item["state"] in {"degraded", "unavailable"} for item in checks) or any(item["state"] == "degraded" for item in jobs); raise SystemExit(0 if data["snapshot_state"] == "current" and data["observed_at"] and data["datasets"] and not failed else 1)' \
+        >/dev/null 2>&1
+}
+
 printf 'services\n'
 for unit in glasswell-api martin postgresql caddy; do
     assert "$unit active" active "$(systemctl is-active "$unit")"
 done
+
+printf 'status snapshot\n'
+assert "glasswell-status.timer enabled" enabled "$(systemctl is-enabled glasswell-status.timer)"
+assert "glasswell-status.timer active" active "$(systemctl is-active glasswell-status.timer)"
+assert "glasswell-status.service last result" success \
+    "$(systemctl show glasswell-status.service -p Result --value)"
+assert_true "status snapshot is a regular file" "missing at $STATUS_SNAPSHOT" \
+    test -f "$STATUS_SNAPSHOT"
+assert_false "status snapshot is not a symlink" "$STATUS_SNAPSHOT must be a regular owned file" \
+    test -L "$STATUS_SNAPSHOT"
+if [[ -f $STATUS_SNAPSHOT && ! -L $STATUS_SNAPSHOT ]]; then
+    assert "status snapshot ownership" "glasswell:glasswell" \
+        "$(stat -c '%U:%G' "$STATUS_SNAPSHOT")"
+    snapshot_mode="$(stat -c '%a' "$STATUS_SNAPSHOT")"
+    assert_true "status snapshot mode is private ($snapshot_mode)" "expected 600 or 640" \
+        test "$snapshot_mode" = 600 -o "$snapshot_mode" = 640
+    assert_true "status snapshot is a JSON object" "invalid JSON or non-object root" \
+        valid_status_snapshot
+    assert_true "status snapshot omits private environment values" \
+        "credential, internal URL, DSN, or configured filesystem path bytes were found" \
+        status_snapshot_omits_private_environment
+fi
 
 # The roster is the tree's, not a list here: a glasswell-* unit added to infra/systemd but not
 # to install.sh's placement loop is never installed, and a timer that was never installed is a
@@ -97,6 +154,12 @@ else
     assert "GET /v1/health with the owner key" 200 \
         "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
             -H "X-Glasswell-Key: $owner_key" "$API/v1/health")"
+    assert "GET /v1/status with the owner key after collection" 200 \
+        "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+            -H "X-Glasswell-Key: $owner_key" "$API/v1/status")"
+    assert_true "GET /v1/status serves a current non-empty snapshot" \
+        "API rejected, omitted, or marked the freshly collected snapshot stale" \
+        status_api_serves_current_snapshot
     # B-1: a query string reaches the access log verbatim, so a key is refused there.
     assert "a key in the query string is refused" 422 \
         "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 \

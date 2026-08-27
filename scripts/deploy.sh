@@ -237,6 +237,14 @@ for _ in $(seq 1 30); do
 done
 [[ -n "$ready" ]] || refuse "the api did not answer /healthz within 30s of restart"
 
+# The timer is the ongoing guarantee, but deployment needs a snapshot from this exact code and
+# the just-restarted dependencies before verify exercises the keyed status route.
+step "7c. fresh status snapshot"
+remote "systemctl start glasswell-status.timer" \
+    || refuse "glasswell-status timer did not start"
+remote "systemctl start glasswell-status.service" \
+    || refuse "glasswell-status did not produce a fresh snapshot"
+
 step "8. verify.sh"
 remote "$DEPLOY_SRC/infra/verify.sh"
 verify_status=$?
