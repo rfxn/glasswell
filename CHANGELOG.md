@@ -7,6 +7,28 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.54"></a>
+## v0.54 — 2026-08-26
+
+- [New] `GET /v1/wells/{api10}/completions` serves FracFocus completion events separately
+      from regulator completion-pool entities, source-scoped formation mappings, explicit
+      null semantics, as-of guards, and derivation handles without joining unrelated keys
+- [New] `GET /v1/formations` aggregates current source-scoped aliases into canonical
+      formations with alias counts, basin and free-text filters, cursor pagination, and
+      reviewed peer groups
+- [New] Well cards show completion events and pool-to-formation context with independent
+      loading, empty, and unavailable states; staging-only design measurements and formation
+      tops remain explicitly unserved
+- [Fix] Formation-alias uniqueness now includes the source namespace; historical well rows,
+      geometry, completion context, and formation aliases honor their available knowledge,
+      effective, and release dates without leaking future or unvintaged observations
+- [Fix] Historical North Dakota single-pool completion observations now backfill only from
+      staged pools joined to the same canonical manifest and API-10, restoring formation
+      context without inferred geology or rewritten vintages
+- [Change] P3 lateral readiness distinguishes 38 source-confirmed absent state laterals from
+         recoverable measurements; survey traces, vertical segments, and spud dates remain
+         prohibited substitutes under unchanged `tcv1.0`
+
 <a id="v0.53"></a>
 ## v0.53 — 2026-08-26
 
