@@ -13,4 +13,3 @@ Unit=glasswell-status.service
 
 [Install]
 WantedBy=timers.target
-
