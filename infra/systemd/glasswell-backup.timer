@@ -1,5 +1,6 @@
 [Unit]
 Description=Nightly glasswell backup (02:00)
+OnFailure=glasswell-alert@%n.service
 
 [Timer]
 OnCalendar=*-*-* 02:00:00

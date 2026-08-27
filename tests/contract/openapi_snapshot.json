@@ -2028,6 +2028,39 @@
         "title": "EnvelopeModel[WellDetail]",
         "type": "object"
       },
+      "EnvelopeModel_WellNeighbors_": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "$ref": "#/components/schemas/WellNeighbors"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[WellNeighbors]",
+        "type": "object"
+      },
       "EnvelopeModel_WellStatusSummary_": {
         "properties": {
           "_explain": {
@@ -3555,6 +3588,162 @@
           "as_of"
         ],
         "title": "MetaModel",
+        "type": "object"
+      },
+      "NeighborCoverage": {
+        "properties": {
+          "eligible": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Candidates left after date and optional exact-formation filtering."
+          },
+          "formation_conflicts": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Candidates whose earliest pool set maps to conflicting formations."
+          },
+          "formation_unavailable": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Candidates with missing pools, aliases, or sub-threshold aliases."
+          },
+          "missing_completion_anchor": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Spatial candidates excluded because no source completion anchor exists."
+          },
+          "on_or_after_cut": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Candidates excluded because completion was equal to or after at_date."
+          },
+          "returned": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Eligible neighbours returned on this page."
+          },
+          "spatial_candidates": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Persisted neighbours inside the requested radius before eligibility cuts."
+          }
+        },
+        "required": [
+          "spatial_candidates",
+          "missing_completion_anchor",
+          "on_or_after_cut",
+          "formation_conflicts",
+          "formation_unavailable",
+          "eligible",
+          "returned"
+        ],
+        "title": "NeighborCoverage",
+        "type": "object"
+      },
+      "NeighborWell": {
+        "properties": {
+          "_lineage": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Field path to an exact persisted subject or edge selector.",
+            "title": "Lineage",
+            "type": "object"
+          },
+          "completion_date": {
+            "description": "Earliest current FracFocus hydraulic-fracturing job-end anchor. Never spud or first production.",
+            "format": "date",
+            "title": "Completion Date",
+            "type": "string",
+            "x-glasswell-glossary": "gt_completion_event"
+          },
+          "distance_crs": {
+            "description": "Pair-local projected CRS used for this edge: EPSG:32613 or EPSG:32614.",
+            "title": "Distance Crs",
+            "type": "string"
+          },
+          "distance_ft": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Minimum lateral-component distance, measured in the stated projected CRS."
+          },
+          "formation_group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Peer group from the same reviewed source-scoped alias row.",
+            "title": "Formation Group",
+            "x-glasswell-glossary": "gt_formation"
+          },
+          "formation_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Canonical formation when the earliest observed pool maps without conflict.",
+            "title": "Formation Id",
+            "x-glasswell-glossary": "gt_formation"
+          },
+          "formation_month": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Earliest source month that reported a nonblank ND MPR pool.",
+            "title": "Formation Month"
+          },
+          "formation_pools": {
+            "description": "Every nonblank ND MPR pool present in the earliest observed source month.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Formation Pools",
+            "type": "array"
+          },
+          "formation_status": {
+            "description": "Explicit mapping outcome; unavailable geology is never inferred.",
+            "enum": [
+              "mapped",
+              "pool_unavailable",
+              "alias_unavailable",
+              "below_confidence",
+              "conflict"
+            ],
+            "title": "Formation Status",
+            "type": "string"
+          },
+          "neighbor_api10": {
+            "description": "Ten-digit API number of the physical neighbour.",
+            "title": "Neighbor Api10",
+            "type": "string",
+            "x-glasswell-glossary": "gt_api_10_api_12_api_14",
+            "x-glasswell-not-a-figure": "API-10 identifier on a physical-neighbour row, not a measurement."
+          },
+          "winning_geometry": {
+            "$ref": "#/components/schemas/WinningGeometry"
+          }
+        },
+        "required": [
+          "neighbor_api10",
+          "distance_ft",
+          "distance_crs",
+          "completion_date",
+          "formation_id",
+          "formation_group",
+          "formation_status",
+          "formation_pools",
+          "formation_month",
+          "winning_geometry",
+          "_lineage"
+        ],
+        "title": "NeighborWell",
         "type": "object"
       },
       "PlatformStatus": {
@@ -5408,6 +5597,79 @@
         "title": "WellDetail",
         "type": "object"
       },
+      "WellNeighbors": {
+        "properties": {
+          "api10": {
+            "description": "Ten-digit API number of the subject well.",
+            "title": "Api10",
+            "type": "string",
+            "x-glasswell-glossary": "gt_api_10_api_12_api_14",
+            "x-glasswell-not-a-figure": "Identifier. A 10-digit API number is an identity string, not a measurement."
+          },
+          "at_date": {
+            "description": "Strict event-time cut used for neighbour eligibility.",
+            "format": "date",
+            "title": "At Date",
+            "type": "string"
+          },
+          "at_date_source": {
+            "description": "Whether the cut came from FracFocus or the caller.",
+            "enum": [
+              "subject_completion_anchor",
+              "caller_supplied"
+            ],
+            "title": "At Date Source",
+            "type": "string"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/NeighborCoverage"
+          },
+          "distance_method": {
+            "description": "Minimum over every promoted lateral-component pair; EPSG:5070 finds candidates and pair-local UTM measures the persisted distance.",
+            "title": "Distance Method",
+            "type": "string"
+          },
+          "geometry_scope": {
+            "const": "current_only",
+            "description": "Canonical geometry is not effective-dated; historical geometry is not fabricated.",
+            "title": "Geometry Scope",
+            "type": "string"
+          },
+          "neighbors": {
+            "description": "Eligible neighbours in distance order.",
+            "items": {
+              "$ref": "#/components/schemas/NeighborWell"
+            },
+            "title": "Neighbors",
+            "type": "array"
+          },
+          "relation": {
+            "const": "physical_neighbours_not_model_analogs",
+            "description": "These are spatial neighbours, not similarity-ranked model analogs.",
+            "title": "Relation",
+            "type": "string"
+          },
+          "snapshot_vintage": {
+            "description": "Current mart snapshot this response is pinned to.",
+            "format": "date",
+            "title": "Snapshot Vintage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api10",
+          "at_date",
+          "at_date_source",
+          "geometry_scope",
+          "snapshot_vintage",
+          "distance_method",
+          "relation",
+          "coverage",
+          "neighbors"
+        ],
+        "title": "WellNeighbors",
+        "type": "object"
+      },
       "WellStatusSummary": {
         "properties": {
           "basins": {
@@ -5646,6 +5908,26 @@
         ],
         "title": "WellTypeCount",
         "type": "object"
+      },
+      "WinningGeometry": {
+        "properties": {
+          "neighbor_geom_key": {
+            "description": "Neighbour component on that same pair.",
+            "title": "Neighbor Geom Key",
+            "type": "string"
+          },
+          "subject_geom_key": {
+            "description": "Subject component on the minimum-distance pair.",
+            "title": "Subject Geom Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject_geom_key",
+          "neighbor_geom_key"
+        ],
+        "title": "WinningGeometry",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -5658,7 +5940,7 @@
     }
   },
   "info": {
-    "description": "Glass-box upstream analytics on public data. Every number this API serves carries a\nderivation handle in band, and `GET /v1/explain` walks that handle back to the\nchecksummed government file it came from.\n\nConventions that hold everywhere: responses are `data` / `meta` / `links`; collections\nare cursor-paginated with no offset parameter; failures are RFC 9457 problem documents\nwhose `type` resolves at `/v1/errors/{code}`; and `as_of` selects knowledge time, with\nthe resolved vintage reported back in `meta.as_of`.\n\nThis deployment serves North Dakota wells, geometry, monthly production, completion context\nand canonical formations with current alias counts, plus Texas wells and bore geometry with\nwell-level production held pending allocation. The lineage spine, conformance registry,\nquarantine and glossary are live. Forecasts, economics, scenarios, agents and\nundrilled-location inventory are not served; New Mexico promotion is not claimed. `/v1/status`\nadds current application-plane\nchecks, scheduled-job observations, registered-artifact age and explicitly grained operational\ndataset inventory without treating those counts as forecast inventory or petroleum figures.",
+    "description": "Glass-box upstream analytics on public data. Every number this API serves carries a\nderivation handle in band, and `GET /v1/explain` walks that handle back to the\nchecksummed government file it came from.\n\nConventions that hold everywhere: responses are `data` / `meta` / `links`; collections\nare cursor-paginated with no offset parameter; failures are RFC 9457 problem documents\nwhose `type` resolves at `/v1/errors/{code}`; and `as_of` selects knowledge time, with\nthe resolved vintage reported back in `meta.as_of`.\n\nThis deployment serves North Dakota wells, geometry, monthly production, completion context,\ncurrent physical neighbours and canonical formations with current alias counts, plus Texas\nwells and bore geometry with well-level production held pending allocation. Physical-neighbour\nresults require current lateral geometry, use strict earlier-completion cutoffs, and are not\nmodel analogs. The lineage spine, conformance registry, quarantine and glossary are live.\nForecasts, economics, scenarios, agents and undrilled-location inventory are not served; New\nMexico promotion is not claimed. `/v1/status` adds current application-plane\nchecks, scheduled-job observations, registered-artifact age and explicitly grained operational\ndataset inventory without treating those counts as forecast inventory or petroleum figures.",
     "title": "glasswell",
     "version": "0.1.0",
     "x-glasswell-freeze": {
@@ -10794,6 +11076,346 @@
           "explain_depth": {
             "so": "Three levels reaches the promotion and its source manifest.",
             "x-glasswell-glossary": "gt_derivation_handle"
+          }
+        }
+      }
+    },
+    "/v1/wells/{api10}/neighbors": {
+      "get": {
+        "description": "Current-snapshot physical neighbours, not model analogs. The mart measures the minimum projected distance over every promoted lateral component pair, retaining the exact winning geometry keys. Surface points, vertical traces and sidetracks never enter. Eligibility is strictly completion_date < at_date; equality is co-development and is excluded. Completion is the earliest current FracFocus job-end anchor, never spud or first production. Missing completion and formation context remains counted and explicit. API reads are indexed scalar joins over the persisted mart with no spatial work. Because canonical geometry is current-only, as_of may only pin the current mart snapshot.",
+        "operationId": "get_well_neighbors",
+        "parameters": [
+          {
+            "description": "Ten-digit API well number.",
+            "in": "path",
+            "name": "api10",
+            "required": true,
+            "schema": {
+              "description": "Ten-digit API well number.",
+              "pattern": "^\\d{10}$",
+              "title": "Api10",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Search radius in feet, from 1 through the 26,400-foot mart cap.",
+            "in": "query",
+            "name": "radius_ft",
+            "required": false,
+            "schema": {
+              "default": 5280,
+              "description": "Search radius in feet, from 1 through the 26,400-foot mart cap.",
+              "maximum": 26400,
+              "minimum": 1,
+              "title": "Radius Ft",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Exact canonical formation; unavailable/conflicting rows never match.",
+            "in": "query",
+            "name": "formation_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[a-z0-9_]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact canonical formation; unavailable/conflicting rows never match.",
+              "title": "Formation Id"
+            }
+          },
+          {
+            "description": "Event-time cut; only neighbours completed strictly before it qualify.",
+            "in": "query",
+            "name": "at_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Event-time cut; only neighbours completed strictly before it qualify.",
+              "title": "At Date"
+            }
+          },
+          {
+            "description": "Exact current mart snapshot. Any other date is refused because canonical geometry is not effective-dated.",
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact current mart snapshot. Any other date is refused because canonical geometry is not effective-dated.",
+              "title": "As Of"
+            }
+          },
+          {
+            "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size, 100 by default, 200 at most.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Page size, 100 by default, 200 at most.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_WellNeighbors_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "cursor_malformed": {
+                    "summary": "Cursor malformed",
+                    "value": {
+                      "detail": "The cursor did not decode to the four declared fields.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor malformed",
+                      "type": "/v1/errors/cursor_malformed"
+                    }
+                  },
+                  "cursor_query_mismatch": {
+                    "summary": "Cursor does not match this query",
+                    "value": {
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor does not match this query",
+                      "type": "/v1/errors/cursor_query_mismatch"
+                    }
+                  },
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Physical neighbours of one North Dakota well",
+        "tags": [
+          "wells"
+        ],
+        "x-glasswell-dataset": {
+          "anchors": [
+            "/api10",
+            "/at_date",
+            "/snapshot_vintage"
+          ],
+          "collection_pointer": "/neighbors",
+          "columns": {
+            "default": [
+              "/neighbor_api10",
+              "/distance_ft",
+              "/completion_date",
+              "/formation_id",
+              "/formation_group",
+              "/formation_status"
+            ],
+            "hidden": [],
+            "hidden_reason": {},
+            "sort": "/distance_ft"
+          },
+          "facets": [
+            "radius_ft",
+            "formation_id",
+            "at_date",
+            "as_of"
+          ],
+          "group": "wells",
+          "id": "neighbors",
+          "intro": "nb_dataset_neighbors",
+          "order": 14,
+          "row_id": [
+            "/neighbor_api10"
+          ],
+          "title": "Physical neighbours (per well)"
+        },
+        "x-glasswell-request-example": {
+          "path": {
+            "api10": "3305310451"
+          },
+          "query": {}
+        },
+        "x-glasswell-semantics": {
+          "as_of": {
+            "so": "Pins the one current mart snapshot. Any other date is refused because canonical well geometry has no effective-dated history.",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "at_date": {
+            "so": "Uses event time only and keeps strictly earlier completions. It never changes the current knowledge snapshot or falls back to spud.",
+            "x-glasswell-glossary": "gt_completion_event"
+          },
+          "cursor": {
+            "so": "Pins the snapshot and continues the distance/API-10 total order."
+          },
+          "explain": {
+            "so": "Inlines exact persisted subject and edge selectors where requested.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "explain_depth": {
+            "so": "Three levels reaches the canonical promotions and source manifests.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "formation_id": {
+            "so": "Matches an exact canonical formation only after every earliest-month pool maps at confidence 0.800 or higher without conflict.",
+            "x-glasswell-glossary": "gt_formation"
+          },
+          "limit": {
+            "so": "Returns 200 neighbours at most; larger pages are refused."
+          },
+          "radius_ft": {
+            "so": "Filters the persisted 26,400-foot edge mart. Values above the mart radius are refused rather than presented as a complete search."
           }
         }
       }

@@ -13,6 +13,7 @@ from psycopg.rows import dict_row
 from glasswell.lineage.errors import LineageUnresolved
 from glasswell.lineage.ids import parse_handle
 from glasswell.lineage.models import Frozen
+from glasswell.lineage.selector_registry import validate_selector
 from glasswell.lineage.serialization import json_ready
 
 MAX_DEPTH = 8
@@ -140,6 +141,11 @@ class PostgresGraph:
             )
             return {row[0] for row in cursor.fetchall()}
 
+    def validate_selector(
+        self, derivation: Mapping[str, Any], selector: str, *, handle: str
+    ) -> None:
+        validate_selector(self._connection, derivation, selector, handle=handle)
+
 
 def _partition_text(partition: Mapping[str, Any]) -> str:
     return ", ".join(f"{key}={value}" for key, value in sorted(partition.items()))
@@ -235,6 +241,10 @@ def resolve_chain_from(
     )
     if root not in derivation_rows:
         raise LineageUnresolved(handle, reason="unknown_id")
+    if parsed.selector is not None:
+        validator = getattr(graph, "validate_selector", None)
+        if validator is not None:
+            validator(derivation_rows[root], parsed.selector, handle=handle)
     manifest_rows = graph.manifests(
         list(dict.fromkeys(r["ref_id"] for r in rows if r["kind"] == "manifest"))
     )

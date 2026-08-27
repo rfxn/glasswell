@@ -19,6 +19,7 @@ RESOURCE_LINKS = {
     "health": "/v1/health",
     "status": "/v1/status",
     "wells": "/v1/wells",
+    "well_neighbors": "/v1/wells/{api10}/neighbors",
     "formations": "/v1/formations",
     "explain": "/v1/explain?h=",
     "derivations": "/v1/derivations",

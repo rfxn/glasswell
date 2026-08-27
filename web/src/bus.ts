@@ -4,7 +4,7 @@
  * the map. `selectWell` is a request; `wellSelected` is the answer the app committed to.
  */
 
-export type SelectSource = "map" | "search" | "url";
+export type SelectSource = "card" | "map" | "search" | "url";
 
 export interface SelectRequest {
   api10: string | null;

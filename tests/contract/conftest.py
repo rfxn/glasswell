@@ -35,6 +35,7 @@ from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.serialization import hash_payload
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.lineage.vintages import open_vintage
+from glasswell.marts.neighbors import refresh_neighbors, resident_content_identity
 from glasswell.seed import seed_all
 from tests.support.fakes import FixedClock
 from tests.support.seed import FIXTURE_ENV, seed_manifest, seed_well, seed_well_spatial
@@ -278,6 +279,119 @@ def _seed_completion_context(
         )
 
 
+def _seed_neighbor_mart(connection: psycopg.Connection) -> None:
+    """Add isolated mart peers under their own content-matching fixture derivation."""
+    neighbor_api10s = ("3305399998", "3305399999")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select api10, completion_date, formation_id, formation_group, formation_status,"
+            " formation_pools, formation_month, lateral_component_count, snapshot_vintage,"
+            " derivation_id from marts.nd_neighbor_subjects"
+            " where api10 = %s",
+            (EXAMPLE_API10,),
+        )
+        subject = cursor.fetchone()
+    snapshot_vintage = subject[8]
+    source_derivation_id = subject[9]
+    output = OutputSpec(
+        store="postgis",
+        dataset="marts.nd_neighbors",
+        partition={"state": "ND", "snapshot_vintage": snapshot_vintage.isoformat()},
+        schema_version="1",
+    )
+    params = {
+        "fixture": "contract_neighbor_rows",
+        "snapshot_vintage": snapshot_vintage.isoformat(),
+    }
+    inputs = [
+        InputRef(
+            kind="derivation",
+            ref_id=source_derivation_id,
+            as_of_vintage=snapshot_vintage,
+        )
+    ]
+    with lineage_session(
+        recorder=PostgresRecorder(connection),
+        environment=FIXTURE_ENV,
+        clock=FixedClock(datetime(2026, 8, 27, 6, 5, 0, tzinfo=UTC)),
+        correlation_id="run_contract_neighbor_fixture",
+    ):
+        with derive(
+            "mart.refresh",
+            output=output,
+            params=params,
+            inputs=inputs,
+            ttl_class="ephemeral",
+        ) as context:
+            pass
+        derivation_id = context.derivation_id
+        with connection.cursor() as cursor:
+            cursor.execute("delete from marts.nd_neighbor_edges")
+            cursor.execute("delete from marts.nd_neighbor_subjects")
+            cursor.execute(
+                "insert into marts.nd_neighbor_subjects"
+                " (api10, completion_date, formation_id, formation_group, formation_status,"
+                " formation_pools, formation_month, lateral_component_count, snapshot_vintage,"
+                " derivation_id) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (*subject[:9], derivation_id),
+            )
+            cursor.executemany(
+                "insert into marts.nd_neighbor_subjects"
+                " (api10, completion_date, formation_id, formation_group, formation_status,"
+                " formation_pools, formation_month, lateral_component_count, snapshot_vintage,"
+                " derivation_id) values"
+                " (%s, %s, 'bakken', 'bakken', 'mapped', array['BAKKEN'],"
+                " '2025-01-01', 1, %s, %s)",
+                [
+                    (neighbor_api10s[0], date(2025, 9, 10), snapshot_vintage, derivation_id),
+                    (neighbor_api10s[1], date(2025, 10, 10), snapshot_vintage, derivation_id),
+                ],
+            )
+            cursor.executemany(
+                "insert into marts.nd_neighbor_edges"
+                " (api10, neighbor_api10, distance_m, distance_epsg, subject_geom_key,"
+                " neighbor_geom_key, snapshot_vintage, derivation_id)"
+                " values (%s, %s, %s, 32613, %s, %s, %s, %s)",
+                [
+                    (
+                        source_api10,
+                        target_api10,
+                        Decimal(distance),
+                        f"{source_api10}:lateral:1",
+                        f"{target_api10}:lateral:1",
+                        snapshot_vintage,
+                        derivation_id,
+                    )
+                    for neighbor_api10, distance in zip(
+                        neighbor_api10s, ("800.000", "1000.000"), strict=True
+                    )
+                    for source_api10, target_api10 in (
+                        (EXAMPLE_API10, neighbor_api10),
+                        (neighbor_api10, EXAMPLE_API10),
+                    )
+                ],
+            )
+        subject_rows, subject_digest, edge_rows, edge_digest = resident_content_identity(
+            connection
+        )
+        with derive(
+            "mart.refresh",
+            output=output,
+            params=params,
+            inputs=inputs,
+            ttl_class="ephemeral",
+        ) as context:
+            context.set_rows(subject_rows + edge_rows)
+            context.set_output_hash(
+                hash_payload(
+                    {
+                        "subjects": {"rows": subject_rows, "sha256": subject_digest},
+                        "edges": {"rows": edge_rows, "sha256": edge_digest},
+                    }
+                )
+            )
+
+
 def _seed_quarantine(connection: psycopg.Connection, manifest_id: str) -> None:
     seen_at = datetime(2026, 8, 1, 5, 2, 11, tzinfo=UTC)
     rows = [
@@ -434,6 +548,15 @@ def seeded(db: psycopg.Connection, raw_zone: Path) -> psycopg.Connection:
         fracfocus_manifest_id=fracfocus_manifest,
         completion_derivation_id=completion,
     )
+    db.commit()
+    with lineage_session(
+        recorder=PostgresRecorder(db),
+        environment=FIXTURE_ENV,
+        clock=FixedClock(datetime(2026, 8, 27, 6, 0, 0, tzinfo=UTC)),
+        correlation_id="run_contract_neighbors",
+    ):
+        refresh_neighbors(db)
+    _seed_neighbor_mart(db)
     _seed_quarantine(db, mpr_manifest)
     _seed_example_key(db)
     open_vintage(

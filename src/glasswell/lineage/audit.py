@@ -50,6 +50,7 @@ AUDIT_EVENT_TYPES: frozenset[str] = frozenset(
         "model.registered",
         "model.promoted",
         "model.retired",
+        "publication.accepted",
         "ledger.graded",
         "mart.refreshed",
         "mart.invalidated",
@@ -78,6 +79,7 @@ SUBJECT_TYPES: frozenset[str] = frozenset(
         "config",
         "aoi",
         "wellset",
+        "publication",
         "ledger",
     }
 )

@@ -68,7 +68,12 @@ class VintageAlreadyPromoted(LineageError):
         self.example = example
 
 
-UNRESOLVED_REASONS = ("selector_ambiguous", "depth_exceeded", "derivation_swept", "unknown_id")
+UNRESOLVED_REASONS = (
+    "selector_ambiguous",
+    "depth_exceeded",
+    "derivation_swept",
+    "unknown_id",
+)
 
 
 class LineageUnresolved(LineageError):

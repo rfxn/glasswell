@@ -65,6 +65,7 @@ export const wellEnvelope = {
     "completions": "/v1/wells/3305310451/completions",
     "explain": "/v1/explain?h=drv_ga3f2mao5zgyb5xcniwq%23api10%3D3305310451%26col%3Dlateral_length_ft&depth=full",
     "formations": "/v1/formations",
+    "neighbors": "/v1/wells/3305310451/neighbors",
     "next": null,
     "production": "/v1/wells/3305310451/production",
     "self": "/v1/wells/3305310451"
@@ -176,6 +177,115 @@ export const completionContextEnvelope = {
         "state": "current"
       }
     },
+    "warnings": []
+  }
+};
+
+export const neighborEnvelope = {
+  "data": {
+    "api10": "3305310451",
+    "at_date": "2025-04-24",
+    "at_date_source": "subject_completion_anchor",
+    "geometry_scope": "current_only",
+    "snapshot_vintage": "2026-08-27",
+    "distance_method": "minimum lateral-component pair in pair-local UTM",
+    "relation": "physical_neighbours_not_model_analogs",
+    "coverage": {
+      "spatial_candidates": {
+        "value": "2",
+        "unit": "wells",
+        "d": "drv_neighbors#api10=3305310451&radius_m=1609.344&at_date=2025-04-24&metric=spatial_candidates"
+      },
+      "missing_completion_anchor": {
+        "value": "0",
+        "unit": "wells",
+        "d": "drv_neighbors#api10=3305310451&radius_m=1609.344&at_date=2025-04-24&metric=missing_completion_anchor"
+      },
+      "on_or_after_cut": {
+        "value": "0",
+        "unit": "wells",
+        "d": "drv_neighbors#api10=3305310451&radius_m=1609.344&at_date=2025-04-24&metric=on_or_after_cut"
+      },
+      "formation_conflicts": {
+        "value": "0",
+        "unit": "wells",
+        "d": "drv_neighbors#api10=3305310451&radius_m=1609.344&at_date=2025-04-24&metric=formation_conflicts"
+      },
+      "formation_unavailable": {
+        "value": "0",
+        "unit": "wells",
+        "d": "drv_neighbors#api10=3305310451&radius_m=1609.344&at_date=2025-04-24&metric=formation_unavailable"
+      },
+      "eligible": {
+        "value": "2",
+        "unit": "wells",
+        "d": "drv_neighbors#api10=3305310451&radius_m=1609.344&at_date=2025-04-24&metric=eligible"
+      },
+      "returned": {
+        "value": "2",
+        "unit": "wells",
+        "d": "drv_neighbors#api10=3305310451&radius_m=1609.344&at_date=2025-04-24&metric=returned&limit=5"
+      }
+    },
+    "neighbors": [
+      {
+        "neighbor_api10": "3305310998",
+        "distance_ft": {
+          "value": "1320.25",
+          "unit": "ft",
+          "d": "drv_neighbors#api10=3305310451&neighbor_api10=3305310998&col=distance_m"
+        },
+        "distance_crs": "EPSG:32613",
+        "completion_date": "2024-11-02",
+        "formation_id": "bakken",
+        "formation_group": "bakken",
+        "formation_status": "mapped",
+        "formation_pools": ["BAKKEN"],
+        "formation_month": "2025-01-01",
+        "winning_geometry": {
+          "subject_geom_key": "33053104510000_LAT1",
+          "neighbor_geom_key": "33053109980000_LAT1"
+        },
+        "_lineage": {}
+      },
+      {
+        "neighbor_api10": "3305310999",
+        "distance_ft": {
+          "value": "2840.10",
+          "unit": "ft",
+          "d": "drv_neighbors#api10=3305310451&neighbor_api10=3305310999&col=distance_m"
+        },
+        "distance_crs": "EPSG:32613",
+        "completion_date": "2024-12-14",
+        "formation_id": null,
+        "formation_group": null,
+        "formation_status": "alias_unavailable",
+        "formation_pools": ["UNREVIEWED"],
+        "formation_month": "2025-01-01",
+        "winning_geometry": {
+          "subject_geom_key": "33053104510000_LAT1",
+          "neighbor_geom_key": "33053109990000_LAT1"
+        },
+        "_lineage": {}
+      }
+    ]
+  },
+  "links": {
+    "self": "/v1/wells/3305310451/neighbors",
+    "well": "/v1/wells/3305310451",
+    "next": null
+  },
+  "meta": {
+    "as_of": { "requested": "latest", "resolved": "2026-08-27" },
+    "deprecations": [],
+    "labels": {
+      "/api10": "gt_api_10_api_12_api_14",
+      "/neighbors/*/neighbor_api10": "gt_api_10_api_12_api_14",
+      "/neighbors/*/formation_id": "gt_formation"
+    },
+    "next_cursor": null,
+    "request_id": "01NEIGHBORFIXTURE00000000000",
+    "source_freshness": {},
     "warnings": []
   }
 };

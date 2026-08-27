@@ -907,6 +907,25 @@ main[data-drawer="open"] #gw-card {
   line-height: 1.45;
 }
 
+.gw-neighbor-context .gw-frame-body {
+  display: grid;
+  gap: var(--gw-space-3);
+}
+
+.gw-neighbor-link {
+  display: inline-block;
+  margin-bottom: var(--gw-space-2);
+  color: var(--paper);
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-fs-mono);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.gw-neighbor-coverage gw-figure {
+  display: inline-flex;
+}
+
 /* A pending state, not an empty one: it reads as a fact about the jurisdiction rather than a
    chart that failed to load, so it takes the panel's own colour and not the warning rail. */
 .gw-pending .gw-frame-body {

@@ -26,14 +26,16 @@ restricted `authorized_keys` `from=` clause and every probe in this repo use `.1
 | `glasswell-ingest.service` + `.timer` | `glasswell` | Monthly ND pull: GIS layers, one production month, tile marts. Installed **disabled**; `install.sh --enable-ingest` arms it |
 | `glasswell-c115b.service` + `.timer` | `glasswell` | Monthly NM C-115B natural-gas-waste capture, staging terminus. The 12th, `Persistent=true`: `reporting_period` is a rolling ~13-month window and a month that rolls out is unrecoverable from the endpoint. Installed **disabled**; `install.sh --enable-c115b` arms it |
 | `glasswell-alert@.service` | `glasswell` | `OnFailure=` target: logs to the journal and appends to `/var/lib/glasswell/health-events` |
-| `glasswell-backup.service` + `.timer` | `root` | Nightly `pg_dump` plus an rsync of the raw zone to forge, via `/usr/local/sbin/glasswell-backup.sh`. Installed **disabled**; `install.sh --enable-backup` arms it. **VM 111 has it enabled already** — the units here were adopted from that host byte-for-byte |
+| `glasswell-backup.service` + `.timer` | `root` | Nightly custom-format `pg_dump`, globals and strict sidecar manifest plus an rsync of the dump and raw zones to forge, via `/usr/local/sbin/glasswell-backup.sh`. Dump and manifest counts share one exported repeatable-read snapshot. Installed **disabled**; `install.sh --enable-backup` arms it. **VM 111 has it enabled already** |
+| `glasswell-restore-drill.service` + `.timer` | `root` | Weekly same-cluster logical restore of the newest private dump into a unique scratch database. It verifies archive identity, schema version, critical counts, representative reads and scratch cleanup, then atomically publishes `/var/lib/glasswell/restore-drill.json` for Status. It follows backup enablement and is not full VM/raw-zone disaster recovery |
 | `martin.service` | `martin` | **Pre-existing, not owned by this directory** — configured through a drop-in. Runs with `auto_publish` on until runbook step 9, so its catalogue is every relation with a geometry column, `staging` and `canonical` included, on `127.0.0.1:3000`. Adopting `martin/config.yaml` cuts it to the three published layers; migration 026's `martin` role, which holds select on three `marts.tile_*` views and nothing else, is what makes the rest unreachable either way |
 | `postgresql@16-main` | `postgres` | Distro unit. `listen_addresses = 'localhost'`, socket peer auth |
 
 `backup/glasswell-backup.sh` and `backup/glasswell-restore-drill.sh` are placed in
-`/usr/local/sbin` by `install.sh`. They need `/root/.ssh/id_glasswell_backup` and a matching
-`authorized_keys` entry on forge, which `install.sh` does not create. The forge-side vzdump
-job is provisioning-owned and is not in this directory.
+`/usr/local/sbin` by `install.sh`. Only the backup script's off-box rsync needs
+`/root/.ssh/id_glasswell_backup` and a matching `authorized_keys` entry on forge; the restore
+drill reads the local logical backup. `install.sh` does not create that key. The forge-side
+vzdump job is provisioning-owned and is not in this directory.
 
 ### Status snapshot
 
@@ -253,19 +255,34 @@ after Caddy should have renewed.
 ./install.sh --with-postgres     # additionally place the tuning drop-in (needs a PG restart)
 ./install.sh --with-caddy        # additionally place the Caddyfile and caddy.service, validated
 ./install.sh --enable-ingest     # additionally arm the monthly NDIC pull
-./install.sh --enable-backup     # additionally arm the nightly backup (needs the forge key)
+./install.sh --enable-backup     # arm nightly backup and weekly logical restore timers
 systemctl start glasswell-api
 systemctl start glasswell-status.timer    # arm only after migrations complete
 systemctl start glasswell-status.service  # optional immediate refresh
 ./verify.sh                      # positive and negative checks, safe to run any time
 ```
 
-Unlike ingest and backup timers, `glasswell-status.timer` has no enable flag. Every install
+Unlike ingest, backup and restore timers, `glasswell-status.timer` has no enable flag. Every install
 runs `systemctl enable glasswell-status.timer`; start it only after migrations so the first
 collection cannot race a required schema grant. `deploy.sh` starts it automatically; a manual
 install must run `systemctl start glasswell-status.timer` after migration. It schedules an early
 boot collection, catches missed calendar runs with `Persistent=true`, and refreshes on each
 quarter hour.
+
+The restore timer is enabled whenever backup is newly enabled or was already enabled, so an
+upgrade cannot leave protection at the old backup-only state. A passing result must be no more
+than eight days old and must identify a dump no more than two days old or Status degrades it.
+Failures are durable too. The drill restores PostgreSQL logical content on the production host;
+it does not consume the off-box copy, restore globals or raw files, or boot a replacement VM.
+Enabling timers is not execution evidence. After first activation or a protection change, prove
+the path immediately and refresh the served snapshot:
+
+```bash
+systemctl start glasswell-backup.service
+systemctl start glasswell-restore-drill.service
+systemctl start glasswell-status.service
+systemctl show glasswell-backup.service glasswell-restore-drill.service -p Result
+```
 
 `install.sh` generates `GLASSWELL_OWNER_KEY` into `/etc/glasswell/app.env` (`root:root 0600`)
 on first run and never prints it. Read it on the VM when you need the demo link; it is not in

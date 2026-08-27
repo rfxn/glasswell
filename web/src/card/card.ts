@@ -238,6 +238,27 @@ export async function renderWellCard(
     asOfQuery,
   );
 
+  let neighborRequest: Promise<void> = Promise.resolve();
+  const neighborPath = well.links?.["neighbors"];
+  if (neighborPath) {
+    const neighborFrame = document.createElement("section");
+    neighborFrame.className = "gw-card-chart gw-neighbor-context";
+    const neighborTitle = document.createElement("h3");
+    neighborTitle.className = "gw-frame-title";
+    neighborTitle.textContent = "Physical neighbours";
+    const neighborHost = document.createElement("div");
+    neighborHost.className = "gw-frame-body";
+    neighborHost.dataset["state"] = "loading";
+    neighborHost.setAttribute("aria-busy", "true");
+    neighborHost.setAttribute("aria-live", "polite");
+    neighborHost.appendChild(placeholder("Loading physical neighbours…"));
+    neighborFrame.append(neighborTitle, neighborHost);
+    body.appendChild(neighborFrame);
+    neighborRequest = import("./neighbors.ts").then(({ loadNeighborContext }) =>
+      loadNeighborContext(neighborHost, neighborPath, api10, { ...asOfQuery, limit: "5" }),
+    );
+  }
+
   // A lease-reporting jurisdiction has no observed well-level series, so the card says that
   // instead of drawing an empty chart: "no production has been reported" would be false about
   // a Texas well whose lease reports every month (DIR-3, cr_tx_allocation_scope_1).
@@ -247,7 +268,7 @@ export async function renderWellCard(
     card.appendChild(pendingProductionPanel(pending, well.links?.["reporting_rule"] ?? undefined));
     highlight(card, termIndex());
     focusPanel(container);
-    await contextRequest;
+    await Promise.all([contextRequest, neighborRequest]);
     return;
   }
 
@@ -301,7 +322,7 @@ export async function renderWellCard(
     }
   })();
 
-  await Promise.all([contextRequest, productionRequest]);
+  await Promise.all([contextRequest, neighborRequest, productionRequest]);
 }
 
 async function loadCompletionContext(
@@ -376,7 +397,7 @@ function completionContextBody(
   return fragment;
 }
 
-function contextGroup(
+export function contextGroup(
   heading: string,
   termId: string | null,
   items: HTMLElement[],
@@ -467,10 +488,10 @@ function completionPoolItem(pool: CompletionPool): HTMLElement {
   return item;
 }
 
-function appendContextFact(
+export function appendContextFact(
   facts: HTMLDListElement,
   label: string,
-  value: string,
+  value: string | Node,
   literal = false,
   handle?: string,
 ): void {
@@ -483,7 +504,7 @@ function appendContextFact(
   facts.append(term, definition);
 }
 
-function appendContextDate(
+export function appendContextDate(
   facts: HTMLDListElement,
   label: string,
   value: string | null,
@@ -540,7 +561,7 @@ function lineageButton(handle: string, label: string): HTMLButtonElement {
 }
 
 /** The <dt> beside it is the label, so the chip carries it for assistive tech only. */
-function figureElement(figure: Figure, label: string, handle: string | null): HTMLElement {
+export function figureElement(figure: Figure, label: string, handle: string | null): HTMLElement {
   const element = document.createElement("gw-figure");
   element.setAttribute("value", figure.value);
   element.setAttribute("unit", figure.unit);
@@ -558,7 +579,7 @@ function term(label: string, termId: string | null): HTMLElement {
   return element;
 }
 
-function placeholder(text: string): HTMLElement {
+export function placeholder(text: string): HTMLElement {
   const element = document.createElement("p");
   element.className = "gw-placeholder";
   element.textContent = text;
@@ -600,7 +621,7 @@ export function pendingProductionPanel(warning: ApiWarning, ruleLink?: string): 
 }
 
 /** One panel per code with its count: three identical warnings used to stack as a wall. */
-function warningPanels(warnings: ApiWarning[]): HTMLElement[] {
+export function warningPanels(warnings: ApiWarning[]): HTMLElement[] {
   const grouped = new Map<string, ApiWarning[]>();
   for (const warning of warnings) {
     grouped.set(warning.code, [...(grouped.get(warning.code) ?? []), warning]);

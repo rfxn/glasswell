@@ -536,6 +536,89 @@ ND_RULES: tuple[dict[str, object], ...] = (
         "evidence_url": GIS_LATERALS_URL,
     },
     {
+        "rule_id": "cr_nd_neighbor_context_1",
+        "effective_from": date(2026, 8, 27),
+        "source_id": "nd_mpr_xlsx",
+        "stage": "join",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["pool_reported", "formation", "formation_group"],
+        "spec": {
+            "module_function": "glasswell.marts.neighbors:refresh_neighbors",
+            "version": "1",
+            "pool_policy": "earliest_nonblank_source_month_set",
+            "alias_scope": "source_scoped_only_no_legacy_fallback",
+            "minimum_confidence": "0.800",
+            "conflict_policy": "distinct_exact_formation_or_group_is_conflict",
+            "unavailable_policy": "never_infer",
+            "contract_note": (
+                "every earliest-month pool must have one source-scoped alias at confidence"
+                " 0.800 or higher; exact formations and groups must each collapse to one"
+            ),
+        },
+        "code_ref": "glasswell.marts.neighbors:refresh_neighbors",
+        "rule": (
+            "Classify neighbour formation from the complete earliest-month ND pool set using"
+            " source-scoped reviewed aliases only; never infer an unavailable mapping."
+        ),
+        "rationale": (
+            "The endpoint offers an exact formation filter, so two exact formations cannot be"
+            " collapsed merely because they share a broader peer group. Missing aliases and"
+            " sub-threshold aliases are availability states, not geological conflicts. Legacy"
+            " unscoped aliases are excluded so another source namespace cannot silently supply"
+            " this mart's context; the selected source-scoped alias rows are content-hashed into"
+            " the derivation identity."
+        ),
+        "evidence_url": MPR_FILE_URL,
+    },
+    {
+        "rule_id": "cr_nd_neighbor_distance_1",
+        "effective_from": date(2026, 8, 27),
+        "source_id": "nd_gis_horizontals_line",
+        "stage": "conform",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["geom", "distance_m", "distance_epsg"],
+        "spec": {
+            "module_function": "glasswell.marts.neighbors:refresh_neighbors",
+            "version": "1",
+            "storage_epsg": 4326,
+            "candidate_epsg": 5070,
+            "candidate_radius_pad": "1.02",
+            "candidate_validation_domain": {
+                "longitude": ["-104.15", "-96.50"],
+                "latitude": ["45.90", "49.05"],
+                "source": "scripts/basemap-regions/nd.geojson",
+            },
+            "candidate_validation_cases": 12672,
+            "candidate_to_final_distance_ratio_max": "1.013136",
+            "candidate_pad_headroom_ft_min": "181.2",
+            "measurement_epsg": [32613, 32614],
+            "zone_boundary_longitude": "-102",
+            "zone_selection": "candidate_crs_shortest_line_midpoint",
+            "max_radius_ft": 26400,
+            "component_policy": "minimum_over_all_promoted_lateral_component_pairs",
+            "tie_break": ["distance_m", "subject_geom_key", "neighbor_geom_key"],
+            "contract_note": (
+                "EPSG:5070 discovers a padded candidate set only; the persisted distance is"
+                " measured in pair-local UTM 13N or 14N and admitted only through 26,400 feet"
+            ),
+        },
+        "code_ref": "glasswell.marts.neighbors:refresh_neighbors",
+        "rule": (
+            "Discover ND lateral pairs in padded EPSG:5070, then persist the minimum distance"
+            " measured in pair-local UTM 13N or 14N through 26,400 feet."
+        ),
+        "rationale": (
+            "The Williston extent crosses the 102W UTM boundary, so one projected zone cannot"
+            " measure every pair defensibly. Candidate discovery and final measurement are"
+            " separated: the equal-area candidate CRS receives a measured two-percent guard,"
+            " while the shortest-line midpoint selects the local UTM zone used for the admitted"
+            " scalar distance. All promoted lateral components participate and geometry keys"
+            " close deterministic ties, preventing a convenient component or zone from being"
+            " substituted at serve time."
+        ),
+        "evidence_url": GIS_LATERALS_URL,
+    },
+    {
         "rule_id": "cr_nd_segment_vocab_1",
         "effective_from": SUPERSESSION_FROM,
         "source_id": "nd_gis_horizontals_line",

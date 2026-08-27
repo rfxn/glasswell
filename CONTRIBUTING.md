@@ -63,9 +63,11 @@ suites run with `make test-anvil`.
 git clone https://github.com/rfxn/glasswell.git
 ```
 
-The repository is currently blueprint and collateral only — no application code has
-been written. When P0 lands, this section gains the toolchain, the test command,
-and the lint gate.
+The repository contains the Python API/data platform, PostgreSQL migrations and marts,
+TypeScript web application, infrastructure units, tests, blueprints and collateral. Use the
+`.venv` populated from `requirements.lock`, the focused targets in `Makefile`, `make lint`,
+and the web scripts under `web/package.json`; run the narrowest relevant gate first and
+`make test-anvil` plus the other CI-equivalent surfaces before review.
 
 Commit style: a short descriptive subject, with body lines tagged `[New]`,
 `[Change]`, `[Fix]`, or `[Remove]`. Stage files explicitly by name. No AI-assistant

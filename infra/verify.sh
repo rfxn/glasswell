@@ -105,6 +105,16 @@ done
 printf 'status snapshot\n'
 assert "glasswell-status.timer enabled" enabled "$(systemctl is-enabled glasswell-status.timer)"
 assert "glasswell-status.timer active" active "$(systemctl is-active glasswell-status.timer)"
+backup_enabled="$(systemctl is-enabled glasswell-backup.timer 2>/dev/null)"
+restore_enabled="$(systemctl is-enabled glasswell-restore-drill.timer 2>/dev/null)"
+assert "restore-drill timer follows backup enablement" "$backup_enabled" "$restore_enabled"
+if [[ $backup_enabled == enabled ]]; then
+    assert "glasswell-backup.timer active" active "$(systemctl is-active glasswell-backup.timer)"
+    assert "glasswell-restore-drill.timer active" active \
+        "$(systemctl is-active glasswell-restore-drill.timer)"
+else
+    ok "backup and restore-drill timers are intentionally disabled"
+fi
 assert "glasswell-status.service last result" success \
     "$(systemctl show glasswell-status.service -p Result --value)"
 assert_true "status snapshot is a regular file" "missing at $STATUS_SNAPSHOT" \
@@ -136,6 +146,12 @@ for unit in "$INFRA_DIR"/systemd/glasswell-*.service "$INFRA_DIR"/systemd/glassw
 done
 
 printf 'api\n'
+neighbor_subjects="$("${PSQL[@]}" "select count(*) from marts.nd_neighbor_subjects")"
+neighbor_edges="$("${PSQL[@]}" "select count(*) from marts.nd_neighbor_edges")"
+assert_true "ND neighbour subjects populated ($neighbor_subjects)" "mart is empty" \
+    test "${neighbor_subjects:-0}" -gt 0
+assert_true "ND neighbour edges populated ($neighbor_edges)" "mart is empty" \
+    test "${neighbor_edges:-0}" -gt 0
 assert "GET /healthz" 200 "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/healthz")"
 assert "GET /v1 without a key is refused" 403 \
     "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/v1/wells?limit=1")"

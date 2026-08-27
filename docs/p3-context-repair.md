@@ -48,6 +48,41 @@ The accepted replay must:
 Published resident hashes and measured counts replace the rollback rehearsal only after the
 migration is applied and the two-run replay completes at a new evaluation vintage.
 
+## Publication command and receipt
+
+Run publication only from a clean tagged deployment after migrations 042 and 046 are resident.
+The command does not accept caller-supplied environment or code identities. It requires the
+root-written deployment stamp, verifies that stamp against `VERSION` and the deployed
+`requirements.lock`, and requires the matching single-thread environment row already registered
+in PostgreSQL:
+
+```bash
+set -a
+. /etc/glasswell/code-version.env
+set +a
+cd /opt/glasswell/src
+sudo --preserve-env=GLASSWELL_CODE_VERSION,GLASSWELL_LOCKFILE_SHA256 -u glasswell \
+  /opt/glasswell/venv/bin/glasswell-p3-context-publish \
+  --dsn 'postgresql:///glasswell?host=/var/run/postgresql' \
+  --eval-vintage YYYY-MM-DD \
+  --feature-root /var/lib/glasswell/features \
+  --model-root /var/lib/glasswell/models
+```
+
+The evaluation vintage must advance beyond the sealed resident vintage and cannot be in the
+future according to the database clock. The publisher takes an advisory lock and a
+repeatable-read snapshot, verifies the resident recipe and all eight split hashes, runs the
+feature, model-ready and unchanged control builders twice, compares every artifact byte, checks
+coverage and rejection policy, then inserts one immutable content-addressed row in
+`lineage.p3_publication_receipts` and a `publication.accepted` audit event in the same database
+transaction. The JSON printed on success is a convenience copy; the database receipt is the
+canonical publication record.
+
+The candidate partitions must not exist before a run. A normal gate failure removes only the
+inode-bound candidates claimed by that process and rolls back the receipt. After a hard process
+kill, inspect and remove unreceipted candidate directories manually before retrying; the
+publisher deliberately refuses to overwrite or silently adopt them.
+
 ## Rollback rehearsal
 
 The 2026-08-26 VM rehearsal executed migration 042 and both complete artifact builds inside one

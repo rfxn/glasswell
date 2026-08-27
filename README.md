@@ -197,8 +197,10 @@ gate in the immutable resident artifact is red at 12.9484% against a 5% ceiling.
 same-manifest repair migration has been rehearsed in a rolled-back transaction: it restores
 all 318 TEST formation gaps without inferring any of the 38 source-absent laterals, preserves
 all eight split hashes, replays unchanged `tcv1.0` byte-identically, and measures 1.0798%
-unavailability (230 / 21,300). A new-vintage live artifact is not published yet. The ladder is
-not widened and those subjects are not dropped. Forecasts are still not live. The strict history and
+unavailability (230 / 21,300). A fail-closed publication gate now pins the tagged deployment
+and dependency lock, requires two byte-identical family builds, and persists an immutable
+receipt. A new-vintage live artifact is not published yet. The ladder is not widened and those
+subjects are not dropped. Forecasts are still not live. The strict history and
 reconstructed-source clocks are distinguished in
 [`docs/p3-matrix-integrity.md`](docs/p3-matrix-integrity.md), and the dataset evidence is in
 [`docs/p3-model-ready-dataset.md`](docs/p3-model-ready-dataset.md). The control contract and
@@ -240,26 +242,32 @@ bounds get measured against two independent validators and published.
 
 ## API surface
 
-API-first, with 33 operations in the frozen v1 snapshot. The current surface serves
-health and operational status, wells, North Dakota production, source-observed completion context, canonical
-formations with alias counts, lineage, manifests, conformance, quarantine, glossary, key
-administration, and tiles:
+API-first, with 34 operations in the frozen snapshot, 33 under `/v1`. The current surface
+serves health and operational status, wells, North Dakota production, source-observed
+completion context, current physical neighbours, canonical formations with alias counts,
+lineage, manifests, conformance, quarantine, glossary, key administration, and tiles:
 
 ```
 GET  /v1/status                         GET  /v1/wells
 GET  /v1/wells/{api10}                  GET  /v1/wells/{api10}/production
 GET  /v1/wells/{api10}/production/pools GET  /v1/wells/{api10}/completions
-GET  /v1/formations                     GET  /v1/explain?h={handle}
+GET  /v1/wells/{api10}/neighbors        GET  /v1/formations
+GET  /v1/explain?h={handle}
 GET  /v1/manifests/{manifest_id}         GET  /v1/conformance
 GET  /v1/conformance/{rule_id}           GET  /v1/quarantine
 GET  /v1/quarantine/summary              GET  /v1/glossary
 GET  /v1/tiles/{layer}/{z}/{x}/{y}.pbf
 ```
 
-The application has three URL-backed surfaces: Map, Explore, and Status. Status joins live
+The application has three URL-backed surfaces: Map, Explore, and Status. North Dakota well
+cards show current physical neighbours for lateral-bearing wells, with strict earlier-completion
+cutoffs, exact distance and coverage lineage, and an explicit warning that proximity does not
+make a model analog. Status joins live
 API/PostgreSQL signals to a sanitized 15-minute host snapshot, exact inventory counts with
 declared grains, scheduled-job evidence, and registered-artifact age for every source. It does
 not relabel artifact age as last-checked time, and stale snapshots never retain green checks.
+Exact-vintage logical backup manifests and durable weekly restore results are freshness-checked;
+remote-copy recency and full replacement-VM recovery remain outside that evidence.
 
 Forecast, valuation, sensitivity, scenario, agent, and undrilled-location inventory operations remain
 designed scope, not live routes. The UI consumes the same public API documented by the

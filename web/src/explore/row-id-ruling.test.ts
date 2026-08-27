@@ -61,6 +61,7 @@ describe("the wells dataset's row identity is the api10, and that is load-bearin
       "production",
       "production_pools",
       "completions",
+      "neighbors",
     ]);
   });
 

@@ -1343,6 +1343,11 @@ def get_well(
         links={
             "completions": f"/v1/wells/{api10}/completions",
             "formations": "/v1/formations",
+            **(
+                {"neighbors": f"/v1/wells/{api10}/neighbors"}
+                if row["state_code"] == "33" and laterals
+                else {}
+            ),
             "production": f"/v1/wells/{api10}/production",
             **(
                 {"reporting_rule": f"/v1/conformance/{lease_reported['rule_id']}"}

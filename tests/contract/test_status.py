@@ -15,6 +15,7 @@ from glasswell.status.models import (
     INVENTORY_REASON,
     DatasetInventory,
     InventoryMetric,
+    JobStatus,
     PlatformStatus,
     StatusCheck,
     StatusDisclosure,
@@ -55,7 +56,16 @@ def _snapshot(observed_at: datetime) -> StatusSnapshot:
                 detail="Current well entities.",
             )
         ],
-        jobs=[],
+        jobs=[
+            JobStatus(
+                id="restore_drill",
+                label="Weekly restore drill",
+                state="ok",
+                last_run_at=observed_at - timedelta(hours=2),
+                next_run_at=observed_at + timedelta(days=5),
+                detail="Durable restore proof passed; scratch cleanup verified.",
+            )
+        ],
         platform=PlatformStatus(
             code_version="v0.test+abc1234",
             schema_version=43,
@@ -68,7 +78,13 @@ def _snapshot(observed_at: datetime) -> StatusSnapshot:
                 label="Source check attempts",
                 state="limited",
                 detail="Registered-artifact age is not last-checked time.",
-            )
+            ),
+            StatusDisclosure(
+                id="remote_backup_copy",
+                label="Remote backup copy",
+                state="not_instrumented",
+                detail="Remote-copy success is not persisted separately.",
+            ),
         ],
     )
 
@@ -108,6 +124,16 @@ def test_status_joins_live_signals_to_the_current_snapshot(
         "reason": INVENTORY_REASON,
     }
     assert len(data["sources"]) > 1
+    restore = next(job for job in data["jobs"] if job["id"] == "restore_drill")
+    assert restore["state"] == "ok"
+    assert "cleanup verified" in restore["detail"]
+    remote_copy = next(
+        disclosure
+        for disclosure in data["disclosures"]
+        if disclosure["id"] == "remote_backup_copy"
+    )
+    assert remote_copy["state"] == "not_instrumented"
+    assert "success" in remote_copy["detail"]
     assert body["meta"]["source_freshness"]
 
 
@@ -172,5 +198,16 @@ def test_inventory_queries_the_declared_grains_not_promotion_bookkeeping(
     assert inventory["canonical.well_completions/nm"].metrics[0].value == 0
     assert inventory["marts.published_map_layers/nd"].scope == "North Dakota"
     assert inventory["marts.published_map_layers/tx"].scope == "Texas"
+    subject_metrics = {
+        metric.metric_id: metric.value
+        for metric in inventory["marts.nd_neighbor_subjects"].metrics
+    }
+    edge_metrics = {
+        metric.metric_id: metric.value for metric in inventory["marts.nd_neighbor_edges"].metrics
+    }
+    assert subject_metrics == {"subjects": 3, "dated_subjects": 3}
+    assert edge_metrics == {"directed_edges": 4}
+    assert inventory["marts.nd_neighbor_subjects"].valid_from is None
+    assert inventory["marts.nd_neighbor_subjects"].valid_to is None
     assert inventory["lineage.quarantine_rows"].detail.startswith("A count only")
     assert platform.schema_version == discover_migrations()[-1].version
