@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import grp
 import hashlib
 import json
 import os
+import pwd
 import subprocess
 from pathlib import Path
 
@@ -123,8 +125,8 @@ def drill(tmp_path: Path):
             "RESTORE_RESULT_PATH": str(result),
             "RESTORE_RESULT_UID": str(os.getuid()),
             "RESTORE_RESULT_GID": str(os.getgid()),
-            "EXPECTED_DUMP_OWNER": "root",
-            "EXPECTED_DUMP_GROUP": "root",
+            "EXPECTED_DUMP_OWNER": pwd.getpwuid(os.getuid()).pw_name,
+            "EXPECTED_DUMP_GROUP": grp.getgrgid(os.getgid()).gr_name,
             "DRILL_LOG": str(calls),
             "GLASSWELL_OWNER_KEY": "must-not-appear",
             **overrides,

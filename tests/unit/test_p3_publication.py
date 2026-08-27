@@ -106,9 +106,11 @@ def test_artifact_verifier_rejects_symlinked_files_and_components(tmp_path: Path
 
 def test_candidate_cleanup_refuses_replaced_directory(tmp_path: Path) -> None:
     candidate = tmp_path / "candidate"
+    replacement = tmp_path / "replacement"
+    replacement.mkdir()
     claims = p3_publication._claim_candidate_partitions((candidate,))
     candidate.rmdir()
-    candidate.mkdir()
+    replacement.rename(candidate)
 
     with pytest.raises(
         PublicationGateError, match="candidate_partition_cleanup_identity_changed"
