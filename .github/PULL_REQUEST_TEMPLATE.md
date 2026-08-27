@@ -20,4 +20,4 @@
 - [ ] Nothing in the raw zone was edited in place
 - [ ] Inventory output states its spacing assumption and support distribution (4D)
 - [ ] Behaviour changes have a regression scenario
-- [ ] `CHANGELOG.md` updated
+- [ ] One branch-owned `changelog.d/*.md` fragment added; `CHANGELOG.md` remains integrator-only

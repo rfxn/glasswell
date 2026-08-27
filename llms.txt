@@ -17,7 +17,10 @@ rolling splits, and a resident D1 `tcv1.0` type-curve control artifact. The cont
 gate in the immutable resident artifact is red at 12.9484% against 5%. A rollback-only,
 same-manifest context repair restores all 318 TEST formation gaps without inferring the 38
 source-absent laterals, preserves the eight split hashes, and replays unchanged `tcv1.0` at
-1.0798% unavailability. A new-vintage live artifact is not published yet. Forecasts, models,
+1.0798% unavailability. A fail-closed publisher now pins deployment identity, rebuilds twice
+and persists an immutable family receipt; a new-vintage live artifact is not published yet.
+Current North Dakota physical neighbours are served for lateral-bearing wells with strict
+earlier-completion cutoffs and explicit non-analog semantics. Forecasts, models,
 calibration, economics, scenarios, agents and inventory remain unserved scope, not live
 product features.
 
@@ -51,12 +54,13 @@ Two framings matter and they are different:
 
 ```
 GET /v1/wells                         GET /v1/wells/{api10}             GET /v1/wells/{api10}/production
-GET /v1/wells/{api10}/completions     GET /v1/formations               GET /v1/explain?h={handle}
+GET /v1/wells/{api10}/completions     GET /v1/wells/{api10}/neighbors GET /v1/formations
+GET /v1/status                        GET /v1/explain?h={handle}
 GET /v1/manifests/{manifest_id}       GET /v1/conformance              GET /v1/quarantine
 GET /v1/glossary                      GET /v1/tiles/{layer}/{z}/{x}/{y}.pbf
 ```
 
-The frozen OpenAPI snapshot contains 32 operations across those families plus health,
+The frozen OpenAPI snapshot contains 34 operations, 33 under `/v1`, across those families plus health,
 vintages, derivations, key administration and error documentation. Forecast, valuation,
 scenario, agent and inventory routes are not live. There is no private endpoint behind
 the UI.
