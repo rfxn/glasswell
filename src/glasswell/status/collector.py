@@ -739,28 +739,16 @@ def collect(connection: psycopg.Connection, *, now: datetime | None = None) -> S
             "glasswell-c115b.timer",
             "glasswell-c115b.service",
         ),
+        _job(
+            "lineage_retention",
+            "Lineage retention",
+            "glasswell-lineage-retention.timer",
+            "glasswell-lineage-retention.service",
+        ),
         _job("backup", "Nightly backup", "glasswell-backup.timer", "glasswell-backup.service"),
         _restore_drill_job(observed_at),
     ]
     disclosures = [
-        StatusDisclosure(
-            id="source_check_attempts",
-            label="Source check attempts",
-            state="limited",
-            detail=(
-                "Unchanged and failed fetch attempts are not persisted independently yet; source"
-                " freshness below is registered-artifact age, not last-checked time."
-            ),
-        ),
-        StatusDisclosure(
-            id="source_cadence",
-            label="Source-specific cadence",
-            state="limited",
-            detail=(
-                "The registry carries no source cadence yet; current/stale uses the existing"
-                " conservative shared artifact-age policy."
-            ),
-        ),
         StatusDisclosure(
             id="remote_backup_copy",
             label="Remote backup copy",

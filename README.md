@@ -33,12 +33,13 @@ derivation handle back to a checksummed regulator file, or it does not ship.
 > Copyright (C) 2026 Ryan MacDonald &lt;ryan@rfxn.com&gt; &#183; All rights reserved
 
 > [!IMPORTANT]
-> **Early build, private, and not a product.** The repository holds the blueprint,
+> **Early build, public source, proprietary, and not a product.** The repository holds the blueprint,
 > the collateral built from it, and a deployed North Dakota production slice with a
 > North Dakota/Texas map. glasswell is a personal single-operator build on public regulator
 > data. It is not commercial, not multi-tenant, not investment advice, and not a
-> source of verified reserves or ownership. Public release is gated on the IP
-> review in [`blueprint.md`](blueprint.md) §8.2.
+> source of verified reserves or ownership. Repository visibility grants no license; a public
+> hosted demo, regulator-data redistribution, and the capability matrix remain separate review
+> decisions under [`blueprint.md`](blueprint.md) §8.2.
 
 ---
 
@@ -193,14 +194,14 @@ aliases. The resident matrix and model-ready `mdv1.4` dataset replay byte-identi
 censoring/rejection coverage, and eight content-addressed rolling splits. Pinned control-major
 `tcv1.0` now replays 2,300,400 rows over those exact splits, all three streams, and both
 normalization arms. Its rung-one share passes at 81.7089%, but its explicit unavailability
-gate in the immutable resident artifact is red at 12.9484% against a 5% ceiling. The
-same-manifest repair migration has been rehearsed in a rolled-back transaction: it restores
-all 318 TEST formation gaps without inferring any of the 38 source-absent laterals, preserves
-all eight split hashes, replays unchanged `tcv1.0` byte-identically, and measures 1.0798%
-unavailability (230 / 21,300). A fail-closed publication gate now pins the tagged deployment
-and dependency lock, requires two byte-identical family builds, and persists an immutable
-receipt. A new-vintage live artifact is not published yet. The ladder is not widened and those
-subjects are not dropped. Forecasts are still not live. The strict history and
+gate in the immutable historical artifact is red at 12.9484% against a 5% ceiling. Accepted
+publication `p3pub_8b434525d8c621762e31b06ca660bfcd` advances the evaluation vintage to
+2026-08-28 while preserving all eight split hashes and the `fv2.0`, `mdv1.4`, and `tcv1.0`
+contracts. Two complete builds reproduce all eight artifacts and split files byte-identically;
+an independent read rehashes every file against the receipt. The source-faithful repair resolves all 318 TEST formation gaps
+without inferring any of the 38 source-absent laterals and measures 1.0798% unavailability
+(230 / 21,300), below the 5% ceiling. The ladder is not widened and those subjects are not
+dropped. Forecasts are still not live. The strict history and
 reconstructed-source clocks are distinguished in
 [`docs/p3-matrix-integrity.md`](docs/p3-matrix-integrity.md), and the dataset evidence is in
 [`docs/p3-model-ready-dataset.md`](docs/p3-model-ready-dataset.md). The control contract and
@@ -270,10 +271,25 @@ cards show current physical neighbours for lateral-bearing wells, with strict ea
 cutoffs, exact distance and coverage lineage, and an explicit warning that proximity does not
 make a model analog. Status joins live
 API/PostgreSQL signals to a sanitized 15-minute host snapshot, exact inventory counts with
-declared grains, scheduled-job evidence, and registered-artifact age for every source. It does
-not relabel artifact age as last-checked time, and stale snapshots never retain green checks.
+declared grains, scheduled-job evidence, and independently committed poll outcomes with
+source-specific cadence and artifact identity for every source. Unchanged checks can keep older
+bytes current; failed, interrupted, or unresolved source-key checks cannot be masked by another
+key's success, and stale snapshots never retain green checks.
 Exact-vintage logical backup manifests and durable weekly restore results are freshness-checked;
 remote-copy recency and full replacement-VM recovery remain outside that evidence.
+
+The locally verified v0.60 candidate validates every selector-bearing figure on the current API
+against a fail-closed persisted
+output profile. Request-computed well-length and viewport aggregates receive their own response
+derivations rather than borrowing one contributing row; exact response evidence lives outside
+derivation identity so changed output trips the determinism gate. The viewport summary that can
+create this evidence is capped at 30 requests per principal per UTC minute with one bounded
+database counter per principal. Conformance rules, lookup rows
+and CRS routing carry an immutable publication clock independent of their valid interval.
+`/v1/conformance` exposes both clocks while retaining the known version history when no valid-time
+cut is requested. Source-data vintages from before Glasswell use the first published policy as an
+explicit baseline, never a later backdated correction. A sandboxed nightly job removes only
+successful unreferenced ephemeral lineage older than 90 days and reports through Status.
 
 Forecast, valuation, sensitivity, scenario, agent, and undrilled-location inventory operations remain
 designed scope, not live routes. The UI consumes the same public API documented by the
@@ -372,7 +388,7 @@ records each file's checksum and refuses a changed migration.
 | [blueprint.md](blueprint.md) | The product and engineering contract. Anything not in scope there is out until it changes. |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Layers, components, boundaries, and the rules R1–R8 |
 | [ROADMAP.md](ROADMAP.md) | Build phases P0–P8 with exit criteria, current status and cut order |
-| [docs/p3-context-repair.md](docs/p3-context-repair.md) | Same-manifest repair policy, source-absent lateral disposition, exact split/hash proof, and rollback rehearsal |
+| [docs/p3-context-repair.md](docs/p3-context-repair.md) | Same-manifest repair policy, source-absent lateral disposition, exact split/hash proof, and accepted live publication |
 | [docs/p3-type-curve-control.md](docs/p3-type-curve-control.md) | Pinned `tcv1.0` control contract, D1 replay evidence, and the explicit red coverage gate |
 | [docs/p3-matrix-integrity.md](docs/p3-matrix-integrity.md) | Feature-matrix availability semantics, and the strict-history versus reconstructed-source clocks |
 | [docs/p3-model-ready-dataset.md](docs/p3-model-ready-dataset.md) | `mdv1.4` labels, curves, censoring coverage, and the eight content-addressed rolling splits |

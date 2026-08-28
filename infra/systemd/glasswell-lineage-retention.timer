@@ -1,0 +1,13 @@
+[Unit]
+Description=Nightly glasswell lineage retention sweep
+Documentation=file:/opt/glasswell/src/infra/README.md
+OnFailure=glasswell-alert@%n.service
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=300
+Unit=glasswell-lineage-retention.service
+
+[Install]
+WantedBy=timers.target

@@ -14,14 +14,17 @@ import { resetTrail } from "./chips.ts";
 import { conformanceRuleEnvelope, quarantineDetailEnvelope } from "./fixtures.ts";
 
 const SNAPSHOT = JSON.parse(readFileSync("../tests/contract/openapi_snapshot.json", "utf8"));
+const QUARANTINE_ROW = quarantineDetailEnvelope.data.quarantine_id;
+const COLLECTION_ONLY_ROW = quarantineEnvelope.data[1]!.quarantine_id;
+const CONFORMANCE_RULE = conformanceRuleEnvelope.data.rule_id;
 
 const BODIES: Record<string, unknown> = {
   "/openapi.json": SNAPSHOT,
   "/v1/quarantine": quarantineEnvelope,
   "/v1/quarantine/summary": quarantineSummaryEnvelope,
-  "/v1/quarantine/qr_01contract0003": quarantineDetailEnvelope,
+  [`/v1/quarantine/${QUARANTINE_ROW}`]: quarantineDetailEnvelope,
   "/v1/conformance": conformanceEnvelope,
-  "/v1/conformance/cr_nd_status_vocab_1": conformanceRuleEnvelope,
+  [`/v1/conformance/${CONFORMANCE_RULE}`]: conformanceRuleEnvelope,
 };
 
 const OPENED = "/?view=explore&ds=quarantine&f.state=open&cursor=opaque";
@@ -107,7 +110,7 @@ describe("the detail is URL-addressable and the back button returns the grid (§
     await settle();
 
     const next = new URLSearchParams(window.location.search);
-    expect(next.get("row")).toBe("qr_01contract0003");
+    expect(next.get("row")).toBe(QUARANTINE_ROW);
     expect(next.get("f.state")).toBe("open");
     expect(next.get("cursor")).toBe("opaque");
     // One request per hop: the page the reader is looking at is not re-read to expand a row.
@@ -130,11 +133,11 @@ describe("the detail is URL-addressable and the back button returns the grid (§
   });
 
   it("opens the panel from the URL alone, which is what makes a row shareable", async () => {
-    await mountShell(`${OPENED}&row=qr_01contract0003`);
+    await mountShell(`${OPENED}&row=${QUARANTINE_ROW}`);
 
     const open = panel();
     expect(open).not.toBe(null);
-    expect(open?.dataset["rowId"]).toBe("qr_01contract0003");
+    expect(open?.dataset["rowId"]).toBe(QUARANTINE_ROW);
     expect(rows()[0]?.getAttribute("aria-expanded")).toBe("true");
   });
 
@@ -154,7 +157,7 @@ describe("the detail is URL-addressable and the back button returns the grid (§
   });
 
   it("stands the panel on its own when the hop lands on a row this page does not hold", async () => {
-    await mountShell("/?view=explore&ds=quarantine&row=qr_01contract0003&f.state=open");
+    await mountShell(`/?view=explore&ds=quarantine&row=${QUARANTINE_ROW}&f.state=open`);
     // The recorded page holds this row, so the standalone arm is asserted on one it does not.
     await mountShell("/?view=explore&ds=quarantine&row=qr_not_on_this_page");
 
@@ -167,7 +170,7 @@ describe("the detail is URL-addressable and the back button returns the grid (§
   it("hands the panel the columns the grid hides, reason and all (M3)", async () => {
     // No recorded record for this row, so the detail request 404s and the collection's own
     // fields are what stands — which is the frame a `hidden_reason` can appear in at all.
-    await mountShell("/?view=explore&ds=quarantine&row=qr_01contract0002");
+    await mountShell(`/?view=explore&ds=quarantine&row=${COLLECTION_ONLY_ROW}`);
 
     const keys = [...(panel()?.querySelectorAll(".gw-detail-key") ?? [])].map((key) => key.textContent ?? "");
     const reasons = [...(panel()?.querySelectorAll(".gw-detail-hidden") ?? [])];
@@ -189,7 +192,7 @@ describe("the detail is URL-addressable and the back button returns the grid (§
   });
 
   it("closes the row rather than the surface when the panel's own close is used", async () => {
-    await mountShell(`${OPENED}&row=qr_01contract0003`);
+    await mountShell(`${OPENED}&row=${QUARANTINE_ROW}`);
     (panel()?.querySelector(".gw-detail-close") as HTMLElement).click();
     await settle();
 
@@ -201,25 +204,25 @@ describe("the detail is URL-addressable and the back button returns the grid (§
 
 describe("a chip hop is one request into a filtered dataset (§3.3, §0.4)", () => {
   it("crosses to the target dataset carrying as_of, and never walks a chain", async () => {
-    await mountShell(`/?view=explore&ds=quarantine&as_of=2026-08-01&row=qr_01contract0003`);
+    await mountShell(`/?view=explore&ds=quarantine&as_of=2026-08-01&row=${QUARANTINE_ROW}`);
     const chip = document.querySelector('.gw-join-chip[data-target="conformance"]') as HTMLElement;
     chip.click();
     await settle();
 
     const next = new URLSearchParams(window.location.search);
     expect(next.get("ds")).toBe("conformance");
-    expect(next.get("row")).toBe("cr_nd_status_vocab_1");
+    expect(next.get("row")).toBe(CONFORMANCE_RULE);
     expect(next.get("as_of")).toBe("2026-08-01");
     // The hop's own collection, and its own record. No third request walked an edge.
     expect(requested.filter((url) => url.startsWith("/v1/conformance"))).toEqual([
       "/v1/conformance?as_of=2026-08-01",
-      // get_conformance_rule declares no as_of, so none is put on its wire (§3.1 rule 3).
-      "/v1/conformance/cr_nd_status_vocab_1",
+      // Both collection and detail pin the same knowledge clock (§3.1 rule 3).
+      `/v1/conformance/${CONFORMANCE_RULE}?as_of=2026-08-01`,
     ]);
   });
 
   it("records the hop, so the breadcrumb can answer how the reader got here", async () => {
-    await mountShell(`/?view=explore&ds=quarantine&row=qr_01contract0003`);
+    await mountShell(`/?view=explore&ds=quarantine&row=${QUARANTINE_ROW}`);
     (document.querySelector('.gw-join-chip[data-target="conformance"]') as HTMLElement).click();
     await settle();
 

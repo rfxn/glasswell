@@ -138,7 +138,9 @@
 
 .gw-status-badge[data-state="ok"],
 .gw-status-badge[data-state="current"],
-.gw-status-badge[data-state="available"] {
+.gw-status-badge[data-state="available"],
+.gw-status-badge[data-state="new"],
+.gw-status-badge[data-state="unchanged"] {
   border-color: var(--gw-status-ok);
   color: var(--gw-status-ok);
 }
@@ -146,7 +148,9 @@
 .gw-status-badge[data-state="degraded"],
 .gw-status-badge[data-state="stale"],
 .gw-status-badge[data-state="invalid"],
-.gw-status-badge[data-state="limited"] {
+.gw-status-badge[data-state="limited"],
+.gw-status-badge[data-state="failed"],
+.gw-status-badge[data-state="interrupted"] {
   border-color: var(--amber);
   color: var(--amber-text);
 }
@@ -154,6 +158,11 @@
 .gw-status-badge[data-state="pending"],
 .gw-status-badge[data-state="partial"],
 .gw-status-badge[data-state="estimated"] {
+  border-color: var(--gw-status-info);
+  color: var(--gw-status-info);
+}
+
+.gw-status-badge[data-state="attempted"] {
   border-color: var(--gw-status-info);
   color: var(--gw-status-info);
 }

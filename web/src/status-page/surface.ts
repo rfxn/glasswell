@@ -55,6 +55,11 @@ export interface StatusSource {
   declared_vintage: string | null;
   last_manifest_id: string | null;
   manifest_count: number;
+  last_attempt_at: string | null;
+  last_outcome: "attempted" | "new" | "unchanged" | "failed" | "interrupted" | null;
+  next_expected_poll: string | null;
+  cadence: string | null;
+  freshness_reason: string;
 }
 
 export interface StatusPayload {
@@ -110,6 +115,14 @@ const STATE_LABELS: Record<StatusState | CheckState | StatusSource["state"], str
 
 const MANIFEST_COUNT_REASON =
   "Registered manifest count is provenance bookkeeping about source artifacts, not a petroleum measurement.";
+
+const OUTCOME_LABELS: Record<NonNullable<StatusSource["last_outcome"]>, string> = {
+  attempted: "Attempted",
+  new: "New artifact",
+  unchanged: "Unchanged",
+  failed: "Failed",
+  interrupted: "Interrupted",
+};
 
 let mounted: Mount | null = null;
 
@@ -424,15 +437,27 @@ function jobs(payload: StatusPayload): HTMLElement {
 function sources(items: StatusSource[]): HTMLElement {
   const section = sectionWithTitle(
     "gw-status-sources-title",
-    "Registered artifact age",
-    "This is the age of registered artifacts, not proof of the last upstream check. Successful unchanged fetches are not persisted as new manifests, so retrieval age can overstate check age.",
+    "Source polls & freshness",
+    "Each state combines independently committed poll evidence, the registered artifact, and one source-specific cadence. Unchanged checks can keep older bytes current; failed or interrupted checks cannot.",
   );
   const wrapper = element("div", "gw-status-table-wrap");
   const table = document.createElement("table");
   table.className = "gw-status-table gw-status-source-table";
   const caption = document.createElement("caption");
-  caption.textContent = "Freshness of registered source artifacts";
-  const head = tableHead(["Source", "State", "Retrieved", "Declared", "Latest artifact", "Artifacts"]);
+  caption.textContent = "Durable source polls and registered artifact freshness";
+  const head = tableHead([
+    "Source",
+    "State",
+    "Last attempt",
+    "Outcome",
+    "Next expected",
+    "Cadence",
+    "Artifact retrieved",
+    "Declared vintage",
+    "Latest artifact",
+    "Artifacts",
+    "Reason",
+  ]);
   const body = document.createElement("tbody");
   for (const source of items) {
     const row = document.createElement("tr");
@@ -442,17 +467,26 @@ function sources(items: StatusSource[]): HTMLElement {
     const id = document.createElement("code");
     id.textContent = source.source_id;
     name.append(id);
+    const outcome =
+      source.last_outcome === null
+        ? textValue("Not recorded")
+        : badge(OUTCOME_LABELS[source.last_outcome], source.last_outcome);
     row.append(
       name,
       tableCell(badge(STATE_LABELS[source.state], source.state)),
+      tableCell(timeOrFallback(source.last_attempt_at, "Never")),
+      tableCell(outcome),
+      tableCell(timeOrFallback(source.next_expected_poll, "Not predictable")),
+      tableCell(textValue(source.cadence ?? "Not registered")),
       tableCell(timeOrFallback(source.retrieval_vintage, "Never")),
       tableCell(timeOrFallback(source.declared_vintage, "Not declared")),
-      tableCell(textValue(source.last_manifest_id ?? "None", true)),
+      tableCell(textValue(source.last_manifest_id ?? "None", source.last_manifest_id !== null)),
       tableCell(countedValue(source.manifest_count, "artifacts", MANIFEST_COUNT_REASON)),
+      tableCell(textValue(source.freshness_reason)),
     );
     body.append(row);
   }
-  if (items.length === 0) body.append(emptyTableRow(6, "No registered sources were served."));
+  if (items.length === 0) body.append(emptyTableRow(11, "No registered sources were served."));
   table.append(caption, head, body);
   wrapper.append(table);
   section.append(wrapper);
@@ -734,6 +768,18 @@ function sourceOf(item: unknown, index: number): StatusSource {
     declared_vintage: nullableTime(source["declared_vintage"], `${path}.declared_vintage`),
     last_manifest_id: nullableString(source["last_manifest_id"], `${path}.last_manifest_id`),
     manifest_count: countNumber(source["manifest_count"], `${path}.manifest_count`),
+    last_attempt_at: nullableTime(source["last_attempt_at"], `${path}.last_attempt_at`),
+    last_outcome: nullableMember(
+      source["last_outcome"],
+      `${path}.last_outcome`,
+      ["attempted", "new", "unchanged", "failed", "interrupted"] as const,
+    ),
+    next_expected_poll: nullableTime(
+      source["next_expected_poll"],
+      `${path}.next_expected_poll`,
+    ),
+    cadence: nullableBoundedString(source["cadence"], `${path}.cadence`, 80),
+    freshness_reason: boundedString(source["freshness_reason"], `${path}.freshness_reason`, 512),
   };
 }
 
@@ -776,6 +822,11 @@ function nullableString(value: unknown, path: string): string | null {
   return string(value, path);
 }
 
+function nullableBoundedString(value: unknown, path: string, maximum: number): string | null {
+  if (value === null) return null;
+  return boundedString(value, path, maximum);
+}
+
 function nullableTime(value: unknown, path: string): string | null {
   const text = nullableString(value, path);
   if (text === null) return null;
@@ -811,6 +862,14 @@ function nonEmptyString(value: unknown, path: string): string {
   return found;
 }
 
+function boundedString(value: unknown, path: string, maximum: number): string {
+  const found = nonEmptyString(value, path);
+  if (found.length > maximum) {
+    throw new StatusContractError(path, `a non-empty string of at most ${maximum} characters`);
+  }
+  return found;
+}
+
 function countNumber(value: unknown, path: string): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
     throw new StatusContractError(path, "a safe non-negative integer");
@@ -828,4 +887,13 @@ function member<const T extends readonly string[]>(value: unknown, path: string,
     throw new StatusContractError(path, `one of ${members.join(", ")}`);
   }
   return value as T[number];
+}
+
+function nullableMember<const T extends readonly string[]>(
+  value: unknown,
+  path: string,
+  members: T,
+): T[number] | null {
+  if (value === null) return null;
+  return member(value, path, members);
 }

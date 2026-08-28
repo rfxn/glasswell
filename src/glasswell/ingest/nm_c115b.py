@@ -38,6 +38,7 @@ from glasswell.lineage import (
     load_rules,
     quarantine,
 )
+from glasswell.lineage.fetch_attempts import durable_fetch_attempts
 from glasswell.lineage.serialization import hash_payload
 
 SERVICE_URL = (
@@ -473,7 +474,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     arguments = parser.parse_args(argv)
 
-    with psycopg.connect(arguments.dsn) as connection:
+    with durable_fetch_attempts(arguments.dsn), psycopg.connect(arguments.dsn) as connection:
         environment = resolve_environment(
             connection, env_id=arguments.env_id, code_version=arguments.code_version
         )

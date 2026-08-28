@@ -1,8 +1,9 @@
 # P3 context repair
 
 This repair leaves `fv2.0`, `mdv1.4`, all eight split objects, and `tcv1.0` unchanged. It
-corrects source population beneath those contracts and then replays them at a new evaluation
-vintage. An old content-addressed partition is never overwritten.
+corrects source population beneath those contracts and replays them at a new evaluation
+vintage. The accepted 2026-08-28 publication is recorded below; no older content-addressed
+partition was overwritten.
 
 ## Formation repair policy
 
@@ -37,7 +38,7 @@ ladder widening, or subject removal is used to make the gate pass.
 
 ## Replay gate
 
-The accepted replay must:
+The accepted replay was required to:
 
 1. build a new immutable `fv2.0` evaluation vintage after migration 042;
 2. reproduce the eight resident split hashes and split-set id exactly;
@@ -45,8 +46,7 @@ The accepted replay must:
 4. report control unavailability at or below 5%; and
 5. publish residual missing/conflict counts without relabelling unavailable source facts.
 
-Published resident hashes and measured counts replace the rollback rehearsal only after the
-migration is applied and the two-run replay completes at a new evaluation vintage.
+The live publication met all five conditions at evaluation vintage 2026-08-28.
 
 ## Publication command and receipt
 
@@ -83,7 +83,35 @@ inode-bound candidates claimed by that process and rolls back the receipt. After
 kill, inspect and remove unreceipted candidate directories manually before retrying; the
 publisher deliberately refuses to overwrite or silently adopt them.
 
-## Rollback rehearsal
+## Accepted live publication
+
+The tagged v0.59 deployment published immutable receipt
+`p3pub_8b434525d8c621762e31b06ca660bfcd`, whose canonical document SHA-256 is
+`8b434525d8c621762e31b06ca660bfcd89b67e70c9be58b08d65602ef9319e9b`. It pins code
+`v0.59+b0be225`, environment `env_59334df47ed960e6`, split set
+`sset_c7bbb9a6932db76b`, and unchanged `fv2.0`, `mdv1.4`, and `tcv1.0` identities.
+The publisher ran every build twice under one repeatable-read snapshot; an independent read
+then rehashed all eight artifacts and all eight split files against the receipt.
+
+| Artifact | Rows | SHA-256 |
+|---|---:|---|
+| `fv2.0` matrix | 17,563 | `f6ab0c7d9bced4d67ceefa9202a1da36e3a98549ced82c79d95cae8578ddf10f` |
+| feature coverage | one canonical JSON document | `7dd6340f0c06919f4e69372a5f5e4753068b5ee292187f51e6399b21177275bf` |
+| `mdv1.4` labels | 105,378 | `94c9829b3fa7441da0a885b0bba00cf3755c24e6832db8df4744c25f3c9bab77` |
+| producing-month curves | 1,172,586 | `a90cb98484dbd83c600558755f2055f9cd5a7f5b3eaa1e079b339a1ace69e22a` |
+| model coverage | one canonical JSON document | `60bff930fd185aab2e76716fee054a47200307c9513032aaed3874fdb46bc845` |
+| model rejections | 2,943 | `16bb1dbebfd798205e5a78789b76518e78c109662e9c54251fd0e572ed22c989` |
+| `tcv1.0` controls | 2,300,400 | `b80b1142631820f495f6479bb23ba3a14e656b7d69979938cb9d6644e4e11f45` |
+| control coverage | one canonical JSON document | `12d66f5b9fb05dba40999fff5ddc0ca85382cfd2826d3d35de0a2c42ad165c40` |
+
+Feature coverage is 17,075 resolved, 486 missing and two simultaneous conflicts across
+17,563 subjects. Across 21,300 TEST subject/split instances, 230 are unavailable
+(`0.010798`): 222 missing-lateral and eight insufficient-peer mentions, with no
+missing-formation mention. Every split passes its own 5% ceiling, the receipt records
+`build_runs=2` and `byte_identical=true`, and the same transaction emitted the append-only
+`publication.accepted` audit event.
+
+## Pre-publication rollback rehearsal
 
 The 2026-08-26 VM rehearsal executed migration 042 and both complete artifact builds inside one
 database transaction, then rolled it back. It inserted 131,893 exact completion-month
@@ -109,6 +137,5 @@ The split-set remains `sset_c7bbb9a6932db76b`; all eight split files byte-compar
 resident `mdv1.4` inputs. Across 21,300 TEST subject/split instances, 230 remain unavailable
 (`0.010798`), all splits pass separately, rung-one coverage rises to `0.926573`, and no
 plausibility flag remains. Residual mentions are 222 `missing_lateral_length` and eight
-`insufficient_peers`; missing formation is zero. The published resident replay follows the
-same procedure after deployment at a new evaluation vintage rather than replacing the sealed
-2026-08-26 partitions.
+`insufficient_peers`; missing formation is zero. The accepted publication above follows this
+same source-faithful procedure without replacing the sealed 2026-08-26 partitions.

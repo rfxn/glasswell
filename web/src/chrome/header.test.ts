@@ -87,8 +87,8 @@ describe("the header is a control surface, not a paragraph", () => {
     expect(help).toContain("Source-matched historical formation context is repaired");
     expect(help).toContain("without cross-manifest inference");
     expect(help).toContain("Missing lateral context remains explicitly unavailable");
-    expect(help).toContain("rollback rehearsal");
-    expect(help).toContain("no post-deployment live replay is published yet");
+    expect(help).toContain("accepted 2026-08-28 publication");
+    expect(help).toContain("230 of 21,300 TEST instances");
     expect(help).toContain("5% ceiling");
     expect(help).toContain("not widened");
     expect(help).not.toContain("12.9484%");

@@ -26,6 +26,7 @@ from glasswell.lineage.capture import derive
 from glasswell.lineage.conformance import QuarantineBatch, apply_rules, load_rules
 from glasswell.lineage.errors import VintageAlreadyPromoted
 from glasswell.lineage.fetch import fetch_raw
+from glasswell.lineage.fetch_attempts import durable_fetch_attempts
 from glasswell.lineage.models import ConformanceRule, InputRef, OutputSpec
 from glasswell.lineage.quarantine import quarantine
 from glasswell.lineage.serialization import hash_payload
@@ -1207,7 +1208,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
     year, _, month = arguments.month.partition("-")
 
-    with psycopg.connect(arguments.dsn) as connection:
+    with durable_fetch_attempts(arguments.dsn), psycopg.connect(arguments.dsn) as connection:
         with open_ingest_run(
             connection, source_id=SOURCE_ID, raw_root=arguments.raw_root
         ) as run:

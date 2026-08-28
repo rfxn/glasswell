@@ -74,12 +74,6 @@ def _snapshot(observed_at: datetime) -> StatusSnapshot:
         ),
         disclosures=[
             StatusDisclosure(
-                id="source_check_attempts",
-                label="Source check attempts",
-                state="limited",
-                detail="Registered-artifact age is not last-checked time.",
-            ),
-            StatusDisclosure(
                 id="remote_backup_copy",
                 label="Remote backup copy",
                 state="not_instrumented",
@@ -124,6 +118,12 @@ def test_status_joins_live_signals_to_the_current_snapshot(
         "reason": INVENTORY_REASON,
     }
     assert len(data["sources"]) > 1
+    nd_source = next(
+        source for source in data["sources"] if source["source_id"] == "nd_mpr_xlsx"
+    )
+    assert nd_source["last_outcome"] is None
+    assert nd_source["cadence"] == "Every 35 days"
+    assert nd_source["freshness_reason"]
     restore = next(job for job in data["jobs"] if job["id"] == "restore_drill")
     assert restore["state"] == "ok"
     assert "cleanup verified" in restore["detail"]

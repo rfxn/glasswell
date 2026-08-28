@@ -74,14 +74,17 @@ update lineage.derivations
 class PostgresRecorder:
     """Writes `lineage.derivations` and its edge tables through one connection."""
 
-    def __init__(self, connection: psycopg.Connection) -> None:
+    def __init__(
+        self, connection: psycopg.Connection, *, lock_existing: bool = True
+    ) -> None:
         self._connection = connection
+        self._lock_existing = lock_existing
 
     def record(self, record: DerivationRecord) -> RecordOutcome:
         with self._connection.cursor() as cursor:
             cursor.execute(
                 "select status, output_sha256 from lineage.derivations where derivation_id = %s"
-                " for update",
+                + (" for update" if self._lock_existing else ""),
                 (record.derivation_id,),
             )
             row = cursor.fetchone()

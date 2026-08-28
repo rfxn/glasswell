@@ -282,13 +282,11 @@ describe("the grid renders a collection off one state object (§3.1 rule 2)", ()
     await mount("sources");
     const table = host.querySelector(".gw-grid-table") as HTMLElement;
 
-    // `name` is the one prose column; it is the only track allowed to shrink, so the dates and
-    // the count that were being cut mid-glyph keep their full width.
-    // `SourceHealth` declares its two vintages as bare strings rather than `format: date`, so
-    // they classify as prose and can shrink — the schema gap is recorded, not worked around.
+    // Cadence is the one prose column; identifiers, states, timestamps and the count retain
+    // content width rather than being cut mid-glyph.
     expect(table.style.gridTemplateColumns).toBe(
-      "max-content minmax(8ch, max-content) minmax(8ch, max-content)" +
-        " minmax(8ch, max-content) minmax(8ch, max-content) max-content",
+      "max-content max-content max-content max-content max-content" +
+        " minmax(8ch, max-content) max-content",
     );
   });
 
@@ -308,8 +306,13 @@ describe("the grid renders a collection off one state object (§3.1 rule 2)", ()
   });
 
   it("carries the whole value in a title wherever a cell can ellipsize (F1)", async () => {
+    const long = JSON.parse(JSON.stringify(healthEnvelope));
+    long.data.sources[0].cadence = "Every thirty-five days after the prior completed source poll";
+    overrides["/v1/health"] = long;
     await mount("sources");
-    const prose = host.querySelector(".gw-value-prose") as HTMLElement;
+    const prose = [...host.querySelectorAll(".gw-value-prose")].find((cell) =>
+      cell.textContent?.startsWith("Every thirty-five days"),
+    ) as HTMLElement;
 
     // The grid already teaches `…` on prose cells, so a reader reads an un-ellipsized value as
     // complete. Anything that can be shortened says what it was shortened from.

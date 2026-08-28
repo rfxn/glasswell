@@ -35,6 +35,7 @@ import psycopg
 from glasswell.ingest.base import open_ingest_run
 from glasswell.ingest.nd_mpr import SOURCE_ID, STAGING_TABLE, ingest_month
 from glasswell.lineage.fetch import RAW_ROOT_ENV, resolve_raw_root
+from glasswell.lineage.fetch_attempts import durable_fetch_attempts
 
 DEFAULT_DSN = "postgresql:///glasswell?host=/var/run/postgresql"
 POLITE_SECONDS = 15
@@ -284,6 +285,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     with (
         ProgressLog(arguments.log_file) as progress,
+        durable_fetch_attempts(arguments.dsn),
         psycopg.connect(arguments.dsn) as connection,
     ):
         summary = run_backload(

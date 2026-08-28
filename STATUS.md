@@ -1,10 +1,11 @@
 # Current status
 
-Reconciled on **2026-08-28** against the v0.59 release line, the checked-in OpenAPI
-snapshot, current `main` history, and the deployed instance. This is the short current-state ledger;
+Reconciled on **2026-08-28** against the deployed v0.59 baseline and the locally verified
+v0.60 release candidate. Candidate capabilities below become shipped claims only after hosted CI,
+release, migration, deployment, and live verification. This is the short current-state ledger;
 [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria, while
 [`blueprint.md`](blueprint.md) remains the committed v0.5 contract and
-[`blueprint-v0.6-draft.md`](blueprint-v0.6-draft.md) is the rc4 amendment set.
+[`blueprint-v0.6-draft.md`](blueprint-v0.6-draft.md) is the rc5 amendment set.
 
 ## Shipped baseline
 
@@ -41,45 +42,36 @@ snapshot, current `main` history, and the deployed instance. This is the short c
 | **P0** Scaffold and contracts | Met | `/v1/audit` is not served, but is not a P0 exit requirement |
 | **P1** ND spine | Met with named deferrals | PDF-era production and FracFocus chemistry remain absent; the disclosure-header anchor path is built |
 | **P2** Serving and map | Substantially met | Completion context, formations and current ND physical neighbours are served and visible on eligible well cards without promoting staging-only design measurements or treating proximity as an analog. Neighbours use current lateral geometry, strict earlier-completion cutoffs and exact query lineage; retrospective geometry remains explicitly unavailable. Permits, land/spacing units, GOR and water-cut remain |
-| **P3** Forecasting and benchmark | Pinned control and publication gate built; resident gate red | Immutable `fv1.0`, semantic-major `fv2.0`, `mdv1.4`, and control-major `tcv1.0` remain separate identities. The immutable resident artifact still records 12.9484% unavailability. A rollback-only migration rehearsal restored all 318 TEST formation gaps through same-manifest source rows, left the 38 source-absent laterals uninferred, replayed unchanged `tcv1.0` byte-identically on all eight exact split hashes, and measured 230 / 21,300 unavailable instances (1.0798%). A fail-closed publisher now pins deployed code and lock identity, verifies two byte-identical builds and persists an immutable family receipt, but a new-vintage live artifact is not yet published. Models, calibration, the model-registry writer, analog index, and harness remain |
+| **P3** Forecasting and benchmark | Pinned control gate accepted; modeling remains | Immutable `fv1.0`, semantic-major `fv2.0`, `mdv1.4`, and control-major `tcv1.0` remain separate identities. The accepted 2026-08-28 publication `p3pub_8b434525d8c621762e31b06ca660bfcd` pins `v0.59+b0be225`, environment `env_59334df47ed960e6`, and split set `sset_c7bbb9a6932db76b`; two complete builds reproduced all eight artifacts and all eight split files byte-identically. Unavailability is 230 / 21,300 (1.0798%), below the 5% ceiling, with 222 missing-lateral and eight insufficient-peer mentions and no TEST missing-formation mention. Matrix-wide coverage is 17,075 resolved, 486 missing and two conflicts across 17,563 subjects. Models, calibration, the model-registry writer, analog index, benchmark scoring and harness remain |
 | **P4** Dollars and scenarios | Not started | Entire phase |
 | **P5** Intelligence, agents and alerts | Not started | Entire phase |
-| **P6** Hardening and glass-box proof | Partial | A sanitized timed Status snapshot observes core services, bounded probes, storage, scheduled jobs, exact-grain dataset inventory and source artifact age. Nightly dumps now carry exact-vintage manifests, and a weekly logical restore drill validates freshness, schema, counts, representative reads and scratch cleanup. The v0.57 live drill completed the database checks but could not publish into shared state; v0.58 isolated the result and persisted the next failure honestly, exposing that an explicit redundant root identity blocked the sandbox's required PostgreSQL credential transition. v0.59 removed that identity and is deployed: the recurring unit itself — not a hand-run rehearsal — restored the 1,493,232,492-byte nightly dump in 849 seconds on 2026-08-28, matched the schema version 46 recorded in that dump's own manifest, all four critical counts and all six representative reads, removed the scratch database, and persisted a `root:glasswell` `0640` pass receipt. Completion and neighbour lineage selectors are checked against persisted derivation outputs, but that enforcement is not universal. This does not prove full VM/raw-zone recovery. Still add durable source-check/cadence evidence, tunnel/Access, outsider guest exercise, full-system recovery, determinism and tool-equivalence gates |
+| **P6** Hardening and glass-box proof | Partial | The deployed v0.59 baseline has a sanitized timed Status snapshot and the passed recurring logical restore. The locally verified v0.60 candidate adds independently committed poll outcomes aligned to actual recurring timers, fail-closed persisted selector outputs, two-clock conformance, and a sandboxed nightly retention unit; none is claimed as live before release verification. The restore unit restored the 1,493,244,558-byte schema-47 dump in 849 seconds, matched 197 manifests, 403,238 latest wells, 7,223,544 production rows and 43,817 ND tile rows, passed six representative reads, removed scratch state and persisted a `root:glasswell` `0640` receipt. This still does not prove full VM/raw-zone recovery. Tunnel/Access, rate limits, outsider guest exercise, remote-copy evidence, full-system recovery, broader determinism and tool-equivalence gates remain |
 | **P7** Permian | Started, unpromoted/incomplete | NM deployment; TX production, allocation, and validators |
 | **P8** Living systems | Not started | Entire phase |
 
-The v0.58 deployment exposed an operational defect in the first live neighbour replay:
-the reverse subject foreign key had no supporting edge index, so deleting 22,263 subjects
-repeatedly scanned 7,958,550 directed edges. The transaction was cancelled and rolled back
-without changing the resident mart. Migration 047 supplies that index and is resident at
-schema head 47; the replay then completed against it, carrying the mart to derivation
-`drv_3b67n3gqigmxkwmmeoka` at snapshot vintage 2026-08-28 with its 22,263 subjects intact.
-
 ## Immediate gaps
 
-1. Publish unchanged `tcv1.0` at a new evaluation vintage with the same eight split hashes and
-   ≤5% unavailability; the source-faithful context and receipt migrations are already resident.
-2. Verify card, pagination, exact lineage and Status inventory against the replayed
-   neighbour mart; the index and the replay itself are resident and no longer the gap.
-3. Retain full VM/raw-zone recovery as a separate P6 exit requirement: the weekly logical
-   restore drill now passes from its deployed unit, but it does not prove host recovery.
-4. Extend `/explain` selector-output validation beyond the completion and physical-neighbour
-   datasets, retaining strict URL-safe base64 decoding for encoded identities.
-5. Add immutable conformance-rule publication time distinct from `effective_from`, then
-   make historical rule lookup honor both clocks; today a newly inserted backdated rule can
-   alter a replay despite append-only storage.
-6. Promote New Mexico before implementing Texas lease allocation so the well-level
+1. Implement the three-stream quantile-model writer, split-conformal calibration and model
+   registry contract against the accepted `fv2.0` / `mdv1.4` split set; publish per-slice
+   empirical coverage rather than serving a candidate early.
+2. Build the persisted analog index and benchmark runner, enforce the identical split against
+   accepted `tcv1.0`, and measure the control bracket and determinism gates end to end.
+3. Promote New Mexico before implementing Texas lease allocation so the well-level
    Permian spine can act as the intended control.
-7. Resolve the owner-gated v0.6 §11 review and public IP carve-out decision separately
-   from implementation work.
+4. Put the deployed app behind the ruled tunnel/Access scopes and exercise a non-interactive
+   guest credential from outside the lab; public source visibility is not deployment access.
+5. Prove remote-copy recency and full replacement-VM/raw-zone recovery separately from the
+   same-cluster logical restore drill.
+6. Resolve the owner-gated v0.6 §11 capability-matrix/IP review separately from the already
+   public source repository.
 
 ## Verification state
 
-- The full locked Python suite passes **2,668 tests with 2 explicit skips**, including the
+- The full locked Python suite passes **2,758 tests with 2 explicit skips**, including the
   Docker-backed integration and contract tiers; Ruff passes.
-- The web suite passes **1,184 tests across 79 files**; typecheck and production build pass.
+- The web suite passes **1,185 tests across 79 files**; typecheck and production build pass.
 - Browserless E2E guards, shell checks, collateral checks, changelog lint, and the
-  headless-Chromium gates pass locally: 35 Map assertions and 82 Status assertions.
+  headless-Chromium gates pass locally: 35 Map assertions and 88 Status assertions.
 - The dependency lock exactly matches the installed environment and the generated OpenAPI
   snapshot reports current.
 - Hosted CI evidence for this implementation-review head must be recorded on its pull request;

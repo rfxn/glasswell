@@ -37,6 +37,7 @@ from glasswell.lineage.fetch import (
     _write_sha256_manifest,
     resolve_raw_root,
 )
+from glasswell.lineage.fetch_attempts import sanitized_failure_detail, source_poll
 from glasswell.lineage.manifests import register_manifest
 from glasswell.lineage.models import OutputSpec
 
@@ -215,6 +216,48 @@ def arcgis_rest_paginate(
 ) -> FetchResult:
     """Walk one layer in total order and register the assembly as one raw artifact."""
     _require_allowlisted(service_url)
+    correlation_id = current_session().correlation_id
+    with source_poll(source_id, source_key, correlation_id=correlation_id) as attempt:
+        result = _arcgis_rest_paginate(
+            connection,
+            source_id,
+            source_key,
+            service_url=service_url,
+            layer_id=layer_id,
+            where=where,
+            raw_root=raw_root,
+            client=client,
+            page_size=page_size,
+            page_delay_seconds=page_delay_seconds,
+            order_by=order_by,
+            rules=rules,
+            license_note=license_note,
+            redistributable=redistributable,
+        )
+        attempt.succeeded(
+            created=result.created,
+            manifest_id=result.manifest.manifest_id,
+        )
+        return result
+
+
+def _arcgis_rest_paginate(
+    connection: psycopg.Connection,
+    source_id: str,
+    source_key: str,
+    *,
+    service_url: str,
+    layer_id: int,
+    where: str,
+    raw_root: Path | str | None = None,
+    client: httpx.Client | None = None,
+    page_size: int | None = None,
+    page_delay_seconds: float = PAGE_DELAY_SECONDS,
+    order_by: str | None = None,
+    rules: tuple[str, ...] = (),
+    license_note: str | None = None,
+    redistributable: bool = False,
+) -> FetchResult:
     root = resolve_raw_root(raw_root)
     staging = root / ".incoming"
     staging.mkdir(parents=True, exist_ok=True)
@@ -250,9 +293,10 @@ def arcgis_rest_paginate(
                 subject_type="manifest",
                 subject_id=f"{source_id}/{source_key}",
                 payload={
-                    "url": f"{service_url}/{layer_id}",
+                    "url": params["url"],
+                    "acquisition_method": "arcgis_rest_paginate",
                     "reason": getattr(error, "glasswell_reason", type(error).__name__),
-                    "detail": str(error),
+                    "detail": sanitized_failure_detail(error),
                 },
             )
             raise

@@ -117,6 +117,7 @@ CRS_ROWS: tuple[dict[str, object], ...] = (
         "compute_epsg": 32614,
         "storage_epsg": 4326,
         "effective_from": date(2026, 1, 1),
+        "published_vintage": date(2026, 8, 20),
         "note": (
             "UTM 14N for area and spacing work only. The Williston basin spans zones 13N and"
             " 14N, so lateral length is measured geodesically under cr_nd_compute_crs_2 rather"
@@ -154,6 +155,14 @@ values (%(basin)s, %(compute_epsg)s, %(storage_epsg)s, %(effective_from)s, %(not
 on conflict do nothing
 """
 
+_INSERT_CLOCKED_CRS = """
+insert into lineage.crs_registry
+    (basin, compute_epsg, storage_epsg, effective_from, published_vintage, note)
+values (%(basin)s, %(compute_epsg)s, %(storage_epsg)s, %(effective_from)s,
+        %(published_vintage)s, %(note)s)
+on conflict do nothing
+"""
+
 
 def seed_sources(connection: psycopg.Connection) -> int:
     with connection.cursor() as cursor:
@@ -171,6 +180,12 @@ def seed_nm_streams(connection: psycopg.Connection) -> int:
 
 def seed_crs(connection: psycopg.Connection) -> int:
     with connection.cursor() as cursor:
-        cursor.executemany(_INSERT_CRS, CRS_ROWS)
+        cursor.execute(
+            "select exists (select 1 from information_schema.columns"
+            " where table_schema = 'lineage' and table_name = 'crs_registry'"
+            " and column_name = 'published_vintage')"
+        )
+        statement = _INSERT_CLOCKED_CRS if cursor.fetchone()[0] else _INSERT_CRS
+        cursor.executemany(statement, CRS_ROWS)
         cursor.execute("select count(*) from lineage.crs_registry")
         return int(cursor.fetchone()[0])

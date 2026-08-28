@@ -102,10 +102,14 @@
               North Dakota wells and production, plus Texas wells and bore geometry.
               Texas well-level production stays pending allocation rather than being
               inferred. The Status surface reports bounded infrastructure checks, scheduled
-              work, exact-grain dataset inventory, and registered-artifact age for every source.
-              It labels stale telemetry unavailable and states the source-check, cadence,
-              source-cadence and remote backup-copy evidence the platform does not yet persist;
-              weekly logical restore results are persisted and freshness-checked. Click
+              work, exact-grain dataset inventory, and durable source-poll freshness. Each source
+              shows its latest attempt and outcome, next expected poll, cadence, retrieval and
+              declared vintages, and latest artifact identity. Unchanged checks can keep older
+              bytes current; failed or interrupted checks cannot. Remote backup-copy evidence
+              remains an explicit limit; weekly logical restore results are persisted and
+              freshness-checked, and the nightly 90-day ephemeral-lineage retention job is
+              observed alongside the other schedules. Viewport summaries that persist exact
+              response lineage are capped at 30 requests per principal per UTC minute. Click
               any ⌾ derivation handle to trace a served figure to a
               checksummed file. Well cards now keep source-observed completion events separate
               from regulator pool-to-formation mappings; design measurements and formation
@@ -121,11 +125,12 @@
               model-ready mdv1.4 dataset replay byte-identically with 105,378 three-stream
               labels, explicit censoring/rejection coverage, and eight shared rolling splits.
               Source-matched historical formation context is repaired without cross-manifest
-              inference in the migration and rollback rehearsal. Missing lateral context remains
-              explicitly unavailable when the source has no reported lateral. Unchanged tcv1.0
-              and the exact split hashes replay byte-identically and pass the 5% ceiling in that
-              rehearsal, but no post-deployment live replay is published yet. The ladder is not
-              widened; forecasts are still not served.
+              inference. Missing lateral context remains explicitly unavailable when the source
+              has no reported lateral. The accepted 2026-08-28 publication preserves unchanged
+              tcv1.0 and all eight split hashes; two complete builds reproduce every artifact
+              byte-identically and an independent read rehashes them against the receipt. It
+              passes the 5% ceiling at 230 of 21,300 TEST instances. The ladder is not widened;
+              forecasts are still not served.
             </p>
             <dl class="gw-help-keys">
               <dt><kbd>/</kbd></dt>

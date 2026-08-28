@@ -190,8 +190,8 @@ def seed_quarantine_density(connection: psycopg.Connection, manifest: str) -> No
     states = ["open", "open", "open", "released", "accepted_loss"]
     rows = [
         {
-            "quarantine_id": f"qr_01serve{index:07d}",
-            "fingerprint": f"fp_serve_{index:04d}",
+            "quarantine_id": f"qr_01explorer{index:04d}",
+            "fingerprint": f"fp_explorer_{index:04d}",
             "source_id": SOURCES[index % len(SOURCES)],
             "staging_table": "staging.nd_mpr_oil",
             "stage": stages[index % len(stages)],

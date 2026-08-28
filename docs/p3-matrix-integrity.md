@@ -77,3 +77,13 @@ the same 17,563-row coverage and byte-identical hashes: Parquet
 hashes from the scratch proof are expected: the derivation id embedded in the Parquet records
 the persisted build identity. Replays compare like-for-like build identities, not just source
 rows.
+
+The accepted 2026-08-28 context-repair publication advances only the evaluation vintage. Its
+`fv2.0` matrix has 17,563 rows, 17,075 resolved formations, 486 missing formations and the same
+two simultaneous conflicts. Two builds reproduced matrix SHA-256
+`f6ab0c7d9bced4d67ceefa9202a1da36e3a98549ced82c79d95cae8578ddf10f` and coverage
+SHA-256 `7dd6340f0c06919f4e69372a5f5e4753068b5ee292187f51e6399b21177275bf`
+byte-identically. Receipt `p3pub_8b434525d8c621762e31b06ca660bfcd` binds those bytes to
+`v0.59+b0be225`, environment `env_59334df47ed960e6`, and unchanged split set
+`sset_c7bbb9a6932db76b`; [`p3-context-repair.md`](p3-context-repair.md) owns the complete
+eight-artifact receipt.

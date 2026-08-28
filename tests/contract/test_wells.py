@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import date
+
+import psycopg
 from fastapi.testclient import TestClient
 
+import glasswell.api.routers.wells as wells_router
 from glasswell.api.examples import EXAMPLE_API10
+from glasswell.lineage.ids import parse_handle
 from tests.contract.conftest import ALL_API10S, TX_API10
 
 
@@ -71,6 +76,21 @@ def test_the_collection_filters_on_geometry_provenance_verbatim(client: TestClie
     )
 
 
+def test_status_summary_bounds_provenance_writes_per_principal(
+    client: TestClient, monkeypatch
+) -> None:
+    monkeypatch.setattr(wells_router, "STATUS_SUMMARY_REQUESTS_PER_MINUTE", 1)
+
+    first = client.get("/v1/wells/status-summary", params={"bbox": "-104,46,-103,47"})
+    refused = client.get(
+        "/v1/wells/status-summary", params={"bbox": "-104.1,46,-103,47"}
+    )
+
+    assert first.status_code == 200
+    assert refused.status_code == 429
+    assert refused.json()["type"].endswith("/rate_limited")
+
+
 def test_the_collection_serves_each_wells_provenance_classes(client: TestClient) -> None:
     """The payload column beside the filter: every class the well's geometry carries,
     alphabetical, and an empty list where no geometry is recorded at all."""
@@ -127,6 +147,44 @@ def test_the_detail_names_its_geometry_and_how_length_was_measured(client: TestC
     assert data["length_method"] == "geodesic"
     assert data["compute_crs"] == "EPSG:4326"
     assert data["storage_crs"] == "EPSG:4326"
+
+
+def test_a_backdated_crs_route_waits_for_its_publication_clock(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.crs_registry"
+            " (basin, compute_epsg, storage_epsg, effective_from, note, length_rule_source,"
+            " published_vintage) values"
+            " ('williston', 32613, 4326, %s, 'future routing fixture',"
+            " 'tx_gis_wells_county', %s)",
+            (date(2026, 8, 1), date(2026, 9, 1)),
+        )
+    seeded.commit()
+
+    before = client.get(
+        f"/v1/wells/{EXAMPLE_API10}", params={"as_of": "2026-08-28"}
+    ).json()["data"]
+    after = client.get(
+        f"/v1/wells/{EXAMPLE_API10}", params={"as_of": "2026-09-01"}
+    ).json()["data"]
+
+    assert (before["length_method"], before["compute_crs"]) == ("geodesic", "EPSG:4326")
+    assert (after["length_method"], after["compute_crs"]) == ("geodesic", "EPSG:4326")
+    derivations = {
+        "before": parse_handle(before["lateral_length_ft"]["d"]).derivation_id,
+        "after": parse_handle(after["lateral_length_ft"]["d"]).derivation_id,
+    }
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select derivation_id, rule_id from lineage.derivation_rules"
+            " where derivation_id = any(%s)",
+            (list(derivations.values()),),
+        )
+        rules = dict(cursor.fetchall())
+    assert rules[derivations["before"]] == "cr_nd_compute_crs_2"
+    assert rules[derivations["after"]] == "cr_tx_compute_crs_1"
 
 
 def test_the_detail_links_to_its_sub_resources(client: TestClient) -> None:

@@ -46,6 +46,7 @@ from glasswell.lineage import (
     load_rules,
     quarantine,
 )
+from glasswell.lineage.fetch_attempts import durable_fetch_attempts, source_poll
 from glasswell.lineage.serialization import hash_payload, json_ready
 from glasswell.units import METRES_PER_FOOT
 
@@ -1142,20 +1143,26 @@ def load_scope(
 ) -> list[CountyLoad]:
     """One connection to the portal, one pull per county archive, in listing order."""
     wanted = tuple(counties) if counties is not None else county_scope(connection)
+    names = {county_code: archive_name(connection, county_code) for county_code in wanted}
     results: list[CountyLoad] = []
     with MftClient(GIS_LINK) as mft:
         for county_code in wanted:
-            name = archive_name(connection, county_code)
-            results.append(
-                load_county(
-                    connection,
-                    county_code,
-                    url=mft.url_for(name),
-                    client=mft.client,
-                    raw_root=raw_root,
-                    restage=restage,
+            name = names[county_code]
+            with source_poll(
+                SOURCE_ID,
+                name,
+                correlation_id=current_session().correlation_id,
+            ):
+                results.append(
+                    load_county(
+                        connection,
+                        county_code,
+                        url=mft.url_for(name),
+                        client=mft.client,
+                        raw_root=raw_root,
+                        restage=restage,
+                    )
                 )
-            )
             connection.commit()
     return results
 
@@ -1172,7 +1179,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--restage", action="store_true")
     arguments = parser.parse_args(argv)
 
-    with psycopg.connect(arguments.dsn) as connection:
+    with durable_fetch_attempts(arguments.dsn), psycopg.connect(arguments.dsn) as connection:
         environment = resolve_environment(
             connection, env_id=arguments.env_id, code_version=arguments.code_version
         )

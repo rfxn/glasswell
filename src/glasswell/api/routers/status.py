@@ -12,7 +12,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.responses import JSONResponse
 
-from glasswell.api.deps import Connection, today
+from glasswell.api.deps import Connection
 from glasswell.api.errors import problem_responses
 from glasswell.api.examples import request_example
 from glasswell.api.responses import EnvelopeModel, enveloped
@@ -56,7 +56,7 @@ class Status(BaseModel):
     )
     jobs: list[JobStatus] = Field(description="Scheduled ingest and protection jobs.")
     sources: list[SourceHealth] = Field(
-        description="Registered-artifact age for every source; not last-checked time."
+        description="Durable poll outcomes, expected cadence, and artifact age for every source."
     )
     platform: PlatformStatus = Field(description="Build, schema and database storage identity.")
     disclosures: list[StatusDisclosure] = Field(
@@ -139,10 +139,10 @@ def _overall_state(
     description=(
         "A live API/PostgreSQL signal joined to a sanitized scheduled snapshot of the tile"
         " service, HTTPS edge, storage, jobs and exact dataset inventory. Stale snapshots never"
-        " preserve a green infrastructure state. Source freshness is explicitly the age of the"
-        " newest registered artifact: unchanged and failed fetch attempts do not have a durable"
-        " independent ledger yet and are disclosed rather than inferred. This is current"
-        " operational telemetry, not a historical `as_of` surface."
+        " preserve a green infrastructure state. Source freshness combines independently"
+        " committed poll attempts with artifact age and source-specific cadence; unchanged"
+        " checks can preserve freshness, while failed or interrupted checks cannot. This is"
+        " current operational telemetry, not a historical `as_of` surface."
     ),
     response_model=EnvelopeModel[Status],
     openapi_extra=request_example(),
@@ -151,7 +151,7 @@ def _overall_state(
 def get_status(request: Request, connection: Connection) -> JSONResponse:
     now = datetime.now(UTC)
     snapshot, snapshot_state, snapshot_detail = load_snapshot(now=now)
-    sources, freshness = source_health_data(connection, as_of_date=today())
+    sources, freshness = source_health_data(connection, observed_at=now)
     checks = [
         StatusCheck(
             id="api",

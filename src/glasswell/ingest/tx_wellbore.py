@@ -41,6 +41,7 @@ from glasswell.lineage import (
 )
 from glasswell.lineage.audit import emit
 from glasswell.lineage.errors import RuleSpecError
+from glasswell.lineage.fetch_attempts import durable_fetch_attempts, source_poll
 from glasswell.lineage.serialization import hash_payload, json_ready
 
 SOURCE_ID = "tx_wellbore_ewa_csv"
@@ -718,18 +719,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     arguments = parser.parse_args(argv)
 
-    with psycopg.connect(arguments.dsn) as connection:
+    with durable_fetch_attempts(arguments.dsn), psycopg.connect(arguments.dsn) as connection:
         environment = resolve_environment(
             connection, env_id=arguments.env_id, code_version=arguments.code_version
         )
         with lineage_session(recorder=PostgresRecorder(connection), environment=environment):
             if arguments.url:
                 result = load(
-                    connection, url=arguments.url, raw_root=arguments.raw_root,
+                    connection,
+                    url=arguments.url,
+                    raw_root=arguments.raw_root,
                     restage=arguments.restage,
                 )
             else:
-                with MftClient(EWA_LINK) as mft:
+                with source_poll(
+                    SOURCE_ID,
+                    SOURCE_KEY,
+                    correlation_id=current_session().correlation_id,
+                ), MftClient(EWA_LINK) as mft:
                     result = load(
                         connection,
                         url=mft.url_for(SOURCE_KEY),

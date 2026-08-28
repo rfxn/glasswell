@@ -22,7 +22,7 @@ from glasswell.lineage.envelope import (
     InlinedExplain,
     attach_lineage,
 )
-from glasswell.lineage.errors import LineageUnresolved
+from glasswell.lineage.errors import InvalidSelector, LineageUnresolved
 from glasswell.lineage.explain import PostgresGraph, resolve_chain_from, to_json
 
 
@@ -127,6 +127,8 @@ def inline_for(
                 )
             except LineageUnresolved as stopped:
                 unresolved[handle] = stopped.reason
+            except InvalidSelector:
+                unresolved[handle] = "invalid_selector"
         return InlinedExplain(chains=chains, unresolved=unresolved)
 
     return inline

@@ -1,21 +1,12 @@
-// Recorded from a locally-served build of this branch on 2026-08-21, not hand-written from
-// the router source, so a shape drift in the API fails a web test rather than the owner's
-// first click. `work-output/explorer-c7-serve.py` stands the stack up; this file is written by
-// `work-output/explorer-c7-record.py`, which is how it is refreshed rather than edited.
+// Recorded from the tracked `tests/support/serve_branch.py` harness by
+// `scripts/record-explorer-fixtures.py`. Request ids are normalized because they are volatile
+// D3 envelope metadata; every other value is the locally served branch response.
 //
-//   curl -H "X-Glasswell-Key: $KEY" .../v1/wells?limit=8
-//   curl -H "X-Glasswell-Key: $KEY" .../v1/quarantine?limit=10   (and ?limit=2, for the cursor)
-//   curl -H "X-Glasswell-Key: $KEY" .../v1/wells/3305302532/production/pools
-//   …one per exported constant below, each named for the operation it came from.
+//   GW_PORT=8130 GW_KEY_FILE=/tmp/gw-serve/owner.key make serve-branch
+//   GW_BASE=http://127.0.0.1:8130 GW_KEY_FILE=/tmp/gw-serve/owner.key \
+//     .venv/bin/python scripts/record-explorer-fixtures.py
 //
-// The deployed instance is not the source: it serves the document that was deployed, and the
-// dataset extension exists only on this branch. The owner key travels in the header and
-// appears in no body here — the recorder asserts that before writing.
-//
-// The per-well production envelope is NOT recorded again: `web/src/test/fixtures.ts` already
-// holds one and that file is read-only to SB-08, so C7 imports it rather than forking it.
-// The pooled well files in two pools, because the contract fixture's well files in one and a
-// `pools: []` response cannot exercise a pooled row (C2 MUST-KNOW P4).
+// The owner key travels only in the request header and the recorder refuses to write it.
 
 export { productionEnvelope } from "../test/fixtures.ts";
 
@@ -27,6 +18,7 @@ export const wellsEnvelope = {
       "confidential_flag": false,
       "county_code_at_permit": "053",
       "effective_from": "2026-08-01",
+      "geometry_provenance": [],
       "land_unit_label": "151N-101W-11",
       "links": {
         "production": "/v1/wells/3305300001/production",
@@ -42,6 +34,7 @@ export const wellsEnvelope = {
       "confidential_flag": false,
       "county_code_at_permit": "053",
       "effective_from": "2026-08-01",
+      "geometry_provenance": [],
       "land_unit_label": "151N-101W-11",
       "links": {
         "production": "/v1/wells/3305300002/production",
@@ -57,6 +50,7 @@ export const wellsEnvelope = {
       "confidential_flag": false,
       "county_code_at_permit": "053",
       "effective_from": "2026-08-01",
+      "geometry_provenance": [],
       "land_unit_label": "151N-101W-11",
       "links": {
         "production": "/v1/wells/3305300003/production",
@@ -72,6 +66,7 @@ export const wellsEnvelope = {
       "confidential_flag": false,
       "county_code_at_permit": "053",
       "effective_from": "2026-08-01",
+      "geometry_provenance": [],
       "land_unit_label": "151N-101W-11",
       "links": {
         "production": "/v1/wells/3305300004/production",
@@ -87,6 +82,7 @@ export const wellsEnvelope = {
       "confidential_flag": false,
       "county_code_at_permit": "053",
       "effective_from": "2026-08-01",
+      "geometry_provenance": [],
       "land_unit_label": "151N-101W-11",
       "links": {
         "production": "/v1/wells/3305300005/production",
@@ -102,6 +98,7 @@ export const wellsEnvelope = {
       "confidential_flag": false,
       "county_code_at_permit": "053",
       "effective_from": "2026-08-01",
+      "geometry_provenance": [],
       "land_unit_label": "151N-101W-11",
       "links": {
         "production": "/v1/wells/3305300006/production",
@@ -117,6 +114,7 @@ export const wellsEnvelope = {
       "confidential_flag": false,
       "county_code_at_permit": "053",
       "effective_from": "2026-08-01",
+      "geometry_provenance": [],
       "land_unit_label": "151N-101W-11",
       "links": {
         "production": "/v1/wells/3305302532/production",
@@ -132,6 +130,9 @@ export const wellsEnvelope = {
       "confidential_flag": false,
       "county_code_at_permit": "053",
       "effective_from": "2026-08-01",
+      "geometry_provenance": [
+        "lateral"
+      ],
       "land_unit_label": "151N-101W-11",
       "links": {
         "production": "/v1/wells/3305310451/production",
@@ -156,7 +157,7 @@ export const wellsEnvelope = {
     "deprecations": [],
     "labels": {},
     "next_cursor": null,
-    "request_id": "01M0HWF7XVX34JS0MCBKJ4KJH0",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {},
     "warnings": []
   }
@@ -166,66 +167,199 @@ export const wellsEnvelope = {
 export const quarantineEnvelope = {
   "data": [
     {
-      "first_seen_at": "2026-08-01T05:02:11+00:00",
+      "first_seen_at": "2026-08-01T05:59:11+00:00",
       "first_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-      "last_seen_at": "2026-08-01T05:02:11+00:00",
+      "last_seen_at": "2026-08-01T05:59:11+00:00",
       "last_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "notes": null,
-      "occurrence_count": 2,
-      "quarantine_id": "qr_01contract0003",
-      "reason_code": "unknown_vocab",
+      "occurrence_count": 74,
+      "quarantine_id": "qr_01explorer0059",
+      "reason_code": "key_collision",
       "release_derivation_id": null,
       "released_at": null,
       "released_by_rule_id": null,
-      "row_fingerprint": "fp_contract_0003",
-      "rule_id": "cr_nd_status_vocab_1",
+      "row_fingerprint": "fp_explorer_0059",
+      "rule_id": "cr_nd_stream_vocab_1",
       "source_id": "nd_gis_wells",
-      "stage": "conform",
-      "staging_table": "staging.nd_gis_wells",
+      "stage": "parse",
+      "staging_table": "staging.nd_mpr_oil",
+      "state": "accepted_loss"
+    },
+    {
+      "first_seen_at": "2026-08-01T05:58:11+00:00",
+      "first_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "last_seen_at": "2026-08-01T05:58:11+00:00",
+      "last_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "notes": null,
+      "occurrence_count": 67,
+      "quarantine_id": "qr_01explorer0058",
+      "reason_code": "datum_undetermined",
+      "release_derivation_id": null,
+      "released_at": null,
+      "released_by_rule_id": null,
+      "row_fingerprint": "fp_explorer_0058",
+      "rule_id": "cr_nd_stream_vocab_1",
+      "source_id": "nd_mpr_xlsx",
+      "stage": "validate",
+      "staging_table": "staging.nd_mpr_oil",
       "state": "released"
     },
     {
-      "first_seen_at": "2026-08-01T05:02:11+00:00",
+      "first_seen_at": "2026-08-01T05:57:11+00:00",
       "first_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-      "last_seen_at": "2026-08-01T05:02:11+00:00",
+      "last_seen_at": "2026-08-01T05:57:11+00:00",
       "last_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "notes": null,
-      "occurrence_count": 1,
-      "quarantine_id": "qr_01contract0002",
+      "occurrence_count": 60,
+      "quarantine_id": "qr_01explorer0057",
       "reason_code": "impossible_volume",
       "release_derivation_id": null,
       "released_at": null,
       "released_by_rule_id": null,
-      "row_fingerprint": "fp_contract_0002",
-      "rule_id": "cr_nd_volume_range_1",
+      "row_fingerprint": "fp_explorer_0057",
+      "rule_id": "cr_nd_stream_vocab_1",
+      "source_id": "nd_gis_wells",
+      "stage": "conform",
+      "staging_table": "staging.nd_mpr_oil",
+      "state": "open"
+    },
+    {
+      "first_seen_at": "2026-08-01T05:56:11+00:00",
+      "first_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "last_seen_at": "2026-08-01T05:56:11+00:00",
+      "last_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "notes": null,
+      "occurrence_count": 53,
+      "quarantine_id": "qr_01explorer0056",
+      "reason_code": "unknown_vocab",
+      "release_derivation_id": null,
+      "released_at": null,
+      "released_by_rule_id": null,
+      "row_fingerprint": "fp_explorer_0056",
+      "rule_id": "cr_nd_stream_vocab_1",
+      "source_id": "nd_mpr_xlsx",
+      "stage": "parse",
+      "staging_table": "staging.nd_mpr_oil",
+      "state": "open"
+    },
+    {
+      "first_seen_at": "2026-08-01T05:55:11+00:00",
+      "first_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "last_seen_at": "2026-08-01T05:55:11+00:00",
+      "last_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "notes": null,
+      "occurrence_count": 46,
+      "quarantine_id": "qr_01explorer0055",
+      "reason_code": "key_collision",
+      "release_derivation_id": null,
+      "released_at": null,
+      "released_by_rule_id": null,
+      "row_fingerprint": "fp_explorer_0055",
+      "rule_id": "cr_nd_stream_vocab_1",
+      "source_id": "nd_gis_wells",
+      "stage": "validate",
+      "staging_table": "staging.nd_mpr_oil",
+      "state": "open"
+    },
+    {
+      "first_seen_at": "2026-08-01T05:54:11+00:00",
+      "first_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "last_seen_at": "2026-08-01T05:54:11+00:00",
+      "last_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "notes": null,
+      "occurrence_count": 39,
+      "quarantine_id": "qr_01explorer0054",
+      "reason_code": "datum_undetermined",
+      "release_derivation_id": null,
+      "released_at": null,
+      "released_by_rule_id": null,
+      "row_fingerprint": "fp_explorer_0054",
+      "rule_id": "cr_nd_stream_vocab_1",
+      "source_id": "nd_mpr_xlsx",
+      "stage": "conform",
+      "staging_table": "staging.nd_mpr_oil",
+      "state": "accepted_loss"
+    },
+    {
+      "first_seen_at": "2026-08-01T05:53:11+00:00",
+      "first_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "last_seen_at": "2026-08-01T05:53:11+00:00",
+      "last_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "notes": null,
+      "occurrence_count": 32,
+      "quarantine_id": "qr_01explorer0053",
+      "reason_code": "impossible_volume",
+      "release_derivation_id": null,
+      "released_at": null,
+      "released_by_rule_id": null,
+      "row_fingerprint": "fp_explorer_0053",
+      "rule_id": "cr_nd_stream_vocab_1",
+      "source_id": "nd_gis_wells",
+      "stage": "parse",
+      "staging_table": "staging.nd_mpr_oil",
+      "state": "released"
+    },
+    {
+      "first_seen_at": "2026-08-01T05:52:11+00:00",
+      "first_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "last_seen_at": "2026-08-01T05:52:11+00:00",
+      "last_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "notes": null,
+      "occurrence_count": 25,
+      "quarantine_id": "qr_01explorer0052",
+      "reason_code": "unknown_vocab",
+      "release_derivation_id": null,
+      "released_at": null,
+      "released_by_rule_id": null,
+      "row_fingerprint": "fp_explorer_0052",
+      "rule_id": "cr_nd_stream_vocab_1",
       "source_id": "nd_mpr_xlsx",
       "stage": "validate",
       "staging_table": "staging.nd_mpr_oil",
       "state": "open"
     },
     {
-      "first_seen_at": "2026-08-01T05:02:11+00:00",
+      "first_seen_at": "2026-08-01T05:51:11+00:00",
       "first_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-      "last_seen_at": "2026-08-01T05:02:11+00:00",
+      "last_seen_at": "2026-08-01T05:51:11+00:00",
       "last_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "notes": null,
-      "occurrence_count": 3,
-      "quarantine_id": "qr_01contract0001",
-      "reason_code": "unknown_vocab",
+      "occurrence_count": 18,
+      "quarantine_id": "qr_01explorer0051",
+      "reason_code": "key_collision",
       "release_derivation_id": null,
       "released_at": null,
       "released_by_rule_id": null,
-      "row_fingerprint": "fp_contract_0001",
+      "row_fingerprint": "fp_explorer_0051",
+      "rule_id": "cr_nd_stream_vocab_1",
+      "source_id": "nd_gis_wells",
+      "stage": "conform",
+      "staging_table": "staging.nd_mpr_oil",
+      "state": "open"
+    },
+    {
+      "first_seen_at": "2026-08-01T05:50:11+00:00",
+      "first_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "last_seen_at": "2026-08-01T05:50:11+00:00",
+      "last_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "notes": null,
+      "occurrence_count": 11,
+      "quarantine_id": "qr_01explorer0050",
+      "reason_code": "datum_undetermined",
+      "release_derivation_id": null,
+      "released_at": null,
+      "released_by_rule_id": null,
+      "row_fingerprint": "fp_explorer_0050",
       "rule_id": "cr_nd_stream_vocab_1",
       "source_id": "nd_mpr_xlsx",
-      "stage": "conform",
+      "stage": "parse",
       "staging_table": "staging.nd_mpr_oil",
       "state": "open"
     }
   ],
   "links": {
     "explain": null,
-    "next": null,
+    "next": "/v1/quarantine?limit=10&cursor=eyJrIjoiMjAyNi0wOC0wMVQwNTo1MDoxMSswMDowMCIsInEiOiI0NDEzNmZhMyIsInQiOiJxcl8wMWV4cGxvcmVyMDA1MCIsInYiOm51bGx9",
     "self": "/v1/quarantine"
   },
   "meta": {
@@ -236,10 +370,10 @@ export const quarantineEnvelope = {
     "deprecations": [],
     "labels": {
       "/reason_code": "gt_quarantine",
-      "/state": "gt_quarantine"
+      "/state": "gt_quarantine_state"
     },
-    "next_cursor": null,
-    "request_id": "01M0HWF7YAR5K0GCX6PA75GGPY",
+    "next_cursor": "eyJrIjoiMjAyNi0wOC0wMVQwNTo1MDoxMSswMDowMCIsInEiOiI0NDEzNmZhMyIsInQiOiJxcl8wMWV4cGxvcmVyMDA1MCIsInYiOm51bGx9",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {},
     "warnings": []
   }
@@ -250,231 +384,212 @@ export const conformanceEnvelope = {
   "data": [
     {
       "applies_to_fields": [
-        "all"
+        "geom",
+        "distance_m",
+        "distance_epsg"
       ],
-      "code_ref": null,
-      "effective_from": "2026-08-21",
+      "code_ref": "glasswell.marts.neighbors:refresh_neighbors",
+      "effective_from": "2026-08-27",
       "effective_to": null,
       "evidence_sha256": null,
-      "evidence_url": "https://www.emnrd.nm.gov/ocd/ocd-data/ftp-server/",
-      "rationale": "Eleven values were measured over all 48.1M records, and two of them are traps: a lowercase p on 7 rows and a single space on 42,366. An exact-match vocabulary seeded from a hand-copied distinct-value list that lost either would quarantine 42,373 rows as unknown_status, which is why the domain is recorded here with its counts. What the letters mean is a different question, and the OCD publishes no codebook mapping them to a well status: lineage.nm_status_map is therefore left empty rather than filled with a plausible guess, because a canonical status invented for an undocumented single-letter code is a mapping that exists only in the head of whoever guessed it, which is what R8 exists to prevent. When the codebook is in evidence the map is populated and a vocab_map row supersedes this declaration.",
-      "rule": "The C-115 well-completion status code is staged verbatim and promoted to no canonical status until its codebook is in evidence.",
-      "rule_family": "cr_nm_wcproduction_status_vocab",
-      "rule_id": "cr_nm_wcproduction_status_vocab_1",
-      "rule_kind": "parse_directive",
-      "source_id": "nm_ocd_wcproduction",
+      "evidence_url": "https://gis.dmr.nd.gov/downloads/oilgas/shapefile/OGD_Horizontals_Line.zip",
+      "published_vintage": "2026-08-27",
+      "rationale": "The Williston extent crosses the 102W UTM boundary, so one projected zone cannot measure every pair defensibly. Candidate discovery and final measurement are separated: the equal-area candidate CRS receives a measured two-percent guard, while the shortest-line midpoint selects the local UTM zone used for the admitted scalar distance. All promoted lateral components participate and geometry keys close deterministic ties, preventing a convenient component or zone from being substituted at serve time.",
+      "rule": "Discover ND lateral pairs in padded EPSG:5070, then persist the minimum distance measured in pair-local UTM 13N or 14N through 26,400 feet.",
+      "rule_family": "cr_nd_neighbor_distance",
+      "rule_id": "cr_nd_neighbor_distance_1",
+      "rule_kind": "code_ref",
+      "source_id": "nd_gis_horizontals_line",
       "spec": {
-        "asserts_header": false,
-        "counts": {
-          " ": 42366,
-          "A": 47439,
-          "D": 15375,
-          "F": 20557177,
-          "G": 391371,
-          "I": 97456,
-          "L": 6,
-          "P": 23532167,
-          "S": 2686669,
-          "T": 734301,
-          "p": 7
+        "candidate_epsg": 5070,
+        "candidate_pad_headroom_ft_min": "181.2",
+        "candidate_radius_pad": "1.02",
+        "candidate_to_final_distance_ratio_max": "1.013136",
+        "candidate_validation_cases": 12672,
+        "candidate_validation_domain": {
+          "latitude": [
+            "45.90",
+            "49.05"
+          ],
+          "longitude": [
+            "-104.15",
+            "-96.50"
+          ],
+          "source": "scripts/basemap-regions/nd.geojson"
         },
-        "declares_fields": [
-          "c115_wc_stat_cde"
+        "component_policy": "minimum_over_all_promoted_lateral_component_pairs",
+        "contract_note": "EPSG:5070 discovers a padded candidate set only; the persisted distance is measured in pair-local UTM 13N or 14N and admitted only through 26,400 feet",
+        "max_radius_ft": 26400,
+        "measurement_epsg": [
+          32613,
+          32614
         ],
-        "domain": [
-          "P",
-          "F",
-          "S",
-          "T",
-          "G",
-          "I",
-          "A",
-          " ",
-          "D",
-          "p",
-          "L"
+        "module_function": "glasswell.marts.neighbors:refresh_neighbors",
+        "storage_epsg": 4326,
+        "tie_break": [
+          "distance_m",
+          "subject_geom_key",
+          "neighbor_geom_key"
         ],
-        "promoted": false,
-        "target_map": "nm_status_map"
+        "version": "1",
+        "zone_boundary_longitude": "-102",
+        "zone_selection": "candidate_crs_shortest_line_midpoint"
       },
       "stage": "conform",
       "supersedes_rule_id": null
     },
     {
       "applies_to_fields": [
-        "all"
+        "pool_reported",
+        "formation",
+        "formation_group"
       ],
-      "code_ref": null,
-      "effective_from": "2026-08-21",
+      "code_ref": "glasswell.marts.neighbors:refresh_neighbors",
+      "effective_from": "2026-08-27",
       "effective_to": null,
       "evidence_sha256": null,
-      "evidence_url": "https://www.emnrd.nm.gov/ocd/ocd-data/ftp-server/",
-      "rationale": "DIR-2 makes the vintage a dimension rather than an overwrite, and migration 008's append-only trigger (008:29-31) makes a canonical UPDATE an error rather than a warning, so this rule states what the trigger enforces and what the promotion must therefore do. The trigger for an append is a value change and not the regulator's flag: the export re-publishes all 48.1M rows nightly, 34,812,326 of them carrying amend_ind N, so reading the flag as the signal would treat a re-publication as a statement that nothing changed. amend_ind is kept as evidence beside the appended row, and mod_dte is a promotion shortcut compared against the staged prior partition; neither enters value_hash (cr_nm_wcproduction_mod_dte_1). The vintage itself is glasswell's own stamp because the artifact is undated and overwritten in place upstream (cr_nm_wcproduction_undated_vintage_1).",
-      "rule": "A restated NM month is appended under a new report vintage. Nothing in canonical is ever updated in place.",
-      "rule_family": "cr_nm_wcproduction_restatement",
-      "rule_id": "cr_nm_wcproduction_restatement_1",
-      "rule_kind": "parse_directive",
-      "source_id": "nm_ocd_wcproduction",
+      "evidence_url": "https://www.dmr.nd.gov/oilgas/mpr/2026_03.xlsx",
+      "published_vintage": "2026-08-27",
+      "rationale": "The endpoint offers an exact formation filter, so two exact formations cannot be collapsed merely because they share a broader peer group. Missing aliases and sub-threshold aliases are availability states, not geological conflicts. Legacy unscoped aliases are excluded so another source namespace cannot silently supply this mart's context; the selected source-scoped alias rows are content-hashed into the derivation identity.",
+      "rule": "Classify neighbour formation from the complete earliest-month ND pool set using source-scoped reviewed aliases only; never infer an unavailable mapping.",
+      "rule_family": "cr_nd_neighbor_context",
+      "rule_id": "cr_nd_neighbor_context_1",
+      "rule_kind": "code_ref",
+      "source_id": "nd_mpr_xlsx",
       "spec": {
-        "amend_ind_role": "evidence",
-        "asserts_header": false,
-        "declares_fields": [
-          "prod_amt",
-          "amend_ind",
-          "mod_dte"
+        "alias_scope": "source_scoped_only_no_legacy_fallback",
+        "conflict_policy": "distinct_exact_formation_or_group_is_conflict",
+        "contract_note": "every earliest-month pool must have one source-scoped alias at confidence 0.800 or higher; exact formations and groups must each collapse to one",
+        "minimum_confidence": "0.800",
+        "module_function": "glasswell.marts.neighbors:refresh_neighbors",
+        "pool_policy": "earliest_nonblank_source_month_set",
+        "unavailable_policy": "never_infer",
+        "version": "1"
+      },
+      "stage": "join",
+      "supersedes_rule_id": null
+    },
+    {
+      "applies_to_fields": [
+        "pool",
+        "formation_group"
+      ],
+      "code_ref": null,
+      "effective_from": "2026-08-26",
+      "effective_to": null,
+      "evidence_sha256": null,
+      "evidence_url": "https://www.dmr.nd.gov/oilgas/mpr/2026_03.xlsx",
+      "published_vintage": "2026-08-26",
+      "rationale": "The MPR pool vocabulary is a source label, not a model peer group. The reviewed crosswalk preserves exact formations, keeps Three Forks distinct from Bakken, and sends ambiguous composites or sub-threshold targets to __other__ rather than asserting geology the source does not support. The row-by-row mapping remains queryable and append-only so a later geological review is a new knowledge vintage, not a code edit.",
+      "rule": "Resolve each reported ND MPR pool through the vintaged formation alias table.",
+      "rule_family": "cr_nd_formation_group",
+      "rule_id": "cr_nd_formation_group_1",
+      "rule_kind": "alias_join",
+      "source_id": "nd_mpr_xlsx",
+      "spec": {
+        "alias_table": "formation_aliases",
+        "key_cols": [
+          "formation_raw"
         ],
-        "detection": "value_hash change for the same entity_key, production_month and stream across report vintages",
-        "in_place_update": "prohibited",
-        "mod_dte_role": "promotion_shortcut",
-        "on_change": "append_new_report_vintage",
-        "vintage_rule_id": "cr_nm_wcproduction_undated_vintage_1"
+        "min_confidence": "0.800",
+        "reason_code": "alias_unresolved",
+        "target_col": "formation_group",
+        "unmatched_action": "quarantine"
+      },
+      "stage": "join",
+      "supersedes_rule_id": null
+    },
+    {
+      "applies_to_fields": [
+        "state_code",
+        "basin"
+      ],
+      "code_ref": "glasswell.ingest.nd_gis:_promote_wells",
+      "effective_from": "2026-08-26",
+      "effective_to": null,
+      "evidence_sha256": null,
+      "evidence_url": "https://gis.dmr.nd.gov/downloads/oilgas/shapefile/OGD_Wells.zip",
+      "published_vintage": "2026-08-26",
+      "rationale": "The v0 ND product and its fv1.0 feature partition are defined at the Williston modeling-basin scope, while OGD_Wells is the statewide identity source and does not publish a basin attribute. The assignment is therefore an explicit modeling conformance rule, not an inferred source field. Keeping it in the registry makes the state-to-model-scope decision visible and replaceable if a future basin boundary source supports a narrower spatial classification.",
+      "rule": "Assign North Dakota OGD wells to the v0 Williston modeling basin.",
+      "rule_family": "cr_nd_basin",
+      "rule_id": "cr_nd_basin_1",
+      "rule_kind": "code_ref",
+      "source_id": "nd_gis_wells",
+      "spec": {
+        "basin": "williston",
+        "contract_note": "_promote_wells writes basin=williston on each ND well revision; a future boundary source must supersede this rule rather than silently narrow it",
+        "module_function": "glasswell.ingest.nd_gis:_promote_wells",
+        "scope": "v0 North Dakota modeling basin",
+        "state_code": "33",
+        "version": "1"
       },
       "stage": "conform",
       "supersedes_rule_id": null
     },
     {
       "applies_to_fields": [
-        "all"
+        "DisclosureList_1.csv"
       ],
       "code_ref": null,
-      "effective_from": "2026-08-21",
+      "effective_from": "2026-08-26",
       "effective_to": null,
       "evidence_sha256": null,
-      "evidence_url": "https://www.emnrd.nm.gov/ocd/ocd-data/ftp-server/",
-      "rationale": "prod_amt is never null and never blank across 48,104,334 records and 6,812,255 rows report zero, so NM's live distinction is reported against reported_zero and the absent states are defensive rather than observed. The vocabulary written here is the one migration 009's CHECK admits - reported, reported_zero, no_report, withheld. PLAN-NM P3.3 named withheld_confidential and not_applicable, which that CHECK rejects; D1 writes what the constraint admits and does not alter another track's constraint to fit its own rule (entry gate G6). A filter would delete the row that carries the absence, which is the distinction this rule exists to keep (\u00a73.0.3).",
-      "rule": "Why a volume is absent is a fact with its own vocabulary; a reported zero is not an absence, and neither is ever collapsed into the other.",
-      "rule_family": "cr_nm_wcproduction_null_semantics",
-      "rule_id": "cr_nm_wcproduction_null_semantics_1",
+      "evidence_url": "https://www.fracfocusdata.org/digitaldownload/FracFocusCSV.zip",
+      "published_vintage": "2026-08-26",
+      "rationale": "The 440 MB archive expands beyond 3 GiB. Streaming one member keeps the source artifact immutable and avoids materialising all members together; every member is still decompressed once for its manifest SHA-256 inventory.",
+      "rule": "Stream DisclosureList_1.csv from the archive and retain source text in staging.",
+      "rule_family": "cr_ff_disclosure_parse",
+      "rule_id": "cr_ff_disclosure_parse_1",
       "rule_kind": "parse_directive",
-      "source_id": "nm_ocd_wcproduction",
+      "source_id": "fracfocus_csv",
       "spec": {
-        "asserts_header": false,
-        "canonical_column": "null_semantics",
-        "collapse": "never",
-        "declares_fields": [
-          "prod_amt"
-        ],
-        "measured": {
-          "null_prod_amt": 0,
-          "reported_zero": 6812255
-        },
-        "vocabulary": [
-          "reported",
-          "reported_zero",
-          "no_report",
-          "withheld"
+        "all_columns": "text",
+        "encoding": "utf-8-sig",
+        "member": "DisclosureList_1.csv",
+        "member_stream": true,
+        "timestamp_formats": [
+          "%m/%d/%Y %I:%M:%S %p",
+          "%m/%d/%Y",
+          "%Y-%m-%d"
         ]
       },
-      "stage": "conform",
+      "stage": "parse",
       "supersedes_rule_id": null
     },
     {
       "applies_to_fields": [
-        "all"
+        "JobStartDate",
+        "JobEndDate",
+        "completion_date"
       ],
-      "code_ref": null,
-      "effective_from": "2026-08-21",
+      "code_ref": "glasswell.ingest.fracfocus:materialize_nd_readiness",
+      "effective_from": "2026-08-26",
       "effective_to": null,
       "evidence_sha256": null,
-      "evidence_url": "https://www.emnrd.nm.gov/ocd/ocd-data/ftp-server/",
-      "rationale": "T1-b asked whether NM has a condensate discriminator and assumed the answer was no, in which case NM would have carried stream = oil with liquids_policy = oil_plus_condensate, as ND does. The artifact answers otherwise: prd_knd_cde carries 'C ' on 3,398 rows, so for those months oil and condensate are two filings and adding them silently would restate the operator. Liquid without qualification means oil plus condensate in this product, which is exactly why the policy travels with the figure: an NM liquids rollup is the labelled sum of the oil and condensate streams, never an oil row quietly containing both. Where the operator filed no condensate row - every month after 1993 - the oil row is what was filed and nothing is added to it.",
-      "rule": "NM reports condensate as its own stream, so an NM oil figure is oil as filed and any liquids figure that adds condensate to it says so.",
-      "rule_family": "cr_nm_wcproduction_liquids",
-      "rule_id": "cr_nm_wcproduction_liquids_1",
-      "rule_kind": "parse_directive",
-      "source_id": "nm_ocd_wcproduction",
+      "evidence_url": "https://www.fracfocusdata.org/digitaldownload/FracFocusCSV.zip",
+      "published_vintage": "2026-08-26",
+      "rationale": "FracFocus's bundled data dictionary defines JobEndDate as the date the hydraulic fracturing job was completed, excluding teardown. It is a completion event, not a spud or production proxy. The earliest event is selected because later disclosures can be refractures; every disclosure remains in canonical so that choice is inspectable. ND's free OGD well extract has no completion date, while the regulator's completion-bearing Well Index is subscription-only.",
+      "rule": "Use the earliest valid FracFocus hydraulic-fracturing JobEndDate as the ND pre-production completion anchor.",
+      "rule_family": "cr_ff_completion_anchor",
+      "rule_id": "cr_ff_completion_anchor_1",
+      "rule_kind": "code_ref",
+      "source_id": "fracfocus_csv",
       "spec": {
-        "asserts_header": false,
-        "condensate_months_observed": "1986-01 through 1993-12",
-        "condensate_stream": "condensate",
-        "declares_fields": [
-          "prd_knd_cde",
-          "prod_amt"
+        "anchor_kind": "hydraulic_frac_job_end",
+        "contract_note": "materialize_nd_readiness selects min(JobEndDate) per API-10 from current disclosure observations and never coalesces spud or production dates",
+        "forbidden_proxies": [
+          "spud_date",
+          "first_production_month"
         ],
-        "liquids_policy": "oil_and_condensate_reported_separately",
-        "oil_includes_condensate": false
-      },
-      "stage": "conform",
-      "supersedes_rule_id": null
-    },
-    {
-      "applies_to_fields": [
-        "all"
-      ],
-      "code_ref": null,
-      "effective_from": "2026-08-21",
-      "effective_to": null,
-      "evidence_sha256": null,
-      "evidence_url": "https://www.emnrd.nm.gov/ocd/ocd-data/",
-      "rationale": "The disposition artifacts that carry it - othervolume, podvolume, podstorage and wcinjection, 738 MB combined - are deliberately not fetched, because the volume they hold attaches to a Property while this spine's grain is well completion x pool. Splitting a Property's flare volume across its completions would put an estimate into canonical, and DIR-3 keeps canonical at native granularity with estimates named as such elsewhere. The decision is a row rather than a note so that a reader asking for NM flaring finds the reason, and so that a later phase which does fetch the disposition tables supersedes a stated decision instead of discovering an unstated one.",
-      "rule": "NM flaring is filed against a Property, not a well completion, so no NM flare volume is derived at the spine's grain and none is served.",
-      "rule_family": "cr_nm_wcproduction_flare_property",
-      "rule_id": "cr_nm_wcproduction_flare_property_1",
-      "rule_kind": "parse_directive",
-      "source_id": "nm_ocd_wcproduction",
-      "spec": {
-        "asserts_header": false,
-        "declares_fields": [],
-        "flare_reporting_grain": "property",
-        "served": false,
-        "sources_out_of_scope": [
-          "othervolume",
-          "podvolume",
-          "podstorage",
-          "wcinjection"
+        "module_function": "glasswell.ingest.fracfocus:materialize_nd_readiness",
+        "reject_if": [
+          "job_end_missing",
+          "job_end_before_job_start"
         ],
-        "well_completion_flare_series": "not_derivable"
-      },
-      "stage": "conform",
-      "supersedes_rule_id": null
-    },
-    {
-      "applies_to_fields": [
-        "all"
-      ],
-      "code_ref": null,
-      "effective_from": "2026-08-21",
-      "effective_to": null,
-      "evidence_sha256": null,
-      "evidence_url": "https://www.emnrd.nm.gov/ocd/ocd-data/ftp-server/",
-      "rationale": "Measured identically on the XML side and off the staged Parquet: N 34,812,326, Y 13,280,514, then 1, 2, 4, 6, 9, 3, X and 7 across 11,494 rows. A boolean reading mis-classifies every one of those 11,494, and it is the reading a column named _ind invites. The eight numeric and X codes are undocumented - the OCD publishes no codebook for them - so nothing is promoted from this column and the raw value stays staged where a later phase holding a codebook can map it under a new rule row. Its part in change detection belongs to cr_nm_wcproduction_mod_dte_1: amend_ind is the regulator's evidence that a row was amended, not the trigger, because the trigger is a value change.",
-      "rule": "amend_ind is a ten-value vocabulary carried verbatim into staging, promoted to no canonical column, and never read as a Y/N flag.",
-      "rule_family": "cr_nm_wcproduction_amend_ind",
-      "rule_id": "cr_nm_wcproduction_amend_ind_1",
-      "rule_kind": "parse_directive",
-      "source_id": "nm_ocd_wcproduction",
-      "spec": {
-        "asserts_header": false,
-        "boolean_reading": "prohibited",
-        "change_detection_rule_id": "cr_nm_wcproduction_mod_dte_1",
-        "counts": {
-          "1": 5959,
-          "2": 5252,
-          "3": 8,
-          "4": 185,
-          "6": 72,
-          "7": 2,
-          "9": 10,
-          "N": 34812326,
-          "X": 6,
-          "Y": 13280514
-        },
-        "declares_fields": [
-          "amend_ind"
-        ],
-        "domain": [
-          "N",
-          "Y",
-          "1",
-          "2",
-          "3",
-          "4",
-          "6",
-          "7",
-          "9",
-          "X"
-        ],
-        "promoted": false
+        "source_field": "JobEndDate",
+        "version": "1",
+        "well_selection": "earliest_valid_job_end_per_api10"
       },
       "stage": "conform",
       "supersedes_rule_id": null
@@ -482,18 +597,18 @@ export const conformanceEnvelope = {
   ],
   "links": {
     "explain": null,
-    "next": "/v1/conformance?limit=6&cursor=eyJrIjoiMjAyNi0wOC0yMSIsInEiOiI0NDEzNmZhMyIsInQiOiJjcl9ubV93Y3Byb2R1Y3Rpb25fYW1lbmRfaW5kXzEiLCJ2IjpudWxsfQ",
+    "next": "/v1/conformance?limit=6&cursor=eyJrIjoiMjAyNi0wOC0yNiIsInEiOiI0NDEzNmZhMyIsInQiOiJjcl9mZl9jb21wbGV0aW9uX2FuY2hvcl8xIiwidiI6IjIwMjYtMDgtMjgifQ",
     "self": "/v1/conformance"
   },
   "meta": {
     "as_of": {
       "requested": "latest",
-      "resolved": null
+      "resolved": "2026-08-28"
     },
     "deprecations": [],
     "labels": {},
-    "next_cursor": "eyJrIjoiMjAyNi0wOC0yMSIsInEiOiI0NDEzNmZhMyIsInQiOiJjcl9ubV93Y3Byb2R1Y3Rpb25fYW1lbmRfaW5kXzEiLCJ2IjpudWxsfQ",
-    "request_id": "01M0HWF7YPR67APFWK9T4ER210",
+    "next_cursor": "eyJrIjoiMjAyNi0wOC0yNiIsInEiOiI0NDEzNmZhMyIsInQiOiJjcl9mZl9jb21wbGV0aW9uX2FuY2hvcl8xIiwidiI6IjIwMjYtMDgtMjgifQ",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {},
     "warnings": []
   }
@@ -554,7 +669,7 @@ export const manifestsEnvelope = {
     "deprecations": [],
     "labels": {},
     "next_cursor": null,
-    "request_id": "01M0HWF7Z2C1GAB6KJ0SEG16SY",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {},
     "warnings": []
   }
@@ -605,7 +720,7 @@ export const derivationsEnvelope = {
     "deprecations": [],
     "labels": {},
     "next_cursor": null,
-    "request_id": "01M0HWF7ZC441D31X2JS2AF4RA",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {},
     "warnings": []
   }
@@ -615,6 +730,11 @@ export const derivationsEnvelope = {
 export const vintagesEnvelope = {
   "data": [
     {
+      "_lineage": {
+        "restatement_summary": "drv_obqajdni25f25zmxcz7a",
+        "rows_appended": "drv_obqajdni25f25zmxcz7a",
+        "rows_examined": "drv_obqajdni25f25zmxcz7a"
+      },
       "manifest_ids": [
         "man_dddddddddddddddddddddddddddddddd"
       ],
@@ -636,6 +756,11 @@ export const vintagesEnvelope = {
       "vintage_id": "vin_nd_gis_wells_2026-08-01"
     },
     {
+      "_lineage": {
+        "restatement_summary": "drv_obqajdni25f25zmxcz7a",
+        "rows_appended": "drv_obqajdni25f25zmxcz7a",
+        "rows_examined": "drv_obqajdni25f25zmxcz7a"
+      },
       "manifest_ids": [
         "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
       ],
@@ -658,7 +783,7 @@ export const vintagesEnvelope = {
     }
   ],
   "links": {
-    "explain": null,
+    "explain": "/v1/explain?h=drv_obqajdni25f25zmxcz7a&depth=full",
     "next": null,
     "self": "/v1/vintages"
   },
@@ -670,7 +795,7 @@ export const vintagesEnvelope = {
     "deprecations": [],
     "labels": {},
     "next_cursor": null,
-    "request_id": "01M0HWF7ZPH60TX01FVTKN0ZFN",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {},
     "warnings": []
   }
@@ -742,22 +867,21 @@ export const glossaryEnvelope = {
     },
     {
       "aliases": [
-        "Bitemporality"
+        "Petroleum basin"
       ],
       "domain_tags": [
-        "lineage",
-        "time",
+        "geology",
         "data-model"
       ],
       "highlightable": true,
-      "short_definition": "Carrying two time axes: when something happened (the production month) and when it was reported (the report vintage).",
-      "term": "Bitemporal",
-      "term_id": "gt_bitemporal"
+      "short_definition": "A named geologic region registered for a source namespace.",
+      "term": "Basin",
+      "term_id": "gt_basin"
     }
   ],
   "links": {
     "explain": null,
-    "next": "/v1/glossary?limit=6&cursor=eyJrIjoiQml0ZW1wb3JhbCIsInEiOiI0NDEzNmZhMyIsInQiOiJndF9iaXRlbXBvcmFsIiwidiI6bnVsbH0",
+    "next": "/v1/glossary?limit=6&cursor=eyJrIjoiQmFzaW4iLCJxIjoiNDQxMzZmYTMiLCJ0IjoiZ3RfYmFzaW4iLCJ2IjpudWxsfQ",
     "self": "/v1/glossary"
   },
   "meta": {
@@ -767,8 +891,8 @@ export const glossaryEnvelope = {
     },
     "deprecations": [],
     "labels": {},
-    "next_cursor": "eyJrIjoiQml0ZW1wb3JhbCIsInEiOiI0NDEzNmZhMyIsInQiOiJndF9iaXRlbXBvcmFsIiwidiI6bnVsbH0",
-    "request_id": "01M0HWF8015C00WWTPJE0XAG4J",
+    "next_cursor": "eyJrIjoiQmFzaW4iLCJxIjoiNDQxMzZmYTMiLCJ0IjoiZ3RfYmFzaW4iLCJ2IjpudWxsfQ",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {},
     "warnings": []
   }
@@ -778,8 +902,17 @@ export const glossaryEnvelope = {
 export const healthEnvelope = {
   "data": {
     "degraded_sources": [
+      "nd_gis_wells",
+      "nd_mpr_xlsx"
+    ],
+    "pending_sources": [
+      "blm_plss_sections",
+      "blm_plss_townships",
+      "fracfocus_csv",
+      "nd_gis_directionals",
       "nd_gis_horizontals_line",
       "nd_gis_spacing_units",
+      "nm_c115b_upstream",
       "nm_ocd_ogrid",
       "nm_ocd_pod",
       "nm_ocd_podwc",
@@ -795,148 +928,298 @@ export const healthEnvelope = {
     ],
     "sources": [
       {
+        "cadence": "Every 35 days",
         "declared_vintage": null,
+        "freshness_reason": "No durable poll attempt or registered artifact exists yet.",
+        "last_attempt_at": null,
         "last_manifest_id": null,
+        "last_outcome": null,
+        "manifest_count": 0,
+        "name": "BLM national CadNSDI PLSS sections / first division (NAD83 service, layer 2)",
+        "next_expected_poll": null,
+        "retrieval_vintage": null,
+        "source_id": "blm_plss_sections",
+        "state": "pending"
+      },
+      {
+        "cadence": "Every 35 days",
+        "declared_vintage": null,
+        "freshness_reason": "No durable poll attempt or registered artifact exists yet.",
+        "last_attempt_at": null,
+        "last_manifest_id": null,
+        "last_outcome": null,
+        "manifest_count": 0,
+        "name": "BLM national CadNSDI PLSS townships (NAD83 service, layer 1)",
+        "next_expected_poll": null,
+        "retrieval_vintage": null,
+        "source_id": "blm_plss_townships",
+        "state": "pending"
+      },
+      {
+        "cadence": "Every 8 days",
+        "declared_vintage": null,
+        "freshness_reason": "No durable poll attempt or registered artifact exists yet.",
+        "last_attempt_at": null,
+        "last_manifest_id": null,
+        "last_outcome": null,
+        "manifest_count": 0,
+        "name": "FracFocus bulk CSV disclosure archive",
+        "next_expected_poll": null,
+        "retrieval_vintage": null,
+        "source_id": "fracfocus_csv",
+        "state": "pending"
+      },
+      {
+        "cadence": "Every 35 days",
+        "declared_vintage": null,
+        "freshness_reason": "No durable poll attempt or registered artifact exists yet.",
+        "last_attempt_at": null,
+        "last_manifest_id": null,
+        "last_outcome": null,
+        "manifest_count": 0,
+        "name": "ND DMR GIS directional survey stations (OGD_Directionals)",
+        "next_expected_poll": null,
+        "retrieval_vintage": null,
+        "source_id": "nd_gis_directionals",
+        "state": "pending"
+      },
+      {
+        "cadence": "Every 8 days",
+        "declared_vintage": null,
+        "freshness_reason": "No durable poll attempt or registered artifact exists yet.",
+        "last_attempt_at": null,
+        "last_manifest_id": null,
+        "last_outcome": null,
         "manifest_count": 0,
         "name": "ND DMR GIS lateral centrelines (OGD_Horizontals_Line)",
+        "next_expected_poll": null,
         "retrieval_vintage": null,
         "source_id": "nd_gis_horizontals_line",
-        "state": "never_fetched"
+        "state": "pending"
       },
       {
+        "cadence": "Every 8 days",
         "declared_vintage": null,
+        "freshness_reason": "No durable poll attempt or registered artifact exists yet.",
+        "last_attempt_at": null,
         "last_manifest_id": null,
+        "last_outcome": null,
         "manifest_count": 0,
         "name": "ND DMR GIS drilling spacing units (OGD_DrillingSpacingUnits)",
+        "next_expected_poll": null,
         "retrieval_vintage": null,
         "source_id": "nd_gis_spacing_units",
-        "state": "never_fetched"
+        "state": "pending"
       },
       {
+        "cadence": "Every 8 days",
         "declared_vintage": "2026-08-01",
+        "freshness_reason": "The artifact is older than the expected poll interval and no durable attempt can prove that the source was checked unchanged.",
+        "last_attempt_at": null,
         "last_manifest_id": "man_dddddddddddddddddddddddddddddddd",
+        "last_outcome": null,
         "manifest_count": 1,
         "name": "nd gis wells",
+        "next_expected_poll": null,
         "retrieval_vintage": "2026-08-01",
         "source_id": "nd_gis_wells",
-        "state": "current"
+        "state": "stale"
       },
       {
+        "cadence": "Every 8 days",
         "declared_vintage": "2026-08-01",
+        "freshness_reason": "The artifact is older than the expected poll interval and no durable attempt can prove that the source was checked unchanged.",
+        "last_attempt_at": null,
         "last_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "last_outcome": null,
         "manifest_count": 1,
         "name": "nd mpr xlsx",
+        "next_expected_poll": null,
         "retrieval_vintage": "2026-08-01",
         "source_id": "nd_mpr_xlsx",
-        "state": "current"
+        "state": "stale"
       },
       {
+        "cadence": "Every 35 days",
         "declared_vintage": null,
+        "freshness_reason": "No durable poll attempt or registered artifact exists yet.",
+        "last_attempt_at": null,
         "last_manifest_id": null,
+        "last_outcome": null,
+        "manifest_count": 0,
+        "name": "NM OCD C-115B natural gas waste, upstream by well API (FeatureServer layer 0)",
+        "next_expected_poll": null,
+        "retrieval_vintage": null,
+        "source_id": "nm_c115b_upstream",
+        "state": "pending"
+      },
+      {
+        "cadence": "Every 36 hours",
+        "declared_vintage": null,
+        "freshness_reason": "No durable poll attempt or registered artifact exists yet.",
+        "last_attempt_at": null,
+        "last_manifest_id": null,
+        "last_outcome": null,
         "manifest_count": 0,
         "name": "NM OCD operator registry (ogrid)",
+        "next_expected_poll": null,
         "retrieval_vintage": null,
         "source_id": "nm_ocd_ogrid",
-        "state": "never_fetched"
+        "state": "pending"
       },
       {
+        "cadence": "Every 36 hours",
         "declared_vintage": null,
+        "freshness_reason": "No durable poll attempt or registered artifact exists yet.",
+        "last_attempt_at": null,
         "last_manifest_id": null,
+        "last_outcome": null,
         "manifest_count": 0,
         "name": "NM OCD pooled development units (pod)",
+        "next_expected_poll": null,
         "retrieval_vintage": null,
         "source_id": "nm_ocd_pod",
-        "state": "never_fetched"
+        "state": "pending"
       },
       {
+        "cadence": "Every 36 hours",
         "declared_vintage": null,
+        "freshness_reason": "No durable poll attempt or registered artifact exists yet.",
+        "last_attempt_at": null,
         "last_manifest_id": null,
+        "last_outcome": null,
         "manifest_count": 0,
         "name": "NM OCD POD to well-completion crosswalk (podwc)",
+        "next_expected_poll": null,
         "retrieval_vintage": null,
         "source_id": "nm_ocd_podwc",
-        "state": "never_fetched"
+        "state": "pending"
       },
       {
+        "cadence": "Every 36 hours",
         "declared_vintage": null,
+        "freshness_reason": "No durable poll attempt or registered artifact exists yet.",
+        "last_attempt_at": null,
         "last_manifest_id": null,
+        "last_outcome": null,
         "manifest_count": 0,
         "name": "NM OCD pool registry (pool)",
+        "next_expected_poll": null,
         "retrieval_vintage": null,
         "source_id": "nm_ocd_pool",
-        "state": "never_fetched"
+        "state": "pending"
       },
       {
+        "cadence": "Every 36 hours",
         "declared_vintage": null,
+        "freshness_reason": "No durable poll attempt or registered artifact exists yet.",
+        "last_attempt_at": null,
         "last_manifest_id": null,
+        "last_outcome": null,
         "manifest_count": 0,
         "name": "NM OCD properties (property)",
+        "next_expected_poll": null,
         "retrieval_vintage": null,
         "source_id": "nm_ocd_property",
-        "state": "never_fetched"
+        "state": "pending"
       },
       {
+        "cadence": "Every 36 hours",
         "declared_vintage": null,
+        "freshness_reason": "No durable poll attempt or registered artifact exists yet.",
+        "last_attempt_at": null,
         "last_manifest_id": null,
+        "last_outcome": null,
         "manifest_count": 0,
         "name": "NM OCD spacing units (spacingunit)",
+        "next_expected_poll": null,
         "retrieval_vintage": null,
         "source_id": "nm_ocd_spacingunit",
-        "state": "never_fetched"
+        "state": "pending"
       },
       {
+        "cadence": "Every 36 hours",
         "declared_vintage": null,
+        "freshness_reason": "No durable poll attempt or registered artifact exists yet.",
+        "last_attempt_at": null,
         "last_manifest_id": null,
+        "last_outcome": null,
         "manifest_count": 0,
         "name": "NM OCD well-completion history (wchistory)",
+        "next_expected_poll": null,
         "retrieval_vintage": null,
         "source_id": "nm_ocd_wchistory",
-        "state": "never_fetched"
+        "state": "pending"
       },
       {
+        "cadence": "Every 36 hours",
         "declared_vintage": null,
+        "freshness_reason": "No durable poll attempt or registered artifact exists yet.",
+        "last_attempt_at": null,
         "last_manifest_id": null,
+        "last_outcome": null,
         "manifest_count": 0,
         "name": "NM OCD well-completion monthly volumes (wcproduction)",
+        "next_expected_poll": null,
         "retrieval_vintage": null,
         "source_id": "nm_ocd_wcproduction",
-        "state": "never_fetched"
+        "state": "pending"
       },
       {
+        "cadence": "Every 36 hours",
         "declared_vintage": null,
+        "freshness_reason": "No durable poll attempt or registered artifact exists yet.",
+        "last_attempt_at": null,
         "last_manifest_id": null,
+        "last_outcome": null,
         "manifest_count": 0,
         "name": "NM OCD well header history (wellhistory)",
+        "next_expected_poll": null,
         "retrieval_vintage": null,
         "source_id": "nm_ocd_wellhistory",
-        "state": "never_fetched"
+        "state": "pending"
       },
       {
+        "cadence": "When the dependency pin changes",
         "declared_vintage": null,
+        "freshness_reason": "No durable poll attempt or registered artifact exists yet.",
+        "last_attempt_at": null,
         "last_manifest_id": null,
+        "last_outcome": null,
         "manifest_count": 0,
         "name": "NOAA NADCON grid used by the NAD27 transform (us_noaa_conus.tif)",
+        "next_expected_poll": null,
         "retrieval_vintage": null,
         "source_id": "proj_grid_nad27",
-        "state": "never_fetched"
+        "state": "pending"
       },
       {
+        "cadence": "Every 8 days",
         "declared_vintage": null,
+        "freshness_reason": "No durable poll attempt or registered artifact exists yet.",
+        "last_attempt_at": null,
         "last_manifest_id": null,
+        "last_outcome": null,
         "manifest_count": 0,
         "name": "TX RRC GIS well layers by county (well###.zip)",
+        "next_expected_poll": null,
         "retrieval_vintage": null,
         "source_id": "tx_gis_wells_county",
-        "state": "never_fetched"
+        "state": "pending"
       },
       {
+        "cadence": "Every 35 days",
         "declared_vintage": null,
+        "freshness_reason": "No durable poll attempt or registered artifact exists yet.",
+        "last_attempt_at": null,
         "last_manifest_id": null,
+        "last_outcome": null,
         "manifest_count": 0,
         "name": "TX RRC Wellbore Query export (OG_WELLBORE_EWA_Report.csv)",
+        "next_expected_poll": null,
         "retrieval_vintage": null,
         "source_id": "tx_wellbore_ewa_csv",
-        "state": "never_fetched"
+        "state": "pending"
       }
     ],
     "state": "degraded",
@@ -957,87 +1240,217 @@ export const healthEnvelope = {
     "deprecations": [],
     "labels": {},
     "next_cursor": null,
-    "request_id": "01M0HWF80BAKQCXT6C17XH8YYJ",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {
-      "nd_gis_horizontals_line": {
+      "blm_plss_sections": {
+        "cadence": "Every 35 days",
         "declared_vintage": null,
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "No durable poll attempt or registered artifact exists yet.",
         "retrieval_vintage": null,
-        "state": "never_fetched"
+        "state": "pending"
+      },
+      "blm_plss_townships": {
+        "cadence": "Every 35 days",
+        "declared_vintage": null,
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "No durable poll attempt or registered artifact exists yet.",
+        "retrieval_vintage": null,
+        "state": "pending"
+      },
+      "fracfocus_csv": {
+        "cadence": "Every 8 days",
+        "declared_vintage": null,
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "No durable poll attempt or registered artifact exists yet.",
+        "retrieval_vintage": null,
+        "state": "pending"
+      },
+      "nd_gis_directionals": {
+        "cadence": "Every 35 days",
+        "declared_vintage": null,
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "No durable poll attempt or registered artifact exists yet.",
+        "retrieval_vintage": null,
+        "state": "pending"
+      },
+      "nd_gis_horizontals_line": {
+        "cadence": "Every 8 days",
+        "declared_vintage": null,
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "No durable poll attempt or registered artifact exists yet.",
+        "retrieval_vintage": null,
+        "state": "pending"
       },
       "nd_gis_spacing_units": {
+        "cadence": "Every 8 days",
         "declared_vintage": null,
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "No durable poll attempt or registered artifact exists yet.",
         "retrieval_vintage": null,
-        "state": "never_fetched"
+        "state": "pending"
       },
       "nd_gis_wells": {
+        "cadence": "Every 8 days",
         "declared_vintage": "2026-08-01",
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "The artifact is older than the expected poll interval and no durable attempt can prove that the source was checked unchanged.",
         "retrieval_vintage": "2026-08-01",
-        "state": "current"
+        "state": "stale"
       },
       "nd_mpr_xlsx": {
+        "cadence": "Every 8 days",
         "declared_vintage": "2026-08-01",
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "The artifact is older than the expected poll interval and no durable attempt can prove that the source was checked unchanged.",
         "retrieval_vintage": "2026-08-01",
-        "state": "current"
+        "state": "stale"
+      },
+      "nm_c115b_upstream": {
+        "cadence": "Every 35 days",
+        "declared_vintage": null,
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "No durable poll attempt or registered artifact exists yet.",
+        "retrieval_vintage": null,
+        "state": "pending"
       },
       "nm_ocd_ogrid": {
+        "cadence": "Every 36 hours",
         "declared_vintage": null,
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "No durable poll attempt or registered artifact exists yet.",
         "retrieval_vintage": null,
-        "state": "never_fetched"
+        "state": "pending"
       },
       "nm_ocd_pod": {
+        "cadence": "Every 36 hours",
         "declared_vintage": null,
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "No durable poll attempt or registered artifact exists yet.",
         "retrieval_vintage": null,
-        "state": "never_fetched"
+        "state": "pending"
       },
       "nm_ocd_podwc": {
+        "cadence": "Every 36 hours",
         "declared_vintage": null,
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "No durable poll attempt or registered artifact exists yet.",
         "retrieval_vintage": null,
-        "state": "never_fetched"
+        "state": "pending"
       },
       "nm_ocd_pool": {
+        "cadence": "Every 36 hours",
         "declared_vintage": null,
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "No durable poll attempt or registered artifact exists yet.",
         "retrieval_vintage": null,
-        "state": "never_fetched"
+        "state": "pending"
       },
       "nm_ocd_property": {
+        "cadence": "Every 36 hours",
         "declared_vintage": null,
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "No durable poll attempt or registered artifact exists yet.",
         "retrieval_vintage": null,
-        "state": "never_fetched"
+        "state": "pending"
       },
       "nm_ocd_spacingunit": {
+        "cadence": "Every 36 hours",
         "declared_vintage": null,
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "No durable poll attempt or registered artifact exists yet.",
         "retrieval_vintage": null,
-        "state": "never_fetched"
+        "state": "pending"
       },
       "nm_ocd_wchistory": {
+        "cadence": "Every 36 hours",
         "declared_vintage": null,
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "No durable poll attempt or registered artifact exists yet.",
         "retrieval_vintage": null,
-        "state": "never_fetched"
+        "state": "pending"
       },
       "nm_ocd_wcproduction": {
+        "cadence": "Every 36 hours",
         "declared_vintage": null,
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "No durable poll attempt or registered artifact exists yet.",
         "retrieval_vintage": null,
-        "state": "never_fetched"
+        "state": "pending"
       },
       "nm_ocd_wellhistory": {
+        "cadence": "Every 36 hours",
         "declared_vintage": null,
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "No durable poll attempt or registered artifact exists yet.",
         "retrieval_vintage": null,
-        "state": "never_fetched"
+        "state": "pending"
       },
       "proj_grid_nad27": {
+        "cadence": "When the dependency pin changes",
         "declared_vintage": null,
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "No durable poll attempt or registered artifact exists yet.",
         "retrieval_vintage": null,
-        "state": "never_fetched"
+        "state": "pending"
       },
       "tx_gis_wells_county": {
+        "cadence": "Every 8 days",
         "declared_vintage": null,
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "No durable poll attempt or registered artifact exists yet.",
         "retrieval_vintage": null,
-        "state": "never_fetched"
+        "state": "pending"
       },
       "tx_wellbore_ewa_csv": {
+        "cadence": "Every 35 days",
         "declared_vintage": null,
+        "last_attempt_at": null,
+        "last_outcome": null,
+        "next_expected_poll": null,
+        "reason": "No durable poll attempt or registered artifact exists yet.",
         "retrieval_vintage": null,
-        "state": "never_fetched"
+        "state": "pending"
       }
     },
     "warnings": []
@@ -1254,6 +1667,7 @@ export const serviceIndexEnvelope = {
     "conformance": "/v1/conformance",
     "derivations": "/v1/derivations",
     "explain": "/v1/explain?h=",
+    "formations": "/v1/formations",
     "glossary": "/v1/glossary",
     "glossary_index": "/v1/glossary/index",
     "health": "/v1/health",
@@ -1262,7 +1676,9 @@ export const serviceIndexEnvelope = {
     "openapi": "/openapi.json",
     "quarantine": "/v1/quarantine",
     "self": "/v1",
+    "status": "/v1/status",
     "tiles": "/v1/tiles",
+    "well_neighbors": "/v1/wells/{api10}/neighbors",
     "wells": "/v1/wells"
   },
   "meta": {
@@ -1273,7 +1689,7 @@ export const serviceIndexEnvelope = {
     "deprecations": [],
     "labels": {},
     "next_cursor": null,
-    "request_id": "01M0HWF80N2R1EGSYQHJTQWGN5",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {},
     "warnings": []
   }
@@ -1285,17 +1701,27 @@ export const quarantineSummaryEnvelope = {
     "group_by": "reason_code",
     "groups": [
       {
-        "count": 2,
-        "key": "unknown_vocab",
-        "share": 0.666667
+        "count": 24,
+        "key": "impossible_volume",
+        "share": 0.258065
       },
       {
-        "count": 1,
-        "key": "impossible_volume",
-        "share": 0.333333
+        "count": 24,
+        "key": "unknown_vocab",
+        "share": 0.258065
+      },
+      {
+        "count": 23,
+        "key": "datum_undetermined",
+        "share": 0.247312
+      },
+      {
+        "count": 22,
+        "key": "key_collision",
+        "share": 0.236559
       }
     ],
-    "total": 3
+    "total": 93
   },
   "links": {
     "explain": null,
@@ -1312,7 +1738,7 @@ export const quarantineSummaryEnvelope = {
       "/groups": "gt_quarantine"
     },
     "next_cursor": null,
-    "request_id": "01M0HWF80Z6S7SS83R7MHVS5GE",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {},
     "warnings": []
   }
@@ -1577,10 +2003,30 @@ export const pooledProductionEnvelope = {
     "deprecations": [],
     "labels": {
       "/api10": "gt_api_10_api_12_api_14",
-      "/granularity": "gt_granularity"
+      "/granularity": "gt_granularity",
+      "/pools/0/series/gas_mcf": "gt_stream",
+      "/pools/0/series/gas_mcf_null_semantics": "gt_withheld",
+      "/pools/0/series/gas_mcf_report_vintage": "gt_report_vintage",
+      "/pools/0/series/oil_bbl": "gt_liquids_policy",
+      "/pools/0/series/oil_bbl_null_semantics": "gt_withheld",
+      "/pools/0/series/oil_bbl_report_vintage": "gt_report_vintage",
+      "/pools/0/series/water_bbl": "gt_stream",
+      "/pools/0/series/water_bbl_null_semantics": "gt_withheld",
+      "/pools/0/series/water_bbl_report_vintage": "gt_report_vintage",
+      "/pools/0/well_completion_pool": "gt_pool",
+      "/pools/1/series/gas_mcf": "gt_stream",
+      "/pools/1/series/gas_mcf_null_semantics": "gt_withheld",
+      "/pools/1/series/gas_mcf_report_vintage": "gt_report_vintage",
+      "/pools/1/series/oil_bbl": "gt_liquids_policy",
+      "/pools/1/series/oil_bbl_null_semantics": "gt_withheld",
+      "/pools/1/series/oil_bbl_report_vintage": "gt_report_vintage",
+      "/pools/1/series/water_bbl": "gt_stream",
+      "/pools/1/series/water_bbl_null_semantics": "gt_withheld",
+      "/pools/1/series/water_bbl_report_vintage": "gt_report_vintage",
+      "/pools/1/well_completion_pool": "gt_pool"
     },
     "next_cursor": null,
-    "request_id": "01M0HWF8188A2RBE8MS9PV4VY8",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {
       "nd_mpr_xlsx": {
         "declared_vintage": "2026-08-01",
@@ -1621,7 +2067,7 @@ export const emptyProductionEnvelope = {
       "/granularity": "gt_granularity"
     },
     "next_cursor": null,
-    "request_id": "01M0HWF81M28DDXG22M1RXRZAY",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {},
     "warnings": []
   }
@@ -1631,47 +2077,47 @@ export const emptyProductionEnvelope = {
 export const pagedQuarantineEnvelope = {
   "data": [
     {
-      "first_seen_at": "2026-08-01T05:02:11+00:00",
+      "first_seen_at": "2026-08-01T05:59:11+00:00",
       "first_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-      "last_seen_at": "2026-08-01T05:02:11+00:00",
+      "last_seen_at": "2026-08-01T05:59:11+00:00",
       "last_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "notes": null,
-      "occurrence_count": 2,
-      "quarantine_id": "qr_01contract0003",
-      "reason_code": "unknown_vocab",
+      "occurrence_count": 74,
+      "quarantine_id": "qr_01explorer0059",
+      "reason_code": "key_collision",
       "release_derivation_id": null,
       "released_at": null,
       "released_by_rule_id": null,
-      "row_fingerprint": "fp_contract_0003",
-      "rule_id": "cr_nd_status_vocab_1",
+      "row_fingerprint": "fp_explorer_0059",
+      "rule_id": "cr_nd_stream_vocab_1",
       "source_id": "nd_gis_wells",
-      "stage": "conform",
-      "staging_table": "staging.nd_gis_wells",
-      "state": "released"
+      "stage": "parse",
+      "staging_table": "staging.nd_mpr_oil",
+      "state": "accepted_loss"
     },
     {
-      "first_seen_at": "2026-08-01T05:02:11+00:00",
+      "first_seen_at": "2026-08-01T05:58:11+00:00",
       "first_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-      "last_seen_at": "2026-08-01T05:02:11+00:00",
+      "last_seen_at": "2026-08-01T05:58:11+00:00",
       "last_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "notes": null,
-      "occurrence_count": 1,
-      "quarantine_id": "qr_01contract0002",
-      "reason_code": "impossible_volume",
+      "occurrence_count": 67,
+      "quarantine_id": "qr_01explorer0058",
+      "reason_code": "datum_undetermined",
       "release_derivation_id": null,
       "released_at": null,
       "released_by_rule_id": null,
-      "row_fingerprint": "fp_contract_0002",
-      "rule_id": "cr_nd_volume_range_1",
+      "row_fingerprint": "fp_explorer_0058",
+      "rule_id": "cr_nd_stream_vocab_1",
       "source_id": "nd_mpr_xlsx",
       "stage": "validate",
       "staging_table": "staging.nd_mpr_oil",
-      "state": "open"
+      "state": "released"
     }
   ],
   "links": {
     "explain": null,
-    "next": "/v1/quarantine?limit=2&cursor=eyJrIjoiMjAyNi0wOC0wMVQwNTowMjoxMSswMDowMCIsInEiOiI0NDEzNmZhMyIsInQiOiJxcl8wMWNvbnRyYWN0MDAwMiIsInYiOm51bGx9",
+    "next": "/v1/quarantine?limit=2&cursor=eyJrIjoiMjAyNi0wOC0wMVQwNTo1ODoxMSswMDowMCIsInEiOiI0NDEzNmZhMyIsInQiOiJxcl8wMWV4cGxvcmVyMDA1OCIsInYiOm51bGx9",
     "self": "/v1/quarantine"
   },
   "meta": {
@@ -1682,10 +2128,10 @@ export const pagedQuarantineEnvelope = {
     "deprecations": [],
     "labels": {
       "/reason_code": "gt_quarantine",
-      "/state": "gt_quarantine"
+      "/state": "gt_quarantine_state"
     },
-    "next_cursor": "eyJrIjoiMjAyNi0wOC0wMVQwNTowMjoxMSswMDowMCIsInEiOiI0NDEzNmZhMyIsInQiOiJxcl8wMWNvbnRyYWN0MDAwMiIsInYiOm51bGx9",
-    "request_id": "01M0HWF822ENYS3H9TJ9WFTP6K",
+    "next_cursor": "eyJrIjoiMjAyNi0wOC0wMVQwNTo1ODoxMSswMDowMCIsInEiOiI0NDEzNmZhMyIsInQiOiJxcl8wMWV4cGxvcmVyMDA1OCIsInYiOm51bGx9",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {},
     "warnings": []
   }
