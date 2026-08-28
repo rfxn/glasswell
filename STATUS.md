@@ -1,8 +1,9 @@
 # Current status
 
-Reconciled on **2026-08-28** against the deployed v0.59 baseline and the locally verified
-v0.60 release candidate. Candidate capabilities below become shipped claims only after hosted CI,
-release, migration, deployment, and live verification. This is the short current-state ledger;
+Reconciled on **2026-08-28** against the v0.59 release line, the checked-in OpenAPI
+snapshot, current `main` history, and the deployed v0.59 baseline. The locally verified v0.60
+release candidate becomes a shipped claim only after release, migration, deployment, and live
+verification. This is the short current-state ledger;
 [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria, while
 [`blueprint.md`](blueprint.md) remains the committed v0.5 contract and
 [`blueprint-v0.6-draft.md`](blueprint-v0.6-draft.md) is the rc5 amendment set.
