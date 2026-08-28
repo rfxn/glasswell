@@ -301,7 +301,7 @@ describe("well card", () => {
     // line naming the derivations behind the column — R8's disclosure, not a decoration.
     await renderWellCard(host, API10, callbacks);
 
-    const frame = host.querySelector(".gw-card-chart") as HTMLElement;
+    const frame = host.querySelector(".gw-production-chart") as HTMLElement;
     const notes = frame.querySelector(".gw-chart-notes") as HTMLElement;
     expect(notes.textContent).toContain("series_spans_derivations");
     expect(frame.querySelector(".gw-frame-body .gw-warning")).toBeNull();
