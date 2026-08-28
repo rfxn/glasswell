@@ -41,9 +41,14 @@ def test_restore_timer_is_weekly_persistent_and_runs_only_the_drill_service() ->
 
 def test_restore_service_is_bounded_private_and_writes_only_product_state() -> None:
     service = text("glasswell-restore-drill.service")
+    directive_keys = {
+        line.partition("=")[0].strip()
+        for line in service.splitlines()
+        if "=" in line and not line.lstrip().startswith(("#", ";"))
+    }
 
     assert "ExecStart=/usr/local/sbin/glasswell-restore-drill.sh" in service
-    assert "\nUser=" not in service
+    assert "User" not in directive_keys
     assert "Group=glasswell" in service
     assert "TimeoutStartSec=4h" in service
     assert "StateDirectory=glasswell-restore-drill" in service
