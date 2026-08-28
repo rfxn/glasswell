@@ -147,6 +147,34 @@ def _refresh(connection: psycopg.Connection, lineage_env):
     return report
 
 
+def _resident_transaction_identity(connection: psycopg.Connection) -> tuple[list, ...]:
+    queries = (
+        "select to_jsonb(subject) from marts.nd_neighbor_subjects subject order by api10",
+        "select to_jsonb(edge) from marts.nd_neighbor_edges edge"
+        " order by api10, neighbor_api10",
+        "select to_jsonb(derivation) from lineage.derivations derivation"
+        " where output_dataset = 'marts.nd_neighbors' order by derivation_id",
+        "select to_jsonb(input) from lineage.derivation_inputs input"
+        " join lineage.derivations derivation using (derivation_id)"
+        " where derivation.output_dataset = 'marts.nd_neighbors'"
+        " order by input.derivation_id, input.ord",
+        "select to_jsonb(rule_ref) from lineage.derivation_rules rule_ref"
+        " join lineage.derivations derivation using (derivation_id)"
+        " where derivation.output_dataset = 'marts.nd_neighbors'"
+        " order by rule_ref.derivation_id, rule_ref.rule_id",
+        "select to_jsonb(event) from lineage.audit_events event"
+        " where event_type = 'mart.refreshed'"
+        " and payload ->> 'dataset' = 'marts.nd_neighbors'"
+        " order by occurred_at, event_id",
+    )
+    with connection.cursor() as cursor:
+        identities = []
+        for query in queries:
+            cursor.execute(query)
+            identities.append([row[0] for row in cursor.fetchall()])
+    return tuple(identities)
+
+
 def test_refresh_uses_every_component_classifies_partial_aliases_and_is_symmetric(
     neighbor_inputs: psycopg.Connection, lineage_env
 ) -> None:
@@ -199,6 +227,69 @@ def test_refresh_replays_exactly_and_repairs_a_mutated_resident_edge(
     assert repaired.derivation_id == first.derivation_id
     assert repaired.changed is True
     assert _refresh(neighbor_inputs, lineage_env).changed is False
+
+
+def test_reverse_subject_foreign_key_has_a_supporting_index(db: psycopg.Connection) -> None:
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select index.indisvalid, index.indisready, index.indnkeyatts,"
+            " pg_get_indexdef(index.indexrelid, 1, false),"
+            " pg_get_indexdef(index.indexrelid, 2, false),"
+            " pg_get_indexdef(index.indexrelid, 3, false)"
+            " from pg_index index"
+            " join pg_class relation on relation.oid = index.indexrelid"
+            " join pg_namespace namespace on namespace.oid = relation.relnamespace"
+            " where namespace.nspname = 'marts'"
+            " and relation.relname = 'nd_neighbor_edges_reverse_fk_idx'"
+        )
+        index_state = cursor.fetchone()
+
+    assert index_state == (
+        True,
+        True,
+        3,
+        "neighbor_api10",
+        "snapshot_vintage",
+        "derivation_id",
+    )
+
+
+def test_failed_replacement_rolls_back_the_resident_mart(
+    neighbor_inputs: psycopg.Connection, lineage_env
+) -> None:
+    _refresh(neighbor_inputs, lineage_env)
+
+    with neighbor_inputs.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.formation_aliases"
+            " (formation_raw, formation, formation_group, confidence, effective_from, source_id,"
+            " created_vintage) values"
+            " ('UNREVIEWED POOL', 'reviewed_later', '__other__', 0.800, '2026-08-27',"
+            " 'nd_mpr_xlsx', '2026-08-27')"
+        )
+        cursor.execute(
+            "create function public.gw_test_reject_neighbor_subject() returns trigger"
+            " language plpgsql as $$ begin raise exception 'injected subject failure'; end $$"
+        )
+        cursor.execute(
+            "create trigger gw_test_reject_neighbor_subject before insert"
+            " on marts.nd_neighbor_subjects for each row"
+            " execute function public.gw_test_reject_neighbor_subject()"
+        )
+    neighbor_inputs.commit()
+    transaction_before = _resident_transaction_identity(neighbor_inputs)
+    neighbor_inputs.commit()
+
+    with lineage_session(
+        recorder=PostgresRecorder(neighbor_inputs),
+        environment=lineage_env,
+        clock=FixedClock(RUN_AT),
+        correlation_id="run_neighbors_failed_replace",
+    ), pytest.raises(psycopg.errors.RaiseException, match="injected subject failure"):
+        refresh_neighbors(neighbor_inputs)
+    neighbor_inputs.rollback()
+
+    assert _resident_transaction_identity(neighbor_inputs) == transaction_before
 
 
 def test_same_day_alias_append_changes_the_derivation_identity(
