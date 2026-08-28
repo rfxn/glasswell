@@ -7,6 +7,14 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.59"></a>
+## v0.59 — 2026-08-28
+
+- [Fix] Preserve the restore drill's implicit root credential so its constrained `SETUID` and
+      `SETGID` capabilities can enter the PostgreSQL identity under the existing sandbox
+- [Fix] Index the physical-neighbour mart's reverse subject foreign key so replacement no longer
+      scans 7.96 million directed edges for each subject deletion
+
 <a id="v0.58"></a>
 ## v0.58 — 2026-08-27
 
