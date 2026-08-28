@@ -43,7 +43,7 @@ def test_restore_service_is_bounded_private_and_writes_only_product_state() -> N
     service = text("glasswell-restore-drill.service")
 
     assert "ExecStart=/usr/local/sbin/glasswell-restore-drill.sh" in service
-    assert "User=root" in service
+    assert "\nUser=" not in service
     assert "Group=glasswell" in service
     assert "TimeoutStartSec=4h" in service
     assert "StateDirectory=glasswell-restore-drill" in service
