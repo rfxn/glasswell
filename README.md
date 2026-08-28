@@ -278,7 +278,7 @@ key's success, and stale snapshots never retain green checks.
 Exact-vintage logical backup manifests and durable weekly restore results are freshness-checked;
 remote-copy recency and full replacement-VM recovery remain outside that evidence.
 
-The locally verified v0.60 candidate validates every selector-bearing figure on the current API
+The deployed v0.60 release validates every selector-bearing figure on the current API
 against a fail-closed persisted
 output profile. Request-computed well-length and viewport aggregates receive their own response
 derivations rather than borrowing one contributing row; exact response evidence lives outside
@@ -290,6 +290,8 @@ and CRS routing carry an immutable publication clock independent of their valid 
 cut is requested. Source-data vintages from before Glasswell use the first published policy as an
 explicit baseline, never a later backdated correction. A sandboxed nightly job removes only
 successful unreferenced ephemeral lineage older than 90 days and reports through Status.
+The release runs at schema head 51 and passed 111 host checks plus 20 API smoke checks; the
+latest recurring restore evidence still covers schema 47 until the next backup and drill.
 
 Forecast, valuation, sensitivity, scenario, agent, and undrilled-location inventory operations remain
 designed scope, not live routes. The UI consumes the same public API documented by the

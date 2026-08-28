@@ -1,9 +1,8 @@
 # Current status
 
 Reconciled on **2026-08-28** against the v0.60 release line, the checked-in OpenAPI
-snapshot, current `main` history, and the deployed v0.59 baseline. The locally verified v0.60
-release candidate becomes a shipped claim only after release, migration, deployment, and live
-verification. This is the short current-state ledger;
+snapshot, current `main` history, and deployed `v0.60+be8e234` at schema head 51. This is the
+short current-state ledger;
 [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria, while
 [`blueprint.md`](blueprint.md) remains the committed v0.5 contract and
 [`blueprint-v0.6-draft.md`](blueprint-v0.6-draft.md) is the rc5 amendment set.
@@ -46,7 +45,7 @@ verification. This is the short current-state ledger;
 | **P3** Forecasting and benchmark | Pinned control gate accepted; modeling remains | Immutable `fv1.0`, semantic-major `fv2.0`, `mdv1.4`, and control-major `tcv1.0` remain separate identities. The accepted 2026-08-28 publication `p3pub_8b434525d8c621762e31b06ca660bfcd` pins `v0.59+b0be225`, environment `env_59334df47ed960e6`, and split set `sset_c7bbb9a6932db76b`; two complete builds reproduced all eight artifacts and all eight split files byte-identically. Unavailability is 230 / 21,300 (1.0798%), below the 5% ceiling, with 222 missing-lateral and eight insufficient-peer mentions and no TEST missing-formation mention. Matrix-wide coverage is 17,075 resolved, 486 missing and two conflicts across 17,563 subjects. Models, calibration, the model-registry writer, analog index, benchmark scoring and harness remain |
 | **P4** Dollars and scenarios | Not started | Entire phase |
 | **P5** Intelligence, agents and alerts | Not started | Entire phase |
-| **P6** Hardening and glass-box proof | Partial | The deployed v0.59 baseline has a sanitized timed Status snapshot and the passed recurring logical restore. The locally verified v0.60 candidate adds independently committed poll outcomes aligned to actual recurring timers, fail-closed persisted selector outputs, two-clock conformance, and a sandboxed nightly retention unit; none is claimed as live before release verification. The restore unit restored the 1,493,244,558-byte schema-47 dump in 849 seconds, matched 197 manifests, 403,238 latest wells, 7,223,544 production rows and 43,817 ND tile rows, passed six representative reads, removed scratch state and persisted a `root:glasswell` `0640` receipt. This still does not prove full VM/raw-zone recovery. Tunnel/Access, rate limits, outsider guest exercise, remote-copy evidence, full-system recovery, broader determinism and tool-equivalence gates remain |
+| **P6** Hardening and glass-box proof | Partial | Deployed v0.60 persists source-poll outcomes independently, registers 22 source-specific cadence policies, validates all current selector-bearing figures against nine fail-closed output contracts, separates conformance publication and valid time, caps viewport provenance writes per principal, and runs sandboxed nightly lineage retention. The release deployment applied schema 51, completed retention with zero eligible removals, persisted a live rate-window request, passed 111 host checks and 20 API smoke checks, and served index and changelog bytes identical to the release build. Fetch-attempt history begins at this deployment and remains empty until a source next polls. The latest recurring restore proof still covers the 1,493,244,558-byte schema-47 dump: it matched 197 manifests, 403,238 latest wells, 7,223,544 production rows and 43,817 ND tile rows, passed six reads, removed scratch state and persisted a `root:glasswell` `0640` receipt. A schema-51 restore, remote-copy evidence, full VM/raw-zone recovery, tunnel/Access, outsider guest exercise, broader API rate policy, determinism and tool-equivalence gates remain |
 | **P7** Permian | Started, unpromoted/incomplete | NM deployment; TX production, allocation, and validators |
 | **P8** Living systems | Not started | Entire phase |
 
@@ -61,8 +60,8 @@ verification. This is the short current-state ledger;
    Permian spine can act as the intended control.
 4. Put the deployed app behind the ruled tunnel/Access scopes and exercise a non-interactive
    guest credential from outside the lab; public source visibility is not deployment access.
-5. Prove remote-copy recency and full replacement-VM/raw-zone recovery separately from the
-   same-cluster logical restore drill.
+5. Let the next schema-51 backup pass the recurring restore drill, then prove remote-copy
+   recency and full replacement-VM/raw-zone recovery separately from that same-cluster proof.
 6. Resolve the owner-gated v0.6 §11 capability-matrix/IP review separately from the already
    public source repository.
 
@@ -75,5 +74,6 @@ verification. This is the short current-state ledger;
   headless-Chromium gates pass locally: 35 Map assertions and 88 Status assertions.
 - The dependency lock exactly matches the installed environment and the generated OpenAPI
   snapshot reports current.
-- Hosted CI evidence for this implementation-review head must be recorded on its pull request;
-  release claims do not inherit a prior head's run.
+- Exact release SHA `be8e234` passed all six hosted CI jobs. The deployed `v0.60+be8e234`
+  instance at schema head 51 passes 111 host checks and 20 API smoke checks; its index and
+  changelog files are byte-identical to the locally built release bundle.
