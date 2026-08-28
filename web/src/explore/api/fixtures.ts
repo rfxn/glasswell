@@ -1,15 +1,8 @@
-// Recorded from a locally-served build of this branch, not hand-written from the router
-// source. `tests/support/serve_branch.py` stands the stack up; this file is written by
-// `work-output/explorer-c9-record.py`, which is how it is refreshed rather than edited.
+// Recorded from the tracked `tests/support/serve_branch.py` harness by
+// `scripts/record-explorer-fixtures.py`, not hand-written from the router source.
 //
-// Every glossary term the served document binds to a parameter through A-8, keyed by the path
-// the pane's `explain()` reads it from — so a test can stub one fetch map and expand any
-// parameter the OPERATION section renders.
-//
-//   curl -H "X-Glasswell-Key: $KEY" .../v1/glossary/gt_stream
-//
-// The owner key travels in the header and appears in no body here: the recorder asserts that
-// before writing.
+// Every glossary term the served document binds to a parameter is keyed by the path the pane's
+// `explain()` reads. Request ids are normalized D3 metadata; the owner key is never written.
 
 export const glossaryBodies: Record<string, unknown> = {
   "/v1/glossary/gt_conformance_rule": {
@@ -56,7 +49,7 @@ export const glossaryBodies: Record<string, unknown> = {
       "deprecations": [],
       "labels": {},
       "next_cursor": null,
-      "request_id": "01M0JRKYDMM7X194Q22FQNQRCH",
+      "request_id": "00000000000000000000000000",
       "source_freshness": {},
       "warnings": []
     }
@@ -100,7 +93,7 @@ export const glossaryBodies: Record<string, unknown> = {
       "deprecations": [],
       "labels": {},
       "next_cursor": null,
-      "request_id": "01M0JRKYE4GG4PKG5STA28BR12",
+      "request_id": "00000000000000000000000000",
       "source_freshness": {},
       "warnings": []
     }
@@ -149,7 +142,7 @@ export const glossaryBodies: Record<string, unknown> = {
       "deprecations": [],
       "labels": {},
       "next_cursor": null,
-      "request_id": "01M0JRKYEFC90DRGFFEZVBNCRN",
+      "request_id": "00000000000000000000000000",
       "source_freshness": {},
       "warnings": []
     }
@@ -196,7 +189,7 @@ export const glossaryBodies: Record<string, unknown> = {
       "deprecations": [],
       "labels": {},
       "next_cursor": null,
-      "request_id": "01M0JRKYES2G52Q6E85F00MA2H",
+      "request_id": "00000000000000000000000000",
       "source_freshness": {},
       "warnings": []
     }
@@ -239,7 +232,7 @@ export const glossaryBodies: Record<string, unknown> = {
       "deprecations": [],
       "labels": {},
       "next_cursor": null,
-      "request_id": "01M0JRKYF3YGKG923QFDP200KG",
+      "request_id": "00000000000000000000000000",
       "source_freshness": {},
       "warnings": []
     }
@@ -285,7 +278,7 @@ export const glossaryBodies: Record<string, unknown> = {
       "deprecations": [],
       "labels": {},
       "next_cursor": null,
-      "request_id": "01M0JRKYFFZYCQ5KGW6XVBARK6",
+      "request_id": "00000000000000000000000000",
       "source_freshness": {},
       "warnings": []
     }
@@ -331,7 +324,7 @@ export const glossaryBodies: Record<string, unknown> = {
       "deprecations": [],
       "labels": {},
       "next_cursor": null,
-      "request_id": "01M0JRKYFTQTRR8KKKS6K2QH0K",
+      "request_id": "00000000000000000000000000",
       "source_freshness": {},
       "warnings": []
     }
@@ -377,7 +370,7 @@ export const glossaryBodies: Record<string, unknown> = {
       "deprecations": [],
       "labels": {},
       "next_cursor": null,
-      "request_id": "01M0JRKYG3V99A6DQNW03YVBSN",
+      "request_id": "00000000000000000000000000",
       "source_freshness": {},
       "warnings": []
     }
@@ -424,7 +417,7 @@ export const glossaryBodies: Record<string, unknown> = {
       "deprecations": [],
       "labels": {},
       "next_cursor": null,
-      "request_id": "01M0JRKYGDF2ZYHMW3076FF2FZ",
+      "request_id": "00000000000000000000000000",
       "source_freshness": {},
       "warnings": []
     }
@@ -467,7 +460,7 @@ export const glossaryBodies: Record<string, unknown> = {
       "deprecations": [],
       "labels": {},
       "next_cursor": null,
-      "request_id": "01M0JRKYGQA17NSHZ5Y3665WSR",
+      "request_id": "00000000000000000000000000",
       "source_freshness": {},
       "warnings": []
     }
@@ -516,7 +509,7 @@ export const glossaryBodies: Record<string, unknown> = {
       "deprecations": [],
       "labels": {},
       "next_cursor": null,
-      "request_id": "01M0JRKYH2WC6DXYRB0V1GVSEW",
+      "request_id": "00000000000000000000000000",
       "source_freshness": {},
       "warnings": []
     }
@@ -560,7 +553,7 @@ export const glossaryBodies: Record<string, unknown> = {
       "deprecations": [],
       "labels": {},
       "next_cursor": null,
-      "request_id": "01M0JRKYHBMT3XDK3FB45Q4KRK",
+      "request_id": "00000000000000000000000000",
       "source_freshness": {},
       "warnings": []
     }
@@ -606,7 +599,7 @@ export const glossaryBodies: Record<string, unknown> = {
       "deprecations": [],
       "labels": {},
       "next_cursor": null,
-      "request_id": "01M0JRKYHPTDC5V2TM72HT0RFH",
+      "request_id": "00000000000000000000000000",
       "source_freshness": {},
       "warnings": []
     }
@@ -653,7 +646,7 @@ export const glossaryBodies: Record<string, unknown> = {
       "deprecations": [],
       "labels": {},
       "next_cursor": null,
-      "request_id": "01M0JRKYHZKHCNMCWM5VREZKZT",
+      "request_id": "00000000000000000000000000",
       "source_freshness": {},
       "warnings": []
     }
@@ -695,7 +688,7 @@ export const glossaryBodies: Record<string, unknown> = {
       "deprecations": [],
       "labels": {},
       "next_cursor": null,
-      "request_id": "01M0JRKYJA4VNFZNYJHQKRB91N",
+      "request_id": "00000000000000000000000000",
       "source_freshness": {},
       "warnings": []
     }
@@ -740,7 +733,7 @@ export const glossaryBodies: Record<string, unknown> = {
       "deprecations": [],
       "labels": {},
       "next_cursor": null,
-      "request_id": "01M0JRKYJNC0986PPJYN1XF22Y",
+      "request_id": "00000000000000000000000000",
       "source_freshness": {},
       "warnings": []
     }

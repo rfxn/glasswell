@@ -562,16 +562,23 @@ def apply_rules(frame: pl.DataFrame, rules: Sequence[ConformanceRule]) -> RuleAp
 _LOAD_RULES = """
 select rule_id, rule_family, supersedes_rule_id, source_id, stage, applies_to_fields,
        rule_kind, spec, rule, rationale, evidence_url, evidence_sha256, effective_from,
-       effective_to, code_ref, code_ref_sha256, created_by_event_id
+       effective_to, published_vintage, code_ref, code_ref_sha256, created_by_event_id
   from lineage.conformance_rules
  where source_id = %(source_id)s
    and (%(stage)s::text is null or stage = %(stage)s)
-   and effective_from <= %(as_of)s
-   and (effective_to is null or effective_to > %(as_of)s)
+   and published_vintage <= %(knowledge_at)s
+   and effective_from <= %(valid_at)s
+   and (effective_to is null or effective_to > %(valid_at)s)
  order by rule_id
 """
 
 _LOOKUP_TABLES = {"mapping_table", "alias_table"}
+_PROMOTED_LOOKUPS = {
+    "nd_stream_promoted_map": ("nd_stream_map", "stream_raw"),
+    "nd_segment_promoted_map": ("nd_segment_map", "segment"),
+    "nd_survey_segment_promoted_map": ("nd_survey_segment_map", "well_sub"),
+    "nm_stream_promoted_map": ("nm_stream_map", "stream_raw"),
+}
 
 
 def load_rules(
@@ -580,21 +587,42 @@ def load_rules(
     source_id: str,
     stage: str | None = None,
     as_of: date | None = None,
+    valid_at: date | None = None,
+    knowledge_at: date | None = None,
 ) -> list[ConformanceRule]:
-    """Read the registry and materialize the lookup rows each rule's spec names."""
-    effective_at = as_of or date.today()
+    """Read rules eligible at both knowledge and valid time, then hydrate their lookups.
+
+    Before the knowledge clock existed, internal callers used ``as_of`` for valid time. It
+    remains a compatibility alias for ``valid_at``; ``knowledge_at`` is the independent
+    publication cut. Omitting the new clock means current knowledge, so existing ingestion
+    calls keep their behavior without rewriting stored dates to manufacture history.
+    """
+    knowledge_cut = knowledge_at or date.today()
+    effective_at = valid_at or as_of or date.today()
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(
             _LOAD_RULES,
-            {"source_id": source_id, "stage": stage, "as_of": effective_at},
+            {
+                "source_id": source_id,
+                "stage": stage,
+                "knowledge_at": knowledge_cut,
+                "valid_at": effective_at,
+            },
         )
         rows = cursor.fetchall()
     loaded = active_rules([ConformanceRule(**row) for row in rows])
-    return [_hydrate(connection, rule, effective_at) for rule in loaded]
+    return [
+        _hydrate(connection, rule, valid_at=effective_at, as_of=knowledge_cut)
+        for rule in loaded
+    ]
 
 
 def _hydrate(
-    connection: psycopg.Connection, rule: ConformanceRule, as_of: date
+    connection: psycopg.Connection,
+    rule: ConformanceRule,
+    *,
+    valid_at: date,
+    as_of: date,
 ) -> ConformanceRule:
     for key in _LOOKUP_TABLES:
         table = rule.spec.get(key)
@@ -612,24 +640,49 @@ def _hydrate(
                     "   effective_from desc, formation) rank"
                     " from lineage.formation_aliases a"
                     " where effective_from <= %s"
-                    "   and (created_vintage is null or created_vintage <= %s)"
+                    "   and created_vintage is not null and created_vintage <= %s"
                     "   and (source_id = %s or source_id is null)) ranked"
                     " where rank = 1",
-                    (rule.source_id, as_of, as_of, rule.source_id),
+                    (rule.source_id, valid_at, as_of, rule.source_id),
                 )
             elif identifier == "operator_aliases":
                 cursor.execute(
-                    "select operator_raw, operator, confidence, effective_from, source_id"
+                    "select operator_raw, operator, confidence, effective_from, source_id,"
+                    " published_vintage"
                     " from (select a.*, row_number() over ("
                     "   partition by operator_raw order by (source_id = %s) desc nulls last,"
                     "   effective_from desc, operator) rank"
                     " from lineage.operator_aliases a where effective_from <= %s"
+                    "   and published_vintage is not null and published_vintage <= %s"
                     "   and (source_id = %s or source_id is null)) ranked"
                     " where rank = 1",
-                    (rule.source_id, as_of, rule.source_id),
+                    (rule.source_id, valid_at, as_of, rule.source_id),
+                )
+            elif identifier in _PROMOTED_LOOKUPS:
+                base_table, key_column = _PROMOTED_LOOKUPS[identifier]
+                cursor.execute(
+                    f"select promoted.*, base.published_vintage"
+                    f" from lineage.{identifier} promoted"
+                    f" join lineage.{base_table} base using ({key_column})"
+                    " where base.published_vintage <= %s",
+                    (as_of,),
                 )
             else:
-                cursor.execute(f"select * from lineage.{identifier}")
+                cursor.execute(
+                    "select exists (select 1 from information_schema.columns"
+                    " where table_schema = 'lineage' and table_name = %s"
+                    " and column_name = 'published_vintage') as has_clock",
+                    (identifier,),
+                )
+                if not cursor.fetchone()["has_clock"]:
+                    raise RuleSpecError(
+                        f"{rule.rule_id}: lookup table {identifier!r} has no publication clock"
+                    )
+                cursor.execute(
+                    f"select * from lineage.{identifier}"
+                    " where published_vintage is not null and published_vintage <= %s",
+                    (as_of,),
+                )
             rule = rule.model_copy(update={"lookup": cursor.fetchall()})
     return rule
 
@@ -648,21 +701,47 @@ def apply_registry_rules(
     source_id: str,
     stage: str,
     as_of: date | None = None,
+    valid_at: date | None = None,
+    knowledge_at: date | None = None,
 ) -> RuleApplication:
     """SB-07 §11 apply_rules(): load from the registry, then execute."""
-    return apply_rules(frame, load_rules(connection, source_id=source_id, stage=stage, as_of=as_of))
+    return apply_rules(
+        frame,
+        load_rules(
+            connection,
+            source_id=source_id,
+            stage=stage,
+            as_of=as_of,
+            valid_at=valid_at,
+            knowledge_at=knowledge_at,
+        ),
+    )
 
 
 _LEASE_REPORTING = """
-select rule_id, rule, spec ->> 'reporting_level' as reporting_level, effective_from
-  from lineage.conformance_rules
- where spec ->> 'state_code' = %s
+select rule_id, rule, spec ->> 'reporting_level' as reporting_level, effective_from,
+       published_vintage
+  from lineage.conformance_rules r
+ where spec ->> 'state_code' = %(state_code)s
    and spec ->> 'reporting_level' = 'lease'
    and (spec -> 'allocation_required')::boolean
-   and effective_from <= %s
-   and (effective_to is null or effective_to > %s)
+   and published_vintage <= %(knowledge_at)s
+   and effective_from <= %(valid_at)s
+   and (effective_to is null or effective_to > %(valid_at)s)
+   and not exists (select 1 from lineage.conformance_rules successor
+        where successor.supersedes_rule_id = r.rule_id
+          and successor.published_vintage <= %(knowledge_at)s
+          and successor.effective_from <= %(valid_at)s
+          and (successor.effective_to is null
+               or successor.effective_to > %(valid_at)s))
  order by effective_from desc
  limit 1
+"""
+
+_LEASE_BASELINE = """
+select min(published_vintage)
+  from lineage.conformance_rules
+ where spec ->> 'state_code' = %s
 """
 
 
@@ -671,6 +750,7 @@ class LeaseReportingRule(TypedDict):
     rule: str
     reporting_level: str
     effective_from: date
+    published_vintage: date
 
 
 def lease_reporting_rule(
@@ -678,6 +758,8 @@ def lease_reporting_rule(
     state_code: str | None,
     *,
     as_of: date | None = None,
+    valid_at: date | None = None,
+    knowledge_at: date | None = None,
 ) -> LeaseReportingRule | None:
     """The rule saying a jurisdiction reports production at the lease, or None.
 
@@ -688,8 +770,21 @@ def lease_reporting_rule(
     """
     if not state_code:
         return None
-    effective_at = as_of or date.today()
+    knowledge_cut = knowledge_at or date.today()
+    with connection.cursor() as cursor:
+        cursor.execute(_LEASE_BASELINE, (state_code,))
+        baseline = cursor.fetchone()[0]
+    if baseline is not None:
+        knowledge_cut = max(knowledge_cut, baseline)
+    effective_at = valid_at or as_of or date.today()
     with connection.cursor(row_factory=dict_row) as cursor:
-        cursor.execute(_LEASE_REPORTING, (state_code, effective_at, effective_at))
+        cursor.execute(
+            _LEASE_REPORTING,
+            {
+                "state_code": state_code,
+                "knowledge_at": knowledge_cut,
+                "valid_at": effective_at,
+            },
+        )
         row = cursor.fetchone()
     return cast(LeaseReportingRule, dict(row)) if row else None

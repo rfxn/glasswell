@@ -142,6 +142,37 @@ def _spatial_derivation(connection: psycopg.Connection, manifest_id: str) -> str
     return context.derivation_id
 
 
+def _well_derivation(
+    connection: psycopg.Connection, manifest_id: str, *, source_id: str, output_rows: int
+) -> str:
+    recorder = PostgresRecorder(connection)
+    with lineage_session(
+        recorder=recorder,
+        environment=FIXTURE_ENV,
+        clock=FixedClock(),
+        correlation_id=f"run_contract_{source_id}_wells",
+    ), derive(
+        "canonical.promote",
+        output=OutputSpec(
+            store="postgres",
+            dataset="canonical.wells",
+            partition={"source_id": source_id},
+        ),
+        params={"source_id": source_id},
+        inputs=[
+            InputRef(
+                kind="manifest",
+                ref_id=manifest_id,
+                role="primary",
+                as_of_vintage=REPORT_VINTAGE,
+            )
+        ],
+    ) as context:
+        context.set_output_hash(hash_payload({"source_id": source_id, "rows": output_rows}))
+        context.set_rows(output_rows)
+    return context.derivation_id
+
+
 def _completion_derivation(connection: psycopg.Connection, manifest_id: str) -> str:
     recorder = PostgresRecorder(connection)
     with lineage_session(
@@ -487,15 +518,21 @@ def seeded(db: psycopg.Connection, raw_zone: Path) -> psycopg.Connection:
         f"the documented derivation example is stale: seeded {promotion}"
     )
     spatial = _spatial_derivation(db, gis_manifest)
+    nd_wells = _well_derivation(
+        db, mpr_manifest, source_id="nd_wells", output_rows=1 + len(OTHER_API10S)
+    )
+    tx_wells = _well_derivation(
+        db, gis_manifest, source_id="tx_gis_wells", output_rows=1
+    )
     completion = _completion_derivation(db, fracfocus_manifest)
 
-    seed_well(db, api10=EXAMPLE_API10, manifest_id=mpr_manifest, derivation_id=promotion)
+    seed_well(db, api10=EXAMPLE_API10, manifest_id=mpr_manifest, derivation_id=nd_wells)
     for index, api10 in enumerate(OTHER_API10S):
         seed_well(
             db,
             api10=api10,
             manifest_id=mpr_manifest,
-            derivation_id=promotion,
+            derivation_id=nd_wells,
             well_name=f"CONTRACT {index + 1}H",
             status_canonical="plugged" if index % 2 else "active",
             operator_name_reported="CONTINENTAL RESOURCES, INC" if index % 2 else "HESS",
@@ -504,7 +541,7 @@ def seeded(db: psycopg.Connection, raw_zone: Path) -> psycopg.Connection:
         db,
         api10=TX_API10,
         manifest_id=gis_manifest,
-        derivation_id=spatial,
+        derivation_id=tx_wells,
         state_code="42",
         county_code_at_permit="003",
         ndic_file_no=None,

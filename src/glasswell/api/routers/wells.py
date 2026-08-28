@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from datetime import date
 from decimal import Decimal
 from typing import Annotated, Any
@@ -11,7 +10,7 @@ from fastapi import APIRouter, Path, Query, Request
 from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 
-from glasswell.api.deps import AsOf, Connection, Cursor, ExplainEffect, WellsLimit, rows
+from glasswell.api.deps import AsOf, Connection, Cursor, ExplainEffect, Principal, WellsLimit, rows
 from glasswell.api.errors import ProblemError, problem_responses
 from glasswell.api.examples import (
     EXAMPLE_API10,
@@ -30,17 +29,21 @@ from glasswell.api.pagination import (
     page,
     query_fingerprint,
 )
+from glasswell.api.provenance import register_response_figures
+from glasswell.api.rate_limit import consume_rate_limit
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, inline_for, iso
 from glasswell.lengths import STORAGE_EPSG, resolve_length_method
 from glasswell.lineage.conformance import LeaseReportingRule, lease_reporting_rule
 from glasswell.lineage.envelope import Figure, collect_handles, distinct_handles, figure
 from glasswell.lineage.explain import MAX_HANDLES
+from glasswell.lineage.selector_registry import identity_selector_term
 from glasswell.marts.tiles import TILE_BUFFER, TILE_EXTENT, TILE_MAX_ZOOM, WEB_MERCATOR
 from glasswell.units import metres_to_feet
 
 router = APIRouter(tags=["wells"])
 
 BBOX_DEGREE_CAP = 4.0
+STATUS_SUMMARY_REQUESTS_PER_MINUTE = 30
 API10_PATTERN = r"^\d{10}$"
 BBOX_PARTS = 4
 LON_LIMIT = 180.0
@@ -57,10 +60,6 @@ STATUS_VOCABULARY_RULES = {"33": "cr_nd_status_vocab_1", "42": "cr_tx_status_voc
 # Same pinning rationale as above: geometry_provenance is geom_type served verbatim, and the
 # row that says so is held to the seeded registry by test_well_status_summary.py.
 PROVENANCE_RULE = "cr_nd_geometry_provenance_1"
-
-# SB-07 §2.1 fixes the selector charset. A status outside it would raise at serve time, which
-# is a 500 on data the conformance rules are supposed to have already refused.
-_NOT_SELECTOR_SAFE = re.compile(r"[^A-Za-z0-9_.:+-]")
 
 WELL_LABELS = {
     "/api10": "gt_api_10_api_12_api_14",
@@ -166,6 +165,7 @@ with in_view as (
 select basin, state_code, status_canonical, well_type_reported,
        derivation_id is null as no_well_row,
        count(*) as wells, max(derivation_id) as derivation_id,
+       array_remove(array_agg(distinct derivation_id), null) as derivation_ids,
        max(effective_from) as effective_from
   from latest
  group by 1, 2, 3, 4, 5
@@ -176,7 +176,8 @@ select basin, state_code, status_canonical, well_type_reported,
 # absence from the status classes is already the geometry_without_a_well_row warning).
 PROVENANCE_SUMMARY_SQL = """
 select geom_type as geometry_provenance, count(distinct api10) as wells,
-       max(derivation_id) as derivation_id
+       max(derivation_id) as derivation_id,
+       array_remove(array_agg(distinct derivation_id), null) as derivation_ids
   from canonical.well_spatial
  where st_intersects(geom,
                      st_makeenvelope(%(minx)s, %(miny)s, %(maxx)s, %(maxy)s, 4326))
@@ -188,7 +189,13 @@ select storage_epsg, effective_from
  from lineage.crs_registry
  where basin = %(basin)s
    and effective_from <= coalesce(%(as_of)s::date, current_date)
- order by effective_from desc
+   and published_vintage <= greatest(
+       coalesce(%(as_of)s::date, current_date),
+       coalesce((select min(baseline.published_vintage)
+                   from lineage.crs_registry baseline
+                  where baseline.basin = %(basin)s),
+                coalesce(%(as_of)s::date, current_date)))
+ order by effective_from desc, published_vintage desc
  limit 1
 """
 
@@ -806,8 +813,8 @@ class WellStatusSummary(BaseModel):
     )
 
 
-def _token(value: str | None) -> str:
-    return _NOT_SELECTOR_SAFE.sub("_", value) if value else "unassigned"
+def _selector_term(name: str, value: str | None) -> str:
+    return f"{name}_null=1" if value is None else identity_selector_term(name, value)
 
 
 def _refuse_bbox(code: str, detail: str, raw: str) -> ProblemError:
@@ -884,7 +891,8 @@ def _classes(found: list[dict[str, Any]], *, box: str, scope: str = "") -> list[
         {
             "status": status,
             "wells": _count(
-                group, selector=f"col=wells&status={_token(status)}{scope}&bbox={box}"
+                group,
+                selector=f"col=wells&{_selector_term('status', status)}{scope}&bbox={box}",
             ),
         }
         for status, group in ordered
@@ -901,7 +909,7 @@ def _provenance_classes(found: list[dict[str, Any]], *, box: str) -> list[dict[s
                 unit=COUNT_UNIT,
                 derivation=row["derivation_id"],
                 selector=(
-                    f"col=wells&geometry_provenance={_token(row['geometry_provenance'])}"
+                    f"col=wells&{_selector_term('geometry_provenance', row['geometry_provenance'])}"
                     f"&bbox={box}"
                 ),
             ),
@@ -921,7 +929,9 @@ def _well_types(found: list[dict[str, Any]], *, box: str) -> list[dict[str, Any]
     return [
         {
             "well_type_reported": code,
-            "wells": _count(group, selector=f"col=wells&well_type={_token(code)}&bbox={box}"),
+            "wells": _count(
+                group, selector=f"col=wells&{_selector_term('well_type', code)}&bbox={box}"
+            ),
         }
         for code, group in ordered
     ]
@@ -935,7 +945,7 @@ def _basins(found: list[dict[str, Any]], *, box: str) -> list[dict[str, Any]]:
     for (basin, state_code), group in sorted(
         grouped.items(), key=lambda item: (item[0][0] or "", item[0][1] or "")
     ):
-        scope = f"&basin={_token(basin)}&state={_token(state_code)}"
+        scope = f"&{_selector_term('basin', basin)}&{_selector_term('state', state_code)}"
         summaries.append(
             {
                 "basin": basin,
@@ -1012,8 +1022,8 @@ def _summary_warnings(
                 "code": "aggregate_spans_derivations",
                 "detail": (
                     "More than one derivation promoted the wells in this box. Every count is"
-                    " over rows the box selected, and its handle names one of the derivations"
-                    " those rows came from; links.explain resolves what each handle names."
+                    " over rows the box selected, and its response derivation cites every"
+                    " contributing promotion; links.explain resolves the complete input set."
                 ),
                 "pointer": "/wells",
             }
@@ -1054,7 +1064,9 @@ def _summary_warnings(
         " Every count is a figure with a derivation handle over the rows it counted, so a"
         " legend number resolves at /v1/explain to the government file the statuses came from."
         " The box a handle names is the box the query ran over, at full precision — two"
-        " viewports a metre apart are two handles. Where a box produces more counts than"
+        " viewports a metre apart are two handles. Because each distinct box persists exact"
+        " response evidence, this operation is capped"
+        " at 30 requests per principal per UTC minute. Where a box produces more counts than"
         " /v1/explain accepts handles in one call, `links.explain` carries as many as it can"
         " and a warning says exactly how many it left out; each count still resolves alone."
         " A class no well in the box carries is absent rather than zero. Wells whose source"
@@ -1117,11 +1129,12 @@ def _summary_warnings(
             },
         ),
     },
-    responses=problem_responses("validation_failed", "service_degraded"),
+    responses=problem_responses("validation_failed", "rate_limited", "service_degraded"),
 )
 def get_well_status_summary(
     request: Request,
     connection: Connection,
+    principal: Principal,
     bbox: Annotated[
         str, Query(description="minx,miny,maxx,maxy in WGS84. Required; there is no cap.")
     ],
@@ -1129,6 +1142,12 @@ def get_well_status_summary(
     as_of: AsOf = None,
 ) -> JSONResponse:
     envelope = _status_bbox(bbox)
+    consume_rate_limit(
+        connection,
+        principal,
+        operation="get_well_status_summary",
+        limit=STATUS_SUMMARY_REQUESTS_PER_MINUTE,
+    )
     found = rows(
         connection,
         STATUS_SUMMARY_SQL,
@@ -1152,6 +1171,7 @@ def get_well_status_summary(
         }
     )
     rules = sorted({rule for row in basins if (rule := row["status_vocabulary_rule"])})
+    response_rules = sorted({*rules, *([PROVENANCE_RULE] if classed else [])})
     data = {
         "bbox": box,
         "wells": _count(counted, selector=f"col=wells&bbox={selector_box}"),
@@ -1165,6 +1185,21 @@ def get_well_status_summary(
         "well_types": _well_types(counted, box=selector_box),
         "vocabulary_rules": rules,
     }
+    data = register_response_figures(
+        connection,
+        data,
+        dataset="api.well_status_summary",
+        operation_id="get_well_status_summary",
+        locator=request.url.path,
+        partition={"bbox": selector_box, "as_of": iso(as_of) or "latest"},
+        input_derivations=[
+            derivation_id
+            for row in [*counted, *classed]
+            for derivation_id in row["derivation_ids"]
+        ],
+        correlation_id=request.state.request_id,
+        rule_ids=response_rules,
+    )
     links = {rule: f"/v1/conformance/{rule}" for rule in rules}
     if classed:
         links[PROVENANCE_RULE] = f"/v1/conformance/{PROVENANCE_RULE}"
@@ -1243,9 +1278,19 @@ def get_well(
     )
     storage_epsg = crs[0]["storage_epsg"] if crs else STORAGE_EPSG
     # The basin's own rule, so a TX length's handle resolves to a rule about TX geometry.
-    method = resolve_length_method(connection, basin=row["basin"], as_of=as_of)
+    method = resolve_length_method(
+        connection,
+        basin=row["basin"],
+        valid_at=as_of,
+        knowledge_at=as_of,
+    )
     warnings: list[dict[str, Any]] = []
-    lease_reported = lease_reporting_rule(connection, row["state_code"], as_of=as_of)
+    lease_reported = lease_reporting_rule(
+        connection,
+        row["state_code"],
+        valid_at=as_of,
+        knowledge_at=as_of,
+    )
     if lease_reported:
         warnings.append(pending_allocation(lease_reported))
     geometry = rows(
@@ -1258,6 +1303,14 @@ def get_well(
         connection, api10, as_of=as_of
     )
     warnings.extend(held_back_warnings)
+    resolved_vintages = [row["available_on"], method.effective_from]
+    resolved_vintages.extend(item["available_on"] for item in geometry)
+    resolved_vintages.extend(held_back_vintages)
+    if crs:
+        resolved_vintages.append(crs[0]["effective_from"])
+    if lease_reported:
+        resolved_vintages.append(lease_reported["effective_from"])
+    resolved_as_of = max(resolved_vintages)
     laterals = [item for item in geometry if item["geom_type"] == "lateral"]
     untiled = [item["geom_key"] for item in laterals if not item["tiled"]]
     if untiled:
@@ -1280,7 +1333,10 @@ def get_well(
             warnings.append(
                 {
                     "code": "aggregate_spans_derivations",
-                    "detail": f"{len(derivations)} derivations contributed; the handle names one",
+                    "detail": (
+                        f"{len(derivations)} derivations contributed; the response derivation"
+                        " cites every contributing derivation"
+                    ),
                     "pointer": "/lateral_length_ft",
                 }
             )
@@ -1290,6 +1346,17 @@ def get_well(
             unit="ft",
             derivation=sorted(derivations)[-1],
             selector=f"api10={api10}&col=lateral_length_ft",
+        )
+        length_figure = register_response_figures(
+            connection,
+            length_figure,
+            dataset="api.well_detail",
+            operation_id="get_well",
+            locator=request.url.path,
+            partition={"api10": api10, "as_of": resolved_as_of.isoformat()},
+            input_derivations=sorted(derivations),
+            correlation_id=request.state.request_id,
+            rule_ids=[method.rule_id],
         )
 
     point = next((item for item in geometry if item["lon"] is not None), None)
@@ -1307,7 +1374,10 @@ def get_well(
                 str(Decimal(str(row["total_depth_ft"])).quantize(Decimal("0.1"))),
                 unit="ft",
                 derivation=row["derivation_id"],
-                selector=f"api10={api10}&col=total_depth_ft",
+                selector=(
+                    f"api10={api10}&effective_from={row['effective_from']:%Y-%m-%d}"
+                    "&col=total_depth_ft"
+                ),
             )
             if row["total_depth_ft"] is not None
             else None
@@ -1326,17 +1396,10 @@ def get_well(
         ],
         "surface_point": {"lon": point["lon"], "lat": point["lat"]} if point else None,
     }
-    resolved_vintages = [row["available_on"], method.effective_from]
-    resolved_vintages.extend(item["available_on"] for item in geometry)
-    resolved_vintages.extend(held_back_vintages)
-    if crs:
-        resolved_vintages.append(crs[0]["effective_from"])
-    if lease_reported:
-        resolved_vintages.append(lease_reported["effective_from"])
     return enveloped(
         request,
         data,
-        as_of=max(resolved_vintages),
+        as_of=resolved_as_of,
         as_of_requested=iso(as_of) or "latest",
         labels=WELL_LABELS,
         warnings=warnings,

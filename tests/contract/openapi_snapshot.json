@@ -594,7 +594,7 @@
                 "type": "null"
               }
             ],
-            "description": "Last day it applied, if superseded.",
+            "description": "Exclusive valid-time upper bound, if any.",
             "title": "Effective To"
           },
           "evidence_sha256": {
@@ -620,6 +620,12 @@
             ],
             "description": "Where the upstream evidence lives.",
             "title": "Evidence Url"
+          },
+          "published_vintage": {
+            "description": "First repository vintage in which this immutable rule was published.",
+            "format": "date",
+            "title": "Published Vintage",
+            "type": "string"
           },
           "rationale": {
             "description": "Why this decision was taken, in the author's words.",
@@ -692,6 +698,7 @@
           "rationale",
           "evidence_url",
           "evidence_sha256",
+          "published_vintage",
           "effective_from",
           "effective_to",
           "code_ref"
@@ -753,7 +760,7 @@
                 "type": "null"
               }
             ],
-            "description": "Last day it applied, if superseded.",
+            "description": "Exclusive valid-time upper bound, if any.",
             "title": "Effective To"
           },
           "evidence_sha256": {
@@ -779,6 +786,12 @@
             ],
             "description": "Where the upstream evidence lives.",
             "title": "Evidence Url"
+          },
+          "published_vintage": {
+            "description": "First repository vintage in which this immutable rule was published.",
+            "format": "date",
+            "title": "Published Vintage",
+            "type": "string"
           },
           "rationale": {
             "description": "Why this decision was taken, in the author's words.",
@@ -851,6 +864,7 @@
           "rationale",
           "evidence_url",
           "evidence_sha256",
+          "published_vintage",
           "effective_from",
           "effective_to",
           "code_ref"
@@ -4771,6 +4785,19 @@
       },
       "SourceHealth": {
         "properties": {
+          "cadence": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source-specific expected cadence from the single poll-policy registry.",
+            "title": "Cadence"
+          },
           "declared_vintage": {
             "anyOf": [
               {
@@ -4785,6 +4812,26 @@
             "title": "Declared Vintage",
             "x-glasswell-glossary": "gt_knowledge_time"
           },
+          "freshness_reason": {
+            "description": "Bounded reason for the state, including sanitized failure limits where needed.",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Freshness Reason",
+            "type": "string"
+          },
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the newest independently committed source poll began.",
+            "title": "Last Attempt At"
+          },
           "last_manifest_id": {
             "anyOf": [
               {
@@ -4797,6 +4844,25 @@
             "description": "Newest manifest registered.",
             "title": "Last Manifest Id"
           },
+          "last_outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "attempted",
+                  "new",
+                  "unchanged",
+                  "failed",
+                  "interrupted"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "attempted, new, unchanged, failed, interrupted, or null before any poll.",
+            "title": "Last Outcome"
+          },
           "manifest_count": {
             "description": "Manifests registered for this source.",
             "title": "Manifest Count",
@@ -4807,6 +4873,19 @@
             "description": "Human-readable source name.",
             "title": "Name",
             "type": "string"
+          },
+          "next_expected_poll": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cadence-derived next expected poll; null for event-driven or unknown cadence.",
+            "title": "Next Expected Poll"
           },
           "retrieval_vintage": {
             "anyOf": [
@@ -4830,6 +4909,11 @@
           },
           "state": {
             "description": "current, stale or pending.",
+            "enum": [
+              "current",
+              "stale",
+              "pending"
+            ],
             "title": "State",
             "type": "string"
           }
@@ -4841,7 +4925,11 @@
           "retrieval_vintage",
           "declared_vintage",
           "last_manifest_id",
-          "manifest_count"
+          "manifest_count",
+          "last_attempt_at",
+          "last_outcome",
+          "next_expected_poll",
+          "freshness_reason"
         ],
         "title": "SourceHealth",
         "type": "object"
@@ -4910,7 +4998,7 @@
             "type": "string"
           },
           "sources": {
-            "description": "Registered-artifact age for every source; not last-checked time.",
+            "description": "Durable poll outcomes, expected cadence, and artifact age for every source.",
             "items": {
               "$ref": "#/components/schemas/SourceHealth"
             },
@@ -6088,7 +6176,7 @@
     },
     "/v1/conformance": {
       "get": {
-        "description": "Every mapping, unit, datum and validity decision the pipeline applies, each with the rationale for taking it and a URL to the upstream evidence. Newest effective date first. Rules are append-only: a correction is a new rule that supersedes the old one, so a past decision stays readable.",
+        "description": "Every mapping, unit, datum and validity decision the pipeline applies, each with the rationale for taking it and a URL to the upstream evidence. `as_of` is the knowledge clock; `valid_at` is the independent date on which the rule applies. When `valid_at` is supplied, eligibility is resolved on both clocks before supersession. Omit it to read every rule version known at `as_of`; rules are append-only, so a past decision remains readable.",
         "operationId": "list_conformance_rules",
         "parameters": [
           {
@@ -6214,7 +6302,46 @@
             }
           },
           {
-            "description": "Rules in force on this date.",
+            "description": "Rules known by this publication date.",
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rules known by this publication date.",
+              "title": "As Of"
+            }
+          },
+          {
+            "description": "Rules valid for source facts on this date.",
+            "in": "query",
+            "name": "valid_at",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rules valid for source facts on this date.",
+              "title": "Valid At"
+            }
+          },
+          {
+            "deprecated": true,
+            "description": "Deprecated alias for valid_at.",
             "in": "query",
             "name": "effective_at",
             "required": false,
@@ -6228,7 +6355,8 @@
                   "type": "null"
                 }
               ],
-              "description": "Rules in force on this date.",
+              "deprecated": true,
+              "description": "Deprecated alias for valid_at.",
               "title": "Effective At"
             }
           }
@@ -6336,8 +6464,8 @@
               "/rule_kind",
               "/rule_family",
               "/stage",
-              "/effective_from",
-              "/rationale"
+              "/published_vintage",
+              "/effective_from"
             ],
             "hidden": [],
             "hidden_reason": {},
@@ -6350,7 +6478,8 @@
             "family",
             "stage",
             "field",
-            "effective_at"
+            "as_of",
+            "valid_at"
           ],
           "group": "kitchen",
           "id": "conformance",
@@ -6368,12 +6497,11 @@
           }
         },
         "x-glasswell-semantics": {
+          "as_of": {
+            "so": "Knowledge time: rules published after this date do not exist for the request, even when their effective date was backdated. Omit it for the current known registry; cursors pin the resolved date."
+          },
           "cursor": {
             "so": "Pins the page to a newest-effective-first ordering and to the filters that opened it. Rules are append-only, so a cursor here holds in a way a quarantine cursor does not \u2014 what was on page two is still on page two."
-          },
-          "effective_at": {
-            "so": "Asks which rules were in force on a date, not which rules exist. It is how a figure published six months ago is explained: read the policy as of that day rather than as of today.",
-            "x-glasswell-glossary": "gt_effective_date"
           },
           "family": {
             "so": "Groups a rule with the versions it superseded. The family is the history of one decision; a rule_id is a single version of it, so only the family shows you what changed and when.",
@@ -6396,13 +6524,17 @@
           "stage": {
             "so": "Narrows to one stage of the pipeline, which decides when a rule runs and therefore which quarantine reasons it can produce.",
             "x-glasswell-glossary": "gt_pipeline_stage"
+          },
+          "valid_at": {
+            "so": "Valid time: asks which rules apply to source facts on this date. It is independent of as_of, so a rule learned later cannot leak into a retrospective decision merely because it was backdated. Omit it to return the known immutable version history without resolving supersession.",
+            "x-glasswell-glossary": "gt_effective_date"
           }
         }
       }
     },
     "/v1/conformance/{rule_id}": {
       "get": {
-        "description": "The rule, its executable spec, why it exists and the evidence behind it. Ask for `include=applied_by` to get the reverse index: which derivations cited this rule and how many rows each applied it to. Rules are immutable once written.",
+        "description": "The rule, its executable spec, why it exists and the evidence behind it at the requested knowledge cut. Supply `valid_at` to require valid-time eligibility and resolve supersession; omit it to retrieve any known immutable version. Ask for `include=applied_by` to get the reverse index: which eligible derivations cited this rule and how many rows each applied it to. Rules are immutable once written.",
         "operationId": "get_conformance_rule",
         "parameters": [
           {
@@ -6432,6 +6564,65 @@
               ],
               "description": "Set to applied_by for the reverse index.",
               "title": "Include"
+            }
+          },
+          {
+            "description": "Rule and derivations known by this publication date.",
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rule and derivations known by this publication date.",
+              "title": "As Of"
+            }
+          },
+          {
+            "description": "Require the rule to be valid on this date.",
+            "in": "query",
+            "name": "valid_at",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Require the rule to be valid on this date.",
+              "title": "Valid At"
+            }
+          },
+          {
+            "deprecated": true,
+            "description": "Deprecated alias for valid_at.",
+            "in": "query",
+            "name": "effective_at",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "deprecated": true,
+              "description": "Deprecated alias for valid_at.",
+              "title": "Effective At"
             }
           }
         ],
@@ -7855,7 +8046,7 @@
     },
     "/v1/health": {
       "get": {
-        "description": "Per-source retrieval and declared vintages, the state of each store, and an overall `ok`/`degraded`. A source whose newest manifest has gone stale degrades the service. A source that is registered but has never been fetched is `pending` and is named in `pending_sources`: registration says the pipeline knows about a source, not that a pull has happened, and reporting a planned ingest as a defect would leave the endpoint unable to say when there is a real one.",
+        "description": "Per-source durable poll outcomes, artifact and declared vintages, expected cadence, store state, and an overall `ok`/`degraded`. A current unchanged poll keeps an older artifact current; a failed or interrupted poll cannot be hidden by that artifact. Sources with no completed evidence are explicit pending or stale states rather than inferred successes.",
         "operationId": "get_health",
         "responses": {
           "200": {
@@ -7909,10 +8100,11 @@
           "columns": {
             "default": [
               "/source_id",
-              "/name",
               "/state",
-              "/retrieval_vintage",
-              "/declared_vintage",
+              "/last_attempt_at",
+              "/last_outcome",
+              "/next_expected_poll",
+              "/cadence",
               "/manifest_count"
             ],
             "hidden": [],
@@ -9609,7 +9801,7 @@
     },
     "/v1/status": {
       "get": {
-        "description": "A live API/PostgreSQL signal joined to a sanitized scheduled snapshot of the tile service, HTTPS edge, storage, jobs and exact dataset inventory. Stale snapshots never preserve a green infrastructure state. Source freshness is explicitly the age of the newest registered artifact: unchanged and failed fetch attempts do not have a durable independent ledger yet and are disclosed rather than inferred. This is current operational telemetry, not a historical `as_of` surface.",
+        "description": "A live API/PostgreSQL signal joined to a sanitized scheduled snapshot of the tile service, HTTPS edge, storage, jobs and exact dataset inventory. Stale snapshots never preserve a green infrastructure state. Source freshness combines independently committed poll attempts with artifact age and source-specific cadence; unchanged checks can preserve freshness, while failed or interrupted checks cannot. This is current operational telemetry, not a historical `as_of` surface.",
         "operationId": "get_status",
         "responses": {
           "200": {
@@ -10521,7 +10713,7 @@
     },
     "/v1/wells/status-summary": {
       "get": {
-        "description": "How many wells of each canonical status have geometry inside a bounding box, as of a knowledge-time cut. This is the count a map legend states, asked of the data rather than of what a renderer drew: a tile pyramid thins points as it zooms out and a symbology withdraws its low-salience classes, so a count taken from drawn features falls exactly as the viewed area grows. This one does not move with zoom, with styling or with which tiles have arrived. The population is wells whose recorded geometry \u2014 surface, bottomhole or lateral \u2014 intersects the box, which is the same population `/v1/wells?bbox=` pages, and a well with no geometry at all is in no viewport and in no count here. The box is closed: a well exactly on the edge is inside it. There is no degree cap, because the answer is bounded by the status vocabulary rather than by the population; `links.wells` is published only where the box is inside the collection's own four-degree cap. Every count is a figure with a derivation handle over the rows it counted, so a legend number resolves at /v1/explain to the government file the statuses came from. The box a handle names is the box the query ran over, at full precision \u2014 two viewports a metre apart are two handles. Where a box produces more counts than /v1/explain accepts handles in one call, `links.explain` carries as many as it can and a warning says exactly how many it left out; each count still resolves alone. A class no well in the box carries is absent rather than zero. Wells whose source reported no status are their own bucket, `unmapped_wells`, and are never added to a class \u2014 in the 2026-08-20 Texas load 65,685 wells are in it, which is more than any class it could have been folded into. Counts are split per basin with the vocabulary rule that mapped that jurisdiction's codes (cr_nd_status_vocab_1 in North Dakota, cr_tx_status_vocab_1 in Texas), because a status class means what its rule says it means. The same box is classed two more ways: per provenance of the recorded geometry \u2014 canonical geom_type verbatim, under the classing rule cr_nd_geometry_provenance_1 \u2014 and per reported well type code, verbatim. Both are figures with handles, so a coverage statement \u2014 how many wells are traced, how many filed under a disposal code \u2014 derives from this endpoint rather than from a pinned constant. Provenance classes overlap where a well holds several geometry kinds, and they are counted over the geometry itself, which is not effective-dated, so they do not move with as_of. It does not return the wells themselves \u2014 see /v1/wells.",
+        "description": "How many wells of each canonical status have geometry inside a bounding box, as of a knowledge-time cut. This is the count a map legend states, asked of the data rather than of what a renderer drew: a tile pyramid thins points as it zooms out and a symbology withdraws its low-salience classes, so a count taken from drawn features falls exactly as the viewed area grows. This one does not move with zoom, with styling or with which tiles have arrived. The population is wells whose recorded geometry \u2014 surface, bottomhole or lateral \u2014 intersects the box, which is the same population `/v1/wells?bbox=` pages, and a well with no geometry at all is in no viewport and in no count here. The box is closed: a well exactly on the edge is inside it. There is no degree cap, because the answer is bounded by the status vocabulary rather than by the population; `links.wells` is published only where the box is inside the collection's own four-degree cap. Every count is a figure with a derivation handle over the rows it counted, so a legend number resolves at /v1/explain to the government file the statuses came from. The box a handle names is the box the query ran over, at full precision \u2014 two viewports a metre apart are two handles. Because each distinct box persists exact response evidence, this operation is capped at 30 requests per principal per UTC minute. Where a box produces more counts than /v1/explain accepts handles in one call, `links.explain` carries as many as it can and a warning says exactly how many it left out; each count still resolves alone. A class no well in the box carries is absent rather than zero. Wells whose source reported no status are their own bucket, `unmapped_wells`, and are never added to a class \u2014 in the 2026-08-20 Texas load 65,685 wells are in it, which is more than any class it could have been folded into. Counts are split per basin with the vocabulary rule that mapped that jurisdiction's codes (cr_nd_status_vocab_1 in North Dakota, cr_tx_status_vocab_1 in Texas), because a status class means what its rule says it means. The same box is classed two more ways: per provenance of the recorded geometry \u2014 canonical geom_type verbatim, under the classing rule cr_nd_geometry_provenance_1 \u2014 and per reported well type code, verbatim. Both are figures with handles, so a coverage statement \u2014 how many wells are traced, how many filed under a disposal code \u2014 derives from this endpoint rather than from a pinned constant. Provenance classes overlap where a well holds several geometry kinds, and they are counted over the geometry itself, which is not effective-dated, so they do not move with as_of. It does not return the wells themselves \u2014 see /v1/wells.",
         "operationId": "get_well_status_summary",
         "parameters": [
           {
@@ -10616,6 +10808,31 @@
               }
             },
             "description": "Request validation failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "rate_limited": {
+                    "summary": "Rate limited",
+                    "value": {
+                      "detail": "The token bucket for this operation is exhausted.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 429,
+                      "title": "Rate limited",
+                      "type": "/v1/errors/rate_limited"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Rate limited"
           },
           "503": {
             "content": {

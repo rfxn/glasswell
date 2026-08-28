@@ -34,6 +34,7 @@ from glasswell.lineage import (
     load_rules,
     quarantine,
 )
+from glasswell.lineage.fetch_attempts import durable_fetch_attempts
 from glasswell.lineage.serialization import hash_payload
 
 SERVICE_URL = (
@@ -649,7 +650,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # Townships first: a section whose plssid has no township row is an orphan_fk.
     layers = list(LAYERS) if arguments.layer == "all" else [arguments.layer]
-    with psycopg.connect(arguments.dsn) as connection:
+    with durable_fetch_attempts(arguments.dsn), psycopg.connect(arguments.dsn) as connection:
         environment = resolve_environment(
             connection, env_id=arguments.env_id, code_version=arguments.code_version
         )

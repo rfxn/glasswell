@@ -9,11 +9,13 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
-from psycopg import IsolationLevel
+from psycopg import Connection, IsolationLevel
 from psycopg.pq import TransactionStatus
 
+import glasswell.status.collector as status_collector
 from glasswell.status.collector import (
     _configure_inventory_connection,
     _job,
@@ -21,6 +23,7 @@ from glasswell.status.collector import (
     _system_service,
     _systemd_properties,
 )
+from glasswell.status.models import JobStatus, PlatformStatus, StatusCheck
 
 
 def _restore_payload(
@@ -222,6 +225,40 @@ def test_inventory_collection_refuses_an_existing_incoherent_transaction() -> No
 
     with pytest.raises(RuntimeError, match="idle database connection"):
         _configure_inventory_connection(connection)  # type: ignore[arg-type]
+
+
+def test_collector_no_longer_discloses_attempt_or_cadence_as_uninstrumented(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def execute(self, *_args):
+            return None
+
+    connection = SimpleNamespace(
+        info=SimpleNamespace(transaction_status=TransactionStatus.IDLE),
+        isolation_level=None,
+        read_only=None,
+        cursor=lambda: Cursor(),
+    )
+    check = StatusCheck(id="test", label="Test", state="ok", detail="Observed.")
+    job = JobStatus(id="test", label="Test", state="ok", detail="Observed.")
+    monkeypatch.setattr(status_collector, "_inventory", lambda *_args: ([], PlatformStatus()))
+    monkeypatch.setattr(status_collector, "_system_service", lambda *_args: check)
+    monkeypatch.setattr(status_collector, "_martin_check", lambda *_args: check)
+    monkeypatch.setattr(status_collector, "_edge_check", lambda *_args: check)
+    monkeypatch.setattr(status_collector, "_storage_check", lambda *_args: check)
+    monkeypatch.setattr(status_collector, "_job", lambda *_args: job)
+    monkeypatch.setattr(status_collector, "_restore_drill_job", lambda *_args: job)
+
+    snapshot = status_collector.collect(cast(Connection, connection))
+
+    assert [item.id for item in snapshot.disclosures] == ["remote_backup_copy"]
 
 
 def test_restore_job_uses_current_durable_proof_not_only_systemd_success(tmp_path: Path) -> None:

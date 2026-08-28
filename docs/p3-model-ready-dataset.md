@@ -89,3 +89,16 @@ All eight splits have no plausibility flags. Their largest pad component is 30 w
 (`pad_group_max_share=0.001905`, below the 0.02 rejection threshold), and the group rule
 reassigns 22–60 wells depending on origin. A second full build reproduced every labels,
 curves, coverage, rejection, and split byte hash above.
+
+## Accepted context-repair replay
+
+The 2026-08-28 publication keeps `mdv1.4` and split set `sset_c7bbb9a6932db76b`
+semantically unchanged while consuming the repaired `fv2.0` population. It writes 105,378
+labels (`94c9829b3fa7441da0a885b0bba00cf3755c24e6832db8df4744c25f3c9bab77`),
+1,172,586 curve rows (`a90cb98484dbd83c600558755f2055f9cd5a7f5b3eaa1e079b339a1ace69e22a`),
+2,943 rejection rows (`16bb1dbebfd798205e5a78789b76518e78c109662e9c54251fd0e572ed22c989`),
+and coverage document
+`60bff930fd185aab2e76716fee054a47200307c9513032aaed3874fdb46bc845`.
+All four artifacts and all eight pre-existing split files were built twice and independently
+rehash to receipt `p3pub_8b434525d8c621762e31b06ca660bfcd`; no split assignment or
+feature-version semantic was changed to clear the control gate.

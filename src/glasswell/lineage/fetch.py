@@ -23,6 +23,7 @@ from psycopg.rows import dict_row
 
 from glasswell.lineage.audit import emit
 from glasswell.lineage.capture import current_session, derive
+from glasswell.lineage.fetch_attempts import sanitized_failure_detail, source_poll
 from glasswell.lineage.ftp import FTP, download_ftp, remote_path_from_url
 from glasswell.lineage.manifests import register_manifest
 from glasswell.lineage.models import AcquisitionMethod, ManifestRecord, OutputSpec
@@ -223,6 +224,48 @@ def fetch_raw(
     decompressed_inventory: Callable[[Path], Sequence[Mapping[str, Any]]] | None = None,
 ) -> FetchResult:
     """Fetch an artifact idempotently by content hash; identical bytes re-register as a check."""
+    correlation_id = current_session().correlation_id
+    with source_poll(source_id, source_key, correlation_id=correlation_id) as attempt:
+        result = _fetch_raw(
+            connection,
+            source_id,
+            source_key,
+            url=url,
+            acquisition_method=acquisition_method,
+            raw_root=raw_root,
+            client=client,
+            ftp=ftp,
+            rules=rules,
+            media_type=media_type,
+            license_note=license_note,
+            redistributable=redistributable,
+            extra_acquisition_params=extra_acquisition_params,
+            decompressed_inventory=decompressed_inventory,
+        )
+        attempt.succeeded(
+            created=result.created,
+            manifest_id=result.manifest.manifest_id,
+        )
+        return result
+
+
+def _fetch_raw(
+    connection: psycopg.Connection,
+    source_id: str,
+    source_key: str,
+    *,
+    url: str,
+    acquisition_method: AcquisitionMethod = "https_get",
+    raw_root: Path | str | None = None,
+    client: httpx.Client | None = None,
+    ftp: FTP | None = None,
+    rules: Sequence[str] = (),
+    media_type: str | None = None,
+    license_note: str | None = None,
+    redistributable: bool = False,
+    extra_acquisition_params: Mapping[str, Any] | None = None,
+    decompressed_inventory: Callable[[Path], Sequence[Mapping[str, Any]]] | None = None,
+) -> FetchResult:
     root = resolve_raw_root(raw_root)
     staging = root / ".incoming"
     staging.mkdir(parents=True, exist_ok=True)
@@ -252,10 +295,11 @@ def fetch_raw(
                 subject_id=f"{source_id}/{source_key}",
                 payload={
                     "url": url,
+                    "acquisition_method": acquisition_method,
                     # A transport that names its own failure mode says so; everything else
                     # keeps the class name this ledger has recorded since P1.
                     "reason": getattr(error, "glasswell_reason", type(error).__name__),
-                    "detail": str(error),
+                    "detail": sanitized_failure_detail(error),
                 },
             )
             raise

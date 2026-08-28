@@ -23,6 +23,7 @@ restricted `authorized_keys` `from=` clause and every probe in this repo use `.1
 | `caddy.service` | `caddy` | TLS front door: `https://glasswell.lab.rpx.sh` → `unix//run/glasswell/api.sock`, certificate from Let's Encrypt over Cloudflare DNS-01. Config `caddy/Caddyfile`, binary and token are host state — see `caddy/README.md` |
 | `glasswell-api.service` | `glasswell` | `uvicorn glasswell.api:app --uds /run/glasswell/api.sock --workers 2 --proxy-headers` — serves `/v1`, the `/v1/tiles` proxy, and the built frontend at `/`, behind Caddy. The socket, not a port: see "Why the API has no port" below |
 | `glasswell-status.service` + `.timer` | `glasswell` | Builds `/var/lib/glasswell/status.json` shortly after boot and every 15 minutes for the keyed `/v1/status` surface. The timer is always enabled by `install.sh`; status visibility is a serving prerequisite, not an optional pipeline schedule |
+| `glasswell-lineage-retention.service` + `.timer` | `glasswell` | Nightly removal of successful, unreferenced `ephemeral` derivations older than 90 days. Failed, permanent, recent, and referenced derivations remain. The timer is always enabled and is shown on Status |
 | `glasswell-ingest.service` + `.timer` | `glasswell` | Monthly ND pull: GIS layers, one production month, tile marts. Installed **disabled**; `install.sh --enable-ingest` arms it |
 | `glasswell-c115b.service` + `.timer` | `glasswell` | Monthly NM C-115B natural-gas-waste capture, staging terminus. The 12th, `Persistent=true`: `reporting_period` is a rolling ~13-month window and a month that rolls out is unrecoverable from the endpoint. Installed **disabled**; `install.sh --enable-c115b` arms it |
 | `glasswell-alert@.service` | `glasswell` | `OnFailure=` target: logs to the journal and appends to `/var/lib/glasswell/health-events` |
@@ -181,6 +182,8 @@ c = psycopg.connect("postgresql:///glasswell?host=/var/run/postgresql")
 print(t.install_tile_functions(c)); c.commit()'
 systemctl restart glasswell-api && systemctl restart martin
 systemctl start glasswell-status.timer     # migrations are complete; arm the schedule now
+systemctl start glasswell-lineage-retention.timer
+systemctl start glasswell-lineage-retention.service  # prove this release can sweep safely
 systemctl start glasswell-status.service   # block until this release's snapshot is written
 ./verify.sh
 
@@ -258,16 +261,24 @@ after Caddy should have renewed.
 ./install.sh --enable-backup     # arm nightly backup and weekly logical restore timers
 systemctl start glasswell-api
 systemctl start glasswell-status.timer    # arm only after migrations complete
+systemctl start glasswell-lineage-retention.timer
+systemctl start glasswell-lineage-retention.service
 systemctl start glasswell-status.service  # optional immediate refresh
 ./verify.sh                      # positive and negative checks, safe to run any time
 ```
 
-Unlike ingest, backup and restore timers, `glasswell-status.timer` has no enable flag. Every install
-runs `systemctl enable glasswell-status.timer`; start it only after migrations so the first
-collection cannot race a required schema grant. `deploy.sh` starts it automatically; a manual
-install must run `systemctl start glasswell-status.timer` after migration. It schedules an early
-boot collection, catches missed calendar runs with `Persistent=true`, and refreshes on each
-quarter hour.
+Unlike ingest, backup and restore timers, `glasswell-status.timer` and
+`glasswell-lineage-retention.timer` have no enable flag. Every install enables both; start them only
+after migrations so neither can race a required schema grant or function. `deploy.sh` starts both
+automatically and executes one retention sweep before collecting Status; a manual install must do
+the same after migration. Status schedules an early boot collection and refreshes each quarter
+hour. Retention runs nightly at 03:30 with `Persistent=true`; it removes only successful,
+unreferenced `ephemeral` derivations older than 90 days.
+
+The installer performs `systemctl enable glasswell-status.timer` and
+`systemctl enable glasswell-lineage-retention.timer`; it deliberately does not start either one.
+For `glasswell-status.timer`, start it only after migrations; the same ordering applies to
+retention because its sweep function arrives with the schema.
 
 The restore timer is enabled whenever backup is newly enabled or was already enabled, so an
 upgrade cannot leave protection at the old backup-only state. A passing result must be no more

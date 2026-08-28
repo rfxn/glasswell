@@ -8,6 +8,7 @@ import psycopg
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_MANIFEST_ID
+from glasswell.lineage.ids import new_ulid
 from glasswell.seed.conformance_c115b import C115B_SOURCES
 from glasswell.seed.conformance_land import LAND_SOURCES
 from glasswell.seed.conformance_tx import TX_SOURCES
@@ -59,22 +60,27 @@ def test_the_index_carries_the_error_registry(client: TestClient) -> None:
 
 
 def test_health_reports_freshness_per_source(client: TestClient) -> None:
-    """Smoke check 2 asserts the key is present; the permitted degradation keeps it."""
+    """Smoke check 2 asserts the key is present without inventing a completed poll."""
     body = client.get("/v1/health").json()
 
     freshness = body["meta"]["source_freshness"]
     assert len(freshness) == SOURCE_COUNT
     assert freshness["nd_mpr_xlsx"]["retrieval_vintage"] == "2026-08-01"
-    assert freshness["nd_mpr_xlsx"]["state"] == "current"
+    assert freshness["nd_mpr_xlsx"]["state"] == "pending"
+    assert freshness["nd_mpr_xlsx"]["last_outcome"] is None
+    assert freshness["nd_mpr_xlsx"]["cadence"] == "Every 35 days"
     assert freshness["nd_gis_spacing_units"]["state"] == "pending"
 
 
 def test_health_states_whether_it_is_degraded(client: TestClient) -> None:
     data = client.get("/v1/health").json()["data"]
 
-    assert data["state"] in {"ok", "degraded"}
+    assert data["state"] == "ok"
     assert data["stores"]["postgres"] == "ok"
     assert data["sources"][0]["last_manifest_id"] in {EXAMPLE_MANIFEST_ID, None}
+    assert [source["source_id"] for source in data["sources"]] == sorted(
+        source["source_id"] for source in data["sources"]
+    )
 
 
 def test_a_source_that_has_never_been_fetched_is_pending_and_named(client: TestClient) -> None:
@@ -85,6 +91,7 @@ def test_a_source_that_has_never_been_fetched_is_pending_and_named(client: TestC
 
     assert data["state"] == "ok"
     assert data["degraded_sources"] == []
+    assert "nd_mpr_xlsx" in data["pending_sources"]
     assert "nd_gis_spacing_units" in data["pending_sources"]
     assert all(
         source["state"] == "pending"
@@ -93,11 +100,10 @@ def test_a_source_that_has_never_been_fetched_is_pending_and_named(client: TestC
     )
 
 
-def test_the_nm_sources_are_pending_until_one_is_fetched(
+def test_an_nm_source_stays_pending_until_its_poll_is_recorded(
     client: TestClient, seeded: psycopg.Connection
 ) -> None:
-    """Wave 2 registers nine NM sources on every deployment and promotes them at a later one.
-    Nine permanently degraded sources would make the signal useless exactly while it matters."""
+    """Registration and an artifact alone do not fabricate a successful source poll."""
     before = client.get("/v1/health").json()["data"]
 
     assert {source for source in before["pending_sources"] if source.startswith("nm_ocd_")}
@@ -111,9 +117,34 @@ def test_the_nm_sources_are_pending_until_one_is_fetched(
         fetched_at=datetime.now(UTC),
     )
     seeded.commit()
+    captured = client.get("/v1/health").json()["data"]
+    captured_states = {source["source_id"]: source["state"] for source in captured["sources"]}
+
+    assert captured_states["nm_ocd_wcproduction"] == "pending"
+
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select manifest_id from lineage.manifests"
+            " where source_id = 'nm_ocd_wcproduction' order by fetched_at desc limit 1"
+        )
+        manifest_id = cursor.fetchone()[0]
+        attempted_at = datetime.now(UTC)
+        cursor.execute(
+            "insert into lineage.fetch_attempts"
+            " (attempt_id, source_id, source_key, attempted_at, completed_at, outcome, manifest_id)"
+            " values (%s, 'nm_ocd_wcproduction', 'wcproduction.zip', %s, %s, 'unchanged', %s)",
+            (
+                f"fat_{new_ulid(attempted_at)}",
+                attempted_at,
+                attempted_at,
+                manifest_id,
+            ),
+        )
+    seeded.commit()
     after = client.get("/v1/health").json()["data"]
     states = {source["source_id"]: source["state"] for source in after["sources"]}
 
     assert states["nm_ocd_wcproduction"] == "current"
     assert "nm_ocd_wcproduction" not in after["pending_sources"]
-    assert after["state"] == "ok"
+    assert after["degraded_sources"] == before["degraded_sources"]
+    assert not any(source.startswith("nm_ocd_") for source in after["degraded_sources"])

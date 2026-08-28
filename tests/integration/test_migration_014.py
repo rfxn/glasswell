@@ -118,6 +118,9 @@ def test_the_registry_note_and_the_glossary_stop_claiming_a_zone(
     db = seeded_before_the_supersession
     with db.cursor() as cursor:
         # The text the VM carries, so the UPDATE is exercised rather than the seed's rewrite.
+        # Migration 049 later made the registry append-only. Disable that later guard only while
+        # reconstructing and exercising the historical pre-049 state in this upgrade-path test.
+        cursor.execute("alter table lineage.crs_registry disable trigger crs_registry_append_only")
         cursor.execute(
             "update lineage.crs_registry set note = 'UTM 14N; every ND distance, area and"
             " spacing computation runs projected, never in degrees' where basin = 'williston'"
@@ -128,6 +131,7 @@ def test_the_registry_note_and_the_glossary_stop_claiming_a_zone(
             " where term_id = 'gt_crs_compute_crs'"
         )
         cursor.execute(migration_sql(MIGRATION))
+        cursor.execute("alter table lineage.crs_registry enable trigger crs_registry_append_only")
         cursor.execute("select note from lineage.crs_registry where basin = 'williston'")
         note = cursor.fetchone()[0]
         cursor.execute(

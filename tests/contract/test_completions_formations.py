@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import base64
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 
 import psycopg
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_API10
-from glasswell.lineage.ids import parse_handle
+from glasswell.lineage.ids import new_ulid, parse_handle
 from tests.support.seed import seed_well, seed_well_spatial
 
 
@@ -53,6 +53,68 @@ def test_completion_context_keeps_events_and_pool_assignments_independent(
     assert body["data"]["events"][0]["_lineage"]["completion_date"].startswith("drv_")
     assert body["data"]["pools"][0]["_lineage"]["pool_reported"].startswith("drv_")
     assert set(body["meta"]["source_freshness"]) == {"fracfocus_csv", "nd_mpr_xlsx"}
+
+
+def test_completion_and_production_freshness_share_durable_poll_semantics(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    first_at = datetime.now(UTC) - timedelta(seconds=2)
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select distinct on (source_id) source_id, source_key, manifest_id"
+            " from lineage.manifests where source_id = any(%s)"
+            " order by source_id, fetched_at desc, manifest_id desc",
+            (["fracfocus_csv", "nd_mpr_xlsx"],),
+        )
+        manifests = {row[0]: row[1:] for row in cursor.fetchall()}
+        for source_id, (source_key, manifest_id) in manifests.items():
+            cursor.execute(
+                "insert into lineage.fetch_attempts"
+                " (attempt_id, source_id, source_key, attempted_at, completed_at, outcome,"
+                " manifest_id) values (%s, %s, %s, %s, %s, 'unchanged', %s)",
+                (
+                    f"fat_{new_ulid(first_at)}",
+                    source_id,
+                    source_key,
+                    first_at,
+                    first_at,
+                    manifest_id,
+                ),
+            )
+    seeded.commit()
+
+    production = client.get(f"/v1/wells/{EXAMPLE_API10}/production").json()
+    completions = client.get(f"/v1/wells/{EXAMPLE_API10}/completions").json()
+    assert production["meta"]["source_freshness"]["nd_mpr_xlsx"]["last_outcome"] == "unchanged"
+    assert production["meta"]["source_freshness"]["nd_mpr_xlsx"]["state"] == "current"
+    assert {
+        source_id: evidence["last_outcome"]
+        for source_id, evidence in completions["meta"]["source_freshness"].items()
+    } == {"fracfocus_csv": "unchanged", "nd_mpr_xlsx": "unchanged"}
+
+    failed_at = datetime.now(UTC) - timedelta(seconds=1)
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.fetch_attempts"
+            " (attempt_id, source_id, source_key, attempted_at, completed_at, outcome,"
+            " failure_code, failure_detail) values"
+            " (%s, 'nd_mpr_xlsx', %s, %s, %s, 'failed', 'contract_failure',"
+            " 'upstream unavailable')",
+            (
+                f"fat_{new_ulid(failed_at)}",
+                manifests["nd_mpr_xlsx"][0],
+                failed_at,
+                failed_at,
+            ),
+        )
+    seeded.commit()
+
+    production_failed = client.get(f"/v1/wells/{EXAMPLE_API10}/production").json()
+    completions_failed = client.get(f"/v1/wells/{EXAMPLE_API10}/completions").json()
+    for response in (production_failed, completions_failed):
+        evidence = response["meta"]["source_freshness"]["nd_mpr_xlsx"]
+        assert (evidence["last_outcome"], evidence["state"]) == ("failed", "stale")
+    assert completions_failed["meta"]["source_freshness"]["fracfocus_csv"]["state"] == "current"
 
 
 def test_completion_as_of_does_not_leak_a_later_event_or_alias(client: TestClient) -> None:

@@ -100,6 +100,7 @@ printf 'placed %s/glasswell.conf and created /run/glasswell\n' "$TMPFILES_DIR"
 for unit in glasswell-api.service glasswell-ingest.service glasswell-ingest.timer \
             glasswell-c115b.service glasswell-c115b.timer \
             glasswell-status.service glasswell-status.timer \
+            glasswell-lineage-retention.service glasswell-lineage-retention.timer \
             glasswell-alert@.service glasswell-backup.service glasswell-backup.timer \
             glasswell-restore-drill.service glasswell-restore-drill.timer; do
     install -o root -g root -m 0644 "$INFRA_DIR/systemd/$unit" "$UNIT_DIR/$unit"
@@ -188,6 +189,8 @@ systemctl enable glasswell-api.service
 # race the schema grant it needs; deploy.sh and the manual runbook start it afterwards.
 systemctl enable glasswell-status.timer
 printf 'enabled glasswell-status.timer — start it after migrations complete\n'
+systemctl enable glasswell-lineage-retention.timer
+printf 'enabled glasswell-lineage-retention.timer — start it after migrations complete\n'
 
 if [[ $with_caddy -eq 1 ]]; then
     systemctl enable caddy.service

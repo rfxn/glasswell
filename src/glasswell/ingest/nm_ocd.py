@@ -55,6 +55,7 @@ from glasswell.lineage.conformance import (
 )
 from glasswell.lineage.errors import RuleSpecError, VintageAlreadyPromoted
 from glasswell.lineage.fetch import fetch_raw
+from glasswell.lineage.fetch_attempts import durable_fetch_attempts
 from glasswell.lineage.ftp import FTP, FtpTransferFailed, close_ftp, connect_ftp, ftp_url
 from glasswell.lineage.models import InputRef, ManifestRecord, OutputSpec
 from glasswell.lineage.quarantine import quarantine
@@ -1584,6 +1585,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         else None
     )
 
+    with durable_fetch_attempts(arguments.dsn):
+        return _execute_command(arguments, tables=tables, window_start=window_start, months=months)
+
+
+def _execute_command(
+    arguments: argparse.Namespace,
+    *,
+    tables: Sequence[str],
+    window_start: date | None,
+    months: Sequence[date] | None,
+) -> int:
     connection = psycopg.connect(arguments.dsn)
     results: list[TableFetch] | list[StageReport] | list[PromotionReport]
     try:

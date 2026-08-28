@@ -8,6 +8,9 @@ not represent (N-1).
 
 from __future__ import annotations
 
+from datetime import date
+
+import psycopg
 from fastapi.testclient import TestClient
 
 from tests.contract.conftest import TX_API10
@@ -97,3 +100,35 @@ def test_the_rule_behind_the_disclosure_is_readable(client: TestClient) -> None:
     assert body["data"]["rule_kind"] == "code_ref"
     assert body["data"]["spec"]["reporting_level"] == "lease"
     assert body["data"]["rationale"]
+
+
+def test_backdated_reporting_change_waits_for_publication_on_both_tx_surfaces(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    successor = "cr_contract_tx_well_reporting_2"
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.conformance_rule_publications"
+            " (rule_id, published_vintage, evidence_tag, evidence_commit)"
+            " values (%s, %s, 'contract-fixture', %s)",
+            (successor, date(2026, 9, 1), "b" * 40),
+        )
+        cursor.execute(
+            "insert into lineage.conformance_rules"
+            " (rule_id, rule_family, supersedes_rule_id, source_id, stage, rule_kind, spec,"
+            " rule, rationale, evidence_url, effective_from)"
+            " select %s, rule_family, rule_id, source_id, stage, rule_kind,"
+            " '{\"state_code\":\"42\",\"reporting_level\":\"well\","
+            "\"allocation_required\":false}'::jsonb, 'TX reports at well level.',"
+            " 'Contract clock fixture.', evidence_url, %s"
+            " from lineage.conformance_rules where rule_id = %s",
+            (successor, date(2020, 1, 1), ALLOCATION_RULE),
+        )
+    seeded.commit()
+
+    for path in (f"/v1/wells/{TX_API10}", f"/v1/wells/{TX_API10}/production"):
+        before = envelope(client, path, as_of="2026-08-28")
+        after = envelope(client, path, as_of="2026-09-01")
+
+        assert PENDING in {warning["code"] for warning in before["meta"]["warnings"]}
+        assert PENDING not in {warning["code"] for warning in after["meta"]["warnings"]}

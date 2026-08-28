@@ -32,14 +32,16 @@ vi.mock("../../api/client.ts", async (importOriginal) => {
 });
 
 const SNAPSHOT = JSON.parse(readFileSync("../tests/contract/openapi_snapshot.json", "utf8"));
+const QUARANTINE_ROW = quarantineDetailEnvelope.data.quarantine_id;
+const CONFORMANCE_RULE = conformanceRuleEnvelope.data.rule_id;
 
 const BODIES: Record<string, unknown> = {
   "/openapi.json": SNAPSHOT,
   "/v1/quarantine": quarantineEnvelope,
   "/v1/quarantine/summary": quarantineSummaryEnvelope,
-  "/v1/quarantine/qr_01contract0003": quarantineDetailEnvelope,
+  [`/v1/quarantine/${QUARANTINE_ROW}`]: quarantineDetailEnvelope,
   "/v1/conformance": conformanceEnvelope,
-  "/v1/conformance/cr_nd_status_vocab_1": conformanceRuleEnvelope,
+  [`/v1/conformance/${CONFORMANCE_RULE}`]: conformanceRuleEnvelope,
 };
 
 // Two values for one filter: the shape a query-string builder gets wrong by collapsing.
@@ -129,13 +131,13 @@ describe("the pane renders the call the centre column issued (§4.2, 9.1)", () =
   });
 
   it("follows the reader into a record, because that is the call now in view (C8 N1)", async () => {
-    await mountShell("/?view=explore&ds=quarantine&row=qr_01contract0003");
+    await mountShell(`/?view=explore&ds=quarantine&row=${QUARANTINE_ROW}`);
     const { curlFor } = await import("./request.ts");
     const { trail } = await import("../detail/chips.ts");
     const walked = trail();
     const last = walked[walked.length - 1];
 
-    expect(renderedCurlUrl()).toContain("/v1/quarantine/qr_01contract0003");
+    expect(renderedCurlUrl()).toContain(`/v1/quarantine/${QUARANTINE_ROW}`);
     expect(last?.operationId).toBe("get_quarantine_row");
     // One builder: the breadcrumb's command for the same step is the pane's, character for
     // character. A second URL assembler is what this test exists to make impossible.
@@ -143,14 +145,14 @@ describe("the pane renders the call the centre column issued (§4.2, 9.1)", () =
   });
 
   it("returns to the collection's call when the record is closed", async () => {
-    await mountShell("/?view=explore&ds=quarantine&row=qr_01contract0003");
-    expect(renderedCurlUrl()).toContain("/qr_01contract0003");
+    await mountShell(`/?view=explore&ds=quarantine&row=${QUARANTINE_ROW}`);
+    expect(renderedCurlUrl()).toContain(`/${QUARANTINE_ROW}`);
 
     (document.querySelector(".gw-detail-close") as HTMLElement).click();
     await settle();
 
     expect(renderedCurlUrl()).toContain("/v1/quarantine");
-    expect(renderedCurlUrl()).not.toContain("/qr_01contract0003");
+    expect(renderedCurlUrl()).not.toContain(`/${QUARANTINE_ROW}`);
   });
 
   it("names the operation the pane is describing, not the dataset's title", async () => {

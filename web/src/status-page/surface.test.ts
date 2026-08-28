@@ -73,6 +73,12 @@ const PAYLOAD: StatusPayload = {
       declared_vintage: "2026-05-01",
       last_manifest_id: "mf_nd_01",
       manifest_count: 18,
+      last_attempt_at: "2026-08-26T17:55:00Z",
+      last_outcome: "unchanged",
+      next_expected_poll: "2026-09-03T17:56:00Z",
+      cadence: "Every 8 days",
+      freshness_reason:
+        "The latest poll completed unchanged inside cadence; the older artifact remains current because its bytes were rechecked successfully.",
     },
     {
       source_id: "tx_completion",
@@ -82,6 +88,11 @@ const PAYLOAD: StatusPayload = {
       declared_vintage: null,
       last_manifest_id: null,
       manifest_count: 0,
+      last_attempt_at: null,
+      last_outcome: null,
+      next_expected_poll: null,
+      cadence: "Every 35 days",
+      freshness_reason: "No durable poll attempt or registered artifact exists yet.",
     },
   ],
   platform: {
@@ -169,14 +180,19 @@ describe("the Status surface", () => {
       "Infrastructure checks",
       "Dataset inventory",
       "Scheduled work",
-      "Registered artifact age",
+      "Source polls & freshness",
       "Observability boundaries",
     ]);
     expect(host.querySelectorAll("dl").length).toBeGreaterThan(2);
     expect(host.querySelectorAll("table")).toHaveLength(2);
     expect(host.querySelectorAll("time").length).toBeGreaterThan(4);
     expect(host.querySelector("time")?.getAttribute("datetime")).toBe(PAYLOAD.observed_at);
-    expect(host.textContent).toContain("Successful unchanged fetches are not persisted as new manifests");
+    expect(host.textContent).toContain("Unchanged checks can keep older bytes current");
+    expect(host.textContent).toContain("Unchanged");
+    expect(host.textContent).toContain("Every 8 days");
+    expect(host.textContent).toContain("2026-09-03 17:56 UTC");
+    expect(host.textContent).toContain("2026-05-01");
+    expect(host.textContent).toContain("mf_nd_01");
     expect(host.textContent).toContain("well-month-stream observation");
     expect(host.textContent).toContain("Latest knowledge");
     expect(
@@ -299,6 +315,40 @@ describe("the Status surface", () => {
       await mountStatusPage(host, { onForbidden });
       expect(host.textContent, String(value)).toContain("safe non-negative integer");
     }
+  });
+
+  it("bounds source reasons and renders them only as text", async () => {
+    vi.stubGlobal(
+      "fetch",
+      () =>
+        Promise.resolve(
+          envelope({
+            ...PAYLOAD,
+            sources: [
+              {
+                ...PAYLOAD.sources[0],
+                freshness_reason: '<img src=x onerror="window.compromised=true">',
+              },
+            ],
+          }),
+        ),
+    );
+
+    await mountStatusPage(host, { onForbidden });
+
+    expect(host.querySelector("img")).toBeNull();
+    expect(host.textContent).toContain('<img src=x onerror="window.compromised=true">');
+
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve(
+        envelope({
+          ...PAYLOAD,
+          sources: [{ ...PAYLOAD.sources[0], freshness_reason: "x".repeat(513) }],
+        }),
+      ),
+    );
+    await mountStatusPage(host, { onForbidden });
+    expect(host.textContent).toContain("at most 512 characters");
   });
 
   it("labels malformed JSON as an invalid response", async () => {

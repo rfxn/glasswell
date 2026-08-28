@@ -32,6 +32,8 @@ import {
 
 const SNAPSHOT = JSON.parse(readFileSync("../tests/contract/openapi_snapshot.json", "utf8"));
 const CATALOGUE = buildCatalogue(SNAPSHOT);
+const QUARANTINE_ROW = quarantineDetailEnvelope.data.quarantine_id;
+const CONFORMANCE_RULE = conformanceRuleEnvelope.data.rule_id;
 
 const COLLECTION: Record<string, { path: string; envelope: unknown }> = {
   quarantine: { path: "/v1/quarantine", envelope: quarantineEnvelope },
@@ -43,8 +45,8 @@ const COLLECTION: Record<string, { path: string; envelope: unknown }> = {
 };
 
 const DETAIL: Record<string, unknown> = {
-  "/v1/quarantine/qr_01contract0003": quarantineDetailEnvelope,
-  "/v1/conformance/cr_nd_status_vocab_1": conformanceRuleEnvelope,
+  [`/v1/quarantine/${QUARANTINE_ROW}`]: quarantineDetailEnvelope,
+  [`/v1/conformance/${CONFORMANCE_RULE}`]: conformanceRuleEnvelope,
   "/v1/manifests/man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": manifestEnvelope,
   "/v1/vintages/vin_nd_gis_wells_2026-08-01": vintageEnvelope,
   "/v1/wells/3305310451": wellDetailEnvelope,
@@ -141,7 +143,7 @@ describe("expanding a row calls the dataset's detail operation (8.1)", () => {
   it("renders the fuller record, which is the reason a detail endpoint exists", async () => {
     const detail = await mount("quarantine");
 
-    expect(requested).toEqual(["/v1/quarantine/qr_01contract0003"]);
+    expect(requested).toEqual([`/v1/quarantine/${QUARANTINE_ROW}`]);
     expect(detail.root.textContent).toContain("get_quarantine_row");
     // The collection serves seven columns and two hidden; the record carries eighteen fields.
     expect(detail.keys.length).toBeGreaterThan((dataset("quarantine").columns.default ?? []).length);
@@ -280,7 +282,7 @@ describe("a verbatim source row renders as JSON, and claims nothing about it (§
     const detail = await mount("quarantine");
     const payload = detail.valueOf("row_payload") as HTMLElement;
 
-    expect(payload.querySelector(".gw-json-block")?.textContent).toContain("MYSTERY");
+    expect(payload.querySelector(".gw-json-block")?.textContent).toContain("GasSold");
     expect(payload.querySelector(".gw-json-caption")?.textContent).toBe(
       "this is the source row as it arrived, not a number the system stands behind",
     );
@@ -299,8 +301,8 @@ describe("a verbatim source row renders as JSON, and claims nothing about it (§
     // does not, so the arm injects the response the schema allows rather than asserting a rule
     // no fixture can reach (C7's §3 lesson).
     const named = structuredClone(quarantineDetailEnvelope) as { data: Record<string, unknown> };
-    named.data["notes"] = "status";
-    overrides["/v1/quarantine/qr_01contract0003"] = named;
+    named.data["notes"] = "stream_raw";
+    overrides[`/v1/quarantine/${QUARANTINE_ROW}`] = named;
     const detail = await mount("quarantine");
     const payload = detail.valueOf("row_payload") as HTMLElement;
 
@@ -308,7 +310,7 @@ describe("a verbatim source row renders as JSON, and claims nothing about it (§
       (line) => line.textContent ?? "",
     );
     expect(offenders).toHaveLength(1);
-    expect(offenders[0]).toContain("status");
+    expect(offenders[0]).toContain("stream_raw");
     expect(payload.textContent).not.toContain("does not name which field was refused");
   });
 });
@@ -321,7 +323,9 @@ describe("every id in the record is a hop, or says why it is not (§3.3)", () =>
     expect(chips.length).toBeGreaterThan(0);
     expect((chips[0] as HTMLElement).dataset["target"]).toBe("conformance");
     expect((chips[0] as HTMLAnchorElement).getAttribute("href")).toContain("ds=conformance");
-    expect((chips[0] as HTMLAnchorElement).getAttribute("href")).toContain("row=cr_nd_status_vocab_1");
+    expect((chips[0] as HTMLAnchorElement).getAttribute("href")).toContain(
+      `row=${CONFORMANCE_RULE}`,
+    );
   });
 
   it("offers the collections a source_id narrows as filtered hops", async () => {
@@ -380,7 +384,7 @@ describe("the detail operation is read as a dataset of one", () => {
   });
 
   it("keeps the collection's fields and says why, when the detail request fails", async () => {
-    overrides["/v1/quarantine/qr_01contract0003"] = undefined;
+    overrides[`/v1/quarantine/${QUARANTINE_ROW}`] = undefined;
     const detail = await mount("quarantine");
 
     expect(detail.root.textContent).toContain("did not answer");
@@ -417,9 +421,11 @@ describe("a record with geometry crosses to the map", () => {
     overrides["/v1/wells/3305310451"] = located();
     const link = linkIn(await mount("wells", { row: "3305310451" }, WELL_ROW));
 
-    // The recorded envelope resolves `latest` to 2026-08-01; the crossing names it rather than
-    // leaving the map to resolve `latest` again on whatever day the link is opened.
-    expect(link?.getAttribute("href")).toContain("as_of=2026-08-01");
+    // The crossing names the recorded resolved vintage rather than leaving the map to resolve
+    // `latest` again on whatever day the link is opened.
+    expect(link?.getAttribute("href")).toContain(
+      `as_of=${wellDetailEnvelope.meta.as_of.resolved}`,
+    );
   });
 
   it("offers nothing when the point is present but not a pair of numbers", async () => {

@@ -67,7 +67,7 @@ lacks the blueprint's `kind=typecurve` discriminator and writer. No control numb
 yet, so the registry migration remains an explicit prerequisite to model serving rather than
 an implied capability.
 
-## Resident replay
+## Original 2026-08-26 resident replay
 
 The resident 2026-08-26 Williston artifact consumes `mdv1.4` bundle
 `sset_c7bbb9a6932db76b` and was built twice from implementation commit `19f754c` in the
@@ -91,7 +91,7 @@ four origins.
 
 ## Honest gate result
 
-### Published resident artifact
+### Original immutable artifact
 
 The measured rung-one floor passes: 81.7089% is above 60%. The control-unavailability gate
 does not: 12.9484% is above the pinned 5% ceiling, and every split fails separately, from
@@ -104,16 +104,21 @@ and eight insufficient-peer mentions; reason mentions overlap. Over the 3,596 un
 subjects, 355 are unavailable: 318 lack formation, 38 lack lateral length, one lacks enough
 peers, and two carry both context gaps. That published miss identifies the source-field repair
 target: no inferred formation, no spud-date substitution, and the same exact replay and 5%
-gate. Model training may be developed, but P3 cannot claim control readiness from this
-published result while its acceptance result is red.
+gate. The artifact remains immutable evidence of the pre-repair miss; it is not relabelled by
+the accepted successor evaluation vintage.
 
-### Context-repair rehearsal
+### Accepted 2026-08-28 context-repair publication
 
-Migration 042 has since been exercised inside a rolled-back resident transaction. Its
-same-manifest, same-API source join restores all 318 TEST formation gaps and does not create a
-lateral for any of the 38 source-absent wells. Two complete builds preserve every exact split
-hash and replay unchanged `tcv1.0` byte-identically at 230 / 21,300 unavailable TEST
-subject/split instances (1.0798%), with no missing-formation reason remaining. This proves the
-repair policy and the 5% gate without mutating the immutable resident artifact. Publication
-still requires deployment and a new evaluation vintage; the hashes and measurements are in
-[`p3-context-repair.md`](docs/p3-context-repair.md).
+Migration 042's same-manifest, same-API source join restores all 318 TEST formation gaps and
+does not create a lateral for any of the 38 source-absent wells. The tagged v0.59 publisher
+preserved all eight exact split hashes and replayed unchanged `tcv1.0` twice at 230 / 21,300
+unavailable TEST subject/split instances (1.0798%), with no missing-formation reason remaining.
+Every split passes the 5% ceiling without widening the ladder or changing a feature, dataset,
+or control semantic version.
+
+The accepted control artifact contains 2,300,400 rows with SHA-256
+`b80b1142631820f495f6479bb23ba3a14e656b7d69979938cb9d6644e4e11f45`; its coverage
+document is `12d66f5b9fb05dba40999fff5ddc0ca85382cfd2826d3d35de0a2c42ad165c40`.
+Receipt `p3pub_8b434525d8c621762e31b06ca660bfcd` pins the exact code, environment,
+model-ready bundle, split set, and two-run byte comparison. [`p3-context-repair.md`](p3-context-repair.md)
+records all eight artifact hashes and the independent receipt rehash.

@@ -185,11 +185,14 @@ describe("collection_pointer and row_projection turn an envelope into rows (G-1)
     expect(responsePointerFor(dataset("production"), "/granularity")).toBe("/granularity");
     expect(responsePointerFor(dataset("quarantine"), "/reason_code")).toBe("/reason_code");
     expect(responsePointerFor(dataset("sources"), "/source_id")).toBe("/sources/0/source_id");
-    // C2 MUST-KNOW P3: the pooled form carries an index, and every one of them is null today.
+    // The pooled form carries an index, and its label pointer includes that row position.
     expect(responsePointerFor(dataset("production_pools"), "/oil_bbl")).toBe(
       "/pools/0/series/oil_bbl",
     );
-    expect(pooledProductionEnvelope.meta.labels).not.toHaveProperty("/pools/0/series/oil_bbl");
+    expect(pooledProductionEnvelope.meta.labels).toHaveProperty(
+      "/pools/0/series/oil_bbl",
+      "gt_liquids_policy",
+    );
   });
 
   it("agrees with the data about which namespace every declared column lives in", () => {

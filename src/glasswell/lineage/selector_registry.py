@@ -13,11 +13,17 @@ from typing import Any
 import psycopg
 
 from glasswell.lineage.errors import InvalidSelector, LineageUnresolved
-from glasswell.lineage.ids import parse_selector
+from glasswell.lineage.ids import format_selector, parse_selector
+from glasswell.lineage.serialization import hash_payload
 
 NEIGHBOR_DATASET = "marts.nd_neighbors"
-COMPLETION_ANCHOR_DATASET = "canonical.well_completion_anchors"
-PRODUCTION_DATASET = "canonical.production_monthly"
+
+PRODUCTION_PROFILE = "production_series"
+COMPLETION_POOL_PROFILE = "completion_pool"
+COMPLETION_ANCHOR_PROFILE = "completion_anchor"
+WELL_PROFILE = "well"
+NEIGHBOR_PROFILE = "nd_neighbor"
+RESPONSE_PROFILE = "response_output"
 
 _EDGE_COLUMNS = frozenset(
     {
@@ -55,6 +61,19 @@ _NEIGHBOR_COVERAGE_METRICS = frozenset(
         "returned",
     }
 )
+_PRODUCTION_COLUMNS = {"oil_bbl": "oil", "gas_mcf": "gas", "water_bbl": "water"}
+_WELL_COLUMNS = frozenset({"total_depth_ft"})
+_KNOWN_PROFILES = frozenset(
+    {
+        PRODUCTION_PROFILE,
+        COMPLETION_POOL_PROFILE,
+        COMPLETION_ANCHOR_PROFILE,
+        WELL_PROFILE,
+        NEIGHBOR_PROFILE,
+        RESPONSE_PROFILE,
+    }
+)
+_PLAIN_IDENTITY = re.compile(r"\A[A-Za-z0-9_.:+-]+\Z")
 
 
 def validate_selector(
@@ -63,21 +82,73 @@ def validate_selector(
     selector: str,
     *,
     handle: str,
+    profiles: tuple[str, ...] | None = None,
+    response_outputs: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> None:
-    """Require a declared selector to identify one row/column for registered datasets."""
+    """Require a registered selector profile to prove the addressed output."""
     pairs = parse_selector(selector)
     terms = dict(pairs)
-    dataset = derivation["output_dataset"]
-    if dataset == NEIGHBOR_DATASET:
+    registered = profiles
+    if registered is None:
+        registered = _registered_profiles(connection, derivation)
+    unknown = sorted(set(registered) - _KNOWN_PROFILES)
+    if unknown:
+        raise InvalidSelector(f"selector registry contains unknown profiles: {unknown}")
+    matching = [profile for profile in registered if _profile_matches(profile, terms)]
+    if len(matching) != 1:
+        raise InvalidSelector(
+            f"no unique registered selector profile accepts {selector!r} for"
+            f" {derivation['operation']} -> {derivation['output_dataset']}"
+        )
+
+    profile = matching[0]
+    if profile == NEIGHBOR_PROFILE:
         _validate_neighbor(connection, derivation, terms, handle=handle)
-    elif dataset == COMPLETION_ANCHOR_DATASET and (
-        "disclosure_id" in terms or "disclosure_id_b64" in terms
-    ):
+    elif profile == COMPLETION_ANCHOR_PROFILE:
         _validate_completion_anchor(connection, derivation, terms, handle=handle)
-    elif dataset == PRODUCTION_DATASET and (
-        "completion_key" in terms or "completion_key_b64" in terms
-    ):
+    elif profile == COMPLETION_POOL_PROFILE:
         _validate_completion_pool(connection, derivation, terms, handle=handle)
+    elif profile == PRODUCTION_PROFILE:
+        _validate_production(connection, derivation, terms, handle=handle)
+    elif profile == WELL_PROFILE:
+        _validate_well(connection, derivation, terms, handle=handle)
+    else:
+        _validate_response_output(connection, derivation, pairs, outputs=response_outputs)
+
+
+def _registered_profiles(
+    connection: psycopg.Connection, derivation: Mapping[str, Any]
+) -> tuple[str, ...]:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select selector_profile from lineage.selector_output_registry"
+            " where operation = %s and output_dataset = %s order by selector_profile",
+            (derivation["operation"], derivation["output_dataset"]),
+        )
+        return tuple(row[0] for row in cursor.fetchall())
+
+
+def _profile_matches(profile: str, terms: Mapping[str, str]) -> bool:
+    keys = set(terms)
+    if profile == NEIGHBOR_PROFILE:
+        return "api10" in keys
+    if profile == COMPLETION_ANCHOR_PROFILE:
+        return bool(keys & {"disclosure_id", "disclosure_id_b64"})
+    if profile == COMPLETION_POOL_PROFILE:
+        return bool(keys & {"completion_key", "completion_key_b64"})
+    if profile == PRODUCTION_PROFILE:
+        return bool(keys & {"api10", "api10_b64", "entity_key", "entity_key_b64"})
+    if profile == WELL_PROFILE:
+        return "api10" in keys or "api10_b64" in keys
+    return profile == RESPONSE_PROFILE
+
+
+def identity_selector_term(name: str, value: str) -> str:
+    """Render an identity without lossy substitution or padded/standard base64."""
+    if _PLAIN_IDENTITY.fullmatch(value):
+        return f"{name}={value}"
+    encoded = base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii").rstrip("=")
+    return f"{name}_b64={encoded}"
 
 
 def _validate_neighbor(
@@ -193,6 +264,120 @@ def _validate_completion_anchor(
     )
 
 
+def _validate_production(
+    connection: psycopg.Connection,
+    derivation: Mapping[str, Any],
+    terms: dict[str, str],
+    *,
+    handle: str,
+) -> None:
+    column = terms.pop("col", None)
+    stream = _PRODUCTION_COLUMNS.get(str(column))
+    if stream is None:
+        raise InvalidSelector(f"{column!r} is not a selectable production column")
+    api10 = _optional_identity(terms, "api10")
+    entity_key = _optional_identity(terms, "entity_key")
+    if (api10 is None) == (entity_key is None):
+        raise InvalidSelector("production selectors require exactly one entity identity")
+    production_month = terms.pop("pm", None)
+    if terms:
+        raise InvalidSelector(
+            "production selectors require one entity identity, col, and optional pm"
+        )
+
+    statement = (
+        "select count(*) from canonical.production_monthly"
+        " where derivation_id = %s and stream = %s"
+    )
+    parameters: list[object] = [derivation["derivation_id"], stream]
+    if api10 is not None:
+        if re.fullmatch(r"[0-9]{10}", api10) is None:
+            raise InvalidSelector("api10 must be exactly ten digits")
+        statement += " and entity_type = 'well' and api10 = %s and entity_key = %s"
+        parameters.extend((api10, api10))
+    else:
+        statement += " and entity_type = 'well_completion_pool' and entity_key = %s"
+        parameters.append(entity_key)
+    if production_month is not None:
+        parsed_month = _month(production_month)
+        statement += " and production_month = %s"
+        parameters.append(parsed_month)
+        _require_one(
+            connection,
+            statement,
+            tuple(parameters),
+            derivation=derivation,
+            handle=handle,
+        )
+        return
+    _require_any(
+        connection,
+        statement,
+        tuple(parameters),
+        derivation=derivation,
+        handle=handle,
+    )
+
+
+def _validate_well(
+    connection: psycopg.Connection,
+    derivation: Mapping[str, Any],
+    terms: dict[str, str],
+    *,
+    handle: str,
+) -> None:
+    column = terms.pop("col", None)
+    if column not in _WELL_COLUMNS:
+        raise InvalidSelector(f"{column!r} is not a selectable well column")
+    api10 = _identity(terms, "api10")
+    effective_from = terms.pop("effective_from", None)
+    try:
+        parsed_effective = date.fromisoformat(str(effective_from))
+    except ValueError:
+        raise InvalidSelector("well selectors require an ISO effective_from") from None
+    if (
+        re.fullmatch(r"[0-9]{10}", api10) is None
+        or parsed_effective.isoformat() != effective_from
+        or terms
+    ):
+        raise InvalidSelector("well selectors require api10, effective_from, and col")
+    _require_one(
+        connection,
+        "select count(*) from canonical.wells"
+        " where derivation_id = %s and api10 = %s and effective_from = %s"
+        " and total_depth_ft is not null",
+        (derivation["derivation_id"], api10, parsed_effective),
+        derivation=derivation,
+        handle=handle,
+    )
+
+
+def _validate_response_output(
+    connection: psycopg.Connection,
+    derivation: Mapping[str, Any],
+    pairs: tuple[tuple[str, str], ...],
+    *,
+    outputs: Mapping[str, Mapping[str, Any]] | None = None,
+) -> None:
+    recorded = outputs
+    if recorded is None:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "select selector, evidence from lineage.response_selector_outputs"
+                " where derivation_id = %s order by selector",
+                (derivation["derivation_id"],),
+            )
+            recorded = {row[0]: row[1] for row in cursor.fetchall()}
+    if not recorded:
+        raise InvalidSelector("API-response derivation has no selector output evidence")
+    expected_hash = hash_payload(recorded)
+    if derivation.get("output_sha256") != expected_hash:
+        raise InvalidSelector("API-response selector output evidence does not match its hash")
+    selector = format_selector(sorted(pairs))
+    if selector not in recorded:
+        raise InvalidSelector("selector does not name an output recorded by the API response")
+
+
 def _validate_completion_pool(
     connection: psycopg.Connection,
     derivation: Mapping[str, Any],
@@ -207,8 +392,8 @@ def _validate_completion_pool(
     pod_id = _optional_identity(terms, "pod_id")
     production_month = terms.pop("pm", None)
     effective_from = terms.pop("effective_from", None)
-    if production_month is not None and effective_from is not None:
-        raise InvalidSelector("completion-pool selector cannot combine pm and effective_from")
+    if (production_month is None) == (effective_from is None):
+        raise InvalidSelector("completion-pool selector requires exactly one time key")
     if terms:
         raise InvalidSelector(
             "completion-pool selectors require completion_key, col, one time key, and optional"
@@ -221,12 +406,7 @@ def _validate_completion_pool(
     )
     parameters: list[object] = [derivation["derivation_id"], completion_key]
     if production_month is not None:
-        try:
-            parsed_month = date.fromisoformat(f"{production_month}-01")
-        except ValueError:
-            raise InvalidSelector("pm must be YYYY-MM") from None
-        if parsed_month.strftime("%Y-%m") != production_month:
-            raise InvalidSelector("pm must be YYYY-MM")
+        parsed_month = _month(production_month)
         statement += " and production_month = %s"
         parameters.append(parsed_month)
     elif effective_from is not None:
@@ -268,6 +448,8 @@ def _optional_identity(terms: dict[str, str], name: str) -> str | None:
         return plain
     if len(encoded) > 4096:
         raise InvalidSelector(f"{name}_b64 is too long")
+    if not encoded or re.fullmatch(r"[A-Za-z0-9_-]+", encoded) is None:
+        raise InvalidSelector(f"{name}_b64 is not unpadded URL-safe base64")
     try:
         decoded = base64.b64decode(
             encoded + "=" * (-len(encoded) % 4), altchars=b"-_", validate=True
@@ -276,7 +458,20 @@ def _optional_identity(terms: dict[str, str], name: str) -> str | None:
         raise InvalidSelector(f"{name}_b64 is not strict URL-safe base64 UTF-8") from None
     if not decoded or len(decoded) > 2048:
         raise InvalidSelector(f"decoded {name}_b64 has invalid length")
+    canonical = base64.urlsafe_b64encode(decoded.encode("utf-8")).decode("ascii").rstrip("=")
+    if canonical != encoded:
+        raise InvalidSelector(f"{name}_b64 is not canonical unpadded URL-safe base64")
     return decoded
+
+
+def _month(value: str) -> date:
+    try:
+        parsed = date.fromisoformat(f"{value}-01")
+    except ValueError:
+        raise InvalidSelector("pm must be YYYY-MM") from None
+    if parsed.strftime("%Y-%m") != value:
+        raise InvalidSelector("pm must be YYYY-MM")
+    return parsed
 
 
 def _require_one(
@@ -298,3 +493,22 @@ def _require_one(
         )
     if matches != 1:
         raise InvalidSelector(f"selector identifies {matches} rows; exactly one is required")
+
+
+def _require_any(
+    connection: psycopg.Connection,
+    statement: str,
+    parameters: tuple[object, ...],
+    *,
+    derivation: Mapping[str, Any],
+    handle: str,
+) -> None:
+    with connection.cursor() as cursor:
+        cursor.execute(statement, parameters)
+        matches = int(cursor.fetchone()[0])
+    if matches == 0:
+        raise LineageUnresolved(
+            handle,
+            reason="unknown_id",
+            last_resolved=derivation["derivation_id"],
+        )

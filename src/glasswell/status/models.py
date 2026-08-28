@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from glasswell.lineage.fetch_attempts import sanitized_evidence_text
 
 INVENTORY_REASON = (
     "Operational inventory from a timed status snapshot; its grain, precision and observation"
@@ -18,6 +20,10 @@ CheckState = Literal["ok", "degraded", "pending", "unavailable", "not_instrument
 DatasetState = Literal["available", "unavailable"]
 Precision = Literal["exact", "estimated"]
 DisclosureState = Literal["limited", "not_instrumented"]
+SourceState = Literal["current", "stale", "pending"]
+RecordedFetchOutcome = Literal["new", "unchanged", "failed"]
+SourceOutcome = Literal["attempted", "new", "unchanged", "failed", "interrupted"]
+FUTURE_SOURCE_TOLERANCE = timedelta(minutes=5)
 RestoreFailureDetail = Literal[
     "drill_interrupted",
     "unsafe_dump_directory",
@@ -45,6 +51,232 @@ RestoreFailureDetail = Literal[
     "representative_read_failed",
     "scratch_cleanup_failed",
 ]
+
+
+class SourceFreshness(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    state: SourceState
+    last_outcome: SourceOutcome | None
+    next_expected_poll: datetime | None
+    reason: str = Field(min_length=1, max_length=512)
+
+
+def source_freshness(
+    *,
+    observed_at: datetime,
+    artifact_at: datetime | None,
+    attempted_at: datetime | None,
+    completed_at: datetime | None,
+    recorded_outcome: RecordedFetchOutcome | None,
+    expected_interval: timedelta | None,
+    attempt_timeout: timedelta | None,
+    cadence: str | None,
+    failure_code: str | None = None,
+    failure_detail: str | None = None,
+    unresolved_failed_keys: int = 0,
+    unresolved_open_keys: int = 0,
+    oldest_open_attempt_at: datetime | None = None,
+    blocking_failure_code: str | None = None,
+    blocking_failure_detail: str | None = None,
+) -> SourceFreshness:
+    """Combine durable poll evidence with artifact age; never infer a successful check."""
+    if observed_at.tzinfo is None:
+        raise ValueError("source freshness observation requires a timezone")
+    now = observed_at
+    if attempted_at is None:
+        if cadence is None:
+            return SourceFreshness(
+                state="pending",
+                last_outcome=None,
+                next_expected_poll=None,
+                reason="No cadence policy or durable poll attempt is registered for this source.",
+            )
+        if artifact_at is None:
+            return SourceFreshness(
+                state="pending",
+                last_outcome=None,
+                next_expected_poll=None,
+                reason="No durable poll attempt or registered artifact exists yet.",
+            )
+        if _future(artifact_at, now):
+            return SourceFreshness(
+                state="stale",
+                last_outcome=None,
+                next_expected_poll=None,
+                reason="The latest artifact timestamp is implausibly in the future.",
+            )
+        if expected_interval is not None and now - artifact_at > expected_interval:
+            return SourceFreshness(
+                state="stale",
+                last_outcome=None,
+                next_expected_poll=None,
+                reason=(
+                    "The artifact is older than the expected poll interval and no durable"
+                    " attempt can prove that the source was checked unchanged."
+                ),
+            )
+        return SourceFreshness(
+            state="pending",
+            last_outcome=None,
+            next_expected_poll=None,
+            reason=(
+                "The artifact is inside the expected interval, but no durable attempt exists;"
+                " current is not inferred from artifact age alone."
+            ),
+        )
+
+    next_expected = _next_expected(
+        attempted_at=attempted_at,
+        completed_at=completed_at,
+        expected_interval=expected_interval,
+    )
+    if _future(attempted_at, now) or (completed_at is not None and _future(completed_at, now)):
+        return SourceFreshness(
+            state="stale",
+            last_outcome=recorded_outcome or "attempted",
+            next_expected_poll=None,
+            reason="The latest poll evidence has an implausible future timestamp.",
+        )
+    if completed_at is not None and completed_at < attempted_at:
+        return SourceFreshness(
+            state="stale",
+            last_outcome=recorded_outcome or "attempted",
+            next_expected_poll=None,
+            reason="The latest poll completion predates its attempt and is invalid evidence.",
+        )
+    if artifact_at is not None and _future(artifact_at, now):
+        return SourceFreshness(
+            state="stale",
+            last_outcome=recorded_outcome or "attempted",
+            next_expected_poll=next_expected,
+            reason="The latest artifact timestamp is implausibly in the future.",
+        )
+    if unresolved_failed_keys:
+        evidence = _failure_evidence(blocking_failure_code, blocking_failure_detail)
+        if recorded_outcome == "failed":
+            reason = (
+                f"The latest durable source-key poll failed{evidence}; an older artifact does"
+                " not override a failed check."
+            )
+        else:
+            noun = "source key has" if unresolved_failed_keys == 1 else "source keys have"
+            reason = (
+                f"{unresolved_failed_keys} {noun} a failed latest poll{evidence}; a later"
+                " success for another key does not clear that failure."
+            )
+        return SourceFreshness(
+            state="stale",
+            last_outcome=recorded_outcome or "attempted",
+            next_expected_poll=next_expected,
+            reason=reason,
+        )
+    if unresolved_open_keys and oldest_open_attempt_at is not None:
+        if _future(oldest_open_attempt_at, now):
+            return SourceFreshness(
+                state="stale",
+                last_outcome=recorded_outcome or "interrupted",
+                next_expected_poll=next_expected,
+                reason="An unresolved source-key attempt has an implausible future timestamp.",
+            )
+        if attempt_timeout is not None and now - oldest_open_attempt_at > attempt_timeout:
+            noun = (
+                "source-key attempt is" if unresolved_open_keys == 1 else "source-key attempts are"
+            )
+            return SourceFreshness(
+                state="stale",
+                last_outcome=recorded_outcome or "interrupted",
+                next_expected_poll=next_expected,
+                reason=(
+                    f"{unresolved_open_keys} unresolved {noun} beyond the registered timeout;"
+                    " later keys cannot turn interrupted work into success."
+                ),
+            )
+        noun = "source-key poll is" if unresolved_open_keys == 1 else "source-key polls are"
+        return SourceFreshness(
+            state="pending",
+            last_outcome=recorded_outcome or "attempted",
+            next_expected_poll=next_expected,
+            reason=f"{unresolved_open_keys} {noun} still inside the registered attempt timeout.",
+        )
+    if recorded_outcome is None:
+        if attempt_timeout is not None and now - attempted_at > attempt_timeout:
+            return SourceFreshness(
+                state="stale",
+                last_outcome="interrupted",
+                next_expected_poll=next_expected,
+                reason=(
+                    "The latest durable attempt has no outcome beyond its registered timeout;"
+                    " it is treated as interrupted, not successful."
+                ),
+            )
+        return SourceFreshness(
+            state="pending",
+            last_outcome="attempted",
+            next_expected_poll=next_expected,
+            reason="A durable source poll is still inside its registered attempt timeout.",
+        )
+    if recorded_outcome == "failed":
+        evidence = _failure_evidence(failure_code, failure_detail)
+        return SourceFreshness(
+            state="stale",
+            last_outcome="failed",
+            next_expected_poll=next_expected,
+            reason=(
+                f"The latest durable poll failed{evidence}; an older artifact does not override"
+                " a failed check."
+            ),
+        )
+    if artifact_at is None:
+        return SourceFreshness(
+            state="stale",
+            last_outcome=recorded_outcome,
+            next_expected_poll=next_expected,
+            reason="The successful poll references no registered artifact; freshness is refused.",
+        )
+    if next_expected is not None and now > next_expected:
+        return SourceFreshness(
+            state="stale",
+            last_outcome=recorded_outcome,
+            next_expected_poll=next_expected,
+            reason="The last successful poll is beyond the source-specific expected interval.",
+        )
+    if recorded_outcome == "unchanged":
+        reason = (
+            "The latest poll completed unchanged inside cadence; the older artifact remains"
+            " current because its bytes were rechecked successfully."
+        )
+    else:
+        reason = "The latest poll committed a new artifact inside the expected cadence."
+    return SourceFreshness(
+        state="current",
+        last_outcome=recorded_outcome,
+        next_expected_poll=next_expected,
+        reason=reason,
+    )
+
+
+def _future(value: datetime, observed_at: datetime) -> bool:
+    return value > observed_at + FUTURE_SOURCE_TOLERANCE
+
+
+def _next_expected(
+    *,
+    attempted_at: datetime,
+    completed_at: datetime | None,
+    expected_interval: timedelta | None,
+) -> datetime | None:
+    if expected_interval is None:
+        return None
+    return (completed_at or attempted_at) + expected_interval
+
+
+def _failure_evidence(code: str | None, detail: str | None) -> str:
+    parts = [value for value in (code, detail) if value]
+    if not parts:
+        return ""
+    safe = sanitized_evidence_text(": ".join(parts))
+    return f" ({safe})"
 
 
 class StatusCheck(BaseModel):

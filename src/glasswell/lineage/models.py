@@ -27,6 +27,7 @@ Operation = Literal[
     "tiles.build",
     "ledger.grade",
     "inventory.run",
+    "api.respond",
 ]
 OutputStore = Literal["parquet", "postgres", "postgis", "duckdb_view", "file", "response"]
 InputKind = Literal["derivation", "manifest", "rule", "model", "external"]
@@ -162,6 +163,7 @@ class ConformanceRule(BaseModel):
     rationale: str
     evidence_url: str | None = None
     evidence_sha256: str | None = None
+    published_vintage: date | None = None
     effective_from: date
     effective_to: date | None = None
     code_ref: str | None = None

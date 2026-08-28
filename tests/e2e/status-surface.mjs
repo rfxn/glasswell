@@ -81,6 +81,12 @@ const STATUS = {
       declared_vintage: "2026-05-01",
       last_manifest_id: "mf_nd_01",
       manifest_count: 18,
+      last_attempt_at: "2026-08-26T17:55:00Z",
+      last_outcome: "unchanged",
+      next_expected_poll: "2026-09-03T17:56:00Z",
+      cadence: "Every 35 days",
+      freshness_reason:
+        "The latest poll completed unchanged inside cadence; the older artifact remains current because its bytes were rechecked successfully.",
     },
   ],
   platform: {
@@ -274,8 +280,13 @@ try {
       JSON.stringify(seen.semantic),
     );
     assert(
-      seen.sourceDisclosure?.includes("Successful unchanged fetches are not persisted"),
-      `${at} source freshness states the unchanged-fetch limit`,
+      seen.sourceDisclosure?.includes("failed or interrupted checks cannot"),
+      `${at} source freshness states the durable-outcome limit`,
+      seen.sourceDisclosure ?? "missing source section",
+    );
+    assert(
+      seen.sourceDisclosure?.includes("2026-05-01") && seen.sourceDisclosure?.includes("mf_nd_01"),
+      `${at} source freshness retains declared vintage and artifact identity`,
       seen.sourceDisclosure ?? "missing source section",
     );
     assert(journal.pageerror.length === 0, `${at} no page errors`, journal.pageerror.join(" | "));

@@ -1281,8 +1281,7 @@ class TestTheDeployRefusals:
         assert "rsync" not in result.stderr
 
     def test_migrations_are_opt_in(self, tmp_path):
-        # v0.31 retired the silent skip: a bare deploy over a gap refuses naming both
-        # heads, applying is --with-migrations, and skipping is loud and never queries.
+        # A bare deploy over a gap refuses naming both heads; applying is explicit.
         root = _deployable(tmp_path)
         _tag(root)
 
@@ -1291,7 +1290,6 @@ class TestTheDeployRefusals:
         assert "deploy refused: the repo carries migrations ahead of the database" in bare.stderr
         assert "(repo head 2, database 1)" in bare.stderr
         assert "pass --with-migrations to apply them" in bare.stderr
-        assert "--skip-migrations to state the gap and proceed" in bare.stderr
         assert "glasswell-migrate" not in bare_log
 
         applied, applied_log = _run_deploy_against_a_stub_host(
@@ -1299,14 +1297,6 @@ class TestTheDeployRefusals:
         )
         assert applied.returncode == 0
         assert "glasswell-migrate" in applied_log
-
-        skipped, skipped_log = _run_deploy_against_a_stub_host(
-            root, tmp_path, "--skip-migrations", db_head="1"
-        )
-        assert skipped.returncode == 0
-        assert "--skip-migrations: repo migration head is 002" in skipped.stdout
-        assert "was NOT consulted" in skipped.stdout
-        assert "schema_migrations" not in skipped_log, "the banner promises zero head queries"
 
     def test_a_current_schema_head_deploys_and_says_so(self, tmp_path):
         root = _deployable(tmp_path)
@@ -1341,12 +1331,12 @@ class TestTheDeployRefusals:
         assert result.returncode == 1
         assert "schema_migrations head answered 'garbage', not a number" in result.stderr
 
-    def test_the_two_migration_flags_together_contradict_and_exit_2(self, tmp_path):
+    def test_the_retired_migration_skip_is_refused_before_host_access(self, tmp_path):
         root = _deployable(tmp_path)
         _tag(root)
 
-        result = _run_deploy(root, tmp_path, "--with-migrations", "--skip-migrations")
+        result = _run_deploy(root, tmp_path, "--skip-migrations")
 
         assert result.returncode == 2
-        assert "--with-migrations and --skip-migrations contradict each other" in result.stderr
+        assert "--skip-migrations was retired" in result.stderr
         assert MARKER not in result.stderr

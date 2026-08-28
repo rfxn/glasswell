@@ -105,6 +105,12 @@ done
 printf 'status snapshot\n'
 assert "glasswell-status.timer enabled" enabled "$(systemctl is-enabled glasswell-status.timer)"
 assert "glasswell-status.timer active" active "$(systemctl is-active glasswell-status.timer)"
+assert "glasswell-lineage-retention.timer enabled" enabled \
+    "$(systemctl is-enabled glasswell-lineage-retention.timer)"
+assert "glasswell-lineage-retention.timer active" active \
+    "$(systemctl is-active glasswell-lineage-retention.timer)"
+assert "glasswell-lineage-retention.service last result" success \
+    "$(systemctl show glasswell-lineage-retention.service -p Result --value)"
 backup_enabled="$(systemctl is-enabled glasswell-backup.timer 2>/dev/null)"
 restore_enabled="$(systemctl is-enabled glasswell-restore-drill.timer 2>/dev/null)"
 assert "restore-drill timer follows backup enablement" "$backup_enabled" "$restore_enabled"

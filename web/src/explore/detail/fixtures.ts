@@ -1,48 +1,39 @@
-// Recorded from a locally-served build of this branch on 2026-08-21, one per operation the
-// eleven datasets name as their `detail_operation`. `work-output/explorer-c8-serve.py` stands
-// the stack up and `work-output/explorer-c8-record.py` writes this file — it is refreshed, not
-// edited, for the reason `web/src/test/fixtures.ts:1-10` gives.
+// Recorded from the tracked `tests/support/serve_branch.py` harness by
+// `scripts/record-explorer-fixtures.py`. Request ids are normalized because they are volatile
+// D3 envelope metadata; every other value is the locally served branch response.
 //
-//   curl -H "X-Glasswell-Key: $KEY" .../v1/quarantine/qr_01contract0003
-//   curl -H "X-Glasswell-Key: $KEY" .../v1/conformance/cr_nd_status_vocab_1
-//   …one per exported constant below, each named for the operation it came from.
-//
-// The ids are the ones C7's collection fixtures already carry, so a row and its record are
-// the same row rather than two plausible ones.
-//
-// A detail response is the reason §3.4 exists: `get_quarantine_row` carries `row_payload` and
-// the first/last-seen manifests, which the collection does not, and `get_vintage` carries the
-// `_lineage` sidecar its list form omits. The owner key travels in the header and appears in
-// no body here — the recorder asserts that before writing.
+// Collection and detail fixtures come from the same seeded database, so each detail id names
+// the exact row carried by the collection fixture. The owner key is never written.
 
-/** `GET /v1/quarantine/qr_01contract0003` — get_quarantine_row. */
+/** `GET /v1/quarantine/qr_01explorer0059` — get_quarantine_row. */
 export const quarantineDetailEnvelope = {
   "data": {
-    "first_seen_at": "2026-08-01T05:02:11+00:00",
+    "first_seen_at": "2026-08-01T05:59:11+00:00",
     "first_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-    "last_seen_at": "2026-08-01T05:02:11+00:00",
+    "last_seen_at": "2026-08-01T05:59:11+00:00",
     "last_seen_manifest_id": "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
     "notes": null,
-    "occurrence_count": 2,
-    "quarantine_id": "qr_01contract0003",
-    "reason_code": "unknown_vocab",
+    "occurrence_count": 74,
+    "quarantine_id": "qr_01explorer0059",
+    "reason_code": "key_collision",
     "release_derivation_id": null,
     "released_at": null,
     "released_by_rule_id": null,
-    "row_fingerprint": "fp_contract_0003",
+    "row_fingerprint": "fp_explorer_0059",
     "row_payload": {
-      "status": "MYSTERY"
+      "row": 59,
+      "stream_raw": "GasSold"
     },
-    "rule_id": "cr_nd_status_vocab_1",
+    "rule_id": "cr_nd_stream_vocab_1",
     "source_id": "nd_gis_wells",
-    "stage": "conform",
-    "staging_table": "staging.nd_gis_wells",
-    "state": "released"
+    "stage": "parse",
+    "staging_table": "staging.nd_mpr_oil",
+    "state": "accepted_loss"
   },
   "links": {
     "explain": null,
     "next": null,
-    "self": "/v1/quarantine/qr_01contract0003"
+    "self": "/v1/quarantine/qr_01explorer0059"
   },
   "meta": {
     "as_of": {
@@ -52,38 +43,39 @@ export const quarantineDetailEnvelope = {
     "deprecations": [],
     "labels": {
       "/reason_code": "gt_quarantine",
-      "/state": "gt_quarantine"
+      "/state": "gt_quarantine_state"
     },
     "next_cursor": null,
-    "request_id": "01M0J67HNMJ05EF0A3BS6X0GST",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {},
     "warnings": []
   }
 };
 
-/** `GET /v1/conformance/cr_nd_status_vocab_1` — get_conformance_rule. */
+/** `GET /v1/conformance/cr_nd_stream_vocab_1` — get_conformance_rule. */
 export const conformanceRuleEnvelope = {
   "data": {
     "applies_to_fields": [
-      "status"
+      "stream_raw"
     ],
     "code_ref": null,
     "effective_from": "2026-01-01",
     "effective_to": null,
     "evidence_sha256": null,
-    "evidence_url": "https://gis.dmr.nd.gov/downloads/oilgas/shapefile/OGD_Wells.zip",
-    "rationale": "Measured from OGD_Wells.dbf (43,812 records): A 20640, PA 6447, DRY 6347, PNC 5725, IA 1597, Confidential 962, AB 842, LOC 610, DRL 340, TA 174, TAO 30, PANF 27, EXP 22, PNS 20, TASC 11, TATD 8, NC 7, LOCR 2, NJ 1. The canonical set is active, plugged, dry, permitted, inactive, confidential, drilling, temporarily_abandoned and expired; the permit-lifecycle terminal codes collapse to expired. Confidential is a status, which is why the well record carries a confidential flag and why withheld is a distinct state from missing (\u00a73.0.3).",
-    "rule": "Map the NDIC well-status code to the canonical status vocabulary.",
-    "rule_family": "cr_nd_status_vocab",
-    "rule_id": "cr_nd_status_vocab_1",
+    "evidence_url": "https://www.dmr.nd.gov/oilgas/mpr/2026_03.xlsx",
+    "published_vintage": "2026-08-20",
+    "rationale": "canonical.production_monthly admits oil, gas and water only. GasSold and Flared are dispositions of produced gas, not streams: they are recorded in nd_stream_map as not promoted and quarantine with a reason, so conflict C7's claim is measured rather than asserted. The rule reads the promoted view because the executor stringifies lookup values and a NULL would promote as the text 'None'.",
+    "rule": "Promote Oil, Wtr and Gas; quarantine every other reported column as a disposition.",
+    "rule_family": "cr_nd_stream_vocab",
+    "rule_id": "cr_nd_stream_vocab_1",
     "rule_kind": "vocab_map",
-    "source_id": "nd_gis_wells",
+    "source_id": "nd_mpr_xlsx",
     "spec": {
-      "key_col": "status",
-      "mapping_table": "nd_status_map",
-      "reason_code": "unknown_status",
+      "key_col": "stream_raw",
+      "mapping_table": "nd_stream_promoted_map",
+      "reason_code": "stream_not_promoted",
       "unmapped_action": "quarantine",
-      "value_col": "status_canonical"
+      "value_col": "stream_canonical"
     },
     "stage": "conform",
     "supersedes_rule_id": null
@@ -91,12 +83,12 @@ export const conformanceRuleEnvelope = {
   "links": {
     "explain": null,
     "next": null,
-    "self": "/v1/conformance/cr_nd_status_vocab_1"
+    "self": "/v1/conformance/cr_nd_stream_vocab_1"
   },
   "meta": {
     "as_of": {
       "requested": "latest",
-      "resolved": null
+      "resolved": "2026-08-28"
     },
     "deprecations": [],
     "labels": {
@@ -104,7 +96,7 @@ export const conformanceRuleEnvelope = {
       "/spec": "gt_conformance_rule"
     },
     "next_cursor": null,
-    "request_id": "01M0J67HP32CA1VF0EHGCCDZGE",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {},
     "warnings": []
   }
@@ -145,7 +137,7 @@ export const manifestEnvelope = {
     "deprecations": [],
     "labels": {},
     "next_cursor": null,
-    "request_id": "01M0J67HPGGWC2TDWGB7J11W7Y",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {},
     "warnings": []
   }
@@ -193,7 +185,7 @@ export const vintageEnvelope = {
     "deprecations": [],
     "labels": {},
     "next_cursor": null,
-    "request_id": "01M0J67HPX67VV24PZ0GAT7G3P",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {},
     "warnings": []
   }
@@ -244,7 +236,7 @@ export const derivationEnvelope = {
     "deprecations": [],
     "labels": {},
     "next_cursor": null,
-    "request_id": "01M0J67HQ7NJ5H4B1RHFBX42ZP",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {},
     "warnings": []
   }
@@ -268,10 +260,13 @@ export const wellDetailEnvelope = {
         "source_datum": "EPSG:4269"
       }
     ],
+    "geometry_provenance": [
+      "lateral"
+    ],
     "land_unit_label": "151N-101W-11",
     "lateral_count": 1,
     "lateral_length_ft": {
-      "d": "drv_tcfhfxnptv2oucdmjtzq#api10=3305310451&col=lateral_length_ft",
+      "d": "drv_vqkc2aza4pwtxpeonuxa#api10=3305310451&col=lateral_length_ft",
       "unit": "ft",
       "value": "9862.27"
     },
@@ -293,7 +288,10 @@ export const wellDetailEnvelope = {
     "well_type_reported": "OG"
   },
   "links": {
-    "explain": "/v1/explain?h=drv_tcfhfxnptv2oucdmjtzq%23api10%3D3305310451%26col%3Dlateral_length_ft&depth=full",
+    "completions": "/v1/wells/3305310451/completions",
+    "explain": "/v1/explain?h=drv_vqkc2aza4pwtxpeonuxa%23api10%3D3305310451%26col%3Dlateral_length_ft&depth=full",
+    "formations": "/v1/formations",
+    "neighbors": "/v1/wells/3305310451/neighbors",
     "next": null,
     "production": "/v1/wells/3305310451/production",
     "self": "/v1/wells/3305310451"
@@ -301,7 +299,7 @@ export const wellDetailEnvelope = {
   "meta": {
     "as_of": {
       "requested": "latest",
-      "resolved": "2026-08-01"
+      "resolved": "2026-08-20"
     },
     "deprecations": [],
     "labels": {
@@ -312,7 +310,7 @@ export const wellDetailEnvelope = {
       "/total_depth_ft": "gt_wellbore"
     },
     "next_cursor": null,
-    "request_id": "01M0J67HQH5VR8YCABVKW0M2HE",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {},
     "warnings": []
   }
@@ -326,7 +324,7 @@ export const glossaryTermEnvelope = {
     "domain_tags": [
       "modeling"
     ],
-    "effective_from": "2026-08-21",
+    "effective_from": "2026-08-28",
     "expanded_definition": "A neighbour is near in metres; an analog is near in the variables that drive performance. Confusing the two is how a comparison set ends up full of wells that share a section and nothing else.",
     "first_surfaced_in": null,
     "highlightable": false,
@@ -354,7 +352,7 @@ export const glossaryTermEnvelope = {
     "deprecations": [],
     "labels": {},
     "next_cursor": null,
-    "request_id": "01M0J67HRGRN08HQG19T1W3VQ4",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {},
     "warnings": []
   }
@@ -383,7 +381,7 @@ export const errorTypeEnvelope = {
     "deprecations": [],
     "labels": {},
     "next_cursor": null,
-    "request_id": "01M0J67HRVEPQ844FJRMF941JC",
+    "request_id": "00000000000000000000000000",
     "source_freshness": {},
     "warnings": []
   }

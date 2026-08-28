@@ -31,8 +31,8 @@ describe("pagination is a teaching moment, not a control (§3.6)", () => {
     const decoded = decodeCursor(pagedQuarantineEnvelope.meta.next_cursor as string);
 
     expect(decoded).toEqual({
-      k: "2026-08-01T05:02:11+00:00",
-      t: "qr_01contract0002",
+      k: pagedQuarantineEnvelope.data[1]?.last_seen_at,
+      t: pagedQuarantineEnvelope.data[1]?.quarantine_id,
       v: null,
       q: "44136fa3",
     });
@@ -115,8 +115,10 @@ describe("pagination is a teaching moment, not a control (§3.6)", () => {
       quarantineSummaryEnvelope.data.total,
     );
 
-    expect(model.total).toBe(3);
-    expect(rendered(model).textContent).toMatch(/3 rows matched/);
+    expect(model.total).toBe(quarantineSummaryEnvelope.data.total);
+    expect(rendered(model).textContent).toContain(
+      `${quarantineSummaryEnvelope.data.total} rows matched`,
+    );
   });
 
   it("never invents a total where no summary operation serves one", () => {
@@ -129,11 +131,20 @@ describe("pagination is a teaching moment, not a control (§3.6)", () => {
   });
 
   it("says the walk is complete rather than offering a next that does not exist", () => {
-    const model = paginationOf(dataset("quarantine"), SNAPSHOT, quarantineEnvelope, 3, null);
+    const terminal = JSON.parse(JSON.stringify(quarantineEnvelope));
+    terminal.links.next = null;
+    terminal.meta.next_cursor = null;
+    const model = paginationOf(
+      dataset("quarantine"),
+      SNAPSHOT,
+      terminal,
+      terminal.data.length,
+      null,
+    );
     const block = rendered(model);
 
     expect(model.next).toBeNull();
     expect(block.querySelector(".gw-page-next")).toBeNull();
-    expect(block.textContent).toMatch(/showing all 3/);
+    expect(block.textContent).toContain(`showing all ${terminal.data.length}`);
   });
 });

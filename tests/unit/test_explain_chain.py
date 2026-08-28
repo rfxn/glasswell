@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from glasswell.lineage.errors import InvalidHandle, LineageUnresolved
+from glasswell.lineage.errors import InvalidHandle, InvalidSelector, LineageUnresolved
 from glasswell.lineage.explain import MAX_DEPTH, resolve_chain_from, to_json
 
 ROOT = "drv_promote001"
@@ -95,6 +95,11 @@ class FakeGraph:
 
     def with_inputs(self, ids: Sequence[str]) -> set[str]:
         return {i for i in ids if i in self._with_inputs}
+
+    def validate_selector(
+        self, derivation: Mapping[str, Any], selector: str, *, handle: str
+    ) -> None:
+        return None
 
 
 def edge(parent: str, ref: str, kind: str, level: int, ordinal: int = 0) -> dict[str, Any]:
@@ -210,6 +215,14 @@ def test_an_unresolvable_input_names_the_last_resolvable_node():
 def test_a_malformed_handle_is_rejected_before_any_traversal():
     with pytest.raises(InvalidHandle):
         resolve_chain_from(nd_graph(), "select 1")
+
+
+def test_a_selector_cannot_pass_when_the_graph_has_no_validator():
+    graph = nd_graph()
+    object.__setattr__(graph, "validate_selector", None)
+
+    with pytest.raises(InvalidSelector, match="validation is unavailable"):
+        resolve_chain_from(graph, HANDLE)
 
 
 def test_a_depth_below_one_is_refused():

@@ -227,7 +227,9 @@ describe("a cell renders the fact the API stated, never a tidier one (§3.2)", (
   it("binds an enum value to the column's own term where the column is bound", () => {
     const cell = cellsOf("quarantine", quarantineEnvelope)(0, "/state");
 
-    expect(cell.querySelector("gw-term")?.getAttribute("term-id")).toBe("gt_quarantine");
+    expect(cell.querySelector("gw-term")?.getAttribute("term-id")).toBe(
+      quarantineEnvelope.meta.labels["/state"],
+    );
     expect(cell.querySelector("gw-term")?.textContent).toBe(quarantineEnvelope.data[0]?.state);
   });
 
@@ -235,7 +237,9 @@ describe("a cell renders the fact the API stated, never a tidier one (§3.2)", (
     const cell = cellsOf("quarantine", quarantineEnvelope)(0, "/last_seen_at");
 
     expect(cell.querySelector("time")?.textContent).toBe("2026-08-01");
-    expect(cell.querySelector(".gw-value-clock")?.textContent).toBe("05:02");
+    expect(cell.querySelector(".gw-value-clock")?.textContent).toBe(
+      quarantineEnvelope.data[0]?.last_seen_at.slice(11, 16),
+    );
     expect(cell.querySelector("time")?.getAttribute("datetime")).toBe(
       quarantineEnvelope.data[0]?.last_seen_at,
     );

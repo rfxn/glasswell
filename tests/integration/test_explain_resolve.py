@@ -40,6 +40,15 @@ def promote_from_manifest(db, lineage_env) -> tuple[str, str]:
             ) as parse:
                 parse.set_output_hash("b" * 64)
             promote.set_output_hash("c" * 64)
+    with db.cursor() as cursor:
+        cursor.execute(
+            "insert into canonical.production_monthly"
+            " (api10, production_month, stream, source_id, report_vintage, volume, unit,"
+            " days_produced, granularity, value_hash, source_manifest_id, derivation_id)"
+            " values ('3305301234', '2024-03-01', 'oil', 'nd_mpr_xlsx', %s, 1, 'bbl', 31,"
+            " 'well_observed', %s, %s, %s)",
+            (VINTAGE, "d" * 64, manifest_id, promote.derivation_id),
+        )
     return promote.derivation_id, manifest_id
 
 

@@ -80,20 +80,43 @@ def compute_crs_rule(rules: Sequence[ConformanceRule]) -> ConformanceRule:
 _LENGTH_RULE_SOURCE = """
 select length_rule_source
   from lineage.crs_registry
- where basin = %s and length_rule_source is not null and effective_from <= %s
- order by effective_from desc
+ where basin = %(basin)s
+   and length_rule_source is not null
+   and effective_from <= %(valid_at)s
+   and published_vintage <= greatest(
+       %(knowledge_at)s,
+       coalesce((select min(baseline.published_vintage)
+                   from lineage.crs_registry baseline
+                  where baseline.basin = %(basin)s), %(knowledge_at)s))
+ order by effective_from desc, published_vintage desc
  limit 1
+"""
+
+_SOURCE_BASELINE = """
+select greatest(%(knowledge_at)s::date, coalesce(min(published_vintage), %(knowledge_at)s::date))
+  from lineage.conformance_rules
+ where source_id = %(source_id)s
 """
 
 
 def length_rule_source(
-    connection: psycopg.Connection, basin: str | None, *, as_of: date | None = None
+    connection: psycopg.Connection,
+    basin: str | None,
+    *,
+    as_of: date | None = None,
+    valid_at: date | None = None,
+    knowledge_at: date | None = None,
 ) -> str:
     """Which source's compute-CRS rule governs a basin. The registry answers, not a constant."""
     if not basin:
         return LATERALS_SOURCE_ID
+    effective_cut = valid_at or as_of or date.today()
+    knowledge_cut = knowledge_at or date.today()
     with connection.cursor() as cursor:
-        cursor.execute(_LENGTH_RULE_SOURCE, (basin, as_of or date.today()))
+        cursor.execute(
+            _LENGTH_RULE_SOURCE,
+            {"basin": basin, "valid_at": effective_cut, "knowledge_at": knowledge_cut},
+        )
         row = cursor.fetchone()
     if row is None:
         raise LookupError(f"lineage.crs_registry names no length rule source for basin {basin!r}")
@@ -106,9 +129,31 @@ def resolve_length_method(
     source_id: str | None = None,
     basin: str | None = None,
     as_of: date | None = None,
+    valid_at: date | None = None,
+    knowledge_at: date | None = None,
 ) -> LengthMethod:
     """The one lookup every length path makes, so no two paths can measure differently."""
-    resolved = source_id or length_rule_source(connection, basin, as_of=as_of)
+    effective_cut = valid_at or as_of or date.today()
+    knowledge_cut = knowledge_at or date.today()
+    resolved = source_id or length_rule_source(
+        connection,
+        basin,
+        valid_at=effective_cut,
+        knowledge_at=knowledge_cut,
+    )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            _SOURCE_BASELINE,
+            {"source_id": resolved, "knowledge_at": knowledge_cut},
+        )
+        rule_knowledge_cut = cursor.fetchone()[0]
     return length_method(
-        compute_crs_rule(load_rules(connection, source_id=resolved, as_of=as_of))
+        compute_crs_rule(
+            load_rules(
+                connection,
+                source_id=resolved,
+                valid_at=effective_cut,
+                knowledge_at=rule_knowledge_cut,
+            )
+        )
     )

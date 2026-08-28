@@ -40,7 +40,7 @@ DEFAULT_MARTIN_URL = "http://127.0.0.1:3000"
 
 
 def get_connection() -> Iterator[psycopg.Connection]:
-    """One connection per request, rolled back on the way out: every route here reads."""
+    """One connection per request; committed writes survive, while unfinished work rolls back."""
     dsn = os.environ.get(DSN_ENV) or os.environ.get(FALLBACK_DSN_ENV)
     if not dsn:
         raise ProblemError(

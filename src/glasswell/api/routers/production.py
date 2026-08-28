@@ -4,7 +4,7 @@ per point, and the three null semantics kept apart."""
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Annotated, Any, Literal
 
 import psycopg
@@ -12,7 +12,7 @@ from fastapi import APIRouter, Path, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import JSONResponse
 
-from glasswell.api.deps import AsOf, Connection, ExplainEffect, rows, today
+from glasswell.api.deps import AsOf, Connection, ExplainEffect, rows
 from glasswell.api.errors import ProblemError, problem_responses
 from glasswell.api.examples import (
     EXAMPLE_API10,
@@ -25,15 +25,16 @@ from glasswell.api.examples import (
 from glasswell.api.responses import (
     EnvelopeModel,
     enveloped,
-    freshness_state,
     inline_for,
     iso,
     month_label,
 )
+from glasswell.api.routers.health import source_health_data
 from glasswell.api.routers.wells import API10_PATTERN, RANKED_WELLS, pending_allocation
 from glasswell.lineage.conformance import lease_reporting_rule
 from glasswell.lineage.envelope import series
 from glasswell.lineage.ids import format_handle
+from glasswell.lineage.selector_registry import identity_selector_term
 from glasswell.lineage.vintages import select_production
 
 router = APIRouter(tags=["wells"])
@@ -95,17 +96,6 @@ select (row_payload ->> 'production_month')::date as production_month,
 """ + _OPEN_AS_OF + """
  group by 1, 2
 """
-
-_FRESHNESS = """
-select source_id,
-       max(fetch_vintage) as retrieval_vintage,
-       (select max(v.vintage_date) from lineage.vintages v where v.source_id = m.source_id)
-           as declared_vintage
-  from lineage.manifests m
- where source_id = any(%(source_ids)s)
- group by source_id
-"""
-
 
 class ProductionSeries(BaseModel):
     """Parallel arrays: `pm` is the shared month axis and every column aligns to it."""
@@ -407,7 +397,10 @@ def get_well_production(
     # A lease-reporting jurisdiction has no observed well-level series. An empty envelope here
     # reads as "nothing was produced"; the disclosure says what is actually true (DIR-3).
     lease_reported = lease_reporting_rule(
-        connection, _state_code(connection, api10), as_of=as_of
+        connection,
+        _state_code(connection, api10),
+        valid_at=as_of,
+        knowledge_at=as_of,
     )
 
     withheld = _withheld_months(connection, api10, window, as_of)
@@ -675,7 +668,7 @@ def get_well_production_pools(
                 [_volume(points.get(month)) for month in months],
                 unit=first["unit"],
                 derivation=first["derivation_id"],
-                selector=f"entity_key={entity_key}&col={column}",
+                selector=f"{identity_selector_term('entity_key', entity_key)}&col={column}",
                 granularity=first["granularity"],
                 basis=STREAM_BASIS[name],
                 point_handles=handles if len(set(handles)) > 1 else None,
@@ -725,7 +718,8 @@ def _pool_handle(
     if row is None:
         return None
     return format_handle(
-        row["derivation_id"], f"entity_key={entity_key}&col={column}&pm={month:%Y-%m}"
+        row["derivation_id"],
+        f"{identity_selector_term('entity_key', entity_key)}&col={column}&pm={month:%Y-%m}",
     )
 
 
@@ -870,12 +864,9 @@ def _point_handle(api10: str, column: str, month: date, row: dict[str, Any] | No
 def _freshness(connection: psycopg.Connection, source_ids: list[str]) -> dict[str, Any]:
     if not source_ids:
         return {}
-    now = today()
-    return {
-        row["source_id"]: {
-            "retrieval_vintage": iso(row["retrieval_vintage"]),
-            "declared_vintage": iso(row["declared_vintage"]),
-            "state": freshness_state(row["retrieval_vintage"], today=now),
-        }
-        for row in rows(connection, _FRESHNESS, {"source_ids": source_ids})
-    }
+    _, freshness = source_health_data(
+        connection,
+        observed_at=datetime.now(UTC),
+        source_ids=source_ids,
+    )
+    return freshness

@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import re
 from collections.abc import Iterable
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Path, Request
@@ -22,7 +22,8 @@ from glasswell.api.examples import (
     request_example,
     semantics,
 )
-from glasswell.api.responses import EnvelopeModel, enveloped, freshness_state, inline_for, iso
+from glasswell.api.responses import EnvelopeModel, enveloped, inline_for, iso
+from glasswell.api.routers.health import source_health_data
 from glasswell.api.routers.wells import API10_PATTERN, RANKED_WELLS
 from glasswell.lineage.ids import format_handle
 
@@ -143,16 +144,6 @@ select source_id, min(available_on) as earliest_available_on,
  group by source_id
  order by source_id
 """
-
-_FRESHNESS = """
-select source_id, max(fetch_vintage) as retrieval_vintage,
-       (select max(v.vintage_date) from lineage.vintages v where v.source_id = m.source_id)
-           as declared_vintage
-  from lineage.manifests m
- where source_id = any(%(source_ids)s)
- group by source_id
-"""
-
 
 class CompletionEvent(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -526,15 +517,12 @@ def _selector_term(name: str, value: str) -> str:
 def _freshness(connection: Any, source_ids: list[str]) -> dict[str, Any]:
     if not source_ids:
         return {}
-    now = today()
-    return {
-        row["source_id"]: {
-            "retrieval_vintage": iso(row["retrieval_vintage"]),
-            "declared_vintage": iso(row["declared_vintage"]),
-            "state": freshness_state(row["retrieval_vintage"], today=now),
-        }
-        for row in rows(connection, _FRESHNESS, {"source_ids": source_ids})
-    }
+    _, freshness = source_health_data(
+        connection,
+        observed_at=datetime.now(UTC),
+        source_ids=source_ids,
+    )
+    return freshness
 
 
 def _coverage_warnings(

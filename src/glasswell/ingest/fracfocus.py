@@ -22,6 +22,7 @@ from psycopg.rows import dict_row
 
 from glasswell.ingest.base import open_ingest_run, record_vintage_day
 from glasswell.lineage import InputRef, OutputSpec, current_session, derive, fetch_raw, quarantine
+from glasswell.lineage.fetch_attempts import durable_fetch_attempts
 from glasswell.lineage.serialization import hash_payload, json_ready
 from glasswell.seed.conformance_fracfocus import DOWNLOAD_URL, TERMS_URL
 
@@ -656,7 +657,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--dsn", required=True)
     parser.add_argument("--raw-root")
     arguments = parser.parse_args(argv)
-    with psycopg.connect(arguments.dsn) as connection, open_ingest_run(
+    with durable_fetch_attempts(arguments.dsn), psycopg.connect(
+        arguments.dsn
+    ) as connection, open_ingest_run(
         connection, source_id=SOURCE_ID, raw_root=arguments.raw_root
     ) as run:
         result = load_disclosures(run.connection, raw_root=run.raw_root)

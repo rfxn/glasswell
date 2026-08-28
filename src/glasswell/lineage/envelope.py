@@ -389,15 +389,38 @@ def _explain_warnings(
                 "pointer": f"/{EXPLAIN_BLOCK}",
             }
         )
-    if resolved.unresolved:
+    invalid = {
+        handle: reason
+        for handle, reason in resolved.unresolved.items()
+        if reason == "invalid_selector"
+    }
+    if invalid:
+        named = "; ".join(sorted(invalid))
+        found.append(
+            {
+                "code": "explain_invalid_selector",
+                "detail": (
+                    f"{len(invalid)} of {len(selected)} handles failed selector-output"
+                    f" validation and are absent from _explain: {named}. The response values"
+                    " are unchanged; call /v1/explain with the handle for the strict refusal."
+                ),
+                "pointer": f"/{EXPLAIN_BLOCK}",
+            }
+        )
+    unresolved = {
+        handle: reason
+        for handle, reason in resolved.unresolved.items()
+        if reason != "invalid_selector"
+    }
+    if unresolved:
         named = "; ".join(
-            f"{handle} ({reason})" for handle, reason in sorted(resolved.unresolved.items())
+            f"{handle} ({reason})" for handle, reason in sorted(unresolved.items())
         )
         found.append(
             {
                 "code": "explain_unresolved",
                 "detail": (
-                    f"{len(resolved.unresolved)} of {len(selected)} handles did not resolve and"
+                    f"{len(unresolved)} of {len(selected)} handles did not resolve and"
                     f" are absent from _explain: {named}. The response's values are unaffected;"
                     " a handle that will not resolve is a lineage defect, not a serving one."
                 ),

@@ -9,6 +9,7 @@ import pytest
 
 from glasswell.lineage.envelope import (
     ENVELOPE_META_KEYS,
+    InlinedExplain,
     attach_lineage,
     figure,
     series,
@@ -35,6 +36,25 @@ def oil_figure(**overrides: Any):
 
 def envelope_of(data: Any):
     return attach_lineage(data, as_of=AS_OF, request_id="req_01").to_dict()
+
+
+def test_inline_invalid_selector_is_an_explicit_non_destructive_warning():
+    value = oil_figure()
+    body = attach_lineage(
+        {"oil": value},
+        as_of=AS_OF,
+        request_id="req_selector_warning",
+        explain=lambda handles: InlinedExplain(
+            chains={}, unresolved=dict.fromkeys(handles, "invalid_selector")
+        ),
+    ).to_dict()
+
+    warning = next(
+        item for item in body["meta"]["warnings"] if item["code"] == "explain_invalid_selector"
+    )
+    assert value.handle in warning["detail"]
+    assert body["data"]["oil"]["value"] == "128340.000"
+    assert body["_explain"] == {}
 
 
 def test_a_figure_without_a_unit_is_rejected_at_construction():

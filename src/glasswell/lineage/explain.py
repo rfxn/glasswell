@@ -10,10 +10,10 @@ from typing import Any, Literal, Protocol
 import psycopg
 from psycopg.rows import dict_row
 
-from glasswell.lineage.errors import LineageUnresolved
+from glasswell.lineage.errors import InvalidSelector, LineageUnresolved
 from glasswell.lineage.ids import parse_handle
 from glasswell.lineage.models import Frozen
-from glasswell.lineage.selector_registry import validate_selector
+from glasswell.lineage.selector_registry import RESPONSE_PROFILE, validate_selector
 from glasswell.lineage.serialization import json_ready
 
 MAX_DEPTH = 8
@@ -78,7 +78,7 @@ select derivation_id, ord, kind, ref_id, selector, as_of_vintage, role, level
 
 _DERIVATIONS = """
 select derivation_id, operation, output_store, output_dataset, output_partition, output_locator,
-       output_sha256, output_rows, code_version, params_hash, created_vintage, model_id,
+       output_sha256, output_rows, code_version, params, params_hash, created_vintage, model_id,
        recipe_id, determinism_class, status
   from lineage.derivations
  where derivation_id = any(%s)
@@ -105,6 +105,8 @@ class PostgresGraph:
 
     def __init__(self, connection: psycopg.Connection) -> None:
         self._connection = connection
+        self._selector_profiles: dict[tuple[str, str], tuple[str, ...]] = {}
+        self._response_outputs: dict[str, Mapping[str, Mapping[str, Any]]] = {}
 
     def edges(self, root: str, depth: int) -> list[Mapping[str, Any]]:
         with self._connection.cursor(row_factory=dict_row) as cursor:
@@ -144,7 +146,38 @@ class PostgresGraph:
     def validate_selector(
         self, derivation: Mapping[str, Any], selector: str, *, handle: str
     ) -> None:
-        validate_selector(self._connection, derivation, selector, handle=handle)
+        key = (str(derivation["operation"]), str(derivation["output_dataset"]))
+        profiles = self._selector_profiles.get(key)
+        if profiles is None:
+            with self._connection.cursor() as cursor:
+                cursor.execute(
+                    "select selector_profile from lineage.selector_output_registry"
+                    " where operation = %s and output_dataset = %s order by selector_profile",
+                    key,
+                )
+                profiles = tuple(row[0] for row in cursor.fetchall())
+            self._selector_profiles[key] = profiles
+        response_outputs = None
+        if RESPONSE_PROFILE in profiles:
+            derivation_id = str(derivation["derivation_id"])
+            response_outputs = self._response_outputs.get(derivation_id)
+            if response_outputs is None:
+                with self._connection.cursor() as cursor:
+                    cursor.execute(
+                        "select selector, evidence from lineage.response_selector_outputs"
+                        " where derivation_id = %s order by selector",
+                        (derivation_id,),
+                    )
+                    response_outputs = {row[0]: row[1] for row in cursor.fetchall()}
+                self._response_outputs[derivation_id] = response_outputs
+        validate_selector(
+            self._connection,
+            derivation,
+            selector,
+            handle=handle,
+            profiles=profiles,
+            response_outputs=response_outputs,
+        )
 
 
 def _partition_text(partition: Mapping[str, Any]) -> str:
@@ -243,8 +276,9 @@ def resolve_chain_from(
         raise LineageUnresolved(handle, reason="unknown_id")
     if parsed.selector is not None:
         validator = getattr(graph, "validate_selector", None)
-        if validator is not None:
-            validator(derivation_rows[root], parsed.selector, handle=handle)
+        if validator is None:
+            raise InvalidSelector("selector validation is unavailable for this lineage graph")
+        validator(derivation_rows[root], parsed.selector, handle=handle)
     manifest_rows = graph.manifests(
         list(dict.fromkeys(r["ref_id"] for r in rows if r["kind"] == "manifest"))
     )

@@ -171,7 +171,12 @@ jobs:
               case "$target" in
                 http://*|https://*|mailto:*|gw:*) continue ;;
               esac
-              if [ ! -e "$target" ]; then
+              if [[ "$target" = /* ]]; then
+                resolved=".${target}"
+              else
+                resolved="$(dirname "$md")/${target}"
+              fi
+              if [ ! -e "$resolved" ]; then
                 echo "BROKEN in $md: $target"
                 FAIL=1
               fi

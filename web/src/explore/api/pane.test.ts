@@ -200,7 +200,11 @@ describe("RESPONSE labels the envelope in place (§4.4)", () => {
   });
 
   it("says the whole response is here when it fits", () => {
-    mount();
+    const terminal = JSON.parse(JSON.stringify(quarantineEnvelope));
+    terminal.data = terminal.data.slice(0, 1);
+    terminal.links.next = null;
+    terminal.meta.next_cursor = null;
+    mount({ envelope: terminal });
 
     expect(host.querySelector(".gw-api-bytes")?.textContent).toMatch(/^[\d,]+ bytes, whole$/);
   });
@@ -233,7 +237,11 @@ describe("the cursor is taught as a link to follow (§4.2, 9.6)", () => {
   });
 
   it("renders one command when the server offered no next page", () => {
-    mount();
+    const terminal = JSON.parse(JSON.stringify(quarantineEnvelope));
+    terminal.data = terminal.data.slice(0, 1);
+    terminal.links.next = null;
+    terminal.meta.next_cursor = null;
+    mount({ envelope: terminal });
 
     expect(host.querySelectorAll(".gw-api-command")).toHaveLength(1);
   });

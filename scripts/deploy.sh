@@ -17,17 +17,13 @@ CODE_ENV_FILE=/etc/glasswell/code-version.env
 
 dry_run=0
 with_migrations=0
-skip_migrations=0
 
 usage() {
     cat <<'EOF'
-usage: deploy.sh [--dry-run] [--with-migrations | --skip-migrations]
+usage: deploy.sh [--dry-run] [--with-migrations]
 
   --dry-run           run the refusals, print every remote command, change nothing
   --with-migrations   also run runbook step 3 (migrations, as the postgres superuser)
-  --skip-migrations   deploy even when the repo carries migrations the database has not
-                      applied; the gap is stated in a banner instead of refused
-
   $GW_DEPLOY_HOST            ssh destination (default root@192.168.2.111, VM 111)
   $GW_DEPLOY_ALLOW_UNTAGGED  1 deploys a HEAD that carries no tag; rolling releases deploy tags
 
@@ -48,16 +44,14 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --dry-run) dry_run=1; shift ;;
         --with-migrations) with_migrations=1; shift ;;
-        --skip-migrations) skip_migrations=1; shift ;;
+        --skip-migrations)
+            printf '%s\n' '--skip-migrations was retired: code and scheduled jobs must not outrun the schema' >&2
+            exit 2
+            ;;
         -h|--help) usage; exit 0 ;;
         *) printf 'unknown argument: %s\n' "$1" >&2; exit 2 ;;
     esac
 done
-
-if (( with_migrations && skip_migrations )); then
-    printf -- '--with-migrations and --skip-migrations contradict each other\n' >&2
-    exit 2
-fi
 
 refuse() { printf 'deploy refused: %s\n' "$1" >&2; exit 1; }
 step() { printf '\n== %s\n' "$1"; }
@@ -188,13 +182,6 @@ if (( with_migrations )); then
     step "6. migrations, as the postgres superuser"
     remote "sudo -u postgres env $code_env $VENV/bin/glasswell-migrate \
             --dsn '$SOCKET_DSN'" || refuse "migrations failed"
-elif (( skip_migrations )); then
-    step "6. migrations SKIPPED by explicit request"
-    printf '  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n'
-    printf '  !!  --skip-migrations: repo migration head is %03d and the database\n' "$repo_head"
-    printf '  !!  was NOT consulted — the deployed code may outrun its schema.\n'
-    printf '  !!  Runbook step 3 by hand, or redeploy with --with-migrations.\n'
-    printf '  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n'
 else
     step "6. migration head, repo vs database"
     if (( dry_run )); then
@@ -205,7 +192,7 @@ else
         db_head="${db_head//[[:space:]]/}"
         [[ $db_head =~ $integer_re ]] || refuse "schema_migrations head answered '$db_head', not a number"
         if (( repo_head > db_head )); then
-            refuse "the repo carries migrations ahead of the database (repo head $repo_head, database $db_head) — pass --with-migrations to apply them, or --skip-migrations to state the gap and proceed"
+            refuse "the repo carries migrations ahead of the database (repo head $repo_head, database $db_head) — pass --with-migrations to apply them"
         fi
         printf '  schema is current at head %03d\n' "$db_head"
     fi
@@ -246,6 +233,10 @@ done
 step "7c. fresh status snapshot"
 remote "systemctl start glasswell-status.timer" \
     || refuse "glasswell-status timer did not start"
+remote "systemctl start glasswell-lineage-retention.timer" \
+    || refuse "glasswell-lineage-retention timer did not start"
+remote "systemctl start glasswell-lineage-retention.service" \
+    || refuse "glasswell-lineage-retention did not complete"
 if remote "systemctl is-enabled --quiet glasswell-restore-drill.timer"; then
     remote "systemctl start glasswell-restore-drill.timer" \
         || refuse "enabled restore-drill timer did not start"
