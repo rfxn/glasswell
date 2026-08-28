@@ -67,7 +67,7 @@ release, migration, deployment, and live verification. This is the short current
 
 ## Verification state
 
-- The full locked Python suite passes **2,757 tests with 2 explicit skips**, including the
+- The full locked Python suite passes **2,758 tests with 2 explicit skips**, including the
   Docker-backed integration and contract tiers; Ruff passes.
 - The web suite passes **1,185 tests across 79 files**; typecheck and production build pass.
 - Browserless E2E guards, shell checks, collateral checks, changelog lint, and the

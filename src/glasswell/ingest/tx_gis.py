@@ -17,7 +17,6 @@ import argparse
 import json
 import zipfile
 from collections.abc import Iterable, Mapping, Sequence
-from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import date
 from functools import lru_cache
@@ -1146,18 +1145,14 @@ def load_scope(
     wanted = tuple(counties) if counties is not None else county_scope(connection)
     names = {county_code: archive_name(connection, county_code) for county_code in wanted}
     results: list[CountyLoad] = []
-    with ExitStack() as polls:
+    with MftClient(GIS_LINK) as mft:
         for county_code in wanted:
-            polls.enter_context(
-                source_poll(
-                    SOURCE_ID,
-                    names[county_code],
-                    correlation_id=current_session().correlation_id,
-                )
-            )
-        with MftClient(GIS_LINK) as mft:
-            for county_code in wanted:
-                name = names[county_code]
+            name = names[county_code]
+            with source_poll(
+                SOURCE_ID,
+                name,
+                correlation_id=current_session().correlation_id,
+            ):
                 results.append(
                     load_county(
                         connection,
@@ -1168,7 +1163,7 @@ def load_scope(
                         restage=restage,
                     )
                 )
-                connection.commit()
+            connection.commit()
     return results
 
 

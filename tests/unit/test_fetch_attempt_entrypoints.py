@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import re
+from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
+
+from glasswell.ingest import tx_gis
 from glasswell.lineage.fetch_attempts import failure_code
 from glasswell.seed.conformance_c115b import C115B_SOURCES
 from glasswell.seed.conformance_land import LAND_SOURCES
@@ -67,3 +72,45 @@ def test_declared_numeric_failure_code_is_made_database_safe() -> None:
     error.glasswell_reason = "503 upstream unavailable"  # type: ignore[attr-defined]
 
     assert failure_code(error) == "fetch_503_upstream_unavailable"
+
+
+def test_tx_county_failure_does_not_open_later_county_polls(monkeypatch) -> None:
+    entered: list[str] = []
+    failed: list[str] = []
+
+    @contextmanager
+    def poll(_source_id, source_key, **_kwargs):
+        entered.append(source_key)
+        try:
+            yield
+        except RuntimeError:
+            failed.append(source_key)
+            raise
+
+    class Portal:
+        client = object()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def url_for(self, name):
+            return f"https://example.invalid/{name}"
+
+    monkeypatch.setattr(tx_gis, "archive_name", lambda _connection, code: f"well{code}.zip")
+    monkeypatch.setattr(tx_gis, "source_poll", poll)
+    monkeypatch.setattr(tx_gis, "current_session", lambda: SimpleNamespace(correlation_id="run"))
+    monkeypatch.setattr(tx_gis, "MftClient", lambda _link: Portal())
+    monkeypatch.setattr(
+        tx_gis,
+        "load_county",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("first county failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="first county failed"):
+        tx_gis.load_scope(SimpleNamespace(), counties=("001", "003"))
+
+    assert entered == ["well001.zip"]
+    assert failed == ["well001.zip"]
