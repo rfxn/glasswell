@@ -248,16 +248,22 @@ completion context, current physical neighbours, canonical formations with alias
 lineage, manifests, conformance, quarantine, glossary, key administration, and tiles:
 
 ```
-GET  /v1/status                         GET  /v1/wells
-GET  /v1/wells/{api10}                  GET  /v1/wells/{api10}/production
-GET  /v1/wells/{api10}/production/pools GET  /v1/wells/{api10}/completions
-GET  /v1/wells/{api10}/neighbors        GET  /v1/formations
-GET  /v1/explain?h={handle}
-GET  /v1/manifests/{manifest_id}         GET  /v1/conformance
-GET  /v1/conformance/{rule_id}           GET  /v1/quarantine
-GET  /v1/quarantine/summary              GET  /v1/glossary
-GET  /v1/tiles/{layer}/{z}/{x}/{y}.pbf
+GET  /v1/status                          GET  /v1/health
+GET  /v1/wells                           GET  /v1/wells/status-summary
+GET  /v1/wells/{api10}                   GET  /v1/wells/{api10}/production
+GET  /v1/wells/{api10}/production/pools  GET  /v1/wells/{api10}/completions
+GET  /v1/wells/{api10}/neighbors         GET  /v1/formations
+GET  /v1/explain?h={handle}              GET  /v1/derivations/{derivation_id}
+GET  /v1/manifests/{manifest_id}         GET  /v1/vintages/{vintage_id}
+GET  /v1/conformance                     GET  /v1/conformance/{rule_id}
+GET  /v1/quarantine                      GET  /v1/quarantine/summary
+GET  /v1/glossary                        GET  /v1/errors/{code}
+GET  /v1/keys                            GET  /v1/tiles/{layer}/{z}/{x}/{y}.pbf
 ```
+
+The snapshot in `tests/contract/openapi_snapshot.json` is the complete list; the
+collection siblings, `/healthz`, the key write operations and
+`/v1/manifests/{manifest_id}/bytes` are left out above only for width.
 
 The application has three URL-backed surfaces: Map, Explore, and Status. North Dakota well
 cards show current physical neighbours for lateral-bearing wells, with strict earlier-completion
@@ -368,6 +374,8 @@ records each file's checksum and refuses a changed migration.
 | [ROADMAP.md](ROADMAP.md) | Build phases P0–P8 with exit criteria, current status and cut order |
 | [docs/p3-context-repair.md](docs/p3-context-repair.md) | Same-manifest repair policy, source-absent lateral disposition, exact split/hash proof, and rollback rehearsal |
 | [docs/p3-type-curve-control.md](docs/p3-type-curve-control.md) | Pinned `tcv1.0` control contract, D1 replay evidence, and the explicit red coverage gate |
+| [docs/p3-matrix-integrity.md](docs/p3-matrix-integrity.md) | Feature-matrix availability semantics, and the strict-history versus reconstructed-source clocks |
+| [docs/p3-model-ready-dataset.md](docs/p3-model-ready-dataset.md) | `mdv1.4` labels, curves, censoring coverage, and the eight content-addressed rolling splits |
 | [BRAND.md](BRAND.md) | Visual system, palette, and asset regeneration |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How changes are made, and what review rejects |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting |
