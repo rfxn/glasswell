@@ -30,7 +30,7 @@ effective date, and the derivations reference it. No exceptions for "obvious" or
 without a derivation handle does not merge. CI checks this; do not argue with it.
 
 **Layer boundaries are absolute.** Parsers write staging. Marts read canonical. A
-mart that reads a `stg_` table is a build error, not a shortcut. Staging never
+mart that reads a `staging.` table is a build error, not a shortcut. Staging never
 serves.
 
 **Rejects are quarantined, never dropped.** A row that fails validation goes to

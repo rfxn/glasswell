@@ -27,16 +27,17 @@ a number from six months ago still reproducible today.
 
 ### Staging — source-faithful
 
-One schema per regulator file type. Current tables include `staging.nd_mpr_oil`, the
-`staging.nd_gis_*` family, `staging.tx_gis_wells`, `staging.nm_ocd_*`, and
-`staging.fracfocus_disclosures`. Parsers write here and nowhere else. They hold no opinions:
-a FracFocus timestamp remains source text until the conformance step validates it.
+One schema per regulator file type. Resident tables are `staging.nd_mpr_oil`, the
+`staging.nd_gis_*`, `staging.tx_gis_wells_*`, `staging.blm_plss_*` and
+`staging.stg_nm_ocd_*` families, `staging.tx_wellbore_ewa`, `staging.nm_c115b_upstream`
+and `staging.fracfocus_disclosures`. Parsers write here and nowhere else. They hold no
+opinions: a FracFocus timestamp remains source text until the conformance step validates it.
 
 Rows that fail parsing or validation go to **quarantine** with a reason code, not
-to `/dev/null`. Quarantine is served at `/quality/quarantine` and its size is a
-published quality metric.
+to `/dev/null`. Quarantine is served at `/v1/quarantine`, with `/v1/quarantine/summary`
+over the reason codes, and its size is a published quality metric.
 
-> **Staging never serves.** No endpoint, tile, or mart reads a `stg_` table.
+> **Staging never serves.** No endpoint, tile, or mart reads a `staging.` table.
 
 ### Canonical — conformed
 
@@ -60,8 +61,15 @@ in a study area, the assumption gets revisited rather than defended.
 
 ### Marts — serving
 
-`well_features`, `type_curve_sets`, `analog_index`, `rollups`, `inventory_slots`,
-and the PostGIS geometry that martin turns into vector tiles. All derived from
+Resident today: the PostGIS geometry martin turns into vector tiles
+(`nd_wells_tile`, `nd_laterals_tile`, `nd_survey_traces_tile`, `tx_wells_tile`,
+`tx_laterals_tile`, `land_units_tile`, `land_metrics_tile`), the `nd_well_card`
+table, and the current physical-neighbour pair `nd_neighbor_subjects` /
+`nd_neighbor_edges`. `well_features` is resident as well, but on the analytical path
+as the content-addressed `features.well_features` Parquet matrix rather than as a
+PostGIS table, and the generic `rollups` slot is filled for observed quantities by
+`land_metrics_tile`. Contracted and not built: `type_curve_sets`, `analog_index`,
+`inventory_slots`, and any rollup over a forecast or a valuation. All derived from
 canonical, all rebuildable at any time.
 
 > **Marts never ingest.** A mart that reads staging is a build error, not a shortcut.
@@ -154,21 +162,22 @@ optional and it is not a rendering preference.
 
 ## Data model
 
-Tables introduced or amended at v0.5:
+Tables introduced or amended at v0.5. **Resident** means the migration is applied on
+the deployed instance; the rest are contract, not schema:
 
-| Table | Purpose |
-|-------|---------|
-| `conformance_rules` | rule_id, source, field, rule, rationale, effective_from |
-| `formation_aliases` | reported name, canonical formation, benchmark group, confidence, knowledge vintage |
-| `crs_registry` | Compute CRS per basin (projected, metres) |
-| `production_monthly` | Gains stream normalisation notes via conformance refs; oil, gas and water all first-class targets |
-| `econ_assumptions` | Gains `opex_water_per_bbl` and severance defaults keyed by state |
-| `analog_index` | api10, feature_version, vector ref — persisted only if an in-process rebuild exceeds 60 s |
-| `inventory_runs` | run_id, area, spacing_assumption_ft, model_id, deck_id, created |
-| `inventory_slots` | run_id, slot geometry, forecast_id, valuation_id, flags |
-| `aois` | aoi_id, name, geom |
-| `alert_digests` | aoi_id, period, payload jsonb |
-| `well_sets` | set_id, name, api10s[] — portfolio rollups |
+| Table | Resident | Purpose |
+|-------|----------|---------|
+| `conformance_rules` | yes | rule_id, source, field, rule, rationale, effective_from |
+| `formation_aliases` | yes | reported name, canonical formation, benchmark group, confidence, knowledge vintage |
+| `crs_registry` | yes | Compute CRS per basin (projected, metres) |
+| `production_monthly` | yes | Gains stream normalisation notes via conformance refs; oil, gas and water all first-class targets |
+| `econ_assumptions` | no | Gains `opex_water_per_bbl` and severance defaults keyed by state |
+| `analog_index` | no | api10, feature_version, vector ref — persisted only if an in-process rebuild exceeds 60 s |
+| `inventory_runs` | no | run_id, area, spacing_assumption_ft, model_id, deck_id, created |
+| `inventory_slots` | no | run_id, slot geometry, forecast_id, valuation_id, flags |
+| `aois` | no | aoi_id, name, geom |
+| `alert_digests` | no | aoi_id, period, payload jsonb |
+| `well_sets` | no | set_id, name, api10s[] — portfolio rollups |
 
 ## Serving
 
@@ -204,9 +213,11 @@ second database that has to be kept in sync with the first.
 ## Deployment
 
 One VM. Parquet plus DuckDB for the analytical path, PostGIS for geometry, martin
-for tiles, and systemd timers for ingest, protection, alerting, and the sanitized
-operational Status snapshot. No distributed infrastructure and
-no service that cannot be rebuilt from the raw zone by replaying recipes.
+for tiles, and systemd timers for ingest, the NM C-115B snapshot, the nightly
+logical backup, the weekly restore drill, and the sanitized operational Status
+snapshot. Alerting is contracted at C23 and has no deployed timer. No distributed
+infrastructure and no service that cannot be rebuilt from the raw zone by replaying
+recipes.
 
 Inventory batch runs are the only new load introduced at v0.5, and they run in
 seconds at township scale.
