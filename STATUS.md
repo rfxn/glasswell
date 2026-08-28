@@ -1,6 +1,6 @@
 # Current status
 
-Reconciled on **2026-08-28** against the v0.59 release line, the checked-in OpenAPI
+Reconciled on **2026-08-28** against the v0.60 release line, the checked-in OpenAPI
 snapshot, current `main` history, and the deployed v0.59 baseline. The locally verified v0.60
 release candidate becomes a shipped claim only after release, migration, deployment, and live
 verification. This is the short current-state ledger;
@@ -10,7 +10,7 @@ verification. This is the short current-state ledger;
 
 ## Shipped baseline
 
-- **Release line:** 40 tagged releases, v0.20 through v0.59, cut 2026-08-21 through
+- **Release line:** 41 tagged releases, v0.20 through v0.60, cut 2026-08-21 through
   2026-08-28.
 - **North Dakota:** ingest, bitemporal promotion, quarantine, conformance, wells,
   geometry, monthly production, lineage, explain, glossary, API, tiles, and map are built.
