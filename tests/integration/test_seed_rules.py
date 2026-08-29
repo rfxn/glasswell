@@ -37,6 +37,11 @@ POLICY_RULES = (
     # One host pin per NM source: the pin is a policy declaration the fetcher implements, and
     # a rule row loads only for the source_id it names (M5).
     *sorted(f"cr_nm_{table}_host_pin_1" for table, _ in NM_TABLES),
+    # The producing definition: a window, a stream set and what counts as evidence. The
+    # executor is the serving path named in each spec, which reads all three at request time.
+    "cr_producing_evidence_1",
+    "cr_producing_streams_1",
+    "cr_producing_window_1",
     "cr_tx_allocation_scope_1",
     "cr_tx_ewa_role_1",
     "cr_tx_geometry_survivor_1",

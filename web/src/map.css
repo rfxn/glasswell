@@ -188,6 +188,50 @@
   color: var(--gas-text);
 }
 
+/* Producing is a different question from status, so the group is ruled off from the status
+   rows rather than continuing them. No swatch: these classes are not painted on the canvas,
+   and a swatch would promise a colour the map does not draw. */
+.gw-lg-producing {
+  margin-top: 0.4rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--rule, rgb(255 255 255 / 12%));
+}
+
+.gw-lg-producing[hidden] {
+  display: none;
+}
+
+.gw-lg-ptitle {
+  margin: 0 0 0.15rem;
+  color: var(--muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.gw-lg-prow {
+  display: flex;
+  align-items: center;
+  min-height: 22px;
+}
+
+/* The label is the click-through to the wells the count is of, so it reads as a link and the
+   count keeps the tabular alignment the status rows have. */
+.gw-lg-plink {
+  flex: 1 1 auto;
+  color: inherit;
+  text-decoration-color: var(--muted);
+  text-decoration-line: underline;
+  text-underline-offset: 2px;
+}
+
+.gw-lg-pnote {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.62rem;
+  line-height: 1.4;
+}
+
 .gw-lg-partial,
 .gw-lg-fault {
   margin: 0.35rem 0 0;

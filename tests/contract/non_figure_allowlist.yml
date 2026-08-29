@@ -105,6 +105,11 @@
 - pointer: /*/bytes
   reason: Byte length, in a manifest collection item.
 
+- pointer: /producing_window/months
+  reason: >-
+    Length of the producing window in months, read from cr_producing_window_1. A
+    parameter of the classing, not an observation it stands behind.
+
 # --- verbatim registry and rejected input ------------------------------------
 - pointer: /params/**
   reason: >-

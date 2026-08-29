@@ -12,6 +12,7 @@ from glasswell.seed import (
     LAND_RULES,
     ND_RULES,
     NM_RULES,
+    PRODUCING_RULES,
     TX_RULES,
     seed_crs,
 )
@@ -31,6 +32,7 @@ def _seeded_rule_ids() -> set[str]:
             LAND_RULES,
             ND_RULES,
             NM_RULES,
+            PRODUCING_RULES,
             TX_RULES,
         )
         for rule in registry

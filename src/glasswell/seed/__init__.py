@@ -13,6 +13,7 @@ from glasswell.seed.conformance_fracfocus import FRACFOCUS_RULES, seed_conforman
 from glasswell.seed.conformance_land import LAND_RULES, seed_conformance_land
 from glasswell.seed.conformance_nd import ND_RULES, seed_conformance_nd
 from glasswell.seed.conformance_nm import NM_RULES, seed_conformance_nm
+from glasswell.seed.conformance_producing import PRODUCING_RULES, seed_conformance_producing
 from glasswell.seed.conformance_tx import TX_RULES, seed_conformance_tx
 from glasswell.seed.features import FEATURE_SPECS, FEATURE_VERSION, seed_features
 from glasswell.seed.formations_nd import FORMATION_ALIASES, seed_nd_formation_aliases
@@ -38,6 +39,7 @@ __all__ = [
     "ND_RULES",
     "NM_RULES",
     "NM_STREAM_ROWS",
+    "PRODUCING_RULES",
     "SOURCES",
     "TX_RULES",
     "load_glossary_seed",
@@ -47,6 +49,7 @@ __all__ = [
     "seed_conformance_land",
     "seed_conformance_nd",
     "seed_conformance_nm",
+    "seed_conformance_producing",
     "seed_conformance_tx",
     "seed_crs",
     "seed_features",
@@ -72,6 +75,10 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
         "sources": seed_sources(connection),
         "crs_registry": seed_crs(connection),
         "conformance_rules_fracfocus": seed_conformance_fracfocus(connection),
+        # Before the ND seeder for the same reason TX is before everything: these rows carry an
+        # nd_ source_id, and the count the ND seeder returns is a registry total over that
+        # prefix. Seeded after it, the first run's number would differ from the second's.
+        "conformance_rules_producing": seed_conformance_producing(connection),
         "conformance_rules": seed_conformance_nd(connection),
         "formation_aliases_nd": seed_nd_formation_aliases(connection),
         "conformance_rules_nm": seed_conformance_nm(connection),

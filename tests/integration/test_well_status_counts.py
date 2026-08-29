@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 
 from glasswell.api.routers.wells import STATUS_SUMMARY_SQL
 from glasswell.lineage.explain import MAX_HANDLES
+from glasswell.marts.producing import load_producing_policy, producing_params
 from glasswell.seed import seed_all
 from tests.support.seed import seed_manifest, seed_well, seed_well_spatial
 
@@ -290,13 +291,15 @@ def test_a_box_with_more_counts_than_explain_takes_says_how_many_it_left_out(
     )
     carried = explain_handles(body["links"]["explain"])
 
+    # 36 rather than 35 since the producing classes are counted too: this population files no
+    # production, so all of it lands in one class and contributes exactly one more figure.
     assert len(carried) == MAX_HANDLES
     assert warning["detail"].startswith(
-        f"This box produced 35 counts and links.explain carries the first {MAX_HANDLES}"
-        f" handles, so {35 - MAX_HANDLES} are absent from it."
+        f"This box produced 36 counts and links.explain carries the first {MAX_HANDLES}"
+        f" handles, so {36 - MAX_HANDLES} are absent from it."
     )
     omitted = sorted(handles(body["data"]) - set(carried))
-    assert len(omitted) == 35 - MAX_HANDLES
+    assert len(omitted) == 36 - MAX_HANDLES
     for handle in omitted:
         resolved = api_client.get("/v1/explain", params={"h": handle, "depth": "full"})
         assert resolved.status_code == 200, handle
@@ -336,7 +339,17 @@ def test_the_box_predicate_can_be_answered_from_the_geometry_index(
     off and the question asked is the one that matters at 400,000 points: can this predicate
     use the GiST index at all, or is it written in a way that cannot?
     """
-    parameters = {"minx": -104.0, "miny": 47.0, "maxx": -103.0, "maxy": 48.0, "as_of": None}
+    parameters = {
+        "minx": -104.0,
+        "miny": 47.0,
+        "maxx": -103.0,
+        "maxy": 48.0,
+        "as_of": None,
+        # Registered, so the producing classifier is in the plan being judged: the question is
+        # whether the box predicate still reaches the index with it there.
+        **producing_params(population, load_producing_policy(population)),
+        "producing_registered": True,
+    }
     with population.cursor() as cursor:
         cursor.execute("set enable_seqscan = off")
         cursor.execute(f"explain (format json) {STATUS_SUMMARY_SQL}", parameters)

@@ -1,5 +1,7 @@
 import { EXPLAIN_EVENT } from "../card/gw-figure.ts";
 import type { VocabularyLink } from "./counts.ts";
+import { PRODUCING_CLASSES, producingHref, producingNote } from "./producing.ts";
+import type { ProducingCounts } from "./producing.ts";
 import { PROVENANCE_RULE } from "./provenance.ts";
 import { STATUS_CLASSES, STATUS_VOCAB_RULES, UNMAPPED_STATUS, statusClass } from "./status.ts";
 import type { StatusClass } from "./status.ts";
@@ -58,6 +60,12 @@ export interface LegendHandle {
   /** The conformance rules that classed this answer (R8). */
   setVocabulary(rules: VocabularyLink[]): void;
   activeStatuses(): Set<string>;
+  /**
+   * The producing classes for the same box, or null where the definition is not registered.
+   * A read-out with its own handles rather than a canvas filter: repainting needs the style
+   * and the map wiring, which this change does not own — see work-output/wells-status.md.
+   */
+  setProducing(next: ProducingCounts | null): void;
 }
 
 /**
@@ -154,6 +162,50 @@ export function createLegend(options: LegendOptions): LegendHandle {
   // Built now, listed when the map first draws one. The switch has to exist before the class
   // does — a row conjured out of a count could not be the row that switches the count off.
   rows.set(UNMAPPED_STATUS.id, buildRow(UNMAPPED_STATUS, wanted(UNMAPPED_STATUS.id)));
+
+  // Producing is asked of the filings, status of the permit, so the classes get their own
+  // group rather than more rows in the status list — a well the regulator calls inactive can
+  // be producing, and on the 2026-08 load 896 of them are.
+  const producing = document.createElement("div");
+  producing.className = "gw-lg-producing";
+  producing.hidden = true;
+  producing.setAttribute("role", "group");
+  producing.setAttribute("aria-label", "Wells by whether they are producing");
+
+  const producingTitle = document.createElement("p");
+  producingTitle.className = "gw-lg-ptitle";
+  producingTitle.textContent = "Producing";
+  producing.appendChild(producingTitle);
+
+  const producingRows = new Map<string, HTMLElement>();
+  for (const entry of PRODUCING_CLASSES) {
+    const row = document.createElement("div");
+    row.className = "gw-lg-prow";
+    row.dataset["producing"] = entry.id;
+    row.title = entry.note;
+
+    const link = document.createElement("a");
+    link.className = "gw-lg-label gw-lg-plink";
+    link.textContent = entry.label;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.title = `List the ${entry.label.toLowerCase()} wells in this box`;
+    row.appendChild(link);
+
+    const cell = document.createElement("span");
+    cell.className = "gw-lg-count";
+    cell.textContent = ABSENT_MARK;
+    row.appendChild(cell);
+
+    row.appendChild(provenanceHandle(`Lineage for the ${entry.label.toLowerCase()} count`));
+    producingRows.set(entry.id, row);
+    producing.appendChild(row);
+  }
+
+  const producingNoteEl = document.createElement("p");
+  producingNoteEl.className = "gw-lg-pnote";
+  producing.appendChild(producingNoteEl);
+  body.appendChild(producing);
 
   // Between the rows and the note: the canvas is a subset of the box at low zoom, and the
   // reader has to be able to see that without reading it as the counts disagreeing.
@@ -270,6 +322,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
   let totalCount: TotalCount | null = null;
   let drawn: number | null = null;
   let zoomNow = 0;
+  let producingCounts: ProducingCounts | null = null;
 
   function cellText(id: string): string {
     if (mode === "pending") return PENDING_MARK;
@@ -342,8 +395,36 @@ export function createLegend(options: LegendOptions): LegendHandle {
     partial.textContent = `Showing ${NUMBER.format(drawn)} of ${NUMBER.format(inView)} in view`;
   }
 
+  function renderProducing(): void {
+    producing.hidden = producingCounts === null;
+    if (!producingCounts) return;
+    producingNoteEl.textContent = producingNote(producingCounts.window);
+    for (const [id, row] of producingRows) {
+      const count = producingCounts.counts[id];
+      const cell = row.querySelector<HTMLElement>(".gw-lg-count");
+      if (cell) cell.textContent = producingCellText(count);
+      const link = row.querySelector<HTMLAnchorElement>("a");
+      if (link) link.href = producingHref(id, producingCounts.bbox);
+      const handle = row.querySelector<HTMLButtonElement>(".gw-lg-handle");
+      const derivation = mode === "ready" ? producingCounts.handles[id] : undefined;
+      if (handle) {
+        handle.hidden = derivation === undefined;
+        handle.dataset["handle"] = derivation ?? "";
+        handle.title = derivation ? `Show where this count came from: ${derivation}` : "";
+      }
+    }
+  }
+
+  function producingCellText(count: number | undefined): string {
+    if (mode === "pending") return PENDING_MARK;
+    if (mode === "unavailable") return ABSENT_MARK;
+    // Absent, not zero: a class the box does not hold has no count to report.
+    return count === undefined ? ABSENT_MARK : NUMBER.format(count);
+  }
+
   function render(): void {
     renderRows();
+    renderProducing();
     renderPartial();
   }
 
@@ -416,6 +497,10 @@ export function createLegend(options: LegendOptions): LegendHandle {
     },
     setVocabulary,
     activeStatuses,
+    setProducing(next) {
+      producingCounts = next;
+      renderProducing();
+    },
   };
 }
 

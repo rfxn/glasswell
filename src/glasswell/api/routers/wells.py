@@ -37,6 +37,17 @@ from glasswell.lineage.conformance import LeaseReportingRule, lease_reporting_ru
 from glasswell.lineage.envelope import Figure, collect_handles, distinct_handles, figure
 from glasswell.lineage.explain import MAX_HANDLES
 from glasswell.lineage.selector_registry import identity_selector_term
+from glasswell.marts.producing import (
+    PRODUCING_CLASSES,
+    PRODUCING_RULE_IDS,
+    ProducingPolicy,
+    ProducingPolicyError,
+    anchor_month,
+    class_expression,
+    load_producing_policy,
+    producing_params,
+    window_start,
+)
 from glasswell.marts.tiles import TILE_BUFFER, TILE_EXTENT, TILE_MAX_ZOOM, WEB_MERCATOR
 from glasswell.units import metres_to_feet
 
@@ -73,7 +84,17 @@ STATUS_SUMMARY_LABELS = {
     "/statuses": "gt_well_status",
     "/unmapped_wells": "gt_well_status",
     "/vocabulary_rules": "gt_conformance_rule",
+    "/producing": "gt_conformance_rule",
+    "/producing_rules": "gt_conformance_rule",
+    "/producing_window/liquids_basis": "gt_stream",
 }
+
+_PRODUCING_CLASS = class_expression(api10="ranked.api10", state_code="ranked.state_code")
+
+# The guard is not decoration: with the definition unregistered the classifier would answer
+# `unknown` for every well, which reads as a fact about the wells rather than about the
+# registry. Short-circuiting to NULL is what lets the response say it does not know.
+_PRODUCING_COLUMN = f"case when %(producing_registered)s::boolean then {_PRODUCING_CLASS} end"
 
 _COLUMNS = (
     "api10, api14, state_code, county_code_at_permit, ndic_file_no, operator_name_reported,"
@@ -92,7 +113,7 @@ _COLUMNS = (
     "          or sd.created_vintage <= %(as_of)s::date)) as geometry_provenance"
 )
 
-RANKED_WELLS = f"""
+_SPINE = """
 with ranked as (
     select w.*, m.fetch_vintage as manifest_vintage,
            d.created_vintage as derivation_vintage,
@@ -105,10 +126,18 @@ with ranked as (
        and (%(as_of)s::date is null or m.fetch_vintage <= %(as_of)s::date)
        and (%(as_of)s::date is null or d.created_vintage is null
             or d.created_vintage <= %(as_of)s::date))
-select {_COLUMNS}
+select {columns}
   from ranked
  where rn = 1
 """
+
+# Two projections of one spine. `/v1/wells` and the well card class each row; the production
+# routes read the same spine and bind none of the producing parameters, so widening the shared
+# constant would break them at query time rather than here.
+RANKED_WELLS = _SPINE.format(columns=_COLUMNS)
+RANKED_WELLS_PRODUCING = _SPINE.format(
+    columns=f"{_COLUMNS}, {_PRODUCING_COLUMN} as producing"
+)
 
 # `tiled` asks the tile pipeline's own question of the deepest published zoom: a geometry that
 # ST_AsMVTGeom drops there is on no tile at any zoom, while the card still serves its length.
@@ -147,7 +176,7 @@ select s.geom_type, s.geom_key, s.derivation_id, s.source_datum, s.source_manife
 # estimate fell to 1, the planner chose a nested loop with a join filter, and a 501-well box
 # cost 125,250 filter comparisons and 28 ms — quadratic in the wells in view, on the small
 # boxes the map spends its life in. Inlined, the same box is 3 ms. See work-output/wss-status.md.
-STATUS_SUMMARY_SQL = """
+STATUS_SUMMARY_SQL = f"""
 with in_view as (
     select distinct api10
       from canonical.well_spatial
@@ -161,14 +190,18 @@ with in_view as (
       left join canonical.wells w
              on w.api10 = v.api10
             and (%(as_of)s::date is null or w.effective_from <= %(as_of)s::date)
-     order by v.api10, w.effective_from desc nulls last, w.created_at desc nulls last)
-select basin, state_code, status_canonical, well_type_reported,
+     order by v.api10, w.effective_from desc nulls last, w.created_at desc nulls last),
+     classed as (
+    select ranked.*,
+           case when %(producing_registered)s::boolean then {_PRODUCING_CLASS} end as producing
+      from latest ranked)
+select basin, state_code, status_canonical, well_type_reported, producing,
        derivation_id is null as no_well_row,
        count(*) as wells, max(derivation_id) as derivation_id,
        array_remove(array_agg(distinct derivation_id), null) as derivation_ids,
        max(effective_from) as effective_from
-  from latest
- group by 1, 2, 3, 4, 5
+  from classed
+ group by 1, 2, 3, 4, 5, 6
 """
 
 # The geometry population itself, classed. Counts wells, not geometry rows; spine-free on
@@ -281,6 +314,18 @@ class WellSummary(BaseModel):
             " recorded."
         ),
     )
+    producing: str | None = Field(
+        description=(
+            "Whether the well is producing on the evidence held, which is a different fact"
+            " from its status: `producing` where a positive oil or gas month was filed inside"
+            " the window, `not_producing` where the well filed but no such month, and"
+            " `unknown` where it filed nothing, where the regulator withheld the months, or"
+            " where the jurisdiction reports at the lease and no well-level series exists."
+            " Defined by cr_producing_window_1, cr_producing_streams_1 and"
+            " cr_producing_evidence_1; liquids are oil plus condensate. Null where the"
+            " definition is not registered, which is disclosed as a warning."
+        ),
+    )
     links: dict[str, str] = Field(description="Sub-resource paths for this well.")
 
 
@@ -391,6 +436,7 @@ def _summary(row: dict[str, Any]) -> dict[str, Any]:
         "confidential_flag": row["confidential_flag"],
         "effective_from": iso(row["effective_from"]),
         "geometry_provenance": row["geometry_provenance"],
+        "producing": row["producing"],
         "links": {
             "self": f"/v1/wells/{row['api10']}",
             "production": f"/v1/wells/{row['api10']}/production",
@@ -442,6 +488,45 @@ def _held_back_geometry(
     return warnings, available_on
 
 
+_UNREGISTERED_PRODUCING: dict[str, Any] = {
+    "producing_registered": False,
+    "producing_streams": [],
+    "producing_evidence": [],
+    "producing_window_start": None,
+    "producing_lease_states": [],
+}
+
+
+def _producing(connection) -> tuple[ProducingPolicy | None, dict[str, Any]]:
+    """The policy and everything the class expression binds, resolved once per request.
+
+    The definition is rows, so a registry without them is a state the response describes
+    rather than one it crashes on — and rather than one it papers over with a window nobody
+    wrote down (R8).
+    """
+    try:
+        policy = load_producing_policy(connection)
+    except ProducingPolicyError:
+        return None, dict(_UNREGISTERED_PRODUCING)
+    return policy, producing_params(connection, policy) | {"producing_registered": True}
+
+
+def _producing_unregistered(pointer: str) -> dict[str, Any]:
+    return {
+        "code": "producing_definition_unregistered",
+        # Missing rows and an unreadable spec both land here, so the text names the outcome
+        # rather than asserting which of the two it was.
+        "detail": (
+            "The producing classes are not served: this registry does not supply a usable"
+            f" {', '.join(PRODUCING_RULE_IDS)} — the rows are absent, not yet in effect, or"
+            " carry a spec that could not be read. Whether a well is producing is a definition"
+            " with a rationale and an effective date, and without those rows there is nothing"
+            " to answer from."
+        ),
+        "pointer": pointer,
+    }
+
+
 def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
     if raw is None:
         return None
@@ -490,7 +575,10 @@ def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
             collection_pointer="",
             row_id=["/api10"],
             detail_operation="get_well",
-            facets=["status", "operator", "county", "bbox", "q"],
+            # `/producing` is a facet but not yet a default column: the explorer's grid
+            # fixture is recorded from a served build, and this branch cannot re-record it,
+            # so declaring the column would name one no recorded row carries.
+            facets=["status", "producing", "operator", "county", "bbox", "q"],
             columns={
                 "default": [
                     "/api10",
@@ -572,6 +660,25 @@ def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
                     " so a match still shows what else the well holds."
                 ),
             },
+            producing={
+                "glossary": "gt_conformance_rule",
+                "so": (
+                    "Scopes the spine by whether a well is actually producing, which is not"
+                    " what its status says. `active` is the regulator's word about a permit;"
+                    " this is a reading of the production filings, and the two disagree in"
+                    " both directions — on the 2026-08 load 896 wells North Dakota calls"
+                    " inactive filed a positive hydrocarbon month inside the window, and 437"
+                    " it calls active filed nothing but zeros. Combine it with `status` to ask"
+                    " the Active-Producing question specifically. `unknown` is a real answer"
+                    " and not a residue: it is where the well filed nothing, where the"
+                    " regulator withheld the months, and where the jurisdiction reports at the"
+                    " lease so no well-level series exists at all. A value outside the three"
+                    " is refused rather than returning an empty page, because the vocabulary"
+                    " is closed — cr_producing_window_1, cr_producing_streams_1 and"
+                    " cr_producing_evidence_1 define it, and they are what a supersession"
+                    " would change."
+                ),
+            },
             bbox={
                 "glossary": "gt_crs_compute_crs",
                 "so": (
@@ -623,6 +730,10 @@ def list_wells(
             )
         ),
     ] = None,
+    producing: Annotated[
+        str | None,
+        Query(description="producing, not_producing or unknown — the class, not the status."),
+    ] = None,
     bbox: Annotated[
         str | None, Query(description="minx,miny,maxx,maxy in WGS84; capped at 4 degrees.")
     ] = None,
@@ -635,13 +746,39 @@ def list_wells(
         "county": county,
         "well_type": well_type,
         "geometry_provenance": geometry_provenance,
+        "producing": producing,
         "bbox": bbox,
         "q": q,
     }
+    if producing is not None and producing not in PRODUCING_CLASSES:
+        raise ProblemError(
+            "validation_failed",
+            detail=f"producing must be one of {', '.join(PRODUCING_CLASSES)}",
+            errors=[
+                {
+                    "pointer": "/query/producing",
+                    "code": "producing_class_unknown",
+                    "detail": (
+                        f"{producing!r} is not a producing class; the classes are"
+                        f" {', '.join(PRODUCING_CLASSES)}, defined by"
+                        f" {', '.join(PRODUCING_RULE_IDS)}"
+                    ),
+                }
+            ],
+        )
     fingerprint = query_fingerprint(filters)
     envelope = _bbox(bbox)
-    params: dict[str, Any] = {"as_of": as_of, "limit": limit + 1}
-    clauses = [RANKED_WELLS]
+    policy, producing_bindings = _producing(connection)
+    if producing is not None and policy is None:
+        raise ProblemError(
+            "service_degraded",
+            detail=(
+                "the producing definition is not registered, so the spine cannot be scoped by"
+                f" it; {', '.join(PRODUCING_RULE_IDS)} are missing from the rule registry"
+            ),
+        )
+    params: dict[str, Any] = {"as_of": as_of, "limit": limit + 1, **producing_bindings}
+    clauses = [RANKED_WELLS_PRODUCING]
     if status is not None:
         clauses.append("and status_canonical = %(status)s")
         params["status"] = status
@@ -666,6 +803,9 @@ def list_wells(
             "      or sd.created_vintage <= %(as_of)s::date))"
         )
         params["geometry_provenance"] = geometry_provenance
+    if producing is not None:
+        clauses.append(f"and {_PRODUCING_CLASS} = %(producing)s")
+        params["producing"] = producing
     if q is not None:
         clauses.append("and well_name ilike '%%' || %(q)s || '%%'")
         params["q"] = q
@@ -767,6 +907,43 @@ class WellTypeCount(BaseModel):
     wells: FigureModel = Field(description="Wells filed under this code inside the box.")
 
 
+class ProducingCount(BaseModel):
+    producing: str = Field(
+        description="producing, not_producing or unknown, as the producing rules define them.",
+        json_schema_extra={GLOSSARY_KEY: "gt_conformance_rule"},
+    )
+    wells: FigureModel = Field(
+        description="Wells of this class inside the box, with the handle the count resolves by."
+    )
+
+
+class ProducingWindow(BaseModel):
+    months: int = Field(
+        description="How many months the window spans, from cr_producing_window_1.",
+        json_schema_extra=not_a_figure(
+            "Length of the producing window in months, read from cr_producing_window_1. A"
+            " parameter of the classing, not an observation it stands behind."
+        ),
+    )
+    from_: str = Field(
+        alias="from",
+        description="First production month the window admits, inclusive.",
+    )
+    to: str = Field(description="Newest production month anybody has filed; the window's anchor.")
+    streams: list[str] = Field(
+        description="Streams that count as producing, from cr_producing_streams_1. Water is"
+        " excluded: it is a byproduct, not evidence of a hydrocarbon well."
+    )
+    liquids_basis: str = Field(
+        description=(
+            "What the liquids figure behind these classes is composed of. ND reports oil plus"
+            " condensate as one column (cr_nd_liquids_policy_1), and the basis is stated here"
+            " because it is stated wherever one of these numbers appears."
+        ),
+        json_schema_extra={GLOSSARY_KEY: "gt_stream"},
+    )
+
+
 class WellStatusSummary(BaseModel):
     bbox: str = Field(
         description="The box the counts were taken over, normalised to minx,miny,maxx,maxy."
@@ -806,6 +983,26 @@ class WellStatusSummary(BaseModel):
             " source reported no type is in no row here — absent, not zero — and is still"
             " counted in `wells`."
         ),
+    )
+    producing: list[ProducingCount] = Field(
+        description=(
+            "The same box classed by whether each well is actually producing, largest first."
+            " Disjoint and exhaustive over the wells with a spine row, so unlike the"
+            " provenance classes these do sum to `wells`. A well the regulator calls active"
+            " can be in any of the three: the classes are asked of the production filings, not"
+            " of the status. Absent entirely where the definition is not registered."
+        ),
+    )
+    producing_window: ProducingWindow | None = Field(
+        description=(
+            "The window the classes were judged over and the streams that counted, so a"
+            " producing number is never read without the definition that produced it. Null"
+            " where the definition is not registered or no production has been loaded."
+        ),
+    )
+    producing_rules: list[str] = Field(
+        description="The rules that define producing here; each one is linked.",
+        json_schema_extra={GLOSSARY_KEY: "gt_conformance_rule"},
     )
     vocabulary_rules: list[str] = Field(
         description="Every status vocabulary rule that shaped these counts; each one is linked.",
@@ -937,6 +1134,41 @@ def _well_types(found: list[dict[str, Any]], *, box: str) -> list[dict[str, Any]
     ]
 
 
+def _producing_classes(found: list[dict[str, Any]], *, box: str) -> list[dict[str, Any]]:
+    """Ordered by the vocabulary, not by size: the three classes read as a scale, and a legend
+    that reshuffles them between viewports is harder to read than one that does not."""
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in found:
+        if row["producing"] is not None:
+            grouped.setdefault(row["producing"], []).append(row)
+    return [
+        {
+            "producing": name,
+            "wells": _count(grouped[name], selector=f"col=wells&producing={name}&bbox={box}"),
+        }
+        for name in PRODUCING_CLASSES
+        if name in grouped
+    ]
+
+
+def _producing_window(
+    connection, policy: ProducingPolicy | None
+) -> dict[str, Any] | None:
+    if policy is None:
+        return None
+    anchor = anchor_month(connection, policy)
+    start = window_start(anchor, policy)
+    if anchor is None or start is None:
+        return None
+    return {
+        "months": policy.window_months,
+        "from": iso(start),
+        "to": iso(anchor),
+        "streams": list(policy.streams),
+        "liquids_basis": policy.liquids_basis,
+    }
+
+
 def _basins(found: list[dict[str, Any]], *, box: str) -> list[dict[str, Any]]:
     grouped: dict[tuple[str | None, str | None], list[dict[str, Any]]] = {}
     for row in found:
@@ -983,9 +1215,16 @@ def _handles(node: Any) -> int:
 
 
 def _summary_warnings(
-    counted: list[dict[str, Any]], *, orphans: int, states: list[str], handles: int
+    counted: list[dict[str, Any]],
+    *,
+    orphans: int,
+    states: list[str],
+    handles: int,
+    producing_registered: bool,
 ) -> list[dict[str, Any]]:
     warnings: list[dict[str, Any]] = []
+    if not producing_registered:
+        warnings.append(_producing_unregistered("/producing"))
     if handles > MAX_HANDLES:
         warnings.append(
             {
@@ -1148,10 +1387,13 @@ def get_well_status_summary(
         operation="get_well_status_summary",
         limit=STATUS_SUMMARY_REQUESTS_PER_MINUTE,
     )
+    policy, producing_bindings = _producing(connection)
     found = rows(
         connection,
         STATUS_SUMMARY_SQL,
-        dict(zip(("minx", "miny", "maxx", "maxy"), envelope, strict=True)) | {"as_of": as_of},
+        dict(zip(("minx", "miny", "maxx", "maxy"), envelope, strict=True))
+        | {"as_of": as_of}
+        | producing_bindings,
     )
     counted = [row for row in found if not row["no_well_row"]]
     orphans = sum(row["wells"] for row in found if row["no_well_row"])
@@ -1183,6 +1425,9 @@ def get_well_status_summary(
         "basins": basins,
         "geometry_provenance": _provenance_classes(classed, box=selector_box),
         "well_types": _well_types(counted, box=selector_box),
+        "producing": _producing_classes(counted, box=selector_box),
+        "producing_window": _producing_window(connection, policy),
+        "producing_rules": sorted(PRODUCING_RULE_IDS) if policy else [],
         "vocabulary_rules": rules,
     }
     data = register_response_figures(
@@ -1203,6 +1448,8 @@ def get_well_status_summary(
     links = {rule: f"/v1/conformance/{rule}" for rule in rules}
     if classed:
         links[PROVENANCE_RULE] = f"/v1/conformance/{PROVENANCE_RULE}"
+    if policy:
+        links |= {rule: f"/v1/conformance/{rule}" for rule in PRODUCING_RULE_IDS}
     minx, miny, maxx, maxy = envelope
     if maxx - minx <= BBOX_DEGREE_CAP and maxy - miny <= BBOX_DEGREE_CAP:
         links["wells"] = f"/v1/wells?bbox={box}"
@@ -1213,7 +1460,11 @@ def get_well_status_summary(
         as_of_requested=iso(as_of) or "latest",
         labels=_summary_labels(basins),
         warnings=_summary_warnings(
-            counted, orphans=orphans, states=unregistered, handles=_handles(data)
+            counted,
+            orphans=orphans,
+            states=unregistered,
+            handles=_handles(data),
+            producing_registered=policy is not None,
         ),
         links=links,
         explain=inline_for(connection, explain),
@@ -1262,10 +1513,11 @@ def get_well(
     explain: ExplainEffect,
     as_of: AsOf = None,
 ) -> JSONResponse:
+    policy, producing_bindings = _producing(connection)
     found = rows(
         connection,
-        RANKED_WELLS + " and api10 = %(api10)s",
-        {"as_of": as_of, "api10": api10},
+        RANKED_WELLS_PRODUCING + " and api10 = %(api10)s",
+        {"as_of": as_of, "api10": api10, **producing_bindings},
     )
     if not found:
         raise ProblemError("not_found", detail=f"no well {api10} at this vintage")
@@ -1285,6 +1537,8 @@ def get_well(
         knowledge_at=as_of,
     )
     warnings: list[dict[str, Any]] = []
+    if policy is None:
+        warnings.append(_producing_unregistered("/producing"))
     lease_reported = lease_reporting_rule(
         connection,
         row["state_code"],
