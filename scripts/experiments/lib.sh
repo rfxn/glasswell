@@ -38,7 +38,15 @@ gw_psql() {
         ssh "$GLASSWELL_SSH" \
             "psql \"\$(sed -n 's/^DATABASE_URL=//p' $(gw_db_env))\" -v ON_ERROR_STOP=1 -At -F'|' $passthrough -f -"
     else
-        psql "$(gw_dsn)" -v ON_ERROR_STOP=1 -At -F'|' "$@" -f -
+        # gw_die's exit fires inside $(), which terminates only the substitution — and a
+        # substitution used as an argument does not trip `set -e` either. Resolve first and
+        # read the status back, or psql runs with an empty DSN against whatever PG* points
+        # at and the experiment prints a VERDICT from the wrong database (F35).
+        local dsn status
+        dsn="$(gw_dsn)"
+        status=$?
+        [ "$status" -eq 0 ] || return "$status"
+        psql "$dsn" -v ON_ERROR_STOP=1 -At -F'|' "$@" -f -
     fi
 }
 
