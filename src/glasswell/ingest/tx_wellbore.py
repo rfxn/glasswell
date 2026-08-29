@@ -60,6 +60,7 @@ BATCH_ROWS = 20_000
 
 REASON_CODES = (
     "schema_mismatch", "key_incomplete", "unknown_status", "multi_completion", "key_collision",
+    "unreliable_numeric", "out_of_range_date",
 )
 
 
@@ -308,6 +309,36 @@ def _depth(value: str | None) -> float | None:
     return float(text) if text.replace(".", "", 1).isdigit() and text else None
 
 
+# A blank field is an absence; a non-empty one the reader returns None for is a reject.
+_MEASURED_FIELDS: tuple[tuple[str, Callable[[str | None], object], str], ...] = (
+    ("total_depth_ft", _depth, "unreliable_numeric"),
+    # The code `nd_gis._promote_wells` already uses for a filed date that is not one.
+    ("completion_date", _date, "out_of_range_date"),
+)
+
+
+def _measured(row: Mapping[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    parsed: dict[str, Any] = {}
+    unreadable: list[dict[str, Any]] = []
+    for name, reader, reason_code in _MEASURED_FIELDS:
+        filed = (row.get(name) or "").strip()
+        parsed[name] = reader(filed)
+        if filed and parsed[name] is None:
+            unreadable.append(
+                {
+                    "api10": row["api10"],
+                    "state_code": row["state_code"],
+                    "county_code": row["county_code"],
+                    "source_row_ordinal": row.get("source_row_ordinal"),
+                    "field": name,
+                    "filed_as": filed,
+                    "field_action": "null_field",
+                    "reason_code": reason_code,
+                }
+            )
+    return parsed, unreadable
+
+
 _INSERT_WELL = """
 insert into canonical.wells (
     api10, state_code, county_code_at_permit, operator_name_reported, operator_id, well_name,
@@ -501,7 +532,7 @@ def load(
         *[{**row, "status_canonical": None} for row in silent],
     ]
 
-    identity_id, wells_added = _promote_identity(
+    identity_id, wells_added, withheld = _promote_identity(
         connection,
         promoted,
         manifest_id=manifest.manifest_id,
@@ -510,6 +541,8 @@ def load(
         rules=[*keyed.applied_rule_ids, *mapped.applied_rule_ids, precedence.rule_id],
         state_code=str(api10_rule.spec["state_code"]),
     )
+    for reason_code, held in withheld.items():
+        counts[reason_code] = counts.get(reason_code, 0) + held
     # DR-88: an all-conflict revision owns nothing and must become a ledger fact, not a no-op.
     if promoted and not wells_added and not _owns_canonical(connection, manifest.manifest_id):
         counts["key_collision"] = counts.get("key_collision", 0) + _quarantine(
@@ -591,7 +624,13 @@ def _promote_identity(
     parse_derivation_id: str,
     rules: Sequence[str],
     state_code: str,
-) -> tuple[str, int]:
+) -> tuple[str, int, dict[str, int]]:
+    unreadable: list[dict[str, Any]] = []
+    measured = []
+    for row in rows:
+        parsed, rejects = _measured(row)
+        measured.append(parsed)
+        unreadable.extend(rejects)
     payload = [
         {
             "api10": row["api10"],
@@ -608,13 +647,13 @@ def _promote_identity(
             # reported value still stands as written and the rule explains the difference.
             "status_reported": row["well_type_name"] or None,
             "well_type": row["well_type_name"] or None,
-            "depth": _depth(row["total_depth_ft"]),
-            "completion_date": _date(row["completion_date"]),
+            "depth": parsed["total_depth_ft"],
+            "completion_date": parsed["completion_date"],
             "basin": BASIN,
             "effective_from": vintage,
             "manifest_id": manifest_id,
         }
-        for row in rows
+        for row, parsed in zip(rows, measured, strict=True)
     ]
     with derive(
         "canonical.promote",
@@ -640,7 +679,16 @@ def _promote_identity(
             [{**row, "derivation_id": context.derivation_id} for row in payload],
         )
         inserted = max(cursor.rowcount, 0)
-    return context.derivation_id, inserted
+    withheld: dict[str, int] = {}
+    for reason_code in sorted({reject["reason_code"] for reject in unreadable}):
+        withheld[reason_code] = _quarantine(
+            connection,
+            _quarantine_frame([r for r in unreadable if r["reason_code"] == reason_code]),
+            manifest_id=manifest_id,
+            reason_code=reason_code,
+            stage="conform",
+        )
+    return context.derivation_id, inserted, withheld
 
 
 def _promote_lease_links(
