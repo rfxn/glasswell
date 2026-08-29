@@ -53,3 +53,6 @@
 - [Change] The bundle budgets are re-measured against that split: the entry falls
          to 22,500 B and the explorer route rises to 71,500 B, both at the ~5%
          headroom the convention in `web/PERF.md` states
+- [Fix] A `row=` deep link on a descending page opened whichever row sat at the mirrored
+      position rather than the one linked: the reversed array was matched against the
+      index each row was built at

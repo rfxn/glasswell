@@ -158,7 +158,9 @@ function render(host: HTMLElement, options: GridOptions, loaded: Loaded): void {
     for (const row of rows.slice(shown, next)) {
       const element = bodyRow(row, columns, loaded, options, open);
       body.append(element);
-      if (row.index === expanded) open(row, row.id, element);
+      // By id, not by index: `ordered` reverses the array for a descending page while
+      // `row.index` stays the position the row was built at, so the two disagree there.
+      if (row.id === options.state.row) open(row, row.id, element);
     }
     shown = next;
     more.hidden = shown >= rows.length;

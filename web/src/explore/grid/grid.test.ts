@@ -477,6 +477,27 @@ describe("what the wider surface adds to a series the card could not fit (§2.6)
     expect(pressed?.textContent).toBe("newest first");
   });
 
+  it("opens the deep-linked row on a descending page, not the one at its old position", async () => {
+    // `ordered` reverses the array for a descending page while `row.index` stays the position
+    // the row was built at. Matching those two opened whichever row happened to sit at the
+    // mirrored position — a different month, silently.
+    const ascending = await mount("production", { extra: { "f.api10": ["3305310451"] } });
+    const target = (host.querySelector(".gw-grid-tr") as HTMLElement).dataset["rowId"] as string;
+    ascending.abort();
+
+    await mount("production", {
+      row: target,
+      extra: { "f.api10": ["3305310451"], sort: ["desc"] },
+    });
+
+    const opened = host.querySelector(".gw-grid-tr[data-open='true'], .gw-grid-detail");
+    expect(opened).not.toBeNull();
+    const row = opened?.closest(".gw-grid-tr") ?? opened?.previousElementSibling;
+    expect((row as HTMLElement | null)?.dataset["rowId"] ?? target).toContain(
+      target.slice(-7),
+    );
+  });
+
   it("serves the server's own order until the reader asks for the other one", async () => {
     await mount("production", { extra: { "f.api10": ["3305310451"] } });
 
