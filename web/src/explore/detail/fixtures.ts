@@ -358,31 +358,3 @@ export const glossaryTermEnvelope = {
   }
 };
 
-/** `GET /v1/errors/cursor_query_mismatch` — get_error_type. */
-export const errorTypeEnvelope = {
-  "data": {
-    "code": "cursor_query_mismatch",
-    "description": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
-    "emitted_by_this_slice": true,
-    "status": 422,
-    "title": "Cursor does not match this query",
-    "type": "/v1/errors/cursor_query_mismatch"
-  },
-  "links": {
-    "explain": null,
-    "next": null,
-    "self": "/v1/errors/cursor_query_mismatch"
-  },
-  "meta": {
-    "as_of": {
-      "requested": "latest",
-      "resolved": null
-    },
-    "deprecations": [],
-    "labels": {},
-    "next_cursor": null,
-    "request_id": "00000000000000000000000000",
-    "source_freshness": {},
-    "warnings": []
-  }
-};

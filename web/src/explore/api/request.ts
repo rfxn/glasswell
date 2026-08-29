@@ -18,12 +18,6 @@ export interface IssuedRequest {
 export const DIALECTS = ["curl", "httpie", "fetch"] as const;
 export type Dialect = (typeof DIALECTS)[number];
 
-export const DIALECT_TITLES: Record<Dialect, string> = {
-  curl: "curl",
-  httpie: "httpie",
-  fetch: "fetch",
-};
-
 /** The one URL builder: `apiUrl` (client.ts:75) is the function the grid fetched through. */
 export function absoluteUrl(request: { path: string; query?: Record<string, string[]> }): string {
   return new URL(apiUrl(request.path, request.query ?? {}), window.location.origin).toString();

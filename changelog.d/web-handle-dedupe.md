@@ -13,3 +13,12 @@
          element's host dispatch kept as declared options rather than private redrafts
 - [Fix] `card.ts` registers `<gw-figure>` by an explicit side-effect import; it had been
       relying on a named import for the custom element's registration
+- [Remove] Dead web code first reported at v0.47 and still present at v0.61: `DIALECT_TITLES`,
+      `isGlossaryLoaded` and the write-only flag behind it, the unreachable hidden-column badge
+      in `renderHeader` with the two `gw-col-hidden` rules it took with it, and the always-true
+      conjunct in the explorer detail's `omittedFrom`
+- [Remove] Three unread test fixtures — `glossaryIndexEnvelope`, `glossaryTermsEnvelope` and
+      `errorTypeEnvelope`; the recorder's `DETAILS` entry for the last one goes with it, so the
+      deletion is not undone the next time fixtures are recorded
+- [Remove] The `absoluteTileUrl` and `baseStyle` re-exports from `map/map.ts`, which nothing
+      imported, and the orphaned `.gw-explore-eyebrow` rule

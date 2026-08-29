@@ -23,14 +23,9 @@ const summaries = new Map<string, TermSummary>();
 const details = new Map<string, Promise<TermDetail>>();
 
 let index: TermIndex = buildIndex({ index_version: "gix_empty", entries: [], stopwords: [] });
-let loaded = false;
 
 export function termIndex(): TermIndex {
   return index;
-}
-
-export function isGlossaryLoaded(): boolean {
-  return loaded;
 }
 
 export function termSummary(termId: string): TermSummary | null {
@@ -45,7 +40,6 @@ export async function loadGlossary(): Promise<TermIndex> {
   ]);
   for (const term of unwrap(termsEnvelope)) summaries.set(term.term_id, term);
   index = buildIndex(unwrap(indexEnvelope));
-  loaded = true;
   return index;
 }
 
