@@ -1,0 +1,38 @@
+/* The crossing's whole point is the width, so the plot takes the panel and the card's 460 px
+   ceiling does not follow it here. */
+.gw-explore-series {
+  margin: var(--gw-space-3) 0;
+  padding: var(--gw-space-3) 0;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.gw-explore-series-note {
+  margin: 0 0 var(--gw-space-2);
+  color: var(--slate);
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-explore-series .gw-chart-plot {
+  min-height: 260px;
+}
+
+/* Absent at every width the plot is readable at, rather than hidden — the same treatment
+   .gw-grid-narrow gets, for the same breakpoint and the same reason. */
+.gw-explore-series-narrow {
+  display: none;
+}
+
+@media (max-width: 520px) {
+  .gw-explore-series-narrow {
+    display: block;
+    margin: 0;
+    color: var(--amber-text);
+    font-size: var(--gw-fs-micro);
+  }
+
+  .gw-explore-series-note,
+  .gw-explore-series .gw-frame-body {
+    display: none;
+  }
+}

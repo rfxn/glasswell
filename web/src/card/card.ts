@@ -2,7 +2,6 @@ import { ApiError, getEnvelope } from "../api/client.ts";
 import { derivationFor, labelFor, unwrap } from "../api/envelope.ts";
 import type { Envelope, Figure } from "../api/envelope.ts";
 import { readState } from "../app/state.ts";
-import { renderChart } from "../chart/chart.ts";
 import { toChartSeries } from "../chart/series.ts";
 import type { ProductionData } from "../chart/series.ts";
 import { focusPanel } from "../chrome/overlays.ts";
@@ -282,7 +281,11 @@ export async function renderWellCard(
   const chartHost = document.createElement("div");
   chartHost.className = "gw-frame-body";
   chartHost.appendChild(placeholder("Loading production…"));
-  chartFrame.append(chartTitle, chartHost);
+  // The chart owns .gw-frame-body and replaces it on every span change and theme repaint, so
+  // the series' warnings — R8's disclosure of the derivations behind a column — sit beside it.
+  const chartNotes = document.createElement("div");
+  chartNotes.className = "gw-chart-notes";
+  chartFrame.append(chartTitle, chartHost, chartNotes);
   body.appendChild(chartFrame);
 
   container.replaceChildren(card);
@@ -311,12 +314,16 @@ export async function renderWellCard(
         resolved: production.meta.as_of.resolved,
       });
       if (series) chartTitle.appendChild(crossingLink(series));
+      // Loaded here rather than at module scope: the plot is drawn only once a series has
+      // arrived, and the entry chunk carries every reader who never opens a card. The budget
+      // test in explore/bundle-budget.test.ts is what holds this to it.
+      const { renderChart } = await import("../chart/chart.ts");
       renderChart(chartHost, toChartSeries(data), {
         onExplain: callbacks.onExplain,
         labelTermFor: (pointer) => labelFor(production, pointer),
       });
-      for (const panel of warningPanels(production.meta.warnings)) chartHost.appendChild(panel);
-      highlight(chartHost, termIndex());
+      for (const panel of warningPanels(production.meta.warnings)) chartNotes.appendChild(panel);
+      highlight(chartFrame, termIndex());
     } catch (error) {
       chartHost.replaceChildren(errorPanel(error, callbacks));
     }

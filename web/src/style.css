@@ -1110,17 +1110,62 @@ gw-figure {
   text-align: center;
 }
 
+/* The window's disclosure and its control read as one line: a count with no way to reach the
+   rest of the record is the naked number this project treats as a correctness bug. */
+.gw-window-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gw-space-2);
+  margin: 0 0 0.4rem;
+}
+
+.gw-window-note {
+  flex: 1 1 16rem;
+  margin: 0;
+  color: var(--slate);
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-window-control {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.gw-window-span {
+  min-height: 30px;
+  padding: 0 var(--gw-space-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-pill);
+  background: none;
+  color: var(--slate);
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+.gw-window-span[aria-pressed="true"] {
+  border-color: var(--cyan);
+  color: var(--cyan-text);
+}
+
+.gw-window-span:hover,
+.gw-window-span:focus-visible {
+  border-color: var(--cyan);
+}
+
 .gw-state-strip {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 2px;
+  margin-top: 0.2rem;
 }
 
 .gw-state-key {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin: 0 0 0.2rem;
+  margin: 0.4rem 0 0.2rem;
   color: var(--slate);
 }
 
@@ -1130,16 +1175,34 @@ gw-figure {
   gap: 0.25rem;
 }
 
+/* The band is the plot's own x axis, so it starts and ends where the plot area does. chart.ts
+   measures uPlot's over-rect into these two properties; the fallbacks are the axis size the
+   options declare, which is what an environment with no layout gets. */
 .gw-state-row {
-  display: flex;
-  align-items: center;
-  gap: 0.15rem;
+  position: relative;
+  display: block;
 }
 
 .gw-state-name {
-  width: 3.5rem;
+  position: absolute;
+  left: 0;
+  width: calc(var(--gw-band-left, 62px) - 4px);
   color: var(--slate);
   font-size: var(--gw-fs-eyebrow);
+  text-align: right;
+  line-height: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gw-state-cells {
+  display: flex;
+  gap: 1px;
+  height: 0.8rem;
+  margin-left: var(--gw-band-left, 62px);
+  margin-right: var(--gw-band-right, 62px);
+  cursor: crosshair;
 }
 
 .gw-state-mark {
@@ -1148,8 +1211,31 @@ gw-figure {
   border-radius: 2px;
   border: 1px solid var(--hairline);
   background: var(--hairline);
-  cursor: pointer;
   padding: 0;
+}
+
+/* In the band a mark is one of sixty, so it takes whatever width is going; the key's swatches
+   keep their fixed size, because there the mark is the thing being read. */
+.gw-state-cells .gw-state-mark {
+  flex: 1 1 0;
+  width: auto;
+  height: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 1px;
+}
+
+.gw-state-cells .gw-state-mark[data-selected] {
+  outline: 2px solid var(--paper);
+  outline-offset: 1px;
+  border-radius: 0;
+}
+
+/* The cell edge is what makes the baseline bar read as a bar of zero height rather than as a
+   rule drawn across the band. It is inset so it costs the mark no width at five pixels. */
+.gw-state-cells .gw-state-reported-zero,
+.gw-state-cells .gw-state-no-report {
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
 }
 
 .gw-state-reported {
@@ -1157,8 +1243,10 @@ gw-figure {
   border-color: var(--oil);
 }
 
+/* A filed zero, drawn as a filed zero: a hollow outline vanished once a mark was five pixels
+   wide, and a bar sitting on the baseline is the one encoding that survives the new density. */
 .gw-state-reported-zero {
-  background: transparent;
+  background: linear-gradient(to top, var(--paper) 0 3px, transparent 3px 100%);
   border-color: var(--paper);
 }
 
@@ -1175,6 +1263,109 @@ gw-figure {
 .gw-state-unknown {
   background: var(--gas);
   border-color: var(--gas);
+}
+
+/* The month under the cursor, as DOM. It replaced 393 two-pixel targets, so nothing in it is
+   allowed to be small: the stepper and every handle clear the 44 px touch floor. */
+.gw-series-readout {
+  margin-top: 0.5rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--hairline);
+}
+
+.gw-readout-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gw-space-2);
+}
+
+.gw-readout-month {
+  margin: 0;
+  color: var(--paper);
+  font-size: var(--gw-fs-title);
+  font-weight: var(--gw-fw-title);
+}
+
+.gw-readout-steps {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.gw-readout-step {
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-sm);
+  background: none;
+  color: var(--paper);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.gw-readout-step:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.gw-readout-step:not(:disabled):hover,
+.gw-readout-step:focus-visible {
+  border-color: var(--cyan);
+}
+
+.gw-readout-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.gw-readout-facts {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.4rem;
+}
+
+.gw-readout-name {
+  min-width: 3rem;
+  color: var(--slate);
+}
+
+.gw-readout-value {
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-fs-mono);
+  color: var(--paper);
+}
+
+.gw-readout-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--slate);
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-readout-nohandle {
+  margin-left: auto;
+  color: var(--amber-text);
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-readout-row .gw-handle {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* Outside .gw-frame-body on purpose: the chart replaces that host on every span change and
+   theme repaint, and this is where the series' own warnings land (card.ts). */
+.gw-chart-notes:not(:empty) {
+  margin-top: 0.4rem;
 }
 
 .gw-handle-text,

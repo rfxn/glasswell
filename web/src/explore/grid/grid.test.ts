@@ -3,6 +3,15 @@ import { readFileSync } from "node:fs";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// The series panel builds a real plot, and uPlot draws to a 2d context happy-dom has none of.
+vi.mock("uplot", () => ({
+  default: class {
+    over = document.createElement("div");
+    setSize(): void {}
+    destroy(): void {}
+  },
+}));
+
 import { DEFAULT_STATE } from "../../app/state.ts";
 import type { AppState } from "../../app/state.ts";
 import { buildCatalogue } from "../catalogue.ts";
@@ -437,6 +446,72 @@ describe("the grid renders a collection off one state object (§3.1 rule 2)", ()
 
     const cursor = pagedQuarantineEnvelope.meta.next_cursor;
     expect(commit).toHaveBeenCalledWith({ extra: { cursor: [cursor] } });
+  });
+});
+
+describe("what the wider surface adds to a series the card could not fit (§2.6)", () => {
+  it("draws the series the request returned, above the months it returned as rows", async () => {
+    await mount("production", { extra: { "f.api10": ["3305310451"] } });
+
+    const panel = host.querySelector(".gw-explore-series");
+    expect(panel).not.toBeNull();
+    expect(panel?.querySelector(".gw-chart-plot")).not.toBeNull();
+    expect(host.querySelectorAll(".gw-grid-tr").length).toBeGreaterThan(0);
+    // The plot sits above the rows, not instead of them.
+    const table = host.querySelector(".gw-grid-table") as Element;
+    const children = [...host.children];
+    expect(children.indexOf(panel as Element)).toBeLessThan(children.indexOf(table));
+  });
+
+  it("draws nothing for a collection with no axis to draw against", async () => {
+    await mount("quarantine");
+    expect(host.querySelector(".gw-explore-series")).toBeNull();
+  });
+
+  it("reorders the loaded rows off the URL, so the view is a link", async () => {
+    await mount("production", { extra: { "f.api10": ["3305310451"], sort: ["desc"] } });
+
+    const first = host.querySelector(".gw-grid-tr") as HTMLElement;
+    expect(first.dataset["rowId"]).toContain("2026-03");
+    const pressed = host.querySelector('.gw-grid-sort-dir[aria-pressed="true"]');
+    expect(pressed?.textContent).toBe("newest first");
+  });
+
+  it("opens the deep-linked row on a descending page, not the one at its old position", async () => {
+    // `ordered` reverses the array for a descending page while `row.index` stays the position
+    // the row was built at. Matching those two opened whichever row happened to sit at the
+    // mirrored position — a different month, silently.
+    const ascending = await mount("production", { extra: { "f.api10": ["3305310451"] } });
+    const target = (host.querySelector(".gw-grid-tr") as HTMLElement).dataset["rowId"] as string;
+    ascending.abort();
+
+    await mount("production", {
+      row: target,
+      extra: { "f.api10": ["3305310451"], sort: ["desc"] },
+    });
+
+    const opened = host.querySelector(".gw-grid-tr[data-open='true'], .gw-grid-detail");
+    expect(opened).not.toBeNull();
+    const row = opened?.closest(".gw-grid-tr") ?? opened?.previousElementSibling;
+    expect((row as HTMLElement | null)?.dataset["rowId"] ?? target).toContain(
+      target.slice(-7),
+    );
+  });
+
+  it("serves the server's own order until the reader asks for the other one", async () => {
+    await mount("production", { extra: { "f.api10": ["3305310451"] } });
+
+    expect((host.querySelector(".gw-grid-tr") as HTMLElement).dataset["rowId"]).toContain(
+      "2025-10",
+    );
+    (host.querySelectorAll(".gw-grid-sort-dir")[1] as HTMLElement).click();
+    expect(commit).toHaveBeenCalledWith({ extra: { "f.api10": ["3305310451"], sort: ["desc"] } });
+  });
+
+  it("offers no reordering while the server still has a page to give", async () => {
+    overrides["/v1/quarantine"] = pagedQuarantineEnvelope;
+    await mount("quarantine");
+    expect(host.querySelector(".gw-grid-sort")).toBeNull();
   });
 });
 

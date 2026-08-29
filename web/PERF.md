@@ -109,9 +109,17 @@ explorer's shell chunk and into the entry. Verified rather than inferred — `gw
 
 | budget | B gzipped | headroom over measured |
 |---|---:|---|
-| entry chunk | 46,500 | +5.2% over 44,192 |
-| explorer route, map excluded | 66,000 | +5.1% over 62,817 |
+| entry chunk | 22,500 | +5.4% over 21,340 |
+| explorer route, map excluded | 71,500 | +4.9% over 68,149 |
 | map chunk | 330,000 | +5.2% over 313,823 |
+
+The first two were re-measured when the production chart moved to a dynamic import. uPlot had
+been riding the entry chunk, which every reader downloads whether or not they open a card, and
+by then the entry had reached 46,330 B against its 46,500 B budget — 170 B of headroom, so the
+instrument was about to fire on any addition at all rather than on a bad one. Splitting the
+chart out took the entry to 21,340 B and moved those bytes onto the explorer route, which is
+honest: a reader landing on a production dataset draws the plot. The entry budget is tightened
+in the same act, because a budget carrying 25 kB of slack has stopped being a ratchet.
 
 Plus one structural budget that a byte count would let drift back slowly: **maplibre must not
 appear in the entry chunk at all.** C0 bought that with a dynamic import, and a single static

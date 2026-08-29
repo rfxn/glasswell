@@ -20,6 +20,44 @@
   color: var(--amber-text);
 }
 
+/* Rendered only where every row of the filtered population is loaded, so it reorders what is
+   on screen and never contradicts the walk the pagination block offers (sort.ts). */
+.gw-grid-sort {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gw-space-2);
+  margin: 0 0 var(--gw-space-2) auto;
+  font-size: var(--gw-fs-micro);
+  color: var(--muted);
+}
+
+.gw-grid-sort-group {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.gw-grid-sort-dir {
+  min-height: 30px;
+  padding: 0 var(--gw-space-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-pill);
+  background: none;
+  color: var(--slate);
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+.gw-grid-sort-dir[aria-pressed="true"] {
+  border-color: var(--cyan);
+  color: var(--cyan-text);
+}
+
+.gw-grid-sort-dir:hover,
+.gw-grid-sort-dir:focus-visible {
+  border-color: var(--cyan);
+}
+
 .gw-grid-error {
   color: var(--gas-text);
 }

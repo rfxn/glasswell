@@ -9,9 +9,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // (`Record what the explorer's shell actually costs`), not chosen ahead of one, and each
 // carries about 5% of headroom over what was measured — enough that a refactor does not trip
 // it and little enough that a dependency arriving on the entry path does.
+// Re-measured when the chart moved off the entry path: the entry fell 46,330 → 21,340 B
+// because uPlot had been riding it for every reader, and the explorer route rose
+// 65,100 → 68,149 B because the plot this branch adds is one an explorer reader really does
+// download. Tightening the entry is the point of re-measuring — a budget carrying 25 kB of
+// slack has stopped being a ratchet.
 const BUDGET_BYTES = {
-  entryGzip: 46_500,
-  explorerRouteGzip: 66_000,
+  entryGzip: 22_500,
+  explorerRouteGzip: 71_500,
   mapChunkGzip: 330_000,
 };
 

@@ -295,6 +295,20 @@ describe("well card", () => {
     expect(renderChart.mock.calls[0]?.[0]).toBe(frame.querySelector(".gw-frame-body"));
   });
 
+  it("keeps the derivation disclosure outside the plot the chart redraws", async () => {
+    // The chart redraws its own host whenever the span or the theme changes. A warning
+    // appended into that host went with it, and that warning is the `series_spans_derivations`
+    // line naming the derivations behind the column — R8's disclosure, not a decoration.
+    await renderWellCard(host, API10, callbacks);
+
+    const frame = host.querySelector(".gw-production-chart") as HTMLElement;
+    const notes = frame.querySelector(".gw-chart-notes") as HTMLElement;
+    expect(notes.textContent).toContain("series_spans_derivations");
+    expect(frame.querySelector(".gw-frame-body .gw-warning")).toBeNull();
+    // And it is inside the body that scrolls, so it stays reachable at every breakpoint.
+    expect(host.querySelector(".gw-panel-body .gw-chart-notes")).toBeTruthy();
+  });
+
   it("splits into a fixed head and a scrolling body, so a long card cannot overrun", async () => {
     await renderWellCard(host, API10, callbacks);
 
