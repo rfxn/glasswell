@@ -29,7 +29,7 @@ restricted `authorized_keys` `from=` clause and every probe in this repo use `.1
 | `glasswell-alert@.service` | `glasswell` | `OnFailure=` target: logs to the journal and appends to `/var/lib/glasswell/health-events` |
 | `glasswell-backup.service` + `.timer` | `root` | Nightly custom-format `pg_dump`, globals and strict sidecar manifest plus an rsync of the dump and raw zones to forge, via `/usr/local/sbin/glasswell-backup.sh`. Dump and manifest counts share one exported repeatable-read snapshot. Installed **disabled**; `install.sh --enable-backup` arms it. **VM 111 has it enabled already** |
 | `glasswell-restore-drill.service` + `.timer` | `root:glasswell` | Weekly same-cluster logical restore of the newest private dump into a unique scratch database. It verifies archive identity, schema version, critical counts, representative reads and scratch cleanup, then atomically publishes `/var/lib/glasswell-restore-drill/result.json` from a dedicated root-owned, Status-readable state directory. It follows backup enablement and is not full VM/raw-zone disaster recovery |
-| `martin.service` | `martin` | **Pre-existing, not owned by this directory** — configured through a drop-in. Runs with `auto_publish` on until runbook step 9, so its catalogue is every relation with a geometry column, `staging` and `canonical` included, on `127.0.0.1:3000`. Adopting `martin/config.yaml` cuts it to the three published layers; migration 026's `martin` role, which holds select on three `marts.tile_*` views and nothing else, is what makes the rest unreachable either way |
+| `martin.service` | `martin` | **Pre-existing, not owned by this directory** — configured through a drop-in. Runs with `auto_publish` on until runbook step 9, so its catalogue is every relation with a geometry column, `staging` and `canonical` included, on `127.0.0.1:3000`. Adopting `martin/config.yaml` cuts it to the ten published layers; the `martin` role created by migration 026, which holds select on the ten `marts.tile_*` views granted across 026–035 and nothing else, is what makes the rest unreachable either way |
 | `postgresql@16-main` | `postgres` | Distro unit. `listen_addresses = 'localhost'`, socket peer auth |
 
 `backup/glasswell-backup.sh` and `backup/glasswell-restore-drill.sh` are placed in
@@ -112,7 +112,7 @@ its source catalogue at startup, so a **restart** is required after `marts.refre
 creates the `marts.nd_*(z, x, y, query)` functions — that is a catalogue refresh, not a
 reconfiguration. `infra/martin/config.yaml` is the documented target and adopting it is runbook step 9:
 it turns auto-publish off, which is what stops the tile server publishing `staging` and
-`canonical` relations. It declares the same three function sources auto-publish would have
+`canonical` relations. It declares the same ten function sources auto-publish would have
 found, so the ids do not move; what it must not carry is a second `tables:` block naming the
 views those functions read, which would collide on the same ids. It needs the PG role
 `martin` that migration 026 creates — its DSN peer-authenticates as the unit's OS user.
@@ -346,7 +346,7 @@ sudo -u postgres /opt/glasswell/venv/bin/glasswell-migrate \
     --dsn "postgresql:///glasswell?host=/var/run/postgresql"
 
 # 4. reinstall the tile functions if src/glasswell/marts/tiles.py moved, then restart and
-#    check. Create-or-replace on the three function bodies; it rewrites no row, which is
+#    check. Create-or-replace on the ten function bodies; it rewrites no row, which is
 #    what separates it from `python -m glasswell.marts.nd_wells` (that mints a mart.refresh
 #    derivation for what may be a code-only change). martin publishes these functions, so a
 #    stale body is a stale tile source.
@@ -364,9 +364,15 @@ systemctl start glasswell-status.service   # block until this release's snapshot
 # 5. Apply the Postgres tuning. Run whenever the drop-in has moved since the last restart.
 #    5a. The swapfile SB-06 2.3 asked for and provisioning never created. Do this FIRST:
 #        it is what makes sizing against 16 GiB safe against the 8 GiB balloon floor.
-swapon --show                       # expect empty — that is the gap
-fallocate -l 4G /swapfile && chmod 0600 /swapfile && mkswap /swapfile && swapon /swapfile
-printf '/swapfile none swap sw 0 0\n' >> /etc/fstab   # survives reboot
+#        Step 5 reruns whenever the drop-in moves, so both halves are guarded: fallocate
+#        would fail on a swapfile already in use, and a second append gives /etc/fstab a
+#        duplicate entry that survives every reboot after it.
+swapon --show                       # expect empty on the first run — that is the gap
+if ! swapon --show=NAME --noheadings | grep -qx /swapfile; then
+    fallocate -l 4G /swapfile && chmod 0600 /swapfile && mkswap /swapfile && swapon /swapfile
+fi
+grep -q '^/swapfile[[:space:]]' /etc/fstab \
+    || printf '/swapfile none swap sw 0 0\n' >> /etc/fstab   # survives reboot
 #    5b. Capture the "before" numbers — the Measure section above is the full set.
 sudo -u postgres psql -d glasswell -c 'select * from pg_stat_bgwriter' > /tmp/pg-before.txt
 #    5c. Place and restart. martin's pooled connections do not survive the restart.
@@ -403,13 +409,13 @@ cd /opt/glasswell/src && rm -rf CLAUDE.md PLAN.md AUDIT.md MEMORY.md docs work-o
 ```bash
 # 9. ONE-TIME — adopt the martin config so the tile server stops publishing staging (DR-05).
 #    Migration 026 first, without exception: the config's DSN peer-auths as the OS user
-#    martin, and both that role and the three marts.tile_* views it may read are created
+#    martin, and both that role and the marts.tile_* views it may read are created
 #    there. martin.service carries Restart=on-failure, so adopting the config against a
 #    database that lacks them is a crash loop, not a failed start. The tile functions the
 #    config publishes must also be installed from the code being deployed (step 4).
 ./install.sh --with-martin-config
 systemctl restart martin
-curl -s 127.0.0.1:3000/catalog | python3 -m json.tool   # expect exactly three ids
+curl -s 127.0.0.1:3000/catalog | python3 -m json.tool   # expect the TILE_LAYERS roster, ten ids
 ./verify.sh                                             # the martin catalogue check goes ok
 ```
 

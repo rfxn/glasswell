@@ -30,3 +30,10 @@
       reach, the apply sequence including the 4 GiB swapfile SB-06 2.3 asked for and
       provisioning never created, and which four values to re-check once real numbers
       come back
+- [Fix] `infra/README.md` said martin publishes three function sources in four places,
+      one of them a runbook command asserting `expect exactly three ids`. The roster has
+      been ten since the land-grid and TX layers landed, so that check failed on a
+      correct host; the martin role's grant spans migrations 026-035, not 026 alone
+- [Fix] The swapfile runbook step appended to `/etc/fstab` unconditionally inside a step
+      documented as rerunnable, so a second run duplicated the entry and `fallocate`
+      failed on a swapfile already in use. Both halves are guarded
