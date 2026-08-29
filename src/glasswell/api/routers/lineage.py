@@ -7,6 +7,7 @@ and adds no lineage logic of its own — a second chain resolver would be a revi
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from pathlib import Path as PathType
 from pathlib import PurePosixPath
@@ -275,11 +276,21 @@ class Vintage(BaseModel):
     manifest_ids: list[str] = Field(description="Manifests the promotion read.")
     opened_at: datetime = Field(description="When the vintage was opened.")
     promotion_derivation_id: str | None = Field(description="Derivation that promoted it.")
-    rows_examined: int = Field(description="Rows read during the promotion.")
-    rows_appended: int = Field(description="Rows appended; a restatement appends (DIR-2).")
+    rows_examined: int | None = Field(
+        description="Rows read during the promotion; null where no derivation promoted the row."
+    )
+    rows_appended: int | None = Field(
+        description=(
+            "Rows appended; a restatement appends (DIR-2). Null where no derivation promoted"
+            " the row, because there is then no handle that explains the count."
+        )
+    )
     months_touched: list[str] = Field(description="Production months the promotion covered.")
-    restatement_summary: dict[str, Any] = Field(
-        description="Per-reason counts of values this vintage restated."
+    restatement_summary: dict[str, Any] | None = Field(
+        description=(
+            "Per-reason counts of values this vintage restated; null where no derivation"
+            " promoted the row."
+        )
     )
     lineage: dict[str, str] = Field(
         default_factory=dict,
@@ -935,7 +946,21 @@ def vintage_lineage(promotion_derivation_id: str | None) -> dict[str, str]:
     return dict.fromkeys(_VINTAGE_SIDECAR, format_handle(promotion_derivation_id))
 
 
+def vintage_counters(
+    row: Mapping[str, Any], names: Sequence[str] = _VINTAGE_SIDECAR
+) -> dict[str, Any]:
+    """The promotion counters, withheld as null on a ledger row no derivation promoted.
+
+    The handle over these numbers is the promotion's, so a row without one has nothing to cite
+    and cannot serve them at all: an unexplainable figure is withheld, never served naked (R8).
+    """
+    if row["promotion_derivation_id"] is None:
+        return dict.fromkeys(names)
+    return {name: row[name] for name in names}
+
+
 def _vintage(row: dict[str, Any]) -> dict[str, Any]:
+    counters = vintage_counters(row)
     record = {
         "vintage_id": row["vintage_id"],
         "source_id": row["source_id"],
@@ -943,10 +968,10 @@ def _vintage(row: dict[str, Any]) -> dict[str, Any]:
         "manifest_ids": list(row["manifest_ids"]),
         "opened_at": iso(row["opened_at"]),
         "promotion_derivation_id": row["promotion_derivation_id"],
-        "rows_examined": row["rows_examined"],
-        "rows_appended": row["rows_appended"],
+        "rows_examined": counters["rows_examined"],
+        "rows_appended": counters["rows_appended"],
         "months_touched": list(row["months_touched"]),
-        "restatement_summary": dict(row["restatement_summary"]),
+        "restatement_summary": counters["restatement_summary"],
     }
     sidecar = vintage_lineage(row["promotion_derivation_id"])
     if sidecar:

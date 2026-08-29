@@ -18,3 +18,9 @@
 - [Change] raw-zone staging is scoped by source slot, not by content hash alone, and
          the reuse-or-place block is one helper shared by the HTTP and ArcGIS
          registrars, refusing before the payload is moved into place
+- [Fix] the ND re-promotion and the NM production promotion record the derivation that
+      promoted them on their vintage-day ledger row, and a run carrying none no longer
+      overwrites the one the ledger already holds
+- [Fix] a vintage row no derivation promoted withholds `rows_examined`, `rows_appended`
+      and `restatement_summary` as null on `/v1` and `/v1/vintages` rather than serving
+      counts no handle can explain; a promoted row is unaffected

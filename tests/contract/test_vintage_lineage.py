@@ -92,6 +92,41 @@ def test_an_unpromoted_vintage_omits_the_key_rather_than_serving_an_empty_object
     assert "_lineage" not in row
 
 
+def test_an_unpromoted_vintage_withholds_its_counters_on_both_surfaces(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The fixture gap that hid this: every other vintage has a derivation, so the R6 walker
+    never met a row whose numbers no handle can reach. `repromote` writes exactly such a row."""
+    _open_unpromoted(seeded)
+
+    listed = payload(client.get("/v1/vintages"))
+    published = payload(client.get("/v1"))
+    row = next(row for row in listed if row["vintage_id"] == UNPROMOTED_ID)
+    index_row = next(
+        row for row in published["published_vintages"] if row["source_id"] == "tx_pdq_dsv"
+    )
+
+    assert row["rows_examined"] is None
+    assert row["rows_appended"] is None
+    assert row["restatement_summary"] is None
+    assert index_row["rows_examined"] is None
+    assert index_row["rows_appended"] is None
+    assert naked_numbers(listed) == []
+    assert naked_numbers(published) == []
+
+
+def test_a_promoted_vintage_still_serves_the_counters_it_can_explain(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The withholding is conditional on the row, not a blanket retreat from serving them."""
+    _open_unpromoted(seeded)
+
+    row = next(row for row in collection(client) if row["vintage_id"] != UNPROMOTED_ID)
+
+    assert row["rows_examined"] is not None
+    assert row["_lineage"]["rows_examined"] == row["promotion_derivation_id"]
+
+
 def test_the_document_declares_the_sidecar_without_requiring_it(client: TestClient) -> None:
     schema = client.get("/openapi.json").json()["components"]["schemas"]["Vintage"]
 

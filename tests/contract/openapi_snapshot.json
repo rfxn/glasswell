@@ -4435,14 +4435,28 @@
             "title": "Promotion Derivation Id"
           },
           "rows_appended": {
-            "description": "Rows appended; restatements append, never update.",
-            "title": "Rows Appended",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Rows appended; restatements append, never update. Null where no derivation promoted the row, because there is then no handle that explains the count.",
+            "title": "Rows Appended"
           },
           "rows_examined": {
-            "description": "Rows read during the promotion.",
-            "title": "Rows Examined",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Rows read during the promotion; null where no derivation promoted the row.",
+            "title": "Rows Examined"
           },
           "source_id": {
             "description": "Source the vintage was promoted from.",
@@ -5355,20 +5369,41 @@
             "title": "Promotion Derivation Id"
           },
           "restatement_summary": {
-            "additionalProperties": true,
-            "description": "Per-reason counts of values this vintage restated.",
-            "title": "Restatement Summary",
-            "type": "object"
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-reason counts of values this vintage restated; null where no derivation promoted the row.",
+            "title": "Restatement Summary"
           },
           "rows_appended": {
-            "description": "Rows appended; a restatement appends (DIR-2).",
-            "title": "Rows Appended",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Rows appended; a restatement appends (DIR-2). Null where no derivation promoted the row, because there is then no handle that explains the count.",
+            "title": "Rows Appended"
           },
           "rows_examined": {
-            "description": "Rows read during the promotion.",
-            "title": "Rows Examined",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Rows read during the promotion; null where no derivation promoted the row.",
+            "title": "Rows Examined"
           },
           "source_id": {
             "description": "Source the vintage was promoted from.",

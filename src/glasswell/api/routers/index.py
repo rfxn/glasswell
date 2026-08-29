@@ -10,7 +10,7 @@ from glasswell.api.deps import Connection, rows
 from glasswell.api.errors import ERROR_REGISTRY, TYPE_BASE, ProblemError, problem_responses
 from glasswell.api.examples import EXAMPLE_ERROR_CODE, dataset, not_a_figure, request_example
 from glasswell.api.responses import EnvelopeModel, enveloped, iso
-from glasswell.api.routers.lineage import vintage_lineage
+from glasswell.api.routers.lineage import vintage_counters, vintage_lineage
 from glasswell.lineage.envelope import LINEAGE_SIDECAR
 
 router = APIRouter(tags=["service"])
@@ -44,8 +44,15 @@ select source_id, vintage_date, rows_examined, rows_appended, promotion_derivati
 class PublishedVintage(BaseModel):
     source_id: str = Field(description="Source the vintage was promoted from.")
     vintage_date: str = Field(description="Knowledge-time label of the promotion.")
-    rows_examined: int = Field(description="Rows read during the promotion.")
-    rows_appended: int = Field(description="Rows appended; restatements append, never update.")
+    rows_examined: int | None = Field(
+        description="Rows read during the promotion; null where no derivation promoted the row."
+    )
+    rows_appended: int | None = Field(
+        description=(
+            "Rows appended; restatements append, never update. Null where no derivation"
+            " promoted the row, because there is then no handle that explains the count."
+        )
+    )
     promotion_derivation_id: str | None = Field(description="Derivation that did the promotion.")
     lineage: dict[str, str] = Field(
         default_factory=dict,
@@ -133,11 +140,12 @@ def _error_codes() -> list[dict]:
 def get_service_index(request: Request, connection: Connection) -> JSONResponse:
     published = []
     for row in rows(connection, _VINTAGES):
+        counters = vintage_counters(row, ("rows_examined", "rows_appended"))
         record = {
             "source_id": row["source_id"],
             "vintage_date": iso(row["vintage_date"]),
-            "rows_examined": row["rows_examined"],
-            "rows_appended": row["rows_appended"],
+            "rows_examined": counters["rows_examined"],
+            "rows_appended": counters["rows_appended"],
             "promotion_derivation_id": row["promotion_derivation_id"],
         }
         sidecar = vintage_lineage(row["promotion_derivation_id"])
