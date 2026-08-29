@@ -80,7 +80,9 @@ export interface ProducingCounts {
  */
 export function producingNote(window: ProducingWindow | null): string {
   if (!window) {
-    return "The producing definition is not registered here, so these classes are not served.";
+    // Null covers an unregistered definition and a registry with no production loaded to
+    // anchor on, so the note states what is not served rather than guessing which it was.
+    return "No producing window is served here, so these classes are not shown.";
   }
   const streams = window.streams.join(" or ");
   return (

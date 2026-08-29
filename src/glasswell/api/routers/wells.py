@@ -514,9 +514,12 @@ def _producing(connection) -> tuple[ProducingPolicy | None, dict[str, Any]]:
 def _producing_unregistered(pointer: str) -> dict[str, Any]:
     return {
         "code": "producing_definition_unregistered",
+        # Missing rows and an unreadable spec both land here, so the text names the outcome
+        # rather than asserting which of the two it was.
         "detail": (
-            "The producing classes are not served: this registry carries no"
-            f" {', '.join(PRODUCING_RULE_IDS)}. Whether a well is producing is a definition"
+            "The producing classes are not served: this registry does not supply a usable"
+            f" {', '.join(PRODUCING_RULE_IDS)} — the rows are absent, not yet in effect, or"
+            " carry a spec that could not be read. Whether a well is producing is a definition"
             " with a rationale and an effective date, and without those rows there is nothing"
             " to answer from."
         ),

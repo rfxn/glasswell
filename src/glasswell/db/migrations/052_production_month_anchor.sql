@@ -6,8 +6,11 @@
 --
 -- The window scan reads the same index from the anchor forward, which is the newest end.
 
+-- Partial on the entity type the classifier reads, so the anchor cannot be pulled forward by a
+-- lease or pool row and the index stays the size of the question being asked.
 create index if not exists production_monthly_month_idx
-    on canonical.production_monthly (production_month desc);
+    on canonical.production_monthly (production_month desc)
+    where entity_type = 'well';
 
 -- Migration 049 made publication evidence a precondition for every conformance rule, so the
 -- three producing rules register theirs before the seeder inserts them. v0.61 is the first tag

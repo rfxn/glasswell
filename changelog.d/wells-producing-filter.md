@@ -7,8 +7,9 @@
       streams and the oil+condensate liquids basis the counts are on
 - [New] Producing read-out in the map legend: per-class counts with their own lineage handles,
       the window and basis stated beneath, and each class linking to the wells it counted
-- [New] Migration 037 indexes canonical.production_monthly on production_month, which the
-      window anchor reads once per request; it was a 288 ms sequential scan at 7.2M rows
+- [New] Migration 052 indexes canonical.production_monthly on production_month for well-level
+      rows, which the window anchor reads once per request; it was a 288 ms sequential scan at
+      7.2M rows
 - [Change] The producing window is anchored on the newest filed production month, never on the
          wall clock: the monthly report runs about five months behind, so a clock-anchored
          window would class every well not-producing

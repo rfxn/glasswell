@@ -188,7 +188,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
     link.className = "gw-lg-label gw-lg-plink";
     link.textContent = entry.label;
     link.target = "_blank";
-    link.rel = "noreferrer";
+    link.rel = "noopener noreferrer";
     link.title = `List the ${entry.label.toLowerCase()} wells in this box`;
     row.appendChild(link);
 

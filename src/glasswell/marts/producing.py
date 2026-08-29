@@ -113,6 +113,7 @@ _LOAD_SPECS = """
 select rule_id, spec
   from lineage.conformance_rules
  where rule_id = any(%(rule_ids)s)
+   and effective_from <= current_date
    and (effective_to is null or effective_to > current_date)
 """
 
@@ -129,7 +130,12 @@ def load_producing_policy(connection: psycopg.Connection) -> ProducingPolicy:
     )
 
 
-_ANCHOR_MONTH = "select max(production_month) as month from canonical.production_monthly"
+# Well-level, because the classifier is: a lease or pool row filed for a newer month would
+# move the window past every well and read the whole basin as idle.
+_ANCHOR_MONTH = (
+    "select max(production_month) as month from canonical.production_monthly"
+    " where entity_type = 'well'"
+)
 
 
 def anchor_month(connection: psycopg.Connection, policy: ProducingPolicy) -> date | None:
