@@ -321,7 +321,12 @@ def _measured(row: Mapping[str, Any]) -> tuple[dict[str, Any], list[dict[str, An
     parsed: dict[str, Any] = {}
     unreadable: list[dict[str, Any]] = []
     for name, reader, reason_code in _MEASURED_FIELDS:
-        filed = (row.get(name) or "").strip()
+        if name not in row:
+            raise RuleSpecError(
+                f"{LAYOUT_RULE} does not declare {name}, which this promotion measures;"
+                " reading it as absent would null the field on every well and exit 0"
+            )
+        filed = (row[name] or "").strip()
         parsed[name] = reader(filed)
         if filed and parsed[name] is None:
             unreadable.append(

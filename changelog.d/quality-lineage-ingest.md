@@ -24,3 +24,5 @@
 - [Fix] a vintage row no derivation promoted withholds `rows_examined`, `rows_appended`
       and `restatement_summary` as null on `/v1` and `/v1/vintages` rather than serving
       counts no handle can explain; a promoted row is unaffected
+- [Fix] TX identity promotion refuses a layout that no longer declares a measured
+      column instead of reading it as absent and nulling the field on every well
