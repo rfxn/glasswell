@@ -710,6 +710,12 @@ def response_pointer_for(declaration: dict[str, Any], column: str, element_index
             return f"{prefix}{column}"
 
 
+# The floor is a vacuity guard, not a coverage target — `test_default_column_binding_meets_
+# the_phase_floor` is what ratchets coverage. Set well under today's count so authoring
+# work never has to move it.
+MIN_EMITTED_LABELS = 20
+
+
 def _emitted_labels(client: TestClient) -> dict[str, dict[str, str]]:
     """`meta.labels` per operation, read off the responses the R6 walker already replays."""
     labels: dict[str, dict[str, str]] = {}
@@ -719,7 +725,18 @@ def _emitted_labels(client: TestClient) -> dict[str, dict[str, str]]:
             continue
         body = response.json()
         if isinstance(body, dict) and isinstance(body.get("meta"), dict):
-            labels.setdefault(operation_id, {}).update(body["meta"].get("labels") or {})
+            emitted = body["meta"].get("labels") or {}
+            if emitted:
+                labels.setdefault(operation_id, {}).update(emitted)
+    # A ratchet whose numerator can be zero without failing is a ratchet over a dead feature:
+    # routers that stopped emitting meta.labels entirely would leave every dataset falling back
+    # to schema bindings and the coverage floor still green. Counted, not merely non-empty:
+    # a dict of empty label maps is the same vacuity wearing a key (F15).
+    bound = sum(len(entry) for entry in labels.values())
+    assert bound >= MIN_EMITTED_LABELS, (
+        f"{bound} label(s) emitted across {len(labels)} operation(s); the binding table below"
+        f" would be measuring schema fallbacks over a dead feature"
+    )
     return labels
 
 
