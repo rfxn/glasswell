@@ -74,9 +74,9 @@ short current-state ledger;
 
 ## Verification state
 
-- The full locked Python suite passes **2,817 tests with 2 explicit skips**, including the
+- The full locked Python suite passes **2,916 tests with 1 explicit skip**, including the
   Docker-backed integration and contract tiers; Ruff passes.
-- The web suite passes **1,274 tests across 85 files**; typecheck and production build pass.
+- The web suite passes **1,290 tests across 86 files**; typecheck and production build pass.
 - Browserless E2E guards, shell checks, collateral checks, changelog lint, and the
   headless-Chromium gates pass locally: 35 Map assertions and 88 Status assertions.
 - The dependency lock exactly matches the installed environment and the generated OpenAPI
