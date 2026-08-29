@@ -16,8 +16,12 @@ from pathlib import Path
 
 import pytest
 
+from glasswell.ingest.base import LOCKFILE_SHA256_ENV
+from glasswell.modeling import p3_publication
+
 ROOT = Path(__file__).resolve().parents[2]
 APP_ENV_EXAMPLE = ROOT / "infra" / "env" / "app.env.example"
+INSTALL = ROOT / "infra" / "install.sh"
 LOCKFILE = ROOT / "requirements.lock"
 PIN = "GLASSWELL_LOCKFILE_SHA256"
 
@@ -41,3 +45,38 @@ def test_the_lockfile_is_not_empty() -> None:
     """A floor: the digest of an empty file would satisfy the assertion above just as well."""
     assert LOCKFILE.stat().st_size > 0
     assert len(LOCKFILE.read_text().splitlines()) > 10
+
+
+def test_the_pin_is_the_name_and_the_file_the_publication_gate_reads() -> None:
+    """The assertion above is only load-bearing while it names what the code names. A rename
+    of the variable, or a move of the lockfile, would leave it green and inert."""
+    assert LOCKFILE_SHA256_ENV == PIN
+    assert p3_publication.REQUIREMENTS_LOCK == LOCKFILE
+
+
+def test_a_stale_pin_refuses_the_p3_publication_rather_than_mis_stamping_it() -> None:
+    """Why the drift is fatal and not cosmetic: `_environment` compares the declared pin to the
+    lockfile's own digest and fails closed, so an example that has drifted cannot publish P3 at
+    all on a fresh host."""
+    source = Path(p3_publication.__file__).read_text(encoding="utf-8")
+
+    refusal = (
+        r"if actual_lock_sha256 != declared_lock_sha256:\s*\n"
+        r"\s*_fail\(\"lockfile_stamp_mismatch\"\)"
+    )
+
+    assert re.search(refusal, source), (
+        "the publication gate no longer refuses a declared fingerprint that disagrees"
+    )
+
+
+def test_a_fresh_host_inherits_the_pin_from_the_example_verbatim() -> None:
+    """`install.sh` seeds /etc/glasswell/app.env from the example and rewrites only the owner
+    key, which is what carries a stale pin onto every fresh host."""
+    seeding = INSTALL.read_text(encoding="utf-8")
+
+    assert "env/app.env.example" in seeding
+    assert re.search(r'sed "s\|\^GLASSWELL_OWNER_KEY=', seeding), (
+        "install.sh no longer seeds app.env by rewriting only the owner key"
+    )
+    assert PIN not in seeding, f"install.sh rewrites {PIN}, so the example's pin is not the stamp"
