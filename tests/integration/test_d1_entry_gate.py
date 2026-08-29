@@ -20,8 +20,18 @@ from glasswell.db.migrate import discover_migrations
 from tests.support.seed import seed_derivation, seed_manifest, seed_production
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-A1B_STATUS = REPOSITORY_ROOT / "work-output" / "track-a1b-status.md"
+WORK_OUTPUT = REPOSITORY_ROOT / "work-output"
+# Wave-1 track artifacts were archived in place. A gate keyed on one hard-coded path skips
+# itself the day the artifact moves, and the skip reason still reads as legitimate (F12).
+A1B_STATUS_LOCATIONS = (
+    Path("work-output") / "track-a1b-status.md",
+    Path("work-output") / "archive" / "wave1" / "track-a1b-status.md",
+)
 A1B_MIGRATIONS = (20, 21, 22, 23, 24)
+
+
+def a1b_status_path(root: Path) -> Path | None:
+    return next((root / rel for rel in A1B_STATUS_LOCATIONS if (root / rel).is_file()), None)
 
 MONTH = date(2026, 1, 1)
 VINTAGE = date(2026, 8, 1)
@@ -248,21 +258,46 @@ def test_g8_the_serving_path_partitions_on_the_key_it_is_promoted_under(db):
     assert "created_at desc" not in windowed
 
 
-@pytest.mark.skipif(
-    not A1B_STATUS.exists(),
-    reason="work-output/ is git-excluded; the gate runs where the merge artifacts live",
-)
-def test_g9_a1bs_status_file_states_the_migration_count_the_tree_carries():
-    status = A1B_STATUS.read_text(encoding="utf-8")
-    stated = re.search(r"[Ee]xact final count:\s*\*{0,2}(\d+)", status)
-    assert stated is not None, "a1b-status.md does not state an exact final migration count"
-
+def test_g9_the_a1b_migration_block_is_intact():
+    """The half of G9 that reads the tree, and therefore has no reason ever to skip. This ran
+    nowhere between the wave-1 archive move and F12."""
     versions = [migration.version for migration in discover_migrations()]
     a1b_block = [version for version in versions if version in A1B_MIGRATIONS]
-    print(f"\nG9 A1b states {stated.group(1)} migrations; tree carries {len(versions)}")
-    print(f"G9 A1b block on disk: {a1b_block}")
-    assert int(stated.group(1)) == len(A1B_MIGRATIONS)
+    print(f"\nG9 A1b block on disk: {a1b_block}; tree carries {len(versions)} migrations")
     assert a1b_block == list(A1B_MIGRATIONS)
     # Wave-1 renumbering put A2 and O above A1b's block; D1 fills from the top (CADENCE §2.1).
     assert versions == list(range(1, len(versions) + 1))
     assert max(versions) >= max(A1B_MIGRATIONS)
+
+
+def test_g9_a1bs_status_file_states_the_migration_count_the_tree_carries():
+    if not WORK_OUTPUT.is_dir():
+        pytest.skip("work-output/ is git-excluded; the gate runs where the merge artifacts live")
+    status_path = a1b_status_path(REPOSITORY_ROOT)
+    assert status_path is not None, (
+        f"work-output/ is populated but track-a1b-status.md is in none of"
+        f" {[str(rel) for rel in A1B_STATUS_LOCATIONS]} — add its new home rather than"
+        f" letting the gate skip itself"
+    )
+
+    stated = re.search(
+        r"[Ee]xact final count:\s*\*{0,2}(\d+)", status_path.read_text(encoding="utf-8")
+    )
+    assert stated is not None, f"{status_path} does not state an exact final migration count"
+    print(f"\nG9 A1b status at {status_path.relative_to(REPOSITORY_ROOT)} states {stated.group(1)}")
+    assert int(stated.group(1)) == len(A1B_MIGRATIONS)
+
+
+@pytest.mark.parametrize("location", A1B_STATUS_LOCATIONS)
+def test_g9_resolves_the_status_artifact_at_either_known_home(tmp_path: Path, location: Path):
+    planted = tmp_path / location
+    planted.parent.mkdir(parents=True)
+    planted.write_text("Exact final count: 5", encoding="utf-8")
+
+    assert a1b_status_path(tmp_path) == planted
+
+
+def test_g9_resolves_nothing_when_the_artifact_is_absent(tmp_path: Path):
+    (tmp_path / "work-output").mkdir()
+
+    assert a1b_status_path(tmp_path) is None
