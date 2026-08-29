@@ -26,21 +26,22 @@ assert_empty() {
 }
 
 printf 'scheduled and persistent units\n'
-units=$(systemctl list-unit-files --no-pager --no-legend 2>/dev/null \
-    | awk '{print $1}' | grep -i glasswell)
+installed=$(systemctl list-unit-files --no-pager --no-legend 2>/dev/null)  # no systemd, no units to flag
+units=$(printf '%s\n' "$installed" | awk '{print $1}' | grep -i glasswell)
 assert_empty "no glasswell systemd unit is installed" "belongs on VM 111" "$units"
 
-user_units=$(systemctl --user list-unit-files --no-pager --no-legend 2>/dev/null \
-    | awk '{print $1}' | grep -i glasswell)
+user_installed=$(systemctl --user list-unit-files --no-pager --no-legend 2>/dev/null)  # no user manager is not a finding
+user_units=$(printf '%s\n' "$user_installed" | awk '{print $1}' | grep -i glasswell)
 assert_empty "no glasswell user unit is installed" "belongs on VM 111" "$user_units"
 
-cron_hits=$( { crontab -l 2>/dev/null; cat /etc/cron.d/* 2>/dev/null; } \
-    | grep -iv '^[[:space:]]*#' | grep -i 'glasswell' )  # no crontab is not an error
+cron_lines=$( { crontab -l 2>/dev/null; cat /etc/cron.d/* 2>/dev/null; } )  # no crontab, and no /etc/cron.d, are both the good case
+cron_hits=$(printf '%s\n' "$cron_lines" | grep -iv '^[[:space:]]*#' | grep -i 'glasswell')
 assert_empty "no glasswell cron entry" "belongs on VM 111" "$cron_hits"
 
 printf 'serving\n'
 # A dev server on loopback is iteration; anything of ours bound to a routable address is not.
-lan_listeners=$(ss -ltnp 2>/dev/null \
+listening=$(ss -ltnp 2>/dev/null)  # ss is absent on a minimal image, and absent means nothing is bound
+lan_listeners=$(printf '%s\n' "$listening" \
     | grep -viE '^State|127\.0\.0\.1|\[::1\]' \
     | grep -iE 'glasswell|gw-|uvicorn|martin|vite' \
     | awk '{print $4}')
@@ -54,18 +55,29 @@ printf 'docker residue\n'
 if ! docker info >/dev/null 2>&1; then  # a workstation without docker has nothing to sweep
     warn "docker state" "no reachable daemon, skipped"
 else
-    orphan_volumes=$(docker volume ls -q --filter "label=$TEST_LABEL" --filter dangling=true 2>&1)
+    orphan_volumes=$(docker volume ls -q --filter "label=$TEST_LABEL" --filter dangling=true 2>/dev/null)  # a daemon warning is not a volume
     assert_empty "no labelled test volume outlived its session" \
         "run: make prune-test-volumes" "$orphan_volumes"
 
-    stale_containers=$(docker ps --filter "label=$TEST_LABEL" \
-        --format '{{.Names}} {{.RunningFor}}' 2>/dev/null \
-        | grep -E "([2-9]|[0-9]{2,}) hours|days|weeks|months")
+    # `RunningFor` is prose, so the threshold is applied to the age this converts it to rather
+    # than baked into a regex that could not read CONTAINER_MAX_HOURS. Anchored on the age
+    # field: an unanchored `days|weeks|months` matched a container *named* after one.
+    running=$(docker ps --filter "label=$TEST_LABEL" \
+        --format '{{.Names}} {{.RunningFor}}' 2>/dev/null)  # a daemon that answers nothing has no stale container
+    stale_containers=$(printf '%s\n' "$running" \
+        | awk -v max="$CONTAINER_MAX_HOURS" '
+            { hours = 0 }
+            $(NF-1) == "hours" || $(NF-1) == "hour"     { hours = $(NF-2) }
+            $(NF-1) == "days"  || $(NF-1) == "day"      { hours = $(NF-2) * 24 }
+            $(NF-1) == "weeks" || $(NF-1) == "week"     { hours = $(NF-2) * 168 }
+            $(NF-1) == "months" || $(NF-1) == "month"   { hours = $(NF-2) * 720 }
+            $(NF-1) == "years" || $(NF-1) == "year"     { hours = $(NF-2) * 8760 }
+            hours > max { print }')
     assert_empty "no test container outlived a suite run" \
         "older than ${CONTAINER_MAX_HOURS}h, docker rm -f it" "$stale_containers"
 
     # buildx keeps its builder state in a volume nothing links to; it is not residue.
-    dangling=$(docker volume ls -q --filter dangling=true 2>/dev/null | grep -cv '^buildx_')
+    dangling=$(docker volume ls -q --filter dangling=true 2>/dev/null | grep -cv '^buildx_')  # an unreadable list counts as zero, which the branch below treats as clean
     if [[ $dangling -gt 0 ]]; then
         warn "$dangling unlabelled dangling volume(s)" \
             "pre-label residue the sweep cannot see; docker volume prune"
@@ -75,9 +87,9 @@ else
 fi
 
 printf 'scratch\n'
-scratch=$(find /tmp -maxdepth 1 -name 'gw-*' -o -maxdepth 1 -name 'glasswell-*' 2>/dev/null)
+scratch=$(find /tmp -maxdepth 1 -name 'gw-*' -o -maxdepth 1 -name 'glasswell-*' 2>/dev/null)  # an entry we cannot read is not scratch of ours
 if [[ -n $scratch ]]; then
-    total_kb=$(printf '%s\n' "$scratch" | xargs -r du -sk 2>/dev/null | awk '{s+=$1} END {print s+0}')
+    total_kb=$(printf '%s\n' "$scratch" | xargs -r du -sk 2>/dev/null | awk '{s+=$1} END {print s+0}')  # a path that vanished between find and du contributes nothing
     if [[ $((total_kb / 1024)) -gt $SCRATCH_WARN_MB ]]; then
         warn "$((total_kb / 1024)) MB of /tmp/gw-* scratch" \
             "fine while a task runs, residue after it; /tmp is tmpfs, so this is RAM"
@@ -90,13 +102,13 @@ fi
 
 # A regulator download outside the raw zone has no fetch manifest, so nothing derived from it
 # is reproducible. Re-fetch through the ingest path on VM 111 instead of promoting these.
-unsealed=$(find /tmp /root -maxdepth 1 \( -name 'OGD_*.zip' -o -name '*_MPR_*.xlsx' \) 2>/dev/null)
+unsealed=$(find /tmp /root -maxdepth 1 \( -name 'OGD_*.zip' -o -name '*_MPR_*.xlsx' \) 2>/dev/null)  # an unreadable /root holds no download this can act on
 assert_empty "no unsealed regulator download" "the raw zone on VM 111 is the system of record" \
     "$unsealed"
 
 # scripts/basemap-build.sh writes to ./basemap by default, and the Permian extract is 336 MB.
 # Persistent locations only: a /tmp archive cannot survive the machine, which is DIR-14's test.
-extracts=$(find . "$HOME" -maxdepth 6 -name '*.pmtiles' -size +1M 2>/dev/null)
+extracts=$(find . "$HOME" -maxdepth 6 -name '*.pmtiles' -size +1M 2>/dev/null)  # an unreadable subtree holds no extract this can act on
 assert_empty "no basemap extract kept here" "build heavy extracts on VM 111" "$extracts"
 
 printf '\n%d ok, %d warn, %d FAIL\n' "$passed" "$warned" "$failed"
