@@ -37,3 +37,6 @@
 - [Fix] The swapfile runbook step appended to `/etc/fstab` unconditionally inside a step
       documented as rerunnable, so a second run duplicated the entry and `fallocate`
       failed on a swapfile already in use. Both halves are guarded
+- [Change] The applied-state paragraph names its evidence as internal deploy and gate
+         records under the git-excluded `work-output/`, rather than citing paths a
+         repository checkout cannot resolve

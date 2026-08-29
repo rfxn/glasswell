@@ -161,13 +161,17 @@ connections.
 
 **The previous nine-setting sizing was applied on 2026-08-20; this file's claim that it was
 not is what went stale.** `postgresql@16-main` was restarted at 15:25:57 that day to apply
-it, with the terminated connections in its log
-(`work-output/archive/increment3/integration-status.md`), and an independent gate read
-`shared_buffers = 262144 × 8 kB = 2 GB` back off the running server the same afternoon
-(`work-output/archive/wave1/gate-o-report.md`). A 2026-08-23 measurement confirms five of
-the nine live (`work-output/gate-backload-report.md`). Runbook step 6 was done in the same
-window. The stale sentence outlived the fact by eight days because the deploy note that
-recorded it said "`infra/README.md` next time that file is touched" and nobody touched it.
+it, with the terminated connections in its log, and an independent gate read
+`shared_buffers = 262144 × 8 kB = 2 GB` back off the running server the same afternoon.
+A 2026-08-23 measurement confirms five of the nine live. Runbook step 6 was done in the
+same window. The stale sentence outlived the fact by eight days because the deploy note
+that recorded it said "`infra/README.md` next time that file is touched" and nobody
+touched it.
+
+The three records behind that paragraph are internal deploy and gate reports under
+`work-output/`, which is git-excluded and so is not resolvable from a repository checkout.
+Anyone re-deriving this from the host should re-run the Measure section rather than take
+the paragraph on trust.
 
 Two things nobody has established, so this file no longer asserts them. **No verbatim
 `postgres tuning` block output exists anywhere** — every recorded `verify.sh` run is a
