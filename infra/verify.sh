@@ -369,13 +369,20 @@ assert_false "postgres is not on the LAN" "listening on $LAN_ADDRESS:5432" \
 assert_true "ufw active" "inactive" systemctl is-active --quiet ufw
 
 # Driven by the shipped drop-in so the check cannot drift from the file it verifies.
-# Red until the deployer runs install.sh --with-postgres and restarts PostgreSQL (DR-20).
+# Red between a drop-in revision and the restart that applies it (infra/README.md step 5).
 printf 'postgres tuning\n'
 if [[ -r $PG_TUNING ]]; then
+    checked=0
     while IFS= read -r line; do
+        line="${line%%#*}"                    # an inline comment is not part of the value
         setting="${line%% =*}"
-        assert "$setting" "${line##*= }" "$("${PSQL[@]}" "show $setting")"
-    done < <(grep -E '^[a-z_]+ = ' "$PG_TUNING")
+        read -r expected <<<"${line#* = }"    # read trims what stripping the comment left
+        assert "$setting" "$expected" "$("${PSQL[@]}" "show $setting")"
+        checked=$((checked + 1))
+    done < <(grep -E '^[a-z0-9_]+ = ' "$PG_TUNING")
+    # F28: a drop-in reformatted to key=value matches nothing, and silence would read as a pass.
+    assert_true "the drop-in yielded settings to check ($checked)" \
+        "no '<setting> = <value>' line matched in $PG_TUNING" test "$checked" -gt 0
 else
     bad "postgres tuning" "$PG_TUNING is missing, so nothing was checked"
 fi

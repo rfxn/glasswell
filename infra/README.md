@@ -148,19 +148,193 @@ migration (DR-21), which is what makes a rebuild on a fresh database possible.
 `glasswell-ingest` unit supplies it, so the runbook in `fix-data-truth-status.md` omits it
 and a hand-run fetch would otherwise write the raw zone to a relative `data/raw`.
 
-## Postgres tuning is shipped but not applied
+## Postgres tuning
 
-`postgres/postgresql.conf.d/glasswell.conf` carries the SB-06 §2.3 sizing, against the 8 GiB
-balloon floor rather than the 16 GiB ceiling. It is the file that should apply: nine settings,
-no `listen_addresses` (the running value is `localhost` and martin reaches PostgreSQL over
-loopback TCP — SB-06 §1.3's `''` would take tiles down). `install.sh` places it only under
-`--with-postgres`, because applying it needs a PostgreSQL restart and martin holds a live
-connection. Applying it is a deployer step; see the runbook below.
+`postgres/postgresql.conf.d/glasswell.conf` is sized for VM 111 as it runs: **8 vCPU,
+16 GiB resident, PGDATA on the ssd-pool, no swap**. It still sets no `listen_addresses` —
+the running value is `localhost` and martin reaches PostgreSQL over loopback TCP, so
+SB-06 §1.3's `''` would take tiles down. `install.sh` places it only under
+`--with-postgres`, because applying it needs a PostgreSQL restart and martin holds live
+connections.
+
+### What is actually on the host
+
+**The previous nine-setting sizing was applied on 2026-08-20; this file's claim that it was
+not is what went stale.** `postgresql@16-main` was restarted at 15:25:57 that day to apply
+it, with the terminated connections in its log
+(`work-output/archive/increment3/integration-status.md`), and an independent gate read
+`shared_buffers = 262144 × 8 kB = 2 GB` back off the running server the same afternoon
+(`work-output/archive/wave1/gate-o-report.md`). A 2026-08-23 measurement confirms five of
+the nine live (`work-output/gate-backload-report.md`). Runbook step 6 was done in the same
+window. The stale sentence outlived the fact by eight days because the deploy note that
+recorded it said "`infra/README.md` next time that file is touched" and nobody touched it.
+
+Two things nobody has established, so this file no longer asserts them. **No verbatim
+`postgres tuning` block output exists anywhere** — every recorded `verify.sh` run is a
+summary count — and `superuser_reserved_connections`, `full_page_writes`, `random_page_cost`
+and `effective_io_concurrency` have never been read back from the host. **The revision below
+is not applied**; the block is red until step 5 runs again.
+
+### Why the sizing basis moved
+
+**The old basis was half right.** SB-06 §2.3 says "size PostgreSQL against the floor, not
+the ceiling", and for *allocations* that still holds: the balloon reclaims page cache and
+free memory, never the shared-memory segment. It does not hold for *planner hints*, which
+allocate nothing — sizing `effective_cache_size` against 8 GiB bought no safety and cost
+index-scan plans on tables that have since grown 18×. This revision splits the two.
+Allocations are sized so the process survives a squeeze to the 8 GiB floor; planner hints
+are sized against the 16 GiB the guest actually has. The one measurement on record shows
+`15991 MB total` with the balloon never observed inflated, and SB-06 §11 already names
+`shared_buffers = 4GB` as the 16 GiB answer.
+
+**The mitigation SB-06 paired with the floor was never built.** §2.3 asks for a 4 GiB
+swapfile so balloon pressure becomes slowdown rather than an OOM kill. The host has
+`Swap: 0`, confirmed twice. Create it before applying this revision — it is what makes the
+16 GiB basis safe, and step 5 starts with it.
+
+### The settings
+
+| setting | was | now | why |
+|---|---|---|---|
+| `shared_buffers` | 2GB | **4GB** | 25 % of the 16 GiB the guest holds. At 2GB it was 12.5 % of real RAM, not the 25 % SB-06 intended |
+| `effective_cache_size` | 6GB | **12GB** | A planner hint that allocates nothing. 75 % of 16 GiB. `canonical.production_monthly` alone projects to ~12 GB post-NM, so under-reporting cache pushes the planner off its indexes |
+| `maintenance_work_mem` | 512MB | **1GB** | `marts/neighbors.py` builds a GiST index plus a PK and a btree on temp tables each refresh. 1GB is the ceiling worth buying — PG16 caps VACUUM's dead-tuple array at 1GB regardless |
+| `autovacuum_work_mem` | −1 | **256MB** | Decouples autovacuum from the line above. At −1 it inherits `maintenance_work_mem`, so raising that to 1GB would have taken the recorded 1.5 GB autovacuum burst to 3 GB; 256MB **cuts** it to 0.75 GB |
+| `work_mem` | 32MB | **64MB** | The z ≤ 7 overplot thinning in `marts/tiles.py` sorts every feature in the envelope with an md5 per row; on `tx_wells` that is ~150–360 k rows, which spills at 32MB on the hottest tiles. Arithmetic below |
+| `temp_buffers` | 8MB | **64MB** | Temp *tables*, not sort spill: `neighbors.py` holds three `on commit drop` tables and `nm_ocd.py` COPYs ~127 k rows/month into one. Only backends that use them pay it |
+| `max_connections` | 60 | **80** | There is no pool — one connection per request, plus a second during auth. Twelve tile-proxy requests from one map pan take 12–24, and martin's pool takes 10 of the 57 usable. 80 moves the crossing point without making the cap useless |
+| `wal_buffers` | −1 (→16MB) | **64MB** | The auto-cap is 16MB. NM's promotion is 89 minutes at 10.6 % CPU — "the rest is Postgres writing" |
+| `min_wal_size` / `max_wal_size` | 80MB / 1GB | **1GB / 4GB** | 17.6 M rows × (~335 B heap + 6 index entries) ≈ 12 GB of relation data against a 1GB checkpoint trigger, re-arming full-page writes on six indexes each time |
+| `checkpoint_timeout` | 5min | **15min** | A page's full-page image is written once per checkpoint cycle, so tripling the cycle is a bigger WAL-volume lever than `max_wal_size`. Costs crash-recovery time, covered by nightly dump and weekly restore drill |
+| `default_statistics_target` | 100 | **200** | Heavy skew on `state_code` (42 vs 33), `api10` prefixes and `formation`, over a table going to ~24.8 M rows. Needs an `ANALYZE` to take effect |
+| `max_parallel_workers_per_gather` | 2 | **4** | Four workers plus the leader is exactly blueprint C26's five-of-eight-vCPU cap for batch work. `max_parallel_workers` stays at its default 8, which is what bounds the total |
+| `max_parallel_maintenance_workers` | 2 | **4** | Index builds in the mart refresh and the weekly restore drill. Costs no extra memory — `maintenance_work_mem` is divided among leader and workers, not multiplied |
+| `autovacuum_vacuum_scale_factor` | 0.2 | **0.05** | For `marts.*_tile`, which `DELETE` and re-`INSERT` a whole generation every refresh |
+| `autovacuum_vacuum_insert_scale_factor` | 0.2 | **0.05** | The one that matters for `canonical.*`: `lineage.reject_mutation()` makes UPDATE and DELETE impossible there, so the risk is insert-driven freezing and visibility-map staleness, not bloat |
+| `autovacuum_analyze_scale_factor` | 0.1 | **0.02** | 10 % of 24.8 M rows is 2.5 M inserts before re-analyze — plans go stale mid-load, exactly when the table grows fastest |
+| `autovacuum_vacuum_cost_limit` | −1 (→200) | **1000** | The default throttles to a few MB/s on an SSD. The limit is *divided* among workers, so raising it is the lever; raising `autovacuum_max_workers` without it gains nothing, and it is left alone |
+| `superuser_reserved_connections`, `full_page_writes`, `random_page_cost`, `effective_io_concurrency` | — | **unchanged** | `random_page_cost` and `effective_io_concurrency` are right for PGDATA on the ssd-pool. The other two restate PG16 defaults and are kept as explicit anti-footgun guards |
+
+**Considered and rejected**, because every line here becomes a live `verify.sh` assertion:
+`checkpoint_completion_target` and `hash_mem_multiplier` (already 0.9 and 2.0 by default in
+PG16 — a line that restates a default is an assertion for no behaviour change);
+`maintenance_io_concurrency` (default is already 10, unlike `effective_io_concurrency`'s 1);
+`max_locks_per_transaction` (the lock pool is `64 × max_connections`, ample for `pg_dump`
+over the partitioned `lineage.audit_events`); `jit = off` (standard PostGIS advice, but
+plan-dependent and unmeasured here — an A/B for the runbook, not a guess);
+`wal_compression` and `shared_preload_libraries = pg_stat_statements` (**both can stop the
+server from starting** if the build lacks LZ4 or the contrib library is absent, and neither
+is verifiable from here — both are runbook steps with a pre-check instead).
+
+### `work_mem` arithmetic
+
+`work_mem` is per sort/hash node per worker, not per connection, so the nominal figure is
+never the exposure. The naive bound — `max_connections` × nodes × `work_mem`, or 80 × 4 ×
+64MB = 20 GB — exceeds RAM at *any* setting above about 8MB, which is why `max_connections`
+is the guard and `work_mem` is not. The bound that governs is narrower:
+
+- **Heavy spatial sorts run on martin's connections, not the API's.** Tile SQL executes
+  through `martin.service`, whose `pool_size` is 10. 10 leaders × 2 nodes × 64MB = **1.3 GB**.
+- **Parallel workers are capped cluster-wide** by `max_parallel_workers`, left at 8.
+  8 × 2 × 64MB = **1.0 GB**, no matter how many gathers are running.
+- **API sorts are index-driven with `LIMIT`.** Say 10 concurrently active: **0.6 GB**.
+
+**≈ 2.9 GB realistic ceiling**, which the budget below carries. What 64MB does *not* buy is
+the bulk path: `canonical.production_monthly_latest` re-ranks the whole table through a
+`WindowAgg` (measured 73 s warm at 17.6 M rows) and `marts/land_metrics.py` reads it. No
+globally safe `work_mem` reaches that. Give it to the one role that needs it instead —
+`ALTER ROLE glasswell_pipeline SET work_mem` in step 5, which is one monthly connection and
+multiplies by nothing.
+
+### Memory budget at the revised values
+
+```
+  15.6 GB  physical, no swap
+ - 4.0 GB  shared_buffers, resident for the life of the postmaster
+ - 1.1 GB  other resident services (uvicorn x2, martin, node, OS)
+ - 0.75 GB autovacuum burst: 3 workers x autovacuum_work_mem 256MB  (was 1.5 GB at 512MB)
+ - 2.9 GB  backend work_mem, per the arithmetic above
+ - 0.3 GB  idle backend overhead across 80 connections
+ - 1.0 GB  page-cache floor below which PostgreSQL's write path crawls
+ = 5.5 GB  left for ingest
+```
+
+`glasswell-ingest.service` caps at `MemoryMax=6G`, 0.5 GB above what this leaves — a guard,
+not a reservation, and its measured peak across the whole 125-month back-load was 297 MB.
+**Do not run a bulk promotion while the balloon is inflated**: at the 8 GiB floor the
+resident total above is ~6.4 GB, which survives serving but not a concurrent 6 GB ingest.
+
+### Measure before trusting any of this
+
+Every number above is derived from the repository and from evidence already on disk. **No
+database-size, cache-hit, connection high-water or checkpoint telemetry exists for this
+host** — `pg_database_size` is collected by `status/collector.py` but no emitted value is
+recorded anywhere. Capture it, then revisit the four settings named at the end.
+
+```bash
+sudo -u postgres psql -d glasswell <<'SQL'
+\pset pager off
+-- Database, and the ten largest relations with their index share.
+select pg_size_pretty(pg_database_size(current_database())) as database;
+select n.nspname||'.'||c.relname as relation,
+       pg_size_pretty(pg_total_relation_size(c.oid)) as total,
+       pg_size_pretty(pg_relation_size(c.oid))       as heap,
+       pg_size_pretty(pg_indexes_size(c.oid))        as indexes,
+       c.reltuples::bigint                           as est_rows
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where c.relkind in ('r','m','p') and n.nspname not like 'pg\_%'
+ order by pg_total_relation_size(c.oid) desc limit 10;
+
+-- Cache hit ratio. Below ~0.99 on a read path this size means shared_buffers is short.
+select round(100.0 * sum(blks_hit) / nullif(sum(blks_hit + blks_read), 0), 2) as cache_hit_pct,
+       sum(temp_files) as temp_files, pg_size_pretty(sum(temp_bytes)) as temp_bytes
+  from pg_stat_database where datname = current_database();
+
+-- Connections now, and the ceiling. temp_bytes above is the work_mem spill evidence.
+select state, count(*) from pg_stat_activity where datname = current_database() group by state;
+select setting as max_connections from pg_settings where name = 'max_connections';
+
+-- Checkpoints. checkpoints_req materially above checkpoints_timed means max_wal_size is short.
+select checkpoints_timed, checkpoints_req, buffers_checkpoint, buffers_clean, buffers_backend
+  from pg_stat_bgwriter;
+
+-- Autovacuum reach on the append-heavy tables.
+select relname, n_live_tup, n_dead_tup, n_mod_since_analyze, last_autovacuum, last_autoanalyze
+  from pg_stat_user_tables
+ where relname in ('production_monthly','quarantine_rows','wells','well_spatial')
+    or relname like '%_tile' order by n_live_tup desc;
+SQL
+
+# Free space where PGDATA and pg_wal live — max_wal_size 4GB peaks at roughly double.
+df -h /var/lib/postgresql; free -m; swapon --show
+```
+
+Optional, and worth doing once — `pg_stat_statements` is the only way to rank this workload
+by real cost. It is **not** in the drop-in because naming a library the build lacks stops
+the server from starting. Check first, then add it by hand:
+
+```bash
+ls /usr/lib/postgresql/16/lib/pg_stat_statements.so    # must exist before the next line
+sudo -u postgres psql -d glasswell -c "alter system set shared_preload_libraries = 'pg_stat_statements'"
+systemctl restart postgresql@16-main && systemctl restart martin
+sudo -u postgres psql -d glasswell -c 'create extension if not exists pg_stat_statements'
+```
+
+**Re-check these four once real numbers come back.** `shared_buffers` — raise toward 6GB
+only if cache hit sits below 99 % *and* `free -m` still shows idle RAM. `work_mem` — the
+`temp_files` and `temp_bytes` counters are the direct evidence; confirm the tile claim with
+`explain (analyze, buffers)` on a z6 `tx_wells` tile and look for `Sort Method: external
+merge`. `max_connections` — the `pg_stat_activity` high-water mark is what would justify
+lowering it back toward 60, which would in turn buy `work_mem` headroom. `max_wal_size` —
+if `checkpoints_req` still dominates during a promotion, raise it; it is `sighup`-reloadable,
+so `select pg_reload_conf()` applies it without a restart and it can go back down after.
 
 ## Deploy runbook
 
-Steps 1–4 are the routine deploy. Steps 5 and 6 are one-time and currently outstanding —
-`verify.sh` reports the tuning as failed until step 5 runs.
+Steps 1–4 are the routine deploy. Step 5 applies a revised tuning drop-in and is outstanding
+whenever `postgres/postgresql.conf.d/glasswell.conf` has moved since the last PostgreSQL
+restart — it is outstanding now, for the revision above. Step 6 was done on 2026-08-20 in
+the same window as the first tuning apply and is kept for the record.
 
 ```bash
 # 1. sync the tree and rebuild the frontend (tar over ssh; rsync --delete stalls here)
@@ -187,14 +361,28 @@ systemctl start glasswell-lineage-retention.service  # prove this release can sw
 systemctl start glasswell-status.service   # block until this release's snapshot is written
 ./verify.sh
 
-# 5. ONE-TIME — apply the Postgres tuning (DR-20). Needs a restart; martin reconnects.
-./install.sh --with-postgres
+# 5. Apply the Postgres tuning. Run whenever the drop-in has moved since the last restart.
+#    5a. The swapfile SB-06 2.3 asked for and provisioning never created. Do this FIRST:
+#        it is what makes sizing against 16 GiB safe against the 8 GiB balloon floor.
+swapon --show                       # expect empty — that is the gap
+fallocate -l 4G /swapfile && chmod 0600 /swapfile && mkswap /swapfile && swapon /swapfile
+printf '/swapfile none swap sw 0 0\n' >> /etc/fstab   # survives reboot
+#    5b. Capture the "before" numbers — the Measure section above is the full set.
+sudo -u postgres psql -d glasswell -c 'select * from pg_stat_bgwriter' > /tmp/pg-before.txt
+#    5c. Place and restart. martin's pooled connections do not survive the restart.
+cd /opt/glasswell/src/infra && ./install.sh --with-postgres
 systemctl restart postgresql@16-main
-systemctl restart martin            # martin's pooled connections do not survive the restart
-sudo -u postgres psql -d glasswell -c 'show shared_buffers'   # expect 2GB
+systemctl restart martin
+#    5d. default_statistics_target only bites after a re-analyze; nothing else needs this.
+sudo -u postgres vacuumdb --analyze-only --all --jobs 4
+#    5e. The bulk path's work_mem, which the global value deliberately does not carry.
+sudo -u postgres psql -d glasswell \
+    -c "alter role glasswell_pipeline set work_mem = '512MB'" \
+    -c "alter role glasswell_pipeline set maintenance_work_mem = '2GB'"
+sudo -u postgres psql -d glasswell -c 'show shared_buffers'   # expect 4GB
 ./verify.sh                         # the "postgres tuning" block must now be all ok
 
-# 6. ONE-TIME — drop the inert LAN rule in front of loopback-only martin (DR-29)
+# 6. DONE 2026-08-20 — drop the inert LAN rule in front of loopback-only martin (DR-29)
 ufw status numbered | grep 3000     # confirm the rule is there and nothing else uses 3000
 ufw delete allow from 192.168.2.0/24 to any port 3000
 ss -ltn | grep 3000                 # still 127.0.0.1:3000 — the rule was never reachable
@@ -242,12 +430,16 @@ ufw delete allow from 192.168.2.0/24 to any port 8000
 ```
 
 Steps 7, 8 and 9 are what the three `zones` / `deploy hygiene` / `martin publishes the
-allowlist and nothing else` failures in `verify.sh` are pointing at. Everything else in the
-file passes today.
+allowlist and nothing else` failures in `verify.sh` are pointing at. The `postgres tuning`
+block joins them until step 5 applies the revised drop-in.
 
 `verify.sh` derives its tuning expectations from the shipped drop-in, so the check cannot
-drift from the file. Step 6 has no counterpart in `verify.sh`: `ufw status` needs root and
-the script is written to run unprivileged. The whole `tls` block is red until step 10 runs,
+drift from the file — and every line in that file is therefore a live assertion against the
+host, which is why the drop-in carries only settings that change behaviour. The parser
+tolerates an inline comment and a digit in a setting name, and now fails when the drop-in
+yields *no* matching line: a file reformatted to `key=value` used to produce output
+indistinguishable from a pass (F28). Step 6 had no counterpart in `verify.sh`: `ufw status`
+needs root and the script is written to run unprivileged. The whole `tls` block is red until step 10 runs,
 and its certificate check stays honest afterwards — it fails at 20 days remaining, ten days
 after Caddy should have renewed.
 
@@ -255,7 +447,8 @@ after Caddy should have renewed.
 
 ```bash
 ./install.sh                     # place config, generate the owner key, enable glasswell-api
-./install.sh --with-postgres     # additionally place the tuning drop-in (needs a PG restart)
+./install.sh --with-postgres     # additionally place the tuning drop-in — 22 settings sized
+                                 # for 16 GiB / 8 vCPU; needs a PG restart and a martin restart
 ./install.sh --with-caddy        # additionally place the Caddyfile and caddy.service, validated
 ./install.sh --enable-ingest     # additionally arm the monthly NDIC pull
 ./install.sh --enable-backup     # arm nightly backup and weekly logical restore timers
