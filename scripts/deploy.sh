@@ -219,7 +219,7 @@ remote "systemctl restart martin" || refuse "martin did not restart"
 # not-yet-bound socket reads as six 000s (seen live on the v0.20 deploy). Wait for readiness.
 step "7b. wait for the api socket"
 ready=""
-for _ in $(seq 1 30); do
+for (( attempt = 0; attempt < 30; attempt++ )); do
     if remote "curl -sf -o /dev/null --unix-socket /run/glasswell/api.sock --max-time 2 http://localhost/healthz"; then
         ready=1
         break
@@ -243,6 +243,20 @@ if remote "systemctl is-enabled --quiet glasswell-restore-drill.timer"; then
 fi
 remote "systemctl start glasswell-status.service" \
     || refuse "glasswell-status did not produce a fresh snapshot"
+
+# martin reads its entire source catalogue from PostgreSQL at startup, so /health answers
+# before /catalog is populated — and verify.sh's per-layer assertions read the catalogue.
+# Without this the gate fails a deploy that was fine (F11).
+step "7d. wait for the martin catalogue"
+ready=""
+for (( attempt = 0; attempt < 30; attempt++ )); do
+    if remote "curl -sf --max-time 2 http://127.0.0.1:3000/catalog | grep -q '\"tiles\"'"; then
+        ready=1
+        break
+    fi
+    sleep 1
+done
+[[ -n "$ready" ]] || refuse "martin did not publish a catalogue within 30s of restart"
 
 step "8. verify.sh"
 remote "$DEPLOY_SRC/infra/verify.sh"

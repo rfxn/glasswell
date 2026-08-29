@@ -25,3 +25,9 @@
       rename cannot leave the digest assertion green and inert
 - [Change] every 2>/dev/null in workstation-hygiene.sh carries its justification on its
          own line; it was the repo's sole outlier on that rule
+- [New] deploy.sh step 7d polls martin's /catalog, the endpoint verify.sh reads, before
+      the gate runs; martin loads its whole source catalogue from PostgreSQL at startup
+      and answers /health before it is populated, so the per-layer assertions could fail
+      a deploy that was fine
+- [Change] both deploy.sh readiness loops count arithmetically instead of word-splitting
+         `$(seq 1 30)`
