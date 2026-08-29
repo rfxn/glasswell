@@ -68,7 +68,7 @@ def keyed(**overrides):
 
 
 def test_the_api10_slice_and_the_digit_count_come_from_the_rule_not_the_loader():
-    identity = rule("cr_nd_survey_api_identity_1")
+    identity = rule("cr_nd_survey_api_identity_2")
     frame = pl.DataFrame([station()], schema=_SURVEYS_SCHEMA)
 
     promoted, rejected = keyed_stations(frame, identity)
@@ -83,7 +83,7 @@ def test_the_api10_slice_and_the_digit_count_come_from_the_rule_not_the_loader()
 def test_a_station_without_fourteen_digits_of_identity_is_never_keyed_on_a_guess(api_wellno):
     frame = pl.DataFrame([station(api_wellno=api_wellno)], schema=_SURVEYS_SCHEMA)
 
-    promoted, rejected = keyed_stations(frame, rule("cr_nd_survey_api_identity_1"))
+    promoted, rejected = keyed_stations(frame, rule("cr_nd_survey_api_identity_2"))
 
     assert promoted == []
     assert len(rejected) == 1
@@ -351,7 +351,7 @@ def test_the_survey_vocabulary_quarantines_an_unlisted_label_rather_than_tracing
 def test_every_survey_rule_is_scoped_to_the_survey_source_and_cites_the_artifact():
     survey_rules = [r for r in ND_RULES if r["source_id"] == SURVEY_SOURCE]
 
-    assert len(survey_rules) == 6
+    assert len(survey_rules) == 7
     for seeded in survey_rules:
         assert seeded["evidence_url"] == SURVEY_EVIDENCE_URL
         assert len(str(seeded["rationale"])) > 200

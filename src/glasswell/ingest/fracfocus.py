@@ -7,7 +7,6 @@ import csv
 import hashlib
 import io
 import json
-import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -20,9 +19,12 @@ import polars as pl
 import psycopg
 from psycopg.rows import dict_row
 
+from glasswell.identity import api10_identity
 from glasswell.ingest.base import open_ingest_run, record_vintage_day
 from glasswell.lineage import InputRef, OutputSpec, current_session, derive, fetch_raw, quarantine
+from glasswell.lineage.conformance import load_rules, rule_for_family
 from glasswell.lineage.fetch_attempts import durable_fetch_attempts
+from glasswell.lineage.models import ConformanceRule
 from glasswell.lineage.serialization import hash_payload, json_ready
 from glasswell.seed.conformance_fracfocus import DOWNLOAD_URL, TERMS_URL
 
@@ -31,13 +33,12 @@ SOURCE_KEY = "FracFocusCSV.zip"
 TERMS_KEY = "terms.html"
 DISCLOSURE_MEMBER = "DisclosureList_1.csv"
 PARSE_RULE_ID = "cr_ff_disclosure_parse_1"
-IDENTITY_RULE_ID = "cr_ff_api_identity_1"
+IDENTITY_FAMILY = "cr_ff_api_identity"
 ANCHOR_RULE_ID = "cr_ff_completion_anchor_1"
 BASIN_RULE_ID = "cr_nd_basin_1"
 ANCHOR_KIND = "hydraulic_frac_job_end"
 STAGING_TABLE = "staging.fracfocus_disclosures"
 
-_API_DIGITS = re.compile(r"\D")
 _DATE_FORMATS = ("%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y", "%Y-%m-%d")
 _SOURCE_COLUMNS = (
     "DisclosureId",
@@ -134,11 +135,10 @@ def zip_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def normalize_api10(value: str | None) -> str | None:
-    digits = _API_DIGITS.sub("", value or "")
-    if len(digits) != 14:
-        return None
-    return digits[:10]
+def identity_rule(connection: psycopg.Connection) -> ConformanceRule:
+    return rule_for_family(
+        load_rules(connection, source_id=SOURCE_ID, stage="parse"), IDENTITY_FAMILY
+    )
 
 
 def parse_source_date(value: str | None) -> date | None:
@@ -235,6 +235,7 @@ def load_disclosures(
         manifest_id=manifest.manifest_id,
         vintage=manifest.fetch_vintage,
         parse_derivation_id=parse_id,
+        identity=identity_rule(connection),
     )
     readiness_id, well_rows = materialize_nd_readiness(
         connection,
@@ -351,22 +352,30 @@ def _stage_disclosures(
     return context.derivation_id, rows
 
 
-def _candidate_rows(connection: psycopg.Connection, manifest_id: str) -> list[dict[str, Any]]:
+def _candidate_rows(
+    connection: psycopg.Connection, manifest_id: str, identity: ConformanceRule
+) -> list[dict[str, Any]]:
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(
             "select source_row_ordinal, disclosure_id, job_start_date, job_end_date,"
             " api_number, state_name from staging.fracfocus_disclosures"
-            " where manifest_id = %s"
-            "   and (state_name = 'North Dakota' or api_number like '33%%')"
+            " where manifest_id = %(manifest_id)s"
+            "   and (state_name = %(state_name)s or api_number like %(prefix)s)"
             " order by source_row_ordinal",
-            (manifest_id,),
+            {
+                "manifest_id": manifest_id,
+                "state_name": str(identity.spec["state_name"]),
+                "prefix": f"{identity.spec['nd_state_code']}%",
+            },
         )
         return [dict(row) for row in cursor.fetchall()]
 
 
-def _current_nd_api10s(connection: psycopg.Connection) -> set[str]:
+def _current_nd_api10s(connection: psycopg.Connection, state_code: str) -> set[str]:
     with connection.cursor() as cursor:
-        cursor.execute("select api10 from canonical.wells_latest where state_code = '33'")
+        cursor.execute(
+            "select api10 from canonical.wells_latest where state_code = %s", (state_code,)
+        )
         return {row[0] for row in cursor.fetchall()}
 
 
@@ -413,8 +422,12 @@ def _promote_anchors(
     manifest_id: str,
     vintage: date,
     parse_derivation_id: str,
+    identity: ConformanceRule,
 ) -> tuple[str, int, dict[str, int]]:
-    known = _current_nd_api10s(connection)
+    state_code = str(identity.spec["nd_state_code"])
+    state_name = str(identity.spec["state_name"])
+    identity_spec = api10_identity(identity)
+    known = _current_nd_api10s(connection, state_code)
     valid: list[dict[str, Any]] = []
     malformed_identity: list[dict[str, Any]] = []
     malformed_date: list[dict[str, Any]] = []
@@ -422,8 +435,8 @@ def _promote_anchors(
     orphans: list[dict[str, Any]] = []
     duplicates: list[dict[str, Any]] = []
     disclosure_ids: set[str] = set()
-    for row in _candidate_rows(connection, manifest_id):
-        api10 = normalize_api10(row["api_number"])
+    for row in _candidate_rows(connection, manifest_id, identity):
+        api10 = identity_spec.normalize(row["api_number"])
         try:
             start = parse_source_date(row["job_start_date"])
             end = parse_source_date(row["job_end_date"])
@@ -433,8 +446,8 @@ def _promote_anchors(
         if (
             not row["disclosure_id"]
             or api10 is None
-            or not api10.startswith("33")
-            or row["state_name"] != "North Dakota"
+            or not api10.startswith(state_code)
+            or row["state_name"] != state_name
             or end is None
         ):
             malformed_identity.append(
@@ -470,7 +483,7 @@ def _promote_anchors(
             malformed_identity,
             manifest_id=manifest_id,
             reason_code="parse_error",
-            rule_id=IDENTITY_RULE_ID,
+            rule_id=identity.rule_id,
         )
         + _quarantine_rows(
             connection,
@@ -491,14 +504,14 @@ def _promote_anchors(
             orphans,
             manifest_id=manifest_id,
             reason_code="orphan_fk",
-            rule_id=IDENTITY_RULE_ID,
+            rule_id=identity.rule_id,
         ),
         "duplicate_row": _quarantine_rows(
             connection,
             duplicates,
             manifest_id=manifest_id,
             reason_code="duplicate_row",
-            rule_id=IDENTITY_RULE_ID,
+            rule_id=identity.rule_id,
         ),
     }
 
@@ -519,7 +532,7 @@ def _promote_anchors(
             InputRef(kind="derivation", ref_id=parse_derivation_id),
             InputRef(kind="manifest", ref_id=manifest_id, as_of_vintage=vintage),
         ],
-        rules=[IDENTITY_RULE_ID, ANCHOR_RULE_ID],
+        rules=[identity.rule_id, ANCHOR_RULE_ID],
     ) as context:
         context.set_rows(len(valid))
         context.set_output_hash(hash_payload(json_ready(valid)))

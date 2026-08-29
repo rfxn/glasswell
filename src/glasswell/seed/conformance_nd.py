@@ -103,6 +103,42 @@ ND_RULES: tuple[dict[str, object], ...] = (
         "evidence_url": MPR_FILE_URL,
     },
     {
+        "rule_id": "cr_nd_api_identity_2",
+        "supersedes_rule_id": "cr_nd_api_identity_1",
+        "effective_from": EFFECTIVE_FROM,
+        "source_id": "nd_mpr_xlsx",
+        "stage": "parse",
+        "rule_kind": "parse_directive",
+        "applies_to_fields": ["api_wellno"],
+        "spec": {
+            "source_field": "API_WELLNO",
+            "digits": 14,
+            "api10_slice": [0, 10],
+            "api12_slice": [0, 12],
+            "separators": ["-", " "],
+        },
+        "rule": (
+            "API-10 is the first ten digits of API_WELLNO once the declared display separators"
+            " are removed; FileNo is not the identity key."
+        ),
+        "rationale": (
+            "cr_nd_api_identity_1 declared the digit count and the slice and said nothing about"
+            " punctuation, so this loader stripped every non-digit character while"
+            " cr_nd_survey_api_identity_1 required fourteen bare digits - one spine, two answers"
+            " to what an API-14 literal is. The separator set is declared rather than inferred,"
+            " and it is the same set every identity rule now names, because a join key cannot"
+            " differ by source. Deleting only these two characters is the correction: the old"
+            " reading keyed 'API 33053039010000' onto a real well, inventing identity out of"
+            " annotation, which is what cr_tx_api10_build_1 refuses through its charset bound."
+            " The MPR itself publishes API_WELLNO bare (33053039010000), so no row that keys"
+            " today stops keying. Valid time is the ancestor's, because this states what an API"
+            " literal has always been rather than changing it from today, and a replay at an"
+            " older report vintage must not fall back to a row that never said; knowledge time"
+            " carries the correction date, which is what the second clock is for."
+        ),
+        "evidence_url": MPR_FILE_URL,
+    },
+    {
         "rule_id": "cr_nd_month_convention_1",
         "source_id": "nd_mpr_xlsx",
         "stage": "parse",
@@ -694,6 +730,44 @@ ND_RULES: tuple[dict[str, object], ...] = (
             " digits and every one of them ends 0000, so the drop discards nothing ND uses. A"
             " row whose api_wellno is not 14 digits has no identity to promote and quarantines"
             " as key_incomplete rather than being keyed on a guess."
+        ),
+        "evidence_url": GIS_SURVEYS_URL,
+    },
+    {
+        "rule_id": "cr_nd_survey_api_identity_2",
+        "supersedes_rule_id": "cr_nd_survey_api_identity_1",
+        "effective_from": SURVEYS_FROM,
+        "source_id": "nd_gis_directionals",
+        "stage": "parse",
+        "rule_kind": "parse_directive",
+        "applies_to_fields": ["api_wellno"],
+        "spec": {
+            "source_field": "api_wellno",
+            "digits": 14,
+            "api10_slice": [0, 10],
+            "trailing_unused_slice": [10, 14],
+            "separators": ["-", " "],
+            "on_short_value": "quarantine",
+            "reason_code": "key_incomplete",
+        },
+        "rule": (
+            "API-10 is the first ten digits of api_wellno once the declared display separators"
+            " are removed; the trailing four are dropped."
+        ),
+        "rationale": (
+            "cr_nd_survey_api_identity_1 read fourteen bare digits and quarantined anything"
+            " else, while cr_ff_api_identity_1 and cr_nd_api_identity_1 stripped punctuation"
+            " first, so 33-053-03901-00-00 was an identity at one end of the join and"
+            " key_incomplete at the other. Neither rule row said which reading was meant, and"
+            " that silence - not either loader - was the defect. The separator set is declared"
+            " here as the same pair every identity rule now names: the FracFocus data dictionary"
+            " publishes xx-xxx-xxxxx-00-00, so refusing hyphens rejects a documented published"
+            " form, and one join key cannot be admissible in one direction only. Nothing this"
+            " layer ships moves: the rationale of the superseded row records that all 52,579"
+            " station records carry 14 bare digits, so tolerating separators here admits no row"
+            " that is quarantined today. Valid time is the ancestor's, because this states what"
+            " an API literal has always been rather than changing it from today; knowledge time"
+            " carries the correction date, which is what the second clock is for."
         ),
         "evidence_url": GIS_SURVEYS_URL,
     },

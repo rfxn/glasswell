@@ -244,7 +244,7 @@ def test_a_rule_the_parse_did_not_apply_stamps_no_rows(db, promoted):
     )
 
     assert stamped["cr_nd_land_unit_1"] == 0
-    assert stamped["cr_nd_api_identity_1"] == DATA_ROWS
+    assert stamped["cr_nd_api_identity_2"] == DATA_ROWS
     assert stamped["cr_nd_month_convention_1"] == DATA_ROWS
 
 

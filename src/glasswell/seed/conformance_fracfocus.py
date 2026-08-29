@@ -64,6 +64,45 @@ FRACFOCUS_RULES: tuple[dict[str, object], ...] = (
         "effective_from": EFFECTIVE_FROM,
     },
     {
+        "rule_id": "cr_ff_api_identity_2",
+        "rule_family": "cr_ff_api_identity",
+        "supersedes_rule_id": "cr_ff_api_identity_1",
+        "source_id": "fracfocus_csv",
+        "stage": "parse",
+        "rule_kind": "parse_directive",
+        "applies_to_fields": ["APINumber"],
+        "spec": {
+            "digits": 14,
+            "api10_slice": [0, 10],
+            "separators": ["-", " "],
+            "nd_state_code": "33",
+            "state_name": "North Dakota",
+        },
+        "rule": (
+            "Normalize the published API-14 by removing the documented display separators,"
+            " require fourteen digits, and use the first ten as well identity."
+        ),
+        "rationale": (
+            "cr_ff_api_identity_1 said normalize and declared the digit count and the slice, but"
+            " never said what a separator is, and three loaders read that silence differently:"
+            " this source and the ND MPR deleted every non-digit character while the ND"
+            " directional survey demanded fourteen bare digits, so 33-043-00002-00-00 keyed at"
+            " one end of the join and quarantined at the other. The separators are declared, and"
+            " declared as these two characters, because the archive's own bundled data"
+            " dictionary defines APINumber as xx-xxx-xxxxx-00-00: the hyphenated literal is the"
+            " published form and refusing it would reject the format the publisher documents."
+            " Deleting every non-digit instead of the declared pair is what made the old reading"
+            " unsafe - it keyed 'API 33053039010000' and '33053039010000 (amended)' onto a real"
+            " well, the same invention cr_tx_api10_build_1 already refuses through its charset"
+            " bound. Valid time is the ancestor's, because this states what an API literal in"
+            " this archive has always been rather than changing it from today; knowledge time"
+            " carries the correction date, which is what the second clock is for."
+        ),
+        "evidence_url": DOWNLOAD_URL,
+        "code_ref": None,
+        "effective_from": EFFECTIVE_FROM,
+    },
+    {
         "rule_id": "cr_ff_completion_anchor_1",
         "rule_family": "cr_ff_completion_anchor",
         "source_id": "fracfocus_csv",
@@ -103,11 +142,11 @@ FRACFOCUS_RULES: tuple[dict[str, object], ...] = (
 
 _INSERT = """
 insert into lineage.conformance_rules
-    (rule_id, rule_family, source_id, stage, applies_to_fields, rule_kind, spec, rule,
-     rationale, evidence_url, code_ref, effective_from)
-values (%(rule_id)s, %(rule_family)s, %(source_id)s, %(stage)s, %(applies_to_fields)s,
-        %(rule_kind)s, %(spec)s, %(rule)s, %(rationale)s, %(evidence_url)s, %(code_ref)s,
-        %(effective_from)s)
+    (rule_id, rule_family, supersedes_rule_id, source_id, stage, applies_to_fields, rule_kind,
+     spec, rule, rationale, evidence_url, code_ref, effective_from)
+values (%(rule_id)s, %(rule_family)s, %(supersedes_rule_id)s, %(source_id)s, %(stage)s,
+        %(applies_to_fields)s, %(rule_kind)s, %(spec)s, %(rule)s, %(rationale)s,
+        %(evidence_url)s, %(code_ref)s, %(effective_from)s)
 on conflict do nothing
 """
 
@@ -116,7 +155,14 @@ def seed_conformance_fracfocus(connection: psycopg.Connection) -> int:
     with connection.cursor() as cursor:
         cursor.executemany(
             _INSERT,
-            [{**rule, "spec": Jsonb(rule["spec"])} for rule in FRACFOCUS_RULES],
+            [
+                {
+                    **rule,
+                    "spec": Jsonb(rule["spec"]),
+                    "supersedes_rule_id": rule.get("supersedes_rule_id"),
+                }
+                for rule in FRACFOCUS_RULES
+            ],
         )
         cursor.execute(
             "select count(*) from lineage.conformance_rules where source_id = 'fracfocus_csv'"

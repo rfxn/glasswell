@@ -2,20 +2,10 @@ from datetime import date
 
 import pytest
 
-from glasswell.ingest.fracfocus import normalize_api10, parse_source_date
+from glasswell.ingest.fracfocus import parse_source_date
 
-
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [
-        ("33043000020000", "3304300002"),
-        ("33-043-00002-00-00", "3304300002"),
-        ("3304300002", None),
-        ("", None),
-    ],
-)
-def test_fracfocus_api10_requires_a_complete_api14(raw, expected):
-    assert normalize_api10(raw) == expected
+# API-10 normalisation is one registry-driven decision shared with the ND loaders; it is
+# exercised across all three of them in test_api10_identity.py.
 
 
 @pytest.mark.parametrize(
