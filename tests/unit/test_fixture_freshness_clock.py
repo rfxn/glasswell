@@ -27,11 +27,11 @@ def test_the_seeded_artifact_is_younger_than_the_shortest_cadence():
     attempt proves a check. A fixed FETCHED_AT therefore reddens the health contract on a
     date with no code change — 2026-09-05, for the 35-day cadence migration 050 seeds."""
     age = datetime.now(UTC) - FETCHED_AT
+    cadence = shortest_declared_poll_interval()
 
-    assert age < shortest_declared_poll_interval(), (
+    assert age < cadence, (
         f"the seeded artifact is {age.days} days old and the shortest declared cadence is"
-        f" {shortest_declared_poll_interval().days} days — pin FETCHED_AT relative to now,"
-        f" not to an absolute date"
+        f" {cadence.days} days — pin FETCHED_AT relative to now, not to an absolute date"
     )
     assert age >= timedelta(0), "the seeded artifact is in the future, which reads as stale"
 
