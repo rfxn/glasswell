@@ -1,7 +1,9 @@
 """An empty layer is not a harvest. The walk's reconciliation reads `0 == 0 == 0` and passes,
 so a layer returning no features produced a zero-byte artifact whose sha256 is the digest of the
-empty string — carrying no source-identifying bytes at all. `tx_gis_wells_county` fetches 55
-county slots through this path, so two empty counties collided by construction (F8)."""
+empty string — carrying no source-identifying bytes at all. `blm_plss_townships` and
+`blm_plss_sections` walk one BLM CadNSDI MapServer under the scope `PLSSID LIKE 'ND%'`
+(`cr_blm_plss_scope_1`), so a prefix change upstream empties both slots and the two zero-byte
+artifacts collide by construction (F8)."""
 
 from __future__ import annotations
 

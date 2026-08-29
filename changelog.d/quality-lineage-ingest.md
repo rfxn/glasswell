@@ -30,3 +30,6 @@
       their reason codes and `field_action` are read from the rule row, both quarantine
       calls and the promotion derivation cite it, and an action the loader cannot
       execute is refused
+- [Fix] the ArcGIS empty-layer test names its true motivating source, the two
+      `blm_plss` slots on one scoped MapServer, not `tx_gis_wells_county`, which
+      fetches over `mft_guid_resolve` and never walks an ArcGIS layer
