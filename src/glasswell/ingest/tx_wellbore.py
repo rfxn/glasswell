@@ -54,12 +54,14 @@ LEASE_KEY_RULE = "cr_tx_lease_key_1"
 API10_RULE = "cr_tx_api10_build_1"
 PLUGGED_RULE = "cr_tx_plugged_precedence_1"
 ROLE_RULE = "cr_tx_ewa_role_1"
+MEASURES_RULE = "cr_tx_ewa_measures_1"
 COLLAPSE_RULE = "cr_tx_identity_collapse_1"
 STATUS_FAMILY = "cr_tx_status_vocab"
 BATCH_ROWS = 20_000
 
 REASON_CODES = (
     "schema_mismatch", "key_incomplete", "unknown_status", "multi_completion", "key_collision",
+    "unreliable_numeric", "out_of_range_date",
 )
 
 
@@ -308,6 +310,74 @@ def _depth(value: str | None) -> float | None:
     return float(text) if text.replace(".", "", 1).isdigit() and text else None
 
 
+_READERS: Mapping[str, Callable[[str | None], object]] = {
+    "total_depth_ft": _depth,
+    # The code `nd_gis._promote_wells` already uses for a filed date that is not one.
+    "completion_date": _date,
+}
+
+# Withholding the value is all this promotion can do; it has no path that drops the well.
+_FIELD_ACTIONS: tuple[str, ...] = ("null_field",)
+
+MeasurePolicy = tuple[str, tuple[tuple[str, Callable[[str | None], object], str], ...]]
+
+
+def _measure_policy(measures: ConformanceRule) -> MeasurePolicy:
+    """What an unreadable measure becomes is read from the rule row, not decided here.
+
+    Same contract as `nd_gis.withheld_measurements`: the fields, the reason code each is filed
+    under and the action are the registry's, so changing the decision is a new rule row.
+    """
+    action = str(measures.spec.get("field_action", ""))
+    if action not in _FIELD_ACTIONS:
+        raise RuleSpecError(
+            f"{measures.rule_id}: field_action {action!r} is not one of"
+            f" {', '.join(_FIELD_ACTIONS)}"
+        )
+    declared = tuple(dict(entry) for entry in measures.spec.get("fields") or ())
+    if {str(entry["field"]) for entry in declared} != set(_READERS):
+        raise RuleSpecError(
+            f"{measures.rule_id}: rules on"
+            f" {sorted(str(entry['field']) for entry in declared)};"
+            f" this promotion measures {sorted(_READERS)}"
+        )
+    return action, tuple(
+        (str(entry["field"]), _READERS[str(entry["field"])], str(entry["reason_code"]))
+        for entry in declared
+    )
+
+
+# A blank field is an absence; a non-empty one the reader returns None for is a reject.
+def _measured(
+    row: Mapping[str, Any], policy: MeasurePolicy
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    action, declared = policy
+    parsed: dict[str, Any] = {}
+    unreadable: list[dict[str, Any]] = []
+    for name, reader, reason_code in declared:
+        if name not in row:
+            raise RuleSpecError(
+                f"{LAYOUT_RULE} does not declare {name}, which this promotion measures;"
+                " reading it as absent would null the field on every well and exit 0"
+            )
+        filed = (row[name] or "").strip()
+        parsed[name] = reader(filed)
+        if filed and parsed[name] is None:
+            unreadable.append(
+                {
+                    "api10": row["api10"],
+                    "state_code": row["state_code"],
+                    "county_code": row["county_code"],
+                    "source_row_ordinal": row.get("source_row_ordinal"),
+                    "field": name,
+                    "filed_as": filed,
+                    "field_action": action,
+                    "reason_code": reason_code,
+                }
+            )
+    return parsed, unreadable
+
+
 _INSERT_WELL = """
 insert into canonical.wells (
     api10, state_code, county_code_at_permit, operator_name_reported, operator_id, well_name,
@@ -401,6 +471,7 @@ def load(
     api10_rule = rule(connection, API10_RULE, source_id="tx_gis_wells_county")
     precedence = rule(connection, PLUGGED_RULE)
     role_rule = rule(connection, ROLE_RULE)
+    measures = rule(connection, MEASURES_RULE)
     collapse_rule = rule(connection, COLLAPSE_RULE)
     status_rules = [
         candidate
@@ -501,15 +572,23 @@ def load(
         *[{**row, "status_canonical": None} for row in silent],
     ]
 
-    identity_id, wells_added = _promote_identity(
+    identity_id, wells_added, withheld = _promote_identity(
         connection,
         promoted,
         manifest_id=manifest.manifest_id,
         vintage=manifest.fetch_vintage,
         parse_derivation_id=parse_id,
-        rules=[*keyed.applied_rule_ids, *mapped.applied_rule_ids, precedence.rule_id],
+        rules=[
+            *keyed.applied_rule_ids,
+            *mapped.applied_rule_ids,
+            precedence.rule_id,
+            measures.rule_id,
+        ],
         state_code=str(api10_rule.spec["state_code"]),
+        measures=measures,
     )
+    for reason_code, held in withheld.items():
+        counts[reason_code] = counts.get(reason_code, 0) + held
     # DR-88: an all-conflict revision owns nothing and must become a ledger fact, not a no-op.
     if promoted and not wells_added and not _owns_canonical(connection, manifest.manifest_id):
         counts["key_collision"] = counts.get("key_collision", 0) + _quarantine(
@@ -591,7 +670,15 @@ def _promote_identity(
     parse_derivation_id: str,
     rules: Sequence[str],
     state_code: str,
-) -> tuple[str, int]:
+    measures: ConformanceRule,
+) -> tuple[str, int, dict[str, int]]:
+    policy = _measure_policy(measures)
+    unreadable: list[dict[str, Any]] = []
+    measured = []
+    for row in rows:
+        parsed, rejects = _measured(row, policy)
+        measured.append(parsed)
+        unreadable.extend(rejects)
     payload = [
         {
             "api10": row["api10"],
@@ -608,13 +695,13 @@ def _promote_identity(
             # reported value still stands as written and the rule explains the difference.
             "status_reported": row["well_type_name"] or None,
             "well_type": row["well_type_name"] or None,
-            "depth": _depth(row["total_depth_ft"]),
-            "completion_date": _date(row["completion_date"]),
+            "depth": parsed["total_depth_ft"],
+            "completion_date": parsed["completion_date"],
             "basin": BASIN,
             "effective_from": vintage,
             "manifest_id": manifest_id,
         }
-        for row in rows
+        for row, parsed in zip(rows, measured, strict=True)
     ]
     with derive(
         "canonical.promote",
@@ -640,7 +727,17 @@ def _promote_identity(
             [{**row, "derivation_id": context.derivation_id} for row in payload],
         )
         inserted = max(cursor.rowcount, 0)
-    return context.derivation_id, inserted
+    withheld: dict[str, int] = {}
+    for reason_code in sorted({reject["reason_code"] for reject in unreadable}):
+        withheld[reason_code] = _quarantine(
+            connection,
+            _quarantine_frame([r for r in unreadable if r["reason_code"] == reason_code]),
+            manifest_id=manifest_id,
+            reason_code=reason_code,
+            stage=measures.stage,
+            rule_id=measures.rule_id,
+        )
+    return context.derivation_id, inserted, withheld
 
 
 def _promote_lease_links(

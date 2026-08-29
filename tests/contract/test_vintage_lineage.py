@@ -92,6 +92,41 @@ def test_an_unpromoted_vintage_omits_the_key_rather_than_serving_an_empty_object
     assert "_lineage" not in row
 
 
+def test_an_unpromoted_vintage_withholds_its_counters_on_both_surfaces(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The fixture gap that hid this: every other vintage has a derivation, so the R6 walker
+    never met a row whose numbers no handle can reach. `repromote` writes exactly such a row."""
+    _open_unpromoted(seeded)
+
+    listed = payload(client.get("/v1/vintages"))
+    published = payload(client.get("/v1"))
+    row = next(row for row in listed if row["vintage_id"] == UNPROMOTED_ID)
+    index_row = next(
+        row for row in published["published_vintages"] if row["source_id"] == "tx_pdq_dsv"
+    )
+
+    assert row["rows_examined"] is None
+    assert row["rows_appended"] is None
+    assert row["restatement_summary"] is None
+    assert index_row["rows_examined"] is None
+    assert index_row["rows_appended"] is None
+    assert naked_numbers(listed) == []
+    assert naked_numbers(published) == []
+
+
+def test_a_promoted_vintage_still_serves_the_counters_it_can_explain(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The withholding is conditional on the row, not a blanket retreat from serving them."""
+    _open_unpromoted(seeded)
+
+    row = next(row for row in collection(client) if row["vintage_id"] != UNPROMOTED_ID)
+
+    assert row["rows_examined"] is not None
+    assert row["_lineage"]["rows_examined"] == row["promotion_derivation_id"]
+
+
 def test_the_document_declares_the_sidecar_without_requiring_it(client: TestClient) -> None:
     schema = client.get("/openapi.json").json()["components"]["schemas"]["Vintage"]
 
@@ -145,3 +180,28 @@ def test_the_collection_advertises_the_one_call_explain_path(client: TestClient)
 
     assert body["links"]["explain"].startswith("/v1/explain?h=")
     assert "depth=full" in body["links"]["explain"]
+
+
+def test_the_service_index_serves_the_same_ruling_as_the_vintages_collection(
+    client: TestClient,
+) -> None:
+    """F13: `rows_examined` and `rows_appended` are one quantity from one table. The collection
+    gave them a handle and the index gave them an exemption written around the gap — the
+    allowlist comment said so outright. Two rulings for one quantity is the defect."""
+    published = client.get("/v1").json()["data"]["published_vintages"]
+    listed = {row["source_id"]: row for row in collection(client)}
+
+    assert published
+    for row in published:
+        twin = listed[row["source_id"]]
+        assert row["_lineage"]["rows_examined"] == twin["_lineage"]["rows_examined"]
+        assert row["_lineage"]["rows_appended"] == twin["_lineage"]["rows_appended"]
+
+
+def test_the_index_numbers_are_figures_and_not_exemptions(client: TestClient) -> None:
+    published = payload(client.get("/v1"))
+
+    assert {"/published_vintages/0/rows_examined", "/published_vintages/0/rows_appended"} <= set(
+        figure_numbers(published)
+    )
+    assert naked_numbers(published) == []

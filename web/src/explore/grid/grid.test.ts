@@ -589,7 +589,17 @@ function numericSchema(id: string, pointer: string, namespace: string): boolean 
     node = walk(node, ["properties", token]);
   }
   const property = walk(node, ["properties", pointer.replace(/^\//, "")]);
-  return property["type"] === "integer" || property["type"] === "number";
+  return isNumeric(property);
+}
+
+// A column that can be withheld declares `anyOf: [{integer}, {null}]` and carries no `type` of
+// its own; reading only `type` would drop it out of this walk and leave the gate vacuous on it.
+function isNumeric(node: Node): boolean {
+  if (node["type"] === "integer" || node["type"] === "number") return true;
+  const branches = (node["anyOf"] ?? node["oneOf"]) as unknown;
+  return (
+    Array.isArray(branches) && branches.some((branch) => isNumeric(deref(branch as Node)))
+  );
 }
 
 function walk(node: Node, keys: readonly string[]): Node {

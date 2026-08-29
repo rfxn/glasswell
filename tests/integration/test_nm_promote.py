@@ -632,10 +632,12 @@ def test_the_ledger_row_two_same_day_passes_produce_is_the_days_sum_exactly(
         {},
         [staged_day_one.manifest_id],
         DAY_ONE,
-        None,
+        widened.promotion_derivation_id,
     )
     assert (first.staged_rows, first.promoted_rows) == (IN_WINDOW_ROWS, IN_WINDOW_ROWS)
     assert widened.promoted_rows == FIXTURE_ROWS - IN_WINDOW_ROWS
+    # Pinning None here pinned the defect: the row served counts nothing could explain.
+    assert widened.promotion_derivation_id is not None
     assert vintage_ledger(db) == [day_one_row]
 
     rerun = promote(db, at=SAME_DAY_RERUN, window_start=FULL_HISTORY)
@@ -658,7 +660,7 @@ def test_the_ledger_row_two_same_day_passes_produce_is_the_days_sum_exactly(
             {"2014-03-01": 1},
             [restaged.manifest_id],
             DAY_TWO,
-            None,
+            restated.promotion_derivation_id,
         ),
     ]
 

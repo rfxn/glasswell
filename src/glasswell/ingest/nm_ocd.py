@@ -909,6 +909,7 @@ class PromotionReport:
     quarantined: Mapping[str, int] = field(default_factory=dict)
     restatement_summary: Mapping[str, int] = field(default_factory=dict)
     vintage_id: str | None = None
+    promotion_derivation_id: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1292,6 +1293,7 @@ def promote_all(
     counts: dict[str, int] = {}
     restatement: dict[str, int] = {}
     touched: list[str] = []
+    promotions: list[str] = []
     views = {"staged": partition} | ({"prior": prior} if prior else {})
 
     def snapshot() -> PromotionReport:
@@ -1300,6 +1302,7 @@ def promote_all(
             report_vintage=run.as_of,
             window_start=window,
             months=list(touched),
+            promotion_derivation_id=promotions[-1] if promotions else None,
             staged_rows=totals["staged"],
             promoted_rows=totals["promoted"],
             restated_rows=totals["restated"],
@@ -1331,6 +1334,7 @@ def promote_all(
                     skipped_unchanged=skipped,
                 )
                 connection.commit()
+                promotions.append(outcome.derivation_id)
                 totals["staged"] += outcome.staged_rows + skipped
                 totals["promoted"] += outcome.promoted_rows
                 totals["restated"] += outcome.restated_rows
@@ -1361,6 +1365,7 @@ def _record_vintage(run: IngestRun, report: PromotionReport) -> None:
         vintage_date=run.as_of,
         manifest_ids=[report.manifest_id],
         opened_at=run.session.clock.now(),
+        promotion_derivation_id=report.promotion_derivation_id,
         rows_examined=report.staged_rows,
         rows_appended=report.promoted_rows,
         months_touched=report.months,

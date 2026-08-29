@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
+import pytest
+
+from glasswell.lineage.errors import ManifestConflict
 from glasswell.lineage.manifests import manifest_chain, register_manifest
 
 NIGHTLY_KEY = "wcproduction.zip"
@@ -9,12 +12,14 @@ FIRST_PULL = datetime(2026, 8, 1, 5, 2, 11, tzinfo=UTC)
 SECOND_PULL = datetime(2026, 8, 2, 5, 2, 11, tzinfo=UTC)
 
 
-def register(db, sha256, *, fetched_at=FIRST_PULL, source_key=NIGHTLY_KEY):
+def register(
+    db, sha256, *, fetched_at=FIRST_PULL, source_key=NIGHTLY_KEY, source_id="nm_ocd_wcproduction"
+):
     return register_manifest(
         db,
         sha256=sha256,
         size_bytes=3812345678,
-        source_id="nm_ocd_wcproduction",
+        source_id=source_id,
         source_key=source_key,
         acquisition_url=f"ftp://164.64.106.6/{source_key}",
         acquisition_method="ftp_anon",
@@ -74,6 +79,49 @@ def test_changed_bytes_under_the_same_source_key_supersede_the_head(db):
     assert second.superseded_manifest_id == first.manifest.manifest_id
     assert second.manifest.supersedes_manifest_id == first.manifest.manifest_id
     assert "raw.manifest_superseded" in event_types(db, first.manifest.manifest_id)
+
+
+def test_the_same_bytes_under_a_different_source_key_are_refused(db):
+    """`sha256` is unique, so the schema cannot hold one payload in two slots. Returning the
+    incumbent's manifest would hand the second slot the first slot's provenance — a handle that
+    resolves, confidently, to the wrong government file (F8)."""
+    first = register(db, "a" * 64)
+    db.commit()
+
+    with pytest.raises(ManifestConflict) as refusal:
+        register(db, "a" * 64, source_key="wcwell.zip")
+
+    assert first.manifest.source_key in str(refusal.value)
+    assert "wcwell.zip" in str(refusal.value)
+
+
+def test_the_same_bytes_under_a_different_source_id_are_refused(db):
+    """The zero-byte trigger's shape: two slots of one multi-slot source are one `source_key`
+    apart, two sources are one `source_id` apart, and both must refuse."""
+    register(db, "a" * 64)
+    db.commit()
+
+    with pytest.raises(ManifestConflict):
+        register(db, "a" * 64, source_id="nd_gis_wells")
+
+
+def test_a_refused_conflict_leaves_the_incumbent_manifest_untouched(db):
+    first = register(db, "a" * 64)
+    db.commit()
+
+    with pytest.raises(ManifestConflict):
+        register(db, "a" * 64, source_key="wcwell.zip", fetched_at=SECOND_PULL)
+    db.rollback()
+
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select source_key, fetched_at from lineage.manifests where sha256 = %s",
+            ("a" * 64,),
+        )
+        assert cursor.fetchone() == (NIGHTLY_KEY, FIRST_PULL)
+        cursor.execute("select count(*) from lineage.manifests")
+        assert cursor.fetchone() == (1,)
+    assert first.manifest.source_key == NIGHTLY_KEY
 
 
 def test_the_head_view_returns_only_the_newest_manifest_per_slot(db):

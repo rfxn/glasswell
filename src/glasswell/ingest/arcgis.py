@@ -27,15 +27,13 @@ import psycopg
 from glasswell.lineage.audit import emit
 from glasswell.lineage.capture import current_session, derive
 from glasswell.lineage.fetch import (
-    PAYLOAD_STEM,
     FetchResult,
-    _artifact_directory,
-    _existing_storage_uri,
     _link_fetch_derivation,
     _seal,
     _write_manifest_json,
     _write_sha256_manifest,
     resolve_raw_root,
+    stage_payload,
 )
 from glasswell.lineage.fetch_attempts import sanitized_failure_detail, source_poll
 from glasswell.lineage.manifests import register_manifest
@@ -88,6 +86,12 @@ class LayerNotPaginable(ArcGisFetchError):
     """A layer that does not advertise supportsPagination is not an ingest path."""
 
     glasswell_reason = "layer_not_paginable"
+
+
+class EmptyWalk(ArcGisFetchError):
+    """A layer matching no features seals zero bytes, whose hash every empty harvest shares."""
+
+    glasswell_reason = "empty_walk"
 
 
 @dataclass(frozen=True, slots=True)
@@ -350,7 +354,9 @@ def _walk(
     order_by = order_by or f"{layer.object_id_field} ASC"
 
     count_before = _count(client, service_url, layer_id, where)
-    expected_pages = math.ceil(count_before / size) if count_before else 0
+    if count_before == 0:
+        raise EmptyWalk(f"{service_url}/{layer_id} matches no features for where={where!r}")
+    expected_pages = math.ceil(count_before / size)
     digest = hashlib.sha256()
     written_bytes = 0
     features_written = 0
@@ -440,16 +446,17 @@ def _register(
     )
     with derive("raw.fetch", output=output, params=params, rules=list(rules)) as context:
         context.set_output_hash(walk.sha256)
-        existing = _existing_storage_uri(connection, walk.sha256)
-        if existing is None:
-            directory = _artifact_directory(
-                root, source_id, source_key, vintage, fetched_at, walk.sha256
-            )
-            directory.mkdir(parents=True, exist_ok=True)
-            payload_path = directory / f"{PAYLOAD_STEM}{Path(source_key).suffix or '.bin'}"
-            os.replace(temporary_path, payload_path)
-        else:
-            payload_path = Path(existing)
+        payload_path = stage_payload(
+            connection,
+            sha256=walk.sha256,
+            source_id=source_id,
+            source_key=source_key,
+            vintage=vintage,
+            fetched_at=fetched_at,
+            root=root,
+            temporary_path=temporary_path,
+            suffix=Path(source_key).suffix or ".bin",
+        )
 
         registration = register_manifest(
             connection,

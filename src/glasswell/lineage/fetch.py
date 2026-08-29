@@ -23,9 +23,10 @@ from psycopg.rows import dict_row
 
 from glasswell.lineage.audit import emit
 from glasswell.lineage.capture import current_session, derive
+from glasswell.lineage.errors import ManifestConflict
 from glasswell.lineage.fetch_attempts import sanitized_failure_detail, source_poll
 from glasswell.lineage.ftp import FTP, download_ftp, remote_path_from_url
-from glasswell.lineage.manifests import register_manifest
+from glasswell.lineage.manifests import owning_slot, register_manifest
 from glasswell.lineage.models import AcquisitionMethod, ManifestRecord, OutputSpec
 from glasswell.lineage.serialization import canonical_json, json_ready
 
@@ -149,11 +150,40 @@ def _artifact_directory(
     return root / source_id / _slug(source_key) / stamp
 
 
-def _existing_storage_uri(connection: psycopg.Connection, sha256: str) -> str | None:
-    with connection.cursor() as cursor:
-        cursor.execute("select storage_uri from lineage.manifests where sha256 = %s", (sha256,))
-        row = cursor.fetchone()
-    return row[0] if row else None
+def stage_payload(
+    connection: psycopg.Connection,
+    *,
+    sha256: str,
+    source_id: str,
+    source_key: str,
+    vintage: date,
+    fetched_at: datetime,
+    root: Path,
+    temporary_path: Path,
+    suffix: str,
+) -> Path:
+    """Reuse the stored artifact when this slot already holds these bytes, otherwise place them.
+
+    Scoped by slot, not by hash: two slots reaching identical bytes are two acquisitions, and
+    handing the second the first's path binds its derivations to the first's provenance (F8).
+    Refused before `os.replace`, so a rejected fetch stages nothing.
+    """
+    owner = owning_slot(connection, sha256)
+    if owner is not None:
+        if (owner["source_id"], owner["source_key"]) != (source_id, source_key):
+            raise ManifestConflict(
+                sha256,
+                (owner["source_id"], owner["source_key"]),
+                (source_id, source_key),
+                owner["bytes"],
+            )
+        return Path(owner["storage_uri"])
+
+    directory = _artifact_directory(root, source_id, source_key, vintage, fetched_at, sha256)
+    directory.mkdir(parents=True, exist_ok=True)
+    payload_path = directory / f"{PAYLOAD_STEM}{suffix}"
+    os.replace(temporary_path, payload_path)
+    return payload_path
 
 
 def _link_fetch_derivation(
@@ -320,16 +350,17 @@ def _fetch_raw(
         )
         with derive("raw.fetch", output=output, params=params, rules=rules) as context:
             context.set_output_hash(download.sha256)
-            existing = _existing_storage_uri(connection, download.sha256)
-            if existing is None:
-                directory = _artifact_directory(
-                    root, source_id, source_key, vintage, fetched_at, download.sha256
-                )
-                directory.mkdir(parents=True, exist_ok=True)
-                payload_path = directory / f"{PAYLOAD_STEM}{_extension(source_key)}"
-                os.replace(temporary_path, payload_path)
-            else:
-                payload_path = Path(existing)
+            payload_path = stage_payload(
+                connection,
+                sha256=download.sha256,
+                source_id=source_id,
+                source_key=source_key,
+                vintage=vintage,
+                fetched_at=fetched_at,
+                root=root,
+                temporary_path=temporary_path,
+                suffix=_extension(source_key),
+            )
 
             registration = register_manifest(
                 connection,

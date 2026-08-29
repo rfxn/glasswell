@@ -24,6 +24,10 @@ LATERAL_WKT = "LINESTRING(-103.5803 47.9075, -103.5401 47.9081)"
 SURFACE_WKT = "POINT(-103.5803 47.9075)"
 # An empty params dict is not what the pipeline records, and it hid /params from the walker.
 DEFAULT_PROMOTE_PARAMS = {"source_key": "2024_03.xlsx", "liquids_basis": "oil+condensate"}
+# Its own slot and its own bytes: a fixture sharing a digest across slots is the collision
+# `register_manifest` now refuses (F8).
+PLACEHOLDER_SOURCE_KEY = "fixture_placeholder.xlsx"
+PLACEHOLDER_SHA256 = "5" * 64
 
 FIXTURE_ENV = DeriveEnvironment(
     code_version="git:0000test",
@@ -59,6 +63,12 @@ def seed_manifest(
         storage_uri=f"/data/raw/{source_id}/{source_key}",
     )
     return registration.manifest.manifest_id
+
+
+def seed_placeholder_manifest(connection: psycopg.Connection) -> str:
+    return seed_manifest(
+        connection, sha256=PLACEHOLDER_SHA256, source_key=PLACEHOLDER_SOURCE_KEY
+    )
 
 
 def seed_derivation(
@@ -133,7 +143,7 @@ def seed_well(
         **overrides,
         "api10": api10,
         "effective_from": effective_from,
-        "source_manifest_id": manifest_id or seed_manifest(connection, sha256="e" * 64),
+        "source_manifest_id": manifest_id or seed_placeholder_manifest(connection),
         "derivation_id": derivation_id or seed_derivation(connection),
     }
     row["api14"] = row["api14"] or f"{api10}0000"
@@ -167,7 +177,7 @@ def seed_well_spatial(
                 wkt or (SURFACE_WKT if geom_type == "surface" else LATERAL_WKT),
                 source_datum,
                 transform_rule_id,
-                manifest_id or seed_manifest(connection, sha256="e" * 64),
+                manifest_id or seed_placeholder_manifest(connection),
                 derivation_id or seed_derivation(connection),
             ),
         )

@@ -93,6 +93,7 @@ def repromote(
     months: set[str] = set()
     restatement: dict[str, int] = {}
     quarantined: dict[str, int] = {}
+    promotions: list[str] = []
     for manifest in manifests:
         outcome = promote_manifest(
             run,
@@ -104,6 +105,7 @@ def repromote(
                 "repromotion": "s_e_entity_key",
             },
         )
+        promotions.append(outcome.promote_derivation_id)
         examined += outcome.rows_examined
         appended += outcome.rows_appended
         aggregated += outcome.rows_aggregated
@@ -123,6 +125,8 @@ def repromote(
         vintage_date=run.as_of,
         manifest_ids=manifest_ids,
         opened_at=run.session.clock.now(),
+        # The last promotion, which is where the backfill path's per-month upsert also lands.
+        promotion_derivation_id=promotions[-1] if promotions else None,
         rows_examined=examined,
         rows_appended=appended,
         months_touched=sorted(months),

@@ -110,7 +110,9 @@ def open_vintage(
             " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
             " on conflict (source_id, vintage_date) do update"
             " set manifest_ids = excluded.manifest_ids,"
-            "     promotion_derivation_id = excluded.promotion_derivation_id,"
+            # A run that carries no derivation must not erase the one the vintage-day recorded.
+            "     promotion_derivation_id = coalesce(excluded.promotion_derivation_id,"
+            "                                        vintages.promotion_derivation_id),"
             "     rows_examined = excluded.rows_examined,"
             "     rows_appended = excluded.rows_appended,"
             "     months_touched = excluded.months_touched,"

@@ -139,3 +139,28 @@ def test_opening_a_vintage_records_the_restatement_magnitude(db, two_vintages):
             (record.vintage_id,),
         )
         assert cursor.fetchone() == (9412, ["2024-03"], {"2024-03": 9412})
+
+
+def test_a_pass_carrying_no_derivation_does_not_erase_the_one_the_day_holds(db, two_vintages):
+    """The upsert set the column from `excluded` outright, so a caller that had no derivation
+    to give replaced the handle over the day's counts with a null — and the numbers under it
+    then had nothing to resolve."""
+    manifest, derivation = two_vintages
+    opened_at = datetime(2026, 8, 1, 5, 30, tzinfo=UTC)
+    common = {
+        "source_id": "nd_mpr_xlsx",
+        "vintage_date": RESTATED_VINTAGE,
+        "manifest_ids": [manifest],
+        "opened_at": opened_at,
+    }
+    open_vintage(db, **common, promotion_derivation_id=derivation, rows_appended=9412)
+    open_vintage(db, **common, promotion_derivation_id=None, rows_appended=1)
+    db.commit()
+
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select promotion_derivation_id, rows_appended from lineage.vintages"
+            " where vintage_id = %s",
+            ("vin_nd_mpr_xlsx_2026-08-01",),
+        )
+        assert cursor.fetchone() == (derivation, 1)

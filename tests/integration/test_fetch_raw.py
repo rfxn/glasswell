@@ -12,10 +12,12 @@ import pytest
 
 from glasswell.ingest.base import open_ingest_run
 from glasswell.lineage.capture import lineage_session
+from glasswell.lineage.errors import ManifestConflict
 from glasswell.lineage.fetch import (
     MANIFEST_FILENAME,
     SHA256_MANIFEST_FILENAME,
     fetch_raw,
+    stage_payload,
 )
 from glasswell.lineage.models import ManifestRecord
 from glasswell.lineage.serialization import canonical_json, json_ready
@@ -170,6 +172,70 @@ def test_identical_bytes_re_register_as_a_recorded_check(db, raw_root, lineage_e
             ("raw.fetch_verified_unchanged",),
         )
         assert cursor.fetchone()[0] == 1
+
+
+def test_a_second_slot_fetching_the_same_bytes_is_refused_and_stages_nothing(
+    db, raw_root, lineage_env
+):
+    """The F8 path end to end. `_existing_storage_uri` used to key on the hash alone, so the
+    second slot was handed the first slot's artifact path, skipped its own manifest.json, seal
+    and sha256 file, and carried away a `FetchResult` naming the first slot's source."""
+    first = fetch(db, raw_root, lineage_env)
+    db.commit()
+
+    with pytest.raises(ManifestConflict):
+        fetch(db, raw_root, lineage_env, key="2026_04.xlsx")
+    db.rollback()
+
+    assert count(db, "lineage.manifests") == 1
+    assert artifact_directories(raw_root) == [first.payload_path.parent]
+    assert list((raw_root / ".incoming").iterdir()) == []
+
+
+def test_staging_refuses_a_foreign_slot_before_it_moves_any_bytes(
+    db, raw_root, lineage_env, tmp_path
+):
+    """The refusal has to land before `os.replace`, or a rejected fetch leaves an unmanifested
+    payload in the raw zone that no seal and no `manifest.json` will ever cover."""
+    first = fetch(db, raw_root, lineage_env)
+    db.commit()
+    incoming = tmp_path / "incoming.xlsx"
+    incoming.write_bytes(PAYLOAD)
+
+    with pytest.raises(ManifestConflict):
+        stage_payload(
+            db,
+            sha256=first.manifest.sha256,
+            source_id=SOURCE_ID,
+            source_key="2026_04.xlsx",
+            vintage=date(2026, 8, 1),
+            fetched_at=datetime(2026, 8, 1, 6, tzinfo=UTC),
+            root=raw_root,
+            temporary_path=incoming,
+            suffix=".xlsx",
+        )
+
+    assert incoming.read_bytes() == PAYLOAD
+    assert artifact_directories(raw_root) == [first.payload_path.parent]
+
+
+def test_staging_reuses_the_artifact_when_the_same_slot_refetches(db, raw_root, lineage_env):
+    first = fetch(db, raw_root, lineage_env)
+    db.commit()
+
+    reused = stage_payload(
+        db,
+        sha256=first.manifest.sha256,
+        source_id=SOURCE_ID,
+        source_key=SOURCE_KEY,
+        vintage=date(2026, 8, 1),
+        fetched_at=datetime(2026, 8, 1, 6, tzinfo=UTC),
+        root=raw_root,
+        temporary_path=raw_root / "never-read",
+        suffix=".xlsx",
+    )
+
+    assert reused == first.payload_path
 
 
 def test_changed_bytes_supersede_the_head_and_keep_both_artifacts(db, raw_root, lineage_env):
