@@ -135,7 +135,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
   extentCount.textContent = ABSENT_MARK;
   extentRow.appendChild(extentCount);
 
-  const extentHandle = provenanceHandle("Lineage for the well count");
+  const extentHandle = provenanceHandle("the well count");
   extentRow.appendChild(extentHandle);
   body.appendChild(extentRow);
 
@@ -197,7 +197,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
     cell.textContent = ABSENT_MARK;
     row.appendChild(cell);
 
-    row.appendChild(provenanceHandle(`Lineage for the ${entry.label.toLowerCase()} count`));
+    row.appendChild(provenanceHandle(`the ${entry.label.toLowerCase()} count`));
     producingRows.set(entry.id, row);
     producing.appendChild(row);
   }
@@ -549,10 +549,11 @@ function buildRow(status: StatusClass, on: boolean): HTMLElement {
   count.textContent = ABSENT_MARK;
   row.appendChild(count);
 
-  row.appendChild(provenanceHandle(`Lineage for the ${status.label} count`));
+  row.appendChild(provenanceHandle(`the ${status.label.toLowerCase()} count`));
   return row;
 }
 
+/** `label` is the figure's name alone — `explainHandle` supplies the "Lineage for" prefix. */
 function provenanceHandle(label: string): HTMLButtonElement {
   const handle = explainHandle({
     className: "gw-lg-handle",

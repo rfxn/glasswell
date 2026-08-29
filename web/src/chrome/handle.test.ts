@@ -34,6 +34,21 @@ describe("the one provenance affordance", () => {
     expect(handle.title).toBe("Show where lateral length came from: drv_9");
   });
 
+  it("refuses a label that already carries the prefix, rather than naming the button twice", () => {
+    // The legend passed "Lineage for the well count" through a helper whose meaning had
+    // changed under it, and every assertion on that name was a substring match, so
+    // "Lineage for Lineage for the well count" shipped green.
+    expect(() => explainHandle({ label: "Lineage for the well count" })).toThrow(/already carries/);
+  });
+
+  it("builds an accessible name that says the prefix exactly once", () => {
+    for (const label of ["the well count", "these bin edges", "lateral length"]) {
+      const name = explainHandle({ label }).getAttribute("aria-label") ?? "";
+      expect(name.match(/Lineage for/g)).toHaveLength(1);
+      expect(name).toBe(`Lineage for ${label}`);
+    }
+  });
+
   it("is visible exactly when it has a derivation to resolve", () => {
     const withHandle = explainHandle({ label: "the well count", handle: "drv_1" });
     const without = explainHandle({ label: "the well count" });

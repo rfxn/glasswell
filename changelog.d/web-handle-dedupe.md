@@ -13,6 +13,10 @@
          element's host dispatch kept as declared options rather than private redrafts
 - [Fix] `card.ts` registers `<gw-figure>` by an explicit side-effect import; it had been
       relying on a named import for the custom element's registration
+- [New] `explainHandle` refuses a label that already carries the "Lineage for" prefix — the
+      test build throws and the dev build logs, as `<gw-figure>` does for a naked number — so a
+      caller cannot name the button twice; every label is interpolated from data, so the rule
+      has to be checked rather than remembered
 - [Remove] Dead web code first reported at v0.47 and still present at v0.61: `DIALECT_TITLES`,
       `isGlossaryLoaded` and the write-only flag behind it, the unreachable hidden-column badge
       in `renderHeader` with the two `gw-col-hidden` rules it took with it, and the always-true
