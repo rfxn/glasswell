@@ -10574,6 +10574,25 @@
             }
           },
           {
+            "description": "Ten-digit API well number, or the fourteen-digit literal recorded for it. Matched whole, never as a fragment.",
+            "in": "query",
+            "name": "api10",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d{10}(?:\\d{4})?$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Ten-digit API well number, or the fourteen-digit literal recorded for it. Matched whole, never as a fragment.",
+              "title": "Api10"
+            }
+          },
+          {
             "description": "Canonical status, e.g. active or plugged.",
             "in": "query",
             "name": "status",
@@ -10829,6 +10848,7 @@
           },
           "detail_operation": "get_well",
           "facets": [
+            "api10",
             "status",
             "producing",
             "operator",
@@ -10852,6 +10872,10 @@
           }
         },
         "x-glasswell-semantics": {
+          "api10": {
+            "so": "Resolves the identity spine, exactly: one well or none, never a partial match, so a leading fragment of an API number is not a search. It also takes the fourteen-digit literal, matched against the API-14 canonical recorded for the well rather than trimmed to ten here \u2014 which digits of an API-14 make the API-10 is an identity rule's declaration, not a search behaviour, so a completion this deployment never recorded answers with an empty page instead of with a guess. Use `q` to read a list of names; use this to name a well.",
+            "x-glasswell-glossary": "gt_api_10_api_12_api_14"
+          },
           "as_of": {
             "so": "Reads the spine as it stood on that knowledge date. A well permitted afterwards is absent, and one whose operator changed since answers with the older name. It does not filter on when a well was drilled \u2014 it chooses which version of every row you are looking at.",
             "x-glasswell-glossary": "gt_knowledge_time"

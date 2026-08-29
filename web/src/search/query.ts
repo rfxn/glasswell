@@ -12,6 +12,7 @@ export interface SearchRequest {
 }
 
 const API10 = /^\d{10}$/;
+const API14 = /^\d{14}$/;
 const PAGE = "20";
 
 /**
@@ -36,6 +37,8 @@ export function searchRequest(term: string): SearchRequest | null {
   const trimmed = term.trim();
   if (trimmed === "") return null;
   if (API10.test(trimmed)) return { path: `/v1/wells/${trimmed}`, query: {} };
+  // The path takes ten digits only, and `q` would read an API-14 as a name and answer nothing.
+  if (API14.test(trimmed)) return { path: "/v1/wells", query: { api10: trimmed, limit: PAGE } };
   return { path: "/v1/wells", query: { q: trimmed, limit: PAGE } };
 }
 

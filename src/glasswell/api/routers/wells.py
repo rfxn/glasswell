@@ -56,6 +56,9 @@ router = APIRouter(tags=["wells"])
 BBOX_DEGREE_CAP = 4.0
 STATUS_SUMMARY_REQUESTS_PER_MINUTE = 30
 API10_PATTERN = r"^\d{10}$"
+# Not API10_PATTERN: §5.3 freezes that one on the path, and the spine lookup also takes the
+# API-14 literal a reader is as likely to be holding.
+API_IDENTITY_PATTERN = r"^\d{10}(?:\d{4})?$"
 BBOX_PARTS = 4
 LON_LIMIT = 180.0
 LAT_LIMIT = 90.0
@@ -578,7 +581,7 @@ def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
             # `/producing` is a facet but not yet a default column: the explorer's grid
             # fixture is recorded from a served build, and this branch cannot re-record it,
             # so declaring the column would name one no recorded row carries.
-            facets=["status", "producing", "operator", "county", "bbox", "q"],
+            facets=["api10", "status", "producing", "operator", "county", "bbox", "q"],
             columns={
                 "default": [
                     "/api10",
@@ -594,6 +597,19 @@ def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
             order=10,
         ),
         **semantics(
+            api10={
+                "glossary": "gt_api_10_api_12_api_14",
+                "so": (
+                    "Resolves the identity spine, exactly: one well or none, never a partial"
+                    " match, so a leading fragment of an API number is not a search. It also"
+                    " takes the fourteen-digit literal, matched against the API-14 canonical"
+                    " recorded for the well rather than trimmed to ten here — which digits of"
+                    " an API-14 make the API-10 is an identity rule's declaration, not a"
+                    " search behaviour, so a completion this deployment never recorded answers"
+                    " with an empty page instead of with a guess. Use `q` to read a list of"
+                    " names; use this to name a well."
+                ),
+            },
             as_of={
                 "glossary": "gt_knowledge_time",
                 "so": (
@@ -708,6 +724,16 @@ def list_wells(
     as_of: AsOf = None,
     cursor: Cursor = None,
     limit: WellsLimit = DEFAULT_LIMIT,
+    api10: Annotated[
+        str | None,
+        Query(
+            description=(
+                "Ten-digit API well number, or the fourteen-digit literal recorded for it."
+                " Matched whole, never as a fragment."
+            ),
+            pattern=API_IDENTITY_PATTERN,
+        ),
+    ] = None,
     status: Annotated[
         str | None, Query(description="Canonical status, e.g. active or plugged.")
     ] = None,
@@ -741,6 +767,7 @@ def list_wells(
 ) -> JSONResponse:
     filters = {
         "as_of": as_of,
+        "api10": api10,
         "status": status,
         "operator": operator,
         "county": county,
@@ -779,6 +806,10 @@ def list_wells(
         )
     params: dict[str, Any] = {"as_of": as_of, "limit": limit + 1, **producing_bindings}
     clauses = [RANKED_WELLS_PRODUCING]
+    if api10 is not None:
+        # The two literal lengths are disjoint, so one bound value needs no branch here.
+        clauses.append("and (api10 = %(api10)s or api14 = %(api10)s)")
+        params["api10"] = api10
     if status is not None:
         clauses.append("and status_canonical = %(status)s")
         params["status"] = status

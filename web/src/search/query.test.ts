@@ -38,6 +38,13 @@ describe("searchRequest", () => {
     expect(searchRequest("   ")).toBeNull();
   });
 
+  it("routes a pasted api14 to the spine filter, which the path cannot take and q cannot match", () => {
+    expect(searchRequest("33053104510000")).toEqual({
+      path: "/v1/wells",
+      query: { api10: "33053104510000", limit: "20" },
+    });
+  });
+
   it("treats an eleven-digit term as a name substring, not an api10", () => {
     expect(searchRequest("33053104510")).toEqual({
       path: "/v1/wells",

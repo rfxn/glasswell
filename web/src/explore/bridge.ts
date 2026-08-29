@@ -62,7 +62,8 @@ interface CrossingTarget extends HopTarget {
 }
 
 export const TARGETS: Record<string, CrossingTarget> = {
-  wells: { id: "wells", pathParameters: [], filter: "q" },
+  // A row hop narrows by the destination's identity; `q` is a name search and matches no API-10.
+  wells: { id: "wells", pathParameters: [], filter: "api10" },
   production: { id: "production", pathParameters: ["api10"], filter: "api10" },
   vintages: { id: "vintages", pathParameters: [], filter: null },
 };
