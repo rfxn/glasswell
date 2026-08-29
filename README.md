@@ -159,8 +159,10 @@ Which makes **rule R8** the sharpest thing in the repository: *every cross-sourc
 mapping decision is a row, not a line of code.* A mapping that exists only in code
 fails review.
 
-`conformance_rules` is served at `/conformance`, referenced by the derivations of
-every number it shaped, and seeded from real gotchas rather than invented ones:
+`conformance_rules` is served at `/v1/conformance` — R8 states the surface as
+`/conformance`; the version prefix is this implementation's — referenced by the
+derivations of every number it shaped, and seeded from real gotchas rather than
+invented ones:
 
 | Decision | Rule |
 |----------|------|
@@ -290,7 +292,7 @@ and CRS routing carry an immutable publication clock independent of their valid 
 cut is requested. Source-data vintages from before Glasswell use the first published policy as an
 explicit baseline, never a later backdated correction. A sandboxed nightly job removes only
 successful unreferenced ephemeral lineage older than 90 days and reports through Status.
-The release runs at schema head 51 and passed 111 host checks plus 20 API smoke checks; the
+The release runs at schema head 52 and passed 111 host checks plus 20 API smoke checks; the
 latest recurring restore evidence still covers schema 47 until the next backup and drill.
 
 Forecast, valuation, sensitivity, scenario, agent, and undrilled-location inventory operations remain

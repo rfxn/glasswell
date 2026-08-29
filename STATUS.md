@@ -1,7 +1,7 @@
 # Current status
 
 Reconciled on **2026-08-28** against the v0.61 release line, the checked-in OpenAPI
-snapshot, current `main` history, and deployed `v0.60+be8e234` at schema head 51. This is the
+snapshot, current `main` history, and deployed `v0.61+e07db3d` at schema head 52. This is the
 short current-state ledger;
 [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria, while
 [`blueprint.md`](blueprint.md) remains the committed v0.5 contract and
@@ -28,12 +28,19 @@ short current-state ledger;
 - **Serving surface:** the frozen snapshot contains 34 operations, 33 under `/v1`, covering
   health, operational status, wells, ND production, source-observed completion context,
   current ND physical neighbours, canonical formations with alias counts, lineage, manifests,
-  conformance, quarantine, glossary, keys, and tiles. Forecast,
-  valuation, scenario, agent, and inventory operations are not served.
+  conformance, quarantine, glossary, keys, and tiles. Every well also carries a producing
+  class, and `/v1/wells?producing=` scopes the collection to one, defined by
+  `cr_producing_window_1`, `cr_producing_streams_1` and `cr_producing_evidence_1` rather than
+  by a predicate in the serving path. Forecast, valuation, scenario, agent, and inventory
+  operations are not served.
 - **Frontend:** URL-backed Map, Explore, and Status surfaces; MapLibre ND/TX layers; a well
   card with independent completion-event, pool-to-formation and current physical-neighbour
   sections, production chart, lineage drawer, glossary, explorer, satellite/hybrid modes, and
   searchable layer panel ship. The neighbour card explicitly separates proximity from analogs.
+  The production chart is built for the 131 months on record: it discloses the window it draws,
+  reads the month under the pointer out as DOM with its own handle, and bins nothing. The map
+  legend carries per-class producing counts with their own handles and the window beneath them,
+  and the explorer draws the crossed-to series from the response the grid already fetched.
 
 ## Phase ledger
 
@@ -45,7 +52,7 @@ short current-state ledger;
 | **P3** Forecasting and benchmark | Pinned control gate accepted; modeling remains | Immutable `fv1.0`, semantic-major `fv2.0`, `mdv1.4`, and control-major `tcv1.0` remain separate identities. The accepted 2026-08-28 publication `p3pub_8b434525d8c621762e31b06ca660bfcd` pins `v0.59+b0be225`, environment `env_59334df47ed960e6`, and split set `sset_c7bbb9a6932db76b`; two complete builds reproduced all eight artifacts and all eight split files byte-identically. Unavailability is 230 / 21,300 (1.0798%), below the 5% ceiling, with 222 missing-lateral and eight insufficient-peer mentions and no TEST missing-formation mention. Matrix-wide coverage is 17,075 resolved, 486 missing and two conflicts across 17,563 subjects. Models, calibration, the model-registry writer, analog index, benchmark scoring and harness remain |
 | **P4** Dollars and scenarios | Not started | Entire phase |
 | **P5** Intelligence, agents and alerts | Not started | Entire phase |
-| **P6** Hardening and glass-box proof | Partial | Deployed v0.60 persists source-poll outcomes independently, registers 22 source-specific cadence policies, validates all current selector-bearing figures against nine fail-closed output contracts, separates conformance publication and valid time, caps viewport provenance writes per principal, and runs sandboxed nightly lineage retention. The release deployment applied schema 51, completed retention with zero eligible removals, persisted a live rate-window request, passed 111 host checks and 20 API smoke checks, and served index and changelog bytes identical to the release build. Fetch-attempt history begins at this deployment and remains empty until a source next polls. The latest recurring restore proof still covers the 1,493,244,558-byte schema-47 dump: it matched 197 manifests, 403,238 latest wells, 7,223,544 production rows and 43,817 ND tile rows, passed six reads, removed scratch state and persisted a `root:glasswell` `0640` receipt. A schema-51 restore, remote-copy evidence, full VM/raw-zone recovery, tunnel/Access, outsider guest exercise, broader API rate policy, determinism and tool-equivalence gates remain |
+| **P6** Hardening and glass-box proof | Partial | The deployed instance persists source-poll outcomes independently, registers 22 source-specific cadence policies, validates all current selector-bearing figures against nine fail-closed output contracts, separates conformance publication and valid time, caps viewport provenance writes per principal, and runs sandboxed nightly lineage retention. The v0.61 deployment applied schema 52, found the lineage-retention timer enabled, active and last-result clean, passed 111 host checks and 20 API smoke checks, and serves a bundle stamped 0.61 with a changelog page naming it. Fetch-attempt history begins at this deployment and remains empty until a source next polls. The latest recurring restore proof still covers the 1,493,244,558-byte schema-47 dump: it matched 197 manifests, 403,238 latest wells, 7,223,544 production rows and 43,817 ND tile rows, passed six reads, removed scratch state and persisted a `root:glasswell` `0640` receipt. A schema-52 restore, remote-copy evidence, full VM/raw-zone recovery, tunnel/Access, outsider guest exercise, broader API rate policy, determinism and tool-equivalence gates remain |
 | **P7** Permian | Started, unpromoted/incomplete | NM deployment; TX production, allocation, and validators |
 | **P8** Living systems | Not started | Entire phase |
 
@@ -60,20 +67,20 @@ short current-state ledger;
    Permian spine can act as the intended control.
 4. Put the deployed app behind the ruled tunnel/Access scopes and exercise a non-interactive
    guest credential from outside the lab; public source visibility is not deployment access.
-5. Let the next schema-51 backup pass the recurring restore drill, then prove remote-copy
+5. Let the next schema-52 backup pass the recurring restore drill, then prove remote-copy
    recency and full replacement-VM/raw-zone recovery separately from that same-cluster proof.
 6. Resolve the owner-gated v0.6 §11 capability-matrix/IP review separately from the already
    public source repository.
 
 ## Verification state
 
-- The full locked Python suite passes **2,758 tests with 2 explicit skips**, including the
+- The full locked Python suite passes **2,817 tests with 2 explicit skips**, including the
   Docker-backed integration and contract tiers; Ruff passes.
-- The web suite passes **1,185 tests across 79 files**; typecheck and production build pass.
+- The web suite passes **1,274 tests across 85 files**; typecheck and production build pass.
 - Browserless E2E guards, shell checks, collateral checks, changelog lint, and the
   headless-Chromium gates pass locally: 35 Map assertions and 88 Status assertions.
 - The dependency lock exactly matches the installed environment and the generated OpenAPI
   snapshot reports current.
 - Exact release SHA `be8e234` passed all six hosted CI jobs. The deployed `v0.60+be8e234`
-  instance at schema head 51 passes 111 host checks and 20 API smoke checks; its index and
+  instance at schema head 52 passes 111 host checks and 20 API smoke checks; its index and
   changelog files are byte-identical to the locally built release bundle.

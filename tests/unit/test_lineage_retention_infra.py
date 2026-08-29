@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -10,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 INFRA = ROOT / "infra"
 SERVICE = INFRA / "systemd" / "glasswell-lineage-retention.service"
 TIMER = INFRA / "systemd" / "glasswell-lineage-retention.timer"
+VERIFY = INFRA / "verify.sh"
 
 
 def _setting(path: Path, name: str) -> str:
@@ -62,6 +65,69 @@ def test_retention_is_installed_armed_after_migrations_and_verified() -> None:
         "systemctl show glasswell-lineage-retention.service -p Result --value",
     ):
         assert fragment in verify
+
+
+def _last_run_state(tmp_path: Path, load_state: str, started: str) -> str:
+    body = VERIFY.read_text().split("last_run_state() {", 1)[1].split("\n}", 1)[0]
+    binaries = tmp_path / "bin"
+    binaries.mkdir()
+    systemctl = binaries / "systemctl"
+    # `Result` is `success` here for every unit, which is exactly what systemd answers for one
+    # that is absent or has never run.
+    systemctl.write_text(
+        "#!/bin/bash\n"
+        'case "$4" in\n'
+        "  LoadState) printf '%s\\n' \"$STUB_LOAD_STATE\" ;;\n"
+        "  ExecMainStartTimestamp) printf '%s\\n' \"$STUB_STARTED\" ;;\n"
+        "  Result) printf 'success\\n' ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    systemctl.chmod(0o755)
+
+    completed = subprocess.run(
+        [
+            "/bin/bash",
+            "-c",
+            f"last_run_state() {{{body}\n}}\nlast_run_state glasswell-lineage-retention.service",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            **os.environ,
+            "PATH": f"{binaries}:{os.environ['PATH']}",
+            "STUB_LOAD_STATE": load_state,
+            "STUB_STARTED": started,
+        },
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    return completed.stdout.strip()
+
+
+@pytest.mark.parametrize(
+    ("load_state", "started", "expected"),
+    [
+        ("not-found", "", "not-found"),
+        ("masked", "", "masked"),
+        ("loaded", "", "never-ran"),
+        ("loaded", "Thu 2026-08-28 03:30:01 UTC", "ran"),
+    ],
+)
+def test_a_sweep_that_is_absent_or_never_ran_is_not_reported_as_a_pass(
+    tmp_path: Path, load_state: str, started: str, expected: str
+) -> None:
+    assert _last_run_state(tmp_path, load_state, started) == expected
+
+
+def test_verify_asserts_run_evidence_beside_the_retention_result() -> None:
+    verify = VERIFY.read_text()
+
+    assert (
+        'assert "glasswell-lineage-retention.service has run" ran \\\n'
+        '    "$(last_run_state glasswell-lineage-retention.service)"'
+    ) in verify
 
 
 def test_status_collector_names_the_retention_job() -> None:

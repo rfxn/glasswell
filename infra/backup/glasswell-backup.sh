@@ -172,10 +172,41 @@ mv "$manifest.partial" "$manifest" || fail "rename $manifest"
 
 log "dumped $dump_bytes bytes with exact-vintage manifest -> $dump"
 
-find "$PGDUMP_DIR" -maxdepth 1 -type f \
-	\( -name 'glasswell-*.dump' -o -name 'glasswell-*.manifest.json' \
-	   -o -name 'globals-*.sql' -o -name '*.partial' \) \
-	-mtime +"$RETAIN_DAYS" -delete || log "WARN: prune pass reported an error"
+# A generation ages out as a unit on its dump's mtime: the manifest is written after the dump is
+# hashed, so per-file mtimes straddle the cutoff and would strand a manifest without its archive.
+prune_status=0
+stale_dumps=$(find "$PGDUMP_DIR" -maxdepth 1 -type f -name 'glasswell-*.dump' \
+	-mtime +"$RETAIN_DAYS") || prune_status=1
+while IFS= read -r stale_dump; do
+	[[ -n $stale_dump ]] || continue
+	stale_generation=${stale_dump##*/}
+	stale_generation=${stale_generation#glasswell-}
+	stale_generation=${stale_generation%.dump}
+	# Manifest first: restore discovery starts from manifests, so an interrupted prune must
+	# leave an ignored orphan dump rather than a manifest that reads as a missing archive.
+	command rm -f -- "$PGDUMP_DIR/glasswell-$stale_generation.manifest.json" || prune_status=1
+	command rm -f -- "$stale_dump" || prune_status=1
+	command rm -f -- "$PGDUMP_DIR/globals-$stale_generation.sql" || prune_status=1
+done <<<"$stale_dumps"
+
+stale_leftovers=$(find "$PGDUMP_DIR" -maxdepth 1 -type f \
+	\( -name 'glasswell-*.manifest.json' -o -name 'globals-*.sql' -o -name '*.partial' \) \
+	-mtime +"$RETAIN_DAYS") || prune_status=1
+while IFS= read -r stale_leftover; do
+	[[ -n $stale_leftover ]] || continue
+	stale_generation=${stale_leftover##*/}
+	stale_generation=${stale_generation#glasswell-}
+	stale_generation=${stale_generation#globals-}
+	stale_generation=${stale_generation%%.*}
+	if [[ $stale_leftover != *.partial && -e $PGDUMP_DIR/glasswell-$stale_generation.dump ]]; then
+		continue
+	fi
+	command rm -f -- "$stale_leftover" || prune_status=1
+done <<<"$stale_leftovers"
+
+if [[ $prune_status -ne 0 ]]; then
+	log "FAIL: retention could not remove every expired backup generation"
+fi
 kept=$(find "$PGDUMP_DIR" -maxdepth 1 -type f -name 'glasswell-*.dump' | wc -l)
 log "retention ${RETAIN_DAYS}d: ${kept} dump(s) kept locally"
 
@@ -190,5 +221,9 @@ if [ -d "$RAW_DIR" ]; then
 else
 	log "WARN: $RAW_DIR does not exist, raw-zone push skipped"
 fi
+
+# The offsite push runs first so a retention fault never also costs the night's copy, but an
+# unpruned disk is a failure the alert unit has to see.
+[[ $prune_status -eq 0 ]] || exit 1
 
 log "OK: backup complete ($ts)"

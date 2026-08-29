@@ -79,7 +79,7 @@
     <text x="46" y="638" fill="#55666F">Rejected rows, cleaning decisions and conformance rules are queryable surfaces, not internals &#8212; the quarantine table has an endpoint.</text>
   </g>
   <g font-family="ui-monospace, Consolas, monospace" font-size="10" text-anchor="end">
-    <text x="1034" y="622" fill="#17607A">/explain &#183; /conformance &#183; /recipes</text>
-    <text x="1034" y="638" fill="#7C8B96">/quality/scorecard &#183; /quality/quarantine &#183; /audit</text>
+    <text x="1034" y="622" fill="#17607A">/v1/explain &#183; /v1/conformance &#183; /v1/quarantine</text>
+    <text x="1034" y="638" fill="#7C8B96">/scorecard &#183; /recipes &#183; /audit</text>
   </g>
 </svg>

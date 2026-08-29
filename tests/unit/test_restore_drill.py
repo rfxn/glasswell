@@ -30,7 +30,14 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 case "$statement" in
-  "DROP DATABASE"*) exit "${STUB_DROP_RC:-0}" ;;
+  "DROP DATABASE"*)
+    drop_count=$(grep -c 'DROP DATABASE' "$DRILL_LOG")
+    fail_from=${STUB_DROP_FAIL_FROM:-0}
+    if [ "$fail_from" != 0 ] && [ "${drop_count:-0}" -ge "$fail_from" ]; then
+      exit 1
+    fi
+    exit "${STUB_DROP_RC:-0}"
+    ;;
   *"count(*) FROM pg_database"*) printf '%s\n' "${STUB_REMAINING:-0}" ;;
   *"postgis_version"*)
     [ "${STUB_POSTGIS_RC:-0}" = 0 ] || exit "$STUB_POSTGIS_RC"
@@ -208,17 +215,37 @@ def test_every_assertion_failure_cleans_up_and_publishes_failure(
     assert "OK: restore drill passed" not in completed.stdout
 
 
-@pytest.mark.parametrize("overrides", [{"STUB_DROP_RC": "1"}, {"STUB_REMAINING": "1"}])
+@pytest.mark.parametrize(
+    ("overrides", "failure_detail"),
+    [
+        ({"STUB_DROP_RC": "1"}, "scratch_precleanup_failed"),
+        ({"STUB_REMAINING": "1"}, "scratch_precleanup_failed"),
+        ({"STUB_DROP_FAIL_FROM": "2"}, "scratch_cleanup_failed"),
+    ],
+)
 def test_cleanup_that_fails_or_leaves_scratch_cannot_fall_through_to_success(
-    drill, overrides: dict[str, str]
+    drill, overrides: dict[str, str], failure_detail: str
 ) -> None:
     completed, payload, _ = drill(**overrides)
 
     assert completed.returncode != 0
     assert payload is not None
     assert payload["result"] == "failed"
-    assert payload["failure_detail"] == "scratch_cleanup_failed"
+    assert payload["failure_detail"] == failure_detail
     assert payload["scratch_removed"] is False
+    assert "OK: restore drill passed" not in completed.stdout
+
+
+def test_cleanup_failure_does_not_overwrite_the_cause_that_came_first(drill) -> None:
+    completed, payload, _ = drill(STUB_RESTORE_RC="1", STUB_DROP_FAIL_FROM="2")
+
+    assert completed.returncode != 0
+    assert payload is not None
+    assert payload["result"] == "failed"
+    assert payload["failure_detail"] == "restore_failed"
+    assert payload["scratch_removed"] is False
+    assert "FAIL: pg_restore failed" in completed.stdout
+    assert "FAIL: scratch database cleanup could not be verified" in completed.stdout
     assert "OK: restore drill passed" not in completed.stdout
 
 

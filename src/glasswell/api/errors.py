@@ -135,7 +135,7 @@ ERROR_REGISTRY: Mapping[str, ErrorSpec] = {
         emitted=False,
     ),
     "rate_limited": ErrorSpec(
-        429, "Rate limited", "The token bucket for this operation is exhausted.", emitted=False
+        429, "Rate limited", "The token bucket for this operation is exhausted."
     ),
     "payload_too_large": ErrorSpec(
         413, "Payload too large", "The request body exceeds the endpoint's cap.", emitted=False
