@@ -37,6 +37,8 @@ def test_the_seeded_artifact_is_younger_than_the_shortest_cadence():
 
 
 def test_the_pinned_vintage_is_independent_of_the_freshness_clock():
-    """Served figures assert on the vintage, so it stays fixed while the clock moves."""
+    """Served figures assert on the vintage, so it stays fixed while the clock moves. The
+    clock is asserted against now rather than against the vintage: the two coincide for one
+    day a year, and a ratchet against date-dependence must not itself be date-dependent."""
     assert FETCH_VINTAGE.isoformat() == "2026-08-01"
-    assert FETCHED_AT.date() != FETCH_VINTAGE
+    assert datetime.now(UTC) - FETCHED_AT < timedelta(days=2)
