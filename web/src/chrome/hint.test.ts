@@ -2,9 +2,9 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Test-only import: hint.ts keys on the event name rather than importing the card, so the rail
-// carries no edge into the card module. This is what proves the two still agree.
-import { EXPLAIN_EVENT } from "../card/gw-figure.ts";
+// Test-only import: hint.ts keys on the event name rather than importing the affordance it
+// only coaches, so the rail carries no edge into it. This is what proves the two still agree.
+import { EXPLAIN_EVENT } from "./handle.ts";
 import { HINT_EVENT, HINT_STORAGE_KEY, mountHint, showHint } from "./hint.ts";
 
 const SENTENCE = "Click any ⌾ to see where a number came from.";

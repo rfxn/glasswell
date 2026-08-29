@@ -5,7 +5,7 @@
  */
 import "./thematics.css";
 
-import { EXPLAIN_EVENT } from "../card/gw-figure.ts";
+import { explainHandle, setExplainHandle } from "../chrome/handle.ts";
 import {
   LIQUID_RAMP,
   LIQUIDS_BASIS_COPY,
@@ -69,19 +69,7 @@ export function createThematicsKey(): ThematicsKeyHandle {
   membership.textContent = `Membership: ${MEMBERSHIP_COPY} — ${MEMBERSHIP_RULE}.`;
   element.appendChild(membership);
 
-  const handle = document.createElement("button");
-  handle.type = "button";
-  handle.className = "gw-handle gw-thm-handle";
-  handle.textContent = "⌾";
-  handle.hidden = true;
-  handle.addEventListener("click", () => {
-    const derivation = handle.dataset["handle"];
-    if (derivation) {
-      handle.dispatchEvent(
-        new CustomEvent(EXPLAIN_EVENT, { detail: { handle: derivation }, bubbles: true }),
-      );
-    }
-  });
+  const handle = explainHandle({ className: "gw-thm-handle", label: "these bin edges" });
   element.appendChild(handle);
 
   return {
@@ -96,12 +84,7 @@ export function createThematicsKey(): ThematicsKeyHandle {
         `Per PLSS ${frame.grain} · bins cut over ${NUMBER.format(frame.population)} ` +
         `${frame.grain}s with observed liquid, frozen at refresh`;
       edges.textContent = frame.edges.map((edge) => compactVolume(edge)).join(" · ") + " bbl";
-      handle.hidden = frame.handle === null;
-      handle.dataset["handle"] = frame.handle ?? "";
-      handle.setAttribute(
-        "aria-label",
-        frame.handle ? `Show where these bin edges came from: ${frame.handle}` : "",
-      );
+      setExplainHandle(handle, frame.handle);
       element.hidden = false;
     },
     clear() {

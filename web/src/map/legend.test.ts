@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { EXPLAIN_EVENT } from "../card/gw-figure.ts";
+import { EXPLAIN_EVENT } from "../chrome/handle.ts";
 import { createLegend, legendEnabled } from "./legend.ts";
 import {
   STATUS_STORAGE_KEY,

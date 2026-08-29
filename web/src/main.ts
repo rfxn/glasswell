@@ -7,7 +7,7 @@ import { keyPanel } from "./auth/key-panel.ts";
 import { flyTo, onSelectWell, onUrlParam, selectWell, wellSelected } from "./bus.ts";
 import type { SelectSource } from "./bus.ts";
 import { renderWellCard } from "./card/card.ts";
-import { EXPLAIN_EVENT } from "./card/gw-figure.ts";
+import { EXPLAIN_EVENT } from "./chrome/handle.ts";
 import { wireHeader } from "./chrome/header.ts";
 import { registerOverlay } from "./chrome/overlays.ts";
 import { setKeyState, setStatus, setVintage, toast } from "./chrome/status.ts";

@@ -9,8 +9,8 @@ import { readSetting, writeSetting } from "./store.ts";
 
 export const HINT_STORAGE_KEY = "glasswell.hint.lineage";
 
-// card/gw-figure.ts's EXPLAIN_EVENT, kept as a literal so the rail carries no import edge into
-// the card; hint.test.ts asserts the two still agree.
+// chrome/handle.ts's EXPLAIN_EVENT, kept as a literal so the rail carries no import edge into
+// the affordance it only coaches; hint.test.ts asserts the two still agree.
 export const HINT_EVENT = "gw-explain";
 
 let host: HTMLElement | null = null;

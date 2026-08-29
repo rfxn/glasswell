@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
 
-import { EXPLAIN_EVENT } from "../card/gw-figure.ts";
+import { EXPLAIN_EVENT } from "../chrome/handle.ts";
 import { createThematicsKey } from "./thematics-key.ts";
 
 const CELL = {
@@ -51,6 +51,17 @@ describe("the thematic key", () => {
     );
     key.element.querySelector<HTMLButtonElement>(".gw-thm-handle")?.click();
     expect(seen).toHaveBeenCalledWith("drv_thematics");
+  });
+
+  it("names its handle before a frame arrives, not once the tile answers", () => {
+    // It carried no aria-label at all until `set()` ran, so a reader meeting the key early
+    // was given a button called "⌾".
+    const key = createThematicsKey();
+    const handle = key.element.querySelector<HTMLButtonElement>(".gw-thm-handle")!;
+    expect(handle.getAttribute("aria-label")).toBe("Lineage for these bin edges");
+    key.set([CELL]);
+    expect(handle.getAttribute("aria-label")).toBe("Lineage for these bin edges");
+    expect(handle.title).toContain("drv_thematics");
   });
 
   it("clears rather than keeping the last viewport's frame", () => {

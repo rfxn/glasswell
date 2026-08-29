@@ -7,7 +7,7 @@ import "./series.css";
 
 import { labelFor } from "../../api/envelope.ts";
 import type { Envelope } from "../../api/envelope.ts";
-import { EXPLAIN_EVENT } from "../../card/gw-figure.ts";
+import { EXPLAIN_EVENT } from "../../chrome/handle.ts";
 import { renderChart } from "../../chart/chart.ts";
 import { toChartSeries } from "../../chart/series.ts";
 import type { ProductionData } from "../../chart/series.ts";
