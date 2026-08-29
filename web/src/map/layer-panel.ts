@@ -1,7 +1,7 @@
 import "./layer-panel.css";
 
 import { readState } from "../app/state.ts";
-import { EXPLAIN_EVENT } from "../card/gw-figure.ts";
+import { explainHandle, setExplainHandle } from "../chrome/handle.ts";
 import { registerOverlay } from "../chrome/overlays.ts";
 import { applyCrossing, cross, whatsBehindThisLayer } from "../explore/bridge.ts";
 import type { Bbox, Crossing } from "../explore/bridge.ts";
@@ -187,24 +187,6 @@ interface LayerRow {
   setForcedOpen(open: boolean): void;
 }
 
-/** The app's one provenance affordance, as the legend and the thematic key already build it. */
-function explainHandle(className: string, description: string): HTMLButtonElement {
-  const handle = document.createElement("button");
-  handle.type = "button";
-  handle.className = `gw-handle ${className}`;
-  handle.textContent = "⌾";
-  handle.setAttribute("aria-label", description);
-  handle.addEventListener("click", () => {
-    const derivation = handle.dataset["handle"];
-    if (derivation) {
-      handle.dispatchEvent(
-        new CustomEvent(EXPLAIN_EVENT, { detail: { handle: derivation }, bubbles: true }),
-      );
-    }
-  });
-  return handle;
-}
-
 function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
   const element = document.createElement("div");
   element.className = "gw-layer-row";
@@ -255,9 +237,13 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
     ? `${layer.subtitle} — source not ingested`
     : layer.subtitle;
   if (layer.snapshot) {
-    const snapshot = explainHandle("gw-layer-snapshot", `Where ${layer.label} counts came from`);
-    snapshot.dataset["handle"] = layer.snapshot;
-    subtitle.appendChild(snapshot);
+    subtitle.appendChild(
+      explainHandle({
+        className: "gw-layer-snapshot",
+        label: `the ${layer.label.toLowerCase()} counts`,
+        handle: layer.snapshot,
+      }),
+    );
   }
   text.appendChild(subtitle);
 
@@ -276,8 +262,10 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
 
   // The same handle the legend and the thematic key resolve in one click, on the surface a
   // reader reaches a layer's provenance from.
-  const derivation = explainHandle("gw-layer-derivation", `Where ${layer.label} geometry came from`);
-  derivation.hidden = true;
+  const derivation = explainHandle({
+    className: "gw-layer-derivation",
+    label: `the ${layer.label.toLowerCase()} geometry`,
+  });
   text.appendChild(derivation);
 
   // §2.6's fourth row. `ⓘ` is in none of the three faces this product ships, so the affordance
@@ -368,8 +356,8 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
       }
     },
     setProvenance(derivationId) {
-      derivation.hidden = false;
-      derivation.dataset["handle"] = derivationId;
+      setExplainHandle(derivation, derivationId);
+      // The row spells the affordance out rather than wearing the bare glyph (map.css).
       derivation.textContent = `⌾ geometry build ${derivationId}`;
     },
     setCrossing(box, resolved, extentOff) {

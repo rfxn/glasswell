@@ -1,11 +1,10 @@
 import type { Figure } from "../api/envelope.ts";
+import { dispatchExplain, explainHandle } from "../chrome/handle.ts";
 import { formatFigure } from "./format.ts";
 
 // SB-05 §3.1: dev renders a NAKED badge and logs; the test build throws. Either way the
 // defect is visible — this element is the browser-side end of the no-naked-numbers rule.
 const STRICT = import.meta.env.MODE === "test";
-
-export const EXPLAIN_EVENT = "gw-explain";
 
 export class GwFigure extends HTMLElement {
   static observedAttributes = [
@@ -72,20 +71,18 @@ export class GwFigure extends HTMLElement {
       parts.push(chip);
     }
 
-    const handle = document_.createElement("button");
-    handle.type = "button";
-    handle.className = "gw-handle";
-    handle.setAttribute("data-handle", figure.d);
-    handle.title = `Show where this number came from: ${figure.d}`;
-    handle.setAttribute("aria-label", `Lineage for ${label ?? "this figure"}`);
-    handle.textContent = "⌾";
-    handle.addEventListener("click", (event) => {
-      event.stopPropagation();
-      this.dispatchEvent(
-        new CustomEvent(EXPLAIN_EVENT, { detail: { handle: figure.d }, bubbles: true }),
-      );
-    });
-    parts.push(handle);
+    parts.push(
+      explainHandle({
+        label: label ?? "this figure",
+        handle: figure.d,
+        // The host carries the event so a row listening above the element still hears it,
+        // and the click stops here rather than also selecting whatever encloses the figure.
+        activate: (id, event) => {
+          event.stopPropagation();
+          dispatchExplain(this, id);
+        },
+      }),
+    );
 
     this.replaceChildren(...parts);
   }

@@ -1,15 +1,17 @@
+import "./gw-figure.ts";
+
 import { ApiError, getEnvelope } from "../api/client.ts";
 import { derivationFor, labelFor, unwrap } from "../api/envelope.ts";
 import type { Envelope, Figure } from "../api/envelope.ts";
 import { readState } from "../app/state.ts";
 import { toChartSeries } from "../chart/series.ts";
 import type { ProductionData } from "../chart/series.ts";
+import { EXPLAIN_EVENT, explainHandle } from "../chrome/handle.ts";
 import { focusPanel } from "../chrome/overlays.ts";
 import { crossingLink, openThisSeries, rowsForThisWell } from "../explore/bridge.ts";
 import { labelElement } from "../glossary/gw-term.ts";
 import { highlight } from "../glossary/index.ts";
 import { termIndex } from "../glossary/store.ts";
-import { EXPLAIN_EVENT } from "./gw-figure.ts";
 import { formatVintage } from "./format.ts";
 
 export interface WellDetail {
@@ -552,19 +554,7 @@ function unavailableReason(
 }
 
 function lineageButton(handle: string, label: string): HTMLButtonElement {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "gw-handle";
-  button.dataset["handle"] = handle;
-  button.title = `Show where this value came from: ${handle}`;
-  button.setAttribute("aria-label", `Lineage for ${label.toLowerCase()}`);
-  button.textContent = "⌾";
-  button.addEventListener("click", () => {
-    button.dispatchEvent(
-      new CustomEvent(EXPLAIN_EVENT, { detail: { handle }, bubbles: true }),
-    );
-  });
-  return button;
+  return explainHandle({ handle, label: label.toLowerCase() });
 }
 
 /** The <dt> beside it is the label, so the chip carries it for assistive tech only. */

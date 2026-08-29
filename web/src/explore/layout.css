@@ -244,15 +244,6 @@
   border-left: 1px solid var(--hairline);
 }
 
-.gw-explore-eyebrow {
-  margin: 0 0 var(--gw-space-2);
-  font-size: var(--gw-fs-eyebrow);
-  font-weight: var(--gw-fw-eyebrow);
-  letter-spacing: var(--gw-ls-eyebrow);
-  text-transform: uppercase;
-  color: var(--cyan-text);
-}
-
 /* The empty grid and the empty pane are stated, not blank: a placeholder that says what will
    render there is the difference between "not built yet" and "broken". */
 .gw-explore-grid .gw-explore-note,

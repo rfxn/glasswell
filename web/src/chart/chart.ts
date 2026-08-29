@@ -2,6 +2,7 @@ import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
 import { NULL_SEMANTICS_STATES, formatMonth, nullSemantics } from "../card/format.ts";
+import { explainHandle } from "../chrome/handle.ts";
 import { THEME_EVENT } from "../chrome/theme.ts";
 import { labelElement } from "../glossary/gw-term.ts";
 import { axisLabels } from "./axes.ts";
@@ -280,16 +281,9 @@ function legend(chart: ChartSeries, callbacks: ChartCallbacks): HTMLElement {
 }
 
 function handleButton(handle: string, label: string, callbacks: ChartCallbacks): HTMLElement {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "gw-handle";
-  button.setAttribute("data-handle", handle);
-  button.setAttribute("aria-label", `Lineage for ${label}`);
-  // The same sentence <gw-figure> uses: the raw handle string taught nobody what ⌾ does.
-  button.title = `Show where this number came from: ${handle}`;
-  button.textContent = "⌾";
-  button.addEventListener("click", () => callbacks.onExplain(handle));
-  return button;
+  // The chart is mounted into hosts that route explain themselves, so it calls back rather
+  // than raising the event its own way.
+  return explainHandle({ handle, label, activate: (id) => callbacks.onExplain(id) });
 }
 
 /** Without a key the band is a strip of colour, and the gap it explains stays ambiguous. */

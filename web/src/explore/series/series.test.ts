@@ -9,7 +9,7 @@ vi.mock("uplot", () => ({
   },
 }));
 
-const { EXPLAIN_EVENT } = await import("../../card/gw-figure.ts");
+const { EXPLAIN_EVENT } = await import("../../chrome/handle.ts");
 const { productionSeries, renderSeriesPanel } = await import("./series.ts");
 const { pooledProductionEnvelope, productionEnvelope, wellsEnvelope } = await import(
   "../fixtures.ts"

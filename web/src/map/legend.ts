@@ -1,4 +1,4 @@
-import { EXPLAIN_EVENT } from "../card/gw-figure.ts";
+import { dispatchExplain, explainHandle, setExplainHandle } from "../chrome/handle.ts";
 import type { VocabularyLink } from "./counts.ts";
 import { PRODUCING_CLASSES, producingHref, producingNote } from "./producing.ts";
 import type { ProducingCounts } from "./producing.ts";
@@ -135,7 +135,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
   extentCount.textContent = ABSENT_MARK;
   extentRow.appendChild(extentCount);
 
-  const extentHandle = provenanceHandle("Lineage for the well count");
+  const extentHandle = provenanceHandle("the well count");
   extentRow.appendChild(extentHandle);
   body.appendChild(extentRow);
 
@@ -197,7 +197,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
     cell.textContent = ABSENT_MARK;
     row.appendChild(cell);
 
-    row.appendChild(provenanceHandle(`Lineage for the ${entry.label.toLowerCase()} count`));
+    row.appendChild(provenanceHandle(`the ${entry.label.toLowerCase()} count`));
     producingRows.set(entry.id, row);
     producing.appendChild(row);
   }
@@ -350,11 +350,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
       if (cell) cell.textContent = cellText(id);
       const handle = row.querySelector<HTMLButtonElement>(".gw-lg-handle");
       const derivation = mode === "ready" ? handles[id] : undefined;
-      if (handle) {
-        handle.hidden = derivation === undefined;
-        handle.dataset["handle"] = derivation ?? "";
-        handle.title = derivation ? `Show where this count came from: ${derivation}` : "";
-      }
+      if (handle) setExplainHandle(handle, derivation ?? null);
       const outOfScale = zoomNow < status.minZoom;
       const box = row.querySelector<HTMLInputElement>("input");
       if (box) box.disabled = outOfScale;
@@ -368,9 +364,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
     }
     extentCount.textContent = extentCellText();
     const population = mode === "ready" ? (totalCount?.handle ?? null) : null;
-    extentHandle.hidden = population === null;
-    extentHandle.dataset["handle"] = population ?? "";
-    extentHandle.title = population ? `Show where this count came from: ${population}` : "";
+    setExplainHandle(extentHandle, population);
     fault.hidden = mode !== "unavailable";
     fault.textContent = mode === "unavailable" ? FAULT_COPY : "";
   }
@@ -407,11 +401,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
       if (link) link.href = producingHref(id, producingCounts.bbox);
       const handle = row.querySelector<HTMLButtonElement>(".gw-lg-handle");
       const derivation = mode === "ready" ? producingCounts.handles[id] : undefined;
-      if (handle) {
-        handle.hidden = derivation === undefined;
-        handle.dataset["handle"] = derivation ?? "";
-        handle.title = derivation ? `Show where this count came from: ${derivation}` : "";
-      }
+      if (handle) setExplainHandle(handle, derivation ?? null);
     }
   }
 
@@ -559,32 +549,22 @@ function buildRow(status: StatusClass, on: boolean): HTMLElement {
   count.textContent = ABSENT_MARK;
   row.appendChild(count);
 
-  row.appendChild(provenanceHandle(`Lineage for the ${status.label} count`));
+  row.appendChild(provenanceHandle(`the ${status.label.toLowerCase()} count`));
   return row;
 }
 
-/**
- * The count is a served figure, so it carries the app's own provenance affordance and raises
- * the one event main.ts already opens the drawer on.
- */
-function provenanceHandle(description: string): HTMLButtonElement {
-  const handle = document.createElement("button");
-  handle.type = "button";
-  handle.className = "gw-handle gw-lg-handle";
-  handle.hidden = true;
-  handle.textContent = "⌾";
-  handle.setAttribute("aria-label", description);
-  handle.addEventListener("click", (event) => {
-    // Inside a <label>: without this the browser forwards the activation to the checkbox, and
-    // asking where a number came from would switch its class off. happy-dom does not implement
-    // that forwarding, so legend.test.ts pins the cancellation rather than the toggle.
-    event.preventDefault();
-    const derivation = handle.dataset["handle"];
-    if (derivation) {
-      handle.dispatchEvent(
-        new CustomEvent(EXPLAIN_EVENT, { detail: { handle: derivation }, bubbles: true }),
-      );
-    }
+/** `label` is the figure's name alone — `explainHandle` supplies the "Lineage for" prefix. */
+function provenanceHandle(label: string): HTMLButtonElement {
+  const handle = explainHandle({
+    className: "gw-lg-handle",
+    label,
+    activate: (derivation, event) => {
+      // Inside a <label>: without this the browser forwards the activation to the checkbox, and
+      // asking where a number came from would switch its class off. happy-dom does not implement
+      // that forwarding, so legend.test.ts pins the cancellation rather than the toggle.
+      event.preventDefault();
+      dispatchExplain(handle, derivation);
+    },
   });
   return handle;
 }

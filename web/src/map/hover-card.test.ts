@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
 
-import { EXPLAIN_EVENT } from "../card/gw-figure.ts";
+import { EXPLAIN_EVENT } from "../chrome/handle.ts";
 import { createHoverCard, placeCard } from "./hover-card.ts";
 import { createTileBanner } from "./tile-banner.ts";
 
@@ -220,7 +220,10 @@ describe("the hover card", () => {
     );
     const handle = card.element.querySelector<HTMLButtonElement>(".gw-hover-handle")!;
     expect(handle.hidden).toBe(false);
-    expect(handle.getAttribute("aria-label")).toContain("drv_thematics");
+    // The name says which figure it explains; the derivation id is machine detail and rides
+    // the title, so a screen reader is not read an opaque handle string.
+    expect(handle.getAttribute("aria-label")).toBe("Lineage for these cell figures");
+    expect(handle.title).toContain("drv_thematics");
     // The live ⌾ is why the cell card alone takes the pointer (map.css pairs with this).
     expect(card.element.classList.contains("gw-hover-cell")).toBe(true);
     const seen = vi.fn();

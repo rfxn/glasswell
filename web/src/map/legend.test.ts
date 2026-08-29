@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { EXPLAIN_EVENT } from "../card/gw-figure.ts";
+import { EXPLAIN_EVENT } from "../chrome/handle.ts";
 import { createLegend, legendEnabled } from "./legend.ts";
 import {
   STATUS_STORAGE_KEY,
@@ -586,7 +586,28 @@ describe("a count that is now a served figure", () => {
   it("names the class in its label, so a screen reader is not given ten identical buttons", () => {
     const legend = createLegend({ onFilter: () => {} });
     legend.setCounts({ active: 3 }, 12, HANDLES);
-    expect(handleFor(legend.element, "active")!.getAttribute("aria-label")).toMatch(/active/i);
+    // Asserted whole, not by substring: /active/i also matched the doubled
+    // "Lineage for Lineage for the active count" this file used to let through.
+    expect(handleFor(legend.element, "active")!.getAttribute("aria-label")).toBe(
+      "Lineage for the active count",
+    );
+  });
+
+  it("says 'Lineage for' once on every handle it renders, not once per author", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    document.body.appendChild(legend.element);
+    expand(legend.element);
+    legend.setCounts({ active: 3, plugged: 2 }, 12, HANDLES);
+
+    const names = [...legend.element.querySelectorAll<HTMLButtonElement>("button.gw-handle")].map(
+      (button) => button.getAttribute("aria-label") ?? "",
+    );
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) {
+      expect(name.match(/Lineage for/g), name).toHaveLength(1);
+      expect(name, name).toMatch(/^Lineage for \S/);
+    }
+    legend.element.remove();
   });
 });
 

@@ -70,7 +70,6 @@ DETAILS = (
     ("derivationEnvelope", "get_derivation", f"/v1/derivations/{DERIVATION}"),
     ("wellDetailEnvelope", "get_well", f"/v1/wells/{WELL}"),
     ("glossaryTermEnvelope", "get_glossary_term", "/v1/glossary/gt_analog"),
-    ("errorTypeEnvelope", "get_error_type", "/v1/errors/cursor_query_mismatch"),
 )
 
 COLLECTION_HEADER = '''// Recorded from the tracked `tests/support/serve_branch.py` harness by

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 
-import { EXPLAIN_EVENT } from "../card/gw-figure.ts";
+import { EXPLAIN_EVENT } from "../chrome/handle.ts";
 import { createLegend } from "./legend.ts";
 import { PRODUCING_CLASSES, PRODUCING_RULES, producingLabel } from "./producing.ts";
 

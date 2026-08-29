@@ -1,4 +1,4 @@
-import { EXPLAIN_EVENT } from "../card/gw-figure.ts";
+import { explainHandle, setExplainHandle } from "../chrome/handle.ts";
 import { disposalType } from "./disposal.ts";
 import { geometryProvenance, provenanceLine } from "./provenance.ts";
 import { statusClass } from "./status.ts";
@@ -143,19 +143,7 @@ export function createHoverCard(options: HoverCardOptions = {}): HoverCardHandle
 
   // gate-m23 cycle-1 item 8: the cell figures resolve on the card itself, so a cropped
   // screenshot of it still carries the affordance the key holds.
-  const handle = document.createElement("button");
-  handle.type = "button";
-  handle.className = "gw-handle gw-hover-handle";
-  handle.textContent = "⌾";
-  handle.hidden = true;
-  handle.addEventListener("click", () => {
-    const derivation = handle.dataset["handle"];
-    if (derivation) {
-      handle.dispatchEvent(
-        new CustomEvent(EXPLAIN_EVENT, { detail: { handle: derivation }, bubbles: true }),
-      );
-    }
-  });
+  const handle = explainHandle({ className: "gw-hover-handle", label: "these cell figures" });
   element.appendChild(handle);
 
   const place = (point: { x: number; y: number }): void => {
@@ -195,12 +183,7 @@ export function createHoverCard(options: HoverCardOptions = {}): HoverCardHandle
       `Liquid is ${LIQUIDS_BASIS_COPY}; ${MEMBERSHIP_COPY} (${MEMBERSHIP_RULE}).`;
     const derivation = properties["derivation_id"];
     const handleId = typeof derivation === "string" && derivation !== "" ? derivation : null;
-    handle.hidden = handleId === null;
-    handle.dataset["handle"] = handleId ?? "";
-    handle.setAttribute(
-      "aria-label",
-      handleId ? `Show where these figures came from: ${handleId}` : "",
-    );
+    setExplainHandle(handle, handleId);
     // The live ⌾ needs the pointer, so only the cell card takes it (see map.css).
     element.classList.add("gw-hover-cell");
     place(point);
@@ -213,10 +196,10 @@ export function createHoverCard(options: HoverCardOptions = {}): HoverCardHandle
         showCell(properties, point);
         return;
       }
-      figures.hidden = policy.hidden = handle.hidden = true;
+      figures.hidden = policy.hidden = true;
       figures.textContent = "";
       policy.textContent = "";
-      handle.dataset["handle"] = "";
+      setExplainHandle(handle, null);
       element.classList.remove("gw-hover-cell");
       const api10 = String(properties["api10"] ?? "");
       const wellName = String(properties["well_name"] ?? "").trim();

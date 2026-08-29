@@ -64,8 +64,6 @@ import { createTileBanner } from "./tile-banner.ts";
 import { tileRequest } from "./tile-request.ts";
 import { applyVariantStyling } from "./variant-style.ts";
 
-export { absoluteTileUrl } from "./style.ts";
-export { graticuleStyle as baseStyle } from "./basemap.ts";
 // Exported for the archive-failure test: the degradation path is the one part of the map
 // module that only runs when something is broken, so it is the part most likely to rot.
 export { resolveStyle as resolveBasemapStyle };

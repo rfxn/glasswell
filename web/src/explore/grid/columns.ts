@@ -209,12 +209,5 @@ export function renderHeader(column: Column): HTMLElement {
     marker.setAttribute("aria-label", `${column.name} has no glossary entry yet`);
     header.append(marker);
   }
-  if (column.hiddenReason) {
-    const note = document.createElement("span");
-    note.className = "gw-col-hidden";
-    note.textContent = "hidden";
-    note.title = column.hiddenReason;
-    header.append(note);
-  }
   return header;
 }

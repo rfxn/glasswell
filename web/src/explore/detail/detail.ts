@@ -113,7 +113,7 @@ export async function mountDetail(host: HTMLElement, options: DetailOptions): Pr
       row: recordRow(columns, envelope.data),
       data: envelope.data,
       source: `${detail.operationId} — the fuller record, ${columns.length} fields`,
-      omitted: omittedFrom(envelope.data, columns),
+      omitted: omittedFrom(envelope.data),
       resolved: (envelope as { meta?: { as_of?: { resolved?: string | null } } }).meta?.as_of
         ?.resolved,
     });
@@ -403,10 +403,10 @@ function listed(column: Column): boolean {
   return !SIDECAR.test(column.pointer) && column.pointer !== NAVIGATION;
 }
 
-function omittedFrom(data: unknown, columns: readonly Column[]): string[] {
-  const shown = new Set(columns.map((column) => column.pointer));
+/** Its one caller filters `listed`, which drops NAVIGATION, so the columns cannot hold it. */
+function omittedFrom(data: unknown): string[] {
   if (typeof data !== "object" || data === null) return [];
-  return Object.keys(data).filter((name) => `/${name}` === NAVIGATION && !shown.has(NAVIGATION));
+  return Object.keys(data).filter((name) => `/${name}` === NAVIGATION);
 }
 
 /**

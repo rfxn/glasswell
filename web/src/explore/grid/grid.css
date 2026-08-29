@@ -121,8 +121,7 @@
   min-width: 0;
 }
 
-.gw-col-head .gw-col-unbound,
-.gw-col-head .gw-col-hidden {
+.gw-col-head .gw-col-unbound {
   flex: none;
 }
 
@@ -145,13 +144,6 @@
   border-radius: var(--gw-radius-pill);
   padding: 0 0.25rem;
   line-height: 1.3;
-}
-
-.gw-col-hidden {
-  font-size: var(--gw-fs-eyebrow);
-  color: var(--amber-text);
-  text-transform: uppercase;
-  letter-spacing: var(--gw-ls-eyebrow);
 }
 
 .gw-grid-tr {
