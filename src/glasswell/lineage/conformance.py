@@ -15,6 +15,7 @@ import polars as pl
 import psycopg
 from psycopg.rows import dict_row
 
+from glasswell.lineage.clock import utc_today
 from glasswell.lineage.errors import RuleSpecError, UnknownRuleKind
 from glasswell.lineage.models import ConformanceRule
 
@@ -597,8 +598,8 @@ def load_rules(
     publication cut. Omitting the new clock means current knowledge, so existing ingestion
     calls keep their behavior without rewriting stored dates to manufacture history.
     """
-    knowledge_cut = knowledge_at or date.today()
-    effective_at = valid_at or as_of or date.today()
+    knowledge_cut = knowledge_at or utc_today()
+    effective_at = valid_at or as_of or utc_today()
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(
             _LOAD_RULES,
@@ -770,13 +771,13 @@ def lease_reporting_rule(
     """
     if not state_code:
         return None
-    knowledge_cut = knowledge_at or date.today()
+    knowledge_cut = knowledge_at or utc_today()
     with connection.cursor() as cursor:
         cursor.execute(_LEASE_BASELINE, (state_code,))
         baseline = cursor.fetchone()[0]
     if baseline is not None:
         knowledge_cut = max(knowledge_cut, baseline)
-    effective_at = valid_at or as_of or date.today()
+    effective_at = valid_at or as_of or utc_today()
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(
             _LEASE_REPORTING,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Iterator
-from datetime import UTC, date, datetime
+from datetime import date
 from typing import Annotated
 
 import psycopg
@@ -27,6 +27,7 @@ from glasswell.api.principal import (
 from glasswell.api.principal import (
     Principal as ResolvedPrincipal,
 )
+from glasswell.lineage.clock import utc_today
 from glasswell.lineage.explain import DEFAULT_DEPTH, MAX_DEPTH
 
 OWNER_KEY_ENV = "GLASSWELL_OWNER_KEY"
@@ -89,7 +90,7 @@ def rows(connection: psycopg.Connection, statement: str, params: object = None) 
 
 
 def today() -> date:
-    return datetime.now(UTC).date()
+    return utc_today()
 
 
 Connection = Annotated[psycopg.Connection, Depends(get_connection)]

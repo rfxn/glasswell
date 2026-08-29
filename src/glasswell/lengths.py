@@ -14,6 +14,7 @@ from datetime import date
 
 import psycopg
 
+from glasswell.lineage.clock import utc_today
 from glasswell.lineage.conformance import load_rules, rule_for_family
 from glasswell.lineage.errors import RuleSpecError
 from glasswell.lineage.models import ConformanceRule
@@ -110,8 +111,8 @@ def length_rule_source(
     """Which source's compute-CRS rule governs a basin. The registry answers, not a constant."""
     if not basin:
         return LATERALS_SOURCE_ID
-    effective_cut = valid_at or as_of or date.today()
-    knowledge_cut = knowledge_at or date.today()
+    effective_cut = valid_at or as_of or utc_today()
+    knowledge_cut = knowledge_at or utc_today()
     with connection.cursor() as cursor:
         cursor.execute(
             _LENGTH_RULE_SOURCE,
@@ -133,8 +134,8 @@ def resolve_length_method(
     knowledge_at: date | None = None,
 ) -> LengthMethod:
     """The one lookup every length path makes, so no two paths can measure differently."""
-    effective_cut = valid_at or as_of or date.today()
-    knowledge_cut = knowledge_at or date.today()
+    effective_cut = valid_at or as_of or utc_today()
+    knowledge_cut = knowledge_at or utc_today()
     resolved = source_id or length_rule_source(
         connection,
         basin,
