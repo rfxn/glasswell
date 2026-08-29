@@ -66,7 +66,7 @@ VOLUME_SCHEMA = dict.fromkeys(VOLUMES, pl.Decimal(18, 3))
 # execute fails at 3am inside an ingest phase instead of here).
 PROBE_FRAMES: dict[str, pl.DataFrame] = {
     "cr_nd_mpr_format_1": pl.DataFrame({"report_date": ["46082"]}),
-    "cr_nd_api_identity_1": pl.DataFrame({"api_wellno": ["33053039010000"]}),
+    "cr_nd_api_identity_2": pl.DataFrame({"api_wellno": ["33053039010000"]}),
     "cr_nd_month_convention_1": pl.DataFrame({"report_date": ["46082"]}),
     "cr_nd_land_unit_1": pl.DataFrame(
         {"township": ["151"], "range": ["101"], "section": ["11"]}
@@ -87,7 +87,7 @@ PROBE_FRAMES: dict[str, pl.DataFrame] = {
     "cr_nd_multilateral_1": pl.DataFrame(
         {"linekey": ["33011003910000_LAT1"], "lateral_ordinal": [1]}
     ),
-    "cr_nd_survey_api_identity_1": pl.DataFrame({"api_wellno": ["33007001460000"]}),
+    "cr_nd_survey_api_identity_2": pl.DataFrame({"api_wellno": ["33007001460000"]}),
     "cr_nd_survey_segment_vocab_1": pl.DataFrame({"well_sub": ["DIR"]}),
     "cr_nd_survey_station_order_1": pl.DataFrame(
         {"measdpth": ["4520.0"], "geom": ["POINT(-103.5027379 47.2394938)"]}
@@ -116,7 +116,7 @@ def registry_rows(connection: psycopg.Connection) -> list[dict]:
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(
             "select rule_id, rule_kind, stage, rationale, evidence_url, spec, source_id,"
-            "       supersedes_rule_id, effective_from"
+            "       supersedes_rule_id, effective_from, published_vintage"
             " from lineage.conformance_rules order by rule_id"
         )
         return cursor.fetchall()
@@ -416,6 +416,49 @@ def test_only_the_superseding_rule_is_loaded_for_the_laterals_source(db, seeded)
     ]
 
     assert loaded == ["cr_nd_compute_crs_2"]
+
+
+def test_the_identity_rules_were_superseded_and_the_old_rows_were_not_edited(db, seeded):
+    """R8: the silence about separators is corrected by new rows, not by editing the old.
+
+    The correction moves on knowledge time only. It states what an API literal in these
+    sources has always been, so it holds over the ancestor's whole valid interval and a
+    replay at an older report vintage does not fall back to the row that never said.
+    """
+    registry = {row["rule_id"]: row for row in registry_rows(db)}
+
+    for old, new in (
+        ("cr_nd_api_identity_1", "cr_nd_api_identity_2"),
+        ("cr_nd_survey_api_identity_1", "cr_nd_survey_api_identity_2"),
+        ("cr_ff_api_identity_1", "cr_ff_api_identity_2"),
+    ):
+        assert "separators" not in registry[old]["spec"]
+        assert registry[new]["supersedes_rule_id"] == old
+        assert registry[new]["effective_from"] == registry[old]["effective_from"]
+        assert registry[new]["published_vintage"] > registry[old]["published_vintage"]
+        assert registry[new]["spec"]["separators"] == ["-", " "]
+
+
+def test_only_the_superseding_identity_rule_is_loaded_for_every_source_on_the_spine(db, seeded):
+    """API-10 is one key, so the three loaders cannot be reading three different rows."""
+    active = {
+        (source_id, family): [
+            rule.rule_id
+            for rule in load_rules(db, source_id=source_id)
+            if rule.rule_family == family
+        ]
+        for source_id, family in (
+            ("nd_mpr_xlsx", "cr_nd_api_identity"),
+            ("nd_gis_directionals", "cr_nd_survey_api_identity"),
+            ("fracfocus_csv", "cr_ff_api_identity"),
+        )
+    }
+
+    assert active == {
+        ("nd_mpr_xlsx", "cr_nd_api_identity"): ["cr_nd_api_identity_2"],
+        ("nd_gis_directionals", "cr_nd_survey_api_identity"): ["cr_nd_survey_api_identity_2"],
+        ("fracfocus_csv", "cr_ff_api_identity"): ["cr_ff_api_identity_2"],
+    }
 
 
 def test_the_active_length_method_is_zone_free(db, seeded):

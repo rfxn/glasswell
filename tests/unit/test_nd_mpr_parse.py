@@ -7,7 +7,6 @@ from decimal import Decimal
 from pathlib import Path
 
 import polars as pl
-import pytest
 
 from glasswell.ingest import nd_mpr
 from glasswell.lineage.conformance import apply_rules
@@ -45,13 +44,8 @@ def test_a_serial_inside_the_month_still_names_the_first_of_it():
     assert nd_mpr.excel_serial_to_month(46082 + 17) == date(2026, 3, 1)
 
 
-def test_api10_is_the_first_ten_digits_of_the_api14():
-    assert nd_mpr.api10_from_api14("33053039010000") == "3305303901"
-
-
-def test_a_thirteen_digit_identifier_raises_rather_than_being_sliced():
-    with pytest.raises(ValueError, match="14"):
-        nd_mpr.api10_from_api14("3305303901000")
+# The API-10 slice is one registry-driven decision shared with the FracFocus and ND GIS
+# loaders; all three read it in test_api10_identity.py.
 
 
 def test_the_skimmed_crude_recovery_sheet_is_not_read():

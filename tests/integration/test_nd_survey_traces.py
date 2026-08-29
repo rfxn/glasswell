@@ -62,7 +62,7 @@ SEGMENT_KINDS = {
 }
 SURVEY_RULES = (
     "cr_nd_datum_1",
-    "cr_nd_survey_api_identity_1",
+    "cr_nd_survey_api_identity_2",
     "cr_nd_survey_azimuth_reference_1",
     "cr_nd_survey_min_stations_1",
     "cr_nd_survey_segment_vocab_1",

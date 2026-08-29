@@ -20,10 +20,16 @@ import openpyxl
 import polars as pl
 import psycopg
 
+from glasswell.identity import api10_identity
 from glasswell.ingest.base import IngestRun, open_ingest_run, record_vintage_day
 from glasswell.lineage.audit import emit
 from glasswell.lineage.capture import derive
-from glasswell.lineage.conformance import QuarantineBatch, apply_rules, load_rules
+from glasswell.lineage.conformance import (
+    QuarantineBatch,
+    apply_rules,
+    load_rules,
+    rule_for_family,
+)
 from glasswell.lineage.errors import VintageAlreadyPromoted
 from glasswell.lineage.fetch import fetch_raw
 from glasswell.lineage.fetch_attempts import durable_fetch_attempts
@@ -42,11 +48,11 @@ EXCEL_EPOCH = date(1899, 12, 30)
 GRANULARITY = "well_observed"
 
 FORMAT_RULE = "cr_nd_mpr_format_1"
-IDENTITY_RULE = "cr_nd_api_identity_1"
+IDENTITY_FAMILY = "cr_nd_api_identity"
 MONTH_RULE = "cr_nd_month_convention_1"
 UNITS_RULE = "cr_nd_units_1"
 # Parse rules whose spec this module consumes per row, rather than only at the header.
-TYPING_RULES = (FORMAT_RULE, IDENTITY_RULE, MONTH_RULE)
+TYPING_RULES = (FORMAT_RULE, MONTH_RULE)
 
 # The reason vocabulary is read from the CHECK (migration 011), never hardcoded. A rule naming
 # a code the CHECK does not admit still degrades rather than raising, keeping its rule_id.
@@ -61,7 +67,6 @@ AGGREGATION = "sum_over_pools"
 _PROMOTION_INDEX = "__glasswell_promotion_index"
 
 _ISO_DATE_RE = re.compile(r"\A\d{4}-\d{2}-\d{2}")
-_NON_DIGITS_RE = re.compile(r"\D")
 _SNAKE_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _REASON_LITERAL_RE = re.compile(r"'([a-z_]+)'::text")
 
@@ -108,24 +113,6 @@ def month_from_cell(value: object, *, epoch: date = EXCEL_EPOCH) -> date | None:
     try:
         return excel_serial_to_month(text, epoch=epoch)
     except ValueError:
-        return None
-
-
-def api10_from_api14(
-    value: object, *, digits: int = 14, api10_slice: Sequence[int] = (0, 10)
-) -> str:
-    """API-10 is the first ten digits of API_WELLNO; digits 13-14 are convention, not identity."""
-    text = _NON_DIGITS_RE.sub("", str(value))
-    if len(text) != digits:
-        raise ValueError(f"{value!r} is not a {digits}-digit API number")
-    start, stop = api10_slice
-    return text[start:stop]
-
-
-def _api10_or_none(value: object, **options: Any) -> str | None:
-    try:
-        return api10_from_api14(value, **options)
-    except (TypeError, ValueError):
         return None
 
 
@@ -222,15 +209,11 @@ def load_staging(connection: psycopg.Connection, frame: pl.DataFrame, *, manifes
 def _typed_frame(
     staged: pl.DataFrame, *, rules: Sequence[ConformanceRule], measures: Sequence[str]
 ) -> pl.DataFrame:
-    identity = _rule(rules, IDENTITY_RULE).spec
+    identity = api10_identity(rule_for_family(rules, IDENTITY_FAMILY))
     epoch = date.fromisoformat(str(_rule(rules, MONTH_RULE).spec["epoch"]))
-    options = {
-        "digits": int(str(identity["digits"])),
-        "api10_slice": tuple(identity["api10_slice"]),
-    }
     return staged.with_columns(
         pl.col("api_wellno")
-        .map_elements(lambda value: _api10_or_none(value, **options), return_dtype=pl.String)
+        .map_elements(identity.normalize, return_dtype=pl.String)
         .alias("api10"),
         pl.col("report_date")
         .map_elements(lambda value: month_from_cell(value, epoch=epoch), return_dtype=pl.Date)
@@ -727,11 +710,12 @@ def _parse_and_stage(
             counts=counts,
         )
         staged_rows = load_staging(connection, parsed.frame, manifest_id=manifest.manifest_id)
+        typing_rules = (*TYPING_RULES, rule_for_family(parse_rules, IDENTITY_FAMILY).rule_id)
         for rule_id in parsed.applied_rule_ids:
             # A parse_directive executor only checks the header; the specs this module
             # reads per row (the sheet, the api10 slice, the month epoch) shaped every
             # staged row and say so, and the rest stamp what they touched: nothing.
-            shaped = rule_id in TYPING_RULES
+            shaped = rule_id in typing_rules
             parsing.add_rule(
                 rule_id, applied_rows=staged_rows if shaped else parsed.applied_rows[rule_id]
             )
@@ -773,6 +757,7 @@ def promote_manifest(
         if rule.rule_kind != "code_ref"
     ]
     sheet = str(_rule(parse_rules, FORMAT_RULE).spec["sheet"])
+    identity_rule_id = rule_for_family(parse_rules, IDENTITY_FAMILY).rule_id
     labels = _stream_labels(connection)
     measures = [_snake(label) for label in labels]
     vocabulary = _reason_vocabulary(connection)
@@ -817,7 +802,7 @@ def promote_manifest(
                 run,
                 [
                     QuarantineBatch(
-                        reason_code=IDENTITY_REASON, rule_id=IDENTITY_RULE, frame=unidentified
+                        reason_code=IDENTITY_REASON, rule_id=identity_rule_id, frame=unidentified
                     )
                 ],
                 stage="parse",
@@ -862,7 +847,7 @@ def promote_manifest(
                         rule_id=(
                             ENTITY_KEY_RULE
                             if ENTITY_KEY_RULE in conformed.applied_rule_ids
-                            else IDENTITY_RULE
+                            else identity_rule_id
                         ),
                         frame=promoted.collided,
                     )

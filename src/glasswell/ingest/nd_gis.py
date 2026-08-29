@@ -20,6 +20,7 @@ import polars as pl
 import psycopg
 from psycopg.rows import dict_row
 
+from glasswell.identity import api10_identity
 from glasswell.ingest.base import record_vintage_day, resolve_environment
 from glasswell.ingest.shapefile import ShapefileRecord, ZippedShapefile
 from glasswell.lengths import LengthMethod, compute_crs_rule, length_method
@@ -48,6 +49,7 @@ LAND_UNIT_RULE_ID = "cr_nd_land_unit_1"
 BASIN_RULE_ID = "cr_nd_basin_1"
 SEGMENT_FAMILY = "cr_nd_segment_vocab"
 SURVEY_SEGMENT_FAMILY = "cr_nd_survey_segment_vocab"
+SURVEY_IDENTITY_FAMILY = "cr_nd_survey_api_identity"
 SURVEY_TRACE_GEOM_TYPE = "survey_trace"
 _LINEKEY = re.compile(r"\A(?P<api14>\d{14})_(?P<segment>[A-Za-z]+)(?P<ordinal>\d*)\Z")
 
@@ -1133,7 +1135,7 @@ _SURVEYS_SCHEMA = {
     "latitude": pl.Float64,
 }
 
-# The identity columns cr_nd_survey_api_identity_1 adds, declared so an empty layer still
+# The identity columns the cr_nd_survey_api_identity rule adds, declared so an empty layer still
 # presents the columns the vocabulary rule maps, and then the column that rule writes.
 _KEYED_SURVEY_SCHEMA = {**_SURVEYS_SCHEMA, "api14": pl.String, "api10": pl.String}
 _ADMITTED_SURVEY_SCHEMA = {**_KEYED_SURVEY_SCHEMA, "segment_kind": pl.String}
@@ -1167,17 +1169,16 @@ on conflict (api10, geom_type, geom_key) do nothing
 def keyed_stations(
     frame: pl.DataFrame, rule: ConformanceRule
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Split on identity: the slice and the digit count are the rule's, not this function's."""
-    digits = int(rule.spec["digits"])
-    start, stop = (int(bound) for bound in rule.spec["api10_slice"])
+    """Split on identity: the whole spec is the rule's, not this function's."""
+    identity = api10_identity(rule)
     keyed: list[dict[str, Any]] = []
     unkeyed: list[dict[str, Any]] = []
     for row in frame.iter_rows(named=True):
-        api14 = (row["api_wellno"] or "").strip()
-        if len(api14) != digits or not api14.isdigit():
+        api14 = identity.literal(row["api_wellno"])
+        if api14 is None:
             unkeyed.append(row)
             continue
-        keyed.append({**row, "api14": api14, "api10": api14[start:stop]})
+        keyed.append({**row, "api14": api14, "api10": identity.normalize(api14)})
     return keyed, unkeyed
 
 
@@ -1308,7 +1309,9 @@ def _promote_surveys(
     staged_rows: int,
     datum: ConformanceRule,
 ) -> LoadResult:
-    identity = _rule(connection, spec.source_id, "cr_nd_survey_api_identity_1")
+    identity = rule_for_family(
+        load_rules(connection, source_id=spec.source_id, stage="parse"), SURVEY_IDENTITY_FAMILY
+    )
     ordering = _rule(connection, spec.source_id, "cr_nd_survey_station_order_1")
     ranges = _rule(connection, spec.source_id, "cr_nd_survey_station_range_1")
     minimum = _rule(connection, spec.source_id, "cr_nd_survey_min_stations_1")
