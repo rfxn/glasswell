@@ -246,7 +246,9 @@ finish() {
 	else
 		scratch_removed=false
 		result=failed
-		failure_detail=scratch_cleanup_failed
+		# scratch_removed carries the leak; failure_detail keeps the cause that came first,
+		# so a cleanup miss never hides an unrestorable dump.
+		[[ -n $failure_detail ]] || failure_detail=scratch_cleanup_failed
 		exit_code=1
 		log "FAIL: scratch database cleanup could not be verified"
 	fi

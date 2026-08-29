@@ -59,6 +59,21 @@ assert_false() {
     fi
 }
 
+# `systemctl show -p Result` answers `success` for a unit that is absent or has never run, so the
+# run evidence is asserted separately from the verdict.
+last_run_state() {
+    local load started
+    load="$(systemctl show "$1" -p LoadState --value)"
+    started="$(systemctl show "$1" -p ExecMainStartTimestamp --value)"
+    if [[ $load != loaded ]]; then
+        printf '%s\n' "$load"
+    elif [[ -z $started ]]; then
+        printf 'never-ran\n'
+    else
+        printf 'ran\n'
+    fi
+}
+
 listening_on() { ss -ltn | grep -q "$1"; }
 glob_matches() { compgen -G "$1" >/dev/null; }
 api_curl() { curl --unix-socket "$API_SOCKET" "$@"; }
@@ -109,6 +124,8 @@ assert "glasswell-lineage-retention.timer enabled" enabled \
     "$(systemctl is-enabled glasswell-lineage-retention.timer)"
 assert "glasswell-lineage-retention.timer active" active \
     "$(systemctl is-active glasswell-lineage-retention.timer)"
+assert "glasswell-lineage-retention.service has run" ran \
+    "$(last_run_state glasswell-lineage-retention.service)"
 assert "glasswell-lineage-retention.service last result" success \
     "$(systemctl show glasswell-lineage-retention.service -p Result --value)"
 backup_enabled="$(systemctl is-enabled glasswell-backup.timer 2>/dev/null)"
@@ -121,6 +138,8 @@ if [[ $backup_enabled == enabled ]]; then
 else
     ok "backup and restore-drill timers are intentionally disabled"
 fi
+assert "glasswell-status.service has run" ran \
+    "$(last_run_state glasswell-status.service)"
 assert "glasswell-status.service last result" success \
     "$(systemctl show glasswell-status.service -p Result --value)"
 assert_true "status snapshot is a regular file" "missing at $STATUS_SNAPSHOT" \
