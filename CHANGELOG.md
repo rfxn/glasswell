@@ -7,6 +7,229 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.62"></a>
+## v0.62 — 2026-08-29
+
+- [Fix] API-10 normalisation is one registry-driven decision instead of three loaders
+      disagreeing: FracFocus hardcoded the digit count, the slice, the state code and the
+      state name that `cr_ff_api_identity` already seeded, so `/conformance` described a
+      rule row that governed nothing
+- [Fix] A dashed identity no longer keys under FracFocus and the ND MPR while
+      quarantining under ND GIS surveys; no identity rule row said whether a published
+      API literal may carry punctuation, so `33-053-03901-00-00` was an identity under
+      one rule and `key_incomplete` under another. The survey and MPR keys meet at one
+      checkable predicate — `/v1/wells/status-summary` reads `canonical.well_spatial`
+      with no `geom_type` filter and classes it against `canonical.production_monthly`
+      on `api10` — where the separator decided whether the well appeared from this
+      source at all, not how its key was spelled
+- [New] `cr_ff_api_identity_2`, `cr_nd_api_identity_2` and `cr_nd_survey_api_identity_2`
+      supersede their ancestors and declare the separator set explicitly, evidenced from
+      the FracFocus data dictionary's own `xx-xxx-xxxxx-00-00` template; they correct on
+      knowledge time and keep the ancestor's valid time, so a replay at an older report
+      vintage reads the corrected row rather than the one that never said; migration 054
+      registers their publication
+- [Change] Only the two declared separators are removed before an API-14 is read, where
+         the FracFocus and ND MPR loaders previously deleted every non-digit character;
+         `API 33053039010000` and `33053039010000 (amended)` keyed onto a real well and
+         now quarantine under their declared reason code
+- [Change] `glasswell.identity` reads the identity spec off the rule row and refuses a row
+         that leaves it unstated, so an undeclared identity decision fails at the registry
+         rather than being invented per loader
+- [Fix] restore drill: a scratch-cleanup failure no longer overwrites the cause that came
+      first, so result.json still names the unrestorable dump while scratch_removed carries
+      the cleanup miss
+- [Fix] backup retention: a generation now expires as a unit on its dump's mtime, manifest
+      first, so a generation straddling the cutoff can no longer strand a manifest without
+      its archive and abort the next restore drill with manifest_dump_missing
+- [Fix] backup retention: a prune that cannot delete now fails the run after the offsite
+      push instead of logging a WARN and exiting 0, so OnFailure fires before the disk fills
+- [Fix] verify.sh: the retention-sweep and status-collector result assertions now check run
+      evidence; systemctl show -p Result answers success for a unit that is absent or has
+      never run
+- [Fix] The knowledge clock is read in UTC everywhere rather than from the host, so a machine
+      west of UTC no longer spends its evening unable to see rules PostgreSQL published today;
+      every registry lookup returned empty in that window and callers quarantined rows they
+      should have resolved, recording the run as normal
+- [Fix] The map legend's producing counts are wired to the response that carries them; the
+      section was built, tested and never called, so it could not render at all
+- [Fix] `rate_limited` is served as a code this slice emits, which it does — `/v1` and
+      `/v1/errors/{code}` published `emitted_by_this_slice: false` for a code the wells router
+      raises
+- [Fix] assets/lineage.svg names the served `/v1/explain`, `/v1/conformance` and
+      `/v1/quarantine`, replacing a `/quality` namespace that has never existed, and puts the
+      unbuilt `/scorecard`, `/recipes` and `/audit` on the designed line under their blueprint
+      names
+- [Change] Architecture records the lineage-retention timer and the spacing-units tile view,
+         security policy stops describing the project as pre-build 42 tags in, and status,
+         roadmap and llms.txt carry the deployed v0.61 at schema head 52 with re-measured
+         suite sizes
+- [Change] The Postgres tuning drop-in is resized for VM 111 as it runs — 8 vCPU, 16 GiB
+         resident, PGDATA on the ssd-pool — rather than for the 8 GiB balloon floor.
+         Allocations still assume the floor is reachable, because the balloon reclaims page
+         cache and never the shared-memory segment; planner hints do not, because they
+         allocate nothing. `shared_buffers` 2GB to 4GB, `effective_cache_size` 6GB to 12GB
+- [New] Thirteen settings the drop-in never carried, for a database that has grown 18x and
+      has a 17.6M-row promotion queued: WAL sizing (`wal_buffers`, `min_wal_size`,
+      `max_wal_size`, `checkpoint_timeout`) against a bulk promotion that writes ~12 GB of
+      relation data through a 1GB checkpoint trigger; parallelism capped at four workers
+      plus the leader, which is C26's five-of-eight-vCPU batch cap; and autovacuum reach
+      for tables whose `reject_mutation` trigger makes insert-driven freezing, not bloat,
+      the risk
+- [Change] `work_mem` 32MB to 64MB, bounded by martin's `pool_size` of 10 and the
+         cluster-wide parallel-worker cap rather than by `max_connections`, and
+         `autovacuum_work_mem` pinned at 256MB so raising `maintenance_work_mem` to 1GB
+         cuts the autovacuum burst from 1.5 GB to 0.75 GB instead of tripling it
+- [Change] `max_connections` 60 to 80: there is no connection pool, so one map pan's
+         tile-proxy requests take 12-24 of the 57 usable and martin's pool takes 10
+- [Fix] `infra/README.md` said the tuning was shipped but not applied. It was applied on
+      2026-08-20 at 15:25:57 and an independent gate read `shared_buffers` back off the
+      running server the same afternoon; the claim outlived the fact by eight days. The
+      section now separates what was measured from what nobody has confirmed, and no
+      longer asserts a state without evidence
+- [Fix] `verify.sh`'s tuning block counted nothing, so a drop-in reformatted to `key=value`
+      matched no line and produced output indistinguishable from a pass (F28). It now
+      asserts that at least one setting was checked, and its parser tolerates an inline
+      comment and a digit in a setting name
+- [New] A measurement runbook in `infra/README.md`: the SQL for database and relation
+      sizes, cache hit ratio, connection high-water, checkpoint counters and autovacuum
+      reach, the apply sequence including the 4 GiB swapfile SB-06 2.3 asked for and
+      provisioning never created, and which four values to re-check once real numbers
+      come back
+- [Fix] `infra/README.md` said martin publishes three function sources in four places,
+      one of them a runbook command asserting `expect exactly three ids`. The roster has
+      been ten since the land-grid and TX layers landed, so that check failed on a
+      correct host; the martin role's grant spans migrations 026-035, not 026 alone
+- [Fix] The swapfile runbook step appended to `/etc/fstab` unconditionally inside a step
+      documented as rerunnable, so a second run duplicated the entry and `fallocate`
+      failed on a swapfile already in use. Both halves are guarded
+- [Change] The applied-state paragraph names its evidence as internal deploy and gate
+         records under the git-excluded `work-output/`, rather than citing paths a
+         repository checkout cannot resolve
+- [New] TX wellbore: a depth or completion date the parser cannot read is quarantined
+      per field as `unreliable_numeric` or `out_of_range_date`, carrying `filed_as`,
+      `field_action` and the row's ordinal, so a filing the reader failed on is no
+      longer indistinguishable from one the regulator never made
+- [Change] `WellboreLoad.quarantined` counts the two new reason codes rather than
+         reporting zeroes for a class the loader never produced
+- [Fix] a blank TX measure stays an absence and is not quarantined, and the well still
+      promotes with the field null rather than being dropped
+- [Fix] the service index publishes its promotion row counts with the derivation handle
+      `/v1/vintages` already gives them, retiring two allowlist exemptions written
+      around the gap rather than around a ruling
+- [Fix] `register_manifest` refuses the same bytes under a second (source_id,
+      source_key) instead of returning the incumbent's manifest, so a slot can no
+      longer inherit another slot's provenance and resolve `/explain` to the wrong
+      government file; `ManifestConflict` is raised rather than dead
+- [Fix] an ArcGIS layer matching no features is refused as `EmptyWalk` rather than
+      sealed as a zero-byte artifact whose hash every empty harvest shares
+- [Change] raw-zone staging is scoped by source slot, not by content hash alone, and
+         the reuse-or-place block is one helper shared by the HTTP and ArcGIS
+         registrars, refusing before the payload is moved into place
+- [Fix] the ND re-promotion and the NM production promotion record the derivation that
+      promoted them on their vintage-day ledger row, and a run carrying none no longer
+      overwrites the one the ledger already holds
+- [Fix] a vintage row no derivation promoted withholds `rows_examined`, `rows_appended`
+      and `restatement_summary` as null on `/v1` and `/v1/vintages` rather than serving
+      counts no handle can explain; a promoted row is unaffected
+- [Fix] TX identity promotion refuses a layout that no longer declares a measured
+      column instead of reading it as absent and nulling the field on every well
+- [New] TX withholding is registered as `cr_tx_ewa_measures_1` — the withheld fields,
+      their reason codes and `field_action` are read from the rule row, both quarantine
+      calls and the promotion derivation cite it, and an action the loader cannot
+      execute is refused
+- [Fix] the ArcGIS empty-layer test names its true motivating source, the two
+      `blm_plss` slots on one scoped MapServer, not `tx_gis_wells_county`, which
+      fetches over `mft_guid_resolve` and never walks an ArcGIS layer
+- [Fix] verify.sh: an empty tile roster and an unparseable martin catalogue are each
+      their own named failure rather than compared to each other; both sides came from
+      a command whose stderr is suppressed, so a venv that cannot import the marts and
+      a martin that answered nothing read as ok while the per-layer loop ran zero times
+- [Change] verify.sh: the deploy-hygiene sweep reads compgen output line by line rather
+         than word-splitting it, so a stray path containing a space stays one path
+- [Fix] app.env.example pins the lockfile fingerprint requirements.lock actually has;
+      the shipped value was fifteen releases stale, and install.sh copies it verbatim to
+      /etc/glasswell/app.env, so a fresh host stamped every lineage node with a false
+      environment and P3 publication refused outright on lockfile_stamp_mismatch
+- [Fix] workstation-hygiene.sh: the orphan-volume probe suppresses stderr like every
+      sibling docker call in the file, so a daemon warning is no longer counted as a
+      volume; the container age is converted from docker's prose and compared against
+      CONTAINER_MAX_HOURS, anchored on the age field, rather than against a baked-in
+      regex that ignored the threshold and matched a container merely named "days"
+- [Fix] scripts/experiments/lib.sh: gw_psql resolves the DSN and reads the status back
+      before calling psql; gw_die's exit fired inside `$(gw_dsn)`, terminating only the
+      substitution, so an experiment could print a VERDICT computed from whatever PG*
+      pointed at
+- [New] the lockfile fingerprint app.env.example pins is asserted against
+      requirements.lock, so a dependency bump cannot leave every lineage node on a
+      fresh host carrying a false environment stamp
+- [New] the fingerprint test also binds the pin to the env var and the lockfile path the
+      publication gate reads, and to install.sh seeding the example unchanged, so a
+      rename cannot leave the digest assertion green and inert
+- [Change] every 2>/dev/null in workstation-hygiene.sh carries its justification on its
+         own line; it was the repo's sole outlier on that rule
+- [New] deploy.sh step 7d polls martin's /catalog, the endpoint verify.sh reads, before
+      the gate runs; martin loads its whole source catalogue from PostgreSQL at startup
+      and answers /health before it is populated, so the per-layer assertions could fail
+      a deploy that was fine
+- [Change] both deploy.sh readiness loops count arithmetically instead of word-splitting
+         `$(seq 1 30)`
+- [Change] both martin guards distinguish a failed read from a successful empty one: an
+         import or parse failure and an empty TILE_LAYERS or empty tiles list are
+         separate refusals, so the reason names the fault the operator has to fix
+- [Fix] deploy.sh's martin wait parses /catalog and requires a non-empty tiles list; it
+      matched the string "tiles", so `{"tiles":[]}` satisfied the wait it exists to
+      outlast and verify.sh failed immediately after
+- [Fix] The health contract was seven days from reddening on a calendar date rather than a
+      code change: `tests/support/seed.py` pinned the artifact clock at 2026-08-01, and
+      migration 050's 35-day cadence turns an artifact older than its interval `stale`
+      when no durable attempt proves a check. The vintage stays pinned, because served
+      figures assert on it; the freshness clock is now relative to the run
+- [New] A ratchet asserting the seeded artifact is younger than the shortest cadence the
+      migrations declare, so the same fixture cannot age out again unnoticed
+- [Change] Gate G9's tree invariant — A1b's block is 020-024, versions contiguous from 1 —
+         is its own test and never skips; the status-file lookup is separate and resolves
+         the artifact across both of its known homes. The gate had skipped itself since
+         the wave-1 archive move, in the exact environment its stated reason claimed it
+         should run in, while two status files recorded it as PASS
+- [Fix] Two contract ratchets could pass over a feature that no longer existed, and now
+      count what they measure
+- [Remove] `lateral_ordinals` in the ND GIS fixture cutter ignored the reader it was
+         handed and returned the same `range(RECORD_COUNT)` its sibling call site inlines,
+         under a docstring describing two records rather than three hundred
+- [Fix] `STATUS.md`'s verification counts are derived from the suite rather than carried
+      forward from the previous release: 2,916 Python tests with one skip and 1,290 web
+      tests across 86 files, where the ledger had stated 2,817/2 and 1,274/85. The
+      figures had gone stale because the release marker was edited and the numbers
+      beneath it were not
+- [New] `web/src/chrome/handle.ts` is the one builder for R6's ⌾ derivation affordance, owning
+      `EXPLAIN_EVENT`, the button's shape and the accessible contract it carries
+- [Fix] The ⌾ handle names the figure it explains before any derivation arrives; the map hover
+      card and the thematic key set no `aria-label` until their tile answered, so a screen
+      reader met an unnamed button, and both blanked the name again whenever the handle went
+      away
+- [Change] The derivation id rides `title` rather than the accessible name, so assistive tech
+         is read "Lineage for these cell figures" instead of an opaque handle string; the
+         handle is visible exactly when it has a derivation to resolve
+- [Change] The seven hand-built copies of the affordance — layer panel, legend, hover card,
+         thematic key, well card, chart and `<gw-figure>` — are routed through the shared
+         builder, with the chart's callback form, the legend's `<label>` cancellation and the
+         element's host dispatch kept as declared options rather than private redrafts
+- [Fix] `card.ts` registers `<gw-figure>` by an explicit side-effect import; it had been
+      relying on a named import for the custom element's registration
+- [New] `explainHandle` refuses a label that already carries the "Lineage for" prefix — the
+      test build throws and the dev build logs, as `<gw-figure>` does for a naked number — so a
+      caller cannot name the button twice; every label is interpolated from data, so the rule
+      has to be checked rather than remembered
+- [Remove] Dead web code first reported at v0.47 and still present at v0.61: `DIALECT_TITLES`,
+      `isGlossaryLoaded` and the write-only flag behind it, the unreachable hidden-column badge
+      in `renderHeader` with the two `gw-col-hidden` rules it took with it, and the always-true
+      conjunct in the explorer detail's `omittedFrom`
+- [Remove] Three unread test fixtures — `glossaryIndexEnvelope`, `glossaryTermsEnvelope` and
+      `errorTypeEnvelope`; the recorder's `DETAILS` entry for the last one goes with it, so the
+      deletion is not undone the next time fixtures are recorded
+- [Remove] The `absoluteTileUrl` and `baseStyle` re-exports from `map/map.ts`, which nothing
+      imported, and the orphaned `.gw-explore-eyebrow` rule
+
 <a id="v0.61"></a>
 ## v0.61 — 2026-08-28
 
