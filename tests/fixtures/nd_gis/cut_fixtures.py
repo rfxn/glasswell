@@ -80,11 +80,6 @@ def write_subset(
                 bundle.write(stem.with_suffix(extension), inner + extension)
 
 
-def lateral_ordinals(reader: shapefile.Reader) -> list[int]:
-    """The head of the file: records 0 and 1 are the documented _LAT1/_LAT2 pair."""
-    return list(range(RECORD_COUNT))
-
-
 def well_ordinals(reader: shapefile.Reader, api10s: set[str]) -> list[int]:
     """Every well the lateral fixture references, one well per reported status, then the head."""
     records = [reader.record(ordinal) for ordinal in range(len(reader))]
@@ -118,7 +113,7 @@ def survey_ordinals(reader: shapefile.Reader) -> list[int]:
 def cut(downloads: Path, destination: Path) -> dict[str, int]:
     destination.mkdir(parents=True, exist_ok=True)
     laterals, lateral_prj = open_layer(downloads / "OGD_Horizontals_Line.zip")
-    lateral_rows = lateral_ordinals(laterals)
+    lateral_rows = list(range(RECORD_COUNT))
     api10s = {laterals.record(ordinal)["linekey"][:10] for ordinal in lateral_rows}
     write_subset(
         laterals, lateral_prj, lateral_rows, destination / "OGD_Horizontals_Line_300.zip"
