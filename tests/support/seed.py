@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -15,7 +15,10 @@ from glasswell.lineage.store import PostgresRecorder
 from tests.conftest import FIXTURE_ENV_ID
 from tests.support.fakes import FixedClock
 
-FETCHED_AT = datetime(2026, 8, 1, 5, 2, 11, tzinfo=UTC)
+# The vintage is pinned because served figures assert on it; the freshness clock is not,
+# because migration 050's 35-day cadence turns a fixed one `stale` on a calendar date.
+FETCH_VINTAGE = date(2026, 8, 1)
+FETCHED_AT = datetime.now(UTC) - timedelta(days=1)
 EFFECTIVE_FROM = date(2026, 8, 1)
 LATERAL_WKT = "LINESTRING(-103.5803 47.9075, -103.5401 47.9081)"
 SURFACE_WKT = "POINT(-103.5803 47.9075)"
@@ -35,8 +38,14 @@ def seed_manifest(
     sha256: str,
     source_id: str = "nd_mpr_xlsx",
     source_key: str = "2024_03.xlsx",
-    fetched_at: datetime = FETCHED_AT,
+    fetched_at: datetime | None = None,
+    fetch_vintage: date | None = None,
 ) -> str:
+    # A caller that names its own fetched_at is choosing the vintage with it; only the
+    # default corpus pins one, so its clock can move without moving the served figure.
+    if fetched_at is None:
+        fetched_at = FETCHED_AT
+        fetch_vintage = fetch_vintage or FETCH_VINTAGE
     registration = register_manifest(
         connection,
         sha256=sha256,
@@ -46,6 +55,7 @@ def seed_manifest(
         acquisition_url=f"https://example.invalid/{source_key}",
         acquisition_method="https_get",
         fetched_at=fetched_at,
+        fetch_vintage=fetch_vintage,
         storage_uri=f"/data/raw/{source_id}/{source_key}",
     )
     return registration.manifest.manifest_id

@@ -258,15 +258,25 @@ def test_no_exemption_covers_a_served_figure(client: TestClient) -> None:
 def test_no_number_is_naked_in_any_reachable_derivation(client: TestClient) -> None:
     """One published example per operation is not the surface. Every handle has a record too."""
     offenders: dict[str, list[str]] = {}
-    for handle in sorted(walked_handles(client)):
+    unreachable: dict[str, int] = {}
+    walked = sorted(walked_handles(client))
+    assert walked, "no response carried a handle, so this walk proves nothing"
+    for handle in walked:
         derivation = parse_handle(handle).derivation_id
-        body = payload(
-            client.get(f"/v1/derivations/{derivation}", params={"include": ["inputs", "rules"]})
+        response = client.get(
+            f"/v1/derivations/{derivation}", params={"include": ["inputs", "rules"]}
         )
-        found = naked_numbers(body)
+        # A problem body is application/problem+json, which `payload` reads as None and
+        # `naked_numbers` reads as no offenders. Without this a 404 on a handle-derived id
+        # is indistinguishable from a clean record (F14).
+        if response.status_code != 200:
+            unreachable[derivation] = response.status_code
+            continue
+        found = naked_numbers(payload(response))
         if found:
             offenders[derivation] = found
 
+    assert unreachable == {}
     assert offenders == {}
 
 
