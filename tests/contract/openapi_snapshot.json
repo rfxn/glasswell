@@ -4414,6 +4414,14 @@
       },
       "PublishedVintage": {
         "properties": {
+          "_lineage": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Handle per bookkeeping number, the same one `/v1/vintages` publishes.",
+            "title": "Lineage",
+            "type": "object"
+          },
           "promotion_derivation_id": {
             "anyOf": [
               {
@@ -4429,14 +4437,12 @@
           "rows_appended": {
             "description": "Rows appended; restatements append, never update.",
             "title": "Rows Appended",
-            "type": "integer",
-            "x-glasswell-not-a-figure": "Promotion bookkeeping from lineage.vintages, not a served observation."
+            "type": "integer"
           },
           "rows_examined": {
             "description": "Rows read during the promotion.",
             "title": "Rows Examined",
-            "type": "integer",
-            "x-glasswell-not-a-figure": "Promotion bookkeeping from lineage.vintages, not a served observation."
+            "type": "integer"
           },
           "source_id": {
             "description": "Source the vintage was promoted from.",

@@ -928,6 +928,13 @@ def list_derivations(
 _VINTAGE_SIDECAR: tuple[str, ...] = ("rows_examined", "rows_appended", "restatement_summary")
 
 
+def vintage_lineage(promotion_derivation_id: str | None) -> dict[str, str]:
+    """Shared so the service index and `/v1/vintages` cannot rule differently on one quantity."""
+    if promotion_derivation_id is None:
+        return {}
+    return dict.fromkeys(_VINTAGE_SIDECAR, format_handle(promotion_derivation_id))
+
+
 def _vintage(row: dict[str, Any]) -> dict[str, Any]:
     record = {
         "vintage_id": row["vintage_id"],
@@ -941,9 +948,9 @@ def _vintage(row: dict[str, Any]) -> dict[str, Any]:
         "months_touched": list(row["months_touched"]),
         "restatement_summary": dict(row["restatement_summary"]),
     }
-    if row["promotion_derivation_id"] is not None:
-        handle = format_handle(row["promotion_derivation_id"])
-        record[LINEAGE_SIDECAR] = dict.fromkeys(_VINTAGE_SIDECAR, handle)
+    sidecar = vintage_lineage(row["promotion_derivation_id"])
+    if sidecar:
+        record[LINEAGE_SIDECAR] = sidecar
     return record
 
 

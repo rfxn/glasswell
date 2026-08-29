@@ -6,3 +6,6 @@
          reporting zeroes for a class the loader never produced
 - [Fix] a blank TX measure stays an absence and is not quarantined, and the well still
       promotes with the field null rather than being dropped
+- [Fix] the service index publishes its promotion row counts with the derivation handle
+      `/v1/vintages` already gives them, retiring two allowlist exemptions written
+      around the gap rather than around a ruling

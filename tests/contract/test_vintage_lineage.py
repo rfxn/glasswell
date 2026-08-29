@@ -145,3 +145,28 @@ def test_the_collection_advertises_the_one_call_explain_path(client: TestClient)
 
     assert body["links"]["explain"].startswith("/v1/explain?h=")
     assert "depth=full" in body["links"]["explain"]
+
+
+def test_the_service_index_serves_the_same_ruling_as_the_vintages_collection(
+    client: TestClient,
+) -> None:
+    """F13: `rows_examined` and `rows_appended` are one quantity from one table. The collection
+    gave them a handle and the index gave them an exemption written around the gap — the
+    allowlist comment said so outright. Two rulings for one quantity is the defect."""
+    published = client.get("/v1").json()["data"]["published_vintages"]
+    listed = {row["source_id"]: row for row in collection(client)}
+
+    assert published
+    for row in published:
+        twin = listed[row["source_id"]]
+        assert row["_lineage"]["rows_examined"] == twin["_lineage"]["rows_examined"]
+        assert row["_lineage"]["rows_appended"] == twin["_lineage"]["rows_appended"]
+
+
+def test_the_index_numbers_are_figures_and_not_exemptions(client: TestClient) -> None:
+    published = payload(client.get("/v1"))
+
+    assert {"/published_vintages/0/rows_examined", "/published_vintages/0/rows_appended"} <= set(
+        figure_numbers(published)
+    )
+    assert naked_numbers(published) == []
