@@ -26,3 +26,7 @@
       counts no handle can explain; a promoted row is unaffected
 - [Fix] TX identity promotion refuses a layout that no longer declares a measured
       column instead of reading it as absent and nulling the field on every well
+- [New] TX withholding is registered as `cr_tx_ewa_measures_1` — the withheld fields,
+      their reason codes and `field_action` are read from the rule row, both quarantine
+      calls and the promotion derivation cite it, and an action the loader cannot
+      execute is refused

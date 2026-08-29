@@ -54,6 +54,7 @@ LEASE_KEY_RULE = "cr_tx_lease_key_1"
 API10_RULE = "cr_tx_api10_build_1"
 PLUGGED_RULE = "cr_tx_plugged_precedence_1"
 ROLE_RULE = "cr_tx_ewa_role_1"
+MEASURES_RULE = "cr_tx_ewa_measures_1"
 COLLAPSE_RULE = "cr_tx_identity_collapse_1"
 STATUS_FAMILY = "cr_tx_status_vocab"
 BATCH_ROWS = 20_000
@@ -309,18 +310,51 @@ def _depth(value: str | None) -> float | None:
     return float(text) if text.replace(".", "", 1).isdigit() and text else None
 
 
-# A blank field is an absence; a non-empty one the reader returns None for is a reject.
-_MEASURED_FIELDS: tuple[tuple[str, Callable[[str | None], object], str], ...] = (
-    ("total_depth_ft", _depth, "unreliable_numeric"),
+_READERS: Mapping[str, Callable[[str | None], object]] = {
+    "total_depth_ft": _depth,
     # The code `nd_gis._promote_wells` already uses for a filed date that is not one.
-    ("completion_date", _date, "out_of_range_date"),
-)
+    "completion_date": _date,
+}
+
+# Withholding the value is all this promotion can do; it has no path that drops the well.
+_FIELD_ACTIONS: tuple[str, ...] = ("null_field",)
+
+MeasurePolicy = tuple[str, tuple[tuple[str, Callable[[str | None], object], str], ...]]
 
 
-def _measured(row: Mapping[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def _measure_policy(measures: ConformanceRule) -> MeasurePolicy:
+    """What an unreadable measure becomes is read from the rule row, not decided here.
+
+    Same contract as `nd_gis.withheld_measurements`: the fields, the reason code each is filed
+    under and the action are the registry's, so changing the decision is a new rule row.
+    """
+    action = str(measures.spec.get("field_action", ""))
+    if action not in _FIELD_ACTIONS:
+        raise RuleSpecError(
+            f"{measures.rule_id}: field_action {action!r} is not one of"
+            f" {', '.join(_FIELD_ACTIONS)}"
+        )
+    declared = tuple(dict(entry) for entry in measures.spec.get("fields") or ())
+    if {str(entry["field"]) for entry in declared} != set(_READERS):
+        raise RuleSpecError(
+            f"{measures.rule_id}: rules on"
+            f" {sorted(str(entry['field']) for entry in declared)};"
+            f" this promotion measures {sorted(_READERS)}"
+        )
+    return action, tuple(
+        (str(entry["field"]), _READERS[str(entry["field"])], str(entry["reason_code"]))
+        for entry in declared
+    )
+
+
+# A blank field is an absence; a non-empty one the reader returns None for is a reject.
+def _measured(
+    row: Mapping[str, Any], policy: MeasurePolicy
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    action, declared = policy
     parsed: dict[str, Any] = {}
     unreadable: list[dict[str, Any]] = []
-    for name, reader, reason_code in _MEASURED_FIELDS:
+    for name, reader, reason_code in declared:
         if name not in row:
             raise RuleSpecError(
                 f"{LAYOUT_RULE} does not declare {name}, which this promotion measures;"
@@ -337,7 +371,7 @@ def _measured(row: Mapping[str, Any]) -> tuple[dict[str, Any], list[dict[str, An
                     "source_row_ordinal": row.get("source_row_ordinal"),
                     "field": name,
                     "filed_as": filed,
-                    "field_action": "null_field",
+                    "field_action": action,
                     "reason_code": reason_code,
                 }
             )
@@ -437,6 +471,7 @@ def load(
     api10_rule = rule(connection, API10_RULE, source_id="tx_gis_wells_county")
     precedence = rule(connection, PLUGGED_RULE)
     role_rule = rule(connection, ROLE_RULE)
+    measures = rule(connection, MEASURES_RULE)
     collapse_rule = rule(connection, COLLAPSE_RULE)
     status_rules = [
         candidate
@@ -543,8 +578,14 @@ def load(
         manifest_id=manifest.manifest_id,
         vintage=manifest.fetch_vintage,
         parse_derivation_id=parse_id,
-        rules=[*keyed.applied_rule_ids, *mapped.applied_rule_ids, precedence.rule_id],
+        rules=[
+            *keyed.applied_rule_ids,
+            *mapped.applied_rule_ids,
+            precedence.rule_id,
+            measures.rule_id,
+        ],
         state_code=str(api10_rule.spec["state_code"]),
+        measures=measures,
     )
     for reason_code, held in withheld.items():
         counts[reason_code] = counts.get(reason_code, 0) + held
@@ -629,11 +670,13 @@ def _promote_identity(
     parse_derivation_id: str,
     rules: Sequence[str],
     state_code: str,
+    measures: ConformanceRule,
 ) -> tuple[str, int, dict[str, int]]:
+    policy = _measure_policy(measures)
     unreadable: list[dict[str, Any]] = []
     measured = []
     for row in rows:
-        parsed, rejects = _measured(row)
+        parsed, rejects = _measured(row, policy)
         measured.append(parsed)
         unreadable.extend(rejects)
     payload = [
@@ -691,7 +734,8 @@ def _promote_identity(
             _quarantine_frame([r for r in unreadable if r["reason_code"] == reason_code]),
             manifest_id=manifest_id,
             reason_code=reason_code,
-            stage="conform",
+            stage=measures.stage,
+            rule_id=measures.rule_id,
         )
     return context.derivation_id, inserted, withheld
 

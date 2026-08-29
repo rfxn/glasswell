@@ -132,3 +132,22 @@ def test_the_load_counts_what_it_withheld(promoted):
     invisible to every caller including the ingest run summary."""
     assert promoted.quarantined["unreliable_numeric"] == 1
     assert promoted.quarantined["out_of_range_date"] == 1
+
+
+def test_every_withholding_cites_the_rule_that_decided_it(promoted, seeded):
+    """R8: the policy is `cr_tx_ewa_measures_1`'s, so the reject names it and carries the
+    stage the rule itself is filed under rather than a stage chosen at the call site."""
+    assert rows(
+        seeded,
+        "select distinct rule_id, stage from lineage.quarantine_rows"
+        " where source_id = 'tx_wellbore_ewa_csv' and row_payload ? 'field'",
+    ) == [(tx_wellbore.MEASURES_RULE, "validate")]
+
+
+def test_the_promotion_derivation_cites_the_withholding_rule(promoted, seeded):
+    """Without this the withheld number can name a rule the derivation never applied."""
+    assert rows(
+        seeded,
+        "select 1 from lineage.derivation_rules where derivation_id = %s and rule_id = %s",
+        (promoted.identity_derivation_id, tx_wellbore.MEASURES_RULE),
+    ) == [(1,)]

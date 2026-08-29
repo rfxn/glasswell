@@ -505,6 +505,42 @@ TX_RULES: tuple[dict[str, object], ...] = (
         "evidence_url": EWA_LINK,
     },
     {
+        "rule_id": "cr_tx_ewa_measures_1",
+        "source_id": "tx_wellbore_ewa_csv",
+        "stage": "validate",
+        "rule_kind": "validity_filter",
+        "applies_to_fields": ["total_depth_ft", "completion_date"],
+        "spec": {
+            "fields": [
+                {"field": "total_depth_ft", "reason_code": "unreliable_numeric"},
+                {"field": "completion_date", "reason_code": "out_of_range_date"},
+            ],
+            "on_fail": "quarantine",
+            "field_action": "null_field",
+        },
+        "rule": (
+            "A non-empty TOTAL DEPTH or COMPLETION DATE the promotion's readers cannot parse is"
+            " withheld from the well and recorded as a rejected value; the well still promotes."
+        ),
+        "rationale": (
+            "cr_tx_ewa_layout_1 proves the pin - 59 fields, the county code as the API prefix,"
+            " the oil-gas domain - and not one of those assertions can judge what is inside"
+            " TOTAL DEPTH or COMPLETION DATE. A thousands separator in the depth, or a switch to"
+            " MM/DD/YYYY in the date, passes the layout and is then unreadable to the readers"
+            " this promotion applies. Promoting that as null files the Commission's answer as an"
+            " absence and the ledger loses the difference between a field the RRC left blank and"
+            " a field this pipeline could not read - the distinction the reject discipline exists"
+            " to make (SB-01 P7b-T3). The reject is the value and not the row: the API-10, the"
+            " operator and the status beside it are separate filings, and a defective depth is no"
+            " evidence against them, which is the reasoning cr_nd_survey_station_range_1 already"
+            " records for ND. field_action and the per-field reason codes are read by the loader"
+            " rather than described by it - null_field is the only action this promotion can"
+            " execute, and it refuses a rule that asks for another - so changing what a"
+            " withholding does here has to be a new rule row and not an edit in tx_wellbore.py."
+        ),
+        "evidence_url": EWA_MANUAL,
+    },
+    {
         "rule_id": "cr_tx_lease_key_1",
         "source_id": "tx_wellbore_ewa_csv",
         "stage": "join",
