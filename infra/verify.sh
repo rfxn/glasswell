@@ -231,12 +231,16 @@ catalog="$(curl -s --max-time 10 "$MARTIN/catalog")"
 # The roster is the code's, not a list here: a layer added to TILE_LAYERS and installed by
 # install_tile_functions must reach the catalogue, and a stale list here would say it had.
 expected_layers="$("$VENV_PY" -c 'from glasswell.marts.tiles import TILE_LAYERS
-print(" ".join(sorted(layer.name for layer in TILE_LAYERS)))' 2>/dev/null)"  # an import failure yields an empty roster, which the guard below refuses
+print(" ".join(sorted(layer.name for layer in TILE_LAYERS)))' 2>/dev/null)"  # the status below separates an import failure from an empty roster
+roster_read=$?
 # Both sides of the equality below are built by a suppressed command, so an empty roster and
 # an empty catalogue compare equal and read ok. Neither emptiness is a pass (F27).
-if [[ -z $expected_layers ]]; then
+if (( roster_read != 0 )); then
     bad "martin publishes the allowlist and nothing else" \
-        "the venv published no tile roster, so nothing was compared"
+        "the venv could not import TILE_LAYERS, so nothing was compared"
+elif [[ -z $expected_layers ]]; then
+    bad "martin publishes the allowlist and nothing else" \
+        "TILE_LAYERS imported but is empty, so the roster asserts nothing"
 fi
 for layer in $expected_layers; do
     assert_true "martin publishes $layer" "absent from /catalog" \
@@ -247,10 +251,14 @@ done
 # auto-publishes eleven sources, three of them staging relations, and this reads FAIL — the
 # same honest signal the tuning block gave before deployer step 5.
 published="$(python3 -c 'import json,sys; print(" ".join(sorted(json.load(sys.stdin)["tiles"])))' \
-    <<<"$catalog" 2>/dev/null)"  # an unparseable body yields nothing, which the guard below refuses
-if [[ -z $published ]]; then
+    <<<"$catalog" 2>/dev/null)"  # the status below separates an unparseable body from an empty tiles list
+catalog_read=$?
+if (( catalog_read != 0 )); then
     bad "martin publishes the allowlist and nothing else" \
         "martin returned no parseable catalogue, so nothing was compared"
+elif [[ -z $published ]]; then
+    bad "martin publishes the allowlist and nothing else" \
+        "martin's catalogue parsed but publishes no tiles at all"
 elif [[ -n $expected_layers ]]; then
     assert "martin publishes the allowlist and nothing else" "$expected_layers" "$published"
 fi

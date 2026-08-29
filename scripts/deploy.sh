@@ -250,7 +250,7 @@ remote "systemctl start glasswell-status.service" \
 step "7d. wait for the martin catalogue"
 ready=""
 for (( attempt = 0; attempt < 30; attempt++ )); do
-    if remote "curl -sf --max-time 2 http://127.0.0.1:3000/catalog | grep -q '\"tiles\"'"; then
+    if remote "curl -sf --max-time 2 http://127.0.0.1:3000/catalog | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get(\"tiles\") else 1)'"; then
         ready=1
         break
     fi

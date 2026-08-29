@@ -31,3 +31,9 @@
       a deploy that was fine
 - [Change] both deploy.sh readiness loops count arithmetically instead of word-splitting
          `$(seq 1 30)`
+- [Change] both martin guards distinguish a failed read from a successful empty one: an
+         import or parse failure and an empty TILE_LAYERS or empty tiles list are
+         separate refusals, so the reason names the fault the operator has to fix
+- [Fix] deploy.sh's martin wait parses /catalog and requires a non-empty tiles list; it
+      matched the string "tiles", so `{"tiles":[]}` satisfied the wait it exists to
+      outlast and verify.sh failed immediately after
