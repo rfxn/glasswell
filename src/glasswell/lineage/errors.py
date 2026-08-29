@@ -43,7 +43,24 @@ class DeterminismViolation(LineageError):
 
 
 class ManifestConflict(LineageError):
-    """The same bytes were registered under a different source slot."""
+    """The same bytes were registered under a different source slot.
+
+    `lineage.manifests.sha256` is unique, so bytes have exactly one owning slot and a second
+    claimant cannot be represented. Returning the incumbent instead would bind the claimant's
+    derivations to the incumbent's provenance, and `/explain` would resolve them — to the wrong
+    government file. Refusal is the only answer that keeps a handle honest.
+    """
+
+    def __init__(
+        self, sha256: str, owner: tuple[str, str], claimant: tuple[str, str], bytes_: int
+    ) -> None:
+        super().__init__(
+            f"sha256 {sha256} is already registered to {owner[0]}/{owner[1]};"
+            f" {claimant[0]}/{claimant[1]} cannot claim the same {bytes_} byte(s)"
+        )
+        self.sha256 = sha256
+        self.owner = owner
+        self.claimant = claimant
 
 
 class VintageAlreadyPromoted(LineageError):

@@ -9,3 +9,12 @@
 - [Fix] the service index publishes its promotion row counts with the derivation handle
       `/v1/vintages` already gives them, retiring two allowlist exemptions written
       around the gap rather than around a ruling
+- [Fix] `register_manifest` refuses the same bytes under a second (source_id,
+      source_key) instead of returning the incumbent's manifest, so a slot can no
+      longer inherit another slot's provenance and resolve `/explain` to the wrong
+      government file; `ManifestConflict` is raised rather than dead
+- [Fix] an ArcGIS layer matching no features is refused as `EmptyWalk` rather than
+      sealed as a zero-byte artifact whose hash every empty harvest shares
+- [Change] raw-zone staging is scoped by source slot, not by content hash alone, and
+         the reuse-or-place block is one helper shared by the HTTP and ArcGIS
+         registrars, refusing before the payload is moved into place

@@ -12,6 +12,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from glasswell.lineage.audit import emit
+from glasswell.lineage.errors import ManifestConflict
 from glasswell.lineage.ids import manifest_id
 from glasswell.lineage.models import AcquisitionMethod, ManifestRecord
 from glasswell.lineage.serialization import json_ready
@@ -39,6 +40,18 @@ returning *
 """
 
 
+def owning_slot(connection: psycopg.Connection, sha256: str) -> dict[str, Any] | None:
+    """The slot already holding these bytes, if any. `sha256` is unique, so there is at most
+    one, and a second claimant is a conflict rather than a duplicate (F8)."""
+    with connection.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(
+            "select source_id, source_key, storage_uri, bytes from lineage.manifests"
+            " where sha256 = %s",
+            (sha256,),
+        )
+        return cursor.fetchone()
+
+
 def register_manifest(
     connection: psycopg.Connection,
     *,
@@ -61,7 +74,8 @@ def register_manifest(
     fetch_derivation_id: str | None = None,
     correlation_id: str | None = None,
 ) -> ManifestRegistration:
-    """Idempotent by sha256: identical bytes re-register as a recorded check, not a new row.
+    """Idempotent by sha256 *within a slot*: identical bytes re-register as a recorded check,
+    not a new row. Identical bytes from another slot raise `ManifestConflict` (F8).
 
     Changed bytes under the same (source_id, source_key) create a new manifest that supersedes
     the current head — the common path, not an exception branch (§2.1).
@@ -73,6 +87,13 @@ def register_manifest(
         )
         existing = cursor.fetchone()
         if existing is not None:
+            if (existing["source_id"], existing["source_key"]) != (source_id, source_key):
+                raise ManifestConflict(
+                    sha256,
+                    (existing["source_id"], existing["source_key"]),
+                    (source_id, source_key),
+                    existing["bytes"],
+                )
             emit(
                 connection,
                 "raw.fetch_verified_unchanged",
