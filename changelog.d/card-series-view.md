@@ -47,3 +47,9 @@
       listener alive, so a surface redrawn N times observed and rebuilt N times.
       One live chart per host now, and the old one is torn down before the new one
       is built
+- [Change] The card loads the chart on demand rather than from the entry chunk, so
+         uPlot no longer ships to every reader whether or not a card is opened; the
+         entry chunk falls from 46,330 to 21,340 B gzipped
+- [Change] The bundle budgets are re-measured against that split: the entry falls
+         to 22,500 B and the explorer route rises to 71,500 B, both at the ~5%
+         headroom the convention in `web/PERF.md` states
