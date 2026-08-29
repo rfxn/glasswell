@@ -63,9 +63,11 @@ in a study area, the assumption gets revisited rather than defended.
 
 Resident today: the PostGIS geometry martin turns into vector tiles
 (`nd_wells_tile`, `nd_laterals_tile`, `nd_survey_traces_tile`, `tx_wells_tile`,
-`tx_laterals_tile`, `land_units_tile`, `land_metrics_tile`), the `nd_well_card`
-table, and the current physical-neighbour pair `nd_neighbor_subjects` /
-`nd_neighbor_edges`. `well_features` is resident as well, but on the analytical path
+`tx_laterals_tile`, `land_units_tile`, `land_metrics_tile`, plus spacing units,
+which are a view rather than a table), the `nd_well_card` table, and the current
+physical-neighbour pair `nd_neighbor_subjects` / `nd_neighbor_edges`. martin reads
+none of those directly: it selects from the `marts.tile_*` views over them, which is
+where the tile-layer allowlist is enforced. `well_features` is resident as well, but on the analytical path
 as the content-addressed `features.well_features` Parquet matrix rather than as a
 PostGIS table, and the generic `rollups` slot is filled for observed quantities by
 `land_metrics_tile`. Contracted and not built: `type_curve_sets`, `analog_index`,
@@ -214,10 +216,10 @@ second database that has to be kept in sync with the first.
 
 One VM. Parquet plus DuckDB for the analytical path, PostGIS for geometry, martin
 for tiles, and systemd timers for ingest, the NM C-115B snapshot, the nightly
-logical backup, the weekly restore drill, and the sanitized operational Status
-snapshot. Alerting is contracted at C23 and has no deployed timer. No distributed
-infrastructure and no service that cannot be rebuilt from the raw zone by replaying
-recipes.
+logical backup, the weekly restore drill, the lineage-retention sweep, and the
+sanitized operational Status snapshot. Alerting is contracted at C23 and has no
+deployed timer. No distributed infrastructure and no service that cannot be rebuilt
+from the raw zone by replaying recipes.
 
 Inventory batch runs are the only new load introduced at v0.5, and they run in
 seconds at township scale.

@@ -26,8 +26,9 @@ Out of scope:
 
 ## Supported versions
 
-Pre-build. Once releases are tagged, only the latest tagged release receives
-security fixes.
+Only the latest tagged release receives security fixes. The version it carries is in
+[`VERSION`](VERSION) and at the head of [`CHANGELOG.md`](CHANGELOG.md); earlier tags
+are kept for reproducibility, not support.
 
 ## Reporting a vulnerability
 

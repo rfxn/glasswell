@@ -29,7 +29,7 @@ selector-bearing API figure fails closed against a registered persisted-output p
 viewport-summary provenance writes are capped per principal with a bounded database counter.
 Initial published policy is the explicit floor for source vintages predating glasswell; later backdated
 corrections do not leak. Its nightly job removes only successful unreferenced ephemeral lineage
-older than 90 days. Release SHA `be8e234` runs at schema head 51 and passed all six hosted CI
+older than 90 days. Release SHA `e07db3d` runs at schema head 52 and passed all six hosted CI
 jobs, 111 host checks and 20 API smoke checks. The latest recurring restore proof remains schema
 47 until the next backup and drill.
 
