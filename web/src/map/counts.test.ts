@@ -11,6 +11,7 @@ import {
   parseBbox,
   retainVintage,
   sameBbox,
+  producingCountsOf,
   statusCounts,
   statusHandles,
   vocabularyLinks,
@@ -501,6 +502,50 @@ describe("a summary that cannot be had", () => {
   });
 });
 
+describe("the producing classes the legend is given", () => {
+  const WINDOW = {
+    months: 3,
+    from: "2026-01-01",
+    to: "2026-03-01",
+    streams: ["oil", "gas"],
+    liquids_basis: "oil plus condensate",
+  };
+
+  it("carries the classes, their handles and the window off the response", () => {
+    // The legend had unit tests and the API had the field; nothing asserted that one reached
+    // the other, so `setProducing` was never called and the section could not render at all.
+    const data = summary(ND, {
+      producing: [
+        { producing: "producing", wells: figure("18980", "col=producing&c=producing") },
+        { producing: "not_producing", wells: figure("437", "col=producing&c=not_producing") },
+      ],
+      producing_window: WINDOW,
+    });
+
+    const parsed = producingCountsOf(data);
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.counts).toEqual({ producing: 18980, not_producing: 437 });
+    expect(parsed?.handles["producing"]).toContain("col=producing&c=producing");
+    expect(parsed?.window).toEqual(WINDOW);
+    expect(parsed?.bbox).toBe(rendered(ND));
+  });
+
+  it("is null where the definition is not registered, so the legend states no window", () => {
+    expect(producingCountsOf(summary(ND))).toBeNull();
+    expect(producingCountsOf(summary(ND, { producing: [] }))).toBeNull();
+  });
+
+  it("keeps a zero class, which is an answer, unlike an absent definition", () => {
+    const data = summary(ND, {
+      producing: [{ producing: "producing", wells: figure("0", "col=producing&c=producing") }],
+      producing_window: WINDOW,
+    });
+
+    expect(producingCountsOf(data)?.counts).toEqual({ producing: 0 });
+  });
+});
+
 describe("the census of what the canvas drew", () => {
   const feature = (api10: string | undefined, derivation?: string) => ({
     properties: {
@@ -543,6 +588,7 @@ describe("the vintage a crossing pins, across a run of answers", () => {
     total: null,
     totalHandle: null,
     vocabulary: [],
+    producing: null,
     resolved,
   });
 

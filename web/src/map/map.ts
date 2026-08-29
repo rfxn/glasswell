@@ -475,6 +475,7 @@ export function createMap(
       handle: state.totalHandle,
     });
     legend.setVocabulary(state.vocabulary);
+    legend.setProducing(state.producing);
     refreshDrawn();
   }
 

@@ -1,4 +1,5 @@
 import type { Envelope, Figure, Links } from "../api/envelope.ts";
+import type { ProducingCounts, ProducingWindow } from "./producing.ts";
 import { UNMAPPED_STATUS } from "./status.ts";
 
 export const STATUS_SUMMARY_PATH = "/v1/wells/status-summary";
@@ -24,6 +25,11 @@ export interface BasinStatusCounts {
   statuses: StatusCount[];
 }
 
+export interface ProducingCount {
+  producing: string;
+  wells: Figure;
+}
+
 export interface WellStatusSummary {
   bbox: string;
   wells: Figure | null;
@@ -31,6 +37,9 @@ export interface WellStatusSummary {
   statuses: StatusCount[];
   basins: BasinStatusCounts[];
   vocabulary_rules: string[];
+  /** Absent entirely where the producing definition is not registered. */
+  producing?: ProducingCount[];
+  producing_window?: ProducingWindow | null;
 }
 
 export interface VocabularyLink {
@@ -59,6 +68,9 @@ export interface CountsReady {
   total: number | null;
   totalHandle: string | null;
   vocabulary: VocabularyLink[];
+  /** Null where the response carried no producing classes, which is how an unregistered
+   *  definition reaches the legend without the legend inventing a reason for it. */
+  producing: ProducingCounts | null;
   /**
    * The vintage this answer resolved to. The map has no other reading of it — the rail's chip
    * is written by main.ts — and a crossing off this surface pins it so the link a reader
@@ -155,6 +167,19 @@ export function statusHandles(data: WellStatusSummary): Record<string, string> {
     handles[UNMAPPED_STATUS.id] = data.unmapped_wells.d;
   }
   return handles;
+}
+
+/** The producing classes as the legend takes them, or null where the response carried none.
+ *  A zero class is kept: "0 producing in this box" is an answer, unlike an absent definition. */
+export function producingCountsOf(data: WellStatusSummary): ProducingCounts | null {
+  const rows = data.producing;
+  if (!rows || rows.length === 0) return null;
+  return {
+    counts: Object.fromEntries(rows.map((row) => [row.producing, Number(row.wells.value)])),
+    handles: Object.fromEntries(rows.map((row) => [row.producing, row.wells.d])),
+    window: data.producing_window ?? null,
+    bbox: data.bbox,
+  };
 }
 
 export interface DrawnCensus {
@@ -297,6 +322,7 @@ function ready(bbox: Bbox, envelope: Envelope<WellStatusSummary>): CountsReady {
     total: data.wells ? Number(data.wells.value) : null,
     totalHandle: data.wells?.d ?? null,
     vocabulary: vocabularyLinks(data, envelope.links),
+    producing: producingCountsOf(data),
     resolved: envelope.meta.as_of.resolved,
   };
 }
