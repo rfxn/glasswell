@@ -382,6 +382,11 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "rule_kind": "code_ref",
         "applies_to_fields": ["bbls_oil_cond"],
         "spec": {
+            "module_function": "glasswell.ingest.mt_bogc:liquids_basis",
+            "contract_note": (
+                "every Montana oil figure carries basis oil+condensate; the promotion derivation"
+                " records liquids_basis and the API surfaces it on the figure"
+            ),
             "basis": "oil+condensate",
             "applied_by": "source",
             "canonical_stream": "oil",
@@ -408,6 +413,11 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "rule_kind": "code_ref",
         "applies_to_fields": ["bbls_oil_cond", "mcf_gas", "bbls_wtr", "days_prod"],
         "spec": {
+            "module_function": "glasswell.ingest.mt_bogc:promote_well_month",
+            "contract_note": (
+                "null_semantics is written on every canonical.production_monthly row; a blank"
+                " measure lands as no_report with volume zero, never as a reported zero"
+            ),
             "states": ["reported", "reported_zero", "no_report", "withheld"],
             "blank_is": "no_report",
             "zero_is": "reported_zero",
@@ -457,6 +467,11 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "rule_kind": "code_ref",
         "applies_to_fields": ["api10", "production_month", "st_fmtn_cd"],
         "spec": {
+            "module_function": "glasswell.ingest.mt_bogc:formation_promotion_records",
+            "contract_note": (
+                "a group the key cannot decompose leaves its extra filings for quarantine under"
+                " key_collision rather than promoting the first by file ordinal"
+            ),
             "declared_key": ["api10", "production_month", "st_fmtn_cd"],
             "measured_collisions": 0,
             "measured_groups": 5809608,
@@ -483,6 +498,11 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "rule_kind": "code_ref",
         "applies_to_fields": ["volume", "days_prod"],
         "spec": {
+            "module_function": "glasswell.ingest.mt_bogc:formation_promotion_records",
+            "contract_note": (
+                "the well row carries aggregation = sum_over_pools and its volume is the exact sum"
+                " of the well_completion_pool rows the same promotion wrote"
+            ),
             "aggregation": "sum_over_pools",
             "volume": "sum",
             "days": "max",
@@ -583,11 +603,16 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "rule_kind": "code_ref",
         "applies_to_fields": ["entity_key"],
         "spec": {
+            "module_function": "glasswell.lineage.conformance:lease_reporting_rule",
+            "contract_note": (
+                "the spine and production routers read this row to label a Montana lease figure"
+                " lease_reported; allocation_required false means no MT well figure is ever"
+                " allocated"
+            ),
             "state_code": "25",
             "reporting_level": "lease",
             "granularity": "lease_reported",
             "allocation_required": False,
-            "module_function": "glasswell.lineage.conformance:lease_reporting_rule",
         },
         "rule": "Montana PRU rows are reported at the lease and are served as lease_reported,"
         " never allocated down to wells.",
@@ -609,6 +634,11 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "rule_kind": "code_ref",
         "applies_to_fields": list(PRU_DISPOSITION_COLUMNS),
         "spec": {
+            "module_function": "glasswell.ingest.mt_bogc:promote_pru_month",
+            "contract_note": (
+                "only the three production measures reach canonical.production_monthly; the"
+                " fifteen disposition columns remain in staging.mt_bogc_pru and are served nowhere"
+            ),
             "promoted": {"oil_prod": "oil", "gas_prod": "gas", "wtr_prod": "water"},
             "staged_not_promoted": list(PRU_DISPOSITION_COLUMNS),
             "canonical_stream_vocabulary": ["oil", "gas", "water", "condensate"],
@@ -659,7 +689,12 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "stage": "conform",
         "rule_kind": "code_ref",
         "applies_to_fields": ["startivn_oilcd"],
-        "spec": {"measure_class": "balance", "is_flow": False, "blank_rows": 18474},
+        "spec": {
+            "module_function": "glasswell.ingest.mt_bogc:promote_pru_month",
+            "contract_note": (
+                "StartIvn_OilCd is absent from the promoted stream set, so no served figure can"
+                " include it"
+            ),"measure_class": "balance", "is_flow": False, "blank_rows": 18474},
         "rule": "StartIvn_OilCd is a stock balance at the start of the month, not a flow, and is"
         " never summed into production.",
         "rationale": (
@@ -679,6 +714,11 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "rule_kind": "code_ref",
         "applies_to_fields": ["lease_unit", "production_month"],
         "spec": {
+            "module_function": "glasswell.ingest.mt_bogc:promote_pru_month",
+            "contract_note": (
+                "a repeated (lease, month) key quarantines under key_collision rather than"
+                " overwriting"
+            ),
             "declared_key": ["lease_unit", "production_month"],
             "measured_collisions": 0,
             "measured_groups": 1603216,
@@ -699,6 +739,11 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "rule_kind": "code_ref",
         "applies_to_fields": ["lease_unit", "production_month", "volume"],
         "spec": {
+            "module_function": "glasswell.ingest.mt_bogc:promote_pru_month",
+            "contract_note": (
+                "the two grains are promoted under separate source ids and never averaged; this"
+                " row is the measured agreement a consumer comparing them should read first"
+            ),
             "join_key": ["lease_unit", "production_month"],
             "well_side": "mt_bogc_well_production.bbls_oil_cond",
             "lease_side": "mt_bogc_pru_production.oil_prod",
@@ -756,6 +801,11 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "rule_kind": "code_ref",
         "applies_to_fields": ["oil_prod", "gas_prod", "wtr_prod"],
         "spec": {
+            "module_function": "glasswell.ingest.mt_bogc:promote_pru_month",
+            "contract_note": (
+                "null_semantics is written per promoted lease row; the unpromoted columns keep"
+                " their blanks verbatim in staging"
+            ),
             "states": ["reported", "reported_zero", "no_report"],
             "blank_is": "no_report",
             "measured_blank": {"oil_prod": 10, "gas_prod": 629, "wtr_prod": 819},
@@ -836,7 +886,12 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "stage": "conform",
         "rule_kind": "code_ref",
         "applies_to_fields": ["oil_prod"],
-        "spec": {"basis": "oil+condensate", "applied_by": "source", "canonical_stream": "oil"},
+        "spec": {
+            "module_function": "glasswell.ingest.mt_bogc:liquids_basis",
+            "contract_note": (
+                "the lease grain shares the well grain's basis, which is why summing one to match"
+                " the other agrees to the barrel"
+            ),"basis": "oil+condensate", "applied_by": "source", "canonical_stream": "oil"},
         "rule": "Oil_Prod is oil plus condensate on the same basis as the well grain.",
         "rationale": (
             "The reconciliation measured above only holds because the two grains share a liquids"
@@ -977,6 +1032,12 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "rule_kind": "code_ref",
         "applies_to_fields": ["geom"],
         "spec": {
+            "module_function": "glasswell.ingest.mt_gis:promote_layer",
+            "contract_note": (
+                "the 49 east-of-line points are promoted unchanged; nothing snaps or drops a"
+                " regulator coordinate, and a cross-border neighbour count is read knowing they"
+                " exist"
+            ),
             "nd_mt_border_longitude": "-104.0489",
             "points_east_of_border": 49,
             "total_points": 42027,
@@ -1061,6 +1122,12 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "rule_kind": "code_ref",
         "applies_to_fields": ["geom"],
         "spec": {
+            "module_function": "glasswell.ingest.mt_gis:promote_layer",
+            "contract_note": (
+                "the promotion derivation records is_directional_survey false, so"
+                " geometry_provenance on every served Montana path resolves to a class that is not"
+                " a survey trace"
+            ),
             "geom_type": "lateral",
             "is_directional_survey": False,
             "has_measured_depth": False,
@@ -1124,6 +1191,11 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "rule_kind": "code_ref",
         "applies_to_fields": ["geom"],
         "spec": {
+            "module_function": "glasswell.ingest.mt_gis:promote_layer",
+            "contract_note": (
+                "any figure keyed to lateral geometry covers 2,836 wells, not 20,021; the"
+                " neighbour and spacing surfaces inherit that denominator"
+            ),
             "api10_with_path": 2836,
             "api10_with_surface_point": 42026,
             "api10_producing": 20021,
@@ -1168,6 +1240,11 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "rule_kind": "code_ref",
         "applies_to_fields": ["basin"],
         "spec": {
+            "module_function": "glasswell.ingest.mt_bogc:promote_well_month",
+            "contract_note": (
+                "canonical.wells.basin stays null for Montana, so the type-curve peer ladder"
+                " cannot draw a Madison or Cut Bank well into a Williston rung"
+            ),
             "basin_assigned": None,
             "formation_row_counts": {"MAD": 999523, "EAG": 881764, "CB": 509961, "BI": 277879,
                                      "BAK": 266133},
