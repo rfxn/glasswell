@@ -65,7 +65,12 @@ Resident today: the PostGIS geometry martin turns into vector tiles
 (`nd_wells_tile`, `nd_laterals_tile`, `nd_survey_traces_tile`, `tx_wells_tile`,
 `tx_laterals_tile`, `land_units_tile`, `land_metrics_tile`, plus spacing units,
 which are a view rather than a table), the `nd_well_card` table, and the current
-physical-neighbour pair `nd_neighbor_subjects` / `nd_neighbor_edges`. martin reads
+physical-neighbour pair `nd_neighbor_subjects` / `nd_neighbor_edges`, and the per-well
+cumulative pair `well_cumulatives` / `well_withholding` — two grains rather than one,
+because withholding is month-grained and cumulative volume is stream-grained, and folding
+them together would either duplicate one fact three times or invent a per-stream breakdown
+the regulator never published. Neither carries a state regex: the scope is a Python
+constant, so a second state widens code rather than shipped DDL. martin reads
 none of those directly: it selects from the `marts.tile_*` views over them, which is
 where the tile-layer allowlist is enforced. `well_features` is resident as well, but on the analytical path
 as the content-addressed `features.well_features` Parquet matrix rather than as a

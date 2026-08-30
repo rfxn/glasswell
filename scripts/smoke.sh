@@ -113,6 +113,40 @@ sys.exit(0 if card.get("unit") and card.get("d", "").startswith("drv_") else 1)
 assert "a well that does not exist is 404, not an empty card" 404 \
     "$(keyed_status "$base/v1/wells/9999999999")"
 
+printf 'cumulatives, cohorts and completion design
+'
+assert "GET /v1/wells/$api10/cumulatives" 200 "$(keyed_status "$base/v1/wells/$api10/cumulatives")"
+body "/v1/wells/$api10/cumulatives"
+assert_true "every cumulative states the months behind it" \
+    "a total whose coverage does not add up to its span is a total nobody can check" \
+    python3 -c '
+import json, sys
+data = json.load(open(sys.argv[1]))["data"]
+coverage = data["coverage"]
+sys.exit(0 if all(
+    block["span_months"] == block["months_reported"] + block["months_reported_zero"]
+    + block["months_no_report"] + block["months_withheld"]
+    for column, block in coverage.items() if not column.startswith("_")
+) else 1)
+' "$work_dir/body.json"
+assert "GET /v1/wells/vintage-cohorts" 200 "$(keyed_status "$base/v1/wells/vintage-cohorts")"
+body "/v1/wells/vintage-cohorts"
+assert_true "the cohort key is a served rule and the no-key cohort is its own" \
+    "a cohort chart that hides its key or drops the unkeyed wells is not defensible" \
+    python3 -c '
+import json, sys
+data = json.load(open(sys.argv[1]))["data"]
+unkeyed = [item for item in data["cohorts"] if item["cohort_year"] is None]
+sys.exit(0 if data["cohort_key_rule"] == "cr_nd_vintage_cohort_1" and len(unkeyed) == 1 else 1)
+' "$work_dir/body.json"
+body "/v1/wells/$api10/completions"
+assert_true "completion design is promoted in this release" \
+    "design_availability is release-scoped and this release promotes it" \
+    python3 -c '
+import json, sys
+sys.exit(0 if json.load(open(sys.argv[1]))["data"]["design_availability"] == "promoted" else 1)
+' "$work_dir/body.json"
+
 printf 'production and lineage\n'
 body "/v1/wells/$api10/production"
 assert_true "every production point carries its own lineage handle" \

@@ -269,8 +269,10 @@ curl -sS "$B/openapi.json" | python3 -c 'import json,sys; print(len(json.load(sy
 13. **The frontend is one 1.14 MB chunk.** No code splitting. The source map is no
     longer built or deployed (the project is proprietary and `StaticFiles` served it).
 14. **~~No repeatable end-to-end smoke script in the repo~~ — closed.**
-    `scripts/smoke.sh` runs twenty read-only API assertions against a deployed
-    instance, and `tests/e2e/` runs thirteen more through a real browser
+    `scripts/smoke.sh` runs twenty-five read-only API assertions against a deployed
+    instance — including the per-well cumulative's coverage identity, the vintage
+    cohorts' served key rule and the promoted completion design — and `tests/e2e/`
+    runs thirteen more through a real browser
     (`make test-e2e`). Together with `infra/verify.sh` they are the regression net this
     walkthrough used to be.
 15. **~~The VM's `/opt/glasswell/src` copy carries working files~~ — closed.**

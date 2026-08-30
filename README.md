@@ -245,16 +245,19 @@ bounds get measured against two independent validators and published.
 
 ## API surface
 
-API-first, with 34 operations in the frozen snapshot, 33 under `/v1`. The current surface
-serves health and operational status, wells, North Dakota production, source-observed
-completion context, current physical neighbours, canonical formations with alias counts,
-lineage, manifests, conformance, quarantine, glossary, key administration, and tiles:
+API-first, with 36 operations in the frozen snapshot, 35 under `/v1`. The current surface
+serves health and operational status, wells, North Dakota production, per-well cumulative
+volumes with the month classes behind them, vintage cohorts, source-observed completion
+context and promoted completion design, current physical neighbours, canonical formations
+with alias counts, lineage, manifests, conformance, quarantine, glossary, key
+administration, and tiles:
 
 ```
 GET  /v1/status                          GET  /v1/health
 GET  /v1/wells                           GET  /v1/wells/status-summary
 GET  /v1/wells/{api10}                   GET  /v1/wells/{api10}/production
 GET  /v1/wells/{api10}/production/pools  GET  /v1/wells/{api10}/completions
+GET  /v1/wells/{api10}/cumulatives       GET  /v1/wells/vintage-cohorts
 GET  /v1/wells/{api10}/neighbors         GET  /v1/formations
 GET  /v1/explain?h={handle}              GET  /v1/derivations/{derivation_id}
 GET  /v1/manifests/{manifest_id}         GET  /v1/vintages/{vintage_id}
