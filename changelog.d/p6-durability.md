@@ -19,6 +19,9 @@
       checks the restore drill established
 - [New] The verify.sh receipt helpers are executed under bash against real files by
       tests/unit/test_verify_helpers.py, not only grepped for
+- [Fix] The recovery drill's identifier allowlist and case-folding pin LC_ALL=C: under
+      en_US.UTF-8 glibc collation [a-z] also matches fullwidth forms such as U+FF47, so the
+      guard no longer depends on the ambient locale of the host it runs on
 - [Change] remote_backup_copy disclosure moves from not_instrumented to limited and states
          the write-only read-back limit; a replacement_host_recovery disclosure states that
          the recovery path is mechanised and unexercised

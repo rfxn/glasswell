@@ -192,10 +192,14 @@ install -d -m 0750 -o "$RESULT_UID" -g "$RESULT_GID" "$(dirname "$RESULT_PATH")"
 # The name reaches `psql --command`, so treat it as hostile: compare case-folded (postgres folds
 # unquoted identifiers itself) and allow only a plain identifier, which also makes the quoted
 # interpolation below unable to carry a statement separator.
-normalised_database=$(printf '%s' "$RECOVERY_DATABASE" | tr '[:upper:]' '[:lower:]')
+# Both comparisons pin LC_ALL=C: under en_US.UTF-8 glibc collation `[a-z]` also matches
+# fullwidth forms such as U+FF47, and `tr` ranges are locale-sensitive the same way. Pinned
+# rather than reasoned about, because the locale this runs under on a replacement host is not
+# something the script gets to know.
+normalised_database=$(printf '%s' "$RECOVERY_DATABASE" | LC_ALL=C tr '[:upper:]' '[:lower:]')
 [[ $normalised_database != "$PRODUCTION_DATABASE" ]] \
 	|| fail refuses_production_database "the recovery target is the production database"
-[[ $RECOVERY_DATABASE =~ ^[a-z][a-z0-9_]{0,62}$ ]] \
+( LC_ALL=C; [[ $RECOVERY_DATABASE =~ ^[a-z][a-z0-9_]{0,62}$ ]] ) \
 	|| fail unsafe_target_database "the recovery target is not a plain lowercase identifier"
 [[ -n $RECOVERY_SOURCE ]] \
 	|| fail no_recovery_source "RECOVERY_SOURCE is unset; it needs a read-capable off-box path"

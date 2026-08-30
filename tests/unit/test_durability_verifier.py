@@ -114,6 +114,12 @@ def test_the_head_comparison_waits_for_a_drill_that_postdates_the_newest_migrati
     assert "if restore_proof_covers_live_head; then" in block
     assert "predates the newest migration" in block
     # Only the head comparison waits. Everything receipt-internal stays unconditional.
+    # Split on the closing `fi` line, not on "fi" — that substring occurs in `receipt_field`,
+    # which truncated this slice mid-token and made every check below vacuous.
+    then_arm = block.split("if restore_proof_covers_live_head; then", 1)[1]
+    gated = then_arm.split("\n        fi\n", 1)[0]
+    assert 'assert "restore proof schema head equals the live head"' in gated
+    assert "predates the newest migration" in gated
     for unconditional in (
         'assert "restore drill result" passed',
         'assert "restore drill schema heads agree" true',
@@ -121,9 +127,7 @@ def test_the_head_comparison_waits_for_a_drill_that_postdates_the_newest_migrati
         'fresh "${restore_verdict:-unreadable}"',
     ):
         assert unconditional in block
-        assert unconditional not in block.split("if restore_proof_covers_live_head; then", 1)[
-            1
-        ].split("fi", 1)[0]
+        assert unconditional not in gated
 
 
 def test_an_existing_offsite_receipt_is_asserted_whatever_the_readiness_test_says():

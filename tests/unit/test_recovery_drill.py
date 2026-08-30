@@ -321,3 +321,19 @@ def test_the_drop_statement_quotes_its_identifier(tmp_path: Path) -> None:
     run_recovery(tmp_path)
     commands = (tmp_path / "commands.log").read_text(encoding="utf-8")
     assert 'DROP DATABASE IF EXISTS "glasswell_recovery" WITH (FORCE);' in commands
+
+
+def test_the_identifier_allowlist_does_not_depend_on_the_ambient_locale(tmp_path: Path) -> None:
+    """Under en_US.UTF-8 glibc collation `[a-z]` also matches fullwidth forms like U+FF47, so
+    the comparison pins LC_ALL=C rather than trusting whatever locale the host happens to set."""
+    completed = run_recovery(
+        # \uff47 is FULLWIDTH LATIN SMALL LETTER G, written as an escape so the homoglyph
+        # is unambiguous in source and ruff does not flag it as an accident.
+        tmp_path,
+        RECOVERY_DATABASE="\uff47lasswell",
+        LC_ALL="en_US.UTF-8",
+    )
+
+    assert completed.returncode != 0
+    assert read_receipt(tmp_path)["failure_detail"] == "unsafe_target_database"
+    assert not (tmp_path / "commands.log").exists()
