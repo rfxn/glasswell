@@ -1,5 +1,9 @@
 VENV   ?= .venv
-PY     := $(VENV)/bin/python
+# A git worktree has no .venv, so every dispatched track found `make lint` broken and reached
+# for a system ruff instead. Fall back to the main checkout's interpreter when this tree has none.
+PY     := $(shell test -x $(VENV)/bin/python && echo $(VENV)/bin/python \
+            || (test -x $(CURDIR)/../glasswell/.venv/bin/python \
+                && echo $(CURDIR)/../glasswell/.venv/bin/python) || echo python3)
 DOCKER ?= docker
 # DIR-14: anvil is the lab's CI host and the default for full suites. This workstation runs
 # single files while iterating. `anvil` is resolved by name because its lease moves.
