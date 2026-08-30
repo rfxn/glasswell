@@ -6,6 +6,7 @@ from pathlib import Path
 import psycopg
 import pytest
 
+from glasswell.lineage.clock import utc_today
 from glasswell.seed import (
     C115B_RULES,
     FRACFOCUS_RULES,
@@ -150,7 +151,8 @@ def test_static_lookup_clocks_are_not_nullable_and_are_indexed(db):
         effective_from, published_vintage = cursor.fetchone()
 
     assert effective_from == date(1980, 1, 1)
-    assert published_vintage == date.today()
+    # PostgreSQL stamps this with its own current_date, so the comparison is UTC's day.
+    assert published_vintage == utc_today()
 
     with pytest.raises(psycopg.errors.RestrictViolation, match="append_only_violation"):
         db.execute(
