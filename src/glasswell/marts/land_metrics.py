@@ -28,7 +28,7 @@ from glasswell.lineage.audit import emit
 from glasswell.lineage.serialization import hash_payload
 from glasswell.marts.tiles import METRIC_LAYERS, install_tile_functions
 
-MEMBERSHIP_RULE = "cr_land_agg_membership_1"
+MEMBERSHIP_RULE = "cr_land_agg_membership_2"
 LIQUIDS_RULE = "cr_nd_liquids_policy_1"
 PUBLISHER_RULE = "cr_blm_plss_publisher_1"
 
@@ -86,12 +86,17 @@ member as (
      where not exists (select 1 from by_midpoint
                         where by_midpoint.api10 = by_surface.api10)),
 prod as (
+    -- Restricted to the wells membership actually joins. `left join prod using (api10)` reads
+    -- and discards every other row, and after the New Mexico promotion the view spans 24.8M of
+    -- them. The output is identical by construction and a test asserts it on a three-state
+    -- fixture; what changes is that the mart stops scanning a view it cannot use.
     select api10,
            sum(volume) filter (where stream in ('oil', 'condensate')) as liquid_bbl,
            sum(volume) filter (where stream = 'gas') as gas_mcf,
            sum(volume) filter (where stream = 'water') as water_bbl
       from canonical.production_monthly_latest
      where entity_type = 'well' and api10 is not null
+       and api10 in (select api10 from member)
      group by api10)
 """
 
@@ -124,10 +129,17 @@ select member.plssid as land_unit_id,
 # nonzero is a well the grid cannot hold at all. Widening the grid is a superseding
 # membership rule, same as widening the PLSS scope.
 GRID_STATE_API_PREFIXES = ("33",)
+# The states the PLSS grid covers at all. Kept separate from GRID_STATE_API_PREFIXES on
+# purpose: collapsing the two would silence the anomaly alarm that one exists to raise.
+GRID_SCOPE_API_PREFIXES: tuple[str, ...] = ("33",)
 
+# Three counters, not two, and the universe is unfiltered. 355,463 Texas surface points are
+# already in `anchor`; scoping the universe would have collapsed a served figure to zero while
+# describing a scope that has not changed (cr_land_agg_membership_2).
 _UNASSIGNED = _MEMBERSHIP + """
 select count(*)::int,
-       count(*) filter (where left(anchor.api10, 2) = any(%(grid_prefixes)s))::int
+       count(*) filter (where left(anchor.api10, 2) = any(%(grid_prefixes)s))::int,
+       count(*) filter (where left(anchor.api10, 2) <> all(%(scope_prefixes)s))::int
   from anchor
  where not exists (select 1 from member where member.api10 = anchor.api10)
 """
@@ -163,6 +175,7 @@ class MetricsRefresh:
     bin_frames: Mapping[str, Mapping[str, object]]
     unassigned_wells: int
     unassigned_grid_state_wells: int
+    unassigned_out_of_grid_scope_wells: int = 0
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -172,6 +185,7 @@ class MetricsRefresh:
             "bin_frames": {grain: dict(frame) for grain, frame in self.bin_frames.items()},
             "unassigned_wells": self.unassigned_wells,
             "unassigned_grid_state_wells": self.unassigned_grid_state_wells,
+            "unassigned_out_of_grid_scope_wells": self.unassigned_out_of_grid_scope_wells,
         }
 
 
@@ -244,8 +258,16 @@ def refresh_land_metrics(connection: psycopg.Connection) -> MetricsRefresh:
     sections = _cells(connection, _SECTION_CELLS, "section")
     townships = _cells(connection, _TOWNSHIP_CELLS, "township")
     with connection.cursor() as cursor:
-        cursor.execute(_UNASSIGNED, {"grid_prefixes": list(GRID_STATE_API_PREFIXES)})
-        unassigned, unassigned_grid_state = (int(count) for count in cursor.fetchone())
+        cursor.execute(
+            _UNASSIGNED,
+            {
+                "grid_prefixes": list(GRID_STATE_API_PREFIXES),
+                "scope_prefixes": list(GRID_SCOPE_API_PREFIXES),
+            },
+        )
+        unassigned, unassigned_grid_state, unassigned_out_of_scope = (
+            int(count) for count in cursor.fetchone()
+        )
 
     frames = {"section": _frame(sections), "township": _frame(townships)}
     for grain, cells in (("section", sections), ("township", townships)):
@@ -281,7 +303,9 @@ def refresh_land_metrics(connection: psycopg.Connection) -> MetricsRefresh:
             "bin_frames": frames,
             "unassigned_wells": unassigned,
             "unassigned_grid_state_wells": unassigned_grid_state,
+            "unassigned_out_of_grid_scope_wells": unassigned_out_of_scope,
             "grid_state_api_prefixes": list(GRID_STATE_API_PREFIXES),
+            "grid_scope_api_prefixes": list(GRID_SCOPE_API_PREFIXES),
         },
         inputs=_canonical_inputs(connection),
         rules=[MEMBERSHIP_RULE, LIQUIDS_RULE, PUBLISHER_RULE],
@@ -330,6 +354,7 @@ def refresh_land_metrics(connection: psycopg.Connection) -> MetricsRefresh:
         bin_frames=frames,
         unassigned_wells=unassigned,
         unassigned_grid_state_wells=unassigned_grid_state,
+        unassigned_out_of_grid_scope_wells=unassigned_out_of_scope,
     )
 
 

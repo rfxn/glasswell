@@ -1,4 +1,4 @@
-"""M2-3: observed rollups on the land grid, membership by cr_land_agg_membership_1.
+"""M2-3: observed rollups on the land grid, membership by cr_land_agg_membership_2.
 
 The geometry is arranged so the membership decision is what the assertions read: one
 horizontal well whose surface hole and lateral midpoint sit in different sections, one
@@ -247,8 +247,11 @@ def test_the_refresh_derivation_carries_the_rules_and_the_frame(gridded):
         )
     }
     assert {
-        "cr_land_agg_membership_1", "cr_nd_liquids_policy_1", "cr_blm_plss_publisher_1"
+        "cr_land_agg_membership_2", "cr_nd_liquids_policy_1", "cr_blm_plss_publisher_1"
     } <= linked
+    assert "cr_land_agg_membership_1" not in linked, (
+        "the superseded row stays in the registry and stops being cited"
+    )
     params = scalar(
         db,
         "select params from lineage.derivations where derivation_id = %s",
@@ -259,6 +262,7 @@ def test_the_refresh_derivation_carries_the_rules_and_the_frame(gridded):
     assert params["observed_only"] is True
     assert params["unassigned_wells"] == 1
     assert params["unassigned_grid_state_wells"] == 1
+    assert params["unassigned_out_of_grid_scope_wells"] == 0
     assert params["bin_frames"]["section"]["population"] == 2
     assert (
         scalar(db, "select distinct derivation_id from marts.land_metrics_tile")
