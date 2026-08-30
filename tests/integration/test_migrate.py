@@ -85,7 +85,7 @@ def test_the_serving_migration_registers_publication_evidence_before_any_rule(db
     register-then-seed order."""
     with db.cursor() as cursor:
         cursor.execute(
-            "select rule_id, published_vintage, evidence_tag from"
+            "select rule_id, published_vintage, evidence_tag, evidence_commit from"
             " lineage.conformance_rule_publications where rule_id like 'cr\\_tc\\_%'"
             " order by rule_id"
         )
@@ -97,10 +97,18 @@ def test_the_serving_migration_registers_publication_evidence_before_any_rule(db
         "cr_tc_quantile_convention_1",
         "cr_tc_unavailable_vocab_1",
     ]
-    assert {row[1].isoformat() for row in rows} == {"2026-08-30"}
-    # A placeholder the integrator repoints at the merge train, not a guessed tag: the table
-    # is append-only, so a wrong first-publication vintage cannot be corrected afterwards.
-    assert {row[2] for row in rows} == {"UNRELEASED"}
+    # Repoint-stable by construction: the merge train rewrites all three evidence fields, so
+    # pinning any placeholder literal here would make the correct action turn this red. What
+    # survives the repoint is that every row carries one vintage and one evidence pair, and
+    # that the tag and the commit agree about whether they have been repointed -- which is
+    # what catches a half-repoint across the five rows.
+    assert len({row[1] for row in rows}) == 1, "the five rules disagree about their vintage"
+    pairs = {(row[2], row[3]) for row in rows}
+    assert len(pairs) == 1, f"a half-repoint left mixed publication evidence: {pairs}"
+    tag, commit = pairs.pop()
+    assert (tag == "UNRELEASED") == (commit == "0" * 40), (
+        f"evidence_tag and evidence_commit disagree about being repointed: {tag} / {commit}"
+    )
 
 
 def test_the_migration_alone_seeds_no_conformance_rule(db) -> None:
