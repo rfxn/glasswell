@@ -18,6 +18,8 @@ artifact, shipped by rsync, never committed.
 
 `public/brand/` holds copies of the hand-authored SVGs in the repository's `assets/`;
 refresh them by copying, never by editing the copy (BRAND.md is the source of truth).
+`public/favicon-32.png` and `public/og-card.png` are rendered derivatives copied the same
+way — regenerate the source in `assets/` per BRAND.md, then re-copy.
 
 ## Serving
 
