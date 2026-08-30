@@ -7,11 +7,13 @@ from decimal import Decimal
 import pytest
 
 from glasswell.api.routers.completions import (
+    ABSENT_VOLUME_SEMANTICS,
     INTENSITY_RULE_UNREGISTERED,
     IntensityPolicy,
     _fluid_intensity,
     _intensity_or_reason,
 )
+from glasswell.marts.producing import CANONICAL_NULL_SEMANTICS
 
 POLICY = IntensityPolicy(
     min_lateral_ft=Decimal("1000"),
@@ -138,13 +140,56 @@ def test_the_rule_declares_exactly_the_reasons_the_code_can_return() -> None:
     for, because `no_report` is a member the code may legitimately return — just not for the
     reason it was being returned. A vocabulary check cannot tell you a branch picked the wrong
     declared member; only a test of that branch can.
+
+    ABSENT_VOLUME_SEMANTICS is unioned in because those reasons leave `_fluid_intensity`
+    through a variable rather than a literal, so the source walk cannot see them. Reading the
+    constant that names the pass-through is still derived — but the seam is real, and it is the
+    one `test_every_class_the_source_can_record_survives_the_division` covers directly.
     """
     from glasswell.seed.conformance_fracfocus import FRACFOCUS_RULES
 
     rule = next(r for r in FRACFOCUS_RULES if r["rule_id"] == "cr_ff_fluid_intensity_1")
     declared = set(rule["spec"]["null_semantics_vocabulary"])
-    returned = _reasons_the_code_can_return()
+    returned = _reasons_the_code_can_return() | set(ABSENT_VOLUME_SEMANTICS)
 
     assert returned == declared
     assert INTENSITY_RULE_UNREGISTERED in returned, "the source walk found no derived reason"
-    assert len(returned) == 6
+    assert len(returned) == 7
+
+
+@pytest.mark.parametrize("semantics", CANONICAL_NULL_SEMANTICS)
+def test_every_class_the_source_can_record_survives_the_division(semantics: str) -> None:
+    """Driven from the source's vocabulary, not the code's returns.
+
+    The guard above compares the code and the rule to each other, so a class *both* are
+    missing is invisible to it — which is how a withheld volume came to be served as
+    `no_report`, one row under a Base fluid row that had it right. This drives the four classes
+    canonical can record and asserts each survives the quotient as itself.
+    """
+    volume = None if semantics in ABSENT_VOLUME_SEMANTICS else Decimal("5917362")
+    value, reason = _fluid_intensity(volume, Decimal("9862.27353475175"), POLICY, semantics)
+
+    if semantics in ABSENT_VOLUME_SEMANTICS:
+        assert (value, reason) == (None, semantics)
+    else:
+        assert (value, reason) == (Decimal("5917362") / Decimal("9862.27353475175"), "reported")
+
+
+def test_a_withheld_volume_does_not_report_as_an_undisclosed_one() -> None:
+    """The blocker, stated as its own test: these are two facts and must stay two."""
+    withheld = _fluid_intensity(None, Decimal("9862.27"), POLICY, "withheld")
+    undisclosed = _fluid_intensity(None, Decimal("9862.27"), POLICY, "no_report")
+
+    assert withheld == (None, "withheld")
+    assert undisclosed == (None, "no_report")
+    assert withheld[1] != undisclosed[1]
+
+
+def test_every_absent_class_the_source_records_is_one_the_rule_declares() -> None:
+    """The pairing the guard above cannot make on its own: source vocabulary against rule."""
+    from glasswell.seed.conformance_fracfocus import FRACFOCUS_RULES
+
+    rule = next(r for r in FRACFOCUS_RULES if r["rule_id"] == "cr_ff_fluid_intensity_1")
+    declared = set(rule["spec"]["null_semantics_vocabulary"])
+
+    assert set(ABSENT_VOLUME_SEMANTICS) <= declared

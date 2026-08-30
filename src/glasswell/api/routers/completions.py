@@ -45,6 +45,10 @@ INTENSITY_FAMILY = "cr_ff_fluid_intensity"
 # the producing classification: answering with a source-shaped label would read as a statement
 # about the well rather than about the registry.
 INTENSITY_RULE_UNREGISTERED = "intensity_rule_unregistered"
+# The source-side absences the quotient inherits verbatim. A withheld numerator makes a
+# withheld quotient; reporting it as no_report would say the operator disclosed nothing when
+# the regulator is what held it back — the conflation cr_nd_null_semantics_1 exists to refuse.
+ABSENT_VOLUME_SEMANTICS = ("no_report", "withheld")
 
 
 @dataclass(frozen=True, slots=True)
@@ -295,7 +299,10 @@ class CompletionDesign(BaseModel):
         json_schema_extra={GLOSSARY_KEY: "gt_fluid_intensity"},
     )
     base_water_null_semantics: str = Field(
-        description="reported, reported_zero or no_report for the disclosed volume."
+        description=(
+            "reported, reported_zero, no_report or withheld for the disclosed volume — the"
+            " same four classes canonical keeps apart, never collapsed into one absence."
+        )
     )
     lateral_length_ft: FigureModel | None = Field(
         description="Summed lateral, measured live under the basin's length rule.",
@@ -307,10 +314,12 @@ class CompletionDesign(BaseModel):
     )
     intensity_null_semantics: str = Field(
         description=(
-            "reported, or why no intensity is served: no_report, lateral_length_unavailable,"
-            " lateral_length_implausible, intensity_out_of_range, or"
-            " intensity_rule_unregistered where cr_ff_fluid_intensity is not registered — a"
-            " gap in the registry, not a fact about the source."
+            "reported, or why no intensity is served. An absent numerator is reported as the"
+            " source classified it — no_report where nothing was disclosed, withheld where the"
+            " regulator held it back — and the divisor and the result have their own reasons:"
+            " lateral_length_unavailable, lateral_length_implausible, intensity_out_of_range."
+            " intensity_rule_unregistered means cr_ff_fluid_intensity is not registered: a gap"
+            " in the registry, not a fact about the source."
         )
     )
     source_id: str = Field(
@@ -517,21 +526,33 @@ def get_well_completions(
 
 
 def _intensity_or_reason(
-    volume_gal: Decimal | None, lateral_ft: Decimal | None, policy: IntensityPolicy | None
+    volume_gal: Decimal | None,
+    lateral_ft: Decimal | None,
+    policy: IntensityPolicy | None,
+    volume_semantics: str = "no_report",
 ) -> tuple[Decimal | None, str]:
     """With no registered rule there are no bounds to apply, and saying so is the only honest
     answer: no_report here would report a registry gap as a source that disclosed nothing."""
     if policy is None:
         return None, INTENSITY_RULE_UNREGISTERED
-    return _fluid_intensity(volume_gal, lateral_ft, policy)
+    return _fluid_intensity(volume_gal, lateral_ft, policy, volume_semantics)
 
 
 def _fluid_intensity(
-    volume_gal: Decimal | None, lateral_ft: Decimal | None, policy: IntensityPolicy
+    volume_gal: Decimal | None,
+    lateral_ft: Decimal | None,
+    policy: IntensityPolicy,
+    volume_semantics: str = "no_report",
 ) -> tuple[Decimal | None, str]:
-    """cr_ff_fluid_intensity_1's executor: a value, or a reason — never a number with neither."""
+    """cr_ff_fluid_intensity_1's executor: a value, or a reason — never a number with neither.
+
+    An absent numerator is classified by the semantics the promotion recorded, not by the
+    nullness of the value: a withheld volume and an undisclosed one are two different facts,
+    and the quotient inherits the distinction rather than collapsing it back into one.
+    """
     if volume_gal is None:
-        return None, "no_report"
+        absent = volume_semantics in ABSENT_VOLUME_SEMANTICS
+        return None, (volume_semantics if absent else "no_report")
     if lateral_ft is None:
         return None, "lateral_length_unavailable"
     if lateral_ft < policy.min_lateral_ft:
@@ -608,7 +629,9 @@ def _design(
     )
     lateral_ft = metres_to_feet(metres) if laterals else None
     volume = row["base_water_volume"]
-    intensity, semantics = _intensity_or_reason(volume, lateral_ft, policy)
+    intensity, semantics = _intensity_or_reason(
+        volume, lateral_ft, policy, row["base_water_null_semantics"]
+    )
     computed: dict[str, Any] = {
         "lateral_length_ft": (
             figure(

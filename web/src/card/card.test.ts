@@ -620,6 +620,40 @@ describe("completion and formation context", () => {
     expect(designFacts["Fluid intensity"]).not.toMatch(/\b0\b/);
   });
 
+  it("keeps a withheld volume distinct from an undisclosed one on both design rows", async () => {
+    const withheld = {
+      ...completionContextEnvelope,
+      data: {
+        ...completionContextEnvelope.data,
+        design: {
+          ...completionContextEnvelope.data.design,
+          base_water_volume: null,
+          base_water_null_semantics: "withheld",
+          fluid_intensity: null,
+          intensity_null_semantics: "withheld",
+        },
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: withheld,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const frame = host.querySelector(".gw-completion-context") as HTMLElement;
+    const designFacts = factsOf(frame.querySelectorAll<HTMLElement>(".gw-context-group")[2] as HTMLElement);
+    expect(designFacts["Base fluid"]).toBe("unavailable \u2014 withheld by the regulator");
+    expect(designFacts["Fluid intensity"]).toBe("unavailable \u2014 withheld by the regulator");
+    expect(designFacts["Fluid intensity"]).not.toContain("no disclosed volume");
+  });
+
   it("says a well carries no disclosure rather than showing an empty design row", async () => {
     const none = {
       ...completionContextEnvelope,
