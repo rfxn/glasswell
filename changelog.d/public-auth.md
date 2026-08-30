@@ -4,3 +4,6 @@
            the design to reinstate
 - [New] argon2-cffi pinned; Argon2id at t=3, m=64MiB, p=2, sized against the two-worker
       uvicorn RAM budget, with a floor assertion so the parameters cannot be lowered
+- [New] migration 056: lineage.users, lineage.sessions and lineage.login_attempts, with
+      owner-only account creation, session tokens stored as sha256 alone, and a CHECK
+      that refuses any password hash that is not Argon2id
