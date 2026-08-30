@@ -24,6 +24,7 @@ dependencies = [
     "pyproj>=3.6",
     "shapely>=2.0",
     "PyYAML>=6.0",
+    "argon2-cffi>=23.1",
 ]
 
 [project.optional-dependencies]
