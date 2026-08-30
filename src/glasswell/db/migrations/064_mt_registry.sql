@@ -114,8 +114,8 @@ grant select on lineage.mt_stream_map, lineage.mt_stream_promoted_map,
 
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-select rule_id, date '2026-08-30', 'UNRELEASED',
-       '0000000000000000000000000000000000000000'
+select rule_id, date '2026-08-30', 'v0.69',
+       '24a29fe008fa35bb4f67ef567ddacc4dc801f953'
   from unnest(array[
         'cr_mt_api_identity_1', 'cr_mt_basin_scope_1', 'cr_mt_days_range_1',
         'cr_mt_entity_key_1', 'cr_mt_formation_rollup_1',
