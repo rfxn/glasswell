@@ -7,3 +7,6 @@
 - [New] migration 056: lineage.users, lineage.sessions and lineage.login_attempts, with
       owner-only account creation, session tokens stored as sha256 alone, and a CHECK
       that refuses any password hash that is not Argon2id
+- [New] login throttling: per-account and per-IP backoff on a doubling curve capped at 900s,
+      15-minute time-boxed lockout, and a known-good-IP bypass so a flood from an
+      unfamiliar address cannot lock the owner out of their own network
