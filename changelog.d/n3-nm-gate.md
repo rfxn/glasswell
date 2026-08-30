@@ -19,3 +19,7 @@
 - [Change] the status contract test seeds two states rather than one — the defect was
          invisible to a single-state fixture — and asserts the two datasets partition the
          table, so a third population would fail rather than vanish from a served figure
+- [New] `docs/runbook-nm-promotion.md`: the four New Mexico production steps with their
+      preconditions, abort conditions, expected counts, verification gates and the rollback
+      each step actually has — which for three of the four is none, stated in terms designed
+      to stop an operator improvising a delete
