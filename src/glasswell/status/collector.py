@@ -555,7 +555,11 @@ def _inventory(
         " count(*) filter (where state_code = '42') as tx_rows,"
         " min(effective_from) filter (where state_code = '42') as tx_valid_from,"
         " max(effective_from) filter (where state_code = '42') as tx_valid_to,"
-        " max(created_at) filter (where state_code = '42') as tx_latest_knowledge"
+        " max(created_at) filter (where state_code = '42') as tx_latest_knowledge,"
+        " count(*) filter (where state_code = '30') as nm_rows,"
+        " min(effective_from) filter (where state_code = '30') as nm_valid_from,"
+        " max(effective_from) filter (where state_code = '30') as nm_valid_to,"
+        " max(created_at) filter (where state_code = '30') as nm_latest_knowledge"
         " from canonical.wells_latest",
     )
     production = _one(
@@ -610,10 +614,13 @@ def _inventory(
         " (select count(*) from marts.nd_laterals_tile) as nd_laterals,"
         " (select count(*) from marts.tx_wells_tile) as tx_wells,"
         " (select count(*) from marts.tx_laterals_tile) as tx_laterals,"
+        " (select count(*) from marts.nm_wells_tile) as nm_wells,"
         " (select max(created_at) from lineage.derivations"
         "   where output_dataset = 'marts.nd_tiles' and status = 'ok') as nd_latest_knowledge,"
         " (select max(created_at) from lineage.derivations"
-        "   where output_dataset = 'marts.tx_tiles' and status = 'ok') as tx_latest_knowledge",
+        "   where output_dataset = 'marts.tx_tiles' and status = 'ok') as tx_latest_knowledge,"
+        " (select max(created_at) from lineage.derivations"
+        "   where output_dataset = 'marts.nm_tiles' and status = 'ok') as nm_latest_knowledge",
     )
     neighbors = _one(
         connection,
@@ -684,6 +691,17 @@ def _inventory(
             wells["tx_valid_from"],
             wells["tx_valid_to"],
             wells["tx_latest_knowledge"],
+        ),
+        dataset(
+            "canonical.wells_latest/nm",
+            "Current New Mexico wells",
+            "New Mexico",
+            "one latest effective row per API-10",
+            [_metric("rows", "Current wells", wells["nm_rows"], "wells")],
+            "Current effective-dated well entities, not accumulated source revisions.",
+            wells["nm_valid_from"],
+            wells["nm_valid_to"],
+            wells["nm_latest_knowledge"],
         ),
         dataset(
             "canonical.production_monthly/nd",
@@ -807,6 +825,18 @@ def _inventory(
             ],
             "Layer rows are shown separately and are never summed as unique physical features.",
             latest_knowledge=map_rows["tx_latest_knowledge"],
+        ),
+        dataset(
+            "marts.published_map_layers/nm",
+            "Published New Mexico map layers",
+            "New Mexico",
+            "one published feature per named New Mexico layer row",
+            [_metric("nm_wells", "NM well points", map_rows["nm_wells"], "features")],
+            (
+                "A point layer only: no in-scope New Mexico source ships a lateral"
+                " (cr_nm_wellhistory_geometry_scope_1), so none is drawn."
+            ),
+            latest_knowledge=map_rows["nm_latest_knowledge"],
         ),
         dataset(
             "marts.nd_neighbor_subjects",

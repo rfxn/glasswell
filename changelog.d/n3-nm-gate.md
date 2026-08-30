@@ -103,3 +103,23 @@
 - [Change] there is no `nm_laterals` layer and a test guards against one, asserted against the
          tile proxy's own allowlist rather than the mart module's constant: no in-scope New
          Mexico source ships a lateral, and a layer would imply a footprint nobody filed
+- [Fix] `api/routers/production.py`: the pool-rollup link was pinned to `cr_nd_pool_rollup_1`
+      and served on the pool endpoint unconditionally, so every New Mexico pool series would
+      have cited a North Dakota rule; the link now resolves per jurisdiction and cites
+      `cr_nm_wcproduction_pool_rollup_1`, which says New Mexico rolls nothing up
+- [Fix] `api/routers/production.py`: `ND_LIQUIDS_BASIS` was served as the mandatory `_basis`
+      sidecar on every liquids figure regardless of state, so every New Mexico oil figure would
+      have carried North Dakota's liquids policy; the basis is resolved per figure and New
+      Mexico's is `oil`, because `cr_nm_wcproduction_liquids_1` measured 3,398 condensate
+      filings and ruled that condensate is its own stream
+- [New] a New Mexico well whose production is filed at pool grain now says so on its
+      well-level series instead of rendering an empty chart: all 17,597,960 promoted rows are
+      `well_completion_pool` and nothing rolls up, so the series is absent rather than zero
+- [Fix] `api/routers/wells.py`: `STATUS_VOCABULARY_RULES` had no prefix-30 entry, so a New
+      Mexico well served a null `status_vocabulary_rule` and a spurious warning; geometry
+      provenance likewise resolved to the North Dakota rule for every state, and five served
+      field descriptions enumerated North Dakota and Texas in prose where they now name the
+      per-jurisdiction mapping
+- [Change] `status/collector.py` reports New Mexico in the `canonical.wells_latest` inventory
+         and publishes `marts.published_map_layers/nm`, so the status surface stops enumerating
+         two states out of three

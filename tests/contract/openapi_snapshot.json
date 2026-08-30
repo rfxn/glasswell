@@ -5097,7 +5097,7 @@
       "ProvenanceCount": {
         "properties": {
           "geometry_provenance": {
-            "description": "Provenance class, verbatim canonical geom_type under cr_nd_geometry_provenance_1: surface, bottomhole, lateral or survey_trace.",
+            "description": "Provenance class, verbatim canonical geom_type under the jurisdiction's provenance rule: surface, bottomhole, lateral or survey_trace.",
             "title": "Geometry Provenance",
             "type": "string"
           },
@@ -6937,7 +6937,7 @@
             "type": "array"
           },
           "geometry_provenance": {
-            "description": "Distinct provenance classes of this well's recorded geometry, alphabetical \u2014 canonical geom_type served verbatim under cr_nd_geometry_provenance_1: surface, bottomhole, lateral or survey_trace. Empty where no geometry is recorded.",
+            "description": "Distinct provenance classes of this well's recorded geometry, alphabetical \u2014 canonical geom_type served verbatim under the jurisdiction's geometry provenance rule: surface, bottomhole, lateral or survey_trace. Empty where no geometry is recorded.",
             "items": {
               "type": "string"
             },
@@ -7063,7 +7063,7 @@
                 "type": "null"
               }
             ],
-            "description": "Status mapped through the source's status vocabulary rule \u2014 cr_nd_status_vocab_1 in North Dakota, cr_tx_status_vocab_1 in Texas. Null where the source reported no status at all, which is not the same as an unknown one.",
+            "description": "Status mapped through the source's own status vocabulary rule, one per jurisdiction and served with the figure. Null where the source reported no status at all, or where its vocabulary has no published codebook to map \u2014 two different absences, and the rule says which.",
             "title": "Status Canonical",
             "x-glasswell-glossary": "gt_well_status"
           },
@@ -7391,7 +7391,7 @@
             "x-glasswell-glossary": "gt_effective_date"
           },
           "geometry_provenance": {
-            "description": "Distinct provenance classes of this well's recorded geometry, alphabetical \u2014 canonical geom_type served verbatim under cr_nd_geometry_provenance_1: surface, bottomhole, lateral or survey_trace. Empty where no geometry is recorded.",
+            "description": "Distinct provenance classes of this well's recorded geometry, alphabetical \u2014 canonical geom_type served verbatim under the jurisdiction's geometry provenance rule: surface, bottomhole, lateral or survey_trace. Empty where no geometry is recorded.",
             "items": {
               "type": "string"
             },
@@ -7467,7 +7467,7 @@
                 "type": "null"
               }
             ],
-            "description": "Status mapped through the source's status vocabulary rule \u2014 cr_nd_status_vocab_1 in North Dakota, cr_tx_status_vocab_1 in Texas. Null where the source reported no status at all, which is not the same as an unknown one.",
+            "description": "Status mapped through the source's own status vocabulary rule, one per jurisdiction and served with the figure. Null where the source reported no status at all, or where its vocabulary has no published codebook to map \u2014 two different absences, and the rule says which.",
             "title": "Status Canonical",
             "x-glasswell-glossary": "gt_well_status"
           },
@@ -14714,7 +14714,7 @@
             "so": "Pins the page to the api10 order and to the filters that opened it. Change a filter and the cursor is refused rather than quietly re-scoped, so a resumed page is the same population you started paging through."
           },
           "geometry_provenance": {
-            "so": "Matches the provenance class of the well's recorded geometry \u2014 surface, bottomhole, lateral or survey_trace \u2014 verbatim, with no decode: the same canonical geom_type the tiles serve as geometry_provenance under cr_nd_geometry_provenance_1. A well matches when any of its geometry carries the class, and the payload column lists every class it carries, so a match still shows what else the well holds."
+            "so": "Matches the provenance class of the well's recorded geometry \u2014 surface, bottomhole, lateral or survey_trace \u2014 verbatim, with no decode: the same canonical geom_type the tiles serve as geometry_provenance under the jurisdiction's provenance rule. A well matches when any of its geometry carries the class, and the payload column lists every class it carries, so a match still shows what else the well holds."
           },
           "limit": {
             "so": "Caps this collection at 1000 a page \u2014 higher than the kitchen collections, because a wells page is what the map draws. Ask for more and the request is rejected rather than trimmed, so a page is never quietly short."
@@ -14743,7 +14743,7 @@
     },
     "/v1/wells/status-summary": {
       "get": {
-        "description": "How many wells of each canonical status have geometry inside a bounding box, as of a knowledge-time cut. This is the count a map legend states, asked of the data rather than of what a renderer drew: a tile pyramid thins points as it zooms out and a symbology withdraws its low-salience classes, so a count taken from drawn features falls exactly as the viewed area grows. This one does not move with zoom, with styling or with which tiles have arrived. The population is wells whose recorded geometry \u2014 surface, bottomhole or lateral \u2014 intersects the box, which is the same population `/v1/wells?bbox=` pages, and a well with no geometry at all is in no viewport and in no count here. The box is closed: a well exactly on the edge is inside it. There is no degree cap, because the answer is bounded by the status vocabulary rather than by the population; `links.wells` is published only where the box is inside the collection's own four-degree cap. Every count is a figure with a derivation handle over the rows it counted, so a legend number resolves at /v1/explain to the government file the statuses came from. The box a handle names is the box the query ran over, at full precision \u2014 two viewports a metre apart are two handles. Because each distinct box persists exact response evidence, this operation is capped at 30 requests per principal per UTC minute. Where a box produces more counts than /v1/explain accepts handles in one call, `links.explain` carries as many as it can and a warning says exactly how many it left out; each count still resolves alone. A class no well in the box carries is absent rather than zero. Wells whose source reported no status are their own bucket, `unmapped_wells`, and are never added to a class \u2014 in the 2026-08-20 Texas load 65,685 wells are in it, which is more than any class it could have been folded into. Counts are split per basin with the vocabulary rule that mapped that jurisdiction's codes (cr_nd_status_vocab_1 in North Dakota, cr_tx_status_vocab_1 in Texas), because a status class means what its rule says it means. The same box is classed two more ways: per provenance of the recorded geometry \u2014 canonical geom_type verbatim, under the classing rule cr_nd_geometry_provenance_1 \u2014 and per reported well type code, verbatim. Both are figures with handles, so a coverage statement \u2014 how many wells are traced, how many filed under a disposal code \u2014 derives from this endpoint rather than from a pinned constant. Provenance classes overlap where a well holds several geometry kinds, and they are counted over the geometry itself, which is not effective-dated, so they do not move with as_of. It does not return the wells themselves \u2014 see /v1/wells.",
+        "description": "How many wells of each canonical status have geometry inside a bounding box, as of a knowledge-time cut. This is the count a map legend states, asked of the data rather than of what a renderer drew: a tile pyramid thins points as it zooms out and a symbology withdraws its low-salience classes, so a count taken from drawn features falls exactly as the viewed area grows. This one does not move with zoom, with styling or with which tiles have arrived. The population is wells whose recorded geometry \u2014 surface, bottomhole or lateral \u2014 intersects the box, which is the same population `/v1/wells?bbox=` pages, and a well with no geometry at all is in no viewport and in no count here. The box is closed: a well exactly on the edge is inside it. There is no degree cap, because the answer is bounded by the status vocabulary rather than by the population; `links.wells` is published only where the box is inside the collection's own four-degree cap. Every count is a figure with a derivation handle over the rows it counted, so a legend number resolves at /v1/explain to the government file the statuses came from. The box a handle names is the box the query ran over, at full precision \u2014 two viewports a metre apart are two handles. Because each distinct box persists exact response evidence, this operation is capped at 30 requests per principal per UTC minute. Where a box produces more counts than /v1/explain accepts handles in one call, `links.explain` carries as many as it can and a warning says exactly how many it left out; each count still resolves alone. A class no well in the box carries is absent rather than zero. Wells whose source reported no status are their own bucket, `unmapped_wells`, and are never added to a class \u2014 in the 2026-08-20 Texas load 65,685 wells are in it, which is more than any class it could have been folded into. Counts are split per basin with the vocabulary rule that mapped that jurisdiction's codes, because a status class means what its rule says it means and the rules travel with the counts. The same box is classed two more ways: per provenance of the recorded geometry \u2014 canonical geom_type verbatim, under the jurisdiction's classing rule \u2014 and per reported well type code, verbatim. Both are figures with handles, so a coverage statement \u2014 how many wells are traced, how many filed under a disposal code \u2014 derives from this endpoint rather than from a pinned constant. Provenance classes overlap where a well holds several geometry kinds, and they are counted over the geometry itself, which is not effective-dated, so they do not move with as_of. It does not return the wells themselves \u2014 see /v1/wells.",
         "operationId": "get_well_status_summary",
         "parameters": [
           {
