@@ -168,3 +168,20 @@ def test_the_backfill_states_its_outcome_when_nothing_is_staged(db, lineage_env)
         report = promote_resident_design(db)
 
     assert report == {"outcome": "no_staged_disclosures", "design_rows": 0, "quarantined": {}}
+
+
+def test_an_unregistered_intensity_rule_refuses_and_says_it_is_the_registry(
+    db: psycopg.Connection,
+):
+    """R8: the loader refuses rather than defaulting, and the warning names the registry gap.
+
+    The database is migrated and unseeded, which is the only way to reach this state — the
+    registry is append-only, so a registered rule cannot be removed.
+    """
+    from glasswell.api.routers.completions import _intensity_policy
+
+    policy, warnings = _intensity_policy(db)
+
+    assert policy is None
+    assert [warning["code"] for warning in warnings] == ["intensity_rule_unregistered"]
+    assert "registry gap, not a fact about the well" in warnings[0]["detail"]
