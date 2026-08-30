@@ -356,6 +356,9 @@ def change_own_password(
     body: PasswordChangeRequest,
     csrf_token: CSRF_PARAMETER = None,
 ) -> JSONResponse:
+    # Charged before the Argon2id verify: this route checks a password, so a stolen session
+    # cookie would otherwise buy unlimited current_password guesses at no cost to the holder.
+    consume_login_bucket(connection, request, bucket="login")
     now = utc_now()
     if principal.kind != "user" or not principal.user_id:
         raise _refuse()

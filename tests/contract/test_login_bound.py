@@ -167,6 +167,28 @@ def test_the_refusal_carries_retry_after_and_names_no_bucket(client, account, se
         assert name not in body, f"the refusal names the {name} bucket"
 
 
+def test_the_password_change_route_is_bounded_on_the_address(client, account, seeded) -> None:
+    """A held session must not buy unlimited `current_password` guesses.
+
+    `change_own_password` verifies a password, so it is a credential-guessing surface like
+    login -- but it sits on the router included without `enforce_rate_limit`, so nothing
+    bounded it. A 403 here means the guess reached the Argon2id verify with the bound spent.
+    """
+    session = caller(client)
+    address = "203.0.113.17"
+    signed_in = post_login(session, address, csrf=challenge(session), password=OWNER_PASSWORD)
+    assert signed_in.status_code == 201, "the fixture account could not sign in"
+
+    fill_bucket(seeded, address, bucket="login", count=LOGIN_LIMIT)
+    refused = session.post(
+        "/v1/session/password",
+        json={"current_password": "wrong", "new_password": "a-long-enough-replacement"},
+        headers={**edge(address), CSRF_HEADER: challenge(session)},
+    )
+
+    assert refused.status_code == 429, "password-change guesses are unbounded"
+
+
 def test_an_unresolvable_address_is_bounded_rather_than_exempt(client, account, seeded) -> None:
     """No edge marker means the address is `unknown`, which shares one bucket -- never none."""
     session = caller(client)
