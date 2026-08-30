@@ -7,6 +7,88 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.63"></a>
+## v0.63 — 2026-08-29
+
+- [Change] roadmap: P7 reads built and gated rather than started and unpromoted — NM's
+         three ingest paths, the C-115B staging terminus and the missing
+         `canonical.wells`/`well_spatial` spine are named, so the gate is a decision
+         about a product surface rather than a missing module
+- [New] roadmap: a Next work section carrying the three owner-approved priorities with
+      exit criteria in the phase-table idiom — serve the 5,211-line modeling layer under
+      the derivation-handle contract, enrich the served views from data already held,
+      and state expansion as the NM gate then Montana; each sits inside an existing
+      phase and renumbers none
+- [New] roadmap: Montana placed after the NM gate and before TX allocation v0, with its
+      reasons — it extends the trained Williston rather than opening a basin, repairs
+      the `^33` neighbour truncation that leaves ND wells at the state line with
+      incomplete offsets, is the only candidate publishing both production grains from
+      one regulator, and inherits the BLM PLSS grid on a scope change
+- [New] roadmap: Oklahoma production tagged `data-unreachable` — no bulk file exists,
+      the Tax Commission serves lease-grain history per record through a web lookup and
+      a mailed form, and header-only coverage would ship wells that could never carry a
+      production number
+- [Change] roadmap: open question 11 stops reading as Texas-specific — PA, WV and OH are
+         metes-and-bounds too, so `blm_plss.py`, `land_units`, `land_metrics` and the
+         Protocol 4D township-inventory story do not port to Appalachia at all
+- [New] roadmap: two open questions — the vintage cohort key as a conformance row rather
+      than a query-level choice, and whether a six-month horizon justifies re-pinning
+      `mdv1.4` and its accepted publication
+- [New] roadmap: two known risks — state assumptions hardened into DDL where the mart
+      module already parameterises them, and built-but-unserved work accumulating
+      against the serving contracts it will have to meet
+- [Fix] STATUS.md asserted two deployed versions at once: the header read
+      `v0.61+e07db3d` at schema head 52 while the verification state read
+      `v0.60+be8e234`; both now read the deployed `v0.62+204bebb` at schema head 54
+- [Fix] STATUS.md carried 111 host checks in the P6 row and the verification state;
+      the deployed instance passes 127, having read 109 / 18 immediately after the
+      deploy with every failure in the Postgres tuning block
+- [Fix] STATUS.md read "lease production, well allocation, and its validators are not
+      built" for Texas, which buried `canonical.well_lease_links`; the row now states
+      that the EWA load populates the Validator A well-to-lease crosswalk and that
+      lease production is a registered source with no ingest module
+- [Fix] STATUS.md listed land/spacing units among P2's remaining work, conflating no
+      JSON endpoint with not built; both ship as tiles and the row now names the five
+      published layers and marks `/v1/spacingunits` unserved
+- [Change] STATUS.md separates "computed but not served" from "not built" on the
+         serving surface: `src/glasswell/modeling/` is 5,211 lines under pinned
+         `tcv1.0` / `fv2.0` / `mdv1.4` identities that no router imports
+- [Change] STATUS.md records the v0.62 deployment: schema 53 and 54 registering
+         publication evidence for `cr_tx_ewa_measures_1` and the three superseding
+         API-10 identity rules, the ND neighbour mart at 7,958,550 edge rows over
+         22,263 subjects, and CI green on the exact release SHA
+- [Change] STATUS.md records the Postgres drop-in applied for the first time — 22
+         settings live, `shared_buffers` 2GB→4GB — the 4 GiB swapfile SB-06 §2.3 asked
+         for, and that the guest reports 12,179 MB rather than the 16 GiB the drop-in
+         was sized against
+- [Change] STATUS.md states that the New Mexico OCD staging schema exists and is
+         unpopulated, and that the benchmark artifact contract is built with no caller
+         outside its own unit test
+- [Fix] The two-clock migration test compared a `published_vintage` PostgreSQL stamps from
+      its own `current_date` against the host's `date.today()`, so it reddened on any
+      workstation west of UTC for the hours between UTC midnight and local midnight. It
+      reads `utc_today()`, the helper added for exactly this, whose docstring already
+      described the defect
+- [Fix] The well card's "Rows for this well" returns the well. The card built its link
+      from the API-10 and put it in `f.q`, a filter that matches well names only, so the
+      crossing landed on an empty grid for every well ever built and no test noticed —
+      the one that checked the link asserted it emitted `f.q`, which is the defect
+      written down as an expectation
+- [New] `GET /v1/wells?api10=` resolves the identity spine: matched whole, one well or
+      none, never as a prefix or a fragment. It also takes the fourteen-digit literal,
+      matched against the API-14 canonical records for the well rather than trimmed to
+      ten at the route — which digits of an API-14 make the API-10 is an identity rule's
+      declaration, so a completion this deployment never recorded answers with an empty
+      page instead of with a guess
+- [Change] The row hop into the wells collection narrows by `api10` rather than by `q`,
+         and the map search box sends a pasted API-14 to that filter instead of to the
+         name search the path cannot take; `q` stays what its served semantics say it is
+- [New] `tests/contract/test_crossing_targets.py` reads the crossing table the browser
+      ships and issues it against the API, so a filter that cannot match the identity it
+      is handed fails in the suite rather than on a reader's screen; the explorer's own
+      check that a crossing names a parameter the operation takes is what a name search
+      handed an API-10 satisfied
+
 <a id="v0.62"></a>
 ## v0.62 — 2026-08-29
 
