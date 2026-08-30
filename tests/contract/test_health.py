@@ -11,6 +11,7 @@ from glasswell.api.examples import EXAMPLE_MANIFEST_ID
 from glasswell.lineage.ids import new_ulid
 from glasswell.seed.conformance_c115b import C115B_SOURCES
 from glasswell.seed.conformance_land import LAND_SOURCES
+from glasswell.seed.conformance_nm_wells import NM_WELLS_GIS_SOURCES
 from glasswell.seed.conformance_tx import TX_SOURCES
 from glasswell.seed.reference import SOURCES
 from tests.support.seed import seed_manifest
@@ -19,7 +20,8 @@ from tests.support.seed import seed_manifest
 SOURCE_COUNT = len(
     {
         source["source_id"]
-        for registry in (SOURCES, C115B_SOURCES, LAND_SOURCES, TX_SOURCES)
+        for registry in (SOURCES, C115B_SOURCES, LAND_SOURCES, TX_SOURCES,
+                         NM_WELLS_GIS_SOURCES)
         for source in registry
     }
     | {"tx_pdq_dsv"}
