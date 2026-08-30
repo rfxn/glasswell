@@ -1,12 +1,12 @@
 -- Migration 049 makes repository publication evidence a precondition for every conformance
 -- rule insert, so the rows this phase seeds register theirs first.
--- Publication evidence is a placeholder until the merge train repoints it. The tag and the
--- commit below are the repository's agreed placeholder literals and `make release-check`
--- refuses while they stand. `published_vintage` is NOT placeholdered — it has no placeholder
--- form — but migration 049's column comment defines knowledge time as the first-tag date, so
--- it is coupled to the release too: **repoint checklist — confirm this date is the day the
--- train actually ships.** lineage.conformance_rule_publications is append-only, so a date
--- that slips past midnight is permanently wrong.
+-- Publication evidence is a placeholder until the merge train repoints it. The tag below reads
+-- UNRELEASED and the commit is forty zeros — the repository's agreed placeholder literals — and
+-- `make release-check` refuses while they stand. `published_vintage` is NOT placeholdered — it
+-- has no placeholder form — but migration 049's column comment defines knowledge time as the
+-- first-tag date, so it is coupled to the release too: **repoint checklist — confirm this date
+-- is the day the train actually ships.** lineage.conformance_rule_publications is append-only,
+-- so a date that slips past midnight is permanently wrong.
 --
 -- Only the ids this migration's own seeder inserts are registered here: the publication catalog
 -- is asserted to cover the shipped registry exactly, so a registration for a rule no seeder

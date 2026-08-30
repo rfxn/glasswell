@@ -26,7 +26,7 @@
 - [New] `tests/integration/test_nm_promotion_gates.py` pins the index the deployed G7-2 gate
       names: `production_monthly_api10_idx` exists, leads on `api10`, and both the served
       query and the `_latest` view resolve to it once a sequential scan stops being free
-- [Change] `055_state_parameterised_neighbors.sql`: `nd_neighbor_subjects.api10` and both
+- [Change] `057_state_parameterised_neighbors.sql`: `nd_neighbor_subjects.api10` and both
          `nd_neighbor_edges` endpoints accept any ten-digit API-10 rather than only `^33`,
          while a new constraint keeps an edge intra-state because the pair-local UTM zone
          selection is undefined across an arbitrary state pair
@@ -36,7 +36,7 @@
 - [New] `seed/conformance_nm_wells.py`: ten conformance rows covering New Mexico's header
       identity, effective dating, status and well-type domains, the NAD83 datum transform, the
       coordinate policy, geometry provenance and scope, the pool grain and the cross-source
-      header precedence; `056_nm_gate_rule_publications.sql` registers their publication
+      header precedence; `058_nm_gate_rule_publications.sql` registers their publication
       evidence, which migration 049 makes a precondition for the insert
 - [New] `cr_nm_wellhistory_coordinate_1` records the measurement behind the policy: 318,720 of
       321,510 records carry a usable coordinate pair, 897 carry a zero ordinate and 1,893 a nil
@@ -54,7 +54,7 @@
       17,597,960 promoted rows are `well_completion_pool` with a null aggregation and there is
       no well-level row among them, so a New Mexico well's well-level series is absent rather
       than zero
-- [New] `057_nm_well_headers.sql`: `coordinate_sentinel` and `coordinate_absent` join the
+- [New] `059_nm_well_headers.sql`: `coordinate_sentinel` and `coordinate_absent` join the
       quarantine reason vocabulary, so a zero ordinate and a nil one are quarantined under
       distinct codes rather than dropped or collapsed, and `wells_state_effective_idx` supports
       the per-state newest-effective-row scan the tile marts run
@@ -83,7 +83,7 @@
 - [New] `marts/land_metrics.py` counts unassigned wells a third way — those outside the states
       the PLSS grid covers at all — so the scope New Mexico's 141,778 surface points fall
       outside is stated explicitly rather than inferred from a total
-- [Change] `058_land_grid_state_scope.sql` and `seed/conformance_land.py` supersede
+- [Change] `060_land_grid_state_scope.sql` and `seed/conformance_land.py` supersede
          `cr_land_agg_membership_1` with `_2`, carrying the third counter and the measured
          populations; the membership itself is unchanged, which is why this is a superseding
          row rather than the code change its own contract_note forbids
@@ -95,7 +95,7 @@
          scan of a view that spans 24.8M rows after the New Mexico promotion
 - [New] `marts/nm_wells.py`: a point-only New Mexico tile mart on the same shape as the ND and
       TX marts — reads canonical only, rebuilds rather than appends, one content-addressed
-      derivation per refresh — and `059_nm_marts.sql` creates `marts.nm_wells_tile` with its
+      derivation per refresh — and `061_nm_marts.sql` creates `marts.nm_wells_tile` with its
       grants and registers the GIS layer's poll cadence
 - [New] the tile carries `status_reported` beside `status_canonical`, because every New Mexico
       `status_canonical` is null by `cr_nm_wellhistory_status_vocab_1` and the reported letter
@@ -144,7 +144,7 @@
 - [New] `ingest/nm_wells_gis.py`: one ordered walk of the OCD Wells_Public FeatureServer layer,
       ordered by the unique `id` rather than `OBJECTID`, into one checksummed artifact, one
       manifest and one staging load; the host is already allowlisted so no blueprint amendment
-      is required, and `060_nm_wells_gis.sql` creates the staging table and registers the rule
+      is required, and `062_nm_wells_gis.sql` creates the staging table and registers the rule
       publications
 - [New] `cr_nm_wells_gis_parity_1` records the agreement between two independently produced New
       Mexico well populations — 141,916 GIS features against 142,000 FTP header API-10s, a
