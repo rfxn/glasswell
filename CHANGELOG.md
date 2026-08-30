@@ -7,6 +7,16 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.67"></a>
+## v0.67 — 2026-08-30
+
+- [Fix] verify.sh asserted that a caddy tunnel listener exists rather than that any listener
+      on 8080 is loopback-bound, so a host with nothing on 8080 failed the deploy gate with
+      a message claiming a binding it did not have; the negative stays unconditional
+- [Fix] the documented glasswell-owner-bootstrap and glasswell-owner-reset commands run as
+      root, where peer authentication resolves the role `root` and the connection fails
+      before the password prompt; both now carry runuser -u glasswell
+
 <a id="v0.66"></a>
 ## v0.66 — 2026-08-30
 
