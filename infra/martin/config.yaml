@@ -47,3 +47,9 @@ postgres:
     nm_wells:
       schema: marts
       function: nm_wells
+    basins:
+      schema: marts
+      function: basins
+    plays:
+      schema: marts
+      function: plays

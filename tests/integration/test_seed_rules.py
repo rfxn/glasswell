@@ -24,6 +24,17 @@ POLICY_RULES = tuple(sorted((
     # The land-grid publisher choice: the executor is the ingest module the spec names, and
     # the measured cross-publisher divergence rides in spec.divergence_measured (M1-4).
     "cr_blm_plss_publisher_1",
+    # The boundary-layer decisions: whose interpretation is drawn, that a basin and a play are
+    # different objects, how a play links to its basin, that overlap is served rather than
+    # arbitrated, how an invalid published ring is repaired, whose area is served, and how a
+    # well is judged inside a boundary. Each executor is the module its spec names.
+    "cr_eia_area_provenance_1",
+    "cr_eia_basin_link_1",
+    "cr_eia_boundary_overlap_1",
+    "cr_eia_boundary_publisher_1",
+    "cr_eia_boundary_taxonomy_1",
+    "cr_eia_geometry_repair_1",
+    "cr_eia_well_membership_1",
     "cr_ff_completion_anchor_1",
     # M2-3's membership decision: which section a well belongs to, chosen with measured
     # evidence and executed by the metrics mart the spec names.
