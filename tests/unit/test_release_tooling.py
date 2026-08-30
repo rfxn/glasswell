@@ -436,19 +436,41 @@ SHIPPED_MIGRATION = (
     / release.MIGRATIONS_DIR
     / "055_serve_modeling_control.sql"
 )
+MIGRATIONS = Path(release.__file__).resolve().parents[1] / release.MIGRATIONS_DIR
 REPOINTED_TAG = "v0.66"
 REPOINTED_COMMIT = "c8cffbc344e1ea36e454e43f3c0a4d7696aa1c0a"
 
+# The evidence fields as the migration writes them, matched by shape rather than by value, so
+# the pair below can be built whether or not the file has been repointed yet.
+EVIDENCE = re.compile(
+    r"(select rule_id, date '\d{4}-\d{2}-\d{2}', ')(?P<tag>[^']+)(',\s*\n\s*')"
+    r"(?P<commit>[0-9a-f]{40})(')"
+)
 
-def _repoint(text: str, *, tag: bool = True, commit: bool = True) -> str:
-    """The repoint the migration header prescribes, applied to real text."""
-    if tag:
-        text = text.replace(f"'{release.PLACEHOLDER_EVIDENCE_TAG}'", f"'{REPOINTED_TAG}'")
-    if commit:
-        text = text.replace(
-            f"'{release.PLACEHOLDER_EVIDENCE_COMMIT}'", f"'{REPOINTED_COMMIT}'"
-        )
-    return text
+
+def _with_evidence(text: str, *, tag: str, commit: str) -> str:
+    replaced, count = EVIDENCE.subn(
+        lambda match: f"{match.group(1)}{tag}{match.group(3)}{commit}{match.group(5)}", text
+    )
+    assert count == 1, f"expected one evidence insert to rewrite, matched {count}"
+    return replaced
+
+
+def _pair() -> tuple[str, str]:
+    """The two states of the real migration: as a branch writes it, and after the repoint.
+
+    Derived from the shipped file rather than read out of it, because a test that asserts what
+    the file contains today inverts the day the integrator does the thing the file asks for.
+    """
+    text = SHIPPED_MIGRATION.read_text(encoding="utf-8")
+    return (
+        _with_evidence(
+            text,
+            tag=release.PLACEHOLDER_EVIDENCE_TAG,
+            commit=release.PLACEHOLDER_EVIDENCE_COMMIT,
+        ),
+        _with_evidence(text, tag=REPOINTED_TAG, commit=REPOINTED_COMMIT),
+    )
 
 
 class TestPlaceholderPublicationEvidence:
@@ -456,16 +478,18 @@ class TestPlaceholderPublicationEvidence:
     that reaches a production migrate is permanent, because the table is append-only. The
     release gate is what turns that silent falsehood into a loud refusal.
 
-    Every case here drives the migration this repository actually ships. The first version of
-    this class checked the negatives against the real file and the positive against a synthetic
-    three-line blob with no header, so it never saw that the guard's own bare-word scan matched
-    the header prose — a correctly repointed file went on refusing, and nothing in the
-    repository could have cut a tag again.
+    Two rules learned the hard way, both from this class's own earlier versions. The behaviour
+    is pinned, never the file's current contents: an assertion that 055 *contains* the
+    placeholder is true today and false the moment the merge train does what the file asks,
+    which turns the correct action into a red suite. And the cases that need the real artifact
+    drive it — the positive case once used a synthetic three-line blob with no header, which is
+    exactly why the guard's own bare-word scan matching the header prose got through.
     """
 
-    def test_the_shipped_migration_as_written_blocks_the_release(self, tmp_path):
+    def test_the_placeholder_state_of_the_real_migration_blocks_the_release(self, tmp_path):
+        placeholder, _ = _pair()
         root = _repo(tmp_path)
-        _with_migration(root, SHIPPED_MIGRATION.read_text(encoding="utf-8"))
+        _with_migration(root, placeholder)
 
         blockers = release.preconditions(root, _pending(root), Version(0, 66))
 
@@ -474,32 +498,59 @@ class TestPlaceholderPublicationEvidence:
         # The refusal names the tag to repoint to, so the fix needs no second lookup.
         assert any(REPOINTED_TAG in blocker for blocker in blockers)
 
-    def test_the_shipped_migration_after_the_prescribed_repoint_releases(self, tmp_path):
+    def test_the_repointed_state_of_the_real_migration_releases(self, tmp_path):
         """The one that matters: doing exactly what the refusal asks must clear the refusal."""
+        placeholder, repointed = _pair()
+        assert placeholder != repointed, "the pair is not a pair; the rewrite matched nothing"
         root = _repo(tmp_path)
-        repointed = _repoint(SHIPPED_MIGRATION.read_text(encoding="utf-8"))
         _with_migration(root, repointed)
 
         assert release.preconditions(root, _pending(root), Version(0, 66)) == []
         # The header still explains the scheme by name, and prose is not evidence.
         assert release.PLACEHOLDER_EVIDENCE_TAG in repointed
 
-    def test_the_shipped_migration_carries_each_literal_exactly_once(self):
-        """Prose must never re-arm the guard.
-
-        A header line reading `evidence_tag 'UNRELEASED' -> the tag it ships in` is quoted, so
-        the scan sees it and the repoint of the SQL alone leaves the file still refusing. That
-        is R-1 wearing a different sentence. One occurrence each means the only quoted literal
-        in the file is the one the repoint edits.
-        """
+    def test_a_half_repoint_of_the_real_migration_still_blocks(self, tmp_path):
+        """Either literal alone is a false claim, so either alone refuses."""
         text = SHIPPED_MIGRATION.read_text(encoding="utf-8")
+        halves = (
+            _with_evidence(
+                text, tag=REPOINTED_TAG, commit=release.PLACEHOLDER_EVIDENCE_COMMIT
+            ),
+            _with_evidence(
+                text, tag=release.PLACEHOLDER_EVIDENCE_TAG, commit=REPOINTED_COMMIT
+            ),
+        )
+        for index, half in enumerate(halves):
+            root = _repo(tmp_path / f"half-{index}")
+            _with_migration(root, half)
 
-        assert text.count(f"'{release.PLACEHOLDER_EVIDENCE_TAG}'") == 1
-        assert text.count(f"'{release.PLACEHOLDER_EVIDENCE_COMMIT}'") == 1
-        # And the one occurrence is in the insert, not above it.
-        header, _, statement = text.partition("insert into lineage.conformance_rule_publications")
-        assert f"'{release.PLACEHOLDER_EVIDENCE_TAG}'" not in header
-        assert f"'{release.PLACEHOLDER_EVIDENCE_TAG}'" in statement
+            blockers = release.preconditions(root, _pending(root), Version(0, 66))
+            assert any(release.PLACEHOLDER_EVIDENCE_TAG in blocker for blocker in blockers)
+
+    def test_no_migration_quotes_a_placeholder_outside_its_evidence_insert(self):
+        """R-4: the pin is repo-wide, not this migration by name.
+
+        A quoted literal in any migration's header re-arms the guard for the whole repository,
+        and the track that wrote it would not find out until its own merge train. `<= 1` rather
+        than `== 1` so a repointed migration — zero occurrences — passes exactly as a
+        placeholder-carrying one does.
+        """
+        migrations = sorted(MIGRATIONS.glob("*.sql"))
+        assert migrations, "no migrations found; this pin would be vacuous"
+        for path in migrations:
+            text = path.read_text(encoding="utf-8")
+            # A migration with no evidence insert has no statement, so `header` is the whole
+            # file and any quoted literal in it is caught — which is the correct answer.
+            header, _, _ = text.partition("insert into lineage.conformance_rule_publications")
+            for literal in (
+                f"'{release.PLACEHOLDER_EVIDENCE_TAG}'",
+                f"'{release.PLACEHOLDER_EVIDENCE_COMMIT}'",
+            ):
+                assert text.count(literal) <= 1, f"{path.name} quotes {literal} more than once"
+                assert literal not in header, (
+                    f"{path.name} quotes {literal} above its evidence insert, which re-arms "
+                    "the release guard through prose"
+                )
 
     def test_prose_naming_the_placeholder_does_not_block(self, tmp_path):
         """R-1 in one line: the guard reads the quoted SQL literal, never the word."""
@@ -511,17 +562,6 @@ class TestPlaceholderPublicationEvidence:
         )
 
         assert release.preconditions(root, _pending(root), Version(0, 66)) == []
-
-    def test_a_half_repoint_still_blocks(self, tmp_path):
-        """Either literal alone is a false claim, so either alone refuses."""
-        for kwargs in ({"tag": False}, {"commit": False}):
-            root = _repo(tmp_path / f"half-{'tag' if kwargs.get('tag') is False else 'commit'}")
-            _with_migration(
-                root, _repoint(SHIPPED_MIGRATION.read_text(encoding="utf-8"), **kwargs)
-            )
-
-            blockers = release.preconditions(root, _pending(root), Version(0, 66))
-            assert any(release.PLACEHOLDER_EVIDENCE_TAG in blocker for blocker in blockers)
 
     def test_a_longer_all_zero_digest_is_not_the_placeholder_commit(self, tmp_path):
         """A forty-zero run is a substring of any longer all-zero digest; the quotes are what
@@ -539,12 +579,13 @@ class TestPlaceholderPublicationEvidence:
 
     def test_the_scan_reaches_only_the_migrations_directory(self, tmp_path):
         """Fixture helpers seed their own harness evidence and must never be repointed."""
+        _, repointed = _pair()
         root = _repo(tmp_path)
         (root / "tests" / "support").mkdir(parents=True)
         (root / "tests" / "support" / "seed.py").write_text(
             f"TAG = '{release.PLACEHOLDER_EVIDENCE_TAG}'\n", encoding="utf-8"
         )
-        _with_migration(root, _repoint(SHIPPED_MIGRATION.read_text(encoding="utf-8")))
+        _with_migration(root, repointed)
 
         assert release.preconditions(root, _pending(root), Version(0, 66)) == []
 
