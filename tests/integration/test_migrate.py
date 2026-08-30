@@ -65,6 +65,50 @@ def test_every_spine_table_and_view_exists_after_migration(empty_db):
     assert missing == []
 
 
+def test_the_serving_migration_registers_the_modeling_selector_profiles(db) -> None:
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select output_dataset, selector_profile from lineage.selector_output_registry"
+            " where operation = 'api.respond' order by output_dataset"
+        )
+        assert cursor.fetchall() == [
+            ("api.modeling_publication", "response_output"),
+            ("api.type_curve", "response_output"),
+            ("api.type_curve_index", "response_output"),
+            ("api.well_detail", "response_output"),
+            ("api.well_status_summary", "response_output"),
+        ]
+
+
+def test_the_serving_migration_registers_publication_evidence_before_any_rule(db) -> None:
+    """049 makes evidence a precondition; 054's ordering is register-then-seed."""
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select rule_id, published_vintage, evidence_tag from"
+            " lineage.conformance_rule_publications where rule_id like 'cr\\_tc\\_%'"
+            " order by rule_id"
+        )
+        rows = cursor.fetchall()
+    assert [row[0] for row in rows] == [
+        "cr_tc_normalization_1",
+        "cr_tc_peer_ladder_1",
+        "cr_tc_publication_scope_1",
+        "cr_tc_quantile_convention_1",
+        "cr_tc_unavailable_vocab_1",
+    ]
+    assert {row[1].isoformat() for row in rows} == {"2026-08-30"}
+    assert {row[2] for row in rows} == {"v0.65"}
+
+
+def test_the_migration_alone_seeds_no_conformance_rule(db) -> None:
+    """The rule bodies need lineage.sources, which migrate() never populates."""
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select count(*) from lineage.conformance_rules where rule_id like 'cr\\_tc\\_%'"
+        )
+        assert cursor.fetchone()[0] == 0
+
+
 def test_postgis_is_available(empty_db):
     migrate(empty_db)
     empty_db.commit()
