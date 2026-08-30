@@ -211,24 +211,23 @@ describe("the grid renders a collection off one state object (§3.1 rule 2)", ()
     // Eighteen identical chips is a column of noise wide enough to push the fifth column off
     // the surface, which is what the C7 visual pass measured before this rule existed.
     expect(host.querySelectorAll("gw-figure[vintage]")).toHaveLength(0);
+    expect(host.querySelector(".gw-grid-vintage")?.textContent).not.toMatch(/vintages/);
   });
 
-  it("chips every cell the moment a second vintage appears, because then it means something", async () => {
+  // Still one line, never eighteen chips: a second vintage changes what the line says, not
+  // how many places it is said. Each figure's own handle resolves the vintage it read at.
+  it("names every vintage on one line the moment a second one appears", async () => {
     const restated = JSON.parse(JSON.stringify(productionEnvelope));
     restated.data.series.oil_bbl_report_vintage[2] = "2026-07-01";
     overrides["/v1/wells/3305310451/production"] = restated;
 
     await mount("production", { extra: { "f.api10": ["3305310451"] } });
 
-    expect(host.querySelector(".gw-grid-vintage")).toBeNull();
-    expect(host.querySelectorAll("gw-figure[vintage]").length).toBe(
-      productionEnvelope.data.series.pm.length * 3,
-    );
-    expect(
-      [...host.querySelectorAll("gw-figure[vintage]")].filter(
-        (figure) => figure.getAttribute("vintage") === "2026-07-01",
-      ),
-    ).toHaveLength(1);
+    const line = host.querySelector(".gw-grid-vintage")?.textContent ?? "";
+    expect(line).toMatch(/values here report at 2 vintages/);
+    expect(line).toContain("2026-07-01");
+    expect(line).toContain("2026-08-20");
+    expect(host.querySelectorAll("gw-figure[vintage]")).toHaveLength(0);
   });
 
   it("sizes one track per column, and two for a figure so its marks leave the number alone", async () => {
@@ -337,7 +336,7 @@ describe("the grid renders a collection off one state object (§3.1 rule 2)", ()
       /1 more column is off the right edge of this panel/,
     );
     expect(overflowNote(3)?.textContent).toMatch(/3 more columns are off/);
-    expect(overflowNote(3)?.textContent).toMatch(/scroll the grid sideways/);
+    expect(overflowNote(3)?.textContent).toMatch(/Scroll the grid sideways/);
   });
 
   it("adds nothing to the table when a reason opens, so the off-edge count stays true (N1)", async () => {

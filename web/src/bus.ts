@@ -47,6 +47,7 @@ function channel<T>(): Channel<T> {
 const requested = channel<SelectRequest>();
 const committed = channel<string | null>();
 const camera = channel<FlyTarget>();
+const session = channel<void>();
 
 export function selectWell(api10: string | null, source: SelectSource): void {
   requested.emit({ api10, source });
@@ -64,6 +65,19 @@ export function onWellSelected(handler: Handler<string | null>): () => void {
   return committed.on(handler);
 }
 
+/**
+ * A session now exists where none did. Surfaces that mounted signed-out were refused rather
+ * than broken, so this is their cue to ask again — it carries no principal, because what they
+ * do about it is theirs to decide and none of them renders who the reader is.
+ */
+export function sessionBegan(): void {
+  session.emit();
+}
+
+export function onSessionBegan(handler: () => void): () => void {
+  return session.on(handler);
+}
+
 export function flyTo(target: FlyTarget): void {
   camera.emit(target);
 }
@@ -76,6 +90,7 @@ export function resetBus(): void {
   requested.clear();
   committed.clear();
   camera.clear();
+  session.clear();
   urlMirror = undefined;
 }
 

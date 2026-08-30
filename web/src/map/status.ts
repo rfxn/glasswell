@@ -126,7 +126,7 @@ export const STATUS_CLASSES: readonly StatusClass[] = [
     colour: "#7A6FD0",
     glyph: "hollow",
     note:
-      "Injection, disposal, storage, observation or water supply — not a producer" +
+      "Injection, disposal, storage, observation or water supply, not a producer" +
       " (cr_tx_status_vocab_1).",
     minZoom: 8,
     rule: TX_STATUS_VOCAB_RULE,
@@ -154,7 +154,7 @@ export const STATUS_CLASSES: readonly StatusClass[] = [
     label: "Expired permit",
     colour: "#55666F",
     glyph: "dashed",
-    note: "Permit lapsed or cancelled before spud — no wellbore exists (PNC, PNS, EXP).",
+    note: "Permit lapsed or cancelled before spud: no wellbore exists (PNC, PNS, EXP).",
     minZoom: 9,
     rule: STATUS_VOCAB_RULE,
   },

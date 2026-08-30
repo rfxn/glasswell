@@ -548,9 +548,9 @@ function unavailableReason(
   semantics: CompletionPool["formation_null_semantics"],
 ): string {
   if (value !== null && value !== "") return value;
-  if (semantics === "pool_not_reported") return "unavailable — pool not reported";
-  if (semantics === "alias_unavailable") return "unavailable — alias unavailable";
-  return "unavailable — no group assigned";
+  if (semantics === "pool_not_reported") return "unavailable: pool not reported";
+  if (semantics === "alias_unavailable") return "unavailable: alias unavailable";
+  return "unavailable: no group assigned";
 }
 
 function lineageButton(handle: string, label: string): HTMLButtonElement {
@@ -566,7 +566,6 @@ export function figureElement(figure: Figure, label: string, handle: string | nu
   element.setAttribute("label", label);
   element.setAttribute("label-hidden", "");
   if (figure.granularity) element.setAttribute("granularity", figure.granularity);
-  if (figure.report_vintage) element.setAttribute("vintage", figure.report_vintage);
   return element;
 }
 

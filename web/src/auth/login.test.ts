@@ -96,9 +96,23 @@ describe("the login panel is the only credential surface the app has", () => {
   });
 
   it("distinguishes a first sign-in from a session that ended", () => {
-    expect(mount("required").textContent).toContain("serves nothing until you sign in");
+    expect(mount("required").textContent).toContain("Welcome to glasswell");
     document.body.innerHTML = "";
     expect(mount("expired").textContent).toContain("has ended");
+  });
+
+  // The copy greets a reader and says what is behind the door. Describing the server's refusal
+  // posture instead is what the owner reported, and neither variant may enumerate accounts.
+  it("greets the reader rather than reporting what the deployment refuses", () => {
+    const required = mount("required").textContent ?? "";
+    document.body.innerHTML = "";
+    const expired = mount("expired").textContent ?? "";
+
+    for (const copy of [required, expired]) {
+      expect(copy).not.toMatch(/deployment|serves nothing|refus/i);
+      expect(copy).not.toContain("—");
+    }
+    expect(required).toMatch(/production history/);
   });
 
   it("hands the session back and clears the password field on success", async () => {

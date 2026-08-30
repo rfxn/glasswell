@@ -144,7 +144,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
   const scope = document.createElement("p");
   scope.className = "gw-lg-scope";
   scope.hidden = extentBox.checked;
-  scope.textContent = "Counting every ingested well — the map view is not narrowing these numbers.";
+  scope.textContent = "Counting every ingested well. The map view is not narrowing these numbers.";
   body.appendChild(scope);
 
   // The joins, visible (M1-2): the extent node is ANDed with the status predicate, and the
@@ -423,7 +423,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
     // what each basin's wire carries must sit above the note's own fold on open at 390.
     note.replaceChildren(
       document.createTextNode(
-        "Every ND feature carries its geometry provenance on the wire — surface, lateral" +
+        "Every ND feature carries its geometry provenance on the wire: surface, lateral" +
           ` or survey_trace, classed by ${PROVENANCE_RULE}, the class served verbatim.` +
           " TX geometry carries no provenance field: the RRC's coordinate-source attribute" +
           " is licence-gated (RF-1) and is not served until that is answered." +
@@ -436,7 +436,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
     }
     note.appendChild(
       document.createTextNode(
-        ". Laterals are ND DMR and TX RRC GIS bore geometry — not a directional survey trace." +
+        ". Laterals are ND DMR and TX RRC GIS bore geometry, not a directional survey trace." +
           " The orchid line is that trace: the bore path ND filed as survey stations." +
           " The teal ring is NDIC's own well_type — disposal and injection wells of any" +
           " injected stream, classed by cr_nd_well_type_disposal_1, the code drawn as filed.",

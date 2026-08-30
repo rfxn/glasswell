@@ -45,10 +45,9 @@ describe("a cell renders the fact the API stated, never a tidier one (§3.2)", (
     expect(figure.getAttribute("handle")).toBe(
       productionEnvelope.data._lineage["series.oil_bbl.3"],
     );
-    // The report vintage is the column's own companion, not a separate column.
-    expect(figure.getAttribute("vintage")).toBe(
-      productionEnvelope.data.series.oil_bbl_report_vintage[3],
-    );
+    // No vintage attribute: the grid states its vintages once on the strap, and this
+    // figure's own handle resolves the one it read at.
+    expect(figure.hasAttribute("vintage")).toBe(false);
     expect(figure.getAttribute("granularity")).toBe("well_observed");
   });
 

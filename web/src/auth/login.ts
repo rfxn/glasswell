@@ -7,10 +7,13 @@ export interface LoginPanelOptions {
 }
 
 const COPY: Record<LoginPanelOptions["reason"], { title: string; explain: string }> = {
-  required: { title: "Sign in", explain: "This deployment serves nothing until you sign in." },
+  required: {
+    title: "Welcome to glasswell",
+    explain: "Sign in to see the wells, their production history and where every number came from.",
+  },
   expired: {
     title: "Sign in again",
-    explain: "That session has ended. Signing in again returns you to the same view.",
+    explain: "Your session has ended. Signing in again returns you to the same view.",
   },
 };
 

@@ -269,3 +269,4 @@ jobs:
           curl -sf "$GLASSWELL_BASE_URL/" >/dev/null || { echo "static server never came up"; exit 1; }
           node tests/e2e/chrome-fold.mjs
           node tests/e2e/status-surface.mjs
+          node tests/e2e/hidden-display.mjs

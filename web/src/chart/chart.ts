@@ -94,6 +94,8 @@ export function renderChart(
     readout.className = "gw-series-readout";
     readout.setAttribute("aria-live", "polite");
     container.append(readout, stateKey(view.chart, callbacks));
+    const vintages = vintageDisclosure(view.chart);
+    if (vintages) container.appendChild(vintages);
 
     const paint = (index: number): void => {
       const next = months[index];
@@ -263,17 +265,6 @@ function legend(chart: ChartSeries, callbacks: ChartCallbacks): HTMLElement {
       basis.textContent = column.basis;
       item.appendChild(basis);
     }
-    if (column.mixedVintages) {
-      const warning = document.createElement("span");
-      warning.className = "gw-chip gw-chip-warn";
-      warning.textContent = "mixed report vintages";
-      item.appendChild(warning);
-    } else if (column.vintage) {
-      const chip = document.createElement("span");
-      chip.className = "gw-chip gw-chip-vintage";
-      chip.textContent = `vintage ${column.vintage}`;
-      item.appendChild(chip);
-    }
     if (column.handle) item.appendChild(handleButton(column.handle, column.label, callbacks));
     wrapper.appendChild(item);
   }
@@ -284,6 +275,42 @@ function handleButton(handle: string, label: string, callbacks: ChartCallbacks):
   // The chart is mounted into hosts that route explain themselves, so it calls back rather
   // than raising the event its own way.
   return explainHandle({ handle, label, activate: (id) => callbacks.onExplain(id) });
+}
+
+/**
+ * Which vintage each stream was read at, one layer down. It is routine provenance rather than
+ * a defect, and on the surface it wore the warning vocabulary; read off the windowed columns,
+ * so it describes the months on screen and not the ones the span dropped (window.ts).
+ */
+function vintageDisclosure(chart: ChartSeries): HTMLElement | null {
+  const rows = chart.columns
+    .map((column) => ({ column, drawn: distinctVintages(column) }))
+    .filter((row) => row.drawn.length > 0);
+  if (rows.length === 0) return null;
+
+  const details = document.createElement("details");
+  details.className = "gw-vintages";
+  const summary = document.createElement("summary");
+  summary.textContent = "Report vintages";
+  details.appendChild(summary);
+
+  const list = document.createElement("dl");
+  list.className = "gw-vintage-list";
+  for (const { column, drawn } of rows) {
+    const term = document.createElement("dt");
+    term.textContent = column.label;
+    const value = document.createElement("dd");
+    value.setAttribute("data-no-glossary", "");
+    value.textContent = column.mixedVintages ? drawn.join(", ") : (column.vintage ?? drawn[0] ?? "");
+    list.append(term, value);
+  }
+  details.appendChild(list);
+  return details;
+}
+
+function distinctVintages(column: SeriesColumn): string[] {
+  const present = column.vintages.filter((vintage): vintage is string => vintage !== null);
+  return [...new Set(present)].sort();
 }
 
 /** Without a key the band is a strip of colour, and the gap it explains stays ambiguous. */
@@ -429,12 +456,6 @@ function readoutRow(row: ReadoutRow, callbacks: ChartCallbacks): HTMLElement {
   facts.className = "gw-readout-facts";
   facts.append(swatch, name, value, state);
 
-  if (row.vintage) {
-    const vintage = document.createElement("span");
-    vintage.className = "gw-chip gw-chip-vintage";
-    vintage.textContent = `vintage ${row.vintage}`;
-    facts.appendChild(vintage);
-  }
   element.appendChild(facts);
   if (row.handle) {
     element.appendChild(handleButton(row.handle, `${row.label} in ${row.mark.label}`, callbacks));

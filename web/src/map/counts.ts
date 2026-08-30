@@ -1,3 +1,4 @@
+import { isAuthRefusal } from "../api/client.ts";
 import type { Envelope, Figure, Links } from "../api/envelope.ts";
 import type { ProducingCounts, ProducingWindow } from "./producing.ts";
 import { UNMAPPED_STATUS } from "./status.ts";
@@ -83,6 +84,8 @@ export interface CountsError {
   kind: "error";
   bbox: Bbox;
   message: string;
+  /** Refused for want of a session, which signing in answers — not a count that failed. */
+  auth?: boolean;
 }
 
 export type CountsState = CountsLoading | CountsReady | CountsError;
@@ -263,7 +266,12 @@ export function createCountSource(options: CountSourceOptions): CountSource {
       }
       settle(record, ready(record.bbox, envelope));
     } catch (error) {
-      settle(record, { kind: "error", bbox: record.bbox, message: messageOf(error) });
+      settle(record, {
+        kind: "error",
+        bbox: record.bbox,
+        message: messageOf(error),
+        auth: isAuthRefusal(error),
+      });
     }
   }
 

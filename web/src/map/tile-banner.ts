@@ -1,6 +1,8 @@
 export interface TileBannerHandle {
   element: HTMLElement;
   report(source: string, fellBackTo?: string): void;
+  /** Drops one source's line. The caller is retrying it, so the last attempt is no longer news. */
+  forget(source: string): void;
 }
 
 /**
@@ -35,7 +37,7 @@ export function createTileBanner(): TileBannerHandle {
     element,
     report(source, fellBackTo) {
       const text = fellBackTo
-        ? `Tiles for ${source} did not load — showing ${fellBackTo} instead.`
+        ? `Tiles for ${source} did not load. Showing ${fellBackTo} instead.`
         : `Tiles for ${source} did not load.`;
       const existing = seen.get(source);
       if (existing) {
@@ -48,6 +50,13 @@ export function createTileBanner(): TileBannerHandle {
         seen.set(source, line);
       }
       if (!dismissed) element.hidden = false;
+    },
+    forget(source) {
+      const line = seen.get(source);
+      if (!line) return;
+      line.remove();
+      seen.delete(source);
+      if (seen.size === 0) element.hidden = true;
     },
   };
 }

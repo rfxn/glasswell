@@ -108,6 +108,6 @@ describe("the panel the crossing lands on", () => {
   it("carries the 390 refusal in the page, so it is absent rather than hidden", () => {
     renderSeriesPanel(host, { envelope: productionEnvelope as unknown as Envelope });
     const narrow = host.querySelector(".gw-explore-series-narrow");
-    expect(narrow?.textContent).toContain("the well card draws the same series");
+    expect(narrow?.textContent).toContain("The well card draws the same series");
   });
 });

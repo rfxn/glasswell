@@ -184,7 +184,7 @@ describe("well card", () => {
     expect(frame?.querySelector(".gw-frame-body")?.getAttribute("data-state")).toBe(
       "populated",
     );
-    expect(frame?.textContent).toContain("Physical proximity only — these are not model analogs");
+    expect(frame?.textContent).toContain("Physical proximity only. These are not model analogs");
     expect(links).toHaveLength(2);
     expect(links?.[0]?.getAttribute("href")).toBe("/?well=3305310998");
     expect(frame?.querySelector("gw-figure")?.textContent).toContain("1,320.25 ft");
@@ -498,9 +498,9 @@ describe("completion and formation context", () => {
     const pools = frame.querySelectorAll<HTMLElement>(".gw-context-list > li");
     expect(factsOf(pools[0] as HTMLElement)).toEqual({
       "Pool entity": "3305310451:BAKKEN",
-      "Reported pool": "unavailable — pool not reported",
-      "Canonical formation": "unavailable — pool not reported",
-      "Formation group": "unavailable — pool not reported",
+      "Reported pool": "unavailable: pool not reported",
+      "Canonical formation": "unavailable: pool not reported",
+      "Formation group": "unavailable: pool not reported",
       "First observed month": "2025-10-01",
       "Last observed month": "2026-03-01",
       "Source": "nd_mpr_xlsx · report 2026-08-20",
@@ -508,8 +508,8 @@ describe("completion and formation context", () => {
     expect(factsOf(pools[1] as HTMLElement)).toEqual({
       "Pool entity": "3305310451:UNKNOWN",
       "Reported pool": "UNKNOWN",
-      "Canonical formation": "unavailable — alias unavailable",
-      "Formation group": "unavailable — alias unavailable",
+      "Canonical formation": "unavailable: alias unavailable",
+      "Formation group": "unavailable: alias unavailable",
       "First observed month": "2025-10-01",
       "Last observed month": "2026-03-01",
       "Source": "nd_mpr_xlsx · report 2026-08-20",

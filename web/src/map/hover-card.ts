@@ -144,6 +144,10 @@ export function createHoverCard(options: HoverCardOptions = {}): HoverCardHandle
   // gate-m23 cycle-1 item 8: the cell figures resolve on the card itself, so a cropped
   // screenshot of it still carries the affordance the key holds.
   const handle = explainHandle({ className: "gw-hover-handle", label: "these cell figures" });
+  // Focusable content inside `aria-hidden` is a control a keyboard reader can reach and hear
+  // nothing about. This card only ever appears under a pointer, and the same derivation reaches
+  // the keyboard through the Layers panel, so the ⌾ keeps its click and gives up Tab.
+  handle.tabIndex = -1;
   element.appendChild(handle);
 
   const place = (point: { x: number; y: number }): void => {

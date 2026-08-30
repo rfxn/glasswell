@@ -74,7 +74,7 @@ export async function mountDetail(host: HTMLElement, options: DetailOptions): Pr
       row: options.row,
       data: options.data,
       source: detail
-        ? `the row as the collection served it — fetching the fuller record from ${detail.operationId}`
+        ? `the row as the collection served it, fetching the fuller record from ${detail.operationId}`
         : `${options.dataset.operationId} declares no detail operation, so these are the row's own fields as the collection served them`,
     });
   }
@@ -113,7 +113,7 @@ export async function mountDetail(host: HTMLElement, options: DetailOptions): Pr
       columns,
       row: recordRow(columns, envelope.data),
       data: envelope.data,
-      source: `${detail.operationId} — the fuller record, ${columns.length} fields`,
+      source: `${detail.operationId}: the fuller record, ${columns.length} fields`,
       omitted: omittedFrom(envelope.data),
       resolved: (envelope as { meta?: { as_of?: { resolved?: string | null } } }).meta?.as_of
         ?.resolved,

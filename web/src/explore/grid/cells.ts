@@ -24,7 +24,6 @@ export interface CellContext {
    * stated once above the grid instead of eighteen times inside it — a chip on every row
    * teaches nothing, and the one that appears on the row that was restated teaches everything.
    */
-  uniformVintage?: boolean;
 }
 
 export function renderCell(column: Column, context: CellContext): HTMLElement {
@@ -92,10 +91,6 @@ function figureCell(column: Column, cell: Cell, context: CellContext): Node[] {
 
   const granularity = granularityOf(context.row) ?? source?.granularity ?? null;
   if (granularity) figure.setAttribute("granularity", granularity);
-  const vintage = cell.companions["_report_vintage"] ?? source?.report_vintage ?? null;
-  if (typeof vintage === "string" && context.uniformVintage !== true) {
-    figure.setAttribute("vintage", vintage);
-  }
 
   return [figure, ...marks(cell)];
 }

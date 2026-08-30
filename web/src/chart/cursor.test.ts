@@ -101,8 +101,11 @@ describe("the readout for one month", () => {
     expect(absent?.mark.label).toBe("no report");
   });
 
-  it("carries the report vintage each point was read at", () => {
-    expect(readout?.rows[0]?.vintage).toBe("2026-08-01");
+  // The readout row no longer copies the vintage -- nothing painted it, and the chart's
+  // disclosure reads the column direct. The per-point data it stood for is still here.
+  it("leaves the per-point report vintages on the column the disclosure reads", () => {
+    expect(chart.columns[0]?.vintages[0]).toBe("2026-08-01");
+    expect(readout?.rows[0]).not.toHaveProperty("vintage");
   });
 
   it("reports a missing handle as missing rather than inventing one", () => {

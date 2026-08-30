@@ -338,3 +338,49 @@ describe("the tile-failure banner", () => {
     expect(banner.element.hidden).toBe(true);
   });
 });
+
+/**
+ * ARIA forbids focusable content inside an `aria-hidden` subtree: a keyboard reader can land
+ * on a control that is not in the accessibility tree and hear nothing about it. The card is a
+ * pointer-only affordance — it is driven by `mousemove` and never appears for a keyboard
+ * reader — so the handle keeps its click and stops taking Tab. The same derivation still
+ * reaches the keyboard through the Layers panel, which map.ts feeds via `setProvenance`.
+ */
+describe("the hover card's accessibility contract", () => {
+  const FOCUSABLE = "a[href], button, input, select, textarea, [tabindex]";
+  const CELL = {
+    land_unit_id: "T150N-R97W-23",
+    unit_type: "section",
+    label: "23",
+    well_count: 12,
+    prod_well_count: 9,
+    derivation_id: "drv_cell_1",
+  };
+
+  it("puts nothing focusable inside its aria-hidden subtree", () => {
+    const card = createHoverCard();
+    card.show(CELL, { x: 10, y: 10 });
+
+    expect(card.element.getAttribute("aria-hidden")).toBe("true");
+    const focusable = [...card.element.querySelectorAll<HTMLElement>(FOCUSABLE)];
+    expect(focusable.length).toBeGreaterThan(0);
+    for (const node of focusable) {
+      expect(node.tabIndex, `${node.className || node.tagName} takes Tab`).toBeLessThan(0);
+    }
+  });
+
+  it("keeps the handle clickable, because the cell figures resolve on the card itself", () => {
+    const card = createHoverCard();
+    const seen = vi.fn();
+    card.element.addEventListener(EXPLAIN_EVENT, (event) => {
+      seen((event as CustomEvent<{ handle: string }>).detail.handle);
+    });
+    card.show(CELL, { x: 10, y: 10 });
+
+    const handle = card.element.querySelector<HTMLButtonElement>(".gw-hover-handle");
+    expect(handle?.hidden).toBe(false);
+    handle?.click();
+
+    expect(seen).toHaveBeenCalledWith("drv_cell_1");
+  });
+});

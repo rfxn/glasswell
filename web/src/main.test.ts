@@ -243,6 +243,56 @@ describe("one dispatch on view, three surfaces (SB-08 §2.1)", () => {
     expect(createMap).not.toHaveBeenCalled();
   });
 
+  // The map mounts before the session resolves, so its tiles and counts are refused and it
+  // latches that. Signing in has to reach it, and the probe that already failed must not be
+  // what tells the rest of the app who the reader is.
+  describe("signing in after a signed-out arrival on the map", () => {
+    const refusesSession = (input: RequestInfo | URL): Promise<Response> => {
+      const path = String(input).split("?")[0];
+      const status = path === "/v1/session" ? 403 : 404;
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ type: "/v1/errors/unauthenticated", title: "Forbidden", status }),
+          { status, headers: { "content-type": "application/problem+json" } },
+        ),
+      );
+    };
+
+    const signIn = (): void => {
+      vi.stubGlobal("fetch", servesSession);
+      const panel = host("gw-key-host");
+      (panel.querySelector("#gw-login-user") as HTMLInputElement).value = "ryan";
+      (panel.querySelector("#gw-login-pass") as HTMLInputElement).value = "correct horse";
+      (panel.querySelector("form") as HTMLFormElement).dispatchEvent(
+        new SubmitEvent("submit", { bubbles: true, cancelable: true }),
+      );
+    };
+
+    it("announces the session, so the map can re-ask for what it was refused", async () => {
+      vi.stubGlobal("fetch", refusesSession);
+      const bus = await bootAt("/");
+      await vi.waitFor(() => expect(host("gw-key-host").hidden).toBe(false));
+      const began = vi.fn();
+      bus.onSessionBegan(began);
+
+      signIn();
+
+      await vi.waitFor(() => expect(began).toHaveBeenCalledTimes(1));
+    });
+
+    it("shows the reader they are signed in without re-asking who they are", async () => {
+      vi.stubGlobal("fetch", refusesSession);
+      await bootAt("/");
+      await vi.waitFor(() => expect(host("gw-key-host").hidden).toBe(false));
+      expect(host("gw-logout-btn").hidden).toBe(true);
+
+      signIn();
+
+      await vi.waitFor(() => expect(host("gw-logout-btn").hidden).toBe(false));
+      expect(host("gw-logout-btn").title).toContain("ryan");
+    });
+  });
+
   it("clears any owner key an earlier build left in this browser", async () => {
     window.localStorage.setItem("glasswell.key", "f".repeat(64));
 

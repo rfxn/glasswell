@@ -236,8 +236,8 @@ export function overflowNote(cut: number): HTMLElement | null {
   if (cut <= 0) return null;
   return note(
     cut === 1
-      ? "1 more column is off the right edge of this panel — scroll the grid sideways to read it. Nothing is hidden; the panel is narrower than the row."
-      : `${cut} more columns are off the right edge of this panel — scroll the grid sideways to read them. Nothing is hidden; the panel is narrower than the row.`,
+      ? "1 more column is off the right edge of this panel. Scroll the grid sideways to read it. Nothing is hidden; the panel is narrower than the row."
+      : `${cut} more columns are off the right edge of this panel. Scroll the grid sideways to read them. Nothing is hidden; the panel is narrower than the row.`,
     "gw-grid-offscreen",
   );
 }
@@ -249,7 +249,7 @@ export function overflowNote(cut: number): HTMLElement | null {
  */
 function narrowNotice(): HTMLElement {
   return note(
-    "The result grid needs a wider window — the API guide below works everywhere.",
+    "The result grid needs a wider window. The API guide below works everywhere.",
     "gw-grid-narrow",
   );
 }
@@ -361,11 +361,7 @@ function bodyRow(
     name.textContent = column.name;
     cell.append(name);
     cell.append(
-      renderCell(column, {
-        data: loaded.envelope.data,
-        row,
-        uniformVintage: loaded.vintages.size === 1,
-      }),
+      renderCell(column, { data: loaded.envelope.data, row }),
     );
     element.append(cell);
   }
@@ -419,11 +415,18 @@ function detailSlot(
 function strap(columns: readonly Column[], loaded: Loaded, options: GridOptions): HTMLElement {
   const wrapper = document.createElement("div");
   wrapper.className = "gw-grid-strap";
-  const [only] = [...loaded.vintages];
-  if (loaded.vintages.size === 1 && only !== undefined) {
+  // One line either way. A second vintage changes what the line says, not how many places it
+  // is said — eighteen per-cell chips was a column of noise, and each figure's own handle
+  // resolves the vintage it read at.
+  const vintages = [...loaded.vintages].sort();
+  const [only] = vintages;
+  if (only !== undefined) {
     const vintage = document.createElement("p");
     vintage.className = "gw-grid-vintage";
-    vintage.textContent = `every value here reports at vintage ${only}`;
+    vintage.textContent =
+      vintages.length === 1
+        ? `every value here reports at vintage ${only}`
+        : `values here report at ${vintages.length} vintages: ${vintages.join(", ")}`;
     wrapper.append(vintage);
   }
   wrapper.append(coverageLine(columns));
