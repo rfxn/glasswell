@@ -26,6 +26,7 @@ from glasswell.lineage import (
 )
 from glasswell.lineage.audit import emit
 from glasswell.lineage.serialization import hash_payload
+from glasswell.marts.cumulatives import per_well_cumulative_cte
 from glasswell.marts.tiles import METRIC_LAYERS, install_tile_functions
 
 MEMBERSHIP_RULE = "cr_land_agg_membership_2"
@@ -85,20 +86,7 @@ member as (
       from by_surface
      where not exists (select 1 from by_midpoint
                         where by_midpoint.api10 = by_surface.api10)),
-prod as (
-    -- Restricted to the wells membership actually joins. `left join prod using (api10)` reads
-    -- and discards every other row, and after the New Mexico promotion the view spans 24.8M of
-    -- them. The output is identical by construction and a test asserts it on a three-state
-    -- fixture; what changes is that the mart stops scanning a view it cannot use.
-    select api10,
-           sum(volume) filter (where stream in ('oil', 'condensate')) as liquid_bbl,
-           sum(volume) filter (where stream = 'gas') as gas_mcf,
-           sum(volume) filter (where stream = 'water') as water_bbl
-      from canonical.production_monthly_latest
-     where entity_type = 'well' and api10 is not null
-       and api10 in (select api10 from member)
-     group by api10)
-"""
+""" + per_well_cumulative_cte("member")
 
 _SECTION_CELLS = _MEMBERSHIP + """
 select member.land_unit_id,
