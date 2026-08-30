@@ -10,3 +10,8 @@
 - [New] login throttling: per-account and per-IP backoff on a doubling curve capped at 900s,
       15-minute time-boxed lockout, and a known-good-IP bypass so a flood from an
       unfamiliar address cannot lock the owner out of their own network
+- [Fix] the client address is resolved from a Caddy-set edge marker, never from
+      X-Forwarded-For; uvicorn runs with --forwarded-allow-ips '*', under which the
+      leftmost X-Forwarded-For entry is attacker-controlled
+- [New] infra/cloudflare: the edge range list, a weekly refresh unit that refuses to
+      publish a shrunken list, and a misconfiguration detector that never grants trust
