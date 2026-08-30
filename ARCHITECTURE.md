@@ -29,8 +29,11 @@ a number from six months ago still reproducible today.
 
 One schema per regulator file type. Resident tables are `staging.nd_mpr_oil`, the
 `staging.nd_gis_*`, `staging.tx_gis_wells_*`, `staging.blm_plss_*` and
-`staging.stg_nm_ocd_*` families, `staging.tx_wellbore_ewa`, `staging.nm_c115b_upstream`
-and `staging.fracfocus_disclosures`. Parsers write here and nowhere else. They hold no
+`staging.stg_nm_ocd_*` families, `staging.tx_wellbore_ewa`, `staging.nm_c115b_upstream`,
+`staging.nm_ocd_wells_gis` and `staging.fracfocus_disclosures`. Two of those are staging
+termini by design rather than by omission — `nm_c115b_upstream` because its rolling window
+cannot be re-fetched once it moves, and `nm_ocd_wells_gis` because the cross-source parity
+measurement is what decides whether and how it promotes. Parsers write here and nowhere else. They hold no
 opinions: a FracFocus timestamp remains source text until the conformance step validates it.
 
 Rows that fail parsing or validation go to **quarantine** with a reason code, not
@@ -63,7 +66,9 @@ in a study area, the assumption gets revisited rather than defended.
 
 Resident today: the PostGIS geometry martin turns into vector tiles
 (`nd_wells_tile`, `nd_laterals_tile`, `nd_survey_traces_tile`, `tx_wells_tile`,
-`tx_laterals_tile`, `land_units_tile`, `land_metrics_tile`, plus spacing units,
+`tx_laterals_tile`, `nm_wells_tile` — a point layer with no lateral sibling, because no
+in-scope New Mexico source ships one — `land_units_tile`, `land_metrics_tile`, plus spacing
+units,
 which are a view rather than a table), the `nd_well_card` table, and the current
 physical-neighbour pair `nd_neighbor_subjects` / `nd_neighbor_edges`. martin reads
 none of those directly: it selects from the `marts.tile_*` views over them, which is
