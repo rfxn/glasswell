@@ -101,3 +101,27 @@ def test_the_unit_does_not_reach_the_api_socket() -> None:
 
     assert "api.sock" not in directives
     assert "AF_UNIX" not in directives
+
+
+def test_the_unit_does_not_wait_for_a_readiness_notification_cloudflared_never_sends() -> None:
+    """`tunnel run` serves without sd_notify, so Type=notify kills a working tunnel.
+
+    Observed on 2026.8.2 during the first cutover: four registered QUIC connections and
+    `/ready` reporting `readyConnections=4`, while systemd held the unit in `activating`,
+    timed the start out and restarted it — `NRestarts=49` against a tunnel that was up the
+    whole time.
+    """
+    unit = UNIT_PATH.read_text(encoding="utf-8")
+    types = [line.split("=", 1)[1].strip() for line in unit.splitlines() if line.startswith("Type=")]
+    assert types == ["exec"], f"expected a single Type=exec, found {types}"
+
+
+def test_install_makes_the_connector_directory_traversable_by_its_group() -> None:
+    """0640 root:cloudflared is unreadable through a 0700 root:root parent.
+
+    The connector then fails with `open /etc/cloudflared/config.yml: permission denied`,
+    naming the file rather than the directory that actually refused it.
+    """
+    install = (INFRA / "install.sh").read_text(encoding="utf-8")
+    assert 'command chown root:cloudflared "$CLOUDFLARED_DIR"' in install
+    assert 'command chmod 0750 "$CLOUDFLARED_DIR"' in install
