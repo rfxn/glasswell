@@ -39,6 +39,36 @@ def test_the_collection_searches_well_names(client: TestClient) -> None:
     assert [item["well_name"] for item in data] == ["CONTRACT 1H"]
 
 
+def test_the_name_search_does_not_resolve_an_api10_and_says_so_by_returning_nothing(
+    client: TestClient,
+) -> None:
+    """Why the identity filter exists rather than a widened `q`: a name search handed an
+    identifier cannot answer, and the served semantics say to use `api10` for that."""
+    assert client.get("/v1/wells", params={"q": EXAMPLE_API10}).json()["data"] == []
+
+
+def test_the_collection_resolves_the_identity_spine_whole_and_never_as_a_fragment(
+    client: TestClient,
+) -> None:
+    found = client.get("/v1/wells", params={"api10": EXAMPLE_API10}).json()["data"]
+
+    assert [item["api10"] for item in found] == [EXAMPLE_API10]
+    assert client.get("/v1/wells", params={"api10": "3305399999"}).json()["data"] == []
+    # A fragment is refused at the grammar rather than answered as a prefix search.
+    assert client.get("/v1/wells", params={"api10": "330531"}).status_code == 422
+
+
+def test_the_identity_filter_takes_the_api14_literal_the_well_carries(
+    client: TestClient,
+) -> None:
+    """API-14 normalises to API-10 for joins, and the well's own recorded literal is that join —
+    which digits make the API-10 is an identity rule's declaration, not this route's."""
+    found = client.get("/v1/wells", params={"api10": f"{EXAMPLE_API10}0000"}).json()["data"]
+
+    assert [item["api10"] for item in found] == [EXAMPLE_API10]
+    assert client.get("/v1/wells", params={"api10": f"{EXAMPLE_API10}9999"}).json()["data"] == []
+
+
 def test_the_collection_filters_on_a_bounding_box(client: TestClient) -> None:
     inside = client.get("/v1/wells", params={"bbox": "-104,47.5,-103,48.5"}).json()["data"]
     outside = client.get("/v1/wells", params={"bbox": "-98,46,-97,47"}).json()["data"]

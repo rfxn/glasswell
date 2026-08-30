@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from glasswell.api.errors import TYPE_BASE
+from glasswell.api.examples import EXAMPLE_API10
 from glasswell.api.pagination import DEFAULT_LIMIT, SPINE_LIMIT_CAP, WELLS_LIMIT_CAP
 
 SPINE_COLLECTIONS = ("/v1/manifests", "/v1/quarantine", "/v1/conformance", "/v1/glossary")
@@ -129,6 +130,24 @@ def test_the_provenance_filter_cannot_rescope_a_page_mid_traversal(client: TestC
     assert dropped.status_code == 422
     assert dropped.json()["type"] == f"{TYPE_BASE}/cursor_query_mismatch"
     assert "geometry_provenance=surface" in filtered["links"]["next"]
+
+
+def test_the_identity_filter_cannot_rescope_a_page_mid_traversal(client: TestClient) -> None:
+    """F-3 again for the spine lookup. Only the adding direction is reachable: `api10` resolves
+    at most one well, so a page under it never has more, and there is no cursor to drop it
+    from."""
+    unfiltered = client.get("/v1/wells", params={"limit": 2}).json()
+
+    added = client.get(
+        "/v1/wells",
+        params={"limit": 2, "cursor": unfiltered["meta"]["next_cursor"], "api10": EXAMPLE_API10},
+    )
+
+    resolved = client.get("/v1/wells", params={"api10": EXAMPLE_API10}).json()
+
+    assert added.status_code == 422
+    assert added.json()["type"] == f"{TYPE_BASE}/cursor_query_mismatch"
+    assert resolved["meta"]["next_cursor"] is None
 
 
 def test_a_corrupt_cursor_is_refused(client: TestClient) -> None:

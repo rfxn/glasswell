@@ -89,7 +89,7 @@ describe("the §2.6 table, both directions", () => {
     expect(crossing?.next.view).toBe("explore");
     expect(crossing?.next.ds).toBe("wells");
     expect(crossing?.next.row).toBe(API10);
-    expect(crossing?.next.extra["f.q"]).toEqual([API10]);
+    expect(crossing?.next.extra["f.api10"]).toEqual([API10]);
   });
 
   it("carries the production chart header to that well's series", () => {
@@ -407,6 +407,29 @@ describe("every declared destination is one the committed document actually serv
     }
   });
 
+  /**
+   * The check above is what let the well card ship dead: `f.q` names a parameter `/v1/wells`
+   * really does take, and a name search handed an API-10 answers with nothing. A crossing that
+   * opens a row has to narrow by the identity that names the row, not merely by something the
+   * operation accepts — and whether that parameter can then answer is `tests/contract/
+   * test_crossing_targets.py`, because only the API can say.
+   */
+  it("narrows a row hop by the destination's own identity, not by any parameter it takes", () => {
+    const opened = everyCrossing().filter(
+      (crossing) => crossing.next.view === "explore" && crossing.next.row !== null,
+    );
+
+    expect(opened.map((crossing) => crossing.id)).toEqual(["rows-for-this-well"]);
+    for (const crossing of opened) {
+      const declared = dataset(crossing.next.ds as string);
+      expect(declared.row_id, crossing.id).toHaveLength(1);
+      const identity = (declared.row_id[0] as string).replace(/^\//, "");
+      const request = requestFor(declared, crossing.next);
+
+      expect(request.query[identity], crossing.id).toEqual([crossing.next.row]);
+    }
+  });
+
   it("issues a request with nothing missing, which is what a dead crossing would show as", () => {
     for (const crossing of everyCrossing()) {
       if (crossing.next.view !== "explore" || crossing.next.ds === null) continue;
@@ -423,7 +446,7 @@ describe("every declared destination is one the committed document actually serv
     expect(requestFor(dataset("production"), series.next).path).toBe(
       `/v1/wells/${API10}/production`,
     );
-    expect(requestFor(dataset("wells"), rows.next).query["q"]).toEqual([API10]);
+    expect(requestFor(dataset("wells"), rows.next).query["api10"]).toEqual([API10]);
   });
 });
 
