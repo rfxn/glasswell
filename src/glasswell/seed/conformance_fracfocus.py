@@ -250,6 +250,7 @@ FRACFOCUS_RULES: tuple[dict[str, object], ...] = (
             "null_semantics_vocabulary": [
                 "reported",
                 "no_report",
+                "withheld",
                 "lateral_length_unavailable",
                 "lateral_length_implausible",
                 "intensity_out_of_range",
@@ -297,7 +298,12 @@ FRACFOCUS_RULES: tuple[dict[str, object], ...] = (
             " with its own effective date. The last vocabulary member is the state where this"
             " rule itself is absent: with no bounds registered there is nothing to apply, and"
             " the response says the registry is missing rather than reporting no_report, which"
-            " would state that the source disclosed nothing."
+            " would state that the source disclosed nothing. no_report and withheld are both"
+            " members for the same reason at the other end: the quotient inherits the class the"
+            " promotion recorded for its numerator, so a withheld volume yields a withheld"
+            " intensity. Classifying an absent numerator by the nullness of the value instead"
+            " would report the regulator's withholding as an operator who filed nothing, which"
+            " is the conflation cr_nd_null_semantics_1 refuses one layer down."
         ),
         "evidence_url": DOWNLOAD_URL,
         "code_ref": "glasswell.api.routers.completions:_fluid_intensity",

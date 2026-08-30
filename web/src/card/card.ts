@@ -438,6 +438,7 @@ const VOLUME_REASONS: Record<string, string> = {
 /** cr_ff_fluid_intensity_1's vocabulary, for the quotient. A different set of facts. */
 const INTENSITY_REASONS: Record<string, string> = {
   no_report: "unavailable \u2014 no disclosed volume",
+  withheld: "unavailable \u2014 withheld by the regulator",
   lateral_length_unavailable: "unavailable \u2014 no lateral geometry",
   lateral_length_implausible: "unavailable \u2014 lateral too short to divide by",
   intensity_out_of_range: "unavailable \u2014 result outside the rule's range",

@@ -398,7 +398,7 @@
         "additionalProperties": false,
         "properties": {
           "base_water_null_semantics": {
-            "description": "reported, reported_zero or no_report for the disclosed volume.",
+            "description": "reported, reported_zero, no_report or withheld for the disclosed volume \u2014 the same four classes canonical keeps apart, never collapsed into one absence.",
             "title": "Base Water Null Semantics",
             "type": "string"
           },
@@ -432,7 +432,7 @@
             "x-glasswell-glossary": "gt_fluid_intensity"
           },
           "intensity_null_semantics": {
-            "description": "reported, or why no intensity is served: no_report, lateral_length_unavailable, lateral_length_implausible, intensity_out_of_range, or intensity_rule_unregistered where cr_ff_fluid_intensity is not registered \u2014 a gap in the registry, not a fact about the source.",
+            "description": "reported, or why no intensity is served. An absent numerator is reported as the source classified it \u2014 no_report where nothing was disclosed, withheld where the regulator held it back \u2014 and the divisor and the result have their own reasons: lateral_length_unavailable, lateral_length_implausible, intensity_out_of_range. intensity_rule_unregistered means cr_ff_fluid_intensity is not registered: a gap in the registry, not a fact about the source.",
             "title": "Intensity Null Semantics",
             "type": "string"
           },

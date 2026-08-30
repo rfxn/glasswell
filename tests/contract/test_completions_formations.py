@@ -723,6 +723,28 @@ def test_a_disclosure_with_no_volume_reports_rather_than_zeroes(
     assert design["intensity_null_semantics"] == "no_report"
 
 
+def test_a_withheld_volume_yields_a_withheld_intensity_not_an_undisclosed_one(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The two rows of the design block must agree about which fact this is.
+
+    Base fluid said `withheld` while Fluid intensity said `no_report`, so the card rendered
+    'withheld by the regulator' immediately above 'no disclosed volume' — for one well, about
+    one number, asserting the operator filed nothing when the regulator held it back.
+    """
+    api10 = "3305300001"
+    seed_well_spatial(seeded, api10=api10, geom_type="lateral")
+    _seed_design(
+        seeded, api10=api10, disclosure_id="ff-withheld", volume=None, semantics="withheld"
+    )
+    design = client.get(f"/v1/wells/{api10}/completions").json()["data"]["design"]
+
+    assert design["base_water_null_semantics"] == "withheld"
+    assert design["intensity_null_semantics"] == "withheld"
+    assert design["fluid_intensity"] is None
+    assert design["intensity_null_semantics"] != "no_report"
+
+
 def test_two_disclosures_are_disclosed_rather_than_summed(
     client: TestClient, seeded: psycopg.Connection
 ) -> None:
