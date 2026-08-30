@@ -1064,13 +1064,30 @@ gw-figure {
   padding: 0.05rem 0.3rem;
 }
 
-.gw-chip-vintage {
-  color: var(--amber-text);
+.gw-vintages {
+  font-size: var(--gw-fs-eyebrow);
+  color: var(--slate);
+  margin: 0.3rem 0 0;
 }
 
-.gw-chip-warn {
-  color: var(--gas-text);
-  border-color: var(--gas);
+.gw-vintages > summary {
+  cursor: pointer;
+  letter-spacing: 0.02em;
+}
+
+.gw-vintage-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.1rem 0.5rem;
+  margin: 0.3rem 0 0;
+}
+
+.gw-vintage-list dt {
+  color: var(--muted);
+}
+
+.gw-vintage-list dd {
+  margin: 0;
 }
 
 .gw-chart-legend {

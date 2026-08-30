@@ -198,3 +198,76 @@ describe("re-rendering the same host", () => {
     expect(host.querySelectorAll(".gw-series-readout").length).toBe(1);
   });
 });
+
+/**
+ * Report vintage is routine provenance, not a warning. On the reading surface it was a chip in
+ * the warning vocabulary, which read as something being wrong with the series; it belongs one
+ * layer down, and it has to stay true to the window that is actually drawn.
+ */
+describe("report vintage, one layer down", () => {
+  const mixed = (): ReturnType<typeof toChartSeries> => {
+    const pm = months("2026-01", 4);
+    const data = production(pm);
+    return toChartSeries({
+      ...data,
+      series: {
+        ...data.series,
+        // The oldest month is the only one on the earlier vintage, so a window that drops it
+        // drops the mixing with it (window.ts:76).
+        oil_bbl_report_vintage: pm.map((_, index) => (index === 0 ? "2026-07-01" : "2026-08-20")),
+      },
+    });
+  };
+
+  it("paints no vintage or mixed-vintage chip on the surface", () => {
+    renderChart(host, mixed(), callbacks);
+
+    expect(host.querySelector(".gw-chip-warn")).toBeNull();
+    expect(host.querySelector(".gw-chip-vintage")).toBeNull();
+    expect(host.querySelector(".gw-chart-legend")?.textContent).not.toContain("vintage");
+    expect(host.querySelector(".gw-series-readout")?.textContent).not.toContain("vintage");
+  });
+
+  it("keeps it reachable behind a disclosure that is closed by default", () => {
+    renderChart(host, mixed(), callbacks);
+    const details = host.querySelector<HTMLDetailsElement>("details.gw-vintages");
+
+    expect(details).not.toBeNull();
+    expect(details?.open).toBe(false);
+    expect(details?.querySelector("summary")?.textContent).toContain("Report vintages");
+    expect(details?.textContent).toContain("2026-07-01");
+    expect(details?.textContent).toContain("2026-08-20");
+  });
+
+  it("reports the vintages the drawn window still holds, not the ones it dropped", () => {
+    const pm = months("2020-01", 70);
+    const data = production(pm);
+    const long = toChartSeries({
+      ...data,
+      series: {
+        ...data.series,
+        oil_bbl_report_vintage: pm.map((_, index) => (index === 0 ? "2026-07-01" : "2026-08-20")),
+      },
+    });
+
+    renderChart(host, long, callbacks);
+
+    // The default span draws the last 60 of 70 months, which drops the only month on the
+    // earlier vintage. Naming it over the drawn points would be false (window.ts:76).
+    const details = host.querySelector("details.gw-vintages");
+    expect(details?.textContent).toContain("2026-08-20");
+    expect(details?.textContent).not.toContain("2026-07-01");
+  });
+
+  it("says nothing at all where the series carried no vintage", () => {
+    const data = production(months("2026-01", 3));
+    const bare = toChartSeries({
+      ...data,
+      series: { ...data.series, oil_bbl_report_vintage: [], gas_mcf_report_vintage: [] },
+    });
+
+    renderChart(host, bare, callbacks);
+
+    expect(host.querySelector("details.gw-vintages")).toBeNull();
+  });
+});

@@ -45,7 +45,7 @@ describe("the document head names the product, not a coverage footprint", () => 
 
   it("pins the title to the product name and its subtitle", () => {
     expect(/<title>([\s\S]*?)<\/title>/.exec(head)?.[1]).toBe(
-      "glasswell — subsurface well intelligence",
+      "glasswell: subsurface well intelligence",
     );
   });
 
@@ -62,7 +62,7 @@ describe("the document head names the product, not a coverage footprint", () => 
   it("wires the share card so an unfurl is not the title alone", () => {
     const description = meta("name", "description");
 
-    expect(meta("property", "og:title")).toBe("glasswell — subsurface well intelligence");
+    expect(meta("property", "og:title")).toBe("glasswell: subsurface well intelligence");
     expect(meta("property", "og:image")).toBe("/og-card.png");
     expect(meta("property", "og:image:alt")).not.toBe("");
     expect(meta("name", "twitter:card")).toBe("summary_large_image");

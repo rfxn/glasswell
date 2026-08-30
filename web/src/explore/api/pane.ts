@@ -31,7 +31,7 @@ const SIDECAR_NOTE =
   "one handle for the whole series, not one per point: it is rooted here and covers what is under it.";
 const FIGURE_NOTE = "a scalar carries its own d, so one number is traceable without a sidecar.";
 const UNIT_NOTE =
-  "no figure object on this page, so no column here claims a unit — units arrive with values.";
+  "no figure object on this page, so no column here claims a unit. Units arrive with values.";
 const SERIES_UNIT_NOTE =
   "the units on this page are read off _units per response, never off the schema (O-1).";
 const CACHE_NOTE = "no cache class is declared yet (O-3), so this is the response's own Cache-Control.";
@@ -85,7 +85,7 @@ function render(
   if (!call || (options.state.ds !== null && call.dataset.id !== options.state.ds)) {
     root.append(
       note(
-        "The call behind whatever the centre column is showing renders here — its URL, its parameters and the envelope it answered with.",
+        "The call behind whatever the centre column is showing renders here: its URL, its parameters and the envelope it answered with.",
       ),
     );
     return root;
@@ -401,7 +401,7 @@ function responseBody(call: ApiCall): HTMLElement {
     const rest = sidecars.length - SIDECARS.length;
     const named = sidecars.slice(0, SIDECARS.length).join(", ");
     const listed = rest > 0 ? `${named} and ${rest} more` : named;
-    body.append(callout(`${listed} — ${SIDECAR_NOTE}`, "sidecar"));
+    body.append(callout(`${listed}: ${SIDECAR_NOTE}`, "sidecar"));
   }
   if (hasFigure(envelope["data"])) body.append(callout(FIGURE_NOTE, "figure"));
   else if (sidecars.some((pointer) => pointer.endsWith("/_units"))) {
@@ -422,7 +422,7 @@ function responseBody(call: ApiCall): HTMLElement {
   count.textContent =
     shown === json
       ? `${format(whole)} bytes, whole`
-      : `${format(bytesOf(shown))} of ${format(whole)} bytes — the rest is on the wire, not here`;
+      : `${format(bytesOf(shown))} of ${format(whole)} bytes. The rest is on the wire, not here`;
   body.append(count);
   return body;
 }

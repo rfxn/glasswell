@@ -236,8 +236,8 @@ export function overflowNote(cut: number): HTMLElement | null {
   if (cut <= 0) return null;
   return note(
     cut === 1
-      ? "1 more column is off the right edge of this panel — scroll the grid sideways to read it. Nothing is hidden; the panel is narrower than the row."
-      : `${cut} more columns are off the right edge of this panel — scroll the grid sideways to read them. Nothing is hidden; the panel is narrower than the row.`,
+      ? "1 more column is off the right edge of this panel. Scroll the grid sideways to read it. Nothing is hidden; the panel is narrower than the row."
+      : `${cut} more columns are off the right edge of this panel. Scroll the grid sideways to read them. Nothing is hidden; the panel is narrower than the row.`,
     "gw-grid-offscreen",
   );
 }
@@ -249,7 +249,7 @@ export function overflowNote(cut: number): HTMLElement | null {
  */
 function narrowNotice(): HTMLElement {
   return note(
-    "The result grid needs a wider window — the API guide below works everywhere.",
+    "The result grid needs a wider window. The API guide below works everywhere.",
     "gw-grid-narrow",
   );
 }

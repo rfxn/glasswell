@@ -26,8 +26,8 @@ const CURSOR_KEYS = ["k", "t", "v", "q"] as const;
 const TEACHING: Record<(typeof CURSOR_KEYS)[number], string> = {
   k: "sort key of the last row on this page",
   t: "tiebreak id, so two rows sharing a sort key cannot be skipped or repeated",
-  v: "the as-of this walk is pinned to — why a restatement landing mid-walk cannot shift rows",
-  q: "fingerprint of your filters — why changing one mid-walk is a 422 instead of a wrong answer",
+  v: "the as-of this walk is pinned to: why a restatement landing mid-walk cannot shift rows",
+  q: "fingerprint of your filters: why changing one mid-walk is a 422 instead of a wrong answer",
 };
 
 export function decodeCursor(token: string): CursorParts | null {
@@ -197,8 +197,8 @@ function uncursored(model: Pagination): HTMLElement {
   note.className = "gw-page-uncursored";
   note.textContent =
     model.limitCap === null
-      ? "This collection is not cursor-paginated — it answers in one page."
-      : `This collection is not cursor-paginated — limit is the whole control, and the server` +
+      ? "This collection is not cursor-paginated. It answers in one page."
+      : `This collection is not cursor-paginated. Limit is the whole control, and the server` +
         ` caps it at ${model.limitCap}.`;
   return note;
 }

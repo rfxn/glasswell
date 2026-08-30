@@ -47,7 +47,7 @@ function narrowNotice(): HTMLElement {
   const element = document.createElement("p");
   element.className = "gw-explore-series-narrow";
   element.textContent =
-    "This plot needs a wider window — the well card draws the same series, with the same" +
+    "This plot needs a wider window. The well card draws the same series, with the same" +
     " month readout, at every width.";
   return element;
 }

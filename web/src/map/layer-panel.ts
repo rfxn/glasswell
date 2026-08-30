@@ -234,7 +234,7 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
   const subtitle = document.createElement("p");
   subtitle.className = "gw-layer-sub";
   subtitle.textContent = layer.pendingSource
-    ? `${layer.subtitle} — source not ingested`
+    ? `${layer.subtitle}: source not ingested`
     : layer.subtitle;
   if (layer.snapshot) {
     subtitle.appendChild(
@@ -284,7 +284,7 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
   const behind = document.createElement("p");
   behind.className = "gw-layer-nocollection";
   behind.hidden = layer.collection !== null;
-  behind.textContent = "No served collection carries this layer — it is drawn from tiles only.";
+  behind.textContent = "No served collection carries this layer. It is drawn from tiles only.";
   text.appendChild(behind);
 
   const hint = document.createElement("p");

@@ -59,7 +59,7 @@ export const CLASS_C_DATASETS: readonly ProposedEntry[] = [
     section: "SB-08 §7.1",
     phase: null,
     amendment: "A-3",
-    status: "proposed — Track A1b/D0 owns it; it gates the cross-well grid at P-B",
+    status: "proposed: Track A1b/D0 owns it; it gates the cross-well grid at P-B",
   },
 ];
 
@@ -77,7 +77,7 @@ export function renderRail(host: HTMLElement, options: RailOptions): void {
     const degraded = document.createElement("p");
     degraded.className = "gw-explore-rail-degraded";
     degraded.textContent =
-      "The catalogue could not be read from /openapi.json, so no dataset is listed. Nothing is missing from the API — this surface simply cannot see it right now.";
+      "The catalogue could not be read from /openapi.json, so no dataset is listed. Nothing is missing from the API. This surface simply cannot see it right now.";
     parts.push(degraded);
   } else {
     for (const group of options.catalogue.groups) {
@@ -163,7 +163,7 @@ function gapEntry(entry: GapEntry, kind: string): HTMLElement {
   item.className = "gw-explore-gap";
   item.dataset["gap"] = kind;
   item.setAttribute("aria-disabled", "true");
-  item.title = `${entry.section} — specified, not served`;
+  item.title = `${entry.section}: specified, not served`;
 
   const title = document.createElement("span");
   title.className = "gw-explore-gap-title";

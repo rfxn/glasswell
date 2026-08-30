@@ -548,9 +548,9 @@ function unavailableReason(
   semantics: CompletionPool["formation_null_semantics"],
 ): string {
   if (value !== null && value !== "") return value;
-  if (semantics === "pool_not_reported") return "unavailable — pool not reported";
-  if (semantics === "alias_unavailable") return "unavailable — alias unavailable";
-  return "unavailable — no group assigned";
+  if (semantics === "pool_not_reported") return "unavailable: pool not reported";
+  if (semantics === "alias_unavailable") return "unavailable: alias unavailable";
+  return "unavailable: no group assigned";
 }
 
 function lineageButton(handle: string, label: string): HTMLButtonElement {

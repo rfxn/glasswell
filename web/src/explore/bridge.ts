@@ -191,8 +191,8 @@ export function whatsBehindThisLayer(
   const title = narrows
     ? "Open the collection this layer draws from, narrowed to the current view."
     : extentOff
-      ? "Open the collection this layer draws from. Map view is unticked — the counts cover everything ingested — so the whole collection is listed."
-      : `Open the collection this layer draws from. The view is too wide to narrow by — the box is capped at ${BBOX_DEGREE_CAP} degrees a side — so the whole collection is listed.`;
+      ? "Open the collection this layer draws from. Map view is unticked (the counts cover everything ingested), so the whole collection is listed."
+      : `Open the collection this layer draws from. The view is too wide to narrow by (the box is capped at ${BBOX_DEGREE_CAP} degrees a side), so the whole collection is listed.`;
 
   return crossing(
     "whats-behind-this-layer",
@@ -287,7 +287,7 @@ export function applyCrossing(link: HTMLAnchorElement, crossing: Crossing): void
     return;
   }
   link.removeAttribute("href");
-  link.textContent = `${crossing.label} — ${UNPINNED_LABEL}`;
+  link.textContent = `${crossing.label}: ${UNPINNED_LABEL}`;
   link.title = `${crossing.title} ${UNPINNED_TITLE}`;
   link.setAttribute("aria-disabled", "true");
   link.dataset["unpinned"] = "true";

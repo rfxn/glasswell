@@ -35,7 +35,7 @@ export const PRODUCING_CLASSES: readonly ProducingClass[] = [
     id: "not_producing",
     label: "Not producing",
     note:
-      "Filed inside the window, but no positive oil or gas month — a reported zero, or water" +
+      "Filed inside the window, but no positive oil or gas month: a reported zero, or water" +
       " only. Water is a byproduct and is not evidence of a producing well.",
   },
   {

@@ -61,12 +61,12 @@ export function createThematicsKey(): ThematicsKeyHandle {
   support.className = "gw-thm-note";
   support.textContent =
     "Pale = 1–2 producing wells behind the cell, mid = 3–7, full = 8+." +
-    " Unpainted = nothing observed. Observed sums only — never interpolated.";
+    " Unpainted = nothing observed. Observed sums only, never interpolated.";
   element.appendChild(support);
 
   const membership = document.createElement("p");
   membership.className = "gw-thm-note";
-  membership.textContent = `Membership: ${MEMBERSHIP_COPY} — ${MEMBERSHIP_RULE}.`;
+  membership.textContent = `Membership: ${MEMBERSHIP_COPY}, ${MEMBERSHIP_RULE}.`;
   element.appendChild(membership);
 
   const handle = explainHandle({ className: "gw-thm-handle", label: "these bin edges" });

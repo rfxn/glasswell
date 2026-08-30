@@ -143,11 +143,11 @@ export function describeWindow(window: SeriesWindow, served = false): string {
     // A request the reader narrowed with `from`/`to` returns part of the record, so a chart
     // drawing all of what it was handed must not call that all of what exists.
     const population = served ? "returned by this request" : "on record";
-    return `Showing all ${window.total} months ${population} — ${shown}.`;
+    return `Showing all ${window.total} months ${population}: ${shown}.`;
   }
   const record = `${formatMonth(window.firstOnRecord ?? window.from)} to ${formatMonth(window.lastOnRecord ?? window.to)}`;
   return (
-    `Showing ${window.shown} of ${window.total} months on record — ${shown}.` +
+    `Showing ${window.shown} of ${window.total} months on record: ${shown}.` +
     ` The full record runs ${record}; widen the range to reach it.`
   );
 }

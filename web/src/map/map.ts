@@ -2,8 +2,8 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import "../map.css";
-import { getEnvelope } from "../api/client.ts";
-import { connectMap, selectWell, setUrlParam } from "../bus.ts";
+import { getEnvelope, isAuthRefusal } from "../api/client.ts";
+import { connectMap, onSessionBegan, selectWell, setUrlParam } from "../bus.ts";
 import type { FlyTarget } from "../bus.ts";
 import type { Viewport } from "../app/state.ts";
 import { toast } from "../chrome/status.ts";
@@ -459,6 +459,11 @@ export function createMap(
       return;
     }
     if (state.kind === "error") {
+      // A refusal for want of a session is pending, not unavailable: signing in re-asks it.
+      if (state.auth) {
+        legend.setPending(zoom);
+        return;
+      }
       legend.setUnavailable(zoom);
       // One toast per failing episode: a pan over a degraded API is a dozen settles, and a
       // dozen toasts would bury the one line that says what happened.
@@ -594,6 +599,9 @@ export function createMap(
   });
 
   map.on("error", (event) => {
+    // Nobody has signed in yet, or the session lapsed. `sessionBegan` re-requests these tiles,
+    // so the refusal is a state this map passes through rather than one it reports (DR-H20).
+    if (isAuthRefusal((event as unknown as { error?: unknown }).error)) return;
     const source = (event as unknown as { sourceId?: string }).sourceId;
     if (source) banner.report(sourceLabel(source));
     // MapLibre logs errors itself only when nothing is listening. Having a listener and
@@ -603,6 +611,23 @@ export function createMap(
   });
 
   map.on("styledata", () => selection.resync());
+
+  /**
+   * The signed-out arrival refused every data tile and every count. MapLibre does not retry a
+   * source on its own — an errored tile stays errored until the source is told to load again —
+   * so handing each one its own tile list back is what puts the wells on the canvas.
+   */
+  onSessionBegan(() => {
+    for (const [id, spec] of Object.entries(sourceSpecs())) {
+      banner.forget(sourceLabel(id));
+      const source = map.getSource(id);
+      if (source && "setTiles" in source && "tiles" in spec && spec.tiles) {
+        (source as maplibregl.VectorTileSource).setTiles([...spec.tiles]);
+      }
+    }
+    countsFailing = false;
+    refreshCounts();
+  });
 
   const handle: MapHandle = {
     select(api10) {

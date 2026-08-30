@@ -70,6 +70,17 @@ export function forgetSignedIn(): void {
   window.localStorage.removeItem(SESSION_SEEN_STORAGE);
 }
 
+/**
+ * A refusal the login panel answers, rather than a service that is down. Reads both shapes the
+ * app sees one: `ApiError.problem.status` from this module, and the bare `status` MapLibre puts
+ * on the error it hands a tile listener.
+ */
+export function isAuthRefusal(error: unknown): boolean {
+  const shape = error as { status?: number; problem?: { status?: number } } | null | undefined;
+  const status = shape?.problem?.status ?? shape?.status;
+  return status === 401 || status === 403;
+}
+
 /** The session rides an HttpOnly cookie; only a write carries the token that proves origin. */
 export function authHeaders(method = "GET"): Record<string, string> {
   if (SAFE_METHODS.has(method.toUpperCase())) return {};

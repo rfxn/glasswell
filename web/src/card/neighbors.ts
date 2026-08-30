@@ -70,7 +70,7 @@ function neighborContextBody(context: NeighborContext): DocumentFragment {
   const scope = document.createElement("p");
   scope.className = "gw-context-scope";
   scope.textContent =
-    "Physical proximity only — these are not model analogs. Geometry is current-only;" +
+    "Physical proximity only. These are not model analogs. Geometry is current-only;" +
     ` eligibility keeps completions strictly before ${formatVintage(context.at_date)}.`;
   fragment.append(
     scope,

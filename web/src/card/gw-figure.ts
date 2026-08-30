@@ -63,14 +63,8 @@ export class GwFigure extends HTMLElement {
       chip.textContent = granularity;
       parts.push(chip);
     }
-    const vintage = this.getAttribute("vintage");
-    if (vintage) {
-      const chip = document_.createElement("span");
-      chip.className = "gw-chip gw-chip-vintage";
-      chip.textContent = `vintage ${vintage}`;
-      parts.push(chip);
-    }
-
+    // No vintage chip: the handle below opens the chain, which states the vintage it resolved
+    // at. The attribute stays the element's contract — callers set it, the surface stays clean.
     parts.push(
       explainHandle({
         label: label ?? "this figure",

@@ -154,7 +154,7 @@ describe("RESPONSE labels the envelope in place (§4.4)", () => {
   it("claims no unit for a page with no figure on it, because kind is per response (m12)", () => {
     mount();
 
-    expect(host.querySelector('[data-callout="unit"]')?.textContent).toContain("units arrive with values");
+    expect(host.querySelector('[data-callout="unit"]')?.textContent).toContain("Units arrive with values");
     expect(host.querySelector('[data-callout="figure"]')).toBe(null);
   });
 

@@ -85,7 +85,7 @@ export const LAYERS: readonly LayerDef[] = [
     id: "land-metrics",
     label: "Liquid on the land grid (ND)",
     subtitle:
-      "Observed cumulative liquid — oil plus condensate as ND files it — summed per PLSS" +
+      "Observed cumulative liquid (oil plus condensate as ND files it) summed per PLSS" +
       ` unit · ${landCellCount()} binned cells · wells assigned by lateral midpoint, else` +
       " surface hole (cr_land_agg_membership_1) · unpainted = nothing observed",
     // Three ramp steps, because the row paints from a binned expression and one amber would
@@ -205,7 +205,7 @@ export const LAYERS: readonly LayerDef[] = [
     id: "survey-traces",
     label: "Survey traces (ND)",
     subtitle:
-      `The bore path ND filed as MD/INC/AZI/TVD stations · ${ndCoverage(ND_SNAPSHOT.traced)} — ` +
+      `The bore path ND filed as MD/INC/AZI/TVD stations · ${ndCoverage(ND_SNAPSHOT.traced)} · ` +
       "confidential wells excluded at source",
     swatch: { kind: "line", colours: [TRACE_COLOUR] },
     // 1.2% coverage drawn by default over 43.8k wells reads as "almost no wells drilled out".
@@ -245,7 +245,7 @@ export const LAYERS: readonly LayerDef[] = [
     label: "Disposal & injection (ND)",
     subtitle:
       `Wells NDIC types SWD, WI, CO2I, AI, GI, SFI, MWUI or INJP · ${ndCoverage(ND_SNAPSHOT.disposal)} ` +
-      "— the well_type code as filed, drawn as a ring over the status dot",
+      "· the well_type code as filed, drawn as a ring over the status dot",
     swatch: { kind: "ring", colours: [DISPOSAL_COLOUR] },
     // 4.5% of the basin drawn unasked would read as emphasis; the class is one panel row away.
     defaultOn: false,
@@ -290,7 +290,7 @@ export const LAYERS: readonly LayerDef[] = [
     defaultOn: false,
     minZoom: 0,
     opacity: 1,
-    provenance: [{ kind: "pending", source: "EIA Shale Play Maps — not ingested" }],
+    provenance: [{ kind: "pending", source: "EIA Shale Play Maps, not ingested" }],
     styleLayers: [],
     drawOrder: 50,
     pendingSource: true,
@@ -304,7 +304,7 @@ export const LAYERS: readonly LayerDef[] = [
     defaultOn: false,
     minZoom: 0,
     opacity: 1,
-    provenance: [{ kind: "pending", source: "USGS NOGA assessment units — not ingested" }],
+    provenance: [{ kind: "pending", source: "USGS NOGA assessment units, not ingested" }],
     styleLayers: [],
     drawOrder: 60,
     pendingSource: true,

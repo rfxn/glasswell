@@ -337,7 +337,7 @@ describe("the grid renders a collection off one state object (§3.1 rule 2)", ()
       /1 more column is off the right edge of this panel/,
     );
     expect(overflowNote(3)?.textContent).toMatch(/3 more columns are off/);
-    expect(overflowNote(3)?.textContent).toMatch(/scroll the grid sideways/);
+    expect(overflowNote(3)?.textContent).toMatch(/Scroll the grid sideways/);
   });
 
   it("adds nothing to the table when a reason opens, so the off-edge count stays true (N1)", async () => {

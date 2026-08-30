@@ -11,7 +11,7 @@ import {
 import { DEFAULT_STATE, readState, serializeState, writeState } from "./app/state.ts";
 import type { AppState } from "./app/state.ts";
 import { loginPanel } from "./auth/login.ts";
-import { flyTo, onSelectWell, onUrlParam, selectWell, wellSelected } from "./bus.ts";
+import { flyTo, onSelectWell, onUrlParam, selectWell, sessionBegan, wellSelected } from "./bus.ts";
 import type { SelectSource } from "./bus.ts";
 import { renderWellCard } from "./card/card.ts";
 import { EXPLAIN_EVENT } from "./chrome/handle.ts";
@@ -99,8 +99,14 @@ function showLoginPanel(): void {
   keyHost.replaceChildren(
     loginPanel({
       reason,
-      onSignedIn: () => {
+      // The panel hands back the session it just got, so nothing here re-asks who the reader is:
+      // `sessionResolved` latched on the probe that failed, and boot() would skip resolveSession.
+      onSignedIn: (session) => {
         keyHost.hidden = true;
+        hadSession = session.kind === "user";
+        setSignedIn(session.username);
+        setSessionState("ok");
+        sessionBegan();
         void boot();
         if (state.view === "status") void renderView();
       },
