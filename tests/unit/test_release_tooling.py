@@ -416,10 +416,10 @@ def _repo(tmp_path: Path) -> Path:
     return root
 
 
-def _with_migration(root: Path, body: str, name: str = "055_serve_modeling_control.sql") -> Path:
+def _with_migration(root: Path, body: str, name: str | None = None) -> Path:
     directory = root / release.MIGRATIONS_DIR
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / name
+    path = directory / (name or SHIPPED_MIGRATION.name)
     path.write_text(body, encoding="utf-8")
 
     def run(*args: str) -> None:
@@ -431,11 +431,6 @@ def _with_migration(root: Path, body: str, name: str = "055_serve_modeling_contr
     return path
 
 
-SHIPPED_MIGRATION = (
-    Path(release.__file__).resolve().parents[1]
-    / release.MIGRATIONS_DIR
-    / "055_serve_modeling_control.sql"
-)
 MIGRATIONS = Path(release.__file__).resolve().parents[1] / release.MIGRATIONS_DIR
 REPOINTED_TAG = "v0.66"
 REPOINTED_COMMIT = "c8cffbc344e1ea36e454e43f3c0a4d7696aa1c0a"
@@ -446,6 +441,24 @@ EVIDENCE = re.compile(
     r"(select rule_id, date '\d{4}-\d{2}-\d{2}', ')(?P<tag>[^']+)(',\s*\n\s*')"
     r"(?P<commit>[0-9a-f]{40})(')"
 )
+
+
+def _evidence_migration() -> Path:
+    """The newest migration that registers rule publication evidence.
+
+    Found rather than named: a migration number is assigned by merge order, and this branch's
+    has already moved once. A filename literal here is the same anti-pattern the repo-wide pin
+    below exists to remove, and it would go stale at the next renumber rather than at the next
+    real change.
+    """
+    found = [path for path in sorted(MIGRATIONS.glob("*.sql")) if EVIDENCE.search(
+        path.read_text(encoding="utf-8")
+    )]
+    assert found, "no migration registers conformance-rule publication evidence"
+    return found[-1]
+
+
+SHIPPED_MIGRATION = _evidence_migration()
 
 
 def _with_evidence(text: str, *, tag: str, commit: str) -> str:
@@ -479,7 +492,7 @@ class TestPlaceholderPublicationEvidence:
     release gate is what turns that silent falsehood into a loud refusal.
 
     Two rules learned the hard way, both from this class's own earlier versions. The behaviour
-    is pinned, never the file's current contents: an assertion that 055 *contains* the
+    is pinned, never the file's current contents: an assertion that the migration *contains* the
     placeholder is true today and false the moment the merge train does what the file asks,
     which turns the correct action into a red suite. And the cases that need the real artifact
     drive it — the positive case once used a synthetic three-line blob with no header, which is
@@ -494,7 +507,7 @@ class TestPlaceholderPublicationEvidence:
         blockers = release.preconditions(root, _pending(root), Version(0, 66))
 
         assert any(release.PLACEHOLDER_EVIDENCE_TAG in blocker for blocker in blockers)
-        assert any("055_serve_modeling_control.sql" in blocker for blocker in blockers)
+        assert any(SHIPPED_MIGRATION.name in blocker for blocker in blockers)
         # The refusal names the tag to repoint to, so the fix needs no second lookup.
         assert any(REPOINTED_TAG in blocker for blocker in blockers)
 

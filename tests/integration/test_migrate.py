@@ -81,7 +81,8 @@ def test_the_serving_migration_registers_the_modeling_selector_profiles(db) -> N
 
 
 def test_the_serving_migration_registers_publication_evidence_before_any_rule(db) -> None:
-    """049 makes evidence a precondition; 055 follows 054's register-then-seed order."""
+    """049 makes evidence a precondition; this migration follows 054's
+    register-then-seed order."""
     with db.cursor() as cursor:
         cursor.execute(
             "select rule_id, published_vintage, evidence_tag from"
