@@ -44,8 +44,8 @@ values
 
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-select rule_id, date '2026-08-30', 'UNRELEASED',
-       '0000000000000000000000000000000000000000'
+select rule_id, date '2026-08-30', 'v0.68',
+       '36687869788419669e665864762017fc17bc3eb7'
   from unnest(array[
        'cr_tc_normalization_1', 'cr_tc_peer_ladder_1', 'cr_tc_publication_scope_1',
        'cr_tc_quantile_convention_1', 'cr_tc_unavailable_vocab_1'
