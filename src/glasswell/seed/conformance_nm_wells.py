@@ -45,6 +45,18 @@ WELL_TYPE_DOMAIN = {
     "O": 176989, "G": 116934, "I": 20404, "S": 4383, "C": 1774, "M": 705, "W": 320,
     "&#x20;": 1,
 }
+# rec_termn_dte over the same full scan of the sealed artifact. 142,000 open rows against
+# 142,000 distinct API-10s is one open header per well, and every one of them is that well's
+# newest: not a single API-10's latest eff_dte row carries a retirement date, so
+# canonical.wells_latest's effective_from ranking cannot surface a header the source retired.
+REC_TERMN_MEASURED: dict[str, object] = {
+    "open_sentinel_rows": 142000,
+    "dated_rows": 179510,
+    "empty_rows": 0,
+    "distinct_api10": 142000,
+    "api10_whose_newest_row_is_terminated": 0,
+}
+
 DIRECTIONAL_DOMAIN = {
     "V": 136164, "absent": 133507, "H": 43409, "&#x20;": 5163, "D": 3265, "M": 2,
 }
@@ -105,26 +117,50 @@ NM_WELLS_RULES: tuple[dict[str, object], ...] = (
         "source_id": "nm_ocd_wellhistory",
         "stage": "conform",
         "rule_kind": "parse_directive",
-        "applies_to_fields": ["eff_dte", "rec_termn_dte"],
+        "applies_to_fields": ["all"],
         "spec": {
+            "declares_fields": ["eff_dte", "rec_termn_dte"],
+            "asserts_header": False,
             "effective_from_field": "eff_dte",
-            "effective_to_field": "rec_termn_dte",
-            "open_interval_sentinel": "9999-12-31",
+            "promoted_to": "canonical.wells.effective_from",
+            "unreadable_eff_dte": "quarantine",
+            "reason_code": "out_of_range_date",
+            "supersession": "by effective_from ordering; canonical.wells carries no valid-time"
+            " end column, so no interval is closed and none is served",
+            "source_semantics": {
+                "rec_termn_dte": "the source's own retirement date for the header record."
+                " Staged verbatim and read by nothing: it is not promoted, not stored and not"
+                " served, because there is no column for it",
+                "open_interval_sentinel": "9999-12-31",
+            },
             "measured_eff_dte_range": ["1900-01-01", "2026-08-19"],
+            "measured_rec_termn_dte": REC_TERMN_MEASURED,
             "backfill_rows_kept": True,
         },
         "rule": (
-            "eff_dte is the header row's valid-time start and rec_termn_dte its end;"
-            " 9999-12-31 is the open sentinel and becomes a null effective_to."
+            "eff_dte is the header row's valid-time start and the second half of its key."
+            " rec_termn_dte is staged verbatim and promoted nowhere: canonical.wells carries no"
+            " valid-time end, so a header is superseded by a later effective_from and by nothing"
+            " else. A record whose eff_dte will not read has no key and is quarantined as"
+            " out_of_range_date rather than dated by default."
         ),
         "rationale": (
             "The staged range runs 1900-01-01 to 2026-08-19. The 1900-01-01 rows are the"
             " regulator's own pre-ONGARD backfill, and they are kept: an effective-dated table is"
             " exactly where a regulator's backfill belongs, and dropping it would make the well's"
-            " history start on the day the state's database did. The 9999-12-31 sentinel is"
-            " translated rather than stored, because a served effective_to of the year 9999 is a"
-            " number a reader has to know a convention to interpret, and null is the convention"
-            " canonical.wells already uses."
+            " history start on the day the state's database did."
+            " What this row does *not* legislate is worth stating, because an earlier draft of it"
+            " did: canonical.wells has one valid-time column and it is effective_from. There is"
+            " no effective_to to translate the 9999-12-31 sentinel into, so the sentinel is"
+            " neither stored nor rewritten and rec_termn_dte reaches no canonical column."
+            " canonical.wells_latest ranks on effective_from alone, so a header the source had"
+            " retired would be served as current if it were also the newest. Measured over all"
+            " 321,510 records rather than assumed: 142,000 rows carry the 9999-12-31 open"
+            " sentinel against 142,000 distinct API-10s, 179,510 carry a real retirement date"
+            " and none is empty — one open header per well — and the number of wells whose"
+            " newest row is a retired one is zero. The ranking has nothing to hide today. A"
+            " source that begins retiring its newest header is a superseding rule with a column"
+            " behind it, not a silent change of meaning here."
         ),
         "evidence_url": OCD_FTP_DESCRIPTIONS_URL,
         "code_ref": "src/glasswell/ingest/nm_wells.py",
@@ -365,6 +401,10 @@ NM_WELLS_RULES: tuple[dict[str, object], ...] = (
         "spec": {
             "declares_fields": ["entity_type", "reporting_level", "aggregation"],
             "asserts_header": False,
+            # The prefix this ruling scopes to, in the key the registry already reads it under:
+            # marts/producing.py resolves the states with no well-level series from here rather
+            # than from a literal in a serving path.
+            "state_code": "30",
             "entity_type": "well_completion_pool",
             "reporting_level": "well_completion_pool",
             "aggregation": None,
@@ -405,6 +445,43 @@ NM_WELLS_RULES: tuple[dict[str, object], ...] = (
         ),
         "evidence_url": OCD_FTP_DESCRIPTIONS_URL,
         "code_ref": "src/glasswell/api/routers/production.py",
+    },
+    {
+        "rule_id": "cr_nm_wellhistory_basin_scope_1",
+        "source_id": "nm_ocd_wellhistory",
+        "stage": "conform",
+        "rule_kind": "parse_directive",
+        "applies_to_fields": ["all"],
+        "spec": {
+            "declares_fields": ["basin"],
+            "asserts_header": False,
+            "canonical_column": "canonical.wells.basin",
+            "assigned": None,
+            "registry_basins": ["williston", "permian"],
+            "storage_epsg_unaffected": 4326,
+            "consequence": "served basin is null and /v1/wells/status-summary carries a"
+            " (basin null, state_code 30) bucket",
+        },
+        "rule": (
+            "New Mexico headers carry no basin. The column is left null rather than assigned,"
+            " because this build delineates no New Mexico play boundary."
+        ),
+        "rationale": (
+            "North Dakota sets williston and Texas sets permian, and each is defensible because"
+            " the slice behind it is scoped to that basin — Texas's by"
+            " cr_tx_county_scope_1's 55 Permian-district counties. New Mexico's header table is"
+            " the whole state: its wells sit in the Permian in the southeast and the San Juan in"
+            " the northwest, and nothing in this build draws the line between them. Writing"
+            " permian would be a claim about geography made by a default, on wells the OCD"
+            " itself does not classify that way, and it would be wrong for every San Juan well."
+            " Null is the honest value, and this row exists so that it is a decision with a"
+            " reason rather than a column somebody forgot. Nothing downstream breaks on it:"
+            " _basins groups on (basin, state_code) and sorts nulls, and the basin lookup the"
+            " well card makes is for storage_epsg, which is 4326 for every registered basin."
+            " A New Mexico play delineation is a superseding row with a boundary behind it."
+        ),
+        "evidence_url": OCD_FTP_DESCRIPTIONS_URL,
+        "code_ref": "src/glasswell/ingest/nm_wells.py",
     },
     {
         "rule_id": "cr_nm_wellhistory_header_precedence_1",

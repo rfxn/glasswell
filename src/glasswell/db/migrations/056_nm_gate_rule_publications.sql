@@ -16,7 +16,7 @@ select rule_id, date '2026-08-30', 'v0.68',
        'cr_nm_wellhistory_status_vocab_1', 'cr_nm_wellhistory_well_type_1',
        'cr_nm_wellhistory_datum_1', 'cr_nm_wellhistory_coordinate_1',
        'cr_nm_wellhistory_geometry_provenance_1', 'cr_nm_wellhistory_geometry_scope_1',
-       'cr_nm_wellhistory_header_precedence_1',
+       'cr_nm_wellhistory_basin_scope_1', 'cr_nm_wellhistory_header_precedence_1',
        'cr_nm_wcproduction_pool_rollup_1'
   ]::text[]) as rule_id
 on conflict (rule_id) do nothing;
