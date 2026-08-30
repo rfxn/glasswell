@@ -1562,7 +1562,16 @@ def test_repointed_evidence_cites_a_commit_that_carries_the_rule() -> None:
     plausible, is what the guard's own message used to recommend, and fails exactly this.
     """
     root = MIGRATIONS.parents[3]
+    checked = 0
     for path, rule, commit in _merge_train_evidence():
+        # CI clones shallow, so a cited commit is routinely not in the object store. `git grep`
+        # answers 128 for that and 1 for a rule that is genuinely absent; conflating them makes
+        # this fail everywhere it cannot run, which is how it first went red.
+        present = subprocess.run(
+            ["git", "cat-file", "-e", f"{commit}^{{commit}}"], cwd=root, capture_output=True
+        )
+        if present.returncode != 0:
+            continue
         probe = subprocess.run(
             ["git", "grep", "-q", rule, commit, "--", "src/"], cwd=root, capture_output=True
         )
@@ -1570,3 +1579,6 @@ def test_repointed_evidence_cites_a_commit_that_carries_the_rule() -> None:
             f"{path.name} publishes {rule} at {commit[:7]}, which does not contain it —"
             " repoint to the first commit on main that does, which is the merge commit"
         )
+        checked += 1
+    if checked == 0:
+        pytest.skip("no cited evidence commit is present in this clone (shallow checkout)")
