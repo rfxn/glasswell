@@ -23,3 +23,6 @@
       preconditions, abort conditions, expected counts, verification gates and the rollback
       each step actually has — which for three of the four is none, stated in terms designed
       to stop an operator improvising a delete
+- [New] `tests/integration/test_nm_promotion_gates.py` pins the index the deployed G7-2 gate
+      names: `production_monthly_api10_idx` exists, leads on `api10`, and both the served
+      query and the `_latest` view resolve to it once a sequential scan stops being free
