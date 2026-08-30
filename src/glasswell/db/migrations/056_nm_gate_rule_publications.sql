@@ -1,7 +1,12 @@
--- Migration 049 made repository publication evidence a precondition for every conformance rule
--- insert, so the rows the New Mexico gate seeds register theirs first. v0.68 is the first tag to
--- contain these ids; the commit is the `main` head the branch was written against, because the
--- commit that introduces a rule cannot cite its own hash.
+-- Migration 049 makes repository publication evidence a precondition for every conformance
+-- rule insert, so the rows this phase seeds register theirs first.
+-- Publication evidence is a placeholder until the merge train repoints it. The tag and the
+-- commit below are the repository's agreed placeholder literals and `make release-check`
+-- refuses while they stand. `published_vintage` is NOT placeholdered — it has no placeholder
+-- form — but migration 049's column comment defines knowledge time as the first-tag date, so
+-- it is coupled to the release too: **repoint checklist — confirm this date is the day the
+-- train actually ships.** lineage.conformance_rule_publications is append-only, so a date
+-- that slips past midnight is permanently wrong.
 --
 -- Only the ids this migration's own seeder inserts are registered here: the publication catalog
 -- is asserted to cover the shipped registry exactly, so a registration for a rule no seeder
@@ -9,8 +14,8 @@
 
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-select rule_id, date '2026-08-30', 'v0.68',
-       'c8cffbc344e1ea36e454e43f3c0a4d7696aa1c0a'
+select rule_id, date '2026-08-30', 'UNRELEASED',
+       '0000000000000000000000000000000000000000'
   from unnest(array[
        'cr_nm_wellhistory_api10_1', 'cr_nm_wellhistory_effective_1',
        'cr_nm_wellhistory_status_vocab_1', 'cr_nm_wellhistory_well_type_1',

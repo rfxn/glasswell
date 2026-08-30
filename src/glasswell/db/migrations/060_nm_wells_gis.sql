@@ -53,13 +53,19 @@ comment on column staging.nm_ocd_wells_gis.ulstr is
 grant select, insert on staging.nm_ocd_wells_gis to glasswell_pipeline;
 grant delete on staging.nm_ocd_wells_gis to glasswell_pipeline;
 
--- Migration 049 makes publication evidence a precondition for the conformance rows this
--- source's seeder inserts. v0.68 is the first tag to contain the ids; the commit is the `main`
--- head the branch was written against.
+-- Migration 049 makes repository publication evidence a precondition for every conformance
+-- rule insert, so the rows this phase seeds register theirs first.
+-- Publication evidence is a placeholder until the merge train repoints it. The tag and the
+-- commit below are the repository's agreed placeholder literals and `make release-check`
+-- refuses while they stand. `published_vintage` is NOT placeholdered — it has no placeholder
+-- form — but migration 049's column comment defines knowledge time as the first-tag date, so
+-- it is coupled to the release too: **repoint checklist — confirm this date is the day the
+-- train actually ships.** lineage.conformance_rule_publications is append-only, so a date
+-- that slips past midnight is permanently wrong.
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-select rule_id, date '2026-08-30', 'v0.68',
-       'c8cffbc344e1ea36e454e43f3c0a4d7696aa1c0a'
+select rule_id, date '2026-08-30', 'UNRELEASED',
+       '0000000000000000000000000000000000000000'
   from unnest(array[
        'cr_nm_wells_gis_source_1', 'cr_nm_wells_gis_walk_order_1',
        'cr_nm_wells_gis_api10_1', 'cr_nm_wells_gis_datum_1', 'cr_nm_wells_gis_parity_1'
