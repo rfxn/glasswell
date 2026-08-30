@@ -21,7 +21,7 @@ import psycopg
 from psycopg import IsolationLevel
 from psycopg.pq import TransactionStatus
 from psycopg.rows import dict_row
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from glasswell.status.models import (
     DATABASE_BYTES_REASON,
@@ -31,7 +31,9 @@ from glasswell.status.models import (
     DatasetInventory,
     InventoryMetric,
     JobStatus,
+    OffsiteCopyReceipt,
     PlatformStatus,
+    RecoveryDrillResult,
     RestoreDrillResult,
     StatusCheck,
     StatusDisclosure,
@@ -42,6 +44,10 @@ SNAPSHOT_ENV = "GLASSWELL_STATUS_SNAPSHOT"
 DEFAULT_SNAPSHOT = Path("/var/lib/glasswell/status.json")
 RESTORE_RESULT_ENV = "GLASSWELL_RESTORE_RESULT"
 DEFAULT_RESTORE_RESULT = Path("/var/lib/glasswell-restore-drill/result.json")
+OFFSITE_RECEIPT_ENV = "GLASSWELL_OFFSITE_RECEIPT"
+DEFAULT_OFFSITE_RECEIPT = Path("/var/lib/glasswell-backup/offsite.json")
+RECOVERY_RESULT_ENV = "GLASSWELL_RECOVERY_RESULT"
+DEFAULT_RECOVERY_RESULT = Path("/var/lib/glasswell-recovery-drill/result.json")
 DSN_ENV = "GLASSWELL_DSN"
 FALLBACK_DSN_ENV = "DATABASE_URL"
 CODE_VERSION_ENV = "GLASSWELL_CODE_VERSION"
@@ -53,6 +59,8 @@ MAX_RESTORE_RESULT_BYTES = 131_072
 RESTORE_RESULT_STALE_AFTER = timedelta(days=8)
 RESTORE_DUMP_STALE_AFTER = timedelta(days=2)
 RESTORE_RESULT_FUTURE_TOLERANCE = timedelta(minutes=5)
+# The push is nightly, so two missed nights is the signal. infra/verify.sh pins the same bound.
+OFFSITE_RECEIPT_STALE_AFTER = timedelta(days=2)
 
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
@@ -170,9 +178,15 @@ def _job(
     )
 
 
-def _load_restore_result(
-    path: Path, *, expected_uid: int = 0, expected_gid: int | None = None
-) -> tuple[RestoreDrillResult | None, str, CheckState | None]:
+def _load_receipt[Receipt: BaseModel](
+    path: Path,
+    model: type[Receipt],
+    noun: str,
+    *,
+    expected_uid: int = 0,
+    expected_gid: int | None = None,
+) -> tuple[Receipt | None, str, CheckState | None]:
+    """Read a root-published durability receipt, refusing anything a reader could have forged."""
     group = os.getgid() if expected_gid is None else expected_gid
     try:
         metadata = path.lstat()
@@ -184,22 +198,22 @@ def _load_restore_result(
             or metadata.st_gid != group
             or stat.S_IMODE(metadata.st_mode) != 0o640
         ):
-            return None, "Durable restore result path, ownership or mode is unsafe.", "degraded"
+            return None, f"Durable {noun} path, ownership or mode is unsafe.", "degraded"
         if metadata.st_size > MAX_RESTORE_RESULT_BYTES:
-            return None, "Durable restore result exceeds the accepted size.", "degraded"
+            return None, f"Durable {noun} exceeds the accepted size.", "degraded"
         descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
             opened = os.fstat(handle.fileno())
             if (opened.st_dev, opened.st_ino) != (metadata.st_dev, metadata.st_ino):
-                return None, "Durable restore result changed while it was opened.", "degraded"
+                return None, f"Durable {noun} changed while it was opened.", "degraded"
             payload = handle.read(MAX_RESTORE_RESULT_BYTES + 1)
         if len(payload.encode("utf-8")) > MAX_RESTORE_RESULT_BYTES:
-            return None, "Durable restore result exceeds the accepted size.", "degraded"
-        return RestoreDrillResult.model_validate_json(payload), "", None
+            return None, f"Durable {noun} exceeds the accepted size.", "degraded"
+        return model.model_validate_json(payload), "", None
     except FileNotFoundError:
-        return None, "No durable restore result has been published yet.", "unavailable"
+        return None, f"No durable {noun} has been published yet.", "unavailable"
     except (OSError, UnicodeError, ValidationError):
-        return None, "Durable restore result could not be validated.", "degraded"
+        return None, f"Durable {noun} could not be validated.", "degraded"
 
 
 def _restore_drill_job(
@@ -218,8 +232,12 @@ def _restore_drill_job(
         runner,
     )
     target = path or Path(os.environ.get(RESTORE_RESULT_ENV, DEFAULT_RESTORE_RESULT))
-    proof, error, invalid_state = _load_restore_result(
-        target, expected_uid=expected_uid, expected_gid=expected_gid
+    proof, error, invalid_state = _load_receipt(
+        target,
+        RestoreDrillResult,
+        "restore result",
+        expected_uid=expected_uid,
+        expected_gid=expected_gid,
     )
     if proof is None:
         if invalid_state == "unavailable" and scheduled.last_run_at is None:
@@ -237,7 +255,13 @@ def _restore_drill_job(
 
     completed_at = proof.completed_at.astimezone(UTC)
     age = observed_at - completed_at
-    dump_age = observed_at - proof.dump.created_at.astimezone(UTC) if proof.dump else None
+    # Measured at drill time, not now: the question is whether the newest dump the drill could
+    # find was recent *when it ran*. Against `now` this compares a 2-day bound to a weekly
+    # cadence, so the job degrades every Tuesday and stays degraded until Sunday — which reds
+    # verify.sh's snapshot check and refuses every deploy in between. A backup that stopped
+    # producing generations is still caught, by the `backup` job and by `offsite_copy`'s own
+    # 2-day bound against now.
+    dump_age = completed_at - proof.dump.created_at.astimezone(UTC) if proof.dump else None
     age_hours = max(0, int(age.total_seconds() // 3600))
     age_detail = f"age {age_hours}h"
     if age < -RESTORE_RESULT_FUTURE_TOLERANCE:
@@ -255,11 +279,14 @@ def _restore_drill_job(
         detail = f"Latest durable restore proof passed but is stale ({age_detail})."
     elif dump_age is not None and dump_age < -RESTORE_RESULT_FUTURE_TOLERANCE:
         state = "degraded"
-        detail = "Restored dump creation time is implausibly in the future."
+        detail = "Restored dump was created after the drill that restored it completed."
     elif dump_age is not None and dump_age > RESTORE_DUMP_STALE_AFTER:
         state = "degraded"
         dump_age_hours = max(0, int(dump_age.total_seconds() // 3600))
-        detail = f"Latest restore passed, but its backup dump is stale (age {dump_age_hours}h)."
+        detail = (
+            "Latest restore passed, but its backup dump is stale: it was already"
+            f" {dump_age_hours}h old when the drill ran."
+        )
     elif scheduled.state != "ok":
         state = scheduled.state
         detail = (
@@ -281,6 +308,135 @@ def _restore_drill_job(
         next_run_at=scheduled.next_run_at,
         detail=detail,
     )
+
+
+def _offsite_copy_job(
+    observed_at: datetime,
+    *,
+    path: Path | None = None,
+    runner: Runner = _run,
+    expected_uid: int = 0,
+    expected_gid: int | None = None,
+) -> JobStatus:
+    """Offsite recency from the sending side only; the remote grant permits no read-back."""
+    label = "Offsite backup copy"
+    scheduled = _job(
+        "offsite_copy", label, "glasswell-backup.timer", "glasswell-backup.service", runner
+    )
+    target = path or Path(os.environ.get(OFFSITE_RECEIPT_ENV, DEFAULT_OFFSITE_RECEIPT))
+    receipt, error, invalid_state = _load_receipt(
+        target,
+        OffsiteCopyReceipt,
+        "offsite copy receipt",
+        expected_uid=expected_uid,
+        expected_gid=expected_gid,
+    )
+    if receipt is None:
+        if invalid_state == "unavailable" and scheduled.last_run_at is None:
+            state = "pending" if scheduled.state == "pending" else scheduled.state
+        else:
+            state = invalid_state or "unavailable"
+        return JobStatus(
+            id="offsite_copy",
+            label=label,
+            state=state,
+            last_run_at=scheduled.last_run_at,
+            next_run_at=scheduled.next_run_at,
+            detail=error,
+        )
+
+    completed_at = receipt.completed_at.astimezone(UTC)
+    age = observed_at - completed_at
+    age_hours = max(0, int(age.total_seconds() // 3600))
+    pushed = next(item for item in receipt.streams if item.id == "pgdump")
+    if age < -RESTORE_RESULT_FUTURE_TOLERANCE:
+        state = "degraded"
+        detail = "Offsite copy receipt completion time is implausibly in the future."
+    elif receipt.result == "failed":
+        state = "degraded"
+        detail = f"Latest offsite push failed ({receipt.failure_detail}); age {age_hours}h."
+    elif age > OFFSITE_RECEIPT_STALE_AFTER:
+        state = "degraded"
+        detail = f"Latest offsite push succeeded but is stale (age {age_hours}h)."
+    elif not receipt.dump_bytes_covered:
+        state = "degraded"
+        detail = (
+            f"Latest offsite push reported success (age {age_hours}h), but the volume it sent"
+            " does not account for the generation's dump."
+        )
+    elif scheduled.state != "ok":
+        state = scheduled.state
+        detail = (
+            f"Latest offsite push succeeded (age {age_hours}h), but schedule evidence is"
+            f" {scheduled.state}."
+        )
+    else:
+        state = "ok"
+        # No host, address or path: this string is served, and the receipt that carries the
+        # destination stays root-owned on disk.
+        detail = (
+            f"Offsite push recorded (age {age_hours}h) for generation {receipt.generation};"
+            f" {pushed.files_transferred} files and {pushed.bytes_transferred} bytes sent,"
+            " covering the generation's dump. Sending-side evidence only — the remote grant is"
+            " write-only, so no read-back was performed."
+        )
+    return JobStatus(
+        id="offsite_copy",
+        label=label,
+        state=state,
+        last_run_at=completed_at,
+        next_run_at=scheduled.next_run_at,
+        detail=detail,
+    )
+
+
+def _recovery_drill_job(
+    observed_at: datetime,
+    *,
+    path: Path | None = None,
+    expected_uid: int = 0,
+    expected_gid: int | None = None,
+) -> JobStatus:
+    """Replacement-host recovery. There is no timer: it is operator-run and has never been run."""
+    label = "Replacement-host recovery"
+    target = path or Path(os.environ.get(RECOVERY_RESULT_ENV, DEFAULT_RECOVERY_RESULT))
+    receipt, error, invalid_state = _load_receipt(
+        target,
+        RecoveryDrillResult,
+        "recovery result",
+        expected_uid=expected_uid,
+        expected_gid=expected_gid,
+    )
+    if receipt is None:
+        if invalid_state == "unavailable":
+            return JobStatus(
+                id="recovery_drill",
+                label=label,
+                state="pending",
+                detail=(
+                    "The replacement-host recovery procedure is mechanised and has never been"
+                    " executed. No recovery has been proven."
+                ),
+            )
+        return JobStatus(id="recovery_drill", label=label, state=invalid_state, detail=error)
+
+    completed_at = receipt.completed_at.astimezone(UTC)
+    age = observed_at - completed_at
+    age_days = max(0, int(age.total_seconds() // 86400))
+    if age < -RESTORE_RESULT_FUTURE_TOLERANCE:
+        state = "degraded"
+        detail = "Recovery result completion time is implausibly in the future."
+    elif receipt.result == "failed":
+        state = "degraded"
+        detail = f"Latest recovery drill failed ({receipt.failure_detail}); age {age_days}d."
+    else:
+        state = "ok"
+        detail = (
+            f"Recovery proven {age_days}d ago at schema {receipt.restored_schema_version}:"
+            " cluster globals, logical dump and raw zone restored on a replacement host."
+        )
+    return JobStatus(id="recovery_drill", label=label, state=state, last_run_at=completed_at,
+                     detail=detail)
 
 
 def _martin_check(observed_at: datetime) -> StatusCheck:
@@ -747,13 +903,28 @@ def collect(connection: psycopg.Connection, *, now: datetime | None = None) -> S
         ),
         _job("backup", "Nightly backup", "glasswell-backup.timer", "glasswell-backup.service"),
         _restore_drill_job(observed_at),
+        _offsite_copy_job(observed_at),
+        _recovery_drill_job(observed_at),
     ]
     disclosures = [
         StatusDisclosure(
             id="remote_backup_copy",
             label="Remote backup copy",
-            state="not_instrumented",
-            detail="The backup job does not persist remote-copy success as separate telemetry.",
+            state="limited",
+            detail=(
+                "The backup job records the offsite push from the sending side. The remote grant"
+                " is write-only, so this host cannot list or read back what landed there; no"
+                " byte-level round-trip proof exists."
+            ),
+        ),
+        StatusDisclosure(
+            id="replacement_host_recovery",
+            label="Replacement-host recovery",
+            state="limited",
+            detail=(
+                "Rebuilding onto a replacement host is mechanised and unit-tested, and has never"
+                " been executed end to end. Treat it as an untested path."
+            ),
         ),
     ]
     return StatusSnapshot(

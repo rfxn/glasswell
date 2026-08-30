@@ -255,10 +255,27 @@ def test_collector_no_longer_discloses_attempt_or_cadence_as_uninstrumented(
     monkeypatch.setattr(status_collector, "_storage_check", lambda *_args: check)
     monkeypatch.setattr(status_collector, "_job", lambda *_args: job)
     monkeypatch.setattr(status_collector, "_restore_drill_job", lambda *_args: job)
+    monkeypatch.setattr(status_collector, "_offsite_copy_job", lambda *_args: job)
+    monkeypatch.setattr(status_collector, "_recovery_drill_job", lambda *_args: job)
 
     snapshot = status_collector.collect(cast(Connection, connection))
 
-    assert [item.id for item in snapshot.disclosures] == ["remote_backup_copy"]
+    assert [item.id for item in snapshot.disclosures] == [
+        "remote_backup_copy",
+        "replacement_host_recovery",
+    ]
+    # Both are `limited`, never `not_instrumented`: the offsite push is now recorded, and the
+    # recovery path is mechanised. Each states the limit that remains rather than hiding it.
+    assert {item.state for item in snapshot.disclosures} == {"limited"}
+    assert [item.id for item in snapshot.jobs] == [
+        "test",
+        "test",
+        "test",
+        "test",
+        "test",
+        "test",
+        "test",
+    ]
 
 
 def test_restore_job_uses_current_durable_proof_not_only_systemd_success(tmp_path: Path) -> None:
@@ -461,3 +478,261 @@ def test_restore_result_replaced_between_metadata_and_open_is_degraded(
 
     assert status.state == "degraded"
     assert "changed while it was opened" in status.detail
+
+
+def _offsite_payload(completed_at: datetime, **overrides) -> dict:
+    payload = {
+        "receipt_version": 1,
+        "result": "passed",
+        "failure_detail": None,
+        "generation": "20260830T020825Z",
+        "dump": {
+            "name": "glasswell-20260830T020825Z.dump",
+            "sha256": "b" * 64,
+            "bytes": 1_493_358_179,
+        },
+        "destination": "root@192.168.2.205",
+        "started_at": (completed_at - timedelta(minutes=3)).isoformat(),
+        "completed_at": completed_at.isoformat(),
+        "duration_seconds": 180,
+        "streams": [
+            {
+                "id": "pgdump",
+                "state": "transferred",
+                "exit_status": 0,
+                "files_transferred": 3,
+                "bytes_transferred": 1_500_000_000,
+                "bytes_on_sender": 7_466_790_895,
+            },
+            {
+                "id": "raw",
+                "state": "transferred",
+                "exit_status": 0,
+                "files_transferred": 1,
+                "bytes_transferred": 2048,
+                "bytes_on_sender": 2048,
+            },
+        ],
+        "dump_bytes_covered": True,
+        "verification": "send_side_only",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _backup_runner(**overrides: str):
+    properties = {
+        "glasswell-backup.timer": "ActiveState=active\n",
+        "glasswell-backup.service": (
+            "Result=success\nExecMainStatus=0\n"
+            "ExecMainExitTimestamp=Thu 2026-08-27 02:09:24 UTC\n"
+        ),
+    }
+    properties.update(overrides)
+    return _runner(properties)
+
+
+def test_offsite_job_reports_a_fresh_push_without_claiming_a_read_back(tmp_path: Path) -> None:
+    completed_at = datetime(2026, 8, 30, 2, 11, tzinfo=UTC)
+    path = tmp_path / "offsite.json"
+    _write_restore_result(path, _offsite_payload(completed_at))
+
+    status = status_collector._offsite_copy_job(
+        completed_at + timedelta(hours=3),
+        path=path,
+        runner=_backup_runner(),
+        expected_uid=os.getuid(),
+        expected_gid=os.getgid(),
+    )
+
+    assert status.state == "ok"
+    assert "write-only" in status.detail
+    assert "no read-back" in status.detail
+    # The served detail must not carry the remote host, address or any filesystem path.
+    assert "192.168.2.205" not in status.detail
+    assert "/hdd-pool" not in status.detail
+
+
+def test_offsite_job_degrades_when_the_push_stops_being_republished(tmp_path: Path) -> None:
+    completed_at = datetime(2026, 8, 25, 2, 11, tzinfo=UTC)
+    path = tmp_path / "offsite.json"
+    _write_restore_result(path, _offsite_payload(completed_at))
+
+    status = status_collector._offsite_copy_job(
+        completed_at + timedelta(days=3),
+        path=path,
+        runner=_backup_runner(),
+        expected_uid=os.getuid(),
+        expected_gid=os.getgid(),
+    )
+
+    assert status.state == "degraded"
+    assert "stale" in status.detail
+
+
+def test_offsite_job_degrades_when_the_volume_sent_misses_the_dump(tmp_path: Path) -> None:
+    """rsync exiting 0 is a claim about a command, not about the generation leaving the host."""
+    completed_at = datetime(2026, 8, 30, 2, 11, tzinfo=UTC)
+    path = tmp_path / "offsite.json"
+    _write_restore_result(path, _offsite_payload(completed_at, dump_bytes_covered=False))
+
+    status = status_collector._offsite_copy_job(
+        completed_at + timedelta(hours=1),
+        path=path,
+        runner=_backup_runner(),
+        expected_uid=os.getuid(),
+        expected_gid=os.getgid(),
+    )
+
+    assert status.state == "degraded"
+    assert "does not account for the generation's dump" in status.detail
+
+
+def test_offsite_job_degrades_on_a_failed_push(tmp_path: Path) -> None:
+    completed_at = datetime(2026, 8, 30, 2, 11, tzinfo=UTC)
+    path = tmp_path / "offsite.json"
+    payload = _offsite_payload(completed_at, result="failed", failure_detail="raw_push_failed")
+    payload["streams"][1]["state"] = "failed"
+    payload["streams"][1]["exit_status"] = 23
+    _write_restore_result(path, payload)
+
+    status = status_collector._offsite_copy_job(
+        completed_at + timedelta(hours=1),
+        path=path,
+        runner=_backup_runner(),
+        expected_uid=os.getuid(),
+        expected_gid=os.getgid(),
+    )
+
+    assert status.state == "degraded"
+    assert "raw_push_failed" in status.detail
+
+
+def test_offsite_job_refuses_a_receipt_a_reader_could_have_written(tmp_path: Path) -> None:
+    completed_at = datetime(2026, 8, 30, 2, 11, tzinfo=UTC)
+    path = tmp_path / "offsite.json"
+    path.write_text(json.dumps(_offsite_payload(completed_at)), encoding="utf-8")
+    path.chmod(0o666)
+
+    status = status_collector._offsite_copy_job(
+        completed_at + timedelta(hours=1),
+        path=path,
+        runner=_backup_runner(),
+        expected_uid=os.getuid(),
+        expected_gid=os.getgid(),
+    )
+
+    assert status.state == "degraded"
+    assert "unsafe" in status.detail
+
+
+def test_recovery_job_says_never_executed_rather_than_ok_or_silent(tmp_path: Path) -> None:
+    """The honest default for a path nobody has ever run is pending, and it says why."""
+    status = status_collector._recovery_drill_job(
+        datetime(2026, 8, 30, tzinfo=UTC),
+        path=tmp_path / "absent.json",
+        expected_uid=os.getuid(),
+        expected_gid=os.getgid(),
+    )
+
+    assert status.state == "pending"
+    assert "never been executed" in status.detail
+    assert status.last_run_at is None
+
+
+def test_recovery_job_reports_a_real_proof_when_one_finally_exists(tmp_path: Path) -> None:
+    completed_at = datetime(2026, 8, 29, tzinfo=UTC)
+    path = tmp_path / "recovery.json"
+    _write_restore_result(
+        path,
+        {
+            "receipt_version": 1,
+            "result": "passed",
+            "failure_detail": None,
+            "target_database": "glasswell_recovery",
+            "dump": {
+                "name": "glasswell-20260830T020825Z.dump",
+                "sha256": "c" * 64,
+                "bytes": 1_493_358_179,
+            },
+            "started_at": (completed_at - timedelta(hours=1)).isoformat(),
+            "completed_at": completed_at.isoformat(),
+            "duration_seconds": 3600,
+            "source_schema_version": 54,
+            "restored_schema_version": 54,
+            "schema_match": True,
+            "critical_row_counts": [
+                {"dataset": "lineage.manifests", "source_rows": 197, "restored_rows": 197,
+                 "match": True}
+            ],
+            "representative_reads": [{"id": "lineage_manifest", "passed": True}],
+            "globals_restored": True,
+            "raw_zone": {"files": 12, "bytes": 2_040_109_465},
+        },
+    )
+
+    status = status_collector._recovery_drill_job(
+        completed_at + timedelta(days=2),
+        path=path,
+        expected_uid=os.getuid(),
+        expected_gid=os.getgid(),
+    )
+
+    assert status.state == "ok"
+    assert "schema 54" in status.detail
+
+
+def test_a_healthy_weekly_drill_does_not_degrade_between_runs(tmp_path: Path) -> None:
+    """The drill is weekly and the dump bound is two days; measured against `now` the job would
+    go degraded every Tuesday and stay there until Sunday, refusing every deploy in between."""
+    completed_at = datetime(2026, 8, 30, 4, 14, tzinfo=UTC)
+    path = tmp_path / "restore.json"
+    _write_restore_result(
+        path,
+        # Sunday's drill restored a dump taken two hours earlier: healthy by any reading.
+        _restore_payload(completed_at, dump_created_at=completed_at - timedelta(hours=2)),
+    )
+    runner = _runner(
+        {
+            "glasswell-restore-drill.timer": "ActiveState=active\n",
+            "glasswell-restore-drill.service": (
+                "Result=success\nExecMainStatus=0\n"
+                "ExecMainExitTimestamp=Thu 2026-08-27 02:09:24 UTC\n"
+            ),
+        }
+    )
+
+    # Wednesday: the receipt is three days old, well inside the eight-day proof bound, and the
+    # dump it restored was two hours old at drill time.
+    status = _restore_drill_job(
+        completed_at + timedelta(days=3),
+        path=path,
+        runner=runner,
+        expected_uid=os.getuid(),
+        expected_gid=os.getgid(),
+    )
+
+    assert status.state == "ok"
+    assert "stale" not in status.detail
+
+
+def test_a_drill_that_restored_an_old_dump_still_degrades(tmp_path: Path) -> None:
+    """The check the dump bound exists for: backups stopped, so the drill had nothing fresh."""
+    completed_at = datetime(2026, 8, 30, 4, 14, tzinfo=UTC)
+    path = tmp_path / "restore.json"
+    _write_restore_result(
+        path,
+        _restore_payload(completed_at, dump_created_at=completed_at - timedelta(days=5)),
+    )
+
+    status = _restore_drill_job(
+        completed_at + timedelta(hours=1),
+        path=path,
+        runner=_runner({"glasswell-restore-drill.timer": "ActiveState=active\n"}),
+        expected_uid=os.getuid(),
+        expected_gid=os.getgid(),
+    )
+
+    assert status.state == "degraded"
+    assert "backup dump is stale" in status.detail
+    assert "when the drill ran" in status.detail

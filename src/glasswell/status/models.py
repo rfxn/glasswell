@@ -24,6 +24,8 @@ SourceState = Literal["current", "stale", "pending"]
 RecordedFetchOutcome = Literal["new", "unchanged", "failed"]
 SourceOutcome = Literal["attempted", "new", "unchanged", "failed", "interrupted"]
 FUTURE_SOURCE_TOLERANCE = timedelta(minutes=5)
+OffsiteStreamState = Literal["transferred", "failed", "absent", "not_attempted"]
+OffsiteFailureDetail = Literal["pgdump_push_failed", "raw_push_failed"]
 RestoreFailureDetail = Literal[
     "drill_interrupted",
     "unsafe_dump_directory",
@@ -469,6 +471,132 @@ class RestoreDrillResult(BaseModel):
             raise ValueError("passed restore result has incomplete representative reads")
         if any(not item.passed for item in reads.values()):
             raise ValueError("passed restore result has a failed representative read")
+        return self
+
+
+class OffsiteDumpIdentity(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(pattern=r"^glasswell-\d{8}T\d{6}Z\.dump$")
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    bytes: int = Field(gt=0)
+
+
+class OffsiteStream(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: Literal["pgdump", "raw"]
+    state: OffsiteStreamState
+    exit_status: int = Field(ge=0)
+    files_transferred: int | None = Field(default=None, ge=0)
+    bytes_transferred: int | None = Field(default=None, ge=0)
+    bytes_on_sender: int | None = Field(default=None, ge=0)
+
+
+class OffsiteCopyReceipt(BaseModel):
+    """What the sender did. The remote grant is write-only, so nothing here saw the far side."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    receipt_version: Literal[1] = 1
+    result: Literal["passed", "failed"]
+    failure_detail: OffsiteFailureDetail | None
+    generation: str = Field(pattern=r"^\d{8}T\d{6}Z$")
+    dump: OffsiteDumpIdentity
+    destination: str = Field(min_length=1, max_length=256)
+    started_at: datetime
+    completed_at: datetime
+    duration_seconds: int = Field(ge=0)
+    streams: list[OffsiteStream]
+    dump_bytes_covered: bool
+    # Pinned to one value on purpose: a receipt cannot claim a stronger proof than the one this
+    # host can make, because `rrsync -wo` gives it no way to read the far side back.
+    verification: Literal["send_side_only"]
+
+    @model_validator(mode="after")
+    def validate_receipt(self) -> OffsiteCopyReceipt:
+        if any(value.tzinfo is None for value in (self.started_at, self.completed_at)):
+            raise ValueError("offsite receipt timestamps require timezone offsets")
+        if self.completed_at < self.started_at:
+            raise ValueError("offsite receipt completes before it starts")
+        streams = {item.id: item for item in self.streams}
+        if set(streams) != {"pgdump", "raw"} or len(streams) != len(self.streams):
+            raise ValueError("offsite receipt must record both streams exactly once")
+        if self.result == "failed":
+            if self.failure_detail is None:
+                raise ValueError("failed offsite receipt requires failure_detail")
+            return self
+        if self.failure_detail is not None:
+            raise ValueError("passed offsite receipt cannot carry failure_detail")
+        if any(item.state == "failed" for item in streams.values()):
+            raise ValueError("passed offsite receipt cannot carry a failed stream")
+        if streams["pgdump"].state != "transferred":
+            raise ValueError("passed offsite receipt requires a transferred pgdump stream")
+        # `dump_bytes_covered` is deliberately not a validity condition. It is a measurement the
+        # consumers judge: a receipt whose stats did not parse must still be readable, or an
+        # rsync output change would take the nightly backup down instead of degrading Status.
+        return self
+
+
+class RecoveryRawZone(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    files: int | None = Field(default=None, ge=0)
+    bytes: int | None = Field(default=None, ge=0)
+
+
+class RecoveryDrillResult(BaseModel):
+    """A replacement-host rebuild from the off-box copy. Never yet produced by a real run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    receipt_version: Literal[1] = 1
+    result: Literal["passed", "failed"]
+    failure_detail: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    # Same plain-identifier allowlist the drill enforces, so a receipt cannot record a target
+    # the script would have refused to build a statement from.
+    target_database: str = Field(pattern=r"^[a-z][a-z0-9_]{0,62}$")
+    dump: OffsiteDumpIdentity | None
+    started_at: datetime
+    completed_at: datetime
+    duration_seconds: int = Field(ge=0)
+    source_schema_version: int | None = Field(default=None, ge=0)
+    restored_schema_version: int | None = Field(default=None, ge=0)
+    schema_match: bool | None
+    critical_row_counts: list[RestoreRowComparison]
+    representative_reads: list[RestoreReadAssertion]
+    globals_restored: bool
+    raw_zone: RecoveryRawZone
+
+    @model_validator(mode="after")
+    def validate_receipt(self) -> RecoveryDrillResult:
+        if any(value.tzinfo is None for value in (self.started_at, self.completed_at)):
+            raise ValueError("recovery result timestamps require timezone offsets")
+        if self.completed_at < self.started_at:
+            raise ValueError("recovery result completes before it starts")
+        # A recovery that wrote over the live database is a catastrophe, not a proof.
+        if self.target_database == "glasswell":
+            raise ValueError("recovery result cannot name the production database")
+        if self.result == "failed":
+            if self.failure_detail is None:
+                raise ValueError("failed recovery result requires failure_detail")
+            return self
+        if self.failure_detail is not None:
+            raise ValueError("passed recovery result cannot carry failure_detail")
+        if self.dump is None:
+            raise ValueError("passed recovery result requires dump identity")
+        if not self.globals_restored:
+            raise ValueError("passed recovery result requires restored cluster globals")
+        if self.schema_match is not True or self.source_schema_version != (
+            self.restored_schema_version
+        ):
+            raise ValueError("passed recovery result requires a matching schema head")
+        if any(not item.match for item in self.critical_row_counts):
+            raise ValueError("passed recovery result has a failed critical row comparison")
+        if any(not item.passed for item in self.representative_reads):
+            raise ValueError("passed recovery result has a failed representative read")
+        if not self.raw_zone.files:
+            raise ValueError("passed recovery result requires a restored raw zone")
         return self
 
 

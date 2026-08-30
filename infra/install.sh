@@ -106,8 +106,11 @@ for unit in glasswell-api.service glasswell-ingest.service glasswell-ingest.time
     install -o root -g root -m 0644 "$INFRA_DIR/systemd/$unit" "$UNIT_DIR/$unit"
 done
 
-# One protection service invokes each script by absolute path.
-for script in glasswell-backup.sh glasswell-restore-drill.sh; do
+# One protection service invokes each script by absolute path. The recovery drill has no unit —
+# it is an operator-run procedure on a replacement host — and the durable writer is the helper
+# the receipts are published through.
+for script in glasswell-backup.sh glasswell-restore-drill.sh glasswell-recovery-drill.sh \
+              glasswell-durable-write.py; do
     install -o root -g root -m 0755 "$INFRA_DIR/backup/$script" "$SBIN_DIR/$script"
 done
 

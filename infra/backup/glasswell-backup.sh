@@ -9,6 +9,10 @@ RAW_DIR="${RAW_DIR:-/data/raw}"
 RETAIN_DAYS="${RETAIN_DAYS:-14}"
 FORGE="${FORGE:-root@192.168.2.205}"
 BACKUP_KEY="${BACKUP_KEY:-/root/.ssh/id_glasswell_backup}"
+OFFSITE_RECEIPT_PATH="${OFFSITE_RECEIPT_PATH:-/var/lib/glasswell-backup/offsite.json}"
+OFFSITE_RECEIPT_UID="${OFFSITE_RECEIPT_UID:-root}"
+OFFSITE_RECEIPT_GID="${OFFSITE_RECEIPT_GID:-glasswell}"
+DURABLE_WRITE="${DURABLE_WRITE:-/usr/local/sbin/glasswell-durable-write.py}"
 
 SSH_CMD="ssh -i $BACKUP_KEY -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15"
 
@@ -210,17 +214,111 @@ fi
 kept=$(find "$PGDUMP_DIR" -maxdepth 1 -type f -name 'glasswell-*.dump' | wc -l)
 log "retention ${RETAIN_DAYS}d: ${kept} dump(s) kept locally"
 
-rsync -aH --delete -e "$SSH_CMD" "$PGDUMP_DIR/" "$FORGE:pgdump/" </dev/null \
-	|| fail "rsync pgdump -> $FORGE"
-log "pushed pgdump/ to $FORGE"
+# The forge grant is `rrsync -wo` — write-only. This host can push and cannot list, stat or
+# read back the far side, so the receipt below records what the *sender* did and says so in its
+# own `verification` field. It is not, and must never be described as, a round-trip proof.
+offsite_started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+offsite_started_epoch=$(date -u +%s)
+pgdump_status=0
+raw_status=0
+raw_state=transferred
+pgdump_stats=""
+raw_stats=""
 
-if [ -d "$RAW_DIR" ]; then
-	rsync -aH --delete -e "$SSH_CMD" "$RAW_DIR/" "$FORGE:raw/" </dev/null \
-		|| fail "rsync raw zone -> $FORGE"
-	log "pushed raw zone ($(du -sh "$RAW_DIR" | cut -f1)) to $FORGE"
+pgdump_stats=$(rsync -aH --delete --stats -e "$SSH_CMD" "$PGDUMP_DIR/" "$FORGE:pgdump/" </dev/null) \
+	|| pgdump_status=$?
+if [[ $pgdump_status -eq 0 ]]; then
+	log "pushed pgdump/ to $FORGE"
+	if [ -d "$RAW_DIR" ]; then
+		raw_stats=$(rsync -aH --delete --stats -e "$SSH_CMD" "$RAW_DIR/" "$FORGE:raw/" </dev/null) \
+			|| raw_status=$?
+		[[ $raw_status -eq 0 ]] && log "pushed raw zone ($(du -sh "$RAW_DIR" | cut -f1)) to $FORGE"
+	else
+		raw_state=absent
+		log "WARN: $RAW_DIR does not exist, raw-zone push skipped"
+	fi
 else
-	log "WARN: $RAW_DIR does not exist, raw-zone push skipped"
+	# The pgdump push is the generation's copy; skipping raw on its failure preserves the
+	# original control flow rather than quietly widening what a failed run still attempts.
+	raw_state=not_attempted
 fi
+
+offsite_completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+install -d -m 0750 -o "$OFFSITE_RECEIPT_UID" -g "$OFFSITE_RECEIPT_GID" \
+	"$(dirname "$OFFSITE_RECEIPT_PATH")" || fail "cannot create the offsite receipt directory"
+OFFSITE_GENERATION="$ts" OFFSITE_DUMP_NAME="${dump##*/}" OFFSITE_DUMP_SHA256="$dump_sha256" \
+	OFFSITE_DUMP_BYTES="$dump_bytes" OFFSITE_DESTINATION="$FORGE" \
+	OFFSITE_STARTED_AT="$offsite_started_at" OFFSITE_COMPLETED_AT="$offsite_completed_at" \
+	OFFSITE_DURATION_SECONDS="$(( $(date -u +%s) - offsite_started_epoch ))" \
+	OFFSITE_PGDUMP_STATUS="$pgdump_status" OFFSITE_PGDUMP_STATS="$pgdump_stats" \
+	OFFSITE_RAW_STATUS="$raw_status" OFFSITE_RAW_STATE="$raw_state" OFFSITE_RAW_STATS="$raw_stats" \
+	/usr/bin/python3 - <<'PY' | /usr/bin/python3 "$DURABLE_WRITE" "$OFFSITE_RECEIPT_PATH" \
+		"$OFFSITE_RECEIPT_UID" "$OFFSITE_RECEIPT_GID" || fail "publish the offsite push receipt"
+import json
+import os
+import re
+
+
+def stream(stream_id: str, status: str, stats: str, state: str) -> dict:
+    files = re.search(r"Number of regular files transferred:\s*([\d,]+)", stats)
+    transferred = re.search(r"Total transferred file size:\s*([\d,]+)", stats)
+    total = re.search(r"Total file size:\s*([\d,]+)", stats)
+
+    def number(match):
+        return int(match.group(1).replace(",", "")) if match else None
+
+    return {
+        "id": stream_id,
+        "state": state if status == "0" else "failed",
+        "exit_status": int(status),
+        "files_transferred": number(files),
+        "bytes_transferred": number(transferred),
+        "bytes_on_sender": number(total),
+    }
+
+
+pgdump = stream(
+    "pgdump", os.environ["OFFSITE_PGDUMP_STATUS"], os.environ["OFFSITE_PGDUMP_STATS"], "transferred"
+)
+raw = stream(
+    "raw",
+    os.environ["OFFSITE_RAW_STATUS"],
+    os.environ["OFFSITE_RAW_STATS"],
+    os.environ["OFFSITE_RAW_STATE"],
+)
+
+dump_bytes = int(os.environ["OFFSITE_DUMP_BYTES"])
+pushed = pgdump["bytes_transferred"]
+failed = [item["id"] for item in (pgdump, raw) if item["state"] == "failed"]
+print(
+    json.dumps(
+        {
+            "receipt_version": 1,
+            "result": "failed" if failed else "passed",
+            "failure_detail": f"{failed[0]}_push_failed" if failed else None,
+            "generation": os.environ["OFFSITE_GENERATION"],
+            "dump": {
+                "name": os.environ["OFFSITE_DUMP_NAME"],
+                "sha256": os.environ["OFFSITE_DUMP_SHA256"],
+                "bytes": dump_bytes,
+            },
+            "destination": os.environ["OFFSITE_DESTINATION"],
+            "started_at": os.environ["OFFSITE_STARTED_AT"],
+            "completed_at": os.environ["OFFSITE_COMPLETED_AT"],
+            "duration_seconds": int(os.environ["OFFSITE_DURATION_SECONDS"]),
+            "streams": [pgdump, raw],
+            # The night's dump is new, so it cannot be skipped as unchanged: a transferred
+            # volume below its size means the generation did not wholly leave this host.
+            "dump_bytes_covered": pushed is not None and pushed >= dump_bytes,
+            # Recorded by the sender. The write-only remote grant makes read-back impossible.
+            "verification": "send_side_only",
+        }
+    )
+)
+PY
+log "offsite receipt published -> $OFFSITE_RECEIPT_PATH"
+[[ $pgdump_status -eq 0 ]] || fail "rsync pgdump -> $FORGE"
+[[ $raw_status -eq 0 ]] || fail "rsync raw zone -> $FORGE"
 
 # The offsite push runs first so a retention fault never also costs the night's copy, but an
 # unpruned disk is a failure the alert unit has to see.

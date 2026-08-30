@@ -22,7 +22,15 @@ PG_TUNING="$INFRA_DIR/postgres/postgresql.conf.d/glasswell.conf"
 PSQL=(sudo -u postgres psql -d glasswell -tAc)
 VENV_PY=/opt/glasswell/venv/bin/python
 UNIT_DIR=/etc/systemd/system
+SBIN_DIR=/usr/local/sbin
 STATUS_SNAPSHOT=/var/lib/glasswell/status.json
+RESTORE_RESULT=/var/lib/glasswell-restore-drill/result.json
+OFFSITE_RECEIPT=/var/lib/glasswell-backup/offsite.json
+RECOVERY_RESULT=/var/lib/glasswell-recovery-drill/result.json
+PGDUMP_DIR=/data/backups/pg
+# Both bounds mirror status/collector.py; tests/unit/test_durability_verifier.py pins them equal.
+RESTORE_PROOF_MAX_AGE_DAYS=8
+OFFSITE_RECEIPT_MAX_AGE_DAYS=2
 
 passed=0
 failed=0
@@ -105,6 +113,99 @@ for env_path in sys.argv[2:]:
 PY
 }
 
+# The three durability receipts share a shape: a JSON object carrying `result` and a UTC
+# `completed_at`. One reader serves all of them; `field` accepts a dotted path.
+receipt_field() {
+    "$VENV_PY" - "$1" "$2" 2>/dev/null <<'PY'  # 2>/dev/null: an unreadable receipt prints nothing and the assert that reads it reports the miss; a traceback would bury the failing line
+import json
+import pathlib
+import sys
+
+value = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+for part in sys.argv[2].split("."):
+    if not isinstance(value, dict):
+        raise SystemExit(1)
+    value = value.get(part)
+print("" if value is None else json.dumps(value).strip('"'))
+PY
+}
+
+receipt_freshness() {
+    "$VENV_PY" - "$1" "$2" 2>/dev/null <<'PY'  # 2>/dev/null: same contract as receipt_field — an empty verdict fails the assert that reads it
+import json
+import pathlib
+import sys
+from datetime import UTC, datetime, timedelta
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+completed = datetime.fromisoformat(payload["completed_at"].replace("Z", "+00:00")).astimezone(UTC)
+age = datetime.now(UTC) - completed
+if age < -timedelta(minutes=5):
+    verdict = "future"
+elif age > timedelta(days=int(sys.argv[2])):
+    verdict = "stale"
+else:
+    verdict = "fresh"
+print(f"{max(0, int(age.total_seconds() // 3600))} {verdict}")
+PY
+}
+
+# root:glasswell 0640 from a root-owned state directory is the contract every durability
+# receipt is published under, so the product user can read a proof it cannot forge.
+assert_receipt_is_safe() {
+    local label="$1" path="$2"
+    assert_true "$label is a regular file" "missing at $path" test -f "$path"
+    assert_false "$label is not a symlink" "$path must be a regular owned file" test -L "$path"
+    if [[ -f $path && ! -L $path ]]; then
+        assert "$label ownership and mode" "root:glasswell 640" "$(stat -c '%U:%G %a' "$path")"
+    fi
+}
+
+# Newest by mtime, which is the same rule glasswell-restore-drill.sh selects a dump by, so the
+# generation this compares against is the one the drill would have picked.
+newest_dump_generation() {
+    local candidate newest="" newest_stamp=0 stamp
+    shopt -s nullglob
+    for candidate in "$PGDUMP_DIR"/glasswell-*.manifest.json; do
+        stamp="$(stat -c %Y -- "$candidate")" || continue
+        if (( stamp > newest_stamp )); then
+            newest_stamp=$stamp
+            newest=${candidate##*/}
+        fi
+    done
+    shopt -u nullglob
+    newest="${newest#glasswell-}"
+    printf '%s\n' "${newest%.manifest.json}"
+}
+
+# The drill is weekly and the live head moves on every migration deploy, so a deploy that lands
+# a migration legitimately leaves the receipt one head behind until the next Sunday run. Compare
+# heads only once a drill has completed since the newest migration was applied; `schema_match`,
+# the safety checks and the freshness bound stay unconditional either way.
+restore_proof_covers_live_head() {
+    local applied_at completed_at
+    applied_at="$("${PSQL[@]}" "select coalesce(max(applied_at), 'epoch'::timestamptz) from public.schema_migrations")" \
+        || return 1
+    [[ -n $applied_at ]] || return 1
+    applied_at="$(date -d "$applied_at" +%s)" || return 1
+    completed_at="$(receipt_field "$RESTORE_RESULT" completed_at)"
+    [[ -n $completed_at ]] || return 1
+    completed_at="$(date -d "$completed_at" +%s)" || return 1
+    (( completed_at > applied_at ))
+}
+
+# A deploy that lands the receipt-publishing backup script is legitimately receipt-less until
+# that night's run. Once a backup has run *since* the script was installed the receipt is
+# mandatory, so a deleted or abandoned one fails from then on.
+offsite_receipt_expected() {
+    local script="$SBIN_DIR/glasswell-backup.sh" installed_at last_run
+    installed_at="$(stat -c %Y -- "$script")" || return 1
+    last_run="$(systemctl show glasswell-backup.service -p ExecMainExitTimestamp --value)"
+    [[ -n $last_run ]] || return 1
+    last_run="$(date -d "$last_run" +%s)" || return 1
+    (( last_run > installed_at ))
+}
+
 status_api_serves_current_snapshot() {
     api_curl -sf --max-time 20 -H "X-Glasswell-Key: $owner_key" "$API/v1/status" \
         | "$VENV_PY" -c \
@@ -159,6 +260,78 @@ if [[ -f $STATUS_SNAPSHOT && ! -L $STATUS_SNAPSHOT ]]; then
         status_snapshot_omits_private_environment
 fi
 
+# Timer enablement says the drill is scheduled, not that it proved anything. The drill pins no
+# schema version — it restores whichever manifest is newest by mtime — so without the head
+# comparison below a drill that passed against a dump several migrations behind the running app
+# reads green, and a receipt that silently stopped updating reads green with it.
+printf 'restore drill proof\n'
+if [[ $backup_enabled == enabled ]]; then
+    assert_receipt_is_safe "restore proof" "$RESTORE_RESULT"
+    if [[ -f $RESTORE_RESULT && ! -L $RESTORE_RESULT ]]; then
+        assert "restore drill result" passed "$(receipt_field "$RESTORE_RESULT" result)"
+        assert "restore drill schema heads agree" true \
+            "$(receipt_field "$RESTORE_RESULT" schema_match)"
+        if restore_proof_covers_live_head; then
+            assert "restore proof schema head equals the live head" \
+                "$("${PSQL[@]}" "select coalesce(max(version), 0) from public.schema_migrations")" \
+                "$(receipt_field "$RESTORE_RESULT" restored_schema_version)"
+        else
+            ok "restore proof predates the newest migration — the next weekly drill refreshes it"
+        fi
+        assert "restore proof scratch cleanup" true \
+            "$(receipt_field "$RESTORE_RESULT" scratch_removed)"
+        read -r restore_age_hours restore_verdict < <(receipt_freshness \
+            "$RESTORE_RESULT" "$RESTORE_PROOF_MAX_AGE_DAYS")
+        assert "restore proof freshness (${restore_age_hours:-?}h, bound ${RESTORE_PROOF_MAX_AGE_DAYS}d)" \
+            fresh "${restore_verdict:-unreadable}"
+    fi
+else
+    ok "restore proof not expected while the restore-drill timer is intentionally disabled"
+fi
+
+# The forge grant is `rrsync -wo` — write-only. VM 111 can push and cannot list, stat or read
+# back the far side, so nothing here is a round-trip proof. These assert what the *sender* did
+# and when. The generation equality is what catches a receipt that stopped updating.
+printf 'offsite copy\n'
+# `install` resets the script's mtime on every deploy, so the readiness test excuses only an
+# *absent* receipt. A receipt that exists is asserted whatever the mtimes say — otherwise a
+# deleted, failed or stale one would be invisible for 24 h after each deploy.
+if [[ $backup_enabled == enabled ]] && { [[ -e $OFFSITE_RECEIPT ]] || offsite_receipt_expected; }; then
+    assert_receipt_is_safe "offsite receipt" "$OFFSITE_RECEIPT"
+    if [[ -f $OFFSITE_RECEIPT && ! -L $OFFSITE_RECEIPT ]]; then
+        assert "offsite push result" passed "$(receipt_field "$OFFSITE_RECEIPT" result)"
+        assert "offsite receipt states its send-side limit" send_side_only \
+            "$(receipt_field "$OFFSITE_RECEIPT" verification)"
+        assert "offsite receipt covers the newest local dump generation" \
+            "$(newest_dump_generation)" "$(receipt_field "$OFFSITE_RECEIPT" generation)"
+        assert "offsite push carried the generation's dump bytes" true \
+            "$(receipt_field "$OFFSITE_RECEIPT" dump_bytes_covered)"
+        read -r offsite_age_hours offsite_verdict < <(receipt_freshness \
+            "$OFFSITE_RECEIPT" "$OFFSITE_RECEIPT_MAX_AGE_DAYS")
+        assert "offsite receipt freshness (${offsite_age_hours:-?}h, bound ${OFFSITE_RECEIPT_MAX_AGE_DAYS}d)" \
+            fresh "${offsite_verdict:-unreadable}"
+    fi
+elif [[ $backup_enabled == enabled ]]; then
+    ok "no offsite receipt expected yet — the backup script is newer than its last run"
+else
+    ok "offsite receipt not expected while the backup timer is intentionally disabled"
+fi
+
+# Replacement-VM recovery is mechanised and has never been executed. Absence of a receipt is
+# reported, not failed: hard-failing on a proof nobody can produce yet would red this verifier
+# permanently and block every deploy behind it.
+printf 'replacement-vm recovery\n'
+assert_true "the recovery drill is installed" "missing at $SBIN_DIR/glasswell-recovery-drill.sh" \
+    test -x "$SBIN_DIR/glasswell-recovery-drill.sh"
+if [[ -e $RECOVERY_RESULT ]]; then
+    assert_receipt_is_safe "recovery proof" "$RECOVERY_RESULT"
+    assert "recovery drill result" passed "$(receipt_field "$RECOVERY_RESULT" result)"
+    assert "recovery proof schema heads agree" true \
+        "$(receipt_field "$RECOVERY_RESULT" schema_match)"
+else
+    ok "recovery drill is mechanised but has NEVER been executed (no receipt at $RECOVERY_RESULT)"
+fi
+
 # The roster is the tree's, not a list here: a glasswell-* unit added to infra/systemd but not
 # to install.sh's placement loop is never installed, and a timer that was never installed is a
 # monthly capture that silently never runs (M1-9). Equality, not existence — the live file
@@ -168,6 +341,17 @@ for unit in "$INFRA_DIR"/systemd/glasswell-*.service "$INFRA_DIR"/systemd/glassw
     name="${unit##*/}"
     assert_true "$name installed and identical to the tree" "missing or drifted at $UNIT_DIR" \
         cmp -s "$unit" "$UNIT_DIR/$name"
+done
+
+# DR-H5. The loop above walks the tree, so a unit that exists only on the host is invisible to
+# it — which is how an enabled, armed glasswell-repromote.timer sat undeclared for nine days.
+# This is the other direction: every glasswell-* unit on the host must be declared in the tree.
+for unit in "$UNIT_DIR"/glasswell-*.service "$UNIT_DIR"/glasswell-*.timer; do
+    [[ -e $unit ]] || continue
+    name="${unit##*/}"
+    assert_true "$name is declared in the tree" \
+        "installed at $UNIT_DIR but absent from infra/systemd — declare it or remove it" \
+        test -e "$INFRA_DIR/systemd/$name"
 done
 
 printf 'api\n'
