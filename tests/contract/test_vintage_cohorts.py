@@ -33,6 +33,50 @@ def test_the_support_distribution_is_on_the_cohort_scale_and_says_why(
 
     assert set(support["classes"]) == {"0", "1-9", "10-99", "100-999", "1000+"}
     assert "section" in support["scale"]
+    assert "wells_with_a_filed_month" in support["scale"]
+
+
+def test_the_support_count_is_the_measure_the_rule_publishes(client: TestClient) -> None:
+    """BL-1: the rule row and this endpoint must not report two numbers for one quantity.
+
+    cr_nd_vintage_cohort_1 publishes its support figures measured as `the well's record admits
+    at least one month into a total` — reported or reported_zero. A `months_reported > 0`
+    aggregate excludes a well whose only filings are zeros, and on the deployed population that
+    is the difference between a published 49 and a served 39 for the no-spud-date cohort.
+    """
+    rule = client.get("/v1/conformance/cr_nd_vintage_cohort_1").json()["data"]
+    measure = rule["spec"]["support_measure"]
+    cohorts = client.get(PATH).json()["data"]["cohorts"]
+
+    assert measure["field"] == "wells_with_a_filed_month"
+    assert "reported_zero" in measure["definition"]
+    assert "cr_producing_window_1" in measure["why_not_the_producing_classification"]
+    assert all("wells_with_a_filed_month" in cohort for cohort in cohorts)
+    assert not any("producing_wells" in cohort for cohort in cohorts)
+
+
+def test_a_well_whose_only_filing_is_a_zero_still_stands_behind_its_cohort(
+    client: TestClient,
+) -> None:
+    """The measure's whole difference from `months_reported > 0`, exercised.
+
+    OTHER_API10S[4] filed exactly one month and it was a zero. A filed zero is a filing, and
+    the support count says so; the cumulative it supports is 0, which is a different fact from
+    the null a well that filed nothing carries.
+    """
+    from tests.contract.conftest import OTHER_API10S
+
+    zero_filer = OTHER_API10S[4]
+    cumulative = client.get(f"/v1/wells/{zero_filer}/cumulatives").json()["data"]
+    cohorts = client.get(PATH).json()["data"]["cohorts"]
+
+    assert cumulative["coverage"]["oil_bbl"]["months_reported_zero"] == 1
+    assert cumulative["coverage"]["oil_bbl"]["months_reported"] == 0
+    assert cumulative["cumulative"]["oil_bbl"]["value"] == "0.000"
+    keyed = next(item for item in cohorts if item["cohort_year"] is not None)
+    # Every seeded ND well but one shares spud year 2019; the zero-filer is inside that cohort
+    # and is counted, so the support count exceeds the wells with a reported month.
+    assert int(keyed["wells_with_a_filed_month"]["value"]) >= 3
 
 
 def test_the_spacing_assumption_is_stated_rather_than_omitted(client: TestClient) -> None:
@@ -63,6 +107,7 @@ def test_a_well_with_no_spud_date_is_its_own_cohort(client: TestClient) -> None:
     assert unkeyed[0]["cohort_key_semantics"] == "no_spud_date"
     assert int(unkeyed[0]["wells"]["value"]) > 0
     assert unkeyed[0]["wells"]["unit"] == "wells"
+    assert unkeyed[0]["wells_with_a_filed_month"]["unit"] == "wells"
 
 
 def test_a_keyed_cohort_carries_its_totals_with_the_snapshot_vintage(

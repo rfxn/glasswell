@@ -22,8 +22,8 @@ from glasswell.marts.land_metrics import support_distribution
 COHORT_RULE = "cr_nd_vintage_cohort_1"
 COHORT_KEYS = ("completion_anchor_year", "spud_year")
 
-# Measured on the deployed instance 2026-08-30 over 94 ND spud-year cohorts: producing-well
-# counts run 0 to 2,553, and the PLSS section scale puts 73 of the 94 in one bucket. These
+# Measured on the deployed instance 2026-08-30 over 94 ND spud-year cohorts: the support count
+# runs 0 to 2,553, and the PLSS section scale puts 73 of the 94 in one bucket. These
 # order-of-magnitude bands put no bucket over half the population.
 COHORT_BANDS: tuple[tuple[int, int | None, str], ...] = (
     (0, 0, "0"),
@@ -37,6 +37,10 @@ SUPPORT_SCALE_NOTE = (
     "Cohort scale, not the PLSS section scale used by the land-grid rollups. A section holds a"
     " handful of wells and a vintage cohort holds hundreds, so the section bands put 73 of the"
     " 94 ND cohorts in one class and told a reader nothing. Two grains, two stated scales."
+    " The count each band is cut on is wells_with_a_filed_month, defined by"
+    " cr_nd_vintage_cohort_1 — the wells whose record admits at least one month into this"
+    " cohort's totals. It is not the producing classification of cr_producing_window_1, which"
+    " asks a different question over a three-month window."
 )
 
 # The Williston basin does not stop at the state line; this population does. Said inside
@@ -133,7 +137,8 @@ _KEY_EXPRESSIONS = {
 _ROLLUP = """
 select {key} as cohort_year,
        count(distinct w.api10) as wells,
-       count(distinct w.api10) filter (where c.months_reported > 0) as producing_wells,
+       count(distinct w.api10) filter (
+           where c.months_reported + c.months_reported_zero > 0) as wells_with_a_filed_month,
        sum(c.cum_volume) filter (where c.stream = 'liquid') as liquid_bbl,
        sum(c.cum_volume) filter (where c.stream = 'gas') as gas_mcf,
        sum(c.cum_volume) filter (where c.stream = 'water') as water_bbl,
@@ -169,7 +174,7 @@ def cohort_rollup(
                 policy.cohort_key if row["cohort_year"] is not None else policy.null_cohort_label
             ),
             "wells": int(row["wells"]),
-            "producing_wells": int(row["producing_wells"]),
+            "wells_with_a_filed_month": int(row["wells_with_a_filed_month"]),
             "totals": {
                 stream: row[column]
                 for stream, column in zip(
@@ -184,7 +189,7 @@ def cohort_rollup(
         "spud_dates_read_at": max((row["spud_dates_read_at"] for row in found), default=None),
         "derivation_ids": derivations,
         "support_distribution": support_distribution(
-            [cohort["producing_wells"] for cohort in cohorts], COHORT_BANDS
+            [cohort["wells_with_a_filed_month"] for cohort in cohorts], COHORT_BANDS
         ),
     }
     return cohorts, population
