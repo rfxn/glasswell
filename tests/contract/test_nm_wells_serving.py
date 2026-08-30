@@ -266,6 +266,31 @@ def test_a_north_dakota_well_carries_no_pool_grain_disclosure(client: TestClient
     assert "production_reported_at_pool_grain" not in codes
 
 
+def test_the_pool_figures_selector_validates_at_the_pool_grain(
+    with_new_mexico: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The last `entity_type = 'well'` predicate in a serving path, checked rather than argued.
+
+    `selector_registry` branches: an api10 selector validates at well grain and an entity_key
+    selector at well_completion_pool grain. New Mexico's pool series carries the second, so the
+    output gate resolves it instead of counting zero rows at a grain New Mexico never files.
+    """
+    data = body(with_new_mexico, f"/v1/wells/{NM_API10}/production/pools")["data"]
+    handles = [
+        handle for key, handle in data["_lineage"].items() if key.startswith("pools.0.series.")
+    ]
+
+    assert handles
+    for handle in handles:
+        derivation_id, _, selector = handle.partition("#")
+        assert derivation_id.startswith("drv_")
+        assert selector.startswith("entity_key="), selector
+        assert "api10=" not in selector, selector
+    # Every point resolves; the gate that would refuse an unregistered selector runs on the way
+    # out of the endpoint, so a 200 with these handles is the proof.
+    assert data["reporting_level"] == "well_completion_pool"
+
+
 def test_the_north_dakota_equivalents_are_unchanged(client: TestClient) -> None:
     """The regression half. A third key in a lookup is where the first two get lost."""
     data = body(client, f"/v1/wells/{EXAMPLE_API10}/production")["data"]
