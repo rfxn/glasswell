@@ -65,9 +65,23 @@ export interface CompletionPool {
   _lineage: Record<string, string>;
 }
 
+export interface CompletionDesign {
+  disclosure_id: string;
+  base_water_volume: Figure | null;
+  base_water_null_semantics: string;
+  lateral_length_ft: Figure | null;
+  fluid_intensity: Figure | null;
+  intensity_null_semantics: string;
+  source_id: string;
+  report_vintage: string;
+}
+
 export interface CompletionContext {
   api10: string;
-  design_availability: "not_promoted";
+  /** A statement about the release, not about this well; per-well absence is `design`. */
+  design_availability: string;
+  design: CompletionDesign | null;
+  design_null_semantics: string;
   events: CompletionEvent[];
   pools: CompletionPool[];
 }
@@ -469,7 +483,8 @@ async function loadCompletionContext(
     const context = unwrap(envelope);
     if (
       context.api10 !== expectedApi10 ||
-      context.design_availability !== "not_promoted" ||
+      typeof context.design_availability !== "string" ||
+      context.design === undefined ||
       !Array.isArray(context.events) ||
       !Array.isArray(context.pools)
     ) {
@@ -478,7 +493,7 @@ async function loadCompletionContext(
     host.replaceChildren(completionContextBody(context, envelope));
     for (const note of warningNotes(envelope.meta.warnings)) host.appendChild(note);
     host.dataset["state"] =
-      context.events.length === 0 && context.pools.length === 0
+      context.events.length === 0 && context.pools.length === 0 && context.design === null
         ? "empty"
         : "populated";
     highlight(host, termIndex());
@@ -495,8 +510,8 @@ function completionContextBody(
   envelope: Envelope<CompletionContext>,
 ): DocumentFragment {
   const fragment = document.createDocumentFragment();
-  if (context.events.length === 0 && context.pools.length === 0) {
-    fragment.appendChild(emptyState("No events or pools reported."));
+  if (context.events.length === 0 && context.pools.length === 0 && context.design === null) {
+    fragment.appendChild(emptyState("No events, pools or design reported."));
   } else {
     fragment.append(
       contextGroup(
@@ -511,13 +526,77 @@ function completionContextBody(
         context.pools.map(completionPoolItem),
         "None reported",
       ),
+      contextGroup(
+        "Completion design",
+        labelFor(envelope, "/design/fluid_intensity"),
+        completionDesignItems(context),
+        "None disclosed",
+      ),
     );
   }
 
   // The absence is a served fact, not a load failure, so it stays on the card — as a scope
   // line under the section it scopes rather than as the sentence it used to be.
-  fragment.appendChild(scopeLine(["Design and formation tops not served"]));
+  fragment.appendChild(
+    scopeLine([
+      context.design === null
+        ? "No design disclosed — FracFocus is voluntary"
+        : "Design as disclosed, measured against computed geometry",
+      "Formation tops not served",
+    ]),
+  );
   return fragment;
+}
+
+const INTENSITY_REASONS: Record<string, string> = {
+  no_report: "unavailable \u2014 no disclosed volume",
+  lateral_length_unavailable: "unavailable \u2014 no lateral geometry",
+  lateral_length_implausible: "unavailable \u2014 lateral too short to divide by",
+  intensity_out_of_range: "unavailable \u2014 result outside the rule's range",
+};
+
+function completionDesignItems(context: CompletionContext): HTMLElement[] {
+  const design = context.design;
+  if (design === null) return [];
+  const item = document.createElement("li");
+  const facts = document.createElement("dl");
+  facts.className = "gw-context-facts";
+  appendContextFact(facts, "Disclosure", design.disclosure_id, true);
+  appendFigureFact(
+    facts,
+    "Base fluid",
+    design.base_water_volume,
+    INTENSITY_REASONS[design.base_water_null_semantics] ?? "unavailable",
+  );
+  appendFigureFact(facts, "Lateral", design.lateral_length_ft, "unavailable \u2014 no geometry");
+  appendFigureFact(
+    facts,
+    "Fluid intensity",
+    design.fluid_intensity,
+    INTENSITY_REASONS[design.intensity_null_semantics] ?? "unavailable",
+  );
+  appendContextFact(
+    facts,
+    "Source",
+    sourceLabel(design.source_id, design.report_vintage),
+    true,
+  );
+  item.appendChild(facts);
+  return [item];
+}
+
+/** A figure renders as a chip with its handle; an absence renders as its stated reason. */
+function appendFigureFact(
+  facts: HTMLDListElement,
+  label: string,
+  value: Figure | null,
+  reason: string,
+): void {
+  if (value === null) {
+    appendContextFact(facts, label, reason);
+    return;
+  }
+  appendContextFact(facts, label, figureElement(value, label, value.d ?? null));
 }
 
 export function contextGroup(
