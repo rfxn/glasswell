@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from glasswell.api import create_app
+from glasswell.api.csrf import CSRF_KEY_ENV
 from glasswell.api.deps import ALLOW_ANON_ENV, OWNER_KEY_ENV, get_connection
 from glasswell.api.examples import KEY_HEADER
 from glasswell.db.migrate import migrate
@@ -43,6 +44,7 @@ FIXTURE_ENV_ID = "env_test"
 LINEAGE_FIXTURE_ENV_ID = "env_lineage_fixture"
 FIXTURE_SOURCES = ("nd_mpr_xlsx", "tx_pdq_dsv", "nm_ocd_wcproduction")
 CONTRACT_OWNER_KEY = "contract-tier-owner-key"
+CONTRACT_CSRF_KEY = "contract-tier-csrf-signing-key-0123456789"
 
 _docker_environment: dict[str, str] | None = None
 _docker_probe_error = ""
@@ -392,6 +394,7 @@ def lineage_env(db: psycopg.Connection) -> DeriveEnvironment:
 def api_client(db: psycopg.Connection, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     """The real app, with its connection dependency bound to this test's database."""
     monkeypatch.setenv(OWNER_KEY_ENV, CONTRACT_OWNER_KEY)
+    monkeypatch.setenv(CSRF_KEY_ENV, CONTRACT_CSRF_KEY)
     monkeypatch.delenv(ALLOW_ANON_ENV, raising=False)
     application = create_app()
     application.dependency_overrides[get_connection] = lambda: db

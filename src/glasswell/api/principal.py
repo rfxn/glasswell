@@ -58,13 +58,32 @@ class KeyRecord(Frozen):
         return "active"
 
 
+Role = Literal["owner", "viewer"]
+
+# `role` is the user-facing concept; `scope` stays the internal authorization key, so every
+# existing guard, matrix row and redaction site keeps reading the field it already reads.
+_ROLE_FOR_SCOPE: dict[Scope, Role] = {"owner": "owner", "agent": "viewer", "guest": "viewer"}
+_SCOPE_FOR_ROLE: dict[Role, Scope] = {"owner": "owner", "viewer": "guest"}
+
+
+def role_for_scope(scope: Scope) -> Role:
+    return _ROLE_FOR_SCOPE[scope]
+
+
+def scope_for_role(role: Role) -> Scope:
+    return _SCOPE_FOR_ROLE[role]
+
+
 class Principal(Frozen):
     """The resolved caller. `id` is what a rate limiter and the audit stream key on."""
 
     id: str
-    kind: Literal["owner", "service", "anonymous"]
+    kind: Literal["owner", "service", "anonymous", "user"]
     scope: Scope
+    role: Role = "viewer"
     key_id: str | None = None
+    user_id: str | None = None
+    session_id: str | None = None
     label: str | None = None
 
 
@@ -144,7 +163,7 @@ def resolve_principal(
     if not presented:
         raise ProblemError("key_required", detail="send the key in X-Glasswell-Key")
     if owner_key and hmac.compare_digest(presented, owner_key):
-        return Principal(id="owner", kind="owner", scope="owner")
+        return Principal(id="owner", kind="owner", scope="owner", role="owner")
     record = store.authenticate(fingerprint(presented))
     if record is None:
         raise ProblemError("unauthenticated")
@@ -155,6 +174,7 @@ def resolve_principal(
         id=f"key:{record.key_id}",
         kind="service",
         scope=record.scope,
+        role=role_for_scope(record.scope),
         key_id=record.key_id,
         label=record.label,
     )

@@ -18,3 +18,13 @@
 - [New] CSRF tokens bound to the session hash and HMAC-signed, so a token minted for one
       session cannot be replayed into another and a caller with no session cannot mint
       one; a missing signing key is a startup abort, never a disabled check
+- [New] session login with two roles (owner, viewer) over lineage.users: __Host- cookie,
+      server-side session records, rotation on login, sliding idle expiry under a
+      never-extended absolute cap, and server-side logout invalidation
+- [Fix] /docs and /openapi.json were served anonymously; both now require a principal,
+      and the auth-matrix coverage test walks the router rather than the OpenAPI
+      document so a reachable-but-undeclared route cannot recur
+- [Change] the static owner key is refused on the tunnel listener, demoting it to a
+           LAN and deploy-gate credential; issued api_keys rows are unaffected
+- [Change] GLASSWELL_ALLOW_ANON resolves to the viewer role rather than owner scope, and
+           the API refuses to start when it is set together with GLASSWELL_PUBLIC=1

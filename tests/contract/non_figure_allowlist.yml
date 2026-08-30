@@ -71,6 +71,8 @@
     collection. Same class as /output/rows on the expanded record.
 - pointer: /entries/*/n_words
   reason: Token count the highlighter uses to build its trie (SB-04 §6.2).
+- pointer: /expires_in
+  reason: Lifetime in seconds of a CSRF token, a protocol parameter of the exchange.
 
 # --- spine metadata ----------------------------------------------------------
 - pointer: /error_codes/*/status

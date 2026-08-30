@@ -15,12 +15,12 @@ import secrets
 import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Literal
+from typing import Literal, Protocol
 
 import psycopg
 from psycopg.rows import dict_row
 
-from glasswell.api.password import DUMMY_HASH, verify_password
+from glasswell.api.password import DUMMY_HASH, hash_password, needs_rehash, verify_password
 from glasswell.api.principal import fingerprint
 from glasswell.lineage.ids import new_ulid
 from glasswell.lineage.models import Frozen
@@ -244,6 +244,72 @@ def revoke_user_sessions(
 
 def verify_user_password(user: User, password: str) -> bool:
     return verify_password(user.password_hash, password)
+
+
+def set_password(
+    connection: psycopg.Connection, user_id: str, *, password: str, now: datetime
+) -> None:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "update lineage.users"
+            "   set password_hash = %(hash)s, password_changed_at = %(now)s"
+            " where user_id = %(user_id)s",
+            {"hash": hash_password(password), "now": now, "user_id": user_id},
+        )
+
+
+def rehash_if_weak(
+    connection: psycopg.Connection, user: User, password: str, *, now: datetime
+) -> bool:
+    """Upgrade a stored hash whose parameters are below the current floor, after a good verify."""
+    if not needs_rehash(user.password_hash):
+        return False
+    set_password(connection, user.user_id, password=password, now=now)
+    return True
+
+
+class SessionStore(Protocol):
+    """Mirrors `KeyStore`: authentication runs on routes that never touch the request pool."""
+
+    def authenticate(self, token: str, *, now: datetime) -> tuple[Session, User] | None: ...
+
+
+class PostgresSessionStore:
+    """Owns the connection it opens, so a route with no database dependency still works."""
+
+    def __init__(self, connect: Callable[[], psycopg.Connection]) -> None:
+        self._connect = connect
+
+    def authenticate(self, token: str, *, now: datetime) -> tuple[Session, User] | None:
+        connection = self._connect()
+        try:
+            resolved = resolve_session(connection, token, now=now)
+            if resolved is not None:
+                touch_session(connection, resolved[0], now=now)
+            connection.commit()
+            return resolved
+        finally:
+            connection.close()
+
+
+class ConnectionSessionStore:
+    """Bound to one live connection — the shape a request handler and a test share."""
+
+    def __init__(self, connection: psycopg.Connection) -> None:
+        self._connection = connection
+
+    def authenticate(self, token: str, *, now: datetime) -> tuple[Session, User] | None:
+        resolved = resolve_session(self._connection, token, now=now)
+        if resolved is not None:
+            touch_session(self._connection, resolved[0], now=now)
+        return resolved
+
+
+class DeniedSessionStore:
+    """No store configured. Denying is the answer; defaulting open is the failure mode."""
+
+    def authenticate(self, token: str, *, now: datetime) -> tuple[Session, User] | None:
+        return None
 
 
 ACCOUNT_BACKOFF_AFTER = 5
