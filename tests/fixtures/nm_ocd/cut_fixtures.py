@@ -44,10 +44,22 @@ WINDOW_SCAN_RECORDS = 60_000
 SMALL_TABLE_SCAN = 60_000
 
 KEY_COLUMNS = ("api_st_cde", "api_cnty_cde", "api_well_idn")
+# The header table is 321,510 records and the rarest coordinate class holds four of them, so
+# the wellhistory cut scans the whole member and keeps a small, case-covering selection.
+WELLHISTORY_RECORDS = 40
+# The amended cell for the second effective row; the source's own datetime shape.
+WELLHISTORY_RESTATED_EFF_DTE = "2024-06-01T00:00:00"
 VOLUME_COLUMN = "prod_amt"
 SMALL_TABLES = ("wchistory", "podwc", "spacingunit", "property", "ogrid")
 
 _YEAR = re.compile(r"<prodn_yr>(\d+)</prodn_yr>")
+# Matched on the raw span, not on a parse: a wellhistory record carries xsi:nil, whose prefix is
+# declared on <root>, so ET.fromstring of one record in isolation raises on an unbound prefix.
+_ORDINATE = {
+    axis: re.compile(rf"<{axis}(?:\s[^>]*?)?(?:/>|>(?P<value>[^<]*)</{axis}>)")
+    for axis in ("latitude", "longitude")
+}
+_CELL = re.compile(r"<(\w+)(?:\s[^>]*?)?(?:/>|>([^<]*)</\1>)")
 _WELL = re.compile(
     r"<api_st_cde>(\d+)</api_st_cde><api_cnty_cde>(\d+)</api_cnty_cde>"
     r"<api_well_idn>(\d+)</api_well_idn>"
@@ -59,6 +71,140 @@ class Record:
     ordinal: int
     span: str
     values: dict[str, str]
+
+
+def ordinate(span: str, axis: str) -> float | None:
+    """The parsed ordinate, or None when the element is nil or absent. Both arrive in scientific
+    notation on every record that has one, so this parses as a float rather than slicing."""
+    match = _ORDINATE[axis].search(span)
+    if match is None:
+        return None
+    text = match.group("value")
+    if text is None or not text.strip():
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def span_values(span: str) -> dict[str, str]:
+    """Cell values read off the raw span, for a record ET cannot parse in isolation."""
+    body = span[span.find(">") + 1 :]
+    return {name: (value or "") for name, value in _CELL.findall(body)}
+
+
+def wellhistory_cases() -> dict[str, Callable[[Record], bool]]:
+    """The coordinate pair's six populations, plus the header shapes the promoter has to handle.
+
+    The pair is what matters, not either ordinate: ST_MakePoint consumes both and raises on
+    neither, so a good latitude beside a zero longitude is a valid point in the Gulf of Guinea.
+    """
+
+    def pair(span: str) -> tuple[float | None, float | None]:
+        return ordinate(span, "latitude"), ordinate(span, "longitude")
+
+    def usable(record: Record) -> bool:
+        lat, lon = pair(record.span)
+        return lat is not None and lon is not None and lat != 0.0 and lon != 0.0
+
+    def both_zero(record: Record) -> bool:
+        return pair(record.span) == (0.0, 0.0)
+
+    def longitude_zero_only(record: Record) -> bool:
+        lat, lon = pair(record.span)
+        return lat not in (None, 0.0) and lon == 0.0
+
+    def both_nil(record: Record) -> bool:
+        return pair(record.span) == (None, None)
+
+    def latitude_nil_longitude_present(record: Record) -> bool:
+        lat, lon = pair(record.span)
+        return lat is None and lon is not None
+
+    def latitude_present_longitude_nil(record: Record) -> bool:
+        lat, lon = pair(record.span)
+        return lat is not None and lon is None
+
+    def unpadded_county(record: Record) -> bool:
+        return len(record.values.get("api_cnty_cde", "")) < 3
+
+    def unpadded_well_number(record: Record) -> bool:
+        return len(record.values.get("api_well_idn", "")) < 5
+
+    def horizontal(record: Record) -> bool:
+        return record.values.get("directional_status", "") == "H"
+
+    def open_ended(record: Record) -> bool:
+        return record.values.get("rec_termn_dte", "").startswith("9999-12-31")
+
+    def terminated(record: Record) -> bool:
+        value = record.values.get("rec_termn_dte", "")
+        return bool(value) and not value.startswith("9999-12-31")
+
+    def char_padded(record: Record) -> bool:
+        return record.values.get("prop_fm_desc", "").endswith(" ")
+
+    return {
+        "usable_pair": usable,
+        "both_zero": both_zero,
+        "longitude_zero_only": longitude_zero_only,
+        "both_nil": both_nil,
+        "latitude_nil_longitude_present": latitude_nil_longitude_present,
+        "latitude_present_longitude_nil": latitude_present_longitude_nil,
+        "unpadded_county": unpadded_county,
+        "unpadded_well_number": unpadded_well_number,
+        "horizontal": horizontal,
+        "open_ended": open_ended,
+        "terminated": terminated,
+        "char_padded": char_padded,
+    }
+
+
+def read_wellhistory(archive: Path) -> tuple[str, list[Record], dict[str, int]]:
+    """One full pass over the header member, keeping the head plus every case's first witness.
+
+    The whole member is scanned because longitude_zero_only holds four records of 321,510 and
+    the mixed nil/valued classes hold three between them; a head cut would carry none of them,
+    and those are exactly the records the coordinate rule exists for.
+    """
+    cases = wellhistory_cases()
+    bundle, text = _member(archive)
+    head: list[Record] = []
+    kept: dict[int, Record] = {}
+    populations = dict.fromkeys(cases, 0)
+    try:
+        stream = _spans(text, "wellhistory")
+        prologue = next(stream)
+        for ordinal, span in enumerate(stream):
+            record = Record(ordinal, span, span_values(span))
+            if len(head) < WELLHISTORY_RECORDS // 2:
+                head.append(record)
+            for name, predicate in cases.items():
+                if not predicate(record):
+                    continue
+                populations[name] += 1
+                if not any(predicate(item) for item in kept.values()):
+                    kept[ordinal] = record
+    finally:
+        text.close()
+        bundle.close()
+
+    for record in head:
+        if len(kept) >= WELLHISTORY_RECORDS:
+            break
+        kept.setdefault(record.ordinal, record)
+
+    selected = [kept[ordinal] for ordinal in sorted(kept)]
+    # The corpus head hands out one effective row per well, and the promoter has to meet two:
+    # (api10, effective_from) is the header key, and one surface point is kept for the pair. One
+    # documented single-cell amendment, the same device the production fixture uses.
+    witness = next(record for record in selected if wellhistory_cases()["usable_pair"](record))
+    restated = amend(witness, eff_dte=WELLHISTORY_RESTATED_EFF_DTE)
+    index = selected.index(witness)
+    selected = [*selected[: index + 1], restated, *selected[index + 1 :]]
+    populations["restated_effective_row"] = 1
+    return prologue, selected, populations
 
 
 def payload_zip(raw_root: Path, table: str) -> Path:
@@ -304,7 +450,12 @@ def cut(raw_root: Path, destination: Path) -> dict[str, object]:
         {"covers_fixture_pools": lambda record: record.values.get("pool_idn", "") in pools},
     )
     write_fixture(destination / "nm_pool_300.xml", pool_prologue, selected)
-    report["pool"] = f"{len(selected)} records, covers_fixture_pools={covers}" 
+    report["pool"] = f"{len(selected)} records, covers_fixture_pools={covers}"
+
+    wh_prologue, wh_records, wh_populations = read_wellhistory(payload_zip(raw_root, "wellhistory"))
+    write_fixture(destination / "nm_wellhistory_headers.xml", wh_prologue, wh_records)
+    report["wellhistory"] = f"{len(wh_records)} records"
+    report["wellhistory_populations"] = wh_populations
     return report
 
 

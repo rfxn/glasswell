@@ -209,3 +209,46 @@ eighteen spaces), so `prd_knd_cde` is not the only CHAR column that will need a 
 the BOM, the `SqlRowSet1` namespace on all 302 references, the trailing space on `prd_knd_cde`,
 the unpadded key segments, both sides of the 2015 window, the two-pool well-month, the
 three-cell restatement diff and the timestamp-only `_moddte` diff.
+
+## `nm_wellhistory_headers.xml` — 28 records, 91,596 bytes, sha256 `3ab9e088826c335e`
+
+Selected rather than cut from the head.
+
+The header table is where New Mexico's geometry lives: `wellhistory` carries `latitude`,
+`longitude` and `datum`, which `wcproduction` does not. Six coordinate populations exist across
+its 321,510 records and three of them hold fewer than five records each, so a head cut carries
+none of the cases the coordinate rule exists for. `read_wellhistory` therefore scans the whole
+member once and keeps the first witness of every case, then fills to the head.
+
+Measured over all 321,510 records, twice and independently:
+
+| population | records |
+|---|---:|
+| usable pair — both ordinates non-nil and non-zero | 318,720 |
+| both ordinates zero | 893 |
+| good latitude, longitude exactly zero | 4 |
+| both ordinates nil | 1,890 |
+| latitude nil, longitude valued | 2 |
+| latitude zero, longitude nil | 1 |
+
+318,720 + 893 + 4 + 1,890 + 2 + 1 = 321,510. The four longitude-only records are why the rule
+is a pair rule: `ST_MakePoint(0.0, 35.16…)` is a perfectly valid geometry about 9,000 km from
+New Mexico, so nothing raises and four wells acquire a point in the Gulf of Guinea. The three
+mixed records are why it carries a stated precedence — nil before zero — because two
+independent per-ordinate rules cannot say what outcome a record nil on one and valued on the
+other takes.
+
+Also carried, with their whole-artifact populations: 43,409 horizontal wells (`directional_status`
+`H`) proving that a horizontal well still yields only a surface point; 61,294 records whose
+`api_well_idn` is shorter than five and 321,510 whose `api_cnty_cde` is shorter than three,
+proving the per-segment pad; 142,000 open-ended records at the `9999-12-31` sentinel against
+179,510 terminated ones; and 203,494 records whose `prop_fm_desc` carries CHAR padding.
+
+**One documented single-cell amendment**, the same device `_amended` uses: the first usable-pair
+record is repeated with `eff_dte` set to `2024-06-01T00:00:00`, so the promoter meets two
+effective rows for one API-10. That is the header key's second half and the corpus head hands
+out one row per well. `datum` is `NAD83` on every record of the artifact, so there is no
+mixed-datum case to carry.
+
+Re-cut with the same command as the others; `read_wellhistory` reads the whole member and takes
+a few minutes.
