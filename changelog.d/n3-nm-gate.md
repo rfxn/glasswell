@@ -166,3 +166,13 @@
          43,409 horizontal wells named and no path filed for any of them
 - [Change] `ARCHITECTURE.md` names the New Mexico tile mart and the two staging termini that
          are termini by design rather than by omission
+- [Change] the promotion runbook asserts the Wave-1 `glasswell-repromote` units are **absent**
+         rather than masking them: T6 removed them from VM 111 on 2026-08-30 and `verify.sh`
+         now asserts host against tree, so masking a unit that does not exist is not the check
+         the condition wants. The armed-timer framing is corrected with the measurement that
+         settles it — `Persistent=` catch-up needs a calendar occurrence after the base time,
+         and `systemd-analyze calendar '2026-08-21 00:30:00 UTC'` returns `Next elapse: never`
+- [Change] the dump precondition says what it does not give: `verify.sh` gates its schema-head
+         comparison on a drill completing after `max(applied_at)`, and the drill is weekly, so
+         between this deploy and the next Sunday the newest restore proof covers the previous
+         schema
