@@ -54,3 +54,10 @@
       17,597,960 promoted rows are `well_completion_pool` with a null aggregation and there is
       no well-level row among them, so a New Mexico well's well-level series is absent rather
       than zero
+- [New] `057_nm_well_headers.sql`: `coordinate_sentinel` and `coordinate_absent` join the
+      quarantine reason vocabulary, so a zero ordinate and a nil one are quarantined under
+      distinct codes rather than dropped or collapsed, and `wells_state_effective_idx` supports
+      the per-state newest-effective-row scan the tile marts run
+- [Change] `canonical.wells` and `canonical.well_spatial` need no widening for API prefix 30 —
+         neither carries a state constraint and `geom_type` already admits `surface` — and a
+         test now guards that against a future state check
