@@ -288,8 +288,57 @@ NM_LAYERS: tuple[TileLayer, ...] = (
     ),
 )
 
+# Two layers over one mart because a basin and a play are different objects
+# (cr_eia_boundary_taxonomy_1), so a style that reads one is never handed the other. Neither is
+# simplified or thinned, for the reasons the land layers state. area_sq_mi is float8 and not
+# numeric because a numeric serves as an MVT string (the N-2 hazard).
+BASIN_LAYERS: tuple[TileLayer, ...] = (
+    TileLayer(
+        name="basins",
+        source="marts.tile_basins",
+        geometry_type="MULTIPOLYGON",
+        properties=(
+            ("boundary_id", "text"),
+            ("boundary_kind", "text"),
+            ("name", "text"),
+            ("area_sq_mi", "float8"),
+            ("area_basis", "text"),
+            ("vintage_label", "text"),
+            ("geometry_repair", "text"),
+            ("derivation_id", "text"),
+        ),
+        label_points=True,
+    ),
+    TileLayer(
+        name="plays",
+        source="marts.tile_plays",
+        geometry_type="MULTIPOLYGON",
+        properties=(
+            ("boundary_id", "text"),
+            ("boundary_kind", "text"),
+            ("name", "text"),
+            ("basin_name", "text"),
+            ("basin_boundary_id", "text"),
+            ("sub_basin", "text"),
+            ("lithology", "text"),
+            ("age_shale", "text"),
+            ("area_sq_mi", "float8"),
+            ("area_basis", "text"),
+            ("vintage_label", "text"),
+            ("geometry_repair", "text"),
+            ("derivation_id", "text"),
+        ),
+        label_points=True,
+    ),
+)
+
 TILE_LAYERS: tuple[TileLayer, ...] = (
-    *ND_LAYERS, *LAND_LAYERS, *METRIC_LAYERS, *TX_LAYERS, *NM_LAYERS
+    *ND_LAYERS,
+    *LAND_LAYERS,
+    *METRIC_LAYERS,
+    *TX_LAYERS,
+    *NM_LAYERS,
+    *BASIN_LAYERS,
 )
 
 # `stable parallel safe` is what martin's function discovery expects, and the argument names

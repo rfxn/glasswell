@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import psycopg
 
+from glasswell.seed.conformance_basins import BASIN_RULES, seed_conformance_basins
 from glasswell.seed.conformance_c115b import (
     C115B_RULES,
     seed_conformance_c115b,
@@ -35,6 +36,7 @@ from glasswell.seed.reference import (
 )
 
 __all__ = [
+    "BASIN_RULES",
     "C115B_RULES",
     "CRS_ROWS",
     "FEATURE_SPECS",
@@ -54,6 +56,7 @@ __all__ = [
     "TYPECURVE_RULES",
     "load_glossary_seed",
     "seed_all",
+    "seed_conformance_basins",
     "seed_conformance_c115b",
     "seed_conformance_fracfocus",
     "seed_conformance_land",
@@ -90,6 +93,9 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
         # run's number differ from the second's. Its rules also carry an nm_ocd_ source id, so
         # it has to precede the NM seeder as well — both constraints point the same way.
         "conformance_rules_nm_wells_gis": seed_conformance_nm_wells_gis(connection),
+        # Before seed_sources for the reason TX and land are: it registers the two EIA sources,
+        # and the number seed_sources returns is a registry total.
+        "conformance_rules_basins": seed_conformance_basins(connection),
         "sources": seed_sources(connection),
         "crs_registry": seed_crs(connection),
         "conformance_rules_fracfocus": seed_conformance_fracfocus(connection),

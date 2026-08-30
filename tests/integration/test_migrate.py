@@ -111,6 +111,45 @@ def test_the_serving_migration_registers_publication_evidence_before_any_rule(db
     )
 
 
+def test_the_boundary_migration_registers_publication_evidence_before_any_rule(db) -> None:
+    """The same register-then-seed order for the eight cr_eia_* boundary decisions."""
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select rule_id, published_vintage, evidence_tag, evidence_commit from"
+            " lineage.conformance_rule_publications where rule_id like 'cr\\_eia\\_%'"
+            " order by rule_id"
+        )
+        rows = cursor.fetchall()
+    assert [row[0] for row in rows] == [
+        "cr_eia_area_provenance_1",
+        "cr_eia_basin_link_1",
+        "cr_eia_boundary_datum_1",
+        "cr_eia_boundary_overlap_1",
+        "cr_eia_boundary_publisher_1",
+        "cr_eia_boundary_taxonomy_1",
+        "cr_eia_geometry_repair_1",
+        "cr_eia_well_membership_1",
+    ]
+    # Repoint-stable, for the reason the cr_tc_ block above states: pinning the placeholder
+    # literal would turn the merge train's correct action red.
+    assert len({row[1] for row in rows}) == 1, "the eight rules disagree about their vintage"
+    pairs = {(row[2], row[3]) for row in rows}
+    assert len(pairs) == 1, f"a half-repoint left mixed publication evidence: {pairs}"
+    tag, commit = pairs.pop()
+    assert (tag == "UNRELEASED") == (commit == "0" * 40), (
+        f"evidence_tag and evidence_commit disagree about being repointed: {tag} / {commit}"
+    )
+
+
+def test_the_boundary_migration_alone_seeds_no_conformance_rule(db) -> None:
+    """The rule bodies need lineage.sources, which migrate() never populates."""
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select count(*) from lineage.conformance_rules where rule_id like 'cr\\_eia\\_%'"
+        )
+        assert cursor.fetchone()[0] == 0
+
+
 def test_the_migration_alone_seeds_no_conformance_rule(db) -> None:
     """The rule bodies need lineage.sources, which migrate() never populates."""
     with db.cursor() as cursor:

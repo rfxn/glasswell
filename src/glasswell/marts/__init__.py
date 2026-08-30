@@ -2,6 +2,7 @@
 
 from glasswell.marts.nd_wells import MartRefresh, refresh_all
 from glasswell.marts.tiles import (
+    BASIN_LAYERS,
     ND_LAYERS,
     NM_LAYERS,
     TILE_LAYERS,
@@ -11,6 +12,7 @@ from glasswell.marts.tiles import (
 )
 
 __all__ = [
+    "BASIN_LAYERS",
     "ND_LAYERS",
     "NM_LAYERS",
     "TILE_LAYERS",
