@@ -26,6 +26,7 @@ from glasswell.lineage import (
 )
 from glasswell.lineage.audit import emit
 from glasswell.lineage.serialization import hash_payload
+from glasswell.marts.cumulatives import PER_WELL_CUMULATIVE_CTE
 from glasswell.marts.tiles import METRIC_LAYERS, install_tile_functions
 
 MEMBERSHIP_RULE = "cr_land_agg_membership_1"
@@ -85,15 +86,7 @@ member as (
       from by_surface
      where not exists (select 1 from by_midpoint
                         where by_midpoint.api10 = by_surface.api10)),
-prod as (
-    select api10,
-           sum(volume) filter (where stream in ('oil', 'condensate')) as liquid_bbl,
-           sum(volume) filter (where stream = 'gas') as gas_mcf,
-           sum(volume) filter (where stream = 'water') as water_bbl
-      from canonical.production_monthly_latest
-     where entity_type = 'well' and api10 is not null
-     group by api10)
-"""
+""" + PER_WELL_CUMULATIVE_CTE
 
 _SECTION_CELLS = _MEMBERSHIP + """
 select member.land_unit_id,
