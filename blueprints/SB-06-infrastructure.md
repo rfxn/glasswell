@@ -607,7 +607,19 @@ exists for any record in this table**, and none may be added.
 ## 5. Cloudflare Access design
 
 Design principle from the assessment §3, itself derived from blueprint §2.3 ("multi-tenant
-auth — design only") and §1.3 ("Not multi-user"): **glasswell never grows a user table.**
+auth — design only") and §1.3 ("Not multi-user"): **no multi-tenancy, no organisations, no
+billing, no self-registration.**
+
+**Amended 2026-08-29 (T5).** The original wording was "glasswell never grows a user table",
+which was a *consequence* of choosing Cloudflare Access as the identity edge, not an
+independent principle. Access is not enabled on this account — `access/apps` and
+`access/service_tokens` both answer `403 access.api.error.not_enabled` — and enabling it
+requires an irreversible team-name choice (§5.6 row 2) plus a second interactive login in
+front of the application's own. The application therefore owns authentication, and
+`lineage.users` exists. The property the original sentence protected is preserved verbatim
+above and is enforced: accounts are created by the owner only, there is no registration path,
+and there is no password-reset-by-email. §5.1–§5.6 below describe the Access design that was
+ruled and not built; they stand as the design to reinstate should Access ever be enabled.
 Identity is enforced at the edge; the origin *verifies* the edge's assertion and separately
 carries a narrow key system for machines.
 
