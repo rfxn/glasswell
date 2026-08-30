@@ -46,7 +46,7 @@ MEASURED_MINIMUM_FT = Decimal("0.24")
     ],
 )
 def test_every_outcome_is_named(volume, lateral, expected) -> None:
-    value, semantics = _fluid_intensity(volume, lateral, POLICY)
+    value, semantics = _fluid_intensity(volume, lateral, POLICY, "no_report")
 
     assert semantics == expected
     assert (value is None) == (expected != "reported")
@@ -55,7 +55,9 @@ def test_every_outcome_is_named(volume, lateral, expected) -> None:
 def test_the_measured_live_minimum_is_withdrawn_rather_than_served() -> None:
     """0.24 ft is the real ND minimum, and it would serve 24 million gal/ft with a handle."""
     naive = Decimal("5917362") / MEASURED_MINIMUM_FT
-    value, semantics = _fluid_intensity(Decimal("5917362"), MEASURED_MINIMUM_FT, POLICY)
+    value, semantics = _fluid_intensity(
+        Decimal("5917362"), MEASURED_MINIMUM_FT, POLICY, "reported"
+    )
 
     assert naive > Decimal("20000000")
     assert (value, semantics) == (None, "lateral_length_implausible")
@@ -63,10 +65,10 @@ def test_the_measured_live_minimum_is_withdrawn_rather_than_served() -> None:
 
 def test_the_bounds_are_inclusive_of_the_numbers_the_rule_states() -> None:
     at_floor, floor_semantics = _fluid_intensity(
-        Decimal("1000"), POLICY.min_lateral_ft, POLICY
+        Decimal("1000"), POLICY.min_lateral_ft, POLICY, "reported"
     )
     at_ceiling, ceiling_semantics = _fluid_intensity(
-        POLICY.max_gal_per_ft * POLICY.min_lateral_ft, POLICY.min_lateral_ft, POLICY
+        POLICY.max_gal_per_ft * POLICY.min_lateral_ft, POLICY.min_lateral_ft, POLICY, "reported"
     )
 
     assert (at_floor, floor_semantics) == (Decimal("1"), "reported")
@@ -75,7 +77,9 @@ def test_the_bounds_are_inclusive_of_the_numbers_the_rule_states() -> None:
 
 def test_a_filed_zero_is_an_intensity_of_zero_and_not_an_absence() -> None:
     """37 ND disclosures filed a zero; that is a filing, and it survives the division."""
-    value, semantics = _fluid_intensity(Decimal("0"), Decimal("9862.27"), POLICY)
+    value, semantics = _fluid_intensity(
+        Decimal("0"), Decimal("9862.27"), POLICY, "reported_zero"
+    )
 
     assert (value, semantics) == (Decimal("0"), "reported")
 
@@ -86,7 +90,9 @@ def test_an_unregistered_rule_is_reported_as_a_registry_gap_not_as_no_report() -
     The precedent is wells.py:97-100, where an unregistered producing definition short-circuits
     rather than answering `unknown` for every well.
     """
-    value, semantics = _intensity_or_reason(Decimal("5917362"), Decimal("9862.27"), None)
+    value, semantics = _intensity_or_reason(
+        Decimal("5917362"), Decimal("9862.27"), None, "reported"
+    )
 
     assert (value, semantics) == (None, INTENSITY_RULE_UNREGISTERED)
     assert semantics != "no_report"
@@ -94,10 +100,10 @@ def test_an_unregistered_rule_is_reported_as_a_registry_gap_not_as_no_report() -
 
 def test_a_registered_rule_still_reaches_the_bounded_answer() -> None:
     """The wrapper adds one state and changes none of the five the rule declares."""
-    assert _intensity_or_reason(Decimal("5917362"), Decimal("9862.27353475175"), POLICY) == (
-        _fluid_intensity(Decimal("5917362"), Decimal("9862.27353475175"), POLICY)
-    )
-    assert _intensity_or_reason(None, Decimal("9862.27"), POLICY)[1] == "no_report"
+    assert _intensity_or_reason(
+        Decimal("5917362"), Decimal("9862.27353475175"), POLICY, "reported"
+    ) == _fluid_intensity(Decimal("5917362"), Decimal("9862.27353475175"), POLICY, "reported")
+    assert _intensity_or_reason(None, Decimal("9862.27"), POLICY, "no_report")[1] == "no_report"
 
 
 def _reasons_the_code_can_return() -> set[str]:
@@ -193,3 +199,17 @@ def test_every_absent_class_the_source_records_is_one_the_rule_declares() -> Non
     declared = set(rule["spec"]["null_semantics_vocabulary"])
 
     assert set(ABSENT_VOLUME_SEMANTICS) <= declared
+
+
+def test_the_numerator_s_class_cannot_be_omitted_by_a_caller() -> None:
+    """A default would hold the collapse one omitted argument away, and the resulting value —
+    a declared member returned for the wrong reason — is the one shape the vocabulary guard
+    above is blind to. Required, so a new call site cannot reinstate it silently."""
+    import inspect
+
+    for function in (_fluid_intensity, _intensity_or_reason):
+        parameter = inspect.signature(function).parameters["volume_semantics"]
+        assert parameter.default is inspect.Parameter.empty, function.__name__
+
+    with pytest.raises(TypeError):
+        _fluid_intensity(None, Decimal("9862.27"), POLICY)  # type: ignore[call-arg]

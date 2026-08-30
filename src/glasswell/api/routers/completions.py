@@ -529,7 +529,7 @@ def _intensity_or_reason(
     volume_gal: Decimal | None,
     lateral_ft: Decimal | None,
     policy: IntensityPolicy | None,
-    volume_semantics: str = "no_report",
+    volume_semantics: str,
 ) -> tuple[Decimal | None, str]:
     """With no registered rule there are no bounds to apply, and saying so is the only honest
     answer: no_report here would report a registry gap as a source that disclosed nothing."""
@@ -542,13 +542,18 @@ def _fluid_intensity(
     volume_gal: Decimal | None,
     lateral_ft: Decimal | None,
     policy: IntensityPolicy,
-    volume_semantics: str = "no_report",
+    volume_semantics: str,
 ) -> tuple[Decimal | None, str]:
     """cr_ff_fluid_intensity_1's executor: a value, or a reason — never a number with neither.
 
     An absent numerator is classified by the semantics the promotion recorded, not by the
     nullness of the value: a withheld volume and an undisclosed one are two different facts,
     and the quotient inherits the distinction rather than collapsing it back into one.
+
+    `volume_semantics` is required rather than defaulted: a default of "no_report" is the
+    collapse this signature exists to prevent, held one omitted argument away, and the failure
+    would be a declared member returned for the wrong reason — which the vocabulary guard in
+    tests/unit/test_fluid_intensity.py cannot see.
     """
     if volume_gal is None:
         absent = volume_semantics in ABSENT_VOLUME_SEMANTICS
