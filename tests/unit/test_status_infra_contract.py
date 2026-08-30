@@ -215,3 +215,29 @@ def test_smoke_never_takes_a_password_on_argv() -> None:
 
     assert "GLASSWELL_SMOKE_PASSWORD" in script
     assert "--password" not in script
+
+
+def test_the_owner_console_commands_are_documented_runnable_as_written() -> None:
+    """A procedure that does not run as written is worse than none: the next reader trusts it.
+
+    Both entry points connect over the unix socket with peer authentication, so run as root
+    the connection arrives as the role `root`, which does not exist, and psycopg fails before
+    the password prompt. The documented command has to carry `runuser -u glasswell`.
+    """
+    docs = {
+        "infra/README.md": README.read_text(encoding="utf-8"),
+        "SMOKE.md": (ROOT / "SMOKE.md").read_text(encoding="utf-8"),
+    }
+
+    for name, text in docs.items():
+        for line in text.splitlines():
+            stripped = line.strip()
+            names = ("glasswell-owner-bootstrap", "glasswell-owner-reset")
+            if not any(name in stripped for name in names):
+                continue
+            # Only lines a reader pastes; prose and inline references are not commands.
+            if not stripped.startswith(("runuser", "/opt")):
+                continue
+            assert "runuser -u glasswell" in stripped, (
+                f"{name}: a pasteable owner command omits runuser and fails as root: {stripped}"
+            )

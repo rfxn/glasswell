@@ -50,7 +50,9 @@ account is created once, on the host:
 
 ```bash
 ssh root@glasswell.lab.rpx.sh
-/opt/glasswell/venv/bin/glasswell-owner-bootstrap \
+# runuser, because the DSN uses peer auth: as root the connection arrives as the role
+# `root`, which does not exist, and it fails before the password prompt.
+runuser -u glasswell -- /opt/glasswell/venv/bin/glasswell-owner-bootstrap \
     --dsn 'postgresql:///glasswell?host=/var/run/postgresql' --username <you>
 # the password is read from stdin: type it, then Ctrl-D. It is never echoed, never in argv,
 # and never in the environment.
@@ -247,7 +249,7 @@ curl -sS "$B/openapi.json" | python3 -c 'import json,sys; print(len(json.load(sy
   through uvicorn to authenticate costs the ~40 ms Nagle penalty the Caddyfile documents.
   A test asserts the archive's layer set contains no glasswell mart layer, so the carve-out
   cannot silently widen.
-- **Account recovery is ssh, not email.** `glasswell-owner-reset --username <name>` on the
+- **Account recovery is ssh, not email.** `runuser -u glasswell -- glasswell-owner-reset --username <name>` on the
   host, password on stdin. It clears the lockout, re-enables a disabled account and revokes
   every session it holds. There is no reset link and no security questions, which is what
   keeps "not multi-user" true.

@@ -607,7 +607,10 @@ one — an unattended installer that mints a credential is how default credentia
 shipped, and a generated password printed at install time lands in the deploy log.
 
 ```bash
-/opt/glasswell/venv/bin/glasswell-owner-bootstrap \
+# runuser, because the DSN uses peer auth over the unix socket: as root the connection
+# arrives as the role `root`, which does not exist, and psycopg fails before the
+# password prompt.
+runuser -u glasswell -- /opt/glasswell/venv/bin/glasswell-owner-bootstrap \
     --dsn 'postgresql:///glasswell?host=/var/run/postgresql' --username <name>
 # password on stdin, then Ctrl-D. Never argv (visible in /proc and in shell history),
 # never an environment variable (visible in systemctl show -p Environment).
@@ -622,7 +625,10 @@ Account locks are time-boxed to fifteen minutes and always expire on their own; 
 administrative unlock is required. Three paths exist for an operator who cannot wait:
 
 ```bash
-/opt/glasswell/venv/bin/glasswell-owner-reset \
+# runuser, because the DSN uses peer auth over the unix socket: as root the connection
+# arrives as the role `root`, which does not exist, and psycopg fails before the
+# password prompt.
+runuser -u glasswell -- /opt/glasswell/venv/bin/glasswell-owner-reset \
     --dsn 'postgresql:///glasswell?host=/var/run/postgresql' --username <name>
 ```
 
