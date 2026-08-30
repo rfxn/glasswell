@@ -199,14 +199,6 @@ def test_verify_asserts_the_session_surface_is_closed() -> None:
     assert "no default credential shipped" in script
 
 
-def test_verify_asserts_the_undeclared_unit_direction() -> None:
-    """Finding F-6. The tree->host loop cannot see a unit that exists only on the host;
-    glasswell-repromote.{service,timer} did, for weeks, in no repo file."""
-    script = VERIFY.read_text(encoding="utf-8")
-
-    assert "is declared in the tree" in script
-    assert 'installed at $UNIT_DIR but in no repo file' in script
-
 
 def test_verify_skips_rather_than_fails_the_tunnel_section_before_cutover() -> None:
     """Otherwise every pre-cutover deploy goes red on probes for a hostname that

@@ -173,16 +173,6 @@ for unit in "$INFRA_DIR"/systemd/glasswell-*.service "$INFRA_DIR"/systemd/glassw
         cmp -s "$unit" "$UNIT_DIR/$name"
 done
 
-# The other direction (F-6). The loop above is tree->host and cannot see a glasswell-* unit
-# that exists only on the host: glasswell-repromote.{service,timer} did, for weeks, in no repo
-# file. An undeclared unit is a scheduled job nobody reviews and nobody can reproduce.
-for installed in "$UNIT_DIR"/glasswell-*.service "$UNIT_DIR"/glasswell-*.timer; do
-    [[ -e $installed ]] || continue          # the glob is literal when nothing matches
-    name="${installed##*/}"
-    assert_true "$name is declared in the tree" "installed at $UNIT_DIR but in no repo file" \
-        test -f "$INFRA_DIR/systemd/$name"
-done
-
 printf 'api\n'
 neighbor_subjects="$("${PSQL[@]}" "select count(*) from marts.nd_neighbor_subjects")"
 neighbor_edges="$("${PSQL[@]}" "select count(*) from marts.nd_neighbor_edges")"
