@@ -31,6 +31,9 @@ PGDUMP_DIR=/data/backups/pg
 # Both bounds mirror status/collector.py; tests/unit/test_durability_verifier.py pins them equal.
 RESTORE_PROOF_MAX_AGE_DAYS=8
 OFFSITE_RECEIPT_MAX_AGE_DAYS=2
+PUBLIC_HOST=glasswell.rpx.sh
+CLOUDFLARED_DIR=/etc/cloudflared
+CF_RANGES=/etc/glasswell/cloudflare-ips.txt
 
 passed=0
 failed=0
@@ -621,6 +624,66 @@ assert_true "code-version.env carries a code identity" \
 api_rw="$(systemctl show glasswell-api -p ReadWritePaths --value)"
 assert_false "api cannot write the raw zone" "ReadWritePaths carries /data/raw" \
     grep -q '/data/raw' <<<"$api_rw"
+
+printf 'session auth\n'
+assert "an anonymous /v1 request is refused" 403 \
+    "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/v1/wells?limit=1")"
+assert "an anonymous /docs is refused" 403 \
+    "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/docs")"
+assert "an anonymous /openapi.json is refused" 403 \
+    "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/openapi.json")"
+assert "the challenge route answers without a credential" 200 \
+    "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/v1/session/challenge")"
+owner_accounts="$("${PSQL[@]}" "select count(*) from lineage.users where role = 'owner' and disabled_at is null")"
+assert_true "at least one enabled owner account exists ($owner_accounts)" \
+    "no owner account: run glasswell-owner-bootstrap" \
+    test "${owner_accounts:-0}" -gt 0
+default_accounts="$("${PSQL[@]}" "select count(*) from lineage.users where username in ('admin', 'glasswell', 'owner', 'root')")"
+assert "no default credential shipped" 0 "${default_accounts:-1}"
+assert_false "app.env sets no anonymous flag" "GLASSWELL_ALLOW_ANON=1 is uncommented" \
+    grep -q '^GLASSWELL_ALLOW_ANON=1' /etc/glasswell/app.env
+assert_true "app.env carries a csrf key" "GLASSWELL_CSRF_KEY is short or absent" \
+    grep -q '^GLASSWELL_CSRF_KEY=.\{32,\}' /etc/glasswell/app.env
+assert "a state-changing call with no csrf token is refused" 403 \
+    "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X DELETE "$API/v1/session")"
+assert_true "the cloudflare range list is present" "missing $CF_RANGES" test -s "$CF_RANGES"
+if [[ -s $CF_RANGES ]]; then
+    range_age=$(( ( $(date +%s) - $(stat -c %Y "$CF_RANGES") ) / 86400 ))
+    assert_true "the cloudflare range list is fresh ($range_age d)" "older than 30 days" \
+        test "$range_age" -lt 30
+fi
+
+printf 'tunnel\n'
+public_mode="$(sed -n 's/^GLASSWELL_PUBLIC=//p' /etc/glasswell/app.env)"
+if [[ ${public_mode:-0} == 1 ]]; then
+    assert "cloudflared active" active "$(systemctl is-active cloudflared)"
+    assert_true "cloudflared config equals the tree" "drifted at $CLOUDFLARED_DIR/config.yml" \
+        command diff -q \
+            <(command sed "s|<tunnel-uuid>|$(command cat "$CLOUDFLARED_DIR/tunnel-id")|g" \
+                "$INFRA_DIR/cloudflared/config.yml") \
+            "$CLOUDFLARED_DIR/config.yml"
+    assert_false "the ingress names no tile server" "127.0.0.1:3000 is published" \
+        grep -q '3000' "$CLOUDFLARED_DIR/config.yml"
+    # martin must still be loopback-only with the connector running, not merely before it.
+    assert_true "martin is still loopback-only behind the tunnel" "martin has a non-local listener" \
+        listening_on '127.0.0.1:3000'
+    assert "the non-/v1 tile path is 404 through the edge" 404 \
+        "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+            "https://$PUBLIC_HOST/tiles/nd_wells/8/54/89.pbf")"
+    assert "the static owner key is refused through the public hostname" 403 \
+        "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+            -H "X-Glasswell-Key: $owner_key" "https://$PUBLIC_HOST/v1/health")"
+    assert "an anonymous request through the public hostname is refused" 403 \
+        "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+            "https://$PUBLIC_HOST/v1/wells?limit=1")"
+    assert_true "hsts is emitted through the edge" "no Strict-Transport-Security" \
+        grep -qi '^strict-transport-security:' \
+            <<<"$(curl -s -D - -o /dev/null --max-time 15 "https://$PUBLIC_HOST/" | tr -d '\r')"
+else
+    # Skipping keeps the count honest: every pre-cutover deploy would otherwise go red on
+    # three DNS-dependent probes for a hostname that deliberately does not resolve yet.
+    ok "GLASSWELL_PUBLIC is 0 — the tunnel section is intentionally skipped"
+fi
 
 printf '\n%d passed, %d failed\n' "$passed" "$failed"
 [[ $failed -eq 0 ]]

@@ -188,9 +188,13 @@ def csrf_binding(principal: ResolvedPrincipal | None) -> str:
 def require_csrf(
     request: Request,
     principal: Annotated[ResolvedPrincipal, Depends(require_principal)],
-    presented: CSRF_PARAMETER = None,
 ) -> None:
     """Attached to the whole /v1 router set, so a new state-changing route cannot forget it.
+
+    The header is read off the request rather than declared as a parameter here: a parameter
+    on a router-set dependency is documented on every operation the set carries, including
+    the safe ones that never send it. Enforcement stays router-wide; the *declaration* is
+    per-route, on the non-safe operations, and test_csrf.py fails if one omits it.
 
     Enforced for cookie-authenticated callers only. CSRF is an ambient-authority problem: a
     browser attaches the cookie to a cross-site request by itself. `X-Glasswell-Key` is never
@@ -199,6 +203,7 @@ def require_csrf(
     """
     if request.method in SAFE_METHODS or principal.kind != "user":
         return
+    presented = request.headers.get(CSRF_HEADER)
     if not presented or not csrf_check(presented, csrf_binding(principal), now=utc_now()):
         raise ProblemError("forbidden", detail=f"send a valid {CSRF_HEADER}")
 
