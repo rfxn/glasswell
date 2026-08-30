@@ -8,7 +8,7 @@
 - [New] seed: four MBOGC sources registered with an UNVERIFIED licence note — the listing
       root answers 403, so bulk paths are pinned constants and no filename is ever derived
       from an index
-- [New] db: 057_mt_registry.sql adds the Montana poll cadences, lineage.mt_stream_map and
+- [New] db: the Montana registry migration adds the poll cadences, lineage.mt_stream_map and
       lineage.mt_status_map with their promoted views, and the first-publication evidence
       migration 049 requires before any cr_mt_ rule may be seeded
 - [Fix] ingest: ZippedShapefile takes an optional encoding. The MBOGC DBF declares Windows-1252
@@ -31,9 +31,9 @@
 - [New] ingest: promote.py carries the source-parameterised bitemporal append — change-only
       heads, scoped head reads and same-vintage divergence refusal — so a second state does
       not restate them as literals bound to one source id
-- [New] db: 058_mt_staging.sql adds the four Montana staging tables, text-faithful including
+- [New] db: the Montana staging migration adds the four staging tables, text-faithful including
       the -999 sentinel and the fifteen unpromoted disposition columns
-- [New] seed: 057 seeds all nineteen published MBOGC status values with their measured counts;
+- [New] seed: the registry migration seeds all nineteen published MBOGC status values with their measured counts;
       six are deliberately unpromoted and quarantine as unknown_status rather than being forced
       onto a canonical state the source does not claim
 - [Fix] marts: the neighbour mart spans North Dakota and Montana. ND wells within 26,400 ft of
@@ -48,7 +48,7 @@
 - [Fix] marts: SUPPORTED_LONGITUDE_MIN moves from -104.15 to -116.10. The old floor sat 7,531 m
       west of the ND/MT line while the padded discovery radius is 8,208 m, so it was already
       too tight for ND-only correctness before Montana existed
-- [New] db: 059_neighbors_multistate.sql relaxes the subject and edge API-10 checks to
+- [New] db: the neighbours multi-state migration relaxes the subject and edge API-10 checks to
       '^(25|33)[0-9]{8}$' and admits UTM 11N-14N, the zones the widened domain can produce
 - [Change] api: the neighbours HAL link and the explain-handle validators accept Montana
       subjects, and STATUS_VOCABULARY_RULES gains 25 so an MT row does not emit

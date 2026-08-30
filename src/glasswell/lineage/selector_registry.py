@@ -19,7 +19,7 @@ from glasswell.lineage.serialization import hash_payload
 NEIGHBOR_DATASET = "marts.nd_neighbors"
 # The neighbour mart spans North Dakota and Montana: the ND/MT line runs through the Williston
 # and a subject on either side has offsets on the other. Kept in step with the mart CHECK in
-# 059_neighbors_multistate.sql and with marts.neighbors.STATE_CODES.
+# the neighbours multi-state migration and with marts.neighbors.STATE_CODES.
 _NEIGHBOR_API10_PATTERN = r"(25|33)[0-9]{8}"
 
 PRODUCTION_PROFILE = "production_series"
