@@ -2,13 +2,13 @@
 -- first-publication evidence migration 049 requires before any conformance rule may be seeded.
 --
 -- REPOINT CHECKLIST (integrator, at the merge train):
---   1. evidence_tag  'UNRELEASED'                                -> the tag that first carries
---                                                                   the cr_mt_* rule ids
---   2. evidence_commit '0000...0000' (forty zeros)               -> the `main` head this branch
---                                                                   was written against
---   3. published_vintage date '2026-08-30'                       -> confirm it is the date that
---                                                                   tag is cut, or correct it
+--   1. evidence_tag UNRELEASED -> the tag that first carries the cr_mt_ rule ids
+--   2. evidence_commit forty zeros -> the main head this branch was written against
+--   3. published_vintage 2026-08-30 -> confirm it is the date that tag is cut, or correct it
 -- The rule ids themselves are immutable and must not change during the repoint.
+-- Both literals appear exactly once each, in the insert below and nowhere else: a quoted
+-- placeholder anywhere above it re-arms the release guard through prose, so this header names
+-- the columns rather than their values.
 
 insert into lineage.source_poll_policies
     (source_id, cadence, expected_poll_interval, attempt_timeout)
@@ -80,6 +80,34 @@ select status, status_canonical
   from lineage.mt_status_map
  where promoted and status_canonical is not null;
 
+-- All nineteen values MBOGC publishes, with their measured counts over the 42,027 surface
+-- points in the 2026-08-18 Wells.zip. The six unpromoted ones are not gaps: a construction
+-- milestone and a water well are not regulatory producing states, and mapping them onto one
+-- would assert something the source does not say. They quarantine as unknown_status, which
+-- keeps them visible and recoverable instead of silently defaulting a well to active.
+insert into lineage.mt_status_map (status, status_canonical, promoted, published_vintage)
+values
+    ('P&A - Approved',           'plugged',                true,  date '2026-08-30'), -- 25276
+    ('Producing',                'active',                 true,  date '2026-08-30'), --  8390
+    ('Shut In',                  'inactive',               true,  date '2026-08-30'), --  4704
+    ('Active Injection',         'active',                 true,  date '2026-08-30'), --   962
+    ('Water Well, Released',     null,                     false, date '2026-08-30'), --   612
+    ('Temporarily Abandoned',    'temporarily_abandoned',  true,  date '2026-08-30'), --   504
+    ('Completed',                null,                     false, date '2026-08-30'), --   397
+    ('Abandoned',                'plugged',                true,  date '2026-08-30'), --   266
+    ('Abandoned - Unapproved',   'plugged',                true,  date '2026-08-30'), --   224
+    ('Unknown',                  null,                     false, date '2026-08-30'), --   198
+    ('Domestic',                 null,                     false, date '2026-08-30'), --   189
+    ('Permit to Drill',          'permitted',              true,  date '2026-08-30'), --   107
+    ('Spudded',                  'drilling',               true,  date '2026-08-30'), --    92
+    ('Permitted Injection Well', 'permitted',              true,  date '2026-08-30'), --    62
+    ('Expired, Not Released',    'expired',                true,  date '2026-08-30'), --    25
+    ('Revoked Inj. Permit',      'expired',                true,  date '2026-08-30'), --    14
+    ('Other',                    null,                     false, date '2026-08-30'), --     2
+    ('Water Well, Completed',    null,                     false, date '2026-08-30'), --     2
+    ('Not Completed',            'drilling',               true,  date '2026-08-30')  --     1
+on conflict (status) do nothing;
+
 grant select on lineage.mt_stream_map, lineage.mt_stream_promoted_map,
     lineage.mt_status_map, lineage.mt_status_promoted_map
     to glasswell_pipeline, glasswell_api;
@@ -105,7 +133,8 @@ select rule_id, date '2026-08-30', 'UNRELEASED',
         'cr_mt_pru_liquids_policy_1', 'cr_mt_pru_month_convention_1',
         'cr_mt_pru_null_semantics_1', 'cr_mt_pru_reconciliation_1',
         'cr_mt_pru_reporting_level_1', 'cr_mt_pru_restatement_1',
-        'cr_mt_pru_stream_scope_1', 'cr_mt_pru_units_1', 'cr_mt_pru_volume_range_1',
+        'cr_mt_pru_stream_scope_1', 'cr_mt_pru_stream_vocab_1', 'cr_mt_pru_units_1',
+        'cr_mt_pru_volume_range_1',
         'cr_mt_stream_vocab_1', 'cr_mt_trailing_record_1', 'cr_mt_units_1',
         'cr_mt_volume_range_1', 'cr_mt_well_format_1', 'cr_mt_well_list_scope_1'
   ]::text[]) rule_id

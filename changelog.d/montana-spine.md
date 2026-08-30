@@ -19,3 +19,20 @@
       opening 050 by name — migrations are immutable, so a source registered later can only be
       given a policy in a later file, and the guard was blind to precisely that case; its
       statement terminator now tolerates a semicolon inside a cadence string
+- [New] ingest: mt_bogc.py stages and promotes both MBOGC grains from one archive and one
+      manifest — the well grain at well and well_completion_pool over ST_FMTN_CD with a
+      sum_over_pools rollup whose days take the maximum, and the lease grain at
+      lease_reported. Staging streams from the zip member and promotion reads one production
+      month at a time, so a 573 MB file is never extracted and never held in memory
+- [New] ingest: mt_gis.py loads the surface points and well paths, selecting the geographic
+      layer of each twinned archive by stem and keying a lateral on WellSub within its API-10;
+      the promotion derivation records is_directional_survey false, so a consumer reading
+      provenance learns the map-stick class from the ledger rather than from prose
+- [New] ingest: promote.py carries the source-parameterised bitemporal append — change-only
+      heads, scoped head reads and same-vintage divergence refusal — so a second state does
+      not restate them as literals bound to one source id
+- [New] db: 058_mt_staging.sql adds the four Montana staging tables, text-faithful including
+      the -999 sentinel and the fifteen unpromoted disposition columns
+- [New] seed: 057 seeds all nineteen published MBOGC status values with their measured counts;
+      six are deliberately unpromoted and quarantine as unknown_status rather than being forced
+      onto a canonical state the source does not claim

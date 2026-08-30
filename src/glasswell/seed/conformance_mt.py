@@ -115,6 +115,7 @@ MT_RULES: tuple[dict[str, object], ...] = (
             "api10_slice": [0, 10],
             "api12_slice": [0, 12],
             "state_code": "25",
+            "separators": [],
         },
         "rule": "API-10 is the first ten digits of API_WellNo; Montana's API state code is 25.",
         "rationale": (
@@ -123,7 +124,10 @@ MT_RULES: tuple[dict[str, object], ...] = (
             " prefixed 25, yielding 20,021 distinct API-10 values. Digits 13-14 are convention"
             " rather than PPDM-defined, which is why they are sliced off rather than trusted"
             " (§3.0.5), and the same slice is applied to every Montana source so the spine"
-            " joins."
+            " joins. separators is empty and that is a measured claim, not a default: no"
+            " API_WellNo value in either production member carries display punctuation, so a"
+            " literal that arrives hyphenated is a change in the source and must fail identity"
+            " rather than be silently repaired."
         ),
         "evidence_url": PRODUCTION_URL,
     },
@@ -328,12 +332,15 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "source_id": WELL_SOURCE,
         "stage": "conform",
         "rule_kind": "unit_conform",
-        "applies_to_fields": ["volume"],
+        "applies_to_fields": ["bbls_oil_cond", "mcf_gas", "bbls_wtr"],
         "spec": {
             "factor": "1",
-            "rounding": "ROUND_HALF_EVEN",
+            "rounding": "half_even",
             "scale": 3,
-            "units": {"bbls_oil_cond": "bbl", "mcf_gas": "Mcf", "bbls_wtr": "bbl"},
+            "units": {"bbls_oil_cond": "bbl", "mcf_gas": "mcf", "bbls_wtr": "bbl"},
+            "conditions_note": (
+                "mcf at the regulator's stated conditions; conditions recorded, not normalised"
+            ),
         },
         "rule": "Oil and water are barrels, gas is thousand cubic feet; no conversion is"
         " applied.",
@@ -476,13 +483,13 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "rule_kind": "code_ref",
         "applies_to_fields": ["volume", "days_prod"],
         "spec": {
-            "aggregation": "sum_over_formations",
+            "aggregation": "sum_over_pools",
             "volume": "sum",
             "days": "max",
             "affected_well_months": 41977,
         },
-        "rule": "A well figure over several formations is the exact sum of its formation rows;"
-        " days take the maximum, never the sum.",
+        "rule": "A well figure over several formations is the exact sum of its formation rows,"
+        " disclosed as sum_over_pools; days take the maximum, never the sum.",
         "rationale": (
             "Volumes from disjoint producing intervals add. Days produced do not: a well"
             " producing 31 days from two formations produced for 31 days, not 62, and summing"
@@ -620,6 +627,31 @@ MT_RULES: tuple[dict[str, object], ...] = (
         ),
         "evidence_url": PRODUCTION_URL,
         "code_ref": "glasswell/ingest/mt_bogc.py",
+    },
+    {
+        "rule_id": "cr_mt_pru_stream_vocab_1",
+        "source_id": PRU_SOURCE,
+        "stage": "conform",
+        "rule_kind": "vocab_map",
+        "applies_to_fields": ["stream_raw"],
+        "spec": {
+            "mapping_table": "mt_stream_promoted_map",
+            "key_col": "stream_raw",
+            "value_col": "stream_canonical",
+            "unmapped_action": "quarantine",
+            "reason_code": "stream_not_promoted",
+        },
+        "rule": "Map the lease grain's reported measure columns through the same"
+        " lineage.mt_stream_map the well grain reads.",
+        "rationale": (
+            "One registry serves both grains, so Oil_Prod and BBLS_OIL_COND cannot drift onto"
+            " different canonical streams — which is the precondition for the cross-grain"
+            " reconciliation meaning anything. The fifteen disposition columns are present in"
+            " the table as unpromoted rows, so a column that stops being unpromoted is a row"
+            " change rather than a code change, and one that was never registered at all"
+            " quarantines under stream_not_promoted instead of vanishing."
+        ),
+        "evidence_url": PRODUCTION_URL,
     },
     {
         "rule_id": "cr_mt_pru_inventory_1",
@@ -780,12 +812,15 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "source_id": PRU_SOURCE,
         "stage": "conform",
         "rule_kind": "unit_conform",
-        "applies_to_fields": ["volume"],
+        "applies_to_fields": ["oil_prod", "gas_prod", "wtr_prod"],
         "spec": {
             "factor": "1",
-            "rounding": "ROUND_HALF_EVEN",
+            "rounding": "half_even",
             "scale": 3,
-            "units": {"oil_prod": "bbl", "gas_prod": "Mcf", "wtr_prod": "bbl"},
+            "units": {"oil_prod": "bbl", "gas_prod": "mcf", "wtr_prod": "bbl"},
+            "conditions_note": (
+                "mcf at the regulator's stated conditions; conditions recorded, not normalised"
+            ),
         },
         "rule": "Lease volumes carry the same customary units as the well grain; no conversion.",
         "rationale": (
@@ -897,7 +932,11 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "stage": "conform",
         "rule_kind": "datum_transform",
         "applies_to_fields": ["geom"],
-        "spec": {"source_epsg": 4269, "target_epsg": 4326, "detect": {"from": "prj"}},
+        "spec": {
+            "source_epsg": 4269,
+            "target_epsg": 4326,
+            "detect": {"prj_contains": "GCS_North_American_1983"},
+        },
         "rule": "Montana GIS is NAD83 geographic and is transformed to WGS84 for storage.",
         "rationale": (
             "The shipped .prj resolves to EPSG:4269 and is read rather than assumed; a datum is"
@@ -919,6 +958,7 @@ MT_RULES: tuple[dict[str, object], ...] = (
             "digits": 14,
             "api10_slice": [0, 10],
             "state_code": "25",
+            "separators": [],
             "duplicate_api10_points": 1,
         },
         "rule": "The GIS API-10 slice is the production-file slice, so geometry and production"
@@ -968,6 +1008,10 @@ MT_RULES: tuple[dict[str, object], ...] = (
             "unmapped_action": "quarantine",
             "reason_code": "unknown_status",
             "source_fields": ["Status", "Type", "MapSymbol"],
+            "distinct_values": 19,
+            "promoted_values": 13,
+            "unpromoted_values": ["Water Well, Released", "Completed", "Unknown", "Domestic",
+                                  "Other", "Water Well, Completed"],
         },
         "rule": "Map the reported well Status onto the canonical status vocabulary through"
         " lineage.mt_status_map.",
@@ -977,7 +1021,13 @@ MT_RULES: tuple[dict[str, object], ...] = (
             " is the regulatory state and is the one mapped; the other two are retained as"
             " reported context. An unmapped status quarantines rather than defaulting, because a"
             " well silently defaulted to active is the failure mode that puts a plugged well on"
-            " the map as producing."
+            " the map as producing. Thirteen of the nineteen published values promote. The other"
+            " six are left unpromoted deliberately rather than forced: Completed is a"
+            " construction milestone and not a producing state, and the production file is the"
+            " authority on whether a well produced; the two water-well values and Domestic are"
+            " not oil and gas wells; and Unknown and Other are the source declining to say,"
+            " which is not a licence to decide on its behalf. Together they are 1,400 of 42,027"
+            " points, so the quarantine rate this produces is a real signal rather than noise."
         ),
         "evidence_url": GIS_WELLS_URL,
     },
@@ -1098,7 +1148,11 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "stage": "conform",
         "rule_kind": "datum_transform",
         "applies_to_fields": ["geom"],
-        "spec": {"source_epsg": 4269, "target_epsg": 4326, "detect": {"from": "prj"}},
+        "spec": {
+            "source_epsg": 4269,
+            "target_epsg": 4326,
+            "detect": {"prj_contains": "GCS_North_American_1983"},
+        },
         "rule": "Well paths are NAD83 geographic and are transformed to WGS84 for storage.",
         "rationale": (
             "The path archive ships its own .prj and it is read on its own terms rather than"
