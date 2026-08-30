@@ -56,3 +56,6 @@
 - [Fix] og:image and twitter:image are made absolute at build time from
       GLASSWELL_PUBLIC_ORIGIN, since Open Graph consumers do not reliably resolve a
       relative URL; unset leaves them relative, so the LAN deployment degrades sanely
+- [Fix] the static owner key gets its own 600/min ceiling rather than the 60/min service
+      bucket: deploy.sh runs verify.sh and smoke.sh back to back, 64 requests, so the
+      deploy gate would otherwise throttle itself
