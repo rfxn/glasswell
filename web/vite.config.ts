@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
 
+import { PUBLIC_ORIGIN_ENV, absolutizeMetaUrls } from "./src/meta/og-url.ts";
+
 const REPO = new URL("../", import.meta.url);
 
 /** No `VERSION` file means no release has been cut from this tree, and the stamp says so. */
@@ -58,10 +60,25 @@ function changelogPage(): Plugin {
   };
 }
 
+/**
+ * `og:image` and `twitter:image` must be absolute to survive an unfurl, and the origin is
+ * deployment configuration rather than a literal. Unset — the LAN deployment — leaves the
+ * markup exactly as authored.
+ */
+function absoluteCardUrls(): Plugin {
+  return {
+    name: "gw-absolute-card-urls",
+    transformIndexHtml: {
+      order: "post",
+      handler: (html) => absolutizeMetaUrls(html, process.env[PUBLIC_ORIGIN_ENV]),
+    },
+  };
+}
+
 // Tiles moved under /v1 (C11), so one proxy rule covers the API and the tile origin.
 export default defineConfig({
   base: "/",
-  plugins: [changelogPage()],
+  plugins: [changelogPage(), absoluteCardUrls()],
   define: { __GW_BUILD__: JSON.stringify(stamp()) },
   // No source map: the bundle is served by StaticFiles, and this source is proprietary (M-6).
   // `npm run dev` is unaffected — esbuild maps the dev server's modules regardless.

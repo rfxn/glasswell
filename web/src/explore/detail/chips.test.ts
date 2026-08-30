@@ -216,13 +216,11 @@ describe("the breadcrumb records the walk and copies as the calls that made it (
     expect(copied.split("curl ")).toHaveLength(4);
   });
 
-  it("renders the placeholder and never the stored key", () => {
-    window.localStorage.setItem("glasswell.key", "f".repeat(64));
+  it("names the key rather than carrying one, because a copied line is a leak path", () => {
     const line = curlFor(step(1, "/v1/one/1"));
 
     expect(line).toContain("$GLASSWELL_KEY");
-    expect(line).not.toContain("f".repeat(64));
-    window.localStorage.clear();
+    expect(line).not.toMatch(/[0-9a-f]{32}/);
   });
 
   it("keeps the last three hops and says the older ones are not recorded", () => {

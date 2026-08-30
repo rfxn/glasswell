@@ -11,6 +11,7 @@ import {
   quarantineSummaryEnvelope,
 } from "../fixtures.ts";
 import { resetTrail } from "./chips.ts";
+import { clearSession, seedSession } from "../../test/session.ts";
 import { conformanceRuleEnvelope, quarantineDetailEnvelope } from "./fixtures.ts";
 
 const SNAPSHOT = JSON.parse(readFileSync("../tests/contract/openapi_snapshot.json", "utf8"));
@@ -83,7 +84,7 @@ beforeEach(() => {
   resetTrail();
   document.body.innerHTML = '<div id="gw-explore"></div>';
   host = document.getElementById("gw-explore") as HTMLElement;
-  window.localStorage.setItem("glasswell.key", "f".repeat(64));
+  seedSession();
   vi.stubGlobal("fetch", (url: string) => {
     requested.push(String(url));
     const path = String(url).split("?")[0] as string;
@@ -99,7 +100,7 @@ afterEach(async () => {
   const shell = await import("../shell.ts");
   shell.unmountExplorer();
   vi.unstubAllGlobals();
-  window.localStorage.clear();
+  clearSession();
 });
 
 describe("the detail is URL-addressable and the back button returns the grid (§2.6, C0)", () => {

@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { readState, writeState } from "../../app/state.ts";
+import { clearSession, seedSession } from "../../test/session.ts";
 import type { AppState } from "../../app/state.ts";
 import { conformanceEnvelope, quarantineEnvelope, quarantineSummaryEnvelope } from "../fixtures.ts";
 import { conformanceRuleEnvelope, quarantineDetailEnvelope } from "../detail/fixtures.ts";
@@ -88,7 +89,7 @@ beforeEach(() => {
   issued.length = 0;
   document.body.innerHTML = '<div id="gw-explore"></div>';
   host = document.getElementById("gw-explore") as HTMLElement;
-  window.localStorage.setItem("glasswell.key", "f".repeat(64));
+  seedSession();
   vi.stubGlobal("fetch", (url: string) => {
     const path = String(url).split("?")[0] as string;
     const body = BODIES[path];
@@ -103,7 +104,7 @@ afterEach(async () => {
   const shell = await import("../shell.ts");
   shell.unmountExplorer();
   vi.unstubAllGlobals();
-  window.localStorage.clear();
+  clearSession();
 });
 
 describe("the pane renders the call the centre column issued (§4.2, 9.1)", () => {

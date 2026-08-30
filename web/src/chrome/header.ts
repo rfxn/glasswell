@@ -11,6 +11,7 @@ export const HEADER_IDS = [
   "gw-mode-switch",
   "gw-search-slot",
   "gw-key-btn",
+  "gw-logout-btn",
   "gw-theme-btn",
   "gw-help-btn",
   "gw-help-panel",
@@ -24,7 +25,8 @@ export const HEADER_IDS = [
 
 export interface HeaderOptions {
   search: HTMLElement;
-  onKeyPanel(): void;
+  onSignIn(): void;
+  onLogout(): void;
 }
 
 const SURFACES: { view: ViewMode; title: string }[] = [
@@ -93,13 +95,14 @@ export function wireHeader(options: HeaderOptions): void {
     vintage: hosts["gw-asof"],
     vintageEcho: hosts["gw-help-asof"],
     toasts: byId("gw-toasts"),
-    keyState: hosts["gw-key-btn"],
+    session: hosts["gw-key-btn"],
   });
   mountHint(hosts["gw-hint"]);
   mountBuildStamp(hosts["gw-build"]);
   mountBuildStamp(hosts["gw-help-build"]);
 
-  hosts["gw-key-btn"].addEventListener("click", () => options.onKeyPanel());
+  hosts["gw-key-btn"].addEventListener("click", () => options.onSignIn());
+  hosts["gw-logout-btn"].addEventListener("click", () => options.onLogout());
   mountThemeToggle(hosts["gw-theme-btn"]);
 
   const help = hosts["gw-help-panel"];
@@ -125,6 +128,14 @@ export function wireHeader(options: HeaderOptions): void {
     if (target instanceof Node && (help.contains(target) || helpButton.contains(target))) return;
     setHelp(false);
   });
+}
+
+/** The control only exists for a reader who has something to sign out of. */
+export function setSignedIn(username: string | null): void {
+  const button = document.getElementById("gw-logout-btn");
+  if (!button) return;
+  button.hidden = username === null;
+  button.title = username === null ? "" : `Signed in as ${username}`;
 }
 
 function byId(id: string): HTMLElement {

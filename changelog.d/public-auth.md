@@ -49,3 +49,9 @@
 - [New] glasswell-owner-bootstrap creates the first owner account and glasswell-owner-reset
       is the lockout break-glass; both read the password from stdin only, never from argv
       or the environment, and the installer calls neither, so no default credential ships
+- [Change] the web app replaces the API-key panel with a session login: the form carries no
+           action attribute and submits by fetch, because the app's own CSP ships
+           form-action 'none'; a stale key in localStorage is cleared on first render
+- [Fix] og:image and twitter:image are made absolute at build time from
+      GLASSWELL_PUBLIC_ORIGIN, since Open Graph consumers do not reliably resolve a
+      relative URL; unset leaves them relative, so the LAN deployment degrades sanely

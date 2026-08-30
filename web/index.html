@@ -43,7 +43,7 @@
         </a>
         <div id="gw-mode-switch" class="gw-mode-switch" role="group" aria-label="Surface"></div>
         <div id="gw-signal" class="gw-signal">
-          <button id="gw-key-btn" type="button" class="gw-key-chip" hidden>key ok</button>
+          <button id="gw-key-btn" type="button" class="gw-key-chip" hidden>signed in</button>
           <p id="gw-status" class="gw-status" role="status"></p>
         </div>
         <div class="gw-controls">
@@ -79,6 +79,13 @@
                 <circle class="gw-i-fill" cx="10.4" cy="14.6" r="0.9" />
               </svg>
               <span class="gw-ctl-lbl">Help</span>
+            </button>
+            <button id="gw-logout-btn" type="button" class="gw-icon-btn" hidden>
+              <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                <path d="M12.4 5.2V3.6H4.2v12.8h8.2v-1.6" />
+                <path d="M8.6 10h8.2M14.2 7.4 16.8 10l-2.6 2.6" />
+              </svg>
+              <span class="gw-ctl-lbl">Sign out</span>
             </button>
             <div id="gw-hint" class="gw-hint" role="note" hidden>
               <p class="gw-hint-text" data-no-glossary></p>
