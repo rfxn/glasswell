@@ -15,8 +15,13 @@ import pytest
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "nm_ocd"
 NAMESPACE = "urn:schemas-microsoft-com:sql:SqlRowSet1"
 PRODUCTION = FIXTURES / "nm_wcproduction_300.xml"
+HEADERS = FIXTURES / "nm_wellhistory_headers.xml"
 RECORD = re.compile(r"<wcproduction .*?</wcproduction>", re.S)
+HEADER_RECORD = re.compile(r"<wellhistory .*?</wellhistory>", re.S)
 CELL = re.compile(r"<(\w+)>([^<]*)</\1>")
+# A nil element is self-closing, so the cell pattern above cannot see it; absence of the name
+# from the parsed cells is what nil looks like.
+ORDINATES = ("latitude", "longitude")
 
 ALL_FIXTURES = sorted(FIXTURES.glob("*.xml"))
 
@@ -37,7 +42,12 @@ def test_every_fixture_is_a_utf16_sqlrowset_document(path: Path):
     assert text.startswith("<root")
     assert text.endswith("</root>")
     assert "<xsd:schema" in text
-    assert text.count(NAMESPACE) == 302  # the schema header, plus one per record
+    # The schema header names it twice, then once per record. Derived rather than pinned at
+    # 302: a fixture that is not 300 records long is not thereby malformed.
+    body = RECORD if "wcproduction" in path.name else re.compile(
+        rf"<{path.name.split('_')[1].split('.')[0]} .*?</", re.S
+    )
+    assert text.count(NAMESPACE) == 2 + len(body.findall(text))
 
 
 def test_the_production_fixture_carries_three_hundred_records():
@@ -118,3 +128,63 @@ def test_the_moddte_fixture_moves_only_the_timestamp():
         cells(left)["mod_dte"] != cells(right)["mod_dte"]
         for left, right in zip(base, moved, strict=True)
     )
+
+
+def header_records() -> list[str]:
+    return HEADER_RECORD.findall(HEADERS.read_text(encoding="utf-16"))
+
+
+def ordinate(record: str, axis: str) -> float | None:
+    """None when the element is nil or absent, which is what the pair rule checks first."""
+    value = cells(record).get(axis)
+    if value is None or not value.strip():
+        return None
+    return float(value)
+
+
+def test_the_header_fixture_carries_every_coordinate_population():
+    """Three of the six hold fewer than five records in 321,510, so a head cut carries none."""
+    pairs = [(ordinate(r, "latitude"), ordinate(r, "longitude")) for r in header_records()]
+    populations = {
+        "usable": [p for p in pairs if None not in p and 0.0 not in p],
+        "both_zero": [p for p in pairs if p == (0.0, 0.0)],
+        "longitude_zero_only": [p for p in pairs if p[0] not in (None, 0.0) and p[1] == 0.0],
+        "both_nil": [p for p in pairs if p == (None, None)],
+        "latitude_nil": [p for p in pairs if p[0] is None and p[1] is not None],
+        "longitude_nil": [p for p in pairs if p[0] is not None and p[1] is None],
+    }
+
+    assert all(populations.values()), {k: len(v) for k, v in populations.items()}
+    assert sum(len(v) for v in populations.values()) == len(pairs)
+
+
+def test_the_header_ordinates_are_scientific_notation_without_exception():
+    """639,237 of 639,237 in the artifact, and the fixture must not quietly normalise them."""
+    values = [
+        cells(record)[axis]
+        for record in header_records()
+        for axis in ORDINATES
+        if cells(record).get(axis, "").strip()
+    ]
+
+    assert values
+    assert all("e" in value.lower() for value in values)
+
+
+def test_the_header_key_segments_are_unpadded_and_the_datum_is_one_value():
+    parsed = [cells(record) for record in header_records()]
+
+    assert {len(row["api_st_cde"]) for row in parsed} == {2}
+    assert min(len(row["api_cnty_cde"]) for row in parsed) < 3
+    assert min(len(row["api_well_idn"]) for row in parsed) < 5
+    assert {row["datum"] for row in parsed} == {"NAD83"}
+
+
+def test_the_header_fixture_carries_a_horizontal_well_and_a_restated_effective_row():
+    parsed = [cells(record) for record in header_records()]
+    dates = [row["eff_dte"] for row in parsed]
+    keys = [tuple(row[c] for c in ("api_st_cde", "api_cnty_cde", "api_well_idn")) for row in parsed]
+
+    assert any(row.get("directional_status") == "H" for row in parsed)
+    assert len(keys) - len(set(keys)) == 1
+    assert dates.count("2024-06-01T00:00:00") == 1

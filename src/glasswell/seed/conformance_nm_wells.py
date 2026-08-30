@@ -18,7 +18,9 @@ from datetime import date
 import psycopg
 from psycopg.types.json import Jsonb
 
-EFFECTIVE_FROM = date(2026, 8, 30)
+# Valid time: the decisions describe the 2026-08-20 artifact, which is the date the rest of the
+# NM registry dates from. Knowledge time is the publication row, 2026-08-30, and is independent.
+EFFECTIVE_FROM = date(2026, 8, 20)
 
 OCD_FTP_PAGE_URL = "https://wwwapps.emnrd.nm.gov/OCD/OCDPermitting/Data/Download.aspx"
 OCD_FTP_DESCRIPTIONS_URL = (

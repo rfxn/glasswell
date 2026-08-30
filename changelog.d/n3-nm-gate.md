@@ -61,3 +61,22 @@
 - [Change] `canonical.wells` and `canonical.well_spatial` need no widening for API prefix 30 —
          neither carries a state constraint and `geom_type` already admits `surface` — and a
          test now guards that against a future state check
+- [New] `ingest/nm_wells.py` promotes `staging.stg_nm_ocd_wellhistory__records` into
+      `canonical.wells` and `canonical.well_spatial`, keyed by the registry's own per-segment
+      API-10 composition rule and carrying no state-code literal. This is the row that opens the
+      serving gate: the spine is rooted on `canonical.wells`, so every New Mexico figure becomes
+      servable here and nowhere earlier
+- [New] the OCD FTP header table ships latitude, longitude and NAD83 datum — 318,720 usable
+      pairs of 321,510 records and 141,778 of 142,000 wells — so New Mexico geometry needs no
+      new source; the earlier "no coordinates" finding was scoped to `wcproduction`
+- [New] the coordinate policy is a pair rule, not a latitude rule: either ordinate nil
+      quarantines as `coordinate_absent` and either ordinate zero as `coordinate_sentinel`, nil
+      taking precedence. Four records carry a good latitude with a zero longitude, and a
+      latitude-only check would have given them a valid point in the Gulf of Guinea in an
+      append-only table
+- [New] `tests/fixtures/nm_ocd/nm_wellhistory_headers.xml`, cut from the sealed artifact by
+      truncation and selected rather than taken from the head, so all six coordinate
+      populations are present — three of them hold fewer than five records in 321,510
+- [Change] neither refusal suppresses the well header, and two reconciliations close on counted
+         populations rather than on subtraction: records equal headers plus unkeyed plus
+         undated, and headers equal points plus coordinate refusals
