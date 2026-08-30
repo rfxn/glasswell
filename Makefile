@@ -1,7 +1,9 @@
 VENV   ?= .venv
-# A git worktree has no .venv, so every dispatched track found `make lint` broken and reached
-# for a system ruff instead. Fall back to the main checkout's interpreter when this tree has none.
-PY     := $(shell test -x $(VENV)/bin/python && echo $(VENV)/bin/python \
+PY     := $(VENV)/bin/python
+# Lint reads the files under CWD, so a borrowed interpreter is correct. Tests are NOT: this
+# venv installs glasswell editable against its own src, so running a worktree's suite through
+# the main checkout's interpreter silently exercises main's code. PY stays local on purpose.
+LINTPY := $(shell test -x $(VENV)/bin/python && echo $(VENV)/bin/python \
             || (test -x $(CURDIR)/../glasswell/.venv/bin/python \
                 && echo $(CURDIR)/../glasswell/.venv/bin/python) || echo python3)
 DOCKER ?= docker
@@ -90,10 +92,10 @@ test-e2e:
 	node tests/e2e/status-surface.mjs
 
 lint:
-	$(PY) -m ruff check .
+	$(LINTPY) -m ruff check .
 
 fmt:
-	$(PY) -m ruff check . --fix
+	$(LINTPY) -m ruff check . --fix
 
 # A gate that judges a branch needs the branch's own API under the browser, not the
 # deployed instance's; tests/e2e/README.md explains the GW_* knobs.
