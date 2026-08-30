@@ -593,6 +593,44 @@ describe("completion and formation context", () => {
     expect(designFacts["Fluid intensity"]).not.toContain("no disclosed volume");
   });
 
+  it("words an absent class identically on both design rows", async () => {
+    const undisclosed = {
+      ...completionContextEnvelope,
+      data: {
+        ...completionContextEnvelope.data,
+        design: {
+          ...completionContextEnvelope.data.design,
+          base_water_volume: null,
+          base_water_null_semantics: "no_report",
+          fluid_intensity: null,
+          intensity_null_semantics: "no_report",
+        },
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: undisclosed,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const frame = host.querySelector(".gw-completion-context") as HTMLElement;
+    const designFacts = factsOf(
+      frame.querySelectorAll<HTMLElement>(".gw-context-group")[2] as HTMLElement,
+    );
+    // One class, one string. Two wordings for one fact is drift waiting to become confusion,
+    // and the volume is named so the sentence reads on the row that is it and the row that is
+    // divided by it.
+    expect(designFacts["Base fluid"]).toBe("unavailable \u2014 no disclosed volume");
+    expect(designFacts["Fluid intensity"]).toBe(designFacts["Base fluid"]);
+  });
+
   it("says a well carries no disclosure rather than showing an empty design row", async () => {
     const none = {
       ...completionContextEnvelope,

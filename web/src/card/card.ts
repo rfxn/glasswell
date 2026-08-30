@@ -431,7 +431,7 @@ function completionContextBody(
 
 /** cr_ff_design_promote_1's vocabulary, for the disclosed volume. */
 const VOLUME_REASONS: Record<string, string> = {
-  no_report: "unavailable \u2014 the source disclosed none",
+  no_report: "unavailable \u2014 no disclosed volume",
   withheld: "unavailable \u2014 withheld by the regulator",
 };
 
