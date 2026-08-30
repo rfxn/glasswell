@@ -12,7 +12,7 @@ import { crossingLink, openThisSeries, rowsForThisWell } from "../explore/bridge
 import { labelElement } from "../glossary/gw-term.ts";
 import { highlight } from "../glossary/index.ts";
 import { termIndex } from "../glossary/store.ts";
-import { formatVintage } from "./format.ts";
+import { absentValue, formatVintage } from "./format.ts";
 
 export interface WellDetail {
   api10: string;
@@ -75,13 +75,29 @@ export interface CardCallbacks {
   onVintage?(resolved: string | null): void;
 }
 
-const HEADER_FIELDS: [keyof WellDetail, string, string][] = [
-  ["operator_name_reported", "Operator", "/operator_name_reported"],
-  ["status_canonical", "Status", "/status_canonical"],
-  ["county_code_at_permit", "County code", "/county_code_at_permit"],
-  ["land_unit_label", "Land unit", "/land_unit_label"],
-  ["spud_date", "Spud date", "/spud_date"],
-  ["basin", "Basin", "/basin"],
+/**
+ * Four bands, in the order an engineer reads a well: who has it, where it is, what was drilled,
+ * and which reading of the record this is. One flat list gave a compute CRS the same weight as
+ * the operator.
+ */
+const FACT_GROUPS: { title: string; fields: [keyof WellDetail, string, string][] }[] = [
+  {
+    title: "Operator",
+    fields: [["operator_name_reported", "Operator", "/operator_name_reported"]],
+  },
+  {
+    title: "Location",
+    fields: [
+      ["basin", "Basin", "/basin"],
+      ["county_code_at_permit", "County code", "/county_code_at_permit"],
+      ["land_unit_label", "Land unit", "/land_unit_label"],
+    ],
+  },
+  {
+    title: "Drilling and completion",
+    fields: [["spud_date", "Spud date", "/spud_date"]],
+  },
+  { title: "Record", fields: [] },
 ];
 
 export async function renderWellCard(
@@ -127,6 +143,21 @@ export async function renderWellCard(
   api.appendChild(apiValue);
   header.appendChild(api);
 
+  // The same glyph grammar the map paints the well with, so the dot a reader clicked and the
+  // chip they land on are one mark. The reported code rides beside the canonical class: the
+  // card showed only the class, which hid the mapping rather than making it readable. The slot
+  // is placed now and filled after the import, so the chip cannot land out of order.
+  const statusSlot = document.createElement("p");
+  statusSlot.className = "gw-card-status";
+  statusSlot.hidden = true;
+  header.appendChild(statusSlot);
+  const statusTerm = labelFor(well, "/status_canonical");
+  const statusRequest = detail.status_canonical
+    ? import("./status-chip.ts").then(({ fillStatusChip }) =>
+        fillStatusChip(statusSlot, detail, statusTerm),
+      )
+    : Promise.resolve();
+
   // SB-08 §2.6 row 1, after the api10 line and ahead of the close button: the crossing
   // reads as part of the identity block rather than as one more control in the corner.
   const rows = rowsForThisWell(detail.api10, {
@@ -149,68 +180,88 @@ export async function renderWellCard(
   body.className = "gw-panel-body";
   card.appendChild(body);
 
-  const facts = document.createElement("dl");
-  facts.className = "gw-facts";
-  for (const [field, label, pointer] of HEADER_FIELDS) {
-    const value = detail[field];
-    if (value === null || value === undefined || value === "") continue;
-    facts.appendChild(term(label, labelFor(well, pointer)));
-    const definition = document.createElement("dd");
-    definition.textContent = String(value);
-    facts.appendChild(definition);
+  const bands = new Map<string, HTMLDListElement>();
+  for (const { title, fields } of FACT_GROUPS) {
+    const facts = document.createElement("dl");
+    facts.className = "gw-facts";
+    for (const [field, label, pointer] of fields) {
+      const value = detail[field];
+      if (value === null || value === undefined || value === "") continue;
+      facts.appendChild(term(label, labelFor(well, pointer)));
+      const definition = document.createElement("dd");
+      definition.textContent = String(value);
+      facts.appendChild(definition);
+    }
+    bands.set(title, facts);
   }
+  const operator = bands.get("Operator")!;
+  const drilling = bands.get("Drilling and completion")!;
+  const record = bands.get("Record")!;
+
   if (detail.confidential_flag) {
-    facts.appendChild(term("Confidential", labelFor(well, "/confidential_flag")));
+    operator.appendChild(term("Confidential", labelFor(well, "/confidential_flag")));
     const definition = document.createElement("dd");
     definition.textContent = "withheld by the regulator";
-    facts.appendChild(definition);
+    operator.appendChild(definition);
   }
-  facts.appendChild(term("Laterals", null));
+
+  if (detail.completion_date) {
+    drilling.appendChild(term("Completed", null));
+    const definition = document.createElement("dd");
+    definition.setAttribute("data-no-glossary", "");
+    definition.textContent = formatVintage(detail.completion_date);
+    drilling.appendChild(definition);
+  }
+  drilling.appendChild(term("Laterals", null));
   const laterals = document.createElement("dd");
   laterals.textContent = String(detail.lateral_count);
-  facts.appendChild(laterals);
+  drilling.appendChild(laterals);
 
   if (detail.lateral_length_ft) {
-    facts.appendChild(term("Lateral length", labelFor(well, "/lateral_length_ft")));
+    drilling.appendChild(term("Lateral length", labelFor(well, "/lateral_length_ft")));
     const definition = document.createElement("dd");
     definition.appendChild(
       figureElement(detail.lateral_length_ft, "lateral length", derivationFor(detail, "/lateral_length_ft")),
     );
-    facts.appendChild(definition);
+    drilling.appendChild(definition);
   }
 
   if (detail.total_depth_ft) {
-    facts.appendChild(term("Total depth", labelFor(well, "/total_depth_ft")));
+    drilling.appendChild(term("Total depth", labelFor(well, "/total_depth_ft")));
     const definition = document.createElement("dd");
     definition.appendChild(
       figureElement(detail.total_depth_ft, "total depth", derivationFor(detail, "/total_depth_ft")),
     );
-    facts.appendChild(definition);
+    drilling.appendChild(definition);
   }
 
-  if (detail.completion_date) {
-    facts.appendChild(term("Completed", null));
-    const definition = document.createElement("dd");
-    definition.setAttribute("data-no-glossary", "");
-    definition.textContent = formatVintage(detail.completion_date);
-    facts.appendChild(definition);
-  }
-
-  facts.appendChild(term("As of", null));
+  record.appendChild(term("As of", null));
   const asOfValue = document.createElement("dd");
   asOfValue.textContent = `${formatVintage(well.meta.as_of.resolved)} (requested ${well.meta.as_of.requested})`;
-  facts.appendChild(asOfValue);
+  record.appendChild(asOfValue);
   callbacks.onVintage?.(well.meta.as_of.resolved);
   if (detail.surface_point) callbacks.onLocated?.(detail.surface_point);
 
   if (detail.compute_crs) {
-    facts.appendChild(term("Compute CRS", labelFor(well, "/compute_crs")));
+    record.appendChild(term("Compute CRS", labelFor(well, "/compute_crs")));
     const definition = document.createElement("dd");
     definition.setAttribute("data-no-glossary", "");
     definition.textContent = `${detail.compute_crs} · stored ${detail.storage_crs}`;
-    facts.appendChild(definition);
+    record.appendChild(definition);
   }
-  body.appendChild(facts);
+
+  // A band whose every field was absent is a heading over nothing: dropped, not left standing.
+  for (const { title } of FACT_GROUPS) {
+    const facts = bands.get(title)!;
+    if (facts.childElementCount === 0) continue;
+    const band = document.createElement("section");
+    band.className = "gw-facts-band";
+    const heading = document.createElement("h3");
+    heading.className = "gw-frame-title";
+    heading.textContent = title;
+    band.append(heading, facts);
+    body.appendChild(band);
+  }
 
   // Everything except the codes a dedicated panel already renders, or the card shows the raw
   // internal warning line immediately above the polished version of the same sentence.
@@ -269,7 +320,7 @@ export async function renderWellCard(
     card.appendChild(pendingProductionPanel(pending, well.links?.["reporting_rule"] ?? undefined));
     highlight(card, termIndex());
     focusPanel(container);
-    await Promise.all([contextRequest, neighborRequest]);
+    await Promise.all([statusRequest, contextRequest, neighborRequest]);
     return;
   }
 
@@ -331,7 +382,7 @@ export async function renderWellCard(
     }
   })();
 
-  await Promise.all([contextRequest, neighborRequest, productionRequest]);
+  await Promise.all([statusRequest, contextRequest, neighborRequest, productionRequest]);
 }
 
 async function loadCompletionContext(
@@ -524,7 +575,7 @@ export function appendContextDate(
   const definition = document.createElement("dd");
   definition.setAttribute("data-no-glossary", "");
   if (value === null) {
-    definition.textContent = "unavailable";
+    definition.appendChild(absentValue(null));
   } else {
     const time = document.createElement("time");
     time.dateTime = value;
@@ -543,14 +594,19 @@ function sourceLabel(sourceId: string, reportVintage: string): string {
   return `${sourceId} · report ${formatVintage(reportVintage)}`;
 }
 
+/** cr_nd_formation_alias_1's vocabulary. One state, one string, wherever the state appears. */
+const POOL_ABSENCE: Record<CompletionPool["formation_null_semantics"], string> = {
+  pool_not_reported: "pool not reported",
+  alias_unavailable: "no registered alias",
+  mapped: "no group assigned",
+};
+
 function unavailableReason(
   value: string | null,
   semantics: CompletionPool["formation_null_semantics"],
-): string {
+): string | HTMLElement {
   if (value !== null && value !== "") return value;
-  if (semantics === "pool_not_reported") return "unavailable: pool not reported";
-  if (semantics === "alias_unavailable") return "unavailable: alias unavailable";
-  return "unavailable: no group assigned";
+  return absentValue(POOL_ABSENCE[semantics] ?? null);
 }
 
 function lineageButton(handle: string, label: string): HTMLButtonElement {
@@ -568,6 +624,7 @@ export function figureElement(figure: Figure, label: string, handle: string | nu
   if (figure.granularity) element.setAttribute("granularity", figure.granularity);
   return element;
 }
+
 
 function term(label: string, termId: string | null): HTMLElement {
   const element = document.createElement("dt");

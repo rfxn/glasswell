@@ -96,9 +96,13 @@ describe("what the explorer's shell costs the reader", () => {
     const map = named("map");
     const status = named("surface");
     const neighbors = named("neighbors");
+    // The status chip is the same class of cost as the neighbour panel: a well card only ever
+    // renders on the map surface, so its lazy branches are cut here and asserted off the route
+    // below. Cutting it also cuts the map status vocabulary and the swatch it reaches through.
+    const statusChip = named("status-chip");
     const route = reach(
       [...entryChunks(), named("shell")],
-      (name) => name === map || name === status || name === neighbors,
+      (name) => name === map || name === status || name === neighbors || name === statusChip,
     );
     const measured = route.reduce((sum, name) => sum + gzip(name), 0);
 
@@ -106,6 +110,9 @@ describe("what the explorer's shell costs the reader", () => {
     expect(route, "the Status chunk is not on the explorer route").not.toContain(status);
     expect(route, "the well-card neighbour chunk is not on the explorer route").not.toContain(
       neighbors,
+    );
+    expect(route, "the well-card status chip is not on the explorer route").not.toContain(
+      statusChip,
     );
     expect(measured, `explorer route ${measured} B gzipped over ${route.join(", ")}`).toBeLessThanOrEqual(
       BUDGET_BYTES.explorerRouteGzip,

@@ -6,7 +6,7 @@ import { registerOverlay } from "../chrome/overlays.ts";
 import { applyCrossing, cross, whatsBehindThisLayer } from "../explore/bridge.ts";
 import type { Bbox, Crossing } from "../explore/bridge.ts";
 import { BASEMAPS } from "./basemap.ts";
-import { LAYERS, defaultLayerSet } from "./registry.ts";
+import { LAYERS, defaultLayerSet, groupedLayers } from "./registry.ts";
 import type { LayerDef } from "./registry.ts";
 import { layerSwatch } from "./swatch.ts";
 
@@ -25,6 +25,11 @@ export interface LayerPanelHandle {
   setZoom(zoom: number): void;
   setBasemap(id: string): void;
   setProvenance(id: string, derivationId: string): void;
+  /**
+   * The ids that are on, in scale, and drew nothing here. A statement about the canvas: a
+   * layer whose tiles failed lands in this set too, and the wording never claims the ground.
+   */
+  setCoverage(empty: ReadonlySet<string>): void;
   /** §2.6: the crossing is rebuilt per viewport, because the box it narrows by moved. */
   setCrossing(box: Bbox, resolved: string | null, extentOff?: boolean): void;
   open(): void;
@@ -104,10 +109,12 @@ export function createLayerPanel(options: LayerPanelOptions): LayerPanelHandle {
   bodyElement.appendChild(baseGroup);
 
   const rows = new Map<string, LayerRow>();
-  for (const layer of LAYERS) {
-    const row = buildRow(layer, options);
-    bodyElement.appendChild(row.element);
-    rows.set(layer.id, row);
+  const sections: LayerGroupSection[] = [];
+  for (const { group, layers } of groupedLayers()) {
+    const section = buildGroup(group.id, group.label, layers, options);
+    for (const [id, row] of section.rows) rows.set(id, row);
+    bodyElement.appendChild(section.element);
+    sections.push(section);
   }
 
   search.addEventListener("input", () => {
@@ -124,6 +131,9 @@ export function createLayerPanel(options: LayerPanelOptions): LayerPanelHandle {
       // collapsed is a hit the reader cannot see.
       row.setForcedOpen(term.length > 0 && matched);
     }
+    // A hit inside a group the reader had shut is a hit they cannot see either, and a group
+    // with no hits left is a header standing over nothing.
+    for (const section of sections) section.setFiltered(term.length > 0);
   });
 
   // The MapLibre control that opens this panel is built by map.ts and never handed here, and
@@ -147,9 +157,13 @@ export function createLayerPanel(options: LayerPanelOptions): LayerPanelHandle {
     element,
     setOn(on) {
       for (const [id, row] of rows) row.setOn(on.has(id));
+      for (const section of sections) section.setOn(on);
     },
     setZoom(zoom) {
       for (const row of rows.values()) row.setZoom(zoom);
+    },
+    setCoverage(empty) {
+      for (const [id, row] of rows) row.setEmpty(empty.has(id));
     },
     setBasemap(id) {
       for (const [base, button] of baseButtons) {
@@ -182,9 +196,91 @@ interface LayerRow {
   element: HTMLElement;
   setOn(on: boolean): void;
   setZoom(zoom: number): void;
+  setEmpty(empty: boolean): void;
   setProvenance(derivationId: string): void;
   setCrossing(box: Bbox, resolved: string | null, extentOff: boolean): void;
   setForcedOpen(open: boolean): void;
+}
+
+interface LayerGroupSection {
+  element: HTMLElement;
+  rows: Map<string, LayerRow>;
+  setOn(on: ReadonlySet<string>): void;
+  setFiltered(filtering: boolean): void;
+}
+
+/**
+ * A group opens if the reader is already drawing something inside it. Twelve rows and a
+ * basemap switcher overflow the sheet on a phone, and the groups nobody has switched on are
+ * the ones worth costing a click rather than a scroll.
+ */
+function buildGroup(
+  id: string,
+  label: string,
+  layers: readonly LayerDef[],
+  options: LayerPanelOptions,
+): LayerGroupSection {
+  const element = document.createElement("div");
+  element.className = "gw-layer-group";
+  element.dataset["group"] = id;
+
+  const head = document.createElement("button");
+  head.type = "button";
+  head.className = "gw-layer-group-head";
+  const heading = document.createElement("span");
+  heading.className = "gw-layer-group-label";
+  heading.textContent = label;
+  head.appendChild(heading);
+
+  const count = document.createElement("span");
+  count.className = "gw-layer-group-count";
+  count.hidden = true;
+  head.appendChild(count);
+  element.appendChild(head);
+
+  const body = document.createElement("div");
+  body.className = "gw-layer-group-body";
+  body.id = `gw-layer-group-${id}`;
+  head.setAttribute("aria-controls", body.id);
+
+  const rows = new Map<string, LayerRow>();
+  for (const layer of layers) {
+    const row = buildRow(layer, options);
+    body.appendChild(row.element);
+    rows.set(layer.id, row);
+  }
+  element.appendChild(body);
+
+  let chosen = layers.some((layer) => options.on.has(layer.id));
+  let forced = false;
+  function applyDisclosure(): void {
+    const open = chosen || forced;
+    body.hidden = !open;
+    head.setAttribute("aria-expanded", String(open));
+  }
+  head.addEventListener("click", () => {
+    chosen = !chosen;
+    forced = false;
+    applyDisclosure();
+  });
+  applyDisclosure();
+
+  return {
+    element,
+    rows,
+    setOn(on) {
+      const drawn = layers.filter((layer) => on.has(layer.id)).length;
+      count.hidden = drawn === 0;
+      // Switches in this panel, not a figure about the ground: no derivation resolves it.
+      count.textContent = `${drawn} on`;
+    },
+    setFiltered(filtering) {
+      const matched = [...rows.values()].filter((row) => !row.element.hidden).length;
+      element.hidden = filtering && matched === 0;
+      forced = filtering && matched > 0;
+      applyDisclosure();
+    },
+  };
 }
 
 function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
@@ -223,6 +319,14 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
   scale.hidden = true;
   scale.textContent = `zoom ${layer.minZoom}+`;
   name.appendChild(scale);
+
+  // Present, switched on, in scale, and painting nothing. Hiding the row would be a claim the
+  // layer does not exist; letting it look drawn would be a claim the ground is empty.
+  const empty = document.createElement("span");
+  empty.className = "gw-layer-empty";
+  empty.hidden = true;
+  empty.textContent = "none here";
+  name.appendChild(empty);
   element.appendChild(name);
 
   const text = document.createElement("div");
@@ -293,6 +397,13 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
   hint.textContent = layer.zoomHint ?? "";
   text.appendChild(hint);
 
+  const emptyReason = document.createElement("p");
+  emptyReason.className = "gw-layer-empty-reason";
+  emptyReason.hidden = true;
+  emptyReason.textContent =
+    "Nothing from this layer is drawn in this view. Pan or zoom to where it publishes.";
+  text.appendChild(emptyReason);
+
   const toggle = document.createElement("button");
   toggle.type = "button";
   toggle.className = "gw-layer-toggle";
@@ -333,6 +444,13 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
   });
   applyDisclosure();
 
+  function setEmptyState(next: boolean): void {
+    empty.hidden = !next;
+    emptyReason.hidden = !next;
+    if (next) element.setAttribute("data-empty", "true");
+    else element.removeAttribute("data-empty");
+  }
+
   return {
     element,
     setForcedOpen(open) {
@@ -342,6 +460,8 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
     setOn(on) {
       toggle.setAttribute("aria-pressed", String(on));
       element.dataset["on"] = String(on);
+      // A row nobody is drawing cannot be empty; the mark would outlive the reason for it.
+      if (!on) setEmptyState(false);
     },
     setZoom(zoom) {
       const outOfScale = layer.minZoom > 0 && zoom < layer.minZoom;
@@ -350,10 +470,15 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
       if (outOfScale) {
         element.setAttribute("data-out-of-scale", "true");
         element.title = layer.zoomHint ?? `Visible at zoom ${layer.minZoom} and above`;
+        // Out of scale already explains the blank canvas; two marks would be two reasons.
+        setEmptyState(false);
       } else {
         element.removeAttribute("data-out-of-scale");
         element.title = layer.subtitle;
       }
+    },
+    setEmpty(next) {
+      setEmptyState(next && !element.hasAttribute("data-out-of-scale"));
     },
     setProvenance(derivationId) {
       setExplainHandle(derivation, derivationId);

@@ -1030,6 +1030,42 @@ h4 {
   margin: 0;
 }
 
+.gw-facts-band + .gw-facts-band {
+  margin-top: var(--gw-space-3);
+}
+
+/* DR-H24: an absent cell and a measured one shared colour, weight, family and font-style, so a
+   skimmed column read as uniform text. The reason still carries which kind of absence it is. */
+.gw-absent {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* The map's own status mark, at card scale: the dot a reader clicked and the chip they land on
+   are one glyph grammar, so the card is legible as the same claim the canvas made. */
+.gw-card-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: var(--gw-space-2) 0 0;
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-card-status-label {
+  color: var(--paper);
+  font-weight: 600;
+}
+
+.gw-card-status-reported {
+  padding: 0 0.25rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--gw-radius-xs);
+  color: var(--slate);
+  font-family: var(--gw-font-mono);
+  font-size: 0.62rem;
+}
+
 gw-figure {
   display: inline-flex;
   align-items: baseline;

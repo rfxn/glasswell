@@ -12,7 +12,7 @@ import {
   placeholder,
   warningPanels,
 } from "./card.ts";
-import { formatVintage } from "./format.ts";
+import { absentValue, formatVintage } from "./format.ts";
 
 interface NeighborWell {
   neighbor_api10: string;
@@ -124,13 +124,31 @@ function neighborItem(neighbor: NeighborWell): HTMLElement {
   appendContextFact(
     facts,
     "Formation",
-    neighbor.formation_id ?? formationStatusLabel(neighbor.formation_status),
+    neighbor.formation_id ?? absentValue(FORMATION_ABSENCE[neighbor.formation_status] ?? null),
   );
-  appendContextFact(facts, "Mapping", formationStatusLabel(neighbor.formation_status));
+  appendContextFact(facts, "Mapping", MAPPING_STATE[neighbor.formation_status] ?? neighbor.formation_status);
   item.appendChild(facts);
   return item;
 }
 
-function formationStatusLabel(status: NeighborWell["formation_status"]): string {
-  return status.replace(/_/g, " ");
-}
+/**
+ * The neighbour endpoint's own null semantics, spelled out. The rows used to render the raw
+ * enum token, so "pool unavailable" stood in the Formation cell looking exactly like a
+ * formation name. This vocabulary is not asserted to mean the same as the completions
+ * endpoint's; only the form the two are rendered in is shared.
+ */
+const FORMATION_ABSENCE: Record<string, string> = {
+  pool_unavailable: "no pool on the neighbour's record",
+  alias_unavailable: "no registered alias",
+  below_confidence: "alias match below the confidence floor",
+  conflict: "the registered aliases disagree",
+};
+
+/** The mapping state itself, which is a value and not an absence, so it carries no mark. */
+const MAPPING_STATE: Record<string, string> = {
+  mapped: "mapped",
+  pool_unavailable: "no pool reported",
+  alias_unavailable: "no registered alias",
+  below_confidence: "below the confidence floor",
+  conflict: "aliases disagree",
+};

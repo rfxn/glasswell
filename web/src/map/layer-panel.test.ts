@@ -3,9 +3,10 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { LAYER_GROUPS } from "./groups.ts";
 import { createLayerPanel } from "./layer-panel.ts";
 import { createPillStrip } from "./pills.ts";
-import { LAYERS, defaultLayerSet } from "./registry.ts";
+import { LAYERS, defaultLayerSet, groupedLayers } from "./registry.ts";
 
 const panel = (on: string[] = defaultLayerSet()) => {
   const events: { id: string; on: boolean }[] = [];
@@ -24,9 +25,25 @@ const rows = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>(".gw-
 const rowFor = (root: HTMLElement, id: string) => rows(root).find((row) => row.dataset["layer"] === id);
 
 describe("the layer panel", () => {
-  it("renders one row per registered layer, in draw order", () => {
+  it("renders one row per registered layer, grouped, each group still in draw order", () => {
     const { handle } = panel();
-    expect(rows(handle.element).map((row) => row.dataset["layer"])).toEqual(LAYERS.map((l) => l.id));
+    // Every layer still has exactly one row: grouping reorders the list, it never drops from it.
+    expect(rows(handle.element).map((row) => row.dataset["layer"]).sort()).toEqual(
+      LAYERS.map((l) => l.id).sort(),
+    );
+    for (const { group, layers } of groupedLayers()) {
+      const body = handle.element.querySelector<HTMLElement>(`#gw-layer-group-${group.id}`)!;
+      expect([...body.querySelectorAll<HTMLElement>(".gw-layer-row")].map((r) => r.dataset["layer"])).toEqual(
+        layers.map((layer) => layer.id),
+      );
+    }
+  });
+
+  it("heads each group with the reader's name for it, not the mart that publishes it", () => {
+    const { handle } = panel();
+    const heads = [...handle.element.querySelectorAll(".gw-layer-group-label")].map((n) => n.textContent);
+    expect(heads).toEqual(LAYER_GROUPS.map((group) => group.label));
+    expect(heads.join(" ")).not.toMatch(/marts\.|_tile|\bND\b|\bTX\b/);
   });
 
   it("carries the epistemic subtitle and the provenance badge in the row itself", () => {
@@ -157,6 +174,109 @@ describe("the layer panel", () => {
     expect(light.getAttribute("aria-pressed")).toBe("false");
     light.click();
     expect(chosen).toEqual(["light"]);
+  });
+});
+
+describe("a group opens on what the reader is already drawing", () => {
+  const groupHead = (root: HTMLElement, id: string) =>
+    root.querySelector<HTMLButtonElement>(`.gw-layer-group[data-group="${id}"] .gw-layer-group-head`)!;
+  const groupBody = (root: HTMLElement, id: string) =>
+    root.querySelector<HTMLElement>(`#gw-layer-group-${id}`)!;
+
+  it("opens the group holding a layer that is on, and shuts the ones holding none", () => {
+    // Twelve rows and a basemap switcher overflow the phone sheet. The groups nobody is
+    // drawing from are the ones that can cost a click instead of a scroll.
+    const { handle } = panel();
+    expect(groupBody(handle.element, "spine").hidden).toBe(false);
+    expect(groupHead(handle.element, "spine").getAttribute("aria-expanded")).toBe("true");
+    expect(groupBody(handle.element, "land").hidden).toBe(true);
+    expect(groupHead(handle.element, "land").getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("follows the reader's own set rather than the registry's defaults", () => {
+    const { handle } = panel(["spacing-units"]);
+    expect(groupBody(handle.element, "land").hidden).toBe(false);
+    expect(groupBody(handle.element, "spine").hidden).toBe(true);
+  });
+
+  it("opens a shut group from its header and says so on the control", () => {
+    const { handle } = panel();
+    const head = groupHead(handle.element, "geology");
+    head.click();
+    expect(groupBody(handle.element, "geology").hidden).toBe(false);
+    expect(head.getAttribute("aria-expanded")).toBe("true");
+    head.click();
+    expect(groupBody(handle.element, "geology").hidden).toBe(true);
+  });
+
+  it("counts the switches inside a shut group, so nothing drawn is hidden without a mark", () => {
+    const { handle } = panel();
+    const count = handle.element.querySelector<HTMLElement>(
+      '.gw-layer-group[data-group="spine"] .gw-layer-group-count',
+    )!;
+    expect(count.hidden).toBe(false);
+    expect(count.textContent).toBe("2 on");
+    const land = handle.element.querySelector<HTMLElement>(
+      '.gw-layer-group[data-group="land"] .gw-layer-group-count',
+    )!;
+    expect(land.hidden).toBe(true);
+    handle.setOn(new Set(["land-grid"]));
+    expect(land.hidden).toBe(false);
+    expect(land.textContent).toBe("1 on");
+  });
+
+  it("reaches into a shut group to show what the filter matched, and drops groups with no hit", () => {
+    const { handle } = panel();
+    const search = handle.element.querySelector<HTMLInputElement>(".gw-layer-search")!;
+    search.value = "spacing";
+    search.dispatchEvent(new Event("input"));
+    expect(groupBody(handle.element, "land").hidden).toBe(false);
+    expect(handle.element.querySelector<HTMLElement>('.gw-layer-group[data-group="geology"]')!.hidden).toBe(true);
+    search.value = "";
+    search.dispatchEvent(new Event("input"));
+    // Back to the reader's own state, not to every group standing open.
+    expect(groupBody(handle.element, "land").hidden).toBe(true);
+    expect(handle.element.querySelector<HTMLElement>('.gw-layer-group[data-group="geology"]')!.hidden).toBe(false);
+  });
+});
+
+describe("a layer that is on and painting nothing says so rather than looking drawn", () => {
+  it("marks the row present but empty, and keeps the toggle live", () => {
+    const { handle } = panel(["wells"]);
+    handle.setZoom(9);
+    handle.setCoverage(new Set(["wells"]));
+    const row = rowFor(handle.element, "wells")!;
+    expect(row.getAttribute("data-empty")).toBe("true");
+    expect(row.querySelector<HTMLElement>(".gw-layer-empty")!.hidden).toBe(false);
+    expect(row.querySelector<HTMLButtonElement>(".gw-layer-toggle")!.disabled).toBe(false);
+  });
+
+  it("says it about the canvas, never about the ground", () => {
+    // A layer whose tiles failed queries empty too, so the sentence cannot claim the ground
+    // is bare. The tile banner is what reports a failed source.
+    const { handle } = panel(["wells"]);
+    handle.setZoom(9);
+    handle.setCoverage(new Set(["wells"]));
+    const reason = rowFor(handle.element, "wells")!.querySelector(".gw-layer-empty-reason")!;
+    expect(reason.textContent).toMatch(/drawn in this view/i);
+    expect(reason.textContent).not.toMatch(/no wells|none exist|no data/i);
+  });
+
+  it("lets out of scale keep the row, since two marks would be two reasons for one blank", () => {
+    const { handle } = panel(["lateral-bores"]);
+    handle.setCoverage(new Set(["lateral-bores"]));
+    handle.setZoom(7);
+    const row = rowFor(handle.element, "lateral-bores")!;
+    expect(row.getAttribute("data-out-of-scale")).toBe("true");
+    expect(row.getAttribute("data-empty")).toBe(null);
+  });
+
+  it("drops the mark when the reader switches the layer off", () => {
+    const { handle } = panel(["wells"]);
+    handle.setZoom(9);
+    handle.setCoverage(new Set(["wells"]));
+    handle.setOn(new Set());
+    expect(rowFor(handle.element, "wells")!.getAttribute("data-empty")).toBe(null);
   });
 });
 

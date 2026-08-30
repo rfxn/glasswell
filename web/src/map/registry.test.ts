@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { LAND_SNAPSHOT, ND_SNAPSHOT, landCellCount, ndCoverage, ndWellCount } from "./coverage.ts";
 import { DISPOSAL_COLOUR } from "./disposal.ts";
-import { LAYERS, defaultLayerSet, layerDef, layerIds, layerRowState } from "./registry.ts";
+import { LAYER_GROUPS } from "./groups.ts";
+import { LAYERS, defaultLayerSet, groupedLayers, layerDef, layerIds, layerRowState } from "./registry.ts";
 import { SELECTION_COLOUR, STATUS_CLASSES, UNMAPPED_STATUS, statusColour } from "./status.ts";
 import { TRACE_COLOUR, dataLayers } from "./style.ts";
 
@@ -278,15 +279,25 @@ describe("the layer registry", () => {
 });
 
 describe("the registry declares no vocabulary nothing reads", () => {
-  it("carries no grouping field, since the panel renders a flat list", () => {
-    // `LayerGroup` was declared, required and assigned twelve times, and read by nothing in
-    // the repo. A required unread field is how a later track builds a taxonomy tree by
-    // accident because the data model appeared to be asking for one — and the taxonomy it
-    // held was a lineage cut, not a task one: `model` had a single disabled member, and it
-    // put a derived choropleth beside the well points because both are well-derived.
-    for (const layer of LAYERS) {
-      expect(Object.keys(layer), layer.id).not.toContain("group");
-    }
+  it("files every layer under a group the panel actually renders", () => {
+    // The field was removed once for being required, assigned twelve times and read by
+    // nothing. It is back because `groupedLayers()` reads it and the panel draws a header per
+    // group; these two assertions are what keep that true rather than the field drifting dead
+    // again. A group nothing declares would render an empty band.
+    const declared = new Set(LAYER_GROUPS.map((group) => group.id));
+    for (const layer of LAYERS) expect(declared, layer.id).toContain(layer.group);
+    expect(groupedLayers().map((entry) => entry.group.id)).toEqual([...declared]);
+  });
+
+  it("cuts the groups by what a layer is of, not by how it was derived", () => {
+    // The taxonomy this field carried the first time was a lineage cut: it sat the land-grid
+    // choropleth beside the well points because both are well-derived. They answer different
+    // questions and a reader looking for one never wants the other, so the cut that survives
+    // is the task one.
+    expect(layerDef("land-metrics")!.group).not.toBe(layerDef("wells")!.group);
+    expect(layerDef("land-metrics")!.group).not.toBe(layerDef("land-grid")!.group);
+    expect(layerDef("wells")!.group).toBe(layerDef("lateral-bores")!.group);
+    expect(layerDef("land-grid")!.group).toBe(layerDef("spacing-units")!.group);
   });
 
   it("hands the rows that state a snapshot's counts that snapshot's own handle", () => {

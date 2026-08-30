@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ChartSeries } from "../chart/series.ts";
+import { statusColour } from "../map/status.ts";
 
 const renderChart = vi.fn<(container: HTMLElement, chart: ChartSeries) => void>();
 const selectWell = vi.fn<(api10: string | null, source: string) => void>();
@@ -327,6 +328,62 @@ describe("well card", () => {
     expect(host.querySelector(".gw-panel-head .gw-close")).toBeTruthy();
   });
 
+  it("carries the status in the head as the mark the map painted, with the code as filed", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    const chip = host.querySelector<HTMLElement>(".gw-panel-head .gw-card-status")!;
+    expect(chip.dataset["status"]).toBe("active");
+    expect(chip.textContent).toContain("Active");
+    // The mapping is readable rather than hidden: the class and the code that produced it.
+    expect(chip.querySelector(".gw-card-status-reported")?.textContent).toBe("filed A");
+    // The map's own glyph grammar, not a second dialect of it.
+    expect(chip.querySelector("svg circle")?.getAttribute("fill")).toBe(statusColour("active"));
+  });
+
+  it("reads the well in bands rather than as one flat list where a CRS outranks the operator", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    const bands = [...host.querySelectorAll<HTMLElement>(".gw-facts-band")];
+    expect(bands.map((band) => band.querySelector(".gw-frame-title")?.textContent)).toEqual([
+      "Operator",
+      "Location",
+      "Drilling and completion",
+      "Record",
+    ]);
+    // Every band that renders carries rows; a heading over nothing is dropped, not left standing.
+    for (const band of bands) expect(band.querySelectorAll("dt").length).toBeGreaterThan(0);
+    const drilling = bands[2] as HTMLElement;
+    expect([...drilling.querySelectorAll("dt")].map((dt) => dt.textContent)).toContain("Lateral length");
+    expect(bands[3]?.textContent).toContain("Compute CRS");
+  });
+
+  it("drops a band whose every field is absent instead of heading an empty list", async () => {
+    const bare = structuredClone(wellEnvelope);
+    for (const field of ["basin", "county_code_at_permit", "land_unit_label"]) {
+      (bare.data as Record<string, unknown>)[field] = null;
+    }
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: bare })));
+    await renderWellCard(host, API10, callbacks);
+
+    const titles = [...host.querySelectorAll(".gw-facts-band .gw-frame-title")].map((n) => n.textContent);
+    expect(titles).not.toContain("Location");
+    expect(titles).toContain("Operator");
+  });
+
+  it("marks an absent value so a skimmed column separates it from a measured one", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    // The neighbour rows used to print the raw enum token, so "alias unavailable" stood in the
+    // Formation cell looking exactly like a formation name beside "bakken".
+    const rows = [...host.querySelectorAll<HTMLElement>(".gw-neighbor-context .gw-context-list > li")];
+    const absent = rows[1]!.querySelector<HTMLElement>(".gw-absent")!;
+    expect(absent).toBeTruthy();
+    expect(absent.textContent).toBe("unavailable: no registered alias");
+    expect(rows[0]!.querySelector(".gw-absent")).toBeNull();
+    // DR-H24: the mark is what a reader sees without reading. A figure never wears it.
+    expect(host.querySelector("gw-figure.gw-absent")).toBeNull();
+  });
+
   it("says so when the API refuses the request instead of rendering an empty card", async () => {
     vi.stubGlobal(
       "fetch",
@@ -508,8 +565,8 @@ describe("completion and formation context", () => {
     expect(factsOf(pools[1] as HTMLElement)).toEqual({
       "Pool entity": "3305310451:UNKNOWN",
       "Reported pool": "UNKNOWN",
-      "Canonical formation": "unavailable: alias unavailable",
-      "Formation group": "unavailable: alias unavailable",
+      "Canonical formation": "unavailable: no registered alias",
+      "Formation group": "unavailable: no registered alias",
       "First observed month": "2025-10-01",
       "Last observed month": "2026-03-01",
       "Source": "nd_mpr_xlsx · report 2026-08-20",
