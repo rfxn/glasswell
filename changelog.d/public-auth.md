@@ -44,8 +44,6 @@
 - [New] infra: the cloudflared ingress publishes one hostname to the Caddy tunnel
       listener and answers 404 for everything else, so the tile server is not reachable
       through the edge; install.sh gains --with-cloudflared and mints GLASSWELL_CSRF_KEY
-- [Fix] verify.sh asserted only tree-to-host unit equality, so a unit installed on the
-      host and declared in no repo file was invisible; the reverse assertion closes it
 - [New] glasswell-owner-bootstrap creates the first owner account and
       glasswell-owner-reset is the lockout break-glass; both read the password from stdin
       only, never argv or the environment, and the installer calls neither, so no
