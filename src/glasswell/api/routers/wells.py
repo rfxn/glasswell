@@ -1560,8 +1560,12 @@ class VintageCohort(BaseModel):
         description="Wells in the cohort.",
         json_schema_extra={GLOSSARY_KEY: "gt_vintage_well_vintage"},
     )
-    producing_wells: FigureModel = Field(
-        description="Wells in the cohort that filed at least one reported month.",
+    wells_with_a_filed_month: FigureModel = Field(
+        description=(
+            "Wells in the cohort whose record admits at least one month into these totals, per"
+            " cr_nd_vintage_cohort_1's support_measure. Not the producing classification of"
+            " cr_producing_window_1, which asks whether a well is producing now."
+        ),
         json_schema_extra={GLOSSARY_KEY: "gt_cumulative_production"},
     )
     cumulative: CohortTotals = Field(description="Cohort totals per stream.")
@@ -1632,7 +1636,9 @@ class WellVintageCohorts(BaseModel):
         " Protocol 4D is stated rather than assumed: a vintage cohort is a population of"
         " drilled wells and not a set of admissible slots, so spacing_assumption.applies is"
         " false with its reason, and support_distribution says how many wells stand behind each"
-        " cohort's figures on a scale cut for cohorts rather than for PLSS sections."
+        " cohort's figures on a scale cut for cohorts rather than for PLSS sections. The count"
+        " it is cut on is wells_with_a_filed_month, which cr_nd_vintage_cohort_1 defines and"
+        " which is deliberately not the producing classification served on /v1/wells."
         " The population is North Dakota. The Williston basin is not, so population_scope says"
         " so inside `data` rather than only in a warning a copied payload would lose."
     ),
@@ -1652,7 +1658,7 @@ class WellVintageCohorts(BaseModel):
                     "/cohort_year",
                     "/cohort_key_semantics",
                     "/wells",
-                    "/producing_wells",
+                    "/wells_with_a_filed_month",
                     "/cumulative/oil_bbl",
                     "/cumulative/gas_mcf",
                 ],
@@ -1749,11 +1755,11 @@ def _cohort(row: dict[str, Any], *, snapshot: date, derivation: str) -> dict[str
             derivation=derivation,
             selector=f"cohort={key}&col=wells",
         ),
-        "producing_wells": figure(
-            str(row["producing_wells"]),
+        "wells_with_a_filed_month": figure(
+            str(row["wells_with_a_filed_month"]),
             unit=COUNT_UNIT,
             derivation=derivation,
-            selector=f"cohort={key}&col=producing_wells",
+            selector=f"cohort={key}&col=wells_with_a_filed_month",
         ),
         "cumulative": {
             COHORT_STREAM_COLUMNS[stream]: (
@@ -1788,7 +1794,7 @@ def _cohort_labels(cohorts: list[dict[str, Any]]) -> dict[str, str]:
             f"/cohorts/{index}/cohort_year": "gt_vintage_well_vintage",
             f"/cohorts/{index}/cohort_key_semantics": "gt_spud_date",
             f"/cohorts/{index}/wells": "gt_vintage_well_vintage",
-            f"/cohorts/{index}/producing_wells": "gt_cumulative_production",
+            f"/cohorts/{index}/wells_with_a_filed_month": "gt_cumulative_production",
             f"/cohorts/{index}/cumulative/oil_bbl": "gt_liquids_policy",
             f"/cohorts/{index}/cumulative/gas_mcf": "gt_stream",
             f"/cohorts/{index}/cumulative/water_bbl": "gt_stream",

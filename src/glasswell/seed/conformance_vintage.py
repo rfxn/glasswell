@@ -34,7 +34,8 @@ VINTAGE_RULES: tuple[dict[str, object], ...] = (
             "contract_note": (
                 "returns the cohort key, the column it is read from and the label the no-key"
                 " cohort is served under; the serving path groups on that key and never"
-                " chooses one itself"
+                " chooses one itself. support_measure below is the second decision this rule"
+                " governs: which wells count as standing behind a cohort's totals"
             ),
             "cohort_key": "spud_year",
             "cohort_key_field": "canonical.wells_latest.spud_date",
@@ -57,18 +58,47 @@ VINTAGE_RULES: tuple[dict[str, object], ...] = (
                 "spud_year": 36847,
                 "completion_anchor_year": 17563,
                 "null_cohort": 6970,
-                "null_cohort_producing": 49,
+                "null_cohort_with_a_filed_month": 49,
             },
             "disagreement": {
                 "both_dates": 17520,
                 "different_year": 8214,
                 "median_lag_days": 150,
             },
+            "support_measure": {
+                "field": "wells_with_a_filed_month",
+                "definition": (
+                    "a well in the cohort whose canonical record carries at least one month"
+                    " admitted into a cumulative total — null_semantics reported or"
+                    " reported_zero — in any stream"
+                ),
+                "why_not_the_producing_classification": (
+                    "cr_producing_window_1, cr_producing_streams_1 and cr_producing_evidence_1"
+                    " define whether a well is producing now, over a three-month window ending"
+                    " at the newest filed month, on oil and gas only. That is a different"
+                    " question from how many wells stand behind a cohort's all-time totals: it"
+                    " would report the 1958 cohort as almost empty and would tell a reader"
+                    " nothing about the support under the figures this response serves. The"
+                    " field is named for what it counts rather than for that classification,"
+                    " so the two are not mistaken for one another."
+                ),
+                "excludes": (
+                    "a well whose only filings are no_report or withheld rows, which is the"
+                    " same set the cumulative admits nothing from; a filed zero is a filing and"
+                    " is counted"
+                ),
+                "measured": {
+                    "cohorts": 94,
+                    "max_cohort": 2553,
+                    "section_scale_largest_class": 73,
+                    "band_histogram": [16, 6, 43, 20, 9],
+                },
+            },
             "support_bands": ["0", "1-9", "10-99", "100-999", "1000+"],
             "support_band_basis": (
-                "Cohort scale. Over the 94 ND spud-year cohorts the producing-well count runs"
-                " 0 to 2,553, so the PLSS section bands used by the land-grid rollups put 73"
-                " of the 94 in one class."
+                "Cohort scale. Over the 94 ND spud-year cohorts the wells_with_a_filed_month"
+                " count runs 0 to 2,553, so the PLSS section bands used by the land-grid"
+                " rollups put 73 of the 94 in one class."
             ),
         },
         "code_ref": COHORT_READER,
@@ -91,8 +121,8 @@ VINTAGE_RULES: tuple[dict[str, object], ...] = (
             " The cost is stated rather than hidden: 6,970 wells (15.9 percent) have no spud"
             " date and are served as an explicit cohort with cohort_year null and"
             " cohort_key_semantics no_spud_date, never folded into a year and never dropped."
-            " Of those, 49 have production, so the cohort is large in count and small in"
-            " volume, and the response says both."
+            " Of those, 49 carry at least one month admitted into a total, so the cohort is"
+            " large in count and small in volume, and the response says both."
             " The glossary is reconciled rather than contradicted: gt_vintage_well_vintage"
             " keeps the industry meaning in its short definition and states this key choice in"
             " its expanded text, and gt_spud_date already warns that a spud-date cohort should"
