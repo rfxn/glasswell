@@ -11,8 +11,10 @@
       count wherever canonical already holds filings the snapshot has not
       absorbed, so a reader summing the live series is not left to find the gap by
       arithmetic
-- [New] GET /v1/wells/vintage-cohorts: wells, producing wells and cumulative
-      volumes per cohort, keyed by cr_nd_vintage_cohort_1 on the spud year with
+- [New] GET /v1/wells/vintage-cohorts: wells, the wells whose record admits a month
+      into those totals, and cumulative volumes per cohort, all three keyed by
+      cr_nd_vintage_cohort_1 - which rules the support measure as well as the
+      cohort key, so neither is decided in a query - on the spud year with
       its measured rationale and its rejected alternative served at
       /v1/conformance; the no-spud-date cohort is its own, never folded into a
       year, and the Montana truncation is stated inside data rather than only in a
@@ -30,7 +32,9 @@
       cr_ff_fluid_intensity_1, which declares a 1,000 ft divisor floor and a 5,000
       gal/ft ceiling; no ND well has a zero summed lateral, so a divide-by-zero
       guard would fire on nothing while the measured 0.24 ft minimum would serve
-      26 M gal/ft as a handled figure
+      26 M gal/ft as a handled figure. An absent numerator is reported as the
+      source classified it, so a withheld volume yields a withheld intensity and
+      never an undisclosed one
 - [New] marts.well_cumulatives and marts.well_withholding carry no state regex and
       an explicit state_code, so a second jurisdiction widens a Python constant
       rather than altering shipped DDL
