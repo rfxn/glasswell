@@ -235,6 +235,10 @@ remote "systemctl start glasswell-status.timer" \
     || refuse "glasswell-status timer did not start"
 remote "systemctl start glasswell-lineage-retention.timer" \
     || refuse "glasswell-lineage-retention timer did not start"
+# The timer only, never the service: its ExecStart fetches from Cloudflare with a 30 s curl
+# budget, and a deploy step must not wait on someone else's network.
+remote "systemctl start glasswell-cf-ranges.timer" \
+    || refuse "glasswell-cf-ranges timer did not start"
 remote "systemctl start glasswell-lineage-retention.service" \
     || refuse "glasswell-lineage-retention did not complete"
 if remote "systemctl is-enabled --quiet glasswell-restore-drill.timer"; then

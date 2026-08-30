@@ -228,6 +228,10 @@ systemctl enable glasswell-status.timer
 printf 'enabled glasswell-status.timer — start it after migrations complete\n'
 systemctl enable glasswell-lineage-retention.timer
 printf 'enabled glasswell-lineage-retention.timer — start it after migrations complete\n'
+# Installed since the tunnel landed but enabled by nothing, so the weekly refresh its own file
+# header advertises had never once run and verify.sh only ever measured install.sh's own mtime.
+systemctl enable glasswell-cf-ranges.timer
+printf 'enabled glasswell-cf-ranges.timer — start it to arm the weekly range refresh\n'
 
 if [[ $with_caddy -eq 1 ]]; then
     systemctl enable caddy.service

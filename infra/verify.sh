@@ -676,6 +676,13 @@ if [[ -s $CF_RANGES ]]; then
     assert_true "the cloudflare range list is fresh ($range_age d)" "older than 30 days" \
         test "$range_age" -lt 30
 fi
+# The freshness check above cannot fail on a deploy: install.sh rewrites the file minutes
+# earlier, so it measures the deploy's own mtime. What it was standing in for is the refresher
+# actually being armed, which nothing enabled and nothing asserted.
+assert "glasswell-cf-ranges.timer enabled" enabled \
+    "$(systemctl is-enabled glasswell-cf-ranges.timer 2>/dev/null)"
+assert "glasswell-cf-ranges.timer active" active \
+    "$(systemctl is-active glasswell-cf-ranges.timer 2>/dev/null)"
 
 printf 'tunnel\n'
 public_mode="$(sed -n 's/^GLASSWELL_PUBLIC=//p' /etc/glasswell/app.env)"
