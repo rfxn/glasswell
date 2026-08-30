@@ -98,21 +98,53 @@ def test_a_registered_rule_still_reaches_the_bounded_answer() -> None:
     assert _intensity_or_reason(None, Decimal("9862.27"), POLICY)[1] == "no_report"
 
 
-def test_the_rule_declares_every_reason_the_code_can_return() -> None:
-    """R8: a served reason the rule's vocabulary does not admit is a mapping made in code."""
+def _reasons_the_code_can_return() -> set[str]:
+    """Every reason literal the two intensity functions return, read off their own source.
+
+    Derived rather than hand-listed: a set built from example inputs proves only that those
+    inputs' reasons are declared, so a branch nobody thought to call would not be in it. The
+    walk is over `return` statements, so adding a branch adds a member without editing a test.
+    """
+    import ast
+    import inspect
+
+    from glasswell.api.routers import completions
+
+    tree = ast.parse(inspect.getsource(completions))
+    reasons: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        if node.name not in ("_fluid_intensity", "_intensity_or_reason"):
+            continue
+        for inner in ast.walk(node):
+            # A tuple return is `(value, reason)`; `return _fluid_intensity(...)` is a Call and
+            # delegates, so it contributes the callee's reasons rather than one of its own.
+            if isinstance(inner, ast.Return) and isinstance(inner.value, ast.Tuple):
+                reason = inner.value.elts[1]
+                if isinstance(reason, ast.Constant) and isinstance(reason.value, str):
+                    reasons.add(reason.value)
+                elif isinstance(reason, ast.Name):
+                    reasons.add(getattr(completions, reason.id))
+    return reasons
+
+
+def test_the_rule_declares_exactly_the_reasons_the_code_can_return() -> None:
+    """R8: a served reason the rule does not admit is a mapping made in code — and a declared
+    reason the code can never return is a vocabulary that describes something else.
+
+    Equality, not containment, so both directions fail. This is a companion to the per-branch
+    tests above, not a replacement for them: it would not have caught the defect it was written
+    for, because `no_report` is a member the code may legitimately return — just not for the
+    reason it was being returned. A vocabulary check cannot tell you a branch picked the wrong
+    declared member; only a test of that branch can.
+    """
     from glasswell.seed.conformance_fracfocus import FRACFOCUS_RULES
 
     rule = next(r for r in FRACFOCUS_RULES if r["rule_id"] == "cr_ff_fluid_intensity_1")
     declared = set(rule["spec"]["null_semantics_vocabulary"])
-    returned = {INTENSITY_RULE_UNREGISTERED} | {
-        _intensity_or_reason(volume, lateral, POLICY)[1]
-        for volume, lateral in (
-            (Decimal("5917362"), Decimal("9862.27")),
-            (None, Decimal("9862.27")),
-            (Decimal("5917362"), None),
-            (Decimal("5917362"), MEASURED_MINIMUM_FT),
-            (Decimal("60000000"), Decimal("9862.27")),
-        )
-    }
+    returned = _reasons_the_code_can_return()
 
-    assert returned <= declared
+    assert returned == declared
+    assert INTENSITY_RULE_UNREGISTERED in returned, "the source walk found no derived reason"
+    assert len(returned) == 6
