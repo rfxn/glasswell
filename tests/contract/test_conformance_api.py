@@ -14,6 +14,7 @@ from glasswell.seed.conformance_fracfocus import FRACFOCUS_RULES
 from glasswell.seed.conformance_land import LAND_RULES
 from glasswell.seed.conformance_nd import ND_RULES
 from glasswell.seed.conformance_nm import NM_RULES
+from glasswell.seed.conformance_nm_wells import NM_WELLS_RULES
 from glasswell.seed.conformance_producing import PRODUCING_RULES
 from glasswell.seed.conformance_tx import TX_RULES
 from glasswell.seed.conformance_typecurve import TYPECURVE_RULES
@@ -97,6 +98,7 @@ def _seeded_policy_rule_ids() -> set[str]:
             LAND_RULES,
             ND_RULES,
             NM_RULES,
+            NM_WELLS_RULES,
             PRODUCING_RULES,
             TX_RULES,
             TYPECURVE_RULES,

@@ -33,3 +33,24 @@
 - [Change] `marts/neighbors.py`: `STATE_CODE` becomes the `STATE_CODES` tuple the refresh
          binds through `= any(...)`, so a second state is a data change rather than an edit;
          New Mexico is deliberately not in it, because neither NM source ships a lateral
+- [New] `seed/conformance_nm_wells.py`: ten conformance rows covering New Mexico's header
+      identity, effective dating, status and well-type domains, the NAD83 datum transform, the
+      coordinate policy, geometry provenance and scope, the pool grain and the cross-source
+      header precedence; `056_nm_gate_rule_publications.sql` registers their publication
+      evidence, which migration 049 makes a precondition for the insert
+- [New] `cr_nm_wellhistory_coordinate_1` records the measurement behind the policy: 318,720 of
+      321,510 records carry a usable coordinate pair, 897 carry a zero ordinate and 1,893 a nil
+      one, giving 141,778 of 142,000 wells a point — three counted populations that sum to the
+      record count rather than two counted and one subtracted
+- [New] `cr_nm_wellhistory_status_vocab_1` records the fifteen-value status domain and asserts
+      no canonical status: the OCD publishes no codebook, so a New Mexico well carries its
+      letter in `status_reported` and null in `status_canonical`, and the served unmapped count
+      has a rule behind it
+- [New] `cr_nm_wellhistory_geometry_scope_1` states that no in-scope New Mexico source ships a
+      lateral or a bottomhole, so the 43,409 horizontal and 3,265 directional wells the header
+      table names must never be read as carrying a path
+- [New] `cr_nm_wcproduction_pool_rollup_1` gives New Mexico's pool grain a New Mexico rule to
+      cite instead of North Dakota's, and says the opposite of what North Dakota's says: all
+      17,597,960 promoted rows are `well_completion_pool` with a null aggregation and there is
+      no well-level row among them, so a New Mexico well's well-level series is absent rather
+      than zero

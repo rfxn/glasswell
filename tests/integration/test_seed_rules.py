@@ -18,7 +18,9 @@ from glasswell.seed.reference import NM_TABLES
 MINIMUM_RULES = 17
 MINIMUM_TERMS = 30
 MEASURED_ND_STATUSES = 19
-POLICY_RULES = (
+# Sorted here rather than by hand: registry_rows reads `order by rule_id`, so a new entry
+# added in the wrong position failed on ordering rather than on content.
+POLICY_RULES = tuple(sorted((
     # The land-grid publisher choice: the executor is the ingest module the spec names, and
     # the measured cross-publisher divergence rides in spec.divergence_measured (M1-4).
     "cr_blm_plss_publisher_1",
@@ -34,6 +36,9 @@ POLICY_RULES = (
     "cr_nd_null_semantics_1",
     "cr_nd_pool_rollup_1",
     "cr_nd_well_type_disposal_1",
+    # New Mexico's header authority: one source until the GIS parity is measured, then a
+    # superseding row. The executor is the promoter the spec names.
+    "cr_nm_wellhistory_header_precedence_1",
     # One host pin per NM source: the pin is a policy declaration the fetcher implements, and
     # a rule row loads only for the source_id it names (M5).
     *sorted(f"cr_nm_{table}_host_pin_1" for table, _ in NM_TABLES),
@@ -56,7 +61,7 @@ POLICY_RULES = (
     "cr_tx_identity_collapse_1",
     "cr_tx_lateral_bounds_1",
     "cr_tx_multi_wellbore_1",
-)
+)))
 
 SUPERSEDED_RULE_IDS = {rule["supersedes_rule_id"] for rule in ND_RULES if rule.get(
     "supersedes_rule_id")}
