@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import importlib.util
+import re
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -197,38 +200,72 @@ def test_migration_replays_without_changing_publication_evidence(db):
     assert after == before
 
 
-# The literals the repository's release guard scans for. Duplicated here on purpose: the guard
-# lives in scripts/release.py and matches the *quoted SQL* forms, so a rename on either side has
-# to fail somewhere. This is that somewhere for the migrations this track adds.
-PLACEHOLDER_TAG_LITERAL = "'" + "UNRELEASED" + "'"
-PLACEHOLDER_COMMIT_LITERAL = "'" + "0" * 40 + "'"
+# The evidence a migration writes into lineage.conformance_rule_publications belongs to the
+# merge train, not to this branch: the table is append-only, so a tag naming a release that has
+# not run is a permanently false claim about when a rule was published. The repository's answer
+# is a placeholder pair plus a release guard that refuses while it stands.
+#
+# Nothing below asserts that a file *contains* the placeholder. That inverts at the moment the
+# integrator repoints — the correct action would turn the suite red — and it is the failure the
+# sibling track shipped. What is pinned here is behaviour that holds on both sides of the
+# repoint: the pair moves together, the set of writers is closed, and a placeholder named in a
+# comment is not a pending repoint.
+PLACEHOLDER_TAG = "UNRELEASED"
+PLACEHOLDER_COMMIT = "0" * 40
 TRACK_PUBLICATION_MIGRATIONS = (
     "056_nm_gate_rule_publications.sql",
     "058_land_grid_state_scope.sql",
     "060_nm_wells_gis.sql",
 )
+TRACK_RULE_PREFIXES = ("cr_nm_wellhistory_", "cr_nm_wcproduction_pool_rollup_", "cr_nm_wells_gis_",
+                       "cr_land_agg_membership_2")
 
 
-def _migration(name: str) -> str:
-    root = Path(migrate.__file__).parent / "migrations"
-    return (root / name).read_text(encoding="utf-8")
+def _migrations_dir() -> Path:
+    return Path(migrate.__file__).parent / "migrations"
 
 
-def test_this_tracks_publication_rows_carry_the_placeholder_the_guard_scans_for():
-    """`lineage.conformance_rule_publications` is append-only, so evidence that reaches a
-    production migrate is permanent. A hardcoded release tag is a claim about a train that has
-    not run, and T1 shipped a release guard that refuses while the placeholder stands — this
-    holds the migrations to the exact literals that guard matches."""
-    for name in TRACK_PUBLICATION_MIGRATIONS:
-        body = _migration(name)
-        assert "conformance_rule_publications" in body, name
-        assert PLACEHOLDER_TAG_LITERAL in body, name
-        assert PLACEHOLDER_COMMIT_LITERAL in body, name
+def _evidence_values(text: str) -> set[tuple[str, str]]:
+    """The (tag, commit) pairs a migration actually writes, read from the quoted SQL values.
+
+    Comments are stripped first, which is the whole point: the guard this mirrors was written as
+    a bare substring scan, and its own header prose then matched it, so a correctly repointed
+    file went on refusing forever. Evidence is what a statement writes, not what a sentence says.
+    """
+    statements = "\n".join(
+        line for line in text.splitlines() if not line.lstrip().startswith("--")
+    )
+    pairs = re.findall(r"'([^']+)',\s*'([0-9a-f]{40})'", statements)
+    return set(pairs)
 
 
-def test_no_other_migration_this_track_adds_writes_publication_evidence():
-    """If a later phase adds one and forgets the placeholder, the guard never sees it."""
-    root = Path(migrate.__file__).parent / "migrations"
+def _pending(root: Path) -> set[str]:
+    """Migrations whose written evidence is still the placeholder pair.
+
+    Prefers the repository's own release guard once that has merged, so this test starts
+    exercising the real implementation rather than a lookalike the moment it exists.
+    """
+    guard = Path(__file__).resolve().parents[2] / "scripts" / "release.py"
+    if guard.is_file():
+        spec = importlib.util.spec_from_file_location("gw_release_guard", guard)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        blockers = getattr(module, "placeholder_evidence_blockers", None)
+        if blockers is not None:
+            repo = guard.parent.parent
+            reported = " ".join(blockers(repo, module.read_version(repo)))
+            return {path.name for path in root.glob("*.sql") if path.name in reported}
+    return {
+        path.name
+        for path in root.glob("*.sql")
+        if (PLACEHOLDER_TAG, PLACEHOLDER_COMMIT) in _evidence_values(path.read_text("utf-8"))
+    }
+
+
+def test_the_publication_writers_this_track_adds_are_exactly_these_three():
+    """A fourth writer added later would never be seen by the guard or by the repoint."""
+    root = _migrations_dir()
     writers = sorted(
         path.name
         for path in root.glob("*.sql")
@@ -238,15 +275,76 @@ def test_no_other_migration_this_track_adds_writes_publication_evidence():
     assert writers == list(TRACK_PUBLICATION_MIGRATIONS)
 
 
-def test_the_placeholder_commit_still_satisfies_the_columns_own_check(db):
-    """Forty zeros is a placeholder to a reader and a well-formed digest to the CHECK, which is
-    why it can be stored at all rather than refused on the way in."""
+def test_every_writer_carries_the_same_evidence_pair():
+    """Repointed or not, they move together: three files half-repointed is the realistic
+    mistake, and it produces two different claims about one release."""
+    pairs = {
+        name: _evidence_values(( _migrations_dir() / name).read_text("utf-8"))
+        for name in TRACK_PUBLICATION_MIGRATIONS
+    }
+
+    for name, values in pairs.items():
+        assert len(values) == 1, (name, values)
+    assert len({next(iter(values)) for values in pairs.values()}) == 1, pairs
+
+
+def test_the_pair_is_all_placeholder_or_no_placeholder_never_half(db):
+    """The database-level statement of the same property, over the rows that actually landed."""
     with db.cursor() as cursor:
         cursor.execute(
-            "select count(*) from lineage.conformance_rule_publications"
-            " where evidence_tag = %s and evidence_commit = %s",
-            ("UNRELEASED", "0" * 40),
+            "select distinct evidence_tag, evidence_commit"
+            "  from lineage.conformance_rule_publications"
+            " where " + " or ".join(["rule_id like %s"] * len(TRACK_RULE_PREFIXES)),
+            tuple(f"{prefix}%" for prefix in TRACK_RULE_PREFIXES),
         )
-        placeholders = cursor.fetchone()[0]
+        pairs = cursor.fetchall()
 
-    assert placeholders > 0, "the placeholder rows must actually land, not be silently dropped"
+    assert pairs
+    for tag, commit in pairs:
+        assert (tag == PLACEHOLDER_TAG) == (commit == PLACEHOLDER_COMMIT), (tag, commit)
+        assert commit
+        assert re.fullmatch(r"[0-9a-f]{40}", commit), commit
+        assert tag.strip()
+
+
+def _with_evidence(text: str, tag: str, commit: str) -> str:
+    """The real migration with its evidence pair set to a chosen one.
+
+    Derived from the shipped file rather than from a synthetic blob — a synthetic fixture is
+    what missed this defect on the sibling track — but independent of which pair the file
+    happens to carry today, so these two tests read the same before and after the repoint.
+    """
+    values = _evidence_values(text)
+    assert len(values) == 1, values
+    current_tag, current_commit = next(iter(values))
+    return text.replace(f"'{current_tag}'", f"'{tag}'").replace(
+        f"'{current_commit}'", f"'{commit}'"
+    )
+
+
+def test_a_placeholder_named_only_in_a_comment_is_not_a_pending_repoint(tmp_path: Path):
+    """The defect the sibling track shipped, encoded.
+
+    A correctly repointed file whose header still *explains* the placeholder must read as clean.
+    A bare substring scan matches its own prose, so the correct action goes on refusing forever
+    and nothing in the repository can cut a tag.
+    """
+    real = (_migrations_dir() / TRACK_PUBLICATION_MIGRATIONS[0]).read_text("utf-8")
+    repointed = _with_evidence(real, "v9.99", "a" * 40)
+    repointed += (
+        f"\n-- Repointed from the {PLACEHOLDER_TAG} placeholder and its {PLACEHOLDER_COMMIT}\n"
+        "-- commit at the merge train.\n"
+    )
+    (tmp_path / "099_repointed.sql").write_text(repointed, encoding="utf-8")
+
+    assert PLACEHOLDER_TAG in repointed, "the fixture must name it in prose to be the test"
+    assert _pending(tmp_path) == set()
+
+
+def test_a_writer_whose_values_carry_the_placeholder_is_reported(tmp_path: Path):
+    """The other direction, from the same real artifact: values decide, not prose."""
+    real = (_migrations_dir() / TRACK_PUBLICATION_MIGRATIONS[0]).read_text("utf-8")
+    placeheld = _with_evidence(real, PLACEHOLDER_TAG, PLACEHOLDER_COMMIT)
+    (tmp_path / "099_pending.sql").write_text(placeheld, encoding="utf-8")
+
+    assert _pending(tmp_path) == {"099_pending.sql"}

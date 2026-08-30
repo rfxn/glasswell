@@ -12,6 +12,7 @@ could not have caught it, because it contains nothing for the filter to remove.
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -237,13 +238,21 @@ def test_the_superseding_row_records_the_populations_it_was_written_against() ->
 
 
 def test_the_land_grid_scope_migration_registers_the_publication(three_states) -> None:
+    """That the row exists, not what tag it names: the evidence belongs to the merge train and
+    pinning a release string here would go red the moment the integrator repoints it."""
     db, _ = three_states
 
-    assert rows(
+    published = rows(
         db,
-        "select evidence_tag from lineage.conformance_rule_publications where rule_id = %s",
+        "select evidence_tag, evidence_commit from lineage.conformance_rule_publications"
+        " where rule_id = %s",
         ("cr_land_agg_membership_2",),
-    ) == [("v0.68",)]
+    )
+
+    assert len(published) == 1
+    tag, commit = published[0]
+    assert tag.strip()
+    assert re.fullmatch(r"[0-9a-f]{40}", commit), commit
 
 
 def test_a_land_unit_is_not_created_for_a_state_with_no_grid(three_states) -> None:
