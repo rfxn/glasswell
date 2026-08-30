@@ -6,6 +6,7 @@ from pathlib import Path
 import psycopg
 import pytest
 
+from glasswell.db import migrate
 from glasswell.lineage.clock import utc_today
 from glasswell.seed import (
     C115B_RULES,
@@ -196,3 +197,58 @@ def test_migration_replays_without_changing_publication_evidence(db):
         after = cursor.fetchone()[0]
 
     assert after == before
+
+
+# The literals the repository's release guard scans for. Duplicated here on purpose: the guard
+# lives in scripts/release.py and matches the *quoted SQL* forms, so a rename on either side has
+# to fail somewhere. This is that somewhere for the migrations this track adds.
+PLACEHOLDER_TAG_LITERAL = "'" + "UNRELEASED" + "'"
+PLACEHOLDER_COMMIT_LITERAL = "'" + "0" * 40 + "'"
+TRACK_PUBLICATION_MIGRATIONS = (
+    "056_nm_gate_rule_publications.sql",
+    "058_land_grid_state_scope.sql",
+    "060_nm_wells_gis.sql",
+)
+
+
+def _migration(name: str) -> str:
+    root = Path(migrate.__file__).parent / "migrations"
+    return (root / name).read_text(encoding="utf-8")
+
+
+def test_this_tracks_publication_rows_carry_the_placeholder_the_guard_scans_for():
+    """`lineage.conformance_rule_publications` is append-only, so evidence that reaches a
+    production migrate is permanent. A hardcoded release tag is a claim about a train that has
+    not run, and T1 shipped a release guard that refuses while the placeholder stands — this
+    holds the migrations to the exact literals that guard matches."""
+    for name in TRACK_PUBLICATION_MIGRATIONS:
+        body = _migration(name)
+        assert "conformance_rule_publications" in body, name
+        assert PLACEHOLDER_TAG_LITERAL in body, name
+        assert PLACEHOLDER_COMMIT_LITERAL in body, name
+
+
+def test_no_other_migration_this_track_adds_writes_publication_evidence():
+    """If a later phase adds one and forgets the placeholder, the guard never sees it."""
+    root = Path(migrate.__file__).parent / "migrations"
+    writers = sorted(
+        path.name
+        for path in root.glob("*.sql")
+        if int(path.name[:3]) >= 55 and "conformance_rule_publications" in path.read_text("utf-8")
+    )
+
+    assert writers == list(TRACK_PUBLICATION_MIGRATIONS)
+
+
+def test_the_placeholder_commit_still_satisfies_the_columns_own_check(db):
+    """Forty zeros is a placeholder to a reader and a well-formed digest to the CHECK, which is
+    why it can be stored at all rather than refused on the way in."""
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select count(*) from lineage.conformance_rule_publications"
+            " where evidence_tag = %s and evidence_commit = %s",
+            ("UNRELEASED", "0" * 40),
+        )
+        placeholders = cursor.fetchone()[0]
+
+    assert placeholders > 0, "the placeholder rows must actually land, not be silently dropped"

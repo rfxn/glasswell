@@ -10,10 +10,17 @@
 -- rather than a code change. cr_land_agg_membership_2 is that row; the membership it carries is
 -- identical.
 --
--- Migration 049 makes publication evidence a precondition for the insert. v0.68 is the first
--- tag to contain the id; the commit is the `main` head the branch was written against.
+-- Migration 049 makes repository publication evidence a precondition for every conformance
+-- rule insert, so the rows this phase seeds register theirs first.
+-- Publication evidence is a placeholder until the merge train repoints it. The tag and the
+-- commit below are the repository's agreed placeholder literals and `make release-check`
+-- refuses while they stand. `published_vintage` is NOT placeholdered — it has no placeholder
+-- form — but migration 049's column comment defines knowledge time as the first-tag date, so
+-- it is coupled to the release too: **repoint checklist — confirm this date is the day the
+-- train actually ships.** lineage.conformance_rule_publications is append-only, so a date
+-- that slips past midnight is permanently wrong.
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-values ('cr_land_agg_membership_2', date '2026-08-30', 'v0.68',
-        'c8cffbc344e1ea36e454e43f3c0a4d7696aa1c0a')
+values ('cr_land_agg_membership_2', date '2026-08-30', 'UNRELEASED',
+        '0000000000000000000000000000000000000000')
 on conflict (rule_id) do nothing;

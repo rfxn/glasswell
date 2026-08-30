@@ -195,3 +195,11 @@
 - [Change] `scripts/ops/nm_reregister_manifests.py` gains `--expect-database`, turning an
          operator rule into a refusal; `test_martin_publishes` suffixes its container name, so
          two worktrees sharing a Docker daemon stop manufacturing false reds
+- [Change] the three migrations that write `lineage.conformance_rule_publications` carry the
+         repository's placeholder evidence rather than a hardcoded release tag, so the release
+         guard refuses until the merge train repoints them; the table is append-only, and a tag
+         that ships from another track would be a permanently false claim about publication
+- [Change] `producing.py`'s `lease_reported_states` alias is removed rather than kept: the
+         function now returns both reasons a state has no well-level series, and a name that
+         describes one of them is the same defect as a rule that describes a transformation the
+         code does not perform
