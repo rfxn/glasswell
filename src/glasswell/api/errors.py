@@ -178,12 +178,16 @@ class ProblemError(Exception):
         detail: str | None = None,
         errors: Sequence[Mapping[str, Any]] = (),
         extra: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(detail or code)
         self.code = code
         self.detail = detail
         self.errors = list(errors)
         self.extra = dict(extra or {})
+        # Response headers a refusal has to carry in the protocol rather than the body --
+        # Retry-After is the only one so far, and RFC 9457 has no body field for it.
+        self.headers = dict(headers or {})
 
 
 def problem_response(
@@ -193,6 +197,7 @@ def problem_response(
     detail: str | None = None,
     errors: Sequence[Mapping[str, Any]] = (),
     extra: Mapping[str, Any] | None = None,
+    headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
     spec = ERROR_REGISTRY[code]
     body: dict[str, Any] = {
@@ -207,7 +212,12 @@ def problem_response(
     if errors:
         body["errors"] = [dict(error) for error in errors]
     body |= dict(extra or {})
-    return JSONResponse(body, status_code=spec.status, media_type=PROBLEM_MEDIA_TYPE)
+    return JSONResponse(
+        body,
+        status_code=spec.status,
+        media_type=PROBLEM_MEDIA_TYPE,
+        headers=dict(headers or {}),
+    )
 
 
 def removed_query_parameters(**replacements: str) -> Callable[[Request], None]:
@@ -284,7 +294,12 @@ def install_handlers(app: FastAPI) -> None:
     @app.exception_handler(ProblemError)
     async def _problem(request: Request, error: ProblemError) -> JSONResponse:
         return problem_response(
-            request, error.code, detail=error.detail, errors=error.errors, extra=error.extra
+            request,
+            error.code,
+            detail=error.detail,
+            errors=error.errors,
+            extra=error.extra,
+            headers=error.headers,
         )
 
     @app.exception_handler(RequestValidationError)

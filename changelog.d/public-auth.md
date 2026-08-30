@@ -31,3 +31,13 @@
 - [New] owner-only account administration at /v1/users: create, list, change role, soft
       disable and reset a password, each an audit event; the last enabled owner cannot
       be disabled or demoted, guarded by a row lock rather than a handler-side count
+- [New] the four ruled rate-limit buckets applied on the /v1 router set: 120/min
+      interactive, 60 service, 600 tiles and 30 per resolved address for anonymous, with
+      one uniform 429 and a Retry-After rounded to 30s so the bucket that fired is not
+      named; global concurrency stays unmet and is recorded as such
+- [New] HSTS over https only, at a year with includeSubDomains and no preload
+- [Change] credential redaction widened to password, token, session and csrf query
+           parameters and to any gws_ session token anywhere in a log record; the
+           tunnel listener gains its own Caddy log block, since a site inherits none
+- [New] retention sweeps expired sessions after their absolute cap plus seven days and
+      login attempts after ninety, keyed on the cap so a live session is unreachable

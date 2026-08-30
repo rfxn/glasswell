@@ -30,6 +30,29 @@ http://127.0.0.1:8080 {
 	# route the edge straight at martin, bypassing the published-layer allowlist and the
 	# session gate together. Tiles are served by the API at /v1/tiles/... instead.
 	reverse_proxy unix//run/glasswell/api.sock
+
+	# Its own log block. A Caddy site does not inherit another site's logging, so without
+	# this every request from the internet would be logged by the default logger with no
+	# filter at all -- the one listener where a leaked credential matters most.
+	log {
+		output file /var/log/caddy/tunnel.log {
+			roll_size 16MiB
+			roll_keep 5
+		}
+		format filter {
+			wrap console
+			fields {
+				request>headers>X-Glasswell-Key delete
+				request>headers>Cookie delete
+				request>headers>X-Glasswell-CSRF delete
+				request>uri query {
+					delete key
+					delete password
+					delete token
+				}
+			}
+		}
+	}
 }
 
 glasswell.lab.rpx.sh {
@@ -107,10 +130,13 @@ glasswell.lab.rpx.sh {
 				# The owner key rides this header. The API is built so it reaches no log.
 				request>headers>X-Glasswell-Key delete
 				request>headers>Cookie delete
+				request>headers>X-Glasswell-CSRF delete
 				# The API refuses ?key= with a 422, but an edge logs the URI verbatim —
 				# which is how a key reached a log here once before and had to be rotated.
 				request>uri query {
 					delete key
+					delete password
+					delete token
 				}
 			}
 		}

@@ -9,20 +9,30 @@ import logging
 import re
 
 ACCESS_LOGGER = "uvicorn.access"
-REDACTED = "key=REDACTED"
+REDACTED = "REDACTED"
 
-_KEY_QUERY_RE = re.compile(r"(?i)\bkey=[^&\s\"']+")
+# Every credential-shaped query parameter, not just `key`. The API refuses three of these
+# outright; this is the second line, for anything that reaches the log first.
+_CREDENTIAL_QUERY_RE = re.compile(r"(?i)\b(key|password|token|session|csrf)=[^&\s\"']+")
+# A session token anywhere in a record, not only in a query string -- a stray repr() of a
+# cookie header would otherwise put a live credential in journald.
+_SESSION_TOKEN_RE = re.compile(r"gws_[A-Za-z0-9_-]{20,}")
+
+
+def redact(text: str) -> str:
+    text = _CREDENTIAL_QUERY_RE.sub(lambda match: f"{match.group(1)}={REDACTED}", text)
+    return _SESSION_TOKEN_RE.sub(f"gws_{REDACTED}", text)
 
 
 class RedactKeyQuery(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         if isinstance(record.args, tuple):
             record.args = tuple(
-                _KEY_QUERY_RE.sub(REDACTED, argument) if isinstance(argument, str) else argument
+                redact(argument) if isinstance(argument, str) else argument
                 for argument in record.args
             )
         if isinstance(record.msg, str):
-            record.msg = _KEY_QUERY_RE.sub(REDACTED, record.msg)
+            record.msg = redact(record.msg)
         return True
 
 

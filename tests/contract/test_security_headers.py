@@ -136,3 +136,37 @@ def test_report_only_mode_swaps_the_header_and_never_emits_both(
 
     assert response.headers[CSP_REPORT_ONLY_HEADER]
     assert CSP_HEADER not in response.headers
+
+
+def test_hsts_is_emitted_over_https_only(client: TestClient) -> None:
+    """The LAN listener answers plain http on 8000 and 308s to https; HSTS there is
+    meaningless, and forcing it onto that path is what keeping it out of
+    STATIC_SECURITY_HEADERS avoids."""
+    from glasswell.api.security import HSTS_HEADER
+
+    over_http = client.get("/v1/health")
+    over_https = client.get("/v1/health", headers={"X-Forwarded-Proto": "https"})
+
+    assert HSTS_HEADER not in over_http.headers
+    assert HSTS_HEADER in over_https.headers or over_https.url.scheme != "https"
+
+
+def test_hsts_carries_a_year_and_subdomains_and_never_preload() -> None:
+    from glasswell.api.security import HSTS_POLICY, hsts_for
+
+    policy = hsts_for(https=True)
+
+    assert policy == HSTS_POLICY
+    assert "max-age=31536000" in policy
+    assert "includeSubDomains" in policy
+    # preload is effectively irreversible and commits every host under the zone.
+    assert "preload" not in policy
+    assert hsts_for(https=False) is None
+
+
+def test_hsts_is_not_a_member_of_the_static_header_mapping() -> None:
+    """tests/unit/test_caddy_basemap_headers.py parametrises over that mapping, so a member
+    here would be demanded on the plain-http basemap path too."""
+    from glasswell.api.security import HSTS_HEADER, STATIC_SECURITY_HEADERS
+
+    assert HSTS_HEADER not in STATIC_SECURITY_HEADERS
