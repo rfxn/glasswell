@@ -579,6 +579,8 @@ _PROMOTED_LOOKUPS = {
     "nd_segment_promoted_map": ("nd_segment_map", "segment"),
     "nd_survey_segment_promoted_map": ("nd_survey_segment_map", "well_sub"),
     "nm_stream_promoted_map": ("nm_stream_map", "stream_raw"),
+    "mt_stream_promoted_map": ("mt_stream_map", "stream_raw"),
+    "mt_status_promoted_map": ("mt_status_map", "status"),
 }
 
 

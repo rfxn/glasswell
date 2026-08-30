@@ -12,6 +12,7 @@ from glasswell.seed.conformance_c115b import (
 )
 from glasswell.seed.conformance_fracfocus import FRACFOCUS_RULES, seed_conformance_fracfocus
 from glasswell.seed.conformance_land import LAND_RULES, seed_conformance_land
+from glasswell.seed.conformance_mt import MT_RULES, seed_conformance_mt
 from glasswell.seed.conformance_nd import ND_RULES, seed_conformance_nd
 from glasswell.seed.conformance_nm import NM_RULES, seed_conformance_nm
 from glasswell.seed.conformance_nm_wells import (
@@ -45,6 +46,7 @@ __all__ = [
     "FRACFOCUS_RULES",
     "GLOSSARY_SEED_PATH",
     "LAND_RULES",
+    "MT_RULES",
     "ND_RULES",
     "NM_RULES",
     "NM_STREAM_ROWS",
@@ -60,6 +62,7 @@ __all__ = [
     "seed_conformance_c115b",
     "seed_conformance_fracfocus",
     "seed_conformance_land",
+    "seed_conformance_mt",
     "seed_conformance_nd",
     "seed_conformance_nm",
     "seed_conformance_nm_wells",
@@ -113,6 +116,7 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
         # that prefix. Seeded after it, the first run's number would differ from the second's.
         "conformance_rules_nm_wells": seed_conformance_nm_wells(connection),
         "conformance_rules_nm": seed_conformance_nm(connection),
+        "conformance_rules_mt": seed_conformance_mt(connection),
         "nm_stream_map": seed_nm_streams(connection),
         "nm_waste_type_map": seed_nm_waste_types(connection),
         "glossary_terms": seed_glossary(connection),

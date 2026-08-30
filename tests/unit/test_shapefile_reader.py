@@ -47,6 +47,47 @@ def write_zip(destination: Path, *, shapes: int, prj: str | None, null_shape: bo
     return destination
 
 
+def write_encoded_zip(destination: Path, *, name: str, encoding: str, layers: int = 1) -> Path:
+    """An archive whose DBF holds `name` in `encoding`, optionally twinned as `layer_p`."""
+    stems = ["layer"] + [f"layer_p{index}" for index in range(1, layers)]
+    with zipfile.ZipFile(destination, "w") as bundle:
+        for stem in stems:
+            buffers = {extension: io.BytesIO() for extension in ("shp", "shx", "dbf")}
+            writer = shapefile.Writer(**buffers, encoding=encoding)
+            writer.field("well_nm", "C", 40)
+            writer.record(name if stem == "layer" else f"{name}-twin")
+            writer.point(-104.5, 47.9)
+            writer.close()
+            for extension, buffer in buffers.items():
+                bundle.writestr(f"{stem}.{extension}", buffer.getvalue())
+            bundle.writestr(f"{stem}.prj", ND_PRJ)
+    return destination
+
+
+def test_a_windows_1252_dbf_reads_when_the_archive_declares_its_encoding(tmp_path: Path):
+    """MBOGC ships cp1252; pyshp's utf-8 default raises partway through iteration."""
+    archive = write_encoded_zip(tmp_path / "cp1252.zip", name="Blasé 15-10", encoding="cp1252")
+    with ZippedShapefile(archive, encoding="cp1252") as layer:
+        records = list(layer)
+    assert [record.attributes["well_nm"] for record in records] == ["Blasé 15-10"]
+
+
+def test_an_undeclared_encoding_keeps_the_strict_utf8_default(tmp_path: Path):
+    """The default is unchanged, so ND/TX/NM read exactly as before this parameter existed."""
+    archive = write_encoded_zip(tmp_path / "undeclared.zip", name="Blasé 15-10", encoding="cp1252")
+    with pytest.raises(shapefile.ShapefileException), ZippedShapefile(archive) as layer:
+        list(layer)
+
+
+def test_a_layer_suffix_selects_one_of_two_twinned_layers(tmp_path: Path):
+    """Both MT archives ship a geographic layer and a StatePlane twin under one zip."""
+    archive = write_encoded_zip(tmp_path / "twinned.zip", name="Well", encoding="cp1252", layers=2)
+    with ZippedShapefile(archive, layer_suffix="layer", encoding="cp1252") as layer:
+        assert [record.attributes["well_nm"] for record in layer] == ["Well"]
+    with ZippedShapefile(archive, layer_suffix="layer_p1", encoding="cp1252") as twin:
+        assert [record.attributes["well_nm"] for record in twin] == ["Well-twin"]
+
+
 def test_the_wells_fixture_reads_three_hundred_records_with_its_fields_in_order():
     with ZippedShapefile(WELLS) as layer:
         assert layer.fields == WELL_FIELDS
