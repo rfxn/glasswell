@@ -57,3 +57,14 @@
 - [Fix] the static owner key gets its own 600/min ceiling rather than the 60/min service
       bucket: deploy.sh runs verify.sh and smoke.sh back to back, 64 requests, so the
       deploy gate would otherwise throttle itself
+- [Fix] the Caddy tunnel listener binds 127.0.0.1 instead of matching on a caller-supplied
+      Host header, so it is not open on every interface and can actually match the
+      connector; the adapted configuration is now asserted with caddy adapt
+- [Fix] HSTS and upgrade-insecure-requests now reach the public path: the tunnel hop is
+      plaintext loopback, so X-Forwarded-Proto is forced to https inside the proxy
+- [Fix] /docs and /openapi.json are registered before the SPA mount, which shadowed them
+      into a 404 in any deployment that serves a frontend
+- [Change] /v1/keys* and the agent scope are marked deprecated with a stated removal
+           target of the next major version
+- [Fix] the two open session routes are bounded per resolved address, and a login already
+      refused by the limiter is padded rather than run through a 64MiB Argon2id verify

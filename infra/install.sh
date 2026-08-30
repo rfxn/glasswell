@@ -91,11 +91,18 @@ fi
 
 # Generated in place and never echoed, like the owner key. Idempotent: an existing key is
 # kept, because rotating it would invalidate every outstanding CSRF token.
+# Substitute when the line exists, append when it does not. An app.env seeded before this
+# release carries no GLASSWELL_CSRF_KEY line at all, and a bare `sed -i s|^...|` would match
+# nothing and leave the guard below to abort the install.
 if ! grep -q '^GLASSWELL_CSRF_KEY=.\{32,\}' "$ETC_DIR/app.env"; then
     (
         umask 077
-        command sed -i "s|^GLASSWELL_CSRF_KEY=.*|GLASSWELL_CSRF_KEY=$(openssl rand -hex 32)|" \
-            "$ETC_DIR/app.env"
+        if grep -q '^GLASSWELL_CSRF_KEY=' "$ETC_DIR/app.env"; then
+            command sed -i "s|^GLASSWELL_CSRF_KEY=.*|GLASSWELL_CSRF_KEY=$(openssl rand -hex 32)|" \
+                "$ETC_DIR/app.env"
+        else
+            printf 'GLASSWELL_CSRF_KEY=%s\n' "$(openssl rand -hex 32)" >> "$ETC_DIR/app.env"
+        fi
     )
     printf 'generated a fresh GLASSWELL_CSRF_KEY in %s\n' "$ETC_DIR/app.env"
 fi
@@ -287,5 +294,15 @@ if [[ $with_cloudflared -eq 1 ]]; then
     command chmod 0640 "$CLOUDFLARED_DIR/config.yml"
     command install -o root -g root -m 0644 "$INFRA_DIR/systemd/cloudflared.service" \
         "$UNIT_DIR/cloudflared.service"
-    printf 'placed %s/config.yml and the connector unit\n' "$CLOUDFLARED_DIR"
+
+    # Placing the connector *is* the decision to be public, so the flag that turns on the
+    # public refusals is set here rather than by an operator remembering a sed line. Left
+    # apart, an instance could serve the internet with GLASSWELL_ALLOW_ANON=1 and the
+    # startup abort would never fire.
+    if grep -q '^GLASSWELL_PUBLIC=' "$ETC_DIR/app.env"; then
+        command sed -i 's|^GLASSWELL_PUBLIC=.*|GLASSWELL_PUBLIC=1|' "$ETC_DIR/app.env"
+    else
+        printf 'GLASSWELL_PUBLIC=1\n' >> "$ETC_DIR/app.env"
+    fi
+    printf 'placed %s/config.yml and the connector unit; GLASSWELL_PUBLIC=1\n' "$CLOUDFLARED_DIR"
 fi

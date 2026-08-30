@@ -99,9 +99,9 @@ def reads_request_client(source: str) -> bool:
     """
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Attribute) and node.attr == "client":
-            target = node.value
-            if isinstance(target, ast.Name) and target.id in ("request", "scope"):
-                return True
+            # Any receiver, not a name allow-list: `req.client.host` in future code has the
+            # same defect, and an allow-list is a guard that ages badly.
+            return True
     return False
 
 

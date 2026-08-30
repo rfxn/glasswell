@@ -3218,14 +3218,17 @@
             "type": "string"
           },
           "scope": {
-            "description": "owner, agent or guest. The key carries it, not the class.",
+            "description": "owner, agent or guest. The key carries it, not the class. **`agent` is deprecated** and is scheduled for removal in the next major version (/v2): it is vestigial, no in-repo caller issues at that scope, and it is retained only because removing a published enum value is a breaking change.",
             "enum": [
               "owner",
               "agent",
               "guest"
             ],
             "title": "Scope",
-            "type": "string"
+            "type": "string",
+            "x-deprecated-values": [
+              "agent"
+            ]
           }
         },
         "required": [
@@ -8718,7 +8721,8 @@
     },
     "/v1/keys": {
       "get": {
-        "description": "Every key this deployment has issued, newest first, with its scope, lifecycle timestamps and last use. Neither the cleartext nor its hash appears here \u2014 the list answers *which credentials exist*, not *what they are*.",
+        "deprecated": true,
+        "description": "Every key this deployment has issued, newest first, with its scope, lifecycle timestamps and last use. Neither the cleartext nor its hash appears here \u2014 the list answers *which credentials exist*, not *what they are*. **Deprecated.** Session login replaces the key layer for interactive use; this operation is retained for the non-interactive path and for the deploy gate, and is scheduled for removal in the next major version of this API (/v2). No new integration should be built on it.",
         "operationId": "list_keys",
         "parameters": [
           {
@@ -8840,7 +8844,8 @@
         }
       },
       "post": {
-        "description": "Creates a key at one of three scopes and returns it. Labels are unique across live keys, so a rotation can reuse the label the consumer already knows. The cleartext key is returned by this call and by nothing else, ever: only its sha256 is stored. A key that has been lost is rotated, not recovered.",
+        "deprecated": true,
+        "description": "Creates a key at one of three scopes and returns it. Labels are unique across live keys, so a rotation can reuse the label the consumer already knows. The cleartext key is returned by this call and by nothing else, ever: only its sha256 is stored. A key that has been lost is rotated, not recovered. **Deprecated.** Session login replaces the key layer for interactive use; this operation is retained for the non-interactive path and for the deploy gate, and is scheduled for removal in the next major version of this API (/v2). No new integration should be built on it.",
         "operationId": "issue_key",
         "parameters": [
           {
@@ -9011,7 +9016,8 @@
     },
     "/v1/keys/{key_id}": {
       "delete": {
-        "description": "Takes the key out of service immediately and records `key.revoked`. Revoking an already-revoked key returns the same record and writes no second event, so a retry after a timeout is safe. The example id is the contract fixture's. Key ids are minted by `POST /v1/keys` and exist only on the deployment that issued them, so read one off `GET /v1/keys` rather than replaying this one.",
+        "deprecated": true,
+        "description": "Takes the key out of service immediately and records `key.revoked`. Revoking an already-revoked key returns the same record and writes no second event, so a retry after a timeout is safe. The example id is the contract fixture's. Key ids are minted by `POST /v1/keys` and exist only on the deployment that issued them, so read one off `GET /v1/keys` rather than replaying this one. **Deprecated.** Session login replaces the key layer for interactive use; this operation is retained for the non-interactive path and for the deploy gate, and is scheduled for removal in the next major version of this API (/v2). No new integration should be built on it.",
         "operationId": "revoke_key",
         "parameters": [
           {
@@ -9160,7 +9166,8 @@
     },
     "/v1/keys/{key_id}/rotate": {
       "post": {
-        "description": "Issues a replacement under the same label and scope and revokes the old key in the same call, which is what makes rotation a single step a consumer cannot half-do. The cleartext key is returned by this call and by nothing else, ever: only its sha256 is stored. A key that has been lost is rotated, not recovered. The example id is the contract fixture's. Key ids are minted by `POST /v1/keys` and exist only on the deployment that issued them, so read one off `GET /v1/keys` rather than replaying this one.",
+        "deprecated": true,
+        "description": "Issues a replacement under the same label and scope and revokes the old key in the same call, which is what makes rotation a single step a consumer cannot half-do. The cleartext key is returned by this call and by nothing else, ever: only its sha256 is stored. A key that has been lost is rotated, not recovered. The example id is the contract fixture's. Key ids are minted by `POST /v1/keys` and exist only on the deployment that issued them, so read one off `GET /v1/keys` rather than replaying this one. **Deprecated.** Session login replaces the key layer for interactive use; this operation is retained for the non-interactive path and for the deploy gate, and is scheduled for removal in the next major version of this API (/v2). No new integration should be built on it.",
         "operationId": "rotate_key",
         "parameters": [
           {
@@ -10732,6 +10739,31 @@
               }
             },
             "description": "Request validation failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "rate_limited": {
+                    "summary": "Rate limited",
+                    "value": {
+                      "detail": "The token bucket for this operation is exhausted.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 429,
+                      "title": "Rate limited",
+                      "type": "/v1/errors/rate_limited"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Rate limited"
           },
           "503": {
             "content": {

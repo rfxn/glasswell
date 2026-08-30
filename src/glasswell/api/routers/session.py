@@ -32,6 +32,7 @@ from glasswell.api.deps import (
 from glasswell.api.errors import ProblemError, problem_responses
 from glasswell.api.examples import not_a_figure, request_example
 from glasswell.api.principal import utc_now
+from glasswell.api.rate_limit import consume_login_bucket
 from glasswell.api.responses import EnvelopeModel, enveloped, iso
 from glasswell.lineage.audit import emit
 
@@ -110,8 +111,10 @@ def _refuse() -> ProblemError:
 )
 def get_session_challenge(
     request: Request,
+    connection: Connection,
     caller: Annotated[object | None, Depends(optional_principal)] = None,
 ) -> JSONResponse:
+    consume_login_bucket(connection, request, bucket="challenge")
     now = utc_now()
     nonce = request.cookies.get(CSRF_COOKIE)
     set_nonce = None
@@ -150,7 +153,9 @@ def get_session_challenge(
     response_model=EnvelopeModel[SessionModel],
     status_code=201,
     openapi_extra=request_example(),
-    responses=problem_responses("unauthenticated", "validation_failed", "service_degraded"),
+    responses=problem_responses(
+        "unauthenticated", "validation_failed", "rate_limited", "service_degraded"
+    ),
 )
 def create_session(
     request: Request,
@@ -162,6 +167,9 @@ def create_session(
     started = time.monotonic()
     now = utc_now()
     client_ip = resolve_client_ip(request)
+    # Before the CSRF check and before any hashing: this is the bound on how much
+    # unauthenticated Argon2id work one address can buy (m-5 also -- the refusal is cheap).
+    consume_login_bucket(connection, request, bucket="login")
 
     # Login CSRF: without a bound token an attacker can silently log a victim into their own
     # account. Either binding is accepted, because both are reachable states -- a first login
@@ -183,6 +191,15 @@ def create_session(
         now=now,
     )
     if user is None:
+        emit(
+            connection,
+            "login.failed",
+            subject_type="session",
+            subject_id="none",
+            payload={"client_ip": client_ip},
+            actor="anonymous",
+            occurred_at=now,
+        )
         connection.commit()
         accounts.enforce_login_floor(started)
         raise _refuse()
@@ -220,7 +237,7 @@ def create_session(
         status_code=201,
     )
     response.set_cookie(SESSION_COOKIE, token, **COOKIE_KWARGS)
-    response.delete_cookie(CSRF_COOKIE, path="/")
+    response.delete_cookie(CSRF_COOKIE, **COOKIE_KWARGS)
     accounts.enforce_login_floor(started)
     return response
 
@@ -295,7 +312,7 @@ def end_session(
             "absolute_expires_at": None,
         },
     )
-    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie(SESSION_COOKIE, **COOKIE_KWARGS)
     return response
 
 

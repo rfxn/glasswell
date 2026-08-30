@@ -628,6 +628,8 @@ assert_false "api cannot write the raw zone" "ReadWritePaths carries /data/raw" 
 printf 'session auth\n'
 assert "an anonymous /v1 request is refused" 403 \
     "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/v1/wells?limit=1")"
+# 403, not 404: the document routes are registered before the SPA mount, so they answer the
+# gate rather than being shadowed by it. A 404 here means the mount ordering regressed.
 assert "an anonymous /docs is refused" 403 \
     "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/docs")"
 assert "an anonymous /openapi.json is refused" 403 \
@@ -655,18 +657,30 @@ fi
 
 printf 'tunnel\n'
 public_mode="$(sed -n 's/^GLASSWELL_PUBLIC=//p' /etc/glasswell/app.env)"
-if [[ ${public_mode:-0} == 1 ]]; then
-    assert "cloudflared active" active "$(systemctl is-active cloudflared)"
+
+# Locally observable, so asserted whether or not the instance is public. These are the
+# assertions that prove the exposure is safe, and a gate that can only run *after* the
+# exposure proves nothing about the decision to make it.
+assert_true "the caddy tunnel listener is loopback-only" "8080 is bound off-loopback" \
+    listening_on '127.0.0.1:8080'
+assert_false "the caddy tunnel listener is not on every interface" "8080 is on 0.0.0.0" \
+    listening_on '0.0.0.0:8080'
+assert_true "martin is loopback-only" "martin has a non-local listener" \
+    listening_on '127.0.0.1:3000'
+assert_false "the tracked ingress names no tile server" "127.0.0.1:3000 is published" \
+    grep -q '3000' "$INFRA_DIR/cloudflared/config.yml"
+if [[ -f $CLOUDFLARED_DIR/config.yml ]]; then
     assert_true "cloudflared config equals the tree" "drifted at $CLOUDFLARED_DIR/config.yml" \
         command diff -q \
             <(command sed "s|<tunnel-uuid>|$(command cat "$CLOUDFLARED_DIR/tunnel-id")|g" \
                 "$INFRA_DIR/cloudflared/config.yml") \
             "$CLOUDFLARED_DIR/config.yml"
-    assert_false "the ingress names no tile server" "127.0.0.1:3000 is published" \
+    assert_false "the installed ingress names no tile server" "127.0.0.1:3000 is published" \
         grep -q '3000' "$CLOUDFLARED_DIR/config.yml"
-    # martin must still be loopback-only with the connector running, not merely before it.
-    assert_true "martin is still loopback-only behind the tunnel" "martin has a non-local listener" \
-        listening_on '127.0.0.1:3000'
+fi
+
+if [[ ${public_mode:-0} == 1 ]]; then
+    assert "cloudflared active" active "$(systemctl is-active cloudflared)"
     assert "the non-/v1 tile path is 404 through the edge" 404 \
         "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
             "https://$PUBLIC_HOST/tiles/nd_wells/8/54/89.pbf")"

@@ -15,6 +15,7 @@ import secrets
 import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
+from time import sleep
 from typing import Literal, Protocol
 
 import psycopg
@@ -351,6 +352,10 @@ KNOWN_GOOD_WINDOW = timedelta(days=30)
 # Padding every login to this floor keeps a database lookup's cost from separating the
 # failure classes that §7.7 requires be indistinguishable.
 LOGIN_FLOOR_SECONDS = 0.250
+# What a limiter-refused attempt costs instead of an Argon2id verify. Enough to sit under the
+# login floor so the response time is unchanged, and not memory-hard, so a flood cannot buy
+# 64 MiB of work per request.
+LOCKED_PAD_SECONDS = 0.005
 
 def enforce_login_floor(
     started: float,
@@ -539,7 +544,11 @@ def authenticate(
     address = client_ip or UNKNOWN_IP
 
     if ip_state(connection, address, now=now) != "open":
-        verify_password(DUMMY_HASH, password)
+        # No Argon2 verify here. Timing uniformity only has to hold between failure classes a
+        # caller can reach *with* a credential attempt; a refused-by-limiter request already
+        # tells the caller it was refused by the limiter. Running a 64 MiB verify would let an
+        # unauthenticated flood buy ~60 ms of memory-hard work per request after being locked.
+        sleep(LOCKED_PAD_SECONDS)
         record_attempt(
             connection,
             username=name,
@@ -551,7 +560,9 @@ def authenticate(
         return None
 
     if account_state(connection, name, address, now=now) != "open":
-        verify_password(DUMMY_HASH, password)
+        # Padded, not verified, for the same reason -- and the pad keeps a locked account
+        # indistinguishable from a wrong password, which is the property that matters.
+        sleep(LOCKED_PAD_SECONDS)
         record_attempt(
             connection,
             username=name,

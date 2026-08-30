@@ -75,6 +75,11 @@ BUCKETS: dict[str, int] = {
     # this ceiling is not reachable from the internet -- and it is a ceiling, not an
     # exemption: the floor's "never unlimited" still holds.
     "deploy": 600,
+    # The two open session routes. They run before a principal exists, so the address is the
+    # only key available -- and without them an unauthenticated caller can buy a 64 MiB
+    # Argon2id verify and a threadpool slot per request on POST /v1/session.
+    "login": 20,
+    "challenge": 60,
 }
 # Rounded up to this, so the remaining-time value cannot be used to tell which bucket fired.
 RETRY_AFTER_GRANULARITY = 30
@@ -83,12 +88,15 @@ WINDOW_SECONDS = 60
 
 def bucket_for(principal: Principal, path: str) -> tuple[str, str]:
     """(bucket name, counter key). The anonymous key is the resolved address, never nothing."""
+    # Anonymous is tested before the tile prefix: an anonymous caller has no principal to key
+    # on, so a tile request from one would otherwise share a single bucket named for the
+    # class rather than for the address it came from.
+    if principal.kind == "anonymous":
+        return "anonymous", principal.id
     if path.startswith(TILE_PREFIX):
         return "tiles", principal.id
     if principal.kind == "user":
         return "interactive", principal.id
-    if principal.kind == "anonymous":
-        return "anonymous", principal.id
     if principal.kind == "owner":
         return "deploy", principal.id
     return "service", principal.id
@@ -128,3 +136,22 @@ def _uniform_refusal() -> ProblemError:
         detail="too many requests; retry after the interval in Retry-After",
         headers={"Retry-After": str(retry)},
     )
+
+
+def consume_login_bucket(
+    connection: psycopg.Connection, request: Request, *, bucket: str
+) -> None:
+    """Bound an open session route on the resolved address.
+
+    `enforce_rate_limit` cannot cover these: it depends on `require_principal`, and both
+    routes must answer before a principal exists. An unresolvable address shares one bucket
+    with every other unresolvable caller rather than escaping the limit.
+    """
+    key = f"ip:{resolve_client_ip(request)}"
+    principal = Principal(id=key, kind="anonymous", scope="guest")
+    try:
+        consume_rate_limit(connection, principal, operation=bucket, limit=BUCKETS[bucket])
+    except ProblemError as refused:
+        if refused.code != "rate_limited":
+            raise
+        raise _uniform_refusal() from refused
