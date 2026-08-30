@@ -28,7 +28,8 @@ alter table lineage.quarantine_rows add constraint quarantine_rows_reason_code_c
         'confidential_withheld', 'duplicate_row', 'out_of_range_date',
         'unreliable_numeric', 'stream_not_promoted', 'unknown_status',
         'segment_not_promoted', 'key_incomplete', 'out_of_scope', 'multi_completion',
-        'insufficient_stations', 'invalid_geometry'));
+        'insufficient_stations', 'coordinate_absent', 'coordinate_sentinel',
+        'invalid_geometry'));
 
 create table staging.eia_basins (
     manifest_id        text not null references lineage.manifests (manifest_id),
