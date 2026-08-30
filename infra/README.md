@@ -32,11 +32,15 @@ restricted `authorized_keys` `from=` clause and every probe in this repo use `.1
 | `martin.service` | `martin` | **Pre-existing, not owned by this directory** — configured through a drop-in. Runs with `auto_publish` on until runbook step 9, so its catalogue is every relation with a geometry column, `staging` and `canonical` included, on `127.0.0.1:3000`. Adopting `martin/config.yaml` cuts it to the ten published layers; the `martin` role created by migration 026, which holds select on the ten `marts.tile_*` views granted across 026–035 and nothing else, is what makes the rest unreachable either way |
 | `postgresql@16-main` | `postgres` | Distro unit. `listen_addresses = 'localhost'`, socket peer auth |
 
-`backup/glasswell-backup.sh` and `backup/glasswell-restore-drill.sh` are placed in
-`/usr/local/sbin` by `install.sh`. Only the backup script's off-box rsync needs
+`backup/glasswell-backup.sh`, `backup/glasswell-restore-drill.sh`,
+`backup/glasswell-recovery-drill.sh` and `backup/glasswell-durable-write.py` are placed in
+`/usr/local/sbin` by `install.sh`. The recovery drill has no unit — it is an operator-run
+procedure for a replacement host — and the durable writer is the helper the receipts are
+published through. Only the backup script's off-box rsync needs
 `/root/.ssh/id_glasswell_backup` and a matching `authorized_keys` entry on forge; the restore
 drill reads the local logical backup. `install.sh` does not create that key. The forge-side
-vzdump job is provisioning-owned and is not in this directory.
+vzdump job is provisioning-owned and is not in this directory. See "Durability proofs" below
+for what each receipt does and does not prove.
 
 ### Status snapshot
 
@@ -53,6 +57,110 @@ The snapshot is sanitized product data: it must not contain credentials, DSNs, c
 filesystem roots, or internal service URLs. `verify.sh` parses it without printing its values,
 checks those private environment values are absent, and then proves the keyed `/v1/status`
 route serves it. A collector or timer failure invokes `glasswell-alert@.service`.
+
+## Durability proofs, and what each one does not prove
+
+Three receipts, all `root:glasswell 0640` in a root-owned state directory, all published
+through `backup/glasswell-durable-write.py` (or, for the restore drill, its own copy of the
+same atomic-replace pattern). `verify.sh` asserts each one on the host; `status/collector.py`
+serves the same evidence as a job on `/v1/status`. Both sides read the same file, and
+`tests/unit/test_durability_verifier.py` pins their paths and staleness bounds together so
+they cannot drift.
+
+| Receipt | Written by | Proves | Does **not** prove |
+|---|---|---|---|
+| `/var/lib/glasswell-restore-drill/result.json` | `glasswell-restore-drill.service`, weekly | The newest local dump restores into a scratch database at its manifest's schema head, with four critical counts and six representative reads matching | Anything about the off-box copy, the globals, the raw zone, or a replacement host |
+| `/var/lib/glasswell-backup/offsite.json` | `glasswell-backup.service`, nightly | That the push ran, when, with what exit status, and how many files and bytes rsync reported sending | **That the bytes arrived.** See the write-only limit below |
+| `/var/lib/glasswell-recovery-drill/result.json` | `glasswell-recovery-drill.sh`, operator-run | Nothing yet — **this has never been executed** | Everything. There is no recovery proof |
+
+### The restore drill selects by mtime, so the head comparison is not optional
+
+Nothing in the drill, its unit or any config pins a schema version: it takes whichever manifest
+in `/data/backups/pg` has the greatest mtime. A drill that passes brilliantly against a dump
+several migrations behind the running app is therefore indistinguishable from a healthy one, on
+its own evidence. `verify.sh` closes that by comparing the receipt's `restored_schema_version`
+to `max(version)` from `public.schema_migrations` on the live database, and by bounding the
+receipt's age — a receipt that silently stopped being republished is the other half of the same
+failure.
+
+### The offsite copy is sending-side evidence only
+
+The forge-side grant is:
+
+```
+command="/usr/bin/rrsync -wo /hdd-pool/backups/glasswell",no-pty,...,from="192.168.2.111"
+```
+
+**`-wo` is write-only.** VM 111 can push and cannot list, stat, checksum or read back anything
+on the far side. There is no round-trip proof available from this host, and none is claimed:
+the receipt carries `"verification": "send_side_only"`, the served Status detail says the same,
+and the `remote_backup_copy` disclosure states the limit rather than hiding it. What is asserted
+is what the sender can actually observe — that rsync exited 0, when it did so, for which
+generation, and that the volume it reported sending covers the night's dump.
+
+The receipt cannot exist until a backup has run with the receipt-publishing script installed, so
+`verify.sh` holds its offsite assertions until `glasswell-backup.service`'s last run postdates
+the installed `glasswell-backup.sh`. Before that it prints "no offsite receipt expected yet";
+after it, the receipt is mandatory and a deleted or abandoned one fails. Without that gate the
+very deploy that ships the writer would fail for want of a receipt it had not yet had a night to
+write.
+
+Turning this into a real round-trip proof is **owner-held** and needs one of: the forge
+`authorized_keys` command relaxed from `-wo` to read/write, a second restricted read-only
+command added alongside it, or a verifier that runs *on forge* and publishes its own receipt.
+All three are changes to a host this repository does not provision.
+
+### Replacement-host recovery: mechanised, never executed
+
+`backup/glasswell-recovery-drill.sh` pulls a generation from the off-box copy, restores the
+cluster globals, then the logical dump, then the raw zone, asserts the schema head against the
+manifest plus the four critical counts and the representative reads, and publishes a receipt.
+It refuses to run against the production database name, and refuses to start without an
+explicit `RECOVERY_SOURCE`.
+
+**This procedure has never been run end to end.** It is unit-tested against stubs
+(`tests/unit/test_recovery_drill.py`), which is a statement about its command sequence and its
+refusals, not about recovery. Do not describe it as proven, verified or tested end-to-end. The
+served `recovery_drill` job reports `pending` with "has never been executed" for exactly this
+reason, and `verify.sh` prints the same rather than failing — hard-failing on a proof nobody can
+produce yet would red the verifier permanently.
+
+Executing it once needs three things this repository cannot supply: a second Proxmox guest,
+forge RAM and pool headroom, and a **read-capable** path to the off-box copy, which the
+`rrsync -wo` grant above does not provide. Until then the honest position is "the procedure is
+written, mechanised and tested; the one execution is pending".
+
+```bash
+# On the replacement host, once the three preconditions exist:
+RECOVERY_SOURCE=root@192.168.2.205:/hdd-pool/backups/glasswell \
+RECOVERY_SSH_KEY=/root/.ssh/id_glasswell_recovery \
+    /usr/local/sbin/glasswell-recovery-drill.sh
+```
+
+### Undeclared units are a failure, in both directions (DR-H5)
+
+`verify.sh` walks `infra/systemd/` and asserts each unit is installed and byte-identical. That
+direction cannot see a unit that exists **only** on the host, which is how
+`glasswell-repromote.{service,timer}` sat on VM 111 undeclared. The reverse assertion — every
+`/etc/systemd/system/glasswell-*` unit is declared in the tree — is now part of `verify.sh`.
+
+`glasswell-repromote` is a **spent one-off** from the 2026-08-21 Wave-1 S-E re-promotion, not a
+recurring job: a single fixed `OnCalendar=2026-08-21 00:30:00 UTC`, a hardcoded
+`repromote-2026-08-21.log` output path, and it already ran to success (exit 0, 00:30:00→00:32:14
+that day). The code it invokes, `glasswell.ingest.repromote`, *is* in the repository and tested;
+only this dated invocation wrapper is host state, and its job is done. It is deliberately **not**
+brought into `infra/systemd/` — `install.sh` would then place a spent one-off on every host
+forever. Remove it instead:
+
+```bash
+systemctl disable --now glasswell-repromote.timer
+command rm -f /etc/systemd/system/glasswell-repromote.timer \
+              /etc/systemd/system/glasswell-repromote.service \
+              /var/lib/systemd/timers/stamp-glasswell-repromote.timer
+systemctl daemon-reload
+```
+
+Until that is run, the reverse assertion above reports it — which is the assertion working.
 
 ## The TLS front door (DIR-13)
 

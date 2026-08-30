@@ -12,10 +12,13 @@ from pathlib import Path
 
 import pytest
 
+from glasswell.status.models import OffsiteCopyReceipt
+
 pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[2]
 BACKUP = ROOT / "infra" / "backup" / "glasswell-backup.sh"
+DURABLE_WRITE = ROOT / "infra" / "backup" / "glasswell-durable-write.py"
 
 RUNNABLE_STUBS = {
     "install": '#!/bin/bash\nfor last; do :; done\nmkdir -p "$last"\n',
@@ -50,7 +53,17 @@ done
 ''',
     "chown": '#!/bin/bash\nprintf "chown %s\\n" "$*" >> "$STUB_LOG"\n',
     "chmod": '#!/bin/bash\nprintf "chmod %s\\n" "$*" >> "$STUB_LOG"\n',
-    "rsync": '#!/bin/bash\nprintf "rsync %s\\n" "$*" >> "$STUB_LOG"\n',
+    # rsync 3.x --stats wording, commas included: the receipt parser has to survive them.
+    "rsync": r'''#!/bin/bash
+printf 'rsync %s\n' "$*" >> "$STUB_LOG"
+[ -n "${RSYNC_FAIL:-}" ] && exit 23
+cat <<'STATS'
+Number of files: 20 (reg: 18, dir: 2)
+Number of regular files transferred: 3
+Total file size: 7,466,790,895 bytes
+Total transferred file size: 1,493,358,179 bytes
+STATS
+''',
     "mv": r'''#!/bin/bash
 printf 'mv %s\n' "$*" >> "$STUB_LOG"
 exec /bin/mv "$@"
@@ -64,6 +77,10 @@ def write_stubs(binaries: Path, stubs: dict[str, str]) -> None:
         path = binaries / name
         path.write_text(body, encoding="utf-8")
         path.chmod(0o755)
+
+
+def offsite_receipt_path(tmp_path: Path) -> Path:
+    return tmp_path / "offsite-state" / "offsite.json"
 
 
 def run_backup(
@@ -81,6 +98,12 @@ def run_backup(
             "RAW_DIR": str(tmp_path / "missing-raw"),
             "STUB_LOG": str(command_log),
             "RETAIN_DAYS": "14",
+            # The receipt goes to a temporary path owned by whoever runs the suite, so no test
+            # touches /var/lib or needs the glasswell group to exist.
+            "OFFSITE_RECEIPT_PATH": str(offsite_receipt_path(tmp_path)),
+            "OFFSITE_RECEIPT_UID": str(os.getuid()),
+            "OFFSITE_RECEIPT_GID": str(os.getgid()),
+            "DURABLE_WRITE": str(DURABLE_WRITE),
             **extra,
         },
     )
@@ -358,3 +381,87 @@ def test_a_backup_with_nothing_to_prune_is_not_failed_by_retention(tmp_path: Pat
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert "OK: backup complete" in completed.stdout
     assert "FAIL: retention" not in completed.stdout
+
+
+def test_backup_publishes_a_send_side_offsite_receipt(tmp_path: Path) -> None:
+    """Recency evidence for the off-box copy, recorded by the sender because it is all there is."""
+    binaries = tmp_path / "bin"
+    command_log = tmp_path / "commands.log"
+    write_stubs(binaries, RUNNABLE_STUBS)
+    dump_dir = tmp_path / "backups" / "pg"
+
+    completed = run_backup(binaries, dump_dir, tmp_path, command_log)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+    receipt = json.loads(offsite_receipt_path(tmp_path).read_text(encoding="utf-8"))
+    dump = next(dump_dir.glob("glasswell-*.dump"))
+    generation = dump.name.removeprefix("glasswell-").removesuffix(".dump")
+
+    assert receipt["result"] == "passed"
+    assert receipt["failure_detail"] is None
+    assert receipt["generation"] == generation
+    assert receipt["dump"] == {
+        "name": dump.name,
+        "sha256": hashlib.sha256(b"archive").hexdigest(),
+        "bytes": 7,
+    }
+    # The claim the receipt is allowed to make, and the only one this host can make.
+    assert receipt["verification"] == "send_side_only"
+    assert receipt["dump_bytes_covered"] is True
+
+    streams = {item["id"]: item for item in receipt["streams"]}
+    assert streams["pgdump"]["state"] == "transferred"
+    assert streams["pgdump"]["files_transferred"] == 3
+    assert streams["pgdump"]["bytes_transferred"] == 1_493_358_179
+    assert streams["pgdump"]["bytes_on_sender"] == 7_466_790_895
+    # RAW_DIR does not exist in this fixture, so the raw stream is absent rather than failed.
+    assert streams["raw"]["state"] == "absent"
+
+    assert "rsync -aH --delete --stats" in command_log.read_text(encoding="utf-8")
+
+
+def test_offsite_receipt_is_the_shape_the_status_collector_accepts(tmp_path: Path) -> None:
+    binaries = tmp_path / "bin"
+    write_stubs(binaries, RUNNABLE_STUBS)
+    run_backup(binaries, tmp_path / "backups" / "pg", tmp_path, tmp_path / "commands.log")
+
+    receipt = OffsiteCopyReceipt.model_validate_json(
+        offsite_receipt_path(tmp_path).read_text(encoding="utf-8")
+    )
+    assert receipt.result == "passed"
+    assert receipt.verification == "send_side_only"
+
+
+def test_a_failed_push_is_recorded_in_the_receipt_and_still_fails_the_unit(
+    tmp_path: Path,
+) -> None:
+    """The receipt must survive the failure it is there to describe."""
+    binaries = tmp_path / "bin"
+    write_stubs(binaries, RUNNABLE_STUBS)
+    dump_dir = tmp_path / "backups" / "pg"
+
+    completed = run_backup(
+        binaries, dump_dir, tmp_path, tmp_path / "commands.log", RSYNC_FAIL="1"
+    )
+
+    assert completed.returncode != 0
+    receipt = json.loads(offsite_receipt_path(tmp_path).read_text(encoding="utf-8"))
+    assert receipt["result"] == "failed"
+    assert receipt["failure_detail"] == "pgdump_push_failed"
+    streams = {item["id"]: item for item in receipt["streams"]}
+    assert streams["pgdump"]["state"] == "failed"
+    assert streams["pgdump"]["exit_status"] == 23
+    # A failed pgdump push skips the raw stream, exactly as the script did before the receipt.
+    assert streams["raw"]["state"] == "not_attempted"
+
+
+def test_the_offsite_receipt_is_private_and_atomically_replaced(tmp_path: Path) -> None:
+    binaries = tmp_path / "bin"
+    write_stubs(binaries, RUNNABLE_STUBS)
+    dump_dir = tmp_path / "backups" / "pg"
+    run_backup(binaries, dump_dir, tmp_path, tmp_path / "commands.log")
+
+    receipt = offsite_receipt_path(tmp_path)
+    assert receipt.stat().st_mode & 0o777 == 0o640
+    assert receipt.stat().st_nlink == 1
+    assert not list(receipt.parent.glob(".offsite.json.*"))
