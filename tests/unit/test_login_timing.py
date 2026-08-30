@@ -65,17 +65,36 @@ def test_the_unknown_user_path_costs_a_real_verify() -> None:
     assert dummy > genuine / 2
 
 
-def test_every_failure_path_in_authenticate_runs_a_verify() -> None:
-    """Structural, so it holds without measuring: each early return that skips the real
-    password comparison must run the dummy one first."""
-    source = inspect.getsource(accounts.authenticate)
-    before_returns = source.split("return None")
+def test_every_credential_failure_path_costs_a_verify_and_every_refusal_does_not() -> None:
+    """Structural, so it holds without measuring.
 
-    # The final chunk is the success path; every earlier chunk is a failure exit.
-    for index, chunk in enumerate(before_returns[:-1]):
-        assert "verify_password(DUMMY_HASH" in chunk or "verify_user_password" in chunk, (
-            f"failure path {index} in authenticate() returns without any password verify"
-        )
+    The uniformity that matters is between the classes a caller reaches *with* a credential
+    attempt -- unknown user, wrong password, disabled account. Each of those must cost a real
+    Argon2id verify, or the cheap one is a username oracle.
+
+    The limiter-refused paths are deliberately the other way. A caller already refused by the
+    limiter has been told so, and running a 64 MiB memory-hard verify for them would let an
+    unauthenticated flood buy that work per request. They pad instead.
+    """
+    source = inspect.getsource(accounts.authenticate)
+    exits = source.split("return None")[:-1]  # the last chunk is the success path
+
+    for index, chunk in enumerate(exits):
+        limited = 'outcome="rate_limited"' in chunk or 'outcome="locked"' in chunk
+        verifies = "verify_password(DUMMY_HASH" in chunk or "verify_user_password" in chunk
+        pads = "sleep(LOCKED_PAD_SECONDS)" in chunk
+
+        if limited:
+            assert pads, f"limiter-refused path {index} does not pad"
+            assert not verifies, (
+                f"limiter-refused path {index} runs a memory-hard verify; an unauthenticated"
+                " flood would buy 64 MiB of work per refused request"
+            )
+        else:
+            assert verifies, (
+                f"credential path {index} returns without a password verify, so its timing"
+                " separates it from the others"
+            )
 
 
 def test_the_login_floor_pads_a_fast_handler() -> None:

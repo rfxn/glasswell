@@ -39,17 +39,18 @@ def test_api_role_cannot_delete_or_truncate_rate_evidence(db: psycopg.Connection
     db.rollback()
 
 
-def test_the_bucket_table_carries_the_four_ruled_limits() -> None:
-    """Policy as data: the test reads the table rather than restating the numbers."""
+def test_the_bucket_table_carries_the_ruled_limits_and_the_stated_additions() -> None:
+    """Policy as data. The four ruled buckets are exact; the three additions are named here
+    so adding a fourth cannot pass unnoticed, each with the reason it exists."""
     from glasswell.api.rate_limit import BUCKETS
 
-    assert BUCKETS == {
-        "interactive": 120,
-        "service": 60,
-        "tiles": 600,
-        "anonymous": 30,
-        "deploy": 600,
-    }
+    ruled = {"interactive": 120, "service": 60, "tiles": 600, "anonymous": 30}
+    assert {name: BUCKETS[name] for name in ruled} == ruled
+
+    # deploy: verify.sh + smoke.sh are 64 requests back to back and would self-throttle.
+    # login/challenge: the two open session routes run before a principal exists, so the
+    # resolved address is the only key available.
+    assert set(BUCKETS) - set(ruled) == {"deploy", "login", "challenge"}
 
 
 @pytest.mark.parametrize(
@@ -61,7 +62,10 @@ def test_the_bucket_table_carries_the_four_ruled_limits() -> None:
         ("service", "guest", "/v1/wells", "service"),
         ("anonymous", "guest", "/v1/wells", "anonymous"),
         ("user", "owner", "/v1/tiles/nd_wells/8/54/89.pbf", "tiles"),
-        ("anonymous", "guest", "/v1/tiles/nd_wells/8/54/89.pbf", "tiles"),
+        # An anonymous caller has no principal to key on, so even on a tile path the
+        # address is the bucket -- otherwise every anonymous tile request in the world
+        # shares one counter named for the class.
+        ("anonymous", "guest", "/v1/tiles/nd_wells/8/54/89.pbf", "anonymous"),
     ],
 )
 def test_each_principal_class_falls_in_its_ruled_bucket(kind, scope, path, expected) -> None:
