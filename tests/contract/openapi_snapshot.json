@@ -6686,26 +6686,6 @@
       "get": {
         "description": "Version, the vintages published per source, the complete error registry and a link to every resource family. This is the one URL a stranger needs to start from.",
         "operationId": "get_service_index",
-        "parameters": [
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -6716,16 +6696,6 @@
               }
             },
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           },
           "503": {
             "content": {
@@ -6977,24 +6947,6 @@
               "deprecated": true,
               "description": "Deprecated alias for valid_at.",
               "title": "Effective At"
-            }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
             }
           }
         ],
@@ -7261,24 +7213,6 @@
               "description": "Deprecated alias for valid_at.",
               "title": "Effective At"
             }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
-            }
           }
         ],
         "responses": {
@@ -7462,24 +7396,6 @@
               ],
               "description": "Filter to ok or failed runs.",
               "title": "Status"
-            }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
             }
           }
         ],
@@ -7695,24 +7611,6 @@
               "title": "Explain Depth",
               "type": "integer"
             }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
-            }
           }
         ],
         "responses": {
@@ -7849,24 +7747,6 @@
               "title": "Code",
               "type": "string"
             }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
-            }
           }
         ],
         "responses": {
@@ -7978,24 +7858,6 @@
               ],
               "title": "Format",
               "type": "string"
-            }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
             }
           }
         ],
@@ -8226,24 +8088,6 @@
               ],
               "description": "Match a canonical formation or reported alias.",
               "title": "Q"
-            }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
             }
           }
         ],
@@ -8481,24 +8325,6 @@
               "description": "Filter to one domain tag.",
               "title": "Domain Tag"
             }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
-            }
           }
         ],
         "responses": {
@@ -8649,26 +8475,6 @@
       "get": {
         "description": "The compact artifact the UI highlighter consumes: pre-lowercased surface forms expanded from terms and aliases, each with its word count, plus the stopword list. Terms flagged non-highlightable are served as stopwords so a glossary containing ordinary words does not underline every third word on the page. Declared before /glossary/{term} so `index` is not matched as a term.",
         "operationId": "get_glossary_index",
-        "parameters": [
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -8679,16 +8485,6 @@
               }
             },
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           },
           "503": {
             "content": {
@@ -8745,24 +8541,6 @@
               "description": "Term id (gt_*) or the surface form.",
               "title": "Term",
               "type": "string"
-            }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
             }
           }
         ],
@@ -8859,26 +8637,6 @@
       "get": {
         "description": "Per-source durable poll outcomes, artifact and declared vintages, expected cadence, store state, and an overall `ok`/`degraded`. A current unchanged poll keeps an older artifact current; a failed or interrupted poll cannot be hidden by that artifact. Sources with no completed evidence are explicit pending or stale states rather than inferred successes.",
         "operationId": "get_health",
-        "parameters": [
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -8889,16 +8647,6 @@
               }
             },
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           },
           "503": {
             "content": {
@@ -8985,24 +8733,6 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
-            }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
             }
           }
         ],
@@ -9757,24 +9487,6 @@
               "title": "Head Only",
               "type": "boolean"
             }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
-            }
           }
         ],
         "responses": {
@@ -9962,24 +9674,6 @@
               "title": "Manifest Id",
               "type": "string"
             }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
-            }
           }
         ],
         "responses": {
@@ -10085,24 +9779,6 @@
               "description": "Content-addressed manifest id.",
               "title": "Manifest Id",
               "type": "string"
-            }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
             }
           }
         ],
@@ -10351,24 +10027,6 @@
               "description": "Filter to one pipeline stage.",
               "title": "Stage"
             }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
-            }
           }
         ],
         "responses": {
@@ -10597,24 +10255,6 @@
               "description": "Filter to one lifecycle state.",
               "title": "State"
             }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
-            }
           }
         ],
         "responses": {
@@ -10710,24 +10350,6 @@
               "description": "Quarantined row id.",
               "title": "Quarantine Id",
               "type": "string"
-            }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
             }
           }
         ],
@@ -11370,26 +10992,6 @@
       "get": {
         "description": "A live API/PostgreSQL signal joined to a sanitized scheduled snapshot of the tile service, HTTPS edge, storage, jobs and exact dataset inventory. Stale snapshots never preserve a green infrastructure state. Source freshness combines independently committed poll attempts with artifact age and source-specific cadence; unchanged checks can preserve freshness, while failed or interrupted checks cannot. This is current operational telemetry, not a historical `as_of` surface.",
         "operationId": "get_status",
-        "parameters": [
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -11400,16 +11002,6 @@
               }
             },
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           },
           "503": {
             "content": {
@@ -11504,24 +11096,6 @@
               "minimum": 0,
               "title": "Y",
               "type": "integer"
-            }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
             }
           }
         ],
@@ -11647,24 +11221,6 @@
               "default": 100,
               "title": "Limit",
               "type": "integer"
-            }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
             }
           }
         ],
@@ -12463,24 +12019,6 @@
               "title": "Explain Depth",
               "type": "integer"
             }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
-            }
           }
         ],
         "responses": {
@@ -12654,24 +12192,6 @@
               "minimum": 1,
               "title": "Explain Depth",
               "type": "integer"
-            }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
             }
           }
         ],
@@ -12992,24 +12512,6 @@
               "description": "Case-insensitive substring of well name.",
               "title": "Q"
             }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
-            }
           }
         ],
         "responses": {
@@ -13254,24 +12756,6 @@
               "title": "Explain Depth",
               "type": "integer"
             }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
-            }
           }
         ],
         "responses": {
@@ -13457,24 +12941,6 @@
               "title": "Explain Depth",
               "type": "integer"
             }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
-            }
           }
         ],
         "responses": {
@@ -13651,24 +13117,6 @@
               "minimum": 1,
               "title": "Explain Depth",
               "type": "integer"
-            }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
             }
           }
         ],
@@ -13979,24 +13427,6 @@
               "minimum": 1,
               "title": "Explain Depth",
               "type": "integer"
-            }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
             }
           }
         ],
@@ -14317,24 +13747,6 @@
               "title": "Explain Depth",
               "type": "integer"
             }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
-            }
           }
         ],
         "responses": {
@@ -14615,24 +14027,6 @@
               "minimum": 1,
               "title": "Explain Depth",
               "type": "integer"
-            }
-          },
-          {
-            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-            "in": "header",
-            "name": "X-Glasswell-CSRF",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
-              "title": "X-Glasswell-Csrf"
             }
           }
         ],

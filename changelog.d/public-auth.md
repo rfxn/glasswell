@@ -41,3 +41,8 @@
            tunnel listener gains its own Caddy log block, since a site inherits none
 - [New] retention sweeps expired sessions after their absolute cap plus seven days and
       login attempts after ninety, keyed on the cap so a live session is unreachable
+- [New] infra: the cloudflared ingress publishes one hostname to the Caddy tunnel listener
+      and answers 404 for everything else, so the tile server is not reachable through
+      the edge; install.sh gains --with-cloudflared and generates GLASSWELL_CSRF_KEY
+- [Fix] verify.sh asserted only tree-to-host unit equality, so a unit installed on the
+      host and declared in no repo file was invisible; the reverse assertion closes it

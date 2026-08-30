@@ -265,7 +265,10 @@ def read_session(request: Request, principal: Principal) -> JSONResponse:
     dependencies=[Depends(require_principal), Depends(require_csrf)],
 )
 def end_session(
-    request: Request, connection: Connection, principal: Principal
+    request: Request,
+    connection: Connection,
+    principal: Principal,
+    csrf_token: CSRF_PARAMETER = None,
 ) -> JSONResponse:
     now = utc_now()
     if principal.kind != "user" or not principal.session_id:
@@ -316,6 +319,7 @@ def change_own_password(
     connection: Connection,
     principal: Principal,
     body: PasswordChangeRequest,
+    csrf_token: CSRF_PARAMETER = None,
 ) -> JSONResponse:
     now = utc_now()
     if principal.kind != "user" or not principal.user_id:

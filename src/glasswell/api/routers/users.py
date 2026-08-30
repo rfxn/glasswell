@@ -14,7 +14,13 @@ from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 
 from glasswell.api import accounts
-from glasswell.api.deps import Connection, Principal, require_scope, rows
+from glasswell.api.deps import (
+    CSRF_PARAMETER,
+    Connection,
+    Principal,
+    require_scope,
+    rows,
+)
 from glasswell.api.errors import ProblemError, problem_responses
 from glasswell.api.examples import request_example
 from glasswell.api.pagination import DEFAULT_LIMIT
@@ -173,6 +179,7 @@ def create_user(
     connection: Connection,
     principal: Principal,
     body: CreateUserRequest,
+    csrf_token: CSRF_PARAMETER = None,
 ) -> JSONResponse:
     now = utc_now()
     username = accounts.normalise_username(body.username)
@@ -227,6 +234,7 @@ def update_user(
     principal: Principal,
     user_id: Annotated[str, Path(description="Id of the account to change.")],
     body: UpdateUserRequest,
+    csrf_token: CSRF_PARAMETER = None,
 ) -> JSONResponse:
     now = utc_now()
     existing = _existing(connection, user_id)
@@ -271,6 +279,7 @@ def disable_user(
     connection: Connection,
     principal: Principal,
     user_id: Annotated[str, Path(description="Id of the account to disable.")],
+    csrf_token: CSRF_PARAMETER = None,
 ) -> JSONResponse:
     now = utc_now()
     existing = _existing(connection, user_id)
@@ -319,6 +328,7 @@ def set_user_password(
     principal: Principal,
     user_id: Annotated[str, Path(description="Id of the account to reset.")],
     body: SetPasswordRequest,
+    csrf_token: CSRF_PARAMETER = None,
 ) -> JSONResponse:
     now = utc_now()
     _existing(connection, user_id)

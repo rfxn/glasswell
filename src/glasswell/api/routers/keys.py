@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 
 from glasswell.api.deps import (
+    CSRF_PARAMETER,
     Connection,
     PostEffect,
     Principal,
@@ -229,6 +230,7 @@ def issue_key(
     principal: Principal,
     body: IssueRequest,
     flags: PostEffect,
+    csrf_token: CSRF_PARAMETER = None,
 ) -> JSONResponse:
     now = utc_now()
     if flags.dry_run:
@@ -320,6 +322,7 @@ def revoke_key(
     connection: Connection,
     principal: Principal,
     key_id: Annotated[str, Path(description="Id of the key to revoke.")],
+    csrf_token: CSRF_PARAMETER = None,
 ) -> JSONResponse:
     now = utc_now()
     existing = _existing(connection, key_id)
@@ -350,6 +353,7 @@ def rotate_key(
     principal: Principal,
     key_id: Annotated[str, Path(description="Id of the key being replaced.")],
     flags: PostEffect,
+    csrf_token: CSRF_PARAMETER = None,
 ) -> JSONResponse:
     now = utc_now()
     existing = _existing(connection, key_id)

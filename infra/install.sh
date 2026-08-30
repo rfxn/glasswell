@@ -24,10 +24,14 @@ CADDY_ENV="$CADDY_CONF_DIR/cloudflare.env"
 CADDY_USER=caddy
 RUN_USER=glasswell
 TMPFILES_DIR=/etc/tmpfiles.d
+CLOUDFLARED_DIR=/etc/cloudflared
+CLOUDFLARED_BIN=/usr/local/bin/cloudflared
+TUNNEL_ID_FILE=/etc/cloudflared/tunnel-id
 
 with_postgres=0
 with_martin_config=0
 with_caddy=0
+with_cloudflared=0
 enable_ingest=0
 enable_c115b=0
 enable_backup=0
@@ -36,11 +40,12 @@ for argument in "$@"; do
         --with-postgres) with_postgres=1 ;;
         --with-martin-config) with_martin_config=1 ;;
         --with-caddy) with_caddy=1 ;;
+        --with-cloudflared) with_cloudflared=1 ;;
         --enable-ingest) enable_ingest=1 ;;
         --enable-c115b) enable_c115b=1 ;;
         --enable-backup) enable_backup=1 ;;
         -h|--help)
-            printf 'usage: %s [--with-postgres] [--with-martin-config] [--with-caddy] [--enable-ingest] [--enable-c115b] [--enable-backup]\n' "${0##*/}"
+            printf 'usage: %s [--with-postgres] [--with-martin-config] [--with-caddy] [--with-cloudflared] [--enable-ingest] [--enable-c115b] [--enable-backup]\n' "${0##*/}"
             exit 0
             ;;
         *)
@@ -84,6 +89,22 @@ if ! grep -q '^GLASSWELL_OWNER_KEY=.\{16,\}' "$ETC_DIR/app.env"; then
     exit 1
 fi
 
+# Generated in place and never echoed, like the owner key. Idempotent: an existing key is
+# kept, because rotating it would invalidate every outstanding CSRF token.
+if ! grep -q '^GLASSWELL_CSRF_KEY=.\{32,\}' "$ETC_DIR/app.env"; then
+    (
+        umask 077
+        command sed -i "s|^GLASSWELL_CSRF_KEY=.*|GLASSWELL_CSRF_KEY=$(openssl rand -hex 32)|" \
+            "$ETC_DIR/app.env"
+    )
+    printf 'generated a fresh GLASSWELL_CSRF_KEY in %s\n' "$ETC_DIR/app.env"
+fi
+
+if ! grep -q '^GLASSWELL_CSRF_KEY=.\{32,\}' "$ETC_DIR/app.env"; then
+    printf 'app.env carries no usable GLASSWELL_CSRF_KEY — CSRF could not be enforced\n' >&2
+    exit 1
+fi
+
 # tmpfiles.d/glasswell.conf names this group, and systemd-tmpfiles fails the whole line on an
 # unknown one — which would leave glasswell-api with nowhere to put its socket. Created here
 # rather than under --with-caddy: the API has no TCP listener, so an install without Caddy has
@@ -102,7 +123,8 @@ for unit in glasswell-api.service glasswell-ingest.service glasswell-ingest.time
             glasswell-status.service glasswell-status.timer \
             glasswell-lineage-retention.service glasswell-lineage-retention.timer \
             glasswell-alert@.service glasswell-backup.service glasswell-backup.timer \
-            glasswell-restore-drill.service glasswell-restore-drill.timer; do
+            glasswell-restore-drill.service glasswell-restore-drill.timer \
+            glasswell-cf-ranges.service glasswell-cf-ranges.timer; do
     install -o root -g root -m 0644 "$INFRA_DIR/systemd/$unit" "$UNIT_DIR/$unit"
 done
 
@@ -110,6 +132,11 @@ done
 for script in glasswell-backup.sh glasswell-restore-drill.sh; do
     install -o root -g root -m 0755 "$INFRA_DIR/backup/$script" "$SBIN_DIR/$script"
 done
+
+command install -o root -g root -m 0755 "$INFRA_DIR/cloudflare/refresh-ranges.sh" \
+    "$SBIN_DIR/refresh-ranges.sh"
+command install -o root -g "$RUN_USER" -m 0644 "$INFRA_DIR/cloudflare/ip-ranges.txt" \
+    "$ETC_DIR/cloudflare-ips.txt"
 
 if [[ $with_postgres -eq 1 ]]; then
     if [[ -d $PG_CONF_DIR ]]; then
@@ -219,3 +246,43 @@ else
 fi
 
 printf 'install complete. start with: systemctl start glasswell-api\n'
+
+# The connector is placed only when asked for, and only when the owner has already created
+# the tunnel and left its id and credentials on the host. Nothing here mints a credential:
+# a tunnel secret in an installer is a tunnel secret in every log the installer writes to.
+if [[ $with_cloudflared -eq 1 ]]; then
+    [[ -x $CLOUDFLARED_BIN ]] || {
+        printf '%s is missing — install the connector first (infra/README.md)\n' \
+            "$CLOUDFLARED_BIN" >&2
+        exit 1
+    }
+    [[ -f $TUNNEL_ID_FILE ]] || {
+        printf '%s is missing — create the tunnel and write its id there first\n' \
+            "$TUNNEL_ID_FILE" >&2
+        exit 1
+    }
+    tunnel_id="$(command tr -d '[:space:]' < "$TUNNEL_ID_FILE")"
+    [[ -n $tunnel_id ]] || {
+        printf '%s is empty\n' "$TUNNEL_ID_FILE" >&2
+        exit 1
+    }
+    [[ -f $CLOUDFLARED_DIR/$tunnel_id.json ]] || {
+        printf '%s/%s.json is missing — it is the tunnel credential and is never in the repository\n' \
+            "$CLOUDFLARED_DIR" "$tunnel_id" >&2
+        exit 1
+    }
+    getent group cloudflared >/dev/null || groupadd --system cloudflared
+    getent passwd cloudflared >/dev/null || \
+        useradd --system --gid cloudflared --home-dir "$CLOUDFLARED_DIR" \
+            --shell /usr/sbin/nologin cloudflared
+    command chown root:cloudflared "$CLOUDFLARED_DIR/$tunnel_id.json"
+    command chmod 0640 "$CLOUDFLARED_DIR/$tunnel_id.json"
+
+    command sed "s|<tunnel-uuid>|$tunnel_id|g" "$INFRA_DIR/cloudflared/config.yml" \
+        > "$CLOUDFLARED_DIR/config.yml"
+    command chown root:cloudflared "$CLOUDFLARED_DIR/config.yml"
+    command chmod 0640 "$CLOUDFLARED_DIR/config.yml"
+    command install -o root -g root -m 0644 "$INFRA_DIR/systemd/cloudflared.service" \
+        "$UNIT_DIR/cloudflared.service"
+    printf 'placed %s/config.yml and the connector unit\n' "$CLOUDFLARED_DIR"
+fi

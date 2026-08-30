@@ -78,6 +78,13 @@ if [[ -z $owner_key ]]; then
 fi
 
 status() { curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "$@"; }
+# A cookie jar per run, so a session probe cannot leak into the operator's browser or a
+# later invocation. The jar lives in $work_dir, which the exit trap removes.
+sessioned() { curl -sS --max-time 60 -b "$work_dir/cookies" -c "$work_dir/cookies" "$@"; }
+sessioned_status() {
+    curl -sS -o /dev/null -w '%{http_code}' --max-time 30 \
+        -b "$work_dir/cookies" -c "$work_dir/cookies" "$@"
+}
 keyed() { curl -sS --max-time 60 -H "X-Glasswell-Key: $owner_key" "$@"; }
 keyed_status() { status -H "X-Glasswell-Key: $owner_key" "$@"; }
 
@@ -229,6 +236,33 @@ if missing:
     print("missing:", ", ".join(missing), file=sys.stderr)
 sys.exit(1 if missing else 0)
 ' "$SNAPSHOT" "$base/openapi.json"
+
+printf 'session auth\n'
+assert "GET /docs without a credential is refused" 403 "$(status "$base/docs")"
+assert "GET /openapi.json without a credential is refused" 403 "$(status "$base/openapi.json")"
+assert "GET /v1/session/challenge is open" 200 "$(sessioned_status "$base/v1/session/challenge")"
+assert "a state-changing call with no csrf token is refused" 403 \
+    "$(sessioned_status -X DELETE "$base/v1/session")"
+# The password is read from a file or the environment, never from argv: argv is visible in
+# /proc to every local user and lands in the operator's shell history.
+if [[ -n ${GLASSWELL_SMOKE_USER:-} && -n ${GLASSWELL_SMOKE_PASSWORD:-} ]]; then
+    csrf_token="$(sessioned "$base/v1/session/challenge" \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["csrf_token"])')"
+    login_body="$(python3 -c 'import json,os; print(json.dumps({"username": os.environ["GLASSWELL_SMOKE_USER"], "password": os.environ["GLASSWELL_SMOKE_PASSWORD"]}))')"
+    assert "login with the smoke account succeeds" 201 \
+        "$(sessioned_status -X POST -H 'Content-Type: application/json' \
+            -H "X-Glasswell-CSRF: $csrf_token" --data "$login_body" "$base/v1/session")"
+    assert "the session reads its own role" 200 "$(sessioned_status "$base/v1/session")"
+    assert "the session reaches a data route" 200 \
+        "$(sessioned_status "$base/v1/wells?limit=1")"
+    csrf_token="$(sessioned "$base/v1/session/challenge" \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["csrf_token"])')"
+    assert "logout succeeds" 200 \
+        "$(sessioned_status -X DELETE -H "X-Glasswell-CSRF: $csrf_token" "$base/v1/session")"
+    assert "the cookie is dead after logout" 403 "$(sessioned_status "$base/v1/wells?limit=1")"
+else
+    printf '  skip session login — set GLASSWELL_SMOKE_USER and GLASSWELL_SMOKE_PASSWORD\n'
+fi
 
 printf '\n%d passed, %d failed\n' "$passed" "$failed"
 [[ $failed -eq 0 ]]
