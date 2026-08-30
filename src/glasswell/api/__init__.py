@@ -10,17 +10,28 @@ import os
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html
 from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES
-from starlette.responses import Response
+from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.staticfiles import StaticFiles
 
 from glasswell.api.access_log import install_access_log_redaction
-from glasswell.api.deps import BASEMAP_ROOT_ENV, WEB_ROOT_ENV, require_key
+from glasswell.api.csrf import CSRF_KEY_ENV
+from glasswell.api.deps import (
+    ALLOW_ANON_ENV,
+    BASEMAP_ROOT_ENV,
+    PUBLIC_ENV,
+    WEB_ROOT_ENV,
+    require_csrf,
+    require_principal,
+)
 from glasswell.api.errors import install_handlers, problem_response
 from glasswell.api.examples import KEY_HEADER
+from glasswell.api.principal import Principal as ResolvedPrincipal
 from glasswell.api.routers import (
     completions,
     conformance,
@@ -33,6 +44,7 @@ from glasswell.api.routers import (
     neighbors,
     production,
     quarantine,
+    session,
     status,
     tiles,
     wells,
@@ -97,12 +109,17 @@ dataset inventory without treating those counts as forecast inventory or petrole
 
 
 def create_app() -> FastAPI:
+    _refuse_an_unsafe_public_configuration()
     app = FastAPI(
         title=API_TITLE,
         version=API_VERSION,
         description=DESCRIPTION,
         openapi_version="3.1.0",
-        docs_url="/docs",
+        # Registered by hand below so both can carry require_principal. Finding F-2: they
+        # were anonymous, and the matrix coverage test could not see it because it walks
+        # `document["paths"]` and neither path is an OpenAPI paths fact.
+        docs_url=None,
+        openapi_url=None,
         redoc_url=None,
     )
     install_handlers(app)
@@ -174,6 +191,9 @@ def create_app() -> FastAPI:
         return response
 
     app.include_router(health.liveness)
+    # Included without the router-set dependency: two of its five operations must answer
+    # before a principal exists, and the other three carry their own gates.
+    app.include_router(session.router, prefix="/v1")
     for router in (
         index.router,
         health.router,
@@ -190,7 +210,11 @@ def create_app() -> FastAPI:
         glossary.router,
         keys.router,
     ):
-        app.include_router(router, prefix="/v1", dependencies=[Depends(require_key)])
+        app.include_router(
+            router,
+            prefix="/v1",
+            dependencies=[Depends(require_principal), Depends(require_csrf)],
+        )
 
     basemap_root = os.environ.get(BASEMAP_ROOT_ENV)
     if basemap_root and Path(basemap_root).is_dir():
@@ -205,7 +229,34 @@ def create_app() -> FastAPI:
         app.mount("/", StaticFiles(directory=web_root, html=True), name="web")
 
     _stamp_the_freeze(app)
+    _serve_the_document(app)
     return app
+
+
+DOCS_PATH = "/docs"
+OPENAPI_PATH = "/openapi.json"
+
+
+def _serve_the_document(app: FastAPI) -> None:
+    """Serve `/docs` and `/openapi.json` behind the same gate as everything else.
+
+    A tightening of a currently-open surface. `openapi_diff.py` cannot see it, because
+    neither path is an entry in `document["paths"]` -- which is also why the auth matrix's
+    coverage test could not catch that they were anonymous (finding F-2). The matrix now
+    walks `app.routes` instead.
+    """
+
+    @app.get(OPENAPI_PATH, include_in_schema=False)
+    def openapi_document(
+        principal: Annotated[ResolvedPrincipal, Depends(require_principal)],
+    ) -> JSONResponse:
+        return JSONResponse(app.openapi())
+
+    @app.get(DOCS_PATH, include_in_schema=False)
+    def swagger_ui(
+        principal: Annotated[ResolvedPrincipal, Depends(require_principal)],
+    ) -> HTMLResponse:
+        return get_swagger_ui_html(openapi_url=OPENAPI_PATH, title=f"{API_TITLE} — API")
 
 
 def _stamp_the_freeze(app: FastAPI) -> None:
@@ -218,6 +269,21 @@ def _stamp_the_freeze(app: FastAPI) -> None:
         return document
 
     app.openapi = openapi  # type: ignore[method-assign]
+
+
+def _refuse_an_unsafe_public_configuration() -> None:
+    """Two refusals that make a misconfigured public instance loudly broken, never quietly open.
+
+    Restart=on-failure turns each into a unit that will not come up, which is the intended
+    outcome: a public origin serving with authentication disabled is worse than a down one.
+    """
+    if os.environ.get(PUBLIC_ENV) == "1" and os.environ.get(ALLOW_ANON_ENV) == "1":
+        raise RuntimeError(
+            f"{ALLOW_ANON_ENV}=1 with {PUBLIC_ENV}=1: refusing to serve the internet with"
+            " authentication disabled"
+        )
+    if os.environ.get(PUBLIC_ENV) == "1" and not os.environ.get(CSRF_KEY_ENV):
+        raise RuntimeError(f"{CSRF_KEY_ENV} is unset: CSRF cannot be enforced")
 
 
 app = create_app()

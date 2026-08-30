@@ -19,7 +19,14 @@ import pytest
 from fastapi.testclient import TestClient
 from psycopg.types.json import Jsonb
 
-from glasswell.api.deps import get_key_store
+from glasswell.api.accounts import (
+    ConnectionSessionStore,
+    create_session,
+    find_user_by_id,
+    new_user_id,
+)
+from glasswell.api.csrf import CSRF_HEADER
+from glasswell.api.deps import SESSION_COOKIE, get_key_store, get_session_store
 from glasswell.api.examples import (
     EXAMPLE_API10,
     EXAMPLE_DERIVATION_ID,
@@ -27,6 +34,7 @@ from glasswell.api.examples import (
     EXAMPLE_QUARANTINE_ID,
     KEY_HEADER,
 )
+from glasswell.api.password import hash_password
 from glasswell.api.principal import ConnectionKeyStore, fingerprint, mint_secret
 from glasswell.api.routers.keys import EXAMPLE_KEY_ID
 from glasswell.lineage.capture import derive, lineage_session
@@ -665,6 +673,7 @@ def client(api_client: TestClient, seeded: psycopg.Connection) -> Iterator[TestC
         transport=httpx.MockTransport(_tile_transport), base_url="http://martin.invalid"
     )
     api_client.app.dependency_overrides[get_key_store] = lambda: ConnectionKeyStore(seeded)
+    api_client.app.dependency_overrides[get_session_store] = lambda: ConnectionSessionStore(seeded)
     yield api_client
     api_client.app.state.tile_client.close()
 
@@ -691,3 +700,132 @@ def guest_client(client: TestClient) -> TestClient:
 @pytest.fixture
 def agent_client(client: TestClient) -> TestClient:
     return as_principal(client, issue_key(client, label="qa-agent-2026", scope="agent"))
+
+
+# --- session principals -------------------------------------------------------------------
+#
+# A session client speaks https so the __Host- cookie, which requires Secure, is actually
+# stored by the transport. Over http the client would silently drop it and every session test
+# would read as an authentication failure.
+
+SESSION_BASE_URL = "https://testserver"
+VIEWER_PASSWORD = "a-sufficiently-long-viewer-password"
+OWNER_PASSWORD = "a-sufficiently-long-owner-password"
+
+# Argon2id at the shipped parameters costs ~60 ms per call by design, and the login route pads
+# itself to a 250 ms floor so the failure classes cannot be told apart by timing. Both are
+# correct in production and ruinous in a fixture the auth matrix builds several hundred times.
+# These are computed once per session; fixtures that only need *a principal holding a session*
+# seed the row directly, and the tests that exist to prove login works call `login()`.
+_OWNER_HASH = hash_password(OWNER_PASSWORD)
+_VIEWER_HASH = hash_password(VIEWER_PASSWORD)
+
+
+def seed_session(
+    client: TestClient, connection: psycopg.Connection, *, username: str, role: str
+) -> TestClient:
+    """A client holding a live session, without paying for the login route.
+
+    The matrix asks what a principal class may *reach*; that login works is a different
+    question, proved against the real route in test_login_uniformity.py and
+    test_session_cookie.py. Going through login here would add a 250 ms floor and an Argon2id
+    verify to every one of several hundred parametrised cases.
+    """
+    user_id = seed_user(
+        connection,
+        username=username,
+        role=role,
+        password_hash=_OWNER_HASH if role == "owner" else _VIEWER_HASH,
+    )
+    now = datetime.now(UTC)
+    user = find_user_by_id(connection, user_id)
+    assert user is not None
+    _, token = create_session(connection, user=user, now=now, client_ip="198.51.100.4")
+    connection.commit()
+    session = TestClient(client.app, base_url=SESSION_BASE_URL)
+    session.cookies.set(SESSION_COOKIE, token)
+    return session
+
+
+def seed_user(
+    connection: psycopg.Connection,
+    *,
+    username: str,
+    role: str,
+    password: str | None = None,
+    password_hash: str | None = None,
+) -> str:
+    """Insert an account directly, the way `glasswell-owner-bootstrap` does.
+
+    There is deliberately no API path that creates the *first* owner -- `/v1/users` is
+    owner-only, so it cannot bootstrap itself. A fixture that needs an account to log in
+    with therefore seeds it exactly as the console entry point does.
+    """
+    now = datetime.now(UTC)
+    user_id = new_user_id(now)
+    stored = password_hash or hash_password(password or "")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.users (user_id, username, password_hash, role, created_at,"
+            " created_by, password_changed_at) values (%s, %s, %s, %s, %s, %s, %s)",
+            (user_id, username, stored, role, now, "contract-fixture", now),
+        )
+    connection.commit()
+    return user_id
+
+
+def create_user(client: TestClient, *, username: str, password: str, role: str) -> str:
+    """Through the API, for the same reason `issue_key` is: a row inserted behind the
+    endpoint would not prove the endpoint stores what it claims to."""
+    response = client.post(
+        "/v1/users", json={"username": username, "password": password, "role": role}
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["data"]["user_id"]
+
+
+def login(client: TestClient, *, username: str, password: str) -> TestClient:
+    """A fresh cookie-bearing client, logged in through the real challenge/login pair."""
+    session = TestClient(client.app, base_url=SESSION_BASE_URL)
+    token = challenge(session)
+    response = session.post(
+        "/v1/session",
+        json={"username": username, "password": password},
+        headers={CSRF_HEADER: token},
+    )
+    assert response.status_code == 201, response.text
+    return session
+
+
+def challenge(client: TestClient) -> str:
+    response = client.get("/v1/session/challenge")
+    assert response.status_code == 200, response.text
+    return response.json()["data"]["csrf_token"]
+
+
+@pytest.fixture
+def owner_session(client: TestClient, seeded: psycopg.Connection) -> TestClient:
+    return seed_session(client, seeded, username="owner-session", role="owner")
+
+
+@pytest.fixture
+def viewer_session(client: TestClient, seeded: psycopg.Connection) -> TestClient:
+    return seed_session(client, seeded, username="viewer-session", role="viewer")
+
+
+@pytest.fixture
+def expired_session(client: TestClient, seeded: psycopg.Connection) -> TestClient:
+    """A session whose row is revoked server-side: the cookie is held but is dead.
+
+    Scoped to this account. Revoking every live session would silently kill the sibling
+    fixtures, and the matrix would then read as "a session reaches nothing".
+    """
+    session = seed_session(client, seeded, username="expired-session", role="viewer")
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "update lineage.sessions set revoked_at = now(), revoked_reason = 'admin'"
+            " where revoked_at is null and user_id in"
+            "       (select user_id from lineage.users where username = 'expired-session')"
+        )
+    seeded.commit()
+    return session

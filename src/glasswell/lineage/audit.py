@@ -59,6 +59,13 @@ AUDIT_EVENT_TYPES: frozenset[str] = frozenset(
         "key.revoked",
         "access.denied",
         "config.changed",
+        "user.created",
+        "user.updated",
+        "user.disabled",
+        "password.changed",
+        "session.started",
+        "session.ended",
+        "login.failed",
         "repro.attempted",
         "repro.succeeded",
         "repro.failed",
@@ -81,6 +88,8 @@ SUBJECT_TYPES: frozenset[str] = frozenset(
         "wellset",
         "publication",
         "ledger",
+        "user",
+        "session",
     }
 )
 
