@@ -97,7 +97,9 @@ def test_the_serving_migration_registers_publication_evidence_before_any_rule(db
         "cr_tc_unavailable_vocab_1",
     ]
     assert {row[1].isoformat() for row in rows} == {"2026-08-30"}
-    assert {row[2] for row in rows} == {"v0.65"}
+    # A placeholder the integrator repoints at the merge train, not a guessed tag: the table
+    # is append-only, so a wrong first-publication vintage cannot be corrected afterwards.
+    assert {row[2] for row in rows} == {"UNRELEASED"}
 
 
 def test_the_migration_alone_seeds_no_conformance_rule(db) -> None:

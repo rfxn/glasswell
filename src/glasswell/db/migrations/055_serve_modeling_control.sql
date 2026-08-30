@@ -4,9 +4,15 @@
 -- number wearing a handle.
 --
 -- Migration 049 made publication evidence a precondition for every conformance rule, so the
--- five cr_tc_* serving decisions register theirs before the seeder inserts them. v0.65 is the
--- first tag to contain these rule ids; the commit is the `main` head they were written
--- against, because the commit that introduces a rule cannot cite its own hash.
+-- five cr_tc_* serving decisions register theirs before the seeder inserts them.
+--
+-- The evidence below is a PLACEHOLDER and the integrator repoints it at the merge train. A
+-- branch cannot know which tag it will ship in — merge order decides that, and this horizon
+-- has reordered twice — so guessing a number writes a false claim about when glasswell could
+-- know these rules. `lineage.conformance_rule_publications` is append-only and this migration
+-- is sha256-pinned once applied, so the repoint must happen BEFORE the production migrate;
+-- afterwards the only remedy is a restore. `scripts/release.py::placeholder_evidence_blockers`
+-- refuses to cut a release while UNRELEASED is still here, so this cannot ship by omission.
 
 insert into lineage.selector_output_registry
     (operation, output_dataset, selector_profile, rationale)
@@ -23,8 +29,8 @@ values
 
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-select rule_id, date '2026-08-30', 'v0.65',
-       'c8cffbc344e1ea36e454e43f3c0a4d7696aa1c0a'
+select rule_id, date '2026-08-30', 'UNRELEASED',
+       '0000000000000000000000000000000000000000'
   from unnest(array[
        'cr_tc_normalization_1', 'cr_tc_peer_ladder_1', 'cr_tc_publication_scope_1',
        'cr_tc_quantile_convention_1', 'cr_tc_unavailable_vocab_1'

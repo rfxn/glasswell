@@ -416,6 +416,81 @@ def _repo(tmp_path: Path) -> Path:
     return root
 
 
+def _with_migration(root: Path, body: str) -> Path:
+    directory = root / release.MIGRATIONS_DIR
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "055_serve_modeling_control.sql"
+    path.write_text(body, encoding="utf-8")
+    def run(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+
+    run("add", "-A")
+    run("commit", "-qm", "migration")
+    run("push", "-q", "origin", "main")
+    return path
+
+
+REPOINTED = (
+    "insert into lineage.conformance_rule_publications values\n"
+    "select rule_id, date '2026-08-30', 'v0.66',\n"
+    "       'c8cffbc344e1ea36e454e43f3c0a4d7696aa1c0a';\n"
+)
+PLACEHOLDER = REPOINTED.replace("v0.66", release.PLACEHOLDER_EVIDENCE_TAG).replace(
+    "c8cffbc344e1ea36e454e43f3c0a4d7696aa1c0a", release.PLACEHOLDER_EVIDENCE_COMMIT
+)
+
+
+class TestPlaceholderPublicationEvidence:
+    """N-1: a branch cannot know its release tag, so it writes a placeholder — and a placeholder
+    that reaches a production migrate is permanent, because the table is append-only. The
+    release gate is what turns that silent falsehood into a loud refusal."""
+
+    def test_a_migration_still_carrying_the_placeholder_blocks_the_release(self, tmp_path):
+        root = _repo(tmp_path)
+        _with_migration(root, PLACEHOLDER)
+
+        blockers = release.preconditions(root, _pending(root), Version(0, 66))
+
+        assert any(release.PLACEHOLDER_EVIDENCE_TAG in blocker for blocker in blockers)
+        assert any("055_serve_modeling_control.sql" in blocker for blocker in blockers)
+        # The refusal names the tag to repoint to, so the fix needs no second lookup.
+        assert any("v0.66" in blocker for blocker in blockers)
+
+    def test_the_placeholder_commit_alone_also_blocks_the_release(self, tmp_path):
+        """Half a repoint is still a false claim, so either literal is enough to refuse."""
+        root = _repo(tmp_path)
+        _with_migration(root, REPOINTED.replace(
+            "c8cffbc344e1ea36e454e43f3c0a4d7696aa1c0a", release.PLACEHOLDER_EVIDENCE_COMMIT
+        ))
+
+        blockers = release.preconditions(root, _pending(root), Version(0, 66))
+
+        assert any(release.PLACEHOLDER_EVIDENCE_TAG in blocker for blocker in blockers)
+
+    def test_a_repointed_migration_releases(self, tmp_path):
+        root = _repo(tmp_path)
+        _with_migration(root, REPOINTED)
+
+        assert release.preconditions(root, _pending(root), Version(0, 66)) == []
+
+    def test_a_tree_with_no_migrations_directory_is_not_blocked(self, tmp_path):
+        """The guard is a scan, not a requirement: a repo without migrations releases."""
+        root = _repo(tmp_path)
+
+        assert release.preconditions(root, _pending(root), Version(0, 66)) == []
+
+    def test_the_shipped_migration_carries_the_placeholder_this_guard_looks_for(self):
+        """Ties the guard to the real file: a rename of either literal fails here first."""
+        shipped = (
+            Path(release.__file__).resolve().parents[1]
+            / release.MIGRATIONS_DIR
+            / "055_serve_modeling_control.sql"
+        ).read_text(encoding="utf-8")
+
+        assert f"'{release.PLACEHOLDER_EVIDENCE_TAG}'" in shipped
+        assert f"'{release.PLACEHOLDER_EVIDENCE_COMMIT}'" in shipped
+
+
 class TestThePreconditions:
     def test_a_clean_level_main_with_a_fragment_pending_has_no_blockers(self, tmp_path):
         root = _repo(tmp_path)

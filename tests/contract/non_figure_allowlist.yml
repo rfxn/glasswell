@@ -135,8 +135,8 @@
     not figures the control stands behind. Same class as /spec/**.
 - pointer: /artifact_sha256/*
   reason: >-
-    Content address of a published artifact. A digest is an identity string — all-digit
-    for one hash in 10^13 — not a measurement.
+    Content address of a published artifact. A digest is an identity string, not a
+    measurement, and a hex digest with no letter in it reads to the walker as a number.
 - pointer: /rows/*
   reason: >-
     Rows each pinned artifact recorded when it was written. Same class as /output/rows

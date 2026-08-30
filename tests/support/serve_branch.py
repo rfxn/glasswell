@@ -111,6 +111,10 @@ def _seed_pinned_control(connection, *, manifest_id: str) -> None:
     from tests.contract.conftest import CONTROL_SUBJECTS
     from tests.support.typecurve_fixture import register_pinned_control, write_control_artifact
 
+    # rmtree on a path from the environment: refuse anything that is not the leaf this
+    # harness owns, so a mistyped GW_MODEL_ROOT cannot delete a tree somebody wanted.
+    if MODEL_ROOT.exists() and MODEL_ROOT.name != "models":
+        raise SystemExit(f"GW_MODEL_ROOT {MODEL_ROOT} must end in /models; refusing to remove it")
     shutil.rmtree(MODEL_ROOT, ignore_errors=True)
     MODEL_ROOT.mkdir(parents=True, exist_ok=True)
     artifact = write_control_artifact(MODEL_ROOT, subjects=CONTROL_SUBJECTS)

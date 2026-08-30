@@ -37,6 +37,18 @@ def test_the_list_filters_by_basin(client: TestClient) -> None:
     )
 
 
+def test_an_empty_basin_is_an_unset_filter_not_a_basin_nothing_matches(
+    client: TestClient,
+) -> None:
+    """m-2's regression. `?basin=` binds to "", which is falsy but not None, and the resolver
+    guarded on truthiness while every other filter guards on `is not None`."""
+    plain = client.get("/v1/modeling/publications").json()["data"]
+    empty = client.get("/v1/modeling/publications", params={"basin": ""}).json()["data"]
+
+    assert empty == plain
+    assert [row["publication_id"] for row in empty] == [EXAMPLE_PUBLICATION_ID]
+
+
 def test_the_detail_states_every_pinned_identity(client: TestClient) -> None:
     data = client.get(DETAIL).json()["data"]
     assert data["publication_id"] == EXAMPLE_PUBLICATION_ID

@@ -495,6 +495,25 @@ def get_well_type_curve(
     )
 
 
+def _cursor_origin(tiebreak: str | None) -> date | None:
+    if not tiebreak:
+        # An absent tiebreak is a cursor from before the pair predicate, and paging it on the
+        # api10 alone is the bug this parameter exists to fix. Refuse rather than degrade.
+        if tiebreak is not None:
+            raise ProblemError(
+                "cursor_malformed",
+                detail="the type-curve cursor carries no origin, so it cannot resume a page",
+            )
+        return None
+    try:
+        return date.fromisoformat(tiebreak)
+    except ValueError as error:
+        raise ProblemError(
+            "cursor_malformed",
+            detail=f"the type-curve cursor's origin {tiebreak!r} is not an ISO-8601 date",
+        ) from error
+
+
 def _pin(connection: Any, publication: str | None) -> served.PinnedControl:
     try:
         return served.resolve_pinned_control(connection, publication_id=publication)
@@ -885,11 +904,9 @@ def list_type_curves(
     after_api10 = decoded.key if decoded is not None else None
     # A row is (subject, origin), so the cursor is too. The tiebreak was encoded and never
     # read, which dropped the remaining origins of any subject a page boundary landed inside.
-    after_origin = (
-        date.fromisoformat(decoded.tiebreak)
-        if decoded is not None and decoded.tiebreak
-        else None
-    )
+    # Cursors are unsigned, so the tiebreak is caller-controlled text: this is the only site in
+    # the codebase that parses one, and an unparseable date is a malformed cursor, not a 500.
+    after_origin = _cursor_origin(decoded.tiebreak if decoded is not None else None)
     try:
         found = served.index_page(
             pin,

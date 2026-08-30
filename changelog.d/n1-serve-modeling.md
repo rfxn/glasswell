@@ -44,6 +44,9 @@
 - [Fix] web: a nested block whose leaves are figures renders as figures rather than as a
       pre block of its JSON, so the publication receipt's acceptance gates and support
       distribution are explain affordances rather than printed handles
+- [Fix] api: a forged cursor whose tiebreak is not an ISO-8601 date is a malformed cursor
+      rather than a 500; cursors are unsigned, so the tiebreak is caller-controlled text and
+      this is the only site in the codebase that parses one
 - [Change] api: register_response_figures walks and rebinds Series alongside Figure,
          recording the whole array and its unit as selector evidence; a series without a
          selector, or one carrying point handles, is refused rather than silently skipped

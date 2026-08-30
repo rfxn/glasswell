@@ -123,6 +123,40 @@ def test_the_builder_writes_exactly_the_locator_keys_the_constants_declare() -> 
     assert document["artifact_uri"][CONTROL_COVERAGE_URI_KEY] == "coverage.json"
 
 
+def test_the_key_literals_are_frozen_by_receipts_that_cannot_be_rewritten() -> None:
+    """The constants are not free to move together.
+
+    `lineage.p3_publication_receipts` is append-only and every accepted receipt already on disk
+    carries these exact strings. A coherent rename across builder, consumer and fixture would
+    keep every other test in this file green while making every published receipt unreadable,
+    so the literals are pinned here rather than only compared to each other.
+    """
+    assert CONTROL_URI_KEY == "type_curve"
+    assert CONTROL_COVERAGE_URI_KEY == "type_curve_coverage"
+    assert CONTROL_SHA256_KEY == "typecurve_control"
+    assert CONTROL_COVERAGE_SHA256_KEY == "typecurve_coverage"
+    assert ARTIFACT_SHA256_KEYS == (
+        "feature_matrix",
+        "feature_coverage",
+        "model_labels",
+        "model_curves",
+        "model_coverage",
+        "model_rejections",
+        "typecurve_control",
+        "typecurve_coverage",
+    )
+    assert ARTIFACT_URI_KEYS == (
+        "feature",
+        "feature_coverage",
+        "model_dataset",
+        "model_curves",
+        "model_coverage",
+        "model_rejections",
+        "type_curve",
+        "type_curve_coverage",
+    )
+
+
 def test_the_two_key_spaces_really_are_different_vocabularies() -> None:
     """The trap in one line: the same artifact is named twice, and never the same way."""
     assert CONTROL_URI_KEY != CONTROL_SHA256_KEY

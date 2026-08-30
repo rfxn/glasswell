@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import base64
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_API10
-from tests.contract.conftest import OTHER_API10S
+from tests.contract.conftest import OTHER_API10S, as_principal, issue_key
 
 INDEX = "/v1/type-curves"
 UNAVAILABLE_SUBJECT = OTHER_API10S[2]
@@ -115,19 +118,54 @@ def test_paging_walks_the_whole_population_without_repeating(client: TestClient)
 
 
 def test_paging_at_every_limit_reaches_the_whole_population(client: TestClient) -> None:
-    """A boundary that lands mid-subject only exists at some limits, so sweep them."""
-    whole = _instances(_page(client, limit=200))
+    """A boundary that lands mid-subject only exists at some limits, so sweep them.
+
+    On its own principal: the sweep costs `1 + sum(ceil(N/L))` requests against an endpoint
+    capped at 30 a minute, which is 25 at today's N and would 429 at N+1. A test whose cost
+    grows with the fixture and whose budget does not is a test that fails on the day someone
+    adds a subject, for a reason that has nothing to do with what it asserts.
+    """
+    sweeper = as_principal(client, issue_key(client, label="qa-typecurve-sweep", scope="guest"))
+    whole = _instances(_page(sweeper, limit=200))
     for limit in range(1, len(whole) + 1):
         seen: list[tuple[str, str]] = []
         params: dict[str, object] = {"limit": limit}
         for _ in range(len(whole) + 2):
-            body = _page(client, **params)
+            body = _page(sweeper, **params)
             seen.extend(_instances(body))
             cursor = body["meta"]["next_cursor"]
             if not cursor:
                 break
             params = {"limit": limit, "cursor": cursor}
         assert seen == whole, f"rows lost or repeated at limit={limit}"
+
+
+@pytest.mark.parametrize(
+    ("tiebreak", "detail"),
+    [("not-a-date", "is not an ISO-8601 date"), ("", "carries no origin")],
+)
+def test_a_forged_cursor_tiebreak_is_a_malformed_cursor_not_a_500(
+    client: TestClient, tiebreak: str, detail: str
+) -> None:
+    """Cursors are unsigned base64 JSON and the fingerprint is an unkeyed sha256, so any caller
+    can mint one. This is the only site in the codebase that parses a tiebreak, and a malformed
+    input from a caller is never a 500."""
+    first = _page(client, limit=2)
+    forged = _reissue(first["meta"]["next_cursor"], tiebreak)
+
+    response = client.get(INDEX, params={"limit": 2, "cursor": forged})
+
+    assert response.status_code == 422
+    assert response.json()["type"].endswith("/cursor_malformed")
+    assert detail in response.json()["detail"]
+
+
+def _reissue(cursor: str, tiebreak: str) -> str:
+    """Re-mint a cursor with one field replaced, the way an attacker would."""
+    padded = cursor + "=" * (-len(cursor) % 4)
+    payload = json.loads(base64.urlsafe_b64decode(padded.encode()))
+    payload["t"] = tiebreak
+    return base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
 
 
 @pytest.mark.parametrize("facet", ["fallback_level", "formation_group"])
