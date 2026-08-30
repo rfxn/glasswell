@@ -81,7 +81,10 @@ STATUS_VOCABULARY_RULES = {
     # codebook, so every NM status_canonical is null and every NM well is counted unmapped.
     # That count is a figure, and this is the rule it cites.
     "30": "cr_nm_wellhistory_status_vocab_1",
+    "25": "cr_mt_gis_status_vocab_1",
 }
+# States the neighbour mart holds subjects for; the link is absent for anything else.
+NEIGHBOR_STATE_CODES = frozenset({"33", "25"})
 
 # Same pinning rationale as above: geometry_provenance is geom_type served verbatim, and the
 # row that says so is held to the seeded registry by test_well_status_summary.py. Per state,
@@ -1749,7 +1752,7 @@ def get_well(
             "formations": "/v1/formations",
             **(
                 {"neighbors": f"/v1/wells/{api10}/neighbors"}
-                if row["state_code"] == "33" and laterals
+                if row["state_code"] in NEIGHBOR_STATE_CODES and laterals
                 else {}
             ),
             "production": f"/v1/wells/{api10}/production",

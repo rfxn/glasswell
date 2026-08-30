@@ -36,3 +36,25 @@
 - [New] seed: 057 seeds all nineteen published MBOGC status values with their measured counts;
       six are deliberately unpromoted and quarantine as unknown_status rather than being forced
       onto a canonical state the source does not claim
+- [Fix] marts: the neighbour mart spans North Dakota and Montana. ND wells within 26,400 ft of
+      the state line had their neighbour sets truncated at the border because
+      nd_neighbor_subjects and both sides of nd_neighbor_edges were constrained to
+      '^33[0-9]{8}$' — a correctness gap ROADMAP already named, not a coverage gap
+- [Fix] marts: the pair-local UTM zone is computed from the shortest-line midpoint rather than
+      chosen from a hardcoded pair split at -102. The old expression had no unsupported branch,
+      so a pair outside 13N/14N was silently measured in one of them, passed the CHECK and was
+      stored under a handle asserting a pair-local CRS. Over the ND rectangle the formula
+      reproduces the old rule with zero mismatches, so ND distances are unchanged
+- [Fix] marts: SUPPORTED_LONGITUDE_MIN moves from -104.15 to -116.10. The old floor sat 7,531 m
+      west of the ND/MT line while the padded discovery radius is 8,208 m, so it was already
+      too tight for ND-only correctness before Montana existed
+- [New] db: 059_neighbors_multistate.sql relaxes the subject and edge API-10 checks to
+      '^(25|33)[0-9]{8}$' and admits UTM 11N-14N, the zones the widened domain can produce
+- [Change] api: the neighbours HAL link and the explain-handle validators accept Montana
+      subjects, and STATUS_VOCABULARY_RULES gains 25 so an MT row does not emit
+      status_vocabulary_unregistered
+- [Change] tests: the candidate-pad proof imports the zone rule instead of reimplementing it,
+      and its measured bound is re-derived over the widened domain rather than relaxed — max
+      ratio 1.013136 against the same < 1.014 claim, with no false negatives. The domain-refusal
+      test is re-anchored from -105.50 to -118.00, never deleted: it is the only proof the
+      guard fires
