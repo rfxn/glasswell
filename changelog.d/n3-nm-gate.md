@@ -141,3 +141,16 @@
          a recurring promotion — 89 minutes and 9.9 GB, which does not fit the ingest unit's
          `TimeoutStartSec` — is recorded in `SMOKE.md` for the decision, along with a weekly
          recommendation for the daily-refreshed GIS layer
+- [New] `ingest/nm_wells_gis.py`: one ordered walk of the OCD Wells_Public FeatureServer layer,
+      ordered by the unique `id` rather than `OBJECTID`, into one checksummed artifact, one
+      manifest and one staging load; the host is already allowlisted so no blueprint amendment
+      is required, and `060_nm_wells_gis.sql` creates the staging table and registers the rule
+      publications
+- [New] `cr_nm_wells_gis_parity_1` records the agreement between two independently produced New
+      Mexico well populations — 141,916 GIS features against 142,000 FTP header API-10s, a
+      0.06% difference — as a prohibition rather than a tolerance band: the per-well distance
+      distribution is not measured, so no rule can yet say which source wins where they differ
+- [Change] the module stops at staging on purpose: the parity measurement decides how it
+         promotes, and promoting first would make the rule a rationalisation rather than a
+         finding. `cr_nm_wellhistory_header_precedence_1` accordingly still names the FTP
+         archive as sole authority, and no superseding row is seeded ahead of the evidence

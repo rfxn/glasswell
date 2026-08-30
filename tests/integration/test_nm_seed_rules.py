@@ -20,7 +20,7 @@ from glasswell.ingest.xml_stream import stream_records
 from glasswell.lineage.conformance import apply_registry_rules, apply_rules, load_rules
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_nm import NM_PROMOTION_RULES, NM_RULES, RECORD_NAMESPACE
-from glasswell.seed.conformance_nm_wells import NM_WELLS_RULES
+from glasswell.seed.conformance_nm_wells import NM_WELLS_GIS_RULES, NM_WELLS_RULES
 from glasswell.seed.reference import NM_TABLES
 
 NM_SOURCE_IDS = tuple(f"nm_ocd_{table}" for table, _ in NM_TABLES)
@@ -171,7 +171,7 @@ def test_no_nm_rule_ships_an_empty_rationale_or_evidence_url(seeded):
 
     # A filter over an empty read passes without reading anything. The well-header rules carry
     # nm_ocd_ source ids too, so this read is both seeders' output.
-    assert len(rows) == len(NM_RULES) + len(NM_WELLS_RULES)
+    assert len(rows) == len(NM_RULES) + len(NM_WELLS_RULES) + len(NM_WELLS_GIS_RULES)
     assert unevidenced == []
 
 
