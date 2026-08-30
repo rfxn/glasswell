@@ -33,7 +33,11 @@ RESTORE_PROOF_MAX_AGE_DAYS=8
 OFFSITE_RECEIPT_MAX_AGE_DAYS=2
 PUBLIC_HOST=glasswell.rpx.sh
 CLOUDFLARED_DIR=/etc/cloudflared
+CADDY_FILE=/etc/caddy/Caddyfile
 CF_RANGES=/etc/glasswell/cloudflare-ips.txt
+# Lab DNS is split-horizon and NXDOMAINs the public record, so the host cannot resolve the
+# name its own edge answers on. Probes carry the address instead of pinning it in /etc/hosts.
+PUBLIC_RESOLVER=1.1.1.1
 
 passed=0
 failed=0
@@ -694,20 +698,37 @@ if [[ -f $CLOUDFLARED_DIR/config.yml ]]; then
         grep -q '3000' "$CLOUDFLARED_DIR/config.yml"
 fi
 
+# The front door owns the CSP and is the more security-relevant of the two configs, yet only
+# the connector was drift-checked; deploy never installs the Caddyfile, so the two diverge
+# silently. A stale line stayed inert here for ten days before anyone noticed.
+if [[ -f $CADDY_FILE ]]; then
+    assert_true "caddy config equals the tree" "drifted at $CADDY_FILE" \
+        command diff -q "$INFRA_DIR/caddy/Caddyfile" "$CADDY_FILE"
+fi
+
 if [[ ${public_mode:-0} == 1 ]]; then
     assert "cloudflared active" active "$(systemctl is-active cloudflared)"
-    assert "the non-/v1 tile path is 404 through the edge" 404 \
-        "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
-            "https://$PUBLIC_HOST/tiles/nd_wells/8/54/89.pbf")"
-    assert "the static owner key is refused through the public hostname" 403 \
-        "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
-            -H "X-Glasswell-Key: $owner_key" "https://$PUBLIC_HOST/v1/health")"
-    assert "an anonymous request through the public hostname is refused" 403 \
-        "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
-            "https://$PUBLIC_HOST/v1/wells?limit=1")"
-    assert_true "hsts is emitted through the edge" "no Strict-Transport-Security" \
-        grep -qi '^strict-transport-security:' \
-            <<<"$(curl -s -D - -o /dev/null --max-time 15 "https://$PUBLIC_HOST/" | tr -d '\r')"
+    public_ip="$(dig +short "@$PUBLIC_RESOLVER" "$PUBLIC_HOST" A 2>/dev/null | grep -m1 -E '^[0-9.]+$')"
+    if [[ -z $public_ip ]]; then
+        # One named failure beats four probes reporting 000 and reading as an edge outage.
+        bad "$PUBLIC_HOST resolves at $PUBLIC_RESOLVER" "no A record — edge probes cannot run"
+    else
+        edge=(--resolve "$PUBLIC_HOST:443:$public_ip")
+        ok "$PUBLIC_HOST resolves to $public_ip at $PUBLIC_RESOLVER"
+        assert "the non-/v1 tile path is 404 through the edge" 404 \
+            "$(curl -s "${edge[@]}" -o /dev/null -w '%{http_code}' --max-time 15 \
+                "https://$PUBLIC_HOST/tiles/nd_wells/8/54/89.pbf")"
+        assert "the static owner key is refused through the public hostname" 403 \
+            "$(curl -s "${edge[@]}" -o /dev/null -w '%{http_code}' --max-time 15 \
+                -H "X-Glasswell-Key: $owner_key" "https://$PUBLIC_HOST/v1/health")"
+        assert "an anonymous request through the public hostname is refused" 403 \
+            "$(curl -s "${edge[@]}" -o /dev/null -w '%{http_code}' --max-time 15 \
+                "https://$PUBLIC_HOST/v1/wells?limit=1")"
+        assert_true "hsts is emitted through the edge" "no Strict-Transport-Security" \
+            grep -qi '^strict-transport-security:' \
+                <<<"$(curl -s "${edge[@]}" -D - -o /dev/null --max-time 15 \
+                    "https://$PUBLIC_HOST/" | tr -d '\r')"
+    fi
 else
     # Skipping keeps the count honest: every pre-cutover deploy would otherwise go red on
     # three DNS-dependent probes for a hostname that deliberately does not resolve yet.
