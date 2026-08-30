@@ -203,3 +203,7 @@
          function now returns both reasons a state has no well-level series, and a name that
          describes one of them is the same defect as a rule that describes a transformation the
          code does not perform
+- [Fix] both manifest re-registration invocations in the promotion runbook pass
+      `--expect-database glasswell`, so the refusal guarding the one-letter gap between
+      `glasswell` and `glasswell_d1` fires on the documented path instead of leaving an
+      operator with the transcript check the flag was added to replace
