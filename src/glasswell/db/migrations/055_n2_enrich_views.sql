@@ -114,7 +114,8 @@ insert into lineage.conformance_rule_publications
 select rule_id, date '2026-08-30', 'v0.67',
        'be26c93c6857aed80537c6efcb28bdd1ca959a85'
   from unnest(array[
-       'cr_nd_vintage_cohort_1'
+       'cr_nd_vintage_cohort_1', 'cr_ff_base_water_units_1', 'cr_ff_design_promote_1',
+       'cr_ff_fluid_intensity_1'
   ]) as rule_id
     on conflict (rule_id) do nothing;
 
