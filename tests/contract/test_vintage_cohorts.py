@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import psycopg
 from fastapi.testclient import TestClient
 
 from tests.contract.test_well_cumulatives import handles
@@ -36,13 +37,13 @@ def test_the_support_distribution_is_on_the_cohort_scale_and_says_why(
     assert "wells_with_a_filed_month" in support["scale"]
 
 
-def test_the_support_count_is_the_measure_the_rule_publishes(client: TestClient) -> None:
-    """BL-1: the rule row and this endpoint must not report two numbers for one quantity.
+def test_the_support_measure_is_named_and_registered_rather_than_decided_in_a_query(
+    client: TestClient,
+) -> None:
+    """MA-1's half: the field is named for what it counts and the rule declares the measure.
 
-    cr_nd_vintage_cohort_1 publishes its support figures measured as `the well's record admits
-    at least one month into a total` — reported or reported_zero. A `months_reported > 0`
-    aggregate excludes a well whose only filings are zeros, and on the deployed population that
-    is the difference between a published 49 and a served 39 for the no-spud-date cohort.
+    This guards the naming and the registration only. It reads no served count, so it cannot
+    detect a wrong aggregate — the two tests below are what do that.
     """
     rule = client.get("/v1/conformance/cr_nd_vintage_cohort_1").json()["data"]
     measure = rule["spec"]["support_measure"]
@@ -53,6 +54,37 @@ def test_the_support_count_is_the_measure_the_rule_publishes(client: TestClient)
     assert "cr_producing_window_1" in measure["why_not_the_producing_classification"]
     assert all("wells_with_a_filed_month" in cohort for cohort in cohorts)
     assert not any("producing_wells" in cohort for cohort in cohorts)
+
+
+def test_every_cohort_s_support_is_the_wells_its_totals_actually_draw_from(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """BL-1: the rule row and this endpoint must not report two numbers for one quantity.
+
+    The expectation is computed from marts.well_cumulatives directly, under the same predicate
+    the cumulative admits, so it is independent of the rollup's own SQL. A support count taken
+    on any other measure — `months_reported > 0` was the one that shipped — disagrees here.
+    """
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select coalesce(extract(year from w.spud_date)::int::text, 'no_spud_date'),"
+            "       count(distinct c.api10) filter ("
+            "           where c.months_reported + c.months_reported_zero > 0)"
+            "  from canonical.wells_latest w"
+            "  join marts.well_cumulatives c on c.api10 = w.api10"
+            " where w.state_code = '33' group by 1"
+        )
+        expected = dict(cursor.fetchall())
+    cohorts = client.get(PATH).json()["data"]["cohorts"]
+
+    assert expected, "no ND cohort reached the mart, so this proves nothing"
+    served = {
+        (str(item["cohort_year"]) if item["cohort_year"] is not None else "no_spud_date"): int(
+            item["wells_with_a_filed_month"]["value"]
+        )
+        for item in cohorts
+    }
+    assert served == expected
 
 
 def test_a_well_whose_only_filing_is_a_zero_still_stands_behind_its_cohort(
@@ -74,9 +106,11 @@ def test_a_well_whose_only_filing_is_a_zero_still_stands_behind_its_cohort(
     assert cumulative["coverage"]["oil_bbl"]["months_reported"] == 0
     assert cumulative["cumulative"]["oil_bbl"]["value"] == "0.000"
     keyed = next(item for item in cohorts if item["cohort_year"] is not None)
-    # Every seeded ND well but one shares spud year 2019; the zero-filer is inside that cohort
-    # and is counted, so the support count exceeds the wells with a reported month.
-    assert int(keyed["wells_with_a_filed_month"]["value"]) >= 3
+    # Exact, not a floor: six ND wells carry spud year 2019, and four of them admit a month —
+    # the example well, the two that filed oil, and this zero-filer. `months_reported > 0`
+    # serves 3 by dropping exactly this well, so a floor of 3 would pass on the defect it
+    # claims to catch.
+    assert int(keyed["wells_with_a_filed_month"]["value"]) == 4
 
 
 def test_the_spacing_assumption_is_stated_rather_than_omitted(client: TestClient) -> None:
@@ -105,7 +139,7 @@ def test_a_well_with_no_spud_date_is_its_own_cohort(client: TestClient) -> None:
     unkeyed = [item for item in cohorts if item["cohort_year"] is None]
     assert len(unkeyed) == 1
     assert unkeyed[0]["cohort_key_semantics"] == "no_spud_date"
-    assert int(unkeyed[0]["wells"]["value"]) > 0
+    assert int(unkeyed[0]["wells"]["value"]) == 1
     assert unkeyed[0]["wells"]["unit"] == "wells"
     assert unkeyed[0]["wells_with_a_filed_month"]["unit"] == "wells"
 
