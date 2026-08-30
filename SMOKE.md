@@ -36,13 +36,25 @@ targets), daily production, ownership, and the agent gateway.
 ## 2. How to reach it
 
 ```
-https://glasswell.lab.rpx.sh/#key=<GLASSWELL_OWNER_KEY>
+https://glasswell.lab.rpx.sh/
 ```
 
-The key rides in the **fragment**, after the `#`. A fragment is never sent to the server,
-so it cannot reach an access log or journald. `?key=` is refused with a `422` —
-the query form was live long enough to write the old key into the journal, so that key was
-rotated and the journal vacuumed.
+**Log in with a username and password.** The app shows a login panel on first load; there is
+no key to paste and no `#key=` link any more. Sessions are server-side records: logging out
+kills the cookie's row, so a copy taken beforehand is dead. The cookie is `__Host-` prefixed,
+`HttpOnly`, `Secure` and `SameSite=Lax`, and it is the only credential a browser holds.
+
+Accounts are created by the owner. There is no self-registration, no password-reset email and
+no "forgot password" link — recovery is `glasswell-owner-reset` over ssh (§6). The first
+account is created once, on the host:
+
+```bash
+ssh root@glasswell.lab.rpx.sh
+/opt/glasswell/venv/bin/glasswell-owner-bootstrap \
+    --dsn 'postgresql:///glasswell?host=/var/run/postgresql' --username <you>
+# the password is read from stdin: type it, then Ctrl-D. It is never echoed, never in argv,
+# and never in the environment.
+```
 
 **HTTPS, no port, no certificate warning.** Caddy terminates TLS with a Let's Encrypt
 host certificate obtained over the DNS-01 challenge — the name resolves to `192.168.2.111`,
@@ -50,22 +62,12 @@ which no ACME server can reach, and DNS-01 does not care. It reverse-proxies uvi
 `/run/glasswell/api.sock`; the API has no TCP port at all, and `http://` on `:80` and the old
 `:8000` both redirect.
 The firewall is unchanged in spirit: `443` and `80` from `192.168.2.0/24` and nothing else.
-Still no tunnel and no Access, so this is reachable from the LAN only (§7).
 
-The key is 64 hex characters, generated on the VM and written only to
-`/etc/glasswell/app.env` (`root:root`, mode 0600). It is in no log and no file in
-this repository. Read it on the VM:
-
-```bash
-ssh root@glasswell.lab.rpx.sh 'sed -n "s/^GLASSWELL_OWNER_KEY=//p" /etc/glasswell/app.env'
-```
-
-Paste it into the `#key=` link once. The app stores it in `localStorage`, strips it
-from the fragment, and plain `https://glasswell.lab.rpx.sh/` works in that browser
-from then on.
-
-For the API steps in §5, put the key in a curl config file so it never reaches your
-shell history or the process table:
+**The API key is still the machine path.** A session is for a browser; a key is for `curl`
+and for the deploy gate. Keys are unchanged, and `?key=` is still refused with a `422` — as
+are `?password=` and `?token=`, because a query string reaches the access log verbatim. For
+the API steps in §5, put the key in a curl config file so it never reaches your shell history
+or the process table:
 
 ```bash
 CFG=$(mktemp); chmod 600 "$CFG"
@@ -74,9 +76,14 @@ curl -sS -K "$CFG" https://glasswell.lab.rpx.sh/v1/health
 # rm -f "$CFG" when you are done
 ```
 
+One thing the static owner key no longer does: it is **refused on the public listener**. It
+has no expiry, no rotation path and no revocation row, so after this release it is a LAN and
+deploy-gate credential only. Issued `api_keys` rows carry an expiry and a revocation row and
+still work from anywhere.
+
 ## 3. The map and one well — about eight minutes
 
-**Step 1 — open the keyed link.** Expect the Williston basin: several thousand well
+**Step 1 — open the app and log in.** Expect the Williston basin: several thousand well
 points on a dark canvas with a one-degree graticule, coloured by well status, a
 status legend bottom-left, and a header line reading
 `Glossary loaded: 50 highlightable surface forms.`
@@ -162,14 +169,17 @@ Screenshot: `05-glossary-popover.png`.
 - **A well that does not exist:** `?well=9999999999` → the card renders
   `Not found (not_found) · no well 9999999999 at this vintage`, not an empty panel.
   Screenshot: `09-well-not-found.png`.
-- **No key at all:** open the app in a private window without `#key=`. The header
-  says `The API needs the owner key: open this page once with #key=…` and the card
-  shows `API key required (key_required)`. It refuses honestly instead of looking
-  empty. Screenshot: `06-no-key-403.png`.
-- **The key in the query string:** `?key=<GLASSWELL_OWNER_KEY>` → `422
-  validation_failed` pointing at `/query/key`, on every path including `/`. A query
+- **Not logged in:** open the app in a private window. The login panel renders and every
+  data route answers `403`. It refuses honestly instead of looking empty.
+- **A wrong password, and a username that does not exist:** both answer the *same*
+  `403 unauthenticated` with no `detail`, and take the same time to do it. That is
+  deliberate — a difference either way tells a stranger which accounts exist.
+- **A credential in the query string:** `?key=`, `?password=` or `?token=` → `422
+  validation_failed` pointing at `/query/<name>`, on every path including `/`. A query
   string is written to the access log verbatim, so the API will not take a credential
   there at all.
+- **A stale cookie after logging out elsewhere:** `403`. Sessions are server-side rows,
+  not self-describing tokens, so revocation is immediate rather than eventual.
 - **A bad handle:** `?explain=drv_doesnotexist` → the drawer opens and reads
   `Lineage could not be resolved (lineage_unresolved) · last resolved nothing ·
   stopped because unknown_id`. A broken chain renders as a broken chain.
@@ -226,6 +236,25 @@ curl -sS "$B/openapi.json" | python3 -c 'import json,sys; print(len(json.load(sy
   empty: that list is for data that has gone stale, and a source on it is a served lie.
 
 ## 6. Known gaps, stated plainly
+
+- **Global concurrency is not capped.** §3.6.8 asks for 32 concurrent requests and 5
+  concurrent write jobs. The limiter is a fixed-window counter, which counts requests per
+  window and not simultaneous in-flight work, so those two are recorded as unmet rather
+  than asserted by a test that measures nothing. The four per-principal buckets — 120/min
+  interactive, 60 service, 600 tiles, 30 anonymous — are applied.
+- **`/basemap/*` is deliberately anonymous.** It is public OpenStreetMap-derived bytes
+  containing no glasswell layer, served directly by Caddy with `sendfile`. Routing it back
+  through uvicorn to authenticate costs the ~40 ms Nagle penalty the Caddyfile documents.
+  A test asserts the archive's layer set contains no glasswell mart layer, so the carve-out
+  cannot silently widen.
+- **Account recovery is ssh, not email.** `glasswell-owner-reset --username <name>` on the
+  host, password on stdin. It clears the lockout, re-enables a disabled account and revokes
+  every session it holds. There is no reset link and no security questions, which is what
+  keeps "not multi-user" true.
+- **`GLASSWELL_ALLOW_ANON=1` resolves a caller to the viewer role** — read-only, never
+  owner scope. It is a development and kiosk break-glass, and with `GLASSWELL_PUBLIC=1` the
+  API refuses to start rather than serving the internet anonymously. This deployment does
+  not set it.
 
 1. **~~No TLS~~ — closed; no tunnel, no Access.** HTTPS on `glasswell.lab.rpx.sh` with a
    Let's Encrypt host certificate, renewed by Caddy over DNS-01, and `verify.sh` fails
