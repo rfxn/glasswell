@@ -37,6 +37,7 @@ from glasswell.api.principal import (
 from glasswell.api.principal import (
     Principal as ResolvedPrincipal,
 )
+from glasswell.api.rate_limit import consume_bucket
 from glasswell.lineage.clock import utc_today
 from glasswell.lineage.explain import DEFAULT_DEPTH, MAX_DEPTH
 
@@ -205,6 +206,20 @@ def require_csrf(
 # Kept so no import site breaks; `require_principal` is the name the resolution order lives
 # under now.
 require_key = require_principal
+
+
+def enforce_rate_limit(
+    request: Request,
+    connection: Annotated[psycopg.Connection, Depends(get_connection)],
+    principal: Annotated[ResolvedPrincipal, Depends(require_principal)],
+) -> None:
+    """Charge every /v1 request to one of the four ruled buckets.
+
+    Attached to the router set rather than per operation, so a new route is limited by
+    existing, not by somebody remembering. The per-operation call in routers/wells.py stays:
+    the viewport provenance write has its own tighter budget and the two stack deliberately.
+    """
+    consume_bucket(connection, principal, request)
 
 
 def rows(connection: psycopg.Connection, statement: str, params: object = None) -> list[dict]:

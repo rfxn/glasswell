@@ -26,6 +26,7 @@ from glasswell.api.deps import (
     BASEMAP_ROOT_ENV,
     PUBLIC_ENV,
     WEB_ROOT_ENV,
+    enforce_rate_limit,
     require_csrf,
     require_principal,
 )
@@ -50,7 +51,12 @@ from glasswell.api.routers import (
     users,
     wells,
 )
-from glasswell.api.security import STATIC_SECURITY_HEADERS, header_for
+from glasswell.api.security import (
+    HSTS_HEADER,
+    STATIC_SECURITY_HEADERS,
+    header_for,
+    hsts_for,
+)
 from glasswell.lineage.ids import new_ulid
 
 API_TITLE = "glasswell"
@@ -74,6 +80,9 @@ FREEZE = {
 }
 REQUEST_ID_HEADER = "X-Request-Id"
 KEY_QUERY_PARAM = "key"
+# A credential in a query string reaches the access log verbatim and the Referer of every
+# outbound link. All three are refused rather than redacted.
+REFUSED_QUERY_PARAMS = ("key", "password", "token")
 ASSET_PREFIX = "/assets/"
 BASEMAP_PREFIX = "/basemap/"
 BASEMAP_MANIFEST = "/basemap/manifest.json"
@@ -136,17 +145,20 @@ def create_app() -> FastAPI:
     async def _refuse_key_in_query(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        if KEY_QUERY_PARAM in request.query_params:
+        offending = next(
+            (name for name in REFUSED_QUERY_PARAMS if name in request.query_params), None
+        )
+        if offending is not None:
             return problem_response(
                 request,
                 "validation_failed",
                 detail=(
-                    "the owner key is not accepted in the query string: open the app once with"
-                    f" #key=<owner key>, or send the key in {KEY_HEADER}"
+                    f"a credential is not accepted in the query string: send the key in"
+                    f" {KEY_HEADER}, or log in and let the session cookie carry it"
                 ),
                 errors=[
                     {
-                        "pointer": f"/query/{KEY_QUERY_PARAM}",
+                        "pointer": f"/query/{offending}",
                         "code": "credential_in_query",
                         "detail": "a query string is written to the access log verbatim",
                     }
@@ -186,9 +198,13 @@ def create_app() -> FastAPI:
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         response = await call_next(request)
+        https = request.url.scheme == "https"
         response.headers.update(STATIC_SECURITY_HEADERS)
-        name, policy = header_for(request.url.path, https=request.url.scheme == "https")
+        name, policy = header_for(request.url.path, https=https)
         response.headers[name] = policy
+        strict_transport = hsts_for(https=https)
+        if strict_transport is not None:
+            response.headers[HSTS_HEADER] = strict_transport
         return response
 
     app.include_router(health.liveness)
@@ -215,7 +231,11 @@ def create_app() -> FastAPI:
         app.include_router(
             router,
             prefix="/v1",
-            dependencies=[Depends(require_principal), Depends(require_csrf)],
+            dependencies=[
+                Depends(require_principal),
+                Depends(require_csrf),
+                Depends(enforce_rate_limit),
+            ],
         )
 
     basemap_root = os.environ.get(BASEMAP_ROOT_ENV)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+import pytest
 from fastapi.testclient import TestClient
 
 from glasswell.api.access_log import ACCESS_LOGGER, REDACTED, install_access_log_redaction
@@ -57,3 +58,33 @@ def test_the_access_log_redacts_a_key_in_the_request_line(
 
     assert OWNER_KEY not in caplog.text
     assert REDACTED in caplog.text
+
+
+@pytest.mark.parametrize("parameter", ["key", "password", "token"])
+def test_a_credential_in_the_query_string_is_refused(client, parameter: str) -> None:
+    """A query string reaches the access log verbatim and the Referer of every outbound link."""
+    response = client.get(f"/v1/health?{parameter}=whatever-they-typed")
+
+    assert response.status_code == 422
+    assert response.json()["errors"][0]["code"] == "credential_in_query"
+
+
+def test_a_session_token_in_a_log_record_is_redacted() -> None:
+    from glasswell.api.access_log import redact
+
+    line = 'GET /v1/wells cookie=__Host-gw_session=gws_QMDbEGaFjZUGhPEdmL2mFAPKJCCl6nqv'
+
+    scrubbed = redact(line)
+
+    assert "gws_QMDbEGaFjZUGhPEdmL2mFAPKJCCl6nqv" not in scrubbed
+    assert "gws_REDACTED" in scrubbed
+
+
+@pytest.mark.parametrize("name", ["key", "password", "token", "session", "csrf"])
+def test_every_credential_shaped_query_parameter_is_redacted_from_a_log(name: str) -> None:
+    from glasswell.api.access_log import redact
+
+    scrubbed = redact(f"GET /v1/wells?{name}=the-secret-value HTTP/1.1")
+
+    assert "the-secret-value" not in scrubbed
+    assert f"{name}=REDACTED" in scrubbed

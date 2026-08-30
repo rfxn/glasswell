@@ -36,6 +36,12 @@ STATIC_SECURITY_HEADERS: Mapping[str, str] = {
     "X-Robots-Tag": "noindex, nofollow",
 }
 
+HSTS_HEADER = "Strict-Transport-Security"
+# One year, subdomains included. No `preload`: submission to the browser preload list is
+# effectively irreversible on the timescale that matters, and it commits every host under
+# this zone. That is the owner's call, not this track's.
+HSTS_POLICY = "max-age=31536000; includeSubDomains"
+
 _DIRECTIVES: tuple[tuple[str, str], ...] = (
     ("default-src", "'none'"),
     ("script-src", "'self'"),
@@ -83,3 +89,13 @@ def header_for(path: str, *, https: bool) -> tuple[str, str]:
     """The CSP header name and value for one request; report-only is read per request."""
     name = CSP_REPORT_ONLY_HEADER if os.environ.get(REPORT_ONLY_ENV) == "1" else CSP_HEADER
     return name, content_security_policy(https=https, docs=path == DOCS_PATH)
+
+
+def hsts_for(*, https: bool) -> str | None:
+    """Emitted over TLS only, and deliberately not a member of STATIC_SECURITY_HEADERS.
+
+    The LAN listener answers plain http on 8000 and 308s to https. HSTS on that response is
+    meaningless at best, and `tests/unit/test_caddy_basemap_headers.py` parametrises over
+    STATIC_SECURITY_HEADERS -- so putting it there would force it onto the http path too.
+    """
+    return HSTS_POLICY if https else None
