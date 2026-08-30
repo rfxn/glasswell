@@ -215,7 +215,12 @@ describe("a group opens on what the reader is already drawing", () => {
       '.gw-layer-group[data-group="spine"] .gw-layer-group-count',
     )!;
     expect(count.hidden).toBe(false);
-    expect(count.textContent).toBe("2 on");
+    // Derived, not pinned: a literal here reddens the day a state adds a spine layer, which
+    // says nothing about whether the count is right.
+    const defaults = new Set(defaultLayerSet());
+    const spineOn = LAYERS.filter((layer) => layer.group === "spine" && defaults.has(layer.id));
+    expect(spineOn.length).toBeGreaterThan(1);
+    expect(count.textContent).toBe(`${spineOn.length} on`);
     const land = handle.element.querySelector<HTMLElement>(
       '.gw-layer-group[data-group="land"] .gw-layer-group-count',
     )!;
