@@ -25,7 +25,9 @@ _NEIGHBOR_API10_PATTERN = r"(25|33)[0-9]{8}"
 PRODUCTION_PROFILE = "production_series"
 COMPLETION_POOL_PROFILE = "completion_pool"
 COMPLETION_ANCHOR_PROFILE = "completion_anchor"
+COMPLETION_DESIGN_PROFILE = "completion_design"
 WELL_PROFILE = "well"
+WELL_CUMULATIVE_PROFILE = "well_cumulative"
 NEIGHBOR_PROFILE = "nd_neighbor"
 RESPONSE_PROFILE = "response_output"
 
@@ -67,12 +69,17 @@ _NEIGHBOR_COVERAGE_METRICS = frozenset(
 )
 _PRODUCTION_COLUMNS = {"oil_bbl": "oil", "gas_mcf": "gas", "water_bbl": "water"}
 _WELL_COLUMNS = frozenset({"total_depth_ft"})
+_COMPLETION_DESIGN_COLUMNS = frozenset({"base_water_volume"})
+_CUMULATIVE_COLUMNS = frozenset({"cum_volume", "coverage"})
+_CUMULATIVE_STREAMS = frozenset({"liquid", "gas", "water"})
 _KNOWN_PROFILES = frozenset(
     {
         PRODUCTION_PROFILE,
         COMPLETION_POOL_PROFILE,
         COMPLETION_ANCHOR_PROFILE,
+        COMPLETION_DESIGN_PROFILE,
         WELL_PROFILE,
+        WELL_CUMULATIVE_PROFILE,
         NEIGHBOR_PROFILE,
         RESPONSE_PROFILE,
     }
@@ -110,6 +117,10 @@ def validate_selector(
         _validate_neighbor(connection, derivation, terms, handle=handle)
     elif profile == COMPLETION_ANCHOR_PROFILE:
         _validate_completion_anchor(connection, derivation, terms, handle=handle)
+    elif profile == COMPLETION_DESIGN_PROFILE:
+        _validate_completion_design(connection, derivation, terms, handle=handle)
+    elif profile == WELL_CUMULATIVE_PROFILE:
+        _validate_well_cumulative(connection, derivation, terms, handle=handle)
     elif profile == COMPLETION_POOL_PROFILE:
         _validate_completion_pool(connection, derivation, terms, handle=handle)
     elif profile == PRODUCTION_PROFILE:
@@ -136,8 +147,13 @@ def _profile_matches(profile: str, terms: Mapping[str, str]) -> bool:
     keys = set(terms)
     if profile == NEIGHBOR_PROFILE:
         return "api10" in keys
-    if profile == COMPLETION_ANCHOR_PROFILE:
+    # The anchor and design predicates are identical on purpose: both address one FracFocus
+    # disclosure, and profiles are looked up per (operation, output_dataset), which are
+    # different tables. They can never both be registered for one lookup.
+    if profile in (COMPLETION_ANCHOR_PROFILE, COMPLETION_DESIGN_PROFILE):
         return bool(keys & {"disclosure_id", "disclosure_id_b64"})
+    if profile == WELL_CUMULATIVE_PROFILE:
+        return bool(keys & {"api10", "api10_b64"}) and "stream" in keys
     if profile == COMPLETION_POOL_PROFILE:
         return bool(keys & {"completion_key", "completion_key_b64"})
     if profile == PRODUCTION_PROFILE:
@@ -263,6 +279,55 @@ def _validate_completion_anchor(
         "select count(*) from canonical.well_completion_anchors"
         " where derivation_id = %s and disclosure_id = %s",
         (derivation["derivation_id"], disclosure_id),
+        derivation=derivation,
+        handle=handle,
+    )
+
+
+def _validate_completion_design(
+    connection: psycopg.Connection,
+    derivation: Mapping[str, Any],
+    terms: dict[str, str],
+    *,
+    handle: str,
+) -> None:
+    column = terms.pop("col", None)
+    if column not in _COMPLETION_DESIGN_COLUMNS:
+        raise InvalidSelector(f"{column!r} is not a selectable completion-design column")
+    disclosure_id = _identity(terms, "disclosure_id")
+    if terms:
+        raise InvalidSelector("completion-design selectors require disclosure_id plus col")
+    _require_one(
+        connection,
+        "select count(*) from canonical.well_completion_design"
+        " where derivation_id = %s and disclosure_id = %s",
+        (derivation["derivation_id"], disclosure_id),
+        derivation=derivation,
+        handle=handle,
+    )
+
+
+def _validate_well_cumulative(
+    connection: psycopg.Connection,
+    derivation: Mapping[str, Any],
+    terms: dict[str, str],
+    *,
+    handle: str,
+) -> None:
+    column = terms.pop("col", None)
+    if column not in _CUMULATIVE_COLUMNS:
+        raise InvalidSelector(f"{column!r} is not a selectable well-cumulative column")
+    stream = terms.pop("stream", None)
+    if stream not in _CUMULATIVE_STREAMS:
+        raise InvalidSelector(f"{stream!r} is not a well-cumulative stream")
+    api10 = _identity(terms, "api10")
+    if re.fullmatch(r"[0-9]{10}", api10) is None or terms:
+        raise InvalidSelector("well-cumulative selectors require api10, stream and col")
+    _require_one(
+        connection,
+        "select count(*) from marts.well_cumulatives"
+        " where derivation_id = %s and api10 = %s and stream = %s",
+        (derivation["derivation_id"], api10, stream),
         derivation=derivation,
         handle=handle,
     )
