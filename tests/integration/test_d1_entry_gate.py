@@ -273,6 +273,11 @@ def test_g9_the_a1b_migration_block_is_intact():
 def test_g9_a1bs_status_file_states_the_migration_count_the_tree_carries():
     if not WORK_OUTPUT.is_dir():
         pytest.skip("work-output/ is git-excluded; the gate runs where the merge artifacts live")
+    # A linked worktree's .git is a file. Dispatched tracks write their own status files into a
+    # work-output/ that never held the wave-1 archive, which turned a self-disabling gate red
+    # and pointed at the wrong thing; three tracks reported it before this line existed.
+    if (REPOSITORY_ROOT / ".git").is_file():
+        pytest.skip("a linked worktree carries its own work-output/, never the wave-1 archive")
     status_path = a1b_status_path(REPOSITORY_ROOT)
     assert status_path is not None, (
         f"work-output/ is populated but track-a1b-status.md is in none of"
