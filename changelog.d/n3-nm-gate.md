@@ -9,3 +9,13 @@
       operator to it named a `work-output/experiments` path that does not exist; it now
       names its target database on every run, reports registered against already-present
       per sidecar, and exits 1 on a slot conflict instead of tracebacking
+- [Fix] `status/collector.py` aggregated `canonical.production_monthly` with no state filter
+      and served the result under a hardcoded North Dakota jurisdiction, so the first New
+      Mexico promotion would have published 24.8M rows and ~93,958 wells under the wrong
+      state within fifteen minutes, on a timer, over rows with no well header
+- [Change] the inventory splits into `canonical.production_monthly/nd` and `/nm`, matching
+         the state-qualified convention every sibling dataset in the file already follows,
+         including the `well_completions/nm` entry that already serves zero
+- [Change] the status contract test seeds two states rather than one — the defect was
+         invisible to a single-state fixture — and asserts the two datasets partition the
+         table, so a third population would fail rather than vanish from a served figure

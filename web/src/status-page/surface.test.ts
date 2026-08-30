@@ -33,8 +33,8 @@ const PAYLOAD: StatusPayload = {
   ],
   datasets: [
     {
-      dataset_id: "canonical.production_monthly",
-      label: "Production observations",
+      dataset_id: "canonical.production_monthly/nd",
+      label: "North Dakota production observations",
       scope: "North Dakota",
       grain: "well-month-stream observation",
       state: "available",
@@ -251,7 +251,7 @@ describe("the Status surface", () => {
     expect(host.textContent).toContain("req_status_01");
     (host.querySelector(".gw-status-refresh") as HTMLButtonElement).click();
     await vi.waitFor(() => expect(host.querySelector("h1")?.textContent).toBe("Status"));
-    await vi.waitFor(() => expect(host.textContent).toContain("Production observations"));
+    await vi.waitFor(() => expect(host.textContent).toContain("North Dakota production observations"));
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 

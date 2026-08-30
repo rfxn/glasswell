@@ -560,9 +560,16 @@ def _inventory(
     )
     production = _one(
         connection,
-        "select count(*) as rows, count(distinct api10) as wells,"
-        " min(production_month) as valid_from, max(production_month) as valid_to,"
-        " max(created_at) as latest_knowledge"
+        "select count(*) filter (where left(api10, 2) = '33') as nd_rows,"
+        " count(distinct api10) filter (where left(api10, 2) = '33') as nd_wells,"
+        " min(production_month) filter (where left(api10, 2) = '33') as nd_valid_from,"
+        " max(production_month) filter (where left(api10, 2) = '33') as nd_valid_to,"
+        " max(created_at) filter (where left(api10, 2) = '33') as nd_latest_knowledge,"
+        " count(*) filter (where left(api10, 2) = '30') as nm_rows,"
+        " count(distinct api10) filter (where left(api10, 2) = '30') as nm_wells,"
+        " min(production_month) filter (where left(api10, 2) = '30') as nm_valid_from,"
+        " max(production_month) filter (where left(api10, 2) = '30') as nm_valid_to,"
+        " max(created_at) filter (where left(api10, 2) = '30') as nm_latest_knowledge"
         " from canonical.production_monthly",
     )
     completions = _one(
@@ -679,18 +686,32 @@ def _inventory(
             wells["tx_latest_knowledge"],
         ),
         dataset(
-            "canonical.production_monthly",
-            "Production observations",
+            "canonical.production_monthly/nd",
+            "North Dakota production observations",
             "North Dakota",
             "one append-only source revision per well, month and stream",
             [
-                _metric("rows", "Observation rows", production["rows"], "rows"),
-                _metric("wells", "Distinct wells", production["wells"], "wells"),
+                _metric("rows", "Observation rows", production["nd_rows"], "rows"),
+                _metric("wells", "Distinct wells", production["nd_wells"], "wells"),
             ],
             "Includes retained report vintages; it is not a count of physical wells.",
-            production["valid_from"],
-            production["valid_to"],
-            production["latest_knowledge"],
+            production["nd_valid_from"],
+            production["nd_valid_to"],
+            production["nd_latest_knowledge"],
+        ),
+        dataset(
+            "canonical.production_monthly/nm",
+            "New Mexico production observations",
+            "New Mexico",
+            "one append-only source revision per well, completion pool, month and stream",
+            [
+                _metric("rows", "Observation rows", production["nm_rows"], "rows"),
+                _metric("wells", "Distinct wells", production["nm_wells"], "wells"),
+            ],
+            "Includes retained report vintages; it is not a count of physical wells.",
+            production["nm_valid_from"],
+            production["nm_valid_to"],
+            production["nm_latest_knowledge"],
         ),
         dataset(
             "canonical.well_completions/nd",
