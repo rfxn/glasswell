@@ -93,3 +93,13 @@
 - [Change] the production CTE is restricted to the wells membership actually joins, which is
          output-identical — asserted by running both shapes side by side — and removes a full
          scan of a view that spans 24.8M rows after the New Mexico promotion
+- [New] `marts/nm_wells.py`: a point-only New Mexico tile mart on the same shape as the ND and
+      TX marts — reads canonical only, rebuilds rather than appends, one content-addressed
+      derivation per refresh — and `059_nm_marts.sql` creates `marts.nm_wells_tile` with its
+      grants and registers the GIS layer's poll cadence
+- [New] the tile carries `status_reported` beside `status_canonical`, because every New Mexico
+      `status_canonical` is null by `cr_nm_wellhistory_status_vocab_1` and the reported letter
+      is what a legend has to work with
+- [Change] there is no `nm_laterals` layer and a test guards against one, asserted against the
+         tile proxy's own allowlist rather than the mart module's constant: no in-scope New
+         Mexico source ships a lateral, and a layer would imply a footprint nobody filed
