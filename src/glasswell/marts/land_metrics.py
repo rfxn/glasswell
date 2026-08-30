@@ -40,6 +40,15 @@ LIQUIDS_BASIS = "oil+condensate"
 BIN_QUANTILES = (0.02, 0.20, 0.40, 0.60, 0.80, 0.98)
 UNPAINTED_BIN = -1
 
+# Cut for a PLSS section, which holds a handful of wells. A rollup over a population two
+# orders of magnitude larger states its own scale rather than saturating this one.
+SECTION_BANDS: tuple[tuple[int, int | None, str], ...] = (
+    (0, 0, "0"),
+    (1, 2, "1-2"),
+    (3, 7, "3-7"),
+    (8, None, "8+"),
+)
+
 # One anchor per well, one section per well. The universe is every well with a surface
 # point (a lateral-only row is invisible — gate-m23 F-E, all TX today). The lateral pick,
 # tie-breaks and the surface fallback are the rule's spec, restated nowhere else: newest
@@ -192,18 +201,17 @@ def liquid_bin(value: float, edges: Sequence[float]) -> int:
     return min(bisect_right(list(edges[1:-1]), value), 6)
 
 
-def _support_distribution(cells: Sequence[dict[str, object]]) -> dict[str, int]:
-    classes = {"0": 0, "1-2": 0, "3-7": 0, "8+": 0}
-    for cell in cells:
-        support = int(cell["prod_well_count"])  # type: ignore[arg-type]
-        if support == 0:
-            classes["0"] += 1
-        elif support <= 2:
-            classes["1-2"] += 1
-        elif support <= 7:
-            classes["3-7"] += 1
-        else:
-            classes["8+"] += 1
+def support_distribution(
+    supports: Sequence[int], bands: Sequence[tuple[int, int | None, str]] = SECTION_BANDS
+) -> dict[str, int]:
+    """Protocol 4D's support statement. The bands are a parameter because a PLSS section
+    holds a handful of wells and a vintage cohort holds hundreds; one scale saturates."""
+    classes = {label: 0 for _, _, label in bands}
+    for support in supports:
+        for low, high, label in bands:
+            if low <= support and (high is None or support <= high):
+                classes[label] += 1
+                break
     return classes
 
 
@@ -228,7 +236,9 @@ def _frame(cells: Sequence[dict[str, object]]) -> dict[str, object]:
         "edges": edges,
         "population": len(liquid),
         "quantiles": ["min", *[f"p{int(q * 100)}" for q in BIN_QUANTILES], "max"],
-        "support_distribution": _support_distribution(cells),
+        "support_distribution": support_distribution(
+            [int(cell["prod_well_count"]) for cell in cells]  # type: ignore[arg-type]
+        ),
     }
 
 

@@ -346,6 +346,54 @@
         "title": "Chains",
         "type": "object"
       },
+      "CohortTotals": {
+        "additionalProperties": false,
+        "properties": {
+          "gas_mcf": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FigureModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cohort gas total.",
+            "x-glasswell-glossary": "gt_stream"
+          },
+          "oil_bbl": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FigureModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cohort liquids total; null where no well in the cohort filed one.",
+            "x-glasswell-glossary": "gt_liquids_policy"
+          },
+          "water_bbl": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FigureModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cohort produced-water total.",
+            "x-glasswell-glossary": "gt_stream"
+          }
+        },
+        "required": [
+          "oil_bbl",
+          "gas_mcf",
+          "water_bbl"
+        ],
+        "title": "CohortTotals",
+        "type": "object"
+      },
       "CompletionEvent": {
         "properties": {
           "_lineage": {
@@ -2228,6 +2276,39 @@
         "title": "EnvelopeModel[WellStatusSummary]",
         "type": "object"
       },
+      "EnvelopeModel_WellVintageCohorts_": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "$ref": "#/components/schemas/WellVintageCohorts"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[WellVintageCohorts]",
+        "type": "object"
+      },
       "EnvelopeModel_list_ConformanceRule__": {
         "properties": {
           "_explain": {
@@ -3969,6 +4050,37 @@
         "title": "PoolProduction",
         "type": "object"
       },
+      "PopulationScope": {
+        "additionalProperties": false,
+        "properties": {
+          "basin_complete": {
+            "description": "Whether the population spans the whole basin.",
+            "title": "Basin Complete",
+            "type": "boolean"
+          },
+          "detail": {
+            "description": "What the truncation means for a basin-level reading.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "states_served": {
+            "description": "API state prefixes in this population.",
+            "items": {
+              "type": "string"
+            },
+            "title": "States Served",
+            "type": "array",
+            "x-glasswell-not-a-figure": "API state prefix naming what this population covers; an identifier, not a quantity. Same class as /state_code."
+          }
+        },
+        "required": [
+          "states_served",
+          "basin_complete",
+          "detail"
+        ],
+        "title": "PopulationScope",
+        "type": "object"
+      },
       "Problem": {
         "additionalProperties": true,
         "description": "The wire shape of every failure (RFC 9457).",
@@ -5137,6 +5249,27 @@
         "title": "SourceHealth",
         "type": "object"
       },
+      "SpacingAssumption": {
+        "additionalProperties": false,
+        "properties": {
+          "applies": {
+            "description": "Whether a spacing assumption underlies these figures.",
+            "title": "Applies",
+            "type": "boolean"
+          },
+          "reason": {
+            "description": "Why it does or does not apply (Protocol 4D).",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "applies",
+          "reason"
+        ],
+        "title": "SpacingAssumption",
+        "type": "object"
+      },
       "Status": {
         "additionalProperties": false,
         "properties": {
@@ -5434,6 +5567,30 @@
         "title": "SummaryGroup",
         "type": "object"
       },
+      "SupportDistribution": {
+        "additionalProperties": false,
+        "properties": {
+          "classes": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "How many cohorts fall in each support band.",
+            "title": "Classes",
+            "type": "object"
+          },
+          "scale": {
+            "description": "Which support scale the bands are, and why this one.",
+            "title": "Scale",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scale",
+          "classes"
+        ],
+        "title": "SupportDistribution",
+        "type": "object"
+      },
       "SurfacePoint": {
         "properties": {
           "lat": {
@@ -5629,6 +5786,52 @@
           "restatement_summary"
         ],
         "title": "Vintage",
+        "type": "object"
+      },
+      "VintageCohort": {
+        "additionalProperties": false,
+        "properties": {
+          "cohort_key_semantics": {
+            "description": "spud_year, or no_spud_date where the regulator published none.",
+            "title": "Cohort Key Semantics",
+            "type": "string"
+          },
+          "cohort_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The year that identifies this cohort; null for the no-key cohort.",
+            "title": "Cohort Year",
+            "x-glasswell-not-a-figure": "Cohort key. The year that identifies a cohort of wells; an identifier for the group, not a quantity measured about it. Which year it is - spud or completion anchor - is stated by cohort_basis and ruled by cohort_key_rule."
+          },
+          "cumulative": {
+            "$ref": "#/components/schemas/CohortTotals",
+            "description": "Cohort totals per stream."
+          },
+          "producing_wells": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Wells in the cohort that filed at least one reported month.",
+            "x-glasswell-glossary": "gt_cumulative_production"
+          },
+          "wells": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Wells in the cohort.",
+            "x-glasswell-glossary": "gt_vintage_well_vintage"
+          }
+        },
+        "required": [
+          "cohort_year",
+          "cohort_key_semantics",
+          "wells",
+          "producing_wells",
+          "cumulative"
+        ],
+        "title": "VintageCohort",
         "type": "object"
       },
       "WellCompletions": {
@@ -6407,6 +6610,74 @@
           "wells"
         ],
         "title": "WellTypeCount",
+        "type": "object"
+      },
+      "WellVintageCohorts": {
+        "properties": {
+          "cohort_basis": {
+            "description": "Which year the cohort key is, per its rule.",
+            "title": "Cohort Basis",
+            "type": "string"
+          },
+          "cohort_key_rule": {
+            "description": "The conformance rule that chose the key.",
+            "title": "Cohort Key Rule",
+            "type": "string",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "cohorts": {
+            "description": "One entry per cohort, oldest first.",
+            "items": {
+              "$ref": "#/components/schemas/VintageCohort"
+            },
+            "title": "Cohorts",
+            "type": "array"
+          },
+          "population_scope": {
+            "$ref": "#/components/schemas/PopulationScope",
+            "description": "What this population does not cover."
+          },
+          "snapshot_vintage": {
+            "description": "Knowledge vintage of the cumulative mart the totals were read from.",
+            "format": "date",
+            "title": "Snapshot Vintage",
+            "type": "string",
+            "x-glasswell-glossary": "gt_report_vintage"
+          },
+          "spacing_assumption": {
+            "$ref": "#/components/schemas/SpacingAssumption",
+            "description": "Protocol 4D, stated not omitted."
+          },
+          "spud_dates_read_at": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Knowledge vintage the cohort key itself was read at.",
+            "title": "Spud Dates Read At",
+            "x-glasswell-glossary": "gt_report_vintage"
+          },
+          "support_distribution": {
+            "$ref": "#/components/schemas/SupportDistribution",
+            "description": "Protocol 4D's support statement, on the cohort scale."
+          }
+        },
+        "required": [
+          "cohort_basis",
+          "cohort_key_rule",
+          "snapshot_vintage",
+          "spud_dates_read_at",
+          "population_scope",
+          "spacing_assumption",
+          "support_distribution",
+          "cohorts"
+        ],
+        "title": "WellVintageCohorts",
         "type": "object"
       },
       "WinningGeometry": {
@@ -11349,6 +11620,140 @@
           },
           "explain_depth": {
             "so": "A count resolves to the status promotion and the file the statuses came from, so three levels reaches the manifest here. Raising it costs one graph read per level per count, which on this operation is the widest multiplier on the surface.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          }
+        }
+      }
+    },
+    "/v1/wells/vintage-cohorts": {
+      "get": {
+        "description": "Drilled wells and their cumulative volumes, grouped by the year that identifies the cohort. Which year that is \u2014 the spud year or the completion-anchor year \u2014 is not a query's choice to make: of the ND wells carrying both dates, 47 percent fall in different years, so the two are different charts. The key is committed as cr_nd_vintage_cohort_1 with its measured rationale and its effective date, read here at serve time, and the response names the rule so a reader can resolve why. Wells the regulator published no key for are their own cohort with cohort_year null, never folded into a year and never dropped: on the deployed instance that is 6,970 ND wells, of which 49 have production, so the cohort is large in count and small in volume and the response says both. Protocol 4D is stated rather than assumed: a vintage cohort is a population of drilled wells and not a set of admissible slots, so spacing_assumption.applies is false with its reason, and support_distribution says how many wells stand behind each cohort's figures on a scale cut for cohorts rather than for PLSS sections. The population is North Dakota. The Williston basin is not, so population_scope says so inside `data` rather than only in a warning a copied payload would lose.",
+        "operationId": "get_well_vintage_cohorts",
+        "parameters": [
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_WellVintageCohorts_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Wells and cumulative volume by vintage cohort",
+        "tags": [
+          "wells"
+        ],
+        "x-glasswell-dataset": {
+          "anchors": [
+            "/cohort_basis",
+            "/cohort_key_rule",
+            "/snapshot_vintage"
+          ],
+          "collection_pointer": "/cohorts",
+          "columns": {
+            "default": [
+              "/cohort_year",
+              "/cohort_key_semantics",
+              "/wells",
+              "/producing_wells",
+              "/cumulative/oil_bbl",
+              "/cumulative/gas_mcf"
+            ],
+            "hidden": [],
+            "hidden_reason": {},
+            "sort": "/cohort_year"
+          },
+          "facets": [],
+          "group": "wells",
+          "id": "vintage_cohorts",
+          "intro": "nb_dataset_vintage_cohorts",
+          "order": 16,
+          "row_id": [
+            "/cohort_year"
+          ],
+          "title": "Vintage cohorts"
+        },
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {}
+        },
+        "x-glasswell-semantics": {
+          "explain": {
+            "so": "Every cohort carries a well count, a producing-well count and up to three totals, so a full basin's cohorts produce more handles than one /v1/explain call takes; the response says how many it left out rather than trimming quietly, and each figure still resolves alone.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "explain_depth": {
+            "so": "A cohort total resolves through the cumulative mart to every promotion that fed it, so the chain is one hop longer than a per-well figure's.",
             "x-glasswell-glossary": "gt_derivation_handle"
           }
         }
