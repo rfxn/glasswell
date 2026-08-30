@@ -15,3 +15,6 @@
       leftmost X-Forwarded-For entry is attacker-controlled
 - [New] infra/cloudflare: the edge range list, a weekly refresh unit that refuses to
       publish a shrunken list, and a misconfiguration detector that never grants trust
+- [New] CSRF tokens bound to the session hash and HMAC-signed, so a token minted for one
+      session cannot be replayed into another and a caller with no session cannot mint
+      one; a missing signing key is a startup abort, never a disabled check
