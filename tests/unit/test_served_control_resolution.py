@@ -160,6 +160,7 @@ def _pin(path: Path, *, coverage_sha256: str = "0" * 64) -> served.PinnedControl
             "artifact_sha256": {"type_curve": "1" * 64, "type_curve_coverage": coverage_sha256},
         },
         superseded=(),
+        in_force="p3pub_" + "0" * 32,
         control_derivation_id="drv_control",
         model_dataset_derivation_id="drv_model",
         feature_derivation_id="drv_feature",

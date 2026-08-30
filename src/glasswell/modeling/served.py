@@ -72,7 +72,10 @@ class UnregisteredArtifact(RuntimeError):
 class PinnedControl:
     publication_id: str
     receipt: Mapping[str, Any]
+    # Older accepted publications for this basin, newest first, and the one a caller who names
+    # no publication is served. A republication is a restatement: both stay addressable.
     superseded: tuple[str, ...]
+    in_force: str
     control_derivation_id: str
     model_dataset_derivation_id: str
     feature_derivation_id: str
@@ -131,10 +134,12 @@ def resolve_pinned_control(
             raise UnregisteredArtifact(
                 f"publication {publication_id} is not an accepted P3 publication"
             )
+    same_basin = [item for item in receipts if item["basin"] == receipt["basin"]]
+    order = (receipt["eval_vintage"], receipt["publication_id"])
     superseded = tuple(
-        item["publication_id"]
-        for item in receipts
-        if item["basin"] == receipt["basin"] and item["publication_id"] != receipt["publication_id"]
+        str(item["publication_id"])
+        for item in same_basin
+        if (item["eval_vintage"], item["publication_id"]) < order
     )
 
     derivation = _registered_control(connection, str(receipt["control_derivation_id"]))
@@ -164,6 +169,7 @@ def resolve_pinned_control(
         publication_id=str(receipt["publication_id"]),
         receipt=document,
         superseded=superseded,
+        in_force=str(same_basin[0]["publication_id"]),
         control_derivation_id=str(receipt["control_derivation_id"]),
         model_dataset_derivation_id=str(receipt["model_dataset_derivation_id"]),
         feature_derivation_id=str(receipt["feature_derivation_id"]),

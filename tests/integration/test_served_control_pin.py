@@ -69,6 +69,7 @@ def test_the_resolver_pins_the_accepted_publication(db, pinned) -> None:
     assert pin.feature_version == "fv2.0"
     assert pin.rows == artifact.rows
     assert pin.superseded == ()
+    assert pin.in_force == publication_id
 
 
 def test_the_pinned_frame_is_the_subject_instance_at_its_horizon(db, pinned) -> None:
@@ -203,12 +204,14 @@ def test_a_second_receipt_selects_by_greatest_eval_vintage_then_publication_id(
 
     pin = served.resolve_pinned_control(db)
     assert pin.publication_id == second_id
+    assert pin.in_force == second_id
     assert pin.superseded == (first_id,)
 
     prior = served.resolve_pinned_control(db, publication_id=first_id)
     assert prior.publication_id == first_id
     assert prior.artifact_sha256 == artifact.sha256
-    assert prior.superseded == (second_id,)
+    assert prior.in_force == second_id
+    assert prior.superseded == ()
 
 
 def test_the_coverage_document_is_digest_checked_and_served(db, pinned) -> None:
