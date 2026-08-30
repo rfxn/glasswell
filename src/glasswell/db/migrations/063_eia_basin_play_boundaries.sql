@@ -208,8 +208,8 @@ grant select on marts.tile_plays to martin, glasswell_api;
 
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-select rule_id, date '2026-08-30', 'UNRELEASED',
-       '0000000000000000000000000000000000000000'
+select rule_id, date '2026-08-30', 'v0.69',
+       'c7f8049fdc24dd94531d958b398a342e7b6455d9'
   from unnest(array[
        'cr_eia_area_provenance_1', 'cr_eia_basin_link_1', 'cr_eia_boundary_datum_1',
        'cr_eia_boundary_overlap_1', 'cr_eia_boundary_publisher_1',
