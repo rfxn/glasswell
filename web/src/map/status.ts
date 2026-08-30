@@ -66,11 +66,13 @@ export const MEASURED_TX_WELL_COUNTS: Readonly<Record<string, number>> = {
 };
 
 /**
- * `select status_canonical, count(*) from marts.nm_wells_tile group by 1` against the deployed
- * New Mexico mart, read at refresh. Every row is null and the object is therefore empty, which
- * is the measurement rather than a placeholder: cr_nm_wellhistory_status_vocab_1 records that
- * the OCD publishes no codebook for its fifteen status letters, so `status_canonical` is an
- * absent mapping and every New Mexico well draws unmapped. Populating this would mean guessing.
+ * Empty by construction rather than by a deployed read, and the distinction matters because the
+ * two constants above it cite real queries. `marts.nm_wells_tile` does not exist on the deployed
+ * host yet. This value is derivable a priori from the promotion path: `nm_wells.py` inserts a
+ * literal null for `status_canonical` on every New Mexico header, because
+ * cr_nm_wellhistory_status_vocab_1 records that the OCD publishes no codebook for its fifteen
+ * status letters. No class can have a count, so every New Mexico well draws unmapped and
+ * populating this would mean guessing. Replace with a real read at the first refresh.
  */
 export const MEASURED_NM_WELL_COUNTS: Readonly<Record<string, number>> = {};
 

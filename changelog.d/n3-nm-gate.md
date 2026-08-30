@@ -176,3 +176,22 @@
          comparison on a drill completing after `max(applied_at)`, and the drill is weekly, so
          between this deploy and the next Sunday the newest restore proof covers the previous
          schema
+- [Fix] `cr_nm_wellhistory_effective_1` legislated a translation of the `9999-12-31` sentinel
+      into a null `effective_to`, and `canonical.wells` has no `effective_to` column and the
+      promoter never read `rec_termn_dte`; the row now states what the code does, the promoter
+      reads the field name and the reason code from the spec, and the ranking question the old
+      text hid is measured — 142,000 open headers against 142,000 wells and zero wells whose
+      newest row is retired
+- [New] `cr_nm_wellhistory_basin_scope_1` records that New Mexico headers carry no basin and
+      why: its wells sit in the Permian and the San Juan and this build delineates neither, so
+      a default would be a claim about geography wrong for every San Juan well
+- [Fix] `marts/producing.py` filtered `entity_type = 'well'` and served every New Mexico well
+      `producing: unknown` under a field description offering three causes, none of which
+      applied; the states with no well-level series now resolve from the registry for either
+      recorded reason, and the well card discloses which with the rule that decided it
+- [Change] the New Mexico smoke check keys its branch on `/v1/status` rather than on the
+         endpoint under test, so a regression that drops New Mexico from the spine fails
+         instead of converting the assertion into a skip
+- [Change] `scripts/ops/nm_reregister_manifests.py` gains `--expect-database`, turning an
+         operator rule into a refusal; `test_martin_publishes` suffixes its container name, so
+         two worktrees sharing a Docker daemon stop manufacturing false reds

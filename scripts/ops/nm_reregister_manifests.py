@@ -142,6 +142,12 @@ def main(argv: list[str] | None = None) -> int:
         help="a manifest.json beside a sealed payload; repeatable",
     )
     parser.add_argument(
+        "--expect-database",
+        default=None,
+        metavar="NAME",
+        help="refuse to run unless --dsn names this database; a rule the tool enforces",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="validate every sidecar and report the manifest ids, committing nothing",
@@ -160,7 +166,14 @@ def main(argv: list[str] | None = None) -> int:
     except psycopg.ProgrammingError as error:
         print(f"error: --dsn is unparseable: {error}", file=sys.stderr)
         return 1
+    dbname = target.get("dbname")
     # glasswell and glasswell_d1 are one letter apart and only one of them is production.
+    if args.expect_database is not None and dbname != args.expect_database:
+        print(
+            f"error: --dsn names database {dbname!r}, not {args.expect_database!r}",
+            file=sys.stderr,
+        )
+        return 1
     print(
         f"target database={target.get('dbname', '(unnamed)')}"
         f" host={target.get('host', '(default)')}"
