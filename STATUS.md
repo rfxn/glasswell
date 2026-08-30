@@ -65,32 +65,81 @@ short current-state ledger;
 | **P7** Permian | Started, unpromoted/incomplete | NM promotion and deployment; TX lease-production ingest, allocation, and the validators over allocated production — the Validator A well-to-lease crosswalk it would be checked against is already built |
 | **P8** Living systems | Not started | Entire phase |
 
+## Public access — live as of 2026-08-30
+
+The deployment is reachable at **`https://glasswell.rpx.sh`** through a Cloudflare Tunnel, and
+is **closed by default**: `/healthz`, the SPA shell and assets, `/basemap/*` and the two login
+routes answer anonymously; every other operation refuses before any database work. Measured
+through the edge at cutover: `/healthz`, `/` and `/v1/session` return 200 while
+`/v1/wells/{api10}`, `/v1/conformance` and `/docs` return 403, with
+`strict-transport-security: max-age=31536000; includeSubDomains` emitted at the edge.
+
+Authentication is the application's own session login with two roles, `owner` and `viewer`.
+**Cloudflare Access is not used** and is not enabled on the account — the app's login is the
+authorization layer, and Access would have been a second, redundant one. `SB-06` §5 and
+`SB-04` carry the amendment; the blueprints previously said glasswell never grows a user
+table, and that contract was changed deliberately rather than worked around.
+
+The API-key path is retained but demoted: the static owner key is refused at the tunnel edge,
+so it is a LAN and deploy-gate credential only, and `/v1/keys*` plus the `agent` scope are
+marked `deprecated: true` in the served document with removal stated for the next major.
+
+Rollback is three independent levels, all exercised or trivially available: delete the proxied
+CNAME (seconds), `systemctl stop cloudflared` (host-side, no dashboard), or revert and redeploy.
+The tunnel is `3b2d209f-7671-4497-ae4f-740dcbc34788`; connector credentials are host state at
+`/etc/cloudflared/` and are not in this repository.
+
 ## Immediate gaps
 
 1. Implement the three-stream quantile-model writer, split-conformal calibration and model
    registry contract against the accepted `fv2.0` / `mdv1.4` split set; publish per-slice
-   empirical coverage rather than serving a candidate early.
+   empirical coverage rather than serving a candidate early. **Note `fv2.0` is a one-feature
+   set** — `features.feature_specs` holds two rows, both `geology.formation_group`, with five
+   of six declared families empty; expanding it moves `feature_set_hash` and cascades the
+   publication identity.
 2. Build the persisted analog index and benchmark runner, enforce the identical split against
    accepted `tcv1.0`, and measure the control bracket and determinism gates end to end.
-3. Promote New Mexico before implementing Texas lease allocation so the well-level
-   Permian spine can act as the intended control.
-4. Put the deployed app behind the ruled tunnel/Access scopes and exercise a non-interactive
-   guest credential from outside the lab; public source visibility is not deployment access.
-5. Let the next schema-54 backup pass the recurring restore drill, then prove remote-copy
-   recency and full replacement-VM/raw-zone recovery separately from that same-cluster proof.
+   `ANALOG_IQR_RATIO_MAX` is unset in SB-02 and is not executable as written.
+3. Promote New Mexico. The spine work is **built and reviewed** on `feat/n3-nm-gate` but not
+   merged; the production promotion is deliberately deferred to a supervised ops window,
+   because `glasswell-status.timer` runs every fifteen minutes and would publish NM rows
+   labelled "North Dakota" into an append-only table before a fix could land.
+4. Exercise a credential from a genuinely off-LAN vantage. The tunnel is live and the edge
+   enforces the ruled scopes, but every probe so far originated on this network, so public
+   *reachability* is proven and a foreign source address is not.
+5. Prove remote-copy recency and full replacement-VM/raw-zone recovery. The schema-54 restore
+   drill **passed** (receipt `schema_match: true`, 197 manifests, 7,223,544 production rows);
+   the offsite push is instrumented but its far side is `rrsync -wo`, so byte-level read-back
+   is impossible and the recovery drill is mechanised but has **never been executed**.
 6. Resolve the owner-gated v0.6 §11 capability-matrix/IP review separately from the already
    public source repository.
 
 ## Verification state
 
-- The full locked Python suite passes **2,916 tests with 1 explicit skip**, including the
+- The full locked Python suite passes **3,484 tests with 56 skips**, including the
   Docker-backed integration and contract tiers; Ruff passes.
-- The web suite passes **1,290 tests across 86 files**; typecheck and production build pass.
-- Browserless E2E guards, shell checks, collateral checks, changelog lint, and the
-  headless-Chromium gates pass locally: 35 Map assertions and 88 Status assertions.
-- The dependency lock exactly matches the installed environment and the generated OpenAPI
-  snapshot reports current.
-- Exact release SHA `204bebb` passed all six hosted CI jobs. The deployed `v0.62+204bebb`
-  instance at schema head 54 passes 127 host checks and 20 API smoke checks, and serves the
-  bundle this release built: the stamp reads version `0.62`, hash `204bebb`, date
-  `2026-08-29`.
+- The web suite passes **1,325 tests across 88 files**; typecheck and production build pass.
+- Browserless E2E guards, shell checks, collateral checks, changelog lint and the
+  headless-Chromium gates pass: **35 Map assertions and 88 Status assertions**.
+- The dependency lock matches the installed environment and the generated OpenAPI snapshot
+  reports current. `openapi_diff` across the session's releases reports **additive changes
+  only** — the `/v1` freeze holds.
+- Every release from v0.64 to v0.67 passed all six hosted CI jobs before merge. The deployed
+  **`v0.67`** instance at schema head 55 passes **172 host checks and 24 API smoke checks**,
+  both exit 0.
+- **v0.66 refused its own deploy** at `verify.sh` (170 passed, 2 failed) and the refusal was
+  correct both times: no owner account existed, and an assertion added by that release
+  demanded a tunnel listener exist on a host that has none, reporting "8080 is bound
+  off-loopback" about a host with nothing bound to 8080. v0.67 fixed the assertion
+  conditionally and the count rose to 172 — the repair *added* checks rather than deleting
+  the failing one.
+- **The four edge probes in `verify.sh` still report `000` after the cutover, and the cause is
+  lab DNS rather than the tunnel.** VM 111's resolver returns NXDOMAIN for `glasswell.rpx.sh`
+  while `1.1.1.1` and `8.8.8.8` both return the Cloudflare edge addresses, so `curl` on the
+  host cannot reach the public hostname at all. Measured off-host against the edge, the same
+  surface answers correctly: `/healthz`, `/` and `/v1/session` 200; `/v1/wells/{api10}`,
+  `/v1/conformance` and `/docs` 403; HSTS present. Public reachability and edge enforcement
+  are therefore proven; the host-run assertions are blocked on split-horizon resolution.
+  Either give the host a resolver that sees the public record, or have those four probes pin
+  the edge address explicitly. Until then `verify.sh` reads **174 passed, 4 failed** and the
+  failures are known and benign.
