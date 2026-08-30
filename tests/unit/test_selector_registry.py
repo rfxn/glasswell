@@ -7,8 +7,12 @@ import pytest
 from glasswell.lineage.errors import InvalidSelector
 from glasswell.lineage.explain import PostgresGraph
 from glasswell.lineage.selector_registry import (
+    COMPLETION_ANCHOR_PROFILE,
+    COMPLETION_DESIGN_PROFILE,
     COMPLETION_POOL_PROFILE,
     RESPONSE_PROFILE,
+    WELL_CUMULATIVE_PROFILE,
+    _profile_matches,
     identity_selector_term,
     validate_selector,
 )
@@ -174,3 +178,71 @@ def test_one_graph_loads_a_profile_once_for_many_handles() -> None:
         graph.validate_selector(row, selector, handle=f"drv_selector01#{selector}")
 
     assert connection.queries == 2
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [
+        "disclosure_id=ff-0001&col=tvd",
+        "disclosure_id=ff-0001&col=base_water_volume&extra=1",
+        "col=base_water_volume",
+    ],
+    ids=["column-outside-the-set", "unexpected-term", "no-identity"],
+)
+def test_a_completion_design_selector_is_refused_outside_its_grammar(selector: str) -> None:
+    with pytest.raises(InvalidSelector):
+        validate_selector(
+            NoDatabase(),  # type: ignore[arg-type]
+            derivation(output_dataset="canonical.well_completion_design"),
+            selector,
+            handle=f"drv_selector01#{selector}",
+            profiles=(COMPLETION_DESIGN_PROFILE,),
+        )
+
+
+def test_the_anchor_and_design_profiles_never_compete_for_one_lookup() -> None:
+    """Identical predicates, different output datasets: the registry keys them apart.
+
+    Written because the next reader of `_profile_matches` sees two identical branches and
+    assumes a bug; `validate_selector` requires exactly one match, so a lookup that could
+    register both would raise.
+    """
+    terms = {"disclosure_id": "ff-0001", "col": "base_water_volume"}
+
+    assert _profile_matches(COMPLETION_ANCHOR_PROFILE, terms)
+    assert _profile_matches(COMPLETION_DESIGN_PROFILE, terms)
+    with pytest.raises(InvalidSelector, match="no unique registered selector profile"):
+        validate_selector(
+            NoDatabase(),  # type: ignore[arg-type]
+            derivation(output_dataset="canonical.well_completion_design"),
+            "disclosure_id=ff-0001&col=base_water_volume",
+            handle="drv_selector01#disclosure_id=ff-0001&col=base_water_volume",
+            profiles=(COMPLETION_ANCHOR_PROFILE, COMPLETION_DESIGN_PROFILE),
+        )
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [
+        "api10=3305310451&stream=oil&col=cum_volume",
+        "api10=3305310451&stream=liquid&col=months_reported",
+        "api10=330531045&stream=liquid&col=cum_volume",
+        "api10=3305310451&stream=liquid&col=cum_volume&pm=2026-01",
+    ],
+    ids=["stream-outside-the-mart", "column-outside-the-set", "short-api10", "unexpected-term"],
+)
+def test_a_well_cumulative_selector_is_refused_outside_its_grammar(selector: str) -> None:
+    with pytest.raises(InvalidSelector):
+        validate_selector(
+            NoDatabase(),  # type: ignore[arg-type]
+            derivation(operation="mart.refresh", output_dataset="marts.well_cumulatives"),
+            selector,
+            handle=f"drv_selector01#{selector}",
+            profiles=(WELL_CUMULATIVE_PROFILE,),
+        )
+
+
+def test_a_well_cumulative_selector_needs_its_stream_to_match_the_profile() -> None:
+    """The mart is keyed (api10, stream), so an api10-only selector names three rows."""
+    assert not _profile_matches(WELL_CUMULATIVE_PROFILE, {"api10": "3305310451"})
+    assert _profile_matches(WELL_CUMULATIVE_PROFILE, {"api10": "3305310451", "stream": "liquid"})

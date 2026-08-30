@@ -655,9 +655,48 @@
   expanded_definition: >-
     Distinct from report vintage; both appear in this system and the glossary keeps them apart
     deliberately, because a chart that mixes them looks like a trend and is an artefact.
+    glasswell keys its North Dakota vintage cohorts on the spud year rather than the completion
+    year, because spud dates cover 84 percent of the ND population against the completion
+    anchor's 40 percent and reach back to 1922 rather than to 2009, which is when the disclosure
+    registry began rather than when the basin was drilled. That choice is
+    cr_nd_vintage_cohort_1, with its measured rationale; the completion anchor is still served
+    per well at /v1/wells/{api10}/completions, it is simply not the cohort key.
   domain_tags: [production, time]
-  related_terms: ["Report vintage", "First production"]
-  source_refs: ["blueprint-v0.6 §9"]
+  related_terms: ["Report vintage", "First production", "Spud date"]
+  source_refs: ["blueprint-v0.6 §9", "cr_nd_vintage_cohort_1"]
+
+- term: Fluid intensity
+  aliases: ["Base fluid intensity", "Fluid per lateral foot"]
+  highlightable: false
+  short_definition: >-
+    Base fluid pumped per foot of lateral, in US gallons per foot.
+  expanded_definition: >-
+    The disclosed total base water volume divided by the well's summed lateral length. It is a
+    completion-design figure, not a production one: a bigger number means a larger job, never a
+    better well. Both operands come from different sources measured at different times - the
+    volume from a voluntary FracFocus disclosure under cr_ff_base_water_units_1, the length
+    computed geodesically from canonical geometry - so a well missing either gets a stated
+    reason rather than a zero. cr_ff_fluid_intensity_1 declares the minimum lateral the division
+    is defensible over and the ceiling above which the result is withdrawn.
+  domain_tags: [completion, design]
+  related_terms: ["Wellbore", "Completion event", "Conformance rule"]
+  source_refs: ["canonical.well_completion_design", "cr_ff_fluid_intensity_1"]
+
+- term: Cumulative production
+  aliases: ["Cumulative", "Cum"]
+  highlightable: false
+  short_definition: >-
+    The sum of a well's filed monthly volumes for one stream, over a stated span.
+  expanded_definition: >-
+    A total is only as complete as the record under it, so the figure is served beside the
+    months that make it up: months reported, months reported as zero, months with no report, and
+    months the regulator withheld. Those four are different facts and are never collapsed into
+    one gap. The cumulative is a mart snapshot at a stated vintage, so the live monthly series
+    can already hold months it has not absorbed; when it does, the response says so rather than
+    leaving a reader to find the difference by arithmetic.
+  domain_tags: [production, time]
+  related_terms: ["Report vintage", "Withheld", "Liquids policy"]
+  source_refs: ["marts.well_cumulatives", "blueprint-v0.6 §9"]
 
 - term: Water cut
   highlightable: false
