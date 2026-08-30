@@ -3,14 +3,36 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ResponseMeta } from "./client.ts";
 
-const { ApiError, apiKey, authHeaders, clearKey, getEnvelope, isKeyShaped, saveKey, storedKey } =
-  await import("./client.ts");
+const {
+  ApiError,
+  authHeaders,
+  getChallenge,
+  getEnvelope,
+  login,
+  logout,
+  purgeLegacyKey,
+  whoami,
+} = await import("./client.ts");
 
-const KEY = "a".repeat(64);
 const ENVELOPE = { data: { api10: "3305310451" }, meta: { as_of: "2026-08-01" } };
+const CHALLENGE = { data: { csrf_token: "tok", expires_in: 14400 }, meta: {}, links: {} };
+const SESSION = {
+  data: {
+    username: "ryan",
+    role: "owner",
+    kind: "user",
+    expires_at: "2026-08-30T12:00:00Z",
+    absolute_expires_at: "2026-08-31T00:00:00Z",
+  },
+  meta: {},
+  links: {},
+};
 
-function visit(url: string): void {
-  window.history.replaceState(null, "", url);
+function json(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 function responds(status: number, body: unknown, headers: Record<string, string> = {}) {
@@ -24,91 +46,166 @@ function responds(status: number, body: unknown, headers: Record<string, string>
   );
 }
 
-beforeEach(() => {
+/** The challenge, then a scripted reply per subsequent call. */
+function exchange(...replies: Response[]) {
+  const queue = [...replies];
+  return vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
+    if (String(input).includes("/v1/session/challenge")) {
+      return Promise.resolve(json(200, CHALLENGE));
+    }
+    return Promise.resolve(queue.shift() ?? json(500, { title: "unscripted call" }));
+  });
+}
+
+function initOf(spy: ReturnType<typeof vi.fn>, index: number): RequestInit {
+  return (spy.mock.calls[index] as [string, RequestInit])[1];
+}
+
+beforeEach(async () => {
   window.localStorage.clear();
-  visit(`/`);
+  window.history.replaceState(null, "", "/");
+  // The held token is module state, and logout is the only exported way back to holding none;
+  // without this every test would inherit whichever token the one before it left behind.
+  vi.stubGlobal("fetch", exchange(json(200, SESSION)));
+  await logout();
+  vi.unstubAllGlobals();
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("the owner key never travels in a place the server logs", () => {
-  it("reads the key from the fragment, which is never sent to the server", () => {
-    visit(`/#key=${KEY}`);
+describe("the owner key is gone, and no path can revive it", () => {
+  it("clears a key an earlier build left in this browser", () => {
+    window.localStorage.setItem("glasswell.key", "f".repeat(64));
 
-    expect(apiKey()).toBe(KEY);
-  });
+    purgeLegacyKey();
 
-  it("strips the key from the fragment once it is stored", () => {
-    visit(`/?map=7.00/47.80000/-102.80000#key=${KEY}`);
-
-    apiKey();
-
-    expect(window.location.hash).toBe("");
-    expect(window.location.href).not.toContain(KEY);
-    expect(window.location.search).toBe("?map=7.00/47.80000/-102.80000");
-  });
-
-  it("keeps the rest of the fragment when it strips the key", () => {
-    visit(`/#key=${KEY}&note=hello`);
-
-    apiKey();
-
-    expect(window.location.hash).toBe("#note=hello");
-  });
-
-  it("refuses the query-string form, because uvicorn writes it to the journal", () => {
-    visit(`/?key=${KEY}`);
-
-    expect(apiKey()).toBeNull();
     expect(window.localStorage.getItem("glasswell.key")).toBeNull();
   });
 
-  it("remembers the key for later visits that carry no fragment", () => {
-    visit(`/#key=${KEY}`);
-    apiKey();
-    visit(`/`);
+  it("is idempotent, so a second boot is not an error", () => {
+    purgeLegacyKey();
+    purgeLegacyKey();
 
-    expect(apiKey()).toBe(KEY);
-    expect(authHeaders()).toEqual({ "X-Glasswell-Key": KEY });
+    expect(window.localStorage.getItem("glasswell.key")).toBeNull();
   });
 
-  it("sends no header at all when no key has been seen", () => {
-    expect(apiKey()).toBeNull();
-    expect(authHeaders()).toEqual({});
+  it("never reads a `#key=` fragment back into a header", async () => {
+    window.history.replaceState(null, "", `/#key=${"a".repeat(64)}`);
+    const fetched = responds(200, ENVELOPE);
+    vi.stubGlobal("fetch", fetched);
+
+    await getEnvelope("/v1/wells");
+
+    const headers = initOf(fetched, 0).headers as Record<string, string>;
+    expect(Object.keys(headers)).toEqual(["Accept"]);
   });
 });
 
-describe("a stored key can be replaced without devtools (UX P1-6)", () => {
-  it("stores a key the UI collected", () => {
-    saveKey(KEY);
+describe("CSRF guards writes and only writes", () => {
+  it("sends nothing on a safe method, because the cookie is the credential", async () => {
+    vi.stubGlobal("fetch", exchange());
+    await getChallenge();
 
-    expect(storedKey()).toBe(KEY);
-    expect(authHeaders()).toEqual({ "X-Glasswell-Key": KEY });
-  });
-
-  it("forgets a wrong key, so the next load is the honest no-key state", () => {
-    saveKey(KEY);
-
-    clearKey();
-
-    expect(storedKey()).toBeNull();
     expect(authHeaders()).toEqual({});
+    expect(authHeaders("GET")).toEqual({});
+    expect(authHeaders("head")).toEqual({});
+    expect(authHeaders("OPTIONS")).toEqual({});
   });
 
-  it("recognises the 64-hex shape in either case, and nothing else", () => {
-    expect(isKeyShaped(KEY)).toBe(true);
-    expect(isKeyShaped("A".repeat(64))).toBe(true);
-    expect(isKeyShaped("a".repeat(63))).toBe(false);
-    expect(isKeyShaped(`${"a".repeat(63)}z`)).toBe(false);
-    expect(isKeyShaped("")).toBe(false);
+  it("sends the token on a method that changes something", async () => {
+    vi.stubGlobal("fetch", exchange());
+
+    await getChallenge();
+
+    expect(authHeaders("POST")).toEqual({ "X-Glasswell-CSRF": "tok" });
+    expect(authHeaders("delete")).toEqual({ "X-Glasswell-CSRF": "tok" });
   });
 
-  it("trims a pasted key rather than storing the whitespace with it", () => {
-    saveKey(`  ${KEY}\n`);
+  it("sends no header when no challenge has been answered yet", () => {
+    expect(authHeaders("POST")).toEqual({});
+  });
 
-    expect(storedKey()).toBe(KEY);
+  it("drops the token on logout, so a dead session cannot keep proving origin", async () => {
+    vi.stubGlobal("fetch", exchange(json(200, SESSION)));
+    await getChallenge();
+
+    await logout();
+
+    expect(authHeaders("POST")).toEqual({});
+  });
+});
+
+describe("a session is opened and closed over the same fetch the app uses", () => {
+  it("mints a token before it posts, and posts the credentials in the body", async () => {
+    const fetched = exchange(json(201, SESSION));
+    vi.stubGlobal("fetch", fetched);
+
+    const session = await login("ryan", "correct horse");
+
+    expect(session).toEqual(SESSION.data);
+    expect(String(fetched.mock.calls[0]?.[0])).toContain("/v1/session/challenge");
+    expect(String(fetched.mock.calls[1]?.[0])).toBe("/v1/session");
+    const init = initOf(fetched, 1);
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({
+      username: "ryan",
+      password: "correct horse",
+    });
+  });
+
+  it("drops the token after login, because the server deletes the cookie it bound to", async () => {
+    vi.stubGlobal("fetch", exchange(json(201, SESSION)));
+
+    await login("ryan", "correct horse");
+
+    expect(authHeaders("POST")).toEqual({});
+  });
+
+  it("states same-origin credentials on every call rather than inheriting a default", async () => {
+    const fetched = exchange(json(201, SESSION), json(200, ENVELOPE));
+    vi.stubGlobal("fetch", fetched);
+
+    await login("ryan", "correct horse");
+    await getEnvelope("/v1/wells");
+
+    expect(fetched.mock.calls).toHaveLength(3);
+    for (let index = 0; index < fetched.mock.calls.length; index += 1) {
+      expect(initOf(fetched, index).credentials).toBe("same-origin");
+    }
+  });
+
+  it("resolves whoami out of the envelope, not out of the browser", async () => {
+    vi.stubGlobal("fetch", responds(200, SESSION));
+
+    expect(await whoami()).toEqual(SESSION.data);
+  });
+
+  it("raises the uniform refusal without inventing a detail for it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      exchange(json(403, { type: "/v1/errors/unauthenticated", title: "Forbidden", status: 403 })),
+    );
+
+    const error = await login("ryan", "wrong").catch((thrown: unknown) => thrown);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as InstanceType<typeof ApiError>).code).toBe("unauthenticated");
+    expect((error as InstanceType<typeof ApiError>).problem.detail).toBeUndefined();
+  });
+
+  it("re-challenges once when a write is refused for a stale token, then gives up", async () => {
+    const forbidden = { type: "/v1/errors/forbidden", title: "Forbidden", status: 403 };
+    const fetched = exchange(json(403, forbidden), json(403, forbidden));
+    vi.stubGlobal("fetch", fetched);
+
+    await expect(logout()).rejects.toBeInstanceOf(ApiError);
+
+    const posts = fetched.mock.calls.filter((call) => String(call[0]) === "/v1/session");
+    const challenges = fetched.mock.calls.filter((call) => String(call[0]).includes("challenge"));
+    expect(posts).toHaveLength(2);
+    expect(challenges).toHaveLength(2);
   });
 });
 

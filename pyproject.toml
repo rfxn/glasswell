@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "glasswell"
-version = "0.64"
+version = "0.65"
 description = "Glass-box upstream analytics on public data"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -24,6 +24,7 @@ dependencies = [
     "pyproj>=3.6",
     "shapely>=2.0",
     "PyYAML>=6.0",
+    "argon2-cffi>=23.1",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +37,8 @@ dev = [
 
 [project.scripts]
 glasswell-migrate = "glasswell.db.migrate:main"
+glasswell-owner-bootstrap = "glasswell.api.bootstrap:bootstrap_main"
+glasswell-owner-reset = "glasswell.api.bootstrap:reset_main"
 glasswell-features = "glasswell.modeling.feature_matrix:main"
 glasswell-model-dataset = "glasswell.modeling.model_dataset:main"
 glasswell-typecurve-control = "glasswell.modeling.type_curve:main"

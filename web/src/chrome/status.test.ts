@@ -4,12 +4,12 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { mountHint } from "./hint.ts";
-import { mountStatus, setKeyState, setStatus, setVintage, toast } from "./status.ts";
+import { mountStatus, setSessionState, setStatus, setVintage, toast } from "./status.ts";
 
 let status: HTMLElement;
 let vintage: HTMLElement;
 let toasts: HTMLElement;
-let keyState: HTMLButtonElement;
+let sessionChip: HTMLButtonElement;
 
 // A hand-rolled MediaQueryList: the rail's brief copy is chosen by a media query, and the
 // test has to be able to cross that boundary in both directions.
@@ -35,9 +35,9 @@ beforeEach(() => {
   status = document.createElement("p");
   vintage = document.createElement("p");
   toasts = document.createElement("div");
-  keyState = document.createElement("button");
-  document.body.append(status, vintage, toasts, keyState);
-  mountStatus({ status, vintage, toasts, keyState });
+  sessionChip = document.createElement("button");
+  document.body.append(status, vintage, toasts, sessionChip);
+  mountStatus({ status, vintage, toasts, session: sessionChip });
 });
 
 afterEach(() => {
@@ -129,22 +129,22 @@ describe("the four status channels are not interchangeable (harvest item 10)", (
     expect(vintage.textContent).toContain("as_of —");
   });
 
-  it("keeps the key channel apart from the status channel", () => {
+  it("keeps the session channel apart from the status channel", () => {
     setStatus("ready");
 
-    setKeyState("rejected");
+    setSessionState("expired");
 
-    expect(keyState.textContent).toContain("key rejected");
-    expect(keyState.hidden).toBe(false);
+    expect(sessionChip.textContent).toContain("session ended");
+    expect(sessionChip.hidden).toBe(false);
     expect(status.textContent).toBe("ready");
   });
 
-  it("hides the key chip once a key is working, so chrome reports only what matters", () => {
-    setKeyState("rejected");
+  it("hides the chip once a session is live, so chrome reports only what matters", () => {
+    setSessionState("expired");
 
-    setKeyState("ok");
+    setSessionState("ok");
 
-    expect(keyState.hidden).toBe(true);
+    expect(sessionChip.hidden).toBe(true);
   });
 });
 

@@ -2,14 +2,15 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { HEADER_IDS, wireHeader } from "./header.ts";
+import { HEADER_IDS, setSignedIn, wireHeader } from "./header.ts";
 import { setStatus, setVintage } from "./status.ts";
 
 // vitest roots at web/, and happy-dom gives import.meta.url an http scheme.
 const INDEX = readFileSync("index.html", "utf8");
 const MARKUP = /<header id="gw-header"[\s\S]*?<\/header>/.exec(INDEX)?.[0] ?? "";
 
-const onKeyPanel = vi.fn();
+const onSignIn = vi.fn();
+const onLogout = vi.fn();
 let search: HTMLElement;
 
 function element(id: string): HTMLElement {
@@ -19,12 +20,13 @@ function element(id: string): HTMLElement {
 beforeEach(() => {
   window.localStorage.clear();
   document.body.innerHTML = `${MARKUP}<div id="gw-toasts"></div>`;
-  onKeyPanel.mockClear();
+  onSignIn.mockClear();
+  onLogout.mockClear();
   search = document.createElement("div");
   const input = document.createElement("input");
   input.className = "gw-search-input";
   search.appendChild(input);
-  wireHeader({ search, onKeyPanel });
+  wireHeader({ search, onSignIn, onLogout });
 });
 
 afterEach(() => {
@@ -273,7 +275,7 @@ describe("the theme control", () => {
     beforeEach(() => {
       vi.stubEnv("VITE_GW_THEME_TOGGLE", "1");
       document.body.innerHTML = `${MARKUP}<div id="gw-toasts"></div>`;
-      wireHeader({ search, onKeyPanel });
+      wireHeader({ search, onSignIn, onLogout });
     });
 
     it("lives in the action group and starts on the brand default", () => {
@@ -325,18 +327,54 @@ describe("the help disclosure", () => {
   });
 });
 
-describe("the key chip", () => {
-  it("starts hidden, because a working key is not news", () => {
+describe("the session chip", () => {
+  it("starts hidden, because a live session is not news", () => {
     expect(element("gw-key-btn").hidden).toBe(true);
   });
 
-  it("opens the key panel when a rejected key makes it visible", () => {
+  it("opens the login panel once a refused request makes it visible", () => {
     const chip = element("gw-key-btn");
     chip.hidden = false;
 
     chip.click();
 
-    expect(onKeyPanel).toHaveBeenCalledOnce();
+    expect(onSignIn).toHaveBeenCalledOnce();
+  });
+});
+
+describe("the sign-out control", () => {
+  it("ships hidden, so a signed-out reader is never offered it", () => {
+    expect(element("gw-logout-btn").hidden).toBe(true);
+    expect(/<button\s+id="gw-logout-btn"([^>]*)>/.exec(MARKUP)?.[1]).toMatch(/\bhidden\b/);
+  });
+
+  it("lives in the action group, beside the other controls that never change width", () => {
+    expect(element("gw-logout-btn").closest(".gw-tools-act")).toBeTruthy();
+  });
+
+  it("appears once a session is known, and names the account it would end", () => {
+    setSignedIn("ryan");
+
+    expect(element("gw-logout-btn").hidden).toBe(false);
+    expect(element("gw-logout-btn").title).toContain("ryan");
+  });
+
+  it("goes away again when there is no session to end", () => {
+    setSignedIn("ryan");
+
+    setSignedIn(null);
+
+    expect(element("gw-logout-btn").hidden).toBe(true);
+    expect(element("gw-logout-btn").title).toBe("");
+  });
+
+  it("hands the press to the caller rather than ending the session itself", () => {
+    setSignedIn("ryan");
+
+    element("gw-logout-btn").click();
+
+    expect(onLogout).toHaveBeenCalledOnce();
+    expect(onSignIn).not.toHaveBeenCalled();
   });
 });
 
@@ -348,7 +386,7 @@ describe("the mode switch (SB-08 §2.1)", () => {
   beforeEach(() => {
     window.history.replaceState(null, "", "/");
     document.body.innerHTML = `${MARKUP}<div id="gw-toasts"></div>`;
-    wireHeader({ search, onKeyPanel });
+    wireHeader({ search, onSignIn, onLogout });
   });
 
   it("offers the three surfaces as one group, between the brand and the controls", () => {
@@ -360,7 +398,7 @@ describe("the mode switch (SB-08 §2.1)", () => {
   it("presses the surface the URL is on, so a deep link arrives with the switch already right", () => {
     window.history.replaceState(null, "", "/?view=explore&ds=wells");
     document.body.innerHTML = `${MARKUP}<div id="gw-toasts"></div>`;
-    wireHeader({ search, onKeyPanel });
+    wireHeader({ search, onSignIn, onLogout });
 
     expect(modes().map((button) => button.getAttribute("aria-pressed"))).toEqual([
       "false",
@@ -381,7 +419,7 @@ describe("the mode switch (SB-08 §2.1)", () => {
   it("carries as_of across the crossing — the surfaces may not disagree about a number", () => {
     window.history.replaceState(null, "", "/?as_of=2026-08-01");
     document.body.innerHTML = `${MARKUP}<div id="gw-toasts"></div>`;
-    wireHeader({ search, onKeyPanel });
+    wireHeader({ search, onSignIn, onLogout });
 
     modes()[1]?.click();
 
@@ -415,7 +453,7 @@ describe("the mode switch (SB-08 §2.1)", () => {
       "/?well=3305310451&explain=drv_1&as_of=2026-08-01&f.q=bakken",
     );
     document.body.innerHTML = `${MARKUP}<div id="gw-toasts"></div>`;
-    wireHeader({ search, onKeyPanel });
+    wireHeader({ search, onSignIn, onLogout });
 
     modes()[2]?.click();
 

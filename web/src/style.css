@@ -423,6 +423,14 @@ body {
   display: none;
 }
 
+/* `[hidden]` is a single attribute selector and loses to any class rule that sets `display`,
+   which is how the sign-out control rendered for signed-out readers on every surface -- and
+   overflowed the rail by 34 px at 320 px, where there is no room for a control nobody can
+   use. The chip above needs the same line for the same reason. */
+.gw-icon-btn[hidden] {
+  display: none;
+}
+
 /* A fixed column, not a capped one. A cap bounds how far the slot can grow; it does not fix
    where it starts, so under a right-packed row every word the status gained pushed search and
    the buttons left — 117 px between idle and a degraded source (gate-v BLOCKER-1). What is in
@@ -774,7 +782,7 @@ main {
    the body scrolls. Without the flex column a long card pushes its own footer off screen. */
 #gw-card,
 #gw-drawer,
-.gw-key-panel {
+.gw-login-panel {
   position: absolute;
   top: 0.75rem;
   bottom: auto;
@@ -806,7 +814,7 @@ main[data-drawer="open"] #gw-card {
   z-index: var(--gw-z-drawer);
 }
 
-.gw-key-panel {
+.gw-login-panel {
   top: 50%;
   left: 50%;
   right: auto;
@@ -1546,20 +1554,24 @@ a {
   cursor: pointer;
 }
 
-.gw-key-form {
+/* A column, not a row: two labelled fields side by side put the password box at half the
+   width a manager's overlay needs, and wrapped to two lines on every phone posture anyway. */
+.gw-login-form {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
+  flex-direction: column;
+  gap: 0.25rem;
   margin: 0.6rem 0;
 }
 
-.gw-key-label {
+.gw-login-label {
   color: var(--slate);
 }
 
-.gw-key-input {
-  flex: 1 1 14rem;
+.gw-login-label + .gw-login-input {
+  margin-bottom: 0.5rem;
+}
+
+.gw-login-input {
   min-height: var(--gw-control-h);
   padding: 0.25rem 0.5rem;
   font-family: var(--gw-font-mono);
@@ -1569,34 +1581,29 @@ a {
   border-radius: var(--gw-radius-sm);
 }
 
-.gw-key-use,
-.gw-key-clear {
+.gw-login-submit {
+  align-self: flex-start;
   min-height: var(--gw-control-h);
   padding: 0.25rem 0.6rem;
   font-family: var(--gw-font-body);
   font-size: var(--gw-fs-micro);
-  color: var(--paper);
+  color: var(--cyan-text);
   background: none;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--cyan);
   border-radius: var(--gw-radius-sm);
   cursor: pointer;
 }
 
-.gw-key-use {
-  color: var(--cyan-text);
-  border-color: var(--cyan);
+.gw-login-submit[disabled] {
+  color: var(--muted);
+  border-color: var(--hairline);
+  cursor: default;
 }
 
-.gw-key-note {
+.gw-login-note {
   margin: 0.3rem 0;
   color: var(--slate);
   font-size: var(--gw-fs-body);
-}
-
-.gw-key-hint {
-  margin: 0.6rem 0 0;
-  color: var(--muted);
-  font-size: var(--gw-fs-micro);
 }
 
 /* Transient gesture feedback, deliberately its own surface: routing it through the status

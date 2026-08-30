@@ -654,7 +654,7 @@ field so the first real outage is diagnosable.
 Result: `request.state.principal` per SB-06 §5.5 — `{kind, id, aud, exp}` — with
 `kind ∈ {owner, guest, service, lan}`. `owner` vs `guest` is decided by matching
 `email` against `GLASSWELL_OWNER_EMAILS` in `/etc/glasswell/app.env`: **config, not a
-table.** glasswell never grows a user table.
+table.** Owner-created accounts only; no registration path (SB-06 §5, amended 2026-08-29).
 
 ### 3.2 Gate 2 — application API keys
 
@@ -1510,7 +1510,7 @@ E-16 through E-20 are gaps.
   trust property it does not have (§2.3).
 - **`meta.derivations` pointer map alongside in-band figures.** E-01.
 - **A user table.** SB-06 §5: identity is enforced at the edge; `owner` vs `guest` is
-  config. glasswell never grows a user table.
+  config. Owner-created accounts only; no registration path (SB-06 §5, amended 2026-08-29).
 - **Per-row ACLs on API keys.** `bp:411` and SB-06 §8.3 both scope this out;
   `owner_principal` + `visibility` is the boundary.
 - **Server-side rendering of `/explain` prose.** SB-07 §9.3 is explicit: prose is a

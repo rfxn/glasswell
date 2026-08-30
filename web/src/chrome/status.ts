@@ -2,12 +2,12 @@
  * Five channels that must never be routed into one another (responder's incident: a
  * transient failure written to the freshness slot erased a live degraded warning and the
  * board read healthier than it was). Persistent status, resolved vintage, transient toast,
- * key state, one-time coaching — one writer each. Coaching is chrome/hint.ts, and this
+ * session state, one-time coaching — one writer each. Coaching is chrome/hint.ts, and this
  * module's only part in it is refusing to print it as a status.
  */
 import { showHint } from "./hint.ts";
 
-export type KeyState = "ok" | "missing" | "rejected";
+export type SessionState = "ok" | "required" | "expired";
 
 interface StatusHosts {
   status: HTMLElement;
@@ -15,14 +15,14 @@ interface StatusHosts {
   /** The phone posture has no room for the read column, so Help carries the same fact. */
   vintageEcho?: HTMLElement;
   toasts: HTMLElement;
-  keyState: HTMLElement;
+  session: HTMLElement;
 }
 
 const TOAST_MS = 6000;
-const KEY_COPY: Record<KeyState, string> = {
-  ok: "key ok",
-  missing: "key needed",
-  rejected: "key rejected",
+const SESSION_COPY: Record<SessionState, string> = {
+  ok: "signed in",
+  required: "sign in",
+  expired: "session ended",
 };
 
 // Matches the ≤520 posture in style.css, where the read slot is 104 px wide. Below that the
@@ -54,7 +54,7 @@ export function mountStatus(elements: StatusHosts): void {
   narrow = window.matchMedia(NARROW_QUERY);
   narrow.addEventListener("change", renderStatus);
   setVintage(null);
-  setKeyState("ok");
+  setSessionState("ok");
 }
 
 export function setStatus(
@@ -117,9 +117,8 @@ export function toast(message: string): void {
   setTimeout(() => item.remove(), TOAST_MS);
 }
 
-export function setKeyState(state: KeyState): void {
+export function setSessionState(state: SessionState): void {
   if (!hosts) return;
-  hosts.keyState.textContent = KEY_COPY[state];
-  hosts.keyState.hidden = state === "ok";
-  hosts.keyState.classList.toggle("gw-key-bad", state !== "ok");
+  hosts.session.textContent = SESSION_COPY[state];
+  hosts.session.hidden = state === "ok";
 }

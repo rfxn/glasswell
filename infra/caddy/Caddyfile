@@ -4,6 +4,70 @@
 	email ryan@rfxn.com
 }
 
+# Tunnel-facing. Reachable only by cloudflared over loopback; no TLS here because the tunnel
+# terminates it at the edge. Every trust header a client could set is neutralised before the
+# proxy, and that is the security property the app's client-IP resolution depends on
+# (src/glasswell/api/client_ip.py); tests/unit/test_caddy_trust_headers.py holds it.
+#
+# Caddy applies a field-specific `delete` AFTER `set` in one headers handler, so deleting a
+# header and then setting it in the same block yields *no* header. For the two headers this
+# block sets, `set` is therefore the defence: it replaces any client-supplied value outright.
+# `delete` is used only for headers Caddy does not set. Getting this backwards would strip the
+# edge marker, put the whole internet in one rate bucket, and stop the tunnel refusal of the
+# static owner key from ever firing.
+http://:8080 {
+	# `bind`, not a host matcher. `http://127.0.0.1:8080` as a site address adapts to
+	# listen :8080 with a `host: 127.0.0.1` *matcher* -- open on every interface, and
+	# matching on a header the caller supplies. It also could never match cloudflared,
+	# which sends Host: glasswell.rpx.sh. This form adapts to listen 127.0.0.1:8080 with
+	# no host matcher; tests/integration/test_caddy_adapt.py asserts the adapted JSON.
+	bind 127.0.0.1
+
+	request_header -X-Forwarded-For
+	request_header -X-Real-IP
+	request_header -Forwarded
+	request_header -X-Glasswell-Origin
+	# Read before the delete below; `set` runs first, so the visitor's address survives.
+	request_header X-Glasswell-Client-Ip {http.request.header.Cf-Connecting-Ip}
+	request_header -Cf-Connecting-Ip
+	request_header X-Glasswell-Edge tunnel
+
+	# No `handle_path /tiles/*`: SB-06 §4.5 specifies one on both listeners, and it would
+	# route the edge straight at martin, bypassing the published-layer allowlist and the
+	# session gate together. Tiles are served by the API at /v1/tiles/... instead.
+	reverse_proxy unix//run/glasswell/api.sock {
+		# Cloudflare terminates TLS at the edge and this hop is plaintext loopback, so
+		# the scheme uvicorn would otherwise infer is `http` -- which drops HSTS and
+		# upgrade-insecure-requests on the public path. This has to be `header_up`
+		# inside the proxy, not a `request_header` above it: reverse_proxy sets
+		# X-Forwarded-Proto from the actual hop and would overwrite the earlier value.
+		header_up X-Forwarded-Proto https
+	}
+
+	# Its own log block. A Caddy site does not inherit another site's logging, so without
+	# this every request from the internet would be logged by the default logger with no
+	# filter at all -- the one listener where a leaked credential matters most.
+	log {
+		output file /var/log/caddy/tunnel.log {
+			roll_size 16MiB
+			roll_keep 5
+		}
+		format filter {
+			wrap console
+			fields {
+				request>headers>X-Glasswell-Key delete
+				request>headers>Cookie delete
+				request>headers>X-Glasswell-CSRF delete
+				request>uri query {
+					delete key
+					delete password
+					delete token
+				}
+			}
+		}
+	}
+}
+
 glasswell.lab.rpx.sh {
 	# DNS-01, not HTTP-01: the name resolves to an RFC1918 address, so Let's Encrypt has
 	# no route to a challenge on this host. CF_API_TOKEN comes from /etc/caddy/cloudflare.env.
@@ -11,6 +75,17 @@ glasswell.lab.rpx.sh {
 		dns cloudflare {env.CF_API_TOKEN}
 		resolvers 1.1.1.1 1.0.0.1
 	}
+
+	# The same contract as the tunnel listener above, with the real peer as the address. A
+	# client reaching this listener must not be able to claim it arrived through the tunnel.
+	request_header -X-Forwarded-For
+	request_header -X-Forwarded-Proto
+	request_header -X-Real-IP
+	request_header -Forwarded
+	request_header -X-Glasswell-Origin
+	request_header -Cf-Connecting-Ip
+	request_header X-Glasswell-Client-Ip {http.request.remote.host}
+	request_header X-Glasswell-Edge lan
 
 	# The archive is static bytes read by range request, and the proxy hop to uvicorn costs
 	# ~40 ms on every read under 64 KB — uvicorn's multi-worker listener is created without
@@ -68,10 +143,13 @@ glasswell.lab.rpx.sh {
 				# The owner key rides this header. The API is built so it reaches no log.
 				request>headers>X-Glasswell-Key delete
 				request>headers>Cookie delete
+				request>headers>X-Glasswell-CSRF delete
 				# The API refuses ?key= with a 422, but an edge logs the URI verbatim —
 				# which is how a key reached a log here once before and had to be rotated.
 				request>uri query {
 					delete key
+					delete password
+					delete token
 				}
 			}
 		}

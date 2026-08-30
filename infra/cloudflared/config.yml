@@ -1,0 +1,23 @@
+# One hostname, one origin, catch-all 404.
+#
+# The tile server is NOT published here. SB-06 §4.5's `handle_path /tiles/*` block would
+# route the edge straight at martin, bypassing both the published-layer allowlist and the
+# session gate; it is deliberately not adopted, and tests/unit/test_cloudflared_config.py
+# and tests/unit/test_caddy_trust_headers.py hold that.
+#
+# <tunnel-uuid> is substituted on the host by `install.sh --with-cloudflared`, which reads
+# /etc/cloudflared/tunnel-id. The credentials file is host state: it is referenced by path
+# and its contents are never in this repository.
+tunnel: <tunnel-uuid>
+credentials-file: /etc/cloudflared/<tunnel-uuid>.json
+metrics: 127.0.0.1:20241
+
+originRequest:
+  connectTimeout: 10s
+  noTLSVerify: false
+  httpHostHeader: glasswell.rpx.sh
+
+ingress:
+  - hostname: glasswell.rpx.sh
+    service: http://127.0.0.1:8080
+  - service: http_status:404

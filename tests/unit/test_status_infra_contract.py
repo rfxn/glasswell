@@ -20,6 +20,7 @@ TIMER = INFRA / "systemd" / "glasswell-status.timer"
 INSTALL = INFRA / "install.sh"
 DEPLOY = ROOT / "scripts" / "deploy.sh"
 VERIFY = INFRA / "verify.sh"
+SMOKE = ROOT / "scripts" / "smoke.sh"
 README = INFRA / "README.md"
 
 
@@ -184,3 +185,33 @@ def test_infrastructure_runbook_describes_the_non_optional_snapshot_contract():
     assert "start it only after migrations" in text
     assert "systemctl start glasswell-status.service" in text
     assert "/v1/status" in text
+
+
+def test_verify_asserts_the_session_surface_is_closed() -> None:
+    """The three anonymous probes are the deploy gate's half of finding F-2 and O-2's
+    closed-by-default ruling: a regression that reopened them would pass every unit test."""
+    script = VERIFY.read_text(encoding="utf-8")
+
+    for probe in ("/v1/wells?limit=1", "$API/docs", "$API/openapi.json"):
+        assert probe in script, f"verify.sh no longer probes {probe} anonymously"
+    assert "an anonymous /v1 request is refused" in script
+    assert "at least one enabled owner account exists" in script
+    assert "no default credential shipped" in script
+
+
+
+def test_verify_skips_rather_than_fails_the_tunnel_section_before_cutover() -> None:
+    """Otherwise every pre-cutover deploy goes red on probes for a hostname that
+    deliberately does not resolve yet. The `ok` in the else branch keeps the count honest."""
+    script = VERIFY.read_text(encoding="utf-8")
+
+    assert "the tunnel section is intentionally skipped" in script
+    assert "GLASSWELL_PUBLIC" in script
+
+
+def test_smoke_never_takes_a_password_on_argv() -> None:
+    """argv is visible in /proc to every local user and lands in shell history."""
+    script = SMOKE.read_text(encoding="utf-8")
+
+    assert "GLASSWELL_SMOKE_PASSWORD" in script
+    assert "--password" not in script

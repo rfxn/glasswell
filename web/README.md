@@ -31,12 +31,14 @@ are routed before the mount. There is no separate web server in this slice.
 
 | Input | Effect |
 |---|---|
-| `#key=<owner key>` | Stored in `localStorage` and stripped from the fragment; sent as `X-Glasswell-Key` on every `/v1` request, tiles included. A fragment is never sent to the server, so the key cannot reach the access log; the API refuses `?key=` outright |
-| `VITE_GLASSWELL_KEY` | Build-time fallback key, for a kiosk build where no one types a URL |
+| `GLASSWELL_PUBLIC_ORIGIN` | Build-time. The origin `og:image` and `twitter:image` are resolved against, because Open Graph consumers do not reliably follow a relative one. Unset leaves them root-relative, which is the LAN deployment |
 | `VITE_API_BASE` | Base for API requests when the bundle is not served from the API's origin |
 | `?laterals=` · `?wells=` | Tile source ids, when martin publishes them under names other than `nd_laterals` and `nd_wells` |
 
-`GLASSWELL_ALLOW_ANON=1` on the API removes the need for a key entirely.
+The browser signs in at `POST /v1/session` and rides a `__Host-gw_session` cookie from there;
+state-changing calls echo the `GET /v1/session/challenge` token in `X-Glasswell-CSRF`. There is
+no browser-side API key: `X-Glasswell-Key` is the machine path, and the Explore pane's
+copy-as-curl snippets are the only place the web tier names it.
 
 ## URL state
 

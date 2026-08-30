@@ -136,3 +136,58 @@ def test_report_only_mode_swaps_the_header_and_never_emits_both(
 
     assert response.headers[CSP_REPORT_ONLY_HEADER]
     assert CSP_HEADER not in response.headers
+
+
+def test_hsts_is_emitted_on_the_public_path_and_not_otherwise(client: TestClient) -> None:
+    """Rewritten: the previous version ended in `or response.url.scheme != "https"`, which is
+    always true under the TestClient, so it passed for any implementation including none.
+
+    The public path is identified by the edge marker, which Caddy sets and a client cannot
+    forge. That is also what makes this assertable without a live tunnel."""
+    from glasswell.api.security import HSTS_HEADER, HSTS_POLICY
+
+    unmarked = client.get("/v1/health")
+    tunnelled = client.get("/v1/health", headers={"X-Glasswell-Edge": "tunnel"})
+
+    assert HSTS_HEADER not in unmarked.headers, "HSTS on the plain-http LAN path"
+    assert tunnelled.headers[HSTS_HEADER] == HSTS_POLICY
+
+
+def test_the_public_path_also_upgrades_insecure_requests(client: TestClient) -> None:
+    """The same predicate drives the CSP directive, so the two cannot drift apart."""
+    tunnelled = client.get("/v1/health", headers={"X-Glasswell-Edge": "tunnel"})
+
+    assert "upgrade-insecure-requests" in tunnelled.headers["Content-Security-Policy"]
+
+
+def test_a_client_cannot_suppress_hsts_by_claiming_plain_http(client: TestClient) -> None:
+    """X-Forwarded-Proto is set by Caddy inside the proxy; a client copy must not win."""
+    response = client.get(
+        "/v1/health",
+        headers={"X-Glasswell-Edge": "tunnel", "X-Forwarded-Proto": "http"},
+    )
+
+    from glasswell.api.security import HSTS_HEADER
+
+    assert HSTS_HEADER in response.headers
+
+
+def test_hsts_carries_a_year_and_subdomains_and_never_preload() -> None:
+    from glasswell.api.security import HSTS_POLICY, hsts_for
+
+    policy = hsts_for(https=True)
+
+    assert policy == HSTS_POLICY
+    assert "max-age=31536000" in policy
+    assert "includeSubDomains" in policy
+    # preload is effectively irreversible and commits every host under the zone.
+    assert "preload" not in policy
+    assert hsts_for(https=False) is None
+
+
+def test_hsts_is_not_a_member_of_the_static_header_mapping() -> None:
+    """tests/unit/test_caddy_basemap_headers.py parametrises over that mapping, so a member
+    here would be demanded on the plain-http basemap path too."""
+    from glasswell.api.security import HSTS_HEADER, STATIC_SECURITY_HEADERS
+
+    assert HSTS_HEADER not in STATIC_SECURITY_HEADERS

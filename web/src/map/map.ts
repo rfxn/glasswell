@@ -218,7 +218,7 @@ export function createMap(
     zoom: viewport.zoom,
     attributionControl: false,
     maxZoom: MAP_MAX_ZOOM,
-    transformRequest: (url, resourceType) => tileRequest(url, resourceType),
+    transformRequest: (url) => tileRequest(url),
   });
 
   // An analytic map has an up. Rotation costs orientation and buys nothing here.

@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "../api/client.ts";
+import { clearSession, seedSession } from "../test/session.ts";
 import { mountStatusPage, unmountStatusPage } from "./surface.ts";
 import type { StatusPayload } from "./surface.ts";
 
@@ -143,13 +144,13 @@ beforeEach(() => {
   document.body.innerHTML = '<div id="gw-status-page"></div>';
   host = document.getElementById("gw-status-page") as HTMLElement;
   onForbidden.mockClear();
-  window.localStorage.setItem("glasswell.key", "f".repeat(64));
+  seedSession();
 });
 
 afterEach(() => {
   unmountStatusPage();
   vi.unstubAllGlobals();
-  window.localStorage.clear();
+  clearSession();
 });
 
 describe("the Status surface", () => {

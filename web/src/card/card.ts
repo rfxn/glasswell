@@ -70,7 +70,7 @@ export interface CompletionContext {
 export interface CardCallbacks {
   onExplain(handle: string): void;
   onClose(): void;
-  onFixKey?(): void;
+  onSignIn?(): void;
   onLocated?(point: { lon: number; lat: number }): void;
   onVintage?(resolved: string | null): void;
 }
@@ -639,7 +639,7 @@ export function warningPanels(warnings: ApiWarning[]): HTMLElement[] {
 
 export function errorPanel(
   error: unknown,
-  callbacks: { onClose(): void; onFixKey?(): void },
+  callbacks: { onClose(): void; onSignIn?(): void },
 ): HTMLElement {
   const element = document.createElement("div");
   element.className = "gw-error";
@@ -649,14 +649,13 @@ export function errorPanel(
     heading.textContent = `${error.problem.title} (${error.code})`;
     body.textContent = error.problem.detail ?? "";
     if (error.problem.status === 403) {
-      body.textContent =
-        "The API rejected this browser's owner key, or has never been given one.";
-      if (callbacks.onFixKey) {
+      body.textContent = "This browser has no live session, so the API served nothing.";
+      if (callbacks.onSignIn) {
         const fix = document.createElement("button");
         fix.type = "button";
         fix.className = "gw-error-key";
-        fix.textContent = "Enter or clear the key";
-        fix.addEventListener("click", () => callbacks.onFixKey?.());
+        fix.textContent = "Sign in";
+        fix.addEventListener("click", () => callbacks.onSignIn?.());
         element.append(heading, body, fix);
       } else {
         element.append(heading, body);

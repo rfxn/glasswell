@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 
 from glasswell.api.deps import (
+    CSRF_PARAMETER,
     Connection,
     PostEffect,
     Principal,
@@ -45,6 +46,12 @@ KEY_ID_NOTE = (
     " The example id is the contract fixture's. Key ids are minted by `POST /v1/keys` and"
     " exist only on the deployment that issued them, so read one off `GET /v1/keys` rather"
     " than replaying this one."
+)
+DEPRECATION_NOTE = (
+    " **Deprecated.** Session login replaces the key layer for interactive use; this"
+    " operation is retained for the non-interactive path and for the deploy gate, and is"
+    " scheduled for removal in the next major version of this API (/v2). No new integration"
+    " should be built on it."
 )
 SHOWN_ONCE_NOTE = (
     " The cleartext key is returned by this call and by nothing else, ever: only its sha256"
@@ -90,7 +97,15 @@ class IssueRequest(BaseModel):
         pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$",
         description="`<consumer>-<purpose>-<year>`, lowercase and hyphenated (SB-06 §8.3).",
     )
-    scope: Scope = Field(description="owner, agent or guest. The key carries it, not the class.")
+    scope: Scope = Field(
+        description=(
+            "owner, agent or guest. The key carries it, not the class. **`agent` is"
+            " deprecated** and is scheduled for removal in the next major version (/v2):"
+            " it is vestigial, no in-repo caller issues at that scope, and it is retained"
+            " only because removing a published enum value is a breaking change."
+        ),
+        json_schema_extra={"x-deprecated-values": ["agent"]},
+    )
     expires_at: datetime | None = Field(
         default=None, description="When the key stops working. A guest key should carry one."
     )
@@ -209,12 +224,14 @@ def _existing(connection: Connection, key_id: str) -> dict[str, Any]:
 
 @router.post(
     "/keys",
+    deprecated=True,
     operation_id="issue_key",
     summary="Issue an API key",
     description=(
         "Creates a key at one of three scopes and returns it. Labels are unique across live"
         " keys, so a rotation can reuse the label the consumer already knows."
         + SHOWN_ONCE_NOTE
+        + DEPRECATION_NOTE
     ),
     response_model=EnvelopeModel[IssuedKey],
     status_code=201,
@@ -229,6 +246,7 @@ def issue_key(
     principal: Principal,
     body: IssueRequest,
     flags: PostEffect,
+    csrf_token: CSRF_PARAMETER = None,
 ) -> JSONResponse:
     now = utc_now()
     if flags.dry_run:
@@ -279,12 +297,14 @@ def _explain_warning() -> dict[str, str]:
 
 @router.get(
     "/keys",
+    deprecated=True,
     operation_id="list_keys",
     summary="List API keys",
     description=(
         "Every key this deployment has issued, newest first, with its scope, lifecycle"
         " timestamps and last use. Neither the cleartext nor its hash appears here — the"
         " list answers *which credentials exist*, not *what they are*."
+        + DEPRECATION_NOTE
     ),
     response_model=EnvelopeModel[list[KeyRecordModel]],
     openapi_extra=request_example(query={"limit": 20}),
@@ -303,6 +323,7 @@ def list_keys(
 
 @router.delete(
     "/keys/{key_id}",
+    deprecated=True,
     operation_id="revoke_key",
     summary="Revoke an API key",
     description=(
@@ -310,6 +331,7 @@ def list_keys(
         " already-revoked key returns the same record and writes no second event, so a"
         " retry after a timeout is safe."
         + KEY_ID_NOTE
+        + DEPRECATION_NOTE
     ),
     response_model=EnvelopeModel[KeyRecordModel],
     openapi_extra=request_example(path={"key_id": EXAMPLE_KEY_ID}),
@@ -320,6 +342,7 @@ def revoke_key(
     connection: Connection,
     principal: Principal,
     key_id: Annotated[str, Path(description="Id of the key to revoke.")],
+    csrf_token: CSRF_PARAMETER = None,
 ) -> JSONResponse:
     now = utc_now()
     existing = _existing(connection, key_id)
@@ -329,6 +352,7 @@ def revoke_key(
 
 @router.post(
     "/keys/{key_id}/rotate",
+    deprecated=True,
     operation_id="rotate_key",
     summary="Rotate an API key",
     description=(
@@ -336,6 +360,7 @@ def revoke_key(
         " same call, which is what makes rotation a single step a consumer cannot half-do."
         + SHOWN_ONCE_NOTE
         + KEY_ID_NOTE
+        + DEPRECATION_NOTE
     ),
     response_model=EnvelopeModel[IssuedKey],
     status_code=201,
@@ -350,6 +375,7 @@ def rotate_key(
     principal: Principal,
     key_id: Annotated[str, Path(description="Id of the key being replaced.")],
     flags: PostEffect,
+    csrf_token: CSRF_PARAMETER = None,
 ) -> JSONResponse:
     now = utc_now()
     existing = _existing(connection, key_id)
