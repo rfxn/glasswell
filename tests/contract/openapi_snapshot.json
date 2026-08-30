@@ -1,6 +1,49 @@
 {
   "components": {
     "schemas": {
+      "AcceptanceGate": {
+        "properties": {
+          "maximum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ceiling the gate allowed.",
+            "title": "Maximum"
+          },
+          "minimum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Floor the gate required.",
+            "title": "Minimum"
+          },
+          "observed": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "The measured share, with its handle."
+          },
+          "status": {
+            "description": "pass or fail, as recorded when the artifact was built.",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "observed",
+          "status"
+        ],
+        "title": "AcceptanceGate",
+        "type": "object"
+      },
       "AppliedBy": {
         "properties": {
           "applied_rows": {
@@ -81,6 +124,34 @@
           "resolved"
         ],
         "title": "AsOfModel",
+        "type": "object"
+      },
+      "AvailableOrigin": {
+        "properties": {
+          "horizon_months": {
+            "description": "Horizon of that split.",
+            "title": "Horizon Months",
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Horizon of another persisted split for this subject, offered for navigation."
+          },
+          "origin": {
+            "description": "Rolling origin of a split this subject appears in.",
+            "format": "date",
+            "title": "Origin",
+            "type": "string"
+          },
+          "split_id": {
+            "description": "Identity of that split object.",
+            "title": "Split Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "origin",
+          "horizon_months",
+          "split_id"
+        ],
+        "title": "AvailableOrigin",
         "type": "object"
       },
       "BasinStatusCounts": {
@@ -927,6 +998,29 @@
           "role"
         ],
         "title": "CreateUserRequest",
+        "type": "object"
+      },
+      "CumulativeBand": {
+        "properties": {
+          "p10": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Low case at the horizon, statistical-ascending."
+          },
+          "p50": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Median case at the horizon."
+          },
+          "p90": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "High case at the horizon."
+          }
+        },
+        "required": [
+          "p10",
+          "p50",
+          "p90"
+        ],
+        "title": "CumulativeBand",
         "type": "object"
       },
       "DatasetInventory": {
@@ -1835,6 +1929,39 @@
         "title": "EnvelopeModel[Manifest]",
         "type": "object"
       },
+      "EnvelopeModel_ModelingPublicationDetail_": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ModelingPublicationDetail"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[ModelingPublicationDetail]",
+        "type": "object"
+      },
       "EnvelopeModel_ProductionPools_": {
         "properties": {
           "_explain": {
@@ -2066,6 +2193,39 @@
         "title": "EnvelopeModel[Status]",
         "type": "object"
       },
+      "EnvelopeModel_TypeCurveIndex_": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TypeCurveIndex"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[TypeCurveIndex]",
+        "type": "object"
+      },
       "EnvelopeModel_UserModel_": {
         "properties": {
           "_explain": {
@@ -2262,6 +2422,39 @@
           "links"
         ],
         "title": "EnvelopeModel[WellStatusSummary]",
+        "type": "object"
+      },
+      "EnvelopeModel_WellTypeCurve_": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "$ref": "#/components/schemas/WellTypeCurve"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[WellTypeCurve]",
         "type": "object"
       },
       "EnvelopeModel_list_ConformanceRule__": {
@@ -2484,6 +2677,43 @@
           "links"
         ],
         "title": "EnvelopeModel[list[Manifest]]",
+        "type": "object"
+      },
+      "EnvelopeModel_list_ModelingPublication__": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ModelingPublication"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[list[ModelingPublication]]",
         "type": "object"
       },
       "EnvelopeModel_list_QuarantineRow__": {
@@ -3825,6 +4055,233 @@
         "title": "MetaModel",
         "type": "object"
       },
+      "ModelingPublication": {
+        "properties": {
+          "accepted": {
+            "description": "Always true: a receipt exists only for a publication that passed the gate.",
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "basin": {
+            "description": "Basin the publication covers.",
+            "title": "Basin",
+            "type": "string",
+            "x-glasswell-glossary": "gt_basin"
+          },
+          "code_version": {
+            "description": "Build stamp of the code that produced the artifacts.",
+            "title": "Code Version",
+            "type": "string",
+            "x-glasswell-glossary": "gt_determinism_class"
+          },
+          "created_at": {
+            "description": "When the receipt was written.",
+            "title": "Created At",
+            "type": "string"
+          },
+          "environment_id": {
+            "description": "Pinned environment identity of the build.",
+            "title": "Environment Id",
+            "type": "string"
+          },
+          "eval_vintage": {
+            "description": "Evaluation vintage the control was pinned to.",
+            "format": "date",
+            "title": "Eval Vintage",
+            "type": "string",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "publication_id": {
+            "description": "Content address of the acceptance receipt.",
+            "title": "Publication Id",
+            "type": "string",
+            "x-glasswell-glossary": "gt_recipe"
+          },
+          "split_set_id": {
+            "description": "Content-addressed identity of the split bundle.",
+            "title": "Split Set Id",
+            "type": "string",
+            "x-glasswell-glossary": "gt_split_set"
+          },
+          "versions": {
+            "$ref": "#/components/schemas/PublicationVersions",
+            "description": "The three semantic versions pinned."
+          },
+          "vintage_basis": {
+            "description": "How the evaluation vintage was reconstructed.",
+            "title": "Vintage Basis",
+            "type": "string"
+          }
+        },
+        "required": [
+          "publication_id",
+          "basin",
+          "eval_vintage",
+          "vintage_basis",
+          "versions",
+          "split_set_id",
+          "code_version",
+          "environment_id",
+          "created_at",
+          "accepted"
+        ],
+        "title": "ModelingPublication",
+        "type": "object"
+      },
+      "ModelingPublicationDetail": {
+        "properties": {
+          "accepted": {
+            "description": "Always true: a receipt exists only for a publication that passed the gate.",
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "artifact_sha256": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Content addresses of the published artifacts.",
+            "title": "Artifact Sha256",
+            "type": "object"
+          },
+          "baseline": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "The sealed baseline the gate pinned.",
+            "title": "Baseline",
+            "type": "object"
+          },
+          "basin": {
+            "description": "Basin the publication covers.",
+            "title": "Basin",
+            "type": "string",
+            "x-glasswell-glossary": "gt_basin"
+          },
+          "code_version": {
+            "description": "Build stamp of the code that produced the artifacts.",
+            "title": "Code Version",
+            "type": "string",
+            "x-glasswell-glossary": "gt_determinism_class"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/PublicationCoverage",
+            "description": "Acceptance and support, from the artifact."
+          },
+          "created_at": {
+            "description": "When the receipt was written.",
+            "title": "Created At",
+            "type": "string"
+          },
+          "derivations": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "The three pinned derivation ids.",
+            "title": "Derivations",
+            "type": "object"
+          },
+          "environment": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Environment identity of the build.",
+            "title": "Environment",
+            "type": "object"
+          },
+          "environment_id": {
+            "description": "Pinned environment identity of the build.",
+            "title": "Environment Id",
+            "type": "string"
+          },
+          "eval_vintage": {
+            "description": "Evaluation vintage the control was pinned to.",
+            "format": "date",
+            "title": "Eval Vintage",
+            "type": "string",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "publication_id": {
+            "description": "Content address of the acceptance receipt.",
+            "title": "Publication Id",
+            "type": "string",
+            "x-glasswell-glossary": "gt_recipe"
+          },
+          "recipes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "The three recipes that produced them.",
+            "title": "Recipes",
+            "type": "object"
+          },
+          "rows": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Rows each artifact recorded when it was written.",
+            "title": "Rows",
+            "type": "object"
+          },
+          "split_set_id": {
+            "description": "Content-addressed identity of the split bundle.",
+            "title": "Split Set Id",
+            "type": "string",
+            "x-glasswell-glossary": "gt_split_set"
+          },
+          "splits": {
+            "description": "Every persisted split in the bundle.",
+            "items": {
+              "$ref": "#/components/schemas/PublicationSplit"
+            },
+            "title": "Splits",
+            "type": "array"
+          },
+          "supersedes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The publication this one displaced, still addressable by id.",
+            "title": "Supersedes"
+          },
+          "versions": {
+            "$ref": "#/components/schemas/PublicationVersions",
+            "description": "The three semantic versions pinned."
+          },
+          "vintage_basis": {
+            "description": "How the evaluation vintage was reconstructed.",
+            "title": "Vintage Basis",
+            "type": "string"
+          }
+        },
+        "required": [
+          "publication_id",
+          "basin",
+          "eval_vintage",
+          "vintage_basis",
+          "versions",
+          "split_set_id",
+          "code_version",
+          "environment_id",
+          "created_at",
+          "accepted",
+          "derivations",
+          "recipes",
+          "baseline",
+          "environment",
+          "artifact_sha256",
+          "rows",
+          "splits",
+          "coverage",
+          "supersedes"
+        ],
+        "title": "ModelingPublicationDetail",
+        "type": "object"
+      },
       "NeighborCoverage": {
         "properties": {
           "eligible": {
@@ -4654,6 +5111,98 @@
           "wells"
         ],
         "title": "ProvenanceCount",
+        "type": "object"
+      },
+      "PublicationCoverage": {
+        "properties": {
+          "acceptance": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AcceptanceGate"
+            },
+            "description": "The gates the publication had to clear, with their thresholds.",
+            "title": "Acceptance",
+            "type": "object"
+          },
+          "control_contract": {
+            "additionalProperties": true,
+            "description": "The build parameters compiled into the control, served verbatim.",
+            "title": "Control Contract",
+            "type": "object"
+          },
+          "support": {
+            "additionalProperties": true,
+            "description": "Protocol 4D's support distribution: peer-ladder rungs and reason mentions.",
+            "title": "Support",
+            "type": "object"
+          }
+        },
+        "required": [
+          "acceptance",
+          "support",
+          "control_contract"
+        ],
+        "title": "PublicationCoverage",
+        "type": "object"
+      },
+      "PublicationSplit": {
+        "properties": {
+          "horizon_months": {
+            "description": "Months of history the split holds out.",
+            "title": "Horizon Months",
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Horizon of a persisted temporal split, read from the split object. A parameter of the split set, not an observation it stands behind."
+          },
+          "origin": {
+            "description": "Rolling origin of the persisted temporal split.",
+            "format": "date",
+            "title": "Origin",
+            "type": "string"
+          },
+          "sha256": {
+            "description": "Content address of the persisted split.",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "split_id": {
+            "description": "Identity of the split object.",
+            "title": "Split Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "origin",
+          "horizon_months",
+          "split_id",
+          "sha256"
+        ],
+        "title": "PublicationSplit",
+        "type": "object"
+      },
+      "PublicationVersions": {
+        "properties": {
+          "feature": {
+            "description": "Feature-set version the publication was built from.",
+            "title": "Feature",
+            "type": "string"
+          },
+          "model_dataset": {
+            "description": "Model-ready dataset version.",
+            "title": "Model Dataset",
+            "type": "string"
+          },
+          "type_curve": {
+            "description": "Type-curve control version.",
+            "title": "Type Curve",
+            "type": "string",
+            "x-glasswell-glossary": "gt_type_curve"
+          }
+        },
+        "required": [
+          "feature",
+          "model_dataset",
+          "type_curve"
+        ],
+        "title": "PublicationVersions",
         "type": "object"
       },
       "PublishedVintage": {
@@ -5608,6 +6157,382 @@
           "ref"
         ],
         "title": "TermSite",
+        "type": "object"
+      },
+      "TypeCurveHorizon": {
+        "description": "A query parameter arrives as text, and Literal[int] does not coerce it.",
+        "enum": [
+          12,
+          24
+        ],
+        "title": "TypeCurveHorizon",
+        "type": "integer"
+      },
+      "TypeCurveIndex": {
+        "properties": {
+          "horizon_months": {
+            "description": "Horizon the page reports at.",
+            "title": "Horizon Months",
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Horizon of the persisted temporal split this control was built on. A parameter of the split, not an observation the control stands behind."
+          },
+          "normalization": {
+            "description": "Normalisation arm in force.",
+            "enum": [
+              "typecurve_absolute",
+              "typecurve_per_kft"
+            ],
+            "title": "Normalization",
+            "type": "string"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Origin filter in force, when one was supplied.",
+            "title": "Origin"
+          },
+          "publication_id": {
+            "description": "Accepted publication this page was read from.",
+            "title": "Publication Id",
+            "type": "string"
+          },
+          "quantile_convention": {
+            "description": "statistical_ascending, the convention every detail curve is served under.",
+            "title": "Quantile Convention",
+            "type": "string",
+            "x-glasswell-glossary": "gt_quantile_convention"
+          },
+          "relation": {
+            "const": "control_type_curve_not_a_forecast",
+            "description": "What these rows describe: a backward-looking peer aggregate.",
+            "title": "Relation",
+            "type": "string"
+          },
+          "series": {
+            "$ref": "#/components/schemas/TypeCurveIndexSeries",
+            "description": "One page of aligned per-instance arrays."
+          },
+          "stream": {
+            "description": "Served stream.",
+            "enum": [
+              "oil",
+              "gas",
+              "water"
+            ],
+            "title": "Stream",
+            "type": "string"
+          }
+        },
+        "required": [
+          "publication_id",
+          "stream",
+          "normalization",
+          "horizon_months",
+          "origin",
+          "relation",
+          "quantile_convention",
+          "series"
+        ],
+        "title": "TypeCurveIndex",
+        "type": "object"
+      },
+      "TypeCurveIndexSeries": {
+        "properties": {
+          "api10": {
+            "description": "Subject of each control instance on this page \u2014 the row axis.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Api10",
+            "type": "array",
+            "x-glasswell-glossary": "gt_api_10_api_12_api_14",
+            "x-glasswell-not-a-figure": "Identifier, on the row axis of an aligned-array page."
+          },
+          "area": {
+            "description": "Area bucket of each subject.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Area",
+            "type": "array",
+            "x-glasswell-not-a-figure": "Area bucket, in an aligned-array page."
+          },
+          "control_unavailable_reasons": {
+            "description": "Why the ladder terminated, per instance. Empty where it did not.",
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Control Unavailable Reasons",
+            "type": "array"
+          },
+          "cumulative_peer_count": {
+            "description": "Peers behind the cumulative quantile at the horizon.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Cumulative Peer Count",
+            "type": "array",
+            "x-glasswell-glossary": "gt_training_support"
+          },
+          "fallback_level": {
+            "description": "Peer-ladder rung each instance resolved to.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Fallback Level",
+            "type": "array",
+            "x-glasswell-glossary": "gt_peer_ladder"
+          },
+          "formation_group": {
+            "description": "Formation group of each subject.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Formation Group",
+            "type": "array",
+            "x-glasswell-glossary": "gt_formation"
+          },
+          "lateral_length_bucket": {
+            "description": "Lateral-length bucket of each subject.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Lateral Length Bucket",
+            "type": "array"
+          },
+          "origin": {
+            "description": "Rolling origin of each instance's split.",
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "title": "Origin",
+            "type": "array",
+            "x-glasswell-glossary": "gt_vintage_well_vintage"
+          },
+          "peer_count": {
+            "description": "Peers behind the monthly quantile at the horizon.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Peer Count",
+            "type": "array",
+            "x-glasswell-glossary": "gt_training_support"
+          },
+          "split_id": {
+            "description": "Split that produced each instance.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Split Id",
+            "type": "array",
+            "x-glasswell-glossary": "gt_split_set"
+          }
+        },
+        "required": [
+          "api10",
+          "origin",
+          "split_id",
+          "fallback_level",
+          "control_unavailable_reasons",
+          "formation_group",
+          "area",
+          "lateral_length_bucket",
+          "peer_count",
+          "cumulative_peer_count"
+        ],
+        "title": "TypeCurveIndexSeries",
+        "type": "object"
+      },
+      "TypeCurveSeries": {
+        "properties": {
+          "cumulative_p10": {
+            "description": "Cumulative low case.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Cumulative P10",
+            "type": "array"
+          },
+          "cumulative_p50": {
+            "description": "Cumulative median case.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Cumulative P50",
+            "type": "array"
+          },
+          "cumulative_p90": {
+            "description": "Cumulative high case.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Cumulative P90",
+            "type": "array"
+          },
+          "cumulative_peer_count": {
+            "description": "Peers behind each cumulative quantile.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Cumulative Peer Count",
+            "type": "array"
+          },
+          "month_index": {
+            "description": "Producing-month index, one to the split's horizon.",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Month Index",
+            "type": "array",
+            "x-glasswell-not-a-figure": "Producing-month index, the axis the curve is plotted against. It is the row key, not a value."
+          },
+          "monthly_p10": {
+            "description": "Monthly low case.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Monthly P10",
+            "type": "array"
+          },
+          "monthly_p50": {
+            "description": "Monthly median case.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Monthly P50",
+            "type": "array"
+          },
+          "monthly_p90": {
+            "description": "Monthly high case.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Monthly P90",
+            "type": "array"
+          },
+          "peer_count": {
+            "description": "Peers behind each monthly quantile.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Peer Count",
+            "type": "array"
+          }
+        },
+        "required": [
+          "month_index",
+          "monthly_p10",
+          "monthly_p50",
+          "monthly_p90",
+          "cumulative_p10",
+          "cumulative_p50",
+          "cumulative_p90",
+          "peer_count",
+          "cumulative_peer_count"
+        ],
+        "title": "TypeCurveSeries",
         "type": "object"
       },
       "UpdateUserRequest": {
@@ -6596,6 +7521,250 @@
         "title": "WellTypeCount",
         "type": "object"
       },
+      "WellTypeCurve": {
+        "properties": {
+          "api10": {
+            "description": "Ten-digit API well number of the control subject.",
+            "title": "Api10",
+            "type": "string",
+            "x-glasswell-glossary": "gt_api_10_api_12_api_14",
+            "x-glasswell-not-a-figure": "Identifier. A 10-digit API number is an identity string, not a measurement."
+          },
+          "area": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Area bucket of the subject.",
+            "title": "Area",
+            "x-glasswell-not-a-figure": "Area bucket the subject falls in, a label the peer ladder groups by. A zero-padded code, not a measurement."
+          },
+          "available_origins": {
+            "description": "Every split instance the control holds for this subject.",
+            "items": {
+              "$ref": "#/components/schemas/AvailableOrigin"
+            },
+            "title": "Available Origins",
+            "type": "array"
+          },
+          "control_unavailable_reasons": {
+            "description": "Why the ladder terminated, served verbatim. Empty when it did not.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Control Unavailable Reasons",
+            "type": "array"
+          },
+          "control_version": {
+            "description": "Type-curve control version.",
+            "title": "Control Version",
+            "type": "string",
+            "x-glasswell-glossary": "gt_type_curve"
+          },
+          "cumulative_at_horizon": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CumulativeBand"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The cum12 or cum24 band; null when the control did not resolve.",
+            "x-glasswell-glossary": "gt_cum12_cum24"
+          },
+          "dataset_version": {
+            "description": "Model-ready dataset version.",
+            "title": "Dataset Version",
+            "type": "string"
+          },
+          "eval_vintage": {
+            "description": "Evaluation vintage the control was pinned to.",
+            "format": "date",
+            "title": "Eval Vintage",
+            "type": "string"
+          },
+          "fallback_level": {
+            "description": "The peer-ladder rung that produced this curve.",
+            "title": "Fallback Level",
+            "type": "string",
+            "x-glasswell-glossary": "gt_peer_ladder"
+          },
+          "feature_version": {
+            "description": "Feature-set version.",
+            "title": "Feature Version",
+            "type": "string"
+          },
+          "formation_group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Formation group of the subject.",
+            "title": "Formation Group",
+            "x-glasswell-glossary": "gt_formation"
+          },
+          "horizon_months": {
+            "description": "Months the curve runs to.",
+            "title": "Horizon Months",
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Horizon of the persisted temporal split this control was built on. A parameter of the split, not an observation the control stands behind."
+          },
+          "knowledge_cutoff": {
+            "description": "Knowledge cut the split was built under.",
+            "format": "date",
+            "title": "Knowledge Cutoff",
+            "type": "string",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "lateral_length_bucket": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lateral-length bucket of the subject.",
+            "title": "Lateral Length Bucket"
+          },
+          "normalization": {
+            "description": "Which normalisation arm was served.",
+            "enum": [
+              "typecurve_absolute",
+              "typecurve_per_kft"
+            ],
+            "title": "Normalization",
+            "type": "string"
+          },
+          "origin": {
+            "description": "Rolling origin of the split.",
+            "format": "date",
+            "title": "Origin",
+            "type": "string"
+          },
+          "outcome": {
+            "description": "available, or control_unavailable when the peer ladder terminated without a comparison set. Always present: an unavailable control is a stated value, never an absent one.",
+            "enum": [
+              "available",
+              "control_unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "peer_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Identity of the peer set, when one was found.",
+            "title": "Peer Set Id"
+          },
+          "publication_id": {
+            "description": "Accepted publication the artifact was read from.",
+            "title": "Publication Id",
+            "type": "string"
+          },
+          "quantile_convention": {
+            "description": "statistical_ascending: p10 is the low case.",
+            "title": "Quantile Convention",
+            "type": "string",
+            "x-glasswell-glossary": "gt_quantile_convention"
+          },
+          "relation": {
+            "const": "control_type_curve_not_a_forecast",
+            "description": "What these numbers are: a backward-looking peer aggregate.",
+            "title": "Relation",
+            "type": "string"
+          },
+          "series": {
+            "$ref": "#/components/schemas/TypeCurveSeries",
+            "description": "The month-indexed curve."
+          },
+          "split_id": {
+            "description": "The split that produced this instance.",
+            "title": "Split Id",
+            "type": "string"
+          },
+          "split_set_id": {
+            "description": "Content-addressed split bundle.",
+            "title": "Split Set Id",
+            "type": "string",
+            "x-glasswell-glossary": "gt_split_set"
+          },
+          "split_sha256": {
+            "description": "Content address of that split object.",
+            "title": "Split Sha256",
+            "type": "string"
+          },
+          "stream": {
+            "description": "Served stream.",
+            "enum": [
+              "oil",
+              "gas",
+              "water"
+            ],
+            "title": "Stream",
+            "type": "string",
+            "x-glasswell-glossary": "gt_stream"
+          },
+          "subject_lateral_length_ft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FigureModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The subject's own lateral length, which the per-kft arm rescales by."
+          }
+        },
+        "required": [
+          "api10",
+          "outcome",
+          "relation",
+          "publication_id",
+          "control_version",
+          "dataset_version",
+          "feature_version",
+          "split_set_id",
+          "split_id",
+          "split_sha256",
+          "origin",
+          "knowledge_cutoff",
+          "eval_vintage",
+          "horizon_months",
+          "stream",
+          "normalization",
+          "quantile_convention",
+          "fallback_level",
+          "control_unavailable_reasons",
+          "peer_set_id",
+          "formation_group",
+          "area",
+          "lateral_length_bucket",
+          "subject_lateral_length_ft",
+          "cumulative_at_horizon",
+          "available_origins",
+          "series"
+        ],
+        "title": "WellTypeCurve",
+        "type": "object"
+      },
       "WinningGeometry": {
         "properties": {
           "neighbor_geom_key": {
@@ -6627,7 +7796,7 @@
     }
   },
   "info": {
-    "description": "Glass-box upstream analytics on public data. Every number this API serves carries a\nderivation handle in band, and `GET /v1/explain` walks that handle back to the\nchecksummed government file it came from.\n\nConventions that hold everywhere: responses are `data` / `meta` / `links`; collections\nare cursor-paginated with no offset parameter; failures are RFC 9457 problem documents\nwhose `type` resolves at `/v1/errors/{code}`; and `as_of` selects knowledge time, with\nthe resolved vintage reported back in `meta.as_of`.\n\nWhat this deployment serves is data-derived rather than declared here: `GET /v1/status`\nreports the resident dataset inventory, each row carrying its own scope, grain, vintage\nbounds and metrics. Where a regulator publishes volumes at well level they are served at\nwell level; where it publishes only at lease level, well-level production is held pending\nallocation rather than inferred. Physical-neighbour results require current lateral\ngeometry, use strict earlier-completion cutoffs, and are not model analogs. The lineage\nspine, conformance registry, quarantine and glossary are live. Forecasts, economics,\nscenarios, agents and undrilled-location inventory are not served, and a source that is\nstaged without being promoted is not claimed as resident. `/v1/status` adds current\napplication-plane checks, scheduled-job observations, registered-artifact age and explicitly\ngrained operational dataset inventory without treating those counts as forecast inventory or\npetroleum figures.",
+    "description": "Glass-box upstream analytics on public data. Every number this API serves carries a\nderivation handle in band, and `GET /v1/explain` walks that handle back to the\nchecksummed government file it came from.\n\nConventions that hold everywhere: responses are `data` / `meta` / `links`; collections\nare cursor-paginated with no offset parameter; failures are RFC 9457 problem documents\nwhose `type` resolves at `/v1/errors/{code}`; and `as_of` selects knowledge time, with\nthe resolved vintage reported back in `meta.as_of`.\n\nWhat this deployment serves is data-derived rather than declared here: `GET /v1/status`\nreports the resident dataset inventory, each row carrying its own scope, grain, vintage\nbounds and metrics. Where a regulator publishes volumes at well level they are served at\nwell level; where it publishes only at lease level, well-level production is held pending\nallocation rather than inferred. Physical-neighbour results require current lateral\ngeometry, use strict earlier-completion cutoffs, and are not model analogs. The lineage\nspine, conformance registry, quarantine and glossary are live. The pinned `tcv1.0`\ntype-curve control is served per test subject and as a browsable population, with its\naccepted publication, split set and peer-ladder support stated; it is a backward-looking\npeer aggregate over a held-out arm, not a forecast. Forecasts, economics,\nscenarios, agents and undrilled-location inventory are not served, and a source that is\nstaged without being promoted is not claimed as resident. `/v1/status` adds current\napplication-plane checks, scheduled-job observations, registered-artifact age and explicitly\ngrained operational dataset inventory without treating those counts as forecast inventory or\npetroleum figures.",
     "title": "glasswell",
     "version": "0.1.0",
     "x-glasswell-freeze": {
@@ -9903,6 +11072,425 @@
         }
       }
     },
+    "/v1/modeling/publications": {
+      "get": {
+        "description": "Every accepted P3 publication receipt: the three semantic versions it pinned, the split set it was built on, and the environment that built it. A receipt exists only for a publication that cleared the gate, so `accepted` is always true and the absence of a row is the only negative answer this collection gives. The receipt is what makes a served type-curve figure traceable \u2014 nothing else on this API decides which artifact is servable.",
+        "operationId": "list_modeling_publications",
+        "parameters": [
+          {
+            "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size, 100 by default, 200 at most (SB-07 \u00a79.5 caps the spine collections lower than the data ones).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Page size, 100 by default, 200 at most (SB-07 \u00a79.5 caps the spine collections lower than the data ones).",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter to one basin.",
+            "in": "query",
+            "name": "basin",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one basin.",
+              "title": "Basin"
+            }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_list_ModelingPublication__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "cursor_malformed": {
+                    "summary": "Cursor malformed",
+                    "value": {
+                      "detail": "The cursor did not decode to the four declared fields.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor malformed",
+                      "type": "/v1/errors/cursor_malformed"
+                    }
+                  },
+                  "cursor_query_mismatch": {
+                    "summary": "Cursor does not match this query",
+                    "value": {
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor does not match this query",
+                      "type": "/v1/errors/cursor_query_mismatch"
+                    }
+                  },
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "List modeling publications",
+        "tags": [
+          "kitchen"
+        ],
+        "x-glasswell-dataset": {
+          "anchors": [],
+          "collection_pointer": "",
+          "columns": {
+            "default": [
+              "/publication_id",
+              "/basin",
+              "/eval_vintage",
+              "/versions/type_curve",
+              "/split_set_id",
+              "/code_version"
+            ],
+            "hidden": [],
+            "hidden_reason": {},
+            "sort": "/publication_id"
+          },
+          "detail_operation": "get_modeling_publication",
+          "facets": [
+            "basin"
+          ],
+          "group": "kitchen",
+          "id": "modeling_publications",
+          "intro": "nb_dataset_modeling_publications",
+          "order": 25,
+          "row_id": [
+            "/publication_id"
+          ],
+          "title": "Modeling publications"
+        },
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {
+            "limit": 5
+          }
+        },
+        "x-glasswell-semantics": {
+          "basin": {
+            "so": "Narrows to one basin's publication history. Each basin is published on its own cadence, so a mixed list orders by evaluation vintage across basins and reads as a single history that never happened.",
+            "x-glasswell-glossary": "gt_basin"
+          },
+          "cursor": {
+            "so": "Pins the page to publication-id order and to the basin filter that opened it. Receipts are append-only, so what was on page two stays there."
+          },
+          "explain": {
+            "so": "The list carries no figures \u2014 every value on it is an identity \u2014 so `explain` returns an empty block here. The detail is where the acceptance and support numbers live.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "explain_depth": {
+            "so": "No effect on this operation; the list has no handles to walk.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "limit": {
+            "so": "Capped at 200. Publications are rare by construction \u2014 one per accepted rebuild \u2014 so a long page here means the context was republished more often than it was read, which is itself the finding."
+          }
+        }
+      }
+    },
+    "/v1/modeling/publications/{publication_id}": {
+      "get": {
+        "description": "The whole acceptance receipt for one publication, plus the coverage document the control artifact was written with: which peer-ladder rung produced how many subject instances, which `control_unavailable` reasons were mentioned and how often, and the two acceptance gates with the thresholds they had to clear. Every figure here carries a handle minted against the pinned control derivation, so the numbers describing the artifact resolve to the artifact. The filesystem location of the artifact is deliberately not served: a path is deployment information. `artifact_sha256` addresses the same bytes without it. When a later publication supersedes this one the response says so and links it; both stay addressable, because a republication is a restatement, not an edit.",
+        "operationId": "get_modeling_publication",
+        "parameters": [
+          {
+            "description": "Publication receipt id.",
+            "in": "path",
+            "name": "publication_id",
+            "required": true,
+            "schema": {
+              "description": "Publication receipt id.",
+              "pattern": "^p3pub_[0-9a-f]{32}$",
+              "title": "Publication Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_ModelingPublicationDetail_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "unregistered_artifact": {
+                    "summary": "Artifact is not registered",
+                    "value": {
+                      "detail": "Serving the number would mean serving it from an unregistered artifact.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 409,
+                      "title": "Artifact is not registered",
+                      "type": "/v1/errors/unregistered_artifact"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Artifact is not registered"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "One modeling publication",
+        "tags": [
+          "kitchen"
+        ],
+        "x-glasswell-request-example": {
+          "path": {
+            "publication_id": "p3pub_285ed522f725bca4ac4c052e84503c16"
+          },
+          "query": {}
+        },
+        "x-glasswell-semantics": {
+          "explain": {
+            "so": "Inlines the chain behind every acceptance and support figure. Each one resolves to the pinned typecurve.build derivation, which is how the coverage numbers are checkable against the artifact they describe.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "explain_depth": {
+            "so": "Three reaches the control derivation and its immediate inputs. The control's own chain is deeper than the default; raise it to eight to walk through to the terminal manifests.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "publication_id": {
+            "so": "A content address over the receipt document, so it names one immutable acceptance and cannot be reused by a later build.",
+            "x-glasswell-glossary": "gt_recipe"
+          }
+        }
+      }
+    },
     "/v1/quarantine": {
       "get": {
         "description": "Rows a conformance rule rejected, with the reason, the rule, how many fetches have re-presented them and their lifecycle state. Nothing is dropped silently: an empty quarantine means the rules are not firing, not that the data is clean.",
@@ -11208,6 +12796,462 @@
             "z": 8
           },
           "query": {}
+        }
+      }
+    },
+    "/v1/type-curves": {
+      "get": {
+        "description": "The pinned control's test subjects at their horizon, one row per subject instance, with the peer-ladder rung that produced it, the `control_unavailable` reasons where the ladder terminated, and the peer support behind both the monthly and the cumulative quantile. Volumes are deliberately absent here: a rollup states its support distribution and the assumption in force and sends the reader to the detail for the number, which is `/v1/wells/{api10}/type-curve`. Subjects whose control did not resolve are listed with their reasons rather than dropped, so the served population is the whole test population and a coverage number taken off this page is not quietly short by the unavailable share. The two support columns are page-level series: one page mints two evidence rows rather than two per subject, and the page key is part of the response derivation's identity so page one and page two are different derivations rather than one derivation with two disagreeing answers.",
+        "operationId": "list_type_curves",
+        "parameters": [
+          {
+            "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size, 100 by default, 200 at most (SB-07 \u00a79.5 caps the spine collections lower than the data ones).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Page size, 100 by default, 200 at most (SB-07 \u00a79.5 caps the spine collections lower than the data ones).",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Served stream.",
+            "in": "query",
+            "name": "stream",
+            "required": false,
+            "schema": {
+              "default": "oil",
+              "description": "Served stream.",
+              "enum": [
+                "oil",
+                "gas",
+                "water"
+              ],
+              "title": "Stream",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Normalisation arm.",
+            "in": "query",
+            "name": "normalization",
+            "required": false,
+            "schema": {
+              "default": "typecurve_absolute",
+              "description": "Normalisation arm.",
+              "enum": [
+                "typecurve_absolute",
+                "typecurve_per_kft"
+              ],
+              "title": "Normalization",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Split horizon in months.",
+            "in": "query",
+            "name": "horizon",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TypeCurveHorizon",
+              "default": 24,
+              "description": "Split horizon in months."
+            }
+          },
+          {
+            "description": "Filter to one rolling origin.",
+            "in": "query",
+            "name": "origin",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one rolling origin.",
+              "title": "Origin"
+            }
+          },
+          {
+            "description": "Filter to one peer-ladder rung.",
+            "in": "query",
+            "name": "fallback_level",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one peer-ladder rung.",
+              "title": "Fallback Level"
+            }
+          },
+          {
+            "description": "Filter to one formation group.",
+            "in": "query",
+            "name": "formation_group",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one formation group.",
+              "title": "Formation Group"
+            }
+          },
+          {
+            "description": "Pin to one publication.",
+            "in": "query",
+            "name": "publication",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^p3pub_[0-9a-f]{32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Pin to one publication.",
+              "title": "Publication"
+            }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_TypeCurveIndex_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "unregistered_artifact": {
+                    "summary": "Artifact is not registered",
+                    "value": {
+                      "detail": "Serving the number would mean serving it from an unregistered artifact.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 409,
+                      "title": "Artifact is not registered",
+                      "type": "/v1/errors/unregistered_artifact"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Artifact is not registered"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "cursor_malformed": {
+                    "summary": "Cursor malformed",
+                    "value": {
+                      "detail": "The cursor did not decode to the four declared fields.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor malformed",
+                      "type": "/v1/errors/cursor_malformed"
+                    }
+                  },
+                  "cursor_query_mismatch": {
+                    "summary": "Cursor does not match this query",
+                    "value": {
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor does not match this query",
+                      "type": "/v1/errors/cursor_query_mismatch"
+                    }
+                  },
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "rate_limited": {
+                    "summary": "Rate limited",
+                    "value": {
+                      "detail": "The token bucket for this operation is exhausted.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 429,
+                      "title": "Rate limited",
+                      "type": "/v1/errors/rate_limited"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Rate limited"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Browse the control population",
+        "tags": [
+          "wells"
+        ],
+        "x-glasswell-dataset": {
+          "anchors": [
+            "/publication_id",
+            "/horizon_months",
+            "/quantile_convention"
+          ],
+          "collection_pointer": "",
+          "columns": {
+            "default": [
+              "/api10",
+              "/origin",
+              "/fallback_level",
+              "/formation_group",
+              "/split_id",
+              "/peer_count"
+            ],
+            "hidden": [],
+            "hidden_reason": {},
+            "sort": "/api10"
+          },
+          "detail_operation": "get_well_type_curve",
+          "facets": [
+            "stream",
+            "normalization",
+            "horizon",
+            "origin",
+            "fallback_level",
+            "formation_group"
+          ],
+          "group": "wells",
+          "id": "type_curves",
+          "intro": "nb_dataset_type_curves",
+          "order": 15,
+          "row_id": [
+            "/api10",
+            "/origin"
+          ],
+          "row_projection": {
+            "axis": "/api10",
+            "columns": [
+              "/origin",
+              "/split_id",
+              "/fallback_level",
+              "/control_unavailable_reasons",
+              "/formation_group",
+              "/area",
+              "/lateral_length_bucket",
+              "/peer_count",
+              "/cumulative_peer_count"
+            ],
+            "suffixes": []
+          },
+          "series_pointer": "/series",
+          "title": "Type curves (control)"
+        },
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {
+            "limit": 5,
+            "stream": "oil"
+          }
+        },
+        "x-glasswell-semantics": {
+          "cursor": {
+            "so": "Pins the page to API-10 order, to the facet set that opened it and to the publication in force. The page key is also part of the response derivation's identity, so page two carries its own evidence."
+          },
+          "explain": {
+            "so": "Two handles per page, one per support column, each resolving to the pinned control derivation. The per-subject volumes are on the detail, so this stays two chains however long the page is.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "explain_depth": {
+            "so": "Three reaches the control derivation and its split hashes. Raise it to eight for the terminal manifests.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "fallback_level": {
+            "so": "The audit filter. Narrowing to formation_basin or control_unavailable lists exactly the subjects whose comparison set was weakest, which is the population a coverage claim is most likely to be wrong about.",
+            "x-glasswell-glossary": "gt_peer_ladder"
+          },
+          "formation_group": {
+            "so": "Narrows to one formation group, which is the first rung of the peer ladder and therefore the coarsest honest way to compare two subjects.",
+            "x-glasswell-glossary": "gt_formation"
+          },
+          "horizon": {
+            "so": "Selects which persisted split the page reports, 12 or 24 months. The two horizons hold out different wells, so their populations are not subsets of one another."
+          },
+          "limit": {
+            "so": "Capped at 200. The control's test arm is thousands of subject instances, so this collection is paged rather than counted in one call."
+          },
+          "normalization": {
+            "so": "Carried so the page says which arm the detail link will open in. The support counts are the same on both arms; the volumes, which live on the detail, are not."
+          },
+          "origin": {
+            "so": "Narrows to one rolling origin. Omit it and a subject appears once per origin it was held out at, which is the honest shape: those are separate evaluations, not repeats of one.",
+            "x-glasswell-glossary": "gt_vintage_well_vintage"
+          },
+          "publication": {
+            "so": "Pins the page to one accepted publication. A cursor carries the publication it was opened under, so a republication invalidates the cursor rather than silently paging across two populations.",
+            "x-glasswell-glossary": "gt_recipe"
+          },
+          "stream": {
+            "so": "The population is the same wells whichever stream you ask for; what changes is which stream's peer support stands behind them, and a subject can be well supported in oil and thin in gas.",
+            "x-glasswell-glossary": "gt_stream"
+          }
         }
       }
     },
@@ -14211,6 +16255,292 @@
           },
           "stream": {
             "so": "Filters the columns inside every pool at once \u2014 there is no way to ask for oil from one pool and gas from another. A pool that filed nothing for the requested stream keeps its row and loses the column.",
+            "x-glasswell-glossary": "gt_stream"
+          }
+        }
+      }
+    },
+    "/v1/wells/{api10}/type-curve": {
+      "get": {
+        "description": "The pinned `tcv1.0` control for one held-out test subject: monthly and cumulative p10/p50/p90 curves indexed to the split's horizon, the peer-ladder rung that produced them, and the number of peers standing behind every month. Quantiles are **statistical-ascending** \u2014 p10 is the low case \u2014 which is the opposite of the reserves convention in which P10 is the high case; `quantile_convention` says so on every response and `cr_tc_quantile_convention_1` records the decision. `typecurve_per_kft` is the peer quantile per thousand lateral feet rescaled to this subject's own lateral length, so it is a length-adjusted volume rather than a rate per thousand feet (`cr_tc_normalization_1`). When the ladder terminated without a comparison set the answer is still a 200: `outcome` reads `control_unavailable`, the reasons are named, and the figure slots are present and null with their handles intact, so the absence resolves to the rung that produced it rather than to a value that does not exist. This is a backward-looking aggregate over a held-out arm \u2014 `relation` says so \u2014 and it is not a forecast, a reserve or an EUR. There is no `as_of`: the control is pinned to one evaluation vintage and has no effective-dated history, so offering one would imply a history that does not exist. Use `publication` to read a prior publication's numbers instead. A warm read of the artifact costs 10-13 ms; `explain=true&explain_depth=8` walks a chain roughly nine hundred derivations wide and is the expensive request here.",
+        "operationId": "get_well_type_curve",
+        "parameters": [
+          {
+            "description": "Ten-digit API well number.",
+            "in": "path",
+            "name": "api10",
+            "required": true,
+            "schema": {
+              "description": "Ten-digit API well number.",
+              "pattern": "^\\d{10}$",
+              "title": "Api10",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Served stream.",
+            "in": "query",
+            "name": "stream",
+            "required": false,
+            "schema": {
+              "default": "oil",
+              "description": "Served stream.",
+              "enum": [
+                "oil",
+                "gas",
+                "water"
+              ],
+              "title": "Stream",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Normalisation arm.",
+            "in": "query",
+            "name": "normalization",
+            "required": false,
+            "schema": {
+              "default": "typecurve_absolute",
+              "description": "Normalisation arm.",
+              "enum": [
+                "typecurve_absolute",
+                "typecurve_per_kft"
+              ],
+              "title": "Normalization",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Split horizon in months.",
+            "in": "query",
+            "name": "horizon",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TypeCurveHorizon",
+              "default": 24,
+              "description": "Split horizon in months."
+            }
+          },
+          {
+            "description": "Rolling origin of the split.",
+            "in": "query",
+            "name": "origin",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rolling origin of the split.",
+              "title": "Origin"
+            }
+          },
+          {
+            "description": "Pin to one publication.",
+            "in": "query",
+            "name": "publication",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^p3pub_[0-9a-f]{32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Pin to one publication.",
+              "title": "Publication"
+            }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_WellTypeCurve_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "unregistered_artifact": {
+                    "summary": "Artifact is not registered",
+                    "value": {
+                      "detail": "Serving the number would mean serving it from an unregistered artifact.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 409,
+                      "title": "Artifact is not registered",
+                      "type": "/v1/errors/unregistered_artifact"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Artifact is not registered"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Type-curve control for one well",
+        "tags": [
+          "wells"
+        ],
+        "x-glasswell-request-example": {
+          "path": {
+            "api10": "3305310451"
+          },
+          "query": {
+            "horizon": 24,
+            "stream": "oil"
+          }
+        },
+        "x-glasswell-semantics": {
+          "explain": {
+            "so": "Inlines the chain behind all twelve handles. Each resolves through the api.respond derivation to the pinned typecurve.build derivation, whose output partition carries the split set and whose output hash is the artifact's, which is what makes the served curve traceable to its bytes.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "explain_depth": {
+            "so": "Three is enough to reach the control derivation and its split hashes, which sit at level one. The control's own chain runs deeper than that, so the inlined block reports truncated until you raise this to eight.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "horizon": {
+            "so": "Selects which persisted split answers, 12 or 24 months. It is not a window on one curve: the two horizons are different splits with different held-out arms, so their numbers are not two views of one thing."
+          },
+          "normalization": {
+            "so": "typecurve_absolute is the peer quantile as produced; typecurve_per_kft is that quantile taken per thousand lateral feet and then rescaled to this subject's length. The arms differ by the subject's lateral length in kft, so reading one as the other is a factor-of-ten error on the Bakken."
+          },
+          "origin": {
+            "so": "Selects the rolling origin. Omit it for the most recent origin this subject has at the requested horizon; available_origins lists them all.",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "publication": {
+            "so": "Pins the answer to one accepted publication. After a republication the numbers move, and this is how a handle minted before it is reconciled against one minted after \u2014 both stay served, neither is edited.",
+            "x-glasswell-glossary": "gt_recipe"
+          },
+          "stream": {
+            "so": "One stream per request, on purpose: three at once is twenty handles, which is exactly the inline-explain cap and a boundary nobody should sit on.",
             "x-glasswell-glossary": "gt_stream"
           }
         }

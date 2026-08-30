@@ -255,7 +255,9 @@ GET  /v1/status                          GET  /v1/health
 GET  /v1/wells                           GET  /v1/wells/status-summary
 GET  /v1/wells/{api10}                   GET  /v1/wells/{api10}/production
 GET  /v1/wells/{api10}/production/pools  GET  /v1/wells/{api10}/completions
-GET  /v1/wells/{api10}/neighbors         GET  /v1/formations
+GET  /v1/wells/{api10}/neighbors         GET  /v1/wells/{api10}/type-curve
+GET  /v1/type-curves                     GET  /v1/formations
+GET  /v1/modeling/publications           GET  /v1/modeling/publications/{publication_id}
 GET  /v1/explain?h={handle}              GET  /v1/derivations/{derivation_id}
 GET  /v1/manifests/{manifest_id}         GET  /v1/vintages/{vintage_id}
 GET  /v1/conformance                     GET  /v1/conformance/{rule_id}
