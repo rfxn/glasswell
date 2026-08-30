@@ -267,7 +267,30 @@ TX_LAYERS: tuple[TileLayer, ...] = (
     ),
 )
 
-TILE_LAYERS: tuple[TileLayer, ...] = (*ND_LAYERS, *LAND_LAYERS, *METRIC_LAYERS, *TX_LAYERS)
+# A point layer and nothing else: no in-scope New Mexico source ships a lateral, and
+# cr_nm_wellhistory_geometry_scope_1 is the row that says so.
+NM_LAYERS: tuple[TileLayer, ...] = (
+    TileLayer(
+        name="nm_wells",
+        source="marts.tile_nm_wells",
+        geometry_type="POINT",
+        properties=(
+            ("api10", "text"),
+            ("operator_name", "text"),
+            ("status_canonical", "text"),
+            ("status_reported", "text"),
+            ("well_type_reported", "text"),
+            ("county_code", "text"),
+            ("spud_year", "int4"),
+            ("derivation_id", "text"),
+        ),
+        thin=True,
+    ),
+)
+
+TILE_LAYERS: tuple[TileLayer, ...] = (
+    *ND_LAYERS, *LAND_LAYERS, *METRIC_LAYERS, *TX_LAYERS, *NM_LAYERS
+)
 
 # `stable parallel safe` is what martin's function discovery expects, and the argument names
 # are part of the contract: it looks for (z, x, y) plus an optional json `query`.

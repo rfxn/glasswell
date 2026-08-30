@@ -44,3 +44,6 @@ postgres:
     tx_wells:
       schema: marts
       function: tx_wells
+    nm_wells:
+      schema: marts
+      function: nm_wells

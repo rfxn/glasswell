@@ -25,11 +25,26 @@ short current-state ledger;
   are on the map, and the same EWA load populates `canonical.well_lease_links`, the
   append-only well-to-lease crosswalk SB-01 §2.9 makes Validator A; `link_role` records which
   crosswalk each row came from so no promotion can average two of them. Lease production is
-  registered as a source (`tx_pdq_dsv`, owner-triggered) with no ingest module, and allocation
-  and the validators that would check it against the links are not built.
-- **New Mexico:** ingest and promotion code exist and the OCD staging schema is created, but
-  promotion remains deployment- and owner-gated, so those tables are unpopulated on the
-  deployed instance; no resident NM production is claimed here.
+  **not** a registered source: `tx_pdq_dsv` has a poll-cadence policy row
+  (`050_durable_fetch_attempts.sql`, which carries no foreign key to `lineage.sources`) and a
+  test fixture, and no seeded `lineage.sources` entry, no conformance rules and no ingest module.
+  Allocation and the validators that would check it against the links are not built. Texas also
+  carries no geometry-provenance rule of its own, so its `geometry_provenance` figure cites North
+  Dakota's classing rule — a pre-existing residual, now stated rather than inherited silently.
+- **New Mexico:** the header spine is built. `ingest/nm_wells.py` promotes the OCD FTP header
+  table into `canonical.wells` and a surface point into `canonical.well_spatial`, keyed by
+  `cr_nm_wellhistory_api10_1`; the coordinate policy is a pair rule with a stated nil-before-zero
+  precedence, because four records in 321,510 carry a good latitude and a longitude of exactly
+  zero. `marts.nm_wells_tile` publishes the points and the serving path resolves New Mexico's own
+  status vocabulary, geometry provenance, liquids basis and pool-grain rules rather than North
+  Dakota's. **Distinguish the production database from the deployed host.** In `glasswell`, the
+  nine OCD staging tables are unpopulated and no canonical NM row is resident; what *is* resident
+  is `staging.nm_c115b_upstream` at 71,447 rows, 10 NM sources and 79 NM conformance rules. On the
+  same host, a scratch database `glasswell_d1` holds a fully promoted 17,597,960-row NM production
+  spine and 763,473 completion rows from the August build. The Tier 1 promotion that moves those
+  into `glasswell` is owner-gated and documented in `docs/runbook-nm-promotion.md`; New Mexico
+  reports production at the well-completion-pool grain and glasswell rolls none of it up to the
+  well, so an NM well's well-level series is absent rather than zero and says so.
 - **Serving surface:** the frozen snapshot contains 34 operations, 33 under `/v1`, covering
   health, operational status, wells, ND production, source-observed completion context,
   current ND physical neighbours, canonical formations with alias counts, lineage, manifests,

@@ -13,6 +13,12 @@ from glasswell.seed.conformance_fracfocus import FRACFOCUS_RULES, seed_conforman
 from glasswell.seed.conformance_land import LAND_RULES, seed_conformance_land
 from glasswell.seed.conformance_nd import ND_RULES, seed_conformance_nd
 from glasswell.seed.conformance_nm import NM_RULES, seed_conformance_nm
+from glasswell.seed.conformance_nm_wells import (
+    NM_WELLS_GIS_RULES,
+    NM_WELLS_RULES,
+    seed_conformance_nm_wells,
+    seed_conformance_nm_wells_gis,
+)
 from glasswell.seed.conformance_producing import PRODUCING_RULES, seed_conformance_producing
 from glasswell.seed.conformance_tx import TX_RULES, seed_conformance_tx
 from glasswell.seed.conformance_typecurve import TYPECURVE_RULES, seed_conformance_typecurve
@@ -40,6 +46,8 @@ __all__ = [
     "ND_RULES",
     "NM_RULES",
     "NM_STREAM_ROWS",
+    "NM_WELLS_GIS_RULES",
+    "NM_WELLS_RULES",
     "PRODUCING_RULES",
     "SOURCES",
     "TX_RULES",
@@ -51,6 +59,8 @@ __all__ = [
     "seed_conformance_land",
     "seed_conformance_nd",
     "seed_conformance_nm",
+    "seed_conformance_nm_wells",
+    "seed_conformance_nm_wells_gis",
     "seed_conformance_producing",
     "seed_conformance_tx",
     "seed_conformance_typecurve",
@@ -75,6 +85,11 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
         "conformance_rules_tx": seed_conformance_tx(connection),
         "conformance_rules_land": seed_conformance_land(connection),
         "conformance_rules_c115b": seed_conformance_c115b(connection),
+        # Registers its own source, so it goes before seed_sources for the reason C-115B does:
+        # that seeder's count is a registry total, and a source added after it makes the first
+        # run's number differ from the second's. Its rules also carry an nm_ocd_ source id, so
+        # it has to precede the NM seeder as well — both constraints point the same way.
+        "conformance_rules_nm_wells_gis": seed_conformance_nm_wells_gis(connection),
         "sources": seed_sources(connection),
         "crs_registry": seed_crs(connection),
         "conformance_rules_fracfocus": seed_conformance_fracfocus(connection),
@@ -87,6 +102,10 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
         "conformance_rules_typecurve": seed_conformance_typecurve(connection),
         "conformance_rules": seed_conformance_nd(connection),
         "formation_aliases_nd": seed_nd_formation_aliases(connection),
+        # Before the NM seeder, and for the reason the two comments above give: its rules carry
+        # nm_ocd_ source ids and the count seed_conformance_nm returns is a registry total over
+        # that prefix. Seeded after it, the first run's number would differ from the second's.
+        "conformance_rules_nm_wells": seed_conformance_nm_wells(connection),
         "conformance_rules_nm": seed_conformance_nm(connection),
         "nm_stream_map": seed_nm_streams(connection),
         "nm_waste_type_map": seed_nm_waste_types(connection),

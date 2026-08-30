@@ -40,8 +40,8 @@ const STATUS = {
   ],
   datasets: [
     {
-      dataset_id: "canonical.production_monthly",
-      label: "Production observations",
+      dataset_id: "canonical.production_monthly/nd",
+      label: "North Dakota production observations",
       scope: "North Dakota",
       grain: "well-month-stream observation",
       state: "available",

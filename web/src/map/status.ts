@@ -9,8 +9,13 @@ import type { Expr } from "./expr.ts";
  */
 export const STATUS_VOCAB_RULE = "cr_nd_status_vocab_1";
 /** One canonical class list, one vocabulary rule per source. Both are named where counts are. */
-export const STATUS_VOCAB_RULES = ["cr_nd_status_vocab_1", "cr_tx_status_vocab_1"] as const;
+export const STATUS_VOCAB_RULES = [
+  "cr_nd_status_vocab_1",
+  "cr_tx_status_vocab_1",
+  "cr_nm_wellhistory_status_vocab_1",
+] as const;
 export const TX_STATUS_VOCAB_RULE = "cr_tx_status_vocab_1";
+export const NM_STATUS_VOCAB_RULE = "cr_nm_wellhistory_status_vocab_1";
 
 /** Reserved for selection. No layer and no status may paint with it (UX P1-5). */
 export const SELECTION_COLOUR = "#5FD3E8";
@@ -60,9 +65,24 @@ export const MEASURED_TX_WELL_COUNTS: Readonly<Record<string, number>> = {
   temporarily_abandoned: 4_179,
 };
 
-/** What the legend may list: a class either basin has actually drawn. */
+/**
+ * Empty by construction rather than by a deployed read, and the distinction matters because the
+ * two constants above it cite real queries. `marts.nm_wells_tile` does not exist on the deployed
+ * host yet. This value is derivable a priori from the promotion path: `nm_wells.py` inserts a
+ * literal null for `status_canonical` on every New Mexico header, because
+ * cr_nm_wellhistory_status_vocab_1 records that the OCD publishes no codebook for its fifteen
+ * status letters. No class can have a count, so every New Mexico well draws unmapped and
+ * populating this would mean guessing. Replace with a real read at the first refresh.
+ */
+export const MEASURED_NM_WELL_COUNTS: Readonly<Record<string, number>> = {};
+
+/** What the legend may list: a class any basin has actually drawn. */
 export function measuredWellCount(id: string): number {
-  return (MEASURED_WELL_COUNTS[id] ?? 0) + (MEASURED_TX_WELL_COUNTS[id] ?? 0);
+  return (
+    (MEASURED_WELL_COUNTS[id] ?? 0)
+    + (MEASURED_TX_WELL_COUNTS[id] ?? 0)
+    + (MEASURED_NM_WELL_COUNTS[id] ?? 0)
+  );
 }
 
 export const STATUS_CLASSES: readonly StatusClass[] = [
@@ -181,7 +201,10 @@ export const UNMAPPED_STATUS: StatusClass = {
   label: "Unmapped status",
   colour: "#46525C",
   glyph: "hollow",
-  note: `No status in ${STATUS_VOCAB_RULES.join(" or ")}: the source reported none.`,
+  note:
+    `No status under ${STATUS_VOCAB_RULES.join(", ")}: the source reported none, or its `
+    + "vocabulary has no published codebook to map — every New Mexico well is here for the "
+    + "second reason.",
   minZoom: 0,
   rule: STATUS_VOCAB_RULE,
 };

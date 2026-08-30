@@ -33,13 +33,18 @@ from glasswell.api.provenance import register_response_figures
 from glasswell.api.rate_limit import consume_rate_limit
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, inline_for, iso
 from glasswell.lengths import STORAGE_EPSG, resolve_length_method
-from glasswell.lineage.conformance import LeaseReportingRule, lease_reporting_rule
+from glasswell.lineage.conformance import (
+    LeaseReportingRule,
+    lease_reporting_rule,
+    pool_grain_rule,
+)
 from glasswell.lineage.envelope import Figure, collect_handles, distinct_handles, figure
 from glasswell.lineage.explain import MAX_HANDLES
 from glasswell.lineage.selector_registry import identity_selector_term
 from glasswell.marts.producing import (
     PRODUCING_CLASSES,
     PRODUCING_RULE_IDS,
+    UNKNOWN,
     ProducingPolicy,
     ProducingPolicyError,
     anchor_month,
@@ -69,11 +74,26 @@ COUNT_UNIT = "wells"
 # registry has no state-code edge to walk — a vocab_map row is keyed by source — so the pairing
 # is pinned here for the same reason as production.ROLLUP_RULE, and
 # test_well_status_summary.py holds every id to a seeded registry row.
-STATUS_VOCABULARY_RULES = {"33": "cr_nd_status_vocab_1", "42": "cr_tx_status_vocab_1"}
+STATUS_VOCABULARY_RULES = {
+    "33": "cr_nd_status_vocab_1",
+    "42": "cr_tx_status_vocab_1",
+    # New Mexico's row records a measured domain and an absent mapping: the OCD publishes no
+    # codebook, so every NM status_canonical is null and every NM well is counted unmapped.
+    # That count is a figure, and this is the rule it cites.
+    "30": "cr_nm_wellhistory_status_vocab_1",
+}
 
 # Same pinning rationale as above: geometry_provenance is geom_type served verbatim, and the
-# row that says so is held to the seeded registry by test_well_status_summary.py.
-PROVENANCE_RULE = "cr_nd_geometry_provenance_1"
+# row that says so is held to the seeded registry by test_well_status_summary.py. Per state,
+# because the row is per source. Texas is mapped to North Dakota's rule as it always has been:
+# the registry carries no cr_tx_geometry_provenance_1, and inventing one or dropping the handle
+# are both larger changes than this. Routed to the register as a pre-existing residual.
+PROVENANCE_RULES = {
+    "33": "cr_nd_geometry_provenance_1",
+    "42": "cr_nd_geometry_provenance_1",
+    "30": "cr_nm_wellhistory_geometry_provenance_1",
+}
+DEFAULT_PROVENANCE_RULE = "cr_nd_geometry_provenance_1"
 
 WELL_LABELS = {
     "/api10": "gt_api_10_api_12_api_14",
@@ -286,9 +306,10 @@ class WellSummary(BaseModel):
     )
     status_canonical: str | None = Field(
         description=(
-            "Status mapped through the source's status vocabulary rule — cr_nd_status_vocab_1"
-            " in North Dakota, cr_tx_status_vocab_1 in Texas. Null where the source reported"
-            " no status at all, which is not the same as an unknown one."
+            "Status mapped through the source's own status vocabulary rule, one per"
+            " jurisdiction and served with the figure. Null where the source reported no"
+            " status at all, or where its vocabulary has no published codebook to map — two"
+            " different absences, and the rule says which."
         ),
         json_schema_extra={GLOSSARY_KEY: "gt_well_status"},
     )
@@ -312,9 +333,9 @@ class WellSummary(BaseModel):
     geometry_provenance: list[str] = Field(
         description=(
             "Distinct provenance classes of this well's recorded geometry, alphabetical —"
-            " canonical geom_type served verbatim under cr_nd_geometry_provenance_1:"
-            " surface, bottomhole, lateral or survey_trace. Empty where no geometry is"
-            " recorded."
+            " canonical geom_type served verbatim under the jurisdiction's geometry"
+            " provenance rule: surface, bottomhole, lateral or survey_trace. Empty where no"
+            " geometry is recorded."
         ),
     )
     producing: str | None = Field(
@@ -322,8 +343,11 @@ class WellSummary(BaseModel):
             "Whether the well is producing on the evidence held, which is a different fact"
             " from its status: `producing` where a positive oil or gas month was filed inside"
             " the window, `not_producing` where the well filed but no such month, and"
-            " `unknown` where it filed nothing, where the regulator withheld the months, or"
-            " where the jurisdiction reports at the lease and no well-level series exists."
+            " `unknown` where it filed nothing, where the regulator withheld the months, where"
+            " the jurisdiction reports at the lease, or where it reports below the well and"
+            " nothing rolls up — the last two are both jurisdictions with no well-level series"
+            " to evaluate, and the rule that says which is served as a warning beside the"
+            " figure rather than left for the reader to guess."
             " Defined by cr_producing_window_1, cr_producing_streams_1 and"
             " cr_producing_evidence_1; liquids are oil plus condensate. Null where the"
             " definition is not registered, which is disclosed as a warning."
@@ -460,6 +484,25 @@ def pending_allocation(rule: LeaseReportingRule) -> dict[str, Any]:
             " well-to-lease keys it will need are already recorded."
         ),
         "pointer": "/production",
+    }
+
+
+def reported_at_pool_grain(rule: LeaseReportingRule) -> dict[str, Any]:
+    """DIR-3 one grain the other way from `pending_allocation`.
+
+    A well whose regulator files per completion pool and rolls nothing up has no well-level
+    series to be absent from, so `producing` is `unknown` — but it filed, and the three causes
+    the field enumerated before this did not include the one that applies. The rule is named so
+    a reader can resolve it at /v1/conformance."""
+    return {
+        "code": "production_reported_at_pool_grain",
+        "detail": (
+            f"This well's regulator files production at the {rule['reporting_level']} and"
+            f" glasswell performs no rollup to the well ({rule['rule_id']}), so no well-level"
+            " series has been observed and `producing` is unknown for that reason rather than"
+            " because nothing was filed. The pool series is served separately."
+        ),
+        "pointer": "/producing",
     }
 
 
@@ -671,7 +714,8 @@ def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
                     "Matches the provenance class of the well's recorded geometry — surface,"
                     " bottomhole, lateral or survey_trace — verbatim, with no decode: the"
                     " same canonical geom_type the tiles serve as geometry_provenance under"
-                    " cr_nd_geometry_provenance_1. A well matches when any of its geometry"
+                    " the jurisdiction's provenance rule. A well matches when any of its"
+                    " geometry"
                     " carries the class, and the payload column lists every class it carries,"
                     " so a match still shows what else the well holds."
                 ),
@@ -922,8 +966,8 @@ class BasinStatusCounts(BaseModel):
 class ProvenanceCount(BaseModel):
     geometry_provenance: str = Field(
         description=(
-            "Provenance class, verbatim canonical geom_type under"
-            " cr_nd_geometry_provenance_1: surface, bottomhole, lateral or survey_trace."
+            "Provenance class, verbatim canonical geom_type under the jurisdiction's"
+            " provenance rule: surface, bottomhole, lateral or survey_trace."
         ),
     )
     wells: FigureModel = Field(
@@ -1343,11 +1387,11 @@ def _summary_warnings(
         " reported no status are their own bucket, `unmapped_wells`, and are never added to a"
         " class — in the 2026-08-20 Texas load 65,685 wells are in it, which is more than any"
         " class it could have been folded into. Counts are split per basin with the vocabulary"
-        " rule that mapped that jurisdiction's codes (cr_nd_status_vocab_1 in North Dakota,"
-        " cr_tx_status_vocab_1 in Texas), because a status class means what its rule says it"
-        " means. The same box is classed two more ways: per provenance of the recorded"
-        " geometry — canonical geom_type verbatim, under the classing rule"
-        " cr_nd_geometry_provenance_1 — and per reported well type code, verbatim. Both are"
+        " rule that mapped that jurisdiction's codes, because a status class means what its"
+        " rule says it means and the rules travel with the counts. The same box is classed two"
+        " more ways: per provenance of the recorded geometry — canonical geom_type verbatim,"
+        " under the jurisdiction's classing rule — and per reported well type code, verbatim."
+        " Both are"
         " figures with handles, so a coverage statement — how many wells are traced, how many"
         " filed under a disposal code — derives from this endpoint rather than from a pinned"
         " constant. Provenance classes overlap where a well holds several geometry kinds, and"
@@ -1444,7 +1488,15 @@ def get_well_status_summary(
         }
     )
     rules = sorted({rule for row in basins if (rule := row["status_vocabulary_rule"])})
-    response_rules = sorted({*rules, *([PROVENANCE_RULE] if classed else [])})
+    # One provenance rule per state actually in the box: geom_type is served verbatim, but the
+    # row that legislates that is per source, so a two-state box cites two.
+    provenance_rules = sorted(
+        {
+            PROVENANCE_RULES.get(row["state_code"] or "", DEFAULT_PROVENANCE_RULE)
+            for row in counted
+        }
+    ) if classed else []
+    response_rules = sorted({*rules, *provenance_rules})
     data = {
         "bbox": box,
         "wells": _count(counted, selector=f"col=wells&bbox={selector_box}"),
@@ -1477,8 +1529,7 @@ def get_well_status_summary(
         rule_ids=response_rules,
     )
     links = {rule: f"/v1/conformance/{rule}" for rule in rules}
-    if classed:
-        links[PROVENANCE_RULE] = f"/v1/conformance/{PROVENANCE_RULE}"
+    links |= {rule: f"/v1/conformance/{rule}" for rule in provenance_rules}
     if policy:
         links |= {rule: f"/v1/conformance/{rule}" for rule in PRODUCING_RULE_IDS}
     minx, miny, maxx, maxy = envelope
@@ -1578,6 +1629,11 @@ def get_well(
     )
     if lease_reported:
         warnings.append(pending_allocation(lease_reported))
+    pool_grain = pool_grain_rule(
+        connection, row["state_code"], valid_at=as_of, knowledge_at=as_of
+    )
+    if pool_grain and row["producing"] == UNKNOWN:
+        warnings.append(reported_at_pool_grain(pool_grain))
     geometry = rows(
         connection,
         _SPATIAL.format(length_metres=method.metres_sql()),

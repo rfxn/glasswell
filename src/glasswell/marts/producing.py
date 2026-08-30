@@ -195,25 +195,41 @@ def class_expression(*, api10: str, state_code: str) -> str:
     )
 
 
-# DIR-3 read as a population rather than as one well's card: where a jurisdiction reports at the
-# lease, no well-level series was ever observed, so its wells have nothing to be absent from.
-# Answering not_producing there would libel every producing well in the state — on the 2026-08
-# load that is 114,122 Texas wells the regulator calls active.
-_LEASE_REPORTED_STATES = """
+# DIR-3 read as a population rather than as one well's card: where no well-level series was ever
+# observed, a state's wells have nothing to be absent from, and answering not_producing would
+# libel every producing well in it — on the 2026-08 load that is 114,122 Texas wells the
+# regulator calls active.
+#
+# Two registry reasons produce that absence and the query resolves both, because the *reason*
+# differs and the *consequence* does not. A lease-reporting jurisdiction files above the well.
+# New Mexico files below it: cr_nm_wcproduction_pool_rollup_1 records that its grain is
+# well_completion_pool and that nothing rolls up, so a New Mexico well has 17.6M pool rows
+# behind it and no well-level series to evaluate. Reading either from the registry is what keeps
+# this a mapping decision with a row rather than a state code in a serving path.
+_NO_WELL_SERIES_STATES = """
 select distinct spec ->> 'state_code' as state_code
   from lineage.conformance_rules
  where spec ->> 'reporting_level' = 'lease'
    and (spec -> 'allocation_required')::boolean
    and (effective_to is null or effective_to > current_date)
    and spec ->> 'state_code' is not null
+union
+select distinct spec ->> 'state_code' as state_code
+  from lineage.conformance_rules
+ where spec ->> 'reporting_level' = 'well_completion_pool'
+   and (spec -> 'rolls_up_to_the_well')::boolean is false
+   and (effective_to is null or effective_to > current_date)
+   and spec ->> 'state_code' is not null
  order by state_code
 """
 
 
-def lease_reported_states(connection: psycopg.Connection) -> list[str]:
+def no_well_series_states(connection: psycopg.Connection) -> list[str]:
+    """States whose registry says no well-level series exists, for either recorded reason."""
     with connection.cursor() as cursor:
-        cursor.execute(_LEASE_REPORTED_STATES)
+        cursor.execute(_NO_WELL_SERIES_STATES)
         return [row[0] for row in cursor.fetchall()]
+
 
 
 def producing_params(connection: psycopg.Connection, policy: ProducingPolicy) -> dict[str, Any]:
@@ -222,5 +238,5 @@ def producing_params(connection: psycopg.Connection, policy: ProducingPolicy) ->
         "producing_streams": list(policy.streams),
         "producing_evidence": list(policy.evidence_semantics),
         "producing_window_start": window_start(anchor_month(connection, policy), policy),
-        "producing_lease_states": lease_reported_states(connection),
+        "producing_lease_states": no_well_series_states(connection),
     }

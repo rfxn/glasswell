@@ -739,6 +739,14 @@ select rule_id, rule, spec ->> 'reporting_level' as reporting_level, effective_f
  limit 1
 """
 
+# The same shape one grain down: a jurisdiction that files *below* the well and rolls nothing up
+# also has no well-level series, and the rule that says so is what a served absence must cite.
+_POOL_GRAIN_REPORTING = _LEASE_REPORTING.replace(
+    "and spec ->> 'reporting_level' = 'lease'\n   and (spec -> 'allocation_required')::boolean",
+    "and spec ->> 'reporting_level' = 'well_completion_pool'\n"
+    "   and (spec -> 'rolls_up_to_the_well')::boolean is false",
+)
+
 _LEASE_BASELINE = """
 select min(published_vintage)
   from lineage.conformance_rules
@@ -752,6 +760,31 @@ class LeaseReportingRule(TypedDict):
     reporting_level: str
     effective_from: date
     published_vintage: date
+
+
+def pool_grain_rule(
+    connection: psycopg.Connection,
+    state_code: str | None,
+    *,
+    as_of: date | None = None,
+    valid_at: date | None = None,
+    knowledge_at: date | None = None,
+) -> LeaseReportingRule | None:
+    """The rule saying a jurisdiction files below the well and nothing rolls up, or None.
+
+    R8 again, and the same argument `lease_reporting_rule` makes one grain the other way: which
+    states have no well-level series is a registry fact with a date and a rationale, not a list
+    of state codes in a serving path. A well in such a state filed — New Mexico's filed 17.6M
+    pool rows — so "it filed nothing" is the wrong thing to tell a reader.
+    """
+    return _reporting_absence(
+        connection,
+        _POOL_GRAIN_REPORTING,
+        state_code,
+        as_of=as_of,
+        valid_at=valid_at,
+        knowledge_at=knowledge_at,
+    )
 
 
 def lease_reporting_rule(
@@ -769,6 +802,26 @@ def lease_reporting_rule(
     series, and the honest answer on its card is that one is pending — not that none was
     reported (DIR-3).
     """
+    return _reporting_absence(
+        connection,
+        _LEASE_REPORTING,
+        state_code,
+        as_of=as_of,
+        valid_at=valid_at,
+        knowledge_at=knowledge_at,
+    )
+
+
+def _reporting_absence(
+    connection: psycopg.Connection,
+    statement: str,
+    state_code: str | None,
+    *,
+    as_of: date | None,
+    valid_at: date | None,
+    knowledge_at: date | None,
+) -> LeaseReportingRule | None:
+    """The two-clock read both absence rules share; only the predicate differs."""
     if not state_code:
         return None
     knowledge_cut = knowledge_at or utc_today()
@@ -780,7 +833,7 @@ def lease_reporting_rule(
     effective_at = valid_at or as_of or utc_today()
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(
-            _LEASE_REPORTING,
+            statement,
             {
                 "state_code": state_code,
                 "knowledge_at": knowledge_cut,

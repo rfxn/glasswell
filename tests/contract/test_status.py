@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import psycopg
@@ -85,6 +86,61 @@ def _snapshot(observed_at: datetime) -> StatusSnapshot:
 
 def _publish(path: Path, snapshot: StatusSnapshot) -> None:
     path.write_text(snapshot.model_dump_json(), encoding="utf-8")
+
+
+def _metrics(dataset: DatasetInventory) -> dict[str, int]:
+    return {metric.metric_id: metric.value for metric in dataset.metrics}
+
+
+NM_API10S = ("3002540209", "3004508708")
+NM_POOLS = ("96269", "72319")
+
+
+def _seed_new_mexico_production(connection: psycopg.Connection) -> int:
+    """New Mexico rows on New Mexico's own grain, reusing the fixture's lineage anchors.
+
+    The defect this file now guards was invisible to a single-state fixture: an aggregate with
+    no state filter is indistinguishable from a correct one until a second state is present.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select source_manifest_id, derivation_id from canonical.production_monthly limit 1"
+        )
+        manifest_id, derivation_id = cursor.fetchone()
+        rows = [
+            {
+                "api10": api10,
+                "entity_key": f"{api10}:{pool}",
+                "pool": pool,
+                "production_month": date(2026, month, 1),
+                "stream": stream,
+                "manifest_id": manifest_id,
+                "derivation_id": derivation_id,
+            }
+            for api10, pool in zip(NM_API10S, NM_POOLS, strict=True)
+            for month in (7, 8)
+            for stream in ("oil", "gas")
+        ]
+        cursor.executemany(
+            "insert into canonical.production_monthly (api10, entity_type, entity_key,"
+            " reporting_level, well_completion_pool, production_month, stream, source_id,"
+            " report_vintage, volume, unit, granularity, value_hash, null_semantics,"
+            " source_manifest_id, derivation_id)"
+            " values (%(api10)s, 'well_completion_pool', %(entity_key)s, 'well_completion_pool',"
+            " %(pool)s, %(production_month)s, %(stream)s, 'nm_ocd_wcproduction',"
+            " %(report_vintage)s, %(volume)s, 'bbl', 'well_observed', %(value_hash)s,"
+            " 'reported', %(manifest_id)s, %(derivation_id)s)",
+            [
+                row
+                | {
+                    "report_vintage": date(2026, 8, 20),
+                    "volume": Decimal("101.500"),
+                    "value_hash": "f" * 64,
+                }
+                for row in rows
+            ],
+        )
+    return len(rows)
 
 
 def test_status_names_the_resource_from_the_service_index(client: TestClient) -> None:
@@ -189,7 +245,7 @@ def test_inventory_queries_the_declared_grains_not_promotion_bookkeeping(
     assert (nd_wells, tx_wells) == (7, 1)
     assert {"33": nd_wells, "42": tx_wells} == direct_well_counts
 
-    production = inventory["canonical.production_monthly"]
+    production = inventory["canonical.production_monthly/nd"]
     metrics = {metric.metric_id: metric.value for metric in production.metrics}
     assert metrics["rows"] > metrics["wells"]
     assert production.grain == "one append-only source revision per well, month and stream"
@@ -211,3 +267,60 @@ def test_inventory_queries_the_declared_grains_not_promotion_bookkeeping(
     assert inventory["marts.nd_neighbor_subjects"].valid_to is None
     assert inventory["lineage.quarantine_rows"].detail.startswith("A count only")
     assert platform.schema_version == discover_migrations()[-1].version
+
+
+def test_production_is_inventoried_under_the_state_that_reported_it(
+    seeded: psycopg.Connection,
+) -> None:
+    """A New Mexico row served under a North Dakota jurisdiction is a naked number, not a label.
+
+    `glasswell-status.timer` runs `*:0/15`, so the first New Mexico promotion would have
+    published its rows under North Dakota within fifteen minutes, unattended, into an
+    append-only surface, over rows with no well header.
+    """
+    observed = datetime(2026, 8, 26, 18, tzinfo=UTC)
+    nm_rows = _seed_new_mexico_production(seeded)
+
+    datasets, _ = _inventory(seeded, observed)
+    inventory = {dataset.dataset_id: dataset for dataset in datasets}
+
+    assert "canonical.production_monthly" not in inventory, (
+        "the unqualified id claimed one jurisdiction for every state's rows"
+    )
+    nd, nm = (
+        inventory["canonical.production_monthly/nd"],
+        inventory["canonical.production_monthly/nm"],
+    )
+    assert (nd.scope, nm.scope) == ("North Dakota", "New Mexico")
+    assert _metrics(nm) == {"rows": nm_rows, "wells": len(NM_API10S)}
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select count(*), count(distinct api10) from canonical.production_monthly"
+            " where left(api10, 2) = '33'"
+        )
+        nd_rows, nd_wells = cursor.fetchone()
+        cursor.execute("select count(*) from canonical.production_monthly")
+        total = cursor.fetchone()[0]
+    assert _metrics(nd) == {"rows": nd_rows, "wells": nd_wells}
+    # The two datasets partition the table. A third population — a Texas lease row, whose api10
+    # is null by migration 020 — would be counted by neither, so it must fail here rather than
+    # disappear from a served figure.
+    assert _metrics(nd)["rows"] + _metrics(nm)["rows"] == total
+    assert nm.valid_from == "2026-07-01"
+    assert nm.valid_to == "2026-08-01"
+    assert nd.valid_from != nm.valid_from
+    assert nd.valid_to != nm.valid_to
+
+
+def test_new_mexico_production_reports_zero_before_its_rows_arrive(
+    seeded: psycopg.Connection,
+) -> None:
+    """The convention `canonical.well_completions/nm` already sets: zero, under its own scope."""
+    datasets, _ = _inventory(seeded, datetime(2026, 8, 26, 18, tzinfo=UTC))
+    inventory = {dataset.dataset_id: dataset for dataset in datasets}
+
+    nm = inventory["canonical.production_monthly/nm"]
+    assert [metric.value for metric in nm.metrics] == [0, 0]
+    assert nm.scope == "New Mexico"
+    assert nm.valid_from is None
+    assert nm.valid_to is None

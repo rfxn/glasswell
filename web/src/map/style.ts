@@ -43,6 +43,9 @@ export const LATERALS_SOURCE = "nd_laterals";
 export const SPACING_SOURCE = "nd_spacing_units";
 export const TX_WELLS_SOURCE = "tx_wells";
 export const TX_LATERALS_SOURCE = "tx_laterals";
+// A point source and no lateral sibling: no in-scope New Mexico source ships one, and
+// cr_nm_wellhistory_geometry_scope_1 is the row that says so.
+export const NM_WELLS_SOURCE = "nm_wells";
 export const TRACES_SOURCE = "nd_survey_traces";
 export const TOWNSHIPS_SOURCE = "land_townships";
 export const SECTIONS_SOURCE = "land_sections";
@@ -131,6 +134,7 @@ export function sourceSpecs(origin?: string, search?: string): Record<string, So
     ["spacing", SPACING_SOURCE, "api10"],
     ["tx_wells", TX_WELLS_SOURCE, "api10"],
     ["tx_laterals", TX_LATERALS_SOURCE, "api10"],
+    ["nm_wells", NM_WELLS_SOURCE, "api10"],
     ["traces", TRACES_SOURCE, "api10"],
     // The land grid's identity is the publisher's unit id, not a well spine key.
     ["townships", TOWNSHIPS_SOURCE, "land_unit_id"],
@@ -276,6 +280,7 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
   const spacing = publishedSource("spacing", SPACING_SOURCE, options.search);
   const txWells = publishedSource("tx_wells", TX_WELLS_SOURCE, options.search);
   const txLaterals = publishedSource("tx_laterals", TX_LATERALS_SOURCE, options.search);
+  const nmWells = publishedSource("nm_wells", NM_WELLS_SOURCE, options.search);
   const traces = publishedSource("traces", TRACES_SOURCE, options.search);
   const townships = publishedSource("townships", TOWNSHIPS_SOURCE, options.search);
   const sections = publishedSource("sections", SECTIONS_SOURCE, options.search);
@@ -484,6 +489,27 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       type: "circle",
       source: txWells,
       "source-layer": txWells,
+      minzoom: 4,
+      metadata: STATUS_GATED,
+      paint: {
+        "circle-color": selectable(SELECTION_COLOUR, statusFillExpression(hollow)),
+        "circle-stroke-color": selectable(SELECTION_COLOUR, statusColourExpression()),
+        "circle-stroke-width": interpolate(zoom, [
+          [4, 0.4],
+          [9, 0.7],
+          [12, 1.2],
+        ]),
+        "circle-radius": wellRadius(),
+      },
+    },
+    {
+      // No struck sibling: the strike marks a status class, and every New Mexico
+      // status_canonical is null under cr_nm_wellhistory_status_vocab_1 — the OCD publishes
+      // no codebook — so the class can never be matched and the layer would be dead.
+      id: "nm-wells",
+      type: "circle",
+      source: nmWells,
+      "source-layer": nmWells,
       minzoom: 4,
       metadata: STATUS_GATED,
       paint: {
