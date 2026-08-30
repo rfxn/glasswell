@@ -5,6 +5,8 @@
  */
 import { LAND_SNAPSHOT, ND_SNAPSHOT, landCellCount, ndCoverage, ndWellCount } from "./coverage.ts";
 import { DISPOSAL_COLOUR } from "./disposal.ts";
+import { LAYER_GROUPS } from "./groups.ts";
+import type { LayerGroup, LayerGroupId } from "./groups.ts";
 import { statusColour } from "./status.ts";
 import { LAND_GRID_COLOUR, TRACE_COLOUR } from "./style.ts";
 import { LIQUID_RAMP } from "./thematics.ts";
@@ -39,6 +41,8 @@ export interface LayerCollection {
 
 export interface LayerDef {
   id: string;
+  /** Required, so a layer added to the table cannot arrive with no place in the reader's list. */
+  group: LayerGroupId;
   label: string;
   subtitle: string;
   swatch: LayerSwatch;
@@ -83,6 +87,7 @@ export const LAYERS: readonly LayerDef[] = [
     // (57.3% of ND liquid volume sits on wells whose lateral midpoint and surface hole are
     // in different sections), never this file's claim.
     id: "land-metrics",
+    group: "derived",
     label: "Liquid on the land grid (ND)",
     subtitle:
       "Observed cumulative liquid (oil plus condensate as ND files it) summed per PLSS" +
@@ -107,6 +112,7 @@ export const LAYERS: readonly LayerDef[] = [
     // the BLM national CadNSDI; the publisher choice and the measured cross-publisher grid
     // divergence are conformance rows (cr_blm_plss_publisher_1), not this file's claim.
     id: "land-grid",
+    group: "land",
     label: "PLSS land grid (ND)",
     // Counts as published by BLM (F2): the promoted rows run 10-to-31 lower per the
     // quarantine's duplicate ledger, and the register quotes the publisher it names rather
@@ -128,6 +134,7 @@ export const LAYERS: readonly LayerDef[] = [
   {
     // Geometry and labels split: the linework at one zoom band, the text two bands finer.
     id: "land-grid-labels",
+    group: "land",
     label: "PLSS grid labels (ND)",
     subtitle: "Township-range and section numbers carried on the land grid itself",
     swatch: { kind: "line", colours: [LAND_GRID_COLOUR] },
@@ -142,6 +149,7 @@ export const LAYERS: readonly LayerDef[] = [
   },
   {
     id: "spacing-units",
+    group: "land",
     label: "Spacing units",
     subtitle: "ND DMR drilling-unit polygons · 10,571 units · the unit an operator thinks in",
     swatch: { kind: "outline", colours: ["#4B6472"] },
@@ -157,6 +165,7 @@ export const LAYERS: readonly LayerDef[] = [
   },
   {
     id: "plss-labels",
+    group: "land",
     label: "Spacing-unit labels",
     subtitle:
       "Township-range description carried on the spacing unit · the surveyed grid itself is" +
@@ -176,6 +185,7 @@ export const LAYERS: readonly LayerDef[] = [
     // written against `laterals` or `tx-laterals` never knew this row, so it arrives at the
     // default below rather than inheriting a bit about a layer that drew one state at z0.
     id: "lateral-bores",
+    group: "spine",
     label: "Laterals",
     subtitle: "Horizontal bore geometry as each regulator filed it · not a directional survey trace",
     swatch: { kind: "line", colours: STATUS_KEYED_LINE },
@@ -203,6 +213,7 @@ export const LAYERS: readonly LayerDef[] = [
     // that is. Coverage is stated on the row because a trace is absent 98.8% of the time,
     // absence here is not "no lateral", and the hole has a reason the subtitle names.
     id: "survey-traces",
+    group: "spine",
     label: "Survey traces (ND)",
     subtitle:
       `The bore path ND filed as MD/INC/AZI/TVD stations · ${ndCoverage(ND_SNAPSHOT.traced)} · ` +
@@ -224,6 +235,7 @@ export const LAYERS: readonly LayerDef[] = [
   },
   {
     id: "wells",
+    group: "spine",
     label: "Wells",
     subtitle: `ND DMR GIS surface locations · ${ndWellCount()} points · culled by status below zoom 9`,
     swatch: { kind: "dot", colours: ["#3FA55E"] },
@@ -242,6 +254,7 @@ export const LAYERS: readonly LayerDef[] = [
     // NDIC itself types as injection class, over the status dot the wells row still draws.
     // The membership is a conformance row, not this file's — see disposal.ts.
     id: "disposal-wells",
+    group: "spine",
     label: "Disposal & injection (ND)",
     subtitle:
       `Wells NDIC types SWD, WI, CO2I, AI, GI, SFI, MWUI or INJP · ${ndCoverage(ND_SNAPSHOT.disposal)} ` +
@@ -265,6 +278,7 @@ export const LAYERS: readonly LayerDef[] = [
   },
   {
     id: "tx-wells",
+    group: "spine",
     label: "Wells (TX)",
     subtitle: "TX RRC GIS surface locations, 55 Permian-district counties · 355,463 points",
     // Not ND's green. Both basins share one status vocabulary and one set of status colours,
@@ -284,6 +298,7 @@ export const LAYERS: readonly LayerDef[] = [
   },
   {
     id: "play-outline",
+    group: "geology",
     label: "Play outlines",
     subtitle: "EIA shale-play boundaries · no ingest recipe yet, so nothing is drawn",
     swatch: { kind: "outline", colours: ["#7C8B96"] },
@@ -298,6 +313,7 @@ export const LAYERS: readonly LayerDef[] = [
   },
   {
     id: "geology-au",
+    group: "geology",
     label: "Assessment units",
     subtitle: "USGS Williston assessment-unit boundaries · no ingest recipe yet",
     swatch: { kind: "outline", colours: ["#7C8B96"] },
@@ -324,6 +340,19 @@ export function layerDef(id: string): LayerDef | undefined {
 
 export function defaultLayerSet(): string[] {
   return LAYERS.filter((layer) => layer.defaultOn).map((layer) => layer.id);
+}
+
+export interface GroupedLayers {
+  group: LayerGroup;
+  layers: LayerDef[];
+}
+
+/** Groups in reading order, each holding its rows in draw order. Empty groups are dropped. */
+export function groupedLayers(): GroupedLayers[] {
+  return LAYER_GROUPS.map((group) => ({
+    group,
+    layers: LAYERS.filter((layer) => layer.group === group.id),
+  })).filter((entry) => entry.layers.length > 0);
 }
 
 /** Tri-state: `null` means this build has no such layer, which is not an error. */

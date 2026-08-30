@@ -99,3 +99,19 @@ export function formatVolume(value: string): string {
 export function formatVintage(vintage: string | null): string {
   return vintage ?? "—";
 }
+
+/**
+ * The one form an absent value takes, and the only place it is styled. DR-H24: absence and
+ * measurement were the same colour, weight, family and font-style, so a skimmed column read as
+ * uniform text and every row had to be parsed to be classified. The reason still carries the
+ * distinction between what a regulator withheld and what was never reported; the mark is what
+ * lets a reader see there is one without reading. Each caller keeps its own reason vocabulary:
+ * two endpoints' null semantics are not asserted to mean the same thing here.
+ */
+export function absentValue(reason: string | null): HTMLElement {
+  const element = document.createElement("span");
+  element.className = "gw-absent";
+  element.setAttribute("data-no-glossary", "");
+  element.textContent = reason ? `unavailable: ${reason}` : "unavailable";
+  return element;
+}

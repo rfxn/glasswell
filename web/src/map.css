@@ -438,6 +438,54 @@
   font-weight: 650;
 }
 
+/* The reader's taxonomy, one band per group. The header carries the same eyebrow treatment as
+   the basemap heading it replaced, so grouping cost the list a control and not a type scale. */
+.gw-layer-group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0.4rem 0 0.2rem;
+  border: 0;
+  background: none;
+  color: var(--slate);
+  font: inherit;
+  font-size: 0.66rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gw-layer-group-head::after {
+  content: "\25BE";
+  margin-left: auto;
+  padding-left: 0.3rem;
+  color: var(--slate);
+  font-size: 0.78rem;
+  letter-spacing: normal;
+}
+
+.gw-layer-group-head[aria-expanded="true"]::after {
+  content: "\25B4";
+}
+
+.gw-layer-group-head:hover,
+.gw-layer-group-head:focus-visible {
+  color: var(--paper);
+}
+
+.gw-layer-group-count {
+  padding: 0 0.25rem;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  color: var(--cyan-text);
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
 /* Auto-placed rather than templated: a collapsed row must occupy one track, and a named area
    whose only item is `display: none` still costs its gap. */
 .gw-layer-row {
@@ -618,8 +666,30 @@
   color: var(--slate);
 }
 
-.gw-layer-row[data-out-of-scale] .gw-layer-swatch {
+.gw-layer-row[data-out-of-scale] .gw-layer-swatch,
+.gw-layer-row[data-empty] .gw-layer-swatch {
   opacity: 0.4;
+}
+
+/* Neutral, not amber: an empty extent is a state of the canvas, and amber in this system means
+   raw or out of scale. The badge sits where the scale badge does and never with it. */
+.gw-layer-empty {
+  flex: 0 0 auto;
+  padding: 0 0.25rem;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.gw-layer-empty-reason {
+  margin: 0.1rem 0 0;
+  color: var(--muted);
+  font-size: 0.66rem;
+  line-height: 1.35;
 }
 
 /* ── active-layer pills ──────────────────────────────────────────────────── */

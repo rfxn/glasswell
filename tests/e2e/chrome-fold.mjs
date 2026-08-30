@@ -69,11 +69,19 @@ const MEASURE = () => {
   const button = document.querySelector(".gw-layers-button");
   if (!panel || !body) return { missing: true };
   const fold = body.getBoundingClientRect().top + body.clientHeight;
+  // A row inside a shut group has a zero rect, so it is trivially "above the fold" and it
+  // drags the mean row height down. Rendered-ness is carried here and the arithmetic below
+  // divides by it, or grouping would have turned both numbers into a pass that measures nothing.
   const rows = [...document.querySelectorAll(".gw-layer-row")].map((row) => ({
     id: row.dataset.layer,
     height: +row.getBoundingClientRect().height.toFixed(1),
+    rendered: row.getBoundingClientRect().height > 0,
     collapsed: row.querySelector(".gw-layer-detail")?.hidden !== false,
     aboveFold: row.getBoundingClientRect().bottom <= fold + 0.5,
+  }));
+  const groups = [...document.querySelectorAll(".gw-layer-group-head")].map((head) => ({
+    id: head.closest(".gw-layer-group")?.dataset.group,
+    aboveFold: head.getBoundingClientRect().bottom <= fold + 0.5,
   }));
   const a = panel.getBoundingClientRect();
   const b = button?.getBoundingClientRect();
@@ -84,6 +92,7 @@ const MEASURE = () => {
     scrollHeight: body.scrollHeight,
     clientHeight: body.clientHeight,
     rows,
+    groups,
     ariaExpanded: button?.getAttribute("aria-expanded") ?? null,
     occlusion: b
       ? +(span(a.left, a.right, b.left, b.right) * span(a.top, a.bottom, b.top, b.bottom)).toFixed(1)
@@ -129,17 +138,25 @@ for (const viewport of BREAKPOINTS) {
     continue;
   }
 
-  const below = seen.rows.filter((row) => !row.aboveFold).map((row) => row.id);
-  const collapsed = seen.rows.filter((row) => row.collapsed);
+  const rendered = seen.rows.filter((row) => row.rendered);
+  const below = rendered.filter((row) => !row.aboveFold).map((row) => row.id);
+  const missing = OPERABLE.filter((id) => !seen.rows.some((row) => row.id === id));
+  const collapsed = rendered.filter((row) => row.collapsed);
   const mean = collapsed.reduce((sum, row) => sum + row.height, 0) / (collapsed.length || 1);
+  const groupsBelow = seen.groups.filter((group) => !group.aboveFold).map((group) => group.id);
   console.log(
     `  [${at}] scrollHeight ${seen.scrollHeight} / clientHeight ${seen.clientHeight} · ` +
-      `${seen.rows.length - below.length}/${seen.rows.length} above the fold · mean collapsed row ${mean.toFixed(1)}px`,
+      `${rendered.length - below.length}/${rendered.length} rendered rows above the fold · ` +
+      `${seen.groups.length} groups · mean collapsed row ${mean.toFixed(1)}px`,
   );
 
+  // The roster is the registry's, so this is what catches a layer that stopped being offered
+  // at all — the failure a fold measurement over rendered rows cannot see.
+  assert(missing.length === 0, `${at} every operable layer has a row in the panel`,
+    `no row for: ${missing.join(", ")}`);
   assert(
     OPERABLE.every((id) => !below.includes(id)),
-    `${at} every operable layer is above the fold`,
+    `${at} every operable layer the panel renders is above the fold`,
     `below: ${below.join(", ")}`,
   );
   assert(
@@ -147,6 +164,12 @@ for (const viewport of BREAKPOINTS) {
     `${at} both default-on layers are reachable without scrolling`,
     `below: ${DEFAULT_ON.filter((id) => below.includes(id)).join(", ")}`,
   );
+  // A row in a shut group is reached through its header, so the header is what has to be
+  // reachable. Skipped on an instance that predates grouping, which renders none.
+  if (seen.groups.length > 0) {
+    assert(groupsBelow.length === 0, `${at} every layer group header is above the fold`,
+      `below: ${groupsBelow.join(", ")}`);
+  }
   assert(mean <= 60, `${at} a collapsed row stays one line`, `mean ${mean.toFixed(1)}px`);
   assert(seen.occlusion === 0, `${at} the panel does not cover the button that opens it`,
     `${seen.occlusion}px² of overlap`);

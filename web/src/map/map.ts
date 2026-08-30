@@ -412,6 +412,32 @@ export function createMap(
     scheduleCounts();
   }
 
+  /**
+   * Which switched-on rows painted nothing here. Only on `idle`, because a layer whose tiles
+   * are still streaming queries empty and would be reported as absent mid-load.
+   */
+  function refreshCoverage(): void {
+    const zoom = map.getZoom();
+    const drawable = LAYERS.filter(
+      (layer) => !layer.pendingSource && on.has(layer.id) && zoom >= layer.minZoom,
+    );
+    const queried = drawable.flatMap((layer) => layer.styleLayers).filter((id) => map.getLayer(id));
+    if (queried.length === 0) {
+      panel.setCoverage(new Set());
+      return;
+    }
+    const painted = new Set(
+      map.queryRenderedFeatures({ layers: queried }).map((feature) => feature.layer.id),
+    );
+    panel.setCoverage(
+      new Set(
+        drawable
+          .filter((layer) => !layer.styleLayers.some((id) => painted.has(id)))
+          .map((layer) => layer.id),
+      ),
+    );
+  }
+
   /** The pixel census, demoted to the one thing it can honestly answer. */
   function refreshDrawn(): void {
     refreshThematics();
@@ -581,6 +607,7 @@ export function createMap(
     // `idle` alone misses the case where the last tile of a pan lands after it fired, which
     // leaves the legend showing an em dash over a map full of wells.
     map.on("idle", scheduleCounts);
+    map.on("idle", refreshCoverage);
     map.on("moveend", scheduleCounts);
     map.on("sourcedata", (event) => {
       if (event.isSourceLoaded) scheduleCounts();
