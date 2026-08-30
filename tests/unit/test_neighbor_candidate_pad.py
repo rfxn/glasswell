@@ -16,8 +16,10 @@ from glasswell.marts.neighbors import (
     SUPPORTED_LATITUDE_MIN,
     SUPPORTED_LONGITUDE_MAX,
     SUPPORTED_LONGITUDE_MIN,
+    SUPPORTED_ZONE_EPSGS,
     UTM_BOUNDARY_LONGITUDE,
     WEST_EPSG,
+    utm_zone_epsg,
 )
 
 pytestmark = pytest.mark.unit
@@ -33,7 +35,7 @@ def _transform_selected(
 ) -> tuple[list[float], list[float]]:
     eastings = [0.0] * len(longitudes)
     northings = [0.0] * len(longitudes)
-    for zone in (WEST_EPSG, EAST_EPSG):
+    for zone in sorted(set(zones)):
         indexes = [index for index, selected in enumerate(zones) if selected == zone]
         transformer = Transformer.from_crs(4326, zone, always_xy=True)
         x_values, y_values = transformer.transform(
@@ -46,8 +48,9 @@ def _transform_selected(
     return eastings, northings
 
 
-def _zone_for_midpoint(longitude: float) -> int:
-    return WEST_EPSG if longitude < float(UTM_BOUNDARY_LONGITUDE) else EAST_EPSG
+# Imported, never reimplemented: a second copy of the zone rule in the proof of the zone rule
+# is how the two stop agreeing without either one looking wrong.
+_zone_for_midpoint = utm_zone_epsg
 
 
 def test_two_percent_candidate_pad_has_no_false_negative_in_supported_domain() -> None:
@@ -82,7 +85,7 @@ def test_two_percent_candidate_pad_has_no_false_negative_in_supported_domain() -
     ]
     endpoint_longitudes = [0.0] * len(origins)
     endpoint_latitudes = [0.0] * len(origins)
-    for zone in (WEST_EPSG, EAST_EPSG):
+    for zone in sorted(set(seed_zones)):
         indexes = [index for index, selected in enumerate(seed_zones) if selected == zone]
         transformer = Transformer.from_crs(zone, 4326, always_xy=True)
         lon_values, lat_values = transformer.transform(
@@ -167,7 +170,9 @@ def test_two_percent_candidate_pad_has_no_false_negative_in_supported_domain() -
 
     assert false_negatives == []
     assert max(ratios) < 1.014 < float(CANDIDATE_PAD)
-    assert set(final_zones) == {WEST_EPSG, EAST_EPSG}
+    assert set(final_zones) <= set(SUPPORTED_ZONE_EPSGS)
+    assert len(set(final_zones)) > 1, "the domain must exercise more than one zone"
+    assert {WEST_EPSG, EAST_EPSG} <= set(final_zones)
     assert boundary_straddles > 0
     assert zone_switches > 0
     assert _zone_for_midpoint(boundary) == EAST_EPSG

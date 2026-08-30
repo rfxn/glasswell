@@ -17,6 +17,10 @@ from glasswell.lineage.ids import format_selector, parse_selector
 from glasswell.lineage.serialization import hash_payload
 
 NEIGHBOR_DATASET = "marts.nd_neighbors"
+# The neighbour mart spans North Dakota and Montana: the ND/MT line runs through the Williston
+# and a subject on either side has offsets on the other. Kept in step with the mart CHECK in
+# the neighbours multi-state migration and with marts.neighbors.STATE_CODES.
+_NEIGHBOR_API10_PATTERN = r"(25|33)[0-9]{8}"
 
 PRODUCTION_PROFILE = "production_series"
 COMPLETION_POOL_PROFILE = "completion_pool"
@@ -206,7 +210,7 @@ def _validate_neighbor_coverage(
     limit = terms.pop("limit", None)
     after_distance = terms.pop("after_distance_m", None)
     after_api10 = terms.pop("after_api10", None)
-    if terms or not re.fullmatch(r"33[0-9]{8}", api10):
+    if terms or not re.fullmatch(_NEIGHBOR_API10_PATTERN, api10):
         raise InvalidSelector("ND neighbour coverage selector has invalid keys or API-10")
     try:
         parsed_radius = Decimal(radius_m)
@@ -227,7 +231,7 @@ def _validate_neighbor_coverage(
                 Decimal(after_distance)
             except InvalidOperation:
                 raise InvalidSelector("returned coverage selector has invalid distance") from None
-            if re.fullmatch(r"33[0-9]{8}", str(after_api10)) is None:
+            if re.fullmatch(_NEIGHBOR_API10_PATTERN, str(after_api10)) is None:
                 raise InvalidSelector("returned coverage selector has invalid API-10")
     elif limit is not None or after_distance is not None or after_api10 is not None:
         raise InvalidSelector("only returned coverage accepts page terms")

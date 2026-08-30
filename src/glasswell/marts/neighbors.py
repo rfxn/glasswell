@@ -25,9 +25,12 @@ from glasswell.lineage.serialization import canonical_json, hash_payload
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.units import METRES_PER_FOOT
 
-# The seam a second state widens. NM is deliberately absent: neither NM source
-# ships a lateral, so an entry here would build an empty subject set.
-STATE_CODES: tuple[str, ...] = ("33",)
+# North Dakota and Montana. The mart is multi-state because the ND/MT line runs through the
+# Williston: an ND well within 26,400 ft of the border has offsets on the Montana side, and a
+# subject set scoped to one state truncates its neighbour list without saying so. NM is
+# deliberately absent: neither NM source ships a lateral, so an entry would build an empty
+# subject set.
+STATE_CODES: tuple[str, ...] = ("33", "25")
 FORMATION_SOURCE_ID = "nd_mpr_xlsx"
 COMPLETION_SOURCE_ID = "fracfocus_csv"
 MIN_ALIAS_CONFIDENCE = Decimal("0.800")
@@ -37,15 +40,33 @@ CANDIDATE_EPSG = 5070
 UTM_BOUNDARY_LONGITUDE = Decimal("-102")
 WEST_EPSG = 32613
 EAST_EPSG = 32614
-SUPPORTED_LONGITUDE_MIN = Decimal("-104.15")
+# The zone is computed from the pair-local midpoint, not chosen from a pair. Over the ND
+# rectangle the formula reproduces the previous boundary rule at -102 exactly, so ND distances
+# are unchanged; Montana reaches UTM 11N, and a zone outside this set fails the mart CHECK
+# loudly rather than being measured nine degrees off its central meridian.
+UTM_EPSG_BASE = 32600
+SUPPORTED_ZONE_EPSGS = (32611, 32612, 32613, 32614)
+# Montana's western edge is 116.05W and North Dakota's eastern is 96.5W. The longitude floor
+# also has to clear the discovery radius west of the ND/MT line: an ND lateral on the border
+# needs candidates out to about -104.16, so -104.15 was already too tight for ND alone.
+SUPPORTED_LONGITUDE_MIN = Decimal("-116.10")
 SUPPORTED_LONGITUDE_MAX = Decimal("-96.50")
-SUPPORTED_LATITUDE_MIN = Decimal("45.90")
+SUPPORTED_LATITUDE_MIN = Decimal("44.30")
 SUPPORTED_LATITUDE_MAX = Decimal("49.05")
 # EPSG:5070 is equal-area rather than equidistant. A two-percent discovery pad prevents its
 # local scale distortion from dropping a true edge; the pair-local UTM measurement below is
 # still the only value admitted to the persisted 26,400-foot mart.
 CANDIDATE_PAD = Decimal("1.02")
 ADVISORY_LOCK_ID = 7_029_563_500_272_080_021
+
+def utm_zone_epsg(longitude: float) -> int:
+    """The zone a longitude falls in. The SQL in _EDGES computes the same expression.
+
+    Kept here so the test suite has one definition to import rather than a second copy that
+    can drift: a reimplementation in a test is how a zone rule and its proof stop agreeing.
+    """
+    return UTM_EPSG_BASE + int((longitude + 180) // 6) + 1
+
 
 RULES = (
     "cr_nd_geometry_provenance_1",
@@ -156,9 +177,9 @@ with candidate_pairs as (
            subject.geom_key as subject_geom_key,
            neighbor.geom_key as neighbor_geom_key,
            subject.geom as subject_geom, neighbor.geom as neighbor_geom,
-           case when st_x(st_transform(st_lineinterpolatepoint(st_shortestline(
-               subject.candidate_geom, neighbor.candidate_geom), 0.5), 4326))
-               < %(utm_boundary)s then {WEST_EPSG} else {EAST_EPSG} end as distance_epsg
+           {UTM_EPSG_BASE} + floor((st_x(st_transform(st_lineinterpolatepoint(
+               st_shortestline(subject.candidate_geom, neighbor.candidate_geom), 0.5), 4326))
+               + 180) / 6)::int + 1 as distance_epsg
       from gw_nd_neighbor_components subject
       join gw_nd_neighbor_components neighbor
         on subject.api10 < neighbor.api10
@@ -328,7 +349,6 @@ def refresh_neighbors(connection: psycopg.Connection) -> NeighborRefresh:
         "formation_source_id": FORMATION_SOURCE_ID,
         "min_confidence": MIN_ALIAS_CONFIDENCE,
         "snapshot_vintage": snapshot_vintage,
-        "utm_boundary": UTM_BOUNDARY_LONGITUDE,
         "max_radius_m": MAX_RADIUS_M,
         "candidate_radius_m": MAX_RADIUS_M * CANDIDATE_PAD,
         "longitude_min": SUPPORTED_LONGITUDE_MIN,
@@ -367,9 +387,9 @@ def refresh_neighbors(connection: psycopg.Connection) -> NeighborRefresh:
                 "latitude": [str(SUPPORTED_LATITUDE_MIN), str(SUPPORTED_LATITUDE_MAX)],
             },
             "distance_epsg_policy": {
-                "boundary_longitude": str(UTM_BOUNDARY_LONGITUDE),
-                "west": WEST_EPSG,
-                "east": EAST_EPSG,
+                "utm_epsg_base": UTM_EPSG_BASE,
+                "supported_zone_epsgs": list(SUPPORTED_ZONE_EPSGS),
+                "zone_formula": "32600 + floor((midpoint_longitude + 180) / 6) + 1",
                 "selection": "candidate_crs_shortest_line_midpoint",
             },
             "max_radius_ft": MAX_RADIUS_FT,

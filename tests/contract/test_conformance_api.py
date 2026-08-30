@@ -13,6 +13,7 @@ from glasswell.api.pagination import decode_cursor, query_fingerprint
 from glasswell.seed.conformance_basins import BASIN_RULES
 from glasswell.seed.conformance_fracfocus import FRACFOCUS_RULES
 from glasswell.seed.conformance_land import LAND_RULES
+from glasswell.seed.conformance_mt import MT_RULES
 from glasswell.seed.conformance_nd import ND_RULES
 from glasswell.seed.conformance_nm import NM_RULES
 from glasswell.seed.conformance_nm_wells import NM_WELLS_GIS_RULES, NM_WELLS_RULES
@@ -98,6 +99,7 @@ def _seeded_policy_rule_ids() -> set[str]:
             BASIN_RULES,
             FRACFOCUS_RULES,
             LAND_RULES,
+            MT_RULES,
             ND_RULES,
             NM_RULES,
             NM_WELLS_GIS_RULES,

@@ -10,7 +10,7 @@ import pytest
 from glasswell.lineage.capture import derive, lineage_session
 from glasswell.lineage.models import OutputSpec
 from glasswell.lineage.store import PostgresRecorder
-from glasswell.marts.neighbors import refresh_neighbors
+from glasswell.marts.neighbors import MAX_RADIUS_M, refresh_neighbors, utm_zone_epsg
 from glasswell.seed import seed_all
 from tests.support.fakes import FixedClock
 from tests.support.seed import seed_manifest, seed_well, seed_well_spatial
@@ -333,7 +333,10 @@ def test_refresh_refuses_geometry_outside_the_measured_candidate_domain(
         neighbor_inputs,
         api10=UNMAPPED,
         geom_key="outside-domain:lateral",
-        wkt="LINESTRING(-105.50 47.90, -105.46 47.90)",
+        # Re-anchored when the domain widened for Montana, never deleted: -105.50 is inside
+        # the supported rectangle now, and this is the only proof the guard fires at all.
+        # -118.00 is west of Montana, so it is outside the measured domain as -105.50 was.
+        wkt="LINESTRING(-118.00 47.90, -117.96 47.90)",
         manifest_id=manifest_id,
         derivation_id=derivation_id,
     )
@@ -364,3 +367,96 @@ def test_refresh_refuses_an_existing_transaction(
     ), pytest.raises(RuntimeError, match="idle connection"):
         refresh_neighbors(neighbor_inputs)
     neighbor_inputs.rollback()
+
+
+ND_BORDER = "3302599001"
+MT_BORDER = "2508399001"
+# The ND/MT line is the 27th meridian west of Washington, about -104.0489. These two laterals
+# straddle it roughly 1.9 miles apart, well inside the 26,400 ft mart radius.
+ND_BORDER_WKT = "LINESTRING(-104.02 48.00, -103.99 48.00)"
+MT_BORDER_WKT = "LINESTRING(-104.08 48.00, -104.05 48.00)"
+
+
+@pytest.fixture
+def border_inputs(db: psycopg.Connection, lineage_env) -> psycopg.Connection:
+    """One ND lateral and one Montana lateral, straddling the state line inside the radius."""
+    seed_all(db)
+    manifest = seed_manifest(db, sha256="a" * 64)
+    derivation_id = _derivation(db, lineage_env)
+    for api10, wkt in ((ND_BORDER, ND_BORDER_WKT), (MT_BORDER, MT_BORDER_WKT)):
+        seed_well(db, api10=api10, manifest_id=manifest, derivation_id=derivation_id)
+        seed_well_spatial(
+            db,
+            api10=api10,
+            geom_key=f"{api10}:lateral",
+            wkt=wkt,
+            manifest_id=manifest,
+            derivation_id=derivation_id,
+        )
+    db.commit()
+    return db
+
+
+def test_a_montana_well_enters_the_neighbour_set_of_the_nd_well_across_the_line(
+    border_inputs: psycopg.Connection, lineage_env
+) -> None:
+    """The repair. Under '^33[0-9]{8}$' the Montana side could not be a subject or an edge."""
+    _refresh(border_inputs, lineage_env)
+
+    with border_inputs.cursor() as cursor:
+        cursor.execute("select api10 from marts.nd_neighbor_subjects order by api10")
+        assert [row[0] for row in cursor.fetchall()] == [MT_BORDER, ND_BORDER]
+
+        cursor.execute(
+            "select api10, neighbor_api10 from marts.nd_neighbor_edges order by api10"
+        )
+        assert cursor.fetchall() == [(MT_BORDER, ND_BORDER), (ND_BORDER, MT_BORDER)]
+
+
+def test_the_cross_border_edge_is_measured_in_one_pair_local_zone(
+    border_inputs: psycopg.Connection, lineage_env
+) -> None:
+    _refresh(border_inputs, lineage_env)
+
+    with border_inputs.cursor() as cursor:
+        cursor.execute(
+            "select distinct distance_epsg from marts.nd_neighbor_edges"
+        )
+        assert [row[0] for row in cursor.fetchall()] == [utm_zone_epsg(-104.05)]
+        cursor.execute("select distinct distance_m from marts.nd_neighbor_edges")
+        distances = [float(row[0]) for row in cursor.fetchall()]
+    # Both directions carry one measured distance, and it is inside the 26,400 ft mart radius.
+    assert len(distances) == 1
+    assert 0 < distances[0] <= float(MAX_RADIUS_M)
+
+
+def test_the_sql_zone_expression_and_the_python_helper_agree(
+    border_inputs: psycopg.Connection,
+) -> None:
+    """Two copies of the zone rule, pinned to each other rather than trusted separately."""
+    longitudes = [-116.10 + step * 0.37 for step in range(54)]
+    with border_inputs.cursor() as cursor:
+        cursor.execute(
+            "select longitude, 32600 + floor((longitude + 180) / 6)::int + 1"
+            "  from unnest(%s::double precision[]) as longitude",
+            (longitudes,),
+        )
+        rows = cursor.fetchall()
+
+    assert rows, "the sweep produced no rows"
+    assert [(longitude, utm_zone_epsg(longitude)) for longitude, _ in rows] == rows
+
+
+def test_the_refresh_declares_every_state_it_scoped_to(
+    border_inputs: psycopg.Connection, lineage_env
+) -> None:
+    """A multi-state mart that still declared one state would be lying in its own ledger."""
+    _refresh(border_inputs, lineage_env)
+
+    with border_inputs.cursor() as cursor:
+        cursor.execute(
+            "select params -> 'state_codes' from lineage.derivations"
+            " where output_dataset = 'marts.nd_neighbors' and status = 'ok'"
+            " order by created_at desc limit 1"
+        )
+        assert sorted(cursor.fetchone()[0]) == ["25", "33"]

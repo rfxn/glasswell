@@ -57,11 +57,22 @@ class ZippedShapefile:
     its stem — TX ships a county's surface points, bottom-hole points and well arcs as
     `well003s`, `well003b` and `well003l` inside a single `well003.zip`, and each carries its
     own `.prj` that the datum rule reads.
+
+    `encoding` names the DBF code page. It defaults to pyshp's strict UTF-8 because a source
+    that has always read is not re-decoded on a guess; a source whose language-driver byte
+    declares otherwise passes it explicitly.
     """
 
-    def __init__(self, archive: Path | str, *, layer_suffix: str | None = None) -> None:
+    def __init__(
+        self,
+        archive: Path | str,
+        *,
+        layer_suffix: str | None = None,
+        encoding: str | None = None,
+    ) -> None:
         self.path = Path(archive)
         self.layer_suffix = layer_suffix
+        self.encoding = encoding
         payloads: dict[str, bytes] = {}
         with zipfile.ZipFile(self.path) as bundle:
             for name in sorted(bundle.namelist()):
@@ -84,6 +95,7 @@ class ZippedShapefile:
             shp=io.BytesIO(payloads["shp"]),
             shx=io.BytesIO(payloads["shx"]),
             dbf=io.BytesIO(payloads["dbf"]),
+            **({"encoding": encoding} if encoding is not None else {}),
         )
         self._epsg: int | None = None
 

@@ -37,6 +37,22 @@ NM_LICENSE_NOTE = (
     " licensed."
 )
 
+# Same posture as NM: no published grant, so redistributable stays False. The listing root
+# returns 403, so the file paths below are pinned constants and never discovered from an index.
+MT_LICENSE_NOTE = (
+    "UNVERIFIED. No published licence, ToS or redistribution grant on the MBOGC (Montana DNRC)"
+    " file host. Absence of a restriction is not a grant. Directory listing at"
+    " bogfiles.dnrc.mt.gov returns HTTP 403, so no index page states terms either; the bulk"
+    " files themselves are served unauthenticated with Access-Control-Allow-Origin: *."
+)
+# The well paths are cartographic centrelines, not directional surveys, and the note says so
+# where a consumer reads provenance rather than only in the conformance registry.
+MT_GEOMETRY_LICENSE_NOTE = (
+    f"{MT_LICENSE_NOTE} Accuracy caveat: WellPaths carries no measured depth, inclination or"
+    " azimuth and averages 2.82 vertices per path (1,754 of 4,173 are two-point straight"
+    " lines), so it is a map stick, not a survey trace."
+)
+
 NM_TABLES: tuple[tuple[str, str], ...] = (
     ("wcproduction", "well-completion monthly volumes"),
     ("wellhistory", "well header history"),
@@ -109,6 +125,34 @@ SOURCES: tuple[dict[str, object], ...] = (
         }
         for table, description in NM_TABLES
     ),
+    {
+        "source_id": "mt_bogc_well_production",
+        "name": "MBOGC historical well production (MT_HistoricalWellProduction.tab)",
+        "jurisdiction": "MT",
+        "license_note": MT_LICENSE_NOTE,
+        "redistributable": False,
+    },
+    {
+        "source_id": "mt_bogc_pru_production",
+        "name": "MBOGC historical PRU production (MT_HistoricalPRUProduction.tab)",
+        "jurisdiction": "MT",
+        "license_note": MT_LICENSE_NOTE,
+        "redistributable": False,
+    },
+    {
+        "source_id": "mt_gis_wells",
+        "name": "MBOGC GIS well surface points (Wells.zip)",
+        "jurisdiction": "MT",
+        "license_note": MT_LICENSE_NOTE,
+        "redistributable": False,
+    },
+    {
+        "source_id": "mt_gis_well_paths",
+        "name": "MBOGC GIS well paths (WellPaths.zip)",
+        "jurisdiction": "MT",
+        "license_note": MT_GEOMETRY_LICENSE_NOTE,
+        "redistributable": False,
+    },
 )
 
 CRS_ROWS: tuple[dict[str, object], ...] = (

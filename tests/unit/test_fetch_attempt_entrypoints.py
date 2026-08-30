@@ -16,7 +16,7 @@ from glasswell.seed.reference import SOURCES
 
 ROOT = Path(__file__).parents[2]
 INGEST = ROOT / "src" / "glasswell" / "ingest"
-MIGRATION = ROOT / "src" / "glasswell" / "db" / "migrations" / "050_durable_fetch_attempts.sql"
+MIGRATIONS = ROOT / "src" / "glasswell" / "db" / "migrations"
 FETCH_COMMANDS = (
     "nd_mpr.py",
     "nd_gis.py",
@@ -55,13 +55,33 @@ def test_fetch_registrars_wrap_failures_and_successes_in_source_polls() -> None:
     assert "attempt.succeeded(" in arcgis
 
 
+def declared_poll_policy_ids() -> list[str]:
+    """Every cadence row across the whole migration set.
+
+    Migrations are immutable, so a source registered after 050 can only get its policy in a
+    later file. Reading one filename made this guard blind to exactly that case, and pinned a
+    migration number outside the migrations directory besides.
+    """
+    ids: list[str] = []
+    for migration in sorted(MIGRATIONS.glob("*.sql")):
+        # Terminated on a semicolon that ends its line: a cadence string may contain one
+        # ("Owner-triggered; no recurring timer") and truncating there loses most of the block.
+        for block in re.findall(
+            r"insert\s+into\s+lineage\.source_poll_policies(.*?);\s*$",
+            migration.read_text(),
+            re.IGNORECASE | re.DOTALL | re.MULTILINE,
+        ):
+            ids.extend(re.findall(r"^\s*\('([^']+)',", block, re.MULTILINE))
+    return ids
+
+
 def test_every_registered_fetchable_source_has_one_cadence_policy() -> None:
     expected = {
         str(source["source_id"])
         for registry in (SOURCES, C115B_SOURCES, LAND_SOURCES, TX_SOURCES)
         for source in registry
     }
-    policy_ids = re.findall(r"^\s*\('([^']+)',", MIGRATION.read_text(), re.MULTILINE)
+    policy_ids = declared_poll_policy_ids()
 
     assert set(policy_ids) == expected | {"tx_pdq_dsv"}
     assert len(policy_ids) == len(set(policy_ids))
