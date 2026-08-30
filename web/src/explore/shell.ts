@@ -1,6 +1,6 @@
 import "./layout.css";
 
-import { apiUrl, authHeaders } from "../api/client.ts";
+import { apiUrl } from "../api/client.ts";
 import { readState } from "../app/state.ts";
 import type { AppState, ExploreTab } from "../app/state.ts";
 import { mountPane } from "./api/pane.ts";
@@ -45,7 +45,7 @@ let gridAbort: AbortController | null = null;
 /** SB-08 §2.3's one exemption: /openapi.json is not an envelope, so `getEnvelope` cannot type it. */
 async function openapiDocument(): Promise<unknown> {
   pending ??= (async () => {
-    const response = await fetch(apiUrl("/openapi.json"), { headers: authHeaders() });
+    const response = await fetch(apiUrl("/openapi.json"), { credentials: "same-origin" });
     if (!response.ok) throw new Error(`/openapi.json answered ${response.status}`);
     return (await response.json()) as unknown;
   })();

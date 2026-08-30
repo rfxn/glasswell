@@ -70,6 +70,41 @@ async function bootAt(url: string): Promise<typeof import("./bus.ts")> {
   return bus;
 }
 
+const SESSION = {
+  data: {
+    username: "ryan",
+    role: "owner",
+    kind: "user",
+    expires_at: null,
+    absolute_expires_at: null,
+  },
+  meta: {},
+  links: {},
+};
+
+/** The login panel signs in over fetch, so the harness answers the challenge and the POST. */
+function servesSession(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const path = String(input).split("?")[0];
+  const body =
+    path === "/v1/session/challenge"
+      ? { data: { csrf_token: "tok", expires_in: 14400 }, meta: {}, links: {} }
+      : SESSION;
+  if (path !== "/v1/session/challenge" && path !== "/v1/session") {
+    return Promise.resolve(
+      new Response(JSON.stringify({ type: "about:blank", title: "Not found", status: 404 }), {
+        status: 404,
+        headers: { "content-type": "application/problem+json" },
+      }),
+    );
+  }
+  return Promise.resolve(
+    new Response(JSON.stringify(body), {
+      status: init?.method === "POST" ? 201 : 200,
+      headers: { "content-type": "application/json" },
+    }),
+  );
+}
+
 function navigate(url: string): void {
   window.history.pushState(null, "", url);
   window.dispatchEvent(new PopStateEvent("popstate"));
@@ -180,7 +215,7 @@ describe("one dispatch on view, three surfaces (SB-08 §2.1)", () => {
     expect(createMap).not.toHaveBeenCalled();
   });
 
-  it("routes a Status 403 through the key panel and remounts Status after key replacement", async () => {
+  it("routes a Status 403 through the login panel and remounts Status once signed in", async () => {
     await bootAt("/?view=status");
     await vi.waitFor(() => expect(mountStatusPage).toHaveBeenCalledOnce());
     const hooks = mountStatusPage.mock.calls[0]?.[1] as { onForbidden(error: unknown): void };
@@ -188,22 +223,32 @@ describe("one dispatch on view, three surfaces (SB-08 §2.1)", () => {
 
     hooks.onForbidden(
       new ApiError({
-        type: "https://glasswell.local/problems/key_rejected",
-        title: "Owner key rejected",
+        type: "/v1/errors/unauthenticated",
+        title: "Forbidden",
         status: 403,
       }),
     );
     expect(host("gw-key-host").hidden).toBe(false);
 
-    const input = host("gw-key-host").querySelector("input") as HTMLInputElement;
-    input.value = "a".repeat(64);
-    (host("gw-key-host").querySelector("form") as HTMLFormElement).dispatchEvent(
+    vi.stubGlobal("fetch", servesSession);
+    const panel = host("gw-key-host");
+    (panel.querySelector("#gw-login-user") as HTMLInputElement).value = "ryan";
+    (panel.querySelector("#gw-login-pass") as HTMLInputElement).value = "correct horse";
+    (panel.querySelector("form") as HTMLFormElement).dispatchEvent(
       new SubmitEvent("submit", { bubbles: true, cancelable: true }),
     );
 
     await vi.waitFor(() => expect(mountStatusPage).toHaveBeenCalledTimes(2));
     expect(host("gw-key-host").hidden).toBe(true);
     expect(createMap).not.toHaveBeenCalled();
+  });
+
+  it("clears any owner key an earlier build left in this browser", async () => {
+    window.localStorage.setItem("glasswell.key", "f".repeat(64));
+
+    await bootAt("/");
+
+    expect(window.localStorage.getItem("glasswell.key")).toBeNull();
   });
 
   // The dynamic import reorders boot: the map subscribes inside createMap, so a selection

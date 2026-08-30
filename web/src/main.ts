@@ -1,16 +1,16 @@
 import "./style.css";
 
-import { ApiError, apiKey, getEnvelope } from "./api/client.ts";
+import { ApiError, getEnvelope, logout, purgeLegacyKey, whoami } from "./api/client.ts";
 import { DEFAULT_STATE, readState, serializeState, writeState } from "./app/state.ts";
 import type { AppState } from "./app/state.ts";
-import { keyPanel } from "./auth/key-panel.ts";
+import { loginPanel } from "./auth/login.ts";
 import { flyTo, onSelectWell, onUrlParam, selectWell, wellSelected } from "./bus.ts";
 import type { SelectSource } from "./bus.ts";
 import { renderWellCard } from "./card/card.ts";
 import { EXPLAIN_EVENT } from "./chrome/handle.ts";
-import { wireHeader } from "./chrome/header.ts";
+import { setSignedIn, wireHeader } from "./chrome/header.ts";
 import { registerOverlay } from "./chrome/overlays.ts";
-import { setKeyState, setStatus, setVintage, toast } from "./chrome/status.ts";
+import { setSessionState, setStatus, setVintage, toast } from "./chrome/status.ts";
 import { highlight } from "./glossary/index.ts";
 import { loadGlossary, termIndex } from "./glossary/store.ts";
 import "./glossary/gw-term.ts";
@@ -35,6 +35,7 @@ let historyGeneration = 0;
 let renderGeneration = 0;
 let unmountExplorer: (() => void) | undefined;
 let unmountStatusPage: (() => void) | undefined;
+let hadSession = false;
 
 function required(id: string): HTMLElement {
   const element = document.getElementById(id);
@@ -59,7 +60,7 @@ function showWell(api10: string | null, mode: "push" | "replace" = "push"): void
   void renderWellCard(cardHost, api10, {
     onExplain: (handle) => openExplain(handle),
     onClose: () => selectWell(null, source),
-    onFixKey: () => showKeyPanel("rejected"),
+    onSignIn: () => showLoginPanel(),
     onVintage: (resolved) => setVintage(resolved),
     // Only a search hit moves the camera: a map click is already looking at the well, and a
     // deep link carries its own ?map= viewport that the reader chose.
@@ -80,12 +81,18 @@ function openExplain(handle: string | null, mode: "push" | "replace" = "push"): 
   void renderLineageDrawer(drawerHost, handle, { onClose: () => openExplain(null) });
 }
 
-function showKeyPanel(reason: "missing" | "rejected"): void {
-  setKeyState(reason);
+/**
+ * The server refuses every auth failure identically, so "expired" is inferred from what this
+ * page has already seen rather than from anything the server said.
+ */
+function showLoginPanel(): void {
+  const reason = hadSession ? "expired" : "required";
+  setSessionState(reason);
+  setSignedIn(null);
   keyHost.replaceChildren(
-    keyPanel({
+    loginPanel({
       reason,
-      onRetry: () => {
+      onSignedIn: () => {
         keyHost.hidden = true;
         void boot();
         if (state.view === "status") void renderView();
@@ -95,10 +102,21 @@ function showKeyPanel(reason: "missing" | "rejected"): void {
   keyHost.hidden = false;
 }
 
-/** Every 403 lands here, so a wrong stored key can never brick the app in silence. */
+async function endSession(): Promise<void> {
+  try {
+    await logout();
+  } catch (error) {
+    // A refused logout is already a dead session; the panel is the same answer either way.
+    if (!(error instanceof ApiError)) toast(`Sign out failed: ${String(error)}`);
+  }
+  hideMapOverlays();
+  showLoginPanel();
+}
+
+/** Every 403 lands here, so an ended session can never brick the app in silence. */
 function handleApiError(error: unknown, context: string): void {
   if (error instanceof ApiError && error.problem.status === 403) {
-    showKeyPanel(error.code === "key_required" ? "missing" : "rejected");
+    showLoginPanel();
     return;
   }
   toast(`${context} failed: ${error instanceof ApiError ? error.problem.title : String(error)}`);
@@ -234,10 +252,20 @@ async function renderView(): Promise<void> {
 
 async function boot(): Promise<void> {
   try {
+    const session = await whoami();
+    hadSession = session.kind === "user";
+    setSignedIn(session.username);
+    setSessionState("ok");
+  } catch (error) {
+    handleApiError(error, "Session");
+    // Nothing further in boot can succeed without a principal; signing in runs it again.
+    if (error instanceof ApiError && error.problem.status === 403) return;
+  }
+
+  try {
     const index = await getEnvelope<{ published_vintages: { vintage_date: string }[] }>("/v1");
     const pinned = state.extra["as_of"]?.[0];
     setVintage(pinned && pinned.length > 0 ? pinned : index.data.published_vintages[0]?.vintage_date ?? null);
-    setKeyState("ok");
     setStatus("Click any ⌾ to see where a number came from.");
   } catch (error) {
     handleApiError(error, "Service index");
@@ -253,9 +281,7 @@ async function boot(): Promise<void> {
 }
 
 async function start(): Promise<void> {
-  // First, and before any history rewrite: serializeState() writes a search-only URL, which
-  // drops the fragment the key arrived in.
-  apiKey();
+  purgeLegacyKey();
 
   registerOverlay(cardHost);
   registerOverlay(drawerHost);
@@ -266,7 +292,8 @@ async function start(): Promise<void> {
       onPick: (result) => selectWell(result.api10, "search"),
       onError: (error) => handleApiError(error, "Search"),
     }),
-    onKeyPanel: () => showKeyPanel("rejected"),
+    onSignIn: () => showLoginPanel(),
+    onLogout: () => void endSession(),
   });
 
   shell.setAttribute("data-drawer", "closed");

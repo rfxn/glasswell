@@ -1,9 +1,8 @@
 // @vitest-environment happy-dom
 import { readFileSync } from "node:fs";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
-import { storedKey } from "../../api/client.ts";
 import { DEFAULT_STATE } from "../../app/state.ts";
 import { buildCatalogue } from "../catalogue.ts";
 import { requestFor } from "../router.ts";
@@ -30,12 +29,7 @@ const REQUEST = {
 };
 
 beforeEach(() => {
-  window.localStorage.setItem("glasswell.key", KEY);
   document.body.innerHTML = '<aside id="pane"></aside>';
-});
-
-afterEach(() => {
-  window.localStorage.clear();
 });
 
 describe("three dialects come from one request object (§4.2, 9.2)", () => {
@@ -50,9 +44,7 @@ describe("three dialects come from one request object (§4.2, 9.2)", () => {
     expect(new Set(rendered).size).toBe(3);
   });
 
-  it("carries the placeholder in every dialect and the stored key in none of them", () => {
-    expect(storedKey()).toBe(KEY);
-
+  it("carries the placeholder in every dialect and a credential in none of them", () => {
     for (const dialect of DIALECTS) {
       const command = commandFor(REQUEST, dialect);
       expect(command, dialect).toContain(KEY_PLACEHOLDER);
@@ -60,8 +52,10 @@ describe("three dialects come from one request object (§4.2, 9.2)", () => {
     }
   });
 
-  it("never reads the key at all, which is why it cannot render one", () => {
-    expect(SOURCE).not.toMatch(/\bapiKey\b|\bstoredKey\b|\bauthHeaders\b|localStorage/);
+  // The machine path deliberately keeps X-Glasswell-Key: a copied snippet runs outside the
+  // browser, where the session cookie does not exist. What it may never do is read one.
+  it("never reads a credential at all, which is why it cannot render one", () => {
+    expect(SOURCE).not.toMatch(/\bauthHeaders\b|localStorage|document\.cookie/);
   });
 
   it("keeps a repeated filter repeated, because that is what was on the wire", () => {

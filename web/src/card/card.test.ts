@@ -334,8 +334,8 @@ describe("well card", () => {
         Promise.resolve(
           new Response(
             JSON.stringify({
-              type: "https://glasswell.rpx.sh/v1/errors/key_required",
-              title: "An API key is required",
+              type: "https://glasswell.example/v1/errors/unauthenticated",
+              title: "Forbidden",
               status: 403,
             }),
             { status: 403, headers: { "content-type": "application/problem+json" } },
@@ -344,17 +344,17 @@ describe("well card", () => {
       ),
     );
     await renderWellCard(host, API10, callbacks);
-    expect(host.textContent).toContain("owner key");
+    expect(host.textContent).toContain("no live session");
   });
 
-  it("offers a way to fix a rejected key rather than a dead end", async () => {
-    const onFixKey = vi.fn();
+  it("offers a way back into a session rather than a dead end", async () => {
+    const onSignIn = vi.fn();
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(problem(403, "unauthenticated"))));
 
-    await renderWellCard(host, API10, { ...callbacks, onFixKey });
+    await renderWellCard(host, API10, { ...callbacks, onSignIn });
     host.querySelector<HTMLButtonElement>(".gw-error-key")?.click();
 
-    expect(onFixKey).toHaveBeenCalledOnce();
+    expect(onSignIn).toHaveBeenCalledOnce();
   });
 
   it("links errors to a path that resolves on this deployment, not to a dead host", async () => {

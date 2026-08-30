@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_STATE } from "../app/state.ts";
+import { clearSession, seedSession } from "../test/session.ts";
 import type { AppState } from "../app/state.ts";
 
 const SNAPSHOT = readFileSync("../tests/contract/openapi_snapshot.json", "utf8");
@@ -53,7 +54,7 @@ beforeEach(() => {
   document.body.innerHTML = '<div id="gw-explore" hidden></div>';
   host = document.getElementById("gw-explore") as HTMLElement;
   window.history.replaceState(null, "", "/?view=explore");
-  window.localStorage.setItem("glasswell.key", "f".repeat(64));
+  seedSession();
   vi.stubGlobal("fetch", (url: string) => {
     fetched.push(String(url));
     return Promise.resolve(new Response(SNAPSHOT, { headers: { "content-type": "application/json" } }));
@@ -64,7 +65,7 @@ afterEach(() => {
   observer?.disconnect();
   observer = undefined;
   vi.unstubAllGlobals();
-  window.localStorage.clear();
+  clearSession();
 });
 
 describe("the shell mounts into the host C0's dispatch gives it", () => {

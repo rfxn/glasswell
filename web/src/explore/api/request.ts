@@ -5,6 +5,8 @@ import { apiUrl } from "../../api/client.ts";
  * issue, a notebook — is a credential-leak path, so the key this module renders is a name.
  */
 export const KEY_PLACEHOLDER = "$GLASSWELL_KEY";
+// The browser now holds a session cookie, but a copied snippet runs outside the browser: the
+// machine path is still the API key, so these snippets keep naming its header.
 const KEY_HEADER = "X-Glasswell-Key";
 const ACCEPT = "application/json";
 
