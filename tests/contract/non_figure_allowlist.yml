@@ -33,6 +33,15 @@
   reason: County code, in a collection item.
 - pointer: /ndic_file_no
   reason: The NDIC file number is the regulator's identifier for the well.
+- pointer: /cohorts/*/cohort_year
+  reason: >-
+    Cohort key. The year that identifies a cohort of wells; an identifier for the group, not
+    a quantity measured about it. Which year it is - spud or completion anchor - is stated
+    by cohort_basis and ruled by cohort_key_rule.
+- pointer: /population_scope/states_served/*
+  reason: >-
+    API state prefix naming what this population covers; an identifier, not a quantity. Same
+    class as /state_code.
 - pointer: /*/ndic_file_no
   reason: The NDIC file number, in a collection item.
 
@@ -64,6 +73,10 @@
   reason: Row count per group.
 - pointer: /groups/*/share
   reason: Count divided by count; it carries no unit and no vintage.
+- pointer: /support_distribution/classes/*
+  reason: >-
+    How many cohorts fall in each support band. A count of rows in this response, taken over
+    figures that each carry their own handle, not a measured quantity of its own.
 - pointer: /occurrence_count
   reason: How many fetches re-presented this rejected row (SB-07 §8.1).
 - pointer: /*/occurrence_count

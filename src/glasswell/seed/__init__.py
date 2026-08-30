@@ -24,6 +24,7 @@ from glasswell.seed.conformance_nm_wells import (
 from glasswell.seed.conformance_producing import PRODUCING_RULES, seed_conformance_producing
 from glasswell.seed.conformance_tx import TX_RULES, seed_conformance_tx
 from glasswell.seed.conformance_typecurve import TYPECURVE_RULES, seed_conformance_typecurve
+from glasswell.seed.conformance_vintage import VINTAGE_RULES, seed_conformance_vintage
 from glasswell.seed.features import FEATURE_SPECS, FEATURE_VERSION, seed_features
 from glasswell.seed.formations_nd import FORMATION_ALIASES, seed_nd_formation_aliases
 from glasswell.seed.glossary import GLOSSARY_SEED_PATH, load_glossary_seed, seed_glossary, slug
@@ -56,6 +57,7 @@ __all__ = [
     "SOURCES",
     "TX_RULES",
     "TYPECURVE_RULES",
+    "VINTAGE_RULES",
     "load_glossary_seed",
     "seed_all",
     "seed_conformance_basins",
@@ -70,6 +72,7 @@ __all__ = [
     "seed_conformance_producing",
     "seed_conformance_tx",
     "seed_conformance_typecurve",
+    "seed_conformance_vintage",
     "seed_crs",
     "seed_features",
     "seed_glossary",
@@ -109,6 +112,9 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
         # Before the ND seeder for the reason the producing block gives: these rows carry an
         # nd_ source_id and the ND count is a registry total over that prefix.
         "conformance_rules_typecurve": seed_conformance_typecurve(connection),
+        # Same reason, same place: this row carries an nd_ source id too, and the ND seeder's
+        # count is a registry total over that prefix.
+        "conformance_rules_vintage": seed_conformance_vintage(connection),
         "conformance_rules": seed_conformance_nd(connection),
         "formation_aliases_nd": seed_nd_formation_aliases(connection),
         # Before the NM seeder, and for the reason the two comments above give: its rules carry

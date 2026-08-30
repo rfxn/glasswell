@@ -75,6 +75,9 @@ POLICY_RULES = tuple(sorted((
     "cr_nd_neighbor_distance_1",
     "cr_nd_null_semantics_1",
     "cr_nd_pool_rollup_1",
+    # The vintage-cohort key: spud year or completion-anchor year is a different chart, so
+    # the choice is a row with its measured rationale rather than a query's decision.
+    "cr_nd_vintage_cohort_1",
     "cr_nd_well_type_disposal_1",
     # New Mexico's header authority: one source until the GIS parity is measured, then a
     # superseding row. The executor is the promoter the spec names.

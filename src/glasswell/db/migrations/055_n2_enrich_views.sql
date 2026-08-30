@@ -106,6 +106,18 @@ values
     ('api.respond', 'api.well_completions', 'response_output',
      'The request derivation records the serve-time fluid intensity it returned.');
 
+-- First-publication evidence for the rule ids this track registers. The tag and commit are
+-- this branch's; the integrator repoints them at the release that actually carries them,
+-- alongside the migration renumber.
+insert into lineage.conformance_rule_publications
+    (rule_id, published_vintage, evidence_tag, evidence_commit)
+select rule_id, date '2026-08-30', 'v0.67',
+       'be26c93c6857aed80537c6efcb28bdd1ca959a85'
+  from unnest(array[
+       'cr_nd_vintage_cohort_1'
+  ]) as rule_id
+    on conflict (rule_id) do nothing;
+
 -- The industry meaning of an industry term stays in the short definition; glasswell's own
 -- cohort key belongs beside the rule that made it (014_geodesic_lateral_length.sql:61).
 insert into canonical.glossary_terms
