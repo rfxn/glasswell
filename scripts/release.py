@@ -176,11 +176,14 @@ def placeholder_evidence_blockers(root: Path, target: Version) -> list[str]:
     directory = root / MIGRATIONS_DIR
     if not directory.is_dir():
         return []
+    # The quoted SQL literals, not the bare words. A bare-word scan matched the migration's own
+    # header prose, so a correctly repointed file went on refusing and nothing in the repository
+    # could cut a tag; and a bare forty-zero run is a substring of any longer all-zero digest.
+    literals = (f"'{PLACEHOLDER_EVIDENCE_TAG}'", f"'{PLACEHOLDER_EVIDENCE_COMMIT}'")
     pending = sorted(
         path.name
         for path in directory.glob("*.sql")
-        if PLACEHOLDER_EVIDENCE_TAG in path.read_text(encoding="utf-8")
-        or PLACEHOLDER_EVIDENCE_COMMIT in path.read_text(encoding="utf-8")
+        if any(literal in path.read_text(encoding="utf-8") for literal in literals)
     )
     if not pending:
         return []
