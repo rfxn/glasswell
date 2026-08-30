@@ -24,9 +24,12 @@ Four things are **not** here, so do not go looking for them:
 
 - **No forecasts.** No decline curves, no EUR, no type curve, no ML.
 - **No dollars.** No economics, no NPV, no scenarios, no inventory.
-- **No Permian production, and no allocation.** Texas wells and wellbore identity are
-  on the map; New Mexico ingest exists with nothing promoted. Production, and the
-  allocation work that would make it comparable, are North Dakota only.
+- **No allocation, and no lease-level Texas production.** Texas wells and wellbore
+  identity are on the map with no production behind them. New Mexico has both: a well
+  header with a surface point, and production filed per completion pool. Nothing rolls
+  a New Mexico pool series up to the well, so its well-level series is absent rather
+  than zero and the card says so (`cr_nm_wcproduction_pool_rollup_1`). The allocation
+  work that would make Texas comparable is not built.
 - **No tunnel and no Access.** HTTPS is up on the LAN name (DIR-13); reaching it from
   outside the LAN is not — see §2.
 
@@ -401,3 +404,27 @@ than being decided on your behalf.
 3. **`work-output/direction-log.md` — parked items**, plus the infra facts of
    record: the NDIC Premium question again from the data side, and the router/DHCP
    confirmation for `.111`.
+
+### The New Mexico cadences, proposed rather than scheduled
+
+Two recurring-run questions the New Mexico gate raises and does not answer, both with the
+numbers now measured:
+
+- **A recurring OCD FTP promotion.** Not implemented and not recommended without a decision.
+  All nine `nm_ocd_*` sources are registered `'Owner-triggered; no recurring timer'`, and the
+  FTP pull is a once-ever event by contract. The measured cost of a full re-run is **89 minutes
+  of wall clock and 9.9 GB of table growth** for the production spine, plus ~35–40 minutes of
+  staging; `glasswell-ingest.service` bounds a run at `TimeoutStartSec=3600`, so a recurring
+  promotion does not fit inside it and would need its own unit.
+- **The OCD public wells layer (`nm_ocd_wells_gis`).** Upstream describes it as updated daily,
+  and the walk is ~141,916 features at 6,000 per page — about 24 pages at the standard 0.25 s
+  spacing, so a few minutes. It is registered owner-triggered like its FTP siblings until a
+  cadence is chosen. **Recommended: weekly**, which is well inside the layer's own refresh rate
+  and cheap enough to be unremarkable; daily buys freshness the frozen FTP archive beside it
+  cannot match anyway.
+
+The ingest unit's own bounds were re-checked against these numbers rather than assumed. What it
+gained is one mart refresh — `glasswell.marts.nm_wells`, a rebuild of a point projection — so
+`TimeoutStartSec=3600` and `MemoryMax=6G` are unchanged. The measured pressure on that unit is
+not the new mart: it is the `canonical.production_monthly_latest` scan the land-metrics refresh
+runs, which the gates measure on the host as G7-3.

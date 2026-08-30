@@ -131,3 +131,13 @@
          ships a lateral, and the strike marks a status class New Mexico can never carry
 - [Change] the default Williston centring is left alone; re-centring for a second basin is an
          owner decision and is routed to the register rather than taken here
+- [New] the `nm_wells` mart joins the ingest unit's refresh sequence, and the unit description
+      stops claiming it is ND-only; that unit runs monthly on day 5, not nightly
+- [New] a smoke check asserts the New Mexico spine — a well header with a geometry provenance
+      and a New Mexico status vocabulary rule — rather than a row count, and skips cleanly
+      where the gate is not open
+- [Change] no timer is added for `nm_ocd`, `nm_dims` or `nm_wells`: those sources are
+         registered owner-triggered and the FTP pull is a once-ever event; the measured cost of
+         a recurring promotion — 89 minutes and 9.9 GB, which does not fit the ingest unit's
+         `TimeoutStartSec` — is recorded in `SMOKE.md` for the decision, along with a weekly
+         recommendation for the daily-refreshed GIS layer
