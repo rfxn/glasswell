@@ -29,6 +29,15 @@ from glasswell.modeling.model_dataset import (
     STREAM_UNITS,
     STREAMS,
 )
+from glasswell.modeling.p3_publication import (
+    ARTIFACT_SHA256_KEYS,
+    ARTIFACT_URI_KEYS,
+    CONTROL_COVERAGE_SHA256_KEY,
+    CONTROL_COVERAGE_URI_KEY,
+    CONTROL_SHA256_KEY,
+    CONTROL_URI_KEY,
+    RECEIPT_SCHEMA,
+)
 from glasswell.modeling.type_curve import (
     CONTROL_DATASET,
     CONTROL_SCHEMA,
@@ -48,7 +57,6 @@ FEATURE_VERSION = "fv2.0"
 FEATURE_DATASET = "features.well_features"
 EVAL_VINTAGE = date(2026, 8, 28)
 VINTAGE_BASIS = "source_reconstructed_not_glasswell_history"
-RECEIPT_SCHEMA = "p3-publication-receipt/1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,21 +300,23 @@ def receipt_document(
             "rejections": 0,
             "type_curve": artifact.rows,
         },
+        # Both blocks are keyed off p3_publication's own constants rather than retyped. The
+        # two vocabularies differ — artifact_uri says type_curve, artifact_sha256 says
+        # typecurve_control — and a fixture free to invent them is a fixture free to agree
+        # with the consumer instead of with the builder.
         "artifact_sha256": {
-            "feature": "a" * 64,
-            "model_dataset": "b" * 64,
-            "type_curve": artifact.sha256,
-            "type_curve_coverage": artifact.coverage_sha256,
+            key: {
+                CONTROL_SHA256_KEY: artifact.sha256,
+                CONTROL_COVERAGE_SHA256_KEY: artifact.coverage_sha256,
+            }.get(key, f"{index:02x}" * 32)
+            for index, key in enumerate(ARTIFACT_SHA256_KEYS)
         },
         "artifact_uri": {
-            "feature": str(artifact.root / "well_features"),
-            "feature_coverage": str(artifact.root / "well_features_coverage.json"),
-            "model_dataset": str(artifact.root / "model_ready_labels"),
-            "model_curves": str(artifact.root / "model_ready_curves"),
-            "model_coverage": str(artifact.root / "model_coverage.json"),
-            "model_rejections": str(artifact.root / "model_rejections"),
-            "type_curve": str(artifact.path),
-            "type_curve_coverage": str(artifact.coverage_path),
+            key: {
+                CONTROL_URI_KEY: str(artifact.path),
+                CONTROL_COVERAGE_URI_KEY: str(artifact.coverage_path),
+            }.get(key, str(artifact.root / key))
+            for key in ARTIFACT_URI_KEYS
         },
         "environment": {
             "environment_id": environment_id or FIXTURE_ENV_ID,

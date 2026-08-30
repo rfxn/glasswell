@@ -286,3 +286,30 @@ a.gw-join-chip:focus-visible {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* A nested block whose leaves are figures renders as figures, not as a pre block of its JSON:
+   the handles are in the payload either way, and only one of the two can be clicked. */
+.gw-figure-tree {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  gap: var(--gw-space-1) var(--gw-space-3);
+  margin: 0;
+}
+
+.gw-figure-tree-key {
+  color: var(--gw-ink-muted);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.gw-figure-tree-value {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.gw-figure-tree .gw-figure-tree {
+  grid-column: 1 / -1;
+  padding-inline-start: var(--gw-space-3);
+  border-inline-start: 1px solid var(--gw-rule);
+}

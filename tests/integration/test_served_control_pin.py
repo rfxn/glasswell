@@ -231,7 +231,7 @@ def test_a_tampered_coverage_document_is_refused_not_degraded(db, pinned) -> Non
         served.control_coverage(pin)
 
 
-def test_the_index_page_is_the_horizon_row_and_pages_by_api10(db, pinned) -> None:
+def test_the_index_page_is_the_horizon_row_and_pages_by_the_subject_instance(db, pinned) -> None:
     pin = served.resolve_pinned_control(db)
     page = served.index_page(
         pin,
@@ -242,6 +242,7 @@ def test_the_index_page_is_the_horizon_row_and_pages_by_api10(db, pinned) -> Non
         fallback_level=None,
         formation_group=None,
         after_api10=None,
+        after_origin=None,
         limit=2,
     )
     assert page["subject_api10"].to_list() == ["3305310451", "3305310452", "3305310453"]
@@ -256,6 +257,7 @@ def test_the_index_page_is_the_horizon_row_and_pages_by_api10(db, pinned) -> Non
         fallback_level=None,
         formation_group=None,
         after_api10="3305310452",
+        after_origin=date(2021, 1, 1),
         limit=2,
     )
     assert second["subject_api10"].to_list() == ["3305310453"]
@@ -269,6 +271,7 @@ def test_the_index_page_is_the_horizon_row_and_pages_by_api10(db, pinned) -> Non
         fallback_level="control_unavailable",
         formation_group=None,
         after_api10=None,
+        after_origin=None,
         limit=10,
     )
     assert narrowed["subject_api10"].to_list() == ["3305310453"]

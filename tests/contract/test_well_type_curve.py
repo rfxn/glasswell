@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_API10
 from glasswell.lineage.explain import MAX_DEPTH
+from glasswell.modeling.p3_publication import CONTROL_SHA256_KEY
 from tests.contract.conftest import OTHER_API10S
 
 CURVE = f"/v1/wells/{EXAMPLE_API10}/type-curve"
@@ -133,8 +134,15 @@ def test_every_handle_names_the_control_derivation_and_the_split_set(client: Tes
         f"/v1/modeling/publications/{data['publication_id']}"
     ).json()["data"]
     control = publication["derivations"]["type_curve"]
-    handles = set(data["_lineage"].values())
-    assert len(handles) >= 8
+    band = data["cumulative_at_horizon"]
+    # Every served figure, not only the eight series sidecars: the three band members and the
+    # subject's lateral length carry inline `d` handles and are minted the same way.
+    handles = {
+        *data["_lineage"].values(),
+        *(band[level]["d"] for level in ("p10", "p50", "p90")),
+        data["subject_lateral_length_ft"]["d"],
+    }
+    assert len(handles) == 12
     for handle in handles:
         chain = body["_explain"][handle]
         assert control in {node["id"] for node in chain["nodes"]}
@@ -144,7 +152,7 @@ def test_every_handle_names_the_control_derivation_and_the_split_set(client: Tes
         if node["id"] == control
     )
     assert node["output"]["partition"]["split_set_id"] == data["split_set_id"]
-    assert node["output"]["sha256"] == publication["artifact_sha256"]["type_curve"]
+    assert node["output"]["sha256"] == publication["artifact_sha256"][CONTROL_SHA256_KEY]
 
 
 def test_the_chain_terminates_in_manifests_with_headroom(client: TestClient) -> None:

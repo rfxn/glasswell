@@ -51,6 +51,36 @@ UNAVAILABLE_SHARE_MAX = Decimal("0.05")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _LOCK_NAME = "glasswell:p3-repaired-context-publication"
 RECEIPT_SCHEMA = "p3-publication-receipt/1"
+
+# The receipt's two artifact blocks are separate vocabularies, and a consumer that guesses one
+# from the other serves 409s: `artifact_uri` keys the control `type_curve`, `artifact_sha256`
+# keys the same artifact `typecurve_control`. Named here so a consumer imports rather than
+# infers; tests/unit/test_receipt_key_spaces.py holds the emitters to these tuples.
+CONTROL_URI_KEY = "type_curve"
+CONTROL_COVERAGE_URI_KEY = "type_curve_coverage"
+CONTROL_SHA256_KEY = "typecurve_control"
+CONTROL_COVERAGE_SHA256_KEY = "typecurve_coverage"
+ARTIFACT_URI_KEYS = (
+    "feature",
+    "feature_coverage",
+    "model_dataset",
+    "model_curves",
+    "model_coverage",
+    "model_rejections",
+    CONTROL_URI_KEY,
+    CONTROL_COVERAGE_URI_KEY,
+)
+ARTIFACT_SHA256_KEYS = (
+    "feature_matrix",
+    "feature_coverage",
+    "model_labels",
+    "model_curves",
+    "model_coverage",
+    "model_rejections",
+    CONTROL_SHA256_KEY,
+    CONTROL_COVERAGE_SHA256_KEY,
+)
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 REQUIREMENTS_LOCK = REPOSITORY_ROOT / "requirements.lock"
 VERSION_FILE = REPOSITORY_ROOT / "VERSION"
@@ -175,8 +205,8 @@ class PublicationReceipt:
                 "model_curves": self.builds.model.curves_uri,
                 "model_coverage": self.builds.model.coverage_uri,
                 "model_rejections": self.builds.model.rejections_uri,
-                "type_curve": self.builds.control.artifact_uri,
-                "type_curve_coverage": self.builds.control.coverage_uri,
+                CONTROL_URI_KEY: self.builds.control.artifact_uri,
+                CONTROL_COVERAGE_URI_KEY: self.builds.control.coverage_uri,
             },
             "environment": {
                 "environment_id": self.environment_id,
@@ -806,13 +836,13 @@ def _artifact_fingerprint(
             model_root,
             "model_rejections_hash_mismatch",
         ),
-        "typecurve_control": _verified_file(
+        CONTROL_SHA256_KEY: _verified_file(
             control.artifact_uri,
             control.artifact_sha256,
             model_root,
             "typecurve_artifact_hash_mismatch",
         ),
-        "typecurve_coverage": _verified_file(
+        CONTROL_COVERAGE_SHA256_KEY: _verified_file(
             control.coverage_uri,
             control.coverage_sha256,
             model_root,

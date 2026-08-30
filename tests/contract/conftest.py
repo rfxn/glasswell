@@ -557,6 +557,16 @@ CONTROL_SUBJECTS = (
     ControlSubject(api10=OTHER_API10S[3], origin=CONTROL_ORIGIN, horizon_months=24),
     ControlSubject(api10=OTHER_API10S[4], origin=CONTROL_ORIGIN, horizon_months=24),
     ControlSubject(api10=OTHER_API10S[5], origin=LATER_ORIGIN, horizon_months=24),
+    # The same subject held out at a second origin, at one horizon. Without it the index's
+    # page boundary can never land mid-subject and the paging test cannot fail.
+    ControlSubject(
+        api10=OTHER_API10S[0],
+        origin=LATER_ORIGIN,
+        horizon_months=24,
+        fallback_level="formation_area",
+        lateral_length_bucket="lt_8000",
+        lateral_length_ft=7200.0,
+    ),
 )
 
 

@@ -133,6 +133,10 @@
     The pinned control contract served verbatim from the artifact's coverage document.
     Its numbers are build parameters — minimum peers, vintage window, quantile levels —
     not figures the control stands behind. Same class as /spec/**.
+- pointer: /artifact_sha256/*
+  reason: >-
+    Content address of a published artifact. A digest is an identity string — all-digit
+    for one hash in 10^13 — not a measurement.
 - pointer: /rows/*
   reason: >-
     Rows each pinned artifact recorded when it was written. Same class as /output/rows

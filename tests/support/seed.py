@@ -232,6 +232,15 @@ def seed_conformance_rule(
     effective_from: date = date(2026, 1, 1),
 ) -> str:
     with connection.cursor() as cursor:
+        # Migration 049 made publication evidence a precondition for every rule row, and its
+        # trigger raises without one. A harness that seeds a rule id no registry declares has
+        # to register its evidence first, exactly as migration 054 does for the real ones.
+        cursor.execute(
+            "insert into lineage.conformance_rule_publications"
+            " (rule_id, published_vintage, evidence_tag, evidence_commit)"
+            " values (%s, %s, 'harness-fixture', %s) on conflict (rule_id) do nothing",
+            (rule_id, effective_from, "0" * 40),
+        )
         cursor.execute(
             "insert into lineage.conformance_rules (rule_id, rule_family, source_id, stage,"
             " applies_to_fields, rule_kind, spec, rule, rationale, evidence_url, effective_from)"

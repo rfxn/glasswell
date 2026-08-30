@@ -20,6 +20,12 @@ import polars as pl
 import psycopg
 
 from glasswell.modeling.model_dataset import resolve_model_root
+from glasswell.modeling.p3_publication import (
+    CONTROL_COVERAGE_SHA256_KEY,
+    CONTROL_COVERAGE_URI_KEY,
+    CONTROL_SHA256_KEY,
+    CONTROL_URI_KEY,
+)
 from glasswell.modeling.type_curve import CONTROL_DATASET
 from glasswell.staging.duck import file_sha256
 
@@ -98,8 +104,8 @@ def accepted_publications(
     connection: psycopg.Connection, *, basin: str | None = None
 ) -> tuple[Mapping[str, Any], ...]:
     """Every accepted receipt, newest evaluation vintage first, ties broken by id."""
-    clause = " where basin = %s" if basin else ""
-    parameters: tuple[Any, ...] = (basin,) if basin else ()
+    clause = " where basin = %s" if basin is not None else ""
+    parameters: tuple[Any, ...] = (basin,) if basin is not None else ()
     with connection.cursor() as cursor:
         cursor.execute(
             "select publication_id, document, basin, eval_vintage, vintage_basis,"
@@ -144,8 +150,8 @@ def resolve_pinned_control(
 
     derivation = _registered_control(connection, str(receipt["control_derivation_id"]))
     document = _document(receipt)
-    locator = _document_text(document, "artifact_uri", "type_curve")
-    digest = _document_text(document, "artifact_sha256", "type_curve")
+    locator = _document_text(document, "artifact_uri", CONTROL_URI_KEY)
+    digest = _document_text(document, "artifact_sha256", CONTROL_SHA256_KEY)
     if locator != derivation["output_locator"]:
         raise UnregisteredArtifact(
             f"receipt {receipt['publication_id']} names {locator!r} but derivation"
@@ -163,7 +169,7 @@ def resolve_pinned_control(
         raise UnregisteredArtifact(
             f"{artifact_path} does not hash to the registered digest {digest}"
         )
-    coverage_locator = _document_text(document, "artifact_uri", "type_curve_coverage")
+    coverage_locator = _document_text(document, "artifact_uri", CONTROL_COVERAGE_URI_KEY)
     rows = document.get("rows")
     return PinnedControl(
         publication_id=str(receipt["publication_id"]),
@@ -191,7 +197,7 @@ def resolve_pinned_control(
 
 def control_coverage(pin: PinnedControl) -> Mapping[str, Any]:
     """The sibling coverage document, digest-checked against the receipt before it is parsed."""
-    expected = _document_text(pin.receipt, "artifact_sha256", "type_curve_coverage")
+    expected = _document_text(pin.receipt, "artifact_sha256", CONTROL_COVERAGE_SHA256_KEY)
     path = _contained_regular_file(str(pin.coverage_path))
     key = (str(path), _stat_tuple(path))
     cached = _coverage_cache.get(key)
@@ -260,9 +266,16 @@ def index_page(
     fallback_level: str | None,
     formation_group: str | None,
     after_api10: str | None,
+    after_origin: date | None,
     limit: int,
 ) -> pl.DataFrame:
-    """One page of subject instances at the horizon row, plus one row of lookahead."""
+    """One page of subject instances at the horizon row, plus one row of lookahead.
+
+    A row is `(subject, origin)`, so the cursor predicate is on the pair. Paging on the api10
+    alone with a strict `>` drops the remaining origins of whichever subject a page boundary
+    lands inside, and the endpoint's own contract is that the served population is the whole
+    test population.
+    """
     predicate = (
         (pl.col("stream") == stream)
         & (pl.col("normalization") == normalization)
@@ -276,7 +289,12 @@ def index_page(
     if formation_group is not None:
         predicate = predicate & (pl.col("formation_group") == formation_group)
     if after_api10 is not None:
-        predicate = predicate & (pl.col("subject_api10") > after_api10)
+        moved_on = pl.col("subject_api10") > after_api10
+        if after_origin is not None:
+            moved_on = moved_on | (
+                (pl.col("subject_api10") == after_api10) & (pl.col("origin") > after_origin)
+            )
+        predicate = predicate & moved_on
     return _collect(
         pin,
         pl.scan_parquet(pin.artifact_path)

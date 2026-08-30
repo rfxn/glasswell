@@ -26,6 +26,24 @@
 - [New] seed: glossary terms for quantile convention, peer ladder and split set
 - [New] infra: GLASSWELL_MODEL_ROOT pins the registered artifact tree the API may read;
       unset refuses every type-curve route rather than reading an unregistered path
+- [Fix] api: the served control is resolved through the receipt keys the P3 builder writes,
+      artifact_sha256.typecurve_control and .typecurve_coverage, not the artifact_uri
+      vocabulary; the two key spaces are now named once in p3_publication and imported by
+      every consumer, and the contract fixture derives its receipt from them
+- [Fix] api: an empty facet value on the type-curve index is an unset filter rather than a
+      second response identity; it minted one derivation for two pages, and a derivation
+      row is immutable, so one request poisoned the default page permanently
+- [Fix] api: the type-curve index pages by the subject instance rather than by the api10,
+      so a subject held out at more than one origin keeps its rows at a page boundary
+- [Fix] web: a label column declared as a series projection rendered as a figure with no
+      handle; the type-curve grid carried twenty-eight naked-number badges and now carries
+      none, and the control_unavailable reasons are a default column
+- [Fix] web: a composite row identity is addressable by a detail operation whose single
+      path parameter names one of its pointers, so the type-curve detail pane opens
+      instead of reporting that the row supplies no value for it
+- [Fix] web: a nested block whose leaves are figures renders as figures rather than as a
+      pre block of its JSON, so the publication receipt's acceptance gates and support
+      distribution are explain affordances rather than printed handles
 - [Change] api: register_response_figures walks and rebinds Series alongside Figure,
          recording the whole array and its unit as selector evidence; a series without a
          selector, or one carrying point handles, is refused rather than silently skipped

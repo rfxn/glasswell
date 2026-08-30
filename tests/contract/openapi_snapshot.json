@@ -6185,7 +6185,7 @@
             "title": "Normalization",
             "type": "string"
           },
-          "origin": {
+          "origin_requested": {
             "anyOf": [
               {
                 "format": "date",
@@ -6195,8 +6195,8 @@
                 "type": "null"
               }
             ],
-            "description": "Origin filter in force, when one was supplied.",
-            "title": "Origin"
+            "description": "Origin filter in force, when one was supplied. The per-row origin is in the series; this is the facet, and it is named apart so the two cannot be read as one pointer.",
+            "title": "Origin Requested"
           },
           "publication_id": {
             "description": "Accepted publication this page was read from.",
@@ -6235,7 +6235,7 @@
           "stream",
           "normalization",
           "horizon_months",
-          "origin",
+          "origin_requested",
           "relation",
           "quantile_convention",
           "series"
@@ -11471,7 +11471,7 @@
         ],
         "x-glasswell-request-example": {
           "path": {
-            "publication_id": "p3pub_285ed522f725bca4ac4c052e84503c16"
+            "publication_id": "p3pub_92793c448b37eade223aa4b9d156be0d"
           },
           "query": {}
         },
@@ -13161,6 +13161,7 @@
               "/api10",
               "/origin",
               "/fallback_level",
+              "/control_unavailable_reasons",
               "/formation_group",
               "/split_id",
               "/peer_count"
@@ -13189,13 +13190,6 @@
           "row_projection": {
             "axis": "/api10",
             "columns": [
-              "/origin",
-              "/split_id",
-              "/fallback_level",
-              "/control_unavailable_reasons",
-              "/formation_group",
-              "/area",
-              "/lateral_length_bucket",
               "/peer_count",
               "/cumulative_peer_count"
             ],

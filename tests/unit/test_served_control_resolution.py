@@ -7,6 +7,12 @@ import pytest
 
 from glasswell.modeling import served
 from glasswell.modeling.model_dataset import MODEL_ROOT_ENV
+from glasswell.modeling.p3_publication import (
+    CONTROL_COVERAGE_SHA256_KEY,
+    CONTROL_COVERAGE_URI_KEY,
+    CONTROL_SHA256_KEY,
+    CONTROL_URI_KEY,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -154,10 +160,13 @@ def _pin(path: Path, *, coverage_sha256: str = "0" * 64) -> served.PinnedControl
         publication_id="p3pub_" + "0" * 32,
         receipt={
             "artifact_uri": {
-                "type_curve": str(path),
-                "type_curve_coverage": str(path.parent / "coverage.json"),
+                CONTROL_URI_KEY: str(path),
+                CONTROL_COVERAGE_URI_KEY: str(path.parent / "coverage.json"),
             },
-            "artifact_sha256": {"type_curve": "1" * 64, "type_curve_coverage": coverage_sha256},
+            "artifact_sha256": {
+                CONTROL_SHA256_KEY: "1" * 64,
+                CONTROL_COVERAGE_SHA256_KEY: coverage_sha256,
+            },
         },
         superseded=(),
         in_force="p3pub_" + "0" * 32,

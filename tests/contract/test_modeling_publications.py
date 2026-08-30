@@ -8,6 +8,7 @@ import psycopg
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_PUBLICATION_ID
+from glasswell.modeling.p3_publication import ARTIFACT_SHA256_KEYS, CONTROL_SHA256_KEY
 from tests.contract.conftest import CONTROL_SUBJECTS
 from tests.support.typecurve_fixture import register_pinned_control, write_control_artifact
 
@@ -41,7 +42,9 @@ def test_the_detail_states_every_pinned_identity(client: TestClient) -> None:
     assert data["publication_id"] == EXAMPLE_PUBLICATION_ID
     assert set(data["derivations"]) == {"feature", "model_dataset", "type_curve"}
     assert data["baseline"]["split_set_id"] == data["split_set_id"]
-    assert data["artifact_sha256"]["type_curve"]
+    assert data["artifact_sha256"][CONTROL_SHA256_KEY]
+    assert set(data["artifact_sha256"]) == set(ARTIFACT_SHA256_KEYS)
+    assert set(data["splits"][0]) == {"origin", "horizon_months", "split_id", "sha256"}
     assert {item["split_id"] for item in data["splits"]} == {
         "spl_20210101_24",
         "spl_20210101_12",

@@ -325,7 +325,10 @@ def get_well_type_curve(
     ] = None,
 ) -> JSONResponse:
     pin = _pin(connection, publication)
-    instances = served.subject_origins(pin, api10=api10)
+    try:
+        instances = served.subject_origins(pin, api10=api10)
+    except served.UnregisteredArtifact as error:
+        raise ProblemError("unregistered_artifact", detail=str(error)) from error
     if not instances:
         raise ProblemError(
             "not_found",
@@ -631,7 +634,11 @@ class TypeCurveIndex(BaseModel):
             " the split, not an observation the control stands behind."
         ),
     )
-    origin: date | None = Field(description="Origin filter in force, when one was supplied.")
+    origin_requested: date | None = Field(
+        description="Origin filter in force, when one was supplied. The per-row origin is in"
+        " the series; this is the facet, and it is named apart so the two cannot be read as"
+        " one pointer."
+    )
     relation: Literal["control_type_curve_not_a_forecast"] = Field(
         description="What these rows describe: a backward-looking peer aggregate."
     )
@@ -642,13 +649,16 @@ class TypeCurveIndex(BaseModel):
     series: TypeCurveIndexSeries = Field(description="One page of aligned per-instance arrays.")
 
 
+# Keyed by the response pointer `grid/rows.ts::responsePointerFor` composes: the axis and the
+# projected figures are series-namespace, every other column resolves element-relative.
 INDEX_LABELS = {
     "/series/api10": "gt_api_10_api_12_api_14",
-    "/series/origin": "gt_vintage_well_vintage",
-    "/series/split_id": "gt_split_set",
-    "/series/fallback_level": "gt_peer_ladder",
-    "/series/formation_group": "gt_formation",
     "/series/peer_count": "gt_training_support",
+    "/origin": "gt_vintage_well_vintage",
+    "/split_id": "gt_split_set",
+    "/fallback_level": "gt_peer_ladder",
+    "/control_unavailable_reasons": "gt_peer_ladder",
+    "/formation_group": "gt_formation",
 }
 INDEX_RULES = (
     "cr_tc_publication_scope_1",
@@ -687,19 +697,14 @@ TYPE_CURVE_INDEX_REQUESTS_PER_MINUTE = 30
             group="wells",
             collection_pointer="",
             series_pointer="/series",
+            # Only the two real figures are projected columns. `grid/columns.ts::classify`
+            # types every pointer in this list as a figure unconditionally, so a label
+            # declared here renders as a number with no handle and wears the naked-number
+            # badge. The label arrays stay in `/series` and `grid/rows.ts::cellFor` still
+            # resolves them per row, which is how `production` carries its own labels.
             row_projection={
                 "axis": "/api10",
-                "columns": [
-                    "/origin",
-                    "/split_id",
-                    "/fallback_level",
-                    "/control_unavailable_reasons",
-                    "/formation_group",
-                    "/area",
-                    "/lateral_length_bucket",
-                    "/peer_count",
-                    "/cumulative_peer_count",
-                ],
+                "columns": ["/peer_count", "/cumulative_peer_count"],
                 "suffixes": [],
             },
             anchors=["/publication_id", "/horizon_months", "/quantile_convention"],
@@ -721,6 +726,7 @@ TYPE_CURVE_INDEX_REQUESTS_PER_MINUTE = 30
                     "/api10",
                     "/origin",
                     "/fallback_level",
+                    "/control_unavailable_reasons",
                     "/formation_group",
                     "/split_id",
                     "/peer_count",
@@ -856,6 +862,13 @@ def list_type_curves(
         operation="list_type_curves",
         limit=TYPE_CURVE_INDEX_REQUESTS_PER_MINUTE,
     )
+    # Normalised once, here, and never again: `?fallback_level=` binds to "", which is falsy
+    # but not None. Guarding the partition and the selector on truthiness while filtering on
+    # `is not None` made the empty arm mint one derivation id for two different pages, and a
+    # derivation row is immutable — a single read-scope request poisoned the default page for
+    # good. The three sites can only agree if the value reaching them is already one thing.
+    fallback_level = fallback_level or None
+    formation_group = formation_group or None
     pin = _pin(connection, publication)
     horizon_months = int(horizon)
     facets = {
@@ -870,6 +883,13 @@ def list_type_curves(
     fingerprint = query_fingerprint(facets)
     decoded = decode_cursor(cursor, fingerprint=fingerprint) if cursor is not None else None
     after_api10 = decoded.key if decoded is not None else None
+    # A row is (subject, origin), so the cursor is too. The tiebreak was encoded and never
+    # read, which dropped the remaining origins of any subject a page boundary landed inside.
+    after_origin = (
+        date.fromisoformat(decoded.tiebreak)
+        if decoded is not None and decoded.tiebreak
+        else None
+    )
     try:
         found = served.index_page(
             pin,
@@ -880,6 +900,7 @@ def list_type_curves(
             fallback_level=fallback_level,
             formation_group=formation_group,
             after_api10=after_api10,
+            after_origin=after_origin,
             limit=limit,
         )
     except served.UnregisteredArtifact as error:
@@ -888,7 +909,7 @@ def list_type_curves(
     next_cursor = (
         encode_cursor(
             key=str(items[-1]["subject_api10"]),
-            tiebreak=f"{items[-1]['origin']}|{horizon_months}",
+            tiebreak=items[-1]["origin"].isoformat(),
             as_of=pin.eval_vintage,
             fingerprint=fingerprint,
         )
@@ -902,6 +923,7 @@ def list_type_curves(
             ("fallback_level", fallback_level),
             ("formation_group", formation_group),
             ("after_api10", after_api10),
+            ("after_origin", after_origin.isoformat() if after_origin else None),
         )
         if value
     )
@@ -915,7 +937,7 @@ def list_type_curves(
         "stream": stream,
         "normalization": normalization,
         "horizon_months": horizon_months,
-        "origin": iso(origin),
+        "origin_requested": iso(origin),
         "relation": RELATION,
         "quantile_convention": QUANTILE_CONVENTION,
         "series": {
@@ -953,6 +975,7 @@ def list_type_curves(
         **({"fallback_level": fallback_level} if fallback_level else {}),
         **({"formation_group": formation_group} if formation_group else {}),
         **({"after_api10": after_api10} if after_api10 else {}),
+        **({"after_origin": after_origin.isoformat()} if after_origin else {}),
     }
     data = register_response_figures(
         connection,

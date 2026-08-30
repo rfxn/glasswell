@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import psycopg
+import pytest
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_API10
@@ -64,9 +64,7 @@ def test_the_cursor_pins_the_publication_and_the_facets(client: TestClient) -> N
     assert refused.json()["type"].endswith("/cursor_query_mismatch")
 
 
-def test_the_second_page_is_served_and_mints_its_own_derivation(
-    client: TestClient, seeded: psycopg.Connection
-) -> None:
+def test_the_second_page_is_served_and_mints_its_own_derivation(client: TestClient) -> None:
     """B-2's regression. Page two under one facet set must 200 and must not reuse page one's
     api.respond derivation: a shared id with disjoint selector evidence is a 500."""
     first = _page(client, limit=2)
@@ -82,18 +80,80 @@ def test_the_second_page_is_served_and_mints_its_own_derivation(
     }
 
 
+def _instances(body: dict) -> list[tuple[str, str]]:
+    """A row is (subject, origin). A set of api10s hides a dropped duplicate-subject row."""
+    series = body["data"]["series"]
+    return list(zip(series["api10"], series["origin"], strict=True))
+
+
+def test_the_population_holds_a_subject_at_two_origins(client: TestClient) -> None:
+    """The precondition M-1 needs to be falsifiable: without it no boundary lands mid-subject."""
+    instances = _instances(_page(client, limit=200))
+    subjects = [api10 for api10, _ in instances]
+    repeated = {api10 for api10 in subjects if subjects.count(api10) > 1}
+
+    assert repeated, "no subject appears at two origins, so paging cannot be tested"
+    assert len(instances) == len(set(instances))
+
+
 def test_paging_walks_the_whole_population_without_repeating(client: TestClient) -> None:
-    seen: list[str] = []
+    """Compared as (api10, origin) pairs in order, not as a set of api10s: a row lost at a
+    page boundary inside a multi-origin subject is invisible to a set comparison."""
+    whole = _instances(_page(client, limit=200))
+    seen: list[tuple[str, str]] = []
     params: dict[str, object] = {"limit": 2}
-    for _ in range(10):
+    for _ in range(20):
         body = _page(client, **params)
-        seen.extend(body["data"]["series"]["api10"])
+        seen.extend(_instances(body))
         cursor = body["meta"]["next_cursor"]
         if not cursor:
             break
         params = {"limit": 2, "cursor": cursor}
+
     assert len(seen) == len(set(seen))
-    assert set(seen) == set(_page(client, limit=200)["data"]["series"]["api10"])
+    assert seen == whole
+
+
+def test_paging_at_every_limit_reaches_the_whole_population(client: TestClient) -> None:
+    """A boundary that lands mid-subject only exists at some limits, so sweep them."""
+    whole = _instances(_page(client, limit=200))
+    for limit in range(1, len(whole) + 1):
+        seen: list[tuple[str, str]] = []
+        params: dict[str, object] = {"limit": limit}
+        for _ in range(len(whole) + 2):
+            body = _page(client, **params)
+            seen.extend(_instances(body))
+            cursor = body["meta"]["next_cursor"]
+            if not cursor:
+                break
+            params = {"limit": limit, "cursor": cursor}
+        assert seen == whole, f"rows lost or repeated at limit={limit}"
+
+
+@pytest.mark.parametrize("facet", ["fallback_level", "formation_group"])
+def test_an_empty_facet_value_is_an_unset_filter_not_a_second_identity(
+    client: TestClient, facet: str
+) -> None:
+    """The B-2 regression. `?fallback_level=` binds to "", which is falsy but not None. Guarded
+    on truthiness in the partition and on `is not None` in the filter, it minted one derivation
+    id for two different pages — and derivation rows are immutable, so the first collision
+    poisoned the default page permanently with an unhandled DeterminismViolation."""
+    plain = _page(client, stream="oil")
+    empty = _page(client, stream="oil", **{facet: ""})
+    replay = _page(client, stream="oil")
+
+    assert empty["data"]["series"] == plain["data"]["series"]
+    assert empty["data"]["_lineage"] == plain["data"]["_lineage"]
+    assert replay["data"]["_lineage"] == plain["data"]["_lineage"]
+
+
+def test_an_empty_facet_value_does_not_poison_a_later_page(client: TestClient) -> None:
+    """The persistence half: the collision was recorded, so a replay had to 500 for ever."""
+    first = _page(client, stream="oil", limit=2, fallback_level="")
+    cursor = first["meta"]["next_cursor"]
+    assert cursor
+    assert _page(client, stream="oil", limit=2, cursor=cursor)["data"]["series"]["api10"]
+    assert _page(client, stream="oil", limit=2)["data"]["series"] == first["data"]["series"]
 
 
 def test_the_index_is_rate_limited(client: TestClient) -> None:

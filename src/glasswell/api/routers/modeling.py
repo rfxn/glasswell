@@ -243,6 +243,7 @@ def list_modeling_publications(
     limit: SpineLimit = DEFAULT_LIMIT,
     basin: Annotated[str | None, Query(description="Filter to one basin.")] = None,
 ) -> JSONResponse:
+    basin = basin or None  # `?basin=` is an unset filter, not a basin nothing matches
     fingerprint = query_fingerprint({"basin": basin})
     decoded = decode_cursor(cursor, fingerprint=fingerprint) if cursor is not None else None
     receipts = [
