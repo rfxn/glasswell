@@ -15,12 +15,15 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from glasswell.api.routers.production import ROLLUP_RULE
+from glasswell.api.routers.production import ROLLUP_RULES
 from glasswell.ingest import nd_mpr
 from glasswell.ingest.base import open_ingest_run
 from glasswell.seed import seed_all
 from tests.support.mpr_workbook import filing, write_workbook
 from tests.support.seed import seed_well
+
+# The rollup rule is per jurisdiction now; this file is North Dakota's.
+ROLLUP_RULE = ROLLUP_RULES["33"]
 
 MONTH = datetime(2026, 1, 1)
 MULTI_POOL = "3305302532"
@@ -208,3 +211,7 @@ def test_pool_rollup_rule_is_the_one_the_promotion_used(wells, api_client):
     """One id, in three places: the router's pin, the promotion, and the served registry."""
     assert ROLLUP_RULE == nd_mpr.ROLLUP_RULE
     assert api_client.get(f"/v1/conformance/{ROLLUP_RULE}").status_code == 200
+    # Every jurisdiction's pin resolves, and none of them is another jurisdiction's.
+    assert len(set(ROLLUP_RULES.values())) == len(ROLLUP_RULES)
+    for rule_id in ROLLUP_RULES.values():
+        assert api_client.get(f"/v1/conformance/{rule_id}").status_code == 200, rule_id

@@ -9,6 +9,7 @@ import { METRICS_SECTIONS_SOURCE, METRICS_TOWNSHIPS_SOURCE } from "./thematics.t
 import { variantStyle } from "./variant-style.ts";
 import {
   LATERALS_SOURCE,
+  NM_WELLS_SOURCE,
   OPACITY_OVERRIDE,
   SECTIONS_SOURCE,
   SOURCE_ID,
@@ -452,12 +453,34 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
     }
   });
 
+  it("draws New Mexico as a point layer and adds no lateral sibling for it", () => {
+    // No in-scope New Mexico source ships a lateral (cr_nm_wellhistory_geometry_scope_1), so a
+    // nm-laterals layer would draw a producing footprint nobody filed.
+    const ids = dataLayers({ labels: true }).map((layer) => layer.id);
+
+    expect(ids).toContain("nm-wells");
+    expect(ids.filter((id) => id.startsWith("nm-"))).toEqual(["nm-wells"]);
+    const nmWells = dataLayers().find((layer) => layer.id === "nm-wells");
+    expect(nmWells?.type).toBe("circle");
+    expect("source" in nmWells! ? nmWells.source : "").toBe(NM_WELLS_SOURCE);
+  });
+
+  it("gives the New Mexico row a registry entry citing the mart it reads", () => {
+    const row = LAYERS.find((layer) => layer.id === "nm-wells");
+
+    expect(row).toBeDefined();
+    expect(row!.styleLayers).toEqual(["nm-wells"]);
+    expect(row!.provenance).toEqual([{ kind: "official", source: "marts.nm_wells_tile" }]);
+    expect(row!.subtitle).toContain("cr_nm_wellhistory_status_vocab_1");
+  });
+
   it("carries the refusal into every place the id is interpolated, not just the url", () => {
     // The id is the tile path, the MVT `source-layer`, and the promoteId key. A validator
     // that only guarded the url would still hand the other two an attacker's string.
     const search =
       "?wells=..%2F..%2Fetc%2Fpasswd&laterals=gw-evil-layer&spacing=%2Fetc%2Fpasswd" +
       "&tx_wells=..%2F..%2Fetc%2Fshadow&tx_laterals=gw-evil-layer&traces=..%2F..%2Fetc%2Fpasswd" +
+      "&nm_wells=..%2F..%2Fetc%2Fshadow" +
       "&townships=..%2F..%2Fetc%2Fpasswd&sections=gw-evil-layer" +
       "&township_metrics=..%2F..%2Fetc%2Fpasswd&section_metrics=gw-evil-layer";
     const specs = sourceSpecs("https://gw.example", search);
@@ -468,6 +491,7 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
         SPACING_SOURCE,
         TX_WELLS_SOURCE,
         TX_LATERALS_SOURCE,
+        NM_WELLS_SOURCE,
         TRACES_SOURCE,
         TOWNSHIPS_SOURCE,
         SECTIONS_SOURCE,
