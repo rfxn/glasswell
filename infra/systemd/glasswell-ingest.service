@@ -30,6 +30,9 @@ ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.nm_wells --dsn ${GLA
 ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.mt_wells --dsn ${GLASSWELL_DSN}
 ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.land_units --dsn ${GLASSWELL_DSN}
 ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.land_metrics --dsn ${GLASSWELL_DSN}
+# After nd_mpr, which is its canonical input. deploy.sh populates it once at release; this is
+# what keeps it current every month afterwards.
+ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.cumulatives --dsn ${GLASSWELL_DSN}
 ExecStart=/opt/glasswell/venv/bin/glasswell-neighbors --dsn ${GLASSWELL_DSN}
 TimeoutStartSec=3600
 MemoryMax=6G

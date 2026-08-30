@@ -88,3 +88,28 @@ def test_the_readiness_loops_do_not_word_split_a_command_substitution() -> None:
     """`for _ in $(seq 1 30)` is the shell-standards `for x in $(…)` shape; the bound is a
     literal here, so an arithmetic loop says the same thing without the substitution."""
     assert re.search(r"for\s+\w+\s+in\s+\$\(", script()) is None
+
+
+@pytest.mark.parametrize(
+    "population",
+    ["glasswell.marts.cumulatives", "glasswell-fracfocus --promote-design"],
+)
+def test_every_population_step_runs_before_the_gate_that_asserts_on_it(population: str) -> None:
+    """verify.sh counts rows in the tables these steps write. An ordering that is right today
+    and unasserted is right until someone reorders it."""
+    populate = order(step_holding(population))
+    verify = order(step_holding("infra/verify.sh"))
+
+    assert populate < verify
+
+
+@pytest.mark.parametrize(
+    "population",
+    ["glasswell.marts.cumulatives", "glasswell-fracfocus --promote-design"],
+)
+def test_no_population_step_can_be_skipped_or_fail_silently(population: str) -> None:
+    """The refusal is the safety layer: a deploy that half-populated a mart must not ship."""
+    body = steps()[step_holding(population)]
+
+    assert "|| refuse" in body
+    assert not re.search(r"^\s*(if|case|while)\b", body, re.MULTILINE), body

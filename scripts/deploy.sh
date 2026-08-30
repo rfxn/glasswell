@@ -227,6 +227,19 @@ step "6c. current ND physical-neighbour mart"
 remote "sudo -u glasswell env $code_env $VENV/bin/glasswell-neighbors --dsn '$SOCKET_DSN'" \
     || refuse "ND physical-neighbour refresh failed"
 
+# Both are idempotent — the mart refresh is delete-then-insert under a content-addressed
+# derivation, the design promotion is `on conflict do nothing` — so a re-deploy is a no-op
+# rather than a duplication. They run before verify because verify asserts on their output.
+step "6d. per-well cumulative marts"
+remote "sudo -u glasswell env $code_env $VENV/bin/python -m glasswell.marts.cumulatives --dsn '$SOCKET_DSN'" \
+    || refuse "cumulatives refresh failed"
+
+# Exits 0 with a stated outcome on a host that has never fetched the 440 MB archive: nothing
+# to promote is a plan, not a failure.
+step "6e. FracFocus completion-design backfill"
+remote "sudo -u glasswell env $code_env $VENV/bin/glasswell-fracfocus --promote-design --dsn '$SOCKET_DSN'" \
+    || refuse "completion-design backfill failed"
+
 # Both, as runbook step 4 has it. martin reads its source catalogue at startup and install.sh
 # above can have just placed infra/martin/config.yaml, so without this the new config is inert
 # and verify.sh's catalogue check fails the deploy two steps later.
