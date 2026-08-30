@@ -41,6 +41,10 @@ FRACFOCUS_SOURCE_ID = "fracfocus_csv"
 UNITS_RULE_ID = "cr_ff_base_water_units_1"
 PROMOTE_RULE_ID = "cr_ff_design_promote_1"
 INTENSITY_FAMILY = "cr_ff_fluid_intensity"
+# A registry gap is not a fact about the source. wells.py:97-100 draws the same distinction for
+# the producing classification: answering with a source-shaped label would read as a statement
+# about the well rather than about the registry.
+INTENSITY_RULE_UNREGISTERED = "intensity_rule_unregistered"
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,7 +308,9 @@ class CompletionDesign(BaseModel):
     intensity_null_semantics: str = Field(
         description=(
             "reported, or why no intensity is served: no_report, lateral_length_unavailable,"
-            " lateral_length_implausible, intensity_out_of_range."
+            " lateral_length_implausible, intensity_out_of_range, or"
+            " intensity_rule_unregistered where cr_ff_fluid_intensity is not registered — a"
+            " gap in the registry, not a fact about the source."
         )
     )
     source_id: str = Field(
@@ -510,6 +516,16 @@ def get_well_completions(
     )
 
 
+def _intensity_or_reason(
+    volume_gal: Decimal | None, lateral_ft: Decimal | None, policy: IntensityPolicy | None
+) -> tuple[Decimal | None, str]:
+    """With no registered rule there are no bounds to apply, and saying so is the only honest
+    answer: no_report here would report a registry gap as a source that disclosed nothing."""
+    if policy is None:
+        return None, INTENSITY_RULE_UNREGISTERED
+    return _fluid_intensity(volume_gal, lateral_ft, policy)
+
+
 def _fluid_intensity(
     volume_gal: Decimal | None, lateral_ft: Decimal | None, policy: IntensityPolicy
 ) -> tuple[Decimal | None, str]:
@@ -592,9 +608,7 @@ def _design(
     )
     lateral_ft = metres_to_feet(metres) if laterals else None
     volume = row["base_water_volume"]
-    intensity, semantics = (
-        _fluid_intensity(volume, lateral_ft, policy) if policy else (None, "no_report")
-    )
+    intensity, semantics = _intensity_or_reason(volume, lateral_ft, policy)
     computed: dict[str, Any] = {
         "lateral_length_ft": (
             figure(

@@ -253,6 +253,7 @@ FRACFOCUS_RULES: tuple[dict[str, object], ...] = (
                 "lateral_length_unavailable",
                 "lateral_length_implausible",
                 "intensity_out_of_range",
+                "intensity_rule_unregistered",
             ],
             "measured_on": "2026-08-30",
             "measured": {
@@ -293,7 +294,10 @@ FRACFOCUS_RULES: tuple[dict[str, object], ...] = (
             " cr_ff_design_promote_1 because the divisor is computed at request time from live"
             " geometry and the promotion never sees it; a rule that did not describe what it"
             " governs would be worse than no rule. Moving either bound is a superseding row"
-            " with its own effective date."
+            " with its own effective date. The last vocabulary member is the state where this"
+            " rule itself is absent: with no bounds registered there is nothing to apply, and"
+            " the response says the registry is missing rather than reporting no_report, which"
+            " would state that the source disclosed nothing."
         ),
         "evidence_url": DOWNLOAD_URL,
         "code_ref": "glasswell.api.routers.completions:_fluid_intensity",

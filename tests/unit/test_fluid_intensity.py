@@ -6,7 +6,12 @@ from decimal import Decimal
 
 import pytest
 
-from glasswell.api.routers.completions import IntensityPolicy, _fluid_intensity
+from glasswell.api.routers.completions import (
+    INTENSITY_RULE_UNREGISTERED,
+    IntensityPolicy,
+    _fluid_intensity,
+    _intensity_or_reason,
+)
 
 POLICY = IntensityPolicy(
     min_lateral_ft=Decimal("1000"),
@@ -71,3 +76,43 @@ def test_a_filed_zero_is_an_intensity_of_zero_and_not_an_absence() -> None:
     value, semantics = _fluid_intensity(Decimal("0"), Decimal("9862.27"), POLICY)
 
     assert (value, semantics) == (Decimal("0"), "reported")
+
+
+def test_an_unregistered_rule_is_reported_as_a_registry_gap_not_as_no_report() -> None:
+    """no_report would say the source disclosed nothing; the source disclosed 5,917,362 gal.
+
+    The precedent is wells.py:97-100, where an unregistered producing definition short-circuits
+    rather than answering `unknown` for every well.
+    """
+    value, semantics = _intensity_or_reason(Decimal("5917362"), Decimal("9862.27"), None)
+
+    assert (value, semantics) == (None, INTENSITY_RULE_UNREGISTERED)
+    assert semantics != "no_report"
+
+
+def test_a_registered_rule_still_reaches_the_bounded_answer() -> None:
+    """The wrapper adds one state and changes none of the five the rule declares."""
+    assert _intensity_or_reason(Decimal("5917362"), Decimal("9862.27353475175"), POLICY) == (
+        _fluid_intensity(Decimal("5917362"), Decimal("9862.27353475175"), POLICY)
+    )
+    assert _intensity_or_reason(None, Decimal("9862.27"), POLICY)[1] == "no_report"
+
+
+def test_the_rule_declares_every_reason_the_code_can_return() -> None:
+    """R8: a served reason the rule's vocabulary does not admit is a mapping made in code."""
+    from glasswell.seed.conformance_fracfocus import FRACFOCUS_RULES
+
+    rule = next(r for r in FRACFOCUS_RULES if r["rule_id"] == "cr_ff_fluid_intensity_1")
+    declared = set(rule["spec"]["null_semantics_vocabulary"])
+    returned = {INTENSITY_RULE_UNREGISTERED} | {
+        _intensity_or_reason(volume, lateral, POLICY)[1]
+        for volume, lateral in (
+            (Decimal("5917362"), Decimal("9862.27")),
+            (None, Decimal("9862.27")),
+            (Decimal("5917362"), None),
+            (Decimal("5917362"), MEASURED_MINIMUM_FT),
+            (Decimal("60000000"), Decimal("9862.27")),
+        )
+    }
+
+    assert returned <= declared
