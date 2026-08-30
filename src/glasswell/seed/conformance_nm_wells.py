@@ -485,3 +485,249 @@ def seed_conformance_nm_wells(connection: psycopg.Connection) -> int:
             (rule_ids,),
         )
         return int(cursor.fetchone()[0])
+
+
+GIS_SERVICE_URL = "https://gis.emnrd.nm.gov/arcgis/rest/services/OCDView/Wells_Public/FeatureServer"
+GIS_LAYER_URL = f"{GIS_SERVICE_URL}/0"
+GIS_SOURCE_ID = "nm_ocd_wells_gis"
+
+# All [NET], by anonymous query on 2026-08-30.
+GIS_FEATURES = 141916
+GIS_DISTINCT_IDS = 141916
+GIS_MAX_RECORD_COUNT = 6000
+
+GIS_LICENSE_NOTE = (
+    "New Mexico public record served from an ArcGIS FeatureServer with Extract enabled."
+    " copyrightText is the attribution string 'Permitting database of the Oil Conservation"
+    " Division (OCD) of the New Mexico Energy, Minerals and Natural Resources Department"
+    " (EMNRD).' and carries no redistribution clause. Reachability, the 141,916 feature count,"
+    " the uniqueness of id over all of them and the empty terms verified by anonymous query"
+    " 2026-08-30."
+)
+
+NM_WELLS_GIS_SOURCES: tuple[dict[str, object], ...] = (
+    {
+        "source_id": GIS_SOURCE_ID,
+        "name": "NM OCD Oil and Gas Wells, public surface locations (FeatureServer layer 0)",
+        "jurisdiction": "NM",
+        "license_note": GIS_LICENSE_NOTE,
+        "redistributable": True,
+    },
+)
+
+NM_WELLS_GIS_RULES: tuple[dict[str, object], ...] = (
+    {
+        "rule_id": "cr_nm_wells_gis_source_1",
+        "source_id": GIS_SOURCE_ID,
+        "stage": "parse",
+        "rule_kind": "parse_directive",
+        "applies_to_fields": ["all"],
+        "spec": {
+            "declares_fields": ["id", "latitude", "longitude", "status", "ulstr"],
+            "asserts_header": False,
+            "service_url": GIS_SERVICE_URL,
+            "layer_id": 0,
+            "layer_name": "New Mexico Oil and Gas Wells",
+            "where": "1=1",
+            "grain": "one point per permitted well surface drilling location",
+            "geometry_type": "esriGeometryPoint",
+            "capabilities": "Query,Sync,Extract,ChangeTracking",
+            "max_record_count": GIS_MAX_RECORD_COUNT,
+            "standard_max_record_count": 32000,
+            "supports_pagination": True,
+            "measured_2026_08_30": {"features": GIS_FEATURES, "distinct_id": GIS_DISTINCT_IDS},
+            "terminus": "staging",
+        },
+        "rule": (
+            "Capture the whole OCDView/Wells_Public layer 0 on every pass, and stop at staging:"
+            " the parity measurement decides whether and how it promotes."
+        ),
+        "rationale": (
+            "This is a second, independent measurement of the same well population the OCD FTP"
+            " header archive carries, and that is the whole reason to take it. The archive is a"
+            " frozen 2026-08-20 snapshot; this layer is refreshed as permits are approved, so"
+            " the two disagree by construction and the disagreement is measurable rather than"
+            " rhetorical. The host is already on the allowlist for the C-115B source, so no"
+            " blueprint amendment is required. The whole layer is taken on every pass rather"
+            " than a changed slice, because ChangeTracking is advertised but the layer publishes"
+            " no field this repository has verified as a reliable change stamp, and a wrong"
+            " change filter loses rows silently. Staging is the terminus on purpose: promoting"
+            " before the parity is measured would make the parity rule a rationalisation of a"
+            " choice already made."
+        ),
+        "evidence_url": GIS_LAYER_URL,
+        "code_ref": "src/glasswell/ingest/nm_wells_gis.py",
+    },
+    {
+        "rule_id": "cr_nm_wells_gis_walk_order_1",
+        "source_id": GIS_SOURCE_ID,
+        "stage": "parse",
+        "rule_kind": "parse_directive",
+        "applies_to_fields": ["all"],
+        "spec": {
+            "declares_fields": ["id"],
+            "asserts_header": False,
+            "order_by": "id ASC",
+            "rejected_order": "OBJECTID ASC",
+            "reason": "objectid_is_not_an_identity_on_a_view_backed_layer",
+            "tripwire": {
+                "reason_code": "duplicate_row",
+                "note": "a repeated id inside one harvest means the walk order stopped being"
+                " total, not that the regulator filed twice",
+            },
+            "measured_2026_08_30": {
+                "features": GIS_FEATURES,
+                "distinct_id": GIS_DISTINCT_IDS,
+                "id_is_unique": True,
+            },
+        },
+        "rule": "Walk the layer ordered by id — never by OBJECTID.",
+        "rationale": (
+            "`resultOffset` re-runs the query for every page, so a walk ordered by anything less"
+            " than a total order silently re-reads and skips rows while every count still"
+            " reconciles. id is unique over all 141,916 features — the distinct count and the"
+            " row count are the same number, asked separately — so ordering on it makes the"
+            " pages contiguous and disjoint. OBJECTID is refused for the reason"
+            " cr_nm_c115b_walk_order_1 records on the sibling service: on a view-backed layer it"
+            " is assigned per query and is not an identity. The duplicate_row quarantine is the"
+            " standing tripwire if id ever stops being unique."
+        ),
+        "evidence_url": GIS_LAYER_URL,
+        "code_ref": "src/glasswell/ingest/nm_wells_gis.py",
+    },
+    {
+        "rule_id": "cr_nm_wells_gis_api10_1",
+        "source_id": GIS_SOURCE_ID,
+        "stage": "parse",
+        "rule_kind": "key_composite",
+        "applies_to_fields": ["id"],
+        "spec": {
+            "module_function": "glasswell.ingest.nm_wells_gis:api10_from_dashed",
+            "version": "1",
+            "source_cols": ["id"],
+            "target_col": "api10",
+            "source_form": "SS-CCC-NNNNN",
+            "target_form": "SSCCCNNNNN",
+            "separators_stripped": ["-"],
+            "reason_code": "key_incomplete",
+            "consistent_with_migration": "054_api10_identity_separators",
+        },
+        "rule": (
+            "Normalise the dashed id (30-001-00505) to the undashed API-10 that is the identity"
+            " spine; an id that is not exactly 2-3-5 digits is held, never padded or truncated"
+            " into one."
+        ),
+        "rationale": (
+            "Two New Mexico sources ship the API number two ways: the FTP header table ships it"
+            " as three unpadded segments and this layer ships it dashed, so both cross a mapping"
+            " on the way to the spine and both are rows rather than a strip() in a parser."
+            " Migration 054 is the precedent this must be consistent with: separators are"
+            " stripped from a well-formed identity and never inferred into one. Strictness costs"
+            " nothing today and is the point on the day it does — stripping non-digits from a"
+            " 14-character API-14 would silently key a wellbore onto its well, and zero-padding"
+            " a short id would build a syntactically perfect API-10 for a well that does not"
+            " exist. Refusal to key is key_incomplete, the code migration 021 added for this"
+            " exit."
+        ),
+        "evidence_url": GIS_LAYER_URL,
+        "code_ref": "src/glasswell/ingest/nm_wells_gis.py",
+    },
+    {
+        "rule_id": "cr_nm_wells_gis_datum_1",
+        "source_id": GIS_SOURCE_ID,
+        "stage": "parse",
+        "rule_kind": "datum_transform",
+        "applies_to_fields": ["latitude", "longitude"],
+        "spec": {
+            "source_epsg": 4269,
+            "target_epsg": 4326,
+            "detect": {
+                "service_sr_wkid": 4269,
+                "lat_col": "latitude",
+                "lon_col": "longitude",
+            },
+            "read_from": "layer json on every fetch, recorded on the manifest",
+        },
+        "rule": "Transform the NAD83 well points to EPSG:4326 before they reach storage.",
+        "rationale": (
+            "The layer's own spatialReference is wkid 4269 and latestWkid 4269, read from the"
+            " layer JSON on every fetch and recorded on the manifest, so a service that silently"
+            " re-projects is a mismatch the fetch raises rather than a shift that lands. Storage"
+            " is always 4326 and the transform is recorded as a derivation even though the shift"
+            " is sub-metre — the same rule cr_nd_datum_1, cr_nm_c115b_datum_1 and"
+            " cr_nm_wellhistory_datum_1 state for their own sources."
+        ),
+        "evidence_url": GIS_LAYER_URL,
+    },
+    {
+        "rule_id": "cr_nm_wells_gis_parity_1",
+        "source_id": GIS_SOURCE_ID,
+        "stage": "validate",
+        "rule_kind": "parse_directive",
+        "applies_to_fields": ["all"],
+        "spec": {
+            "declares_fields": ["id", "latitude", "longitude"],
+            "asserts_header": False,
+            "form": "prohibition",
+            "compared_sources": ["nm_ocd_wells_gis", "nm_ocd_wellhistory"],
+            "compared_on": "api10, and the surface point where both carry one",
+            "cardinality_measured": {
+                "gis_features_2026_08_30": GIS_FEATURES,
+                "gis_distinct_api10_2026_08_30": GIS_DISTINCT_IDS,
+                "ftp_distinct_api10_2026_08_20": DISTINCT_API10S,
+                "ftp_distinct_api10_with_a_point": API10S_WITH_A_POINT,
+                "difference_share": "0.06%",
+            },
+            "distance_distribution_measured": None,
+            "on_disagreement": "report both and promote neither",
+            "on_present_in_one_source_only": "count and report; never silently drop",
+        },
+        "rule": (
+            "Neither source may be preferred over the other for a New Mexico surface point until"
+            " the per-well disagreement has been measured. A well present in one source and"
+            " absent from the other is counted and reported, never silently dropped."
+        ),
+        "rationale": (
+            "This is written as a prohibition rather than as an enumerated tolerance because the"
+            " evidence for a tolerance does not exist yet. What is measured is the cardinality:"
+            " 141,916 distinct API-10s in the GIS layer on 2026-08-30 against 142,000 in the"
+            " 2026-08-20 FTP header archive, a 0.06% difference between two independently"
+            " produced measurements of the same population — which is the agreement that makes"
+            " the comparison worth making at all. What is not measured is the per-well surface"
+            " point distance distribution, and until it is, no rule can say which source wins"
+            " where they differ. Recording a tolerance now would be an assertion wearing a"
+            " measurement's clothes, and cr_nm_wellhistory_header_precedence_1 accordingly still"
+            " names the FTP archive as sole authority; the superseding row that changes that is"
+            " the one this measurement is for. Both populations move: the GIS layer gains a"
+            " point when an APD is approved, and the FTP archive is frozen, so a difference is"
+            " expected and its size is the finding."
+        ),
+        "evidence_url": GIS_LAYER_URL,
+        "code_ref": "src/glasswell/ingest/nm_wells_gis.py",
+    },
+)
+
+_INSERT_SOURCE = """
+insert into lineage.sources (source_id, name, jurisdiction, license_note, redistributable)
+values (%(source_id)s, %(name)s, %(jurisdiction)s, %(license_note)s, %(redistributable)s)
+on conflict do nothing
+"""
+
+
+def seed_sources_nm_wells_gis(connection: psycopg.Connection) -> int:
+    with connection.cursor() as cursor:
+        cursor.executemany(_INSERT_SOURCE, NM_WELLS_GIS_SOURCES)
+    return len(NM_WELLS_GIS_SOURCES)
+
+
+def seed_conformance_nm_wells_gis(connection: psycopg.Connection) -> int:
+    """The GIS layer's own source row and its five rules. Counted over its own ids."""
+    seed_sources_nm_wells_gis(connection)
+    rule_ids = [str(rule["rule_id"]) for rule in NM_WELLS_GIS_RULES]
+    with connection.cursor() as cursor:
+        cursor.executemany(_INSERT_RULE, [_row(rule) for rule in NM_WELLS_GIS_RULES])
+        cursor.execute(
+            "select count(*) from lineage.conformance_rules where rule_id = any(%s)",
+            (rule_ids,),
+        )
+        return int(cursor.fetchone()[0])
