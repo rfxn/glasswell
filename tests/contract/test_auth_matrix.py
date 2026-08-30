@@ -93,6 +93,11 @@ MATRIX: tuple[tuple[str, str, str], ...] = (
     ("GET", "/v1/session", READ),
     ("DELETE", "/v1/session", SESSION),
     ("POST", "/v1/session/password", SESSION),
+    ("GET", "/v1/users", OWNER),
+    ("POST", "/v1/users", OWNER),
+    ("PATCH", "/v1/users/{user_id}", OWNER),
+    ("DELETE", "/v1/users/{user_id}", OWNER),
+    ("POST", "/v1/users/{user_id}/password", OWNER),
     # Finding F-2: both were anonymous, and the coverage test below could not see it
     # because it walked document["paths"], which neither path is an entry in.
     ("GET", "/docs", READ),
@@ -108,6 +113,11 @@ NOT_STATUS_PROBED = frozenset(
         ("POST", "/v1/session"),
         # Needs the current password in the body; test_session_cookie.py owns it.
         ("POST", "/v1/session/password"),
+        # Need a body and a target account; test_users.py and test_users_surface.py own them.
+        ("POST", "/v1/users"),
+        ("PATCH", "/v1/users/{user_id}"),
+        ("DELETE", "/v1/users/{user_id}"),
+        ("POST", "/v1/users/{user_id}/password"),
     }
 )
 
@@ -315,5 +325,16 @@ def test_no_principal_class_can_reach_key_management_except_the_owner(
 ) -> None:
     """DR-67's hard line, asserted separately from the table so it cannot be edited away."""
     reachable = principals[principal].get("/v1/keys").status_code == 200
+
+    assert reachable is (principal in ("owner", "owner_session"))
+
+
+@pytest.mark.parametrize("principal", CREDENTIALLED)
+def test_no_principal_class_can_reach_user_management_except_the_owner(
+    principals: dict[str, TestClient], principal: str
+) -> None:
+    """The same hard line as key management, asserted outside the table so it cannot be
+    edited away by a matrix row."""
+    reachable = principals[principal].get("/v1/users").status_code == 200
 
     assert reachable is (principal in ("owner", "owner_session"))

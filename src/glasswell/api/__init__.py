@@ -47,6 +47,7 @@ from glasswell.api.routers import (
     session,
     status,
     tiles,
+    users,
     wells,
 )
 from glasswell.api.security import STATIC_SECURITY_HEADERS, header_for
@@ -209,6 +210,7 @@ def create_app() -> FastAPI:
         quarantine.router,
         glossary.router,
         keys.router,
+        users.router,
     ):
         app.include_router(
             router,

@@ -893,6 +893,42 @@
         "title": "ConformanceRuleDetail",
         "type": "object"
       },
+      "CreateUserRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "description": "Argon2id-hashed on arrival. Never stored, echoed or logged in clear.",
+            "maxLength": 1024,
+            "minLength": 12,
+            "title": "Password",
+            "type": "string"
+          },
+          "role": {
+            "description": "owner or viewer.",
+            "enum": [
+              "owner",
+              "viewer"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "username": {
+            "description": "Stored lowercased and unique case-insensitively.",
+            "maxLength": 64,
+            "minLength": 3,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password",
+          "role"
+        ],
+        "title": "CreateUserRequest",
+        "type": "object"
+      },
       "DatasetInventory": {
         "additionalProperties": false,
         "properties": {
@@ -2030,6 +2066,39 @@
         "title": "EnvelopeModel[Status]",
         "type": "object"
       },
+      "EnvelopeModel_UserModel_": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "$ref": "#/components/schemas/UserModel"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[UserModel]",
+        "type": "object"
+      },
       "EnvelopeModel_Vintage_": {
         "properties": {
           "_explain": {
@@ -2452,6 +2521,43 @@
           "links"
         ],
         "title": "EnvelopeModel[list[QuarantineRow]]",
+        "type": "object"
+      },
+      "EnvelopeModel_list_UserModel__": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/UserModel"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[list[UserModel]]",
         "type": "object"
       },
       "EnvelopeModel_list_Vintage__": {
@@ -5060,6 +5166,22 @@
         "title": "SessionModel",
         "type": "object"
       },
+      "SetPasswordRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "new_password": {
+            "maxLength": 1024,
+            "minLength": 12,
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_password"
+        ],
+        "title": "SetPasswordRequest",
+        "type": "object"
+      },
       "SourceHealth": {
         "properties": {
           "cadence": {
@@ -5476,6 +5598,118 @@
           "ref"
         ],
         "title": "TermSite",
+        "type": "object"
+      },
+      "UpdateUserRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "owner",
+                  "viewer"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "New role, when changing one.",
+            "title": "Role"
+          }
+        },
+        "title": "UpdateUserRequest",
+        "type": "object"
+      },
+      "UserModel": {
+        "properties": {
+          "created_at": {
+            "description": "When the account was created.",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "description": "Principal that created it.",
+            "title": "Created By",
+            "type": "string"
+          },
+          "disabled_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it was disabled, if it was.",
+            "title": "Disabled At"
+          },
+          "disabled_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Principal that disabled it.",
+            "title": "Disabled By"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last successful login.",
+            "title": "Last Login At"
+          },
+          "password_changed_at": {
+            "description": "Last password change.",
+            "title": "Password Changed At",
+            "type": "string"
+          },
+          "role": {
+            "description": "owner or viewer.",
+            "title": "Role",
+            "type": "string"
+          },
+          "state": {
+            "description": "active or disabled.",
+            "title": "State",
+            "type": "string"
+          },
+          "user_id": {
+            "description": "Stable id; safe to log and to reference.",
+            "title": "User Id",
+            "type": "string"
+          },
+          "username": {
+            "description": "Lowercased account name.",
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "username",
+          "role",
+          "state",
+          "created_at",
+          "created_by",
+          "password_changed_at",
+          "last_login_at",
+          "disabled_at",
+          "disabled_by"
+        ],
+        "title": "UserModel",
         "type": "object"
       },
       "ValidationError": {
@@ -11395,6 +11629,773 @@
             "x": 54,
             "y": 89,
             "z": 8
+          },
+          "query": {}
+        }
+      }
+    },
+    "/v1/users": {
+      "get": {
+        "description": "Every account on this deployment, newest first. No password material appears here or anywhere else in the API \u2014 the list answers *who exists*, not *what they know*.",
+        "operationId": "list_users",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
+            "in": "header",
+            "name": "X-Glasswell-CSRF",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
+              "title": "X-Glasswell-Csrf"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_list_UserModel__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "forbidden": {
+                    "summary": "Forbidden",
+                    "value": {
+                      "detail": "Authenticated, but out of scope for this operation.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 403,
+                      "title": "Forbidden",
+                      "type": "/v1/errors/forbidden"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "List accounts",
+        "tags": [
+          "users"
+        ],
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {
+            "limit": 20
+          }
+        }
+      },
+      "post": {
+        "description": "Owner-only. There is no self-registration path and no password reset by email, so this is the only way an account comes into existence after the first one.",
+        "operationId": "create_user",
+        "parameters": [
+          {
+            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
+            "in": "header",
+            "name": "X-Glasswell-CSRF",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
+              "title": "X-Glasswell-Csrf"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_UserModel_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "forbidden": {
+                    "summary": "Forbidden",
+                    "value": {
+                      "detail": "Authenticated, but out of scope for this operation.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 403,
+                      "title": "Forbidden",
+                      "type": "/v1/errors/forbidden"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Create an account",
+        "tags": [
+          "users"
+        ],
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {}
+        }
+      }
+    },
+    "/v1/users/{user_id}": {
+      "delete": {
+        "description": "Soft: the row is kept and marked disabled, and every session that account holds is revoked in the same transaction. Rows are never deleted, because a session and an audit event still point at them. The example id is the contract fixture's. User ids are minted by `POST /v1/users` and exist only on the deployment that created them, so read one off `GET /v1/users`.",
+        "operationId": "disable_user",
+        "parameters": [
+          {
+            "description": "Id of the account to disable.",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "description": "Id of the account to disable.",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
+            "in": "header",
+            "name": "X-Glasswell-CSRF",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
+              "title": "X-Glasswell-Csrf"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_UserModel_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "forbidden": {
+                    "summary": "Forbidden",
+                    "value": {
+                      "detail": "Authenticated, but out of scope for this operation.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 403,
+                      "title": "Forbidden",
+                      "type": "/v1/errors/forbidden"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Disable an account",
+        "tags": [
+          "users"
+        ],
+        "x-glasswell-request-example": {
+          "path": {
+            "user_id": "usr_01JBQ7M0Z8K2V4N6X8R0T2Y4W6"
+          },
+          "query": {}
+        }
+      },
+      "patch": {
+        "description": "Owner-only. The last enabled owner cannot be demoted; the check takes a row lock on the enabled-owner set, because a handler-only count races under concurrency. The example id is the contract fixture's. User ids are minted by `POST /v1/users` and exist only on the deployment that created them, so read one off `GET /v1/users`.",
+        "operationId": "update_user",
+        "parameters": [
+          {
+            "description": "Id of the account to change.",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "description": "Id of the account to change.",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
+            "in": "header",
+            "name": "X-Glasswell-CSRF",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
+              "title": "X-Glasswell-Csrf"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_UserModel_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "forbidden": {
+                    "summary": "Forbidden",
+                    "value": {
+                      "detail": "Authenticated, but out of scope for this operation.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 403,
+                      "title": "Forbidden",
+                      "type": "/v1/errors/forbidden"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Change an account's role",
+        "tags": [
+          "users"
+        ],
+        "x-glasswell-request-example": {
+          "path": {
+            "user_id": "usr_01JBQ7M0Z8K2V4N6X8R0T2Y4W6"
+          },
+          "query": {}
+        }
+      }
+    },
+    "/v1/users/{user_id}/password": {
+      "post": {
+        "description": "Owner-only reset. Every session that account holds is revoked, because a password reset whose old sessions survive has not taken effect. The example id is the contract fixture's. User ids are minted by `POST /v1/users` and exist only on the deployment that created them, so read one off `GET /v1/users`.",
+        "operationId": "set_user_password",
+        "parameters": [
+          {
+            "description": "Id of the account to reset.",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "description": "Id of the account to reset.",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
+            "in": "header",
+            "name": "X-Glasswell-CSRF",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
+              "title": "X-Glasswell-Csrf"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_UserModel_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "forbidden": {
+                    "summary": "Forbidden",
+                    "value": {
+                      "detail": "Authenticated, but out of scope for this operation.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 403,
+                      "title": "Forbidden",
+                      "type": "/v1/errors/forbidden"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Set an account's password",
+        "tags": [
+          "users"
+        ],
+        "x-glasswell-request-example": {
+          "path": {
+            "user_id": "usr_01JBQ7M0Z8K2V4N6X8R0T2Y4W6"
           },
           "query": {}
         }
