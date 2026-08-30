@@ -221,6 +221,51 @@ def test_an_empty_well_level_series_says_why_rather_than_reading_as_no_productio
     assert f"/v1/wells/{NM_API10}/production/pools" in detail
 
 
+def test_a_new_mexico_well_is_producing_unknown_and_the_reason_is_disclosed(
+    with_new_mexico: TestClient,
+) -> None:
+    """`unknown` is the safe value and the wrong story without the reason.
+
+    marts/producing.py evaluates `entity_type = 'well'` and New Mexico has none, so an NM well
+    that filed 17.6M pool rows would otherwise be reported under a field whose description
+    offers only "filed nothing", "withheld" and "reports at the lease" — none of which is true
+    of it.
+    """
+    envelope = body(with_new_mexico, f"/v1/wells/{NM_API10}")
+    warnings = {item["code"]: item for item in envelope["meta"].get("warnings", [])}
+
+    assert envelope["data"]["producing"] == "unknown"
+    assert "production_reported_at_pool_grain" in warnings
+    disclosure = warnings["production_reported_at_pool_grain"]
+    assert "cr_nm_wcproduction_pool_rollup_1" in disclosure["detail"]
+    assert disclosure["pointer"] == "/producing"
+
+
+def test_the_reason_comes_from_the_registry_not_from_a_state_code_in_the_path(
+    seeded: psycopg.Connection,
+) -> None:
+    """Both causes of an absent well-level series resolve from `lineage.conformance_rules`."""
+    from glasswell.lineage.conformance import lease_reporting_rule, pool_grain_rule
+    from glasswell.marts.producing import no_well_series_states
+
+    assert pool_grain_rule(seeded, "30") is not None
+    assert pool_grain_rule(seeded, "33") is None
+    # Texas's absence is the lease reason, not this one; the two must not collapse.
+    assert pool_grain_rule(seeded, "42") is None
+    assert "30" in no_well_series_states(seeded)
+    assert "33" not in no_well_series_states(seeded)
+    if lease_reporting_rule(seeded, "42") is not None:
+        assert "42" in no_well_series_states(seeded)
+
+
+def test_a_north_dakota_well_carries_no_pool_grain_disclosure(client: TestClient) -> None:
+    """The regression half: ND rolls up under cr_nd_pool_rollup_1, so the reason does not apply."""
+    envelope = body(client, f"/v1/wells/{EXAMPLE_API10}")
+    codes = {item["code"] for item in envelope["meta"].get("warnings", [])}
+
+    assert "production_reported_at_pool_grain" not in codes
+
+
 def test_the_north_dakota_equivalents_are_unchanged(client: TestClient) -> None:
     """The regression half. A third key in a lookup is where the first two get lost."""
     data = body(client, f"/v1/wells/{EXAMPLE_API10}/production")["data"]

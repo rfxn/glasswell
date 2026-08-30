@@ -33,13 +33,18 @@ from glasswell.api.provenance import register_response_figures
 from glasswell.api.rate_limit import consume_rate_limit
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, inline_for, iso
 from glasswell.lengths import STORAGE_EPSG, resolve_length_method
-from glasswell.lineage.conformance import LeaseReportingRule, lease_reporting_rule
+from glasswell.lineage.conformance import (
+    LeaseReportingRule,
+    lease_reporting_rule,
+    pool_grain_rule,
+)
 from glasswell.lineage.envelope import Figure, collect_handles, distinct_handles, figure
 from glasswell.lineage.explain import MAX_HANDLES
 from glasswell.lineage.selector_registry import identity_selector_term
 from glasswell.marts.producing import (
     PRODUCING_CLASSES,
     PRODUCING_RULE_IDS,
+    UNKNOWN,
     ProducingPolicy,
     ProducingPolicyError,
     anchor_month,
@@ -338,8 +343,11 @@ class WellSummary(BaseModel):
             "Whether the well is producing on the evidence held, which is a different fact"
             " from its status: `producing` where a positive oil or gas month was filed inside"
             " the window, `not_producing` where the well filed but no such month, and"
-            " `unknown` where it filed nothing, where the regulator withheld the months, or"
-            " where the jurisdiction reports at the lease and no well-level series exists."
+            " `unknown` where it filed nothing, where the regulator withheld the months, where"
+            " the jurisdiction reports at the lease, or where it reports below the well and"
+            " nothing rolls up — the last two are both jurisdictions with no well-level series"
+            " to evaluate, and the rule that says which is served as a warning beside the"
+            " figure rather than left for the reader to guess."
             " Defined by cr_producing_window_1, cr_producing_streams_1 and"
             " cr_producing_evidence_1; liquids are oil plus condensate. Null where the"
             " definition is not registered, which is disclosed as a warning."
@@ -476,6 +484,25 @@ def pending_allocation(rule: LeaseReportingRule) -> dict[str, Any]:
             " well-to-lease keys it will need are already recorded."
         ),
         "pointer": "/production",
+    }
+
+
+def reported_at_pool_grain(rule: LeaseReportingRule) -> dict[str, Any]:
+    """DIR-3 one grain the other way from `pending_allocation`.
+
+    A well whose regulator files per completion pool and rolls nothing up has no well-level
+    series to be absent from, so `producing` is `unknown` — but it filed, and the three causes
+    the field enumerated before this did not include the one that applies. The rule is named so
+    a reader can resolve it at /v1/conformance."""
+    return {
+        "code": "production_reported_at_pool_grain",
+        "detail": (
+            f"This well's regulator files production at the {rule['reporting_level']} and"
+            f" glasswell performs no rollup to the well ({rule['rule_id']}), so no well-level"
+            " series has been observed and `producing` is unknown for that reason rather than"
+            " because nothing was filed. The pool series is served separately."
+        ),
+        "pointer": "/producing",
     }
 
 
@@ -1602,6 +1629,11 @@ def get_well(
     )
     if lease_reported:
         warnings.append(pending_allocation(lease_reported))
+    pool_grain = pool_grain_rule(
+        connection, row["state_code"], valid_at=as_of, knowledge_at=as_of
+    )
+    if pool_grain and row["producing"] == UNKNOWN:
+        warnings.append(reported_at_pool_grain(pool_grain))
     geometry = rows(
         connection,
         _SPATIAL.format(length_metres=method.metres_sql()),
