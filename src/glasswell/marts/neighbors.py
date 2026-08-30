@@ -25,7 +25,9 @@ from glasswell.lineage.serialization import canonical_json, hash_payload
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.units import METRES_PER_FOOT
 
-STATE_CODE = "33"
+# The seam a second state widens. NM is deliberately absent: neither NM source
+# ships a lateral, so an entry here would build an empty subject set.
+STATE_CODES: tuple[str, ...] = ("33",)
 FORMATION_SOURCE_ID = "nd_mpr_xlsx"
 COMPLETION_SOURCE_ID = "fracfocus_csv"
 MIN_ALIAS_CONFIDENCE = Decimal("0.800")
@@ -59,7 +61,7 @@ select s.api10, s.geom_key, st_force2d(s.geom) as geom,
        st_transform(st_force2d(s.geom), {CANDIDATE_EPSG}) as candidate_geom
  from canonical.well_spatial s
  where s.geom_type = 'lateral'
-   and left(s.api10, 2) = %(state_code)s
+   and left(s.api10, 2) = any(%(state_codes)s)
 """
 
 _SUBJECTS = """
@@ -196,11 +198,11 @@ _INPUT_DERIVATIONS = """
 with lateral_apis as (
     select distinct api10
       from canonical.well_spatial
-     where geom_type = 'lateral' and left(api10, 2) = %(state_code)s
+     where geom_type = 'lateral' and left(api10, 2) = any(%(state_codes)s)
 ), identifiers as (
     select s.derivation_id
       from canonical.well_spatial s
-     where s.geom_type = 'lateral' and left(s.api10, 2) = %(state_code)s
+     where s.geom_type = 'lateral' and left(s.api10, 2) = any(%(state_codes)s)
     union
     select a.derivation_id
       from canonical.well_completion_anchors_latest a
@@ -229,7 +231,7 @@ _OUTSIDE_SUPPORTED_DOMAIN = """
 select count(*), min(api10 || ':' || geom_key)
   from canonical.well_spatial
  where geom_type = 'lateral'
-   and left(api10, 2) = %(state_code)s
+   and left(api10, 2) = any(%(state_codes)s)
    and not st_coveredby(
        st_force2d(geom),
        st_makeenvelope(
@@ -321,7 +323,7 @@ def refresh_neighbors(connection: psycopg.Connection) -> NeighborRefresh:
         default=current_session().vintage,
     )
     parameters = {
-        "state_code": STATE_CODE,
+        "state_codes": list(STATE_CODES),
         "completion_source_id": COMPLETION_SOURCE_ID,
         "formation_source_id": FORMATION_SOURCE_ID,
         "min_confidence": MIN_ALIAS_CONFIDENCE,
@@ -355,7 +357,7 @@ def refresh_neighbors(connection: psycopg.Connection) -> NeighborRefresh:
             schema_version="1",
         ),
         params={
-            "state_code": STATE_CODE,
+            "state_codes": list(STATE_CODES),
             "geometry_scope": "current_only",
             "geometry_type": "lateral",
             "candidate_epsg": CANDIDATE_EPSG,
@@ -430,7 +432,7 @@ def refresh_neighbors(connection: psycopg.Connection) -> NeighborRefresh:
 
 def _inputs(connection: psycopg.Connection) -> list[InputRef]:
     params = {
-        "state_code": STATE_CODE,
+        "state_codes": list(STATE_CODES),
         "completion_source_id": COMPLETION_SOURCE_ID,
         "formation_source_id": FORMATION_SOURCE_ID,
     }

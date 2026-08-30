@@ -26,3 +26,10 @@
 - [New] `tests/integration/test_nm_promotion_gates.py` pins the index the deployed G7-2 gate
       names: `production_monthly_api10_idx` exists, leads on `api10`, and both the served
       query and the `_latest` view resolve to it once a sequential scan stops being free
+- [Change] `055_state_parameterised_neighbors.sql`: `nd_neighbor_subjects.api10` and both
+         `nd_neighbor_edges` endpoints accept any ten-digit API-10 rather than only `^33`,
+         while a new constraint keeps an edge intra-state because the pair-local UTM zone
+         selection is undefined across an arbitrary state pair
+- [Change] `marts/neighbors.py`: `STATE_CODE` becomes the `STATE_CODES` tuple the refresh
+         binds through `= any(...)`, so a second state is a data change rather than an edit;
+         New Mexico is deliberately not in it, because neither NM source ships a lateral
