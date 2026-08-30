@@ -102,6 +102,37 @@ def test_verify_asserts_the_offsite_push_without_claiming_a_read_back():
     assert "write-only" in preamble
 
 
+def test_the_head_comparison_waits_for_a_drill_that_postdates_the_newest_migration():
+    """The drill is weekly; every migration deploy would otherwise red verify.sh until Sunday."""
+    text = VERIFY.read_text()
+    gate = text.split("restore_proof_covers_live_head() {", 1)[1].split("\n}", 1)[0]
+    assert "max(applied_at)" in gate
+    assert 'receipt_field "$RESTORE_RESULT" completed_at' in gate
+    assert "(( completed_at > applied_at ))" in gate
+
+    block = text.split("printf 'restore drill proof\\n'", 1)[1].split("printf 'offsite copy", 1)[0]
+    assert "if restore_proof_covers_live_head; then" in block
+    assert "predates the newest migration" in block
+    # Only the head comparison waits. Everything receipt-internal stays unconditional.
+    for unconditional in (
+        'assert "restore drill result" passed',
+        'assert "restore drill schema heads agree" true',
+        'assert "restore proof scratch cleanup" true',
+        'fresh "${restore_verdict:-unreadable}"',
+    ):
+        assert unconditional in block
+        assert unconditional not in block.split("if restore_proof_covers_live_head; then", 1)[
+            1
+        ].split("fi", 1)[0]
+
+
+def test_an_existing_offsite_receipt_is_asserted_whatever_the_readiness_test_says():
+    """`install` resets mtime every deploy; a stale receipt must not hide behind that window."""
+    text = VERIFY.read_text()
+    section = text.split("printf 'offsite copy\\n'", 1)[1].split("printf 'replacement-vm", 1)[0]
+    assert "[[ -e $OFFSITE_RECEIPT ]] || offsite_receipt_expected" in section
+
+
 def test_offsite_assertions_wait_for_a_backup_run_made_with_the_publishing_script():
     """Otherwise the deploy that ships the receipt writer fails for want of a receipt it
     could not yet have written, and blocks itself."""

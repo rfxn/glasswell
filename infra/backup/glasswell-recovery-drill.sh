@@ -189,12 +189,32 @@ install -d -m 0750 -o "$RESULT_UID" -g "$RESULT_GID" "$(dirname "$RESULT_PATH")"
 
 # A recovery drill restores a whole cluster's worth of roles and data. Pointing it at the live
 # database would overwrite production with a backup, which is the one thing it must never do.
-[[ $RECOVERY_DATABASE != "$PRODUCTION_DATABASE" ]] \
+# The name reaches `psql --command`, so treat it as hostile: compare case-folded (postgres folds
+# unquoted identifiers itself) and allow only a plain identifier, which also makes the quoted
+# interpolation below unable to carry a statement separator.
+normalised_database=$(printf '%s' "$RECOVERY_DATABASE" | tr '[:upper:]' '[:lower:]')
+[[ $normalised_database != "$PRODUCTION_DATABASE" ]] \
 	|| fail refuses_production_database "the recovery target is the production database"
+[[ $RECOVERY_DATABASE =~ ^[a-z][a-z0-9_]{0,62}$ ]] \
+	|| fail unsafe_target_database "the recovery target is not a plain lowercase identifier"
 [[ -n $RECOVERY_SOURCE ]] \
 	|| fail no_recovery_source "RECOVERY_SOURCE is unset; it needs a read-capable off-box path"
 
-command mkdir -p "$RECOVERY_WORK_DIR" || fail work_dir_unavailable "cannot create $RECOVERY_WORK_DIR"
+# The globals restore rewrites cluster roles and the raw-zone pull writes $RECOVERY_RAW_DIR,
+# which defaults to the production raw zone. Neither is stopped by the target-name refusal
+# above, so the host itself is refused: a replacement host has no production database and is
+# not yet serving. `install.sh` places this script on VM 111, so this guard is what stands
+# between a stray invocation there and the irreplaceable half of the system.
+# Fails closed: a probe that cannot answer is treated as "this might be production".
+production_databases=$(psql_value postgres \
+	"SELECT count(*) FROM pg_database WHERE datname = '$PRODUCTION_DATABASE';") \
+	|| fail production_probe_failed "could not determine whether this is the production host"
+[[ ${production_databases//[[:space:]]/} == 0 ]] \
+	|| fail refuses_production_host "the production database exists in this cluster"
+[[ $(systemctl is-active glasswell-api.service) != active ]] \
+	|| fail refuses_production_host "glasswell-api is active, so this is not a replacement host"
+
+mkdir -p "$RECOVERY_WORK_DIR" || fail work_dir_unavailable "cannot create $RECOVERY_WORK_DIR"
 
 # The production push uses `rrsync -wo` on forge, which cannot serve a read. This pull therefore
 # needs a separate read-capable grant that does not exist yet — see infra/README.md.
@@ -281,7 +301,7 @@ runuser -u postgres -- psql --no-psqlrc --set=ON_ERROR_STOP=1 --dbname postgres 
 	|| fail globals_restore_failed "the cluster globals could not be restored"
 globals_restored=true
 
-psql_value postgres "DROP DATABASE IF EXISTS $RECOVERY_DATABASE WITH (FORCE);" >/dev/null \
+psql_value postgres "DROP DATABASE IF EXISTS \"$RECOVERY_DATABASE\" WITH (FORCE);" >/dev/null \
 	|| fail target_precleanup_failed "an existing recovery database could not be removed"
 runuser -u postgres -- createdb --owner="$RECOVERY_OWNER" "$RECOVERY_DATABASE" \
 	|| fail target_create_failed "the recovery database could not be created"
@@ -323,7 +343,7 @@ done
 
 # The raw zone is the irreplaceable half: the database can be rebuilt from it, not the reverse.
 log "restoring the raw zone into $RECOVERY_RAW_DIR"
-command mkdir -p "$RECOVERY_RAW_DIR" || fail raw_zone_unavailable "cannot create $RECOVERY_RAW_DIR"
+mkdir -p "$RECOVERY_RAW_DIR" || fail raw_zone_unavailable "cannot create $RECOVERY_RAW_DIR"
 rsync -aH -e "ssh -i $RECOVERY_SSH_KEY -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15" \
 	"$RECOVERY_SOURCE/raw/" "$RECOVERY_RAW_DIR/" </dev/null \
 	|| fail raw_zone_pull_failed "the off-box raw zone could not be pulled"

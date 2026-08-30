@@ -178,6 +178,22 @@ newest_dump_generation() {
     printf '%s\n' "${newest%.manifest.json}"
 }
 
+# The drill is weekly and the live head moves on every migration deploy, so a deploy that lands
+# a migration legitimately leaves the receipt one head behind until the next Sunday run. Compare
+# heads only once a drill has completed since the newest migration was applied; `schema_match`,
+# the safety checks and the freshness bound stay unconditional either way.
+restore_proof_covers_live_head() {
+    local applied_at completed_at
+    applied_at="$("${PSQL[@]}" "select coalesce(max(applied_at), 'epoch'::timestamptz) from public.schema_migrations")" \
+        || return 1
+    [[ -n $applied_at ]] || return 1
+    applied_at="$(date -d "$applied_at" +%s)" || return 1
+    completed_at="$(receipt_field "$RESTORE_RESULT" completed_at)"
+    [[ -n $completed_at ]] || return 1
+    completed_at="$(date -d "$completed_at" +%s)" || return 1
+    (( completed_at > applied_at ))
+}
+
 # A deploy that lands the receipt-publishing backup script is legitimately receipt-less until
 # that night's run. Once a backup has run *since* the script was installed the receipt is
 # mandatory, so a deleted or abandoned one fails from then on.
@@ -255,9 +271,13 @@ if [[ $backup_enabled == enabled ]]; then
         assert "restore drill result" passed "$(receipt_field "$RESTORE_RESULT" result)"
         assert "restore drill schema heads agree" true \
             "$(receipt_field "$RESTORE_RESULT" schema_match)"
-        assert "restore proof schema head equals the live head" \
-            "$("${PSQL[@]}" "select coalesce(max(version), 0) from public.schema_migrations")" \
-            "$(receipt_field "$RESTORE_RESULT" restored_schema_version)"
+        if restore_proof_covers_live_head; then
+            assert "restore proof schema head equals the live head" \
+                "$("${PSQL[@]}" "select coalesce(max(version), 0) from public.schema_migrations")" \
+                "$(receipt_field "$RESTORE_RESULT" restored_schema_version)"
+        else
+            ok "restore proof predates the newest migration — the next weekly drill refreshes it"
+        fi
         assert "restore proof scratch cleanup" true \
             "$(receipt_field "$RESTORE_RESULT" scratch_removed)"
         read -r restore_age_hours restore_verdict < <(receipt_freshness \
@@ -273,7 +293,10 @@ fi
 # back the far side, so nothing here is a round-trip proof. These assert what the *sender* did
 # and when. The generation equality is what catches a receipt that stopped updating.
 printf 'offsite copy\n'
-if [[ $backup_enabled == enabled ]] && offsite_receipt_expected; then
+# `install` resets the script's mtime on every deploy, so the readiness test excuses only an
+# *absent* receipt. A receipt that exists is asserted whatever the mtimes say — otherwise a
+# deleted, failed or stale one would be invisible for 24 h after each deploy.
+if [[ $backup_enabled == enabled ]] && { [[ -e $OFFSITE_RECEIPT ]] || offsite_receipt_expected; }; then
     assert_receipt_is_safe "offsite receipt" "$OFFSITE_RECEIPT"
     if [[ -f $OFFSITE_RECEIPT && ! -L $OFFSITE_RECEIPT ]]; then
         assert "offsite push result" passed "$(receipt_field "$OFFSITE_RECEIPT" result)"

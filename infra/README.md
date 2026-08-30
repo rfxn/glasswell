@@ -71,6 +71,13 @@ they cannot drift.
 |---|---|---|---|
 | `/var/lib/glasswell-restore-drill/result.json` | `glasswell-restore-drill.service`, weekly | The newest local dump restores into a scratch database at its manifest's schema head, with four critical counts and six representative reads matching | Anything about the off-box copy, the globals, the raw zone, or a replacement host |
 | `/var/lib/glasswell-backup/offsite.json` | `glasswell-backup.service`, nightly | That the push ran, when, with what exit status, and how many files and bytes rsync reported sending | **That the bytes arrived.** See the write-only limit below |
+
+Note one coupling this introduces: `glasswell-backup.service` now fails if the receipt cannot be
+published — including when the receipt's own ownership or mode has drifted from
+`root:glasswell 0640`, which the durable writer refuses. A successful dump-and-push whose
+telemetry cannot be written is reported as a failed backup and pages `glasswell-alert@`. That is
+deliberate (silent loss of the durability evidence is worse than a loud failure), but it means a
+`chmod` on the receipt is enough to red the nightly job.
 | `/var/lib/glasswell-recovery-drill/result.json` | `glasswell-recovery-drill.sh`, operator-run | Nothing yet — **this has never been executed** | Everything. There is no recovery proof |
 
 ### The restore drill selects by mtime, so the head comparison is not optional
@@ -115,8 +122,20 @@ All three are changes to a host this repository does not provision.
 `backup/glasswell-recovery-drill.sh` pulls a generation from the off-box copy, restores the
 cluster globals, then the logical dump, then the raw zone, asserts the schema head against the
 manifest plus the four critical counts and the representative reads, and publishes a receipt.
-It refuses to run against the production database name, and refuses to start without an
-explicit `RECOVERY_SOURCE`.
+It refuses to start without an explicit `RECOVERY_SOURCE`, and it refuses three ways to protect
+production, because `install.sh` places it on VM 111 where a stray run would rewrite live
+cluster roles and the irreplaceable raw zone:
+
+- **the target name** — case-folded comparison against `glasswell` (postgres folds unquoted
+  identifiers, so `GLASSWELL` is the same database), plus a plain-identifier allowlist. The name
+  reaches `psql --command`, so a value like `gw; DROP DATABASE glasswell WITH (FORCE)` is
+  refused by the allowlist rather than merely by inequality, and the identifier is quoted;
+- **the production database being present** in the local cluster. The probe **fails closed**: if
+  it cannot answer, the run is refused;
+- **`glasswell-api.service` being active**, which a replacement host is not.
+
+There is deliberately no override. The runbook saying "on the replacement host" is
+documentation; these are refusals.
 
 **This procedure has never been run end to end.** It is unit-tested against stubs
 (`tests/unit/test_recovery_drill.py`), which is a statement about its command sequence and its
@@ -128,7 +147,7 @@ produce yet would red the verifier permanently.
 Executing it once needs three things this repository cannot supply: a second Proxmox guest,
 forge RAM and pool headroom, and a **read-capable** path to the off-box copy, which the
 `rrsync -wo` grant above does not provide. Until then the honest position is "the procedure is
-written, mechanised and tested; the one execution is pending".
+written, mechanised and unit-tested against stubs; the one execution is pending".
 
 ```bash
 # On the replacement host, once the three preconditions exist:
@@ -143,6 +162,12 @@ RECOVERY_SSH_KEY=/root/.ssh/id_glasswell_recovery \
 direction cannot see a unit that exists **only** on the host, which is how
 `glasswell-repromote.{service,timer}` sat on VM 111 undeclared. The reverse assertion — every
 `/etc/systemd/system/glasswell-*` unit is declared in the tree — is now part of `verify.sh`.
+
+It is **not armed**, which is measurable without touching the host:
+`systemd-analyze calendar '2026-08-21 00:30:00 UTC'` answers `Next elapse: never`. `Persistent=`
+catch-up needs a calendar occurrence after its base time, and with no stamp file the base is the
+timer's activation time or now — both later than the spec's single instant. A repeating spec
+would behave differently; a one-shot instant in the past cannot fire again.
 
 `glasswell-repromote` is a **spent one-off** from the 2026-08-21 Wave-1 S-E re-promotion, not a
 recurring job: a single fixed `OnCalendar=2026-08-21 00:30:00 UTC`, a hardcoded

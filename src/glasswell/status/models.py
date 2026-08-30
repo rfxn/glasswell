@@ -553,7 +553,9 @@ class RecoveryDrillResult(BaseModel):
     receipt_version: Literal[1] = 1
     result: Literal["passed", "failed"]
     failure_detail: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{0,63}$")
-    target_database: str = Field(min_length=1, max_length=64)
+    # Same plain-identifier allowlist the drill enforces, so a receipt cannot record a target
+    # the script would have refused to build a statement from.
+    target_database: str = Field(pattern=r"^[a-z][a-z0-9_]{0,62}$")
     dump: OffsiteDumpIdentity | None
     started_at: datetime
     completed_at: datetime
