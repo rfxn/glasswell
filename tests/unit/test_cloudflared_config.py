@@ -112,7 +112,8 @@ def test_the_unit_does_not_wait_for_a_readiness_notification_cloudflared_never_s
     whole time.
     """
     unit = UNIT_PATH.read_text(encoding="utf-8")
-    types = [line.split("=", 1)[1].strip() for line in unit.splitlines() if line.startswith("Type=")]
+    lines = unit.splitlines()
+    types = [line.split("=", 1)[1].strip() for line in lines if line.startswith("Type=")]
     assert types == ["exec"], f"expected a single Type=exec, found {types}"
 
 
