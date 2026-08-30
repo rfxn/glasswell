@@ -154,3 +154,15 @@
          promotes, and promoting first would make the rule a rationalisation rather than a
          finding. `cr_nm_wellhistory_header_precedence_1` accordingly still names the FTP
          archive as sole authority, and no superseding row is seeded ahead of the evidence
+- [Fix] `STATUS.md` conflated the production database with the deployed host, so it reported
+      New Mexico as unpopulated while 79 conformance rules, 10 sources and 71,447 staging rows
+      were resident and a full 17.6M-row spine sat in a scratch database on the same machine
+- [Fix] `STATUS.md` overstated `tx_pdq_dsv`: it has a poll-cadence row on a table with no
+      foreign key to `lineage.sources`, and a test fixture — not a seeded source registration,
+      not conformance rules and not an ingest module
+- [Change] `ROADMAP.md` N3 says surface geometry rather than lateral geometry, and New Mexico
+         lateral geometry is tagged `data-unreachable`: neither the OCD FTP header table nor
+         the OCD public wells layer ships a lateral or a bottomhole, measured in both, with
+         43,409 horizontal wells named and no path filed for any of them
+- [Change] `ARCHITECTURE.md` names the New Mexico tile mart and the two staging termini that
+         are termini by design rather than by omission
