@@ -21,6 +21,6 @@
 -- so a date that slips past midnight is permanently wrong.
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-values ('cr_land_agg_membership_2', date '2026-08-30', 'UNRELEASED',
-        '0000000000000000000000000000000000000000')
+values ('cr_land_agg_membership_2', date '2026-08-30', 'v0.69',
+        '70d3248c562f2bc03ed9d9d290ae2db73634ab91')
 on conflict (rule_id) do nothing;

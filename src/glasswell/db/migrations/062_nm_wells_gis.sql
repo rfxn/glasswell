@@ -64,8 +64,8 @@ grant delete on staging.nm_ocd_wells_gis to glasswell_pipeline;
 -- so a date that slips past midnight is permanently wrong.
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-select rule_id, date '2026-08-30', 'UNRELEASED',
-       '0000000000000000000000000000000000000000'
+select rule_id, date '2026-08-30', 'v0.69',
+       '70d3248c562f2bc03ed9d9d290ae2db73634ab91'
   from unnest(array[
        'cr_nm_wells_gis_source_1', 'cr_nm_wells_gis_walk_order_1',
        'cr_nm_wells_gis_api10_1', 'cr_nm_wells_gis_datum_1', 'cr_nm_wells_gis_parity_1'
