@@ -190,8 +190,10 @@ def placeholder_evidence_blockers(root: Path, target: Version) -> list[str]:
     listed = ", ".join(pending)
     return [
         f"{len(pending)} migration(s) still carry {PLACEHOLDER_EVIDENCE_TAG} publication "
-        f"evidence ({listed}) — repoint evidence_tag to {target.tag} and evidence_commit to "
-        "the main head the rules were written against before cutting. "
+        f"evidence ({listed}) — repoint evidence_tag to {target.tag}, evidence_commit to the "
+        "first commit on main that contains the rule (the merge commit, not the head it was "
+        f"written against — {target.tag} must contain what evidence_commit names), and "
+        "published_vintage to the date the tag is cut, which no check can verify for you. "
         "lineage.conformance_rule_publications is append-only, so a placeholder that reaches a "
         "production migrate is a permanent false claim about when the rule was published"
     ]

@@ -15,7 +15,7 @@
 --
 -- Repoint all THREE fields on the insert below, not two:
 --   evidence_tag       the UNRELEASED literal -> the tag this actually ships in
---   evidence_commit    the 40-zero literal    -> the `main` head it was written against
+--   evidence_commit    the 40-zero literal    -> the first commit on main containing the rule
 --   published_vintage  the date               -> the DATE THAT TAG IS CUT
 -- The third is easy to miss and is not independent of the other two: 049's own column comment
 -- defines published_vintage as "first repository-tag publication of this immutable rule
@@ -45,7 +45,7 @@ values
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
 select rule_id, date '2026-08-30', 'v0.68',
-       '36687869788419669e665864762017fc17bc3eb7'
+       '7db33e2da40503cd0daa5177a4f4f55f0f213868'
   from unnest(array[
        'cr_tc_normalization_1', 'cr_tc_peer_ladder_1', 'cr_tc_publication_scope_1',
        'cr_tc_quantile_convention_1', 'cr_tc_unavailable_vocab_1'

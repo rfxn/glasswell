@@ -1527,3 +1527,46 @@ class TestTheDeployRefusals:
         assert result.returncode == 2
         assert "--skip-migrations was retired" in result.stderr
         assert MARKER not in result.stderr
+
+
+# Pre-055 migrations backfilled evidence for rules that already existed, so their commits
+# legitimately predate the file asserting them. The merge-train rule below governs 055 onward,
+# where the integrator repoints at the train and the rules are new in that same migration.
+MERGE_TRAIN_ERA = 55
+
+EVIDENCE_ROW = re.compile(r"'(?P<tag>[^']+)',\s*\n\s*'(?P<commit>[0-9a-f]{40})'")
+
+
+def _merge_train_evidence() -> list[tuple[Path, str, str]]:
+    """(migration, rule_id, commit) for repointed publication rows in the merge-train era."""
+    rows = []
+    for path in sorted(MIGRATIONS.glob("*.sql")):
+        if int(path.name.split("_", 1)[0]) < MERGE_TRAIN_ERA:
+            continue
+        text = path.read_text(encoding="utf-8")
+        if "conformance_rule_publications" not in text:
+            continue
+        match = EVIDENCE_ROW.search(text)
+        if match is None or match.group("tag") == release.PLACEHOLDER_EVIDENCE_TAG:
+            continue
+        for rule in re.findall(r"'(cr_[a-z0-9_]+)'", text):
+            rows.append((path, rule, match.group("commit")))
+    return rows
+
+
+def test_repointed_evidence_cites_a_commit_that_carries_the_rule() -> None:
+    """A merge-train repoint names the first commit containing the rule, not the head before it.
+
+    `evidence_commit` is provenance in an append-only table, so a commit that does not carry the
+    rule is a permanent claim nobody can check out and verify. The pre-merge head reads entirely
+    plausible, is what the guard's own message used to recommend, and fails exactly this.
+    """
+    root = MIGRATIONS.parents[3]
+    for path, rule, commit in _merge_train_evidence():
+        probe = subprocess.run(
+            ["git", "grep", "-q", rule, commit, "--", "src/"], cwd=root, capture_output=True
+        )
+        assert probe.returncode == 0, (
+            f"{path.name} publishes {rule} at {commit[:7]}, which does not contain it —"
+            " repoint to the first commit on main that does, which is the merge commit"
+        )
