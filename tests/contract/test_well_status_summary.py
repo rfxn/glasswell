@@ -113,12 +113,26 @@ def test_the_counts_are_split_per_basin_with_the_rule_that_mapped_them(client: T
 
 def test_the_vocabulary_rules_it_names_are_rows_in_the_registry(client: TestClient) -> None:
     """The pinned map is held to the seeded registry: a rule id that resolves nowhere is a
-    citation to nothing."""
+    citation to nothing.
+
+    The kind check is per rule rather than fixed at `vocab_map`, and it is stricter for it: a
+    mapping rule has to name the table it maps through, and a rule that records an *absent*
+    mapping — New Mexico's, because the OCD publishes no codebook for its status letters — has
+    to say so in its own spec and carry the domain it measured. The old assertion checked
+    neither. Every id here still decides a status vocabulary; not every vocabulary decision is
+    a mapping.
+    """
     for rule_id in sorted(set(STATUS_VOCABULARY_RULES.values())):
         rule = client.get(f"/v1/conformance/{rule_id}")
 
         assert rule.status_code == 200, rule_id
-        assert rule.json()["data"]["rule_kind"] == "vocab_map"
+        spec = rule.json()["data"]["spec"]
+        if rule.json()["data"]["rule_kind"] == "vocab_map":
+            assert spec.get("mapping_table"), rule_id
+        else:
+            assert spec.get("mapping_table") is None, rule_id
+            assert spec.get("status_canonical") is None, rule_id
+            assert spec.get("measured_domain"), rule_id
 
 
 def test_the_named_rules_are_linked_where_a_reader_can_open_them(client: TestClient) -> None:
