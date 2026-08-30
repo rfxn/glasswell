@@ -68,6 +68,13 @@ BUCKETS: dict[str, int] = {
     "service": 60,
     "tiles": 600,
     "anonymous": 30,
+    # A fifth bucket the ruled table does not have, for the static owner key alone.
+    # deploy.sh steps 8 and 9 run verify.sh (33 requests) and smoke.sh (31) back to back, so
+    # the deploy gate exceeds the 60/min service bucket by itself and would throttle the one
+    # path that must never be flaky. The key is already refused on the tunnel listener, so
+    # this ceiling is not reachable from the internet -- and it is a ceiling, not an
+    # exemption: the floor's "never unlimited" still holds.
+    "deploy": 600,
 }
 # Rounded up to this, so the remaining-time value cannot be used to tell which bucket fired.
 RETRY_AFTER_GRANULARITY = 30
@@ -82,6 +89,8 @@ def bucket_for(principal: Principal, path: str) -> tuple[str, str]:
         return "interactive", principal.id
     if principal.kind == "anonymous":
         return "anonymous", principal.id
+    if principal.kind == "owner":
+        return "deploy", principal.id
     return "service", principal.id
 
 

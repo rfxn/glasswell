@@ -11214,11 +11214,15 @@
         "operationId": "list_users",
         "parameters": [
           {
+            "description": "Page size, 100 by default, 200 at most (SB-07 \u00a79.5 caps the spine collections lower than the data ones).",
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
               "default": 100,
+              "description": "Page size, 100 by default, 200 at most (SB-07 \u00a79.5 caps the spine collections lower than the data ones).",
+              "maximum": 200,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }

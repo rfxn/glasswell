@@ -43,7 +43,13 @@ def test_the_bucket_table_carries_the_four_ruled_limits() -> None:
     """Policy as data: the test reads the table rather than restating the numbers."""
     from glasswell.api.rate_limit import BUCKETS
 
-    assert BUCKETS == {"interactive": 120, "service": 60, "tiles": 600, "anonymous": 30}
+    assert BUCKETS == {
+        "interactive": 120,
+        "service": 60,
+        "tiles": 600,
+        "anonymous": 30,
+        "deploy": 600,
+    }
 
 
 @pytest.mark.parametrize(
@@ -51,7 +57,7 @@ def test_the_bucket_table_carries_the_four_ruled_limits() -> None:
     [
         ("user", "owner", "/v1/wells", "interactive"),
         ("user", "guest", "/v1/glossary", "interactive"),
-        ("owner", "owner", "/v1/wells", "service"),
+        ("owner", "owner", "/v1/wells", "deploy"),
         ("service", "guest", "/v1/wells", "service"),
         ("anonymous", "guest", "/v1/wells", "anonymous"),
         ("user", "owner", "/v1/tiles/nd_wells/8/54/89.pbf", "tiles"),
@@ -64,6 +70,25 @@ def test_each_principal_class_falls_in_its_ruled_bucket(kind, scope, path, expec
     principal = Principal(id="probe", kind=kind, scope=scope)
 
     assert bucket_for(principal, path)[0] == expected
+
+
+def test_the_deploy_credential_is_bounded_not_exempt() -> None:
+    """deploy.sh runs verify.sh (33 requests) and smoke.sh (31) back to back, so the gate
+    exceeds the 60/min service bucket by itself. The static owner key gets its own ceiling
+    -- reachable only off the tunnel, and still a ceiling."""
+    from glasswell.api.rate_limit import BUCKETS
+
+    assert BUCKETS["deploy"] > 64, "the deploy gate would throttle itself"
+    assert BUCKETS["deploy"] < 10_000, "a bucket this large is an exemption, not a limit"
+
+
+def test_an_issued_key_does_not_get_the_deploy_ceiling() -> None:
+    """Only the static owner key. An issued key is kind=service and stays at 60/min."""
+    from glasswell.api.rate_limit import bucket_for
+
+    issued = Principal(id="key:key_1", kind="service", scope="owner")
+
+    assert bucket_for(issued, "/v1/wells")[0] == "service"
 
 
 def test_a_principal_switching_credential_does_not_inherit_the_other_count(

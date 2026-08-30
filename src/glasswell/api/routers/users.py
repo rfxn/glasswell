@@ -18,6 +18,7 @@ from glasswell.api.deps import (
     CSRF_PARAMETER,
     Connection,
     Principal,
+    SpineLimit,
     require_scope,
     rows,
 )
@@ -42,7 +43,12 @@ _COLUMNS = (
     " disabled_at, disabled_by"
 )
 
-_LIST = f"select {_COLUMNS} from lineage.users order by created_at desc, user_id desc"
+_LIST = f"""
+select {_COLUMNS}
+  from lineage.users
+ order by created_at desc, user_id desc
+ limit %(limit)s
+"""
 _GET = f"select {_COLUMNS} from lineage.users where user_id = %(user_id)s"
 
 # Taken inside the transaction. A handler-only count races: two concurrent demotions would
@@ -155,10 +161,10 @@ def list_users(
     request: Request,
     connection: Connection,
     principal: Principal,
-    limit: int = DEFAULT_LIMIT,
+    limit: SpineLimit = DEFAULT_LIMIT,
 ) -> JSONResponse:
-    found = rows(connection, _LIST)
-    return enveloped(request, [_serialize(row) for row in found[:limit]])
+    found = rows(connection, _LIST, {"limit": limit})
+    return enveloped(request, [_serialize(row) for row in found])
 
 
 @router.post(
