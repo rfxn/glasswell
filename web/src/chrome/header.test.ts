@@ -31,6 +31,46 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+describe("the document head names the product, not a coverage footprint", () => {
+  // The title read "glasswell — North Dakota and Texas" for eleven releases because nothing
+  // asserted it; the tab, the bookmark and every link unfurl carried a stale scope claim.
+  const head = /<head>([\s\S]*?)<\/head>/.exec(INDEX)?.[1] ?? "";
+
+  function meta(attribute: string, name: string): string {
+    const tag = new RegExp(`<meta[^>]*${attribute}="${name}"[\\s\\S]*?/>`).exec(head)?.[0] ?? "";
+    return /content="([^"]*)"/.exec(tag)?.[1] ?? "";
+  }
+
+  it("pins the title to the product name and its subtitle", () => {
+    expect(/<title>([\s\S]*?)<\/title>/.exec(head)?.[1]).toBe(
+      "glasswell — subsurface well intelligence",
+    );
+  });
+
+  it("names no state, basin or play anywhere in the head or the map's label", () => {
+    // Case-sensitive on purpose: the abbreviations are how the codebase writes them
+    // ("ND wells", "Wells (TX)"), and a case-insensitive \bnd\b would fire on prose.
+    const places =
+      /North Dakota|Texas|New Mexico|Williston|Permian|Bakken|Delaware|\bND\b|\bTX\b|\bNM\b/;
+
+    expect(head).not.toMatch(places);
+    expect(/<div id="gw-map" aria-label="([^"]*)"/.exec(INDEX)?.[1]).not.toMatch(places);
+  });
+
+  it("wires the share card so an unfurl is not the title alone", () => {
+    const description = meta("name", "description");
+
+    expect(meta("property", "og:title")).toBe("glasswell — subsurface well intelligence");
+    expect(meta("property", "og:image")).toBe("/og-card.png");
+    expect(meta("property", "og:image:alt")).not.toBe("");
+    expect(meta("name", "twitter:card")).toBe("summary_large_image");
+    // Deleting both description tags leaves two empty strings, which are equal — so
+    // presence is asserted before equality, or the guard passes on the regression.
+    expect(description).not.toBe("");
+    expect(meta("property", "og:description")).toBe(description);
+  });
+});
+
 describe("the header is a control surface, not a paragraph", () => {
   it("carries every id the wiring depends on", () => {
     // Asserted against the shipped markup, not the wired DOM, so a renamed id fails here
@@ -66,11 +106,14 @@ describe("the header is a control surface, not a paragraph", () => {
     expect(element("gw-help-panel").textContent).toContain("derivation");
   });
 
-  it("states the two-basin boundary without claiming Texas production", () => {
+  it("states the coverage boundary without claiming inferred well-level production", () => {
     const help = (element("gw-help-panel").textContent ?? "").replace(/\s+/g, " ");
 
-    expect(help).toContain("North Dakota wells and production");
-    expect(help).toContain("Texas wells and bore geometry");
+    // The scope claim lives in /v1/status.datasets[].scope, not in this paragraph, so the
+    // panel points at it rather than restating a two-state string that goes stale.
+    expect(help).toContain("reported live on the Status surface");
+    expect(help).toContain("lease-level volumes");
+    expect(help).not.toContain("North Dakota wells and production");
     expect(help).toContain("completion events separate from regulator pool-to-formation mappings");
     expect(help).toContain("design measurements and formation tops remain explicitly unserved");
     expect(help).toContain("pending allocation");

@@ -2,7 +2,7 @@
 
 > Glass-box upstream analytics on public data. Well-level production, three-stream
 > forecasts with calibrated bands, DCF economics, scenarios, analogs and inventory
-> across North Dakota and the Permian, built from public regulator files by a
+> across structurally different public reporting regimes, built from regulator files by a
 > single operator. Every served figure carries a derivation handle back to a
 > checksummed source file. Proprietary — copyright Ryan MacDonald, all rights
 > reserved.

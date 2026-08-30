@@ -25,7 +25,22 @@
       crossorigin
     />
     <link rel="preload" href="/fonts/gw-symbols.woff2" as="font" type="font/woff2" crossorigin />
-    <title>glasswell — North Dakota and Texas</title>
+    <title>glasswell — subsurface well intelligence</title>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="glasswell — subsurface well intelligence" />
+    <meta
+      property="og:description"
+      content="glasswell — glass-box upstream analytics on public data. Every number carries its derivation handle."
+    />
+    <!-- Root-relative: no instance owns the canonical origin, and a hardcoded host unfurls the wrong deployment. -->
+    <meta property="og:image" content="/og-card.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="glasswell — glass-box upstream analytics on public data"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <div id="app">
@@ -99,8 +114,10 @@
               no naked numbers · every figure traces to a checksummed regulator file
             </p>
             <p>
-              North Dakota wells and production, plus Texas wells and bore geometry.
-              Texas well-level production stays pending allocation rather than being
+              Wells, geometry and production rebuilt from public regulator files, with the
+              resident dataset inventory and its scope reported live on the Status surface
+              rather than claimed here. Where a regulator publishes only lease-level volumes,
+              well-level production stays pending allocation rather than being
               inferred. The Status surface reports bounded infrastructure checks, scheduled
               work, exact-grain dataset inventory, and durable source-poll freshness. Each source
               shows its latest attempt and outcome, next expected poll, cadence, retrieval and
@@ -148,7 +165,7 @@
         </div>
       </header>
       <main id="gw-main">
-        <div id="gw-map" aria-label="Map of North Dakota and Texas laterals and well points"></div>
+        <div id="gw-map" aria-label="Map of well laterals and surface locations"></div>
         <aside id="gw-card" aria-label="Well card" hidden></aside>
         <aside id="gw-drawer" aria-label="Lineage" hidden></aside>
         <div id="gw-explore" aria-label="Data explorer" hidden></div>

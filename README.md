@@ -14,12 +14,12 @@
   <img src="https://img.shields.io/badge/blueprint-v0.5-2A9BB5?style=flat-square" alt="Blueprint v0.5">
   <img src="https://img.shields.io/badge/license-proprietary-7C8B96?style=flat-square" alt="License: proprietary">
   <img src="https://img.shields.io/badge/data-public_only-3FA55E?style=flat-square" alt="Public data only">
-  <img src="https://img.shields.io/badge/basins-ND_%C2%B7_Permian-2A9BB5?style=flat-square" alt="Basins: North Dakota and Permian">
+  <img src="https://img.shields.io/badge/coverage-multi_basin-2A9BB5?style=flat-square" alt="Coverage: multi-basin">
 </p>
 
 glasswell rebuilds the public-data tier of the upstream analytics stack — well-level
 production, three-stream forecasts, economics, scenarios, inventory, and a map —
-across two structurally different reporting regimes, and exposes every decision
+across structurally different reporting regimes, and exposes every decision
 inside it. Ingest, cleaning, cross-source conformance, modelling, and valuation are
 queryable surfaces rather than internals. Every figure it serves carries a
 derivation handle back to a checksummed regulator file, or it does not ship.
