@@ -7,7 +7,7 @@ from typing import Any
 import psycopg
 from fastapi.testclient import TestClient
 
-from glasswell.api.examples import EXAMPLE_API10, EXAMPLE_BBOX
+from glasswell.api.examples import EXAMPLE_API10, EXAMPLE_BBOX, EXAMPLE_PUBLICATION_ID
 from glasswell.lineage.capture import derive, lineage_session
 from glasswell.lineage.ids import parse_handle
 from glasswell.lineage.models import OutputSpec
@@ -45,6 +45,9 @@ def test_every_selector_bearing_surface_resolves_through_a_registered_profile(
         (f"/v1/wells/{EXAMPLE_API10}/completions", {}),
         (f"/v1/wells/{EXAMPLE_API10}/neighbors", {}),
         ("/v1/wells/status-summary", {"bbox": EXAMPLE_BBOX}),
+        (f"/v1/wells/{EXAMPLE_API10}/type-curve", {}),
+        ("/v1/type-curves", {}),
+        (f"/v1/modeling/publications/{EXAMPLE_PUBLICATION_ID}", {}),
     )
     found: set[str] = set()
     for path, params in calls:
@@ -69,6 +72,11 @@ def test_direct_and_request_computed_figures_name_the_honest_output_dataset(
             client.get(f"/v1/wells/{EXAMPLE_API10}").json()["data"]["lateral_length_ft"]["d"]
         ).derivation_id,
         "status_count": parse_handle(summary["wells"]["d"]).derivation_id,
+        "type_curve": parse_handle(
+            client.get(f"/v1/wells/{EXAMPLE_API10}/type-curve").json()["data"]["_lineage"][
+                "series.monthly_p50"
+            ]
+        ).derivation_id,
     }
 
     with db.cursor() as cursor:
@@ -87,10 +95,15 @@ def test_direct_and_request_computed_figures_name_the_honest_output_dataset(
     for name, dataset in (
         ("lateral_length", "api.well_detail"),
         ("status_count", "api.well_status_summary"),
+        ("type_curve", "api.type_curve"),
     ):
         operation, output_dataset, store, params = rows[roots[name]]
         assert (operation, output_dataset, store) == ("api.respond", dataset, "response")
-        assert params["operation_id"] in {"get_well", "get_well_status_summary"}
+        assert params["operation_id"] in {
+            "get_well",
+            "get_well_status_summary",
+            "get_well_type_curve",
+        }
         with db.cursor() as cursor:
             cursor.execute(
                 "select count(*) from lineage.response_selector_outputs"
@@ -107,6 +120,18 @@ def test_direct_and_request_computed_figures_name_the_honest_output_dataset(
         rules = {row[0] for row in cursor.fetchall()}
     assert "cr_nd_geometry_provenance_1" in rules
     assert "cr_nd_status_vocab_1" in rules
+
+    # The served curve's response derivation cites the pinned typecurve.build derivation as an
+    # input, which is the whole of "no figure reads an unregistered artifact" seen from outside.
+    control = client.get(
+        f"/v1/modeling/publications/{EXAMPLE_PUBLICATION_ID}"
+    ).json()["data"]["derivations"]["type_curve"]
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select ref_id from lineage.derivation_inputs where derivation_id = %s",
+            (roots["type_curve"],),
+        )
+        assert control in {row[0] for row in cursor.fetchall()}
 
 
 def test_an_unregistered_derivation_output_is_strictly_refused(
