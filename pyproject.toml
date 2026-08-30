@@ -37,6 +37,8 @@ dev = [
 
 [project.scripts]
 glasswell-migrate = "glasswell.db.migrate:main"
+glasswell-owner-bootstrap = "glasswell.api.bootstrap:bootstrap_main"
+glasswell-owner-reset = "glasswell.api.bootstrap:reset_main"
 glasswell-features = "glasswell.modeling.feature_matrix:main"
 glasswell-model-dataset = "glasswell.modeling.model_dataset:main"
 glasswell-typecurve-control = "glasswell.modeling.type_curve:main"

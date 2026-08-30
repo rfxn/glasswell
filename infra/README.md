@@ -453,6 +453,97 @@ needs root and the script is written to run unprivileged. The whole `tls` block 
 and its certificate check stays honest afterwards — it fails at 20 days remaining, ten days
 after Caddy should have renewed.
 
+## Accounts, the tunnel, and the public cutover
+
+Authentication is the application's own session login. Cloudflare Access is **not** used and
+is not enabled on the account; SB-06 §5 records the amendment and the reason. `api_keys` is
+unchanged and remains the non-interactive path.
+
+### The first account
+
+There is no default credential at any point, and `install.sh` deliberately does not create
+one — an unattended installer that mints a credential is how default credentials get
+shipped, and a generated password printed at install time lands in the deploy log.
+
+```bash
+/opt/glasswell/venv/bin/glasswell-owner-bootstrap \
+    --dsn 'postgresql:///glasswell?host=/var/run/postgresql' --username <name>
+# password on stdin, then Ctrl-D. Never argv (visible in /proc and in shell history),
+# never an environment variable (visible in systemctl show -p Environment).
+```
+
+It refuses if an enabled owner already exists. With an empty `users` table the login route
+fails uniformly, which is the same fail-closed shape `DeniedKeyStore` uses for keys.
+
+### Lockout recovery — the break-glass
+
+Account locks are time-boxed to fifteen minutes and always expire on their own; no
+administrative unlock is required. Three paths exist for an operator who cannot wait:
+
+```bash
+/opt/glasswell/venv/bin/glasswell-owner-reset \
+    --dsn 'postgresql:///glasswell?host=/var/run/postgresql' --username <name>
+```
+
+It sets a new password, clears the failure history that arms the lock, re-enables a disabled
+account and revokes every session it holds. The other two are the LAN listener with the
+static owner key, which the login limiter does not gate, and the fact that a lock does not
+apply from an address that account has logged in from in the last thirty days.
+
+### The tunnel
+
+The connector is installed and running **before** the hostname resolves. That ordering is the
+point: the last step is the DNS record, and until it exists the origin is not on the internet.
+
+```bash
+# 1. owner, once: create the tunnel and leave its id and credentials on the host
+cloudflared tunnel login
+cloudflared tunnel create glasswell
+install -o cloudflared -g cloudflared -m 0640 \
+    ~/.cloudflared/<uuid>.json /etc/cloudflared/<uuid>.json
+printf '%s\n' '<uuid>' > /etc/cloudflared/tunnel-id
+
+# 2. place the config and the unit; refuses if the two files above are absent
+cd /opt/glasswell/src/infra && ./install.sh --with-cloudflared
+
+# 3. start the connector. The hostname still does not resolve; it reaches nothing.
+systemctl enable --now cloudflared
+
+# 4. turn on public mode: HSTS, the static-owner-key refusal on the tunnel listener,
+#    and GLASSWELL_ALLOW_ANON=1 becomes a refusal to start
+sed -i 's/^GLASSWELL_PUBLIC=0/GLASSWELL_PUBLIC=1/' /etc/glasswell/app.env
+systemctl restart glasswell-api
+
+# 5. verify. The tunnel section now runs; its three DNS-dependent probes fail because the
+#    CNAME does not exist yet. That is expected and is the last checkpoint before exposure.
+./verify.sh
+
+# 6. THE CUTOVER. From here the origin is on the internet.
+cloudflared tunnel route dns glasswell glasswell.rpx.sh
+```
+
+The credentials file is host state and is never in this repository. `infra/cloudflared/config.yml`
+carries a `<tunnel-uuid>` placeholder that `install.sh` substitutes from
+`/etc/cloudflared/tunnel-id`, and the ingress publishes exactly one hostname to Caddy's
+`127.0.0.1:8080` listener with `http_status:404` for everything else — no martin, no
+PostgreSQL, no SSH.
+
+### Rollback — three levels, each independently sufficient
+
+| Level | Action | Time | Effect |
+|---|---|---|---|
+| L1 | delete the proxied CNAME | seconds | the hostname stops resolving; connector and LAN path untouched |
+| L2 | `systemctl stop cloudflared` | ~1 min | origin is LAN-only again; host-side, no dashboard needed |
+| L3 | `GLASSWELL_PUBLIC=0`, revert the merge, redeploy | one deploy | pre-session behaviour |
+
+L3 works **because the key path was retained**: reverting the session code leaves a
+deployment whose only credential path is the one that was never removed.
+
+**Stated non-reversible residue.** There are no down-migrations (`db/migrate.py` has no
+`down` concept). A revert leaves `lineage.users`, `lineage.sessions` and
+`lineage.login_attempts` in place, unused. Harmless, and recorded here so it is stated
+rather than discovered.
+
 ## Usage
 
 ```bash
