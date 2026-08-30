@@ -566,7 +566,6 @@ export function figureElement(figure: Figure, label: string, handle: string | nu
   element.setAttribute("label", label);
   element.setAttribute("label-hidden", "");
   if (figure.granularity) element.setAttribute("granularity", figure.granularity);
-  if (figure.report_vintage) element.setAttribute("vintage", figure.report_vintage);
   return element;
 }
 

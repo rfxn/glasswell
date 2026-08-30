@@ -14,7 +14,6 @@ export class GwFigure extends HTMLElement {
     "label",
     "label-hidden",
     "granularity",
-    "vintage",
   ];
 
   connectedCallback(): void {
@@ -63,8 +62,8 @@ export class GwFigure extends HTMLElement {
       chip.textContent = granularity;
       parts.push(chip);
     }
-    // No vintage chip: the handle below opens the chain, which states the vintage it resolved
-    // at. The attribute stays the element's contract — callers set it, the surface stays clean.
+    // No vintage here: the handle below opens the chain, which states the vintage it
+    // resolved at.
     parts.push(
       explainHandle({
         label: label ?? "this figure",

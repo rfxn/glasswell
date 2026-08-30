@@ -17,3 +17,19 @@
            routine provenance, the derivation handle beside it is untouched, and the
            disclosure is re-read over the drawn window so it cannot claim a vintage the
            span dropped
+- [Fix] an element carrying the hidden attribute is no longer painted: the UA's own
+      [hidden] rule is UA-origin and loses to any author display, which left five
+      .gw-hover-meta elements reserving an empty 8px band under every hover card. One
+      author-origin reset replaces the 25 per-rule overrides that had accumulated and
+      still missed them
+- [Fix] the hover card's derivation handle no longer takes Tab: a focusable control
+      inside an aria-hidden subtree is a control a keyboard reader reaches and hears
+      nothing about. It keeps its click, and the same derivation still reaches the
+      keyboard through the Layers panel
+- [New] tests/e2e/hidden-display.mjs: asserts in a real browser that every element
+      carrying hidden computes to display:none, read off the rendered document rather
+      than a class list; happy-dom cannot see this defect class
+- [Remove] the unpainted vintage attribute on gw-figure and the unread vintage field on
+           the chart's readout row, with the uniformVintage plumbing behind them; the
+           explorer grid now names several vintages on the one strap line it already used
+           for a single one, instead of chipping every cell

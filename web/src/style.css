@@ -146,6 +146,17 @@
   box-sizing: border-box;
 }
 
+/* The UA's own `[hidden] { display: none }` is UA-origin, so any author `display` beats it
+   whatever the specificity -- `.gw-hover-meta { display: flex }` reserved an empty band under
+   every hover card while the attribute was still set. `!important` rather than a plain rule:
+   plain ties with a class selector and loses to an id, which is why 25 per-rule overrides had
+   accumulated and still missed five elements. `until-found` is exempt so `hidden="until-found"`
+   keeps working if it is ever used. tests/e2e/hidden-display.mjs holds this to account in a
+   real browser -- happy-dom cannot see this defect. */
+[hidden]:not([hidden="until-found"]) {
+  display: none !important;
+}
+
 body {
   margin: 0;
   background: var(--ink);

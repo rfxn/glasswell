@@ -16,7 +16,6 @@ export interface ReadoutRow {
   /** Formatted, or null where the month was never measured — a gap is not a zero (SB-05 §3.2). */
   value: string | null;
   mark: NullSemanticsMark;
-  vintage: string | null;
   handle: string | null;
 }
 
@@ -65,7 +64,6 @@ export function readoutAt(chart: ChartSeries, index: number): Readout | null {
         unit: column.unit,
         value: plotted === null || raw === null ? null : formatVolume(raw),
         mark: nullSemantics(column.nullSemantics[index] ?? ""),
-        vintage: column.vintages[index] ?? null,
         handle: handleAt(column, index, month),
       };
     }),
