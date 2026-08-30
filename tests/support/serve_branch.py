@@ -163,6 +163,16 @@ def seed(dsn: str) -> None:
         for term in ("report vintage", "null semantics", "reporting level", "lateral length"):
             seed_glossary_term(connection, term=term)
         for rule in ("cr_nd_stream_vocab_1", "cr_tx_lease_alloc_1"):
+            # Migration 049 refuses a rule with no first-publication evidence, and
+            # cr_tx_lease_alloc_1 is a fixture id no migration seeds evidence for, so
+            # `make serve-branch` failed here on every branch until this row existed.
+            connection.execute(
+                "insert into lineage.conformance_rule_publications"
+                " (rule_id, published_vintage, evidence_tag, evidence_commit)"
+                " values (%s, date '2026-01-01', 'serve-branch-fixture', %s)"
+                " on conflict (rule_id) do nothing",
+                (rule, "0" * 40),
+            )
             seed_conformance_rule(connection, rule_id=rule)
 
         if EXTRA_SEED:
