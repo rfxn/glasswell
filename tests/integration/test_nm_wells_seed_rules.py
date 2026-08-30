@@ -10,15 +10,18 @@ seeder ran.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import psycopg
 import pytest
 from psycopg.rows import dict_row
 
+from glasswell.ingest import nm_wells
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_nm_wells import (
     COORDINATE_ABSENT,
     COORDINATE_SENTINEL,
+    DISTINCT_API10S,
     NM_WELLS_RULES,
     RECORDS_MEASURED,
     STATUS_DOMAIN,
@@ -223,6 +226,64 @@ def test_no_liquids_policy_row_is_invented_for_a_question_already_decided(regist
 
     assert spec["oil_includes_condensate"] is False
     assert spec["condensate_stream"] == "condensate"
+
+
+def test_the_effective_rule_describes_what_the_code_does_and_nothing_it_does_not(
+    registry, db
+) -> None:
+    """A mapping that exists only in the registry fails review the way one that exists only in
+    code does, and worse: the handle resolves and what it resolves to is untrue.
+
+    canonical.wells has one valid-time column. An earlier draft of this row legislated an
+    effective_to that no column, and no line of the promoter, has ever had.
+    """
+    row = registry["cr_nm_wellhistory_effective_1"]
+    spec = row["spec"]
+
+    assert spec["effective_from_field"] == "eff_dte"
+    assert spec["promoted_to"] == "canonical.wells.effective_from"
+    assert "effective_to_field" not in spec, "there is no such column to promote into"
+    assert spec["source_semantics"]["open_interval_sentinel"] == "9999-12-31"
+    assert "not promoted, not stored and not served" in (
+        spec["source_semantics"]["rec_termn_dte"]
+    )
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select count(*) from information_schema.columns"
+            " where table_schema = 'canonical' and table_name = 'wells'"
+            "   and column_name = 'effective_to'"
+        )
+        assert cursor.fetchone()[0] == 0
+
+
+def test_the_terminated_newest_header_case_is_measured_rather_than_assumed(registry) -> None:
+    """wells_latest ranks on effective_from alone, so a retired newest header would serve as
+    current. Measured over all 321,510 records: one open header per well, and it is the newest."""
+    measured = registry["cr_nm_wellhistory_effective_1"]["spec"]["measured_rec_termn_dte"]
+
+    assert measured["api10_whose_newest_row_is_terminated"] == 0
+    assert measured["open_sentinel_rows"] == measured["distinct_api10"] == DISTINCT_API10S
+    assert measured["open_sentinel_rows"] + measured["dated_rows"] == RECORDS_MEASURED
+    assert measured["empty_rows"] == 0
+
+
+def test_the_promoter_reads_the_effective_field_from_the_rule(registry) -> None:
+    """The sibling wchistory rule is consumed by its promoter; this one is too."""
+    source = Path(nm_wells.__file__).read_text(encoding="utf-8")
+
+    assert 'rule.spec["effective_from_field"]' in source
+    assert '_as_date("eff_dte")' not in source
+    assert 'effective_rule.spec["reason_code"]' in source
+
+
+def test_new_mexico_carries_no_basin_and_the_registry_says_why(registry) -> None:
+    """A decision made by omission in code is the thing R8 exists to prevent, even when the
+    value it produces is the honest one."""
+    spec = registry["cr_nm_wellhistory_basin_scope_1"]["spec"]
+
+    assert spec["assigned"] is None
+    assert spec["canonical_column"] == "canonical.wells.basin"
+    assert "San Juan" in registry["cr_nm_wellhistory_basin_scope_1"]["rationale"]
 
 
 def test_the_header_precedence_row_is_seeded_with_one_authority(registry) -> None:

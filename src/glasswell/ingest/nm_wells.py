@@ -259,14 +259,16 @@ def _as_date(column: str) -> pl.Expr:
     return pl.col(column).str.slice(0, 10).str.to_date("%Y-%m-%d", strict=False)
 
 
-def dated(frame: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
+def dated(frame: pl.DataFrame, rule: ConformanceRule) -> tuple[pl.DataFrame, pl.DataFrame]:
     """The records whose effective date reads, and the ones whose does not.
 
     The header key is (api10, effective_from), so a record with no readable eff_dte has no key.
     It is quarantined rather than dropped, and it is judged before the coordinate is, so the two
-    reconciliations stay disjoint.
+    reconciliations stay disjoint. The column is the one the rule names, not a literal here.
     """
-    marked = frame.with_columns(_as_date("eff_dte").alias("effective_from"))
+    marked = frame.with_columns(
+        _as_date(str(rule.spec["effective_from_field"])).alias("effective_from")
+    )
     return (
         marked.filter(pl.col("effective_from").is_not_null()),
         marked.filter(pl.col("effective_from").is_null()).drop("effective_from"),
@@ -371,11 +373,17 @@ def promote_headers(
             keyed = apply_rules(frame, [api10_rule])
             _route(run, keyed.quarantined, stage="conform", vocabulary=vocabulary, counts=counts,
                    manifest_id=head.manifest_id)
-            keyed_and_dated, undated = dated(keyed.frame)
+            keyed_and_dated, undated = dated(keyed.frame, effective_rule)
             if not undated.is_empty():
                 _route(
                     run,
-                    [QuarantineBatch("out_of_range_date", effective_rule.rule_id, undated)],
+                    [
+                        QuarantineBatch(
+                            str(effective_rule.spec["reason_code"]),
+                            effective_rule.rule_id,
+                            undated,
+                        )
+                    ],
                     stage="conform", vocabulary=vocabulary, counts=counts,
                     manifest_id=head.manifest_id,
                 )
