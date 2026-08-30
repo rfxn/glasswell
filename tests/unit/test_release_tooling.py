@@ -1582,3 +1582,21 @@ def test_repointed_evidence_cites_a_commit_that_carries_the_rule() -> None:
         checked += 1
     if checked == 0:
         pytest.skip("no cited evidence commit is present in this clone (shallow checkout)")
+
+
+def test_the_deploy_installs_tile_functions_before_restarting_martin() -> None:
+    """martin refuses to boot on an unresolvable source, so an empty layer is not a partial
+    outage — it takes every tile down. v0.69 lost nd_wells and tx_wells to three New Mexico and
+    boundary layers whose marts had never been refreshed, so their functions did not exist. The
+    install is create-or-replace and must precede the restart that reads the catalogue.
+    """
+    script = DEPLOY.read_text(encoding="utf-8")
+    install = script.find("install_tile_functions")
+    restart = script.find("systemctl restart martin")
+
+    assert install != -1, "the deploy no longer installs tile functions"
+    assert restart != -1, "the deploy no longer restarts martin"
+    assert install < restart, (
+        "tile functions are installed after martin restarts, so a layer whose mart has never"
+        " been refreshed still stops martin from booting and takes every tile with it"
+    )

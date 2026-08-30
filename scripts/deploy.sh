@@ -204,6 +204,15 @@ step "6b. seed registries, as postgres"
 remote "sudo -u postgres env $code_env $VENV/bin/python -c 'import psycopg; from glasswell.seed import seed_all; connection = psycopg.connect(\"$SOCKET_DSN\"); print(\"   \", seed_all(connection)); connection.commit(); connection.close()'" \
     || refuse "seed_all failed"
 
+# martin refuses to start if any configured source is unresolvable, so one layer whose mart has
+# never been refreshed takes every tile down with it -- which is how v0.69 lost nd_wells and
+# tx_wells to three empty New Mexico and boundary layers. The functions are create-or-replace and
+# read their own source relation, so installing them all here decouples "the layer exists" from
+# "its mart has been populated": an empty layer answers 204 instead of refusing to boot.
+step "6b2. tile functions for every configured layer"
+remote "sudo -u postgres env $code_env $VENV/bin/python -c 'import psycopg; from glasswell.marts.tiles import install_tile_functions; connection = psycopg.connect(\"$SOCKET_DSN\"); print(\"   \", len(install_tile_functions(connection)), \"tile functions\"); connection.commit(); connection.close()'" \
+    || refuse "tile function install failed"
+
 step "6c. current ND physical-neighbour mart"
 remote "sudo -u glasswell env $code_env $VENV/bin/glasswell-neighbors --dsn '$SOCKET_DSN'" \
     || refuse "ND physical-neighbour refresh failed"
