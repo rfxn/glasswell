@@ -70,3 +70,9 @@
       refused by the limiter is padded rather than run through a 64MiB Argon2id verify
 - [New] the login bound is proved by test: the limiter runs before the CSRF check and
       before any password hashing, and deleting either call turns seven tests red
+- [Fix] GET /v1/session is open and always answers 200: asking who you are is not a
+      privileged question and "nobody" is a valid answer, so an uncredentialled caller
+      gets kind: anonymous rather than a refusal on every first page load
+- [Fix] the sign-out control carried the hidden attribute but a class rule set display,
+      so it rendered for signed-out readers on every surface and overflowed the 320px
+      rail; the session probe no longer fires on Status, which needs no identity

@@ -85,7 +85,7 @@ class ChallengeModel(BaseModel):
 
 class SessionModel(BaseModel):
     username: str | None = Field(description="The account, when the caller holds a session.")
-    role: str = Field(description="owner or viewer.")
+    role: str | None = Field(description="owner or viewer; null for an uncredentialled caller.")
     kind: str = Field(description="user, owner, service or anonymous.")
     expires_at: str | None = Field(description="When idleness ends this session.")
     absolute_expires_at: str | None = Field(description="Hard cap; never extended.")
@@ -249,19 +249,37 @@ def create_session(
     description=(
         "The calling principal, resolved. Returns the account and role for a session, and"
         " the kind alone for a key. Never returns a token, a hash or a password."
+        "\n\nOpen, and always `200`. Asking who you are is not a privileged question and"
+        " *nobody* is a valid answer: an uncredentialled caller gets `kind: anonymous` with"
+        " a null username and role. Refusing here would make the ordinary first visit to a"
+        " public instance a console error and a failed request on every page load, and it"
+        " would say nothing a caller does not already know about itself."
     ),
     response_model=EnvelopeModel[SessionModel],
     openapi_extra=request_example(),
-    responses=problem_responses("key_required", "unauthenticated", "service_degraded"),
-    dependencies=[Depends(require_principal)],
+    responses=problem_responses("service_degraded"),
 )
-def read_session(request: Request, principal: Principal) -> JSONResponse:
+def read_session(
+    request: Request,
+    caller: Annotated[object | None, Depends(optional_principal)] = None,
+) -> JSONResponse:
+    if caller is None:
+        return enveloped(
+            request,
+            {
+                "username": None,
+                "role": None,
+                "kind": "anonymous",
+                "expires_at": None,
+                "absolute_expires_at": None,
+            },
+        )
     return enveloped(
         request,
         {
-            "username": principal.label if principal.kind == "user" else None,
-            "role": principal.role,
-            "kind": principal.kind,
+            "username": caller.label if caller.kind == "user" else None,
+            "role": caller.role,
+            "kind": caller.kind,
             "expires_at": None,
             "absolute_expires_at": None,
         },

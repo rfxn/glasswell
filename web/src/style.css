@@ -423,6 +423,14 @@ body {
   display: none;
 }
 
+/* `[hidden]` is a single attribute selector and loses to any class rule that sets `display`,
+   which is how the sign-out control rendered for signed-out readers on every surface -- and
+   overflowed the rail by 34 px at 320 px, where there is no room for a control nobody can
+   use. The chip above needs the same line for the same reason. */
+.gw-icon-btn[hidden] {
+  display: none;
+}
+
 /* A fixed column, not a capped one. A cap bounds how far the slot can grow; it does not fix
    where it starts, so under a right-packed row every word the status gained pushed search and
    the buttons left — 117 px between idle and a degraded source (gate-v BLOCKER-1). What is in

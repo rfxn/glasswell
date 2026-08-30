@@ -32,6 +32,12 @@ const CSRF_HEADER = "X-Glasswell-CSRF";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
 /** The owner-key era's storage slot, cleared at boot so no surviving path can send one. */
 const LEGACY_KEY_STORAGE = "glasswell.key";
+// Not a credential and never sent anywhere: a local note that this browser has signed in
+// before, so the app knows whether asking "who am I" can tell it anything. The session itself
+// is an HttpOnly cookie, which script cannot read -- without this marker the only way to find
+// out is to ask, and asking on a public surface makes a first visit a request that answers
+// "nobody" every time.
+const SESSION_SEEN_STORAGE = "glasswell.session-seen";
 
 let csrf: string | null = null;
 
@@ -50,6 +56,18 @@ export interface Session {
 
 export function purgeLegacyKey(): void {
   window.localStorage.removeItem(LEGACY_KEY_STORAGE);
+}
+
+export function hasSignedInBefore(): boolean {
+  return window.localStorage.getItem(SESSION_SEEN_STORAGE) === "1";
+}
+
+export function markSignedIn(): void {
+  window.localStorage.setItem(SESSION_SEEN_STORAGE, "1");
+}
+
+export function forgetSignedIn(): void {
+  window.localStorage.removeItem(SESSION_SEEN_STORAGE);
 }
 
 /** The session rides an HttpOnly cookie; only a write carries the token that proves origin. */
@@ -126,12 +144,14 @@ export async function login(username: string, password: string): Promise<Session
   const session = await mutate<Session>("POST", "/v1/session", { username, password });
   // Login deletes the pre-session cookie the held token was bound to, so that token is spent.
   csrf = null;
+  markSignedIn();
   return session;
 }
 
 export async function logout(): Promise<Session> {
   const ended = await mutate<Session>("DELETE", "/v1/session");
   csrf = null;
+  forgetSignedIn();
   return ended;
 }
 

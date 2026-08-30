@@ -90,7 +90,11 @@ MATRIX: tuple[tuple[str, str, str], ...] = (
     ("POST", "/v1/keys/{key_id}/rotate", OWNER),
     ("GET", "/v1/session/challenge", OPEN),
     ("POST", "/v1/session", OPEN),
-    ("GET", "/v1/session", READ),
+    # OPEN, deliberately. "Who am I" is not a privileged question and `nobody` is a valid
+    # answer; it discloses strictly less than /v1/session/challenge, which already mints a
+    # signed token for an uncredentialled caller. Gated, the ordinary first visit to a public
+    # instance was a console error and a failed request on every page load.
+    ("GET", "/v1/session", OPEN),
     ("DELETE", "/v1/session", SESSION),
     ("POST", "/v1/session/password", SESSION),
     ("GET", "/v1/users", OWNER),
@@ -361,3 +365,26 @@ def test_the_document_routes_are_gated_in_the_deployed_shape(
             status = deployed.get(path).status_code
 
             assert status == 403, f"{path} answered {status}; the SPA mount shadows the gate"
+
+
+def test_the_open_surface_is_exactly_the_ruled_set(client: TestClient) -> None:
+    """O-2 chose Option A -- closed by default -- so the anonymous surface is a decision, not
+    an accident. Anything reachable without a credential must be listed here on purpose.
+
+    `GET /v1/session` is on this list and was not in O-2's original enumeration. It answers
+    only about the caller itself, cannot enumerate accounts, and discloses less than the
+    challenge route beside it; gated, it made every first page load on a public instance emit
+    a console error and a failed request.
+    """
+    expected = {
+        ("GET", "/healthz"),
+        ("GET", "/v1/session/challenge"),
+        ("POST", "/v1/session"),
+        ("GET", "/v1/session"),
+    }
+
+    served_open = {
+        (method, path.split("?")[0]) for method, path, access in MATRIX if access == OPEN
+    }
+
+    assert served_open == expected, "the anonymous surface changed without a ruling"

@@ -5142,9 +5142,16 @@
             "type": "string"
           },
           "role": {
-            "description": "owner or viewer.",
-            "title": "Role",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "owner or viewer; null for an uncredentialled caller.",
+            "title": "Role"
           },
           "username": {
             "anyOf": [
@@ -10557,7 +10564,7 @@
         }
       },
       "get": {
-        "description": "The calling principal, resolved. Returns the account and role for a session, and the kind alone for a key. Never returns a token, a hash or a password.",
+        "description": "The calling principal, resolved. Returns the account and role for a session, and the kind alone for a key. Never returns a token, a hash or a password.\n\nOpen, and always `200`. Asking who you are is not a privileged question and *nobody* is a valid answer: an uncredentialled caller gets `kind: anonymous` with a null username and role. Refusing here would make the ordinary first visit to a public instance a console error and a failed request on every page load, and it would say nothing a caller does not already know about itself.",
         "operationId": "read_session",
         "responses": {
           "200": {
@@ -10569,42 +10576,6 @@
               }
             },
             "description": "Successful Response"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              },
-              "application/problem+json": {
-                "examples": {
-                  "key_required": {
-                    "summary": "API key required",
-                    "value": {
-                      "detail": "The request carried no owner key. Send it in the X-Glasswell-Key header.",
-                      "instance": "/v1",
-                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
-                      "status": 403,
-                      "title": "API key required",
-                      "type": "/v1/errors/key_required"
-                    }
-                  },
-                  "unauthenticated": {
-                    "summary": "Not authenticated",
-                    "value": {
-                      "detail": "No credential was accepted. The body carries no detail on purpose: a caller must not be able to use the error as an oracle for why a key failed.",
-                      "instance": "/v1",
-                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
-                      "status": 403,
-                      "title": "Not authenticated",
-                      "type": "/v1/errors/unauthenticated"
-                    }
-                  }
-                }
-              }
-            },
-            "description": "API key required"
           },
           "503": {
             "content": {

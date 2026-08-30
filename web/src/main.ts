@@ -1,6 +1,13 @@
 import "./style.css";
 
-import { ApiError, getEnvelope, logout, purgeLegacyKey, whoami } from "./api/client.ts";
+import {
+  ApiError,
+  getEnvelope,
+  hasSignedInBefore,
+  logout,
+  purgeLegacyKey,
+  whoami,
+} from "./api/client.ts";
 import { DEFAULT_STATE, readState, serializeState, writeState } from "./app/state.ts";
 import type { AppState } from "./app/state.ts";
 import { loginPanel } from "./auth/login.ts";
@@ -235,6 +242,10 @@ async function renderView(): Promise<void> {
     return;
   }
 
+  // Arriving here from Status, the probe boot() skipped is now worth making: this surface
+  // renders per-principal state and the header has to be right.
+  if (!sessionResolved) void resolveSession();
+
   unmountExplorer?.();
   unmountStatusPage?.();
   exploreHost.hidden = true;
@@ -250,17 +261,37 @@ async function renderView(): Promise<void> {
   });
 }
 
-async function boot(): Promise<void> {
+/** Whether asking "who am I" can tell this page anything it does not already know.
+ *
+ * Status is a public surface: arriving there directly does not require knowing who you are,
+ * and a browser that has never signed in has no session for the answer to describe. Probing
+ * anyway makes the ordinary first visit a request whose only possible answer is "nobody".
+ * Every other surface asks, because the header has to render the right state.
+ */
+function shouldResolveSession(): boolean {
+  return state.view !== "status" || hasSignedInBefore();
+}
+
+let sessionResolved = false;
+
+async function resolveSession(): Promise<boolean> {
+  sessionResolved = true;
   try {
     const session = await whoami();
     hadSession = session.kind === "user";
     setSignedIn(session.username);
     setSessionState("ok");
+    return true;
   } catch (error) {
     handleApiError(error, "Session");
     // Nothing further in boot can succeed without a principal; signing in runs it again.
-    if (error instanceof ApiError && error.problem.status === 403) return;
+    if (error instanceof ApiError && error.problem.status === 403) return false;
+    return true;
   }
+}
+
+async function boot(): Promise<void> {
+  if (shouldResolveSession() && !sessionResolved && !(await resolveSession())) return;
 
   try {
     const index = await getEnvelope<{ published_vintages: { vintage_date: string }[] }>("/v1");
