@@ -205,7 +205,10 @@ class WellCumulatives(BaseModel):
             group="wells",
             collection_pointer="",
             anchors=["/api10", "/granularity", "/snapshot_vintage"],
-            row_id=["/api10"],
+            # Composite on purpose: the row is this well's total at this snapshot, and two
+            # snapshots are two rows. It also keeps /api10 the identity of exactly one
+            # dataset, which is what the wells row-id ruling (UDM-SPEC §6.4) rests on.
+            row_id=["/api10", "/snapshot_vintage"],
             facets=["as_of"],
             columns={
                 "default": [

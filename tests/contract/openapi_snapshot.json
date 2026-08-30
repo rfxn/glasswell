@@ -12459,7 +12459,8 @@
           "intro": "nb_dataset_cumulatives",
           "order": 15,
           "row_id": [
-            "/api10"
+            "/api10",
+            "/snapshot_vintage"
           ],
           "title": "Cumulative production (per well)"
         },

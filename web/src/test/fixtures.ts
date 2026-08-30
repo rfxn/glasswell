@@ -100,7 +100,30 @@ export const wellEnvelope = {
 export const completionContextEnvelope = {
   "data": {
     "api10": "3305310451",
-    "design_availability": "not_promoted",
+    "design_availability": "promoted",
+    "design_null_semantics": "reported",
+    "design": {
+      "disclosure_id": "ff-3305310451-20250424",
+      "base_water_volume": {
+        "value": "5917362.00",
+        "unit": "gal",
+        "d": "drv_context_design#disclosure_id=ff-3305310451-20250424&col=base_water_volume"
+      },
+      "base_water_null_semantics": "reported",
+      "lateral_length_ft": {
+        "value": "9862.27",
+        "unit": "ft",
+        "d": "drv_context_intensity#api10=3305310451&col=lateral_length_ft"
+      },
+      "fluid_intensity": {
+        "value": "600.00",
+        "unit": "gal/ft",
+        "d": "drv_context_intensity#api10=3305310451&col=fluid_intensity"
+      },
+      "intensity_null_semantics": "reported",
+      "source_id": "fracfocus_csv",
+      "report_vintage": "2026-08-20"
+    },
     "events": [
       {
         "event_id": "ff-3305310451-20250424",

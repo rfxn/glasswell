@@ -399,10 +399,18 @@ describe("completion and formation context", () => {
       "Last observed month": "2026-03-01",
       "Source": "nd_mpr_xlsx · report 2026-08-20",
     });
+    const designFacts = factsOf(groups[2] as HTMLElement);
+    expect(designFacts).toEqual({
+      "Disclosure": "ff-3305310451-20250424",
+      "Base fluid": "5,917,362.00 gal",
+      "Lateral": "9,862.27 ft",
+      "Fluid intensity": "600.00 gal/ft",
+      "Source": "fracfocus_csv · report 2026-08-20",
+    });
     expect(frame.textContent).toContain(
-      "Completion design is not promoted; no design measurements or formation tops are served here",
+      "Completion design is the operator's own disclosure, measured against geometry glasswell computes",
     );
-    expect(frame.textContent).not.toMatch(/proppant|fluid volume|formation depth/i);
+    expect(frame.textContent).not.toMatch(/proppant|formation depth/i);
 
     callbacks.onExplain.mockClear();
     frame.querySelector<HTMLButtonElement>("button[data-handle*='col=completion_date']")?.click();
@@ -517,11 +525,79 @@ describe("completion and formation context", () => {
     expect(frame.textContent).not.toContain("Hydraulic frac job end");
   });
 
+  it("renders a null intensity as its stated reason rather than as a zero", async () => {
+    const withdrawn = {
+      ...completionContextEnvelope,
+      data: {
+        ...completionContextEnvelope.data,
+        design: {
+          ...completionContextEnvelope.data.design,
+          fluid_intensity: null,
+          intensity_null_semantics: "lateral_length_implausible",
+        },
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: withdrawn,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const frame = host.querySelector(".gw-completion-context") as HTMLElement;
+    const groups = frame.querySelectorAll<HTMLElement>(".gw-context-group");
+    const designFacts = factsOf(groups[2] as HTMLElement);
+    expect(designFacts["Fluid intensity"]).toBe(
+      "unavailable \u2014 lateral too short to divide by",
+    );
+    expect(designFacts["Fluid intensity"]).not.toMatch(/\b0\b/);
+  });
+
+  it("says a well carries no disclosure rather than showing an empty design row", async () => {
+    const none = {
+      ...completionContextEnvelope,
+      data: {
+        ...completionContextEnvelope.data,
+        design: null,
+        design_null_semantics: "no_report",
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: none,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const frame = host.querySelector(".gw-completion-context") as HTMLElement;
+    expect(frame.textContent).toContain(
+      "No FracFocus disclosure carries a completion design for this well",
+    );
+    expect(frame.textContent).toContain("FracFocus disclosure is voluntary");
+    expect(frame.querySelector<HTMLElement>(".gw-frame-body")?.dataset["state"]).toBe(
+      "populated",
+    );
+  });
+
   it("distinguishes an observed empty response from a failed request", async () => {
     const empty = {
       ...completionContextEnvelope,
       data: {
         ...completionContextEnvelope.data,
+        design: null,
+        design_null_semantics: "no_report",
         events: [],
         pools: [],
       },
