@@ -680,3 +680,59 @@ def test_recovery_job_reports_a_real_proof_when_one_finally_exists(tmp_path: Pat
 
     assert status.state == "ok"
     assert "schema 54" in status.detail
+
+
+def test_a_healthy_weekly_drill_does_not_degrade_between_runs(tmp_path: Path) -> None:
+    """The drill is weekly and the dump bound is two days; measured against `now` the job would
+    go degraded every Tuesday and stay there until Sunday, refusing every deploy in between."""
+    completed_at = datetime(2026, 8, 30, 4, 14, tzinfo=UTC)
+    path = tmp_path / "restore.json"
+    _write_restore_result(
+        path,
+        # Sunday's drill restored a dump taken two hours earlier: healthy by any reading.
+        _restore_payload(completed_at, dump_created_at=completed_at - timedelta(hours=2)),
+    )
+    runner = _runner(
+        {
+            "glasswell-restore-drill.timer": "ActiveState=active\n",
+            "glasswell-restore-drill.service": (
+                "Result=success\nExecMainStatus=0\n"
+                "ExecMainExitTimestamp=Thu 2026-08-27 02:09:24 UTC\n"
+            ),
+        }
+    )
+
+    # Wednesday: the receipt is three days old, well inside the eight-day proof bound, and the
+    # dump it restored was two hours old at drill time.
+    status = _restore_drill_job(
+        completed_at + timedelta(days=3),
+        path=path,
+        runner=runner,
+        expected_uid=os.getuid(),
+        expected_gid=os.getgid(),
+    )
+
+    assert status.state == "ok"
+    assert "stale" not in status.detail
+
+
+def test_a_drill_that_restored_an_old_dump_still_degrades(tmp_path: Path) -> None:
+    """The check the dump bound exists for: backups stopped, so the drill had nothing fresh."""
+    completed_at = datetime(2026, 8, 30, 4, 14, tzinfo=UTC)
+    path = tmp_path / "restore.json"
+    _write_restore_result(
+        path,
+        _restore_payload(completed_at, dump_created_at=completed_at - timedelta(days=5)),
+    )
+
+    status = _restore_drill_job(
+        completed_at + timedelta(hours=1),
+        path=path,
+        runner=_runner({"glasswell-restore-drill.timer": "ActiveState=active\n"}),
+        expected_uid=os.getuid(),
+        expected_gid=os.getgid(),
+    )
+
+    assert status.state == "degraded"
+    assert "backup dump is stale" in status.detail
+    assert "when the drill ran" in status.detail

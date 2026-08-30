@@ -25,3 +25,6 @@
 - [Change] infra/README.md gains a durability-proofs section recording what each receipt does
          not prove, the removal procedure for the undeclared glasswell-repromote units, and
          the new coupling that a receipt it cannot publish fails the nightly backup
+- [Fix] The restore-drill job measures its dump's staleness at drill time rather than against
+      now, so a healthy weekly drill no longer degrades every Tuesday and refuses every deploy
+      until Sunday; a drill that genuinely restored an old dump still degrades

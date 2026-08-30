@@ -255,7 +255,13 @@ def _restore_drill_job(
 
     completed_at = proof.completed_at.astimezone(UTC)
     age = observed_at - completed_at
-    dump_age = observed_at - proof.dump.created_at.astimezone(UTC) if proof.dump else None
+    # Measured at drill time, not now: the question is whether the newest dump the drill could
+    # find was recent *when it ran*. Against `now` this compares a 2-day bound to a weekly
+    # cadence, so the job degrades every Tuesday and stays degraded until Sunday — which reds
+    # verify.sh's snapshot check and refuses every deploy in between. A backup that stopped
+    # producing generations is still caught, by the `backup` job and by `offsite_copy`'s own
+    # 2-day bound against now.
+    dump_age = completed_at - proof.dump.created_at.astimezone(UTC) if proof.dump else None
     age_hours = max(0, int(age.total_seconds() // 3600))
     age_detail = f"age {age_hours}h"
     if age < -RESTORE_RESULT_FUTURE_TOLERANCE:
@@ -273,11 +279,14 @@ def _restore_drill_job(
         detail = f"Latest durable restore proof passed but is stale ({age_detail})."
     elif dump_age is not None and dump_age < -RESTORE_RESULT_FUTURE_TOLERANCE:
         state = "degraded"
-        detail = "Restored dump creation time is implausibly in the future."
+        detail = "Restored dump was created after the drill that restored it completed."
     elif dump_age is not None and dump_age > RESTORE_DUMP_STALE_AFTER:
         state = "degraded"
         dump_age_hours = max(0, int(dump_age.total_seconds() // 3600))
-        detail = f"Latest restore passed, but its backup dump is stale (age {dump_age_hours}h)."
+        detail = (
+            "Latest restore passed, but its backup dump is stale: it was already"
+            f" {dump_age_hours}h old when the drill ran."
+        )
     elif scheduled.state != "ok":
         state = scheduled.state
         detail = (

@@ -90,6 +90,14 @@ to `max(version)` from `public.schema_migrations` on the live database, and by b
 receipt's age — a receipt that silently stopped being republished is the other half of the same
 failure.
 
+The drill's dump-staleness bound (`RESTORE_DUMP_STALE_AFTER`, two days) is measured **at drill
+time** — "was the newest dump this drill could find recent when it ran?" — not against the
+clock. Measured against the clock it compares a two-day bound to a weekly cadence, so a
+perfectly healthy drill degrades every Tuesday and stays degraded until Sunday, which reds
+`verify.sh`'s snapshot check and refuses every deploy in between. A backup that has genuinely
+stopped producing generations is still caught: by the `backup` job's own timer evidence, and by
+`offsite_copy`, whose two-day bound *is* against the clock and matches its nightly cadence.
+
 ### The offsite copy is sending-side evidence only
 
 The forge-side grant is:
