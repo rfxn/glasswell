@@ -6,7 +6,11 @@ Wants=network-online.target
 OnFailure=glasswell-alert@%n.service
 
 [Service]
-Type=notify
+# NOT notify: `cloudflared tunnel run` registers its connections and serves without ever
+# sending sd_notify READY, so systemd holds the unit in `activating`, times the start out,
+# kills a working tunnel and restarts it. Observed on 2026.8.2: four registered QUIC
+# connections and /ready reporting readyConnections=4, against NRestarts=49.
+Type=exec
 User=cloudflared
 Group=cloudflared
 ExecStart=/usr/local/bin/cloudflared --config /etc/cloudflared/config.yml --no-autoupdate tunnel run

@@ -285,6 +285,11 @@ if [[ $with_cloudflared -eq 1 ]]; then
     getent passwd cloudflared >/dev/null || \
         useradd --system --gid cloudflared --home-dir "$CLOUDFLARED_DIR" \
             --shell /usr/sbin/nologin cloudflared
+    # The directory, not just the files in it: 0640 root:cloudflared is unreadable through a
+    # 0700 root:root parent, and the connector fails with a bare "permission denied" naming
+    # the file rather than the directory that actually refused.
+    command chown root:cloudflared "$CLOUDFLARED_DIR"
+    command chmod 0750 "$CLOUDFLARED_DIR"
     command chown root:cloudflared "$CLOUDFLARED_DIR/$tunnel_id.json"
     command chmod 0640 "$CLOUDFLARED_DIR/$tunnel_id.json"
 
