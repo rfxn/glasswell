@@ -95,26 +95,45 @@ ls -la --time-style=full-iso /data/backups/pg/glasswell-*.dump | tail -3
 
 `glasswell-backup.timer` is `*-*-* 02:00:00`, daily.
 
+**What this condition does not give you: proof that a restore of the post-promotion schema
+works.** `verify.sh` compares the live schema head to the restore-drill receipt, gated on a
+drill completing after `max(applied_at)`. This track's migrations move the live head, and the
+drill is weekly on Sundays at about 04:00 UTC — so between the deploy and the next drill the
+receipt covers a schema that predates it. The gate is built to hold rather than fail in that
+window, which is correct, but it means the newest restore proof is a proof about the *old*
+schema. Do not read a green `verify.sh` in that window as restore coverage of these
+migrations; wait for the drill that follows them.
+
 ### C — no competing writer
 
 ```bash
 pgrep -a pg_restore || echo "no restore drill running"
 systemctl is-active glasswell-ingest.service      # must be inactive
-systemctl list-timers --all --no-pager | grep glasswell-repromote
-systemctl mask glasswell-repromote.timer glasswell-repromote.service
+# The one-shot re-promotion units must be ABSENT, not merely inert. Zero, or STOP.
+systemctl list-unit-files 'glasswell-repromote*' --no-pager
+ls /etc/systemd/system/glasswell-repromote.* 2>&1        # expect: No such file or directory
+ls /etc/systemd/system/ | grep -c '^glasswell-'          # expect 14, matching the tree
 ```
 
 - `glasswell-restore-drill.timer` is `Sun *-*-* 04:00:00` with `RandomizedDelaySec=600`:
   **weekly, Sundays**. The window to avoid is **Sunday 03:45–05:00 UTC** and no other night.
 - `glasswell-ingest.timer` is `*-*-05 04:30:00 UTC` with `RandomizedDelaySec=1800`: **monthly,
   day 5**. If the run falls on the 5th, wait for it or start before 04:00.
-- **`glasswell-repromote.timer` must be masked, and the mask recorded.** It is `enabled` and
-  `active` with a fixed **past** `OnCalendar=2026-08-21 00:30:00 UTC` and `Persistent=true`. It
-  is dormant only because `/var/lib/systemd/timers/stamp-glasswell-repromote.timer` exists.
-  Lose that stamp — a reinstall, a tmpfiles sweep, a restore of `/var` — and a `Persistent=true`
-  timer whose instant is in the past fires on the next daemon reload, running a Wave-1 one-shot
-  re-promotion designed for a 398k-row table against one that will hold 24.8M. It has no
-  remaining purpose.
+- **`glasswell-repromote.timer` and its service must not exist. Assert absence; do not mask,
+  and do not re-create them.** They were a Wave-1 one-shot — `Description=One-shot S-E
+  re-promotion (Wave-1 track A1b)`, a single `OnCalendar=2026-08-21 00:30:00 UTC`, a hardcoded
+  log path, `Result=success` from its one run — installed on the host and never committed to
+  `infra/systemd/`. They were removed on 2026-08-30; the host now carries exactly 14
+  `glasswell-*` unit files, matching the tree, and `verify.sh` asserts host against tree in that
+  direction. `systemctl mask` on a unit that does not exist is not the check you want.
+
+  **The earlier framing of this as an armed timer was wrong, and the correction is measured
+  rather than argued.** `Persistent=true` catch-up targets a calendar occurrence *after* the
+  base time, and a single past instant has none: `systemd-analyze calendar '2026-08-21 00:30:00
+  UTC'` returns `Next elapse: never`, and `NextElapseUSecRealtime` was empty on the host for
+  that reason and not because a stamp file was suppressing it. The finding that survives is the
+  one that mattered — a unit existed on the host that existed nowhere in the tree — and absence
+  is what this condition now checks.
 
 ### D — the ordinary stops
 
