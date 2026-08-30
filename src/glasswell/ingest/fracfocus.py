@@ -7,9 +7,11 @@ import csv
 import hashlib
 import io
 import json
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, TextIO
 from zipfile import ZipFile
@@ -36,8 +38,13 @@ PARSE_RULE_ID = "cr_ff_disclosure_parse_1"
 IDENTITY_FAMILY = "cr_ff_api_identity"
 ANCHOR_RULE_ID = "cr_ff_completion_anchor_1"
 BASIN_RULE_ID = "cr_nd_basin_1"
+UNITS_FAMILY = "cr_ff_base_water_units"
+DESIGN_FAMILY = "cr_ff_design_promote"
 ANCHOR_KIND = "hydraulic_frac_job_end"
 STAGING_TABLE = "staging.fracfocus_disclosures"
+DESIGN_TABLE = "canonical.well_completion_design"
+
+_NUMERIC = re.compile(r"[0-9]+(\.[0-9]+)?")
 
 _DATE_FORMATS = ("%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y", "%Y-%m-%d")
 _SOURCE_COLUMNS = (
@@ -95,10 +102,13 @@ class FracFocusLoadResult:
     parse_derivation_id: str
     anchor_derivation_id: str
     readiness_derivation_id: str
+    design_derivation_id: str
     staged_rows: int
     anchor_rows: int
+    design_rows: int
     well_rows: int
     quarantined: Mapping[str, int]
+    design_quarantined: Mapping[str, int]
     unchanged: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -107,8 +117,10 @@ class FracFocusLoadResult:
             "terms_manifest_id": self.terms_manifest_id,
             "staged_rows": self.staged_rows,
             "anchor_rows": self.anchor_rows,
+            "design_rows": self.design_rows,
             "well_rows": self.well_rows,
             "quarantined": dict(self.quarantined),
+            "design_quarantined": dict(self.design_quarantined),
             "unchanged": self.unchanged,
         }
 
@@ -139,6 +151,28 @@ def identity_rule(connection: psycopg.Connection) -> ConformanceRule:
     return rule_for_family(
         load_rules(connection, source_id=SOURCE_ID, stage="parse"), IDENTITY_FAMILY
     )
+
+
+def design_rules(connection: psycopg.Connection) -> tuple[ConformanceRule, ConformanceRule]:
+    """The unit rule and the promotion rule, pinned by family so a supersession is not missed."""
+    rules = load_rules(connection, source_id=SOURCE_ID, stage="conform")
+    return rule_for_family(rules, UNITS_FAMILY), rule_for_family(rules, DESIGN_FAMILY)
+
+
+def classify_base_water(raw: str | None) -> tuple[str, Decimal | None]:
+    """A blank is a fact about the source, so it promotes; a bad literal raises and rejects."""
+    text = (raw or "").strip()
+    if not text:
+        return "no_report", None
+    if _NUMERIC.fullmatch(text) is None:
+        raise ValueError(f"unparseable TotalBaseWaterVolume {raw!r}")
+    value = Decimal(text)
+    return ("reported_zero" if value == 0 else "reported"), value
+
+
+def exceeds_plausibility(value: Decimal | None, bound: Decimal) -> bool:
+    """Strictly above: the bound itself is admitted, so the rule's number is inclusive."""
+    return value is not None and value > bound
 
 
 def parse_source_date(value: str | None) -> date | None:
@@ -206,7 +240,7 @@ def load_disclosures(
 
     manifest = fetched.manifest
     if fetched.unchanged and _already_staged(connection, manifest.manifest_id):
-        parse_id, anchor_id, readiness_id = _existing_derivations(
+        parse_id, anchor_id, readiness_id, design_id = _existing_derivations(
             connection, manifest.manifest_id
         )
         return FracFocusLoadResult(
@@ -215,13 +249,20 @@ def load_disclosures(
             parse_derivation_id=parse_id,
             anchor_derivation_id=anchor_id,
             readiness_derivation_id=readiness_id,
+            design_derivation_id=design_id,
             staged_rows=0,
             anchor_rows=0,
+            design_rows=0,
             well_rows=0,
             quarantined={
                 "parse_error": 0,
                 "out_of_range_date": 0,
                 "orphan_fk": 0,
+                "duplicate_row": 0,
+            },
+            design_quarantined={
+                "parse_error": 0,
+                "impossible_volume": 0,
                 "duplicate_row": 0,
             },
             unchanged=True,
@@ -230,12 +271,23 @@ def load_disclosures(
     parse_id, staged_rows = _stage_disclosures(
         connection, fetched.payload_path, manifest.manifest_id
     )
+    identity = identity_rule(connection)
     anchor_id, anchor_rows, quarantined = _promote_anchors(
         connection,
         manifest_id=manifest.manifest_id,
         vintage=manifest.fetch_vintage,
         parse_derivation_id=parse_id,
-        identity=identity_rule(connection),
+        identity=identity,
+    )
+    units_rule, promote_rule = design_rules(connection)
+    design_id, design_rows, design_quarantined = _promote_design(
+        connection,
+        manifest_id=manifest.manifest_id,
+        vintage=manifest.fetch_vintage,
+        parse_derivation_id=parse_id,
+        identity=identity,
+        units_rule=units_rule,
+        promote_rule=promote_rule,
     )
     readiness_id, well_rows = materialize_nd_readiness(
         connection,
@@ -259,10 +311,13 @@ def load_disclosures(
         parse_derivation_id=parse_id,
         anchor_derivation_id=anchor_id,
         readiness_derivation_id=readiness_id,
+        design_derivation_id=design_id,
         staged_rows=staged_rows,
         anchor_rows=anchor_rows,
+        design_rows=design_rows,
         well_rows=well_rows,
         quarantined=quarantined,
+        design_quarantined=design_quarantined,
     )
 
 
@@ -277,17 +332,18 @@ def _already_staged(connection: psycopg.Connection, manifest_id: str) -> bool:
 
 def _existing_derivations(
     connection: psycopg.Connection, manifest_id: str
-) -> tuple[str, str, str]:
+) -> tuple[str, str, str, str]:
     with connection.cursor() as cursor:
         cursor.execute(
             "select output_dataset, derivation_id from lineage.derivations"
             " where output_partition ->> 'manifest_id' = %s"
-            "   and output_dataset in (%s, %s, %s)",
+            "   and output_dataset in (%s, %s, %s, %s)",
             (
                 manifest_id,
                 STAGING_TABLE,
                 "canonical.well_completion_anchors",
                 "canonical.wells",
+                DESIGN_TABLE,
             ),
         )
         found = dict(cursor.fetchall())
@@ -295,6 +351,7 @@ def _existing_derivations(
         found.get(STAGING_TABLE, ""),
         found.get("canonical.well_completion_anchors", ""),
         found.get("canonical.wells", ""),
+        found.get(DESIGN_TABLE, ""),
     )
 
 
@@ -545,6 +602,146 @@ def _promote_anchors(
     return context.derivation_id, inserted, quarantined
 
 
+_INSERT_DESIGN = """
+insert into canonical.well_completion_design
+    (disclosure_id, api10, base_water_volume, base_water_unit, base_water_null_semantics,
+     source_id, report_vintage, source_manifest_id, derivation_id)
+values (%(disclosure_id)s, %(api10)s, %(base_water_volume)s, %(base_water_unit)s,
+        %(base_water_null_semantics)s, %(source_id)s, %(report_vintage)s, %(manifest_id)s,
+        %(derivation_id)s)
+on conflict do nothing
+"""
+
+
+def _design_candidate_rows(
+    connection: psycopg.Connection, manifest_id: str, identity: ConformanceRule
+) -> list[dict[str, Any]]:
+    with connection.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(
+            "select source_row_ordinal, disclosure_id, api_number, state_name,"
+            " total_base_water_volume from staging.fracfocus_disclosures"
+            " where manifest_id = %(manifest_id)s"
+            "   and (state_name = %(state_name)s or api_number like %(prefix)s)"
+            " order by source_row_ordinal",
+            {
+                "manifest_id": manifest_id,
+                "state_name": str(identity.spec["state_name"]),
+                "prefix": f"{identity.spec['nd_state_code']}%",
+            },
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def _promote_design(
+    connection: psycopg.Connection,
+    *,
+    manifest_id: str,
+    vintage: date,
+    parse_derivation_id: str,
+    identity: ConformanceRule,
+    units_rule: ConformanceRule,
+    promote_rule: ConformanceRule,
+) -> tuple[str, int, dict[str, int]]:
+    """Promote the disclosed base fluid volume with its null semantics kept apart."""
+    state_code = str(identity.spec["nd_state_code"])
+    state_name = str(identity.spec["state_name"])
+    identity_spec = api10_identity(identity)
+    unit = str(units_rule.spec["unit"])
+    bound = Decimal(str(promote_rule.spec["plausibility_max_gal"]))
+    valid: list[dict[str, Any]] = []
+    malformed: list[dict[str, Any]] = []
+    implausible: list[dict[str, Any]] = []
+    duplicates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in _design_candidate_rows(connection, manifest_id, identity):
+        api10 = identity_spec.normalize(row["api_number"])
+        if (
+            not row["disclosure_id"]
+            or api10 is None
+            or not api10.startswith(state_code)
+            or row["state_name"] != state_name
+        ):
+            malformed.append({**row, "detail": "missing or inconsistent design identity"})
+            continue
+        if row["disclosure_id"] in seen:
+            duplicates.append({**row, "detail": "duplicate DisclosureId in one archive"})
+            continue
+        try:
+            semantics, volume = classify_base_water(row["total_base_water_volume"])
+        except ValueError as error:
+            malformed.append({**row, "detail": str(error)})
+            continue
+        if exceeds_plausibility(volume, bound):
+            implausible.append(
+                {**row, "detail": f"TotalBaseWaterVolume exceeds {bound} {unit}"}
+            )
+            continue
+        seen.add(row["disclosure_id"])
+        valid.append(
+            {
+                "disclosure_id": row["disclosure_id"],
+                "api10": api10,
+                "base_water_volume": volume,
+                "base_water_unit": unit,
+                "base_water_null_semantics": semantics,
+                "source_id": SOURCE_ID,
+                "report_vintage": vintage,
+                "manifest_id": manifest_id,
+            }
+        )
+
+    quarantined = {
+        "parse_error": _quarantine_rows(
+            connection,
+            malformed,
+            manifest_id=manifest_id,
+            reason_code="parse_error",
+            rule_id=promote_rule.rule_id,
+        ),
+        "impossible_volume": _quarantine_rows(
+            connection,
+            implausible,
+            manifest_id=manifest_id,
+            reason_code="impossible_volume",
+            rule_id=promote_rule.rule_id,
+        ),
+        "duplicate_row": _quarantine_rows(
+            connection,
+            duplicates,
+            manifest_id=manifest_id,
+            reason_code="duplicate_row",
+            rule_id=identity.rule_id,
+        ),
+    }
+
+    with derive(
+        "canonical.promote",
+        output=OutputSpec(
+            store="postgres", dataset=DESIGN_TABLE, partition={"manifest_id": manifest_id}
+        ),
+        params={
+            "state": "North Dakota",
+            "source_field": "TotalBaseWaterVolume",
+            "unit": unit,
+            "plausibility_max_gal": str(bound),
+        },
+        inputs=[
+            InputRef(kind="derivation", ref_id=parse_derivation_id),
+            InputRef(kind="manifest", ref_id=manifest_id, as_of_vintage=vintage),
+        ],
+        rules=[identity.rule_id, units_rule.rule_id, promote_rule.rule_id],
+    ) as context:
+        context.set_rows(len(valid))
+        context.set_output_hash(hash_payload(json_ready(valid)))
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            _INSERT_DESIGN,
+            [{**row, "derivation_id": context.derivation_id} for row in valid],
+        )
+        inserted = max(cursor.rowcount, 0)
+    return context.derivation_id, inserted, quarantined
+
+
 _CURRENT_WELLS = """
 select api10, api14, state_code, county_code_at_permit, ndic_file_no, operator_name_reported,
        operator_id, well_name, status_canonical, status_reported, well_type_reported, spud_date,
@@ -665,19 +862,89 @@ def materialize_nd_readiness(
     return context.derivation_id, inserted
 
 
+_NEWEST_STAGED_MANIFEST = """
+select s.manifest_id
+  from staging.fracfocus_disclosures s
+  join lineage.manifests m on m.manifest_id = s.manifest_id
+ where s.state_name = %(state_name)s or s.api_number like %(prefix)s
+ group by s.manifest_id, m.fetch_vintage
+ order by m.fetch_vintage desc, s.manifest_id desc
+ limit 1
+"""
+
+
+def promote_resident_design(connection: psycopg.Connection) -> dict[str, Any]:
+    """Promote from staging already on the host, with no fetch.
+
+    A host that has never pulled the 440 MB voluntary-disclosure archive has nothing to
+    promote, which is a plan and not a failure: the outcome is stated and the caller exits 0.
+    """
+    identity = identity_rule(connection)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            _NEWEST_STAGED_MANIFEST,
+            {
+                "state_name": str(identity.spec["state_name"]),
+                "prefix": f"{identity.spec['nd_state_code']}%",
+            },
+        )
+        found = cursor.fetchone()
+    if found is None:
+        return {"outcome": "no_staged_disclosures", "design_rows": 0, "quarantined": {}}
+    manifest_id = found[0]
+    parse_id, _, _, _ = _existing_derivations(connection, manifest_id)
+    if not parse_id:
+        return {
+            "outcome": "no_parse_derivation",
+            "manifest_id": manifest_id,
+            "design_rows": 0,
+            "quarantined": {},
+        }
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select fetch_vintage from lineage.manifests where manifest_id = %s", (manifest_id,)
+        )
+        vintage = cursor.fetchone()[0]
+    units_rule, promote_rule = design_rules(connection)
+    derivation_id, rows, quarantined = _promote_design(
+        connection,
+        manifest_id=manifest_id,
+        vintage=vintage,
+        parse_derivation_id=parse_id,
+        identity=identity,
+        units_rule=units_rule,
+        promote_rule=promote_rule,
+    )
+    return {
+        "outcome": "promoted",
+        "manifest_id": manifest_id,
+        "design_derivation_id": derivation_id,
+        "design_rows": rows,
+        "quarantined": quarantined,
+    }
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Ingest FracFocus ND completion anchors.")
     parser.add_argument("--dsn", required=True)
     parser.add_argument("--raw-root")
+    parser.add_argument(
+        "--promote-design",
+        action="store_true",
+        help="promote completion design from resident staging without fetching the archive",
+    )
     arguments = parser.parse_args(argv)
     with durable_fetch_attempts(arguments.dsn), psycopg.connect(
         arguments.dsn
     ) as connection, open_ingest_run(
         connection, source_id=SOURCE_ID, raw_root=arguments.raw_root
     ) as run:
-        result = load_disclosures(run.connection, raw_root=run.raw_root)
+        if arguments.promote_design:
+            report: dict[str, Any] = promote_resident_design(run.connection)
+        else:
+            report = load_disclosures(run.connection, raw_root=run.raw_root).to_dict()
         connection.commit()
-    print(json.dumps(result.to_dict(), sort_keys=True))
+    print(json.dumps(report, sort_keys=True))
     return 0
 
 
