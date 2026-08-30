@@ -432,7 +432,7 @@
             "x-glasswell-glossary": "gt_fluid_intensity"
           },
           "intensity_null_semantics": {
-            "description": "reported, or why no intensity is served: no_report, lateral_length_unavailable, lateral_length_implausible, intensity_out_of_range.",
+            "description": "reported, or why no intensity is served: no_report, lateral_length_unavailable, lateral_length_implausible, intensity_out_of_range, or intensity_rule_unregistered where cr_ff_fluid_intensity is not registered \u2014 a gap in the registry, not a fact about the source.",
             "title": "Intensity Null Semantics",
             "type": "string"
           },
@@ -5894,22 +5894,22 @@
             "$ref": "#/components/schemas/CohortTotals",
             "description": "Cohort totals per stream."
           },
-          "producing_wells": {
-            "$ref": "#/components/schemas/FigureModel",
-            "description": "Wells in the cohort that filed at least one reported month.",
-            "x-glasswell-glossary": "gt_cumulative_production"
-          },
           "wells": {
             "$ref": "#/components/schemas/FigureModel",
             "description": "Wells in the cohort.",
             "x-glasswell-glossary": "gt_vintage_well_vintage"
+          },
+          "wells_with_a_filed_month": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Wells in the cohort whose record admits at least one month into these totals, per cr_nd_vintage_cohort_1's support_measure. Not the producing classification of cr_producing_window_1, which asks whether a well is producing now.",
+            "x-glasswell-glossary": "gt_cumulative_production"
           }
         },
         "required": [
           "cohort_year",
           "cohort_key_semantics",
           "wells",
-          "producing_wells",
+          "wells_with_a_filed_month",
           "cumulative"
         ],
         "title": "VintageCohort",
@@ -11726,7 +11726,7 @@
     },
     "/v1/wells/vintage-cohorts": {
       "get": {
-        "description": "Drilled wells and their cumulative volumes, grouped by the year that identifies the cohort. Which year that is \u2014 the spud year or the completion-anchor year \u2014 is not a query's choice to make: of the ND wells carrying both dates, 47 percent fall in different years, so the two are different charts. The key is committed as cr_nd_vintage_cohort_1 with its measured rationale and its effective date, read here at serve time, and the response names the rule so a reader can resolve why. Wells the regulator published no key for are their own cohort with cohort_year null, never folded into a year and never dropped: on the deployed instance that is 6,970 ND wells, of which 49 have production, so the cohort is large in count and small in volume and the response says both. Protocol 4D is stated rather than assumed: a vintage cohort is a population of drilled wells and not a set of admissible slots, so spacing_assumption.applies is false with its reason, and support_distribution says how many wells stand behind each cohort's figures on a scale cut for cohorts rather than for PLSS sections. The population is North Dakota. The Williston basin is not, so population_scope says so inside `data` rather than only in a warning a copied payload would lose.",
+        "description": "Drilled wells and their cumulative volumes, grouped by the year that identifies the cohort. Which year that is \u2014 the spud year or the completion-anchor year \u2014 is not a query's choice to make: of the ND wells carrying both dates, 47 percent fall in different years, so the two are different charts. The key is committed as cr_nd_vintage_cohort_1 with its measured rationale and its effective date, read here at serve time, and the response names the rule so a reader can resolve why. Wells the regulator published no key for are their own cohort with cohort_year null, never folded into a year and never dropped: on the deployed instance that is 6,970 ND wells, of which 49 have production, so the cohort is large in count and small in volume and the response says both. Protocol 4D is stated rather than assumed: a vintage cohort is a population of drilled wells and not a set of admissible slots, so spacing_assumption.applies is false with its reason, and support_distribution says how many wells stand behind each cohort's figures on a scale cut for cohorts rather than for PLSS sections. The count it is cut on is wells_with_a_filed_month, which cr_nd_vintage_cohort_1 defines and which is deliberately not the producing classification served on /v1/wells. The population is North Dakota. The Williston basin is not, so population_scope says so inside `data` rather than only in a warning a copied payload would lose.",
         "operationId": "get_well_vintage_cohorts",
         "parameters": [
           {
@@ -11824,7 +11824,7 @@
               "/cohort_year",
               "/cohort_key_semantics",
               "/wells",
-              "/producing_wells",
+              "/wells_with_a_filed_month",
               "/cumulative/oil_bbl",
               "/cumulative/gas_mcf"
             ],

@@ -171,6 +171,10 @@ def test_a_stored_no_report_row_is_its_own_class_and_is_not_a_gap(refreshed):
 def test_every_row_reconciles_its_month_classes_to_its_span(refreshed):
     """An identity that holds only where someone remembered to check is not an identity."""
     db, _ = refreshed
+    # Its own floor: an anti-join over an empty mart returns no offenders and proves nothing.
+    assert rows(db, "select count(*) from marts.well_cumulatives")[0][0] == len(ND_WELLS) * len(
+        MART_STREAMS
+    )
     offenders = rows(
         db,
         "select c.api10, c.stream, c.span_months from marts.well_cumulatives c"

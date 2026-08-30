@@ -113,8 +113,7 @@ sys.exit(0 if card.get("unit") and card.get("d", "").startswith("drv_") else 1)
 assert "a well that does not exist is 404, not an empty card" 404 \
     "$(keyed_status "$base/v1/wells/9999999999")"
 
-printf 'cumulatives, cohorts and completion design
-'
+printf 'cumulatives, cohorts and completion design\n'
 assert "GET /v1/wells/$api10/cumulatives" 200 "$(keyed_status "$base/v1/wells/$api10/cumulatives")"
 body "/v1/wells/$api10/cumulatives"
 assert_true "every cumulative states the months behind it" \
@@ -140,11 +139,26 @@ unkeyed = [item for item in data["cohorts"] if item["cohort_year"] is None]
 sys.exit(0 if data["cohort_key_rule"] == "cr_nd_vintage_cohort_1" and len(unkeyed) == 1 else 1)
 ' "$work_dir/body.json"
 body "/v1/wells/$api10/completions"
-assert_true "completion design is promoted in this release" \
-    "design_availability is release-scoped and this release promotes it" \
+# Not design_availability: completions.py sets that literal unconditionally, so asserting it
+# compares a constant to a constant and passes against a host with no promoted rows at all.
+# verify.sh holds the population; this holds the shape of what a promoted row serves.
+assert_true "a promoted design carries a handled volume and a reasoned intensity" \
+    "a design block that serves a bare number, or a null with no reason, is not defensible" \
     python3 -c '
 import json, sys
-sys.exit(0 if json.load(open(sys.argv[1]))["data"]["design_availability"] == "promoted" else 1)
+data = json.load(open(sys.argv[1]))["data"]
+design = data["design"]
+if design is None:
+    sys.exit(0 if data["design_null_semantics"] == "no_report" else 1)
+volume, intensity = design["base_water_volume"], design["fluid_intensity"]
+ok = design["base_water_null_semantics"] in ("reported", "reported_zero", "no_report")
+ok = ok and (volume is None or (volume["unit"] == "gal" and volume["d"].startswith("drv_")))
+ok = ok and (
+    (intensity is None and design["intensity_null_semantics"] != "reported")
+    or (intensity is not None and design["intensity_null_semantics"] == "reported"
+        and intensity["unit"] == "gal/ft" and intensity["d"].startswith("drv_"))
+)
+sys.exit(0 if ok else 1)
 ' "$work_dir/body.json"
 
 printf 'production and lineage\n'

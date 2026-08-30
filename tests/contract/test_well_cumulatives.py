@@ -165,22 +165,38 @@ def test_the_links_reach_the_well_the_series_and_the_rule(client: TestClient) ->
 def test_the_total_equals_the_live_series_summed_at_the_same_vintage(client: TestClient) -> None:
     """Two surfaces serving one quantity must agree, and this is what proves they do.
 
+    Truncated on the knowledge axis, which is the one the mart's snapshot is on and the one
+    `_BEHIND_SERIES` compares: a point filed at a report vintage later than the snapshot is a
+    point the mart has not absorbed, and including it would make this test fail for the one
+    reason the response already explains.
+
     Only the months the cumulative admits are summed: the fixture's withheld water month
     carries a non-zero volume, so a naive sum of the series would disagree with the mart by
     exactly the value the regulator held back — which is the point, not a discrepancy.
     """
     cumulative = client.get(PATH).json()["data"]
+    snapshot = cumulative["snapshot_vintage"]
     series = client.get(f"/v1/wells/{EXAMPLE_API10}/production").json()["data"]["series"]
 
+    truncated = 0
     for column in ("oil_bbl", "gas_mcf", "water_bbl"):
-        summed = sum(
-            Decimal(value)
-            for value, semantics in zip(
-                series[column], series[f"{column}_null_semantics"], strict=True
-            )
-            if semantics in ADMITTED and value is not None
-        )
+        summed = Decimal(0)
+        for value, semantics, vintage in zip(
+            series[column],
+            series[f"{column}_null_semantics"],
+            series[f"{column}_report_vintage"],
+            strict=True,
+        ):
+            if semantics not in ADMITTED or value is None:
+                continue
+            if vintage is not None and vintage > snapshot:
+                truncated += 1
+                continue
+            summed += Decimal(value)
         assert summed == Decimal(cumulative["cumulative"][column]["value"]), column
+    # The fixture holds nothing past the snapshot, so the truncation arm is exercised by
+    # test_a_filing_newer_than_the_snapshot_is_stated_rather_than_left_to_arithmetic instead.
+    assert truncated == 0
 
 
 def test_every_cumulative_figure_carries_the_vintage_it_was_built_at(client: TestClient) -> None:

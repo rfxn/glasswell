@@ -429,11 +429,19 @@ function completionContextBody(
   return fragment;
 }
 
+/** cr_ff_design_promote_1's vocabulary, for the disclosed volume. */
+const VOLUME_REASONS: Record<string, string> = {
+  no_report: "unavailable \u2014 the source disclosed none",
+  withheld: "unavailable \u2014 withheld by the regulator",
+};
+
+/** cr_ff_fluid_intensity_1's vocabulary, for the quotient. A different set of facts. */
 const INTENSITY_REASONS: Record<string, string> = {
   no_report: "unavailable \u2014 no disclosed volume",
   lateral_length_unavailable: "unavailable \u2014 no lateral geometry",
   lateral_length_implausible: "unavailable \u2014 lateral too short to divide by",
   intensity_out_of_range: "unavailable \u2014 result outside the rule's range",
+  intensity_rule_unregistered: "unavailable \u2014 the intensity rule is not registered",
 };
 
 function completionDesignItems(context: CompletionContext): HTMLElement[] {
@@ -447,7 +455,7 @@ function completionDesignItems(context: CompletionContext): HTMLElement[] {
     facts,
     "Base fluid",
     design.base_water_volume,
-    INTENSITY_REASONS[design.base_water_null_semantics] ?? "unavailable",
+    VOLUME_REASONS[design.base_water_null_semantics] ?? "unavailable",
   );
   appendFigureFact(facts, "Lateral", design.lateral_length_ft, "unavailable \u2014 no geometry");
   appendFigureFact(
