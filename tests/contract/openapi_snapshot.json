@@ -7557,7 +7557,7 @@
     },
     "/v1/derivations/{derivation_id}": {
       "get": {
-        "description": "The recorded derivation: what ran, on what inputs, under which code version and conformance rules, and what it produced. Ask for `include=inputs` and `include=rules` to expand them. Derivation ids are content addresses, so this record is immutable. The example id is the contract fixture's. `drv_`, `man_` and `qr_` ids are content addresses over bytes and run parameters, so they differ per deployment by construction \u2014 take a live one from the `d` handle on any served figure, or from `/v1/manifests`.",
+        "description": "The recorded derivation: what ran, on what inputs, under which code version and conformance rules, and what it produced. Ask for `include=inputs` and `include=rules` to expand them. Derivation ids are content addresses, so this record is immutable. The example id is the contract fixture's. `drv_`, `man_`, `qr_` and `p3pub_` ids are content addresses over bytes and run parameters, so they differ per deployment by construction \u2014 take a live one from the `d` handle on any served figure, from `/v1/manifests`, or from `/v1/modeling/publications`.",
         "operationId": "get_derivation",
         "parameters": [
           {
@@ -7825,7 +7825,7 @@
     },
     "/v1/explain": {
       "get": {
-        "description": "Walks each handle back through the derivation graph to the manifests it came from, returning nodes, edges, terminals and a one-sentence explanation per node. This is the call that turns a number on a chart into a checksummed government file. Up to twenty handles per request and eight levels deep; both caps are refused rather than clamped. A handle that cannot be resolved returns `lineage_unresolved` naming the last node that did resolve \u2014 never a bare 404. `format=dot` returns the same resolution as a Graphviz digraph instead of JSON: derivations, manifests and the conformance rules they cited as nodes, and every edge labelled with the role the input played. The example id is the contract fixture's. `drv_`, `man_` and `qr_` ids are content addresses over bytes and run parameters, so they differ per deployment by construction \u2014 take a live one from the `d` handle on any served figure, or from `/v1/manifests`.",
+        "description": "Walks each handle back through the derivation graph to the manifests it came from, returning nodes, edges, terminals and a one-sentence explanation per node. This is the call that turns a number on a chart into a checksummed government file. Up to twenty handles per request and eight levels deep; both caps are refused rather than clamped. A handle that cannot be resolved returns `lineage_unresolved` naming the last node that did resolve \u2014 never a bare 404. `format=dot` returns the same resolution as a Graphviz digraph instead of JSON: derivations, manifests and the conformance rules they cited as nodes, and every edge labelled with the role the input played. The example id is the contract fixture's. `drv_`, `man_`, `qr_` and `p3pub_` ids are content addresses over bytes and run parameters, so they differ per deployment by construction \u2014 take a live one from the `d` handle on any served figure, from `/v1/manifests`, or from `/v1/modeling/publications`.",
         "operationId": "get_explain",
         "parameters": [
           {
@@ -9675,7 +9675,7 @@
     },
     "/v1/manifests/{manifest_id}": {
       "get": {
-        "description": "The terminal node of every lineage chain: the checksum, the byte length, the acquisition URL and method, the self-stamped fetch vintage, and the supersession links either side of it. Manifest ids are content addresses, so this record is immutable. The bytes are not served (SB-07 \u00a79.6). The example id is the contract fixture's. `drv_`, `man_` and `qr_` ids are content addresses over bytes and run parameters, so they differ per deployment by construction \u2014 take a live one from the `d` handle on any served figure, or from `/v1/manifests`.",
+        "description": "The terminal node of every lineage chain: the checksum, the byte length, the acquisition URL and method, the self-stamped fetch vintage, and the supersession links either side of it. Manifest ids are content addresses, so this record is immutable. The bytes are not served (SB-07 \u00a79.6). The example id is the contract fixture's. `drv_`, `man_`, `qr_` and `p3pub_` ids are content addresses over bytes and run parameters, so they differ per deployment by construction \u2014 take a live one from the `d` handle on any served figure, from `/v1/manifests`, or from `/v1/modeling/publications`.",
         "operationId": "get_manifest",
         "parameters": [
           {
@@ -9781,7 +9781,7 @@
     },
     "/v1/manifests/{manifest_id}/bytes": {
       "get": {
-        "description": "The archived copy of the fetched artifact, byte-identical to what was hashed. Owner scope, unless the source's terms mark the artifact redistributable (SB-07 \u00a79.6) \u2014 an auditor does not need our copy, because the checksum and the exact acquisition URL let them re-fetch from the regulator and hash it themselves, which is the stronger audit. `404` when this host does not hold the bytes; the record at `/v1/manifests/{manifest_id}` still resolves. The example id is the contract fixture's. `drv_`, `man_` and `qr_` ids are content addresses over bytes and run parameters, so they differ per deployment by construction \u2014 take a live one from the `d` handle on any served figure, or from `/v1/manifests`.",
+        "description": "The archived copy of the fetched artifact, byte-identical to what was hashed. Owner scope, unless the source's terms mark the artifact redistributable (SB-07 \u00a79.6) \u2014 an auditor does not need our copy, because the checksum and the exact acquisition URL let them re-fetch from the regulator and hash it themselves, which is the stronger audit. `404` when this host does not hold the bytes; the record at `/v1/manifests/{manifest_id}` still resolves. The example id is the contract fixture's. `drv_`, `man_`, `qr_` and `p3pub_` ids are content addresses over bytes and run parameters, so they differ per deployment by construction \u2014 take a live one from the `d` handle on any served figure, from `/v1/manifests`, or from `/v1/modeling/publications`.",
         "operationId": "get_manifest_bytes",
         "parameters": [
           {
@@ -10352,7 +10352,7 @@
     },
     "/v1/quarantine/{quarantine_id}": {
       "get": {
-        "description": "The rejected row itself, served verbatim alongside the rule that rejected it and the manifests it was first and last seen in. Re-processing always re-reads the manifest, never this payload, so the payload is evidence rather than input. The example id is the contract fixture's. `drv_`, `man_` and `qr_` ids are content addresses over bytes and run parameters, so they differ per deployment by construction \u2014 take a live one from the `d` handle on any served figure, or from `/v1/manifests`.",
+        "description": "The rejected row itself, served verbatim alongside the rule that rejected it and the manifests it was first and last seen in. Re-processing always re-reads the manifest, never this payload, so the payload is evidence rather than input. The example id is the contract fixture's. `drv_`, `man_`, `qr_` and `p3pub_` ids are content addresses over bytes and run parameters, so they differ per deployment by construction \u2014 take a live one from the `d` handle on any served figure, from `/v1/manifests`, or from `/v1/modeling/publications`.",
         "operationId": "get_quarantine_row",
         "parameters": [
           {
