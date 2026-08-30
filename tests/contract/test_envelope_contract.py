@@ -61,9 +61,21 @@ def test_no_second_lineage_representation(client: TestClient, path: str) -> None
 def test_collections_carry_a_cursor_key_that_is_null_at_the_end(
     client: TestClient, path: str
 ) -> None:
+    """Followed to the real last page rather than assuming one page reaches it. A fixed limit
+    silently stops testing the end the day a collection outgrows it, which /v1/conformance did
+    when two states and a boundary source landed together."""
     body = client.get(path, params={"limit": 200}).json()
-
     assert isinstance(body["data"], list)
+
+    for _ in range(50):
+        if body["meta"]["next_cursor"] is None:
+            break
+        assert body["links"]["next"] is not None, "a cursor was advertised with no next link"
+        body = client.get(body["links"]["next"]).json()
+        assert isinstance(body["data"], list)
+    else:
+        pytest.fail(f"{path} did not reach a last page in 50 requests")
+
     assert body["meta"]["next_cursor"] is None
     assert body["links"]["next"] is None
 

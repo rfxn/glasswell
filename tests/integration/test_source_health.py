@@ -200,13 +200,23 @@ def test_poll_policy_matches_the_recurring_units(db) -> None:
         "nd_gis_wells",
         "nd_mpr_xlsx",
         "nm_c115b_upstream",
+        # Montana publishes on the same cadence as the ND and BLM feeds. nm_ocd_wells_gis is
+        # deliberately absent: 061 registers it owner-triggered, like its nine FTP siblings.
+        "mt_bogc_well_production",
+        "mt_bogc_pru_production",
+        "mt_gis_wells",
+        "mt_gis_well_paths",
     }
 
     assert all(policies[source] == ("Every 35 days", timedelta(days=35)) for source in scheduled)
-    assert all(
-        interval is None
+    unscheduled_with_an_interval = {
+        source
         for source, (_cadence, interval) in policies.items()
-        if source not in scheduled
+        if source not in scheduled and interval is not None
+    }
+    assert not unscheduled_with_an_interval, (
+        f"{sorted(unscheduled_with_an_interval)} carry a poll interval but are not listed as"
+        " scheduled — add them here, or register them owner-triggered with a null interval"
     )
     root = Path(__file__).resolve().parents[2]
     ingest_service = (root / "infra/systemd/glasswell-ingest.service").read_text()
