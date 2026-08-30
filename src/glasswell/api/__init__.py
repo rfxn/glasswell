@@ -24,6 +24,7 @@ from glasswell.api.examples import KEY_HEADER
 from glasswell.api.routers import (
     completions,
     conformance,
+    cumulatives,
     formations,
     glossary,
     health,
@@ -184,6 +185,7 @@ def create_app() -> FastAPI:
         wells.router,
         neighbors.router,
         completions.router,
+        cumulatives.router,
         production.router,
         formations.router,
         tiles.router,

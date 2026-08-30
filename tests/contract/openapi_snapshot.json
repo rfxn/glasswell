@@ -872,6 +872,93 @@
         "title": "ConformanceRuleDetail",
         "type": "object"
       },
+      "Coverage": {
+        "additionalProperties": false,
+        "properties": {
+          "_lineage": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Stream to derivation handle (SB-07 \u00a79.1b); one handle per stream.",
+            "title": "Lineage",
+            "type": "object"
+          },
+          "_units": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Stream to count unit.",
+            "title": "Units",
+            "type": "object"
+          },
+          "gas_mcf": {
+            "$ref": "#/components/schemas/StreamCoverage"
+          },
+          "oil_bbl": {
+            "$ref": "#/components/schemas/StreamCoverage"
+          },
+          "water_bbl": {
+            "$ref": "#/components/schemas/StreamCoverage"
+          }
+        },
+        "required": [
+          "oil_bbl",
+          "gas_mcf",
+          "water_bbl",
+          "_lineage",
+          "_units"
+        ],
+        "title": "Coverage",
+        "type": "object"
+      },
+      "CumulativeStreams": {
+        "additionalProperties": false,
+        "properties": {
+          "gas_mcf": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FigureModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cumulative gas; null where none was filed.",
+            "x-glasswell-glossary": "gt_stream"
+          },
+          "oil_bbl": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FigureModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cumulative liquids, oil plus condensate; null where none was filed.",
+            "x-glasswell-glossary": "gt_liquids_policy"
+          },
+          "water_bbl": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FigureModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cumulative produced water; null where none was filed.",
+            "x-glasswell-glossary": "gt_stream"
+          }
+        },
+        "required": [
+          "oil_bbl",
+          "gas_mcf",
+          "water_bbl"
+        ],
+        "title": "CumulativeStreams",
+        "type": "object"
+      },
       "DatasetInventory": {
         "additionalProperties": false,
         "properties": {
@@ -2007,6 +2094,39 @@
           "links"
         ],
         "title": "EnvelopeModel[WellCompletions]",
+        "type": "object"
+      },
+      "EnvelopeModel_WellCumulatives_": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "$ref": "#/components/schemas/WellCumulatives"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[WellCumulatives]",
         "type": "object"
       },
       "EnvelopeModel_WellDetail_": {
@@ -5214,6 +5334,78 @@
         "title": "StatusDisclosure",
         "type": "object"
       },
+      "StreamCoverage": {
+        "additionalProperties": false,
+        "description": "The record one total is taken over: four counts that add up to the span.",
+        "properties": {
+          "coverage_complete": {
+            "description": "False wherever a month of the span was not filed as a value or a zero.",
+            "title": "Coverage Complete",
+            "type": "boolean"
+          },
+          "first_month": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First month of the span, YYYY-MM.",
+            "title": "First Month"
+          },
+          "last_month": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last month of the span, YYYY-MM.",
+            "title": "Last Month"
+          },
+          "months_no_report": {
+            "description": "Months with no filing: a stored no_report row, or no row at all.",
+            "title": "Months No Report",
+            "type": "integer"
+          },
+          "months_reported": {
+            "description": "Months the source filed a value for.",
+            "title": "Months Reported",
+            "type": "integer"
+          },
+          "months_reported_zero": {
+            "description": "Months the source filed a zero for.",
+            "title": "Months Reported Zero",
+            "type": "integer"
+          },
+          "months_withheld": {
+            "description": "Months held back by the regulator, stored or quarantined.",
+            "title": "Months Withheld",
+            "type": "integer"
+          },
+          "span_months": {
+            "description": "Months from the first filed month to the last.",
+            "title": "Span Months",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "months_reported",
+          "months_reported_zero",
+          "months_no_report",
+          "months_withheld",
+          "span_months",
+          "first_month",
+          "last_month",
+          "coverage_complete"
+        ],
+        "title": "StreamCoverage",
+        "type": "object"
+      },
       "SummaryGroup": {
         "properties": {
           "count": {
@@ -5476,6 +5668,65 @@
           "pools"
         ],
         "title": "WellCompletions",
+        "type": "object"
+      },
+      "WellCumulatives": {
+        "properties": {
+          "api10": {
+            "description": "Ten-digit API well number.",
+            "title": "Api10",
+            "type": "string",
+            "x-glasswell-not-a-figure": "Identifier. A 10-digit API number is an identity string, not a measurement."
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/Coverage",
+            "description": "The month classes each total is taken over."
+          },
+          "coverage_outcome": {
+            "description": "observed, or never_reported where the well has filed nothing at all.",
+            "title": "Coverage Outcome",
+            "type": "string"
+          },
+          "cumulative": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CumulativeStreams"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The three totals; null where the well has never filed anything."
+          },
+          "granularity": {
+            "description": "well_observed; these are regulator filings summed, never allocated.",
+            "title": "Granularity",
+            "type": "string",
+            "x-glasswell-glossary": "gt_granularity"
+          },
+          "months_withheld": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Months the regulator withheld for this well, from the quarantine ledger.",
+            "x-glasswell-glossary": "gt_withheld"
+          },
+          "snapshot_vintage": {
+            "description": "Knowledge vintage this mart snapshot was built at.",
+            "format": "date",
+            "title": "Snapshot Vintage",
+            "type": "string",
+            "x-glasswell-glossary": "gt_report_vintage"
+          }
+        },
+        "required": [
+          "api10",
+          "granularity",
+          "snapshot_vintage",
+          "coverage_outcome",
+          "cumulative",
+          "coverage",
+          "months_withheld"
+        ],
+        "title": "WellCumulatives",
         "type": "object"
       },
       "WellDetail": {
@@ -11500,6 +11751,230 @@
           },
           "explain_depth": {
             "so": "Three levels reaches the promotion and its source manifest.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          }
+        }
+      }
+    },
+    "/v1/wells/{api10}/cumulatives": {
+      "get": {
+        "description": "Cumulative oil, gas and water for one well, served beside the record each total is taken over. A total on its own cannot say whether a zero is a filed zero or an absence, and it cannot say anything at all about a month the regulator withheld \u2014 those months never reach canonical, they are quarantined \u2014 so every figure here carries four month counts that add up to its span: months reported, months reported as zero, months with no report, and months withheld. Only a reported or a reported-zero month is admitted into the total; a no-report month and a withheld month are counted and excluded, never summed as zeros. A well that has never filed anything returns 200 with a null cumulative and coverage_outcome never_reported, because the well exists and the honest answer is that nothing was ever filed for it \u2014 not a zero, and not a 404. The totals are a mart snapshot, and every figure states the vintage it was built at. The live monthly series at /v1/wells/{api10}/production can already hold filings this snapshot has not absorbed; where it does, this response says so and names both dates rather than leaving a reader to find the gap by arithmetic. Both are correct at the vintage each states. The mart covers North Dakota, so a well outside it is refused by name rather than served an empty total that would read as no production.",
+        "operationId": "get_well_cumulatives",
+        "parameters": [
+          {
+            "description": "Ten-digit API well number.",
+            "in": "path",
+            "name": "api10",
+            "required": true,
+            "schema": {
+              "description": "Ten-digit API well number.",
+              "pattern": "^\\d{10}$",
+              "title": "Api10",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+              "title": "As Of"
+            }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_WellCumulatives_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "as_of_out_of_range": {
+                    "summary": "as_of precedes the captured history",
+                    "value": {
+                      "detail": "`as_of` is earlier than the earliest captured vintage for every contributing source. An empty result would be indistinguishable from nothing happening.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "as_of precedes the captured history",
+                      "type": "/v1/errors/as_of_out_of_range"
+                    }
+                  },
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Cumulative production for one well",
+        "tags": [
+          "wells"
+        ],
+        "x-glasswell-dataset": {
+          "anchors": [
+            "/api10",
+            "/granularity",
+            "/snapshot_vintage"
+          ],
+          "collection_pointer": "",
+          "columns": {
+            "default": [
+              "/api10",
+              "/cumulative/oil_bbl",
+              "/cumulative/gas_mcf",
+              "/cumulative/water_bbl",
+              "/months_withheld",
+              "/snapshot_vintage"
+            ],
+            "hidden": [],
+            "hidden_reason": {},
+            "sort": "/api10"
+          },
+          "facets": [
+            "as_of"
+          ],
+          "group": "wells",
+          "id": "cumulatives",
+          "intro": "nb_dataset_cumulatives",
+          "order": 15,
+          "row_id": [
+            "/api10"
+          ],
+          "title": "Cumulative production (per well)"
+        },
+        "x-glasswell-request-example": {
+          "path": {
+            "api10": "3305310451"
+          },
+          "query": {}
+        },
+        "x-glasswell-semantics": {
+          "as_of": {
+            "so": "This surface is a snapshot rather than a live read, so as_of cannot walk backwards through it: a date before the snapshot vintage is refused rather than answered with a total the date never saw. Ask /v1/wells/{api10}/production for a historical cut.",
+            "x-glasswell-glossary": "gt_report_vintage"
+          },
+          "explain": {
+            "so": "Inlines the chain behind each total and behind the coverage counts. The counts share one handle per stream, so the block stays inside /v1/explain's cap however many months a well has filed.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "explain_depth": {
+            "so": "A total resolves through the mart refresh to every promotion that fed it, so the chain here is one hop longer than a live figure's.",
             "x-glasswell-glossary": "gt_derivation_handle"
           }
         }
