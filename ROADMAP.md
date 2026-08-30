@@ -26,7 +26,7 @@ the exit criteria below, not against a feeling of progress:
 | **P4** Dollars and scenarios | **Not started.** No deck, DCF, breakeven, payout or scenario loop. `econ.value` and `econ.sensitivity` exist in the derivation-kind vocabulary and nothing emits them |
 | **P5** Intelligence, agents and alerts | **Not started.** No agent gateway and no curated tool surface; no league table, AOIs or digests; `lineage.forecast_grades` is DDL with no writer |
 | **P6** Hardening and glass-box proof | **Partial.** Six CI jobs are branch-protection-required — `python`, `web`, `e2e-guards`, `shell`, `collateral`, `map-chrome` — with the tile allowlist asserted and conformance exercised end to end. Deployed `v0.61+e07db3d` at schema head 52 adds independently committed source-poll outcomes aligned to actual recurring timers, nine fail-closed selector-output contracts, two-clock conformance, a bounded viewport rate window, and a sandboxed nightly retention unit; release CI, 111 host checks and 20 API smoke checks pass. Fetch-attempt history begins empty until each source next polls. The recurring logical restore has passed against the latest schema-47 backup with exact critical counts, six reads, durable evidence and scratch cleanup; schema 51 has not yet reached that scheduled proof. Full VM/raw-zone recovery remains open, as do broader rate policy, remote-copy evidence, tunnel/Access, outsider guest exercise, broader determinism and tool-equivalence gates |
-| **P7** Permian — NM first, then TX | **Started, unpromoted.** NM ingest and promotion code exist and the sources are registered, but no NM row is resident — they read `pending` until the promotion deploy. TX carries wells and wellbore identity on the map. TX lease production, allocation v0 and its two validators are unbuilt P7b scope |
+| **P7** Permian — NM first, then TX | **Built and gated, with no well spine.** NM is gated, not unbuilt: `ingest/nm_ocd.py` promotes to `canonical.production_monthly`, `ingest/nm_dims.py` promotes NM's own effective-dated completion dimension to `canonical.well_completions` — 426,529 observations over 147,975 completions, appended and never updated — and `ingest/nm_c115b.py` stops at staging by design, because the C-115B service publishes a rolling window and a month that rolls out of it cannot be re-fetched. Conformance rows are seeded and resident; NM production and well rows are zero, and the gate is a decision rather than a missing module. The gap is the spine: no `nm_*` module writes `canonical.wells` or `canonical.well_spatial`, so promoting today would land production and completions with no well header and no geometry — no map presence, no well card, a large data win with no product surface. TX carries wells and wellbore identity on the map. TX lease production, allocation v0 and its two validators are unbuilt P7b scope |
 | **P8** Living systems | **Not started.** |
 
 ## Phases
@@ -40,13 +40,84 @@ the exit criteria below, not against a feeling of progress:
 | **P4** Dollars and scenarios | Decks and assumptions with water opex and per-state tax defaults; DCF, breakeven and payout; sensitivities and tornado; the scenario loop; type-curve builder in the UI; analog panel on the scenario card | A scenario returns forecast plus NPV in under three seconds; the type-curve builder is live; the tornado is hand-checked directionally; every valuation reports P10, P50 and P90 together |
 | **P5** Intelligence, agents and alerts | Activity surfaces and the DUC proxy; operator league table on the residual metric, with operator aliasing and a stated rollup mode; areas of interest and weekly digests; well sets and rollups; agent gateway over curated tools; the forecast ledger starts writing | The ten-question suite passes through the public tools; the tool-equivalence report is clean; an AOI digest is correct against a manual diff, with its freshness window stated |
 | **P6** Hardening and glass-box proof | Naked-number, glossary-coverage, tile-allowlist, conformance, contract, tool-equivalence and determinism checks all wired and blocking; determinism pinning across the artifact path; tunnel and Access with all three scopes and a non-interactive guest-key class; the two-user database split landed before the first guest key; rate limits; backup and a live restore drill; observability and the weekly self-report; non-functional budgets converted to tests | A stranger with a guest key reproduces every number in the UI; the restore drill completed from backup to a working system; the glass-box, performance, scenario, agent, conformance, glossary and as-of criteria all green |
-| **P7** Permian — NM first, then TX | **NM first.** OCD fetch with address re-resolution; XML full-table parsers; production, well and completion history, spacing units and the well-completion crosswalk; change detection; a well-level Permian spine, which is the allocation variable removed. **Then TX.** RRC identifier resolution with rotation monitoring; lease production and the in-dump well-to-lease crosswalk; the wellbore master; completion feed and permits, incremental; county GIS layers with the NAD27 transform recorded as a derivation; allocation v0 with both validators; abstracts loaded as land units. TX directional survey stations stay out — see the two reasons under **Out of scope** | Allocation error bounds published from both validators; the quality scorecard published; the Texas user stories passing on TX data; quarantine rate reported by basin against the per-basin trigger; the oil-lease share of allocation measured and published; a Permian benchmark artifact, sliced, against the type-curve control on the identical split; the NM-before-TX ordering validated — the well-level spine de-confounded the allocation error measurement, or it is documented why it did not |
+| **P7** Permian — NM first, then TX | **NM first.** OCD fetch with address re-resolution; XML full-table parsers; production, well and completion history, spacing units and the well-completion crosswalk; change detection; a well-level Permian spine, which is the allocation variable removed — and the well headers and geometry that spine is made of, since `canonical.wells` and `canonical.well_spatial` are the unbuilt half and no promoted NM figure reaches the map or the well card without them. **Then TX.** RRC identifier resolution with rotation monitoring; lease production and the in-dump well-to-lease crosswalk; the wellbore master; completion feed and permits, incremental; county GIS layers with the NAD27 transform recorded as a derivation; allocation v0 with both validators; abstracts loaded as land units. TX directional survey stations stay out — see the two reasons under **Out of scope** | Allocation error bounds published from both validators; the quality scorecard published; the Texas user stories passing on TX data; quarantine rate reported by basin against the per-basin trigger; the oil-lease share of allocation measured and published; a Permian benchmark artifact, sliced, against the type-curve control on the identical split; no NM figure served before a well header and geometry exist for the rows behind it; the NM-before-TX ordering validated — the well-level spine de-confounded the allocation error measurement, or it is documented why it did not |
 | **P8** Living systems | One graded forecast-ledger cycle, bounded by elapsed time; inventory v0, ND-scoped — geometrically admissible undrilled locations at an assumed spacing, each carrying a training-support score, and never reserves; basin transfer as a stretch; capability matrix with attribution checked; the notebook write-up and the fluency outcomes; publish decision against IP-carve-out status | One graded cycle complete, the capability matrix published, and the township inventory demo recorded (conditional); every honest gap tagged `data-unreachable` or `effort-unreachable`; the publish decision recorded either way |
 
 Epics E1–E16 and user stories U1–U15 are defined in blueprint v0.4 §5 and §6; the
 v0.5 amendments, E17 (inventory) and U16–U21 are in [`blueprint.md`](blueprint.md)
 §5 and §6; E18 (glossary-as-data) and U22 are new in
 [`blueprint-v0.6-draft.md`](blueprint-v0.6-draft.md) §5 and §6.
+
+## Next work
+
+A capability review at the mature end of the market, held internally under the
+[`blueprint.md`](blueprint.md) §8.2 carve-out, found the analytics surface already built
+and sold: filtered rate-versus-time with normalisation and grouping, basin rollups,
+machine-learned rock-quality tiers over locations that do not exist, breakeven
+economics, decline parameters as a download. It also found no lineage affordance
+anywhere on it — no derivation handle, no per-figure source, no vintage stamp, no
+spacing or support disclosure — one artifact carrying two different totals for the same
+quantity with nothing on the page to reconcile them, and drilled wells stacked with
+modelled locations behind a single measure a reader can forget to filter. The
+conclusion is not to copy that surface. It is that the same class of figure, served
+with the handle attached and the 4D statements mandatory, is the product — and R8,
+the naked-number rule and Protocol 4D are already built, which is the expensive part.
+
+Three priorities, owner-approved 2026-08-29. Each sits inside an existing phase rather
+than alongside one; none renumbers the P0–P8 set:
+
+| Priority | Contents | Exit criteria |
+|----------|----------|---------------|
+| **N1** Serve the computed modeling layer *(P3 → P2 serving)* | `src/glasswell/modeling/` is 5,211 lines and no router imports it — `grep -rn "from glasswell.modeling" src/glasswell/api/` returns nothing. It holds formation type curves at P10/P50/P90 on the closed `formation_area_length → formation_area → formation_basin` peer ladder, under both normalisation arms (`NORMALIZATIONS = ("typecurve_per_kft", "typecurve_absolute")`), with the control pinned `tcv1.0` and the accepted publication `p3pub_8b434525d8c621762e31b06ca660bfcd`; 12- and 24-month cumulatives and producing-month-indexed curves (`HORIZONS = (12, 24)` in `modeling/model_dataset.py`); feature matrices and model-ready splits. All persisted to Parquet, none served. The work is routers over pinned artifacts, not new modelling | Every served type-curve and cumulative figure resolves under `?explain=true` to the pinned artifact and the split set it was built on; `control_unavailable` is served as a stated outcome rather than an absent figure; the naked-number and glossary-coverage checks pass over the new surface; no figure reads an unregistered artifact |
+| **N2** Enrich the served views from data already in hand *(P2)* | Per-well cumulative oil, gas and water — the `prod` CTE in `marts/land_metrics.py` `_MEMBERSHIP` already computes it `group by api10` on every refresh and discards it into the PLSS rollup. Spacing statistics over `marts.nd_neighbor_edges`, which already holds directed distances with a pair-local UTM zone recorded per edge. Parent/child labelling, since `/v1/wells/{api10}/neighbors` already returns only earlier-completion same-formation neighbours — the relation is live; the label, the child-side inversion and the aggregates are not. Vintage cohorts from `spud_year`, already a tile column. Fluid intensity per lateral foot, one promotion away — `total_base_water_volume` is staged today and the card reports `design_availability=not_promoted`. Lateral length, the producing class and land-unit rollups are already served and are out of scope; `marts.nd_well_card` is empty on purpose, as `013_lateral_length_precision.sql` states and `tests/integration/test_marts_nd.py` asserts, so filling it is a decision to reverse rather than a gap to close | Each new figure carries a derivation handle and states its null semantics, keeping `no_report`, `reported_zero` and `withheld` distinct; the cohort key — spud year or completion anchor year — is a committed conformance rule with its rationale, not a choice made in a query; the fluid-intensity promotion moves the card off `not_promoted`; any figure whose inputs are state-truncated says so on the figure |
+| **N3** State expansion — the NM gate, then Montana *(P7, then a Williston extension)* | NM's remaining half is the spine: well headers into `canonical.wells` and lateral geometry into `canonical.well_spatial`, neither of which any `nm_*` module writes. Then Montana — MBOGC publishes bulk well-level *and* lease/unit-level monthly production, the complete well list, surface points and well paths, from one regulator; the `^33` neighbour constraints become state-parameterised; the BLM PLSS scope rule extends | NM: no figure served before a well header and geometry exist for the rows behind it — the gate opens on the spine, not on the row count. MT: ND wells at the Montana line carry complete neighbour sets, with the count that changed reported rather than asserted; MT well-level and lease-level volumes reconciled and the residual published as a measured allocation control before TX allocation v0 is written; MT quarantine share measured against the per-basin trigger |
+
+N1 and N2 do not depend on each other, and neither depends on N3. Two of N2's figures do
+depend on N3: spacing distributions and parent/child aggregates read
+`marts.nd_neighbor_edges`, whose DDL constrains the subject key and both endpoints to
+`^33[0-9]{8}$` (`045_nd_neighbors.sql:5` and `:55`), so ND wells at the Montana line have
+truncated neighbour sets today. Serving those two before Montana lands means restating
+them after it. N1 is the only one of the three that unlocks a built artifact rather than
+building one, so it goes first under compression.
+
+### State expansion
+
+**Montana follows the NM gate and precedes TX allocation v0.** It is not a phase and
+renumbers nothing; it extends P1's ND spine into a second Williston state. It is not one
+of the additional basins deferred until after P8, because it is the same Williston Bakken
+already trained on; Colorado and Wyoming would be.
+
+Four reasons for that position. It extends the trained basin rather than opening a new
+one, so formation aliases and the peer ladder in `modeling/type_curve.py` reach across
+the state line instead of needing new analogues. It repairs a live defect rather than only
+adding coverage: `045_nd_neighbors.sql` constrains `nd_neighbor_subjects.api10` and both
+sides of `nd_neighbor_edges` to `^33[0-9]{8}$`, and `marts/land_metrics.py` pins
+`GRID_STATE_API_PREFIXES = ("33",)`, so ND wells near the border have truncated neighbour
+sets and every spacing or parent/child figure built on them inherits the truncation. It is
+the only candidate publishing both production grains from one regulator, which makes the
+well-level file a control for the lease-level file — the TX allocation problem rehearsed
+against ground truth before allocation v0 is written, which is the same argument P7's exit
+criterion already makes for NM-before-TX, at a fraction of NM's cost. And the land grid is
+free: the BLM CadNSDI service that `ingest/blm_plss.py` already fetches covers Montana,
+with the ND scope held as a conformance row (`cr_blm_plss_scope_1`), so land units, land
+metrics, spacing-unit tiles and the Protocol 4D inventory story port on a scope change
+rather than a new component.
+
+It goes after the NM gate and not before it because NM's cost is already sunk — roughly
+200 KB across `ingest/nm_ocd.py`, `ingest/nm_dims.py`, `ingest/nm_c115b.py` and
+`seed/conformance_nm.py` — and its gate is a build decision about the spine, not a new
+source. Montana is net-new build. Estimated S–M, about two weekends at the rate below; it
+sits outside the phase budget table because it is not a phase.
+
+**Oklahoma is tagged `data-unreachable` on production.** Headers, permits and completions
+are bulk and good. Production is not: the Corporation Commission does not publish it, the
+Tax Commission is the recordkeeper, and its history is lease-grain on the production-unit
+number, served through a per-record web lookup and a mailed request form. No bulk
+production file exists, so this carries the same tag as open question 7 and the TX survey
+filings, for the same reason. Header-and-permit coverage alone would ship a state whose
+wells could never carry a production number, which is worse than absence. The completions
+master does carry the tax production-unit number, so the identity half of a lease
+crosswalk is largely pre-solved if a bulk feed ever appears.
 
 ## Timebox
 
@@ -65,6 +136,9 @@ hours per weekend, solo:
 | P7 Permian (NM 2, TX 4) | 6 | TX carries the heaviest parse work in the project |
 | P8 Living systems | 3 + elapsed | The graded cycle is bounded by calendar time, not effort |
 | **Total** | **~32 weekends** | About seven to eight months of weekends |
+
+Montana is deliberately absent: it is a Williston extension rather than a phase, and its
+estimate sits with it under **Next work**.
 
 The earlier estimate — roughly 17 to 19 weekends — did not survive inspection. The
 same span had to carry ND ingest across six source families, promotion, PostGIS,
@@ -159,9 +233,11 @@ Carried forward, to be resolved with evidence rather than preference:
 8. **Confidential and tight-hole handling** — exclude, censor, or impute? Currently censored, but the confidential period systematically hides new wells, which is exactly the population inventory and scenarios care about.
 9. **Analog distance metric** — plain Euclidean on standardised features, or learned? Start Euclidean; compare once forecasting is stable.
 10. **Inventory spacing assumption** — a single user input, or per-operator inferred from recent development? Start with user input; inferred spacing is a P8 experiment.
-11. **TX inventory geometry** — with no PLSS, what is the unit: the operator's unit polygon, the lease, the abstract, or a synthetic grid? The land-unit abstraction keeps this a design question rather than a migration.
+11. **TX inventory geometry** — with no PLSS, what is the unit: the operator's unit polygon, the lease, the abstract, or a synthetic grid? The land-unit abstraction keeps this a design question rather than a migration. It is also not a Texas question. Pennsylvania, West Virginia and Ohio are metes-and-bounds with no PLSS either, so `ingest/blm_plss.py`, `marts/land_units.py`, `marts/land_metrics.py`, the spacing-unit tiles and the whole Protocol 4D township-inventory story do not port to Appalachia at all. Whatever answers this answers those, and until it does, Appalachia inherits an open design question rather than an ingest job.
 12. **Attribute-bundle size ceiling** — the client-side join is measured at ND scale and the Permian is an order of magnitude larger. The declared feature cap turns this into an instrument that fires on real traffic rather than a measurement someone must remember to take.
 13. **Rule-change re-promotion cost** — at what rule-change frequency does re-vintaging become the dominant compute cost, and does a rule change ever justify a rebuild instead?
+14. **Vintage cohort key** — spud year or completion anchor year? Both inputs are already held: `spud_year` is a tile column, and `modeling/model_dataset.py` already bins subjects by anchor year. The two disagree for any well spudded in one year and completed in the next, which is most of them, so this is a conformance row with a rationale rather than a query-level choice.
+15. **Whether a shorter horizon earns its keep** — a six-month cumulative is cheap to compute and expensive to land: `HORIZONS = (12, 24)` is part of the pinned `mdv1.4` identity and the accepted publication references it, so adding one changes an immutable and forces a reproducibility re-run. Only worth it against measured evidence that cum12 is too long a feedback loop for the ledger.
 
 Two further questions — league-table normalisation, and whether upstream bandwidth
 would carry a public demo — are closed, and are kept on the record in
@@ -183,6 +259,8 @@ their resolution stays traceable.
 | **Single VM, irreplaceable raw zone** | Nightly and weekly off-box copies, and a live restore drill as a P6 exit item |
 | **Glass-box tax collapses velocity** | Capture is a decorator and a context manager, not a per-call-site chore, and it is built in P0 so the cost is paid once. If it does slow the build, that measurement is itself an answer worth writing up |
 | **Harvest scope creep** — small features quietly become medium ones | Each harvested feature is capped at its stated acceptance; anything beyond it is a new blueprint version |
+| **State assumptions hardened into DDL** — a check constraint is the expensive half of a single-state assumption, because it is a migration rather than an argument | `marts/neighbors.py` parameterises `state_code`, but `045_nd_neighbors.sql` constrains `nd_neighbor_subjects.api10` and both sides of `nd_neighbor_edges` to `^33[0-9]{8}$` and `marts/land_metrics.py` pins `GRID_STATE_API_PREFIXES = ("33",)`. ND wells at the Montana line are the worked example that this is a correctness gap, not a coverage gap. Every new state audits the DDL and the mart module constants for hardcoded prefixes before its first row lands |
+| **Built-but-unserved work accumulates** — 5,211 lines of modeling no router imports is capital earning nothing while it rots against the serving contracts | N1 makes serving the exit condition rather than a follow-on. The artifact identities are pinned — `tcv1.0`, `mdv1.4`, the accepted publication — so the serving layer reads a fixed input and the cost is a router, not a rebuild. The same test applies to anything else built ahead of its consumer: name the endpoint that will read it, or do not build it yet |
 | **Inventory misuse** — slot counts read as reserves | The 4D statements are mandatory in every rollup, response and export |
 
 ---
