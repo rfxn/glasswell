@@ -68,3 +68,5 @@
            target of the next major version
 - [Fix] the two open session routes are bounded per resolved address, and a login already
       refused by the limiter is padded rather than run through a 64MiB Argon2id verify
+- [New] the login bound is proved by test: the limiter runs before the CSRF check and
+      before any password hashing, and deleting either call turns seven tests red

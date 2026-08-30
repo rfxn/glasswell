@@ -116,3 +116,29 @@ def test_the_login_floor_never_pads_a_slow_handler_negative() -> None:
 
     assert padding == 0.0
     assert slept == []
+
+
+def test_the_login_floor_is_pinned_because_uniformity_now_depends_on_it() -> None:
+    """An equality, not a floor, and the reason is new.
+
+    The two exit classes no longer cost the same work: a limiter-refused attempt pads for
+    LOCKED_PAD_SECONDS while a credential attempt runs a full Argon2id verify. What makes
+    them indistinguishable is that `enforce_login_floor` pads *both* out to the same wall
+    time, so the floor has to stay above the slower one. Lower it below the verify cost and
+    the classes separate again -- silently, because every other test here would still pass.
+    """
+    assert accounts.LOGIN_FLOOR_SECONDS == 0.250
+    assert accounts.LOCKED_PAD_SECONDS < accounts.LOGIN_FLOOR_SECONDS
+
+
+def test_the_floor_still_exceeds_what_a_real_verify_costs() -> None:
+    """The floor is only load-bearing while it is above the work it is masking. If Argon2id
+    at the shipped parameters ever costs more than the floor, the floor stops hiding the
+    difference and this fails rather than degrading quietly."""
+    real = hash_password(PASSWORD)
+    verify_cost = statistics.median(_durations(real, "wrong-password", count=5))
+
+    assert verify_cost < accounts.LOGIN_FLOOR_SECONDS, (
+        f"an Argon2id verify costs {verify_cost * 1000:.0f} ms against a"
+        f" {accounts.LOGIN_FLOOR_SECONDS * 1000:.0f} ms floor; the floor no longer masks it"
+    )
