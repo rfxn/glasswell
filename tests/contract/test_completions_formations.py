@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import base64
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 
 import psycopg
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_API10
 from glasswell.lineage.ids import new_ulid, parse_handle
+from tests.contract.conftest import BASE_WATER_GAL, FLUID_INTENSITY_GAL_PER_FT
 from tests.support.seed import seed_well, seed_well_spatial
 
 
@@ -20,7 +22,7 @@ def test_completion_context_keeps_events_and_pool_assignments_independent(
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["data"]["design_availability"] == "not_promoted"
+    assert body["data"]["design_availability"] == "promoted"
     assert body["data"]["events"] == [
         {
             "event_id": "ff-contract-0001",
@@ -128,16 +130,14 @@ def test_completion_as_of_does_not_leak_a_later_event_or_alias(client: TestClien
     assert body["data"]["pools"][0]["formation_null_semantics"] == "alias_unavailable"
     assert body["meta"]["as_of"] == {"requested": "2026-08-01", "resolved": "2026-08-01"}
     assert set(body["meta"]["source_freshness"]) == {"fracfocus_csv", "nd_mpr_xlsx"}
-    assert body["meta"]["warnings"] == [
-        {
-            "code": "source_history_unavailable",
-            "detail": (
-                "fracfocus_csv has captured events for this well, but its first available"
-                " observation is 2026-08-26, after the requested cut."
-            ),
-            "pointer": "/events",
-        }
+    assert [item["code"] for item in body["meta"]["warnings"]] == [
+        "source_history_unavailable",
+        "design_coverage_partial",
     ]
+    assert body["meta"]["warnings"][0]["detail"] == (
+        "fracfocus_csv has captured events for this well, but its first available"
+        " observation is 2026-08-26, after the requested cut."
+    )
 
 
 def test_completion_resolved_vintage_includes_derivation_availability(
@@ -268,7 +268,11 @@ def test_a_well_without_completion_context_is_explicitly_empty(client: TestClien
 
     assert body == {
         "api10": "3305300001",
-        "design_availability": "not_promoted",
+        # Release-scoped: this release promotes completion design. Whether *this* well has any
+        # is design_null_semantics, which is the right grain for a per-well fact.
+        "design_availability": "promoted",
+        "design": None,
+        "design_null_semantics": "no_report",
         "events": [],
         "pools": [],
     }
@@ -567,3 +571,174 @@ def test_formation_cursor_is_bound_to_its_filter(client: TestClient) -> None:
 
     assert mismatch.status_code == 422
     assert mismatch.json()["type"] == "/v1/errors/cursor_query_mismatch"
+
+
+def _seed_design(
+    connection: psycopg.Connection,
+    *,
+    api10: str,
+    disclosure_id: str,
+    volume: Decimal | None,
+    semantics: str = "reported",
+) -> None:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select source_manifest_id, derivation_id from canonical.well_completion_design"
+            " where disclosure_id = 'ff-contract-0001'"
+        )
+        manifest_id, derivation_id = cursor.fetchone()
+        cursor.execute(
+            "insert into canonical.well_completion_design (disclosure_id, api10,"
+            " base_water_volume, base_water_unit, base_water_null_semantics, source_id,"
+            " report_vintage, source_manifest_id, derivation_id)"
+            " values (%s, %s, %s, 'gal', %s, 'fracfocus_csv', '2026-08-26', %s, %s)",
+            (disclosure_id, api10, volume, semantics, manifest_id, derivation_id),
+        )
+    connection.commit()
+
+
+def test_the_design_block_serves_the_disclosed_volume_and_the_intensity(
+    client: TestClient,
+) -> None:
+    design = client.get(f"/v1/wells/{EXAMPLE_API10}/completions").json()["data"]["design"]
+
+    assert design["disclosure_id"] == "ff-contract-0001"
+    assert (design["base_water_volume"]["value"], design["base_water_volume"]["unit"]) == (
+        f"{BASE_WATER_GAL:.2f}",
+        "gal",
+    )
+    assert design["base_water_null_semantics"] == "reported"
+    # The literal, not the ratio: 5,917,362 gal over the fixture's 9862.27353475175 ft
+    # geodesic lateral. Re-deriving it from the response's own operands would pass even if the
+    # implementation divided by the wrong lateral.
+    assert design["fluid_intensity"] == {
+        "value": FLUID_INTENSITY_GAL_PER_FT,
+        "unit": "gal/ft",
+        "d": design["fluid_intensity"]["d"],
+    }
+    assert design["intensity_null_semantics"] == "reported"
+    assert design["lateral_length_ft"]["value"] == "9862.27"
+
+
+def test_every_design_handle_resolves(client: TestClient) -> None:
+    design = client.get(f"/v1/wells/{EXAMPLE_API10}/completions").json()["data"]["design"]
+
+    handles = [
+        design[field]["d"]
+        for field in ("base_water_volume", "fluid_intensity", "lateral_length_ft")
+    ]
+    assert len(set(handles)) == 3
+    for handle in handles:
+        response = client.get("/v1/explain", params={"h": handle, "depth": "full"})
+        assert response.status_code == 200, (handle, response.text)
+
+
+def test_the_disclosed_volume_resolves_to_the_promotion_rather_than_the_request(
+    client: TestClient,
+) -> None:
+    """The promoted value is a row, so its handle addresses the row that holds it."""
+    design = client.get(f"/v1/wells/{EXAMPLE_API10}/completions").json()["data"]["design"]
+    chain = client.get(
+        "/v1/explain", params={"h": design["base_water_volume"]["d"], "depth": "full"}
+    ).json()["data"]["chains"][0]
+
+    operations = {node.get("operation") for node in chain["nodes"]}
+    assert "canonical.promote" in operations
+
+
+def test_a_well_with_no_disclosure_says_so_rather_than_serving_a_zero(
+    client: TestClient,
+) -> None:
+    body = client.get("/v1/wells/3305300001/completions").json()
+
+    assert body["data"]["design"] is None
+    assert body["data"]["design_null_semantics"] == "no_report"
+    coverage = [
+        item for item in body["meta"]["warnings"] if item["code"] == "design_coverage_partial"
+    ]
+    assert len(coverage) == 1
+    assert "70.5 percent" in coverage[0]["detail"]
+
+
+def test_a_well_with_no_lateral_geometry_names_the_missing_divisor(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    api10 = "3305300002"
+    _seed_design(seeded, api10=api10, disclosure_id="ff-no-lateral", volume=Decimal("5000000"))
+    design = client.get(f"/v1/wells/{api10}/completions").json()["data"]["design"]
+
+    assert design["fluid_intensity"] is None
+    assert design["intensity_null_semantics"] == "lateral_length_unavailable"
+    assert design["lateral_length_ft"] is None
+
+
+def test_a_lateral_below_the_rule_floor_is_implausible_rather_than_intense(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """Seeded near the measured live minimum of 0.24 ft, not at zero: no ND well has a zero
+    summed lateral, so a zero-divisor fixture would exercise an unreachable branch."""
+    api10 = "3305300003"
+    seed_well_spatial(
+        seeded,
+        api10=api10,
+        geom_type="lateral",
+        wkt="LINESTRING(-103.5803 47.9075, -103.58029 47.9075)",
+    )
+    _seed_design(seeded, api10=api10, disclosure_id="ff-short", volume=Decimal("5000000"))
+    design = client.get(f"/v1/wells/{api10}/completions").json()["data"]["design"]
+
+    assert Decimal(design["lateral_length_ft"]["value"]) < Decimal("1000")
+    assert design["fluid_intensity"] is None
+    assert design["intensity_null_semantics"] == "lateral_length_implausible"
+
+
+def test_a_result_above_the_rule_ceiling_is_withdrawn_rather_than_served(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    api10 = "3305300004"
+    seed_well_spatial(seeded, api10=api10, geom_type="lateral")
+    _seed_design(seeded, api10=api10, disclosure_id="ff-huge", volume=Decimal("49999999"))
+    design = client.get(f"/v1/wells/{api10}/completions").json()["data"]["design"]
+
+    # Under the promotion's 50,000,000 gal bound and still over the serve-time ceiling: the
+    # two rules govern different things, and this well proves it.
+    assert design["fluid_intensity"] is None
+    assert design["intensity_null_semantics"] == "intensity_out_of_range"
+    assert design["base_water_volume"]["value"] == "49999999.00"
+
+
+def test_a_disclosure_with_no_volume_reports_rather_than_zeroes(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    api10 = "3305300005"
+    seed_well_spatial(seeded, api10=api10, geom_type="lateral")
+    _seed_design(
+        seeded, api10=api10, disclosure_id="ff-blank", volume=None, semantics="no_report"
+    )
+    design = client.get(f"/v1/wells/{api10}/completions").json()["data"]["design"]
+
+    assert design["base_water_volume"] is None
+    assert design["base_water_null_semantics"] == "no_report"
+    assert design["fluid_intensity"] is None
+    assert design["intensity_null_semantics"] == "no_report"
+
+
+def test_two_disclosures_are_disclosed_rather_than_summed(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """R7: a pad-level filing added to a well-level one would inflate the intensity of both."""
+    _seed_design(
+        seeded, api10=EXAMPLE_API10, disclosure_id="ff-contract-0002", volume=Decimal("1000000")
+    )
+    body = client.get(f"/v1/wells/{EXAMPLE_API10}/completions").json()
+
+    codes = [item["code"] for item in body["meta"]["warnings"]]
+    assert "multiple_design_disclosures" in codes
+    assert body["data"]["design"]["disclosure_id"] in ("ff-contract-0001", "ff-contract-0002")
+
+
+def test_the_intensity_rule_is_linked_beside_the_figure_it_bounds(client: TestClient) -> None:
+    links = client.get(f"/v1/wells/{EXAMPLE_API10}/completions").json()["links"]
+
+    assert links["cr_ff_base_water_units_1"] == "/v1/conformance/cr_ff_base_water_units_1"
+    assert links["cr_ff_fluid_intensity_1"] == "/v1/conformance/cr_ff_fluid_intensity_1"
