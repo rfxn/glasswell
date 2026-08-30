@@ -7,15 +7,18 @@
 -- the router, the selector registry, the status collector and the OpenAPI snapshot, and it is
 -- not smuggled in behind a scope widening.
 
-alter table marts.nd_neighbor_subjects
-    drop constraint nd_neighbor_subjects_api10_check,
-    add constraint nd_neighbor_subjects_api10_check
-        check (api10 ~ '^(25|33)[0-9]{8}$');
+-- 057 already widened this to any prefix so a third state needs no migration of its own, and
+-- marts/neighbors.py STATE_CODES is the control over which states are actually built. Left as
+-- 057 wrote it; narrowing it to an allowlist here would make New Mexico unrepresentable again.
 
+-- 057 widened the same constraint to any prefix but required an edge stay intra-state, because
+-- a pair-local UTM zone is undefined across an arbitrary state pair. That restriction is what
+-- this migration exists to lift, and it is safe to lift only because the zone set below is now
+-- bounded by the supported longitude domain rather than left to a binary guess.
 alter table marts.nd_neighbor_edges
-    drop constraint nd_neighbor_edges_check1,
-    add constraint nd_neighbor_edges_check1
-        check (api10 ~ '^(25|33)[0-9]{8}$' and neighbor_api10 ~ '^(25|33)[0-9]{8}$');
+    drop constraint nd_neighbor_edges_api10_check,
+    add constraint nd_neighbor_edges_api10_check
+        check (api10 ~ '^[0-9]{10}$' and neighbor_api10 ~ '^[0-9]{10}$');
 
 -- The zone is computed from the pair-local midpoint rather than picked from a pair, so the
 -- admitted set is the zones the supported domain can produce. Montana reaches UTM 11N; the
@@ -31,6 +34,10 @@ comment on constraint nd_neighbor_edges_distance_epsg_check on marts.nd_neighbor
     ' the set is a geometry the domain guard should already have refused, so this fires loudly'
     ' rather than persisting a distance measured far off its central meridian.';
 
-comment on constraint nd_neighbor_subjects_api10_check on marts.nd_neighbor_subjects is
-    'North Dakota (33) and Montana (25). Widening this is what repairs the truncated'
-    ' neighbour sets on the ND side of the Williston; see marts/neighbors.py STATE_CODES.';
+comment on constraint nd_neighbor_edges_api10_check on marts.nd_neighbor_edges is
+    'Any well prefix, and deliberately not intra-state: a cross-border edge is the whole'
+    ' repair, and marts/neighbors.py STATE_CODES decides which states are built. 057 required'
+    ' left(api10,2) = left(neighbor_api10,2) because a'
+    ' pair-local UTM zone had no defined answer off the two ND zones; the distance_epsg'
+    ' constraint above now bounds that answer, so the restriction is superseded rather than'
+    ' dropped.';

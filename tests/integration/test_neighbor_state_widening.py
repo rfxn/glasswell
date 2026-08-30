@@ -84,16 +84,16 @@ def test_north_dakota_is_unchanged_by_the_widening(db: psycopg.Connection, deriv
         assert cursor.fetchone()[0] == 1
 
 
-def test_an_edge_that_crosses_a_state_line_is_still_refused(
+def test_an_edge_that_crosses_a_state_line_is_representable(
     db: psycopg.Connection, derivation: str
 ) -> None:
-    """The pair-local UTM zone is chosen from the pair's midpoint; across two states it has no
-    definition, so a cross-state distance would be a number with no frame behind it."""
+    """066 lifted the intra-state restriction this test used to assert. It was there because a
+    pair-local UTM zone had no defined answer off the two ND zones; the distance_epsg constraint
+    now bounds that answer, and a cross-border edge is the ND/MT repair's whole point."""
     subject(db, ND[0], derivation)
     subject(db, NM[0], derivation)
 
-    with pytest.raises(psycopg.errors.CheckViolation):
-        edge(db, ND[0], NM[0], derivation)
+    edge(db, ND[0], NM[0], derivation)
 
 
 @pytest.mark.parametrize("malformed", ["3312345", "abc", "33053000012", "33-0530-0001"])
@@ -119,15 +119,17 @@ def test_no_migration_still_pins_the_north_dakota_prefix_on_these_tables(
         definitions = " ".join(row[0] for row in cursor.fetchall())
 
     assert "^33" not in definitions
-    assert "left(api10, 2) = left(neighbor_api10, 2)" in definitions.replace('"', "")
+    # 066 lifted it: an edge across the ND/MT line is the repair, not a violation. Asserted
+    # absent rather than deleted, so re-adding the restriction reddens here.
+    assert "left(api10, 2) = left(neighbor_api10, 2)" not in definitions.replace('"', "")
 
 
 def test_the_refresh_binds_a_state_tuple_rather_than_a_literal() -> None:
-    """`STATE_CODES` is the seam Montana widens. New Mexico is deliberately not in it: neither
-    NM source ships a lateral, so an entry would build an empty subject set and then record a
-    state in the derivation payload that contributed nothing."""
+    """`STATE_CODES` is the seam, and Montana has now widened it. New Mexico is still not in
+    it: neither NM source ships a lateral, so an entry would build an empty subject set and then
+    record a state in the derivation payload that contributed nothing."""
     from glasswell.marts import neighbors
 
-    assert neighbors.STATE_CODES == ("33",)
+    assert neighbors.STATE_CODES == ("33", "25")
     assert "%(state_code)s" not in neighbors._COMPONENTS
     assert "any(%(state_codes)s)" in neighbors._COMPONENTS
