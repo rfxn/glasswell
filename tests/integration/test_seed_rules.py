@@ -28,6 +28,9 @@ POLICY_RULES = tuple(sorted((
     # M2-3's membership decision: which section a well belongs to, chosen with measured
     # evidence and executed by the metrics mart the spec names.
     "cr_land_agg_membership_1",
+    # _2 supersedes _1 with the same membership and a third unassigned counter; both stay in
+    # the registry, because a superseded row is history rather than a mistake.
+    "cr_land_agg_membership_2",
     "cr_nd_basin_1",
     "cr_nd_geometry_provenance_1",
     "cr_nd_liquids_policy_1",

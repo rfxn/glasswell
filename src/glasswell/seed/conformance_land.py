@@ -219,6 +219,58 @@ LAND_RULES: tuple[dict[str, object], ...] = (
     },
 )
 
+_MEMBERSHIP_1 = next(
+    rule for rule in LAND_RULES if rule["rule_id"] == "cr_land_agg_membership_1"
+)
+
+# The membership itself is unchanged, which is exactly why this is a superseding row and not a
+# code change: _1's own contract_note says a different membership is a superseding row, and no
+# different membership is being proposed. What changes is that the scope the grid covers is now
+# stated beside the figure rather than left to be inferred from a total.
+MEMBERSHIP_2: dict[str, object] = {
+    **_MEMBERSHIP_1,
+    "rule_id": "cr_land_agg_membership_2",
+    "supersedes_rule_id": "cr_land_agg_membership_1",
+    "effective_from": date(2026, 8, 30),
+    "spec": {
+        **dict(_MEMBERSHIP_1["spec"]),  # type: ignore[arg-type]
+        "version": "2",
+        "grid_scope_api_prefixes": ["33"],
+        "unassigned": "a well whose midpoint and surface hole both resolve no land unit is"
+        " excluded from every cell; the refresh derivation params count the exclusions three"
+        " ways — in total, for the grid's own states where any nonzero count is an anomaly,"
+        " and for wells outside the states the PLSS grid covers at all, which is where every"
+        " Texas and New Mexico well falls until a grid exists for them",
+        "unassigned_populations_measured": {
+            "measured_on": "2026-08-29, VM 111 canonical.well_spatial by state and geom_type",
+            "nd_surface": 43817,
+            "tx_surface": 355463,
+            "nm_surface": 0,
+            "nm_surface_after_the_header_promotion": 141778,
+        },
+    },
+    "rule": "A well belongs to the section holding its lateral midpoint when it has a filed"
+    " lateral, and the section holding its surface hole otherwise; townships inherit through"
+    " the section's parent. Sums are whole-well and observed-only. The membership universe is"
+    " every well with a surface point in any state, and the served unassigned count says which"
+    " of those the grid does not cover.",
+    "rationale": (
+        "The membership is unchanged from cr_land_agg_membership_1 and this row supersedes it"
+        " for one reason: the universe was never state-scoped, and 355,463 Texas surface points"
+        " are already in it. Filtering the universe to the grid's states would have collapsed a"
+        " served figure from about 355,463 to about zero while describing a scope that has not"
+        " changed — the grid covers exactly the states it covered yesterday, and only our"
+        " description of it is becoming explicit. A restatement should record a change in the"
+        " world or in our reading of it, not a change in our vocabulary. So the scope is stated"
+        " beside the existing figure as a third counter rather than applied to it as a filter,"
+        " which is both cheaper and truer. New Mexico's 141,778 surface points join the"
+        " out-of-scope population when the header promotion lands, and any figure whose inputs"
+        " are state-truncated says so on the figure."
+    ),
+}
+
+LAND_RULES = (*LAND_RULES, MEMBERSHIP_2)
+
 _INSERT_SOURCE = """
 insert into lineage.sources (source_id, name, jurisdiction, license_note, redistributable)
 values (%(source_id)s, %(name)s, %(jurisdiction)s, %(license_note)s, %(redistributable)s)

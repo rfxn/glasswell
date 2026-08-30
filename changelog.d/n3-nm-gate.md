@@ -80,3 +80,16 @@
 - [Change] neither refusal suppresses the well header, and two reconciliations close on counted
          populations rather than on subtraction: records equal headers plus unkeyed plus
          undated, and headers equal points plus coordinate refusals
+- [New] `marts/land_metrics.py` counts unassigned wells a third way — those outside the states
+      the PLSS grid covers at all — so the scope New Mexico's 141,778 surface points fall
+      outside is stated explicitly rather than inferred from a total
+- [Change] `058_land_grid_state_scope.sql` and `seed/conformance_land.py` supersede
+         `cr_land_agg_membership_1` with `_2`, carrying the third counter and the measured
+         populations; the membership itself is unchanged, which is why this is a superseding
+         row rather than the code change its own contract_note forbids
+- [Fix] the membership universe is not filtered by state: 355,463 Texas surface points are in
+      it today and a scope filter would have collapsed a served figure to zero while a fixture
+      with one state in it reported no change
+- [Change] the production CTE is restricted to the wells membership actually joins, which is
+         output-identical — asserted by running both shapes side by side — and removes a full
+         scan of a view that spans 24.8M rows after the New Mexico promotion
