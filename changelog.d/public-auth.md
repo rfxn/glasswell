@@ -28,3 +28,6 @@
            LAN and deploy-gate credential; issued api_keys rows are unaffected
 - [Change] GLASSWELL_ALLOW_ANON resolves to the viewer role rather than owner scope, and
            the API refuses to start when it is set together with GLASSWELL_PUBLIC=1
+- [New] owner-only account administration at /v1/users: create, list, change role, soft
+      disable and reset a password, each an audit event; the last enabled owner cannot
+      be disabled or demoted, guarded by a row lock rather than a handler-side count

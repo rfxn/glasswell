@@ -246,6 +246,33 @@ def verify_user_password(user: User, password: str) -> bool:
     return verify_password(user.password_hash, password)
 
 
+def create_user(
+    connection: psycopg.Connection,
+    *,
+    username: str,
+    password: str,
+    role: Role,
+    created_by: str,
+    now: datetime,
+) -> str:
+    user_id = new_user_id(now)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.users (user_id, username, password_hash, role, created_at,"
+            " created_by, password_changed_at) values (%s, %s, %s, %s, %s, %s, %s)",
+            (
+                user_id,
+                normalise_username(username),
+                hash_password(password),
+                role,
+                now,
+                created_by,
+                now,
+            ),
+        )
+    return user_id
+
+
 def set_password(
     connection: psycopg.Connection, user_id: str, *, password: str, now: datetime
 ) -> None:
