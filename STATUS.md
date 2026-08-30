@@ -1,6 +1,6 @@
 # Current status
 
-Reconciled on **2026-08-30** against the v0.67 release line, the checked-in OpenAPI
+Reconciled on **2026-08-30** against the v0.68 release line, the checked-in OpenAPI
 snapshot, current `main` history, and deployed `v0.62+204bebb` at schema head 54. This is the
 short current-state ledger;
 [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria, while
@@ -9,7 +9,7 @@ short current-state ledger;
 
 ## Shipped baseline
 
-- **Release line:** 48 tagged releases, v0.20 through v0.67, cut 2026-08-21 through
+- **Release line:** 49 tagged releases, v0.20 through v0.68, cut 2026-08-21 through
   2026-08-30.
 - **North Dakota:** ingest, bitemporal promotion, quarantine, conformance, wells,
   geometry, monthly production, lineage, explain, glossary, API, tiles, and map are built.
