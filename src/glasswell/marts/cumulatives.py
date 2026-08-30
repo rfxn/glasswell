@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -208,12 +208,18 @@ select api10, {_MART_STREAM} as stream, sum(volume) as cum_volume
 
 # One label per (well, mart stream, month): where two sources filed the same month, the
 # strongest statement wins, so a reported month is never demoted by a second source's blank.
+#
+# Ordered by api10 and read through a server-side cursor: this is the only unbounded relation
+# the refresh touches — 7,141,506 groups on the 2026-08-30 ND load — and materialising it was a
+# multi-gigabyte peak inside a deploy step that refuses on failure. One well is resident at a
+# time (gate-t2-review MA-2).
 _STREAM_MONTHS = f"""
 select api10, {_MART_STREAM} as stream, production_month, min({_CLASS_RANK}) as class_rank
   from canonical.production_monthly_latest
  where entity_type = 'well' and api10 is not null
    and left(api10, 2) = any(%(states)s)
  group by 1, 2, 3
+ order by 1
 """
 
 _SNAPSHOT_VINTAGE = """
@@ -286,17 +292,38 @@ def _canonical_inputs(connection: psycopg.Connection) -> list[InputRef]:
         ]
 
 
+def _month_groups(
+    connection: psycopg.Connection, states: dict[str, Any]
+) -> Iterator[tuple[str, dict[str, dict[date, str]]]]:
+    """One well's labelled months at a time, in api10 order, off a server-side cursor.
+
+    The rows arrive grouped because the statement orders by api10, so a well is complete the
+    moment a different one appears and nothing but the current well is ever resident.
+    """
+    with connection.cursor(name="gw_stream_months", row_factory=dict_row) as cursor:
+        cursor.itersize = 10_000
+        cursor.execute(_STREAM_MONTHS, states)
+        current: str | None = None
+        group: dict[str, dict[date, str]] = {}
+        for row in cursor:
+            if row["api10"] != current:
+                if current is not None:
+                    yield current, group
+                current, group = row["api10"], {}
+            group.setdefault(row["stream"], {})[row["production_month"]] = _RANK_LABELS[
+                int(row["class_rank"])
+            ]
+        if current is not None:
+            yield current, group
+
+
 def _collect(connection: psycopg.Connection) -> dict[str, Any]:
+    """Everything bounded by the well population. The month labels are not, so they stream."""
     states = {"states": list(STATE_API_PREFIXES)}
     sources, reasons = _withholding_pairs()
     totals: dict[tuple[str, str], Decimal | None] = {}
     for row in _rows(connection, _STREAM_TOTALS, states):
         totals[(row["api10"], row["stream"])] = row["cum_volume"]
-    months: dict[tuple[str, str], dict[date, str]] = {}
-    for row in _rows(connection, _STREAM_MONTHS, states):
-        months.setdefault((row["api10"], row["stream"]), {})[row["production_month"]] = (
-            _RANK_LABELS[int(row["class_rank"])]
-        )
     withheld: dict[str, dict[date, str | None]] = {}
     for row in _rows(connection, _WITHHELD_MONTHS, {**states, "sources": sources,
                                                     "reasons": reasons}):
@@ -307,48 +334,53 @@ def _collect(connection: psycopg.Connection) -> dict[str, Any]:
     return {
         "wells": _rows(connection, _WELLS, states),
         "totals": totals,
-        "months": months,
         "withheld": withheld,
         "snapshot_vintage": snapshot_vintage,
+        "states": states,
     }
 
 
-def _cumulative_rows(collected: dict[str, Any]) -> list[dict[str, Any]]:
+def _cumulative_rows(
+    connection: psycopg.Connection, collected: dict[str, Any]
+) -> Iterator[dict[str, Any]]:
+    """Merge the well population against the streamed month labels; both are api10-ordered."""
     snapshot_vintage = collected["snapshot_vintage"]
-    rows: list[dict[str, Any]] = []
+    groups = _month_groups(connection, collected["states"])
+    pending: tuple[str, dict[str, dict[date, str]]] | None = next(groups, None)
     for well in collected["wells"]:
         api10 = well["api10"]
+        while pending is not None and pending[0] < api10:
+            pending = next(groups, None)
+        months: dict[str, dict[date, str]] = {}
+        if pending is not None and pending[0] == api10:
+            months = pending[1]
+            pending = next(groups, None)
         withheld_months = collected["withheld"].get(api10, {})
         well_months: dict[date, str] = {}
         for stream in MART_STREAMS:
-            well_months |= collected["months"].get((api10, stream), {})
+            well_months |= months.get(stream, {})
         span = filed_span(well_months, withheld_months)
         outcome = NEVER_REPORTED if span[0] is None else OBSERVED
         for stream in MART_STREAMS:
-            counts = month_class_counts(
-                span, collected["months"].get((api10, stream), {}), withheld_months
-            )
-            rows.append(
-                {
-                    "api10": api10,
-                    "state_code": well["state_code"],
-                    "stream": stream,
-                    "cum_volume": collected["totals"].get((api10, stream)),
-                    "unit": STREAM_UNITS[stream],
-                    "basis": STREAM_BASIS[stream],
-                    "months_reported": counts.reported,
-                    "months_reported_zero": counts.reported_zero,
-                    "months_no_report_stored": counts.no_report_stored,
-                    "months_withheld_stored": counts.withheld_stored,
-                    "months_absent": counts.absent,
-                    "span_months": counts.span_months,
-                    "first_month": span[0],
-                    "last_month": span[1],
-                    "coverage_outcome": outcome,
-                    "snapshot_vintage": snapshot_vintage,
-                }
-            )
-    return rows
+            counts = month_class_counts(span, months.get(stream, {}), withheld_months)
+            yield {
+                "api10": api10,
+                "state_code": well["state_code"],
+                "stream": stream,
+                "cum_volume": collected["totals"].get((api10, stream)),
+                "unit": STREAM_UNITS[stream],
+                "basis": STREAM_BASIS[stream],
+                "months_reported": counts.reported,
+                "months_reported_zero": counts.reported_zero,
+                "months_no_report_stored": counts.no_report_stored,
+                "months_withheld_stored": counts.withheld_stored,
+                "months_absent": counts.absent,
+                "span_months": counts.span_months,
+                "first_month": span[0],
+                "last_month": span[1],
+                "coverage_outcome": outcome,
+                "snapshot_vintage": snapshot_vintage,
+            }
 
 
 def _withholding_rows(collected: dict[str, Any]) -> list[dict[str, Any]]:
@@ -376,7 +408,7 @@ def _withholding_rows(collected: dict[str, Any]) -> list[dict[str, Any]]:
 def refresh_well_cumulatives(connection: psycopg.Connection) -> CumulativesRefresh:
     """Rebuild both cumulative marts under one content-addressed derivation."""
     collected = _collect(connection)
-    cumulatives = _cumulative_rows(collected)
+    cumulatives = list(_cumulative_rows(connection, collected))
     withholding = _withholding_rows(collected)
     snapshot_vintage = collected["snapshot_vintage"]
     outcomes = {OBSERVED: 0, NEVER_REPORTED: 0}
