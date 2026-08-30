@@ -231,9 +231,6 @@ def no_well_series_states(connection: psycopg.Connection) -> list[str]:
         return [row[0] for row in cursor.fetchall()]
 
 
-# The old name, kept so a caller outside this module reads the same list under the name it knew.
-lease_reported_states = no_well_series_states
-
 
 def producing_params(connection: psycopg.Connection, policy: ProducingPolicy) -> dict[str, Any]:
     """Every value `class_expression` binds, resolved once per request."""

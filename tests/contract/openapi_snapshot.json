@@ -7024,7 +7024,7 @@
                 "type": "null"
               }
             ],
-            "description": "Whether the well is producing on the evidence held, which is a different fact from its status: `producing` where a positive oil or gas month was filed inside the window, `not_producing` where the well filed but no such month, and `unknown` where it filed nothing, where the regulator withheld the months, or where the jurisdiction reports at the lease and no well-level series exists. Defined by cr_producing_window_1, cr_producing_streams_1 and cr_producing_evidence_1; liquids are oil plus condensate. Null where the definition is not registered, which is disclosed as a warning.",
+            "description": "Whether the well is producing on the evidence held, which is a different fact from its status: `producing` where a positive oil or gas month was filed inside the window, `not_producing` where the well filed but no such month, and `unknown` where it filed nothing, where the regulator withheld the months, where the jurisdiction reports at the lease, or where it reports below the well and nothing rolls up \u2014 the last two are both jurisdictions with no well-level series to evaluate, and the rule that says which is served as a warning beside the figure rather than left for the reader to guess. Defined by cr_producing_window_1, cr_producing_streams_1 and cr_producing_evidence_1; liquids are oil plus condensate. Null where the definition is not registered, which is disclosed as a warning.",
             "title": "Producing"
           },
           "spud_date": {
@@ -7441,7 +7441,7 @@
                 "type": "null"
               }
             ],
-            "description": "Whether the well is producing on the evidence held, which is a different fact from its status: `producing` where a positive oil or gas month was filed inside the window, `not_producing` where the well filed but no such month, and `unknown` where it filed nothing, where the regulator withheld the months, or where the jurisdiction reports at the lease and no well-level series exists. Defined by cr_producing_window_1, cr_producing_streams_1 and cr_producing_evidence_1; liquids are oil plus condensate. Null where the definition is not registered, which is disclosed as a warning.",
+            "description": "Whether the well is producing on the evidence held, which is a different fact from its status: `producing` where a positive oil or gas month was filed inside the window, `not_producing` where the well filed but no such month, and `unknown` where it filed nothing, where the regulator withheld the months, where the jurisdiction reports at the lease, or where it reports below the well and nothing rolls up \u2014 the last two are both jurisdictions with no well-level series to evaluate, and the rule that says which is served as a warning beside the figure rather than left for the reader to guess. Defined by cr_producing_window_1, cr_producing_streams_1 and cr_producing_evidence_1; liquids are oil plus condensate. Null where the definition is not registered, which is disclosed as a warning.",
             "title": "Producing"
           },
           "spud_date": {

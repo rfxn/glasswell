@@ -16,6 +16,7 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
+from glasswell.lineage.conformance import lease_reporting_rule, pool_grain_rule
 from glasswell.marts.producing import (
     NOT_PRODUCING,
     PRODUCING,
@@ -23,8 +24,8 @@ from glasswell.marts.producing import (
     ProducingPolicyError,
     anchor_month,
     class_expression,
-    lease_reported_states,
     load_producing_policy,
+    no_well_series_states,
     producing_params,
     window_start,
 )
@@ -155,10 +156,29 @@ def test_a_month_restated_upward_starts_answering_producing(population) -> None:
     assert classify(population)["3305300010"] == PRODUCING
 
 
-def test_a_lease_reporting_jurisdiction_is_unknown_and_never_not_producing(population) -> None:
-    """DIR-3: Texas has no well-level series, so its wells have nothing to be absent from."""
-    assert lease_reported_states(population) == ["42"]
+def test_a_jurisdiction_with_no_well_level_series_is_unknown_and_never_not_producing(
+    population,
+) -> None:
+    """DIR-3: a state with no well-level series has nothing for its wells to be absent from.
+
+    Two registry reasons produce that, and the function returns both because the consequence is
+    the same: Texas files above the well and needs allocation, New Mexico files below it and
+    nothing rolls up. Which reason applies to which state stays separable — that is what the
+    two rule readers below are for — but neither state may be answered `not_producing`.
+    """
+    assert no_well_series_states(population) == ["30", "42"]
     assert classify(population)["4200300001"] == UNKNOWN
+
+
+def test_the_two_reasons_for_an_absent_series_do_not_collapse_into_each_other(
+    population,
+) -> None:
+    """A test that would pass on a query that returned every state for either reason."""
+    assert lease_reporting_rule(population, "42") is not None
+    assert lease_reporting_rule(population, "30") is None
+    assert pool_grain_rule(population, "30") is not None
+    assert pool_grain_rule(population, "42") is None
+    assert pool_grain_rule(population, "33") is None
 
 
 def test_the_policy_comes_from_the_registry_rather_than_from_the_code(population) -> None:
