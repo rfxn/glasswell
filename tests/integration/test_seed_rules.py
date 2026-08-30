@@ -42,6 +42,14 @@ POLICY_RULES = (
     "cr_producing_evidence_1",
     "cr_producing_streams_1",
     "cr_producing_window_1",
+    # The type-curve serving decisions: which publication is servable, which rung produced the
+    # number, what per-kft rescales to, which quantile convention is in force, and whether an
+    # unavailable control is a value or an absence. The executor is the module each spec names.
+    "cr_tc_normalization_1",
+    "cr_tc_peer_ladder_1",
+    "cr_tc_publication_scope_1",
+    "cr_tc_quantile_convention_1",
+    "cr_tc_unavailable_vocab_1",
     "cr_tx_allocation_scope_1",
     "cr_tx_ewa_role_1",
     "cr_tx_geometry_survivor_1",

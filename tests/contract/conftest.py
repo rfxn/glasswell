@@ -31,6 +31,7 @@ from glasswell.api.examples import (
     EXAMPLE_API10,
     EXAMPLE_DERIVATION_ID,
     EXAMPLE_MANIFEST_ID,
+    EXAMPLE_PUBLICATION_ID,
     EXAMPLE_QUARANTINE_ID,
     KEY_HEADER,
 )
@@ -44,9 +45,17 @@ from glasswell.lineage.serialization import hash_payload
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.lineage.vintages import open_vintage
 from glasswell.marts.neighbors import refresh_neighbors, resident_content_identity
+from glasswell.modeling import served
+from glasswell.modeling.model_dataset import MODEL_ROOT_ENV
 from glasswell.seed import seed_all
 from tests.support.fakes import FixedClock
 from tests.support.seed import FIXTURE_ENV, seed_manifest, seed_well, seed_well_spatial
+from tests.support.typecurve_fixture import (
+    ControlArtifact,
+    ControlSubject,
+    register_pinned_control,
+    write_control_artifact,
+)
 
 MPR_SHA256 = "e" * 64
 GIS_SHA256 = "d" * 64
@@ -512,8 +521,78 @@ def raw_zone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return payload
 
 
+CONTROL_ORIGIN = date(2021, 1, 1)
+LATER_ORIGIN = date(2021, 7, 1)
+# One subject per served shape: the published example at both horizons, one rung below the
+# first, one basin rung under the peer floor, one control_unavailable subject, two fillers so
+# a small limit pages twice, and one at a second origin so `available_origins` is not a
+# singleton. A fixture that cannot produce a page 2 cannot regress B-2.
+CONTROL_SUBJECTS = (
+    ControlSubject(api10=EXAMPLE_API10, origin=CONTROL_ORIGIN, horizon_months=24),
+    ControlSubject(api10=EXAMPLE_API10, origin=CONTROL_ORIGIN, horizon_months=12),
+    ControlSubject(
+        api10=OTHER_API10S[0],
+        origin=CONTROL_ORIGIN,
+        horizon_months=24,
+        fallback_level="formation_area",
+        lateral_length_bucket="lt_8000",
+        lateral_length_ft=7200.0,
+    ),
+    ControlSubject(
+        api10=OTHER_API10S[1],
+        origin=CONTROL_ORIGIN,
+        horizon_months=24,
+        fallback_level="formation_basin",
+        peer_count=12,
+    ),
+    ControlSubject(
+        api10=OTHER_API10S[2],
+        origin=CONTROL_ORIGIN,
+        horizon_months=24,
+        fallback_level="control_unavailable",
+        lateral_length_bucket=None,
+        lateral_length_ft=None,
+        reasons=("missing_lateral_length",),
+    ),
+    ControlSubject(api10=OTHER_API10S[3], origin=CONTROL_ORIGIN, horizon_months=24),
+    ControlSubject(api10=OTHER_API10S[4], origin=CONTROL_ORIGIN, horizon_months=24),
+    ControlSubject(api10=OTHER_API10S[5], origin=LATER_ORIGIN, horizon_months=24),
+    # The same subject held out at a second origin, at one horizon. Without it the index's
+    # page boundary can never land mid-subject and the paging test cannot fail.
+    ControlSubject(
+        api10=OTHER_API10S[0],
+        origin=LATER_ORIGIN,
+        horizon_months=24,
+        fallback_level="formation_area",
+        lateral_length_bucket="lt_8000",
+        lateral_length_ft=7200.0,
+    ),
+)
+
+
 @pytest.fixture
-def seeded(db: psycopg.Connection, raw_zone: Path) -> psycopg.Connection:
+def pinned_control(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ControlArtifact:
+    """A registered control artifact under a model root the resolver will accept.
+
+    `DEFAULT_MODEL_ROOT` is relative, so without this the type-curve routes are fail-closed
+    and every published example would 409 instead of serving.
+
+    The root is named relative to a per-test working directory rather than as an absolute
+    path, because the receipt document carries `artifact_uri` and the publication id is a
+    content address over that document: an absolute temp path would move the published
+    `EXAMPLE_PUBLICATION_ID` on every run. A relative root is a shape the real builder
+    produces too — `resolve_model_root()` falls back to `data/models`.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(MODEL_ROOT_ENV, "models")
+    served.clear_caches()
+    return write_control_artifact(Path("models"), subjects=CONTROL_SUBJECTS)
+
+
+@pytest.fixture
+def seeded(
+    db: psycopg.Connection, raw_zone: Path, pinned_control: ControlArtifact
+) -> psycopg.Connection:
     """Registries, wells, geometry, production and quarantine, keyed to the examples."""
     seed_all(db)
     mpr_manifest = seed_manifest(db, sha256=MPR_SHA256, source_key="2026_06.xlsx")
@@ -616,6 +695,10 @@ def seeded(db: psycopg.Connection, raw_zone: Path) -> psycopg.Connection:
     _seed_neighbor_mart(db)
     _seed_quarantine(db, mpr_manifest)
     _seed_example_key(db)
+    publication = register_pinned_control(db, pinned_control, manifest_id=mpr_manifest)
+    assert publication == EXAMPLE_PUBLICATION_ID, (
+        f"the documented publication example is stale: seeded {publication}"
+    )
     open_vintage(
         db,
         source_id="nd_mpr_xlsx",

@@ -10,7 +10,7 @@ from psycopg.types.json import Jsonb
 
 from glasswell.ingest.base import resolve_environment
 from glasswell.lineage.capture import derive, lineage_session
-from glasswell.lineage.envelope import Figure
+from glasswell.lineage.envelope import Figure, Series
 from glasswell.lineage.ids import format_selector, parse_selector
 from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.serialization import hash_payload, json_ready
@@ -145,6 +145,18 @@ def _selector_outputs(node: Any) -> dict[str, dict[str, Any]]:
             prior = outputs.setdefault(selector, evidence)
             if prior != evidence:
                 raise ValueError(f"selector {selector!r} names conflicting response figures")
+        # Before the Sequence branch, not after: Series.values is a Sequence, so a Series
+        # reached as a list would be walked element-wise and its evidence never recorded.
+        elif isinstance(value, Series):
+            if value.selector is None:
+                raise ValueError("an API-response series must carry a selector")
+            if value.point_handles is not None:
+                raise ValueError("an API-response series may not carry point handles")
+            selector = _normal_selector(value.selector)
+            evidence = json_ready({"values": list(value.values), "unit": value.unit})
+            prior = outputs.setdefault(selector, evidence)
+            if prior != evidence:
+                raise ValueError(f"selector {selector!r} names conflicting response figures")
         elif isinstance(value, Mapping):
             for child in value.values():
                 visit(child)
@@ -157,7 +169,7 @@ def _selector_outputs(node: Any) -> dict[str, dict[str, Any]]:
 
 
 def _bind_derivation(node: Any, derivation_id: str) -> Any:
-    if isinstance(node, Figure):
+    if isinstance(node, (Figure, Series)):
         return node.model_copy(update={"derivation": derivation_id})
     if isinstance(node, Mapping):
         return {key: _bind_derivation(value, derivation_id) for key, value in node.items()}

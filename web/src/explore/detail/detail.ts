@@ -10,6 +10,7 @@ import { crossingLink, showOnMap } from "../bridge.ts";
 import type { Point } from "../bridge.ts";
 import type { CatalogueDataset } from "../catalogue.ts";
 import { renderCell } from "../grid/cells.ts";
+import { containsFigure, figureTree } from "./figures.ts";
 import { columnsFor } from "../grid/columns.ts";
 import type { Column } from "../grid/columns.ts";
 import type { Cell, Row } from "../grid/rows.ts";
@@ -209,7 +210,9 @@ function valueNodes(
   // A coordinate is never printed (§3.2), so geometry keeps the grid's treatment even though
   // its value is an object; everything else structural reads as the JSON it is.
   if (column.kind !== "geometry" && isStructural(raw)) {
-    return [jsonView(column, raw, view.row)];
+    // A handle nobody can click is not an explain affordance. A structural value whose leaves
+    // are figures reads as a tree of figures; one with none reads as the JSON it is.
+    return [containsFigure(raw) ? figureTree(raw) : jsonView(column, raw, view.row)];
   }
   if (column.kind === "geometry") {
     return [renderCell(column, { data: view.data, row: view.row }), ...mapCrossing(raw, view, options)];
@@ -459,7 +462,7 @@ function detailRequest(
 ): { path: string; query: Record<string, string[]> } | null {
   const [name, ...rest] = detail.pathParameters;
   if (name === undefined || rest.length > 0) return null;
-  const identity = identityValue(options);
+  const identity = identityValue(options, name);
   if (identity === null) return null;
 
   const query: Record<string, string[]> = {};
@@ -468,12 +471,21 @@ function detailRequest(
   return { path: detail.path.replace(`{${name}}`, encodeURIComponent(identity)), query };
 }
 
-function identityValue(options: DetailOptions): string | null {
-  if (options.dataset.row_id.length !== 1) return null;
-  const pointer = options.dataset.row_id[0] as string;
+/**
+ * A composite identity is still addressable when the detail operation's single path parameter
+ * names one of its pointers. `/v1/type-curves` rows are `(api10, origin)` — the origin is what
+ * makes a row unique — and the detail is read by api10; without this arm a dataset with a
+ * composite `row_id` can declare a `detail_operation` the pane is structurally unable to call,
+ * and the reader is told "this row supplies no value for it" beside the value it supplies.
+ */
+function identityValue(options: DetailOptions, name: string): string | null {
+  const pointers = options.dataset.row_id;
+  const pointer =
+    pointers.length === 1 ? pointers[0] : pointers.find((candidate) => candidate === `/${name}`);
+  if (pointer === undefined) return null;
   const own = options.row?.cells[pointer]?.value;
   if (typeof own === "string" || typeof own === "number") return String(own);
-  return options.rowId === "" ? null : options.rowId;
+  return pointers.length === 1 && options.rowId !== "" ? options.rowId : null;
 }
 
 /** Only what the operation declares reaches the wire: an undeclared as_of teaches a filter it has not got. */

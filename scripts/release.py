@@ -36,6 +36,16 @@ PYPROJECT_VERSION = re.compile(r'^version = "[^"]*"$', re.MULTILINE)
 ANCHOR_PREFIX = '<a id="v'
 RELEASE_SURFACE_FILES = ("README.md", "STATUS.md", "ROADMAP.md", "llms.txt")
 
+# A migration that registers conformance-rule publication evidence has to name the release the
+# rule first shipped in — and the branch that writes it cannot know that number, because merge
+# order decides it. So it writes these, and the integrator repoints them at the merge train.
+# `lineage.conformance_rule_publications` is append-only, so a guessed tag that reaches a
+# production migrate is a permanent false claim about when glasswell could know a rule. This is
+# the assertion that stops one leaving in a tagged release rather than relying on memory.
+MIGRATIONS_DIR = Path("src/glasswell/db/migrations")
+PLACEHOLDER_EVIDENCE_TAG = "UNRELEASED"
+PLACEHOLDER_EVIDENCE_COMMIT = "0" * 40
+
 
 @dataclass(frozen=True, order=True)
 class Version:
@@ -156,7 +166,35 @@ def preconditions(root: Path, fragments: list[Path], target: Version) -> list[st
     if git_ok(root, "rev-parse", "--verify", "--quiet", f"refs/tags/{target.tag}"):
         blockers.append(f"tag {target.tag} already exists — the odometer has already passed it")
 
+    blockers += placeholder_evidence_blockers(root, target)
+
     return blockers
+
+
+def placeholder_evidence_blockers(root: Path, target: Version) -> list[str]:
+    """Refuse to cut a release while a migration still carries placeholder rule evidence."""
+    directory = root / MIGRATIONS_DIR
+    if not directory.is_dir():
+        return []
+    # The quoted SQL literals, not the bare words. A bare-word scan matched the migration's own
+    # header prose, so a correctly repointed file went on refusing and nothing in the repository
+    # could cut a tag; and a bare forty-zero run is a substring of any longer all-zero digest.
+    literals = (f"'{PLACEHOLDER_EVIDENCE_TAG}'", f"'{PLACEHOLDER_EVIDENCE_COMMIT}'")
+    pending = sorted(
+        path.name
+        for path in directory.glob("*.sql")
+        if any(literal in path.read_text(encoding="utf-8") for literal in literals)
+    )
+    if not pending:
+        return []
+    listed = ", ".join(pending)
+    return [
+        f"{len(pending)} migration(s) still carry {PLACEHOLDER_EVIDENCE_TAG} publication "
+        f"evidence ({listed}) — repoint evidence_tag to {target.tag} and evidence_commit to "
+        "the main head the rules were written against before cutting. "
+        "lineage.conformance_rule_publications is append-only, so a placeholder that reaches a "
+        "production migrate is a permanent false claim about when the rule was published"
+    ]
 
 
 def anchor(version: Version) -> str:

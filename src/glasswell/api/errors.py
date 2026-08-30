@@ -108,7 +108,6 @@ ERROR_REGISTRY: Mapping[str, ErrorSpec] = {
         409,
         "Artifact is not registered",
         "Serving the number would mean serving it from an unregistered artifact.",
-        emitted=False,
     ),
     "model_not_promoted": ErrorSpec(
         409, "Model is not promoted", "The model registry refused a non-promoted model.",

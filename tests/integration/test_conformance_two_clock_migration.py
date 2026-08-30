@@ -15,6 +15,7 @@ from glasswell.seed import (
     NM_RULES,
     PRODUCING_RULES,
     TX_RULES,
+    TYPECURVE_RULES,
     seed_crs,
 )
 
@@ -35,6 +36,7 @@ def _seeded_rule_ids() -> set[str]:
             NM_RULES,
             PRODUCING_RULES,
             TX_RULES,
+            TYPECURVE_RULES,
         )
         for rule in registry
     }

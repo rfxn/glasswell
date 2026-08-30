@@ -237,6 +237,40 @@ curl -sS "$B/openapi.json" | python3 -c 'import json,sys; print(len(json.load(sy
   which is where the NM sources sit until the promotion deploy. `degraded_sources` must be
   empty: that list is for data that has gone stale, and a source on it is a served lie.
 
+### The control is pinned, and the pin is what is served
+
+```bash
+PUB=$(curl -sS -K "$CFG" "$B/v1/modeling/publications" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0]["publication_id"])')
+curl -sS -K "$CFG" "$B/v1/modeling/publications/$PUB" | python3 -m json.tool | head -60
+SUBJECT=$(curl -sS -K "$CFG" "$B/v1/type-curves?limit=1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["series"]["api10"][0])')
+curl -sS -K "$CFG" "$B/v1/wells/$SUBJECT/type-curve?explain=true&explain_depth=8" \
+  | python3 -c 'import json,sys; c=json.load(sys.stdin)["_explain"]; v=next(iter(c.values())); print({"truncated": v["truncated"], "depth": v["depth"], "terminals": len(v["terminals"])})'
+```
+
+- **`/v1/modeling/publications`** — the accepted P3 receipt, its three semantic versions,
+  its split set, and the peer-ladder support distribution read from the artifact's own
+  coverage document. No filesystem path is served; `artifact_sha256` addresses the same
+  bytes without disclosing where they live.
+- **The chain must read `truncated: false` and `depth: 7`.** `MAX_DEPTH` is 8, so 7 is the
+  last passing value: one more hop in a future `typecurve.build` turns every served
+  type-curve handle truncated at once. **CI cannot see this** — the contract fixture
+  registers a single manifest input, so its chain is two levels deep by construction and
+  the same assertion holds there whatever the real build gains. Record the number here at
+  each deploy.
+- **Time both explain paths.** Budget: p95 under 2 s at `explain_depth=8` (twelve handles
+  over a chain roughly nine hundred derivations wide) and under 300 ms at the default
+  depth 3. Over budget is a register item, not a new norm.
+- **The negative check.** With `GLASSWELL_MODEL_ROOT` unset the type-curve routes must
+  answer **409 `unregistered_artifact`** — not 200, and not 500. `DEFAULT_MODEL_ROOT` is
+  relative, so an unset variable makes every absolute locator fail containment. That is
+  the fail-closed behaviour, and it is why the variable is in `app.env.example`.
+- **A `control_unavailable` subject must answer 200**, not 404, with `outcome` reading
+  `control_unavailable`, its reasons named, and the figure slots present and null.
+  `curl "$B/v1/type-curves?fallback_level=control_unavailable&limit=1"` finds one.
+- **Re-publication is a restatement event.** A second accepted publication is announced by
+  a `publication_superseded` warning on every affected response; the prior publication stays
+  served under its own id and is reachable with `?publication=`. Nothing is edited.
+
 ## 6. Known gaps, stated plainly
 
 - **Global concurrency is not capped.** §3.6.8 asks for 32 concurrent requests and 5

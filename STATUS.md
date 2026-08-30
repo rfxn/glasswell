@@ -37,11 +37,16 @@ short current-state ledger;
   class, and `/v1/wells?producing=` scopes the collection to one, defined by
   `cr_producing_window_1`, `cr_producing_streams_1` and `cr_producing_evidence_1` rather than
   by a predicate in the serving path. Forecast, valuation, scenario, agent, and inventory
-  operations are not served. Not served is not the same as not built: `src/glasswell/modeling/`
-  is 5,211 lines that compute type curves, splits, feature matrices and model-ready datasets
-  under the pinned `tcv1.0`, `fv2.0` and `mdv1.4` identities and an accepted publication, and
-  no router imports it — `grep -rn "from glasswell.modeling" src/glasswell/api/` returns
-  nothing.
+  operations are not served. The pinned `tcv1.0` type-curve control now is:
+  `/v1/modeling/publications` and its detail serve the accepted P3 receipt with its acceptance
+  gates and its peer-ladder support distribution; `/v1/wells/{api10}/type-curve` serves one
+  held-out test subject's P10/P50/P90 monthly and cumulative curves under both normalisation
+  arms, with `control_unavailable` served as a stated outcome on a required field rather than
+  as an absent figure; and `/v1/type-curves` browses the control population by rung. Every
+  figure carries a handle that resolves to the pinned `typecurve.build` derivation and the
+  split set it was built on, and the resolver refuses to read any artifact an accepted
+  publication does not name. Training, calibration, the model registry, the analog index and
+  benchmark scoring remain built but unserved.
 - **Frontend:** URL-backed Map, Explore, and Status surfaces; MapLibre ND/TX layers; a well
   card with independent completion-event, pool-to-formation and current physical-neighbour
   sections, production chart, lineage drawer, glossary, explorer, satellite/hybrid modes, and

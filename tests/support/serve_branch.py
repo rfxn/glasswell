@@ -15,6 +15,7 @@ from __future__ import annotations
 import atexit
 import os
 import secrets
+import shutil
 import signal
 import subprocess
 import sys
@@ -67,6 +68,9 @@ SOURCES = ["nd_mpr_xlsx", "nd_gis_wells"]
 WELL = "3305310451"
 OTHER_WELLS = tuple(f"330530000{index}" for index in range(1, 7))
 POOLED_WELL = "3305302532"
+# Without a registered control artifact every type-curve route answers 409 and the two new
+# rail entries render an error, which is not a surface anyone can judge.
+MODEL_ROOT = Path(os.environ.get("GW_MODEL_ROOT", "/tmp/gw-serve/models")).resolve()
 
 
 def docker(*arguments: str) -> str:
@@ -103,6 +107,21 @@ def start_database() -> tuple[str, str, str]:
     raise SystemExit("postgis never became ready")
 
 
+def _seed_pinned_control(connection, *, manifest_id: str) -> None:
+    from tests.contract.conftest import CONTROL_SUBJECTS
+    from tests.support.typecurve_fixture import register_pinned_control, write_control_artifact
+
+    # rmtree on a path from the environment: refuse anything that is not the leaf this
+    # harness owns, so a mistyped GW_MODEL_ROOT cannot delete a tree somebody wanted.
+    if MODEL_ROOT.exists() and MODEL_ROOT.name != "models":
+        raise SystemExit(f"GW_MODEL_ROOT {MODEL_ROOT} must end in /models; refusing to remove it")
+    shutil.rmtree(MODEL_ROOT, ignore_errors=True)
+    MODEL_ROOT.mkdir(parents=True, exist_ok=True)
+    artifact = write_control_artifact(MODEL_ROOT, subjects=CONTROL_SUBJECTS)
+    register_pinned_control(connection, artifact, manifest_id=manifest_id)
+    connection.commit()
+
+
 def seed(dsn: str) -> None:
     with psycopg.connect(dsn) as connection:
         migrate(connection)
@@ -128,6 +147,7 @@ def seed(dsn: str) -> None:
         promotion = _promotion_derivation(connection, mpr)
         spatial = _spatial_derivation(connection, gis)
 
+        _seed_pinned_control(connection, manifest_id=mpr)
         seed_well(connection, api10=WELL, manifest_id=mpr, derivation_id=promotion)
         for index, api10 in enumerate(OTHER_WELLS):
             seed_well(
@@ -269,6 +289,7 @@ def main() -> None:
             "GLASSWELL_DSN": dsn,
             "GLASSWELL_OWNER_KEY": key,
             "GLASSWELL_WEB_ROOT": str(WEB_ROOT),
+            "GLASSWELL_MODEL_ROOT": str(MODEL_ROOT),
         },
     )
     print(f"ready http://127.0.0.1:{PORT} key-file {KEY_FILE}", flush=True)

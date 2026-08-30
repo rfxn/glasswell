@@ -119,7 +119,7 @@ current contracts:
 |-----------|----------|
 | **C3** Parsers | Write staging only. Never canonical, never marts. |
 | **C4** Promotion / conformance step | Promotes staging to canonical, applying rules from the registry and emitting conformance references into derivations. |
-| **C7** Modelling engine | The pinned `tcv1.0` empirical type-curve control is built over exact `mdv1.4` splits. Gradient-boosted quantile models, conformal calibration, analog KNN, and batch scenario execution remain planned. |
+| **C7** Modelling engine | The pinned `tcv1.0` empirical type-curve control is built over exact `mdv1.4` splits, and is served read-only through a registered locator: the API resolves the artifact from the accepted P3 publication receipt and the `typecurve.build` derivation that wrote it, refuses any path outside `GLASSWELL_MODEL_ROOT`, and never writes the artifact tree. Gradient-boosted quantile models, conformal calibration, analog KNN, and batch scenario execution remain planned. |
 | **C10** Economics | DCF at a named deck. Sensitivity runs (deck, opex, capex deltas → tornado rows) at trivial cost because valuation is pure. Assumptions include water handling cost and per-state severance defaults. |
 | **C11** Scenario / valuation orchestration | The composition point the inventory engine wraps. |
 | **C13 / C14** Map and UI | Type-curve builder (filter selection → curve with band and well count), operator league table, GOR and water-cut charts on the well card, inventory slot layer. |

@@ -19,6 +19,7 @@ from glasswell.api.examples import (
     EXAMPLE_DERIVATION_ID,
     EXAMPLE_ERROR_CODE,
     EXAMPLE_MANIFEST_ID,
+    EXAMPLE_PUBLICATION_ID,
     EXAMPLE_QUARANTINE_ID,
     EXAMPLE_RULE_ID,
     EXAMPLE_TERM_ID,
@@ -53,6 +54,8 @@ MATRIX: tuple[tuple[str, str, str], ...] = (
     ("GET", f"/v1/wells/{EXAMPLE_API10}/neighbors", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production/pools", READ),
+    ("GET", f"/v1/wells/{EXAMPLE_API10}/type-curve", READ),
+    ("GET", f"/v1/wells/{EXAMPLE_API10}/type-curve?explain=true&explain_depth=8", READ),
     # DR-63/DR-64 add parameters, never gates: an optional flag that carried its own auth
     # answer would be a second access rule on a surface this table already covers, and it
     # would be invisible here because the table keys on the path.
@@ -74,6 +77,11 @@ MATRIX: tuple[tuple[str, str, str], ...] = (
     ("GET", f"/v1/manifests/{EXAMPLE_MANIFEST_ID}/bytes", OWNER),
     ("GET", "/v1/vintages", READ),
     ("GET", f"/v1/vintages/{_VINTAGE}", READ),
+    ("GET", "/v1/type-curves", READ),
+    ("GET", "/v1/type-curves?explain=true", READ),
+    ("GET", "/v1/modeling/publications", READ),
+    ("GET", f"/v1/modeling/publications/{EXAMPLE_PUBLICATION_ID}", READ),
+    ("GET", f"/v1/modeling/publications/{EXAMPLE_PUBLICATION_ID}?explain=true", READ),
     ("GET", "/v1/conformance", READ),
     ("GET", f"/v1/conformance/{EXAMPLE_RULE_ID}", READ),
     ("GET", "/v1/quarantine", READ),
@@ -311,6 +319,7 @@ def _template(path: str) -> str:
         (EXAMPLE_API10, "api10"),
         (EXAMPLE_DERIVATION_ID, "derivation_id"),
         (EXAMPLE_MANIFEST_ID, "manifest_id"),
+        (EXAMPLE_PUBLICATION_ID, "publication_id"),
         (EXAMPLE_QUARANTINE_ID, "quarantine_id"),
         (EXAMPLE_RULE_ID, "rule_id"),
         (EXAMPLE_TERM_ID, "term"),

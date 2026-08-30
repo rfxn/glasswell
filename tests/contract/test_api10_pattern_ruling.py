@@ -56,6 +56,7 @@ def test_every_served_api10_path_declares_that_grammar_rather_than_one_of_its_ow
         "GET /v1/wells/{api10}/neighbors",
         "GET /v1/wells/{api10}/production",
         "GET /v1/wells/{api10}/production/pools",
+        "GET /v1/wells/{api10}/type-curve",
     ]
     assert {route: parameter["schema"]["pattern"] for route, parameter in declared.items()} == {
         route: API10_PATTERN for route in declared

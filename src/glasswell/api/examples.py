@@ -38,9 +38,10 @@ EXAMPLE_MANIFEST_ID = "man_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 EXAMPLE_DERIVATION_ID = "drv_obqajdni25f25zmxcz7a"
 
 CONTENT_ADDRESS_NOTE = (
-    " The example id is the contract fixture's. `drv_`, `man_` and `qr_` ids are content"
-    " addresses over bytes and run parameters, so they differ per deployment by construction"
-    " — take a live one from the `d` handle on any served figure, or from `/v1/manifests`."
+    " The example id is the contract fixture's. `drv_`, `man_`, `qr_` and `p3pub_` ids are"
+    " content addresses over bytes and run parameters, so they differ per deployment by"
+    " construction — take a live one from the `d` handle on any served figure, from"
+    " `/v1/manifests`, or from `/v1/modeling/publications`."
 )
 VINTAGE_ID_NOTE = (
     " The example id is the contract fixture's. A vintage id is `vin_<source_id>_<date>`,"
@@ -51,6 +52,7 @@ EXAMPLE_RULE_ID = "cr_nd_stream_vocab_1"
 EXAMPLE_SOURCE_ID = "nd_mpr_xlsx"
 EXAMPLE_VINTAGE_ID = "vin_nd_mpr_xlsx_2026-08-01"
 EXAMPLE_QUARANTINE_ID = "qr_01contract0001"
+EXAMPLE_PUBLICATION_ID = "p3pub_92793c448b37eade223aa4b9d156be0d"
 EXAMPLE_TERM_ID = "gt_report_vintage"
 EXAMPLE_ERROR_CODE = "lineage_unresolved"
 EXAMPLE_TILE = {"layer": "nd_laterals", "z": 8, "x": 54, "y": 89}
