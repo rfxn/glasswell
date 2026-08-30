@@ -86,6 +86,24 @@ last_run_state() {
 }
 
 listening_on() { ss -ltn | grep -q "$1"; }
+
+# The tunnel listener exists only where a tunnel is configured, so its *existence* is not a
+# safety property and must not be asserted as one: unconditional, this reported "8080 is bound
+# off-loopback" on a host with nothing bound to 8080 at all, which is not merely a failure but
+# a false statement about the host. The claim worth holding is the conditional one -- whatever
+# is bound to 8080 must be bound to loopback -- and it is assertable on every host, public or
+# not. The negative needs no condition at all: "not on every interface" is true when nothing is
+# listening, so it stays unconditional and keeps proving the property before the exposure.
+assert_tunnel_listener_bind() {
+    if listening_on ':8080'; then
+        assert_true "the caddy tunnel listener is loopback-only" "8080 is bound off-loopback" \
+            listening_on '127.0.0.1:8080'
+    else
+        ok "no tunnel listener is bound: nothing is listening on 8080"
+    fi
+    assert_false "the caddy tunnel listener is not on every interface" "8080 is on 0.0.0.0" \
+        listening_on '0.0.0.0:8080'
+}
 glob_matches() { compgen -G "$1" >/dev/null; }
 api_curl() { curl --unix-socket "$API_SOCKET" "$@"; }
 
@@ -661,10 +679,7 @@ public_mode="$(sed -n 's/^GLASSWELL_PUBLIC=//p' /etc/glasswell/app.env)"
 # Locally observable, so asserted whether or not the instance is public. These are the
 # assertions that prove the exposure is safe, and a gate that can only run *after* the
 # exposure proves nothing about the decision to make it.
-assert_true "the caddy tunnel listener is loopback-only" "8080 is bound off-loopback" \
-    listening_on '127.0.0.1:8080'
-assert_false "the caddy tunnel listener is not on every interface" "8080 is on 0.0.0.0" \
-    listening_on '0.0.0.0:8080'
+assert_tunnel_listener_bind
 assert_true "martin is loopback-only" "martin has a non-local listener" \
     listening_on '127.0.0.1:3000'
 assert_false "the tracked ingress names no tile server" "127.0.0.1:3000 is published" \
