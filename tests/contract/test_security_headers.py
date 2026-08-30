@@ -138,17 +138,38 @@ def test_report_only_mode_swaps_the_header_and_never_emits_both(
     assert CSP_HEADER not in response.headers
 
 
-def test_hsts_is_emitted_over_https_only(client: TestClient) -> None:
-    """The LAN listener answers plain http on 8000 and 308s to https; HSTS there is
-    meaningless, and forcing it onto that path is what keeping it out of
-    STATIC_SECURITY_HEADERS avoids."""
+def test_hsts_is_emitted_on_the_public_path_and_not_otherwise(client: TestClient) -> None:
+    """Rewritten: the previous version ended in `or response.url.scheme != "https"`, which is
+    always true under the TestClient, so it passed for any implementation including none.
+
+    The public path is identified by the edge marker, which Caddy sets and a client cannot
+    forge. That is also what makes this assertable without a live tunnel."""
+    from glasswell.api.security import HSTS_HEADER, HSTS_POLICY
+
+    unmarked = client.get("/v1/health")
+    tunnelled = client.get("/v1/health", headers={"X-Glasswell-Edge": "tunnel"})
+
+    assert HSTS_HEADER not in unmarked.headers, "HSTS on the plain-http LAN path"
+    assert tunnelled.headers[HSTS_HEADER] == HSTS_POLICY
+
+
+def test_the_public_path_also_upgrades_insecure_requests(client: TestClient) -> None:
+    """The same predicate drives the CSP directive, so the two cannot drift apart."""
+    tunnelled = client.get("/v1/health", headers={"X-Glasswell-Edge": "tunnel"})
+
+    assert "upgrade-insecure-requests" in tunnelled.headers["Content-Security-Policy"]
+
+
+def test_a_client_cannot_suppress_hsts_by_claiming_plain_http(client: TestClient) -> None:
+    """X-Forwarded-Proto is set by Caddy inside the proxy; a client copy must not win."""
+    response = client.get(
+        "/v1/health",
+        headers={"X-Glasswell-Edge": "tunnel", "X-Forwarded-Proto": "http"},
+    )
+
     from glasswell.api.security import HSTS_HEADER
 
-    over_http = client.get("/v1/health")
-    over_https = client.get("/v1/health", headers={"X-Forwarded-Proto": "https"})
-
-    assert HSTS_HEADER not in over_http.headers
-    assert HSTS_HEADER in over_https.headers or over_https.url.scheme != "https"
+    assert HSTS_HEADER in response.headers
 
 
 def test_hsts_carries_a_year_and_subdomains_and_never_preload() -> None:

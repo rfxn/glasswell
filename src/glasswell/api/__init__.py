@@ -20,6 +20,7 @@ from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.staticfiles import StaticFiles
 
 from glasswell.api.access_log import install_access_log_redaction
+from glasswell.api.client_ip import edge_of
 from glasswell.api.csrf import CSRF_KEY_ENV
 from glasswell.api.deps import (
     ALLOW_ANON_ENV,
@@ -198,7 +199,10 @@ def create_app() -> FastAPI:
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         response = await call_next(request)
-        https = request.url.scheme == "https"
+        # The tunnel hop is plaintext loopback. Caddy sets X-Forwarded-Proto: https via
+        # header_up so uvicorn resolves the scheme correctly, and the edge marker is a
+        # second, independent witness -- neither is client-settable.
+        https = request.url.scheme == "https" or edge_of(request) == "tunnel"
         response.headers.update(STATIC_SECURITY_HEADERS)
         name, policy = header_for(request.url.path, https=https)
         response.headers[name] = policy
@@ -238,6 +242,12 @@ def create_app() -> FastAPI:
             ],
         )
 
+    # Before the mounts: Starlette matches in route order, and Mount("/") shadows
+    # everything after it. Registered later these answered 404 rather than 403 in any
+    # deployment that sets GLASSWELL_WEB_ROOT -- which production does and the fixtures
+    # did not, so the F-2 fix was real in code and vacuous on the host.
+    _serve_the_document(app)
+
     basemap_root = os.environ.get(BASEMAP_ROOT_ENV)
     if basemap_root and Path(basemap_root).is_dir():
         # Keyless on purpose: the archive is public OSM data on this origin, and PMTiles
@@ -251,7 +261,6 @@ def create_app() -> FastAPI:
         app.mount("/", StaticFiles(directory=web_root, html=True), name="web")
 
     _stamp_the_freeze(app)
-    _serve_the_document(app)
     return app
 
 

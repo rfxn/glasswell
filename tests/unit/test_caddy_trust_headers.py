@@ -21,7 +21,7 @@ pytestmark = pytest.mark.unit
 
 CADDYFILE = Path(__file__).resolve().parents[2] / "infra" / "caddy" / "Caddyfile"
 
-TUNNEL_BLOCK = "http://127.0.0.1:8080"
+TUNNEL_BLOCK = "http://:8080"
 LAN_BLOCK = "glasswell.lab.rpx.sh {"
 
 # Headers a client could set that this deployment's trust decisions read, and that Caddy does
@@ -89,12 +89,22 @@ def test_the_lan_listener_deletes_every_trust_header(lan: str, header: str) -> N
     assert deletes(lan, header), f"the LAN listener does not delete {header}"
 
 
-def test_the_forwarded_proto_is_deleted_before_the_proxy(tunnel: str, lan: str) -> None:
-    """A forged `X-Forwarded-Proto: http` would drop upgrade-insecure-requests and HSTS."""
-    for block in (tunnel, lan):
-        assert deletes(block, "X-Forwarded-Proto")
-        proto = block.index("request_header -X-Forwarded-Proto")
-        assert proto < block.index("reverse_proxy")
+def test_the_lan_listener_deletes_the_forwarded_proto_before_the_proxy(lan: str) -> None:
+    """A forged `X-Forwarded-Proto: http` would drop upgrade-insecure-requests and HSTS.
+    The LAN listener deletes it and lets reverse_proxy set the real scheme."""
+    assert deletes(lan, "X-Forwarded-Proto")
+    assert lan.index("request_header -X-Forwarded-Proto") < lan.index("reverse_proxy")
+
+
+def test_the_tunnel_listener_forces_the_forwarded_proto_inside_the_proxy(tunnel: str) -> None:
+    """The tunnel hop is plaintext loopback, so the real scheme is the wrong answer: TLS was
+    terminated at the edge. It must be `header_up` inside reverse_proxy, because
+    reverse_proxy sets this header itself and overwrites anything set above it --
+    tests/integration/test_caddy_adapt.py asserts that on the adapted JSON."""
+    assert "header_up X-Forwarded-Proto https" in tunnel
+    assert not deletes(tunnel, "X-Forwarded-Proto"), (
+        "deleting it here is dead config: reverse_proxy re-adds it from the plaintext hop"
+    )
 
 
 def test_each_listener_sets_its_own_edge_marker(tunnel: str, lan: str) -> None:

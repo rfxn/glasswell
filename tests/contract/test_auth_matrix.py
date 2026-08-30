@@ -338,3 +338,26 @@ def test_no_principal_class_can_reach_user_management_except_the_owner(
     reachable = principals[principal].get("/v1/users").status_code == 200
 
     assert reachable is (principal in ("owner", "owner_session"))
+
+
+def test_the_document_routes_are_gated_in_the_deployed_shape(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The matrix builds an app with no SPA mount; production always has one.
+
+    `Mount("/")` shadows anything registered after it, so with `GLASSWELL_WEB_ROOT` set --
+    which is the deployed configuration -- `/docs` and `/openapi.json` answered 404 rather
+    than the gate. Fail-closed, but it made the F-2 fix real in code and vacuous on the host,
+    and it would have failed four verify/smoke assertions on the deploy gate.
+    """
+    from glasswell.api import create_app
+    from glasswell.api.deps import WEB_ROOT_ENV
+
+    (tmp_path / "index.html").write_text("<html></html>", encoding="utf-8")
+    monkeypatch.setenv(WEB_ROOT_ENV, str(tmp_path))
+
+    with TestClient(create_app()) as deployed:
+        for path in ("/docs", "/openapi.json"):
+            status = deployed.get(path).status_code
+
+            assert status == 403, f"{path} answered {status}; the SPA mount shadows the gate"
