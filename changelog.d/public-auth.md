@@ -4,12 +4,12 @@
            the design to reinstate
 - [New] argon2-cffi pinned; Argon2id at t=3, m=64MiB, p=2, sized against the two-worker
       uvicorn RAM budget, with a floor assertion so the parameters cannot be lowered
-- [New] migration 056: lineage.users, lineage.sessions and lineage.login_attempts, with
-      owner-only account creation, session tokens stored as sha256 alone, and a CHECK
-      that refuses any password hash that is not Argon2id
-- [New] login throttling: per-account and per-IP backoff on a doubling curve capped at 900s,
-      15-minute time-boxed lockout, and a known-good-IP bypass so a flood from an
-      unfamiliar address cannot lock the owner out of their own network
+- [New] the accounts migration adds lineage.users, lineage.sessions and
+      lineage.login_attempts, with owner-created accounts only, session tokens stored as
+      sha256 alone, and a CHECK that refuses any password hash that is not Argon2id
+- [New] login throttling: per-account and per-IP backoff on a doubling curve capped at
+      900s, a 15-minute time-boxed lockout, and a known-good-IP bypass so a flood from
+      an unfamiliar address cannot lock the owner out of their own network
 - [Fix] the client address is resolved from a Caddy-set edge marker, never from
       X-Forwarded-For; uvicorn runs with --forwarded-allow-ips '*', under which the
       leftmost X-Forwarded-For entry is attacker-controlled
@@ -41,16 +41,17 @@
            tunnel listener gains its own Caddy log block, since a site inherits none
 - [New] retention sweeps expired sessions after their absolute cap plus seven days and
       login attempts after ninety, keyed on the cap so a live session is unreachable
-- [New] infra: the cloudflared ingress publishes one hostname to the Caddy tunnel listener
-      and answers 404 for everything else, so the tile server is not reachable through
-      the edge; install.sh gains --with-cloudflared and generates GLASSWELL_CSRF_KEY
+- [New] infra: the cloudflared ingress publishes one hostname to the Caddy tunnel
+      listener and answers 404 for everything else, so the tile server is not reachable
+      through the edge; install.sh gains --with-cloudflared and mints GLASSWELL_CSRF_KEY
 - [Fix] verify.sh asserted only tree-to-host unit equality, so a unit installed on the
       host and declared in no repo file was invisible; the reverse assertion closes it
-- [New] glasswell-owner-bootstrap creates the first owner account and glasswell-owner-reset
-      is the lockout break-glass; both read the password from stdin only, never from argv
-      or the environment, and the installer calls neither, so no default credential ships
-- [Change] the web app replaces the API-key panel with a session login: the form carries no
-           action attribute and submits by fetch, because the app's own CSP ships
+- [New] glasswell-owner-bootstrap creates the first owner account and
+      glasswell-owner-reset is the lockout break-glass; both read the password from stdin
+      only, never argv or the environment, and the installer calls neither, so no
+      default credential ships
+- [Change] the web app replaces the API-key panel with a session login: the form carries
+           no action attribute and submits by fetch, because the app's own CSP ships
            form-action 'none'; a stale key in localStorage is cleared on first render
 - [Fix] og:image and twitter:image are made absolute at build time from
       GLASSWELL_PUBLIC_ORIGIN, since Open Graph consumers do not reliably resolve a
