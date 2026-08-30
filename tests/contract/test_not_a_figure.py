@@ -54,7 +54,13 @@ from tests.contract.test_naked_numbers import ALLOWED, allowed_numbers, exercise
 
 COVERAGE_REPORT = Path("/tmp/gw-pa/not-a-figure-coverage.json")
 NUMERIC_TYPES = frozenset({"integer", "number"})
-BAG_ENTRIES = ("/params/**", "/spec/**", "/*/spec/**", "/row_payload/**")
+BAG_ENTRIES = (
+    "/params/**",
+    "/spec/**",
+    "/*/spec/**",
+    "/row_payload/**",
+    "/coverage/control_contract/**",
+)
 # A walker that silently matched nothing would satisfy every assertion below by vacuity. The
 # floor is deliberately far under the measured register; it is a tripwire, not a target.
 VACUITY_FLOOR = 25

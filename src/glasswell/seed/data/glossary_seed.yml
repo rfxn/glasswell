@@ -385,6 +385,23 @@
   related_terms: ["Conformance rule", "Canonical", "Spine"]
   source_refs: ["canonical.wells.operator_name_reported", "SB-08 §7.1 O-6"]
 
+- term: Peer ladder
+  aliases: ["Fallback level", "Peer fallback"]
+  short_definition: >-
+    The closed sequence of peer definitions a type-curve control tries, in order, until one
+    has enough wells.
+  expanded_definition: >-
+    formation_area_length, then formation_area, then formation_basin, then control_unavailable.
+    A rung is taken only if it holds at least the minimum peer count inside the vintage window;
+    pad mates are excluded and peers are drawn only from the training and calibration arms, so
+    the subject cannot be its own comparison. The rung is the peer assumption in force, which
+    is why it is served on every row rather than left in the build log: two subjects under one
+    column name and two different rungs are two different quantities. Recorded as
+    cr_tc_peer_ladder_1.
+  domain_tags: [modeling, quality]
+  related_terms: ["Type curve", "Analog", "Training support"]
+  source_refs: ["blueprint-v0.6 §9", "cr_tc_peer_ladder_1"]
+
 - term: Pipeline stage
   aliases: ["Stage"]
   highlightable: false
@@ -442,6 +459,21 @@
   domain_tags: [production, time]
   related_terms: ["Report vintage", "Valid time", "Bitemporal", "Restatement"]
   source_refs: ["canonical.production.production_month", "DIR-2"]
+
+- term: Quantile convention
+  aliases: ["P10 / P50 / P90", "Statistical ascending"]
+  short_definition: >-
+    Which end of a distribution a quantile label names. glasswell serves
+    statistical-ascending quantiles: p10 is the low case.
+  expanded_definition: >-
+    Every served band reads p10 < p50 < p90 by value, so p10 is the pessimistic case and p90
+    the optimistic one. This is the opposite of the reserves convention a petroleum engineer
+    reads by default, in which P10 is the high case and P90 the low one. The two conventions
+    invert the reader's conclusion rather than blurring it, so the convention in force rides on
+    every response as quantile_convention and is recorded as cr_tc_quantile_convention_1.
+  domain_tags: [modeling, quality]
+  related_terms: ["Band", "Type curve", "Naked number"]
+  source_refs: ["cr_tc_quantile_convention_1"]
 
 - term: Quarantine
   short_definition: >-
@@ -576,6 +608,22 @@
     source carry API-10 at all - is answered before any of that source's data is promoted.
   domain_tags: [identity, data-model]
   related_terms: ["API-10 / API-12 / API-14", "Wellbore"]
+  source_refs: ["blueprint-v0.6 §9"]
+
+- term: Split set
+  aliases: ["sset", "Temporal split bundle"]
+  short_definition: >-
+    The content-addressed identity of the rolling-origin train, calibration and test splits a
+    model artifact was built on.
+  expanded_definition: >-
+    An sset_ id addresses the whole bundle of persisted splits — every rolling origin and every
+    horizon in it — so two artifacts carrying the same split set were evaluated on the same held
+    out wells and are comparable, and two carrying different ones are not. All three streams
+    share one bundle because the split is a decision about wells and time, not about what was
+    produced. Each individual split also carries its own hash, so a served figure names both the
+    bundle and the split that produced it.
+  domain_tags: [modeling, lineage]
+  related_terms: ["Type curve", "Knowledge time", "Recipe"]
   source_refs: ["blueprint-v0.6 §9"]
 
 - term: Spud date

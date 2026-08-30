@@ -28,6 +28,7 @@ from glasswell.api.examples import (
     EXAMPLE_API10,
     EXAMPLE_BBOX,
     EXAMPLE_DERIVATION_ID,
+    EXAMPLE_PUBLICATION_ID,
     EXAMPLE_VINTAGE_ID,
 )
 from glasswell.lineage.envelope import InlinedExplain, attach_lineage, figure
@@ -55,6 +56,12 @@ SURFACES: tuple[tuple[str, dict[str, Any]], ...] = (
     ("get_derivation", {"url": f"/v1/derivations/{EXAMPLE_DERIVATION_ID}", "params": {}}),
     ("list_vintages", {"url": "/v1/vintages", "params": {}}),
     ("get_vintage", {"url": f"/v1/vintages/{EXAMPLE_VINTAGE_ID}", "params": {}}),
+    ("get_well_type_curve", {"url": f"/v1/wells/{EXAMPLE_API10}/type-curve", "params": {}}),
+    ("list_type_curves", {"url": "/v1/type-curves", "params": {}}),
+    (
+        "get_modeling_publication",
+        {"url": f"/v1/modeling/publications/{EXAMPLE_PUBLICATION_ID}", "params": {}},
+    ),
 )
 SURFACE_IDS = [name for name, _ in SURFACES]
 
@@ -69,6 +76,10 @@ DECLARED_PATHS = (
     "/v1/derivations/{derivation_id}",
     "/v1/vintages",
     "/v1/vintages/{vintage_id}",
+    "/v1/modeling/publications",
+    "/v1/modeling/publications/{publication_id}",
+    "/v1/wells/{api10}/type-curve",
+    "/v1/type-curves",
 )
 
 

@@ -122,3 +122,49 @@
   reason: >-
     The rejected source row, served verbatim as evidence (SB-07 §8). It is the input
     that failed a rule, not a number the system stands behind.
+
+# --- modeling control --------------------------------------------------------
+- pointer: /splits/*/horizon_months
+  reason: >-
+    Horizon of a persisted temporal split, read from the split object. A parameter of
+    the split set, not an observation it stands behind.
+- pointer: /coverage/control_contract/**
+  reason: >-
+    The pinned control contract served verbatim from the artifact's coverage document.
+    Its numbers are build parameters — minimum peers, vintage window, quantile levels —
+    not figures the control stands behind. Same class as /spec/**.
+- pointer: /rows/*
+  reason: >-
+    Rows each pinned artifact recorded when it was written. Same class as /output/rows
+    on the derivation record.
+- pointer: /coverage/acceptance/*/minimum
+  reason: >-
+    Floor the acceptance gate required, recorded with the artifact. A threshold the
+    build was judged against, not an observation it stands behind.
+- pointer: /coverage/acceptance/*/maximum
+  reason: >-
+    Ceiling the acceptance gate allowed, recorded with the artifact. A threshold the
+    build was judged against, not an observation it stands behind.
+- pointer: /horizon_months
+  reason: >-
+    Horizon of the persisted temporal split this control was built on. A parameter of
+    the split, not an observation the control stands behind.
+- pointer: /series/month_index/*
+  reason: >-
+    Producing-month index, the axis the curve is plotted against. It is the row key,
+    not a value.
+- pointer: /available_origins/*/horizon_months
+  reason: >-
+    Horizon of another persisted split for this subject, offered for navigation.
+- pointer: /series/control_unavailable_reasons/*/*
+  reason: >-
+    Why the peer ladder terminated for a subject, served verbatim from the control. A
+    vocabulary term, not a number.
+- pointer: /series/api10/*
+  reason: Identifier, on the row axis of an aligned-array page.
+- pointer: /area
+  reason: >-
+    Area bucket the subject falls in, a label the peer ladder groups by. A zero-padded
+    code, not a measurement.
+- pointer: /series/area/*
+  reason: Area bucket, in an aligned-array page.

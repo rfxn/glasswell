@@ -43,12 +43,14 @@ from glasswell.api.routers import (
     index,
     keys,
     lineage,
+    modeling,
     neighbors,
     production,
     quarantine,
     session,
     status,
     tiles,
+    type_curves,
     users,
     wells,
 )
@@ -113,7 +115,10 @@ bounds and metrics. Where a regulator publishes volumes at well level they are s
 well level; where it publishes only at lease level, well-level production is held pending
 allocation rather than inferred. Physical-neighbour results require current lateral
 geometry, use strict earlier-completion cutoffs, and are not model analogs. The lineage
-spine, conformance registry, quarantine and glossary are live. Forecasts, economics,
+spine, conformance registry, quarantine and glossary are live. The pinned `tcv1.0`
+type-curve control is served per test subject and as a browsable population, with its
+accepted publication, split set and peer-ladder support stated; it is a backward-looking
+peer aggregate over a held-out arm, not a forecast. Forecasts, economics,
 scenarios, agents and undrilled-location inventory are not served, and a source that is
 staged without being promoted is not claimed as resident. `/v1/status` adds current
 application-plane checks, scheduled-job observations, registered-artifact age and explicitly
@@ -223,12 +228,14 @@ def create_app() -> FastAPI:
         health.router,
         status.router,
         wells.router,
+        type_curves.router,
         neighbors.router,
         completions.router,
         production.router,
         formations.router,
         tiles.router,
         lineage.router,
+        modeling.router,
         conformance.router,
         quarantine.router,
         glossary.router,
