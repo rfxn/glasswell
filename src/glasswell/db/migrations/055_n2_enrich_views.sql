@@ -107,12 +107,16 @@ values
      'The request derivation records the serve-time fluid intensity it returned.');
 
 -- First-publication evidence for the rule ids this track registers. The tag and commit are
--- this branch's; the integrator repoints them at the release that actually carries them,
--- alongside the migration renumber.
+-- placeholders the release gate refuses to ship; the integrator repoints them at the tag that
+-- actually carries these rules, alongside the migration renumber.
+--
+-- published_vintage is a third repoint item, not a placeholder: 049 defines it as the date of
+-- the first tag containing the rule, so it is only right while the train ships on the date
+-- below. Check it against the tag date rather than assuming it; the table is append-only.
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-select rule_id, date '2026-08-30', 'v0.67',
-       'be26c93c6857aed80537c6efcb28bdd1ca959a85'
+select rule_id, date '2026-08-30', 'UNRELEASED',
+       '0000000000000000000000000000000000000000'
   from unnest(array[
        'cr_nd_vintage_cohort_1', 'cr_ff_base_water_units_1', 'cr_ff_design_promote_1',
        'cr_ff_fluid_intensity_1'
