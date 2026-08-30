@@ -215,11 +215,16 @@ echo "$SIDECARS" | wc -l          # must print 9
 sudo -u glasswell /opt/glasswell/venv/bin/python \
   /opt/glasswell/src/scripts/ops/nm_reregister_manifests.py \
   --dsn 'postgresql:///glasswell?host=/var/run/postgresql' \
+  --expect-database glasswell \
   --dry-run \
   $(for s in $SIDECARS; do printf ' --sidecar %s' "$s"; done)
 ```
 
-The first line of output names the target database. Confirm it reads `database=glasswell`.
+**`--expect-database` is not optional here.** `glasswell` and `glasswell_d1` are one letter
+apart and only one of them is production; without the flag the tool prints the database it
+resolved and trusts you to read the line, and with it a mismatched `--dsn` exits 1 before any
+statement runs. Confirm the first line of output reads `database=glasswell` as well — the flag
+is the refusal, the line is the receipt.
 
 Expected: nine `… would register …` lines, nine distinct `man_…` ids, and `lineage.manifests`
 unchanged — the dry run holds a read-only connection, so it cannot write even if it tried. The
@@ -238,8 +243,18 @@ Every line must read `OK`. A mismatch aborts the whole track.
 
 ### 1c — register
 
-The same command with `--dry-run` removed. Expected: nine `… registered …` lines,
-`supersedes=nothing` on each. An `already present` line is not an error — record it.
+```bash
+sudo -u glasswell /opt/glasswell/venv/bin/python \
+  /opt/glasswell/src/scripts/ops/nm_reregister_manifests.py \
+  --dsn 'postgresql:///glasswell?host=/var/run/postgresql' \
+  --expect-database glasswell \
+  $(for s in $SIDECARS; do printf ' --sidecar %s' "$s"; done)
+```
+
+Step 1a's command with `--dry-run` removed and **`--expect-database` still on it** — this is
+the invocation that writes, so it is the one the refusal exists for. Expected: nine
+`… registered …` lines, `supersedes=nothing` on each. An `already present` line is not an
+error — record it.
 
 ### 1d — verify
 
