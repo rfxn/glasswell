@@ -19,6 +19,9 @@ const PRIORITY: Readonly<Record<string, number>> = {
   "wells-struck": 40,
   "tx-wells": 40,
   "tx-wells-struck": 40,
+  // New Mexico at the same rank and for the same reason. It has no struck sibling: the strike
+  // marks a status class and every NM status_canonical is null, so the class cannot match.
+  "nm-wells": 40,
   // Both of the laterals row's style layers, at one rank: the two never overlap — they are
   // different basins — and one row that selected in North Dakota and did nothing in the
   // Permian would be the toggle contradicting itself.

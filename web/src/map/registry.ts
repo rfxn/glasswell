@@ -7,7 +7,7 @@ import { LAND_SNAPSHOT, ND_SNAPSHOT, landCellCount, ndCoverage, ndWellCount } fr
 import { DISPOSAL_COLOUR } from "./disposal.ts";
 import { LAYER_GROUPS } from "./groups.ts";
 import type { LayerGroup, LayerGroupId } from "./groups.ts";
-import { statusColour } from "./status.ts";
+import { UNMAPPED_STATUS, statusColour } from "./status.ts";
 import { LAND_GRID_COLOUR, TRACE_COLOUR } from "./style.ts";
 import { LIQUID_RAMP } from "./thematics.ts";
 
@@ -294,6 +294,27 @@ export const LAYERS: readonly LayerDef[] = [
     styleLayers: ["tx-wells", "tx-wells-struck"],
     drawOrder: 42,
     // One spine, two tile marts: /v1/wells is state-agnostic, so both rows land on it.
+    collection: { dataset: "wells", bbox: "bbox" },
+  },
+  {
+    id: "nm-wells",
+    group: "spine",
+    label: "Wells (NM)",
+    subtitle:
+      "NM OCD well-header surface locations · read from marts.nm_wells_tile at refresh, " +
+      "all unmapped: the OCD publishes no status codebook (cr_nm_wellhistory_status_vocab_1)",
+    // Neither green nor plugged grey: New Mexico draws entirely in the unmapped class, because
+    // its status letters have no published meaning to map. A swatch is a prediction about the
+    // canvas, and this one predicts what the canvas will actually show.
+    swatch: { kind: "dot", colours: [UNMAPPED_STATUS.colour] },
+    defaultOn: true,
+    minZoom: 4,
+    zoomHint: "Visible at zoom 4 and above",
+    opacity: 1,
+    provenance: [{ kind: "official", source: "marts.nm_wells_tile" }],
+    styleLayers: ["nm-wells"],
+    drawOrder: 43,
+    // One spine, three tile marts: /v1/wells is state-agnostic, so every row lands on it.
     collection: { dataset: "wells", bbox: "bbox" },
   },
   {

@@ -123,3 +123,11 @@
 - [Change] `status/collector.py` reports New Mexico in the `canonical.wells_latest` inventory
          and publishes `marts.published_map_layers/nm`, so the status surface stops enumerating
          two states out of three
+- [New] `web/src/map`: the `nm_wells` point layer, its registry provenance entry citing
+      `marts.nm_wells_tile`, and its status-count block — which is empty, and says why: every
+      New Mexico `status_canonical` is null under `cr_nm_wellhistory_status_vocab_1`, so the
+      whole state draws in the unmapped class rather than a guessed one
+- [Change] no `nm_laterals` layer is added and no struck sibling: no in-scope New Mexico source
+         ships a lateral, and the strike marks a status class New Mexico can never carry
+- [Change] the default Williston centring is left alone; re-centring for a second basin is an
+         owner decision and is routed to the register rather than taken here
