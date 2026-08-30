@@ -11,6 +11,8 @@ APP_ENV=/etc/glasswell/app.env
 
 base="${GLASSWELL_BASE_URL:-https://glasswell.lab.rpx.sh}"
 api10=3305310451
+# The New Mexico spine check reads a header, not a row count: the gate opens on the spine.
+nm_api10=3002540209
 key_file=""
 
 usage() {
@@ -19,6 +21,7 @@ usage: smoke.sh [options]
 
   --base URL        API root; $GLASSWELL_BASE_URL, else https://glasswell.lab.rpx.sh
   --api10 API10     the well every well-level assertion reads (default 3305310451)
+  --nm-api10 API10  the New Mexico well the spine assertion reads (default 3002540209)
   --key-file FILE   read GLASSWELL_OWNER_KEY=... from FILE (default /etc/glasswell/app.env)
 
 $GLASSWELL_BASE_URL is the one name every tier reads: this script, tests/e2e and the docs.
@@ -32,6 +35,7 @@ while [[ $# -gt 0 ]]; do
         --*=*) set -- "${1%%=*}" "${1#*=}" "${@:2}"; continue ;;
         --base) base="$2"; shift 2 ;;
         --api10) api10="$2"; shift 2 ;;
+        --nm-api10) nm_api10="$2"; shift 2 ;;
         --key-file) key_file="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) printf 'unknown argument: %s\n' "$1" >&2; exit 2 ;;
@@ -189,6 +193,37 @@ sys.exit(0 if sources and not data["degraded_sources"]
          and all(source["state"] in ("current", "pending") for source in sources)
          and pending == {s["source_id"] for s in sources if s["state"] == "pending"} else 1)
 ' "$work_dir/body.json"
+
+printf 'the New Mexico spine\n'
+# The gate opens on the spine, not on the row count: what is asserted is a well header with a
+# geometry provenance and a status vocabulary rule behind it. A count of promoted rows would
+# have passed before canonical.wells held a single New Mexico row.
+nm_status="$(keyed_status "$base/v1/wells/$nm_api10")"
+if [[ $nm_status == 200 ]]; then
+    body "/v1/wells/$nm_api10"
+    assert_true "a New Mexico well resolves through the spine with its handles" \
+        "a served New Mexico figure with no rule behind it is a naked number" \
+        python3 -c '
+import json, sys
+card = json.load(open(sys.argv[1]))["data"]
+sys.exit(0 if card["state_code"] == "30" and card["geometry_provenance"] else 1)
+' "$work_dir/body.json"
+    keyed "$base/v1/wells/status-summary?bbox=-109.1,31.2,-102.9,37.1" > "$work_dir/body.json"
+    assert_true "the New Mexico status vocabulary rule is New Mexico's" \
+        "an NM count under cr_nd_status_vocab_1 would be North Dakota's answer to a New Mexico question" \
+        python3 -c '
+import json, sys
+basins = json.load(open(sys.argv[1]))["data"]["basins"]
+rules = {row["state_code"]: row["status_vocabulary_rule"] for row in basins}
+sys.exit(0 if rules.get("30") == "cr_nm_wellhistory_status_vocab_1" else 1)
+' "$work_dir/body.json"
+else
+    printf '  skip    New Mexico spine: /v1/wells/%s is %s, so the gate is not open here\n' \
+        "$nm_api10" "$nm_status"
+fi
+# Check 15 above is a fetch-freshness signal: freshness_state is a pure function of
+# max(manifests.fetch_vintage) and consults no canonical table, so it flips when a manifest is
+# registered and says nothing about whether anything was promoted.
 
 printf 'tiles and the contract\n'
 tile_path="$(python3 -c '
