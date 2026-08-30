@@ -12,7 +12,7 @@ numbering; its §10 governs when that changes.
 
 ## Where it stands
 
-49 tagged releases, v0.20 through v0.68, cut from 2026-08-21 through 2026-08-30, run
+50 tagged releases, v0.20 through v0.69, cut from 2026-08-21 through 2026-08-30, run
 the North Dakota production slice and North Dakota/Texas map on one VM. The concise
 evidence ledger is [`STATUS.md`](STATUS.md); status here is per phase and stated against
 the exit criteria below, not against a feeling of progress:

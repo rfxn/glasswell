@@ -7,6 +7,350 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.69"></a>
+## v0.69 — 2026-08-30
+
+- [New] tiles: basins and plays are served tile layers over marts.basin_boundaries_tile —
+      32 EIA sedimentary basin outlines and 16 individual play boundaries for the lower 48,
+      each with a label anchor point owned by exactly one tile, so the map has a geological
+      frame of reference instead of an undifferentiated field of well points
+- [New] ingest: eia_boundaries loads both EIA archives as plain HTTPS zips through the
+      existing strict-.prj shapefile reader — one manifest per archive, twelve boundary
+      shapefiles selected out of the play bundle by a declared stem marker so the elevation
+      and isopach contours beside them are never read
+- [New] canonical: basin_boundaries holds one published boundary per row under a minted key
+      — EIA publishes no feature id — discriminated by boundary_kind, append-only, with the
+      publisher's own Basin string kept verbatim beside the resolved link
+- [New] seed: eight code_ref and datum conformance rules record the boundary decisions —
+      whose interpretation is drawn, that a basin and a play are different objects, how a
+      play links to its basin, that overlap is served rather than arbitrated, how an invalid
+      published ring is repaired, whose area is served, how a well is judged inside a
+      boundary, and that both archives ship WGS 84
+- [New] conformance: cr_eia_basin_link_1 links a play to its basin by case-folded exact name
+      and to nothing otherwise; four of sixteen plays do not resolve and the rule records why
+      each near match is refused, because a join right twelve times and quietly wrong twice
+      is worse than one that reports four unresolved links
+- [New] conformance: cr_eia_geometry_repair_1 repairs the two invalid published rings —
+      Bakken and Three Forks, both ring self-intersections, both Williston — by ST_MakeValid
+      with polygonal extraction, records each as an invalid_geometry reject and then releases
+      it under the rule with the promotion derivation, so the repair is a ledger fact rather
+      than a silent edit; a repair that yields no polygon is refused outright
+- [New] conformance: cr_eia_well_membership_1 defines basin membership as surface-hole
+      intersection with the served boundary, states that membership is a set and that a well
+      inside none is unassigned, and records that canonical.wells.basin is a declared
+      per-source constant and not this geometric claim
+- [New] quarantine: invalid_geometry joins the reject vocabulary
+- [Change] tiles: TILE_LAYERS composes BASIN_LAYERS, so the proxy allowlist, the martin
+         config assertion and the wire-type audit cover the two new layers on the day they
+         are declared
+- [New] map: the layer list is grouped by what a layer is of rather than by the mart that
+      publishes it. Well spine, land and legal framework, derived surfaces and geology
+      framework each head a collapsible band; a band opens when the reader is already
+      drawing something inside it and carries a count of its live switches when shut, so
+      nothing on the canvas is hidden without a mark. The panel now fits above the fold at
+      every breakpoint, 635px of list at 390 wide becoming 419px
+- [New] map: a layer that is switched on, in scale, and painting nothing at this extent
+      says so on its own row instead of looking drawn. Read off the canvas at map idle, so
+      a layer whose tiles are still streaming is never reported absent; the wording states
+      the canvas and never the ground, because a failed source queries empty too
+- [New] card: the well header carries the status as the same glyph the map painted it
+      with, and names the code the regulator filed beside the canonical class, so the
+      mapping is readable rather than hidden. Loaded on a dynamic edge, which is what keeps
+      the map status vocabulary off the entry chunk and off the explorer route
+- [Change] card: the well facts read as four bands, operator, location, drilling and
+           completion, and record, instead of one flat list where a compute CRS carried the
+           same weight as the operator; a band whose every field is absent is dropped
+           rather than left heading an empty list
+- [Fix] card: an absent value is no longer typographically identical to a measured one.
+      DR-H24 recorded that absence and measurement shared colour, weight, family and font
+      style, and that this becomes a real problem when a panel is skimmed rather than read;
+      absence now takes one muted italic form and still names which kind of absence it is
+- [Fix] card: the neighbour rows printed the raw null-semantics token, so "alias
+      unavailable" stood in the Formation cell looking exactly like a formation name beside
+      "bakken". Both the absent value and the mapping state are spelled out now, each from
+      its own endpoint's vocabulary, which are rendered in one form and never asserted to
+      mean the same thing
+- [Change] tests/e2e/chrome-fold.mjs: the fold arithmetic divides by rendered rows and
+           asserts every group header is reachable, plus every operable layer having a row
+           at all. A row inside a shut group has a zero rect, which would have made both
+           the fold count and the mean row height pass while measuring nothing
+- [New] seed: conformance_mt.py registers 45 Montana rules across four MBOGC sources — the
+      API-14 to API-10 slice on state code 25, the end-of-month report convention, the -999
+      Lease_Unit sentinel, the pre-applied oil-plus-condensate liquids basis, the formation
+      rollup, the lease grain's reporting level, the fifteen disposition columns that stage
+      but never promote, the cp1252 DBF encoding, the twinned-layer selection, and the
+      map-stick-not-survey class on well paths; every row carries a rationale, an evidence
+      URL and a figure measured by full streaming pass rather than sampled
+- [New] seed: four MBOGC sources registered with an UNVERIFIED licence note — the listing
+      root answers 403, so bulk paths are pinned constants and no filename is ever derived
+      from an index
+- [New] db: the Montana registry migration adds the poll cadences, lineage.mt_stream_map and
+      lineage.mt_status_map with their promoted views, and the first-publication evidence
+      migration 049 requires before any cr_mt_ rule may be seeded
+- [Fix] ingest: ZippedShapefile takes an optional encoding. The MBOGC DBF declares Windows-1252
+      at language-driver byte 0x59 and pyshp's strict UTF-8 default raised partway through
+      iteration on a well named Blasé; the default is unchanged, so ND, TX and NM read exactly
+      as before
+- [Fix] tests: the source-poll cadence guard scans every migration for its insert rather than
+      opening 050 by name — migrations are immutable, so a source registered later can only be
+      given a policy in a later file, and the guard was blind to precisely that case; its
+      statement terminator now tolerates a semicolon inside a cadence string
+- [New] ingest: mt_bogc.py stages and promotes both MBOGC grains from one archive and one
+      manifest — the well grain at well and well_completion_pool over ST_FMTN_CD with a
+      sum_over_pools rollup whose days take the maximum, and the lease grain at
+      lease_reported. Staging streams from the zip member and promotion reads one production
+      month at a time, so a 573 MB file is never extracted and never held in memory
+- [New] ingest: mt_gis.py loads the surface points and well paths, selecting the geographic
+      layer of each twinned archive by stem and keying a lateral on WellSub within its API-10;
+      the promotion derivation records is_directional_survey false, so a consumer reading
+      provenance learns the map-stick class from the ledger rather than from prose
+- [New] ingest: promote.py carries the source-parameterised bitemporal append — change-only
+      heads, scoped head reads and same-vintage divergence refusal — so a second state does
+      not restate them as literals bound to one source id
+- [New] db: the Montana staging migration adds the four staging tables, text-faithful including
+      the -999 sentinel and the fifteen unpromoted disposition columns
+- [New] seed: the registry migration seeds all nineteen published MBOGC status values with their measured counts;
+      six are deliberately unpromoted and quarantine as unknown_status rather than being forced
+      onto a canonical state the source does not claim
+- [Fix] marts: the neighbour mart spans North Dakota and Montana. ND wells within 26,400 ft of
+      the state line had their neighbour sets truncated at the border because
+      nd_neighbor_subjects and both sides of nd_neighbor_edges were constrained to
+      '^33[0-9]{8}$' — a correctness gap ROADMAP already named, not a coverage gap
+- [Fix] marts: the pair-local UTM zone is computed from the shortest-line midpoint rather than
+      chosen from a hardcoded pair split at -102. The old expression had no unsupported branch,
+      so a pair outside 13N/14N was silently measured in one of them, passed the CHECK and was
+      stored under a handle asserting a pair-local CRS. Over the ND rectangle the formula
+      reproduces the old rule with zero mismatches, so ND distances are unchanged
+- [Fix] marts: SUPPORTED_LONGITUDE_MIN moves from -104.15 to -116.10. The old floor sat 7,531 m
+      west of the ND/MT line while the padded discovery radius is 8,208 m, so it was already
+      too tight for ND-only correctness before Montana existed
+- [New] db: the neighbours multi-state migration relaxes the subject and edge API-10 checks to
+      '^(25|33)[0-9]{8}$' and admits UTM 11N-14N, the zones the widened domain can produce
+- [Change] api: the neighbours HAL link and the explain-handle validators accept Montana
+      subjects, and STATUS_VOCABULARY_RULES gains 25 so an MT row does not emit
+      status_vocabulary_unregistered
+- [Change] tests: the candidate-pad proof imports the zone rule instead of reimplementing it,
+      and its measured bound is re-derived over the widened domain rather than relaxed — max
+      ratio 1.013136 against the same < 1.014 claim, with no false negatives. The domain-refusal
+      test is re-anchored from -105.50 to -118.00, never deleted: it is the only proof the
+      guard fires
+- [New] `scripts/ops/nm_reregister_manifests.py` re-registers a sealed raw-zone artifact
+      from its sidecar into an index that does not carry it yet; no socket is opened and
+      the operation is idempotent on the sha256 within a slot
+- [New] `--dry-run` validates every sidecar, resolves each against the live index and
+      reports the manifest ids it would create on a read-only connection, so committing
+      nothing is enforced by the server rather than by the code path
+- [Fix] the manifest re-registration tool existed only at `/data/scratch/d1-p4/reregister.py`
+      on the app VM, inside a disposable tree, while the status file that directs an
+      operator to it named a `work-output/experiments` path that does not exist; it now
+      names its target database on every run, reports registered against already-present
+      per sidecar, and exits 1 on a slot conflict instead of tracebacking
+- [Fix] `status/collector.py` aggregated `canonical.production_monthly` with no state filter
+      and served the result under a hardcoded North Dakota jurisdiction, so the first New
+      Mexico promotion would have published 24.8M rows and ~93,958 wells under the wrong
+      state within fifteen minutes, on a timer, over rows with no well header
+- [Change] the inventory splits into `canonical.production_monthly/nd` and `/nm`, matching
+         the state-qualified convention every sibling dataset in the file already follows,
+         including the `well_completions/nm` entry that already serves zero
+- [Change] the status contract test seeds two states rather than one — the defect was
+         invisible to a single-state fixture — and asserts the two datasets partition the
+         table, so a third population would fail rather than vanish from a served figure
+- [New] `docs/runbook-nm-promotion.md`: the four New Mexico production steps with their
+      preconditions, abort conditions, expected counts, verification gates and the rollback
+      each step actually has — which for three of the four is none, stated in terms designed
+      to stop an operator improvising a delete
+- [New] `tests/integration/test_nm_promotion_gates.py` pins the index the deployed G7-2 gate
+      names: `production_monthly_api10_idx` exists, leads on `api10`, and both the served
+      query and the `_latest` view resolve to it once a sequential scan stops being free
+- [Change] `057_state_parameterised_neighbors.sql`: `nd_neighbor_subjects.api10` and both
+         `nd_neighbor_edges` endpoints accept any ten-digit API-10 rather than only `^33`,
+         while a new constraint keeps an edge intra-state because the pair-local UTM zone
+         selection is undefined across an arbitrary state pair
+- [Change] `marts/neighbors.py`: `STATE_CODE` becomes the `STATE_CODES` tuple the refresh
+         binds through `= any(...)`, so a second state is a data change rather than an edit;
+         New Mexico is deliberately not in it, because neither NM source ships a lateral
+- [New] `seed/conformance_nm_wells.py`: ten conformance rows covering New Mexico's header
+      identity, effective dating, status and well-type domains, the NAD83 datum transform, the
+      coordinate policy, geometry provenance and scope, the pool grain and the cross-source
+      header precedence; `058_nm_gate_rule_publications.sql` registers their publication
+      evidence, which migration 049 makes a precondition for the insert
+- [New] `cr_nm_wellhistory_coordinate_1` records the measurement behind the policy: 318,720 of
+      321,510 records carry a usable coordinate pair, 897 carry a zero ordinate and 1,893 a nil
+      one, giving 141,778 of 142,000 wells a point — three counted populations that sum to the
+      record count rather than two counted and one subtracted
+- [New] `cr_nm_wellhistory_status_vocab_1` records the fifteen-value status domain and asserts
+      no canonical status: the OCD publishes no codebook, so a New Mexico well carries its
+      letter in `status_reported` and null in `status_canonical`, and the served unmapped count
+      has a rule behind it
+- [New] `cr_nm_wellhistory_geometry_scope_1` states that no in-scope New Mexico source ships a
+      lateral or a bottomhole, so the 43,409 horizontal and 3,265 directional wells the header
+      table names must never be read as carrying a path
+- [New] `cr_nm_wcproduction_pool_rollup_1` gives New Mexico's pool grain a New Mexico rule to
+      cite instead of North Dakota's, and says the opposite of what North Dakota's says: all
+      17,597,960 promoted rows are `well_completion_pool` with a null aggregation and there is
+      no well-level row among them, so a New Mexico well's well-level series is absent rather
+      than zero
+- [New] `059_nm_well_headers.sql`: `coordinate_sentinel` and `coordinate_absent` join the
+      quarantine reason vocabulary, so a zero ordinate and a nil one are quarantined under
+      distinct codes rather than dropped or collapsed, and `wells_state_effective_idx` supports
+      the per-state newest-effective-row scan the tile marts run
+- [Change] `canonical.wells` and `canonical.well_spatial` need no widening for API prefix 30 —
+         neither carries a state constraint and `geom_type` already admits `surface` — and a
+         test now guards that against a future state check
+- [New] `ingest/nm_wells.py` promotes `staging.stg_nm_ocd_wellhistory__records` into
+      `canonical.wells` and `canonical.well_spatial`, keyed by the registry's own per-segment
+      API-10 composition rule and carrying no state-code literal. This is the row that opens the
+      serving gate: the spine is rooted on `canonical.wells`, so every New Mexico figure becomes
+      servable here and nowhere earlier
+- [New] the OCD FTP header table ships latitude, longitude and NAD83 datum — 318,720 usable
+      pairs of 321,510 records and 141,778 of 142,000 wells — so New Mexico geometry needs no
+      new source; the earlier "no coordinates" finding was scoped to `wcproduction`
+- [New] the coordinate policy is a pair rule, not a latitude rule: either ordinate nil
+      quarantines as `coordinate_absent` and either ordinate zero as `coordinate_sentinel`, nil
+      taking precedence. Four records carry a good latitude with a zero longitude, and a
+      latitude-only check would have given them a valid point in the Gulf of Guinea in an
+      append-only table
+- [New] `tests/fixtures/nm_ocd/nm_wellhistory_headers.xml`, cut from the sealed artifact by
+      truncation and selected rather than taken from the head, so all six coordinate
+      populations are present — three of them hold fewer than five records in 321,510
+- [Change] neither refusal suppresses the well header, and two reconciliations close on counted
+         populations rather than on subtraction: records equal headers plus unkeyed plus
+         undated, and headers equal points plus coordinate refusals
+- [New] `marts/land_metrics.py` counts unassigned wells a third way — those outside the states
+      the PLSS grid covers at all — so the scope New Mexico's 141,778 surface points fall
+      outside is stated explicitly rather than inferred from a total
+- [Change] `060_land_grid_state_scope.sql` and `seed/conformance_land.py` supersede
+         `cr_land_agg_membership_1` with `_2`, carrying the third counter and the measured
+         populations; the membership itself is unchanged, which is why this is a superseding
+         row rather than the code change its own contract_note forbids
+- [Fix] the membership universe is not filtered by state: 355,463 Texas surface points are in
+      it today and a scope filter would have collapsed a served figure to zero while a fixture
+      with one state in it reported no change
+- [Change] the production CTE is restricted to the wells membership actually joins, which is
+         output-identical — asserted by running both shapes side by side — and removes a full
+         scan of a view that spans 24.8M rows after the New Mexico promotion
+- [New] `marts/nm_wells.py`: a point-only New Mexico tile mart on the same shape as the ND and
+      TX marts — reads canonical only, rebuilds rather than appends, one content-addressed
+      derivation per refresh — and `061_nm_marts.sql` creates `marts.nm_wells_tile` with its
+      grants and registers the GIS layer's poll cadence
+- [New] the tile carries `status_reported` beside `status_canonical`, because every New Mexico
+      `status_canonical` is null by `cr_nm_wellhistory_status_vocab_1` and the reported letter
+      is what a legend has to work with
+- [Change] there is no `nm_laterals` layer and a test guards against one, asserted against the
+         tile proxy's own allowlist rather than the mart module's constant: no in-scope New
+         Mexico source ships a lateral, and a layer would imply a footprint nobody filed
+- [Fix] `api/routers/production.py`: the pool-rollup link was pinned to `cr_nd_pool_rollup_1`
+      and served on the pool endpoint unconditionally, so every New Mexico pool series would
+      have cited a North Dakota rule; the link now resolves per jurisdiction and cites
+      `cr_nm_wcproduction_pool_rollup_1`, which says New Mexico rolls nothing up
+- [Fix] `api/routers/production.py`: `ND_LIQUIDS_BASIS` was served as the mandatory `_basis`
+      sidecar on every liquids figure regardless of state, so every New Mexico oil figure would
+      have carried North Dakota's liquids policy; the basis is resolved per figure and New
+      Mexico's is `oil`, because `cr_nm_wcproduction_liquids_1` measured 3,398 condensate
+      filings and ruled that condensate is its own stream
+- [New] a New Mexico well whose production is filed at pool grain now says so on its
+      well-level series instead of rendering an empty chart: all 17,597,960 promoted rows are
+      `well_completion_pool` and nothing rolls up, so the series is absent rather than zero
+- [Fix] `api/routers/wells.py`: `STATUS_VOCABULARY_RULES` had no prefix-30 entry, so a New
+      Mexico well served a null `status_vocabulary_rule` and a spurious warning; geometry
+      provenance likewise resolved to the North Dakota rule for every state, and five served
+      field descriptions enumerated North Dakota and Texas in prose where they now name the
+      per-jurisdiction mapping
+- [Change] `status/collector.py` reports New Mexico in the `canonical.wells_latest` inventory
+         and publishes `marts.published_map_layers/nm`, so the status surface stops enumerating
+         two states out of three
+- [New] `web/src/map`: the `nm_wells` point layer, its registry provenance entry citing
+      `marts.nm_wells_tile`, and its status-count block — which is empty, and says why: every
+      New Mexico `status_canonical` is null under `cr_nm_wellhistory_status_vocab_1`, so the
+      whole state draws in the unmapped class rather than a guessed one
+- [Change] no `nm_laterals` layer is added and no struck sibling: no in-scope New Mexico source
+         ships a lateral, and the strike marks a status class New Mexico can never carry
+- [Change] the default Williston centring is left alone; re-centring for a second basin is an
+         owner decision and is routed to the register rather than taken here
+- [New] the `nm_wells` mart joins the ingest unit's refresh sequence, and the unit description
+      stops claiming it is ND-only; that unit runs monthly on day 5, not nightly
+- [New] a smoke check asserts the New Mexico spine — a well header with a geometry provenance
+      and a New Mexico status vocabulary rule — rather than a row count, and skips cleanly
+      where the gate is not open
+- [Change] no timer is added for `nm_ocd`, `nm_dims` or `nm_wells`: those sources are
+         registered owner-triggered and the FTP pull is a once-ever event; the measured cost of
+         a recurring promotion — 89 minutes and 9.9 GB, which does not fit the ingest unit's
+         `TimeoutStartSec` — is recorded in `SMOKE.md` for the decision, along with a weekly
+         recommendation for the daily-refreshed GIS layer
+- [New] `ingest/nm_wells_gis.py`: one ordered walk of the OCD Wells_Public FeatureServer layer,
+      ordered by the unique `id` rather than `OBJECTID`, into one checksummed artifact, one
+      manifest and one staging load; the host is already allowlisted so no blueprint amendment
+      is required, and `062_nm_wells_gis.sql` creates the staging table and registers the rule
+      publications
+- [New] `cr_nm_wells_gis_parity_1` records the agreement between two independently produced New
+      Mexico well populations — 141,916 GIS features against 142,000 FTP header API-10s, a
+      0.06% difference — as a prohibition rather than a tolerance band: the per-well distance
+      distribution is not measured, so no rule can yet say which source wins where they differ
+- [Change] the module stops at staging on purpose: the parity measurement decides how it
+         promotes, and promoting first would make the rule a rationalisation rather than a
+         finding. `cr_nm_wellhistory_header_precedence_1` accordingly still names the FTP
+         archive as sole authority, and no superseding row is seeded ahead of the evidence
+- [Fix] `STATUS.md` conflated the production database with the deployed host, so it reported
+      New Mexico as unpopulated while 79 conformance rules, 10 sources and 71,447 staging rows
+      were resident and a full 17.6M-row spine sat in a scratch database on the same machine
+- [Fix] `STATUS.md` overstated `tx_pdq_dsv`: it has a poll-cadence row on a table with no
+      foreign key to `lineage.sources`, and a test fixture — not a seeded source registration,
+      not conformance rules and not an ingest module
+- [Change] `ROADMAP.md` N3 says surface geometry rather than lateral geometry, and New Mexico
+         lateral geometry is tagged `data-unreachable`: neither the OCD FTP header table nor
+         the OCD public wells layer ships a lateral or a bottomhole, measured in both, with
+         43,409 horizontal wells named and no path filed for any of them
+- [Change] `ARCHITECTURE.md` names the New Mexico tile mart and the two staging termini that
+         are termini by design rather than by omission
+- [Change] the promotion runbook asserts the Wave-1 `glasswell-repromote` units are **absent**
+         rather than masking them: T6 removed them from VM 111 on 2026-08-30 and `verify.sh`
+         now asserts host against tree, so masking a unit that does not exist is not the check
+         the condition wants. The armed-timer framing is corrected with the measurement that
+         settles it — `Persistent=` catch-up needs a calendar occurrence after the base time,
+         and `systemd-analyze calendar '2026-08-21 00:30:00 UTC'` returns `Next elapse: never`
+- [Change] the dump precondition says what it does not give: `verify.sh` gates its schema-head
+         comparison on a drill completing after `max(applied_at)`, and the drill is weekly, so
+         between this deploy and the next Sunday the newest restore proof covers the previous
+         schema
+- [Fix] `cr_nm_wellhistory_effective_1` legislated a translation of the `9999-12-31` sentinel
+      into a null `effective_to`, and `canonical.wells` has no `effective_to` column and the
+      promoter never read `rec_termn_dte`; the row now states what the code does, the promoter
+      reads the field name and the reason code from the spec, and the ranking question the old
+      text hid is measured — 142,000 open headers against 142,000 wells and zero wells whose
+      newest row is retired
+- [New] `cr_nm_wellhistory_basin_scope_1` records that New Mexico headers carry no basin and
+      why: its wells sit in the Permian and the San Juan and this build delineates neither, so
+      a default would be a claim about geography wrong for every San Juan well
+- [Fix] `marts/producing.py` filtered `entity_type = 'well'` and served every New Mexico well
+      `producing: unknown` under a field description offering three causes, none of which
+      applied; the states with no well-level series now resolve from the registry for either
+      recorded reason, and the well card discloses which with the rule that decided it
+- [Change] the New Mexico smoke check keys its branch on `/v1/status` rather than on the
+         endpoint under test, so a regression that drops New Mexico from the spine fails
+         instead of converting the assertion into a skip
+- [Change] `scripts/ops/nm_reregister_manifests.py` gains `--expect-database`, turning an
+         operator rule into a refusal; `test_martin_publishes` suffixes its container name, so
+         two worktrees sharing a Docker daemon stop manufacturing false reds
+- [Change] the three migrations that write `lineage.conformance_rule_publications` carry the
+         repository's placeholder evidence rather than a hardcoded release tag, so the release
+         guard refuses until the merge train repoints them; the table is append-only, and a tag
+         that ships from another track would be a permanently false claim about publication
+- [Change] `producing.py`'s `lease_reported_states` alias is removed rather than kept: the
+         function now returns both reasons a state has no well-level series, and a name that
+         describes one of them is the same defect as a rule that describes a transformation the
+         code does not perform
+- [Fix] both manifest re-registration invocations in the promotion runbook pass
+      `--expect-database glasswell`, so the refusal guarding the one-letter gap between
+      `glasswell` and `glasswell_d1` fires on the documented path instead of leaving an
+      operator with the transcript check the flag was added to replace
+- [Fix] Makefile: `make lint` and `make fmt` borrow the main checkout's interpreter when the
+      current tree has none, so they work in a git worktree; every dispatched track hit the
+      failure and reached for a system ruff instead. The test targets deliberately do not
+      borrow it, because that venv installs glasswell editable against its own src
+- [Fix] test_d1_entry_gate.py: skip the wave-1 status-artifact gate in a linked worktree.
+      Its guard keyed on work-output/ existing, so any dispatched track writing a status
+      file there turned a self-disabling gate red with a message naming the wrong cause
+
 <a id="v0.68"></a>
 ## v0.68 — 2026-08-30
 
