@@ -66,6 +66,11 @@ NEVER_REPORTED_API10 = OTHER_API10S[5]
 # Outside the filed span on purpose: a withheld month the ledger holds extends the axis
 # rather than colliding with a month canonical already carries.
 WITHHELD_LEDGER_MONTH = date(2025, 12, 1)
+# The fixture lateral is 9862.27353475175 ft geodesic, so this volume makes the served
+# intensity exactly 600.00 gal/ft — a literal a reader can check by hand rather than a ratio
+# re-derived from the response's own operands.
+BASE_WATER_GAL = Decimal("5917362")
+FLUID_INTENSITY_GAL_PER_FT = "600.00"
 STREAM_UNITS = {"oil": "bbl", "gas": "mcf", "water": "bbl"}
 TILE_BODY = b"\x1a\x2fcontract-fixture-tile"
 
@@ -345,6 +350,55 @@ def _seed_completion_context(
                 COMPLETION_REPORT_VINTAGE,
                 fracfocus_manifest_id,
                 completion_derivation_id,
+            ),
+        )
+
+
+def _seed_design(
+    connection: psycopg.Connection,
+    *,
+    manifest_id: str,
+    parse_derivation_id: str,
+) -> None:
+    """One promoted design row for the documented example, under a real promote derivation."""
+    recorder = PostgresRecorder(connection)
+    with lineage_session(
+        recorder=recorder,
+        environment=FIXTURE_ENV,
+        clock=FixedClock(datetime(2026, 8, 26, 5, 30, 0, tzinfo=UTC)),
+        correlation_id="run_contract_design",
+    ), derive(
+        "canonical.promote",
+        output=OutputSpec(
+            store="postgres",
+            dataset="canonical.well_completion_design",
+            partition={"manifest_id": manifest_id},
+        ),
+        params={"source_field": "TotalBaseWaterVolume", "unit": "gal"},
+        inputs=[
+            InputRef(
+                kind="manifest",
+                ref_id=manifest_id,
+                role="primary",
+                as_of_vintage=COMPLETION_REPORT_VINTAGE,
+            )
+        ],
+        rules=["cr_ff_base_water_units_1", "cr_ff_design_promote_1"],
+    ) as context:
+        context.set_output_hash("d4" * 32)
+        context.set_rows(1)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "insert into canonical.well_completion_design (disclosure_id, api10,"
+            " base_water_volume, base_water_unit, base_water_null_semantics, source_id,"
+            " report_vintage, source_manifest_id, derivation_id)"
+            " values ('ff-contract-0001', %s, %s, 'gal', 'reported', 'fracfocus_csv', %s, %s, %s)",
+            (
+                EXAMPLE_API10,
+                BASE_WATER_GAL,
+                COMPLETION_REPORT_VINTAGE,
+                manifest_id,
+                context.derivation_id,
             ),
         )
 
@@ -648,6 +702,7 @@ def seeded(db: psycopg.Connection, raw_zone: Path) -> psycopg.Connection:
         fracfocus_manifest_id=fracfocus_manifest,
         completion_derivation_id=completion,
     )
+    _seed_design(db, manifest_id=fracfocus_manifest, parse_derivation_id=completion)
     db.commit()
     with lineage_session(
         recorder=PostgresRecorder(db),
