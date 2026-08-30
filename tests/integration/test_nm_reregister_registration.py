@@ -114,6 +114,71 @@ def test_a_dry_run_surfaces_the_conflict_before_the_operator_writes(
     assert str(claimant) in capsys.readouterr().err
 
 
+def test_the_dry_run_connection_is_read_only_at_the_server(
+    db: psycopg.Connection, postgres_password: str, tmp_path: Path, monkeypatch
+):
+    """The status file claims the server enforces this, not the code path. Hold it to that.
+
+    Asserting only that the table is unchanged would also pass if the tool simply never issued
+    a write — which is the weaker property, and not the one that was claimed.
+    """
+    attempted: list[str] = []
+    real_inspect = tool.inspect
+
+    def probe(connection, path, row):
+        with connection.cursor() as cursor, pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
+            cursor.execute("insert into lineage.audit_events (event_id) values ('evt_probe')")
+        attempted.append(str(path))
+        connection.rollback()
+        return real_inspect(connection, path, row)
+
+    monkeypatch.setattr(tool, "inspect", probe)
+    status = tool.main(
+        [
+            "--dsn",
+            harness_dsn(db, postgres_password),
+            "--dry-run",
+            "--sidecar",
+            str(write_sidecar(tmp_path)),
+        ]
+    )
+
+    assert status == 0
+    assert attempted, "the probe never ran, so nothing was proved"
+
+
+def test_a_dsn_naming_the_wrong_database_is_refused_rather_than_reported(
+    db: psycopg.Connection, postgres_password: str, tmp_path: Path, capsys
+):
+    """glasswell and glasswell_d1 are one letter apart; an operator rule the tool can enforce
+    should be a refusal, not a line in a transcript someone has to read."""
+    status = tool.main(
+        [
+            "--dsn",
+            harness_dsn(db, postgres_password),
+            "--expect-database",
+            "glasswell",
+            "--dry-run",
+            "--sidecar",
+            str(write_sidecar(tmp_path)),
+        ]
+    )
+
+    assert status == 1
+    assert "not 'glasswell'" in capsys.readouterr().err
+    assert tool.main(
+        [
+            "--dsn",
+            harness_dsn(db, postgres_password),
+            "--expect-database",
+            db.info.dbname,
+            "--dry-run",
+            "--sidecar",
+            str(write_sidecar(tmp_path)),
+        ]
+    ) == 0
+
+
 def test_the_target_database_is_named_on_every_run(
     db: psycopg.Connection, postgres_password: str, tmp_path: Path, capsys
 ):

@@ -19,6 +19,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from uuid import uuid4
 
 import psycopg
 import psycopg.sql
@@ -43,6 +44,12 @@ READY_TIMEOUT_SECONDS = 45
 PUBLISHED = {layer.name for layer in TILE_LAYERS}
 # Whatever else the catalogue holds, none of it may name a relation outside `marts`.
 FORBIDDEN_FRAGMENTS = ("staging", "nd_gis", "well_spatial", "quarantine", "production")
+
+
+def _unique(name: str) -> str:
+    """Every dispatched track gets its own worktree and they share one Docker daemon, so a
+    literal container name manufactures a red that reproduces nowhere. `--rm` handles cleanup."""
+    return f"{name}-{uuid4().hex[:8]}"
 
 
 def _docker(environment: dict[str, str], *arguments: str, check: bool = True) -> str:
@@ -179,7 +186,7 @@ def _adapted(martin_ready: dict, **overrides) -> dict:
 
 def test_the_shipped_config_publishes_the_allowlist_and_nothing_else(martin_ready):
     """The adoption step, run rather than described."""
-    catalog = _run(martin_ready, _adapted(martin_ready), "gw-martin-allowlist")
+    catalog = _run(martin_ready, _adapted(martin_ready), _unique("gw-martin-allowlist"))
 
     assert set(catalog["tiles"]) == PUBLISHED
     for source in catalog["tiles"].values():
@@ -192,7 +199,7 @@ def test_no_configuration_change_can_publish_staging(martin_ready):
     catalog = _run(
         martin_ready,
         _adapted(martin_ready, auto_publish=True),
-        "gw-martin-autopublish",
+        _unique("gw-martin-autopublish"),
     )
 
     published = " ".join(catalog["tiles"]).lower()

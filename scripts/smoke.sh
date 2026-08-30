@@ -205,8 +205,22 @@ printf 'the New Mexico spine\n'
 # The gate opens on the spine, not on the row count: what is asserted is a well header with a
 # geometry provenance and a status vocabulary rule behind it. A count of promoted rows would
 # have passed before canonical.wells held a single New Mexico row.
+# Keyed on the status surface, never on the endpoint under test: a branch that reads the answer
+# to its own question is disarmed by the regression it exists to catch. /v1/status now serves
+# canonical.wells_latest/nm, so "not promoted yet" and "regressed" are distinguishable.
+keyed "$base/v1/status" > "$work_dir/status.json"
+nm_headers="$(python3 -c '
+import json, sys
+data = json.load(open(sys.argv[1]))["data"]
+rows = {d["dataset_id"]: d for d in data["datasets"]}.get("canonical.wells_latest/nm")
+metric = next((m["value"] for m in rows["metrics"] if m["metric_id"] == "rows"), 0) if rows else 0
+print(int(metric))
+' "$work_dir/status.json" 2>/dev/null || echo 0)"
 nm_status="$(keyed_status "$base/v1/wells/$nm_api10")"
-if [[ $nm_status == 200 ]]; then
+if [[ ${nm_headers:-0} -gt 0 && $nm_status != 200 ]]; then
+    bad "a New Mexico well resolves through the spine with its handles" \
+        "/v1/status reports $nm_headers NM headers and /v1/wells/$nm_api10 is $nm_status"
+elif [[ $nm_status == 200 ]]; then
     body "/v1/wells/$nm_api10"
     assert_true "a New Mexico well resolves through the spine with its handles" \
         "a served New Mexico figure with no rule behind it is a naked number" \
@@ -225,8 +239,7 @@ rules = {row["state_code"]: row["status_vocabulary_rule"] for row in basins}
 sys.exit(0 if rules.get("30") == "cr_nm_wellhistory_status_vocab_1" else 1)
 ' "$work_dir/body.json"
 else
-    printf '  skip    New Mexico spine: /v1/wells/%s is %s, so the gate is not open here\n' \
-        "$nm_api10" "$nm_status"
+    printf '  skip    New Mexico spine: /v1/status reports 0 NM headers, so the gate is not open here\n'
 fi
 # Check 15 above is a fetch-freshness signal: freshness_state is a pure function of
 # max(manifests.fetch_vintage) and consults no canonical table, so it flips when a manifest is
