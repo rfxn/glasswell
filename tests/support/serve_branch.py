@@ -8,6 +8,10 @@ so a browser gate judges the branch's own bundle against the branch's own API.
 Prints the base URL and the key-file path, never the key. GW_SEED names an optional python
 file exec'd with `connection` bound, after the base seeds, for track-specific shapes.
 Everything docker creates carries glasswell.test=1 (CADENCE N-10) and is removed on exit.
+
+Refuses to start on a `GW_WEB_ROOT` older than `web/src`, because a gate pointed at the
+instance photographs whatever was last built (DR-P7). `GW_WEB_STALE=ok` serves it anyway with
+a warning, which is what a run that puts its own dev server in front of this API wants.
 """
 
 from __future__ import annotations
@@ -64,6 +68,8 @@ PORT = int(os.environ.get("GW_PORT", "8130"))
 WEB_ROOT = Path(os.environ.get("GW_WEB_ROOT", ROOT / "web" / "dist")).resolve()
 KEY_FILE = Path(os.environ.get("GW_KEY_FILE", "/tmp/gw-serve/owner.key"))
 EXTRA_SEED = os.environ.get("GW_SEED", "")
+# Set to `ok` to serve a bundle older than web/src anyway — the vite-proxy gates never load it.
+STALE_BUNDLE_ENV = "GW_WEB_STALE"
 SOURCES = ["nd_mpr_xlsx", "nd_gis_wells"]
 WELL = "3305310451"
 OTHER_WELLS = tuple(f"330530000{index}" for index in range(1, 7))
@@ -264,9 +270,36 @@ def seed_pools(connection: psycopg.Connection, manifest: str, derivation: str) -
                 )
 
 
+def bundle_complaint(web_root: Path, sources: Path) -> str | None:
+    """Why the bundle under `web_root` cannot be trusted to be this branch's, or None.
+
+    deploy.sh:99-104 refuses on the same comparison. A silent stale bundle is worse here than
+    there: a browser gate pointed at the instance photographs it and reports on code that was
+    never under review (DR-P7).
+    """
+    index = web_root / "index.html"
+    if not index.is_file():
+        return f"{web_root} carries no index.html — run `npm --prefix web run build`"
+    if not sources.is_dir():
+        return None
+    newest = max((path.stat().st_mtime for path in sources.rglob("*") if path.is_file()), default=0)
+    if newest <= index.stat().st_mtime:
+        return None
+    return (
+        f"{web_root} predates {sources} — the browser would be served a bundle this branch did"
+        " not build. Run `npm --prefix web run build`, or set"
+        f" {STALE_BUNDLE_ENV}=ok if the bundle is not what you are judging"
+    )
+
+
 def main() -> None:
     if not WEB_ROOT.is_dir():
         raise SystemExit(f"{WEB_ROOT} is not a directory — run `npm --prefix web run build` first")
+    complaint = bundle_complaint(WEB_ROOT, ROOT / "web" / "src")
+    if complaint:
+        if os.environ.get(STALE_BUNDLE_ENV) != "ok":
+            raise SystemExit(complaint)
+        print(f"warning: {complaint}", flush=True)
     KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
     key = secrets.token_hex(32)
     KEY_FILE.write_text(key)
