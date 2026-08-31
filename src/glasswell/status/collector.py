@@ -660,9 +660,9 @@ _PRODUCTION_PRESENTATION: dict[str, _ProductionPresentation] = {
         entity_label="Distinct wells",
         entity_unit="wells",
         detail=(
-            "MBOGC files two grains and this is one of them; the lease grain is counted"
-            " separately below and the two are never added. Oil is oil plus condensate as"
-            " published (cr_mt_liquids_policy_1). " + _VINTAGE_NOTE
+            "MBOGC files two grains and this is one of them; the lease grain is counted as its"
+            " own dataset (canonical.production_monthly/mt-lease) and the two are never added."
+            " Oil is oil plus condensate as published (cr_mt_liquids_policy_1). " + _VINTAGE_NOTE
         ),
         show_months=False,
     ),
@@ -676,8 +676,8 @@ _PRODUCTION_PRESENTATION: dict[str, _ProductionPresentation] = {
         detail=(
             "The PRU grain. These rows carry a lease entity_key and no API-10, so they are"
             " invisible to any well-prefix filter and are counted by source instead. Never"
-            " summed with the well grain above: the two are the same production reported at"
-            " different levels, not two populations."
+            " summed with the well grain (canonical.production_monthly/mt-well): the two are"
+            " the same production reported at different levels, not two populations."
         ),
         show_months=False,
     ),

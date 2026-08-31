@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
@@ -825,3 +826,38 @@ def test_the_fixture_source_rows_carry_the_jurisdiction_the_registry_registers()
             assert jurisdiction == registered[source_id], (
                 f"{source_id} shadows the registry with a different jurisdiction"
             )
+
+
+_POSITIONAL = ("above", "below", "preceding", "following")
+
+
+def test_no_production_dataset_qualifies_itself_by_where_another_one_was_emitted() -> None:
+    """Emission order is registry data, so prose that points at a neighbour claims nothing.
+
+    The sources are ordered by jurisdiction and then by source id, which already put the
+    Montana lease grain ahead of the well grain it used to follow. Two served sentences said
+    "below" and "above" of each other and both silently inverted. A cross-reference has to
+    name the other dataset's id, which no reordering can move.
+    """
+    shown = [
+        *status_collector._PRODUCTION_PRESENTATION.items(),
+        ("<unregistered>", status_collector._production_presentation("zz_new", "Zz")),
+    ]
+
+    for source_id, presentation in shown:
+        for field in ("label", "grain", "detail"):
+            text = getattr(presentation, field).lower()
+            for word in _POSITIONAL:
+                assert not re.search(rf"\b{word}\b", text), (
+                    f"{source_id}.{field} places another dataset by position ({word!r});"
+                    " name it by dataset_id, because the emitted order is registry data"
+                )
+
+
+def test_the_two_montana_grains_name_each_other_by_id_where_they_refuse_to_be_added() -> None:
+    """The refusal to sum them is only actionable if a reader can tell which two are meant."""
+    well = status_collector._PRODUCTION_PRESENTATION["mt_bogc_well_production"]
+    lease = status_collector._PRODUCTION_PRESENTATION["mt_bogc_pru_production"]
+
+    assert lease.dataset_id in well.detail
+    assert well.dataset_id in lease.detail
