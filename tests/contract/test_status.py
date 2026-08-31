@@ -733,11 +733,13 @@ def test_a_new_state_is_inventoried_by_registering_a_rule_not_by_editing_the_col
 def test_the_lease_grain_is_counted_on_the_identity_it_actually_carries(
     seeded: psycopg.Connection,
 ) -> None:
-    """The Montana PRU rows carry a lease entity_key and a null api10.
+    """A preservation test: every assertion below already held before the source-scoped rewrite.
 
-    Counting distinct api10 over them returns zero while the rows plainly exist, which is the
-    failure mode that made an api10-prefix discriminator unusable for this grain in the first
-    place. entity_key is the one identity every grain has.
+    The Montana PRU rows carry a lease entity_key and a null api10, so counting distinct api10
+    over them returns zero while the rows plainly exist — the failure mode that made an
+    api10-prefix discriminator unusable for this grain. The filtered aggregate this replaced
+    already counted the lease grain on entity_key; what is pinned here is that moving to one
+    query per source did not put the api10 identity back. It is not coverage of anything new.
     """
     _seed_montana_production(seeded)
 
