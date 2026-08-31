@@ -616,10 +616,10 @@ def get_well_facets(
     order: Annotated[Literal["desc", "asc"], Query(description="Ranking direction.")] = "desc",
     as_of: AsOf = None,
 ) -> JSONResponse:
-    loaded = _require_state(connection, state)
     consume_rate_limit(
         connection, principal, operation="get_well_facets", limit=FACET_REQUESTS_PER_MINUTE
     )
+    loaded = _require_state(connection, state)
     scoped = (_SCOPED_AS_OF if as_of is not None else _SCOPED_LATEST).format(
         column=DIMENSIONS[by]["column"]
     )
