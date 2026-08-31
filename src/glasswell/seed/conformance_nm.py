@@ -1446,7 +1446,7 @@ def _inventory_jurisdiction() -> dict[str, object]:
             "module_function": "glasswell.status.collector:_production_inventory",
             "contract_note": (
                 "the operational inventory buckets this source's production rows by its"
-                " registered jurisdiction, and the dataset detail states that basis"
+                " registered jurisdiction, and the dataset is scoped to that jurisdiction"
             ),
             "discriminator": "lineage.sources.jurisdiction",
             "entity_identity_column": "entity_key",
