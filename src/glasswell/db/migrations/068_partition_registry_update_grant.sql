@@ -1,0 +1,11 @@
+-- The partition registry is the one New Mexico staging table the pipeline upserts rather than
+-- appends: nm_ocd._REGISTER_PARTITION is `insert ... on conflict (manifest_id) do update`, which
+-- Postgres checks for UPDATE, and migration 028's grant block gave it only select and insert.
+-- Its eight siblings are append-only and are correctly served by that grant.
+--
+-- It stayed invisible because every prior New Mexico staging run was against glasswell_d1, where
+-- the executing role owned the table and no grant was consulted. Production is the first place
+-- the pipeline role has ever been least-privileged against this path, and the first --stage-only
+-- run there failed after 33 minutes with `permission denied for table
+-- stg_nm_ocd_wcproduction__partitions` -- eight tables staged, the ninth refused.
+grant update on staging.stg_nm_ocd_wcproduction__partitions to glasswell_pipeline;
