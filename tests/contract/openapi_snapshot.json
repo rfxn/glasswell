@@ -1119,6 +1119,50 @@
         "title": "DatasetInventory",
         "type": "object"
       },
+      "DeploymentPosture": {
+        "additionalProperties": false,
+        "description": "Read from the serving process, not the snapshot: only it knows what it is enforcing.",
+        "properties": {
+          "anonymous_reads": {
+            "title": "Anonymous Reads",
+            "type": "boolean"
+          },
+          "basemap_served": {
+            "title": "Basemap Served",
+            "type": "boolean"
+          },
+          "csp_report_only": {
+            "title": "Csp Report Only",
+            "type": "boolean"
+          },
+          "public_origin": {
+            "title": "Public Origin",
+            "type": "boolean"
+          },
+          "spa_served": {
+            "title": "Spa Served",
+            "type": "boolean"
+          },
+          "tile_upstream": {
+            "enum": [
+              "default",
+              "configured"
+            ],
+            "title": "Tile Upstream",
+            "type": "string"
+          }
+        },
+        "required": [
+          "public_origin",
+          "anonymous_reads",
+          "spa_served",
+          "basemap_served",
+          "tile_upstream",
+          "csp_report_only"
+        ],
+        "title": "DeploymentPosture",
+        "type": "object"
+      },
       "Derivation": {
         "properties": {
           "code_dirty": {
@@ -3640,6 +3684,28 @@
             ],
             "title": "State",
             "type": "string"
+          },
+          "timer_armed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timer Armed"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
           }
         },
         "required": [
@@ -4492,6 +4558,17 @@
             "default": "Physical PostgreSQL storage inventory, not a petroleum figure.",
             "title": "Database Bytes Reason",
             "type": "string"
+          },
+          "edge_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edge Host"
           },
           "schema_version": {
             "anyOf": [
@@ -5911,6 +5988,10 @@
             "title": "Datasets",
             "type": "array"
           },
+          "deployment": {
+            "$ref": "#/components/schemas/DeploymentPosture",
+            "description": "What this serving process has enabled, refused, or left at its default."
+          },
           "disclosures": {
             "description": "Known limits that prevent a broader health claim.",
             "items": {
@@ -5983,6 +6064,7 @@
           "jobs",
           "sources",
           "platform",
+          "deployment",
           "disclosures"
         ],
         "title": "Status",
@@ -6015,6 +6097,17 @@
             ],
             "title": "Observed At"
           },
+          "probe": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probe"
+          },
           "state": {
             "enum": [
               "ok",
@@ -6024,6 +6117,17 @@
               "not_instrumented"
             ],
             "title": "State",
+            "type": "string"
+          },
+          "tier": {
+            "default": "serving",
+            "enum": [
+              "serving",
+              "data",
+              "edge",
+              "host"
+            ],
+            "title": "Tier",
             "type": "string"
           }
         },

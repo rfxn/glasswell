@@ -28,6 +28,7 @@ from glasswell.status.models import (
     INVENTORY_REASON,
     SCHEMA_VERSION_REASON,
     CheckState,
+    CheckTier,
     DatasetInventory,
     InventoryMetric,
     JobStatus,
@@ -96,7 +97,12 @@ def _systemd_properties(unit: str, runner: Runner = _run) -> dict[str, str]:
 
 
 def _system_service(
-    check_id: str, label: str, unit: str, observed_at: datetime, runner: Runner = _run
+    check_id: str,
+    label: str,
+    unit: str,
+    observed_at: datetime,
+    runner: Runner = _run,
+    tier: CheckTier = "serving",
 ) -> StatusCheck:
     properties = _systemd_properties(unit, runner)
     if not properties:
@@ -106,6 +112,8 @@ def _system_service(
             state="unavailable",
             observed_at=observed_at,
             detail="Service-manager evidence is unavailable.",
+            tier=tier,
+            probe=unit,
         )
     active = properties.get("ActiveState") == "active"
     return StatusCheck(
@@ -118,6 +126,8 @@ def _system_service(
             if active
             else "Service manager does not report active."
         ),
+        tier=tier,
+        probe=unit,
     )
 
 
@@ -175,6 +185,8 @@ def _job(
         last_run_at=last_run,
         next_run_at=next_run,
         detail=detail,
+        unit=timer_unit,
+        timer_armed=None if not timer else timer.get("ActiveState") == "active",
     )
 
 
@@ -251,6 +263,8 @@ def _restore_drill_job(
             last_run_at=scheduled.last_run_at,
             next_run_at=scheduled.next_run_at,
             detail=error,
+            unit=scheduled.unit,
+            timer_armed=scheduled.timer_armed,
         )
 
     completed_at = proof.completed_at.astimezone(UTC)
@@ -307,6 +321,8 @@ def _restore_drill_job(
         last_run_at=completed_at,
         next_run_at=scheduled.next_run_at,
         detail=detail,
+        unit=scheduled.unit,
+        timer_armed=scheduled.timer_armed,
     )
 
 
@@ -343,6 +359,8 @@ def _offsite_copy_job(
             last_run_at=scheduled.last_run_at,
             next_run_at=scheduled.next_run_at,
             detail=error,
+            unit=scheduled.unit,
+            timer_armed=scheduled.timer_armed,
         )
 
     completed_at = receipt.completed_at.astimezone(UTC)
@@ -387,6 +405,8 @@ def _offsite_copy_job(
         last_run_at=completed_at,
         next_run_at=scheduled.next_run_at,
         detail=detail,
+        unit=scheduled.unit,
+        timer_armed=scheduled.timer_armed,
     )
 
 
@@ -459,6 +479,8 @@ def _martin_check(observed_at: datetime) -> StatusCheck:
             if ok
             else "Tile service activity or its bounded health probe failed."
         ),
+        tier="serving",
+        probe="martin.service",
     )
 
 
@@ -490,6 +512,8 @@ def _edge_check(observed_at: datetime, host: str) -> StatusCheck:
             if ok
             else "Edge activity or its certificate-verified request failed."
         ),
+        tier="edge",
+        probe="caddy.service",
     )
 
 
@@ -504,6 +528,8 @@ def _storage_check(check_id: str, label: str, path: Path, observed_at: datetime)
             state="unavailable",
             observed_at=observed_at,
             detail="Capacity could not be observed.",
+            tier="host",
+            probe=str(path),
         )
     healthy = available_ratio >= 0.10
     return StatusCheck(
@@ -516,6 +542,8 @@ def _storage_check(check_id: str, label: str, path: Path, observed_at: datetime)
             if healthy
             else "Available capacity is below the configured guardrail."
         ),
+        tier="host",
+        probe=str(path),
     )
 
 
@@ -566,11 +594,13 @@ def _inventory(
         connection,
         "select count(*) filter (where left(api10, 2) = '33') as nd_rows,"
         " count(distinct api10) filter (where left(api10, 2) = '33') as nd_wells,"
+        " count(distinct production_month) filter (where left(api10, 2) = '33') as nd_months,"
         " min(production_month) filter (where left(api10, 2) = '33') as nd_valid_from,"
         " max(production_month) filter (where left(api10, 2) = '33') as nd_valid_to,"
         " max(created_at) filter (where left(api10, 2) = '33') as nd_latest_knowledge,"
         " count(*) filter (where left(api10, 2) = '30') as nm_rows,"
         " count(distinct api10) filter (where left(api10, 2) = '30') as nm_wells,"
+        " count(distinct production_month) filter (where left(api10, 2) = '30') as nm_months,"
         " min(production_month) filter (where left(api10, 2) = '30') as nm_valid_from,"
         " max(production_month) filter (where left(api10, 2) = '30') as nm_valid_to,"
         " max(created_at) filter (where left(api10, 2) = '30') as nm_latest_knowledge"
@@ -637,6 +667,21 @@ def _inventory(
         "select count(*) filter (where state = 'open') as open_rows,"
         " max(last_seen_at) filter (where state = 'open') as latest_knowledge"
         " from lineage.quarantine_rows",
+    )
+    with connection.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(
+            "select reason_code, count(*) as rows from lineage.quarantine_rows"
+            " where state = 'open' group by reason_code order by count(*) desc, reason_code"
+        )
+        quarantine_reasons = [dict(row) for row in cursor.fetchall()]
+    conformance = _one(
+        connection,
+        "select count(*) as rules,"
+        " count(*) filter (where effective_from <= current_date"
+        "   and (effective_to is null or effective_to > current_date)) as in_force,"
+        " count(distinct rule_family) as families,"
+        " count(distinct source_id) as sources"
+        " from lineage.conformance_rules",
     )
     raw = _one(
         connection,
@@ -711,6 +756,7 @@ def _inventory(
             [
                 _metric("rows", "Observation rows", production["nd_rows"], "rows"),
                 _metric("wells", "Distinct wells", production["nd_wells"], "wells"),
+                _metric("months", "Distinct months", production["nd_months"], "months"),
             ],
             "Includes retained report vintages; it is not a count of physical wells.",
             production["nd_valid_from"],
@@ -725,6 +771,7 @@ def _inventory(
             [
                 _metric("rows", "Observation rows", production["nm_rows"], "rows"),
                 _metric("wells", "Distinct wells", production["nm_wells"], "wells"),
+                _metric("months", "Distinct months", production["nm_months"], "months"),
             ],
             "Includes retained report vintages; it is not a count of physical wells.",
             production["nm_valid_from"],
@@ -878,12 +925,42 @@ def _inventory(
             latest_knowledge=neighbors["latest_knowledge"],
         ),
         dataset(
+            "lineage.conformance_rules",
+            "Registered conformance rules",
+            "All registered sources",
+            "one registered mapping decision per rule id",
+            [
+                _metric("rules", "Registered rules", conformance["rules"], "rules"),
+                _metric("in_force", "In force today", conformance["in_force"], "rules"),
+                _metric("families", "Rule families", conformance["families"], "families"),
+                _metric("sources", "Sources covered", conformance["sources"], "sources"),
+            ],
+            (
+                "Every cross-source mapping decision is a registered row carrying a rationale"
+                " and an effective date. A mapping that exists only in code is not counted"
+                " here, because it does not exist. A registry has no validity interval of its"
+                " own; 'in force today' is the temporal fact it does carry."
+            ),
+        ),
+        dataset(
             "lineage.quarantine_rows",
             "Open quarantine",
             "All ingested sources",
             "one rejected row fingerprint per rule",
-            [_metric("open_rows", "Open rows", quality["open_rows"], "rows")],
-            "A count only; no rejection rate is claimed without a matching input denominator.",
+            [
+                _metric("open_rows", "Open rows", quality["open_rows"], "rows"),
+                *(
+                    _metric(
+                        f"reason_{row['reason_code']}", row["reason_code"], row["rows"], "rows"
+                    )
+                    for row in quarantine_reasons
+                ),
+            ],
+            (
+                "Counts only; no rejection rate is claimed without a matching input"
+                " denominator. The per-reason rows partition the open population, so they sum"
+                " to it."
+            ),
             latest_knowledge=quality["latest_knowledge"],
         ),
         dataset(
@@ -907,6 +984,7 @@ def _inventory(
         schema_version=platform["schema_version"],
         database_bytes=platform["database_bytes"],
         database_bytes_reason=DATABASE_BYTES_REASON,
+        edge_host=os.environ.get(EDGE_HOST_ENV, DEFAULT_EDGE_HOST),
     )
 
 
@@ -926,10 +1004,17 @@ def collect(connection: psycopg.Connection, *, now: datetime | None = None) -> S
     checks = [
         _system_service("api_service", "API service", "glasswell-api.service", observed_at),
         _system_service(
-            "database_service", "PostgreSQL service", "postgresql.service", observed_at
+            "database_service",
+            "PostgreSQL service",
+            "postgresql.service",
+            observed_at,
+            tier="data",
         ),
         _martin_check(observed_at),
         _edge_check(observed_at, os.environ.get(EDGE_HOST_ENV, DEFAULT_EDGE_HOST)),
+        _system_service(
+            "tunnel", "Cloudflare tunnel", "cloudflared.service", observed_at, tier="edge"
+        ),
         _storage_check("root_storage", "System storage", Path("/"), observed_at),
         _storage_check("data_storage", "Data storage", Path("/data"), observed_at),
     ]
@@ -947,6 +1032,18 @@ def collect(connection: psycopg.Connection, *, now: datetime | None = None) -> S
             "glasswell-c115b.service",
         ),
         _job(
+            "status_snapshot",
+            "Status snapshot",
+            "glasswell-status.timer",
+            "glasswell-status.service",
+        ),
+        _job(
+            "cf_ranges",
+            "Cloudflare range refresh",
+            "glasswell-cf-ranges.timer",
+            "glasswell-cf-ranges.service",
+        ),
+        _job(
             "lineage_retention",
             "Lineage retention",
             "glasswell-lineage-retention.timer",
@@ -958,6 +1055,15 @@ def collect(connection: psycopg.Connection, *, now: datetime | None = None) -> S
         _recovery_drill_job(observed_at),
     ]
     disclosures = [
+        StatusDisclosure(
+            id="staging_inventory",
+            label="Staging inventory",
+            state="not_instrumented",
+            detail=(
+                "Parsers write staging and staging never serves, so this snapshot counts no"
+                " staging rows. Staging volume is not observable from this page."
+            ),
+        ),
         StatusDisclosure(
             id="remote_backup_copy",
             label="Remote backup copy",

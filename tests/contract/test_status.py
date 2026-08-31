@@ -226,6 +226,39 @@ def test_status_exposes_an_invalid_snapshot_as_a_gap(
     assert data["disclosures"][0]["state"] == "not_instrumented"
 
 
+def test_deployment_posture_is_read_from_the_serving_process_not_the_snapshot(
+    client: TestClient, tmp_path: Path, monkeypatch
+) -> None:
+    """Only the process that enforces the posture can report it, so it is not snapshot state."""
+    monkeypatch.setenv(SNAPSHOT_ENV, str(tmp_path / "absent.json"))
+    monkeypatch.setenv("GLASSWELL_PUBLIC", "1")
+    monkeypatch.delenv("GLASSWELL_ALLOW_ANON", raising=False)
+    monkeypatch.setenv("GLASSWELL_MARTIN_URL", "http://tiles.invalid:3000")
+
+    posture = client.get("/v1/status").json()["data"]["deployment"]
+
+    assert posture == {
+        "public_origin": True,
+        "anonymous_reads": False,
+        "spa_served": False,
+        "basemap_served": False,
+        "tile_upstream": "configured",
+        "csp_report_only": False,
+    }
+    # The upstream address is host state; only that it was overridden is served.
+    assert "tiles.invalid" not in client.get("/v1/status").text
+
+    monkeypatch.setenv("GLASSWELL_ALLOW_ANON", "1")
+    monkeypatch.delenv("GLASSWELL_PUBLIC", raising=False)
+    monkeypatch.delenv("GLASSWELL_MARTIN_URL", raising=False)
+    reread = client.get("/v1/status").json()["data"]["deployment"]
+    assert (reread["public_origin"], reread["anonymous_reads"], reread["tile_upstream"]) == (
+        False,
+        True,
+        "default",
+    )
+
+
 def test_inventory_queries_the_declared_grains_not_promotion_bookkeeping(
     seeded: psycopg.Connection,
 ) -> None:
@@ -265,8 +298,62 @@ def test_inventory_queries_the_declared_grains_not_promotion_bookkeeping(
     assert edge_metrics == {"directed_edges": 4}
     assert inventory["marts.nd_neighbor_subjects"].valid_from is None
     assert inventory["marts.nd_neighbor_subjects"].valid_to is None
-    assert inventory["lineage.quarantine_rows"].detail.startswith("A count only")
+    assert inventory["lineage.quarantine_rows"].detail.startswith("Counts only")
     assert platform.schema_version == discover_migrations()[-1].version
+    assert platform.edge_host is not None
+
+
+def test_quarantine_is_inventoried_by_reason_and_the_reasons_partition_the_total(
+    seeded: psycopg.Connection,
+) -> None:
+    """A single open-row count says a number was rejected, never what refused it."""
+    quarantine = {
+        dataset.dataset_id: dataset
+        for dataset in _inventory(seeded, datetime(2026, 8, 26, 18, tzinfo=UTC))[0]
+    }["lineage.quarantine_rows"]
+    metrics = _metrics(quarantine)
+
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select reason_code, count(*) from lineage.quarantine_rows"
+            " where state = 'open' group by reason_code"
+        )
+        direct = {f"reason_{code}": rows for code, rows in cursor.fetchall()}
+
+    assert direct, "the fixture must hold open quarantine, or this test cannot fail"
+    assert {key: value for key, value in metrics.items() if key != "open_rows"} == direct
+    assert sum(direct.values()) == metrics["open_rows"]
+    assert all(metric.precision == "exact" for metric in quarantine.metrics)
+
+
+def test_registered_conformance_rules_are_inventoried_with_the_rules_in_force(
+    seeded: psycopg.Connection,
+) -> None:
+    """R8 makes the registry the mapping surface; a page that never counts it cannot show that."""
+    rules = {
+        dataset.dataset_id: dataset
+        for dataset in _inventory(seeded, datetime(2026, 8, 26, 18, tzinfo=UTC))[0]
+    }["lineage.conformance_rules"]
+    metrics = _metrics(rules)
+
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select count(*), count(distinct rule_family), count(distinct source_id)"
+            " from lineage.conformance_rules"
+        )
+        total, families, sources = cursor.fetchone()
+
+    assert metrics == {
+        "rules": total,
+        "in_force": metrics["in_force"],
+        "families": families,
+        "sources": sources,
+    }
+    assert 0 < metrics["in_force"] <= total
+    assert rules.grain == "one registered mapping decision per rule id"
+    # A registry has no validity interval; claiming one from min/max effective_from would be
+    # a span that qualifies nothing. `in_force` is the temporal fact it does carry.
+    assert (rules.valid_from, rules.valid_to) == (None, None)
 
 
 def test_production_is_inventoried_under_the_state_that_reported_it(
@@ -292,16 +379,18 @@ def test_production_is_inventoried_under_the_state_that_reported_it(
         inventory["canonical.production_monthly/nm"],
     )
     assert (nd.scope, nm.scope) == ("North Dakota", "New Mexico")
-    assert _metrics(nm) == {"rows": nm_rows, "wells": len(NM_API10S)}
+    assert _metrics(nm) == {"rows": nm_rows, "wells": len(NM_API10S), "months": 2}
     with seeded.cursor() as cursor:
         cursor.execute(
-            "select count(*), count(distinct api10) from canonical.production_monthly"
-            " where left(api10, 2) = '33'"
+            "select count(*), count(distinct api10), count(distinct production_month)"
+            " from canonical.production_monthly where left(api10, 2) = '33'"
         )
-        nd_rows, nd_wells = cursor.fetchone()
+        nd_rows, nd_wells, nd_months = cursor.fetchone()
         cursor.execute("select count(*) from canonical.production_monthly")
         total = cursor.fetchone()[0]
-    assert _metrics(nd) == {"rows": nd_rows, "wells": nd_wells}
+    assert _metrics(nd) == {"rows": nd_rows, "wells": nd_wells, "months": nd_months}
+    # A span of two endpoints cannot show a hole between them; the month count can.
+    assert nd_months <= 12 * 12
     # The two datasets partition the table. A third population — a Texas lease row, whose api10
     # is null by migration 020 — would be counted by neither, so it must fail here rather than
     # disappear from a served figure.
@@ -320,7 +409,7 @@ def test_new_mexico_production_reports_zero_before_its_rows_arrive(
     inventory = {dataset.dataset_id: dataset for dataset in datasets}
 
     nm = inventory["canonical.production_monthly/nm"]
-    assert [metric.value for metric in nm.metrics] == [0, 0]
+    assert [metric.value for metric in nm.metrics] == [0, 0, 0]
     assert nm.scope == "New Mexico"
     assert nm.valid_from is None
     assert nm.valid_to is None

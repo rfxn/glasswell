@@ -29,6 +29,17 @@ const STATUS = {
       state: "ok",
       observed_at: "2026-08-26T18:00:00Z",
       detail: "The status request completed.",
+      tier: "serving",
+      probe: "this request",
+    },
+    {
+      id: "edge",
+      label: "HTTPS edge",
+      state: "ok",
+      observed_at: "2026-08-26T18:00:00Z",
+      detail: "A certificate-verified request answered.",
+      tier: "edge",
+      probe: "caddy.service",
     },
     {
       id: "restore",
@@ -36,6 +47,8 @@ const STATUS = {
       state: "not_instrumented",
       observed_at: null,
       detail: "No persisted execution result exists.",
+      tier: "host",
+      probe: null,
     },
   ],
   datasets: [
@@ -56,10 +69,48 @@ const STATUS = {
           precision: "estimated",
           reason: "Operational inventory at the named grain, not a petroleum measurement.",
         },
+        {
+          metric_id: "months",
+          label: "Distinct months",
+          value: 131,
+          unit: "months",
+          precision: "exact",
+          reason: "Operational inventory at the named grain, not a petroleum measurement.",
+        },
       ],
       valid_from: "2015-05",
       valid_to: "2026-03",
       detail: "Append-only source observations; not a count of unique wells.",
+    },
+    {
+      dataset_id: "lineage.quarantine_rows",
+      label: "Open quarantine",
+      scope: "All ingested sources",
+      grain: "one rejected row fingerprint per rule",
+      state: "available",
+      counted_at: "2026-08-26T17:45:00Z",
+      latest_knowledge_at: null,
+      metrics: [
+        {
+          metric_id: "open_rows",
+          label: "Open rows",
+          value: 4412,
+          unit: "rows",
+          precision: "exact",
+          reason: "Operational inventory at the named grain, not a petroleum measurement.",
+        },
+        {
+          metric_id: "reason_alias_unresolved",
+          label: "alias_unresolved",
+          value: 4412,
+          unit: "rows",
+          precision: "exact",
+          reason: "Operational inventory at the named grain, not a petroleum measurement.",
+        },
+      ],
+      valid_from: null,
+      valid_to: null,
+      detail: "Counts only; no rejection rate is claimed without an input denominator.",
     },
   ],
   jobs: [
@@ -70,6 +121,18 @@ const STATUS = {
       last_run_at: "2026-08-26T04:30:00Z",
       next_run_at: null,
       detail: "Next-run time is not persisted.",
+      unit: "glasswell-ingest.timer",
+      timer_armed: true,
+    },
+    {
+      id: "recovery_drill",
+      label: "Replacement-host recovery",
+      state: "pending",
+      last_run_at: null,
+      next_run_at: null,
+      detail: "No recovery has been proven.",
+      unit: null,
+      timer_armed: null,
     },
   ],
   sources: [
@@ -95,6 +158,15 @@ const STATUS = {
     schema_version_reason: "Schema migration sequence is deployment bookkeeping.",
     database_bytes: 12345678,
     database_bytes_reason: "Operational storage reading, not a petroleum measurement.",
+    edge_host: "glasswell.rpx.sh",
+  },
+  deployment: {
+    public_origin: true,
+    anonymous_reads: false,
+    spa_served: true,
+    basemap_served: false,
+    tile_upstream: "default",
+    csp_report_only: false,
   },
   disclosures: [
     {
@@ -208,7 +280,7 @@ try {
     await page.goto(`${base}/?view=status`, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForSelector("#gw-status-page:not([hidden]) .gw-status-page", { timeout: 10000 });
     await page.waitForFunction(
-      () => document.querySelector(".gw-status-dataset, .gw-status-error"),
+      () => document.querySelector(".gw-status-footprint tbody tr, .gw-status-error"),
       undefined,
       { timeout: 10000 },
     );
@@ -247,12 +319,71 @@ try {
         semantic: {
           sections: document.querySelectorAll("#gw-status-page section[aria-labelledby]").length,
           lists: document.querySelectorAll("#gw-status-page dl").length,
-          tables: document.querySelectorAll("#gw-status-page table").length,
+          tables: [...document.querySelectorAll("#gw-status-page table")].map(
+            (table) => table.className,
+          ),
           times: document.querySelectorAll("#gw-status-page time[datetime]").length,
         },
-        sourceDisclosure: document.getElementById("gw-status-sources-title")?.parentElement?.textContent,
+        sourceDisclosure: document.getElementById("gw-status-sources-title")?.closest("section")?.textContent,
+        // Facts a reader came for: the deployment identity, the component tiers, and a
+        // footprint row whose magnitudes are laid out rather than collapsed to nothing.
+        deploymentFacts: [...document.querySelectorAll(".gw-status-facts dt")].map(
+          (term) => term.textContent,
+        ),
+        tiers: [...document.querySelectorAll(".gw-status-tier")].map((tier) => tier.textContent),
+        probes: [...document.querySelectorAll(".gw-status-probe")].map((one) => one.textContent),
+        footprintRows: [...document.querySelectorAll(".gw-status-footprint tbody tr")].map(
+          (row) => ({
+            height: row.getBoundingClientRect().height,
+            layer: row.classList.contains("gw-status-layer-row"),
+            magnitudes: [...row.querySelectorAll(".gw-status-magnitudes li")].map(
+              (item) => item.getBoundingClientRect().height,
+            ),
+          }),
+        ),
+        // Every served number wears a reason; a count without one is the naked-number defect.
+        counts: [...document.querySelectorAll("#gw-status-page gw-count")].map((count) => ({
+          reason: (count.getAttribute("reason") ?? "").length,
+          width: count.getBoundingClientRect().width,
+        })),
+        // The demoted caveats: closed by default, and each one really is a disclosure.
+        // checkVisibility is the only honest probe here — a closed <details> keeps a laid-out
+        // box, so both getBoundingClientRect().height and offsetParent report it as visible.
+        notes: [...document.querySelectorAll("#gw-status-page details.gw-status-note")].map(
+          (note) => ({
+            open: note.open,
+            summary: note.querySelector("summary")?.textContent,
+            bodyVisible: note.querySelector("p")?.checkVisibility() ?? true,
+            summaryVisible: note.querySelector("summary")?.checkVisibility() ?? false,
+          }),
+        ),
+        // No standing method paragraph survives beside a heading.
+        standingProse: [
+          ...document.querySelectorAll(
+            "#gw-status-page section > p, #gw-status-page .gw-status-section-head > p",
+          ),
+        ].map((one) => one.textContent),
       };
     });
+
+    // The caveat must be reachable, not merely present in textContent: open the source note
+    // in the browser and require the prose to acquire real height.
+    const sourceNote = page.locator("section:has(#gw-status-sources-title) details.gw-status-note");
+    const reachable = (await sourceNote.count()) === 1;
+    const collapsedVisible = reachable
+      ? await sourceNote.locator("p").evaluate((node) => node.checkVisibility())
+      : true;
+    if (reachable) {
+      await sourceNote.locator("summary").click();
+      await page.waitForTimeout(120);
+    }
+    const openedNote = reachable
+      ? await sourceNote.evaluate((node) => ({
+          open: node.open,
+          visible: node.querySelector("p").checkVisibility(),
+          text: node.querySelector("p").textContent,
+        }))
+      : { open: false, visible: false, text: "" };
 
     assert(seen.documentOverflow <= 0, `${at} document has no horizontal overflow`, `${seen.documentOverflow}px`);
     assert(seen.headerOverflow <= 0, `${at} header stays inside its rail`, `${seen.headerOverflow}px`);
@@ -275,19 +406,65 @@ try {
     assert(seen.statusOverflow <= 0, `${at} Status owns no page-level horizontal overflow`, `${seen.statusOverflow}px`);
     assert(seen.mapHidden && seen.mapCanvases === 0, `${at} direct Status arrival never constructs Map`, JSON.stringify(seen));
     assert(
-      seen.semantic.sections >= 6 && seen.semantic.lists >= 3 && seen.semantic.tables === 2 && seen.semantic.times >= 4,
+      seen.semantic.sections >= 6 &&
+        seen.semantic.lists >= 1 &&
+        seen.semantic.tables.filter((name) => name.includes("gw-status-footprint")).length === 1 &&
+        seen.semantic.tables.length === 3 &&
+        seen.semantic.times >= 4,
       `${at} semantic sections, lists, tables, and times survive layout`,
       JSON.stringify(seen.semantic),
-    );
-    assert(
-      seen.sourceDisclosure?.includes("failed or interrupted checks cannot"),
-      `${at} source freshness states the durable-outcome limit`,
-      seen.sourceDisclosure ?? "missing source section",
     );
     assert(
       seen.sourceDisclosure?.includes("2026-05-01") && seen.sourceDisclosure?.includes("mf_nd_01"),
       `${at} source freshness retains declared vintage and artifact identity`,
       seen.sourceDisclosure ?? "missing source section",
+    );
+    assert(
+      seen.deploymentFacts.length >= 8 &&
+        ["Code version", "Schema head", "Edge host", "Origin", "Anonymous reads"].every((label) =>
+          seen.deploymentFacts.includes(label),
+        ),
+      `${at} the deployment states its build, schema head, host and access posture`,
+      JSON.stringify(seen.deploymentFacts),
+    );
+    assert(
+      seen.tiers.length >= 2 && seen.probes.some((probe) => probe?.includes("caddy.service")),
+      `${at} components are grouped by tier and name the probe each was observed through`,
+      JSON.stringify({ tiers: seen.tiers, probes: seen.probes }),
+    );
+    const bodyRows = seen.footprintRows.filter((row) => !row.layer);
+    assert(
+      seen.footprintRows.some((row) => row.layer) &&
+        bodyRows.length > 0 &&
+        bodyRows.every((row) => row.height > 0 && row.magnitudes.every((height) => height > 0)),
+      `${at} footprint rows are grouped by layer and every magnitude has real height`,
+      JSON.stringify(seen.footprintRows),
+    );
+    assert(
+      seen.counts.length > 0 &&
+        seen.counts.every((count) => count.reason > 0 && count.width > 0),
+      `${at} every rendered count carries a reason and is actually painted`,
+      JSON.stringify(seen.counts),
+    );
+    assert(
+      seen.notes.length >= 5 &&
+        seen.notes.every((note) => !note.open && !note.bodyVisible && note.summaryVisible),
+      `${at} method caveats start collapsed behind a visible control, not above the facts`,
+      JSON.stringify(seen.notes),
+    );
+    assert(
+      seen.standingProse.length === 0,
+      `${at} no method paragraph stands beside a section heading`,
+      JSON.stringify(seen.standingProse),
+    );
+    assert(
+      reachable &&
+        openedNote.open &&
+        !collapsedVisible &&
+        openedNote.visible &&
+        openedNote.text.includes("failed or interrupted checks cannot"),
+      `${at} opening the source note reveals the durable-outcome limit`,
+      JSON.stringify({ reachable, collapsedVisible, ...openedNote }),
     );
     assert(journal.pageerror.length === 0, `${at} no page errors`, journal.pageerror.join(" | "));
     assert(journal.console.length === 0, `${at} no console warnings or errors`, journal.console.join(" | "));

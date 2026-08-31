@@ -17,6 +17,7 @@ SCHEMA_VERSION_REASON = "Database migration identity, not a measured petroleum q
 DATABASE_BYTES_REASON = "Physical PostgreSQL storage inventory, not a petroleum figure."
 
 CheckState = Literal["ok", "degraded", "pending", "unavailable", "not_instrumented"]
+CheckTier = Literal["serving", "data", "edge", "host"]
 DatasetState = Literal["available", "unavailable"]
 Precision = Literal["exact", "estimated"]
 DisclosureState = Literal["limited", "not_instrumented"]
@@ -289,6 +290,9 @@ class StatusCheck(BaseModel):
     state: CheckState
     observed_at: datetime | None = None
     detail: str
+    # Defaulted so a snapshot written by an older collector still validates mid-deploy.
+    tier: CheckTier = "serving"
+    probe: str | None = None
 
 
 class InventoryMetric(BaseModel):
@@ -330,6 +334,8 @@ class JobStatus(BaseModel):
     last_run_at: datetime | None = None
     next_run_at: datetime | None = None
     detail: str
+    unit: str | None = None
+    timer_armed: bool | None = None
 
 
 class PlatformStatus(BaseModel):
@@ -348,6 +354,20 @@ class PlatformStatus(BaseModel):
         json_schema_extra={"x-glasswell-not-a-figure": DATABASE_BYTES_REASON},
     )
     database_bytes_reason: str = DATABASE_BYTES_REASON
+    edge_host: str | None = None
+
+
+class DeploymentPosture(BaseModel):
+    """Read from the serving process, not the snapshot: only it knows what it is enforcing."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    public_origin: bool
+    anonymous_reads: bool
+    spa_served: bool
+    basemap_served: bool
+    tile_upstream: Literal["default", "configured"]
+    csp_report_only: bool
 
 
 class StatusDisclosure(BaseModel):
