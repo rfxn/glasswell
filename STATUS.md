@@ -232,7 +232,7 @@ The tunnel is `3b2d209f-7671-4497-ae4f-740dcbc34788`; connector credentials are 
    *reachability* is proven and a foreign source address is not.
 6. Prove remote-copy recency and full replacement-VM/raw-zone recovery, and take a restore proof
    at a current schema. The last recurring proof is schema 47 against a 403,238-well database;
-   the tree is at 070 and the deployed database holds 487,681 well rows across three states.
+   the tree is at 070 and the deployed database holds 809,191 well rows across four states.
    The offsite push is instrumented but its far side is `rrsync -wo`, so byte-level read-back
    is impossible and the recovery drill is mechanised but has **never been executed**.
 7. Resolve the owner-gated v0.6 §11 capability-matrix/IP review separately from the already
@@ -272,11 +272,15 @@ The tunnel is `3b2d209f-7671-4497-ae4f-740dcbc34788`; connector credentials are 
   track this session ran either. The last recorded figures are 172 host checks and 24 API smoke
   checks, both exit 0, and they describe a host three states of data and eleven schema versions
   behind the tree. Treat them as historical, not current.
-- The one measurement taken against the deployed database this session was read-only:
-  `canonical.wells` holds **487,681 rows** over **443,864 distinct API-10s** — Texas 359,421,
-  North Dakota 43,817 across 87,634 vintage rows, Montana 40,626, New Mexico **zero**. The
-  session created one index concurrently to measure it and dropped it; `canonical.wells` carries
-  the same three indexes it did before.
+- Measured against the deployed database after the v0.71 deploy, read-only: `canonical.wells`
+  holds **809,191 rows** over **585,864 distinct API-10s** — Texas 359,421, New Mexico 321,510,
+  North Dakota 87,634 vintage rows, Montana 40,626, with 321,234 New Mexico rows in
+  `canonical.well_spatial`. North Dakota carries no well with an absent operator and 1,590
+  distinct operators. An earlier figure of 487,681 over 443,864 circulated in this file and
+  called New Mexico zero: it was the correct total for the three states resident *before* the
+  New Mexico promotion, quoted rather than measured, and 809,191 - 321,510 = 487,681 is how it
+  survived review. Derive this line from the database or mark it unverified; do not carry it
+  forward.
 - **v0.66 refused its own deploy** at `verify.sh` (170 passed, 2 failed) and the refusal was
   correct both times: no owner account existed, and an assertion added by that release
   demanded a tunnel listener exist on a host that has none, reporting "8080 is bound
