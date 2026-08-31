@@ -26,3 +26,9 @@
 - [Change] `/v1/wells` declares `well_type` a facet. The collection has always applied the
            filter, and a well-type bucket set it, but a filter the dataset does not declare
            renders no chip and cannot be cleared on its own
+- [Fix] The "Wells by …" search keeps focus and the caret across the re-render its own
+      keystroke causes. Every debounced commit rebuilt the explorer and destroyed the focused
+      input, so any pause longer than 250 ms dropped the reader out of the box mid-word
+- [Change] A search commits with `replaceState` rather than `pushState`, on the convention the
+           viewport already follows — a seven-character search cost seven back presses.
+           Changing the dimension, the state, the ranking or its direction still pushes

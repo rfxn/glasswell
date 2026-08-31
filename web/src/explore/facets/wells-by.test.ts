@@ -68,6 +68,7 @@ const RESPONSE: WellFacets = {
 let host: HTMLElement;
 let requested: string[];
 let panelCommits: Record<string, string | null>[];
+let panelModes: string[];
 let filterCommits: Record<string, string[]>[];
 
 function state(extra: Record<string, string[]> = {}): AppState {
@@ -76,7 +77,10 @@ function state(extra: Record<string, string[]> = {}): AppState {
 
 function hooks() {
   return {
-    setPanel: (values: Record<string, string | null>) => void panelCommits.push(values),
+    setPanel: (values: Record<string, string | null>, mode: "push" | "replace") => {
+      panelCommits.push(values);
+      panelModes.push(mode);
+    },
     applyFilter: (filters: Record<string, string[]>) => void filterCommits.push(filters),
   };
 }
@@ -96,6 +100,7 @@ function respondWith(body: Partial<WellFacets>, warnings: Warning[] = []): void 
 beforeEach(() => {
   requested = [];
   panelCommits = [];
+  panelModes = [];
   filterCommits = [];
   document.body.innerHTML = '<div id="host"></div>';
   host = document.getElementById("host") as HTMLElement;
@@ -207,6 +212,64 @@ describe("the absence bucket is named, counted and outside the ranking", () => {
 
     expect(host.querySelector(".gw-wells-by-absence")).not.toBeNull();
     expect(host.querySelector(".gw-wells-by-rule")).toBeNull();
+  });
+});
+
+describe("the search box survives the re-render its own keystroke causes", () => {
+  /** What the shell does between two mounts: `render()` replaces the whole explorer host. */
+  async function typeAndRerender(caret: number): Promise<HTMLInputElement> {
+    const signal = new AbortController().signal;
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal });
+    const input = host.querySelector(".gw-wells-by-search-input") as HTMLInputElement;
+    input.focus();
+    input.value = "chevron";
+    input.setSelectionRange(caret, caret);
+    input.dispatchEvent(new Event("input"));
+    await vi.advanceTimersByTimeAsync(400);
+
+    host.replaceChildren();
+    await mountWellsBy(host, {
+      state: state({ "wb.q": ["chevron"] }),
+      hooks: hooks(),
+      signal,
+    });
+    return host.querySelector(".gw-wells-by-search-input") as HTMLInputElement;
+  }
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("puts focus and the caret back where the reader left them", async () => {
+    const rebuilt = await typeAndRerender(4);
+
+    expect(panelCommits).toEqual([{ q: "chevron" }]);
+    expect(document.activeElement).toBe(rebuilt);
+    expect(rebuilt.selectionStart).toBe(4);
+    expect(rebuilt.selectionEnd).toBe(4);
+  });
+
+  it("steals no focus on a mount no search caused", async () => {
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    expect(document.activeElement).not.toBe(host.querySelector(".gw-wells-by-search-input"));
+  });
+
+  it("replaces rather than pushes, so a seven-character search is not seven back presses", async () => {
+    // web/src/app/state.ts: "Viewport churn uses replaceState so the back button is not forty
+    // pan events". A debounced search is the same churn on the same history stack.
+    await typeAndRerender(7);
+
+    expect(panelModes).toEqual(["replace"]);
+  });
+
+  it("still pushes a dimension change, so only the search churn is collapsed", async () => {
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    const picker = host.querySelector(".gw-wells-by-dimension") as HTMLSelectElement;
+    picker.value = "county";
+    picker.dispatchEvent(new Event("change"));
+
+    expect(panelCommits).toEqual([{ by: "county", q: null }]);
+    expect(panelModes).toEqual(["push"]);
   });
 });
 

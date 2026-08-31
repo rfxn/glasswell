@@ -67,8 +67,8 @@ export interface WellFacets {
 }
 
 export interface WellsByHooks {
-  /** Commits panel state to the URL. */
-  setPanel(values: Record<string, string | null>): void;
+  /** Commits panel state to the URL. Search churn replaces rather than pushes. */
+  setPanel(values: Record<string, string | null>, mode: "push" | "replace"): void;
   /** Narrows the grid beside this panel to one bucket, by every filter the bucket's link names. */
   applyFilter(filters: Record<string, string[]>): void;
 }
@@ -117,6 +117,38 @@ function filtersOfLink(link: string | undefined): Record<string, string[]> | nul
  */
 let knownStates: FacetState[] = [];
 
+const SEARCH_SELECTOR = ".gw-wells-by-search-input";
+
+/**
+ * Where the caret was when a commit tore the panel down. Every commit rebuilds the explorer —
+ * the shell replaces its own children before this module replaces the host's — so a focused
+ * search input is destroyed mid-word and the browser has nothing left to restore focus to.
+ */
+let searchCaret: { start: number; end: number } | null = null;
+
+function rememberCaret(input: HTMLInputElement | null): void {
+  if (!input || document.activeElement !== input) return;
+  searchCaret = {
+    start: input.selectionStart ?? input.value.length,
+    end: input.selectionEnd ?? input.value.length,
+  };
+}
+
+/** The one place the panel's children are swapped, so nothing can rebuild it and forget this. */
+function swap(host: HTMLElement, ...children: HTMLElement[]): void {
+  rememberCaret(host.querySelector<HTMLInputElement>(SEARCH_SELECTOR));
+  host.replaceChildren(...children);
+  const caret = searchCaret;
+  searchCaret = null;
+  const input = host.querySelector<HTMLInputElement>(SEARCH_SELECTOR);
+  // Only a caret carried in from a commit the reader's own typing caused: a first mount must
+  // not take focus off whatever they were using.
+  if (!caret || !input) return;
+  input.focus();
+  const end = Math.min(caret.end, input.value.length);
+  input.setSelectionRange(Math.min(caret.start, end), end);
+}
+
 export async function mountWellsBy(host: HTMLElement, options: WellsByOptions): Promise<void> {
   const panel = panelState(options.state);
   const query: Record<string, string> = {
@@ -128,23 +160,20 @@ export async function mountWellsBy(host: HTMLElement, options: WellsByOptions): 
   };
   if (panel["q"]) query["q"] = panel["q"];
 
-  host.replaceChildren(controls(panel, null, options), loading());
+  swap(host, controls(panel, null, options), loading());
   try {
     const envelope = await getEnvelope<WellFacets>("/v1/wells/facets", query, options.signal);
     if (options.signal.aborted) return;
     const { data } = envelope;
     if (data.states.length > 0) knownStates = data.states;
-    host.replaceChildren(
-      controls(panel, data, options),
-      list(data, envelope.meta.warnings, options),
-    );
+    swap(host, controls(panel, data, options), list(data, envelope.meta.warnings, options));
   } catch (error) {
     if (options.signal.aborted) return;
     // The refusal carries the same state list the success path serves, so the picker survives
     // it and the reader can leave without editing the URL.
     const offered = error instanceof ApiError ? statesOf(error) : [];
     if (offered.length > 0) knownStates = offered;
-    host.replaceChildren(controls(panel, null, options), refusal(error));
+    swap(host, controls(panel, null, options), refusal(error));
   }
 }
 
@@ -204,7 +233,7 @@ function controls(
         "dimension",
         DIMENSIONS.map((entry) => ({ value: entry.id, label: entry.label, disabled: false })),
         panel["by"] as string,
-        (value) => options.hooks.setPanel({ by: value, q: null }),
+        (value) => options.hooks.setPanel({ by: value, q: null }, "push"),
         options.signal,
       ),
     ),
@@ -226,7 +255,7 @@ function controls(
           ? states
           : [{ value: panel["state"] as string, label: "…", disabled: true }],
         panel["state"] as string,
-        (value) => options.hooks.setPanel({ state: value, q: null }),
+        (value) => options.hooks.setPanel({ state: value, q: null }, "push"),
         options.signal,
       ),
     ),
@@ -240,7 +269,7 @@ function controls(
       "sort",
       SORTS.map((entry) => ({ value: entry.id, label: entry.label, disabled: false })),
       panel["sort"] as string,
-      (value) => options.hooks.setPanel({ sort: value }),
+      (value) => options.hooks.setPanel({ sort: value }, "push"),
       options.signal,
     ),
     direction(panel, options),
@@ -281,10 +310,12 @@ function search(
     "input",
     () => {
       if (timer !== undefined) clearTimeout(timer);
-      timer = setTimeout(
-        () => options.hooks.setPanel({ q: input.value.trim() || null }),
-        SEARCH_DEBOUNCE_MS,
-      );
+      // `replace`, on the convention web/src/app/state.ts states for viewport churn: "the back
+      // button is not forty pan events". A seven-character search is seven commits.
+      timer = setTimeout(() => {
+        rememberCaret(input);
+        options.hooks.setPanel({ q: input.value.trim() || null }, "replace");
+      }, SEARCH_DEBOUNCE_MS);
     },
     { signal: options.signal },
   );
@@ -306,7 +337,7 @@ function direction(panel: Record<string, string>, options: WellsByOptions): HTML
   button.setAttribute("aria-label", `Ranking direction: ${button.textContent}. Click to flip.`);
   button.addEventListener(
     "click",
-    () => options.hooks.setPanel({ order: descending ? "asc" : "desc" }),
+    () => options.hooks.setPanel({ order: descending ? "asc" : "desc" }, "push"),
     { signal: options.signal },
   );
   return button;
