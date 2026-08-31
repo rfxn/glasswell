@@ -204,6 +204,24 @@ def test_the_search_does_not_narrow_the_absence_bucket(
     assert int(data["absence"]["wells"]["value"]) == _TX_ABSENT
 
 
+def test_the_absence_bucket_says_the_search_did_not_narrow_it(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """Under a search the buckets and the remainder reconcile against `matched_wells`, and the
+    absence bucket alone is still the whole state. Its count is identical to the unsearched one
+    while every figure around it has moved, so the sentence beside it has to say which
+    population it belongs to — served with the count so the two cannot drift apart."""
+    _seed_tx(seeded)
+    unsearched = _facets(client)["data"]["absence"]
+    searched = _facets(client, q="chevron")["data"]["absence"]
+
+    assert int(searched["wells"]["value"]) == int(unsearched["wells"]["value"]) == _TX_ABSENT
+    assert searched["detail"] != unsearched["detail"]
+    assert "chevron" in searched["detail"]
+    assert "Texas" in searched["detail"]
+    assert "chevron" not in unsearched["detail"]
+
+
 def test_a_search_matching_nothing_says_so_rather_than_serving_a_silent_empty_list(
     client: TestClient, seeded: psycopg.Connection
 ) -> None:

@@ -391,16 +391,26 @@ def _absence(
     counted = _figure(row, _selector(dimension, state, q, "absent_wells"))
     if counted is None:
         return None
+    noun = dimension.replace("_", " ")
     detail = (
-        f"These wells carry no {dimension.replace('_', ' ')}. The decision that this is an"
-        " absence rather than an unknown is registered, with its evidence and its date."
+        f"These wells carry no {noun}. The decision that this is an absence rather than an"
+        " unknown is registered, with its evidence and its date."
         if rule
         else (
-            f"These wells carry no {dimension.replace('_', ' ')}. No conformance rule states"
-            " what that absence means on this source, so this bucket counts them and claims"
-            " nothing further about them (R8)."
+            f"These wells carry no {noun}. No conformance rule states what that absence means"
+            " on this source, so this bucket counts them and claims nothing further about"
+            " them (R8)."
         )
     )
+    # The search moves every other figure in the response and leaves this one whole-state, so
+    # the sentence names the population the count belongs to rather than leaving the reader to
+    # infer it from a total that is no longer on the surface.
+    if q is not None:
+        detail += (
+            f" The search for {q!r} did not narrow this bucket: a well with no {noun} matches"
+            f" no {noun} text, so this is every such well in"
+            f" {STATE_NAMES.get(state, f'state {state}')}, not a share of the matches."
+        )
     return {
         "label": ABSENCE_LABEL,
         "detail": detail,

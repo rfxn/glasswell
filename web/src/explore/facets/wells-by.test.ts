@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULTS_FOR_TEST, filterFor, mountWellsBy, panelState } from "./wells-by.ts";
 import type { WellFacets } from "./wells-by.ts";
-import type { Figure } from "../../api/envelope.ts";
+import type { Figure, Warning } from "../../api/envelope.ts";
 import { DEFAULT_STATE } from "../../app/state.ts";
 import type { AppState } from "../../app/state.ts";
 
@@ -72,13 +72,14 @@ function hooks() {
   };
 }
 
-function respondWith(body: Partial<WellFacets>): void {
+function respondWith(body: Partial<WellFacets>, warnings: Warning[] = []): void {
   vi.stubGlobal("fetch", (url: string) => {
     requested.push(String(url));
     return Promise.resolve(
-      new Response(JSON.stringify({ data: { ...RESPONSE, ...body }, meta: {}, links: {} }), {
-        headers: { "content-type": "application/json" },
-      }),
+      new Response(
+        JSON.stringify({ data: { ...RESPONSE, ...body }, meta: { warnings }, links: {} }),
+        { headers: { "content-type": "application/json" } },
+      ),
     );
   });
 }
@@ -197,6 +198,41 @@ describe("the absence bucket is named, counted and outside the ranking", () => {
 
     expect(host.querySelector(".gw-wells-by-absence")).not.toBeNull();
     expect(host.querySelector(".gw-wells-by-rule")).toBeNull();
+  });
+});
+
+describe("what the envelope warns about reaches the surface", () => {
+  it("renders one panel per served warning rather than dropping all three", async () => {
+    respondWith({ q: "usa", matched_wells: figure("6513") }, [
+      {
+        code: "list_truncated",
+        detail: "This list is a ranked cut, not the population.",
+        pointer: "/buckets",
+      },
+      {
+        code: "search_scopes_the_ranking",
+        detail: "The search ran over every value in the state before the cut.",
+        pointer: "/buckets",
+      },
+    ]);
+    await mountWellsBy(host, {
+      state: state({ "wb.q": ["usa"] }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+
+    const warnings = [...host.querySelectorAll(".gw-wells-by-list .gw-warning")].map(
+      (node) => node.textContent,
+    );
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toContain("list_truncated");
+    expect(warnings[1]).toContain("The search ran over every value in the state");
+  });
+
+  it("renders no warning line where the envelope carries none", async () => {
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    expect(host.querySelector(".gw-warning")).toBeNull();
   });
 });
 

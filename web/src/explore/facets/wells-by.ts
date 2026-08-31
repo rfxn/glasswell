@@ -1,8 +1,9 @@
 import "./wells-by.css";
 
 import { ApiError, getEnvelope } from "../../api/client.ts";
-import type { Figure } from "../../api/envelope.ts";
+import type { Figure, Warning } from "../../api/envelope.ts";
 import type { AppState } from "../../app/state.ts";
+import { warningPanels } from "../../card/card.ts";
 import "../../card/gw-figure.ts";
 
 /** §4.1: the panel rides the URL, so a shared link opens the list the sharer was reading. */
@@ -123,14 +124,14 @@ export async function mountWellsBy(host: HTMLElement, options: WellsByOptions): 
 
   host.replaceChildren(controls(panel, null, options), loading());
   try {
-    const { data } = await getEnvelope<WellFacets>(
-      "/v1/wells/facets",
-      query,
-      options.signal,
-    );
+    const envelope = await getEnvelope<WellFacets>("/v1/wells/facets", query, options.signal);
     if (options.signal.aborted) return;
+    const { data } = envelope;
     if (data.states.length > 0) knownStates = data.states;
-    host.replaceChildren(controls(panel, data, options), list(data, options));
+    host.replaceChildren(
+      controls(panel, data, options),
+      list(data, envelope.meta.warnings, options),
+    );
   } catch (error) {
     if (options.signal.aborted) return;
     // The refusal carries the same state list the success path serves, so the picker survives
@@ -337,7 +338,7 @@ function select(
   return element;
 }
 
-function list(data: WellFacets, options: WellsByOptions): HTMLElement {
+function list(data: WellFacets, warnings: Warning[], options: WellsByOptions): HTMLElement {
   const box = div("gw-wells-by-list");
 
   const caption = document.createElement("p");
@@ -375,6 +376,10 @@ function list(data: WellFacets, options: WellsByOptions): HTMLElement {
   if (data.remainder) box.append(remainder(data.remainder));
   if (data.absence) box.append(absence(data.absence));
   box.append(total(data));
+  // The same panels the well card and the neighbour list render. Under a search the absence
+  // bucket is the one figure on screen outside the visible arithmetic, and
+  // `search_scopes_the_ranking` is the served sentence that says so.
+  box.append(...warningPanels(warnings));
   return box;
 }
 
