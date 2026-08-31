@@ -23,6 +23,7 @@ from glasswell.ingest.arcgis import (
 )
 from glasswell.ingest.nm_wells_gis import api10_from_dashed, parse_features
 from glasswell.seed.conformance_nm_wells import NM_WELLS_GIS_RULES
+from tests.support.layers import schema_reads_in
 
 pytestmark = pytest.mark.unit
 
@@ -173,5 +174,6 @@ def test_no_superseding_header_precedence_row_is_seeded_before_the_measurement()
 def test_the_source_stops_at_staging_on_purpose():
     assert nm_wells_gis.STAGING_TABLE == "staging.nm_ocd_wells_gis"
     assert rule("cr_nm_wells_gis_source_1")["spec"]["terminus"] == "staging"
-    source = Path(nm_wells_gis.__file__).read_text(encoding="utf-8")
-    assert "canonical." not in source
+    # Read from the parsed module: a substring grep over the file text is satisfied by a name
+    # written in pieces, which still executes as a canonical read.
+    assert schema_reads_in(Path(nm_wells_gis.__file__), "canonical") == []
