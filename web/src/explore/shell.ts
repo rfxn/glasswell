@@ -8,7 +8,8 @@ import { buildCatalogue } from "./catalogue.ts";
 import type { Catalogue, CatalogueDataset } from "./catalogue.ts";
 import { mountGrid } from "./grid/grid.ts";
 import { renderRail } from "./rail.ts";
-import { requestFor } from "./router.ts";
+import { requestFor, withFilter } from "./router.ts";
+import { WELLS_BY_PREFIX, mountWellsBy } from "./facets/wells-by.ts";
 
 export interface ExplorerHooks {
   commit(next: Partial<AppState>, mode?: "push" | "replace"): void;
@@ -16,7 +17,11 @@ export interface ExplorerHooks {
 
 export const GRID_HOST_ID = "gw-explore-grid";
 export const FACET_HOST_ID = "gw-explore-facets";
+export const WELLS_BY_HOST_ID = "gw-explore-wells-by";
 export const PANE_HOST_ID = "gw-explore-pane";
+
+/** The one dataset "Wells by ..." counts over; its filters are the dimensions it offers. */
+const WELLS_BY_DATASET = "wells";
 
 const TABS: { id: ExploreTab; title: string }[] = [
   { id: "datasets", title: "Datasets" },
@@ -41,6 +46,9 @@ let apiDocument: unknown = null;
 // One render, one in-flight grid: a filter changed twice quickly must not race two responses
 // into the same host, and the loser has to be cancelled rather than merely ignored.
 let gridAbort: AbortController | null = null;
+// Its own controller: the facet panel and the grid answer different requests, and a filter
+// click re-renders both — cancelling one must not cancel the other's in-flight response.
+let wellsByAbort: AbortController | null = null;
 
 /** SB-08 §2.3's one exemption: /openapi.json is not an envelope, so `getEnvelope` cannot type it. */
 async function openapiDocument(): Promise<unknown> {
@@ -56,6 +64,8 @@ export function unmountExplorer(): void {
   if (!mounted) return;
   gridAbort?.abort();
   gridAbort = null;
+  wellsByAbort?.abort();
+  wellsByAbort = null;
   mounted.abort.abort();
   mounted.host.replaceChildren();
   mounted.host.removeAttribute("data-tab");
@@ -150,7 +160,41 @@ function render(next: AppState): void {
 
   root.append(rail, centre, pane);
   host.replaceChildren(root);
+  renderWellsBy(next);
   renderGrid(next);
+}
+
+/**
+ * The counted list sits above the grid it narrows, on the one dataset whose rows it counts.
+ * It is deliberately not a map surface: the map's counts are bbox-scoped by design, and a
+ * "top 15 operators" that reordered as the reader panned would be the same defect
+ * `/v1/wells/status-summary` was written to avoid — a count of what was drawn.
+ */
+function renderWellsBy(next: AppState): void {
+  wellsByAbort?.abort();
+  wellsByAbort = null;
+  const host = document.getElementById(WELLS_BY_HOST_ID);
+  if (!host || next.tab !== "datasets" || selected(next)?.id !== WELLS_BY_DATASET) return;
+
+  wellsByAbort = new AbortController();
+  void mountWellsBy(host, {
+    state: next,
+    hooks: {
+      setPanel: (values) => {
+        const extra = { ...state?.extra };
+        for (const [key, value] of Object.entries(values)) {
+          if (value === null) delete extra[`${WELLS_BY_PREFIX}${key}`];
+          else extra[`${WELLS_BY_PREFIX}${key}`] = [value];
+        }
+        commit({ extra });
+      },
+      applyFilter: (name, values) => {
+        if (!state) return;
+        commit({ extra: withFilter(state, name, values).extra });
+      },
+    },
+    signal: wellsByAbort.signal,
+  });
 }
 
 function renderGrid(next: AppState): void {
@@ -221,7 +265,15 @@ function panel(next: AppState): HTMLElement {
     return body;
   }
   body.append(datasetHeader(dataset, next), facetHost(), gridHost(dataset));
+  if (dataset.id === WELLS_BY_DATASET) body.insertBefore(wellsByHost(), body.children[1] ?? null);
   return body;
+}
+
+function wellsByHost(): HTMLElement {
+  const host = element("section", "gw-wells-by");
+  host.id = WELLS_BY_HOST_ID;
+  host.setAttribute("aria-label", "Wells by dimension");
+  return host;
 }
 
 function datasetHeader(dataset: CatalogueDataset, next: AppState): HTMLElement {

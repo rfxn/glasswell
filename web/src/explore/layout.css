@@ -380,7 +380,8 @@
      which is what a scrollport is for. */
   .gw-explore-head,
   .gw-explore-grid,
-  .gw-explore-facets {
+  .gw-explore-facets,
+  .gw-wells-by {
     flex: 0 0 auto;
   }
 
@@ -388,14 +389,21 @@
     order: 1;
   }
 
-  .gw-explore-grid {
+  /* Above the grid's refusal, because it is the one thing in this band that is real content
+     at this width: the counted list renders here while the rows do not. Ordered explicitly
+     rather than left at the initial 0, which sorted it above the dataset title. */
+  .gw-wells-by {
     order: 2;
+  }
+
+  .gw-explore-grid {
+    order: 3;
   }
 
   /* Static, not sticky: the 820 sheet pins itself to the top of the scrollport, and reordered
      below the refusal it would pin itself over it. */
   .gw-explore-facets {
-    order: 3;
+    order: 4;
     position: static;
     padding: 0;
     border: 0;

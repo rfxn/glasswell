@@ -110,7 +110,7 @@ explorer's shell chunk and into the entry. Verified rather than inferred — `gw
 | budget | B gzipped | headroom over measured |
 |---|---:|---|
 | entry chunk | 22,500 | +5.4% over 21,340 |
-| explorer route, map excluded | 71,500 | +4.9% over 68,149 |
+| explorer route, map excluded | 75,000 | +4.9% over 71,511 |
 | map chunk | 330,000 | +5.2% over 313,823 |
 
 The first two were re-measured when the production chart moved to a dynamic import. uPlot had
@@ -242,3 +242,4 @@ single green check. Append; do not overwrite.
 | 2026-08-21 | C11 | 44,192 | 62,817 | 313,823 | first measurement of the explorer route |
 | 2026-08-22 | M1-7 | 44,245 | 62,867 | 315,287 | disposal layer: +538 gz on the map chunk (base cda2e51 measured 314,749); entry unchanged |
 | 2026-08-22 | M1-3 | 44,014 | 62,615 | 314,293 | provenance wire field + snapshot coverage: +383 gz on the map chunk (base 88105aa measured 313,910 on this toolchain); entry +10, jitter class |
+| 2026-08-31 | facets | 21,340 | 71,511 | 313,823 | "Wells by ..." panel: +3,362 gz on the explorer route, entry and map chunk unchanged. Not split behind a dynamic import — it renders on the `wells` dataset, the one the explorer opens on, so a split buys a second round trip for nearly every reader |

@@ -21,6 +21,10 @@
   reason: Identifier. The completion-level API number.
 - pointer: /state_code
   reason: FIPS-style state code carried as reported; an identifier, not a quantity.
+- pointer: /state
+  reason: API state code carried as reported; an identifier, not a quantity.
+- pointer: /states/*/code
+  reason: API state code carried as reported; an identifier, not a quantity.
 - pointer: /basins/*/state_code
   reason: API state code on a per-basin summary row; an identifier, not a quantity.
 - pointer: /county_code_at_permit
@@ -39,6 +43,19 @@
   reason: Geometry, not a figure. Storage CRS is EPSG:4326 and is stated alongside.
 
 # --- counts and shares -------------------------------------------------------
+- pointer: /distinct_values
+  reason: >-
+    Cardinality of a value list, not a measured or modelled petroleum figure. How many
+    operators exist is a fact about the vocabulary; how many wells they hold is the figure
+    beside it, and that one carries a handle.
+- pointer: /remainder/values
+  reason: >-
+    Cardinality of the value list below the served cut. The wells those values hold is the
+    figure beside it and carries a handle.
+- pointer: /top
+  reason: >-
+    Echo of the requested page cut; it counts nothing in the data. Served because a reader
+    must be able to see the list is a cut of fifteen without counting the array.
 - pointer: /lateral_count
   reason: A count of geometry rows, not a measured quantity.
 - pointer: /total
