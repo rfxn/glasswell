@@ -316,12 +316,10 @@ def test_the_caption_names_the_direction_the_list_was_actually_ranked_in(
     assert caption("count", "asc") == (
         "The 2 operator values with the fewest wells, of 5 operator values in Texas."
     )
-    assert caption("value", "desc") == (
-        "2 of 5 operator values in Texas, ranked by value, descending."
-    )
-    assert caption("value", "asc") == (
-        "2 of 5 operator values in Texas, ranked by value, ascending."
-    )
+    # The button beside the caption reads `Z to A` / `A to Z` under `sort=value`; one
+    # vocabulary, or the two controls describe the same parameter in different words.
+    assert caption("value", "desc") == ("2 of 5 operator values in Texas, ranked by value, Z to A.")
+    assert caption("value", "asc") == ("2 of 5 operator values in Texas, ranked by value, A to Z.")
     # The prose is bound to the rows: ascending by count serves the two smallest operators.
     ascending = _facets(client, top=2, sort="count", order="asc")["data"]
     assert [bucket["value"] for bucket in ascending["buckets"]] == [
@@ -344,9 +342,7 @@ def test_a_complete_list_says_which_way_it_is_ranked_rather_than_only_by_what(
     assert caption("count", "asc") == (
         "All 5 operator values in Texas, ranked by well count, lowest first."
     )
-    assert caption("value", "asc") == (
-        "All 5 operator values in Texas, ranked by value, ascending."
-    )
+    assert caption("value", "asc") == ("All 5 operator values in Texas, ranked by value, A to Z.")
 
 
 def test_ranking_by_value_orders_by_the_value_and_not_the_count(

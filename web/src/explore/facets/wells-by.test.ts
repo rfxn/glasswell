@@ -409,6 +409,34 @@ describe("the cut is a control, not a URL the reader has to hand-edit", () => {
   });
 });
 
+describe("the direction control and the caption speak one vocabulary", () => {
+  it("names an alphabetical ranking A to Z, not in the count words", async () => {
+    await mountWellsBy(host, {
+      state: state({ "wb.sort": ["value"], "wb.order": ["asc"] }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+
+    expect(host.querySelector(".gw-wells-by-order")?.textContent).toBe("A to Z");
+  });
+
+  it("flips that ranking to Z to A rather than to `highest first`", async () => {
+    await mountWellsBy(host, {
+      state: state({ "wb.sort": ["value"] }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+
+    expect(host.querySelector(".gw-wells-by-order")?.textContent).toBe("Z to A");
+  });
+
+  it("keeps the count words where the ranking is a count", async () => {
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    expect(host.querySelector(".gw-wells-by-order")?.textContent).toBe("highest first");
+  });
+});
+
 describe("the bucket that is the applied filter says so", () => {
   function applied(value: string): Record<string, string[]> {
     return { "f.operator": [value], "f.state": ["42"] };

@@ -464,7 +464,9 @@ def _caption(
         else f"{distinct:,} {noun} values{matching} in {name}"
     )
     descending = order == "desc"
-    by_value = f"value, {'descending' if descending else 'ascending'}"
+    # The words the direction button beside this sentence uses (`wells-by.ts` directionLabel):
+    # one vocabulary, or two controls describe the same parameter differently 40 px apart.
+    by_value = f"value, {'Z to A' if descending else 'A to Z'}"
     if shown >= distinct:
         ranking = (
             f"well count, {'highest' if descending else 'lowest'} first"

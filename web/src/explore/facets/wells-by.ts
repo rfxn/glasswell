@@ -353,7 +353,7 @@ function direction(panel: Record<string, string>, options: WellsByOptions): HTML
   button.type = "button";
   button.className = "gw-wells-by-order";
   const descending = panel["order"] === "desc";
-  button.textContent = descending ? "highest first" : "lowest first";
+  button.textContent = directionLabel(panel["sort"] as string, descending);
   button.setAttribute("aria-label", `Ranking direction: ${button.textContent}. Click to flip.`);
   button.addEventListener(
     "click",
@@ -361,6 +361,16 @@ function direction(panel: Record<string, string>, options: WellsByOptions): HTML
     { signal: options.signal },
   );
   return button;
+}
+
+/**
+ * The words the caption uses for the same parameter (`facets.py` `_caption`). Count words on an
+ * alphabetical ranking described the wrong thing twice: `order=asc` on `sort=value` is A to Z,
+ * not the lowest anything.
+ */
+function directionLabel(sort: string, descending: boolean): string {
+  if (sort === "value") return descending ? "Z to A" : "A to Z";
+  return descending ? "highest first" : "lowest first";
 }
 
 /** The offered cuts, plus whatever the URL asked for: the control names the list it produced. */
