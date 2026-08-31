@@ -1031,7 +1031,6 @@ ND_RULES: tuple[dict[str, object], ...] = (
                 "the operational inventory buckets this source's production rows by its"
                 " registered jurisdiction, and the dataset detail states that basis"
             ),
-            "jurisdiction": "ND",
             "discriminator": "lineage.sources.jurisdiction",
             "entity_identity_column": "entity_key",
         },

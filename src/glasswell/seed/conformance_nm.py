@@ -1448,7 +1448,6 @@ def _inventory_jurisdiction() -> dict[str, object]:
                 "the operational inventory buckets this source's production rows by its"
                 " registered jurisdiction, and the dataset detail states that basis"
             ),
-            "jurisdiction": "NM",
             "discriminator": "lineage.sources.jurisdiction",
             "entity_identity_column": "entity_key",
         },

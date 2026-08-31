@@ -568,12 +568,11 @@ def _one(
     return dict(row or {})
 
 
-# Which sources are inventoried as production, and under which jurisdiction, is read from the
-# rules that shaped this derivation rather than from arms in the SQL below (R8). A new state
-# registers a rule and appears here; it does not edit this module.
+# Which sources are inventoried as production is read from the rules that registered them, and
+# the jurisdiction each is counted under from the source registry those rules name as their
+# discriminator (R8). A new state registers a source and a rule; it does not edit this module.
 _PRODUCTION_SOURCES = """
-select r.source_id, s.name,
-       coalesce(r.spec ->> 'jurisdiction', s.jurisdiction, r.source_id) as jurisdiction
+select r.source_id, s.name, coalesce(s.jurisdiction, s.source_id) as jurisdiction
   from lineage.conformance_rules r
   join lineage.sources s on s.source_id = r.source_id
  where r.rule_kind = 'code_ref'

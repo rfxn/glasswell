@@ -16,6 +16,7 @@ from psycopg import Connection, IsolationLevel
 from psycopg.pq import TransactionStatus
 
 import glasswell.status.collector as status_collector
+from glasswell.seed import MT_RULES, ND_RULES, NM_RULES, SOURCES
 from glasswell.status.collector import (
     _configure_inventory_connection,
     _job,
@@ -24,6 +25,7 @@ from glasswell.status.collector import (
     _systemd_properties,
 )
 from glasswell.status.models import JobStatus, PlatformStatus, StatusCheck
+from tests.conftest import FIXTURE_SOURCES
 
 
 def _restore_payload(
@@ -777,3 +779,49 @@ def test_every_production_inventory_read_is_bounded_to_one_source() -> None:
     assert len(arms) == 3, "the metrics query changed shape; re-check every arm is source-bounded"
     for arm in arms:
         assert "where source_id = %(source_id)s" in arm
+
+
+INVENTORY_JURISDICTION_RULES = tuple(
+    rule
+    for catalogue in (MT_RULES, ND_RULES, NM_RULES)
+    for rule in catalogue
+    if isinstance(rule["spec"], dict)
+    and rule["spec"].get("module_function")
+    == "glasswell.status.collector:_production_inventory"
+)
+
+
+def test_the_inventory_rules_declare_the_one_place_the_jurisdiction_is_read_from() -> None:
+    """R8: the registered rule has to describe what runs, not a second copy of the fact.
+
+    Each of these rules names `lineage.sources.jurisdiction` as its discriminator and says in
+    its rationale that the row is bucketed because the source is registered to that state. A
+    `jurisdiction` key in the same spec is a second copy of that fact which the collector's
+    coalesce would prefer, leaving the declared discriminator unread and the rationale false.
+    """
+    assert len(INVENTORY_JURISDICTION_RULES) == 4, "one rule per production-bearing source"
+    for rule in INVENTORY_JURISDICTION_RULES:
+        spec = rule["spec"]
+        assert spec["discriminator"] == "lineage.sources.jurisdiction", rule["rule_id"]
+        assert "jurisdiction" not in spec, (
+            f"{rule['rule_id']} carries a jurisdiction literal beside the discriminator it"
+            " declares; the served bucket would come from the literal, not from the registry"
+        )
+
+
+def test_the_fixture_source_rows_carry_the_jurisdiction_the_registry_registers() -> None:
+    """The fixture pre-inserts these ids, so `seed_sources` never gets to fill them in.
+
+    `reference.py`'s insert ends `on conflict do nothing`, which means a fixture row written
+    without a jurisdiction stays without one for the whole suite — and the collector then
+    cannot tell a registry read from a rule-spec literal, because both sources of the fact
+    resolve to the same answer only when the registry has one at all.
+    """
+    registered = {str(source["source_id"]): source["jurisdiction"] for source in SOURCES}
+
+    for source_id, jurisdiction in FIXTURE_SOURCES:
+        assert jurisdiction, f"{source_id} would be inventoried under its own id"
+        if source_id in registered:
+            assert jurisdiction == registered[source_id], (
+                f"{source_id} shadows the registry with a different jurisdiction"
+            )

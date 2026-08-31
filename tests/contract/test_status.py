@@ -580,14 +580,32 @@ def test_new_mexico_production_reports_zero_before_its_rows_arrive(
 
 
 def _register_production_source(
-    connection: psycopg.Connection, *, source_id: str, jurisdiction: str, rule_id: str
+    connection: psycopg.Connection,
+    *,
+    source_id: str,
+    jurisdiction: str | None,
+    rule_id: str,
+    spec_jurisdiction: str | None = None,
 ) -> None:
-    """Everything a state has to add to be inventoried: a source row and a rule row."""
+    """Everything a state has to add to be inventoried: a source row and a rule row.
+
+    `spec_jurisdiction` writes a jurisdiction literal into the rule spec beside the
+    discriminator the rule declares, so a test can register a disagreement and name which of
+    the two the collector resolved.
+    """
+    spec: dict[str, str] = {
+        "module_function": "glasswell.status.collector:_production_inventory",
+        "contract_note": "registered for the inventory",
+        "discriminator": "lineage.sources.jurisdiction",
+        "entity_identity_column": "entity_key",
+    }
+    if spec_jurisdiction is not None:
+        spec["jurisdiction"] = spec_jurisdiction
     with connection.cursor() as cursor:
         cursor.execute(
             "insert into lineage.sources (source_id, name, jurisdiction)"
-            " values (%s, %s, %s)",
-            (source_id, f"{jurisdiction} production", jurisdiction),
+            " values (%s, %s, %s) on conflict (source_id) do nothing",
+            (source_id, f"{jurisdiction or source_id} production", jurisdiction),
         )
         cursor.execute(
             "insert into lineage.conformance_rule_publications"
@@ -599,22 +617,34 @@ def _register_production_source(
             "insert into lineage.conformance_rules (rule_id, rule_family, source_id, stage,"
             " applies_to_fields, rule_kind, spec, rule, rationale, effective_from)"
             " values (%s, %s, %s, 'join', '{source_id}', 'code_ref', %s, 'r', 'r', current_date)",
-            (
-                rule_id,
-                rule_id.rsplit("_", 1)[0],
-                source_id,
-                Jsonb(
-                    {
-                        "module_function": (
-                            "glasswell.status.collector:_production_inventory"
-                        ),
-                        "contract_note": "registered for the inventory",
-                        "jurisdiction": jurisdiction,
-                        "entity_identity_column": "entity_key",
-                    }
-                ),
-            ),
+            (rule_id, rule_id.rsplit("_", 1)[0], source_id, Jsonb(spec)),
         )
+
+
+def test_the_registered_source_decides_the_jurisdiction_not_a_literal_in_the_rule_spec(
+    seeded: psycopg.Connection,
+) -> None:
+    """R8: the rule declares `lineage.sources.jurisdiction`, so that column has to be what runs.
+
+    A `jurisdiction` key in the same spec is a second copy of the fact. A collector that
+    preferred it would leave the declared discriminator unread while every rationale served at
+    /conformance went on saying the source's own registration is what buckets the row.
+    """
+    _register_production_source(
+        seeded,
+        source_id="ok_occ_production",
+        jurisdiction="OK",
+        rule_id="cr_ok_inventory_jurisdiction_1",
+        spec_jurisdiction="ZZ",
+    )
+
+    datasets, _ = _inventory(seeded, datetime(2026, 8, 30, 18, tzinfo=UTC))
+    inventory = {dataset.dataset_id: dataset for dataset in datasets}
+
+    assert inventory["canonical.production_monthly/ok_occ_production"].scope == "OK", (
+        "the rule spec's own literal decided the bucket, so the discriminator the rule"
+        " registers and the rationale it publishes are both unread"
+    )
 
 
 def test_a_new_state_is_inventoried_by_registering_a_rule_not_by_editing_the_collector(

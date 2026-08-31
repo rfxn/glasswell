@@ -1339,7 +1339,6 @@ MT_RULES: tuple[dict[str, object], ...] = (
                 "the operational inventory buckets this source's production rows by its"
                 " registered jurisdiction, and the dataset detail states that basis"
             ),
-            "jurisdiction": "MT",
             "discriminator": "lineage.sources.jurisdiction",
             "entity_identity_column": "entity_key",
         },
@@ -1371,7 +1370,6 @@ MT_RULES: tuple[dict[str, object], ...] = (
                 "the lease grain is inventoried by registered jurisdiction and counted on"
                 " entity_key; it is never summed with the well grain"
             ),
-            "jurisdiction": "MT",
             "discriminator": "lineage.sources.jurisdiction",
             "entity_identity_column": "entity_key",
         },
