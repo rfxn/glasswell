@@ -280,6 +280,23 @@ would violate the foreign key. A re-registered manifest therefore resolves to it
 column, **or** accept the gap and write it here, in one paragraph, where a reader of
 `?explain=true` can find it. **Do not re-fetch to close it** — the FTP is pulled once, ever.
 
+**Taken 2026-08-31, on the record: the gap is accepted, provisionally, and remains open for the
+owner to close.** Nine manifests were registered at Step 1c with `fetch_derivation_id` unset, so
+a reader who resolves one reaches its bytes, its sha256 and its `acquisition_params`, but not the
+`raw.fetch` derivation that produced them. The alternative was taken seriously rather than waved
+off: `glasswell_d1` still exists on the host and still holds all nine `raw.fetch` rows, so the
+copy is available at any later date and nothing here forecloses it. It was not done tonight
+because a cross-database derivation copy has to bring its own foreign-key closure —
+`derivation_inputs`, `derivation_rules`, and whatever `environments`, `recipes` and `sources`
+those reference — and a half-copied closure pollutes the lineage spine, which is the one table in
+this system that must not be guessed at. Accepting a *stated* gap is recoverable; a wrong
+derivation row is not, because `lineage.derivations` is append-only.
+
+What this costs a reader, precisely: `?explain=true` on a New Mexico figure resolves the
+conformance rules and the promotion derivation, and stops at the manifest. It does not claim a
+fetch it cannot evidence. That is a smaller lie than none at all, which is the standard this
+project holds — but it is still an incomplete chain, and it should be closed rather than left.
+
 ### 1f — the smoke-check trap
 
 `/v1/health` smoke check 15 flips from 19/1 to 20/0 **at this step**, on the manifest rows
