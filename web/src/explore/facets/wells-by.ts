@@ -73,7 +73,11 @@ export interface WellFacets {
 export interface WellsByHooks {
   /** Commits panel state to the URL. Search churn replaces rather than pushes. */
   setPanel(values: Record<string, string | null>, mode: "push" | "replace"): void;
-  /** Narrows the grid beside this panel to one bucket, by every filter the bucket's link names. */
+  /**
+   * Narrows the grid beside this panel to one bucket, by every filter the bucket's link names.
+   * A name mapped to an empty list clears that filter — the un-press path removes exactly the
+   * terms the press added.
+   */
   applyFilter(filters: Record<string, string[]>): void;
 }
 
@@ -458,6 +462,15 @@ function narrowedBy(
   );
 }
 
+/**
+ * The same filter names with no values, which `withFilter` deletes. The `state` term goes with
+ * the dimension term rather than persisting: the press put it there, and a filter left behind
+ * by an un-press is one no control below 520 can clear.
+ */
+function released(filters: Record<string, string[]>): Record<string, string[]> {
+  return Object.fromEntries(Object.keys(filters).map((name) => [name, []]));
+}
+
 function row(
   bucket: FacetBucket,
   rank: number,
@@ -474,12 +487,17 @@ function row(
   const label = filters ? document.createElement("button") : document.createElement("span");
   label.className = "gw-wells-by-value";
   if (label instanceof HTMLButtonElement && filters) {
+    const pressed = narrowedBy(filters, applied);
     label.type = "button";
     label.setAttribute("aria-label", `Narrow the wells below to ${bucket.value} in ${data.state_name}`);
-    label.setAttribute("aria-pressed", String(narrowedBy(filters, applied)));
-    label.addEventListener("click", () => options.hooks.applyFilter(filters), {
-      signal: options.signal,
-    });
+    label.setAttribute("aria-pressed", String(pressed));
+    // A toggle button un-presses. At <=520 the grid's clear-filters line is display:none, so a
+    // press with no un-press is the only way back out of an unfiltered list — and there is none.
+    label.addEventListener(
+      "click",
+      () => options.hooks.applyFilter(pressed ? released(filters) : filters),
+      { signal: options.signal },
+    );
   } else {
     // A dimension /v1/wells cannot filter on gets no button: a control that looks clickable
     // and narrows nothing is worse than a plain label.

@@ -436,6 +436,32 @@ describe("the bucket that is the applied filter says so", () => {
     expect(pressed).toEqual(["false", "false"]);
   });
 
+  it("clears every filter the press committed when the pressed bucket is clicked again", async () => {
+    // The add path and the remove path are the same control: at <=520 the grid's own
+    // clear-filters line is display:none, so a press with no un-press is a one-way door.
+    await mountWellsBy(host, {
+      state: state(applied("PIONEER NATURAL RESOURCES USA INC")),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+
+    (host.querySelector('button.gw-wells-by-value[aria-pressed="true"]') as HTMLButtonElement).click();
+
+    expect(filterCommits).toEqual([{ operator: [], state: [] }]);
+  });
+
+  it("still applies an unpressed bucket while another bucket is the applied filter", async () => {
+    await mountWellsBy(host, {
+      state: state(applied("PIONEER NATURAL RESOURCES USA INC")),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+
+    (host.querySelector('button.gw-wells-by-value[aria-pressed="false"]') as HTMLButtonElement).click();
+
+    expect(filterCommits).toEqual([{ operator: ["DIAMONDBACK E&P LLC"], state: ["42"] }]);
+  });
+
   it("presses nothing where the state does not match, so one county code is not two", async () => {
     // The filter names the same value in a different state: this bucket is not that filter.
     await mountWellsBy(host, {
