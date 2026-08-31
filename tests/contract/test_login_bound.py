@@ -20,8 +20,11 @@ from glasswell.api.deps import SESSION_COOKIE
 from glasswell.api.rate_limit import BUCKETS
 from tests.contract.conftest import (
     OWNER_PASSWORD,
+    RATE_WINDOW_HEADROOM,
     SESSION_BASE_URL,
+    await_rate_window,
     challenge,
+    rate_window_remaining,
     seed_user,
 )
 
@@ -62,9 +65,10 @@ def fill_bucket(connection, address: str, *, bucket: str, count: int) -> None:
     Driving a bucket to its limit through the route costs a real Argon2id verify plus the
     250 ms floor per attempt -- around 7 s for twenty -- and the window is a truncated UTC
     minute. A run that straddles a minute boundary resets the counter and the assertion
-    evaporates. Seeding removes the wall-clock race while still exercising the real route for
-    the request that matters.
+    evaporates. Seeding shrinks that straddle to the one request under test and the wait
+    removes it, while the request that matters still goes through the real route.
     """
+    await_rate_window(connection)
     with connection.cursor() as cursor:
         cursor.execute(
             "insert into lineage.api_rate_windows"
@@ -76,6 +80,18 @@ def fill_bucket(connection, address: str, *, bucket: str, count: int) -> None:
             (f"ip:{address}", bucket, count),
         )
     connection.commit()
+
+
+def test_a_seeded_bucket_outlives_the_request_it_was_seeded_for(seeded) -> None:
+    """The floor under every `fill_bucket` caller here, and the flake this file used to carry.
+
+    A bucket seeded in the last moments of a truncated minute is empty again by the time the
+    request under test arrives, and the 429 those tests assert never comes. Delete the wait in
+    `fill_bucket` and this goes red on roughly one run in six.
+    """
+    fill_bucket(seeded, "203.0.113.18", bucket="login", count=LOGIN_LIMIT)
+
+    assert rate_window_remaining(seeded) >= RATE_WINDOW_HEADROOM - 1
 
 
 def test_login_is_refused_once_the_address_bucket_is_spent(client, account, seeded) -> None:
@@ -91,25 +107,29 @@ def test_login_is_refused_once_the_address_bucket_is_spent(client, account, seed
     assert refused.status_code == 429, "login was never bounded"
 
 
-def test_the_limiter_runs_before_the_csrf_check(client, account) -> None:
+def test_the_limiter_runs_before_the_csrf_check(client, account, seeded) -> None:
     """The ordering assertion, and the reason it is observable.
 
-    Every request here carries **no** CSRF token, so the CSRF check would answer 403 for all
-    of them. Seeing a 429 proves the limiter ran first. Move `consume_login_bucket` below the
-    CSRF check and every status becomes 403, which fails this test.
+    Both requests here carry **no** CSRF token, so the CSRF check would answer 403 for either
+    one. The first meets an unspent bucket and does answer 403; the second meets the same
+    bucket spent, and 429 is only reachable if the limiter was consulted first. Move
+    `consume_login_bucket` below the CSRF check and both become 403, which fails this test.
+
+    One address, so what changes between the two requests is the bucket and nothing else. The
+    tokenless 403 is window-independent -- a reset bucket answers it too -- so only the spent
+    request needs the window `fill_bucket` holds open for it.
     """
     session = caller(client)
     address = "203.0.113.11"
 
-    statuses = [
-        post_login(session, address, csrf=None, password="wrong").status_code
-        for _ in range(LOGIN_LIMIT + 1)
-    ]
+    allowed = post_login(session, address, csrf=None, password="wrong")
+    fill_bucket(seeded, address, bucket="login", count=LOGIN_LIMIT)
+    refused = post_login(session, address, csrf=None, password="wrong")
 
-    assert statuses[0] == 403, "the first tokenless attempt should fail CSRF"
-    assert statuses[-1] == 429, (
+    assert allowed.status_code == 403, "a tokenless attempt with bucket left should fail CSRF"
+    assert refused.status_code == 429, (
         "a tokenless caller was never rate limited, so the limiter runs after the CSRF"
-        f" check and buys nothing: {statuses}"
+        f" check and buys nothing: {refused.status_code}"
     )
 
 

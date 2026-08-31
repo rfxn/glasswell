@@ -7,6 +7,7 @@ they are written down; everything here seeds against those constants.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -884,6 +885,57 @@ def challenge(client: TestClient) -> str:
     response = client.get("/v1/session/challenge")
     assert response.status_code == 200, response.text
     return response.json()["data"]["csrf_token"]
+
+
+# --- rate-limit windows -------------------------------------------------------------------
+#
+# `consume_rate_limit` counts into `date_trunc('minute', clock_timestamp())`, so a bucket a
+# test drove or seeded is worth nothing once the clock crosses a minute boundary: the counter
+# resets to 1 and the refusal a test is about to assert never comes. Any test that spends a
+# bucket and then measures the request after it is racing that boundary. These wait it out
+# instead, on the database's clock, which is the one the limiter reads.
+
+RATE_WINDOW_HEADROOM = 10.0
+
+
+def rate_window_remaining(connection: psycopg.Connection) -> float:
+    """Seconds left in the limiter's current window."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select extract(epoch from (date_trunc('minute', clock_timestamp())"
+            " + interval '1 minute') - clock_timestamp())"
+        )
+        remaining = float(cursor.fetchone()[0])
+    connection.commit()
+    return remaining
+
+
+def await_rate_window(
+    connection: psycopg.Connection, *, headroom: float = RATE_WINDOW_HEADROOM
+) -> None:
+    """Block until the window has `headroom` seconds left, so a spent bucket outlives the
+    request it was spent for. Costs nothing on five runs in six and removes the race on the
+    sixth; a request under test is a few hundred milliseconds against that headroom."""
+    remaining = rate_window_remaining(connection)
+    if remaining < headroom:
+        time.sleep(remaining + 0.05)
+
+
+def spend_rate_window(connection: psycopg.Connection, *, operation: str, count: int) -> None:
+    """Move an already-open per-operation bucket to `count`, in the window the next request
+    lands in. The route has written the row, so its principal id stays where it is resolved
+    rather than being restated -- and mis-stating it would seed a bucket nothing reads."""
+    await_rate_window(connection)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "update lineage.api_rate_windows"
+            "   set requests = %s,"
+            "       window_started_at = date_trunc('minute', clock_timestamp())"
+            " where operation = %s",
+            (count, operation),
+        )
+        assert cursor.rowcount == 1, f"no {operation} window is open to spend"
+    connection.commit()
 
 
 @pytest.fixture

@@ -5,11 +5,17 @@ from __future__ import annotations
 import base64
 import json
 
+import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_API10
-from tests.contract.conftest import OTHER_API10S, as_principal, issue_key
+from tests.contract.conftest import (
+    OTHER_API10S,
+    as_principal,
+    issue_key,
+    spend_rate_window,
+)
 
 INDEX = "/v1/type-curves"
 UNAVAILABLE_SUBJECT = OTHER_API10S[2]
@@ -194,12 +200,30 @@ def test_an_empty_facet_value_does_not_poison_a_later_page(client: TestClient) -
     assert _page(client, stream="oil", limit=2)["data"]["series"] == first["data"]["series"]
 
 
-def test_the_index_is_rate_limited(client: TestClient) -> None:
+def test_the_index_is_rate_limited(client: TestClient, seeded: psycopg.Connection) -> None:
+    """The ceiling is the shipped constant: one under it serves, at it refuses.
+
+    Both edges are asserted against `TYPE_CURVE_INDEX_REQUESTS_PER_MINUTE` rather than walked
+    to, because the window is a truncated UTC minute -- a loop long enough to reach the limit
+    is a loop long enough to cross a boundary, and past one the counter has reset and the
+    refusal never comes. The opening request is what writes the row the two edges move.
+    """
     from glasswell.api.routers.type_curves import TYPE_CURVE_INDEX_REQUESTS_PER_MINUTE
 
-    for _ in range(TYPE_CURVE_INDEX_REQUESTS_PER_MINUTE):
-        assert client.get(INDEX, params={"limit": 1}).status_code == 200
+    assert client.get(INDEX, params={"limit": 1}).status_code == 200
+
+    spend_rate_window(
+        seeded, operation="list_type_curves", count=TYPE_CURVE_INDEX_REQUESTS_PER_MINUTE - 1
+    )
+    assert client.get(INDEX, params={"limit": 1}).status_code == 200, (
+        "the index refused a request below its limit"
+    )
+
+    spend_rate_window(
+        seeded, operation="list_type_curves", count=TYPE_CURVE_INDEX_REQUESTS_PER_MINUTE
+    )
     exhausted = client.get(INDEX, params={"limit": 1})
+
     assert exhausted.status_code == 429
     assert exhausted.json()["type"].endswith("/rate_limited")
 
