@@ -143,6 +143,80 @@ def _seed_new_mexico_production(connection: psycopg.Connection) -> int:
     return len(rows)
 
 
+MT_API10S = ("2508321001", "2508321002")
+MT_LEASE_UNITS = ("05100", "05101", "05102")
+
+
+def _seed_montana_production(connection: psycopg.Connection) -> tuple[int, int]:
+    """Both MBOGC grains, because only one of them is reachable by an API-10 prefix.
+
+    The lease grain carries a lease `entity_key` and a null api10 — the third population the
+    partition assertion above was written to catch — so a Montana arm filtered the way the ND
+    and NM arms are filtered would report the well grain and silently drop 28% of the state.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select source_manifest_id, derivation_id from canonical.production_monthly limit 1"
+        )
+        manifest_id, derivation_id = cursor.fetchone()
+        common = {
+            "report_vintage": date(2026, 8, 30),
+            "volume": Decimal("42.000"),
+            "manifest_id": manifest_id,
+            "derivation_id": derivation_id,
+        }
+        well_rows = [
+            common
+            | {
+                "api10": api10,
+                "entity_key": api10,
+                "production_month": date(2026, month, 1),
+                "stream": stream,
+                "value_hash": f"{index:064d}",
+            }
+            for index, (api10, month, stream) in enumerate(
+                (api10, month, stream)
+                for api10 in MT_API10S
+                for month in (5, 6)
+                for stream in ("oil", "gas")
+            )
+        ]
+        cursor.executemany(
+            "insert into canonical.production_monthly (api10, entity_type, entity_key,"
+            " reporting_level, production_month, stream, source_id, report_vintage, volume,"
+            " unit, granularity, value_hash, null_semantics, source_manifest_id, derivation_id)"
+            " values (%(api10)s, 'well', %(entity_key)s, 'well', %(production_month)s,"
+            " %(stream)s, 'mt_bogc_well_production', %(report_vintage)s, %(volume)s, 'bbl',"
+            " 'well_observed', %(value_hash)s, 'reported', %(manifest_id)s, %(derivation_id)s)",
+            well_rows,
+        )
+        lease_rows = [
+            common
+            | {
+                "entity_key": unit,
+                "production_month": date(2026, month, 1),
+                "stream": stream,
+                "value_hash": f"{index + 1000:064d}",
+            }
+            for index, (unit, month, stream) in enumerate(
+                (unit, month, stream)
+                for unit in MT_LEASE_UNITS
+                for month in (5, 6)
+                for stream in ("oil", "gas")
+            )
+        ]
+        cursor.executemany(
+            "insert into canonical.production_monthly (api10, entity_type, entity_key,"
+            " reporting_level, production_month, stream, source_id, report_vintage, volume,"
+            " unit, granularity, value_hash, null_semantics, source_manifest_id, derivation_id)"
+            " values (null, 'lease', %(entity_key)s, 'lease', %(production_month)s, %(stream)s,"
+            " 'mt_bogc_pru_production', %(report_vintage)s, %(volume)s, 'bbl',"
+            " 'lease_reported', %(value_hash)s, 'reported', %(manifest_id)s, %(derivation_id)s)",
+            lease_rows,
+        )
+    return len(well_rows), len(lease_rows)
+
+
 def test_status_names_the_resource_from_the_service_index(client: TestClient) -> None:
     assert client.get("/v1").json()["links"]["status"] == "/v1/status"
 
@@ -367,6 +441,9 @@ def test_production_is_inventoried_under_the_state_that_reported_it(
     """
     observed = datetime(2026, 8, 26, 18, tzinfo=UTC)
     nm_rows = _seed_new_mexico_production(seeded)
+    # Montana too, and specifically its lease grain: the partition below is only load-bearing
+    # while a population exists that no api10 predicate can reach.
+    mt_well_rows, mt_lease_rows = _seed_montana_production(seeded)
 
     datasets, _ = _inventory(seeded, observed)
     inventory = {dataset.dataset_id: dataset for dataset in datasets}
@@ -391,14 +468,100 @@ def test_production_is_inventoried_under_the_state_that_reported_it(
     assert _metrics(nd) == {"rows": nd_rows, "wells": nd_wells, "months": nd_months}
     # A span of two endpoints cannot show a hole between them; the month count can.
     assert nd_months <= 12 * 12
-    # The two datasets partition the table. A third population — a Texas lease row, whose api10
-    # is null by migration 020 — would be counted by neither, so it must fail here rather than
-    # disappear from a served figure.
-    assert _metrics(nd)["rows"] + _metrics(nm)["rows"] == total
+    # The datasets partition the table. A population counted by none of them — a lease row,
+    # whose api10 is null by migration 020 — must fail here rather than disappear from a
+    # served figure. Montana files exactly such a grain, so its two arms join the sum.
+    montana = sum(
+        _metrics(inventory[f"canonical.production_monthly/mt-{grain}"])["rows"]
+        for grain in ("well", "lease")
+    )
+    assert montana == mt_well_rows + mt_lease_rows
+    assert mt_lease_rows > 0, "without a null-api10 population the partition proves nothing"
+    assert _metrics(nd)["rows"] + _metrics(nm)["rows"] + montana == total
     assert nm.valid_from == "2026-07-01"
     assert nm.valid_to == "2026-08-01"
     assert nd.valid_from != nm.valid_from
     assert nd.valid_to != nm.valid_to
+
+
+def test_montana_is_inventoried_on_both_grains_it_files(seeded: psycopg.Connection) -> None:
+    """The lease grain is the population an API-10 prefix cannot see.
+
+    MBOGC files the same production at a well level and a lease level. The lease rows carry a
+    lease `entity_key` and no api10 at all, so `left(api10, 2) = '25'` reaches none of them —
+    on the real 2026-08-17 archive that is 59,778 of 215,742 rows, 28% of the state, absent
+    from a figure labelled Montana. The arms are filtered by source instead.
+    """
+    well_rows, lease_rows = _seed_montana_production(seeded)
+
+    datasets, _ = _inventory(seeded, datetime(2026, 8, 30, 18, tzinfo=UTC))
+    inventory = {dataset.dataset_id: dataset for dataset in datasets}
+    well = inventory["canonical.production_monthly/mt-well"]
+    lease = inventory["canonical.production_monthly/mt-lease"]
+
+    assert (well.scope, lease.scope) == ("Montana", "Montana")
+    assert _metrics(well) == {"rows": well_rows, "wells": len(MT_API10S)}
+    assert _metrics(lease) == {"rows": lease_rows, "lease_units": len(MT_LEASE_UNITS)}
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select count(*) from canonical.production_monthly where left(api10, 2) = '25'"
+        )
+        assert cursor.fetchone()[0] == well_rows, "the prefix filter must miss the lease grain"
+
+
+def test_the_two_montana_grains_are_never_added_into_one_figure(
+    seeded: psycopg.Connection,
+) -> None:
+    """They are the same production reported at two levels, not two populations. One row
+    summing them would double the state."""
+    _seed_montana_production(seeded)
+
+    datasets, _ = _inventory(seeded, datetime(2026, 8, 30, 18, tzinfo=UTC))
+    inventory = {dataset.dataset_id: dataset for dataset in datasets}
+
+    assert "canonical.production_monthly/mt" not in inventory
+    assert inventory["canonical.production_monthly/mt-lease"].detail.count("Never summed") == 1
+    assert "lease_units" not in _metrics(inventory["canonical.production_monthly/mt-well"])
+    assert "wells" not in _metrics(inventory["canonical.production_monthly/mt-lease"])
+
+
+def test_montana_production_reports_zero_before_its_rows_arrive(
+    seeded: psycopg.Connection,
+) -> None:
+    """The convention the New Mexico arms set: zero, under its own scope, on both grains."""
+    datasets, _ = _inventory(seeded, datetime(2026, 8, 30, 18, tzinfo=UTC))
+    inventory = {dataset.dataset_id: dataset for dataset in datasets}
+
+    for grain in ("well", "lease"):
+        entry = inventory[f"canonical.production_monthly/mt-{grain}"]
+        assert [metric.value for metric in entry.metrics] == [0, 0], grain
+        assert entry.scope == "Montana"
+        assert entry.valid_from is None
+
+
+def test_montana_wells_are_inventoried_under_montana(seeded: psycopg.Connection) -> None:
+    """The `canonical.wells` block already carried three states; Montana is the fourth."""
+    datasets, _ = _inventory(seeded, datetime(2026, 8, 30, 18, tzinfo=UTC))
+    inventory = {dataset.dataset_id: dataset for dataset in datasets}
+
+    assert inventory["canonical.wells_latest/mt"].scope == "Montana"
+    assert inventory["marts.published_map_layers/mt"].scope == "Montana"
+    assert {metric.metric_id for metric in inventory["marts.published_map_layers/mt"].metrics} == {
+        "mt_wells", "mt_paths"
+    }
+
+
+def test_no_montana_completions_arm_is_claimed_because_no_source_files_them(
+    seeded: psycopg.Connection,
+) -> None:
+    """Checked per block rather than assumed symmetric. `canonical.well_completions` is written
+    only by nd_mpr and nm_dims; no Montana ingest touches it, so an arm here would be a figure
+    of zero standing in for a measurement nothing takes."""
+    datasets, _ = _inventory(seeded, datetime(2026, 8, 30, 18, tzinfo=UTC))
+    inventory = {dataset.dataset_id: dataset for dataset in datasets}
+
+    assert "canonical.well_completions/mt" not in inventory
+    assert {"canonical.well_completions/nd", "canonical.well_completions/nm"} <= set(inventory)
 
 
 def test_new_mexico_production_reports_zero_before_its_rows_arrive(

@@ -236,6 +236,7 @@ and recorded in a manifest before anything reads it.
 | **North Dakota** (Bakken / Three Forks) | DMR well-level monthly production and public GIS wells, laterals, surveys and spacing units; FracFocus hydraulic-fracturing completion anchors |
 | **Texas** (Midland, TX Delaware) | RRC county GIS wells and well arcs, wellbore query export *(landed)*; PDQ lease production, W-2 / G-1 completions, W-1 permits, wellbore master |
 | **New Mexico** (Delaware) | OCD well-level production — a third spine, and the allocation validator |
+| **Montana** (Elm Coulee and the rest of the state) | MBOGC monthly production at both the well and lease grains, GIS surface points and well paths. No basin tag: Bakken is 4.6% of the state (`cr_mt_basin_scope_1`) |
 | **Cross-cutting** | FracFocus disclosure headers, PLSS and spacing units, operator registries |
 
 Texas reports at the lease level while North Dakota and New Mexico report at the
@@ -362,6 +363,24 @@ make check-workstation # flag glasswell persistent state on a workstation
 make lint              # ruff
 ```
 
+Installed console scripts, for the pipelines an operator runs by hand rather than on a timer:
+
+```
+glasswell-migrate            apply pending migrations
+glasswell-owner-bootstrap    create the owner key; glasswell-owner-reset rotates it
+glasswell-features           build the feature matrix
+glasswell-model-dataset      build the model-ready dataset
+glasswell-typecurve-control  refresh the pinned type-curve control
+glasswell-p3-context-publish publish the P3 context baseline
+glasswell-neighbors          rebuild the physical-neighbour mart
+glasswell-fracfocus          ingest FracFocus completion anchors
+glasswell-mt-bogc            ingest MBOGC production, both grains
+glasswell-mt-gis             ingest the MBOGC GIS surface points and well paths
+```
+
+The Montana pair are run from [docs/runbook-mt-load.md](docs/runbook-mt-load.md); the mart
+refresh behind them is on the ingest timer.
+
 The integration tier starts one `postgis/postgis:16-3.4` container per session and clones
 a migrated template database per test. It honours an inherited `DOCKER_HOST`, then tries the
 local socket, then `tcp://127.0.0.1:2376` with TLS. Without a reachable docker daemon the
@@ -399,6 +418,7 @@ records each file's checksum and refuses a changed migration.
 | [docs/p3-matrix-integrity.md](docs/p3-matrix-integrity.md) | Feature-matrix availability semantics, and the strict-history versus reconstructed-source clocks |
 | [docs/p3-model-ready-dataset.md](docs/p3-model-ready-dataset.md) | `mdv1.4` labels, curves, censoring coverage, and the eight content-addressed rolling splits |
 | [docs/runbook-basin-load.md](docs/runbook-basin-load.md) | Loading the EIA basin and play boundaries: the two commands, which user runs each, expected counts, and the undo |
+| [docs/runbook-mt-load.md](docs/runbook-mt-load.md) | Loading Montana on the deployed host: commands, expected counts, success versus partial, and how to undo |
 | [docs/runbook-nm-tier2.md](docs/runbook-nm-tier2.md) | Tier 2 — opening the New Mexico gate: well headers, surface geometry and the tile mart, with the preconditions, gates and the one decision that cannot be taken afterwards |
 | [docs/runbook-nm-promotion.md](docs/runbook-nm-promotion.md) | Tier 1 — the New Mexico production-history load: nine manifests, the staged spine and its ~24.8M appended rows |
 | [BRAND.md](BRAND.md) | Visual system, palette, and asset regeneration |

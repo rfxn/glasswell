@@ -288,6 +288,45 @@ NM_LAYERS: tuple[TileLayer, ...] = (
     ),
 )
 
+# The paths are neither simplified nor thinned, for measured reasons rather than by omission:
+# Douglas-Peucker has nothing to discard from a mean of 2.82 vertices
+# (cr_mt_paths_geometry_class_1), and 4,173 lines over the whole state is the nd_survey_traces
+# case, not the overplot the thinning gate approved a rank for.
+MT_LAYERS: tuple[TileLayer, ...] = (
+    TileLayer(
+        name="mt_wells",
+        source="marts.tile_mt_wells",
+        geometry_type="POINT",
+        properties=(
+            ("api10", "text"),
+            ("operator_name", "text"),
+            ("status_canonical", "text"),
+            ("status_reported", "text"),
+            ("well_type_reported", "text"),
+            # Montana files a completion date and no spud date; not spud_year renamed.
+            ("completion_year", "int4"),
+            ("derivation_id", "text"),
+        ),
+        thin=True,
+    ),
+    TileLayer(
+        name="mt_paths",
+        source="marts.tile_mt_paths",
+        geometry_type="LINESTRING",
+        properties=(
+            ("api10", "text"),
+            ("geom_key", "text"),
+            ("operator_name", "text"),
+            ("status_canonical", "text"),
+            # Per feature, because cr_mt_paths_geometry_class_1 states the map-stick
+            # distinction wherever the geometry is served and a tile client reads no docs.
+            ("geometry_class", "text"),
+            ("vertex_count", "int4"),
+            ("derivation_id", "text"),
+        ),
+    ),
+)
+
 # Two layers over one mart because a basin and a play are different objects
 # (cr_eia_boundary_taxonomy_1), so a style that reads one is never handed the other. Neither is
 # simplified or thinned, for the reasons the land layers state. area_sq_mi is float8 and not
@@ -338,6 +377,7 @@ TILE_LAYERS: tuple[TileLayer, ...] = (
     *METRIC_LAYERS,
     *TX_LAYERS,
     *NM_LAYERS,
+    *MT_LAYERS,
     *BASIN_LAYERS,
 )
 

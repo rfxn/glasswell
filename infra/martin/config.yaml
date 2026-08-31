@@ -47,6 +47,12 @@ postgres:
     nm_wells:
       schema: marts
       function: nm_wells
+    mt_wells:
+      schema: marts
+      function: mt_wells
+    mt_paths:
+      schema: marts
+      function: mt_paths
     basins:
       schema: marts
       function: basins

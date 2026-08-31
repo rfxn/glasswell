@@ -13,9 +13,11 @@ export const STATUS_VOCAB_RULES = [
   "cr_nd_status_vocab_1",
   "cr_tx_status_vocab_1",
   "cr_nm_wellhistory_status_vocab_1",
+  "cr_mt_gis_status_vocab_1",
 ] as const;
 export const TX_STATUS_VOCAB_RULE = "cr_tx_status_vocab_1";
 export const NM_STATUS_VOCAB_RULE = "cr_nm_wellhistory_status_vocab_1";
+export const MT_STATUS_VOCAB_RULE = "cr_mt_gis_status_vocab_1";
 
 /** Reserved for selection. No layer and no status may paint with it (UX P1-5). */
 export const SELECTION_COLOUR = "#5FD3E8";
@@ -76,12 +78,32 @@ export const MEASURED_TX_WELL_COUNTS: Readonly<Record<string, number>> = {
  */
 export const MEASURED_NM_WELL_COUNTS: Readonly<Record<string, number>> = {};
 
+/**
+ * `select status_canonical, count(*) from marts.mt_wells_tile group by 1`, read from a full
+ * MBOGC load of the 2026-08-18 Wells.zip into an ephemeral database — not from the deployed
+ * host, which carries no Montana yet (docs/runbook-mt-load.md is what puts it there). A further
+ * 1,400 of the 42,026 points carry no class: their MBOGC Status is one of the six
+ * cr_mt_gis_status_vocab_1 does not promote, so they quarantine as unknown_status and the
+ * legend draws them unmapped rather than defaulting a water well to active. Re-read at the
+ * first deployed refresh.
+ */
+export const MEASURED_MT_WELL_COUNTS: Readonly<Record<string, number>> = {
+  plugged: 25_766,
+  active: 9_351,
+  inactive: 4_704,
+  temporarily_abandoned: 504,
+  permitted: 169,
+  drilling: 93,
+  expired: 39,
+};
+
 /** What the legend may list: a class any basin has actually drawn. */
 export function measuredWellCount(id: string): number {
   return (
     (MEASURED_WELL_COUNTS[id] ?? 0)
     + (MEASURED_TX_WELL_COUNTS[id] ?? 0)
     + (MEASURED_NM_WELL_COUNTS[id] ?? 0)
+    + (MEASURED_MT_WELL_COUNTS[id] ?? 0)
   );
 }
 

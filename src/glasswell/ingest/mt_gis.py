@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import polars as pl
 import psycopg
 
 from glasswell.identity import api10_identity
@@ -30,6 +31,7 @@ from glasswell.lineage.conformance import load_rules, rule_for_family
 from glasswell.lineage.fetch import fetch_raw
 from glasswell.lineage.fetch_attempts import durable_fetch_attempts
 from glasswell.lineage.models import ConformanceRule, InputRef, OutputSpec
+from glasswell.lineage.quarantine import quarantine
 from glasswell.lineage.serialization import hash_payload
 
 __rule_version__ = "1"
@@ -200,6 +202,34 @@ def _completion_date(value: str | None) -> date | None:
         return None
 
 
+def _quarantine_rejects(
+    run: IngestRun,
+    layer: LayerSpec,
+    *,
+    manifest_id: str,
+    rejected: Mapping[tuple[str, str, str], list[dict[str, Any]]],
+    counts: dict[str, int],
+) -> None:
+    """Write every rejected row to the ledger. A counted reject that never lands there is a
+    dropped row wearing a number, which is the one thing §3.4 forbids outright."""
+    for (reason_code, rule_id, stage), rows in rejected.items():
+        result = quarantine(
+            run.connection,
+            pl.DataFrame(rows, infer_schema_length=None),
+            reason_code=reason_code,
+            manifest_id=manifest_id,
+            source_id=layer.source_id,
+            staging_table=layer.staging_table,
+            stage=stage,
+            seen_at=run.session.clock.now(),
+            rule_id=rule_id,
+            correlation_id=run.session.correlation_id,
+        )
+        counts[reason_code] = (
+            counts.get(reason_code, 0) + result.opened + result.reoccurred
+        )
+
+
 def promote_layer(
     run: IngestRun,
     layer: LayerSpec,
@@ -228,10 +258,11 @@ def promote_layer(
 
     geometry_rows: list[dict[str, Any]] = []
     header_rows: list[dict[str, Any]] = []
+    rejected: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
     for row in staged:
         api10 = identity.normalize(row.get("api_wellno"))
         if api10 is None:
-            counts[IDENTITY_REASON] = counts.get(IDENTITY_REASON, 0) + 1
+            rejected.setdefault((IDENTITY_REASON, identity.rule_id, "parse"), []).append(row)
             continue
         # cr_mt_paths_subkey_1: 875 wells carry more than one path, so a lateral is keyed by
         # its WellSub within the API-10. A point layer has one geometry per well.
@@ -254,7 +285,7 @@ def promote_layer(
         reported = row.get("status")
         canonical = statuses.get(str(reported)) if reported is not None else None
         if canonical is None:
-            counts[UNKNOWN_STATUS_REASON] = counts.get(UNKNOWN_STATUS_REASON, 0) + 1
+            rejected.setdefault((UNKNOWN_STATUS_REASON, STATUS_RULE, "conform"), []).append(row)
             continue
         header_rows.append(
             {
@@ -271,6 +302,9 @@ def promote_layer(
                 "manifest_id": manifest.manifest_id,
             }
         )
+
+    _quarantine_rejects(run, layer, manifest_id=manifest.manifest_id, rejected=rejected,
+                        counts=counts)
 
     with derive(
         "canonical.promote",

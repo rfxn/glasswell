@@ -234,6 +234,34 @@ export const LAYERS: readonly LayerDef[] = [
     collection: null,
   },
   {
+    // Deliberately not folded into the laterals row. MBOGC files one path layer covering
+    // laterals, sidetracks and vertical wellbores alike, so a row promising horizontal bore
+    // geometry would misdescribe 378 of the 4,173 lines — and the geometry is a cartographic
+    // centreline in either case, which is the fact the subtitle leads with.
+    id: "mt-paths",
+    group: "spine",
+    label: "Well paths (MT)",
+    subtitle:
+      "MBOGC well paths — laterals, sidetracks and wellbores as filed · cartographic" +
+      " centrelines averaging 2.8 vertices, never a survey (cr_mt_paths_geometry_class_1) ·" +
+      " 2,836 carry one, of the 20,021 Montana wells that ever produced" +
+      " (cr_mt_paths_coverage_1) · no length is served for a Montana bore" +
+      " (cr_mt_paths_length_scope_1)",
+    swatch: { kind: "line", colours: STATUS_KEYED_LINE },
+    // 4,173 lines over a state whose wells are mostly plugged is not a first-paint question.
+    defaultOn: false,
+    // The laterals' own gate, so the two bore-line layers a reader compares are never on the
+    // canvas at different scales — the reason survey-traces sits at 8 rather than its tile floor.
+    minZoom: 8,
+    zoomHint: "Visible at zoom 8 and above",
+    opacity: 1,
+    provenance: [{ kind: "official", source: "marts.mt_paths_tile" }],
+    styleLayers: ["mt-paths"],
+    drawOrder: 36,
+    // Drawn from tiles only. /v1/wells counts a well's geometry classes, it does not list lines.
+    collection: null,
+  },
+  {
     id: "wells",
     group: "spine",
     label: "Wells",
@@ -315,6 +343,28 @@ export const LAYERS: readonly LayerDef[] = [
     styleLayers: ["nm-wells"],
     drawOrder: 43,
     // One spine, three tile marts: /v1/wells is state-agnostic, so every row lands on it.
+    collection: { dataset: "wells", bbox: "bbox" },
+  },
+  {
+    id: "mt-wells",
+    group: "spine",
+    label: "Wells (MT)",
+    subtitle:
+      "MBOGC surface locations · 42,026 points, 13 of the 19 filed status values mapped and" +
+      " the other 6 quarantined rather than defaulted (cr_mt_gis_status_vocab_1) · no basin" +
+      " tag: Bakken is 4.6% of Montana (cr_mt_basin_scope_1) · completion year, never a spud",
+    // Plugged grey, for Texas's reason rather than by imitation: 63% of Montana's mapped
+    // wells are plugged and 3% carry no class, so a green dot would promise a canvas that
+    // does not arrive.
+    swatch: { kind: "dot", colours: [statusColour("plugged")] },
+    defaultOn: true,
+    minZoom: 4,
+    zoomHint: "Visible at zoom 4 and above",
+    opacity: 1,
+    provenance: [{ kind: "official", source: "marts.mt_wells_tile" }],
+    styleLayers: ["mt-wells", "mt-wells-struck"],
+    drawOrder: 44,
+    // One spine, four tile marts: /v1/wells is state-agnostic, so every row lands on it.
     collection: { dataset: "wells", bbox: "bbox" },
   },
   {

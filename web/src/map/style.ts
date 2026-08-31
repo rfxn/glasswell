@@ -46,6 +46,10 @@ export const TX_LATERALS_SOURCE = "tx_laterals";
 // A point source and no lateral sibling: no in-scope New Mexico source ships one, and
 // cr_nm_wellhistory_geometry_scope_1 is the row that says so.
 export const NM_WELLS_SOURCE = "nm_wells";
+export const MT_WELLS_SOURCE = "mt_wells";
+// Not `mt_laterals`: the source carries laterals, sidetracks and vertical wellbores alike, and
+// cr_mt_paths_geometry_class_1 keeps the map-stick class off the lateral vocabulary.
+export const MT_PATHS_SOURCE = "mt_paths";
 export const TRACES_SOURCE = "nd_survey_traces";
 export const TOWNSHIPS_SOURCE = "land_townships";
 export const SECTIONS_SOURCE = "land_sections";
@@ -76,7 +80,7 @@ const SECTION_LABEL_MIN_ZOOM = 12;
 const SPACING_UNIT_LABEL_MIN_ZOOM = 11;
 
 /** The point layers the legend counts from. Both basins, because the legend counts what is drawn. */
-export const WELL_POINT_LAYERS = ["wells", "tx-wells"] as const;
+export const WELL_POINT_LAYERS = ["wells", "tx-wells", "mt-wells"] as const;
 
 const INK = "#0B1014";
 const SPACING_LABEL_SIZE = 10;
@@ -135,6 +139,8 @@ export function sourceSpecs(origin?: string, search?: string): Record<string, So
     ["tx_wells", TX_WELLS_SOURCE, "api10"],
     ["tx_laterals", TX_LATERALS_SOURCE, "api10"],
     ["nm_wells", NM_WELLS_SOURCE, "api10"],
+    ["mt_wells", MT_WELLS_SOURCE, "api10"],
+    ["mt_paths", MT_PATHS_SOURCE, "api10"],
     ["traces", TRACES_SOURCE, "api10"],
     // The land grid's identity is the publisher's unit id, not a well spine key.
     ["townships", TOWNSHIPS_SOURCE, "land_unit_id"],
@@ -229,6 +235,21 @@ function lateralWidth(): Expr {
   ]);
 }
 
+/**
+ * Zoom-only, because the Montana paths mart publishes no length: cr_mt_basin_scope_1 leaves the
+ * state untagged and `lengths` is keyed by basin, so there is no registered method to measure
+ * one with. A ramp reading `lateral_length_ft` here would coalesce every path to zero and draw
+ * the whole state at the thin end while looking like it varied. Mid-ramp against a lateral, and
+ * the same selected weights, so the two line layers stay comparable.
+ */
+function pathWidth(): Expr {
+  return interpolate(zoom, [
+    [8, selectable(3.5, 1)],
+    [12, selectable(5, 2)],
+    [15, selectable(7, 4)],
+  ]);
+}
+
 /** Finer than a lateral at every stop: the trace is the precise path, not the emphasis. */
 function traceWidth(): Expr {
   return interpolate(zoom, [
@@ -281,6 +302,8 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
   const txWells = publishedSource("tx_wells", TX_WELLS_SOURCE, options.search);
   const txLaterals = publishedSource("tx_laterals", TX_LATERALS_SOURCE, options.search);
   const nmWells = publishedSource("nm_wells", NM_WELLS_SOURCE, options.search);
+  const mtWells = publishedSource("mt_wells", MT_WELLS_SOURCE, options.search);
+  const mtPaths = publishedSource("mt_paths", MT_PATHS_SOURCE, options.search);
   const traces = publishedSource("traces", TRACES_SOURCE, options.search);
   const townships = publishedSource("townships", TOWNSHIPS_SOURCE, options.search);
   const sections = publishedSource("sections", SECTIONS_SOURCE, options.search);
@@ -405,6 +428,23 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       },
     },
     {
+      // Status-keyed like the other filed bore lines, because Montana has a status codebook
+      // and a reader compares like with like. What this layer is *of* — a centreline that may
+      // be a lateral, a sidetrack or a vertical wellbore — rides on the feature's own
+      // geometry_class and vertex_count, so no colour has to carry it.
+      id: "mt-paths",
+      type: "line",
+      source: mtPaths,
+      "source-layer": mtPaths,
+      minzoom: LATERAL_MIN_ZOOM,
+      metadata: STATUS_GATED,
+      paint: {
+        "line-color": selectable(SELECTION_COLOUR, statusColourExpression()),
+        "line-width": pathWidth(),
+        "line-opacity": selectable(1, 0.85),
+      },
+    },
+    {
       id: "wells",
       type: "circle",
       source: wells,
@@ -521,6 +561,46 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
           [12, 1.2],
         ]),
         "circle-radius": wellRadius(),
+      },
+    },
+    {
+      // Montana draws from the same expressions as the other two, and unlike New Mexico it has
+      // a codebook to draw from: cr_mt_gis_status_vocab_1 maps thirteen of nineteen MBOGC
+      // values and quarantines the other six rather than defaulting them to active.
+      id: "mt-wells",
+      type: "circle",
+      source: mtWells,
+      "source-layer": mtWells,
+      minzoom: 4,
+      metadata: STATUS_GATED,
+      paint: {
+        "circle-color": selectable(SELECTION_COLOUR, statusFillExpression(hollow)),
+        "circle-stroke-color": selectable(SELECTION_COLOUR, statusColourExpression()),
+        "circle-stroke-width": interpolate(zoom, [
+          [4, 0.4],
+          [9, 0.7],
+          [12, 1.2],
+        ]),
+        "circle-radius": wellRadius(),
+      },
+    },
+    {
+      // A struck sibling, where New Mexico has none: 63% of Montana's mapped wells are plugged,
+      // so the class the strike marks is the largest one on this canvas.
+      id: "mt-wells-struck",
+      type: "symbol",
+      source: mtWells,
+      "source-layer": mtWells,
+      minzoom: 11,
+      filter: inSet(statusProperty(), [...STRUCK_STATUSES]),
+      layout: {
+        "icon-image": "gw-strike",
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
+        "icon-size": interpolate(zoom, [
+          [11, 0.55],
+          [15, 1],
+        ]) as unknown as number,
       },
     },
     {

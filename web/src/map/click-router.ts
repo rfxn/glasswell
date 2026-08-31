@@ -22,6 +22,9 @@ const PRIORITY: Readonly<Record<string, number>> = {
   // New Mexico at the same rank and for the same reason. It has no struck sibling: the strike
   // marks a status class and every NM status_canonical is null, so the class cannot match.
   "nm-wells": 40,
+  // Montana at the same rank, and it does have a struck sibling: it has a status codebook.
+  "mt-wells": 40,
+  "mt-wells-struck": 40,
   // Both of the laterals row's style layers, at one rank: the two never overlap — they are
   // different basins — and one row that selected in North Dakota and did nothing in the
   // Permian would be the toggle contradicting itself.
@@ -30,6 +33,9 @@ const PRIORITY: Readonly<Record<string, number>> = {
   "survey-traces": 35,
   laterals: 30,
   "tx-laterals": 30,
+  // At the lateral rank and not the trace's: a map stick is filed bore geometry, not a
+  // survey, and ranking it above the laterals would say the opposite (cr_mt_paths_geometry_class_1).
+  "mt-paths": 30,
   "spacing-units-line": 20,
   "spacing-units-fill": 10,
   // Under the spacing unit that overlies them: an aggregate is the context a reader falls

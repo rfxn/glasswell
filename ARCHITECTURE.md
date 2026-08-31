@@ -67,7 +67,10 @@ in a study area, the assumption gets revisited rather than defended.
 Resident today: the PostGIS geometry martin turns into vector tiles
 (`nd_wells_tile`, `nd_laterals_tile`, `nd_survey_traces_tile`, `tx_wells_tile`,
 `tx_laterals_tile`, `nm_wells_tile` — a point layer with no lateral sibling, because no
-in-scope New Mexico source ships one — `land_units_tile`, `land_metrics_tile`, plus spacing
+in-scope New Mexico source ships one — `mt_wells_tile` and `mt_paths_tile` — whose lines are
+cartographic centrelines carrying `geometry_class` and `vertex_count` on every feature, and no
+length, because Montana carries no basin and so no registered length method —
+`land_units_tile`, `land_metrics_tile`, plus spacing
 units,
 which are a view rather than a table), the `nd_well_card` table, and the current
 physical-neighbour pair `nd_neighbor_subjects` / `nd_neighbor_edges`. martin reads

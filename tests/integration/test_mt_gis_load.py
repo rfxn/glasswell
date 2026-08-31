@@ -160,6 +160,37 @@ def test_promoted_headers_carry_the_montana_state_code_and_reported_status(db, l
     ) == 0
 
 
+def test_every_unpromoted_status_reaches_the_quarantine_ledger_and_not_only_a_counter(
+    db, loaded
+):
+    """A counted reject that lands nowhere is a dropped row wearing a number. On the real
+    2026-08-18 Wells.zip this is 1,400 wells that tile with a location and no status, and
+    before this they were reconstructable only by subtracting two printed totals."""
+    counted = loaded[mt_gis.WELLS.source_key].quarantined.get("unknown_status", 0)
+    assert counted > 0, "the fixture must contain at least one unpromoted status"
+
+    assert query(
+        db,
+        "select source_id, stage, rule_id, count(*) from lineage.quarantine_rows"
+        " where reason_code = 'unknown_status' group by 1, 2, 3",
+    ) == [("mt_gis_wells", "conform", "cr_mt_gis_status_vocab_1", counted)]
+
+
+def test_the_quarantined_row_keeps_the_status_that_got_it_rejected(db, loaded):
+    """Quarantine is recoverable, not a tombstone: the payload must carry enough to re-promote
+    the row once cr_mt_gis_status_vocab_1 grows a mapping for its value."""
+    payloads = query(
+        db,
+        "select row_payload from lineage.quarantine_rows"
+        " where reason_code = 'unknown_status' limit 5",
+    )
+
+    assert payloads
+    for (payload,) in payloads:
+        assert payload["api_wellno"]
+        assert payload["status"] not in (None, "")
+
+
 def test_no_montana_well_is_given_a_basin(db, loaded):
     """cr_mt_basin_scope_1: Bakken is 4.6 percent of the state, so williston is not a default."""
     assert scalar(db, "select count(*) from canonical.wells where basin is not null") == 0

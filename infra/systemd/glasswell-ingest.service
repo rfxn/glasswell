@@ -1,5 +1,5 @@
 [Unit]
-Description=glasswell scheduled ingest and mart refresh (ND GIS and production, the BLM land grid, and the ND, NM and land tile marts)
+Description=glasswell scheduled ingest and mart refresh (ND GIS and production, the BLM land grid, and the ND, NM, MT and land tile marts)
 Documentation=file:/opt/glasswell/src/infra/README.md
 After=network-online.target postgresql.service
 Wants=network-online.target
@@ -24,6 +24,10 @@ ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.nd_wells --dsn ${GLA
 # The mart refresh only. No ExecStart re-promotes New Mexico: all nine nm_ocd_ sources are
 # registered owner-triggered and the FTP pull is a once-ever event by contract.
 ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.nm_wells --dsn ${GLASSWELL_DSN}
+# The mart refresh only, for the reason above: all four mt_ sources poll on a 35-day cadence
+# and the archives are large, so the ingest is run from docs/runbook-mt-load.md rather than
+# ridden along with a timer that fires far more often than the data changes.
+ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.mt_wells --dsn ${GLASSWELL_DSN}
 ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.land_units --dsn ${GLASSWELL_DSN}
 ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.land_metrics --dsn ${GLASSWELL_DSN}
 ExecStart=/opt/glasswell/venv/bin/glasswell-neighbors --dsn ${GLASSWELL_DSN}

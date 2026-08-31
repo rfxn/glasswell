@@ -587,7 +587,11 @@ def _inventory(
         " count(*) filter (where state_code = '30') as nm_rows,"
         " min(effective_from) filter (where state_code = '30') as nm_valid_from,"
         " max(effective_from) filter (where state_code = '30') as nm_valid_to,"
-        " max(created_at) filter (where state_code = '30') as nm_latest_knowledge"
+        " max(created_at) filter (where state_code = '30') as nm_latest_knowledge,"
+        " count(*) filter (where state_code = '25') as mt_rows,"
+        " min(effective_from) filter (where state_code = '25') as mt_valid_from,"
+        " max(effective_from) filter (where state_code = '25') as mt_valid_to,"
+        " max(created_at) filter (where state_code = '25') as mt_latest_knowledge"
         " from canonical.wells_latest",
     )
     production = _one(
@@ -603,7 +607,28 @@ def _inventory(
         " count(distinct production_month) filter (where left(api10, 2) = '30') as nm_months,"
         " min(production_month) filter (where left(api10, 2) = '30') as nm_valid_from,"
         " max(production_month) filter (where left(api10, 2) = '30') as nm_valid_to,"
-        " max(created_at) filter (where left(api10, 2) = '30') as nm_latest_knowledge"
+        " max(created_at) filter (where left(api10, 2) = '30') as nm_latest_knowledge,"
+        # Montana is bucketed by source and not by api10 prefix: it files a lease grain whose
+        # rows carry an entity_key and no api10 at all, so the prefix predicate the two arms
+        # above use would silently report 72% of the state under a label saying Montana.
+        " count(*) filter (where source_id = 'mt_bogc_well_production') as mt_rows,"
+        " count(distinct api10) filter (where source_id = 'mt_bogc_well_production')"
+        "   as mt_wells,"
+        " min(production_month) filter (where source_id = 'mt_bogc_well_production')"
+        "   as mt_valid_from,"
+        " max(production_month) filter (where source_id = 'mt_bogc_well_production')"
+        "   as mt_valid_to,"
+        " max(created_at) filter (where source_id = 'mt_bogc_well_production')"
+        "   as mt_latest_knowledge,"
+        " count(*) filter (where source_id = 'mt_bogc_pru_production') as mt_lease_rows,"
+        " count(distinct entity_key) filter (where source_id = 'mt_bogc_pru_production')"
+        "   as mt_lease_units,"
+        " min(production_month) filter (where source_id = 'mt_bogc_pru_production')"
+        "   as mt_lease_valid_from,"
+        " max(production_month) filter (where source_id = 'mt_bogc_pru_production')"
+        "   as mt_lease_valid_to,"
+        " max(created_at) filter (where source_id = 'mt_bogc_pru_production')"
+        "   as mt_lease_latest_knowledge"
         " from canonical.production_monthly",
     )
     completions = _one(
@@ -645,12 +670,16 @@ def _inventory(
         " (select count(*) from marts.tx_wells_tile) as tx_wells,"
         " (select count(*) from marts.tx_laterals_tile) as tx_laterals,"
         " (select count(*) from marts.nm_wells_tile) as nm_wells,"
+        " (select count(*) from marts.mt_wells_tile) as mt_wells,"
+        " (select count(*) from marts.mt_paths_tile) as mt_paths,"
         " (select max(created_at) from lineage.derivations"
         "   where output_dataset = 'marts.nd_tiles' and status = 'ok') as nd_latest_knowledge,"
         " (select max(created_at) from lineage.derivations"
         "   where output_dataset = 'marts.tx_tiles' and status = 'ok') as tx_latest_knowledge,"
         " (select max(created_at) from lineage.derivations"
-        "   where output_dataset = 'marts.nm_tiles' and status = 'ok') as nm_latest_knowledge",
+        "   where output_dataset = 'marts.nm_tiles' and status = 'ok') as nm_latest_knowledge,"
+        " (select max(created_at) from lineage.derivations"
+        "   where output_dataset = 'marts.mt_tiles' and status = 'ok') as mt_latest_knowledge",
     )
     neighbors = _one(
         connection,
@@ -749,6 +778,21 @@ def _inventory(
             wells["nm_latest_knowledge"],
         ),
         dataset(
+            "canonical.wells_latest/mt",
+            "Current Montana wells",
+            "Montana",
+            "one latest effective row per API-10",
+            [_metric("rows", "Current wells", wells["mt_rows"], "wells")],
+            (
+                "Headers only for the statuses cr_mt_gis_status_vocab_1 promotes; the six it"
+                " does not quarantine as unknown_status, so this is below the surface-point"
+                " count and the difference is in the quarantine ledger, not lost."
+            ),
+            wells["mt_valid_from"],
+            wells["mt_valid_to"],
+            wells["mt_latest_knowledge"],
+        ),
+        dataset(
             "canonical.production_monthly/nd",
             "North Dakota production observations",
             "North Dakota",
@@ -777,6 +821,46 @@ def _inventory(
             production["nm_valid_from"],
             production["nm_valid_to"],
             production["nm_latest_knowledge"],
+        ),
+        dataset(
+            "canonical.production_monthly/mt-well",
+            "Montana well-grain production observations",
+            "Montana",
+            "one append-only source revision per well, pool, month and stream",
+            [
+                _metric("rows", "Observation rows", production["mt_rows"], "rows"),
+                _metric("wells", "Distinct wells", production["mt_wells"], "wells"),
+            ],
+            (
+                "MBOGC files two grains and this is one of them; the lease grain is counted"
+                " separately below and the two are never added. Oil is oil plus condensate as"
+                " published (cr_mt_liquids_policy_1). Includes retained report vintages; it is"
+                " not a count of physical wells."
+            ),
+            production["mt_valid_from"],
+            production["mt_valid_to"],
+            production["mt_latest_knowledge"],
+        ),
+        dataset(
+            "canonical.production_monthly/mt-lease",
+            "Montana lease-grain production observations",
+            "Montana",
+            "one append-only source revision per lease unit, month and stream",
+            [
+                _metric("rows", "Observation rows", production["mt_lease_rows"], "rows"),
+                _metric(
+                    "lease_units", "Distinct lease units", production["mt_lease_units"], "units"
+                ),
+            ],
+            (
+                "The PRU grain. These rows carry a lease entity_key and no API-10, so they are"
+                " invisible to any well-prefix filter and are counted by source instead. Never"
+                " summed with the well grain above: the two are the same production reported at"
+                " different levels, not two populations."
+            ),
+            production["mt_lease_valid_from"],
+            production["mt_lease_valid_to"],
+            production["mt_lease_latest_knowledge"],
         ),
         dataset(
             "canonical.well_completions/nd",
@@ -884,6 +968,22 @@ def _inventory(
                 " (cr_nm_wellhistory_geometry_scope_1), so none is drawn."
             ),
             latest_knowledge=map_rows["nm_latest_knowledge"],
+        ),
+        dataset(
+            "marts.published_map_layers/mt",
+            "Published Montana map layers",
+            "Montana",
+            "one published feature per named Montana layer row; layers may overlap",
+            [
+                _metric("mt_wells", "MT well points", map_rows["mt_wells"], "features"),
+                _metric("mt_paths", "MT well paths", map_rows["mt_paths"], "features"),
+            ],
+            (
+                "The paths are cartographic centrelines, never directional surveys"
+                " (cr_mt_paths_geometry_class_1), and they cover a seventh of the wells that"
+                " ever produced (cr_mt_paths_coverage_1) — absence is the normal case."
+            ),
+            latest_knowledge=map_rows["mt_latest_knowledge"],
         ),
         dataset(
             "marts.nd_neighbor_subjects",
