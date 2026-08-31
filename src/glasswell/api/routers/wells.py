@@ -95,8 +95,19 @@ PROVENANCE_RULES = {
     "33": "cr_nd_geometry_provenance_1",
     "42": "cr_nd_geometry_provenance_1",
     "30": "cr_nm_wellhistory_geometry_provenance_1",
+    # Montana's `lateral` geom_type is a cartographic centreline, and this is the row that says
+    # so. Left on the ND default it would have cited a survey-derived provenance for a map
+    # stick — dormant while nothing Montana was served, a wrong claim the moment it is.
+    "25": "cr_mt_paths_geometry_class_1",
 }
 DEFAULT_PROVENANCE_RULE = "cr_nd_geometry_provenance_1"
+
+# States whose geometry has no registered length method. `lengths.length_rule_source` answers
+# nd_gis_horizontals_line for a well with no basin, so without this a Montana length would be
+# served under a rule about North Dakota geometry — and would sum the multiple paths per well
+# that cr_mt_paths_subkey_1 measured. The rule is served in the figure's place.
+LENGTH_SCOPE_RULES = {"25": "cr_mt_paths_length_scope_1"}
+LENGTH_NOT_SERVED = "not_served"
 
 WELL_LABELS = {
     "/api10": "gt_api_10_api_12_api_14",
@@ -425,20 +436,25 @@ class WellDetail(WellSummary):
         json_schema_extra=not_a_figure("A count of geometry rows, not a measured quantity."),
     )
     lateral_length_ft: FigureModel | None = Field(
-        description="Total lateral length, projected into the basin compute CRS.",
+        description=(
+            "Total lateral length, projected into the basin compute CRS. Null where a"
+            " conformance rule withholds it; length_method then reads not_served."
+        ),
         json_schema_extra={GLOSSARY_KEY: "gt_wellbore"},
     )
     compute_crs: str | None = Field(
         description=(
             "CRS the length computation is defined on. Zone-free while length_method is"
-            " geodesic, which is why it reads as the storage CRS."
+            " geodesic, which is why it reads as the storage CRS. Null where no length is"
+            " served, because no computation was defined."
         ),
         json_schema_extra={GLOSSARY_KEY: "gt_crs_compute_crs"},
     )
     length_method: str = Field(
         description=(
             "How lateral length was measured, from the compute-CRS rule the well's basin names:"
-            " geodesic on the WGS84 ellipsoid, or projected into a named CRS."
+            " geodesic on the WGS84 ellipsoid, or projected into a named CRS. Reads not_served"
+            " where a conformance rule withholds the length; links.length_rule names it."
         ),
         json_schema_extra={GLOSSARY_KEY: "gt_crs_compute_crs"},
     )
@@ -1614,12 +1630,19 @@ def get_well(
         {"basin": row["basin"] or "williston", "as_of": as_of},
     )
     storage_epsg = crs[0]["storage_epsg"] if crs else STORAGE_EPSG
-    # The basin's own rule, so a TX length's handle resolves to a rule about TX geometry.
-    method = resolve_length_method(
-        connection,
-        basin=row["basin"],
-        valid_at=as_of,
-        knowledge_at=as_of,
+    length_scope_rule = LENGTH_SCOPE_RULES.get(row["state_code"] or "")
+    # The basin's own rule, so a TX length's handle resolves to a rule about TX geometry. Not
+    # resolved at all where a rule withholds the length: the resolver's no-basin default is
+    # North Dakota's, and reading it would put that rule id on the response either way.
+    method = (
+        None
+        if length_scope_rule
+        else resolve_length_method(
+            connection,
+            basin=row["basin"],
+            valid_at=as_of,
+            knowledge_at=as_of,
+        )
     )
     warnings: list[dict[str, Any]] = []
     if policy is None:
@@ -1639,7 +1662,11 @@ def get_well(
         warnings.append(reported_at_pool_grain(pool_grain))
     geometry = rows(
         connection,
-        _SPATIAL.format(length_metres=method.metres_sql()),
+        # No method, no metres: `length_m` is what the withheld figure would have been summed
+        # from, so it must not be computed under a rule the response does not cite.
+        _SPATIAL.format(
+            length_metres="null::double precision" if method is None else method.metres_sql()
+        ),
         {"api10": api10, "as_of": as_of},
     )
 
@@ -1647,7 +1674,9 @@ def get_well(
         connection, api10, as_of=as_of
     )
     warnings.extend(held_back_warnings)
-    resolved_vintages = [row["available_on"], method.effective_from]
+    resolved_vintages = [row["available_on"]]
+    if method is not None:
+        resolved_vintages.append(method.effective_from)
     resolved_vintages.extend(item["available_on"] for item in geometry)
     resolved_vintages.extend(held_back_vintages)
     if crs:
@@ -1663,14 +1692,26 @@ def get_well(
                 "code": "below_tile_resolution",
                 "detail": (
                     f"{len(untiled)} lateral geometries are below the resolution of the"
-                    f" deepest published zoom (z{TILE_MAX_ZOOM}) and render on no tile;"
-                    " their length is still served here"
+                    f" deepest published zoom (z{TILE_MAX_ZOOM}) and render on no tile"
+                    + ("" if length_scope_rule else "; their length is still served here")
                 ),
                 "pointer": "/geometry",
             }
         )
     length_figure = None
-    if laterals:
+    if laterals and length_scope_rule:
+        warnings.append(
+            {
+                "code": "length_not_served",
+                "detail": (
+                    f"{len(laterals)} geometries are held for this well and no length is served"
+                    f" for them; {length_scope_rule} is the rule that withholds it"
+                ),
+                "pointer": "/lateral_length_ft",
+                "rule_id": length_scope_rule,
+            }
+        )
+    elif laterals:
         metres = sum(Decimal(str(item["length_m"])) for item in laterals)
         derivations = {item["derivation_id"] for item in laterals}
         if len(derivations) > 1:
@@ -1727,8 +1768,8 @@ def get_well(
             else None
         ),
         "completion_date": iso(row["completion_date"]),
-        "compute_crs": method.compute_crs,
-        "length_method": method.method,
+        "compute_crs": None if method is None else method.compute_crs,
+        "length_method": LENGTH_NOT_SERVED if method is None else method.method,
         "storage_crs": f"EPSG:{storage_epsg}",
         "geometry": [
             {
@@ -1759,6 +1800,13 @@ def get_well(
             **(
                 {"reporting_rule": f"/v1/conformance/{lease_reported['rule_id']}"}
                 if lease_reported
+                else {}
+            ),
+            # The absence of a figure is itself a decision, so it is reachable from the
+            # response rather than only stated in a warning string.
+            **(
+                {"length_rule": f"/v1/conformance/{length_scope_rule}"}
+                if length_scope_rule
                 else {}
             ),
         },

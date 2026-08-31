@@ -9,6 +9,8 @@ import { METRICS_SECTIONS_SOURCE, METRICS_TOWNSHIPS_SOURCE } from "./thematics.t
 import { variantStyle } from "./variant-style.ts";
 import {
   LATERALS_SOURCE,
+  MT_PATHS_SOURCE,
+  MT_WELLS_SOURCE,
   NM_WELLS_SOURCE,
   OPACITY_OVERRIDE,
   SECTIONS_SOURCE,
@@ -465,6 +467,38 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
     expect("source" in nmWells! ? nmWells.source : "").toBe(NM_WELLS_SOURCE);
   });
 
+  it("draws Montana as a point layer with the struck sibling New Mexico cannot have", () => {
+    // Montana has a codebook (cr_mt_gis_status_vocab_1) where New Mexico has none, so the
+    // strike marks a class that can actually match — 63% of the state is plugged.
+    const ids = dataLayers({ labels: true }).map((layer) => layer.id);
+
+    expect(ids).toContain("mt-wells");
+    expect(ids).toContain("mt-wells-struck");
+    const mtWells = dataLayers().find((layer) => layer.id === "mt-wells");
+    expect(mtWells?.type).toBe("circle");
+    expect("source" in mtWells! ? mtWells.source : "").toBe(MT_WELLS_SOURCE);
+    expect(statusStyledLayerIds()).toContain("mt-wells");
+  });
+
+  it("draws the Montana paths as their own line layer, not as a second laterals layer", () => {
+    const mtPaths = dataLayers().find((layer) => layer.id === "mt-paths");
+
+    expect(mtPaths?.type).toBe("line");
+    expect("source" in mtPaths! ? mtPaths.source : "").toBe(MT_PATHS_SOURCE);
+    expect(dataLayers().map((layer) => layer.id)).not.toContain("mt-laterals");
+  });
+
+  it("never reads a length the Montana mart does not publish", () => {
+    // cr_mt_paths_length_scope_1: no basin, so no registered length method and no column. A
+    // width ramp over `lateral_length_ft` would coalesce to zero and draw the whole state at
+    // the thin end while looking like it varied with the bore.
+    const mtPaths = dataLayers().find((layer) => layer.id === "mt-paths");
+    const painted = JSON.stringify(mtPaths && "paint" in mtPaths ? mtPaths.paint : {});
+
+    expect(painted).not.toContain("lateral_length_ft");
+    expect(painted).not.toContain("length");
+  });
+
   it("gives the New Mexico row a registry entry citing the mart it reads", () => {
     const row = LAYERS.find((layer) => layer.id === "nm-wells");
 
@@ -481,6 +515,7 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
       "?wells=..%2F..%2Fetc%2Fpasswd&laterals=gw-evil-layer&spacing=%2Fetc%2Fpasswd" +
       "&tx_wells=..%2F..%2Fetc%2Fshadow&tx_laterals=gw-evil-layer&traces=..%2F..%2Fetc%2Fpasswd" +
       "&nm_wells=..%2F..%2Fetc%2Fshadow" +
+      "&mt_wells=..%2F..%2Fetc%2Fshadow&mt_paths=gw-evil-layer" +
       "&townships=..%2F..%2Fetc%2Fpasswd&sections=gw-evil-layer" +
       "&township_metrics=..%2F..%2Fetc%2Fpasswd&section_metrics=gw-evil-layer";
     const specs = sourceSpecs("https://gw.example", search);
@@ -492,6 +527,8 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
         TX_WELLS_SOURCE,
         TX_LATERALS_SOURCE,
         NM_WELLS_SOURCE,
+        MT_WELLS_SOURCE,
+        MT_PATHS_SOURCE,
         TRACES_SOURCE,
         TOWNSHIPS_SOURCE,
         SECTIONS_SOURCE,

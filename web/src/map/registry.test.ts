@@ -218,6 +218,75 @@ describe("the layer registry", () => {
     expect(DISPOSAL_COLOUR).not.toBe(SELECTION_COLOUR);
   });
 
+  it("registers both Montana rows against the marts they read", () => {
+    const wells = layerDef("mt-wells")!;
+    const paths = layerDef("mt-paths")!;
+
+    expect(wells.pendingSource).toBeFalsy();
+    expect(wells.provenance).toEqual([{ kind: "official", source: "marts.mt_wells_tile" }]);
+    expect(wells.styleLayers).toEqual(["mt-wells", "mt-wells-struck"]);
+    expect(paths.provenance).toEqual([{ kind: "official", source: "marts.mt_paths_tile" }]);
+    expect(paths.styleLayers).toEqual(["mt-paths"]);
+  });
+
+  it("puts Montana wells on by default, like the two basins beside it", () => {
+    expect(defaultLayerSet()).toContain("mt-wells");
+    expect(defaultLayerSet()).not.toContain("mt-paths");
+  });
+
+  it("predicts the Montana canvas rather than borrowing North Dakota's green", () => {
+    // 63% of the state's mapped wells are plugged. A swatch is a prediction about the canvas.
+    expect(layerDef("mt-wells")!.swatch).toEqual({
+      kind: "dot",
+      colours: [statusColour("plugged")],
+    });
+  });
+
+  it("says on the path row that the geometry is a centreline and not a survey", () => {
+    // cr_mt_paths_geometry_class_1 requires the distinction wherever the geometry is served,
+    // and the layer panel is where a reader meets it before the tile properties.
+    const subtitle = layerDef("mt-paths")!.subtitle;
+
+    expect(subtitle).toMatch(/cartographic centrelines/i);
+    expect(subtitle).toMatch(/never a survey/i);
+    expect(subtitle).toContain("cr_mt_paths_geometry_class_1");
+  });
+
+  it("states the Montana path coverage against the wells that actually produced", () => {
+    // cr_mt_paths_coverage_1: 2,836 of 20,021, not of the 42,026 surface points. A coverage
+    // figure stated against the point count would overstate it sevenfold.
+    const subtitle = layerDef("mt-paths")!.subtitle;
+
+    expect(subtitle).toContain("2,836");
+    expect(subtitle).toContain("20,021");
+    expect(subtitle).toContain("cr_mt_paths_coverage_1");
+  });
+
+  it("puts no length figure on either Montana row, and says on the path row why not", () => {
+    // The mart publishes no length column (cr_mt_paths_length_scope_1). A row carrying a
+    // number in feet or miles would be the only place in the app claiming a figure nothing
+    // serves — and the absence is stated rather than left for the reader to notice.
+    for (const id of ["mt-paths", "mt-wells"]) {
+      expect(layerDef(id)!.subtitle).not.toMatch(/[\d,.]+\s*(ft|mi|feet|miles)\b/i);
+    }
+    const paths = layerDef("mt-paths")!.subtitle;
+    expect(paths).toMatch(/no length is served/i);
+    expect(paths).toContain("cr_mt_paths_length_scope_1");
+  });
+
+  it("says on the wells row that Montana carries no basin, and why", () => {
+    // The peer-ladder guard, stated where a reader can act on it: Bakken is 4.6% of the state.
+    const subtitle = layerDef("mt-wells")!.subtitle;
+
+    expect(subtitle).toMatch(/no basin/i);
+    expect(subtitle).toContain("cr_mt_basin_scope_1");
+    expect(subtitle).not.toMatch(/williston|bakken play/i);
+  });
+
+  it("says the Montana wells row carries a completion year and never a spud one", () => {
+    expect(layerDef("mt-wells")!.subtitle).toMatch(/completion year, never a spud/i);
+  });
+
   it("reports a row for a retired layer as null instead of throwing", () => {
     expect(layerRowState("wells", new Set(["wells"]))).toBe(true);
     expect(layerRowState("wells", new Set())).toBe(false);

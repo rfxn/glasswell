@@ -1289,6 +1289,44 @@ MT_RULES: tuple[dict[str, object], ...] = (
         ),
         "evidence_url": WELL_LIST_URL,
     },
+    {
+        "rule_id": "cr_mt_paths_length_scope_1",
+        "source_id": GIS_PATHS_SOURCE,
+        "stage": "conform",
+        "rule_kind": "validity_filter",
+        "applies_to_fields": ["geom", "lateral_length_ft"],
+        "spec": {
+            "module_function": "glasswell.api.routers.wells:get_well",
+            "contract_note": (
+                "lateral_length_ft is null for every Montana well and the response carries this"
+                " rule id as the reason; no Montana mart publishes a length column either"
+            ),
+            "length_method": "not_served",
+            "basin_assigned": None,
+            "length_rule_source_if_defaulted": "nd_gis_horizontals_line",
+            "wellsub_values_summed_if_served": ["LT01", "LT02", "LT03", "LT04", "ST01", "WL01"],
+            "api10_with_multiple_paths": 875,
+            "vertical_wellbore_paths": 186,
+            "sidetrack_paths": 192,
+        },
+        "rule": "No lateral length is served for a Montana well; the figure is withheld and this"
+        " rule is what the response cites in its place.",
+        "rationale": (
+            "Two independent reasons, either sufficient. First, lengths.resolve_length_method is"
+            " keyed by basin and cr_mt_basin_scope_1 leaves Montana untagged, so the default"
+            " path resolves North Dakota's nd_gis_horizontals_line rule — a Montana figure"
+            " would carry a handle resolving to a rule about North Dakota geometry, which is the"
+            " naked-number failure R8 exists to prevent. Second, the figure would be a sum of"
+            " path lengths per API-10, and cr_mt_paths_subkey_1 measured that 875 wells carry"
+            " more than one path, so the sum double-counts them; 186 of the 4,173 paths are"
+            " WL01 vertical wellbores and 192 are ST01 sidetracks, neither of which is a lateral"
+            " whose plan-view length means what the field name says. Withholding is not a gap:"
+            " the geometry is still served and still drawn, and a consumer that needs a length"
+            " can measure the served line under a method of its own choosing and its own name."
+        ),
+        "evidence_url": GIS_PATHS_URL,
+        "code_ref": "glasswell/api/routers/wells.py",
+    },
 )
 
 _INSERT = """

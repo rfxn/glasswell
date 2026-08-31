@@ -7001,7 +7001,7 @@
                 "type": "null"
               }
             ],
-            "description": "CRS the length computation is defined on. Zone-free while length_method is geodesic, which is why it reads as the storage CRS.",
+            "description": "CRS the length computation is defined on. Zone-free while length_method is geodesic, which is why it reads as the storage CRS. Null where no length is served, because no computation was defined.",
             "title": "Compute Crs",
             "x-glasswell-glossary": "gt_crs_compute_crs"
           },
@@ -7076,11 +7076,11 @@
                 "type": "null"
               }
             ],
-            "description": "Total lateral length, projected into the basin compute CRS.",
+            "description": "Total lateral length, projected into the basin compute CRS. Null where a conformance rule withholds it; length_method then reads not_served.",
             "x-glasswell-glossary": "gt_wellbore"
           },
           "length_method": {
-            "description": "How lateral length was measured, from the compute-CRS rule the well's basin names: geodesic on the WGS84 ellipsoid, or projected into a named CRS.",
+            "description": "How lateral length was measured, from the compute-CRS rule the well's basin names: geodesic on the WGS84 ellipsoid, or projected into a named CRS. Reads not_served where a conformance rule withholds the length; links.length_rule names it.",
             "title": "Length Method",
             "type": "string",
             "x-glasswell-glossary": "gt_crs_compute_crs"
