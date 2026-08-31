@@ -273,6 +273,15 @@ export const TILE_FACET_PROPERTIES: Readonly<Record<string, readonly string[]>> 
   [MT_PATHS_SOURCE]: ["operator_name", "status_canonical"],
 };
 
+/**
+ * The tile pyramid keeps one feature per half CSS pixel at and below this zoom, ranked by
+ * md5(api10) — `marts/tiles.py` THIN_MAX_ZOOM and THIN_PIXELS, held equal to the Python by
+ * facet-pill.test.ts. The canvas is a sample down there, which nothing in this app has ever
+ * said on screen, and a filtered canvas is a sample of a sample.
+ */
+export const TILE_THIN_MAX_ZOOM = 7;
+export const TILE_THIN_PIXELS = 0.5;
+
 /** The property this layer can filter `dimension` by, or null where its tile publishes none. */
 export function facetTileProperty(layerId: string, dimension: string): string | null {
   const property = FACET_TILE_PROPERTY[dimension];

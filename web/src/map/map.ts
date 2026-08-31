@@ -34,8 +34,11 @@ import {
   retainVintage,
 } from "./counts.ts";
 import type { Bbox, CountsState, WellStatusSummary } from "./counts.ts";
+import { WELLS_BY_PREFIX } from "../explore/facets/wells-by.ts";
+import type { FacetBucket } from "../explore/facets/wells-by.ts";
 import { EXTENT_PARAM, countedBbox, extentFilterOn } from "./extent.ts";
-import { facetFromSearch } from "./facet-pick.ts";
+import { createFacetPill } from "./facet-pill.ts";
+import { PICK_PARAM, facetFromSearch } from "./facet-pick.ts";
 import { createHoverCard } from "./hover-card.ts";
 import { createLayerPanel } from "./layer-panel.ts";
 import { createLegend, legendEnabled } from "./legend.ts";
@@ -64,6 +67,7 @@ import { createThematicsKey } from "./thematics-key.ts";
 import { createTileBanner } from "./tile-banner.ts";
 import { tileRequest } from "./tile-request.ts";
 import { applyVariantStyling } from "./variant-style.ts";
+import { createWellsBySheet } from "./wells-by-sheet.ts";
 
 // Exported for the archive-failure test: the degradation path is the one part of the map
 // module that only runs when something is broken, so it is the part most likely to rot.
@@ -313,6 +317,45 @@ export function createMap(
     onOpen: () => panel.open(),
   });
 
+  // On the canvas rather than only inside the sheet: at 768 the sheet covers the map, so a
+  // reader who pressed a bucket and shut it would have no way to see or release the filter.
+  const facetPill = createFacetPill({
+    onClear: () => setPick(null, null),
+    onOpen: () => wellsBy.open(),
+  });
+
+  const wellsBy = createWellsBySheet({
+    setPanel: (values, mode) => {
+      for (const [key, value] of Object.entries(values)) {
+        setUrlParam(`${WELLS_BY_PREFIX}${key}`, value, mode);
+      }
+      // A press belongs to the dimension and the state it was made in: carried across either, it
+      // would narrow the canvas by a value the new ranking never listed.
+      if ("by" in values || "state" in values) setPick(null, null);
+      else wellsBy.refresh();
+    },
+    onPick: (value, bucket) => setPick(value, bucket),
+    // One sheet at a time: the two share a column and a geometry, and two open sheets are one
+    // sheet with the other's rows behind it.
+    onOpen: () => panel.close(),
+  });
+
+  /**
+   * A press, committed. `push` and not `replace`: narrowing the map to one operator is a
+   * decision the back button should undo, unlike a pan (`?extent`, `?layers`), which is churn.
+   */
+  function setPick(value: string | null, bucket: FacetBucket | null): void {
+    setUrlParam(PICK_PARAM, value, "push");
+    facet = facetFromSearch(window.location.search);
+    applyWellFilter();
+    invalidateDrawn();
+    facetPill.set(
+      facet ? { dimension: facet.dimension, value: facet.value, wells: bucket?.wells ?? null } : null,
+    );
+    facetPill.setZoom(map.getZoom());
+    wellsBy.refresh();
+  }
+
   // The handle stays live either way: refreshCounts() writes to a detached legend without
   // knowing it is off-canvas, so nothing has to test for the suppressed case at every call.
   const showLegend = legendEnabled(window.location.search);
@@ -320,9 +363,17 @@ export function createMap(
   // embed that asked for a clean canvas asked for both to go.
   chrome.append(
     ...(showLegend ? [pills.element, legend.element, thematics.element] : [pills.element]),
+    // Not behind `?legend=0`: an embed that asked for a clean canvas did not ask for a filter
+    // it cannot see. The pill is the applied state, not a key.
+    facetPill.element,
     panel.element,
+    wellsBy.element,
   );
-  map.addControl(new LayerButton(() => panel.toggle()), "top-right");
+  map.addControl(new SheetButton("Layers", "gw-layers-button", () => panel.toggle()), "top-right");
+  map.addControl(
+    new SheetButton("Wells by", "gw-wells-by-button", () => wellsBy.toggle()),
+    "top-right",
+  );
 
   function persist(): void {
     writeCapabilitySet(LAYER_STORAGE_KEY, on, layerIds());
@@ -631,12 +682,18 @@ export function createMap(
     map.on("sourcedata", (event) => {
       if (event.isSourceLoaded) scheduleCounts();
     });
-    map.on("zoom", applyWellFilter);
+    map.on("zoom", () => {
+      applyWellFilter();
+      // The thinning sentence is a fact about the zoom, and the pill is where it is stated.
+      facetPill.setZoom(map.getZoom());
+    });
     map.on("styleimagemissing", (event) => {
       if (event.id === "gw-strike") installStrikeGlyph();
     });
     panel.setZoom(map.getZoom());
     pills.setOn(on);
+    facetPill.set(facet ? { dimension: facet.dimension, value: facet.value, wells: null } : null);
+    facetPill.setZoom(map.getZoom());
   });
 
   map.on("moveend", () => {
@@ -693,12 +750,20 @@ export function createMap(
   return handle;
 }
 
-/** Opens the layer panel from the map's own control cluster, not from the app header. */
-class LayerButton implements maplibregl.IControl {
+/**
+ * Opens one of the map's sheets from its own control cluster, not from the app header. One
+ * class for both: they are the same control over the same frame, and the sheet each opens
+ * announces its own state back onto this button's `aria-expanded` off the class name.
+ */
+class SheetButton implements maplibregl.IControl {
+  private readonly label: string;
+  private readonly className: string;
   private readonly onClick: () => void;
   private container: HTMLElement | undefined;
 
-  constructor(onClick: () => void) {
+  constructor(label: string, className: string, onClick: () => void) {
+    this.label = label;
+    this.className = className;
     this.onClick = onClick;
   }
 
@@ -707,9 +772,9 @@ class LayerButton implements maplibregl.IControl {
     container.className = "maplibregl-ctrl maplibregl-ctrl-group";
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "gw-layers-button";
-    button.textContent = "Layers";
-    button.setAttribute("aria-label", "Layers");
+    button.className = this.className;
+    button.textContent = this.label;
+    button.setAttribute("aria-label", this.label);
     button.addEventListener("click", this.onClick);
     container.appendChild(button);
     this.container = container;

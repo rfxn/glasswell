@@ -179,10 +179,11 @@ document.addEventListener(
       return;
     }
     // Map chrome, so it is under the panels on the ladder and last here. The element rather
-    // than a handle: the panel is built inside createMap and never reaches this module, and
-    // it announces its own state off this attribute.
-    const layers = document.querySelector<HTMLElement>(".gw-layers:not([hidden])");
-    if (layers) layers.hidden = true;
+    // than a handle: the sheets are built inside createMap and never reach this module, and
+    // each announces its own state off this attribute. One selector for both, because only one
+    // of them is ever open.
+    const sheet = document.querySelector<HTMLElement>(".gw-sheet:not([hidden])");
+    if (sheet) sheet.hidden = true;
   },
   true,
 );

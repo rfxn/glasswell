@@ -104,8 +104,12 @@ export interface WellsByOptions {
   applied: Record<string, string[]>;
   /** The host's own press rule. Absent, the link-presence rule below stands. */
   bucketAffordance?(dimension: string, bucket: FacetBucket): BucketAffordance;
-  /** One line above the ranking naming the population these counts were taken over. */
-  scopeNote?: string;
+  /**
+   * One line above the ranking naming the population these counts were taken over. A function
+   * where the sentence needs the served state name: the map sheet says "every current well in
+   * North Dakota", and the name is the server's rather than a second copy of the code table.
+   */
+  scopeNote?: string | ((data: WellFacets) => string);
 }
 
 /** The collection's own refusal: a dimension /v1/wells accepts no filter for. */
@@ -493,10 +497,12 @@ function list(data: WellFacets, warnings: Warning[], options: WellsByOptions): H
   box.append(caption);
 
   // Above the ranking, never under it: a population stated after the numbers is a correction.
-  if (options.scopeNote) {
+  const scopeNote =
+    typeof options.scopeNote === "function" ? options.scopeNote(data) : options.scopeNote;
+  if (scopeNote) {
     const scope = document.createElement("p");
     scope.className = "gw-wells-by-scope";
-    scope.textContent = options.scopeNote;
+    scope.textContent = scopeNote;
     box.append(scope);
   }
 

@@ -45,7 +45,7 @@ export interface LayerPanelHandle {
  */
 export function createLayerPanel(options: LayerPanelOptions): LayerPanelHandle {
   const element = document.createElement("section");
-  element.className = "gw-layers";
+  element.className = "gw-sheet gw-layers";
   element.id = "gw-layers";
   element.hidden = true;
   element.setAttribute("aria-label", "Map layers");

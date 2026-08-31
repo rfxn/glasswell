@@ -1,5 +1,5 @@
 import { parseState } from "../app/state.ts";
-import { WELLS_BY_PREFIX, panelState } from "../explore/facets/wells-by.ts";
+import { DIMENSIONS, WELLS_BY_PREFIX, panelState } from "../explore/facets/wells-by.ts";
 import type { FacetSelection } from "./style.ts";
 
 /**
@@ -21,4 +21,18 @@ export function facetFromSearch(search: string): FacetSelection | null {
   const value = new URLSearchParams(search).get(PICK_PARAM);
   if (value === null || value === "") return null;
   return { dimension: panelState(parseState(search))["by"] as string, value };
+}
+
+/**
+ * The press in the shape `narrowedBy` compares against: the `/v1/wells` filter the pressed
+ * dimension becomes, and the state it was counted in — which is exactly what `_bucket_link`
+ * publishes, so the pressed bucket matches its own link and no other. Empty where nothing is
+ * pressed, or where the dimension is one the collection accepts no filter for.
+ */
+export function appliedFilters(search: string): Record<string, string[]> {
+  const facet = facetFromSearch(search);
+  if (!facet) return {};
+  const name = DIMENSIONS.find((entry) => entry.id === facet.dimension)?.filter;
+  if (!name) return {};
+  return { [name]: [facet.value], state: [panelState(parseState(search))["state"] as string] };
 }

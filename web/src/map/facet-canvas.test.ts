@@ -26,8 +26,11 @@ class FakeMap {
     (handlers.get(event) ?? handlers.set(event, []).get(event)!).push(handler);
     return this;
   }
+  // Attached, not merely constructed: the sheets announce their state back onto these buttons
+  // through a MutationObserver, and a control off the document is a control nothing observes.
   addControl(control: { onAdd?: () => HTMLElement }): this {
-    control.onAdd?.();
+    const element = control.onAdd?.();
+    if (element) document.body.append(element);
     return this;
   }
   getZoom(): number {
@@ -84,6 +87,46 @@ vi.mock("maplibre-gl", () => ({
   },
 }));
 
+const figure = (value: string, handle: string) => ({ value, unit: "wells", d: handle });
+
+/** One state, two operators — enough for a press, an un-press and the pill's figure. */
+const FACETS = {
+  data: {
+    state: "33",
+    state_name: "North Dakota",
+    dimension: "operator",
+    dimension_title: "current operator, as the source reported it",
+    sort: "count",
+    order: "desc",
+    q: null,
+    top: 15,
+    distinct_values: 1590,
+    caption: "The 15 operator values with the most wells, of 1,590 in North Dakota.",
+    buckets: [
+      {
+        value: "HESS CORP",
+        wells: figure("3412", "drv_test#operator=HESS"),
+        links: { wells: "/v1/wells?operator=HESS+CORP&state=33" },
+      },
+    ],
+    remainder: null,
+    absence: null,
+    wells: figure("87634", "drv_test#wells"),
+    matched_wells: null,
+    states: [{ code: "33", name: "North Dakota", loaded: true }],
+    rules: [],
+  },
+  meta: {
+    request_id: "01M0JWJ6ASE1P30C37CVC61WYB",
+    as_of: { requested: "latest", resolved: "2026-08-01" },
+    source_freshness: {},
+    labels: {},
+    next_cursor: null,
+    warnings: [],
+  },
+  links: {},
+};
+
 const BARE_STYLE = (): StyleSpecification => ({
   version: 8,
   sources: {},
@@ -131,7 +174,10 @@ describe("a Wells-By press written onto the canvas", () => {
     zoomNow = 12;
     vi.resetModules();
     window.localStorage.clear();
-    globalThis.fetch = (() => Promise.reject(new Error("offline"))) as typeof fetch;
+    globalThis.fetch = ((input: RequestInfo | URL) =>
+      String(input).includes("/v1/wells/facets")
+        ? Promise.resolve(new Response(JSON.stringify(FACETS), { status: 200 }))
+        : Promise.reject(new Error("offline"))) as typeof fetch;
   });
 
   afterEach(() => {
@@ -206,5 +252,83 @@ describe("a Wells-By press written onto the canvas", () => {
     await mount("?wb.by=completion_year&wb.pick=2021");
 
     expect(JSON.stringify(built("mt-wells"))).not.toContain("completion_year");
+  });
+});
+
+describe("the press, from the sheet to the canvas", () => {
+  beforeEach(() => {
+    writes.length = 0;
+    handlers.clear();
+    transformStyle = null;
+    zoomNow = 12;
+    vi.resetModules();
+    window.localStorage.clear();
+    globalThis.fetch = ((input: RequestInfo | URL) =>
+      String(input).includes("/v1/wells/facets")
+        ? Promise.resolve(new Response(JSON.stringify(FACETS), { status: 200 }))
+        : Promise.reject(new Error("offline"))) as typeof fetch;
+  });
+
+  afterEach(() => {
+    document.body.replaceChildren();
+    window.history.replaceState({}, "", "/");
+  });
+
+  const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("commits the bucket with a history entry and narrows the canvas to it", async () => {
+    await mount("?map=12/47.8/-102.8");
+    const sheet = document.querySelector<HTMLElement>("#gw-wells-by")!;
+    document.querySelector<HTMLButtonElement>(".gw-wells-by-button")!.click();
+    await settle();
+
+    const pushes: string[] = [];
+    const original = window.history.pushState.bind(window.history);
+    window.history.pushState = ((state: unknown, title: string, url: string) => {
+      pushes.push(url);
+      original(state, title, url);
+    }) as typeof window.history.pushState;
+
+    sheet.querySelector<HTMLButtonElement>("button.gw-wells-by-value")!.click();
+    await settle();
+    window.history.pushState = original;
+
+    // A decision, not viewport churn: the back button undoes a press.
+    expect(pushes.some((url) => url.includes("wb.pick=HESS"))).toBe(true);
+    expect(carries(lastWrite("wells"), "operator_name", "HESS CORP")).toBe(true);
+    // And the layers the press cannot reach are still rewritten, not left behind.
+    expect(carries(lastWrite("disposal-wells"), "operator_name", "HESS CORP")).toBe(true);
+  });
+
+  it("puts the panel's own figure on the pill, and its handle", async () => {
+    await mount("?map=12/47.8/-102.8");
+    document.querySelector<HTMLButtonElement>(".gw-wells-by-button")!.click();
+    await settle();
+    document
+      .querySelector<HTMLElement>("#gw-wells-by")!
+      .querySelector<HTMLButtonElement>("button.gw-wells-by-value")!
+      .click();
+    await settle();
+
+    const pill = document.querySelector<HTMLElement>(".gw-facet-pill")!;
+    expect(pill.hidden).toBe(false);
+    expect(pill.querySelector(".gw-facet-pill-count")?.textContent).toBe("3,412");
+    expect(pill.querySelector<HTMLButtonElement>(".gw-handle")?.dataset["handle"]).toBe(
+      "drv_test#operator=HESS",
+    );
+  });
+
+  it("opens one sheet at a time, because the two share a column", async () => {
+    await mount("?map=12/47.8/-102.8");
+    const layers = document.querySelector<HTMLElement>("#gw-layers")!;
+    const sheet = document.querySelector<HTMLElement>("#gw-wells-by")!;
+
+    document.querySelector<HTMLButtonElement>(".gw-layers-button")!.click();
+    expect(layers.hidden).toBe(false);
+
+    document.querySelector<HTMLButtonElement>(".gw-wells-by-button")!.click();
+    await settle();
+    expect(layers.hidden).toBe(true);
+    expect(sheet.hidden).toBe(false);
   });
 });
