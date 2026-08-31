@@ -541,6 +541,45 @@ TX_RULES: tuple[dict[str, object], ...] = (
         "evidence_url": EWA_MANUAL,
     },
     {
+        "rule_id": "cr_tx_operator_absence_1",
+        "source_id": "tx_wellbore_ewa_csv",
+        "stage": "parse",
+        "rule_kind": "parse_directive",
+        "applies_to_fields": ["operator_name", "operator_no"],
+        "spec": {
+            "normalises_to": None,
+            "current_tx_wells": 359421,
+            "with_operator": 289382,
+            "without_operator": 70039,
+            "causes": [
+                {"cause": "blank_ewa_operator_field", "source_id": "tx_wellbore_ewa_csv",
+                 "wells": 39390},
+                {"cause": "no_ewa_wellbore_record", "source_id": "tx_gis_wells_county",
+                 "wells": 30649},
+            ],
+        },
+        "rule": (
+            "A TX well with no operator name is a well the Commission's files did not report one"
+            " for. It is never withheld, never imputed, and never folded into another bucket."
+        ),
+        "rationale": (
+            "Measured on the deployed database over all 359,421 current TX wells: 289,382 carry"
+            " an operator and 70,039 do not, in two populations that do not overlap. 39,390 were"
+            " promoted from an EWA wellbore record whose operator field is empty; 30,649 reached"
+            " canonical from a county GIS layer and have no EWA wellbore record at all, so no"
+            " operator was ever carried by the source that created them. Neither is withholding:"
+            " cr_tx_ewa_measures_1 is the only TX withholding rule and it covers TOTAL DEPTH and"
+            " COMPLETION DATE, stating explicitly that the operator beside them is a separate"
+            " filing. Texas has no operator registry comparable to NM's OGRID and"
+            " lineage.operator_aliases carries no TX row, so an absent name cannot be recovered"
+            " by lookup and is not guessed. The distinction matters because /v1/wells/facets"
+            " counts wells by operator: were this absence ranked as a value it would outrank"
+            " every real operator in the state, and were it dropped the buckets would not sum to"
+            " the population."
+        ),
+        "evidence_url": EWA_MANUAL,
+    },
+    {
         "rule_id": "cr_tx_lease_key_1",
         "source_id": "tx_wellbore_ewa_csv",
         "stage": "join",

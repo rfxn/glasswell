@@ -78,6 +78,11 @@ and serves uvicorn on `127.0.0.1` — `GW_ROOT` points it at any worktree, `GW_S
 optional python file exec'd with `connection` for track-specific rows. `make serve-branch`
 runs it; the printed key-file path carries the owner key.
 
+It refuses to start when the `web/dist` it would mount is older than `web/src`: the bundle is
+what a browser gate photographs, and a stale one silently judges code that was never under
+review (DR-P7). Build first, or set `GW_WEB_STALE=ok` — which is right when the front end
+under judgement is a dev server proxying `/v1` here rather than the mounted bundle.
+
 Running `smoke.mjs` against a serve-branch instance is a useful boot check, but two of its
 assertions read real ND data the fixture does not carry (viewport tile coverage and the
 `dmr.nd.gov` acquisition url) — expect 11/13 there, 13/13 only against a deployed instance.

@@ -2402,6 +2402,39 @@
         "title": "EnvelopeModel[WellDetail]",
         "type": "object"
       },
+      "EnvelopeModel_WellFacets_": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "$ref": "#/components/schemas/WellFacets"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[WellFacets]",
+        "type": "object"
+      },
       "EnvelopeModel_WellNeighbors_": {
         "properties": {
           "_explain": {
@@ -2990,6 +3023,139 @@
           "emitted_by_this_slice"
         ],
         "title": "ErrorType",
+        "type": "object"
+      },
+      "FacetAbsence": {
+        "description": "Wells the dimension has no value for, as their own named bucket.",
+        "properties": {
+          "detail": {
+            "description": "What an absent value means on this source.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "label": {
+            "description": "What the bucket is called wherever it is shown.",
+            "title": "Label",
+            "type": "string"
+          },
+          "links": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "`rule` resolves the decision, when there is one.",
+            "title": "Links",
+            "type": "object"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The conformance rule that decided it, or null where none is registered.",
+            "title": "Rule Id",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "wells": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Wells with no value for this dimension."
+          }
+        },
+        "required": [
+          "label",
+          "detail",
+          "rule_id",
+          "wells",
+          "links"
+        ],
+        "title": "FacetAbsence",
+        "type": "object"
+      },
+      "FacetBucket": {
+        "description": "One value of the dimension and how many current wells carry it.",
+        "properties": {
+          "links": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "`wells` narrows the collection to this bucket, in this state. Absent where the collection accepts no filter for the dimension, rather than published as a link that narrows to something else. Note that `operator` is matched by the collection as a case-insensitive substring while this bucket is an exact group, so an operator name that contains a shorter one returns the longer name's rows too; the count here is the exact group and is the figure.",
+            "title": "Links",
+            "type": "object"
+          },
+          "value": {
+            "description": "The value as the source reported it; never normalised here.",
+            "title": "Value",
+            "type": "string"
+          },
+          "wells": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Wells carrying this value, in the scoped state."
+          }
+        },
+        "required": [
+          "value",
+          "wells",
+          "links"
+        ],
+        "title": "FacetBucket",
+        "type": "object"
+      },
+      "FacetRemainder": {
+        "description": "What the served list leaves out, counted rather than implied.",
+        "properties": {
+          "detail": {
+            "description": "What the remainder is, in words, for a reader who skims.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "values": {
+            "description": "Distinct values ranked below the cut.",
+            "title": "Values",
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Cardinality of the value list below the served cut. The wells those values hold is the figure beside it and carries a handle."
+          },
+          "wells": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Wells held by every value below the cut, summed."
+          }
+        },
+        "required": [
+          "values",
+          "wells",
+          "detail"
+        ],
+        "title": "FacetRemainder",
+        "type": "object"
+      },
+      "FacetState": {
+        "description": "A state this operation knows about, and whether the spine currently holds wells for it.",
+        "properties": {
+          "code": {
+            "description": "API state code.",
+            "title": "Code",
+            "type": "string",
+            "x-glasswell-not-a-figure": "API state code carried as reported; an identifier, not a quantity."
+          },
+          "loaded": {
+            "description": "False where the spine holds no well for it, which is a gated or unrun ingest and not an empty facet list.",
+            "title": "Loaded",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "The state's name, in the `Noun (Full state name)` convention.",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "loaded"
+        ],
+        "title": "FacetState",
         "type": "object"
       },
       "FigureModel": {
@@ -7267,6 +7433,161 @@
           "surface_point"
         ],
         "title": "WellDetail",
+        "type": "object"
+      },
+      "WellFacets": {
+        "description": "SB-04 \u00a72.2 data for one dimension of one state.",
+        "properties": {
+          "absence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FacetAbsence"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Absent when every well in scope carries a value."
+          },
+          "buckets": {
+            "description": "The leading values, ranked as asked.",
+            "items": {
+              "$ref": "#/components/schemas/FacetBucket"
+            },
+            "title": "Buckets",
+            "type": "array"
+          },
+          "caption": {
+            "description": "What this list is, in one sentence, including what it is a cut of. Served rather than composed by the client so the count and the sentence cannot disagree.",
+            "title": "Caption",
+            "type": "string"
+          },
+          "dimension": {
+            "description": "Which dimension the wells are counted by.",
+            "title": "Dimension",
+            "type": "string"
+          },
+          "dimension_title": {
+            "description": "What the dimension means, in one line.",
+            "title": "Dimension Title",
+            "type": "string"
+          },
+          "distinct_values": {
+            "description": "Distinct non-absent values the scope holds, before the cut.",
+            "title": "Distinct Values",
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Cardinality of a value list, not a measured or modelled petroleum figure. How many operators exist is a fact about the vocabulary; how many wells they hold is the figure beside it, and that one carries a handle."
+          },
+          "matched_wells": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FigureModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Wells under the search, absent when no search was asked for. `buckets` + `remainder` sum to it, because both are inside the search and `absence` is not."
+          },
+          "order": {
+            "description": "Echo of the direction asked for.",
+            "title": "Order",
+            "type": "string"
+          },
+          "q": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Echo of the search, or null when the whole state ranked.",
+            "title": "Q"
+          },
+          "remainder": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FacetRemainder"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Absent when the list is complete; present whenever anything was cut."
+          },
+          "rules": {
+            "description": "Every conformance rule these counts cite; each one is linked.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Rules",
+            "type": "array",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "sort": {
+            "description": "Echo of the ranking asked for.",
+            "title": "Sort",
+            "type": "string"
+          },
+          "state": {
+            "description": "API state code the counts are scoped to.",
+            "title": "State",
+            "type": "string",
+            "x-glasswell-not-a-figure": "API state code carried as reported; an identifier, not a quantity."
+          },
+          "state_name": {
+            "description": "The state's name, so a client renders `Wells (North Dakota)` without carrying a second copy of the mapping.",
+            "title": "State Name",
+            "type": "string"
+          },
+          "states": {
+            "description": "Every state this operation knows, loaded or not, so a picker can offer them all and say which one has nothing behind it yet.",
+            "items": {
+              "$ref": "#/components/schemas/FacetState"
+            },
+            "title": "States",
+            "type": "array"
+          },
+          "top": {
+            "description": "The cut asked for. `buckets` is at most this long.",
+            "title": "Top",
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Echo of the requested page cut; it counts nothing in the data. Served because a reader must be able to see the list is a cut of fifteen without counting the array."
+          },
+          "wells": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FigureModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Every current well in the scoped state, absent when the state holds none."
+          }
+        },
+        "required": [
+          "state",
+          "state_name",
+          "dimension",
+          "dimension_title",
+          "sort",
+          "order",
+          "q",
+          "top",
+          "distinct_values",
+          "caption",
+          "buckets",
+          "remainder",
+          "absence",
+          "wells",
+          "matched_wells",
+          "states",
+          "rules"
+        ],
+        "title": "WellFacets",
         "type": "object"
       },
       "WellNeighbors": {
@@ -14573,6 +14894,25 @@
             }
           },
           {
+            "description": "API state code, e.g. 33 for North Dakota. Matched exactly.",
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d{2}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "API state code, e.g. 33 for North Dakota. Matched exactly.",
+              "title": "State"
+            }
+          },
+          {
             "description": "Well type code exactly as the source reported it, e.g. SWD.",
             "in": "query",
             "name": "well_type",
@@ -14777,8 +15117,10 @@
             "api10",
             "status",
             "producing",
+            "well_type",
             "operator",
             "county",
+            "state",
             "bbox",
             "q"
           ],
@@ -14835,12 +15177,268 @@
             "so": "Substring-matches the name the operator filed. Names repeat across operators and change with the lease, so this narrows a list to read; it does not identify a well. Use api10 for that.",
             "x-glasswell-glossary": "gt_well_name"
           },
+          "state": {
+            "so": "Matches the API state code exactly \u2014 the first two digits of every API-10 in the answer. It is what scopes a `/v1/wells/facets` bucket link to the state the bucket was counted in; without it a county or status filter returns every jurisdiction that happens to share the code.",
+            "x-glasswell-glossary": "gt_api_10_api_12_api_14"
+          },
           "status": {
             "so": "Filters on the canonical value rather than the code the state published, so `active` here means every source's version of active. A reported code with no mapping is quarantined, so it matches no status at all.",
             "x-glasswell-glossary": "gt_well_status"
           },
           "well_type": {
             "so": "Matches the well type code exactly as the regulator filed it \u2014 SWD, WI, OG \u2014 with no decode and no classing, the same verbatim code the well record serves. Which codes make up a class is a conformance rule's declaration (cr_nd_well_type_disposal_1 for ND injection), so scoping the spine to a class means asking for each code the rule names."
+          }
+        }
+      }
+    },
+    "/v1/wells/facets": {
+      "get": {
+        "description": "How many current wells carry each value of one dimension, ranked, for one state. This is the question a screening pass opens with \u2014 who operates here, what is in this county, how old is the completion population \u2014 asked of the spine rather than of a page of it. The population is every current well the state has promoted, so the ranking does not move with the viewport, with paging, or with which rows a grid has fetched. Scope is one state and is required. Operator names arrive per source and `lineage.operator_aliases` carries no row for any state served here, so the same company spelled two ways in two jurisdictions is two values; summing them across a border would be an aliasing decision no conformance rule has made, and this operation declines to make it silently (R8). Three things about what the list is not are counted rather than implied: `remainder` holds every value below the cut and the wells they carry, `distinct_values` is how many values the state holds in total, and `absence` is its own named bucket for wells the dimension has no value for. The absence bucket never enters the ranking \u2014 on the current Texas load it would outrank all 9,369 operators \u2014 and never enters the search, because a well with no name matches no name. With no search in force, `buckets` + `remainder` + `absence` sum to `wells`. Under a `q` the ranked arms are searched and `absence` is not, so `buckets` + `remainder` sum to `matched_wells` instead and that is what the served figures reconcile against. Every count is a figure with a derivation handle, so a bucket resolves at /v1/explain to the government file its wells were promoted from. Because each distinct dimension, search and cut persists exact response evidence, this operation is capped at 60 requests per principal per UTC minute. It does not return the wells themselves \u2014 each bucket links to /v1/wells, which does.",
+        "operationId": "get_well_facets",
+        "parameters": [
+          {
+            "description": "API state code, e.g. 33 for North Dakota. Required.",
+            "in": "query",
+            "name": "state",
+            "required": true,
+            "schema": {
+              "description": "API state code, e.g. 33 for North Dakota. Required.",
+              "pattern": "^\\d{2}$",
+              "title": "State",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The dimension to count wells by.",
+            "in": "query",
+            "name": "by",
+            "required": true,
+            "schema": {
+              "description": "The dimension to count wells by.",
+              "enum": [
+                "operator",
+                "county",
+                "status",
+                "well_type",
+                "completion_year"
+              ],
+              "title": "By",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Values to serve, 15 by default.",
+            "in": "query",
+            "name": "top",
+            "required": false,
+            "schema": {
+              "default": 15,
+              "description": "Values to serve, 15 by default.",
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Top",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Case-insensitive substring of the value.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive substring of the value.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Rank by well count or by value.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "count",
+              "description": "Rank by well count or by value.",
+              "enum": [
+                "count",
+                "value"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Ranking direction.",
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "description": "Ranking direction.",
+              "enum": [
+                "desc",
+                "asc"
+              ],
+              "title": "Order",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+              "title": "As Of"
+            }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_WellFacets_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Wells by a dimension, counted",
+        "tags": [
+          "wells"
+        ],
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {
+            "by": "operator",
+            "state": "33",
+            "top": 15
+          }
+        },
+        "x-glasswell-semantics": {
+          "as_of": {
+            "so": "Counts the wells as they were described on that knowledge date. A status or operator restatement appends a row, so an earlier cut ranks the earlier operator and the totals move with it.",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "by": {
+            "so": "Which column the wells are grouped by. Each one is also a filter /v1/wells accepts, so every bucket links to the rows behind it.",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "explain": {
+            "so": "Inlines the chain behind every bucket count, the remainder and the absence bucket under `_explain`. A list of fifteen is sixteen separate /v1/explain calls by hand.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "explain_depth": {
+            "so": "A bucket resolves to the promotion that wrote its wells and the file they came from, so three levels reaches the manifest.",
+            "x-glasswell-glossary": "gt_derivation_handle"
+          },
+          "q": {
+            "so": "Case-insensitive substring, applied to every value in the state before the ranking \u2014 not to the served page. Searching 9,369 operators for the one you mean is the case this exists for, so it cannot be a filter over fifteen rows.",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "state": {
+            "so": "The API state code, the first two digits of every API-10 in the bucket. Required, and refused when the spine holds no well for it: a state whose ingest has not run is a different answer from a state with no operators, and only one of them is worth serving as an empty list.",
+            "x-glasswell-glossary": "gt_api_10_api_12_api_14"
           }
         }
       }

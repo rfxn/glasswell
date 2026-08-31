@@ -8,6 +8,7 @@ from pathlib import Path
 
 import psycopg
 from fastapi.testclient import TestClient
+from psycopg.types.json import Jsonb
 
 from glasswell.db.migrate import discover_migrations
 from glasswell.status.collector import SNAPSHOT_ENV, _inventory
@@ -94,6 +95,8 @@ def _metrics(dataset: DatasetInventory) -> dict[str, int]:
 
 NM_API10S = ("3002540209", "3004508708")
 NM_POOLS = ("96269", "72319")
+# The grain New Mexico files and is counted on: one entity per well and completion pool.
+NM_ENTITY_KEYS = tuple(f"{api10}:{pool}" for api10, pool in zip(NM_API10S, NM_POOLS, strict=True))
 
 
 def _seed_new_mexico_production(connection: psycopg.Connection) -> int:
@@ -456,7 +459,7 @@ def test_production_is_inventoried_under_the_state_that_reported_it(
         inventory["canonical.production_monthly/nm"],
     )
     assert (nd.scope, nm.scope) == ("North Dakota", "New Mexico")
-    assert _metrics(nm) == {"rows": nm_rows, "wells": len(NM_API10S), "months": 2}
+    assert _metrics(nm) == {"rows": nm_rows, "entities": len(NM_ENTITY_KEYS), "months": 2}
     with seeded.cursor() as cursor:
         cursor.execute(
             "select count(*), count(distinct api10), count(distinct production_month)"
@@ -576,3 +579,183 @@ def test_new_mexico_production_reports_zero_before_its_rows_arrive(
     assert nm.scope == "New Mexico"
     assert nm.valid_from is None
     assert nm.valid_to is None
+
+
+def _register_production_source(
+    connection: psycopg.Connection,
+    *,
+    source_id: str,
+    jurisdiction: str | None,
+    rule_id: str,
+    spec_jurisdiction: str | None = None,
+) -> None:
+    """Everything a state has to add to be inventoried: a source row and a rule row.
+
+    `spec_jurisdiction` writes a jurisdiction literal into the rule spec beside the
+    discriminator the rule declares, so a test can register a disagreement and name which of
+    the two the collector resolved.
+    """
+    spec: dict[str, str] = {
+        "module_function": "glasswell.status.collector:_production_inventory",
+        "contract_note": "registered for the inventory",
+        "discriminator": "lineage.sources.jurisdiction",
+        "entity_identity_column": "entity_key",
+    }
+    if spec_jurisdiction is not None:
+        spec["jurisdiction"] = spec_jurisdiction
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.sources (source_id, name, jurisdiction)"
+            " values (%s, %s, %s) on conflict (source_id) do nothing",
+            (source_id, f"{jurisdiction or source_id} production", jurisdiction),
+        )
+        cursor.execute(
+            "insert into lineage.conformance_rule_publications"
+            " (rule_id, published_vintage, evidence_tag, evidence_commit)"
+            " values (%s, current_date, 'UNRELEASED', %s)",
+            (rule_id, "0" * 40),
+        )
+        cursor.execute(
+            "insert into lineage.conformance_rules (rule_id, rule_family, source_id, stage,"
+            " applies_to_fields, rule_kind, spec, rule, rationale, effective_from)"
+            " values (%s, %s, %s, 'join', '{source_id}', 'code_ref', %s, 'r', 'r', current_date)",
+            (rule_id, rule_id.rsplit("_", 1)[0], source_id, Jsonb(spec)),
+        )
+
+
+def test_the_registered_source_decides_the_jurisdiction_not_a_literal_in_the_rule_spec(
+    seeded: psycopg.Connection,
+) -> None:
+    """R8: the rule declares `lineage.sources.jurisdiction`, so that column has to be what runs.
+
+    A `jurisdiction` key in the same spec is a second copy of the fact. A collector that
+    preferred it would leave the declared discriminator unread while every rationale served at
+    /conformance went on saying the source's own registration is what buckets the row.
+    """
+    _register_production_source(
+        seeded,
+        source_id="ok_occ_production",
+        jurisdiction="OK",
+        rule_id="cr_ok_inventory_jurisdiction_1",
+        spec_jurisdiction="ZZ",
+    )
+
+    datasets, _ = _inventory(seeded, datetime(2026, 8, 30, 18, tzinfo=UTC))
+    inventory = {dataset.dataset_id: dataset for dataset in datasets}
+
+    assert inventory["canonical.production_monthly/ok_occ_production"].scope == "OK", (
+        "the rule spec's own literal decided the bucket, so the discriminator the rule"
+        " registers and the rationale it publishes are both unread"
+    )
+
+
+def test_a_second_in_force_rule_for_one_source_does_not_inventory_it_twice(
+    seeded: psycopg.Connection,
+) -> None:
+    """The `_1` suffix says a superseding `_2` is expected, and rules are append-only.
+
+    Closing `_1`'s effective window is a separate edit nothing enforces, so the realistic
+    mistake is two in-force rules naming one source. Emitting one dataset per rule served the
+    same dataset_id twice — and, before the discriminator was fixed, twice under two different
+    scopes — which no consumer keying on dataset_id can even represent.
+    """
+    for suffix, jurisdiction in ((1, "OK"), (2, "OK")):
+        _register_production_source(
+            seeded,
+            source_id="ok_occ_production",
+            jurisdiction=jurisdiction,
+            rule_id=f"cr_ok_inventory_jurisdiction_{suffix}",
+        )
+
+    datasets, _ = _inventory(seeded, datetime(2026, 8, 30, 18, tzinfo=UTC))
+    emitted = [
+        dataset.dataset_id
+        for dataset in datasets
+        if dataset.dataset_id == "canonical.production_monthly/ok_occ_production"
+    ]
+
+    assert len(emitted) == 1, f"one source, {len(emitted)} datasets under one id"
+    assert len({dataset.dataset_id for dataset in datasets}) == len(datasets)
+
+
+def test_a_new_state_is_inventoried_by_registering_a_rule_not_by_editing_the_collector(
+    seeded: psycopg.Connection,
+) -> None:
+    """The scaling property, asserted directly.
+
+    Every state used to be two more arms in one filtered aggregate over the whole table, so the
+    thirtieth state's arms read the other twenty-nine states' rows on every fifteen-minute run.
+    A state now registers a row and is counted by a query bounded to its own source.
+    """
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select source_manifest_id, derivation_id from canonical.production_monthly limit 1"
+        )
+        manifest_id, derivation_id = cursor.fetchone()
+    _register_production_source(
+        seeded,
+        source_id="ok_occ_production",
+        jurisdiction="OK",
+        rule_id="cr_ok_inventory_jurisdiction_1",
+    )
+    with seeded.cursor() as cursor:
+        cursor.executemany(
+            "insert into canonical.production_monthly (entity_type, entity_key, reporting_level,"
+            " api10, production_month, stream, source_id, report_vintage, volume, unit,"
+            " granularity, value_hash, source_manifest_id, derivation_id, null_semantics)"
+            " values ('well', %(api10)s, 'well', %(api10)s, %(month)s, 'oil',"
+            " 'ok_occ_production', date '2026-08-30', 1.0, 'bbl', 'well_observed',"
+            " %(value_hash)s, %(manifest)s, %(derivation)s, 'reported')",
+            [
+                {
+                    "api10": api10,
+                    "month": date(2026, month, 1),
+                    "value_hash": f"ok{index:062d}",
+                    "manifest": manifest_id,
+                    "derivation": derivation_id,
+                }
+                for index, (api10, month) in enumerate(
+                    (api10, month) for api10 in ("3500100001", "3500100002") for month in (5, 6)
+                )
+            ],
+        )
+
+    datasets, _ = _inventory(seeded, datetime(2026, 8, 30, 18, tzinfo=UTC))
+    inventory = {dataset.dataset_id: dataset for dataset in datasets}
+
+    entry = inventory["canonical.production_monthly/ok_occ_production"]
+    assert entry.scope == "OK", "an unnamed jurisdiction must read as its own code, not as a guess"
+    assert _metrics(entry) == {"rows": 4, "entities": 2, "months": 2}
+    assert entry.valid_from == "2026-05-01"
+    assert entry.valid_to == "2026-06-01"
+
+
+def test_the_lease_grain_is_counted_on_the_identity_it_actually_carries(
+    seeded: psycopg.Connection,
+) -> None:
+    """A preservation test: every assertion below already held before the source-scoped rewrite.
+
+    The Montana PRU rows carry a lease entity_key and a null api10, so counting distinct api10
+    over them returns zero while the rows plainly exist — the failure mode that made an
+    api10-prefix discriminator unusable for this grain. The filtered aggregate this replaced
+    already counted the lease grain on entity_key; what is pinned here is that moving to one
+    query per source did not put the api10 identity back. It is not coverage of anything new.
+    """
+    _seed_montana_production(seeded)
+
+    datasets, _ = _inventory(seeded, datetime(2026, 8, 30, 18, tzinfo=UTC))
+    lease = {dataset.dataset_id: dataset for dataset in datasets}[
+        "canonical.production_monthly/mt-lease"
+    ]
+    counted = _metrics(lease)
+
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select count(distinct api10), count(distinct entity_key), count(*)"
+            " from canonical.production_monthly where source_id = 'mt_bogc_pru_production'"
+        )
+        distinct_api10, distinct_entity, rows = cursor.fetchone()
+
+    assert distinct_api10 == 0, "the fixture stopped exercising the null-api10 grain"
+    assert counted["lease_units"] == distinct_entity > 0
+    assert counted["rows"] == rows

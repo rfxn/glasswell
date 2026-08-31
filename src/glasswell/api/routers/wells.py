@@ -65,6 +65,7 @@ API10_PATTERN = r"^\d{10}$"
 # API-14 literal a reader is as likely to be holding.
 API_IDENTITY_PATTERN = r"^\d{10}(?:\d{4})?$"
 BBOX_PARTS = 4
+STATE_CODE_PATTERN = r"^\d{2}$"
 LON_LIMIT = 180.0
 LAT_LIMIT = 90.0
 COUNT_UNIT = "wells"
@@ -643,7 +644,20 @@ def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
             # `/producing` is a facet but not yet a default column: the explorer's grid
             # fixture is recorded from a served build, and this branch cannot re-record it,
             # so declaring the column would name one no recorded row carries.
-            facets=["api10", "status", "producing", "operator", "county", "bbox", "q"],
+            # `well_type` is here because a "Wells by well type" bucket narrows the grid by it:
+            # an applied filter the dataset does not declare renders no chip and cannot be
+            # cleared on its own.
+            facets=[
+                "api10",
+                "status",
+                "producing",
+                "well_type",
+                "operator",
+                "county",
+                "state",
+                "bbox",
+                "q",
+            ],
             columns={
                 "default": [
                     "/api10",
@@ -717,6 +731,15 @@ def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
                     "Matches the county on the permit, which is fixed inside the API number and"
                     " never restated. A lateral that produces in the next county still answers"
                     " to the county it was permitted in."
+                ),
+            },
+            state={
+                "glossary": "gt_api_10_api_12_api_14",
+                "so": (
+                    "Matches the API state code exactly — the first two digits of every API-10"
+                    " in the answer. It is what scopes a `/v1/wells/facets` bucket link to the"
+                    " state the bucket was counted in; without it a county or status filter"
+                    " returns every jurisdiction that happens to share the code."
                 ),
             },
             well_type={
@@ -806,6 +829,16 @@ def list_wells(
     county: Annotated[
         str | None, Query(description="County code as recorded at permit.")
     ] = None,
+    # Added for `/v1/wells/facets`: a facet bucket is counted within one state, so the link it
+    # publishes has to narrow to that state or it answers with a different population. Without
+    # it `?county=003` returns Texas county 003 and North Dakota county 003 together.
+    state: Annotated[
+        str | None,
+        Query(
+            description="API state code, e.g. 33 for North Dakota. Matched exactly.",
+            pattern=STATE_CODE_PATTERN,
+        ),
+    ] = None,
     well_type: Annotated[
         str | None,
         Query(description="Well type code exactly as the source reported it, e.g. SWD."),
@@ -834,6 +867,7 @@ def list_wells(
         "status": status,
         "operator": operator,
         "county": county,
+        "state": state,
         "well_type": well_type,
         "geometry_provenance": geometry_provenance,
         "producing": producing,
@@ -882,6 +916,9 @@ def list_wells(
     if county is not None:
         clauses.append("and county_code_at_permit = %(county)s")
         params["county"] = county
+    if state is not None:
+        clauses.append("and state_code = %(state)s")
+        params["state"] = state
     if well_type is not None:
         clauses.append("and well_type_reported = %(well_type)s")
         params["well_type"] = well_type

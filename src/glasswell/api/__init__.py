@@ -37,6 +37,7 @@ from glasswell.api.principal import Principal as ResolvedPrincipal
 from glasswell.api.routers import (
     completions,
     conformance,
+    facets,
     formations,
     glossary,
     health,
@@ -227,6 +228,10 @@ def create_app() -> FastAPI:
         index.router,
         health.router,
         status.router,
+        # Before wells.router, not beside it: Starlette matches in registration order and
+        # `/wells/{api10}` accepts any single segment, so `facets` reaches the detail route
+        # and 422s on the api10 pattern if this line moves below it.
+        facets.router,
         wells.router,
         type_curves.router,
         neighbors.router,

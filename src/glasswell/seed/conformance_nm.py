@@ -1435,6 +1435,38 @@ NM_DIMENSION_RULES: tuple[dict[str, object], ...] = (
     ),
 )
 
+def _inventory_jurisdiction() -> dict[str, object]:
+    return {
+        "rule_id": "cr_nm_wcproduction_inventory_jurisdiction_1",
+        "source_id": "nm_ocd_wcproduction",
+        "stage": "join",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["source_id"],
+        "spec": {
+            "module_function": "glasswell.status.collector:_production_inventory",
+            "contract_note": (
+                "the operational inventory buckets this source's production rows by its"
+                " registered jurisdiction, and the dataset is scoped to that jurisdiction"
+            ),
+            "discriminator": "lineage.sources.jurisdiction",
+            "entity_identity_column": "entity_key",
+        },
+        "rule": "Production rows filed by this source are inventoried as New Mexico because the"
+        " source is registered to New Mexico, not because their API-10 begins 30.",
+        "rationale": (
+            "The inventory previously read left(api10, 2) = '30', a mapping decision living in a"
+            " Python literal that R8 refuses and that no index can serve. Reading the registered"
+            " jurisdiction of the filing source is one discriminator for every state and every"
+            " grain. New Mexico reports at the well-completion-pool grain, so its distinct-entity"
+            " count is taken on entity_key, which for these rows is the composed completion-pool"
+            " key rather than a bare API-10; the metric is therefore distinct reporting entities"
+            " at the grain the source files, and the dataset says so rather than implying wells."
+        ),
+        "evidence_url": OCD_DATA_URL,
+        "code_ref": "glasswell/status/collector.py",
+    }
+
+
 NM_RULES: tuple[dict[str, object], ...] = (
     *(
         family(table)
@@ -1443,6 +1475,7 @@ NM_RULES: tuple[dict[str, object], ...] = (
     ),
     _mod_dte(),
     _month(),
+    _inventory_jurisdiction(),
     *NM_PROMOTION_RULES,
     *NM_DIMENSION_RULES,
 )
