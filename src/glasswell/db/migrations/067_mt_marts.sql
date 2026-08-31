@@ -11,8 +11,8 @@
 -- guard through prose, so repointing could never clear the refusal.
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-values ('cr_mt_paths_length_scope_1', date '2026-08-30', 'UNRELEASED',
-        '0000000000000000000000000000000000000000')
+values ('cr_mt_paths_length_scope_1', date '2026-08-31', 'v0.70',
+        '258d88dce644fbc842a88be66a3050f717fb70d8')
 on conflict (rule_id) do nothing;
 
 --
