@@ -646,12 +646,15 @@ def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
             # so declaring the column would name one no recorded row carries.
             # `well_type` is here because a "Wells by well type" bucket narrows the grid by it:
             # an applied filter the dataset does not declare renders no chip and cannot be
-            # cleared on its own.
+            # cleared on its own. `geometry_provenance` is here for the same reason: the map
+            # legend now counts the classes /v1/wells/status-summary serves, and a reader
+            # crossing from one of those counts into the grid arrives on that filter.
             facets=[
                 "api10",
                 "status",
                 "producing",
                 "well_type",
+                "geometry_provenance",
                 "operator",
                 "county",
                 "state",

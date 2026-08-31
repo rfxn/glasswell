@@ -15118,6 +15118,7 @@
             "status",
             "producing",
             "well_type",
+            "geometry_provenance",
             "operator",
             "county",
             "state",
