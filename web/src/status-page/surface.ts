@@ -6,6 +6,7 @@ import "../components/gw-count.ts";
 export type SnapshotState = "current" | "stale" | "unavailable" | "invalid";
 export type StatusState = "ok" | "degraded" | "partial";
 export type CheckState = "ok" | "degraded" | "pending" | "unavailable" | "not_instrumented";
+export type CheckTier = "serving" | "data" | "edge" | "host";
 
 export interface StatusCheck {
   id: string;
@@ -13,6 +14,8 @@ export interface StatusCheck {
   state: CheckState;
   observed_at: string | null;
   detail: string;
+  tier: CheckTier | null;
+  probe: string | null;
 }
 
 export interface StatusMetric {
@@ -45,6 +48,8 @@ export interface StatusJob {
   last_run_at: string | null;
   next_run_at: string | null;
   detail: string;
+  unit: string | null;
+  timer_armed: boolean | null;
 }
 
 export interface StatusSource {
@@ -76,7 +81,16 @@ export interface StatusPayload {
     schema_version_reason: string;
     database_bytes: number | null;
     database_bytes_reason: string;
+    edge_host: string | null;
   };
+  deployment: {
+    public_origin: boolean;
+    anonymous_reads: boolean;
+    spa_served: boolean;
+    basemap_served: boolean;
+    tile_upstream: "default" | "configured";
+    csp_report_only: boolean;
+  } | null;
   disclosures: {
     id: string;
     label: string;
@@ -123,6 +137,61 @@ const OUTCOME_LABELS: Record<NonNullable<StatusSource["last_outcome"]>, string> 
   failed: "Failed",
   interrupted: "Interrupted",
 };
+
+const TIERS: { id: CheckTier | null; label: string }[] = [
+  { id: "serving", label: "Serving plane" },
+  { id: "data", label: "Data plane" },
+  { id: "edge", label: "Edge" },
+  { id: "host", label: "Host" },
+  { id: null, label: "Unclassified" },
+];
+
+const LAYERS: { prefix: string; label: string }[] = [
+  { prefix: "canonical.", label: "canonical" },
+  { prefix: "marts.", label: "marts" },
+  { prefix: "lineage.", label: "lineage" },
+];
+
+type Posture = NonNullable<StatusPayload["deployment"]>;
+
+const POSTURE: { label: string; value(posture: Posture): Node }[] = [
+  { label: "Origin", value: (one) => textValue(one.public_origin ? "Public" : "Closed network") },
+  { label: "Anonymous reads", value: (one) => anonymousValue(one.anonymous_reads) },
+  {
+    label: "Tile upstream",
+    value: (one) => textValue(one.tile_upstream === "configured" ? "Configured" : "Default"),
+  },
+  { label: "Frontend bundle", value: (one) => servedValue(one.spa_served) },
+  { label: "Local basemap", value: (one) => servedValue(one.basemap_served) },
+  { label: "CSP", value: (one) => textValue(one.csp_report_only ? "Report-only" : "Enforced") },
+];
+
+/**
+ * Method statements that qualify a section rather than report its state. They stay one click
+ * away instead of standing above the facts a reader came for.
+ */
+const NOTES = {
+  architecture: {
+    summary: "What a check proves",
+    text: "A successful check proves only the detail it names. Capacity, replication, and host services are not inferred from a database query. A component with no probe is listed as not instrumented rather than omitted.",
+  },
+  footprint: {
+    summary: "How these counts are grained",
+    text: "Each row states its grain, and its precision is exact unless a metric is marked Estimated. Unrelated row populations are never summed into a single records total, so there is no headline total here on purpose. Counts are taken at the snapshot's observation time.",
+  },
+  jobs: {
+    summary: "What a run time means",
+    text: "Run times are reported only where the platform persists them; an installed timer is not treated as proof that a job completed. An armed timer states that the schedule exists, never that the last run succeeded.",
+  },
+  sources: {
+    summary: "How freshness is decided",
+    text: "Each state combines independently committed poll evidence, the registered artifact, and one source-specific cadence. Unchanged checks can keep older bytes current; failed or interrupted checks cannot.",
+  },
+  disclosures: {
+    summary: "Why this section exists",
+    text: "Unknowns stay visible instead of being folded into a healthy summary.",
+  },
+} as const;
 
 let mounted: Mount | null = null;
 
@@ -232,9 +301,9 @@ function renderStatus(mount: Mount, payload: StatusPayload): void {
 
   root.append(
     header,
-    snapshotSummary(payload),
-    infrastructure(payload),
-    datasets(payload.datasets),
+    deployment(payload),
+    architecture(payload),
+    footprint(payload),
     jobs(payload),
     sources(payload.sources),
     disclosures(payload.disclosures),
@@ -254,10 +323,7 @@ function pageHeader(): HTMLElement {
   eyebrow.textContent = "Operational visibility";
   const title = document.createElement("h1");
   title.textContent = "Status";
-  const intro = document.createElement("p");
-  intro.textContent =
-    "Serving checks, scheduled work, registered-source freshness, and clearly grained dataset inventory.";
-  copy.append(eyebrow, title, intro);
+  copy.append(eyebrow, title);
   header.append(copy);
   return header;
 }
@@ -273,7 +339,7 @@ function loadingSection(message: string): HTMLElement {
   return section;
 }
 
-function snapshotSummary(payload: StatusPayload): HTMLElement {
+function deployment(payload: StatusPayload): HTMLElement {
   const section = element("section", "gw-status-summary");
   section.dataset["snapshot"] = payload.snapshot_state;
   section.setAttribute("aria-labelledby", "gw-status-summary-title");
@@ -281,22 +347,25 @@ function snapshotSummary(payload: StatusPayload): HTMLElement {
   const heading = element("div", "gw-status-summary-head");
   const title = element("h2", "gw-status-section-title");
   title.id = "gw-status-summary-title";
-  title.textContent = "Snapshot";
+  title.textContent = "Deployment";
   heading.append(
     title,
     badge(SNAPSHOT_LABELS[payload.snapshot_state], payload.snapshot_state),
     badge(STATE_LABELS[payload.state], payload.state),
   );
+  section.append(heading);
 
-  const warning = element("p", "gw-status-snapshot-note");
-  warning.textContent = snapshotMessage(payload.snapshot_state);
+  if (payload.snapshot_state !== "current") {
+    const warning = element("p", "gw-status-snapshot-note");
+    warning.textContent = snapshotMessage(payload.snapshot_state);
+    section.append(warning);
+  }
 
   const facts = element("dl", "gw-status-facts");
-  summaryFact(facts, "Observed", timeOrFallback(payload.observed_at, "Not observed"));
   summaryFact(facts, "Code version", textValue(payload.platform.code_version ?? "Unavailable", true));
   summaryFact(
     facts,
-    "Schema version",
+    "Schema head",
     payload.platform.schema_version === null
       ? textValue("Unavailable")
       : countedValue(
@@ -305,6 +374,8 @@ function snapshotSummary(payload: StatusPayload): HTMLElement {
           payload.platform.schema_version_reason,
         ),
   );
+  summaryFact(facts, "Edge host", textValue(payload.platform.edge_host ?? "Not served", true));
+  summaryFact(facts, "Observed", timeOrFallback(payload.observed_at, "Not observed"));
   summaryFact(
     facts,
     "Database storage",
@@ -317,100 +388,187 @@ function snapshotSummary(payload: StatusPayload): HTMLElement {
         ),
   );
 
-  section.append(heading, warning, facts);
+  const posture = payload.deployment;
+  for (const item of POSTURE) {
+    summaryFact(facts, item.label, posture === null ? textValue("Not served") : item.value(posture));
+  }
+
+  section.append(facts);
   return section;
 }
 
-function infrastructure(payload: StatusPayload): HTMLElement {
-  const section = sectionWithTitle(
-    "gw-status-checks-title",
-    "Infrastructure checks",
-    "A successful check proves only the detail it names. Capacity, replication, and host services are not inferred from a database query.",
+function architecture(payload: StatusPayload): HTMLElement {
+  const section = sectionWithTitle("gw-status-checks-title", "Architecture", NOTES.architecture);
+  if (payload.checks.length === 0) {
+    section.append(emptyBlock("No components were served."));
+    return section;
+  }
+  for (const tier of TIERS) {
+    const members = payload.checks.filter((check) => check.tier === tier.id);
+    if (members.length === 0) continue;
+    const group = element("h3", "gw-status-tier");
+    group.textContent = tier.label;
+    const list = element("ul", "gw-status-card-grid gw-status-check-grid");
+    for (const check of members) {
+      const state = effectiveState(check.state, payload.snapshot_state);
+      const item = document.createElement("li");
+      item.className = "gw-status-card gw-status-check";
+      const head = element("div", "gw-status-card-head");
+      const title = document.createElement("h4");
+      title.textContent = check.label;
+      head.append(title, badge(STATE_LABELS[state], state));
+      const probe = element("p", "gw-status-probe");
+      probe.append(check.probe === null ? textValue("No probe registered") : textValue(check.probe, true));
+      const detail = document.createElement("p");
+      detail.textContent = check.detail;
+      item.append(head, probe, detail);
+      if (check.observed_at !== payload.observed_at) {
+        const observed = element("p", "gw-status-card-time");
+        observed.append("Observed ", timeOrFallback(check.observed_at, "not recorded"));
+        item.append(observed);
+      }
+      list.append(item);
+    }
+    section.append(group, list);
+  }
+  return section;
+}
+
+function footprint(payload: StatusPayload): HTMLElement {
+  const section = sectionWithTitle("gw-status-datasets-title", "Data footprint", NOTES.footprint);
+  const wrapper = element("div", "gw-status-table-wrap");
+  const table = document.createElement("table");
+  table.className = "gw-status-table gw-status-footprint";
+  const caption = document.createElement("caption");
+  caption.textContent = "Resident inventory by storage layer, each row on its own stated grain";
+  const head = tableHead(["Dataset", "Scope", "Grain", "Magnitude", "Covers", "Latest knowledge"]);
+  const body = document.createElement("tbody");
+
+  for (const layer of layersOf(payload.datasets)) {
+    body.append(layerRow(layer.label, layer.items.length));
+    for (const dataset of layer.items) body.append(footprintRow(dataset));
+  }
+  if (payload.datasets.length === 0) {
+    body.append(emptyTableRow(6, "No dataset inventory was served."));
+  }
+  table.append(caption, head, body);
+  wrapper.append(table);
+  section.append(wrapper);
+  return section;
+}
+
+function layersOf(items: StatusDataset[]): { label: string; items: StatusDataset[] }[] {
+  const grouped = LAYERS.map((layer) => ({
+    label: layer.label,
+    items: items.filter((dataset) => dataset.dataset_id.startsWith(layer.prefix)),
+  }));
+  const rest = items.filter(
+    (dataset) => !LAYERS.some((layer) => dataset.dataset_id.startsWith(layer.prefix)),
   );
-  const list = element("ul", "gw-status-card-grid gw-status-check-grid");
-  for (const check of payload.checks) {
-    const state = effectiveState(check.state, payload.snapshot_state);
+  if (rest.length > 0) grouped.push({ label: "other", items: rest });
+  return grouped.filter((layer) => layer.items.length > 0);
+}
+
+function layerRow(label: string, count: number): HTMLTableRowElement {
+  const row = element("tr", "gw-status-layer-row");
+  const cell = document.createElement("th");
+  cell.scope = "colgroup";
+  cell.colSpan = 6;
+  const name = document.createElement("code");
+  name.textContent = label;
+  cell.append(name, ` · ${count} ${count === 1 ? "dataset" : "datasets"}`);
+  row.append(cell);
+  return row;
+}
+
+function footprintRow(dataset: StatusDataset): HTMLTableRowElement {
+  const row = document.createElement("tr");
+  const name = document.createElement("th");
+  name.scope = "row";
+  name.append(document.createTextNode(dataset.label));
+  const id = document.createElement("code");
+  id.textContent = dataset.dataset_id;
+  name.append(id, datasetNote(dataset));
+
+  const grain = document.createElement("td");
+  grain.append(textValue(dataset.grain));
+  const shared = sharedPrecision(dataset);
+  if (shared !== null) grain.append(precisionBadge(shared));
+
+  const magnitudes = element("ul", "gw-status-magnitudes");
+  for (const metric of dataset.metrics) {
     const item = document.createElement("li");
-    item.className = "gw-status-card gw-status-check";
-    const head = element("div", "gw-status-card-head");
-    const title = document.createElement("h3");
-    title.textContent = check.label;
-    head.append(title, badge(STATE_LABELS[state], state));
-    const detail = document.createElement("p");
-    detail.textContent = check.detail;
-    const observed = element("p", "gw-status-card-time");
-    observed.append("Observed ", timeOrFallback(check.observed_at, "not recorded"));
-    item.append(head, detail, observed);
-    list.append(item);
+    const label = element("span", "gw-status-magnitude-label");
+    label.textContent = metric.label;
+    item.append(label, countedValue(metric.value, metric.unit, metric.reason));
+    if (shared === null) item.append(precisionBadge(metric.precision));
+    magnitudes.append(item);
   }
-  if (payload.checks.length === 0) list.append(emptyListItem("No infrastructure checks were served."));
-  section.append(list);
-  return section;
+  const magnitudeCell = document.createElement("td");
+  magnitudeCell.append(dataset.metrics.length === 0 ? textValue("None served") : magnitudes);
+
+  row.append(
+    name,
+    tableCell(
+      dataset.state === "available"
+        ? textValue(dataset.scope)
+        : badge("Unavailable", dataset.state),
+    ),
+    grain,
+    magnitudeCell,
+    tableCell(span(dataset)),
+    tableCell(timeOrFallback(dataset.latest_knowledge_at, "Not recorded")),
+  );
+  return row;
 }
 
-function datasets(items: StatusDataset[]): HTMLElement {
-  const section = sectionWithTitle(
-    "gw-status-datasets-title",
-    "Dataset inventory",
-    "Each metric states its grain and whether the count is exact or estimated; unrelated row populations are never summed into a single records total.",
-  );
-  const list = element("div", "gw-status-card-grid gw-status-dataset-grid");
-  for (const dataset of items) {
-    const card = element("article", "gw-status-card gw-status-dataset");
-    const head = element("div", "gw-status-card-head");
-    const title = document.createElement("h3");
-    title.textContent = dataset.label;
-    head.append(title, badge(dataset.state === "available" ? "Available" : "Unavailable", dataset.state));
+function sharedPrecision(dataset: StatusDataset): StatusMetric["precision"] | null {
+  const first = dataset.metrics[0];
+  if (first === undefined) return null;
+  return dataset.metrics.every((metric) => metric.precision === first.precision)
+    ? first.precision
+    : null;
+}
 
-    const identity = element("p", "gw-status-dataset-identity");
-    identity.textContent = `${dataset.scope} · ${dataset.grain}`;
+function precisionBadge(precision: StatusMetric["precision"]): HTMLElement {
+  return badge(precision === "exact" ? "Exact" : "Estimated", precision);
+}
 
-    const metrics = element("dl", "gw-status-metrics");
-    for (const metric of dataset.metrics) {
-      const term = document.createElement("dt");
-      term.textContent = metric.label;
-      const value = document.createElement("dd");
-      value.append(
-        countedValue(metric.value, metric.unit, metric.reason),
-        badge(metric.precision === "exact" ? "Exact" : "Estimated", metric.precision),
-      );
-      metrics.append(term, value);
-    }
-    if (dataset.metrics.length === 0) {
-      const term = document.createElement("dt");
-      term.textContent = "Metrics";
-      const value = document.createElement("dd");
-      value.textContent = "None served";
-      metrics.append(term, value);
-    }
-
-    const dates = element("dl", "gw-status-dataset-dates");
-    fact(dates, "Valid from", timeOrFallback(dataset.valid_from, "Not served"));
-    fact(dates, "Valid to", timeOrFallback(dataset.valid_to, "Not served"));
-    fact(dates, "Latest knowledge", timeOrFallback(dataset.latest_knowledge_at, "Not recorded"));
-    fact(dates, "Counted", timeOrFallback(dataset.counted_at, "Not recorded"));
-    const detail = document.createElement("p");
-    detail.textContent = dataset.detail;
-    card.append(head, identity, metrics, dates, detail);
-    list.append(card);
+function span(dataset: StatusDataset): HTMLElement {
+  const wrapper = element("span", "gw-status-span");
+  if (dataset.valid_from === null && dataset.valid_to === null) {
+    wrapper.append(textValue("Not served"));
+    return wrapper;
   }
-  if (items.length === 0) list.append(emptyBlock("No dataset inventory was served."));
-  section.append(list);
-  return section;
+  wrapper.append(
+    timeOrFallback(dataset.valid_from, "Not served"),
+    textValue(" – "),
+    timeOrFallback(dataset.valid_to, "Not served"),
+  );
+  return wrapper;
+}
+
+/** The dataset's served caveat and count time, one click from the number they qualify. */
+function datasetNote(dataset: StatusDataset): HTMLElement {
+  const note = element("details", "gw-status-note gw-status-row-note");
+  const summary = document.createElement("summary");
+  summary.textContent = "What this counts";
+  const detail = document.createElement("p");
+  detail.textContent = dataset.detail;
+  const counted = element("p", "gw-status-card-time");
+  counted.append("Counted ", timeOrFallback(dataset.counted_at, "not recorded"));
+  note.append(summary, detail, counted);
+  return note;
 }
 
 function jobs(payload: StatusPayload): HTMLElement {
-  const section = sectionWithTitle(
-    "gw-status-jobs-title",
-    "Scheduled work",
-    "Run times are reported only where the platform persists them; an installed timer is not treated as proof that a job completed.",
-  );
+  const section = sectionWithTitle("gw-status-jobs-title", "Scheduled work", NOTES.jobs);
   const wrapper = element("div", "gw-status-table-wrap");
   const table = document.createElement("table");
   table.className = "gw-status-table";
   const caption = document.createElement("caption");
-  caption.textContent = "Persisted job observations";
-  const head = tableHead(["Job", "State", "Last run", "Next run", "Detail"]);
+  caption.textContent = "Registered timers and the runs the platform persisted";
+  const head = tableHead(["Job", "State", "Timer", "Last run", "Next run", "Detail"]);
   const body = document.createElement("tbody");
   for (const job of payload.jobs) {
     const row = document.createElement("tr");
@@ -421,24 +579,40 @@ function jobs(payload: StatusPayload): HTMLElement {
     row.append(
       name,
       tableCell(badge(STATE_LABELS[state], state)),
+      tableCell(timer(job)),
       tableCell(timeOrFallback(job.last_run_at, "Not recorded")),
       tableCell(timeOrFallback(job.next_run_at, "Not recorded")),
       tableCell(textValue(job.detail)),
     );
     body.append(row);
   }
-  if (payload.jobs.length === 0) body.append(emptyTableRow(5, "No job observations were served."));
+  if (payload.jobs.length === 0) body.append(emptyTableRow(6, "No job observations were served."));
   table.append(caption, head, body);
   wrapper.append(table);
   section.append(wrapper);
   return section;
 }
 
+function timer(job: StatusJob): HTMLElement {
+  const wrapper = element("span", "gw-status-timer");
+  if (job.unit === null) {
+    wrapper.append(textValue("Not registered"));
+    return wrapper;
+  }
+  wrapper.append(textValue(job.unit, true));
+  wrapper.append(
+    job.timer_armed === null
+      ? badge("Evidence unavailable", "unavailable")
+      : badge(job.timer_armed ? "Armed" : "Not armed", job.timer_armed ? "ok" : "degraded"),
+  );
+  return wrapper;
+}
+
 function sources(items: StatusSource[]): HTMLElement {
   const section = sectionWithTitle(
     "gw-status-sources-title",
     "Source polls & freshness",
-    "Each state combines independently committed poll evidence, the registered artifact, and one source-specific cadence. Unchanged checks can keep older bytes current; failed or interrupted checks cannot.",
+    NOTES.sources,
   );
   const wrapper = element("div", "gw-status-table-wrap");
   const table = document.createElement("table");
@@ -497,7 +671,7 @@ function disclosures(items: StatusPayload["disclosures"]): HTMLElement {
   const section = sectionWithTitle(
     "gw-status-disclosures-title",
     "Observability boundaries",
-    "Unknowns stay visible instead of being folded into a healthy summary.",
+    NOTES.disclosures,
   );
   const list = element("ul", "gw-status-disclosures");
   for (const disclosure of items) {
@@ -522,16 +696,39 @@ function disclosures(items: StatusPayload["disclosures"]): HTMLElement {
   return section;
 }
 
-function sectionWithTitle(id: string, titleText: string, introText: string): HTMLElement {
+function sectionWithTitle(
+  id: string,
+  titleText: string,
+  note: { summary: string; text: string },
+): HTMLElement {
   const section = element("section", "gw-status-section");
   section.setAttribute("aria-labelledby", id);
+  const head = element("div", "gw-status-section-head");
   const title = element("h2", "gw-status-section-title");
   title.id = id;
   title.textContent = titleText;
-  const intro = element("p", "gw-status-section-intro");
-  intro.textContent = introText;
-  section.append(title, intro);
+  head.append(title, sectionNote(note));
+  section.append(head);
   return section;
+}
+
+function sectionNote(note: { summary: string; text: string }): HTMLElement {
+  const disclosure = element("details", "gw-status-note");
+  const summary = document.createElement("summary");
+  summary.textContent = note.summary;
+  const body = document.createElement("p");
+  body.textContent = note.text;
+  disclosure.append(summary, body);
+  return disclosure;
+}
+
+/** Anonymous reads on is the alarming state, so the colour follows the risk, not the flag. */
+function anonymousValue(enabled: boolean): HTMLElement {
+  return badge(enabled ? "Enabled" : "Disabled", enabled ? "degraded" : "ok");
+}
+
+function servedValue(served: boolean): HTMLElement {
+  return badge(served ? "Served" : "Not served", served ? "ok" : "unavailable");
 }
 
 function snapshotMessage(state: SnapshotState): string {
@@ -686,12 +883,19 @@ function statusPayload(value: unknown): StatusPayload {
         ),
         observed_at: nullableTime(check["observed_at"], `data.checks[${index}].observed_at`),
         detail: string(check["detail"], `data.checks[${index}].detail`),
+        tier: nullableMember(
+          check["tier"] ?? null,
+          `data.checks[${index}].tier`,
+          ["serving", "data", "edge", "host"] as const,
+        ),
+        probe: nullableString(check["probe"] ?? null, `data.checks[${index}].probe`),
       };
     }),
     datasets: array(root["datasets"], "data.datasets").map(datasetOf),
     jobs: array(root["jobs"], "data.jobs").map(jobOf),
     sources: array(root["sources"], "data.sources").map(sourceOf),
     platform: platformOf(root["platform"]),
+    deployment: deploymentOf(root["deployment"]),
     disclosures: array(root["disclosures"], "data.disclosures").map((item, index) => {
       const disclosure = record(item, `data.disclosures[${index}]`);
       return {
@@ -754,6 +958,8 @@ function jobOf(item: unknown, index: number): StatusJob {
     last_run_at: nullableTime(job["last_run_at"], `${path}.last_run_at`),
     next_run_at: nullableTime(job["next_run_at"], `${path}.next_run_at`),
     detail: string(job["detail"], `${path}.detail`),
+    unit: nullableString(job["unit"] ?? null, `${path}.unit`),
+    timer_armed: nullableBoolean(job["timer_armed"] ?? null, `${path}.timer_armed`),
   };
 }
 
@@ -797,6 +1003,24 @@ function platformOf(item: unknown): StatusPayload["platform"] {
       platform["database_bytes_reason"],
       "data.platform.database_bytes_reason",
     ),
+    edge_host: nullableString(platform["edge_host"] ?? null, "data.platform.edge_host"),
+  };
+}
+
+/** Absent on a server older than this surface; the page says "not served" rather than guessing. */
+function deploymentOf(item: unknown): StatusPayload["deployment"] {
+  if (item === undefined || item === null) return null;
+  const posture = record(item, "data.deployment");
+  return {
+    public_origin: boolean(posture["public_origin"], "data.deployment.public_origin"),
+    anonymous_reads: boolean(posture["anonymous_reads"], "data.deployment.anonymous_reads"),
+    spa_served: boolean(posture["spa_served"], "data.deployment.spa_served"),
+    basemap_served: boolean(posture["basemap_served"], "data.deployment.basemap_served"),
+    tile_upstream: member(posture["tile_upstream"], "data.deployment.tile_upstream", [
+      "default",
+      "configured",
+    ] as const),
+    csp_report_only: boolean(posture["csp_report_only"], "data.deployment.csp_report_only"),
   };
 }
 
@@ -820,6 +1044,16 @@ function string(value: unknown, path: string): string {
 function nullableString(value: unknown, path: string): string | null {
   if (value === null) return null;
   return string(value, path);
+}
+
+function boolean(value: unknown, path: string): boolean {
+  if (typeof value !== "boolean") throw new StatusContractError(path, "a boolean");
+  return value;
+}
+
+function nullableBoolean(value: unknown, path: string): boolean | null {
+  if (value === null) return null;
+  return boolean(value, path);
 }
 
 function nullableBoundedString(value: unknown, path: string, maximum: number): string | null {

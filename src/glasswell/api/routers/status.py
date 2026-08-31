@@ -12,16 +12,25 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.responses import JSONResponse
 
-from glasswell.api.deps import Connection
+from glasswell.api.deps import (
+    ALLOW_ANON_ENV,
+    BASEMAP_ROOT_ENV,
+    MARTIN_URL_ENV,
+    PUBLIC_ENV,
+    WEB_ROOT_ENV,
+    Connection,
+)
 from glasswell.api.errors import problem_responses
 from glasswell.api.examples import request_example
 from glasswell.api.responses import EnvelopeModel, enveloped
 from glasswell.api.routers.health import SourceHealth, source_health_data
+from glasswell.api.security import REPORT_ONLY_ENV
 from glasswell.status.collector import DEFAULT_SNAPSHOT, SNAPSHOT_ENV
 from glasswell.status.models import (
     DATABASE_BYTES_REASON,
     CheckState,
     DatasetInventory,
+    DeploymentPosture,
     JobStatus,
     PlatformStatus,
     StatusCheck,
@@ -59,6 +68,9 @@ class Status(BaseModel):
         description="Durable poll outcomes, expected cadence, and artifact age for every source."
     )
     platform: PlatformStatus = Field(description="Build, schema and database storage identity.")
+    deployment: DeploymentPosture = Field(
+        description="What this serving process has enabled, refused, or left at its default."
+    )
     disclosures: list[StatusDisclosure] = Field(
         description="Known limits that prevent a broader health claim."
     )
@@ -66,6 +78,23 @@ class Status(BaseModel):
 
 def _empty_platform() -> PlatformStatus:
     return PlatformStatus(database_bytes_reason=DATABASE_BYTES_REASON)
+
+
+def _served_directory(variable: str) -> bool:
+    configured = os.environ.get(variable)
+    return bool(configured) and Path(configured).is_dir()
+
+
+def _deployment_posture() -> DeploymentPosture:
+    return DeploymentPosture(
+        public_origin=os.environ.get(PUBLIC_ENV) == "1",
+        anonymous_reads=os.environ.get(ALLOW_ANON_ENV) == "1",
+        spa_served=_served_directory(WEB_ROOT_ENV),
+        basemap_served=_served_directory(BASEMAP_ROOT_ENV),
+        # The upstream address is host state; only whether it was overridden is served.
+        tile_upstream="configured" if os.environ.get(MARTIN_URL_ENV) else "default",
+        csp_report_only=os.environ.get(REPORT_ONLY_ENV) == "1",
+    )
 
 
 def load_snapshot(
@@ -159,6 +188,8 @@ def get_status(request: Request, connection: Connection) -> JSONResponse:
             state="ok",
             observed_at=now,
             detail="This authenticated status request reached the application.",
+            tier="serving",
+            probe="this request",
         ),
         StatusCheck(
             id="postgres",
@@ -166,6 +197,8 @@ def get_status(request: Request, connection: Connection) -> JSONResponse:
             state="ok",
             observed_at=now,
             detail="The source-freshness query completed on this request.",
+            tier="data",
+            probe="this request",
         ),
         StatusCheck(
             id="status_snapshot",
@@ -179,6 +212,8 @@ def get_status(request: Request, connection: Connection) -> JSONResponse:
             ),
             observed_at=snapshot.observed_at if snapshot else None,
             detail=snapshot_detail,
+            tier="serving",
+            probe="glasswell-status.timer",
         ),
     ]
     datasets: list[DatasetInventory] = []
@@ -216,6 +251,7 @@ def get_status(request: Request, connection: Connection) -> JSONResponse:
         jobs=jobs,
         sources=[SourceHealth.model_validate(source) for source in sources],
         platform=platform,
+        deployment=_deployment_posture(),
         disclosures=disclosures,
     )
     return enveloped(

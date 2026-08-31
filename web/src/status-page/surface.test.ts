@@ -22,6 +22,17 @@ const PAYLOAD: StatusPayload = {
       state: "ok",
       observed_at: "2026-08-26T18:00:00Z",
       detail: "The status request completed.",
+      tier: "serving",
+      probe: "this request",
+    },
+    {
+      id: "tunnel",
+      label: "Cloudflare tunnel",
+      state: "degraded",
+      observed_at: "2026-08-26T18:00:00Z",
+      detail: "Service manager does not report active.",
+      tier: "edge",
+      probe: "cloudflared.service",
     },
     {
       id: "backup",
@@ -29,6 +40,8 @@ const PAYLOAD: StatusPayload = {
       state: "not_instrumented",
       observed_at: null,
       detail: "No persisted remote-copy result exists.",
+      tier: null,
+      probe: null,
     },
   ],
   datasets: [
@@ -49,10 +62,40 @@ const PAYLOAD: StatusPayload = {
           precision: "estimated",
           reason: METRIC_REASON,
         },
+        {
+          metric_id: "months",
+          label: "Distinct months",
+          value: 131,
+          unit: "months",
+          precision: "exact",
+          reason: METRIC_REASON,
+        },
       ],
       valid_from: "2015-05",
       valid_to: "2026-03",
       detail: "Append-only source observations; not a count of unique wells.",
+    },
+    {
+      dataset_id: "lineage.conformance_rules",
+      label: "Registered conformance rules",
+      scope: "All registered sources",
+      grain: "one registered mapping decision per rule id",
+      state: "available",
+      counted_at: "2026-08-26T17:45:00Z",
+      latest_knowledge_at: null,
+      metrics: [
+        {
+          metric_id: "rules",
+          label: "Registered rules",
+          value: 431,
+          unit: "rules",
+          precision: "exact",
+          reason: METRIC_REASON,
+        },
+      ],
+      valid_from: null,
+      valid_to: null,
+      detail: "A mapping that exists only in code is not counted here.",
     },
   ],
   jobs: [
@@ -63,6 +106,18 @@ const PAYLOAD: StatusPayload = {
       last_run_at: "2026-08-26T04:30:00Z",
       next_run_at: null,
       detail: "Next-run time is not persisted.",
+      unit: "glasswell-ingest.timer",
+      timer_armed: true,
+    },
+    {
+      id: "recovery_drill",
+      label: "Replacement-host recovery",
+      state: "pending",
+      last_run_at: null,
+      next_run_at: null,
+      detail: "No recovery has been proven.",
+      unit: null,
+      timer_armed: null,
     },
   ],
   sources: [
@@ -103,6 +158,15 @@ const PAYLOAD: StatusPayload = {
       "Schema migration sequence is deployment bookkeeping, not a petroleum measurement.",
     database_bytes: 12_345_678,
     database_bytes_reason: STORAGE_REASON,
+    edge_host: "glasswell.rpx.sh",
+  },
+  deployment: {
+    public_origin: true,
+    anonymous_reads: false,
+    spa_served: true,
+    basemap_served: false,
+    tile_upstream: "default",
+    csp_report_only: false,
   },
   disclosures: [
     {
@@ -177,18 +241,17 @@ describe("the Status surface", () => {
     await mountStatusPage(host, { onForbidden });
 
     expect(host.querySelector("h1")?.textContent).toBe("Status");
-    expect([...host.querySelectorAll("section > h2")].map((heading) => heading.textContent)).toEqual([
-      "Infrastructure checks",
-      "Dataset inventory",
+    expect([...host.querySelectorAll("section h2")].map((heading) => heading.textContent)).toEqual([
+      "Deployment",
+      "Architecture",
+      "Data footprint",
       "Scheduled work",
       "Source polls & freshness",
       "Observability boundaries",
     ]);
-    expect(host.querySelectorAll("dl").length).toBeGreaterThan(2);
-    expect(host.querySelectorAll("table")).toHaveLength(2);
+    expect(host.querySelectorAll("dl").length).toBeGreaterThan(0);
+    expect(host.querySelectorAll("table")).toHaveLength(3);
     expect(host.querySelectorAll("time").length).toBeGreaterThan(4);
-    expect(host.querySelector("time")?.getAttribute("datetime")).toBe(PAYLOAD.observed_at);
-    expect(host.textContent).toContain("Unchanged checks can keep older bytes current");
     expect(host.textContent).toContain("Unchanged");
     expect(host.textContent).toContain("Every 8 days");
     expect(host.textContent).toContain("2026-09-03 17:56 UTC");
@@ -201,8 +264,130 @@ describe("the Status surface", () => {
         (time) => time.getAttribute("datetime") === "2026-08-26T17:30:00Z",
       ),
     ).toBe(true);
-    expect(host.textContent).toContain("not a count of unique wells");
     expect(host.textContent).toContain("Not instrumented");
+  });
+
+  it("states the deployment identity and the posture the serving process enforces", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(envelope(PAYLOAD)));
+
+    await mountStatusPage(host, { onForbidden });
+
+    const facts = host.querySelector(".gw-status-facts") as HTMLElement;
+    const labels = [...facts.querySelectorAll("dt")].map((term) => term.textContent);
+    expect(labels).toEqual([
+      "Code version",
+      "Schema head",
+      "Edge host",
+      "Observed",
+      "Database storage",
+      "Origin",
+      "Anonymous reads",
+      "Tile upstream",
+      "Frontend bundle",
+      "Local basemap",
+      "CSP",
+    ]);
+    expect(facts.textContent).toContain("glasswell.rpx.sh");
+    expect(facts.textContent).toContain("Public");
+    expect(facts.textContent).toContain("Disabled");
+    expect(facts.textContent).toContain("Enforced");
+    expect(facts.textContent).toContain("Default");
+  });
+
+  it("says not served for a posture an older server does not carry", async () => {
+    const { deployment: _omitted, ...withoutPosture } = PAYLOAD;
+    vi.stubGlobal("fetch", () => Promise.resolve(envelope(withoutPosture)));
+
+    await mountStatusPage(host, { onForbidden });
+
+    const facts = host.querySelector(".gw-status-facts") as HTMLElement;
+    expect(facts.textContent).not.toContain("Public");
+    expect([...facts.querySelectorAll("dd")].filter((cell) => cell.textContent === "Not served")).toHaveLength(6);
+  });
+
+  it("groups components by tier and names the probe each one was observed through", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(envelope(PAYLOAD)));
+
+    await mountStatusPage(host, { onForbidden });
+
+    const section = host.querySelector("#gw-status-checks-title")?.closest("section") as HTMLElement;
+    expect([...section.querySelectorAll(".gw-status-tier")].map((tier) => tier.textContent)).toEqual([
+      "Serving plane",
+      "Edge",
+      "Unclassified",
+    ]);
+    expect(section.textContent).toContain("cloudflared.service");
+    expect(section.textContent).toContain("No probe registered");
+    expect(section.querySelector('[data-state="degraded"]')?.textContent).toBe("Degraded");
+  });
+
+  it("reports each timer's unit and whether it is armed, without inferring a run from it", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(envelope(PAYLOAD)));
+
+    await mountStatusPage(host, { onForbidden });
+
+    const jobs = host.querySelector("#gw-status-jobs-title")?.closest("section") as HTMLElement;
+    expect(jobs.textContent).toContain("glasswell-ingest.timer");
+    expect(jobs.textContent).toContain("Armed");
+    expect(jobs.textContent).toContain("Not registered");
+    const armed = jobs.querySelector(".gw-status-timer") as HTMLElement;
+    expect(armed.querySelector(".gw-status-badge")?.textContent).toBe("Armed");
+    // Armed is a schedule fact; the run beside it is still Pending.
+    expect(armed.closest("tr")?.querySelector('[data-state="pending"]')).not.toBeNull();
+  });
+
+  it("groups the footprint by storage layer and keeps every magnitude on its own grain", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(envelope(PAYLOAD)));
+
+    await mountStatusPage(host, { onForbidden });
+
+    const table = host.querySelector(".gw-status-footprint") as HTMLElement;
+    expect([...table.querySelectorAll(".gw-status-layer-row code")].map((code) => code.textContent)).toEqual([
+      "canonical",
+      "lineage",
+    ]);
+    expect(table.textContent).toContain("canonical.production_monthly/nd");
+    expect(table.textContent).toContain("2015-05");
+    expect(table.textContent).toContain("2026-03");
+    expect(table.textContent).toContain("131");
+    // No headline total: unrelated populations are never summed into one records number.
+    expect(table.textContent).not.toContain("Total records");
+  });
+
+  it("marks precision once per row when uniform and per metric when it is mixed", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(envelope(PAYLOAD)));
+
+    await mountStatusPage(host, { onForbidden });
+
+    const rows = [...host.querySelectorAll(".gw-status-footprint tbody tr")];
+    const mixed = rows.find((row) => row.textContent?.includes("production_monthly")) as HTMLElement;
+    const uniform = rows.find((row) => row.textContent?.includes("conformance_rules")) as HTMLElement;
+    expect(
+      [...mixed.querySelectorAll(".gw-status-magnitudes .gw-status-badge")].map((one) => one.textContent),
+    ).toEqual(["Estimated", "Exact"]);
+    expect(uniform.querySelectorAll(".gw-status-magnitudes .gw-status-badge")).toHaveLength(0);
+    expect(uniform.querySelector("td .gw-status-badge")?.textContent).toBe("Exact");
+  });
+
+  it("keeps every method caveat reachable behind a closed disclosure rather than above the facts", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(envelope(PAYLOAD)));
+
+    await mountStatusPage(host, { onForbidden });
+
+    const notes = [...host.querySelectorAll("details.gw-status-note")];
+    expect(notes.length).toBeGreaterThanOrEqual(6);
+    expect(notes.every((note) => !(note as HTMLDetailsElement).open)).toBe(true);
+    expect(notes.map((note) => note.querySelector("summary")?.textContent)).toContain(
+      "How freshness is decided",
+    );
+    expect(host.textContent).toContain("failed or interrupted checks cannot");
+    expect(host.textContent).toContain("A successful check proves only the detail it names");
+    expect(host.textContent).toContain("Unrelated row populations are never summed");
+    expect(host.textContent).toContain("an installed timer is not treated as proof");
+    // The caveat lives inside the disclosure, never as a standing paragraph beside the heading.
+    expect(
+      [...host.querySelectorAll("section > p, .gw-status-section-head > p")].map((one) => one.textContent),
+    ).toEqual([]);
   });
 
   it("renders served operational reasons through gw-count", async () => {
@@ -210,8 +395,14 @@ describe("the Status surface", () => {
 
     await mountStatusPage(host, { onForbidden });
 
+    // Derived, not pinned: every number the payload carries must reach the page wearing a
+    // reason, so adding a served figure without a handle fails here.
+    const served =
+      2 + // schema head and database storage
+      PAYLOAD.datasets.reduce((total, dataset) => total + dataset.metrics.length, 0) +
+      PAYLOAD.sources.length; // one manifest count each
     const counts = [...host.querySelectorAll("gw-count")];
-    expect(counts).toHaveLength(5);
+    expect(counts).toHaveLength(served);
     expect(counts.every((count) => (count.getAttribute("reason")?.length ?? 0) > 0)).toBe(true);
     expect(counts.map((count) => count.getAttribute("reason"))).toContain(STORAGE_REASON);
     expect(counts.map((count) => count.getAttribute("reason"))).toContain(METRIC_REASON);

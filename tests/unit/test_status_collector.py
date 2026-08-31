@@ -249,7 +249,7 @@ def test_collector_no_longer_discloses_attempt_or_cadence_as_uninstrumented(
     check = StatusCheck(id="test", label="Test", state="ok", detail="Observed.")
     job = JobStatus(id="test", label="Test", state="ok", detail="Observed.")
     monkeypatch.setattr(status_collector, "_inventory", lambda *_args: ([], PlatformStatus()))
-    monkeypatch.setattr(status_collector, "_system_service", lambda *_args: check)
+    monkeypatch.setattr(status_collector, "_system_service", lambda *_args, **_kwargs: check)
     monkeypatch.setattr(status_collector, "_martin_check", lambda *_args: check)
     monkeypatch.setattr(status_collector, "_edge_check", lambda *_args: check)
     monkeypatch.setattr(status_collector, "_storage_check", lambda *_args: check)
@@ -261,21 +261,19 @@ def test_collector_no_longer_discloses_attempt_or_cadence_as_uninstrumented(
     snapshot = status_collector.collect(cast(Connection, connection))
 
     assert [item.id for item in snapshot.disclosures] == [
+        "staging_inventory",
         "remote_backup_copy",
         "replacement_host_recovery",
     ]
-    # Both are `limited`, never `not_instrumented`: the offsite push is now recorded, and the
-    # recovery path is mechanised. Each states the limit that remains rather than hiding it.
-    assert {item.state for item in snapshot.disclosures} == {"limited"}
-    assert [item.id for item in snapshot.jobs] == [
-        "test",
-        "test",
-        "test",
-        "test",
-        "test",
-        "test",
-        "test",
-    ]
+    # The two durability limits are `limited`, never `not_instrumented`: the offsite push is
+    # recorded and the recovery path is mechanised. Staging is genuinely uncounted and says so.
+    assert {item.id: item.state for item in snapshot.disclosures} == {
+        "staging_inventory": "not_instrumented",
+        "remote_backup_copy": "limited",
+        "replacement_host_recovery": "limited",
+    }
+    assert len(snapshot.jobs) == 9
+    assert len(snapshot.checks) == 7
 
 
 def test_restore_job_uses_current_durable_proof_not_only_systemd_success(tmp_path: Path) -> None:
