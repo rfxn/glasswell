@@ -8,6 +8,9 @@ remembers to. The table is the contract: a new endpoint that is not in it fails
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any, NamedTuple
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -25,8 +28,17 @@ from glasswell.api.examples import (
     EXAMPLE_TERM_ID,
     EXAMPLE_TILE,
     EXAMPLE_VINTAGE_ID,
+    KEY_HEADER,
 )
-from tests.contract.conftest import as_principal, challenge, issue_key
+from tests.contract.conftest import (
+    OWNER_PASSWORD,
+    SESSION_BASE_URL,
+    VIEWER_PASSWORD,
+    VIEWER_USERNAME,
+    as_principal,
+    challenge,
+    issue_key,
+)
 
 OPEN = "open"
 READ = "read"
@@ -38,10 +50,42 @@ SESSION = "session"
 TILE = EXAMPLE_TILE
 _VINTAGE = "vin_nd_mpr_xlsx_2026-08-01"
 
-# (method, path, class). `open` needs no credential; `read` is any live credential; `owner`
-# is owner scope, held by the owner key or an owner account; `session` is a route that acts on
-# the caller's own session and is therefore unreachable with a key.
-MATRIX: tuple[tuple[str, str, str], ...] = (
+ISSUE_BODY = {"label": "matrix-probe-2026", "scope": "guest"}
+NEW_PASSWORD = "a-sufficiently-long-new-password"
+WRONG_PASSWORD = "not-this-accounts-current-password"
+CREATE_USER_BODY = {"username": "matrix-created", "password": NEW_PASSWORD, "role": "viewer"}
+PROBE_USER_BODY = {"username": "matrix-target", "password": NEW_PASSWORD, "role": "viewer"}
+# `seed_session` hashes it once per session, so a login the matrix expects to succeed costs
+# no Argon2id work of its own.
+LOGIN_BODY = {"username": VIEWER_USERNAME, "password": VIEWER_PASSWORD}
+LOGIN = ("POST", "/v1/session")
+SESSION_PASSWORD = {"owner_session": OWNER_PASSWORD, "viewer_session": VIEWER_PASSWORD}
+
+
+def _own_password_body(principal: str) -> dict[str, Any]:
+    """The current password is the acting account's, so it is the principal that decides it."""
+    return {
+        "current_password": SESSION_PASSWORD.get(principal, WRONG_PASSWORD),
+        "new_password": NEW_PASSWORD,
+    }
+
+
+# A body is a dict, or a function of the principal when the right value differs by caller.
+Body = dict[str, Any] | Callable[[str], dict[str, Any]] | None
+
+
+class Case(NamedTuple):
+    method: str
+    path: str
+    access: str
+    body: Body = None
+
+
+# (method, path, class[, body]). `open` needs no credential; `read` is any live credential;
+# `owner` is owner scope, held by the owner key or an owner account; `session` is a route that
+# acts on the caller's own session and is therefore unreachable with a key. The fourth element
+# is the request body, on the routes that need one to be dispatched at all.
+MATRIX: tuple[tuple, ...] = (
     ("GET", "/healthz", OPEN),
     ("GET", "/v1", READ),
     ("GET", "/v1/health", READ),
@@ -94,45 +138,30 @@ MATRIX: tuple[tuple[str, str, str], ...] = (
     ("GET", f"/v1/glossary/{EXAMPLE_TERM_ID}", READ),
     ("GET", f"/v1/tiles/{TILE['layer']}/{TILE['z']}/{TILE['x']}/{TILE['y']}.pbf", READ),
     ("GET", "/v1/keys", OWNER),
-    ("POST", "/v1/keys", OWNER),
+    ("POST", "/v1/keys", OWNER, ISSUE_BODY),
     ("DELETE", "/v1/keys/{key_id}", OWNER),
     ("POST", "/v1/keys/{key_id}/rotate", OWNER),
     ("GET", "/v1/session/challenge", OPEN),
-    ("POST", "/v1/session", OPEN),
+    ("POST", "/v1/session", OPEN, LOGIN_BODY),
     # OPEN, deliberately. "Who am I" is not a privileged question and `nobody` is a valid
     # answer; it discloses strictly less than /v1/session/challenge, which already mints a
     # signed token for an uncredentialled caller. Gated, the ordinary first visit to a public
     # instance was a console error and a failed request on every page load.
     ("GET", "/v1/session", OPEN),
     ("DELETE", "/v1/session", SESSION),
-    ("POST", "/v1/session/password", SESSION),
+    ("POST", "/v1/session/password", SESSION, _own_password_body),
     ("GET", "/v1/users", OWNER),
-    ("POST", "/v1/users", OWNER),
-    ("PATCH", "/v1/users/{user_id}", OWNER),
+    ("POST", "/v1/users", OWNER, CREATE_USER_BODY),
+    ("PATCH", "/v1/users/{user_id}", OWNER, {"role": "viewer"}),
     ("DELETE", "/v1/users/{user_id}", OWNER),
-    ("POST", "/v1/users/{user_id}/password", OWNER),
+    ("POST", "/v1/users/{user_id}/password", OWNER, {"new_password": NEW_PASSWORD}),
     # Finding F-2: both were anonymous, and the coverage test below could not see it
     # because it walked document["paths"], which neither path is an entry in.
     ("GET", "/docs", READ),
     ("GET", "/openapi.json", READ),
 )
 
-# Routes exercised for coverage but deliberately excluded from the status assertions: the
-# two open session routes need a request body or a pre-session cookie to answer anything
-# other than a refusal, and they have dedicated files.
-NOT_STATUS_PROBED = frozenset(
-    {
-        # Needs a pre-session cookie and a body; test_login_uniformity.py owns it.
-        ("POST", "/v1/session"),
-        # Needs the current password in the body; test_session_cookie.py owns it.
-        ("POST", "/v1/session/password"),
-        # Need a body and a target account; test_users.py and test_users_surface.py own them.
-        ("POST", "/v1/users"),
-        ("PATCH", "/v1/users/{user_id}"),
-        ("DELETE", "/v1/users/{user_id}"),
-        ("POST", "/v1/users/{user_id}/password"),
-    }
-)
+CASES: tuple[Case, ...] = tuple(Case(*row) for row in MATRIX)
 
 SESSION_PRINCIPALS = ("owner_session", "viewer_session")
 
@@ -149,8 +178,6 @@ PRINCIPALS = (
 )
 CREDENTIALLED = ("guest", "agent", "owner", "owner_session", "viewer_session")
 DENIED = ("anonymous", "invalid", "revoked", "expired_session")
-
-ISSUE_BODY = {"label": "matrix-probe-2026", "scope": "guest"}
 
 
 def _expected(access: str, principal: str) -> str:
@@ -173,7 +200,11 @@ def principals(
     viewer_session: TestClient,
     expired_session: TestClient,
 ) -> dict[str, TestClient]:
-    """One client per class, each holding a credential issued through the API itself."""
+    """One client per class, each holding a credential issued through the API itself.
+
+    Every one of them speaks https, including the key classes: the login probe has to hold the
+    pre-session `__Host-` CSRF cookie, which the transport drops over http.
+    """
     revoked_secret = issue_key(client, label="matrix-revoked-2026", scope="agent")
     revoked_id = next(
         row["key_id"]
@@ -182,61 +213,100 @@ def principals(
     )
     client.delete(f"/v1/keys/{revoked_id}")
     return {
-        "anonymous": as_principal(client, None),
-        "invalid": as_principal(client, "a-key-that-was-never-issued"),
-        "revoked": as_principal(client, revoked_secret),
-        "guest": as_principal(client, issue_key(client, label="matrix-guest-2026", scope="guest")),
-        "agent": as_principal(client, issue_key(client, label="matrix-agent-2026", scope="agent")),
-        "owner": client,
+        "anonymous": _secure(client, None),
+        "invalid": _secure(client, "a-key-that-was-never-issued"),
+        "revoked": _secure(client, revoked_secret),
+        "guest": _secure(client, issue_key(client, label="matrix-guest-2026", scope="guest")),
+        "agent": _secure(client, issue_key(client, label="matrix-agent-2026", scope="agent")),
+        "owner": _secure(client, client.headers[KEY_HEADER]),
         "owner_session": owner_session,
         "viewer_session": viewer_session,
         "expired_session": expired_session,
     }
 
 
-def _call(caller: TestClient, method: str, path: str, owner: TestClient) -> int:
+def _secure(client: TestClient, secret: str | None) -> TestClient:
+    return as_principal(client, secret, base_url=SESSION_BASE_URL)
+
+
+def _call(caller: TestClient, case: Case, owner: TestClient, principal: str) -> int:
+    path = _target(case.path, owner)
+    body = case.body(principal) if callable(case.body) else case.body
+    headers = _csrf_headers(caller, case.method, path)
+    return caller.request(case.method, path, json=body, headers=headers).status_code
+
+
+def _target(path: str, owner: TestClient) -> str:
+    """Mint whatever the templated segment names, as the owner, so the probe has a real target.
+
+    Without one the allowed principals meet a 404 and the row would read as a refusal.
+    """
     if "{key_id}" in path:
         issued = owner.post(
             "/v1/keys", json={**ISSUE_BODY, "label": f"matrix-{abs(hash(path)) % 9999}-2026"}
         )
-        path = path.replace("{key_id}", issued.json()["data"]["key_id"])
-    headers = _csrf_headers(caller, method)
-    if method == "POST":
-        return caller.post(path, json=ISSUE_BODY, headers=headers).status_code
-    if method == "DELETE":
-        return caller.delete(path, headers=headers).status_code
-    return caller.get(path).status_code
+        return path.replace("{key_id}", issued.json()["data"]["key_id"])
+    if "{user_id}" in path:
+        made = owner.post("/v1/users", json=PROBE_USER_BODY)
+        return path.replace("{user_id}", made.json()["data"]["user_id"])
+    return path
 
 
-def _csrf_headers(caller: TestClient, method: str) -> dict[str, str]:
+def _csrf_headers(caller: TestClient, method: str, path: str) -> dict[str, str]:
     """A session making a state-changing call carries a CSRF token, as a browser would.
 
     Without this the matrix would read every session mutation as a refusal and hide whatever
-    the authorization answer actually is.
+    the authorization answer actually is. Login carries one whoever is asking: it checks the
+    token itself, against a pre-session nonce when the caller holds no session.
     """
-    if method in SAFE_METHODS or not caller.cookies.get(SESSION_COOKIE):
+    if method in SAFE_METHODS:
+        return {}
+    if (method, path) != LOGIN and not caller.cookies.get(SESSION_COOKIE):
         return {}
     return {CSRF_HEADER: challenge(caller)}
 
 
-@pytest.mark.parametrize(("method", "path", "access"), MATRIX, ids=lambda value: str(value))
+@pytest.mark.parametrize(
+    "case", CASES, ids=lambda case: f"{case.method}-{case.path}-{case.access}"
+)
 @pytest.mark.parametrize("principal", PRINCIPALS)
 def test_the_auth_matrix_holds(
     client: TestClient,
     principals: dict[str, TestClient],
-    method: str,
-    path: str,
-    access: str,
+    case: Case,
     principal: str,
 ) -> None:
-    if (method, path) in NOT_STATUS_PROBED:
-        pytest.skip("needs a request body and a pre-session cookie; covered by its own file")
-    status = _call(principals[principal], method, path, client)
+    status = _call(principals[principal], case, client, principal)
 
-    if _expected(access, principal) == "deny":
-        assert status == 403, f"{principal} reached {method} {path}"
+    if _expected(case.access, principal) == "deny":
+        assert status == 403, f"{principal} reached {case.method} {case.path}"
     else:
-        assert status < 400, f"{principal} was refused {method} {path} with {status}"
+        assert status < 400, f"{principal} was refused {case.method} {case.path} with {status}"
+
+
+# The gated routes that take a body, with an id that need not resolve: a caller who is refused
+# never gets far enough for it to matter.
+BODY_ROUTES = (
+    ("POST", "/v1/users"),
+    ("PATCH", "/v1/users/usr_whatever"),
+    ("DELETE", "/v1/users/usr_whatever"),
+    ("POST", "/v1/users/usr_whatever/password"),
+    ("POST", "/v1/session/password"),
+)
+
+
+@pytest.mark.parametrize(("method", "path"), BODY_ROUTES, ids=lambda value: str(value))
+def test_an_anonymous_caller_is_refused_before_their_body_is_read(
+    principals: dict[str, TestClient], method: str, path: str
+) -> None:
+    """Authorization answers first, so no payload from an uncredentialled caller is examined.
+
+    A 422 here would say the body was parsed and validated against a schema for someone who
+    may not reach the route at all -- and the pointers in a validation body describe it.
+    """
+    response = principals["anonymous"].request(method, path, json={"not": "the schema"})
+
+    assert response.status_code == 403, f"{method} {path} read the body before refusing"
 
 
 @pytest.mark.parametrize("principal", ["anonymous", "invalid", "revoked"])
@@ -282,7 +352,7 @@ def test_the_matrix_covers_every_reachable_route(client: TestClient) -> None:
     could ever have caught it, because neither path is an entry there. This walks what the
     router will answer instead, so a route that is reachable but undeclared fails here.
     """
-    covered = {(method, _template(path.split("?")[0])) for method, path, _ in MATRIX}
+    covered = {(case.method, _template(case.path.split("?")[0])) for case in CASES}
 
     uncovered = reachable_routes(client.app) - covered
 
@@ -308,7 +378,7 @@ def test_the_matrix_covers_every_served_operation(client: TestClient) -> None:
         for path, operations in document["paths"].items()
         for method in operations
     }
-    covered = {(method, path.split("?")[0]) for method, path, _ in MATRIX}
+    covered = {(case.method, case.path.split("?")[0]) for case in CASES}
     templated = {(method, _template(path)) for method, path in served}
 
     assert templated - {(method, _template(path)) for method, path in covered} == set()
@@ -394,7 +464,7 @@ def test_the_open_surface_is_exactly_the_ruled_set(client: TestClient) -> None:
     }
 
     served_open = {
-        (method, path.split("?")[0]) for method, path, access in MATRIX if access == OPEN
+        (case.method, case.path.split("?")[0]) for case in CASES if case.access == OPEN
     }
 
     assert served_open == expected, "the anonymous surface changed without a ruling"
