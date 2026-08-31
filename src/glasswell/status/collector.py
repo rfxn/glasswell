@@ -11,6 +11,7 @@ import stat
 import subprocess
 import tempfile
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -558,11 +559,171 @@ def _metric(metric_id: str, label: str, value: Any, unit: str) -> InventoryMetri
     )
 
 
-def _one(connection: psycopg.Connection, statement: str) -> dict[str, Any]:
+def _one(
+    connection: psycopg.Connection, statement: str, parameters: Any = None
+) -> dict[str, Any]:
     with connection.cursor(row_factory=dict_row) as cursor:
-        cursor.execute(statement)
+        cursor.execute(statement, parameters)
         row = cursor.fetchone()
     return dict(row or {})
+
+
+# Which sources are inventoried as production is read from the rules that registered them, and
+# the jurisdiction each is counted under from the source registry those rules name as their
+# discriminator (R8). A new state registers a source and a rule; it does not edit this module.
+# The registry is the row source and the rules are a predicate over it, so a source cannot be
+# inventoried twice however many rules register it; a join emitted one row per rule, and two
+# in-force rules for one source served the same dataset_id twice.
+_PRODUCTION_SOURCES = """
+select s.source_id, s.name, coalesce(s.jurisdiction, s.source_id) as jurisdiction
+  from lineage.sources s
+ where s.source_id in (
+       select r.source_id
+         from lineage.conformance_rules r
+        where r.rule_kind = 'code_ref'
+          and r.spec ->> 'module_function' = 'glasswell.status.collector:_production_inventory'
+          and r.effective_from <= current_date
+          and (r.effective_to is null or r.effective_to > current_date))
+ order by jurisdiction, s.source_id
+"""
+
+# One bounded question per source. Each arm is index-only under migration 069: rows, months and
+# the valid-time bounds ride (source_id, production_month), the entity count rides
+# (source_id, entity_key), and the knowledge time is a one-row backward scan on
+# (source_id, created_at desc). Asking them of the whole table with FILTER instead reads every
+# row of every state and sorts all of it — that is the shape this replaced.
+_PRODUCTION_METRICS = """
+select m.rows, m.months, m.valid_from, m.valid_to, e.entities, k.latest_knowledge
+  from (select count(*) as rows, count(distinct production_month) as months,
+               min(production_month) as valid_from, max(production_month) as valid_to
+          from canonical.production_monthly where source_id = %(source_id)s) m,
+       (select count(distinct entity_key) as entities
+          from canonical.production_monthly where source_id = %(source_id)s) e,
+       (select max(created_at) as latest_knowledge
+          from canonical.production_monthly where source_id = %(source_id)s) k
+"""
+
+
+@dataclass(frozen=True, slots=True)
+class _ProductionPresentation:
+    """How one source's production inventory is named and qualified.
+
+    Prose only. Which sources are counted and under which jurisdiction is registry data; this
+    carries the grain wording and the caveats that grain forces, which no registry row holds. A
+    source without an entry is still counted, under its registered name.
+    """
+
+    dataset_id: str
+    label: str
+    grain: str
+    entity_metric_id: str
+    entity_label: str
+    entity_unit: str
+    detail: str
+    show_months: bool = True
+
+
+_VINTAGE_NOTE = "Includes retained report vintages; it is not a count of physical wells."
+
+# The scope string a jurisdiction reads as. An unregistered code is shown as itself rather than
+# guessed at, so a new state reads its own code until someone names it.
+JURISDICTION_SCOPES = {
+    "ND": "North Dakota",
+    "NM": "New Mexico",
+    "MT": "Montana",
+    "TX": "Texas",
+}
+
+_PRODUCTION_PRESENTATION: dict[str, _ProductionPresentation] = {
+    "nd_mpr_xlsx": _ProductionPresentation(
+        dataset_id="canonical.production_monthly/nd",
+        label="North Dakota production observations",
+        grain="one append-only source revision per well, month and stream",
+        entity_metric_id="wells",
+        entity_label="Distinct wells",
+        entity_unit="wells",
+        detail=_VINTAGE_NOTE,
+    ),
+    "nm_ocd_wcproduction": _ProductionPresentation(
+        dataset_id="canonical.production_monthly/nm",
+        label="New Mexico production observations",
+        grain="one append-only source revision per well, completion pool, month and stream",
+        entity_metric_id="entities",
+        entity_label="Distinct completion-pool entities",
+        entity_unit="entities",
+        detail=(
+            "Counted at the completion-pool grain the source files, not rolled up to the well"
+            " (cr_nm_wcproduction_inventory_jurisdiction_1), so this is not a well count. "
+            + _VINTAGE_NOTE
+        ),
+    ),
+    "mt_bogc_well_production": _ProductionPresentation(
+        dataset_id="canonical.production_monthly/mt-well",
+        label="Montana well-grain production observations",
+        grain="one append-only source revision per well, pool, month and stream",
+        entity_metric_id="wells",
+        entity_label="Distinct wells",
+        entity_unit="wells",
+        detail=(
+            "MBOGC files two grains and this is one of them; the lease grain is counted as its"
+            " own dataset (canonical.production_monthly/mt-lease) and the two are never added."
+            " Oil is oil plus condensate as published (cr_mt_liquids_policy_1). " + _VINTAGE_NOTE
+        ),
+        show_months=False,
+    ),
+    "mt_bogc_pru_production": _ProductionPresentation(
+        dataset_id="canonical.production_monthly/mt-lease",
+        label="Montana lease-grain production observations",
+        grain="one append-only source revision per lease unit, month and stream",
+        entity_metric_id="lease_units",
+        entity_label="Distinct lease units",
+        entity_unit="units",
+        detail=(
+            "The PRU grain. These rows carry a lease entity_key and no API-10, so they are"
+            " invisible to any well-prefix filter and are counted by source instead. Never"
+            " summed with the well grain (canonical.production_monthly/mt-well): the two are"
+            " the same production reported at different levels, not two populations."
+        ),
+        show_months=False,
+    ),
+}
+
+
+def _production_presentation(source_id: str, name: str) -> _ProductionPresentation:
+    known = _PRODUCTION_PRESENTATION.get(source_id)
+    if known is not None:
+        return known
+    return _ProductionPresentation(
+        dataset_id=f"canonical.production_monthly/{source_id}",
+        label=f"{name} production observations",
+        grain="one append-only source revision per reporting entity, month and stream",
+        entity_metric_id="entities",
+        entity_label="Distinct reporting entities",
+        entity_unit="entities",
+        detail=(
+            "Counted at the grain this source files, by registered jurisdiction. No grain"
+            " wording is registered for it yet, so nothing narrower is claimed here."
+        ),
+    )
+
+
+def _production_inventory(
+    connection: psycopg.Connection,
+) -> list[tuple[_ProductionPresentation, dict[str, Any]]]:
+    """Count canonical.production_monthly once per registered source, never once per table."""
+    with connection.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(_PRODUCTION_SOURCES)
+        sources = [dict(row) for row in cursor.fetchall()]
+    return [
+        (
+            _production_presentation(source["source_id"], source["name"]),
+            {
+                "jurisdiction": source["jurisdiction"],
+                **_one(connection, _PRODUCTION_METRICS, {"source_id": source["source_id"]}),
+            },
+        )
+        for source in sources
+    ]
 
 
 def _inventory(
@@ -594,43 +755,7 @@ def _inventory(
         " max(created_at) filter (where state_code = '25') as mt_latest_knowledge"
         " from canonical.wells_latest",
     )
-    production = _one(
-        connection,
-        "select count(*) filter (where left(api10, 2) = '33') as nd_rows,"
-        " count(distinct api10) filter (where left(api10, 2) = '33') as nd_wells,"
-        " count(distinct production_month) filter (where left(api10, 2) = '33') as nd_months,"
-        " min(production_month) filter (where left(api10, 2) = '33') as nd_valid_from,"
-        " max(production_month) filter (where left(api10, 2) = '33') as nd_valid_to,"
-        " max(created_at) filter (where left(api10, 2) = '33') as nd_latest_knowledge,"
-        " count(*) filter (where left(api10, 2) = '30') as nm_rows,"
-        " count(distinct api10) filter (where left(api10, 2) = '30') as nm_wells,"
-        " count(distinct production_month) filter (where left(api10, 2) = '30') as nm_months,"
-        " min(production_month) filter (where left(api10, 2) = '30') as nm_valid_from,"
-        " max(production_month) filter (where left(api10, 2) = '30') as nm_valid_to,"
-        " max(created_at) filter (where left(api10, 2) = '30') as nm_latest_knowledge,"
-        # Montana is bucketed by source and not by api10 prefix: it files a lease grain whose
-        # rows carry an entity_key and no api10 at all, so the prefix predicate the two arms
-        # above use would silently report 72% of the state under a label saying Montana.
-        " count(*) filter (where source_id = 'mt_bogc_well_production') as mt_rows,"
-        " count(distinct api10) filter (where source_id = 'mt_bogc_well_production')"
-        "   as mt_wells,"
-        " min(production_month) filter (where source_id = 'mt_bogc_well_production')"
-        "   as mt_valid_from,"
-        " max(production_month) filter (where source_id = 'mt_bogc_well_production')"
-        "   as mt_valid_to,"
-        " max(created_at) filter (where source_id = 'mt_bogc_well_production')"
-        "   as mt_latest_knowledge,"
-        " count(*) filter (where source_id = 'mt_bogc_pru_production') as mt_lease_rows,"
-        " count(distinct entity_key) filter (where source_id = 'mt_bogc_pru_production')"
-        "   as mt_lease_units,"
-        " min(production_month) filter (where source_id = 'mt_bogc_pru_production')"
-        "   as mt_lease_valid_from,"
-        " max(production_month) filter (where source_id = 'mt_bogc_pru_production')"
-        "   as mt_lease_valid_to,"
-        " max(created_at) filter (where source_id = 'mt_bogc_pru_production')"
-        "   as mt_lease_latest_knowledge"
-        " from canonical.production_monthly",
-    )
+    production = _production_inventory(connection)
     completions = _one(
         connection,
         "select count(*) filter (where left(api10, 2) = '33') as nd_rows,"
@@ -792,75 +917,32 @@ def _inventory(
             wells["mt_valid_to"],
             wells["mt_latest_knowledge"],
         ),
-        dataset(
-            "canonical.production_monthly/nd",
-            "North Dakota production observations",
-            "North Dakota",
-            "one append-only source revision per well, month and stream",
-            [
-                _metric("rows", "Observation rows", production["nd_rows"], "rows"),
-                _metric("wells", "Distinct wells", production["nd_wells"], "wells"),
-                _metric("months", "Distinct months", production["nd_months"], "months"),
-            ],
-            "Includes retained report vintages; it is not a count of physical wells.",
-            production["nd_valid_from"],
-            production["nd_valid_to"],
-            production["nd_latest_knowledge"],
-        ),
-        dataset(
-            "canonical.production_monthly/nm",
-            "New Mexico production observations",
-            "New Mexico",
-            "one append-only source revision per well, completion pool, month and stream",
-            [
-                _metric("rows", "Observation rows", production["nm_rows"], "rows"),
-                _metric("wells", "Distinct wells", production["nm_wells"], "wells"),
-                _metric("months", "Distinct months", production["nm_months"], "months"),
-            ],
-            "Includes retained report vintages; it is not a count of physical wells.",
-            production["nm_valid_from"],
-            production["nm_valid_to"],
-            production["nm_latest_knowledge"],
-        ),
-        dataset(
-            "canonical.production_monthly/mt-well",
-            "Montana well-grain production observations",
-            "Montana",
-            "one append-only source revision per well, pool, month and stream",
-            [
-                _metric("rows", "Observation rows", production["mt_rows"], "rows"),
-                _metric("wells", "Distinct wells", production["mt_wells"], "wells"),
-            ],
-            (
-                "MBOGC files two grains and this is one of them; the lease grain is counted"
-                " separately below and the two are never added. Oil is oil plus condensate as"
-                " published (cr_mt_liquids_policy_1). Includes retained report vintages; it is"
-                " not a count of physical wells."
-            ),
-            production["mt_valid_from"],
-            production["mt_valid_to"],
-            production["mt_latest_knowledge"],
-        ),
-        dataset(
-            "canonical.production_monthly/mt-lease",
-            "Montana lease-grain production observations",
-            "Montana",
-            "one append-only source revision per lease unit, month and stream",
-            [
-                _metric("rows", "Observation rows", production["mt_lease_rows"], "rows"),
-                _metric(
-                    "lease_units", "Distinct lease units", production["mt_lease_units"], "units"
-                ),
-            ],
-            (
-                "The PRU grain. These rows carry a lease entity_key and no API-10, so they are"
-                " invisible to any well-prefix filter and are counted by source instead. Never"
-                " summed with the well grain above: the two are the same production reported at"
-                " different levels, not two populations."
-            ),
-            production["mt_lease_valid_from"],
-            production["mt_lease_valid_to"],
-            production["mt_lease_latest_knowledge"],
+        *(
+            dataset(
+                shown.dataset_id,
+                shown.label,
+                JURISDICTION_SCOPES.get(counted["jurisdiction"], counted["jurisdiction"]),
+                shown.grain,
+                [
+                    _metric("rows", "Observation rows", counted["rows"], "rows"),
+                    _metric(
+                        shown.entity_metric_id,
+                        shown.entity_label,
+                        counted["entities"],
+                        shown.entity_unit,
+                    ),
+                    *(
+                        [_metric("months", "Distinct months", counted["months"], "months")]
+                        if shown.show_months
+                        else []
+                    ),
+                ],
+                shown.detail,
+                counted["valid_from"],
+                counted["valid_to"],
+                counted["latest_knowledge"],
+            )
+            for shown, counted in production
         ),
         dataset(
             "canonical.well_completions/nd",

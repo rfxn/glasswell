@@ -42,7 +42,9 @@ LOCAL_DAEMON_HOSTS = ("localhost", "127.0.0.1", "::1")
 
 FIXTURE_ENV_ID = "env_test"
 LINEAGE_FIXTURE_ENV_ID = "env_lineage_fixture"
-FIXTURE_SOURCES = ("nd_mpr_xlsx", "tx_pdq_dsv", "nm_ocd_wcproduction")
+# Jurisdictions included: these rows are inserted before seed_sources, whose `on conflict do
+# nothing` then cannot repair them, so anything left null here is null for the whole suite.
+FIXTURE_SOURCES = (("nd_mpr_xlsx", "ND"), ("tx_pdq_dsv", "TX"), ("nm_ocd_wcproduction", "NM"))
 CONTRACT_OWNER_KEY = "contract-tier-owner-key"
 CONTRACT_CSRF_KEY = "contract-tier-csrf-signing-key-0123456789"
 
@@ -331,8 +333,11 @@ def _seed_fixture_rows(connection: psycopg.Connection) -> None:
             (FIXTURE_ENV_ID,),
         )
         cursor.executemany(
-            "insert into lineage.sources (source_id, name) values (%s, %s)",
-            [(source, source.replace("_", " ")) for source in FIXTURE_SOURCES],
+            "insert into lineage.sources (source_id, name, jurisdiction) values (%s, %s, %s)",
+            [
+                (source, source.replace("_", " "), jurisdiction)
+                for source, jurisdiction in FIXTURE_SOURCES
+            ],
         )
 
 

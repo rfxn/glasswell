@@ -1019,6 +1019,37 @@ ND_RULES: tuple[dict[str, object], ...] = (
         "evidence_url": GIS_WELLS_URL,
         "code_ref": "web/src/map/provenance.ts",
     },
+    {
+        "rule_id": "cr_nd_inventory_jurisdiction_1",
+        "source_id": "nd_mpr_xlsx",
+        "stage": "join",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["source_id"],
+        "spec": {
+            "module_function": "glasswell.status.collector:_production_inventory",
+            "contract_note": (
+                "the operational inventory buckets this source's production rows by its"
+                " registered jurisdiction, and the dataset is scoped to that jurisdiction"
+            ),
+            "discriminator": "lineage.sources.jurisdiction",
+            "entity_identity_column": "entity_key",
+        },
+        "rule": "Production rows filed by this source are inventoried as North Dakota because"
+        " the source is registered to North Dakota, not because their API-10 begins 33.",
+        "rationale": (
+            "The inventory previously read left(api10, 2) = '33'. That is a mapping decision"
+            " living in a Python literal, which R8 refuses, and it is not indexable as written,"
+            " so every count read every row of a table that four states now share. The"
+            " registered jurisdiction of the filing source is one discriminator for every state"
+            " and every grain, including the Montana lease grain that carries no API-10. The two"
+            " definitions are not identical by construction: a row filed by this source whose"
+            " API-10 names another state now counts here, which is the honest attribution for an"
+            " inventory of what each source delivered. Confirm they agree on the resident load"
+            " before relying on the figure as a continuation of the old series."
+        ),
+        "evidence_url": MPR_INDEX_URL,
+        "code_ref": "glasswell/status/collector.py",
+    },
 )
 
 _INSERT = """

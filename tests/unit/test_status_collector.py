@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
@@ -16,6 +17,7 @@ from psycopg import Connection, IsolationLevel
 from psycopg.pq import TransactionStatus
 
 import glasswell.status.collector as status_collector
+from glasswell.seed import MT_RULES, ND_RULES, NM_RULES, SOURCES
 from glasswell.status.collector import (
     _configure_inventory_connection,
     _job,
@@ -24,6 +26,7 @@ from glasswell.status.collector import (
     _systemd_properties,
 )
 from glasswell.status.models import JobStatus, PlatformStatus, StatusCheck
+from tests.conftest import FIXTURE_SOURCES
 
 
 def _restore_payload(
@@ -734,3 +737,195 @@ def test_a_drill_that_restored_an_old_dump_still_degrades(tmp_path: Path) -> Non
     assert status.state == "degraded"
     assert "backup dump is stale" in status.detail
     assert "when the drill ran" in status.detail
+
+
+class _RecordingCursor:
+    """Records every statement issued and answers it from a caller-supplied result table."""
+
+    def __init__(self, executed: list, answers) -> None:
+        self._executed = executed
+        self._answers = answers
+        self._rows: list[dict] = []
+
+    def __enter__(self) -> _RecordingCursor:
+        return self
+
+    def __exit__(self, *_exception) -> bool:
+        return False
+
+    def execute(self, statement: str, parameters=None) -> None:
+        self._executed.append((statement, parameters))
+        self._rows = self._answers(statement)
+
+    def fetchall(self) -> list[dict]:
+        return self._rows
+
+    def fetchone(self) -> dict | None:
+        return self._rows[0] if self._rows else None
+
+
+class _RecordingConnection:
+    def __init__(self, registered: list[dict], counted: dict) -> None:
+        self.executed: list = []
+        self._registered = registered
+        self._counted = counted
+
+    def cursor(self, row_factory=None) -> _RecordingCursor:
+        return _RecordingCursor(
+            self.executed,
+            lambda statement: (
+                list(self._registered)
+                if "lineage.conformance_rules" in statement
+                else [dict(self._counted)]
+            ),
+        )
+
+
+def test_the_production_inventory_asks_one_bounded_question_per_registered_source() -> None:
+    """The defect was one aggregate whose cost grew with the union of every state's rows.
+
+    Driven rather than read: the function runs against three registered sources and every
+    statement it issues is recorded. Each arm has to carry its own `source_id` predicate and be
+    parameterised with the source it claims to count — separate scalar subqueries, so one arm
+    losing its predicate reads every state's rows while still returning a plausible number for
+    the source that was asked for. An unregistered source must still be counted, under the
+    presentation that claims nothing about its grain.
+    """
+    registered = [
+        {"source_id": "nd_mpr_xlsx", "name": "ND MPR", "jurisdiction": "ND"},
+        {"source_id": "mt_bogc_pru_production", "name": "MBOGC PRU", "jurisdiction": "MT"},
+        {"source_id": "zz_new_state", "name": "ZZ filings", "jurisdiction": "ZZ"},
+    ]
+    connection = _RecordingConnection(
+        registered,
+        {
+            "rows": 4,
+            "months": 2,
+            "entities": 2,
+            "valid_from": None,
+            "valid_to": None,
+            "latest_knowledge": None,
+        },
+    )
+
+    inventory = status_collector._production_inventory(connection)  # type: ignore[arg-type]
+
+    assert [shown.dataset_id for shown, _ in inventory] == [
+        "canonical.production_monthly/nd",
+        "canonical.production_monthly/mt-lease",
+        "canonical.production_monthly/zz_new_state",
+    ]
+    counted = [
+        (statement, parameters)
+        for statement, parameters in connection.executed
+        if "canonical.production_monthly" in statement
+    ]
+    assert [parameters["source_id"] for _, parameters in counted] == [
+        source["source_id"] for source in registered
+    ]
+    for statement, _parameters in counted:
+        arms = [
+            arm
+            for arm in statement.split("(select")[1:]
+            if "canonical.production_monthly" in arm
+        ]
+        assert len(arms) == 3, "the metrics query changed shape; re-check every arm"
+        for arm in arms:
+            assert "where source_id = %(source_id)s" in arm
+
+
+INVENTORY_JURISDICTION_RULES = tuple(
+    rule
+    for catalogue in (MT_RULES, ND_RULES, NM_RULES)
+    for rule in catalogue
+    if isinstance(rule["spec"], dict)
+    and rule["spec"].get("module_function")
+    == "glasswell.status.collector:_production_inventory"
+)
+
+
+def test_the_inventory_rules_declare_the_one_place_the_jurisdiction_is_read_from() -> None:
+    """R8: the registered rule has to describe what runs, not a second copy of the fact.
+
+    Each of these rules names `lineage.sources.jurisdiction` as its discriminator and says in
+    its rationale that the row is bucketed because the source is registered to that state. A
+    `jurisdiction` key in the same spec is a second copy of that fact which the collector's
+    coalesce would prefer, leaving the declared discriminator unread and the rationale false.
+    """
+    assert len(INVENTORY_JURISDICTION_RULES) == 4, "one rule per production-bearing source"
+    for rule in INVENTORY_JURISDICTION_RULES:
+        spec = rule["spec"]
+        assert spec["discriminator"] == "lineage.sources.jurisdiction", rule["rule_id"]
+        assert "jurisdiction" not in spec, (
+            f"{rule['rule_id']} carries a jurisdiction literal beside the discriminator it"
+            " declares; the served bucket would come from the literal, not from the registry"
+        )
+
+
+def test_the_fixture_source_rows_carry_the_jurisdiction_the_registry_registers() -> None:
+    """The fixture pre-inserts these ids, so `seed_sources` never gets to fill them in.
+
+    `reference.py`'s insert ends `on conflict do nothing`, which means a fixture row written
+    without a jurisdiction stays without one for the whole suite — and the collector then
+    cannot tell a registry read from a rule-spec literal, because both sources of the fact
+    resolve to the same answer only when the registry has one at all.
+    """
+    registered = {str(source["source_id"]): source["jurisdiction"] for source in SOURCES}
+
+    for source_id, jurisdiction in FIXTURE_SOURCES:
+        assert jurisdiction, f"{source_id} would be inventoried under its own id"
+        if source_id in registered:
+            assert jurisdiction == registered[source_id], (
+                f"{source_id} shadows the registry with a different jurisdiction"
+            )
+
+
+_POSITIONAL = ("above", "below", "preceding", "following")
+
+
+def test_no_production_dataset_qualifies_itself_by_where_another_one_was_emitted() -> None:
+    """Emission order is registry data, so prose that points at a neighbour claims nothing.
+
+    The sources are ordered by jurisdiction and then by source id, which already put the
+    Montana lease grain ahead of the well grain it used to follow. Two served sentences said
+    "below" and "above" of each other and both silently inverted. A cross-reference has to
+    name the other dataset's id, which no reordering can move.
+    """
+    shown = [
+        *status_collector._PRODUCTION_PRESENTATION.items(),
+        ("<unregistered>", status_collector._production_presentation("zz_new", "Zz")),
+    ]
+
+    for source_id, presentation in shown:
+        for field in ("label", "grain", "detail"):
+            text = getattr(presentation, field).lower()
+            for word in _POSITIONAL:
+                assert not re.search(rf"\b{word}\b", text), (
+                    f"{source_id}.{field} places another dataset by position ({word!r});"
+                    " name it by dataset_id, because the emitted order is registry data"
+                )
+
+
+def test_the_two_montana_grains_name_each_other_by_id_where_they_refuse_to_be_added() -> None:
+    """The refusal to sum them is only actionable if a reader can tell which two are meant."""
+    well = status_collector._PRODUCTION_PRESENTATION["mt_bogc_well_production"]
+    lease = status_collector._PRODUCTION_PRESENTATION["mt_bogc_pru_production"]
+
+    assert lease.dataset_id in well.detail
+    assert well.dataset_id in lease.detail
+
+
+def test_no_production_dataset_calls_its_entity_metric_wells_while_counting_something_else() -> (
+    None
+):
+    """`metric_id` is the machine-readable half of a figure whose label a consumer may not read.
+
+    New Mexico is counted at the completion-pool grain on `entity_key`, and its own detail says
+    the number is not a well count — so an id of `wells` invites exactly the cross-state sum
+    the detail refuses, and does it in the field a client keys on.
+    """
+    for source_id, shown in status_collector._PRODUCTION_PRESENTATION.items():
+        if shown.entity_metric_id == "wells":
+            assert shown.entity_unit == "wells", (
+                f"{source_id} ids its entity metric as wells but counts {shown.entity_unit}"
+            )
