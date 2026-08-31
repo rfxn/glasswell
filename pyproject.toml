@@ -47,6 +47,10 @@ glasswell-neighbors = "glasswell.marts.neighbors:main"
 glasswell-fracfocus = "glasswell.ingest.fracfocus:main"
 glasswell-eia-boundaries = "glasswell.ingest.eia_boundaries:main"
 glasswell-basin-boundaries = "glasswell.marts.basin_boundaries:main"
+# Tier 2 of the New Mexico track only. `glasswell.ingest.nm_ocd` and `.nm_dims` deliberately
+# keep their `python -m` spelling: docs/runbook-nm-tier2.md states why.
+glasswell-nm-wells = "glasswell.ingest.nm_wells:main"
+glasswell-nm-tiles = "glasswell.marts.nm_wells:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

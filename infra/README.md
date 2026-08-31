@@ -42,6 +42,28 @@ drill reads the local logical backup. `install.sh` does not create that key. The
 vzdump job is provisioning-owned and is not in this directory. See "Durability proofs" below
 for what each receipt does and does not prove.
 
+### Operator entry points
+
+`[project.scripts]` in `pyproject.toml` is what `scripts/deploy.sh` installs into
+`/opt/glasswell/venv/bin`; the editable reinstall runs on every deploy, lockfile change or
+not, so the table and the host move together. Anything not listed there is run as
+`/opt/glasswell/venv/bin/python -m glasswell.<module>`, which is a deliberate choice for the
+long, unattended loads — a short name reads like an invitation, and those need a runbook and a
+named authorisation instead.
+
+| script | what it does |
+|---|---|
+| `glasswell-migrate` | apply migrations; run as `postgres` |
+| `glasswell-neighbors` | rebuild the ND neighbour marts; wired into `glasswell-ingest.service` |
+| `glasswell-fracfocus` | FracFocus completion-anchor ingest |
+| `glasswell-nm-wells` | promote NM well headers and surface geometry from staged `wellhistory` |
+| `glasswell-nm-tiles` | rebuild `marts.nm_wells_tile` from canonical and reinstall the tile function |
+
+`glasswell-nm-wells` and `glasswell-nm-tiles` are the New Mexico track's Tier 2 — the spine and
+the map. They are the two steps in `docs/runbook-nm-tier2.md`. The Tier 1 production-history
+load keeps its `python -m glasswell.ingest.nm_ocd --promote-only` spelling for the reason above;
+`docs/runbook-nm-promotion.md` governs it.
+
 ### Status snapshot
 
 `glasswell-status.service` runs
