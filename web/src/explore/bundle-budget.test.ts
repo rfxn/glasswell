@@ -14,9 +14,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // 65,100 → 68,149 B because the plot this branch adds is one an explorer reader really does
 // download. Tightening the entry is the point of re-measuring — a budget carrying 25 kB of
 // slack has stopped being a ratchet.
+// Re-measured again for the "Wells by ..." panel: the explorer route rose 68,149 → 71,511 B.
+// It is on the route rather than split behind a dynamic import on purpose — it renders on the
+// wells dataset, which is the dataset the explorer opens on, so splitting it would buy a
+// second round trip for almost every reader rather than saving one a download.
 const BUDGET_BYTES = {
   entryGzip: 22_500,
-  explorerRouteGzip: 71_500,
+  explorerRouteGzip: 75_000,
   mapChunkGzip: 330_000,
 };
 

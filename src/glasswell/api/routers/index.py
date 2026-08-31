@@ -21,6 +21,7 @@ RESOURCE_LINKS = {
     "health": "/v1/health",
     "status": "/v1/status",
     "wells": "/v1/wells",
+    "well_facets": "/v1/wells/facets",
     "well_neighbors": "/v1/wells/{api10}/neighbors",
     "well_type_curve": "/v1/wells/{api10}/type-curve",
     "type_curves": "/v1/type-curves",

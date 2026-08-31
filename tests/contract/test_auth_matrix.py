@@ -48,6 +48,7 @@ MATRIX: tuple[tuple[str, str, str], ...] = (
     ("GET", "/v1/status", READ),
     ("GET", f"/v1/errors/{EXAMPLE_ERROR_CODE}", READ),
     ("GET", "/v1/wells", READ),
+    ("GET", "/v1/wells/facets?state=33&by=operator", READ),
     ("GET", f"/v1/wells/status-summary?bbox={EXAMPLE_BBOX}", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/completions", READ),
