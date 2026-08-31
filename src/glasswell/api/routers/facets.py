@@ -498,7 +498,7 @@ def _warnings(
                 "detail": (
                     "The search ran over every value in the state before the cut, so these are"
                     " the leading matches and not the matches within a page. `absence` is"
-                    " outside it: a well with no value matches no search text.",
+                    " outside it: a well with no value matches no search text."
                 ),
                 "pointer": "/buckets",
             }
