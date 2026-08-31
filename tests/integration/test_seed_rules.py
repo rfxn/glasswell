@@ -60,6 +60,14 @@ POLICY_RULES = tuple(sorted((
     "cr_mt_pru_reconciliation_1",
     "cr_mt_pru_reporting_level_1",
     "cr_mt_pru_stream_scope_1",
+    # Which jurisdiction the operational inventory counts a source's production rows under.
+    # One row per production-bearing source, because the alternative was an api10-prefix
+    # predicate in the collector — a mapping decision in a Python literal that also reached
+    # none of the Montana lease grain. The executor is the collector the spec names.
+    "cr_mt_inventory_jurisdiction_1",
+    "cr_mt_pru_inventory_jurisdiction_1",
+    "cr_nd_inventory_jurisdiction_1",
+    "cr_nm_wcproduction_inventory_jurisdiction_1",
     "cr_nd_basin_1",
     "cr_nd_geometry_provenance_1",
     "cr_nd_liquids_policy_1",

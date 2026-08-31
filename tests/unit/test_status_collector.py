@@ -734,3 +734,46 @@ def test_a_drill_that_restored_an_old_dump_still_degrades(tmp_path: Path) -> Non
     assert status.state == "degraded"
     assert "backup dump is stale" in status.detail
     assert "when the drill ran" in status.detail
+
+
+def test_the_production_inventory_is_read_only_through_its_source_bounded_query() -> None:
+    """The predicate this replaced, kept out of the production reads by name.
+
+    `left(api10, 2)` is not indexable as written, so every arm using it read the whole table —
+    and it reached none of the Montana lease grain, which carries no API-10 at all. Both faults
+    return the moment someone adds a state by copying the arm above it, which is exactly how the
+    original grew. Jurisdiction is registry data now (R8); a literal here is the regression.
+
+    Scoped to `canonical.production_monthly` deliberately. The `canonical.well_completions` arm
+    is still written the old way and is still a whole-table read; it was left alone because no
+    resident row count was available to size the fix against, and it is recorded as outstanding
+    rather than quietly swept in here.
+    """
+    source = Path(status_collector.__file__).read_text(encoding="utf-8")
+    reads = [line for line in source.splitlines() if "from canonical.production_monthly" in line]
+
+    assert "left(api10" not in status_collector._PRODUCTION_METRICS
+    assert len(reads) == 3, (
+        "every read of production_monthly must be one of the three source-bounded arms;"
+        f" found {len(reads)}"
+    )
+    for line in reads:
+        assert "where source_id = %(source_id)s" in line
+
+
+def test_every_production_inventory_read_is_bounded_to_one_source() -> None:
+    """An unbounded aggregate is the whole defect: cost that grows with the union of states.
+
+    Each arm of the metrics query must carry its own source predicate, because they are separate
+    scalar subqueries and one missing predicate silently reads every state's rows while still
+    returning a plausible number for the source that was asked for.
+    """
+    arms = [
+        arm
+        for arm in status_collector._PRODUCTION_METRICS.split("(select")[1:]
+        if "canonical.production_monthly" in arm
+    ]
+
+    assert len(arms) == 3, "the metrics query changed shape; re-check every arm is source-bounded"
+    for arm in arms:
+        assert "where source_id = %(source_id)s" in arm

@@ -1327,6 +1327,68 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "evidence_url": GIS_PATHS_URL,
         "code_ref": "glasswell/api/routers/wells.py",
     },
+    {
+        "rule_id": "cr_mt_inventory_jurisdiction_1",
+        "source_id": WELL_SOURCE,
+        "stage": "join",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["source_id"],
+        "spec": {
+            "module_function": "glasswell.status.collector:_production_inventory",
+            "contract_note": (
+                "the operational inventory buckets this source's production rows by its"
+                " registered jurisdiction, and the dataset detail states that basis"
+            ),
+            "jurisdiction": "MT",
+            "discriminator": "lineage.sources.jurisdiction",
+            "entity_identity_column": "entity_key",
+        },
+        "rule": "Production rows filed by this source are inventoried as Montana because the"
+        " source is registered to Montana, not because their API-10 begins 25.",
+        "rationale": (
+            "The inventory previously bucketed a row by the first two characters of its API-10."
+            " That predicate is a mapping decision living in a Python literal, which R8 refuses,"
+            " and it is also wrong for Montana: the same filing agency's PRU grain carries no"
+            " API-10 at all, so the collector already had to special-case it by source. Reading"
+            " the registered jurisdiction of the filing source is one discriminator that covers"
+            " both grains and every state after them, and it is a fact with an owner and a date"
+            " rather than a substring. It is not identical to the prefix predicate: a row whose"
+            " API-10 names another state is now counted under the source that filed it, which is"
+            " the honest attribution for an operational inventory of what each source delivered."
+        ),
+        "evidence_url": PRODUCTION_URL,
+        "code_ref": "glasswell/status/collector.py",
+    },
+    {
+        "rule_id": "cr_mt_pru_inventory_jurisdiction_1",
+        "source_id": PRU_SOURCE,
+        "stage": "join",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["source_id"],
+        "spec": {
+            "module_function": "glasswell.status.collector:_production_inventory",
+            "contract_note": (
+                "the lease grain is inventoried by registered jurisdiction and counted on"
+                " entity_key; it is never summed with the well grain"
+            ),
+            "jurisdiction": "MT",
+            "discriminator": "lineage.sources.jurisdiction",
+            "entity_identity_column": "entity_key",
+        },
+        "rule": "PRU rows are inventoried as Montana by registered jurisdiction, and their"
+        " distinct-entity count is taken on entity_key because they carry no API-10.",
+        "rationale": (
+            "This grain is the reason the API-10 prefix cannot be the discriminator. Its rows"
+            " are lease units with an entity_key and a null api10, so a prefix predicate reaches"
+            " none of the 4,808,814 of them and would report Montana as its well grain alone."
+            " Counting on entity_key rather than api10 is the same choice made once for every"
+            " grain instead of per state: for a well row entity_key is the API-10 by the"
+            " definition of entity_type, so no well count changes, and for a lease row it is the"
+            " only identity there is. The two grains stay separate datasets and are never added."
+        ),
+        "evidence_url": PRODUCTION_URL,
+        "code_ref": "glasswell/status/collector.py",
+    },
 )
 
 _INSERT = """
