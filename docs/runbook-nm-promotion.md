@@ -335,8 +335,13 @@ journalctl -u t3-nm-stage -f
 
 **Do not pass `--tables`.** Step 4 needs all eight siblings of `wcproduction`.
 
-Expected: `staged_rows` for `wcproduction` = **17,645,580** — that is the Parquet partition
-registry, not Postgres rows. Wall clock ~34 min for `wcproduction` plus a few minutes for the
+Expected: `staged_rows` for `wcproduction` = **48,104,334** — the whole archive, and the count
+the Parquet partition registers. **Corrected 2026-08-31; this line previously read 17,645,580,
+which is the Step 3 figure and not this one.** Staging is unfiltered by design: the 2015-01
+promotion window lives in `cr_nm_wcproduction_window_1` and is applied by `staged_months`
+(`nm_ocd.py:1425-1431`) at promotion, reading out of the full partition. Measured against the
+staged Parquet, `prodn_yr >= '2015'` is exactly **17,645,580**, so both figures are right about
+different things and Step 3's table below is unchanged. Wall clock ~34 min for `wcproduction` plus a few minutes for the
 eight siblings. Peak RSS ~2.24 GB, comfortably under the unit's `MemoryMax=6G`. Staging
 footprint **≈ 448 MB**: `wchistory` 167 MB, `wellhistory` 150 MB, `podwc` 44 MB, `pod` 37 MB,
 `property` 18 MB, `ogrid` 15 MB, `spacingunit` 14 MB, `pool` 2.7 MB,
