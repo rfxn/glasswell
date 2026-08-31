@@ -32,3 +32,16 @@
 - [Change] A search commits with `replaceState` rather than `pushState`, on the convention the
            viewport already follows — a seven-character search cost seven back presses.
            Changing the dimension, the state, the ranking or its direction still pushes
+- [New] The "Wells by …" panel offers the cut as a control — 10, 15, 20, 25 or 50 — writing
+      `wb.top`. The API has always accepted `top` and the owner asked for "top 15 or 20", but
+      reaching 20 meant hand-editing the URL. A cut the URL names and the list does not offer
+      is shown rather than silently replaced by the default
+- [New] A bucket whose filter the grid beside it already carries is drawn and announced as
+      pressed, the same `aria-pressed` convention the enum chips in the facet row use. The
+      state term counts: the same county code in another state is not the applied filter
+- [New] The counted list is an `aria-live="polite"` region and the wait before it carries
+      `role="status"`, so the list changing under a control that keeps focus is announced
+      rather than replaced in silence
+- [Fix] A "Wells by …" picker shows the value the request actually used. Selectedness set
+      before an option is inserted does not survive the select's reset, so a picker could name
+      one dimension, state or ranking while the list beside it answered another

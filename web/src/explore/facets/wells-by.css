@@ -149,6 +149,18 @@ button.gw-wells-by-value:focus-visible .gw-wells-by-name {
   text-decoration: underline;
 }
 
+/* The facet row's chip convention on a different control: the bucket that *is* the applied
+   filter is drawn in the accent, not in a severity colour. No padding, so a pressed row does
+   not shift its value column against the unpressed ones above and below it. */
+button.gw-wells-by-value[aria-pressed="true"] {
+  background: var(--tint-accent);
+  border-radius: var(--gw-radius-xs);
+}
+
+button.gw-wells-by-value[aria-pressed="true"] .gw-wells-by-name {
+  color: var(--cyan-text);
+}
+
 .gw-wells-by-name {
   display: block;
   overflow: hidden;

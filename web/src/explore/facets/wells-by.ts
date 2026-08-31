@@ -5,6 +5,7 @@ import type { Figure, Warning } from "../../api/envelope.ts";
 import type { AppState } from "../../app/state.ts";
 import { warningPanels } from "../../card/card.ts";
 import "../../card/gw-figure.ts";
+import { filtersOf } from "../router.ts";
 
 /** §4.1: the panel rides the URL, so a shared link opens the list the sharer was reading. */
 export const WELLS_BY_PREFIX = "wb.";
@@ -21,6 +22,9 @@ const SORTS = [
   { id: "count", label: "well count" },
   { id: "value", label: "value" },
 ] as const;
+
+/** Every size the operation accepts a cut at: `ge=1, le=50` on the server, 15 by default. */
+const TOPS = ["10", "15", "20", "25", "50"] as const;
 
 const DEFAULTS = { state: "33", by: "operator", sort: "count", order: "desc", top: "15" };
 
@@ -214,6 +218,7 @@ function statesOf(error: ApiError): FacetState[] {
 
 function loading(): HTMLElement {
   const box = div("gw-wells-by-loading");
+  box.setAttribute("role", "status");
   box.textContent = "Counting wells…";
   return box;
 }
@@ -273,6 +278,17 @@ function controls(
       options.signal,
     ),
     direction(panel, options),
+    select(
+      "top",
+      cuts(panel["top"] as string).map((size) => ({
+        value: size,
+        label: `top ${size}`,
+        disabled: false,
+      })),
+      panel["top"] as string,
+      (value) => options.hooks.setPanel({ top: value }, "push"),
+      options.signal,
+    ),
   );
   bar.append(tools);
   return bar;
@@ -343,6 +359,11 @@ function direction(panel: Record<string, string>, options: WellsByOptions): HTML
   return button;
 }
 
+/** The offered cuts, plus whatever the URL asked for: the control names the list it produced. */
+function cuts(current: string): string[] {
+  return [...new Set([...TOPS, current])].sort((a, b) => Number(a) - Number(b));
+}
+
 /** Label and control wrap as one unit: at 320 a bare `in` was left stranded on the line above. */
 function pair(label: string, control: HTMLElement): HTMLElement {
   const wrapper = div("gw-wells-by-pair");
@@ -371,12 +392,18 @@ function select(
     node.selected = option.value === current;
     element.append(node);
   }
+  // Assigned after insertion as well: inserting an option resets the select, which drops a
+  // selectedness set before it, and a picker showing a value the request did not use is a
+  // control that lies about the list beside it.
+  if (options_.some((option) => option.value === current)) element.value = current;
   element.addEventListener("change", () => onChange(element.value), { signal });
   return element;
 }
 
 function list(data: WellFacets, warnings: Warning[], options: WellsByOptions): HTMLElement {
   const box = div("gw-wells-by-list");
+  // The counts change under a control that keeps focus, so nothing else would announce them.
+  box.setAttribute("aria-live", "polite");
 
   const caption = document.createElement("p");
   caption.className = "gw-wells-by-caption";
@@ -405,8 +432,9 @@ function list(data: WellFacets, warnings: Warning[], options: WellsByOptions): H
   );
   const rows = document.createElement("ol");
   rows.className = "gw-wells-by-rows";
+  const applied = filtersOf(options.state);
   data.buckets.forEach((bucket, index) => {
-    rows.append(row(bucket, index + 1, widest, data, options));
+    rows.append(row(bucket, index + 1, widest, data, applied, options));
   });
   if (data.buckets.length > 0) box.append(rows);
 
@@ -420,11 +448,22 @@ function list(data: WellFacets, warnings: Warning[], options: WellsByOptions): H
   return box;
 }
 
+/** Mirrors the enum chips: a bucket whose filter the grid already carries is a pressed control. */
+function narrowedBy(
+  filters: Record<string, string[]>,
+  applied: Record<string, string[]>,
+): boolean {
+  return Object.entries(filters).every(([name, values]) =>
+    values.every((value) => applied[name]?.includes(value)),
+  );
+}
+
 function row(
   bucket: FacetBucket,
   rank: number,
   widest: number,
   data: WellFacets,
+  applied: Record<string, string[]>,
   options: WellsByOptions,
 ): HTMLElement {
   const item = document.createElement("li");
@@ -437,6 +476,7 @@ function row(
   if (label instanceof HTMLButtonElement && filters) {
     label.type = "button";
     label.setAttribute("aria-label", `Narrow the wells below to ${bucket.value} in ${data.state_name}`);
+    label.setAttribute("aria-pressed", String(narrowedBy(filters, applied)));
     label.addEventListener("click", () => options.hooks.applyFilter(filters), {
       signal: options.signal,
     });

@@ -359,6 +359,117 @@ describe("a bucket narrows the grid beside it", () => {
   });
 });
 
+describe("the cut is a control, not a URL the reader has to hand-edit", () => {
+  it("offers the sizes the server accepts and asks for the one the URL names", async () => {
+    await mountWellsBy(host, {
+      state: state({ "wb.top": ["20"] }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+    const picker = host.querySelector(".gw-wells-by-top") as HTMLSelectElement;
+
+    expect([...picker.options].map((option) => option.value)).toEqual([
+      "10",
+      "15",
+      "20",
+      "25",
+      "50",
+    ]);
+    expect(picker.value).toBe("20");
+    expect(requested[0]).toContain("top=20");
+  });
+
+  it("shows the cut the URL asked for even when it is not one of the offered sizes", async () => {
+    await mountWellsBy(host, {
+      state: state({ "wb.top": ["7"] }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+    const picker = host.querySelector(".gw-wells-by-top") as HTMLSelectElement;
+
+    expect([...picker.options].map((option) => option.value)).toEqual([
+      "7",
+      "10",
+      "15",
+      "20",
+      "25",
+      "50",
+    ]);
+    expect(picker.value).toBe("7");
+  });
+
+  it("commits the chosen cut to the panel's own URL key", async () => {
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    const picker = host.querySelector(".gw-wells-by-top") as HTMLSelectElement;
+    picker.value = "25";
+    picker.dispatchEvent(new Event("change"));
+
+    expect(panelCommits).toEqual([{ top: "25" }]);
+    expect(panelModes).toEqual(["push"]);
+  });
+});
+
+describe("the bucket that is the applied filter says so", () => {
+  function applied(value: string): Record<string, string[]> {
+    return { "f.operator": [value], "f.state": ["42"] };
+  }
+
+  it("presses the bucket whose filter the grid beside it is already narrowed by", async () => {
+    await mountWellsBy(host, {
+      state: state(applied("PIONEER NATURAL RESOURCES USA INC")),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+    const pressed = [...host.querySelectorAll("button.gw-wells-by-value")].map((node) =>
+      node.getAttribute("aria-pressed"),
+    );
+
+    expect(pressed).toEqual(["true", "false"]);
+  });
+
+  it("presses nothing when the grid carries no filter of its own", async () => {
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    const pressed = [...host.querySelectorAll("button.gw-wells-by-value")].map((node) =>
+      node.getAttribute("aria-pressed"),
+    );
+
+    expect(pressed).toEqual(["false", "false"]);
+  });
+
+  it("presses nothing where the state does not match, so one county code is not two", async () => {
+    // The filter names the same value in a different state: this bucket is not that filter.
+    await mountWellsBy(host, {
+      state: state({
+        "f.operator": ["PIONEER NATURAL RESOURCES USA INC"],
+        "f.state": ["33"],
+      }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+
+    expect(
+      [...host.querySelectorAll("button.gw-wells-by-value")].map((node) =>
+        node.getAttribute("aria-pressed"),
+      ),
+    ).toEqual(["false", "false"]);
+  });
+});
+
+describe("a screen reader is told the counts changed", () => {
+  it("announces the list politely rather than replacing it in silence", async () => {
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    expect(host.querySelector(".gw-wells-by-list")?.getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("gives the wait before it a status role", () => {
+    vi.stubGlobal("fetch", () => new Promise(() => {}));
+    void mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    expect(host.querySelector(".gw-wells-by-loading")?.getAttribute("role")).toBe("status");
+  });
+});
+
 describe("the state picker offers every state and says which have nothing behind them", () => {
   it("names each state in the layer panel's `Noun (Full state name)` convention", async () => {
     await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
