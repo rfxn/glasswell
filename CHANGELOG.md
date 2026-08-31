@@ -7,6 +7,138 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.70"></a>
+## v0.70 — 2026-08-30
+
+- [New] glasswell-eia-boundaries and glasswell-basin-boundaries console scripts, so both
+      halves of the EIA boundary load are operator-reachable; the layer shipped in v0.69 with
+      its tables, tile functions and martin sources installed and served nothing because
+      neither loader had an entry point
+- [New] docs/runbook-basin-load.md: the two production commands, the user each runs as, the
+      exact expected counts against pinned manifest ids, success-versus-partial triage, and
+      the undo
+- [Change] test_fetch_attempt_entrypoints: eia_boundaries.py joins the network-fetch commands
+           required to open the independent attempt ledger; it always did, and nothing
+           checked it
+- [New] Montana reaches the API and the map: marts.mt_wells_tile and marts.mt_paths_tile
+      rebuilt by glasswell.marts.mt_wells, mt_wells and mt_paths published as tile layers
+      and martin function sources, and a Wells (MT) and Well paths (MT) row in the layer
+      registry drawn from the same status expressions as North Dakota and Texas
+- [New] every served Montana path carries geometry_class map_stick and its vertex_count as
+      tile properties, so cr_mt_paths_geometry_class_1's requirement that the distinction
+      be stated wherever the geometry is served holds for a client that reads no docs
+- [New] cr_mt_paths_length_scope_1: no lateral length is served for a Montana well, and the
+      response carries the rule in the figure's place with a length_not_served warning and
+      a links.length_rule handle
+- [New] glasswell-mt-bogc and glasswell-mt-gis console scripts, the Montana mart refresh on
+      the ingest timer, and docs/runbook-mt-load.md — the production load with its expected
+      counts, tolerances, success-versus-partial cut and its undo
+- [New] /status reports current Montana wells and published Montana map layers, each stating
+      the rule behind what it counts
+- [Fix] mt_gis: rejected rows reach lineage.quarantine_rows instead of only a counter — on
+      the 2026-08-18 Wells.zip that is 1,400 wells whose MBOGC status cr_mt_gis_status_vocab_1
+      does not promote, plus one unparseable API-10, recoverable with their payloads rather
+      than reconstructable by subtracting two printed totals
+- [Fix] the well card served a Montana lateral length of 6,120.87 ft under North Dakota's
+      cr_nd_compute_crs rule: lengths.length_rule_source answers nd_gis_horizontals_line for
+      any well with no basin, and cr_mt_basin_scope_1 leaves every Montana well untagged
+- [Change] the frozen WellDetail schema documents what it now serves: length_method reads
+           not_served where a rule withholds the length, compute_crs and lateral_length_ft are
+           null there, and links.length_rule names the rule; descriptions only, no structural
+           change, snapshot regenerated with scripts/regen-snapshot.py
+- [Change] /status inventories Montana production on both grains MBOGC files, bucketed by
+           source rather than by API-10 prefix: the lease grain carries a lease entity_key and
+           no api10, so a prefix filter reaches none of it and would report 72% of the state
+           under a label saying Montana
+- [Change] PROVENANCE_RULES maps state 25 to cr_mt_paths_geometry_class_1 rather than
+           falling through to North Dakota's cr_nd_geometry_provenance_1, which would have
+           cited a survey-derived classing rule for a cartographic centreline
+- [New] `glasswell-nm-wells` and `glasswell-nm-tiles` console scripts for the New Mexico
+      Tier 2 pair — the header and surface-geometry promotion, and the tile mart refresh.
+      Both modules already had a `main()` and neither had an operator entry point, so the
+      runbook commands were module invocations; `scripts/deploy.sh` reinstalls the project
+      editable on every deploy, so the table and the host move together
+- [New] `docs/runbook-nm-tier2.md`: the four production steps that open the New Mexico gate,
+      scoped as Tier 2 and explicitly not the production-history load. Every expected figure
+      carries its provenance — sealed 2026-08-20 measurement, estimate by analogy, or record
+      it — so no fixture count is mistaken for a forecast
+- [New] `tests/integration/test_nm_tier2_end_to_end.py` runs the operator's chain on one
+      database — stage, promote, refresh, serve — and decodes a fixed zoom-9 southeastern New
+      Mexico tile off the wire; the promotion and the mart each had their own suite and
+      nothing measured the seam between them
+- [New] the gate assertion is red then green on the same API-10: the first promotion is
+      rolled back so the 404 and the 200 are the same key on the same database, which is the
+      only ordering that proves the header row is what changed the answer
+- [New] `tests/unit/test_console_scripts.py` pins the New Mexico pair to the launcher
+      contract and fails if `nm_ocd` or `nm_dims` ever acquires a script of its own: an entry
+      point is a form of encouragement, and the production-history load needs a runbook and a
+      named authorisation instead of a shorter spelling
+- [New] `canonical.wells.operator_name_reported` is decided at promotion time and is not one
+      of the attributes the divergence check compares, so a re-run once
+      `lineage.operator_aliases` exists appends nothing and leaves every name null — measured,
+      then pinned by a test pair covering both orderings. The runbook makes it an abort
+      condition with an owner decision rather than a default
+- [Change] `infra/README.md` gains an operator entry-point table, and records why the Tier 1
+         production-history load keeps its `python -m` spelling: an entry point is a form of
+         encouragement, and that load needs a runbook and a named authorisation instead
+- [Change] `infra/martin/README.md` lists `nm_wells` with its refresh command, states that
+         New Mexico publishes a point layer and no lateral, and stops claiming a layer count
+         the roster outgrew
+- [Change] `README.md`'s project-docs table gains both New Mexico runbooks; the Tier 1 one
+         has never been listed there and the pair only reads correctly together
+- [New] Status serves a Deployment block: code version, schema head, edge host,
+      database storage, and the posture the serving process is actually enforcing
+      (public origin, anonymous reads, tile upstream, frontend bundle, local
+      basemap, CSP), read from the API process rather than the snapshot because
+      only it knows what it refuses
+- [New] Status groups components into an Architecture section by tier — serving
+      plane, data plane, edge, host — and names the systemd unit or mount each one
+      was observed through, so a reader can act on the row
+- [New] The collector observes the Cloudflare tunnel (`cloudflared.service`), the
+      status-snapshot timer that writes this page, and the Cloudflare range
+      refresh; three components the deployment ran with no telemetry at all
+- [New] Scheduled work reports each job's timer unit and whether it is armed,
+      separately from whether its last run succeeded
+- [New] Dataset inventory counts `lineage.conformance_rules` — registered rules,
+      rules in force today, rule families, sources covered — so R8's mapping
+      registry has a magnitude on the page
+- [New] Open quarantine is inventoried per reason code as well as in total; the
+      per-reason metrics partition the open population
+- [New] Monthly production carries a distinct-month count per state alongside its
+      span, because two endpoints cannot show a hole between them
+- [New] Status discloses that staging is not inventoried, rather than leaving its
+      absence to inference
+- [Change] Dataset inventory becomes a Data footprint table grouped by storage
+           layer (canonical, marts, lineage), with scope, grain, magnitudes, the
+           span covered and latest knowledge on one scannable row; each dataset's
+           served caveat and count time move into a per-row disclosure
+- [Change] Method statements that qualified a section rather than reported its
+           state — what a check proves, how counts are grained, what a run time
+           means, how freshness is decided — move from standing paragraphs into
+           collapsed disclosures beside each heading; visible standing prose on the
+           surface drops from 276 words to 77, all of it served content
+- [Change] Precision is marked once per footprint row when every metric shares it
+           and per metric when they differ, replacing a badge on all 43 counts
+- [Change] Component cards state their observation time only when it differs from
+           the snapshot's, instead of repeating one timestamp on every card
+- [Change] The committed OpenAPI snapshot regains the served document: `deployment`,
+           `checks[].tier`, `checks[].probe`, `jobs[].unit`, `jobs[].timer_armed` and
+           `platform.edge_host` are all additive
+- [Change] `tests/e2e/status-surface.mjs` grows from 88 to 124 assertions, adding
+           deployment facts, tier grouping and probe identity, layer grouping and
+           laid-out magnitude height, a derivation handle on every rendered count,
+           and that each demoted caveat starts collapsed behind a visible control
+           and becomes visible when opened; visibility is measured with
+           `checkVisibility()`, since a closed `<details>` keeps a laid-out box that
+           makes both `getBoundingClientRect()` and `offsetParent` report it visible
+- [Fix] deploy.sh: install every configured layer's tile function after seeding and before
+      the martin restart. martin refuses to boot on an unresolvable source, so three New
+      Mexico and boundary layers whose marts had never been refreshed stopped it starting
+      and took nd_wells and tx_wells down with them
+- [Fix] deploy.sh: hand the marts tile functions to the pipeline role after installing them
+      as superuser; a function first created by the deploy was owned by postgres and made
+      the next mart refresh fail with "must be owner of function nd_survey_traces"
+
 <a id="v0.69"></a>
 ## v0.69 — 2026-08-30
 
