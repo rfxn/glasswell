@@ -52,10 +52,16 @@ def _is_number(value: Any) -> bool:
     return isinstance(value, str) and bool(NUMERIC_TEXT.match(value))
 
 
+def _is_handle(value: Any) -> bool:
+    """A handle is a non-empty string. `d: null` is a key, not a derivation."""
+    return isinstance(value, str) and bool(value)
+
+
 def _sidecar_prefixes(node: Any, pointer: str, found: set[str]) -> None:
     if isinstance(node, dict):
-        for key in node.get("_lineage", {}):
-            found.add(f"{pointer}/{key.replace('.', '/')}")
+        for key, handle in node.get("_lineage", {}).items():
+            if _is_handle(handle):
+                found.add(f"{pointer}/{key.replace('.', '/')}")
         for key, value in node.items():
             _sidecar_prefixes(value, f"{pointer}/{key}", found)
     elif isinstance(node, list):
@@ -85,7 +91,9 @@ def _walk(
         return
     if not _is_number(node):
         return
-    in_figure = isinstance(parent, dict) and key == "value" and "d" in parent
+    # The value of `d`, not its presence: a figure whose handle is null resolves to nothing, so
+    # classifying it as covered would let the whole surface go handleless with the gate green.
+    in_figure = isinstance(parent, dict) and key == "value" and _is_handle(parent.get("d"))
     if in_figure or _covered_by_sidecar(pointer, prefixes):
         yield pointer, "figure"
     elif _allowed(pointer):
@@ -115,19 +123,45 @@ def allowed_numbers(data: Any) -> list[str]:
 
 
 def handles(data: Any) -> set[str]:
+    """The resolvable handles. Anything at a handle position that is not one is not silently
+    dropped here — `unusable_handles` reports it, and the walker calls its figure naked."""
+    found, _ = _handle_walk(data, "")
+    return found
+
+
+def unusable_handles(data: Any) -> list[str]:
+    """Pointers where a handle is advertised and something unresolvable is served instead."""
+    _, offenders = _handle_walk(data, "")
+    return offenders
+
+
+def _handle_walk(data: Any, pointer: str) -> tuple[set[str], list[str]]:
     found: set[str] = set()
+    offenders: list[str] = []
+
+    def collect(value: Any, at: str) -> None:
+        if _is_handle(value):
+            found.add(value)
+        else:
+            offenders.append(at)
+
     if isinstance(data, dict):
-        if isinstance(data.get("d"), str):
-            found.add(data["d"])
+        if "d" in data:
+            collect(data["d"], f"{pointer}/d")
         for key, value in data.items():
             if key == "_lineage" and isinstance(value, dict):
-                found.update(str(handle) for handle in value.values())
+                for name, handle in value.items():
+                    collect(handle, f"{pointer}/_lineage/{name}")
             else:
-                found.update(handles(value))
+                nested, nested_offenders = _handle_walk(value, f"{pointer}/{key}")
+                found |= nested
+                offenders.extend(nested_offenders)
     elif isinstance(data, list):
-        for value in data:
-            found.update(handles(value))
-    return found
+        for index, value in enumerate(data):
+            nested, nested_offenders = _handle_walk(value, f"{pointer}/{index}")
+            found |= nested
+            offenders.extend(nested_offenders)
+    return found, offenders
 
 
 # The published examples are all North Dakota, and a jurisdiction the walker never walks is a
@@ -230,6 +264,24 @@ def test_no_served_number_is_naked(client: TestClient) -> None:
         if found:
             offenders[operation_id] = found
 
+    assert offenders == {}
+
+
+def test_no_served_handle_is_advertised_and_unresolvable(client: TestClient) -> None:
+    """`d` present with a null or non-string value is the shape a presence check cannot see:
+    every figure carries the key, nothing carries a derivation, and R6 reads as satisfied."""
+    offenders: dict[str, list[str]] = {}
+    carriers = 0
+    for operation_id, call in exercised(client):
+        body = payload(client.get(call["url"], params=call["params"]))
+        if body is None:
+            continue
+        carriers += len(handles(body))
+        found = unusable_handles(body)
+        if found:
+            offenders[operation_id] = found
+
+    assert carriers, "no response carried a handle, so this test cannot fail"
     assert offenders == {}
 
 
