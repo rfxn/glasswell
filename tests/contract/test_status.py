@@ -95,6 +95,8 @@ def _metrics(dataset: DatasetInventory) -> dict[str, int]:
 
 NM_API10S = ("3002540209", "3004508708")
 NM_POOLS = ("96269", "72319")
+# The grain New Mexico files and is counted on: one entity per well and completion pool.
+NM_ENTITY_KEYS = tuple(f"{api10}:{pool}" for api10, pool in zip(NM_API10S, NM_POOLS, strict=True))
 
 
 def _seed_new_mexico_production(connection: psycopg.Connection) -> int:
@@ -457,7 +459,7 @@ def test_production_is_inventoried_under_the_state_that_reported_it(
         inventory["canonical.production_monthly/nm"],
     )
     assert (nd.scope, nm.scope) == ("North Dakota", "New Mexico")
-    assert _metrics(nm) == {"rows": nm_rows, "wells": len(NM_API10S), "months": 2}
+    assert _metrics(nm) == {"rows": nm_rows, "entities": len(NM_ENTITY_KEYS), "months": 2}
     with seeded.cursor() as cursor:
         cursor.execute(
             "select count(*), count(distinct api10), count(distinct production_month)"

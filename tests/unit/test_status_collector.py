@@ -861,3 +861,19 @@ def test_the_two_montana_grains_name_each_other_by_id_where_they_refuse_to_be_ad
 
     assert lease.dataset_id in well.detail
     assert well.dataset_id in lease.detail
+
+
+def test_no_production_dataset_calls_its_entity_metric_wells_while_counting_something_else() -> (
+    None
+):
+    """`metric_id` is the machine-readable half of a figure whose label a consumer may not read.
+
+    New Mexico is counted at the completion-pool grain on `entity_key`, and its own detail says
+    the number is not a well count — so an id of `wells` invites exactly the cross-state sum
+    the detail refuses, and does it in the field a client keys on.
+    """
+    for source_id, shown in status_collector._PRODUCTION_PRESENTATION.items():
+        if shown.entity_metric_id == "wells":
+            assert shown.entity_unit == "wells", (
+                f"{source_id} ids its entity metric as wells but counts {shown.entity_unit}"
+            )
