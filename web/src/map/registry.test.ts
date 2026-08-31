@@ -15,7 +15,7 @@ import {
   layerRowState,
 } from "./registry.ts";
 import { SELECTION_COLOUR, STATUS_CLASSES, UNMAPPED_STATUS, statusColour } from "./status.ts";
-import { TRACE_COLOUR, dataLayers } from "./style.ts";
+import { TRACE_COLOUR, WELL_POINT_LAYERS, dataLayers } from "./style.ts";
 
 describe("the layer registry", () => {
   it("registers the four tiled rows this build actually serves", () => {
@@ -329,6 +329,22 @@ describe("the layer registry", () => {
     for (const built of dataLayers({ labels: true })) {
       const owners = LAYERS.filter((layer) => layer.styleLayers.includes(built.id));
       expect(owners.map((owner) => owner.id), `${built.id} owners`).toHaveLength(1);
+    }
+  });
+
+  it("censuses every wells row, so a state added later cannot be left out of the count", () => {
+    // The legend's rendered-wells census reads this list (map.ts refreshDrawn). New Mexico was
+    // a registered row for four states' worth of releases and never reached it, so an NM-only
+    // canvas reported no census at all and a mixed one understated by every NM well drawn.
+    expect([...WELL_POINT_LAYERS]).toEqual(familyMembers("wells").map((layer) => layer.id));
+  });
+
+  it("censuses each wells row through a style layer that row actually draws", () => {
+    // refreshDrawn spends the same string twice — once on the switched-on set, which is keyed
+    // by row id, and once on `getLayer`, which is keyed by style layer. A row whose id is not
+    // also one of its style layers would census nothing and say so as a blank line.
+    for (const id of WELL_POINT_LAYERS) {
+      expect(layerDef(id)?.styleLayers, `${id} census layer`).toContain(id);
     }
   });
 
