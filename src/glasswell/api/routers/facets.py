@@ -458,11 +458,7 @@ def _caption(
             else f"No well in {name} carries a {noun}."
         )
     matching = f" matching {q!r}" if q is not None else ""
-    of = (
-        f"{distinct:,} {noun} value{'s' if distinct != 1 else ''}{matching} in {name}"
-        if q is None
-        else f"{distinct:,} {noun} values{matching} in {name}"
-    )
+    of = f"{distinct:,} {noun} value{'s' if distinct != 1 else ''}{matching} in {name}"
     descending = order == "desc"
     # The words the direction button beside this sentence uses (`wells-by.ts` directionLabel):
     # one vocabulary, or two controls describe the same parameter differently 40 px apart.

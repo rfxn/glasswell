@@ -355,6 +355,17 @@ def test_ranking_by_value_orders_by_the_value_and_not_the_count(
     assert values == sorted(values)
 
 
+def test_the_searched_caption_pluralises_on_what_it_counted(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """"All 1 operator values" was on screen at every width: the `q` arm hard-coded the s."""
+    _seed_tx(seeded)
+
+    assert _facets(client, top=50, q="chevron")["data"]["caption"] == (
+        "All 1 operator value matching 'chevron' in Texas, ranked by well count, highest first."
+    )
+
+
 def test_every_dimension_serves_and_sums(
     client: TestClient, seeded: psycopg.Connection
 ) -> None:
