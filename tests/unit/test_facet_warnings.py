@@ -10,13 +10,7 @@ UNREGISTERED_ABSENCE = {"label": "not reported", "rule_id": None}
 def test_every_warning_detail_is_a_string_on_every_arm() -> None:
     """A stray comma inside the parens makes `detail` a 1-tuple. `meta.warnings` is typed
     `list[dict[str, Any]]`, so pydantic serialises it as a JSON array and nothing refuses it."""
-    emitted = _warnings(
-        state="42",
-        dimension="operator",
-        absence=UNREGISTERED_ABSENCE,
-        truncated=True,
-        q="chevron",
-    )
+    emitted = _warnings(absence=UNREGISTERED_ABSENCE, truncated=True, q="chevron")
 
     assert {warning["code"] for warning in emitted} == {
         "absence_unregistered",

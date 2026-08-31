@@ -487,18 +487,18 @@ def _bucket_link(dimension: str, value: str, state: str) -> dict[str, str]:
 
 
 def _warnings(
-    *, state: str, dimension: str, absence: dict[str, Any] | None, truncated: bool, q: str | None
+    *, absence: dict[str, Any] | None, truncated: bool, q: str | None
 ) -> list[dict[str, Any]]:
     warnings: list[dict[str, Any]] = []
     if absence is not None and absence["rule_id"] is None:
         warnings.append(
             {
                 "code": "absence_unregistered",
+                # What `absence.detail` does not already say. The panel renders this inside the
+                # block the pointer names, and two paragraphs of one fact is one too many.
                 "detail": (
-                    f"State {state} has wells with no {dimension.replace('_', ' ')} and no"
-                    " registered rule saying what that absence means. The count is the"
-                    " promoted data; the decision behind it is not citable until it is a"
-                    " conformance row (R8)."
+                    "This bucket is a count, not a finding: it is not citable as one until the"
+                    " absence is registered as a conformance row (R8)."
                 ),
                 "pointer": "/absence",
             }
@@ -734,13 +734,7 @@ def get_well_facets(
         as_of=as_of,
         as_of_requested=iso(as_of) or "latest",
         labels={"/rules": "gt_conformance_rule", "/absence/rule_id": "gt_conformance_rule"},
-        warnings=_warnings(
-            state=state,
-            dimension=by,
-            absence=absence,
-            truncated=remainder is not None,
-            q=q,
-        ),
+        warnings=_warnings(absence=absence, truncated=remainder is not None, q=q),
         links={rule: f"/v1/conformance/{rule}" for rule in data["rules"]},
         explain=inline_for(connection, explain),
     )

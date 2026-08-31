@@ -452,13 +452,18 @@ function list(data: WellFacets, warnings: Warning[], options: WellsByOptions): H
   });
   if (data.buckets.length > 0) box.append(rows);
 
+  // A warning is rendered against what it points at: `absence_unregistered` restated the absence
+  // block's own paragraph 39 px below it with the total wedged between the two.
+  const aboutAbsence = data.absence ? warnings.filter((warning) => warning.pointer === "/absence") : [];
+  const rest = warnings.filter((warning) => !aboutAbsence.includes(warning));
+
   if (data.remainder) box.append(remainder(data.remainder));
-  if (data.absence) box.append(absence(data.absence));
+  if (data.absence) box.append(absence(data.absence, aboutAbsence));
   box.append(total(data));
   // The same panels the well card and the neighbour list render. Under a search the absence
   // bucket is the one figure on screen outside the visible arithmetic, and
   // `search_scopes_the_ranking` is the served sentence that says so.
-  box.append(...warningPanels(warnings));
+  box.append(...warningPanels(rest));
   return box;
 }
 
@@ -561,7 +566,7 @@ function remainder(value: NonNullable<WellFacets["remainder"]>): HTMLElement {
  * load this bucket holds 70,039 wells — more than any real operator — and a reader who mistook
  * it for one would conclude Texas has a dominant operator that does not exist.
  */
-function absence(value: NonNullable<WellFacets["absence"]>): HTMLElement {
+function absence(value: NonNullable<WellFacets["absence"]>, warnings: Warning[]): HTMLElement {
   const box = div("gw-wells-by-absence");
   const head = div("gw-wells-by-absence-head");
   const label = document.createElement("span");
@@ -583,6 +588,7 @@ function absence(value: NonNullable<WellFacets["absence"]>): HTMLElement {
     line.append(document.createTextNode("Registered as "), link);
     box.append(line);
   }
+  box.append(...warningPanels(warnings));
   return box;
 }
 

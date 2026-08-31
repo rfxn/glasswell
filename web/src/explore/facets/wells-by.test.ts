@@ -306,6 +306,46 @@ describe("what the envelope warns about reaches the surface", () => {
 
     expect(host.querySelector(".gw-warning")).toBeNull();
   });
+
+  it("renders a warning pointing at /absence inside the block it explains", async () => {
+    respondWith({ absence: { ...RESPONSE.absence!, rule_id: null, links: {} } }, [
+      {
+        code: "absence_unregistered",
+        detail: "Texas has wells with no operator and no registered rule.",
+        pointer: "/absence",
+      },
+      {
+        code: "list_truncated",
+        detail: "This list is a ranked cut, not the population.",
+        pointer: "/buckets",
+      },
+    ]);
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    expect(host.querySelector(".gw-wells-by-absence .gw-warning")?.textContent).toContain(
+      "absence_unregistered",
+    );
+    const trailing = [...host.querySelectorAll(".gw-wells-by-list > .gw-warning")].map(
+      (node) => node.textContent,
+    );
+    expect(trailing).toHaveLength(1);
+    expect(trailing[0]).toContain("list_truncated");
+  });
+
+  it("keeps an /absence warning on the surface when the response carries no absence block", async () => {
+    respondWith({ absence: null }, [
+      {
+        code: "absence_unregistered",
+        detail: "Texas has wells with no operator and no registered rule.",
+        pointer: "/absence",
+      },
+    ]);
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    expect(host.querySelector(".gw-wells-by-list > .gw-warning")?.textContent).toContain(
+      "absence_unregistered",
+    );
+  });
 });
 
 describe("a bucket narrows the grid beside it", () => {
