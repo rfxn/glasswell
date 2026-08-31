@@ -12,6 +12,9 @@ WEB_ROOT=/opt/glasswell/web
 VENV=/opt/glasswell/venv
 LOCK=requirements.lock
 SOCKET_DSN='postgresql:///glasswell?host=/var/run/postgresql'
+# The role every ingest and mart refresh runs as, and therefore the one that must own anything
+# those refreshes replace.
+PIPELINE_ROLE=glasswell
 MIGRATIONS_DIR=src/glasswell/db/migrations
 CODE_ENV_FILE=/etc/glasswell/code-version.env
 
@@ -212,6 +215,13 @@ remote "sudo -u postgres env $code_env $VENV/bin/python -c 'import psycopg; from
 step "6b2. tile functions for every configured layer"
 remote "sudo -u postgres env $code_env $VENV/bin/python -c 'import psycopg; from glasswell.marts.tiles import install_tile_functions; connection = psycopg.connect(\"$SOCKET_DSN\"); print(\"   \", len(install_tile_functions(connection)), \"tile functions\"); connection.commit(); connection.close()'" \
     || refuse "tile function install failed"
+# Installed as superuser so it can replace any of them, then handed to the pipeline role: every
+# mart refresh calls install_tile_functions itself, and CREATE OR REPLACE requires ownership. A
+# function first created here would otherwise be owned by postgres and refuse the next refresh,
+# which is how a marts refresh died on `must be owner of function nd_survey_traces`.
+step "6b3. tile functions owned by the pipeline role"
+remote "sudo -u postgres psql -d glasswell -tAc \"select format('alter function %s owner to $PIPELINE_ROLE;', p.oid::regprocedure) from pg_proc p join pg_namespace n on n.oid = p.pronamespace join pg_roles r on r.oid = p.proowner where n.nspname = 'marts' and r.rolname <> '$PIPELINE_ROLE'\" | sudo -u postgres psql -d glasswell -q" \
+    || refuse "could not hand the tile functions to $PIPELINE_ROLE"
 
 step "6c. current ND physical-neighbour mart"
 remote "sudo -u glasswell env $code_env $VENV/bin/glasswell-neighbors --dsn '$SOCKET_DSN'" \
