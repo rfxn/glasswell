@@ -270,7 +270,7 @@ function panel(next: AppState): HTMLElement {
 }
 
 function wellsByHost(): HTMLElement {
-  const host = element("div", "gw-wells-by");
+  const host = element("section", "gw-wells-by");
   host.id = WELLS_BY_HOST_ID;
   host.setAttribute("aria-label", "Wells by dimension");
   return host;
