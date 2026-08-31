@@ -30,6 +30,18 @@ REQUIRE_DOCKER_ENV = "GLASSWELL_REQUIRE_DOCKER"
 TEST_LABEL = "glasswell.test=1"
 DATA_DIRECTORY = "/var/lib/postgresql/data"
 PULL_TIMEOUT_SECONDS = 600
+# A server that is destroyed at the end of the session has nothing to recover, so every fsync
+# it performs is bought and never read. The suite creates and drops a database per test, and
+# each of those is a WAL flush the defaults make durable for no one.
+EPHEMERAL_SERVER_SETTINGS = (
+    "fsync=off",
+    "synchronous_commit=off",
+    "full_page_writes=off",
+    "wal_level=minimal",
+    "max_wal_senders=0",
+    "max_wal_size=2GB",
+    "checkpoint_timeout=30min",
+)
 # A LAN connection that loses a burst of packets backs off to a multi-minute RTO and never
 # recovers inside a test; without these the session hangs rather than failing. They fire only
 # on unacknowledged data, so a slow query is unaffected.
@@ -244,6 +256,7 @@ def postgres_server() -> Iterator[str]:
         "-e", f"POSTGRES_PASSWORD={password}",
         "-e", "POSTGRES_DB=postgres",
         POSTGIS_IMAGE,
+        *(argument for setting in EPHEMERAL_SERVER_SETTINGS for argument in ("-c", setting)),
     )
     _session_container, _session_volume = name, volume
     try:
@@ -301,14 +314,16 @@ def database_address_for_containers(postgres_server: str) -> str:
     return _session_container_address
 
 
-def _create_database(dsn_template: str, name: str, template: str | None = None) -> str:
+def create_database(dsn_template: str, name: str, template: str | None = None) -> str:
     with psycopg.connect(dsn_template.format(database="postgres"), autocommit=True) as admin:
-        clause = f' template "{template}"' if template else ""
+        # file_copy only beats the wal_log default because EPHEMERAL_SERVER_SETTINGS makes the
+        # checkpoints it forces free; at the shipped durability settings it is twice as slow.
+        clause = f' template "{template}" strategy file_copy' if template else ""
         admin.execute(f'create database "{name}"{clause}')
     return dsn_template.format(database=name)
 
 
-def _drop_database(dsn_template: str, name: str) -> None:
+def drop_database(dsn_template: str, name: str) -> None:
     with psycopg.connect(dsn_template.format(database="postgres"), autocommit=True) as admin:
         admin.execute(f'drop database if exists "{name}" with (force)')
 
@@ -316,7 +331,7 @@ def _drop_database(dsn_template: str, name: str) -> None:
 @pytest.fixture(scope="session")
 def migrated_template(postgres_server: str) -> str:
     """Migrations and shared fixture rows run once; every test database is cloned from here."""
-    dsn = _create_database(postgres_server, TEMPLATE_DATABASE)
+    dsn = create_database(postgres_server, TEMPLATE_DATABASE)
     with psycopg.connect(dsn) as connection:
         migrate(connection)
         connection.commit()
@@ -345,26 +360,26 @@ def _seed_fixture_rows(connection: psycopg.Connection) -> None:
 def db(migrated_template: str) -> Iterator[psycopg.Connection]:
     """A migrated database of its own, per test."""
     name = f"gw_test_{uuid4().hex[:12]}"
-    dsn = _create_database(migrated_template, name, template=TEMPLATE_DATABASE)
+    dsn = create_database(migrated_template, name, template=TEMPLATE_DATABASE)
     connection = psycopg.connect(dsn)
     try:
         yield connection
     finally:
         connection.close()
-        _drop_database(migrated_template, name)
+        drop_database(migrated_template, name)
 
 
 @pytest.fixture
 def empty_db(postgres_server: str) -> Iterator[psycopg.Connection]:
     """An un-migrated database, for exercising the migration runner itself."""
     name = f"gw_empty_{uuid4().hex[:12]}"
-    dsn = _create_database(postgres_server, name)
+    dsn = create_database(postgres_server, name)
     connection = psycopg.connect(dsn)
     try:
         yield connection
     finally:
         connection.close()
-        _drop_database(postgres_server, name)
+        drop_database(postgres_server, name)
 
 
 @pytest.fixture
