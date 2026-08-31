@@ -571,15 +571,20 @@ def _one(
 # Which sources are inventoried as production is read from the rules that registered them, and
 # the jurisdiction each is counted under from the source registry those rules name as their
 # discriminator (R8). A new state registers a source and a rule; it does not edit this module.
+# The registry is the row source and the rules are a predicate over it, so a source cannot be
+# inventoried twice however many rules register it; a join emitted one row per rule, and two
+# in-force rules for one source served the same dataset_id twice.
 _PRODUCTION_SOURCES = """
-select r.source_id, s.name, coalesce(s.jurisdiction, s.source_id) as jurisdiction
-  from lineage.conformance_rules r
-  join lineage.sources s on s.source_id = r.source_id
- where r.rule_kind = 'code_ref'
-   and r.spec ->> 'module_function' = 'glasswell.status.collector:_production_inventory'
-   and r.effective_from <= current_date
-   and (r.effective_to is null or r.effective_to > current_date)
- order by jurisdiction, r.source_id
+select s.source_id, s.name, coalesce(s.jurisdiction, s.source_id) as jurisdiction
+  from lineage.sources s
+ where s.source_id in (
+       select r.source_id
+         from lineage.conformance_rules r
+        where r.rule_kind = 'code_ref'
+          and r.spec ->> 'module_function' = 'glasswell.status.collector:_production_inventory'
+          and r.effective_from <= current_date
+          and (r.effective_to is null or r.effective_to > current_date))
+ order by jurisdiction, s.source_id
 """
 
 # One bounded question per source. Each arm is index-only under migration 069: rows, months and

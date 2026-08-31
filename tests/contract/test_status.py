@@ -649,6 +649,35 @@ def test_the_registered_source_decides_the_jurisdiction_not_a_literal_in_the_rul
     )
 
 
+def test_a_second_in_force_rule_for_one_source_does_not_inventory_it_twice(
+    seeded: psycopg.Connection,
+) -> None:
+    """The `_1` suffix says a superseding `_2` is expected, and rules are append-only.
+
+    Closing `_1`'s effective window is a separate edit nothing enforces, so the realistic
+    mistake is two in-force rules naming one source. Emitting one dataset per rule served the
+    same dataset_id twice — and, before the discriminator was fixed, twice under two different
+    scopes — which no consumer keying on dataset_id can even represent.
+    """
+    for suffix, jurisdiction in ((1, "OK"), (2, "OK")):
+        _register_production_source(
+            seeded,
+            source_id="ok_occ_production",
+            jurisdiction=jurisdiction,
+            rule_id=f"cr_ok_inventory_jurisdiction_{suffix}",
+        )
+
+    datasets, _ = _inventory(seeded, datetime(2026, 8, 30, 18, tzinfo=UTC))
+    emitted = [
+        dataset.dataset_id
+        for dataset in datasets
+        if dataset.dataset_id == "canonical.production_monthly/ok_occ_production"
+    ]
+
+    assert len(emitted) == 1, f"one source, {len(emitted)} datasets under one id"
+    assert len({dataset.dataset_id for dataset in datasets}) == len(datasets)
+
+
 def test_a_new_state_is_inventoried_by_registering_a_rule_not_by_editing_the_collector(
     seeded: psycopg.Connection,
 ) -> None:
