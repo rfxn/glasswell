@@ -53,7 +53,7 @@ describe("the document head names the product, not a coverage footprint", () => 
     // Case-sensitive on purpose: the abbreviations are how the codebase writes them
     // ("ND wells", "Wells (TX)"), and a case-insensitive \bnd\b would fire on prose.
     const places =
-      /North Dakota|Texas|New Mexico|Williston|Permian|Bakken|Delaware|\bND\b|\bTX\b|\bNM\b/;
+      /North Dakota|Texas|New Mexico|Montana|Williston|Permian|Bakken|Delaware|\bND\b|\bTX\b|\bNM\b|\bMT\b/;
 
     expect(head).not.toMatch(places);
     expect(/<div id="gw-map" aria-label="([^"]*)"/.exec(INDEX)?.[1]).not.toMatch(places);

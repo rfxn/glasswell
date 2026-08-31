@@ -79,8 +79,8 @@ const TOWNSHIP_LABEL_MIN_ZOOM = 9;
 const SECTION_LABEL_MIN_ZOOM = 12;
 const SPACING_UNIT_LABEL_MIN_ZOOM = 11;
 
-/** The point layers the legend counts from. Both basins, because the legend counts what is drawn. */
-export const WELL_POINT_LAYERS = ["wells", "tx-wells", "mt-wells"] as const;
+/** One point layer per wells-family row; registry.test.ts holds the two in step as states land. */
+export const WELL_POINT_LAYERS = ["wells", "tx-wells", "nm-wells", "mt-wells"] as const;
 
 const INK = "#0B1014";
 const SPACING_LABEL_SIZE = 10;
