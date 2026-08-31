@@ -128,15 +128,34 @@ let knownStates: FacetState[] = [];
 const SEARCH_SELECTOR = ".gw-wells-by-search-input";
 
 /**
- * Where the caret was when a commit tore the panel down. Every commit rebuilds the explorer —
- * the shell replaces its own children before this module replaces the host's — so a focused
- * search input is destroyed mid-word and the browser has nothing left to restore focus to.
+ * What the reader has typed, and where their caret is, when a commit tears the panel down. Every
+ * commit rebuilds the explorer — the shell replaces its own children before this module replaces
+ * the host's — so a focused search input is destroyed mid-word. The value travels with the caret
+ * because the rebuilt input is filled from the URL, which lags the keyboard by a debounce plus a
+ * round trip: restoring the caret alone put the reader back in a box that had un-typed them.
  */
-let searchCaret: { start: number; end: number } | null = null;
+let searchDraft: { value: string; start: number; end: number } | null = null;
 
-function rememberCaret(input: HTMLInputElement | null): void {
-  if (!input || document.activeElement !== input) return;
-  searchCaret = {
+/**
+ * Armed by the search box's own commit, spent by the rebuild that commit causes. Every control on
+ * this panel rebuilds it, and a `blur` cannot tell the two apart — Chromium fires one as it
+ * removes a focused element, and reports the element still connected while it does. So the
+ * rebuild the reader's typing caused is marked at the commit rather than inferred at the teardown.
+ */
+let searchCommitted = false;
+
+/**
+ * Re-reads where the reader is. A box they have left owns no draft; a detached box is not a
+ * departure but the teardown this whole mechanism exists to survive, and says nothing either way.
+ */
+function rememberDraft(input: HTMLInputElement | null): void {
+  if (!input?.isConnected) return;
+  if (document.activeElement !== input) {
+    searchDraft = null;
+    return;
+  }
+  searchDraft = {
+    value: input.value,
     start: input.selectionStart ?? input.value.length,
     end: input.selectionEnd ?? input.value.length,
   };
@@ -144,17 +163,25 @@ function rememberCaret(input: HTMLInputElement | null): void {
 
 /** The one place the panel's children are swapped, so nothing can rebuild it and forget this. */
 function swap(host: HTMLElement, ...children: HTMLElement[]): void {
-  rememberCaret(host.querySelector<HTMLInputElement>(SEARCH_SELECTOR));
+  const outgoing = host.querySelector<HTMLInputElement>(SEARCH_SELECTOR);
+  // Whose rebuild this is: the box's own commit, or a reader still typing in the box being torn
+  // down. A sort, a bucket press or anything else carries nothing into the panel it rebuilds.
+  const carried = searchCommitted || (outgoing !== null && document.activeElement === outgoing);
+  searchCommitted = false;
+  rememberDraft(outgoing);
+  const draft = carried ? searchDraft : null;
+  // Taken, not read: a draft outliving the swap that consumed it is one a later mount would
+  // type into a box the reader never touched.
+  searchDraft = null;
   host.replaceChildren(...children);
-  const caret = searchCaret;
-  searchCaret = null;
   const input = host.querySelector<HTMLInputElement>(SEARCH_SELECTOR);
-  // Only a caret carried in from a commit the reader's own typing caused: a first mount must
+  // Only a draft carried in from a commit the reader's own typing caused: a first mount must
   // not take focus off whatever they were using.
-  if (!caret || !input) return;
+  if (!draft || !input) return;
+  input.value = draft.value;
   input.focus();
-  const end = Math.min(caret.end, input.value.length);
-  input.setSelectionRange(Math.min(caret.start, end), end);
+  const end = Math.min(draft.end, input.value.length);
+  input.setSelectionRange(Math.min(draft.start, end), end);
 }
 
 export async function mountWellsBy(host: HTMLElement, options: WellsByOptions): Promise<void> {
@@ -329,12 +356,20 @@ function search(
   input.addEventListener(
     "input",
     () => {
+      // On the keystroke, not only in the timer: by the time the timer runs a rebuild may
+      // already have detached this element, and a detached input is never activeElement.
+      rememberDraft(input);
       if (timer !== undefined) clearTimeout(timer);
       // `replace`, on the convention web/src/app/state.ts states for viewport churn: "the back
       // button is not forty pan events". A seven-character search is seven commits.
       timer = setTimeout(() => {
-        rememberCaret(input);
-        options.hooks.setPanel({ q: input.value.trim() || null }, "replace");
+        // The box on screen, which a rebuild mid-debounce makes a different element from the one
+        // this closure holds: re-reading it is what arms the restore for the commit below.
+        rememberDraft(document.querySelector<HTMLInputElement>(SEARCH_SELECTOR) ?? input);
+        // The reader's own text, and this detached element's only when they have left the box.
+        const typed = searchDraft?.value ?? input.value;
+        searchCommitted = true;
+        options.hooks.setPanel({ q: typed.trim() || null }, "replace");
       }, SEARCH_DEBOUNCE_MS);
     },
     { signal: options.signal },
