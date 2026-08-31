@@ -22,6 +22,13 @@ def _live_rows(connection: psycopg.Connection, statement: str) -> list[tuple]:
         return cursor.fetchall()
 
 
+def _live_table(connection: psycopg.Connection, statement: str) -> tuple[list[str], list[tuple]]:
+    """Rows with their column names, so a `select *` scan can name what it found."""
+    with connection.cursor() as cursor:
+        cursor.execute(statement)
+        return [column.name for column in cursor.description], cursor.fetchall()
+
+
 def test_a_key_is_issued_with_its_cleartext_exactly_once(client: TestClient) -> None:
     response = client.post("/v1/keys", json={"label": "qa-issue-2026", "scope": "guest"})
 
@@ -40,13 +47,25 @@ def test_a_key_is_issued_with_its_cleartext_exactly_once(client: TestClient) -> 
 def test_only_the_hash_reaches_the_table(
     client: TestClient, seeded: psycopg.Connection
 ) -> None:
-    """SB-06 §8.3: sha256 is the only representation at rest."""
+    """SB-06 §8.3: sha256 is the only representation at rest.
+
+    Every column, not the two the claim used to be checked against: a cleartext key written to
+    `created_by` -- or to a column added after this test was written -- is exactly what a
+    two-column select cannot see, and the assertion is about the whole row.
+    """
     secret = issue_key(client, label="qa-at-rest-2026", scope="agent")
 
-    stored = _live_rows(seeded, "select sha256, label from lineage.api_keys")
+    columns, stored = _live_table(seeded, "select * from lineage.api_keys")
 
-    assert fingerprint(secret) in {row[0] for row in stored}
-    assert all(secret not in str(row) for row in stored)
+    assert stored, "no key reached the table, so this test cannot fail"
+    assert len(columns) > 2, "the scan must reach past the hash and the label"
+    assert fingerprint(secret) in {row[columns.index("sha256")] for row in stored}
+    assert [
+        columns[index]
+        for row in stored
+        for index, value in enumerate(row)
+        if secret in str(value)
+    ] == []
 
 
 def test_the_issued_key_authenticates_at_its_own_scope(client: TestClient) -> None:
