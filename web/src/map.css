@@ -232,6 +232,53 @@
   line-height: 1.4;
 }
 
+/* The two dimensions the summary serves beside the statuses. Ruled off like the producing
+   group and for the same reason — a different question of the same box — and, like it, with no
+   swatch: the map draws no colour for a well-type code or a provenance class. */
+.gw-lg-dim {
+  margin-top: 0.4rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--rule, rgb(255 255 255 / 12%));
+}
+
+.gw-lg-dim[hidden] {
+  display: none;
+}
+
+.gw-lg-dtitle {
+  margin: 0 0 0.15rem;
+  color: var(--muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.gw-lg-drow {
+  display: flex;
+  align-items: center;
+  min-height: 22px;
+}
+
+.gw-lg-dnote {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.62rem;
+  line-height: 1.4;
+}
+
+/* Names the other scope. The map sheet carries the mirror of this line, so a reader who finds
+   one surface is told the other exists rather than reading the two as disagreeing counts. */
+.gw-lg-crossref {
+  margin: 0.4rem 0 0;
+  color: var(--slate);
+  font-size: 0.62rem;
+  line-height: 1.4;
+}
+
+.gw-lg-crossref[hidden] {
+  display: none;
+}
+
 .gw-lg-partial,
 .gw-lg-fault {
   margin: 0.35rem 0 0;

@@ -1,5 +1,5 @@
 import { dispatchExplain, explainHandle, setExplainHandle } from "../chrome/handle.ts";
-import type { VocabularyLink } from "./counts.ts";
+import type { DimensionCounts, VocabularyLink } from "./counts.ts";
 import { PRODUCING_CLASSES, producingHref, producingNote } from "./producing.ts";
 import type { ProducingCounts } from "./producing.ts";
 import { PROVENANCE_RULE } from "./provenance.ts";
@@ -14,6 +14,49 @@ const FAULT_COPY = "Counts for this area could not be read.";
 const PARTIAL_NOTE =
   "Status classes recede at low zoom and point tiles are thinned below zoom 8." +
   " The counts above are the data's, not the canvas's.";
+
+/**
+ * The other Wells-By scope, named once so the two surfaces read as two scopes of one question
+ * rather than as two answers. The map sheet carries the mirror of this line.
+ */
+const CROSSREF_COPY =
+  "These count the map view and move when you pan. Wells by counts a whole state and does not.";
+
+/**
+ * A dimension of the same box the status rows count, rendered as a read-out rather than as a
+ * filter row. No swatch, for the reason .gw-lg-producing states: the map draws no colour for
+ * these classes, and a swatch would promise one it does not.
+ */
+interface DimensionSpec {
+  id: string;
+  title: string;
+  aria: string;
+  /** What the numbers mean, and — because the two blocks do not share one — its zero rule. */
+  note: string;
+}
+
+const DIMENSIONS: readonly DimensionSpec[] = [
+  {
+    id: "well_type",
+    title: "Well type",
+    aria: "Wells by the well type their source reported",
+    note:
+      "Codes exactly as the source filed them: no decode and no classing. A code the box does" +
+      " not hold is absent here, not zero — the rule the status rows follow — and a well whose" +
+      " source filed no type is in no row at all while still counting in the total above.",
+  },
+  {
+    id: "geometry_provenance",
+    title: "Geometry provenance",
+    aria: "Wells by the provenance of their recorded geometry",
+    note:
+      `Classed by ${PROVENANCE_RULE}, the class served verbatim. These classes overlap — one` +
+      " well can hold a surface hole, a lateral and a survey trace at once — so they do not sum" +
+      " to the well count above and no share can be read off them. A registered class the box" +
+      " does not hold reads zero rather than absent, which is the producing rows' rule: the" +
+      " vocabulary names the class whether or not this box holds one.",
+  },
+] as const;
 
 /** What the count cells are allowed to say. Never the last viewport's numbers. */
 type CountMode = "ready" | "pending" | "unavailable";
@@ -66,6 +109,10 @@ export interface LegendHandle {
    * and the map wiring, which this change does not own — see work-output/wells-status.md.
    */
   setProducing(next: ProducingCounts | null): void;
+  /** Reported well type codes for the same box; null where it holds no coded well. */
+  setWellTypes(next: DimensionCounts | null): void;
+  /** Geometry provenance classes for the same box; null where the jurisdiction serves none. */
+  setProvenance(next: DimensionCounts | null): void;
 }
 
 /**
@@ -207,6 +254,23 @@ export function createLegend(options: LegendOptions): LegendHandle {
   producing.appendChild(producingNoteEl);
   body.appendChild(producing);
 
+  // The two dimensions /v1/wells/status-summary has always served beside the statuses. Rows are
+  // data-driven — the codes are the source's, not a roster — so each block rebuilds its rows
+  // when the served order changes and patches them in place otherwise, which is what keeps a ⌾
+  // from being torn out from under the pointer between two viewports holding the same classes.
+  const dimensionBlocks = new Map<string, DimensionView>();
+  for (const spec of DIMENSIONS) {
+    const view = buildDimension(spec);
+    dimensionBlocks.set(spec.id, view);
+    body.appendChild(view.element);
+  }
+
+  const crossref = document.createElement("p");
+  crossref.className = "gw-lg-crossref";
+  crossref.hidden = true;
+  crossref.textContent = CROSSREF_COPY;
+  body.appendChild(crossref);
+
   // Between the rows and the note: the canvas is a subset of the box at low zoom, and the
   // reader has to be able to see that without reading it as the counts disagreeing.
   const partial = document.createElement("p");
@@ -323,6 +387,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
   let drawn: number | null = null;
   let zoomNow = 0;
   let producingCounts: ProducingCounts | null = null;
+  const dimensionCounts = new Map<string, DimensionCounts | null>();
 
   function cellText(id: string): string {
     if (mode === "pending") return PENDING_MARK;
@@ -412,9 +477,37 @@ export function createLegend(options: LegendOptions): LegendHandle {
     return count === undefined ? ABSENT_MARK : NUMBER.format(count);
   }
 
+  function renderDimensions(): void {
+    let anyShown = false;
+    for (const [id, view] of dimensionBlocks) {
+      const served = dimensionCounts.get(id) ?? null;
+      view.element.hidden = served === null;
+      if (served === null) continue;
+      anyShown = true;
+      view.setRows(served.order);
+      for (const value of served.order) {
+        const row = view.rows.get(value);
+        const cell = row?.querySelector<HTMLElement>(".gw-lg-count");
+        if (cell) cell.textContent = dimensionCellText(served.counts[value]);
+        const handle = row?.querySelector<HTMLButtonElement>(".gw-lg-handle");
+        const derivation = mode === "ready" ? served.handles[value] : undefined;
+        if (handle) setExplainHandle(handle, derivation ?? null);
+      }
+    }
+    crossref.hidden = !anyShown;
+  }
+
+  /** The same three readings the status cells have, so one key never mixes two vocabularies. */
+  function dimensionCellText(count: number | undefined): string {
+    if (mode === "pending") return PENDING_MARK;
+    if (mode === "unavailable") return ABSENT_MARK;
+    return count === undefined ? ABSENT_MARK : NUMBER.format(count);
+  }
+
   function render(): void {
     renderRows();
     renderProducing();
+    renderDimensions();
     renderPartial();
   }
 
@@ -457,7 +550,9 @@ export function createLegend(options: LegendOptions): LegendHandle {
     zoomNow = zoom;
     const unmapped = rows.get(UNMAPPED_STATUS.id);
     if (counts[UNMAPPED_STATUS.id] !== undefined && unmapped && unmapped.parentNode !== body) {
-      body.insertBefore(unmapped, partial);
+      // Anchored on the first dimension block rather than on `partial`, so the row keeps the
+      // place it had when the producing group was the last thing in the body.
+      body.insertBefore(unmapped, dimensionBlocks.values().next().value?.element ?? partial);
       syncTitle();
     }
     render();
@@ -491,7 +586,86 @@ export function createLegend(options: LegendOptions): LegendHandle {
       producingCounts = next;
       renderProducing();
     },
+    setWellTypes(next) {
+      dimensionCounts.set("well_type", next);
+      renderDimensions();
+    },
+    setProvenance(next) {
+      dimensionCounts.set("geometry_provenance", next);
+      renderDimensions();
+    },
   };
+}
+
+interface DimensionView {
+  element: HTMLElement;
+  rows: Map<string, HTMLElement>;
+  /** Rebuilds only when the served order changes; otherwise the existing rows are kept. */
+  setRows(order: readonly string[]): void;
+}
+
+function buildDimension(spec: DimensionSpec): DimensionView {
+  const element = document.createElement("div");
+  element.className = "gw-lg-dim";
+  element.dataset["dimension"] = spec.id;
+  element.hidden = true;
+  element.setAttribute("role", "group");
+  element.setAttribute("aria-label", spec.aria);
+
+  const title = document.createElement("p");
+  title.className = "gw-lg-dtitle";
+  title.textContent = spec.title;
+  element.appendChild(title);
+
+  const list = document.createElement("div");
+  list.className = "gw-lg-drows";
+  element.appendChild(list);
+
+  const note = document.createElement("p");
+  note.className = "gw-lg-dnote";
+  note.textContent = spec.note;
+  element.appendChild(note);
+
+  const rows = new Map<string, HTMLElement>();
+  let built: string[] = [];
+
+  return {
+    element,
+    rows,
+    setRows(order) {
+      if (built.length === order.length && built.every((value, at) => value === order[at])) return;
+      built = [...order];
+      rows.clear();
+      list.replaceChildren(
+        ...order.map((value) => {
+          const row = dimensionRow(value);
+          rows.set(value, row);
+          return row;
+        }),
+      );
+    },
+  };
+}
+
+/** Value, count, handle — the status row's anatomy without the checkbox and without the swatch. */
+function dimensionRow(value: string): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "gw-lg-drow";
+  row.dataset["value"] = value;
+  row.title = value;
+
+  const label = document.createElement("span");
+  label.className = "gw-lg-label";
+  label.textContent = value;
+  row.appendChild(label);
+
+  const count = document.createElement("span");
+  count.className = "gw-lg-count";
+  count.textContent = ABSENT_MARK;
+  row.appendChild(count);
+
+  row.appendChild(provenanceHandle(`the ${value} count`));
+  return row;
 }
 
 /** A rule the response linked is a row a reader can open; one it did not is still named. */

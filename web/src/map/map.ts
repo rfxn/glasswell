@@ -505,6 +505,8 @@ export function createMap(
     });
     legend.setVocabulary(state.vocabulary);
     legend.setProducing(state.producing);
+    legend.setWellTypes(state.wellTypes);
+    legend.setProvenance(state.provenance);
     refreshDrawn();
   }
 
