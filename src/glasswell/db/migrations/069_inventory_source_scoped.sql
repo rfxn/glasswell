@@ -60,8 +60,8 @@ comment on index canonical.production_monthly_source_created_idx is
 -- The rule ids themselves are immutable and must not change during the repoint.
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-select rule_id, date '2026-08-31', 'UNRELEASED',
-       '0000000000000000000000000000000000000000'
+select rule_id, date '2026-08-31', 'v0.71',
+       'b78bd0bb8b22b5d08ee6f68df8745a75d438f083'
   from unnest(array[
        'cr_nd_inventory_jurisdiction_1', 'cr_nm_wcproduction_inventory_jurisdiction_1',
        'cr_mt_inventory_jurisdiction_1', 'cr_mt_pru_inventory_jurisdiction_1'

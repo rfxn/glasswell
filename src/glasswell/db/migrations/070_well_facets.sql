@@ -47,6 +47,6 @@ values
 -- quoted literal is still here; the date has no such guard and only a reader can check it.
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-values ('cr_tx_operator_absence_1', date '2026-08-30', 'UNRELEASED',
-        '0000000000000000000000000000000000000000')
+values ('cr_tx_operator_absence_1', date '2026-08-31', 'v0.71',
+        '59fef03cd0061184a463d52b2b3931772d73814a')
     on conflict (rule_id) do nothing;
