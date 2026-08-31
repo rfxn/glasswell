@@ -99,10 +99,10 @@ export async function mountExplorer(
   render(next);
 }
 
-function commit(next: Partial<AppState>): void {
+function commit(next: Partial<AppState>, mode: "push" | "replace" = "push"): void {
   if (!mounted || !state) return;
   state = { ...state, ...next };
-  mounted.hooks.commit(next, "push");
+  mounted.hooks.commit(next, mode);
   render(state);
 }
 
@@ -180,17 +180,24 @@ function renderWellsBy(next: AppState): void {
   void mountWellsBy(host, {
     state: next,
     hooks: {
-      setPanel: (values) => {
+      setPanel: (values, mode) => {
         const extra = { ...state?.extra };
         for (const [key, value] of Object.entries(values)) {
           if (value === null) delete extra[`${WELLS_BY_PREFIX}${key}`];
           else extra[`${WELLS_BY_PREFIX}${key}`] = [value];
         }
-        commit({ extra });
+        commit({ extra }, mode);
       },
-      applyFilter: (name, values) => {
+      // One commit for the whole set: a loop of commits re-renders under its own feet, and
+      // the state term is not optional decoration — it is what keeps the bucket's population
+      // and the grid's the same one.
+      applyFilter: (filters) => {
         if (!state) return;
-        commit({ extra: withFilter(state, name, values).extra });
+        let narrowed = state;
+        for (const [name, values] of Object.entries(filters)) {
+          narrowed = withFilter(narrowed, name, values);
+        }
+        commit({ extra: narrowed.extra });
       },
     },
     signal: wellsByAbort.signal,

@@ -7,6 +7,7 @@ from datetime import date
 import psycopg
 from fastapi.testclient import TestClient
 
+from glasswell.api.routers.facets import DIMENSIONS
 from tests.support.seed import seed_well
 
 # Enough operators to be truncated by a small `top`, with a deliberate long tail and a
@@ -204,6 +205,24 @@ def test_the_search_does_not_narrow_the_absence_bucket(
     assert int(data["absence"]["wells"]["value"]) == _TX_ABSENT
 
 
+def test_the_absence_bucket_says_the_search_did_not_narrow_it(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """Under a search the buckets and the remainder reconcile against `matched_wells`, and the
+    absence bucket alone is still the whole state. Its count is identical to the unsearched one
+    while every figure around it has moved, so the sentence beside it has to say which
+    population it belongs to — served with the count so the two cannot drift apart."""
+    _seed_tx(seeded)
+    unsearched = _facets(client)["data"]["absence"]
+    searched = _facets(client, q="chevron")["data"]["absence"]
+
+    assert int(searched["wells"]["value"]) == int(unsearched["wells"]["value"]) == _TX_ABSENT
+    assert searched["detail"] != unsearched["detail"]
+    assert "chevron" in searched["detail"]
+    assert "Texas" in searched["detail"]
+    assert "chevron" not in unsearched["detail"]
+
+
 def test_a_search_matching_nothing_says_so_rather_than_serving_a_silent_empty_list(
     client: TestClient, seeded: psycopg.Connection
 ) -> None:
@@ -281,6 +300,55 @@ def test_the_caption_states_what_the_list_is_a_cut_of(
     assert "Texas" in data["caption"]
 
 
+def test_the_caption_names_the_direction_the_list_was_actually_ranked_in(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """`order=asc` serves the values with the fewest wells. A caption reading "with the most
+    wells" over that list is a served sentence that is false about the rows beside it."""
+    _seed_tx(seeded)
+
+    def caption(sort: str, order: str) -> str:
+        return _facets(client, top=2, sort=sort, order=order)["data"]["caption"]
+
+    assert caption("count", "desc") == (
+        "The 2 operator values with the most wells, of 5 operator values in Texas."
+    )
+    assert caption("count", "asc") == (
+        "The 2 operator values with the fewest wells, of 5 operator values in Texas."
+    )
+    assert caption("value", "desc") == (
+        "2 of 5 operator values in Texas, ranked by value, descending."
+    )
+    assert caption("value", "asc") == (
+        "2 of 5 operator values in Texas, ranked by value, ascending."
+    )
+    # The prose is bound to the rows: ascending by count serves the two smallest operators.
+    ascending = _facets(client, top=2, sort="count", order="asc")["data"]
+    assert [bucket["value"] for bucket in ascending["buckets"]] == [
+        "CHEVRON USA INC",
+        "DEVON ENERGY PRODUCTION CO LP",
+    ]
+
+
+def test_a_complete_list_says_which_way_it_is_ranked_rather_than_only_by_what(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    _seed_tx(seeded)
+
+    def caption(sort: str, order: str) -> str:
+        return _facets(client, top=50, sort=sort, order=order)["data"]["caption"]
+
+    assert caption("count", "desc") == (
+        "All 5 operator values in Texas, ranked by well count, highest first."
+    )
+    assert caption("count", "asc") == (
+        "All 5 operator values in Texas, ranked by well count, lowest first."
+    )
+    assert caption("value", "asc") == (
+        "All 5 operator values in Texas, ranked by value, ascending."
+    )
+
+
 def test_ranking_by_value_orders_by_the_value_and_not_the_count(
     client: TestClient, seeded: psycopg.Connection
 ) -> None:
@@ -344,6 +412,25 @@ def test_a_bucket_link_is_scoped_to_the_state_it_was_counted_in(
     assert prefixes == {"42"}
 
 
+def test_a_bucket_link_percent_encodes_the_value_it_carries(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """Written into a URL verbatim, `DIAMONDBACK E&P LLC` ends at the ampersand and mints a
+    stray `P LLC` parameter, so the published link narrows to a different population than the
+    count beside it — and the spaces make it a URL no agent or auditor can issue at all."""
+    _seed_tx(seeded)
+    buckets = {
+        bucket["value"]: bucket for bucket in _facets(client, top=50)["data"]["buckets"]
+    }
+    link = buckets["DIAMONDBACK E&P LLC"]["links"]["wells"]
+
+    assert link == "/v1/wells?operator=DIAMONDBACK+E%26P+LLC&state=42"
+    followed = client.get(f"{link}&limit=200")
+    assert followed.status_code == 200, followed.text
+    names = {row["operator_name_reported"] for row in followed.json()["data"]}
+    assert names == {"DIAMONDBACK E&P LLC"}
+
+
 def test_a_dimension_the_collection_cannot_filter_on_publishes_no_link(
     client: TestClient, seeded: psycopg.Connection
 ) -> None:
@@ -353,6 +440,21 @@ def test_a_dimension_the_collection_cannot_filter_on_publishes_no_link(
     bucket = _facets(client, by="completion_year", top=1)["data"]["buckets"][0]
 
     assert bucket["links"] == {}
+
+
+def test_the_collection_declares_every_filter_a_facet_bucket_narrows_by(
+    client: TestClient,
+) -> None:
+    """A bucket's link is only as good as the dataset declaration behind it: a filter the
+    collection applies but does not declare is one the grid cannot show a chip for, and one a
+    reader cannot clear on its own once a well-type bucket has set it."""
+    declaration = client.get("/openapi.json").json()["paths"]["/v1/wells"]["get"][
+        "x-glasswell-dataset"
+    ]
+
+    narrowed = {entry["filter"] for entry in DIMENSIONS.values() if entry["filter"]}
+
+    assert narrowed | {"state"} <= set(declaration["facets"])
 
 
 def test_the_state_name_matches_the_layer_panel_convention(

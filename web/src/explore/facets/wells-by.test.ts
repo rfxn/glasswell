@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULTS_FOR_TEST, filterFor, mountWellsBy, panelState } from "./wells-by.ts";
+import { DEFAULTS_FOR_TEST, mountWellsBy, panelState } from "./wells-by.ts";
 import type { WellFacets } from "./wells-by.ts";
-import type { Figure } from "../../api/envelope.ts";
+import type { Figure, Warning } from "../../api/envelope.ts";
 import { DEFAULT_STATE } from "../../app/state.ts";
 import type { AppState } from "../../app/state.ts";
 
@@ -29,9 +29,18 @@ const RESPONSE: WellFacets = {
   top: 15,
   distinct_values: 9369,
   caption: "The 15 operator values with the most wells, of 9,369 operator values in Texas.",
+  // The links are the ones the server actually publishes, percent-encoded and state-scoped.
   buckets: [
-    { value: "PIONEER NATURAL RESOURCES USA INC", wells: figure("4312"), links: { wells: "/v1/wells?operator=PIONEER&state=42" } },
-    { value: "DIAMONDBACK E&P LLC", wells: figure("2201"), links: { wells: "/v1/wells?operator=DIAMONDBACK&state=42" } },
+    {
+      value: "PIONEER NATURAL RESOURCES USA INC",
+      wells: figure("4312"),
+      links: { wells: "/v1/wells?operator=PIONEER+NATURAL+RESOURCES+USA+INC&state=42" },
+    },
+    {
+      value: "DIAMONDBACK E&P LLC",
+      wells: figure("2201"),
+      links: { wells: "/v1/wells?operator=DIAMONDBACK+E%26P+LLC&state=42" },
+    },
   ],
   remainder: {
     values: 9367,
@@ -59,7 +68,8 @@ const RESPONSE: WellFacets = {
 let host: HTMLElement;
 let requested: string[];
 let panelCommits: Record<string, string | null>[];
-let filterCommits: [string, string[]][];
+let panelModes: string[];
+let filterCommits: Record<string, string[]>[];
 
 function state(extra: Record<string, string[]> = {}): AppState {
   return { ...DEFAULT_STATE, view: "explore", ds: "wells", extra };
@@ -67,18 +77,22 @@ function state(extra: Record<string, string[]> = {}): AppState {
 
 function hooks() {
   return {
-    setPanel: (values: Record<string, string | null>) => void panelCommits.push(values),
-    applyFilter: (name: string, values: string[]) => void filterCommits.push([name, values]),
+    setPanel: (values: Record<string, string | null>, mode: "push" | "replace") => {
+      panelCommits.push(values);
+      panelModes.push(mode);
+    },
+    applyFilter: (filters: Record<string, string[]>) => void filterCommits.push(filters),
   };
 }
 
-function respondWith(body: Partial<WellFacets>): void {
+function respondWith(body: Partial<WellFacets>, warnings: Warning[] = []): void {
   vi.stubGlobal("fetch", (url: string) => {
     requested.push(String(url));
     return Promise.resolve(
-      new Response(JSON.stringify({ data: { ...RESPONSE, ...body }, meta: {}, links: {} }), {
-        headers: { "content-type": "application/json" },
-      }),
+      new Response(
+        JSON.stringify({ data: { ...RESPONSE, ...body }, meta: { warnings }, links: {} }),
+        { headers: { "content-type": "application/json" } },
+      ),
     );
   });
 }
@@ -86,6 +100,7 @@ function respondWith(body: Partial<WellFacets>): void {
 beforeEach(() => {
   requested = [];
   panelCommits = [];
+  panelModes = [];
   filterCommits = [];
   document.body.innerHTML = '<div id="host"></div>';
   host = document.getElementById("host") as HTMLElement;
@@ -200,29 +215,258 @@ describe("the absence bucket is named, counted and outside the ranking", () => {
   });
 });
 
+describe("the search box survives the re-render its own keystroke causes", () => {
+  /** What the shell does between two mounts: `render()` replaces the whole explorer host. */
+  async function typeAndRerender(caret: number): Promise<HTMLInputElement> {
+    const signal = new AbortController().signal;
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal });
+    const input = host.querySelector(".gw-wells-by-search-input") as HTMLInputElement;
+    input.focus();
+    input.value = "chevron";
+    input.setSelectionRange(caret, caret);
+    input.dispatchEvent(new Event("input"));
+    await vi.advanceTimersByTimeAsync(400);
+
+    host.replaceChildren();
+    await mountWellsBy(host, {
+      state: state({ "wb.q": ["chevron"] }),
+      hooks: hooks(),
+      signal,
+    });
+    return host.querySelector(".gw-wells-by-search-input") as HTMLInputElement;
+  }
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("puts focus and the caret back where the reader left them", async () => {
+    const rebuilt = await typeAndRerender(4);
+
+    expect(panelCommits).toEqual([{ q: "chevron" }]);
+    expect(document.activeElement).toBe(rebuilt);
+    expect(rebuilt.selectionStart).toBe(4);
+    expect(rebuilt.selectionEnd).toBe(4);
+  });
+
+  it("steals no focus on a mount no search caused", async () => {
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    expect(document.activeElement).not.toBe(host.querySelector(".gw-wells-by-search-input"));
+  });
+
+  it("replaces rather than pushes, so a seven-character search is not seven back presses", async () => {
+    // web/src/app/state.ts: "Viewport churn uses replaceState so the back button is not forty
+    // pan events". A debounced search is the same churn on the same history stack.
+    await typeAndRerender(7);
+
+    expect(panelModes).toEqual(["replace"]);
+  });
+
+  it("still pushes a dimension change, so only the search churn is collapsed", async () => {
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    const picker = host.querySelector(".gw-wells-by-dimension") as HTMLSelectElement;
+    picker.value = "county";
+    picker.dispatchEvent(new Event("change"));
+
+    expect(panelCommits).toEqual([{ by: "county", q: null }]);
+    expect(panelModes).toEqual(["push"]);
+  });
+});
+
+describe("what the envelope warns about reaches the surface", () => {
+  it("renders one panel per served warning rather than dropping all three", async () => {
+    respondWith({ q: "usa", matched_wells: figure("6513") }, [
+      {
+        code: "list_truncated",
+        detail: "This list is a ranked cut, not the population.",
+        pointer: "/buckets",
+      },
+      {
+        code: "search_scopes_the_ranking",
+        detail: "The search ran over every value in the state before the cut.",
+        pointer: "/buckets",
+      },
+    ]);
+    await mountWellsBy(host, {
+      state: state({ "wb.q": ["usa"] }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+
+    const warnings = [...host.querySelectorAll(".gw-wells-by-list .gw-warning")].map(
+      (node) => node.textContent,
+    );
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toContain("list_truncated");
+    expect(warnings[1]).toContain("The search ran over every value in the state");
+  });
+
+  it("renders no warning line where the envelope carries none", async () => {
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    expect(host.querySelector(".gw-warning")).toBeNull();
+  });
+});
+
 describe("a bucket narrows the grid beside it", () => {
-  it("commits the collection filter the dimension maps to", async () => {
+  it("commits every filter the server's own link carries, the state included", async () => {
     await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     (host.querySelector("button.gw-wells-by-value") as HTMLButtonElement).click();
 
-    expect(filterCommits).toEqual([["operator", ["PIONEER NATURAL RESOURCES USA INC"]]]);
+    expect(filterCommits).toEqual([
+      { operator: ["PIONEER NATURAL RESOURCES USA INC"], state: ["42"] },
+    ]);
   });
 
-  it("renders a plain label, not a button, for a dimension the collection cannot filter", async () => {
-    respondWith({ dimension: "completion_year" });
+  it("narrows to the state the bucket was counted in, so county 003 is not two of them", async () => {
+    // The defect `state` was added to /v1/wells for: Texas county 003 and North Dakota county
+    // 003 are different counties, and a filter rebuilt from the dimension alone returns both.
+    respondWith({
+      dimension: "county",
+      buckets: [
+        { value: "003", wells: figure("120"), links: { wells: "/v1/wells?county=003&state=42" } },
+      ],
+    });
+    await mountWellsBy(host, {
+      state: state({ "wb.by": ["county"] }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+
+    (host.querySelector("button.gw-wells-by-value") as HTMLButtonElement).click();
+
+    expect(filterCommits).toEqual([{ county: ["003"], state: ["42"] }]);
+  });
+
+  it("decodes the link rather than committing its percent-encoded spelling", async () => {
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    (host.querySelectorAll("button.gw-wells-by-value")[1] as HTMLButtonElement).click();
+
+    expect(filterCommits).toEqual([{ operator: ["DIAMONDBACK E&P LLC"], state: ["42"] }]);
+  });
+
+  it("renders a plain label, not a button, for a bucket the server published no link for", async () => {
+    respondWith({
+      dimension: "completion_year",
+      buckets: [{ value: "2019", wells: figure("120"), links: {} }],
+    });
     await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     expect(host.querySelector("button.gw-wells-by-value")).toBeNull();
     expect(host.querySelector("span.gw-wells-by-value")).not.toBeNull();
   });
+});
 
-  it("maps only the four dimensions the collection actually accepts", () => {
-    expect(filterFor("operator")).toBe("operator");
-    expect(filterFor("county")).toBe("county");
-    expect(filterFor("status")).toBe("status");
-    expect(filterFor("well_type")).toBe("well_type");
-    expect(filterFor("completion_year")).toBeNull();
+describe("the cut is a control, not a URL the reader has to hand-edit", () => {
+  it("offers the sizes the server accepts and asks for the one the URL names", async () => {
+    await mountWellsBy(host, {
+      state: state({ "wb.top": ["20"] }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+    const picker = host.querySelector(".gw-wells-by-top") as HTMLSelectElement;
+
+    expect([...picker.options].map((option) => option.value)).toEqual([
+      "10",
+      "15",
+      "20",
+      "25",
+      "50",
+    ]);
+    expect(picker.value).toBe("20");
+    expect(requested[0]).toContain("top=20");
+  });
+
+  it("shows the cut the URL asked for even when it is not one of the offered sizes", async () => {
+    await mountWellsBy(host, {
+      state: state({ "wb.top": ["7"] }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+    const picker = host.querySelector(".gw-wells-by-top") as HTMLSelectElement;
+
+    expect([...picker.options].map((option) => option.value)).toEqual([
+      "7",
+      "10",
+      "15",
+      "20",
+      "25",
+      "50",
+    ]);
+    expect(picker.value).toBe("7");
+  });
+
+  it("commits the chosen cut to the panel's own URL key", async () => {
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    const picker = host.querySelector(".gw-wells-by-top") as HTMLSelectElement;
+    picker.value = "25";
+    picker.dispatchEvent(new Event("change"));
+
+    expect(panelCommits).toEqual([{ top: "25" }]);
+    expect(panelModes).toEqual(["push"]);
+  });
+});
+
+describe("the bucket that is the applied filter says so", () => {
+  function applied(value: string): Record<string, string[]> {
+    return { "f.operator": [value], "f.state": ["42"] };
+  }
+
+  it("presses the bucket whose filter the grid beside it is already narrowed by", async () => {
+    await mountWellsBy(host, {
+      state: state(applied("PIONEER NATURAL RESOURCES USA INC")),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+    const pressed = [...host.querySelectorAll("button.gw-wells-by-value")].map((node) =>
+      node.getAttribute("aria-pressed"),
+    );
+
+    expect(pressed).toEqual(["true", "false"]);
+  });
+
+  it("presses nothing when the grid carries no filter of its own", async () => {
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    const pressed = [...host.querySelectorAll("button.gw-wells-by-value")].map((node) =>
+      node.getAttribute("aria-pressed"),
+    );
+
+    expect(pressed).toEqual(["false", "false"]);
+  });
+
+  it("presses nothing where the state does not match, so one county code is not two", async () => {
+    // The filter names the same value in a different state: this bucket is not that filter.
+    await mountWellsBy(host, {
+      state: state({
+        "f.operator": ["PIONEER NATURAL RESOURCES USA INC"],
+        "f.state": ["33"],
+      }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+
+    expect(
+      [...host.querySelectorAll("button.gw-wells-by-value")].map((node) =>
+        node.getAttribute("aria-pressed"),
+      ),
+    ).toEqual(["false", "false"]);
+  });
+});
+
+describe("a screen reader is told the counts changed", () => {
+  it("announces the list politely rather than replacing it in silence", async () => {
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    expect(host.querySelector(".gw-wells-by-list")?.getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("gives the wait before it a status role", () => {
+    vi.stubGlobal("fetch", () => new Promise(() => {}));
+    void mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    expect(host.querySelector(".gw-wells-by-loading")?.getAttribute("role")).toBe("status");
   });
 });
 

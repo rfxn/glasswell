@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
@@ -390,16 +391,26 @@ def _absence(
     counted = _figure(row, _selector(dimension, state, q, "absent_wells"))
     if counted is None:
         return None
+    noun = dimension.replace("_", " ")
     detail = (
-        f"These wells carry no {dimension.replace('_', ' ')}. The decision that this is an"
-        " absence rather than an unknown is registered, with its evidence and its date."
+        f"These wells carry no {noun}. The decision that this is an absence rather than an"
+        " unknown is registered, with its evidence and its date."
         if rule
         else (
-            f"These wells carry no {dimension.replace('_', ' ')}. No conformance rule states"
-            " what that absence means on this source, so this bucket counts them and claims"
-            " nothing further about them (R8)."
+            f"These wells carry no {noun}. No conformance rule states what that absence means"
+            " on this source, so this bucket counts them and claims nothing further about"
+            " them (R8)."
         )
     )
+    # The search moves every other figure in the response and leaves this one whole-state, so
+    # the sentence names the population the count belongs to rather than leaving the reader to
+    # infer it from a total that is no longer on the surface.
+    if q is not None:
+        detail += (
+            f" The search for {q!r} did not narrow this bucket: a well with no {noun} matches"
+            f" no {noun} text, so this is every such well in"
+            f" {STATE_NAMES.get(state, f'state {state}')}, not a share of the matches."
+        )
     return {
         "label": ABSENCE_LABEL,
         "detail": detail,
@@ -430,9 +441,13 @@ def _remainder(
 
 
 def _caption(
-    *, dimension: str, state: str, shown: int, distinct: int, q: str | None, sort: str
+    *, dimension: str, state: str, shown: int, distinct: int, q: str | None, sort: str, order: str
 ) -> str:
-    """The one sentence that has to be true: what is on screen, and what it is a cut of."""
+    """The one sentence that has to be true: what is on screen, and what it is a cut of.
+
+    `order` is as load-bearing as `sort`: `count:asc` serves the values with the *fewest* wells,
+    and a sentence naming the most describes a list the reader is not looking at.
+    """
     noun = dimension.replace("_", " ")
     name = STATE_NAMES.get(state, f"state {state}")
     if distinct == 0:
@@ -448,13 +463,20 @@ def _caption(
         if q is None
         else f"{distinct:,} {noun} values{matching} in {name}"
     )
+    descending = order == "desc"
+    by_value = f"value, {'descending' if descending else 'ascending'}"
     if shown >= distinct:
-        return f"All {of}, ranked by {'well count' if sort == 'count' else 'value'}."
-    return (
-        f"The {shown:,} {noun} value{'s' if shown != 1 else ''} with the most wells, of {of}."
-        if sort == "count"
-        else f"{shown:,} of {of}, ranked by value."
-    )
+        ranking = (
+            f"well count, {'highest' if descending else 'lowest'} first"
+            if sort == "count"
+            else by_value
+        )
+        return f"All {of}, ranked by {ranking}."
+    if sort == "count":
+        extreme = "most" if descending else "fewest"
+        plural = "s" if shown != 1 else ""
+        return f"The {shown:,} {noun} value{plural} with the {extreme} wells, of {of}."
+    return f"{shown:,} of {of}, ranked by {by_value}."
 
 
 def _bucket_link(dimension: str, value: str, state: str) -> dict[str, str]:
@@ -462,7 +484,8 @@ def _bucket_link(dimension: str, value: str, state: str) -> dict[str, str]:
     name = DIMENSIONS[dimension]["filter"]
     if not name:
         return {}
-    return {"wells": f"/v1/wells?{name}={value}&state={state}"}
+    # Encoded, not interpolated: `DIAMONDBACK E&P LLC` ends at the ampersand written verbatim.
+    return {"wells": f"/v1/wells?{urlencode([(name, value), ('state', state)])}"}
 
 
 def _warnings(
@@ -662,6 +685,7 @@ def get_well_facets(
             ),
             q=q,
             sort=sort,
+            order=order,
         ),
         "buckets": [
             {

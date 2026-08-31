@@ -1,9 +1,11 @@
 import "./wells-by.css";
 
 import { ApiError, getEnvelope } from "../../api/client.ts";
-import type { Figure } from "../../api/envelope.ts";
+import type { Figure, Warning } from "../../api/envelope.ts";
 import type { AppState } from "../../app/state.ts";
+import { warningPanels } from "../../card/card.ts";
 import "../../card/gw-figure.ts";
+import { filtersOf } from "../router.ts";
 
 /** §4.1: the panel rides the URL, so a shared link opens the list the sharer was reading. */
 export const WELLS_BY_PREFIX = "wb.";
@@ -20,6 +22,9 @@ const SORTS = [
   { id: "count", label: "well count" },
   { id: "value", label: "value" },
 ] as const;
+
+/** Every size the operation accepts a cut at: `ge=1, le=50` on the server, 15 by default. */
+const TOPS = ["10", "15", "20", "25", "50"] as const;
 
 const DEFAULTS = { state: "33", by: "operator", sort: "count", order: "desc", top: "15" };
 
@@ -66,10 +71,10 @@ export interface WellFacets {
 }
 
 export interface WellsByHooks {
-  /** Commits panel state to the URL. */
-  setPanel(values: Record<string, string | null>): void;
-  /** Narrows the grid beside this panel to one bucket. */
-  applyFilter(name: string, values: string[]): void;
+  /** Commits panel state to the URL. Search churn replaces rather than pushes. */
+  setPanel(values: Record<string, string | null>, mode: "push" | "replace"): void;
+  /** Narrows the grid beside this panel to one bucket, by every filter the bucket's link names. */
+  applyFilter(filters: Record<string, string[]>): void;
 }
 
 export interface WellsByOptions {
@@ -91,15 +96,21 @@ export function panelState(state: AppState): Record<string, string> {
   };
 }
 
-/** The filter each dimension becomes on /v1/wells; `completion_year` becomes none. */
-export function filterFor(dimension: string): string | null {
-  const links: Record<string, string> = {
-    operator: "operator",
-    county: "county",
-    status: "status",
-    well_type: "well_type",
-  };
-  return links[dimension] ?? null;
+/**
+ * The filters a bucket narrows the collection by, read out of the link the server published for
+ * it rather than rebuilt from the dimension here. The `state` term is why: a county-003 bucket
+ * counted in Texas narrows to Texas county 003, and a filter assembled from the dimension alone
+ * returns North Dakota's county 003 beside it. A bucket the collection cannot reproduce carries
+ * no link, and gets no filter rather than one that narrows to something else.
+ */
+function filtersOfLink(link: string | undefined): Record<string, string[]> | null {
+  const mark = link?.indexOf("?") ?? -1;
+  if (link === undefined || mark < 0) return null;
+  const filters: Record<string, string[]> = {};
+  for (const [name, value] of new URLSearchParams(link.slice(mark + 1))) {
+    (filters[name] ??= []).push(value);
+  }
+  return Object.keys(filters).length > 0 ? filters : null;
 }
 
 /**
@@ -109,6 +120,38 @@ export function filterFor(dimension: string): string | null {
  * The list changes only when an ingest runs, so a cached one is never stale within a session.
  */
 let knownStates: FacetState[] = [];
+
+const SEARCH_SELECTOR = ".gw-wells-by-search-input";
+
+/**
+ * Where the caret was when a commit tore the panel down. Every commit rebuilds the explorer —
+ * the shell replaces its own children before this module replaces the host's — so a focused
+ * search input is destroyed mid-word and the browser has nothing left to restore focus to.
+ */
+let searchCaret: { start: number; end: number } | null = null;
+
+function rememberCaret(input: HTMLInputElement | null): void {
+  if (!input || document.activeElement !== input) return;
+  searchCaret = {
+    start: input.selectionStart ?? input.value.length,
+    end: input.selectionEnd ?? input.value.length,
+  };
+}
+
+/** The one place the panel's children are swapped, so nothing can rebuild it and forget this. */
+function swap(host: HTMLElement, ...children: HTMLElement[]): void {
+  rememberCaret(host.querySelector<HTMLInputElement>(SEARCH_SELECTOR));
+  host.replaceChildren(...children);
+  const caret = searchCaret;
+  searchCaret = null;
+  const input = host.querySelector<HTMLInputElement>(SEARCH_SELECTOR);
+  // Only a caret carried in from a commit the reader's own typing caused: a first mount must
+  // not take focus off whatever they were using.
+  if (!caret || !input) return;
+  input.focus();
+  const end = Math.min(caret.end, input.value.length);
+  input.setSelectionRange(Math.min(caret.start, end), end);
+}
 
 export async function mountWellsBy(host: HTMLElement, options: WellsByOptions): Promise<void> {
   const panel = panelState(options.state);
@@ -121,23 +164,20 @@ export async function mountWellsBy(host: HTMLElement, options: WellsByOptions): 
   };
   if (panel["q"]) query["q"] = panel["q"];
 
-  host.replaceChildren(controls(panel, null, options), loading());
+  swap(host, controls(panel, null, options), loading());
   try {
-    const { data } = await getEnvelope<WellFacets>(
-      "/v1/wells/facets",
-      query,
-      options.signal,
-    );
+    const envelope = await getEnvelope<WellFacets>("/v1/wells/facets", query, options.signal);
     if (options.signal.aborted) return;
+    const { data } = envelope;
     if (data.states.length > 0) knownStates = data.states;
-    host.replaceChildren(controls(panel, data, options), list(data, options));
+    swap(host, controls(panel, data, options), list(data, envelope.meta.warnings, options));
   } catch (error) {
     if (options.signal.aborted) return;
     // The refusal carries the same state list the success path serves, so the picker survives
     // it and the reader can leave without editing the URL.
     const offered = error instanceof ApiError ? statesOf(error) : [];
     if (offered.length > 0) knownStates = offered;
-    host.replaceChildren(controls(panel, null, options), refusal(error));
+    swap(host, controls(panel, null, options), refusal(error));
   }
 }
 
@@ -178,6 +218,7 @@ function statesOf(error: ApiError): FacetState[] {
 
 function loading(): HTMLElement {
   const box = div("gw-wells-by-loading");
+  box.setAttribute("role", "status");
   box.textContent = "Counting wells…";
   return box;
 }
@@ -197,7 +238,7 @@ function controls(
         "dimension",
         DIMENSIONS.map((entry) => ({ value: entry.id, label: entry.label, disabled: false })),
         panel["by"] as string,
-        (value) => options.hooks.setPanel({ by: value, q: null }),
+        (value) => options.hooks.setPanel({ by: value, q: null }, "push"),
         options.signal,
       ),
     ),
@@ -219,7 +260,7 @@ function controls(
           ? states
           : [{ value: panel["state"] as string, label: "…", disabled: true }],
         panel["state"] as string,
-        (value) => options.hooks.setPanel({ state: value, q: null }),
+        (value) => options.hooks.setPanel({ state: value, q: null }, "push"),
         options.signal,
       ),
     ),
@@ -233,10 +274,21 @@ function controls(
       "sort",
       SORTS.map((entry) => ({ value: entry.id, label: entry.label, disabled: false })),
       panel["sort"] as string,
-      (value) => options.hooks.setPanel({ sort: value }),
+      (value) => options.hooks.setPanel({ sort: value }, "push"),
       options.signal,
     ),
     direction(panel, options),
+    select(
+      "top",
+      cuts(panel["top"] as string).map((size) => ({
+        value: size,
+        label: `top ${size}`,
+        disabled: false,
+      })),
+      panel["top"] as string,
+      (value) => options.hooks.setPanel({ top: value }, "push"),
+      options.signal,
+    ),
   );
   bar.append(tools);
   return bar;
@@ -274,10 +326,12 @@ function search(
     "input",
     () => {
       if (timer !== undefined) clearTimeout(timer);
-      timer = setTimeout(
-        () => options.hooks.setPanel({ q: input.value.trim() || null }),
-        SEARCH_DEBOUNCE_MS,
-      );
+      // `replace`, on the convention web/src/app/state.ts states for viewport churn: "the back
+      // button is not forty pan events". A seven-character search is seven commits.
+      timer = setTimeout(() => {
+        rememberCaret(input);
+        options.hooks.setPanel({ q: input.value.trim() || null }, "replace");
+      }, SEARCH_DEBOUNCE_MS);
     },
     { signal: options.signal },
   );
@@ -299,10 +353,15 @@ function direction(panel: Record<string, string>, options: WellsByOptions): HTML
   button.setAttribute("aria-label", `Ranking direction: ${button.textContent}. Click to flip.`);
   button.addEventListener(
     "click",
-    () => options.hooks.setPanel({ order: descending ? "asc" : "desc" }),
+    () => options.hooks.setPanel({ order: descending ? "asc" : "desc" }, "push"),
     { signal: options.signal },
   );
   return button;
+}
+
+/** The offered cuts, plus whatever the URL asked for: the control names the list it produced. */
+function cuts(current: string): string[] {
+  return [...new Set([...TOPS, current])].sort((a, b) => Number(a) - Number(b));
 }
 
 /** Label and control wrap as one unit: at 320 a bare `in` was left stranded on the line above. */
@@ -333,12 +392,18 @@ function select(
     node.selected = option.value === current;
     element.append(node);
   }
+  // Assigned after insertion as well: inserting an option resets the select, which drops a
+  // selectedness set before it, and a picker showing a value the request did not use is a
+  // control that lies about the list beside it.
+  if (options_.some((option) => option.value === current)) element.value = current;
   element.addEventListener("change", () => onChange(element.value), { signal });
   return element;
 }
 
-function list(data: WellFacets, options: WellsByOptions): HTMLElement {
+function list(data: WellFacets, warnings: Warning[], options: WellsByOptions): HTMLElement {
   const box = div("gw-wells-by-list");
+  // The counts change under a control that keeps focus, so nothing else would announce them.
+  box.setAttribute("aria-live", "polite");
 
   const caption = document.createElement("p");
   caption.className = "gw-wells-by-caption";
@@ -367,15 +432,30 @@ function list(data: WellFacets, options: WellsByOptions): HTMLElement {
   );
   const rows = document.createElement("ol");
   rows.className = "gw-wells-by-rows";
+  const applied = filtersOf(options.state);
   data.buckets.forEach((bucket, index) => {
-    rows.append(row(bucket, index + 1, widest, data, options));
+    rows.append(row(bucket, index + 1, widest, data, applied, options));
   });
   if (data.buckets.length > 0) box.append(rows);
 
   if (data.remainder) box.append(remainder(data.remainder));
   if (data.absence) box.append(absence(data.absence));
   box.append(total(data));
+  // The same panels the well card and the neighbour list render. Under a search the absence
+  // bucket is the one figure on screen outside the visible arithmetic, and
+  // `search_scopes_the_ranking` is the served sentence that says so.
+  box.append(...warningPanels(warnings));
   return box;
+}
+
+/** Mirrors the enum chips: a bucket whose filter the grid already carries is a pressed control. */
+function narrowedBy(
+  filters: Record<string, string[]>,
+  applied: Record<string, string[]>,
+): boolean {
+  return Object.entries(filters).every(([name, values]) =>
+    values.every((value) => applied[name]?.includes(value)),
+  );
 }
 
 function row(
@@ -383,19 +463,21 @@ function row(
   rank: number,
   widest: number,
   data: WellFacets,
+  applied: Record<string, string[]>,
   options: WellsByOptions,
 ): HTMLElement {
   const item = document.createElement("li");
   item.className = "gw-wells-by-row";
   item.dataset["value"] = bucket.value;
 
-  const filter = filterFor(data.dimension);
-  const label = filter ? document.createElement("button") : document.createElement("span");
+  const filters = filtersOfLink(bucket.links["wells"]);
+  const label = filters ? document.createElement("button") : document.createElement("span");
   label.className = "gw-wells-by-value";
-  if (label instanceof HTMLButtonElement) {
+  if (label instanceof HTMLButtonElement && filters) {
     label.type = "button";
-    label.setAttribute("aria-label", `Narrow the wells below to ${bucket.value}`);
-    label.addEventListener("click", () => options.hooks.applyFilter(filter as string, [bucket.value]), {
+    label.setAttribute("aria-label", `Narrow the wells below to ${bucket.value} in ${data.state_name}`);
+    label.setAttribute("aria-pressed", String(narrowedBy(filters, applied)));
+    label.addEventListener("click", () => options.hooks.applyFilter(filters), {
       signal: options.signal,
     });
   } else {
