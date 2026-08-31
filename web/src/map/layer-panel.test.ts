@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { LAYER_GROUPS } from "./groups.ts";
 import { createLayerPanel } from "./layer-panel.ts";
 import { createPillStrip } from "./pills.ts";
-import { LAYERS, defaultLayerSet, groupedLayers } from "./registry.ts";
+import { LAYERS, defaultLayerSet, familyMembers, groupEntries } from "./registry.ts";
 
 const panel = (on: string[] = defaultLayerSet()) => {
   const events: { id: string; on: boolean }[] = [];
@@ -22,21 +22,47 @@ const panel = (on: string[] = defaultLayerSet()) => {
 };
 
 const rows = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>(".gw-layer-row")];
+/** The parent is a `.gw-layer-row` so the fold gate measures it, but it is not a layer. */
+const layerRows = (root: HTMLElement) => rows(root).filter((row) => row.dataset["layer"]);
 const rowFor = (root: HTMLElement, id: string) => rows(root).find((row) => row.dataset["layer"] === id);
+const familyOf = (root: HTMLElement, id: string) =>
+  root.querySelector<HTMLElement>(`.gw-layer-family[data-family="${id}"]`)!;
+const familyToggle = (root: HTMLElement, id: string) =>
+  familyOf(root, id).querySelector<HTMLButtonElement>(".gw-layer-family-toggle")!;
+const familyName = (root: HTMLElement, id: string) =>
+  familyOf(root, id).querySelector<HTMLButtonElement>(".gw-layer-family-name")!;
+const familyBody = (root: HTMLElement, id: string) =>
+  familyOf(root, id).querySelector<HTMLElement>(".gw-layer-family-body")!;
 
 describe("the layer panel", () => {
-  it("renders one row per registered layer, grouped, each group still in draw order", () => {
+  it("renders one row per registered layer, grouped and nested, none dropped", () => {
     const { handle } = panel();
-    // Every layer still has exactly one row: grouping reorders the list, it never drops from it.
-    expect(rows(handle.element).map((row) => row.dataset["layer"]).sort()).toEqual(
+    // Every layer still has exactly one row: grouping and nesting reorder the list, and a
+    // member moving under a parent never drops it from it.
+    expect(layerRows(handle.element).map((row) => row.dataset["layer"]).sort()).toEqual(
       LAYERS.map((l) => l.id).sort(),
     );
-    for (const { group, layers } of groupedLayers()) {
+    for (const { group, entries } of groupEntries()) {
       const body = handle.element.querySelector<HTMLElement>(`#gw-layer-group-${group.id}`)!;
-      expect([...body.querySelectorAll<HTMLElement>(".gw-layer-row")].map((r) => r.dataset["layer"])).toEqual(
-        layers.map((layer) => layer.id),
+      // Direct children only: a member sits inside its parent's body, not in the group's.
+      const listed = [...body.children].map((node) =>
+        node.classList.contains("gw-layer-family")
+          ? `family:${(node as HTMLElement).dataset["family"]}`
+          : (node as HTMLElement).dataset["layer"],
+      );
+      expect(listed).toEqual(
+        entries.map((entry) => (entry.kind === "family" ? `family:${entry.family.id}` : entry.layer.id)),
       );
     }
+  });
+
+  it("measures the parent against the fold like any other row", () => {
+    // chrome-fold.mjs computes the fold over `.gw-layer-row`. A parent that were only
+    // `.gw-layer-family-head` would be the one control in the list no gate measures.
+    const { handle } = panel();
+    const head = handle.element.querySelector<HTMLElement>(".gw-layer-family-head")!;
+    expect(head.classList.contains("gw-layer-row")).toBe(true);
+    expect(head.dataset["layer"]).toBeUndefined();
   });
 
   it("heads each group with the reader's name for it, not the mart that publishes it", () => {
@@ -295,7 +321,17 @@ describe("the active-layer pill strip", () => {
     strip.setOn(new Set([...defaultLayerSet(), "spacing-units"]));
     expect(strip.element.hidden).toBe(false);
     const labels = [...strip.element.querySelectorAll(".gw-pill-label")].map((n) => n.textContent);
-    expect(labels).toContain("Spacing units");
+    expect(labels).toContain("Spacing units (North Dakota)");
+  });
+
+  it("names a member by its standalone label, since no parent stands over a pill", () => {
+    // The panel can shorten "Wells (Texas)" to "Texas" because the row above says Wells. A
+    // pill has nothing above it, and one reading "Texas" alone would name no layer at all.
+    const strip = createPillStrip({ onRemove: () => {}, onOpen: () => {} });
+    strip.setOn(new Set(defaultLayerSet().filter((id) => id !== "tx-wells")));
+    const labels = [...strip.element.querySelectorAll(".gw-pill-label")].map((n) => n.textContent);
+    expect(labels).toContain("Wells (Texas)");
+    expect(labels).not.toContain("Texas");
   });
 
   it("skips an id this build no longer offers instead of drawing a pill nothing can remove", () => {
@@ -690,6 +726,190 @@ describe("the row's provenance handles are the app's, not a third dialect", () =
   });
 });
 
+describe("the wells parent", () => {
+  const MEMBERS = familyMembers("wells").map((layer) => layer.id);
+
+  it("stands one parent over the state rows, with its members shut on first paint", () => {
+    // Nesting adds a row; collapsing it removes four. The four rows a reader who does not
+    // care which state would otherwise scroll past are the four this buys back.
+    const { handle } = panel();
+    expect(familyBody(handle.element, "wells").hidden).toBe(true);
+    expect(familyName(handle.element, "wells").getAttribute("aria-expanded")).toBe("false");
+    expect(
+      [...familyBody(handle.element, "wells").children].map((n) => (n as HTMLElement).dataset["layer"]),
+    ).toEqual(MEMBERS);
+  });
+
+  it("reads each member by its state, and never repeats the noun the parent carries", () => {
+    const { handle } = panel();
+    const labels = [...familyBody(handle.element, "wells").querySelectorAll(".gw-layer-label")].map(
+      (node) => node.textContent,
+    );
+    expect(labels).toEqual(["North Dakota", "Texas", "New Mexico", "Montana"]);
+    expect(
+      familyOf(handle.element, "wells").querySelector(".gw-layer-family-name .gw-layer-label")!
+        .textContent,
+    ).toBe("Wells");
+  });
+
+  it("keeps the standalone name on the controls a screen reader meets on their own", () => {
+    // The visible label is shortened by the row above it; a switch announced as "Show Texas"
+    // would have lost the only word saying what is being shown.
+    const { handle } = panel();
+    const row = rowFor(handle.element, "tx-wells")!;
+    expect(row.querySelector(".gw-layer-toggle")!.getAttribute("aria-label")).toBe(
+      "Show Wells (Texas)",
+    );
+    expect(row.querySelector(".gw-layer-opacity")!.getAttribute("aria-label")).toBe(
+      "Wells (Texas) opacity",
+    );
+  });
+
+  it("reports all on, all off and some on as three distinct states of one switch", () => {
+    const { handle } = panel();
+    const toggle = familyToggle(handle.element, "wells");
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+
+    handle.setOn(new Set(["wells", "tx-wells"]));
+    expect(toggle.getAttribute("aria-pressed")).toBe("mixed");
+
+    handle.setOn(new Set());
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("says how many of how many while it is mixed, and stays quiet when it is not", () => {
+    const { handle } = panel();
+    const count = familyOf(handle.element, "wells").querySelector<HTMLElement>(
+      ".gw-layer-family-count",
+    )!;
+    expect(count.hidden).toBe(true);
+
+    handle.setOn(new Set(["wells", "tx-wells"]));
+    expect(count.hidden).toBe(false);
+    expect(count.textContent).toBe(`2 of ${MEMBERS.length}`);
+
+    handle.setOn(new Set(MEMBERS));
+    expect(count.hidden).toBe(true);
+  });
+
+  it("resolves a mixed parent upward, then falls to all off — mixed is never a destination", () => {
+    const { handle, events } = panel();
+    const toggle = familyToggle(handle.element, "wells");
+
+    handle.setOn(new Set(["wells"]));
+    toggle.click();
+    expect(events.splice(0)).toEqual(MEMBERS.map((id) => ({ id, on: true })));
+
+    handle.setOn(new Set(MEMBERS));
+    toggle.click();
+    expect(events.splice(0)).toEqual(MEMBERS.map((id) => ({ id, on: false })));
+
+    handle.setOn(new Set());
+    toggle.click();
+    expect(events.splice(0)).toEqual(MEMBERS.map((id) => ({ id, on: true })));
+  });
+
+  it("switches nothing outside the family, in either direction", () => {
+    const { handle, events } = panel();
+    familyToggle(handle.element, "wells").click();
+    expect(events.map((event) => event.id).sort()).toEqual([...MEMBERS].sort());
+  });
+
+  it("mutates the map through the same callback a member's own switch uses", () => {
+    // The parent is a control over four switches, not a fifth layer: it owns no id, writes
+    // nothing of its own, and every effect it has reaches the map as four ordinary toggles.
+    const { handle, events } = panel();
+    handle.setOn(new Set());
+    familyToggle(handle.element, "wells").click();
+    const viaParent = events.splice(0);
+    for (const id of MEMBERS) rowFor(handle.element, id)!.querySelector<HTMLButtonElement>(
+      ".gw-layer-toggle",
+    )!.click();
+    expect(events).toEqual(viaParent);
+  });
+
+  it("opens and shuts the members from the parent's own name, and says so on it", () => {
+    const { handle } = panel();
+    const name = familyName(handle.element, "wells");
+    name.click();
+    expect(familyBody(handle.element, "wells").hidden).toBe(false);
+    expect(name.getAttribute("aria-expanded")).toBe("true");
+    expect(name.getAttribute("aria-controls")).toBe(familyBody(handle.element, "wells").id);
+    name.click();
+    expect(familyBody(handle.element, "wells").hidden).toBe(true);
+  });
+
+  it("does not switch the family when the reader asks which states are in it", () => {
+    const { handle, events } = panel();
+    familyName(handle.element, "wells").click();
+    expect(events).toEqual([]);
+  });
+
+  it("reaches into a shut family to show what the filter matched", () => {
+    const { handle } = panel();
+    const search = handle.element.querySelector<HTMLInputElement>(".gw-layer-search")!;
+    search.value = "montana";
+    search.dispatchEvent(new Event("input"));
+
+    expect(familyOf(handle.element, "wells").hidden).toBe(false);
+    expect(familyBody(handle.element, "wells").hidden).toBe(false);
+    expect(rowFor(handle.element, "mt-wells")!.hidden).toBe(false);
+    expect(rowFor(handle.element, "tx-wells")!.hidden).toBe(true);
+  });
+
+  it("drops the parent when nothing inside it matched, rather than heading an empty list", () => {
+    const { handle } = panel();
+    const search = handle.element.querySelector<HTMLInputElement>(".gw-layer-search")!;
+    search.value = "spacing";
+    search.dispatchEvent(new Event("input"));
+    expect(familyOf(handle.element, "wells").hidden).toBe(true);
+  });
+
+  it("finds a state by its name now the label spells it out", () => {
+    // Before this the haystack held "Wells (TX)": typing "texas" matched nothing, while
+    // "montana" matched only because the Montana subtitle happened to spell it.
+    const { handle } = panel();
+    const search = handle.element.querySelector<HTMLInputElement>(".gw-layer-search")!;
+    for (const [term, id] of [["texas", "tx-wells"], ["new mexico", "nm-wells"]] as const) {
+      search.value = term;
+      search.dispatchEvent(new Event("input"));
+      expect(rowFor(handle.element, id)!.hidden, term).toBe(false);
+    }
+  });
+
+  it("says none here on the parent only when every state it is drawing drew nothing", () => {
+    // The present-but-empty state the panel already models, aggregated honestly: Montana and
+    // New Mexico are ingested and zero today, so a reader over the Permian has two members
+    // painting nothing and one painting. That is not an empty family.
+    const { handle } = panel();
+    const mark = familyOf(handle.element, "wells").querySelector<HTMLElement>(".gw-layer-empty")!;
+    handle.setZoom(9);
+    expect(mark.hidden).toBe(true);
+
+    handle.setCoverage(new Set(["nm-wells", "mt-wells"]));
+    expect(mark.hidden).toBe(true);
+
+    handle.setCoverage(new Set(MEMBERS));
+    expect(mark.hidden).toBe(false);
+
+    // A member nobody is drawing cannot hold the family empty.
+    handle.setOn(new Set(["wells"]));
+    handle.setCoverage(new Set(["nm-wells", "mt-wells"]));
+    expect(mark.hidden).toBe(true);
+  });
+
+  it("counts a shut family's members one by one on the group header", () => {
+    // Four switches behind one shut parent may not read as one. The group count is what the
+    // reader has while the family is closed, so it counts layers and not families.
+    const { handle } = panel();
+    const count = handle.element.querySelector<HTMLElement>(
+      '.gw-layer-group[data-group="spine"] .gw-layer-group-count',
+    )!;
+    handle.setOn(new Set(MEMBERS));
+    expect(count.textContent).toBe(`${MEMBERS.length} on`);
+  });
+});
+
 describe("the panel's own layout contract, read off the shipped sheets", () => {
   // happy-dom lays nothing out; what is pinnable here is the declaration each measured
   // defect was fixed by. tests/e2e measures the result. The idiom is surfaces.test.ts's.
@@ -732,15 +952,23 @@ describe("the panel's own layout contract, read off the shipped sheets", () => {
     expect(sheet).toContain("env(safe-area-inset-bottom)");
   });
 
-  it("lets the hidden attribute win on the disclosure, so a collapsed row stays collapsed", () => {
+  it("lets the hidden attribute win on every collapsible the panel shuts", () => {
     // The defect .gw-layer-crossing already carries a note about: a bare `display` outranks
-    // the UA's `[hidden] { display: none }`.
+    // the UA's `[hidden] { display: none }`. Read over every element this module sets `hidden`
+    // on rather than the one that had the bug, because the next disclosure added is the one
+    // that will have it. A base rule may instead be answered by an explicit `[hidden]`
+    // override, which is how .gw-layer-row settles it. style.css's global `!important` reset
+    // covers all of them at runtime; this holds the sheet's own convention so a rule cannot
+    // come to depend on that reset silently.
     const css = `${MAP}\n${PANEL}`.replace(/\/\*[\s\S]*?\*\//g, "");
+    const shut = [".gw-layer-detail", ".gw-layer-family-body", ".gw-layer-group-body", ".gw-layer-row"];
     for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
       const selector = (match[1] ?? "").trim();
-      if (!selector.startsWith(".gw-layer-detail")) continue;
-      if (!/display\s*:/.test(match[2] ?? "")) continue;
-      expect(selector, selector).toContain(":not([hidden])");
+      const base = shut.find((candidate) => selector.startsWith(candidate));
+      if (!base || !/display\s*:/.test(match[2] ?? "")) continue;
+      if (selector.includes(":not([hidden])") || selector.includes("[hidden]")) continue;
+      const override = new RegExp(`\\${base}\\[hidden\\]\\s*\\{[^}]*display\\s*:\\s*none`);
+      expect(override.test(css), `${selector} sets display and nothing re-hides it`).toBe(true);
     }
   });
 });

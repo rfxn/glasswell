@@ -235,8 +235,9 @@ curl -sf 'http://127.0.0.1:8000/v1/wells/status-summary?bbox=-105.0,47.5,-104.0,
   | python3 -m json.tool | head -40
 ```
 
-Then in a browser: **Wells (MT)** and **Well paths (MT)** appear in the layer panel, Wells (MT)
-is on by default and draws mostly plugged grey over eastern Montana.
+Then in a browser: **Well paths (Montana)** appears in the layer panel's Well spine group, and
+**Montana** appears under the **Wells** parent — open that row to see it. Montana is on by
+default and draws mostly plugged grey over eastern Montana.
 
 Four things to confirm by eye, each of which is a rule doing its job:
 

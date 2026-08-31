@@ -113,4 +113,28 @@ describe("a set stored before the two lateral rows were combined", () => {
     expect(restored.has("lateral-bores")).toBe(false);
     expect(restored.has("tx-wells")).toBe(true);
   });
+
+  it("restores a set written before the wells family byte for byte", () => {
+    // The migration this track owes, and the reason the parent is derived rather than stored:
+    // nesting moved no id, so the pre-nesting roster IS the current one for every member and
+    // `restoreCapabilitySet` has nothing to migrate. A reader who had turned three states off
+    // and kept North Dakota gets exactly that back — not four states, and not the defaults.
+    const beforeNesting = [
+      "land-metrics", "land-grid", "land-grid-labels", "spacing-units", "plss-labels",
+      "lateral-bores", "survey-traces", "mt-paths", "wells", "disposal-wells",
+      "tx-wells", "nm-wells", "mt-wells", "play-outline", "geology-au",
+    ];
+    expect(beforeNesting.sort()).toEqual([...layerIds()].sort());
+
+    const stored = { on: ["wells", "lateral-bores"], known: beforeNesting };
+    const restored = restoreCapabilitySet(stored, layerIds(), defaultLayerSet());
+    expect([...restored].sort()).toEqual(["lateral-bores", "wells"]);
+  });
+
+  it("adds no parent id to the persisted roster, so the family costs the store nothing", () => {
+    // A parent that were a real row would arrive absent from every stored `known`, take its
+    // own default, and then either mean nothing or force its members on over the reader's set.
+    for (const id of layerIds()) expect(id).not.toMatch(/^wells-(all|family|parent)$/);
+    expect(layerIds()).toHaveLength(15);
+  });
 });

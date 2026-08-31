@@ -2,8 +2,18 @@ import { describe, expect, it } from "vitest";
 
 import { LAND_SNAPSHOT, ND_SNAPSHOT, landCellCount, ndCoverage, ndWellCount } from "./coverage.ts";
 import { DISPOSAL_COLOUR } from "./disposal.ts";
-import { LAYER_GROUPS } from "./groups.ts";
-import { LAYERS, defaultLayerSet, groupedLayers, layerDef, layerIds, layerRowState } from "./registry.ts";
+import { LAYER_FAMILIES, LAYER_GROUPS, layerFamily } from "./groups.ts";
+import {
+  LAYERS,
+  defaultLayerSet,
+  familyMembers,
+  familyState,
+  groupEntries,
+  groupedLayers,
+  layerDef,
+  layerIds,
+  layerRowState,
+} from "./registry.ts";
 import { SELECTION_COLOUR, STATUS_CLASSES, UNMAPPED_STATUS, statusColour } from "./status.ts";
 import { TRACE_COLOUR, dataLayers } from "./style.ts";
 
@@ -383,5 +393,118 @@ describe("the registry declares no vocabulary nothing reads", () => {
 
   it("states the land mart's cell count on the row drawn from it, from the snapshot", () => {
     expect(layerDef("land-metrics")!.subtitle).toContain(`${landCellCount()} binned cells`);
+  });
+});
+
+describe("the wells family", () => {
+  it("holds the four state well-point rows and nothing else", () => {
+    // The boundary is "one point per well, surface hole, differing only by which regulator
+    // filed it". A path is not a well: mt-paths and survey-traces draw bore geometry, and
+    // disposal-wells cuts the same points by well_type rather than by state — nesting either
+    // under a parent whose children are states would read as a fifth state.
+    expect(familyMembers("wells").map((layer) => layer.id)).toEqual([
+      "wells", "tx-wells", "nm-wells", "mt-wells",
+    ]);
+    for (const sibling of ["mt-paths", "survey-traces", "disposal-wells", "lateral-bores"]) {
+      expect(layerDef(sibling)!.family, `${sibling} was nested`).toBeUndefined();
+    }
+  });
+
+  it("gives every member the same swatch kind, since one parent governs all of them", () => {
+    for (const layer of familyMembers("wells")) expect(layer.swatch.kind).toBe("dot");
+  });
+
+  it("declares a family label wherever it declares a family, and never one without the other", () => {
+    for (const layer of LAYERS) {
+      expect(Boolean(layer.family), `${layer.id}`).toBe(Boolean(layer.familyLabel));
+      if (layer.family) expect(LAYER_FAMILIES.map((f) => f.id)).toContain(layer.family);
+    }
+  });
+
+  it("names each member by the axis it divides on, with the parent carrying the noun", () => {
+    expect(layerFamily("wells")!.label).toBe("Wells");
+    expect(layerFamily("wells")!.childAxis).toBe("state");
+    expect(familyMembers("wells").map((layer) => layer.familyLabel)).toEqual([
+      "North Dakota", "Texas", "New Mexico", "Montana",
+    ]);
+    // The standalone name still says what the row is: a pill reading "Texas" alone would not.
+    for (const layer of familyMembers("wells")) {
+      expect(layer.label).toBe(`Wells (${layer.familyLabel})`);
+    }
+  });
+
+  it("keeps every member on by default, so the parent opens as one switch and not as mixed", () => {
+    for (const layer of familyMembers("wells")) expect(layer.defaultOn).toBe(true);
+    expect(familyState("wells", new Set(defaultLayerSet()))).toBe(true);
+  });
+
+  it("reports the parent as a readout of its members and never as a stored bit", () => {
+    expect(familyState("wells", new Set())).toBe(false);
+    expect(familyState("wells", new Set(["wells"]))).toBe("mixed");
+    expect(familyState("wells", new Set(["wells", "tx-wells", "nm-wells"]))).toBe("mixed");
+    expect(familyState("wells", new Set(["wells", "tx-wells", "nm-wells", "mt-wells"]))).toBe(true);
+    // A layer outside the family cannot move the parent, in either direction.
+    expect(familyState("wells", new Set(["mt-paths"]))).toBe(false);
+  });
+});
+
+describe("every row states its state the same way", () => {
+  // North Dakota was the unmarked default only because it was ingested first — an accident of
+  // build order presented to the reader as a distinction, which gets worse with every state.
+  const STATES = ["North Dakota", "Texas", "New Mexico", "Montana"];
+
+  it("spells the state out rather than shipping a postal code the panel alone would use", () => {
+    // The status page names all four in full across seventeen dataset rows and the glossary
+    // does the same; the parenthesised code lived in this file and nowhere else. Spelling it
+    // is the existing suffix convention with the abbreviation removed, not a third one.
+    for (const layer of LAYERS) {
+      expect(layer.label, `${layer.id}`).not.toMatch(/\((ND|TX|NM|MT)\)/);
+    }
+  });
+
+  it("qualifies every single-state row, so no state is the unmarked default", () => {
+    for (const layer of LAYERS) {
+      const states = STATES.filter((state) => layer.subtitle.includes(state));
+      const codes = [...layer.subtitle.matchAll(/\b(ND|TX|NM|MT)\b/g)].map((match) => match[1]);
+      const single = new Set([...codes, ...states.map((state) => state.slice(0, 2))]).size === 1;
+      if (!single || layer.pendingSource) continue;
+      expect(layer.label, `${layer.id} names no state`).toMatch(/\(North Dakota|Texas|New Mexico|Montana\)$/);
+    }
+  });
+
+  it("puts the noun first, so a scan down the list reads layers rather than states", () => {
+    for (const layer of LAYERS) {
+      for (const state of STATES) expect(layer.label).not.toMatch(new RegExp(`^${state}\\b`));
+    }
+  });
+});
+
+describe("the panel's reading order", () => {
+  it("lists every layer exactly once, whether it is nested or not", () => {
+    const listed = groupEntries().flatMap((entry) =>
+      entry.entries.flatMap((row) => (row.kind === "family" ? row.layers : [row.layer])),
+    );
+    expect(listed.map((layer) => layer.id).sort()).toEqual([...layerIds()].sort());
+  });
+
+  it("stands the family where its first member stood, and lists its members inside it", () => {
+    const spine = groupEntries().find((entry) => entry.group.id === "spine")!;
+    expect(
+      spine.entries.map((row) => (row.kind === "family" ? `family:${row.family.id}` : row.layer.id)),
+    ).toEqual(["lateral-bores", "survey-traces", "mt-paths", "family:wells", "disposal-wells"]);
+    const family = spine.entries.find((row) => row.kind === "family")!;
+    expect(family.kind === "family" && family.layers.map((layer) => layer.id)).toEqual([
+      "wells", "tx-wells", "nm-wells", "mt-wells",
+    ]);
+  });
+
+  it("leaves a group with no family exactly as the flat order had it", () => {
+    for (const { group, entries } of groupEntries()) {
+      if (entries.some((row) => row.kind === "family")) continue;
+      const flat = groupedLayers().find((entry) => entry.group.id === group.id)!;
+      expect(entries.map((row) => row.kind === "layer" && row.layer.id)).toEqual(
+        flat.layers.map((layer) => layer.id),
+      );
+    }
   });
 });
