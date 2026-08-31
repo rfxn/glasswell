@@ -49,7 +49,9 @@ comment on index canonical.production_monthly_source_created_idx is
 --
 -- REPOINT CHECKLIST (integrator, at the merge train):
 --   1. evidence_tag -> the tag that first carries the four rule ids below
---   2. evidence_commit -> the main head this branch was written against
+--   2. evidence_commit -> the first commit on main that contains these rules, which is the
+--      merge commit and not the head this branch was written against: the tag has to contain
+--      what evidence_commit names, and `make release-check` says so in those words
 --   3. published_vintage -> confirm it is the date that tag is cut, or correct it
 -- The rule ids themselves are immutable and must not change during the repoint.
 insert into lineage.conformance_rule_publications
