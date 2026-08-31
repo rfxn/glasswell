@@ -121,7 +121,9 @@ _SCOPED_AS_OF = """
 
 # Five arms over one aggregate, so the served list and the three claims about what it leaves out
 # are counted in the same pass and cannot disagree. `scope` counts the null bucket in its total
-# and excludes it from `values`, which is what makes buckets + remainder + absence == wells.
+# and excludes it from `values`, which is what makes buckets + remainder + absence == wells with
+# no `q` in force; under one the ranked arms read `matched` and only `scope` still reads the
+# whole state, so buckets + remainder == matched instead.
 _FACETS = """
 with scoped as ({scoped}),
      bucketed as (
@@ -272,7 +274,8 @@ class WellFacets(BaseModel):
         description="Every current well in the scoped state, absent when the state holds none."
     )
     matched_wells: FigureModel | None = Field(
-        description="Wells under the search, absent when no search was asked for."
+        description="Wells under the search, absent when no search was asked for. `buckets`"
+        " + `remainder` sum to it, because both are inside the search and `absence` is not."
     )
     states: list[FacetState] = Field(
         description="Every state this operation knows, loaded or not, so a picker can offer"
@@ -527,8 +530,10 @@ def _warnings(
         " many values the state holds in total, and `absence` is its own named bucket for wells"
         " the dimension has no value for. The absence bucket never enters the ranking — on the"
         " current Texas load it would outrank all 9,369 operators — and never enters the"
-        " search, because a well with no name matches no name. `buckets` + `remainder` +"
-        " `absence` sum to `wells`, always."
+        " search, because a well with no name matches no name. With no search in force,"
+        " `buckets` + `remainder` + `absence` sum to `wells`. Under a `q` the ranked arms are"
+        " searched and `absence` is not, so `buckets` + `remainder` sum to `matched_wells`"
+        " instead and that is what the served figures reconcile against."
         " Every count is a figure with a derivation handle, so a bucket resolves at /v1/explain"
         " to the government file its wells were promoted from. Because each distinct dimension,"
         " search and cut persists exact response evidence, this operation is capped at 60"

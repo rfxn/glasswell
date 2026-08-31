@@ -7,7 +7,9 @@
       a bucket click that narrows the grid beside it to exactly that bucket
 - [New] Truncation is counted rather than implied: `remainder` states how many values fall
       below the cut and how many wells they hold, `distinct_values` states how many the state
-      holds in total, and `buckets` + `remainder` + `absence` always sum to `wells`
+      holds in total, and with no search in force `buckets` + `remainder` + `absence` sum to
+      `wells`; under a search the absence bucket stays outside it, so `buckets` + `remainder`
+      sum to `matched_wells` and the served description says which reconciliation applies
 - [New] Wells whose dimension has no value are their own named bucket, outside the ranking and
       outside the search — on the current Texas load 70,039 wells report no operator, more
       than any real operator holds, so ranking it would have put a non-operator at the top and

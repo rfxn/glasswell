@@ -78,6 +78,27 @@ def test_the_buckets_the_remainder_and_the_absence_sum_to_the_population(
     assert listed + remainder + absent == int(data["wells"]["value"])
 
 
+def test_under_a_search_the_buckets_reconcile_against_the_matched_population(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The unsearched sum does not extend to a search. `q` narrows the ranked arms and never
+    the absence bucket, so the three of them fall short of `wells` by the unmatched values —
+    which is why the reconciling figure under a search is `matched_wells`."""
+    _seed_tx(seeded)
+    # "usa" matches two operators, so the cut is real and the remainder is served rather than
+    # absent — the arm that would otherwise leave the relationship untested.
+    data = _facets(client, top=1, q="usa")["data"]
+
+    listed = sum(int(bucket["wells"]["value"]) for bucket in data["buckets"])
+    remainder = int(data["remainder"]["wells"]["value"])
+    absent = int(data["absence"]["wells"]["value"])
+
+    assert data["remainder"]["values"] == 1
+    assert listed + remainder == int(data["matched_wells"]["value"])
+    assert absent == _TX_ABSENT
+    assert listed + remainder + absent < int(data["wells"]["value"])
+
+
 def test_the_absence_is_its_own_named_bucket_and_never_enters_the_ranking(
     client: TestClient, seeded: psycopg.Connection
 ) -> None:
