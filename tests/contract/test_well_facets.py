@@ -393,6 +393,25 @@ def test_a_bucket_link_is_scoped_to_the_state_it_was_counted_in(
     assert prefixes == {"42"}
 
 
+def test_a_bucket_link_percent_encodes_the_value_it_carries(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """Written into a URL verbatim, `DIAMONDBACK E&P LLC` ends at the ampersand and mints a
+    stray `P LLC` parameter, so the published link narrows to a different population than the
+    count beside it — and the spaces make it a URL no agent or auditor can issue at all."""
+    _seed_tx(seeded)
+    buckets = {
+        bucket["value"]: bucket for bucket in _facets(client, top=50)["data"]["buckets"]
+    }
+    link = buckets["DIAMONDBACK E&P LLC"]["links"]["wells"]
+
+    assert link == "/v1/wells?operator=DIAMONDBACK+E%26P+LLC&state=42"
+    followed = client.get(f"{link}&limit=200")
+    assert followed.status_code == 200, followed.text
+    names = {row["operator_name_reported"] for row in followed.json()["data"]}
+    assert names == {"DIAMONDBACK E&P LLC"}
+
+
 def test_a_dimension_the_collection_cannot_filter_on_publishes_no_link(
     client: TestClient, seeded: psycopg.Connection
 ) -> None:

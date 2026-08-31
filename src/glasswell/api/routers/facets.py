@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
@@ -473,7 +474,8 @@ def _bucket_link(dimension: str, value: str, state: str) -> dict[str, str]:
     name = DIMENSIONS[dimension]["filter"]
     if not name:
         return {}
-    return {"wells": f"/v1/wells?{name}={value}&state={state}"}
+    # Encoded, not interpolated: `DIAMONDBACK E&P LLC` ends at the ampersand written verbatim.
+    return {"wells": f"/v1/wells?{urlencode([(name, value), ('state', state)])}"}
 
 
 def _warnings(
