@@ -770,10 +770,16 @@ def issue_key(client: TestClient, *, label: str, scope: str) -> str:
     return response.json()["data"]["secret"]
 
 
-def as_principal(client: TestClient, secret: str | None) -> TestClient:
-    """A second client on the same app, presenting a different credential (or none)."""
+def as_principal(
+    client: TestClient, secret: str | None, *, base_url: str = "http://testserver"
+) -> TestClient:
+    """A second client on the same app, presenting a different credential (or none).
+
+    `base_url` is https for a caller that has to hold a `__Host-` cookie: the prefix requires
+    Secure, so over http the transport drops the cookie and the caller reads as uncredentialled.
+    """
     headers = {} if secret is None else {KEY_HEADER: secret}
-    return TestClient(client.app, headers=headers)
+    return TestClient(client.app, base_url=base_url, headers=headers)
 
 
 @pytest.fixture
@@ -795,6 +801,8 @@ def agent_client(client: TestClient) -> TestClient:
 SESSION_BASE_URL = "https://testserver"
 VIEWER_PASSWORD = "a-sufficiently-long-viewer-password"
 OWNER_PASSWORD = "a-sufficiently-long-owner-password"
+VIEWER_USERNAME = "viewer-session"
+OWNER_USERNAME = "owner-session"
 
 # Argon2id at the shipped parameters costs ~60 ms per call by design, and the login route pads
 # itself to a 250 ms floor so the failure classes cannot be told apart by timing. Both are
@@ -940,12 +948,12 @@ def spend_rate_window(connection: psycopg.Connection, *, operation: str, count: 
 
 @pytest.fixture
 def owner_session(client: TestClient, seeded: psycopg.Connection) -> TestClient:
-    return seed_session(client, seeded, username="owner-session", role="owner")
+    return seed_session(client, seeded, username=OWNER_USERNAME, role="owner")
 
 
 @pytest.fixture
 def viewer_session(client: TestClient, seeded: psycopg.Connection) -> TestClient:
-    return seed_session(client, seeded, username="viewer-session", role="viewer")
+    return seed_session(client, seeded, username=VIEWER_USERNAME, role="viewer")
 
 
 @pytest.fixture
