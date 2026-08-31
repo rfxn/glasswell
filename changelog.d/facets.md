@@ -21,7 +21,7 @@
       for its source and is cited beside it
 - [New] `/v1/wells` accepts `state`, an exact API state-code filter, so a facet bucket's link
       narrows to the state the bucket was counted in
-- [New] Migration 069 adds `wells_facet_dimensions_idx`, a covering index over
+- [New] Migration 070 adds `wells_facet_dimensions_idx`, a covering index over
       `canonical.wells` that answers the facet aggregate index-only with no heap fetches;
       measured on the deployed database the top-15 Texas operator facet falls from 269,438
       shared buffers and 459 ms to 5,717 buffers and 354 ms
