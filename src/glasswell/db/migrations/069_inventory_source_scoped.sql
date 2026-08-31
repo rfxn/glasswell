@@ -22,10 +22,14 @@
 -- inventory without a heap fetch. Sizes at 29.6M rows: 203 MB and 202 MB, against a 7,643 MB
 -- table — btree deduplication carries them, because both lead with a column of three values.
 
-create index production_monthly_source_entity_idx
+-- `if not exists` so an operator can build both CONCURRENTLY ahead of the migrate and have this
+-- no-op: migrate.py runs each migration inside one transaction, which CONCURRENTLY cannot join,
+-- and a plain build holds a SHARE lock against writes to a 7.6 GB table for its whole duration.
+
+create index if not exists production_monthly_source_entity_idx
     on canonical.production_monthly (source_id, entity_key);
 
-create index production_monthly_source_created_idx
+create index if not exists production_monthly_source_created_idx
     on canonical.production_monthly (source_id, created_at desc);
 
 comment on index canonical.production_monthly_source_entity_idx is
