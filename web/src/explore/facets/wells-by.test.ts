@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULTS_FOR_TEST, mountWellsBy, panelState } from "./wells-by.ts";
-import type { WellFacets } from "./wells-by.ts";
+import { DEFAULTS_FOR_TEST, WELLS_BY_PREFIX, mountWellsBy, panelState } from "./wells-by.ts";
+import type { WellFacets, WellsByHooks } from "./wells-by.ts";
 import type { Figure, Warning } from "../../api/envelope.ts";
 import { DEFAULT_STATE } from "../../app/state.ts";
 import type { AppState } from "../../app/state.ts";
@@ -85,15 +85,17 @@ function hooks() {
   };
 }
 
-function respondWith(body: Partial<WellFacets>, warnings: Warning[] = []): void {
+/** `latency` puts the response behind the keyboard, which is where every round trip is. */
+function respondWith(body: Partial<WellFacets>, warnings: Warning[] = [], latency = 0): void {
   vi.stubGlobal("fetch", (url: string) => {
     requested.push(String(url));
-    return Promise.resolve(
+    const answer = (): Response =>
       new Response(
         JSON.stringify({ data: { ...RESPONSE, ...body }, meta: { warnings }, links: {} }),
         { headers: { "content-type": "application/json" } },
-      ),
-    );
+      );
+    if (latency === 0) return Promise.resolve(answer());
+    return new Promise<Response>((resolve) => setTimeout(() => resolve(answer()), latency));
   });
 }
 
@@ -252,6 +254,149 @@ describe("the search box survives the re-render its own keystroke causes", () =>
     await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     expect(document.activeElement).not.toBe(host.querySelector(".gw-wells-by-search-input"));
+  });
+
+  /**
+   * Types ahead of the round trip, which is what anyone slower than the 250 ms debounce does: the
+   * commit fires on the first word, the reader keeps typing, and the response for that *earlier*
+   * word rebuilds the box from a URL a keystroke behind. The suite had only ever rebuilt with a
+   * URL that had caught up, which is why every assertion below passed over a broken panel.
+   */
+  async function typeAhead(): Promise<{ signal: AbortSignal }> {
+    const signal = new AbortController().signal;
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal });
+    const input = host.querySelector(".gw-wells-by-search-input") as HTMLInputElement;
+    input.focus();
+    input.value = "chev";
+    input.setSelectionRange(4, 4);
+    input.dispatchEvent(new Event("input"));
+    await vi.advanceTimersByTimeAsync(400);
+
+    const live = host.querySelector(".gw-wells-by-search-input") as HTMLInputElement;
+    live.focus();
+    live.value = "chevr";
+    live.setSelectionRange(5, 5);
+    live.dispatchEvent(new Event("input"));
+
+    // The response the first commit asked for lands: the shell rebuilds from `q=chev`.
+    host.replaceChildren();
+    await mountWellsBy(host, { state: state({ "wb.q": ["chev"] }), hooks: hooks(), signal });
+    return { signal };
+  }
+
+  it("keeps a keystroke typed while the round trip for the one before it was still in the air", async () => {
+    await typeAhead();
+
+    const rebuilt = host.querySelector(".gw-wells-by-search-input") as HTMLInputElement;
+    expect(rebuilt.value).toBe("chevr");
+    expect(document.activeElement).toBe(rebuilt);
+    expect(rebuilt.selectionStart).toBe(5);
+  });
+
+  it("commits what the live box holds when the rebuild orphaned the pending timer", async () => {
+    await typeAhead();
+    // The timer belongs to an input the rebuild detached; it must not commit that element's
+    // stale value, and the box must still be the reader's afterwards.
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(panelCommits).toEqual([{ q: "chev" }, { q: "chevr" }]);
+    expect(document.activeElement).toBe(host.querySelector(".gw-wells-by-search-input"));
+  });
+
+  it("does not re-type an abandoned search onto the next dimension", async () => {
+    const signal = new AbortController().signal;
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal });
+    const input = host.querySelector(".gw-wells-by-search-input") as HTMLInputElement;
+    input.focus();
+    input.value = "chev";
+    input.dispatchEvent(new Event("input"));
+
+    const dimension = host.querySelector(".gw-wells-by-dimension") as HTMLSelectElement;
+    dimension.value = "county";
+    dimension.dispatchEvent(new Event("change"));
+    host.replaceChildren();
+    await mountWellsBy(host, { state: state({ "wb.by": ["county"] }), hooks: hooks(), signal });
+
+    const rebuilt = host.querySelector(".gw-wells-by-search-input") as HTMLInputElement;
+    expect(rebuilt.value).toBe("");
+    expect(document.activeElement).not.toBe(rebuilt);
+  });
+
+  /**
+   * The shell's own loop, which nothing else in this file models: a commit replaces the whole
+   * explorer and the panel is then rebuilt from the URL, rather than edited in place. Keystrokes
+   * go wherever the focus is, so a panel that drops focus drops the letters after it too.
+   */
+  function shell(signal: AbortSignal): Record<string, string[]> {
+    const url: Record<string, string[]> = {};
+    const shellHooks: WellsByHooks = {
+      setPanel: (values, mode) => {
+        panelCommits.push(values);
+        panelModes.push(mode);
+        for (const [key, value] of Object.entries(values)) {
+          if (value === null) delete url[`${WELLS_BY_PREFIX}${key}`];
+          else url[`${WELLS_BY_PREFIX}${key}`] = [value];
+        }
+        host.replaceChildren();
+        void mountWellsBy(host, { state: state(url), hooks: shellHooks, signal });
+      },
+      applyFilter: (filters) => void filterCommits.push(filters),
+    };
+    void mountWellsBy(host, { state: state(url), hooks: shellHooks, signal });
+    return url;
+  }
+
+  it("loses no letter to a reader typing slower than the debounce", async () => {
+    // 300 ms a character against a 250 ms debounce and a 120 ms round trip: every letter commits
+    // on its own, and every response rebuilds the box from a URL one letter behind the keyboard.
+    respondWith({}, [], 120);
+    const url = shell(new AbortController().signal);
+    await vi.advanceTimersByTimeAsync(200);
+    (host.querySelector(".gw-wells-by-search-input") as HTMLInputElement).focus();
+
+    for (const letter of "energy") {
+      const box = document.activeElement as HTMLInputElement | null;
+      if (box?.classList.contains("gw-wells-by-search-input")) {
+        box.value += letter;
+        box.setSelectionRange(box.value.length, box.value.length);
+        box.dispatchEvent(new Event("input"));
+      }
+      await vi.advanceTimersByTimeAsync(300);
+    }
+    await vi.advanceTimersByTimeAsync(400);
+
+    const box = host.querySelector(".gw-wells-by-search-input") as HTMLInputElement;
+    expect(box.value).toBe("energy");
+    expect(url[`${WELLS_BY_PREFIX}q`]).toEqual(["energy"]);
+    expect(document.activeElement).toBe(box);
+    expect(box.selectionStart).toBe(6);
+  });
+
+  it("does not pull focus back out of the control that caused the rebuild", async () => {
+    // Carrying the draft across a rebuild is only the search box's licence to keep its own
+    // reader. Sorting is a different control, and it leaves the box for it.
+    const signal = new AbortController().signal;
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal });
+    const input = host.querySelector(".gw-wells-by-search-input") as HTMLInputElement;
+    input.focus();
+    input.value = "chev";
+    input.setSelectionRange(4, 4);
+    input.dispatchEvent(new Event("input"));
+
+    const sort = host.querySelector(".gw-wells-by-sort") as HTMLSelectElement;
+    sort.focus();
+    sort.value = "value";
+    sort.dispatchEvent(new Event("change"));
+    host.replaceChildren();
+    await mountWellsBy(host, { state: state({ "wb.sort": ["value"] }), hooks: hooks(), signal });
+    await vi.advanceTimersByTimeAsync(400);
+
+    const rebuilt = host.querySelector(".gw-wells-by-search-input") as HTMLInputElement;
+    expect(document.activeElement).not.toBe(rebuilt);
+    expect(rebuilt.value).toBe("");
+    // A pending debounce commits the word it was armed with, never the value the rebuild put
+    // into the box for it.
+    expect(panelCommits).toEqual([{ sort: "value" }, { q: "chev" }]);
   });
 
   it("replaces rather than pushes, so a seven-character search is not seven back presses", async () => {
