@@ -26,6 +26,7 @@ FETCH_COMMANDS = (
     "nm_ocd.py",
     "blm_plss.py",
     "nm_c115b.py",
+    "eia_boundaries.py",
 )
 
 

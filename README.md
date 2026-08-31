@@ -398,6 +398,7 @@ records each file's checksum and refuses a changed migration.
 | [docs/p3-type-curve-control.md](docs/p3-type-curve-control.md) | Pinned `tcv1.0` control contract, D1 replay evidence, and the explicit red coverage gate |
 | [docs/p3-matrix-integrity.md](docs/p3-matrix-integrity.md) | Feature-matrix availability semantics, and the strict-history versus reconstructed-source clocks |
 | [docs/p3-model-ready-dataset.md](docs/p3-model-ready-dataset.md) | `mdv1.4` labels, curves, censoring coverage, and the eight content-addressed rolling splits |
+| [docs/runbook-basin-load.md](docs/runbook-basin-load.md) | Loading the EIA basin and play boundaries: the two commands, which user runs each, expected counts, and the undo |
 | [BRAND.md](BRAND.md) | Visual system, palette, and asset regeneration |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How changes are made, and what review rejects |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting |

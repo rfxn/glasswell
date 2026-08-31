@@ -45,6 +45,8 @@ glasswell-typecurve-control = "glasswell.modeling.type_curve:main"
 glasswell-p3-context-publish = "glasswell.modeling.p3_publication:main"
 glasswell-neighbors = "glasswell.marts.neighbors:main"
 glasswell-fracfocus = "glasswell.ingest.fracfocus:main"
+glasswell-eia-boundaries = "glasswell.ingest.eia_boundaries:main"
+glasswell-basin-boundaries = "glasswell.marts.basin_boundaries:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
