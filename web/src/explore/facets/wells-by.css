@@ -351,3 +351,13 @@ button.gw-wells-by-value[aria-pressed="true"] {
     gap: var(--gw-space-1);
   }
 }
+
+/* The population the ranking was counted over, stated above it. A host that counts a whole
+   state and a host that counts a viewport render the same panel, and the difference between
+   them is a sentence rather than a second component. */
+.gw-wells-by-scope {
+  margin: 0.15rem 0 0.4rem;
+  color: var(--slate);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}

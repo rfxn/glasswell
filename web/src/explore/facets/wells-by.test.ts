@@ -1,11 +1,18 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULTS_FOR_TEST, WELLS_BY_PREFIX, mountWellsBy, panelState } from "./wells-by.ts";
+import {
+  DEFAULTS_FOR_TEST,
+  DIMENSIONS,
+  WELLS_BY_PREFIX,
+  mountWellsBy,
+  panelState,
+} from "./wells-by.ts";
 import type { WellFacets, WellsByHooks } from "./wells-by.ts";
 import type { Figure, Warning } from "../../api/envelope.ts";
 import { DEFAULT_STATE } from "../../app/state.ts";
 import type { AppState } from "../../app/state.ts";
+import { filtersOf } from "../router.ts";
 
 /**
  * No visibility or layout assertion lives in this file. `web/src/style.css` carries a global
@@ -111,6 +118,17 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllGlobals());
 
+/**
+ * The explorer's own wiring, in one place: shell.ts hands the panel the filters the grid beside
+ * it already carries. The panel no longer reads them out of `state.extra` itself — the map has
+ * no `f.` prefix and no grid — so the surface that has them supplies them.
+ */
+const mount = (options: {
+  state: AppState;
+  hooks: WellsByHooks;
+  signal: AbortSignal;
+}): Promise<void> => mountWellsBy(host, { ...options, applied: filtersOf(options.state) });
+
 describe("the panel reads its question off the URL", () => {
   it("defaults to the top 15 operators of one state rather than every state at once", () => {
     expect(panelState(state())).toMatchObject({
@@ -132,7 +150,7 @@ describe("the panel reads its question off the URL", () => {
   });
 
   it("asks the server for the state and dimension the URL names", async () => {
-    await mountWellsBy(host, {
+    await mount({
       state: state({ "wb.by": ["status"], "wb.state": ["25"] }),
       hooks: hooks(),
       signal: new AbortController().signal,
@@ -146,7 +164,7 @@ describe("the panel reads its question off the URL", () => {
 
 describe("the served counts are rendered as figures, never as bare numbers", () => {
   it("gives every bucket a gw-figure carrying the handle the API served", async () => {
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     const figures = host.querySelectorAll(".gw-wells-by-rows gw-figure");
     expect(figures).toHaveLength(2);
@@ -155,7 +173,7 @@ describe("the served counts are rendered as figures, never as bare numbers", () 
   });
 
   it("renders the remainder, the absence and the total as figures too", async () => {
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     for (const selector of [".gw-wells-by-remainder", ".gw-wells-by-absence", ".gw-wells-by-total"]) {
       expect(host.querySelector(`${selector} gw-figure`), selector).not.toBeNull();
@@ -165,13 +183,13 @@ describe("the served counts are rendered as figures, never as bare numbers", () 
 
 describe("what the list leaves out is on the surface, not inferred from it", () => {
   it("states the cut in the caption the server composed", async () => {
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     expect(host.querySelector(".gw-wells-by-caption")?.textContent).toContain("of 9,369");
   });
 
   it("prints the remainder's own sentence, so the tail is counted rather than implied", async () => {
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     expect(host.querySelector(".gw-wells-by-remainder-detail")?.textContent).toContain(
       "9,367 further operator values hold 212,830 wells",
@@ -180,7 +198,7 @@ describe("what the list leaves out is on the surface, not inferred from it", () 
 
   it("drops the remainder block entirely when the list is complete", async () => {
     respondWith({ remainder: null });
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     expect(host.querySelector(".gw-wells-by-remainder")).toBeNull();
   });
@@ -188,7 +206,7 @@ describe("what the list leaves out is on the surface, not inferred from it", () 
 
 describe("the absence bucket is named, counted and outside the ranking", () => {
   it("renders it as its own block and not as a row in the ranked list", async () => {
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     const rows = [...host.querySelectorAll(".gw-wells-by-row .gw-wells-by-name")].map(
       (node) => node.textContent,
@@ -198,7 +216,7 @@ describe("the absence bucket is named, counted and outside the ranking", () => {
   });
 
   it("carries the count and links the conformance rule that decided it", async () => {
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     expect(host.querySelector(".gw-wells-by-absence gw-figure")?.getAttribute("value")).toBe("70039");
     expect(host.querySelector(".gw-wells-by-rule")?.getAttribute("href")).toBe(
@@ -210,7 +228,7 @@ describe("the absence bucket is named, counted and outside the ranking", () => {
     respondWith({
       absence: { ...RESPONSE.absence!, rule_id: null, links: {} },
     });
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     expect(host.querySelector(".gw-wells-by-absence")).not.toBeNull();
     expect(host.querySelector(".gw-wells-by-rule")).toBeNull();
@@ -221,7 +239,7 @@ describe("the search box survives the re-render its own keystroke causes", () =>
   /** What the shell does between two mounts: `render()` replaces the whole explorer host. */
   async function typeAndRerender(caret: number): Promise<HTMLInputElement> {
     const signal = new AbortController().signal;
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal });
+    await mount({ state: state(), hooks: hooks(), signal });
     const input = host.querySelector(".gw-wells-by-search-input") as HTMLInputElement;
     input.focus();
     input.value = "chevron";
@@ -230,7 +248,7 @@ describe("the search box survives the re-render its own keystroke causes", () =>
     await vi.advanceTimersByTimeAsync(400);
 
     host.replaceChildren();
-    await mountWellsBy(host, {
+    await mount({
       state: state({ "wb.q": ["chevron"] }),
       hooks: hooks(),
       signal,
@@ -251,7 +269,7 @@ describe("the search box survives the re-render its own keystroke causes", () =>
   });
 
   it("steals no focus on a mount no search caused", async () => {
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     expect(document.activeElement).not.toBe(host.querySelector(".gw-wells-by-search-input"));
   });
@@ -264,7 +282,7 @@ describe("the search box survives the re-render its own keystroke causes", () =>
    */
   async function typeAhead(): Promise<{ signal: AbortSignal }> {
     const signal = new AbortController().signal;
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal });
+    await mount({ state: state(), hooks: hooks(), signal });
     const input = host.querySelector(".gw-wells-by-search-input") as HTMLInputElement;
     input.focus();
     input.value = "chev";
@@ -280,7 +298,7 @@ describe("the search box survives the re-render its own keystroke causes", () =>
 
     // The response the first commit asked for lands: the shell rebuilds from `q=chev`.
     host.replaceChildren();
-    await mountWellsBy(host, { state: state({ "wb.q": ["chev"] }), hooks: hooks(), signal });
+    await mount({ state: state({ "wb.q": ["chev"] }), hooks: hooks(), signal });
     return { signal };
   }
 
@@ -305,7 +323,7 @@ describe("the search box survives the re-render its own keystroke causes", () =>
 
   it("does not re-type an abandoned search onto the next dimension", async () => {
     const signal = new AbortController().signal;
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal });
+    await mount({ state: state(), hooks: hooks(), signal });
     const input = host.querySelector(".gw-wells-by-search-input") as HTMLInputElement;
     input.focus();
     input.value = "chev";
@@ -315,7 +333,7 @@ describe("the search box survives the re-render its own keystroke causes", () =>
     dimension.value = "county";
     dimension.dispatchEvent(new Event("change"));
     host.replaceChildren();
-    await mountWellsBy(host, { state: state({ "wb.by": ["county"] }), hooks: hooks(), signal });
+    await mount({ state: state({ "wb.by": ["county"] }), hooks: hooks(), signal });
 
     const rebuilt = host.querySelector(".gw-wells-by-search-input") as HTMLInputElement;
     expect(rebuilt.value).toBe("");
@@ -338,11 +356,11 @@ describe("the search box survives the re-render its own keystroke causes", () =>
           else url[`${WELLS_BY_PREFIX}${key}`] = [value];
         }
         host.replaceChildren();
-        void mountWellsBy(host, { state: state(url), hooks: shellHooks, signal });
+        void mount({ state: state(url), hooks: shellHooks, signal });
       },
       applyFilter: (filters) => void filterCommits.push(filters),
     };
-    void mountWellsBy(host, { state: state(url), hooks: shellHooks, signal });
+    void mount({ state: state(url), hooks: shellHooks, signal });
     return url;
   }
 
@@ -376,7 +394,7 @@ describe("the search box survives the re-render its own keystroke causes", () =>
     // Carrying the draft across a rebuild is only the search box's licence to keep its own
     // reader. Sorting is a different control, and it leaves the box for it.
     const signal = new AbortController().signal;
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal });
+    await mount({ state: state(), hooks: hooks(), signal });
     const input = host.querySelector(".gw-wells-by-search-input") as HTMLInputElement;
     input.focus();
     input.value = "chev";
@@ -388,7 +406,7 @@ describe("the search box survives the re-render its own keystroke causes", () =>
     sort.value = "value";
     sort.dispatchEvent(new Event("change"));
     host.replaceChildren();
-    await mountWellsBy(host, { state: state({ "wb.sort": ["value"] }), hooks: hooks(), signal });
+    await mount({ state: state({ "wb.sort": ["value"] }), hooks: hooks(), signal });
     await vi.advanceTimersByTimeAsync(400);
 
     const rebuilt = host.querySelector(".gw-wells-by-search-input") as HTMLInputElement;
@@ -408,7 +426,7 @@ describe("the search box survives the re-render its own keystroke causes", () =>
   });
 
   it("still pushes a dimension change, so only the search churn is collapsed", async () => {
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
     const picker = host.querySelector(".gw-wells-by-dimension") as HTMLSelectElement;
     picker.value = "county";
     picker.dispatchEvent(new Event("change"));
@@ -432,7 +450,7 @@ describe("what the envelope warns about reaches the surface", () => {
         pointer: "/buckets",
       },
     ]);
-    await mountWellsBy(host, {
+    await mount({
       state: state({ "wb.q": ["usa"] }),
       hooks: hooks(),
       signal: new AbortController().signal,
@@ -447,7 +465,7 @@ describe("what the envelope warns about reaches the surface", () => {
   });
 
   it("renders no warning line where the envelope carries none", async () => {
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     expect(host.querySelector(".gw-warning")).toBeNull();
   });
@@ -465,7 +483,7 @@ describe("what the envelope warns about reaches the surface", () => {
         pointer: "/buckets",
       },
     ]);
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     expect(host.querySelector(".gw-wells-by-absence .gw-warning")?.textContent).toContain(
       "absence_unregistered",
@@ -485,7 +503,7 @@ describe("what the envelope warns about reaches the surface", () => {
         pointer: "/absence",
       },
     ]);
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     expect(host.querySelector(".gw-wells-by-list > .gw-warning")?.textContent).toContain(
       "absence_unregistered",
@@ -495,7 +513,7 @@ describe("what the envelope warns about reaches the surface", () => {
 
 describe("a bucket narrows the grid beside it", () => {
   it("commits every filter the server's own link carries, the state included", async () => {
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     (host.querySelector("button.gw-wells-by-value") as HTMLButtonElement).click();
 
@@ -513,7 +531,7 @@ describe("a bucket narrows the grid beside it", () => {
         { value: "003", wells: figure("120"), links: { wells: "/v1/wells?county=003&state=42" } },
       ],
     });
-    await mountWellsBy(host, {
+    await mount({
       state: state({ "wb.by": ["county"] }),
       hooks: hooks(),
       signal: new AbortController().signal,
@@ -525,7 +543,7 @@ describe("a bucket narrows the grid beside it", () => {
   });
 
   it("decodes the link rather than committing its percent-encoded spelling", async () => {
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     (host.querySelectorAll("button.gw-wells-by-value")[1] as HTMLButtonElement).click();
 
@@ -537,7 +555,7 @@ describe("a bucket narrows the grid beside it", () => {
       dimension: "completion_year",
       buckets: [{ value: "2019", wells: figure("120"), links: {} }],
     });
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     expect(host.querySelector("button.gw-wells-by-value")).toBeNull();
     expect(host.querySelector("span.gw-wells-by-value")).not.toBeNull();
@@ -546,7 +564,7 @@ describe("a bucket narrows the grid beside it", () => {
 
 describe("the cut is a control, not a URL the reader has to hand-edit", () => {
   it("offers the sizes the server accepts and asks for the one the URL names", async () => {
-    await mountWellsBy(host, {
+    await mount({
       state: state({ "wb.top": ["20"] }),
       hooks: hooks(),
       signal: new AbortController().signal,
@@ -565,7 +583,7 @@ describe("the cut is a control, not a URL the reader has to hand-edit", () => {
   });
 
   it("shows the cut the URL asked for even when it is not one of the offered sizes", async () => {
-    await mountWellsBy(host, {
+    await mount({
       state: state({ "wb.top": ["7"] }),
       hooks: hooks(),
       signal: new AbortController().signal,
@@ -584,7 +602,7 @@ describe("the cut is a control, not a URL the reader has to hand-edit", () => {
   });
 
   it("commits the chosen cut to the panel's own URL key", async () => {
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
     const picker = host.querySelector(".gw-wells-by-top") as HTMLSelectElement;
     picker.value = "25";
     picker.dispatchEvent(new Event("change"));
@@ -596,7 +614,7 @@ describe("the cut is a control, not a URL the reader has to hand-edit", () => {
 
 describe("the direction control and the caption speak one vocabulary", () => {
   it("names an alphabetical ranking A to Z, not in the count words", async () => {
-    await mountWellsBy(host, {
+    await mount({
       state: state({ "wb.sort": ["value"], "wb.order": ["asc"] }),
       hooks: hooks(),
       signal: new AbortController().signal,
@@ -606,7 +624,7 @@ describe("the direction control and the caption speak one vocabulary", () => {
   });
 
   it("flips that ranking to Z to A rather than to `highest first`", async () => {
-    await mountWellsBy(host, {
+    await mount({
       state: state({ "wb.sort": ["value"] }),
       hooks: hooks(),
       signal: new AbortController().signal,
@@ -616,7 +634,7 @@ describe("the direction control and the caption speak one vocabulary", () => {
   });
 
   it("keeps the count words where the ranking is a count", async () => {
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     expect(host.querySelector(".gw-wells-by-order")?.textContent).toBe("highest first");
   });
@@ -628,7 +646,7 @@ describe("the bucket that is the applied filter says so", () => {
   }
 
   it("presses the bucket whose filter the grid beside it is already narrowed by", async () => {
-    await mountWellsBy(host, {
+    await mount({
       state: state(applied("PIONEER NATURAL RESOURCES USA INC")),
       hooks: hooks(),
       signal: new AbortController().signal,
@@ -641,7 +659,7 @@ describe("the bucket that is the applied filter says so", () => {
   });
 
   it("presses nothing when the grid carries no filter of its own", async () => {
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
     const pressed = [...host.querySelectorAll("button.gw-wells-by-value")].map((node) =>
       node.getAttribute("aria-pressed"),
     );
@@ -652,7 +670,7 @@ describe("the bucket that is the applied filter says so", () => {
   it("clears every filter the press committed when the pressed bucket is clicked again", async () => {
     // The add path and the remove path are the same control: at <=520 the grid's own
     // clear-filters line is display:none, so a press with no un-press is a one-way door.
-    await mountWellsBy(host, {
+    await mount({
       state: state(applied("PIONEER NATURAL RESOURCES USA INC")),
       hooks: hooks(),
       signal: new AbortController().signal,
@@ -664,7 +682,7 @@ describe("the bucket that is the applied filter says so", () => {
   });
 
   it("still applies an unpressed bucket while another bucket is the applied filter", async () => {
-    await mountWellsBy(host, {
+    await mount({
       state: state(applied("PIONEER NATURAL RESOURCES USA INC")),
       hooks: hooks(),
       signal: new AbortController().signal,
@@ -677,7 +695,7 @@ describe("the bucket that is the applied filter says so", () => {
 
   it("presses nothing where the state does not match, so one county code is not two", async () => {
     // The filter names the same value in a different state: this bucket is not that filter.
-    await mountWellsBy(host, {
+    await mount({
       state: state({
         "f.operator": ["PIONEER NATURAL RESOURCES USA INC"],
         "f.state": ["33"],
@@ -696,14 +714,14 @@ describe("the bucket that is the applied filter says so", () => {
 
 describe("a screen reader is told the counts changed", () => {
   it("announces the list politely rather than replacing it in silence", async () => {
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     expect(host.querySelector(".gw-wells-by-list")?.getAttribute("aria-live")).toBe("polite");
   });
 
   it("gives the wait before it a status role", () => {
     vi.stubGlobal("fetch", () => new Promise(() => {}));
-    void mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    void mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     expect(host.querySelector(".gw-wells-by-loading")?.getAttribute("role")).toBe("status");
   });
@@ -711,7 +729,7 @@ describe("a screen reader is told the counts changed", () => {
 
 describe("the state picker offers every state and says which have nothing behind them", () => {
   it("names each state in the layer panel's `Noun (Full state name)` convention", async () => {
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     const labels = [...host.querySelectorAll(".gw-wells-by-state option")].map(
       (node) => node.textContent,
@@ -721,7 +739,7 @@ describe("the state picker offers every state and says which have nothing behind
   });
 
   it("offers an unloaded state as disabled rather than hiding that it exists", async () => {
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     const newMexico = [...host.querySelectorAll<HTMLOptionElement>(".gw-wells-by-state option")].find(
       (node) => node.value === "30",
@@ -734,7 +752,7 @@ describe("the state picker offers every state and says which have nothing behind
 describe("an empty answer is a sentence, never a blank panel", () => {
   it("says a search matched nothing and that the search covered the whole state", async () => {
     respondWith({ buckets: [], remainder: null, q: "zzz", caption: "No operator in Texas matches 'zzz'." });
-    await mountWellsBy(host, { state: state({ "wb.q": ["zzz"] }), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state({ "wb.q": ["zzz"] }), hooks: hooks(), signal: new AbortController().signal });
 
     expect(host.querySelector(".gw-wells-by-empty-title")?.textContent).toBe(
       "No value matches that search",
@@ -757,7 +775,7 @@ describe("an empty answer is a sentence, never a blank panel", () => {
         ),
       ),
     );
-    await mountWellsBy(host, {
+    await mount({
       state: state({ "wb.state": ["30"] }),
       hooks: hooks(),
       signal: new AbortController().signal,
@@ -783,7 +801,7 @@ describe("an empty answer is a sentence, never a blank panel", () => {
         ),
       ),
     );
-    await mountWellsBy(host, {
+    await mount({
       state: state({ "wb.state": ["30"] }),
       hooks: hooks(),
       signal: new AbortController().signal,
@@ -800,8 +818,108 @@ describe("an empty answer is a sentence, never a blank panel", () => {
     vi.stubGlobal("fetch", () =>
       Promise.resolve(new Response(JSON.stringify({ status: 422, detail: "nope" }), { status: 422 })),
     );
-    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     expect(host.querySelector(".gw-wells-by-controls")).not.toBeNull();
+  });
+});
+
+describe("the panel serves a second surface without forking", () => {
+  const bucketLabels = (): HTMLElement[] => [
+    ...host.querySelectorAll<HTMLElement>(".gw-wells-by-value"),
+  ];
+
+  it("takes the applied filters from its host, not from the explorer's URL vocabulary", async () => {
+    // No `f.` term in the state at all: the map has no grid and no such prefix, and a panel
+    // that reached for one could not serve both surfaces from one component.
+    await mountWellsBy(host, {
+      state: state(),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+      applied: { operator: ["PIONEER NATURAL RESOURCES USA INC"], state: ["42"] },
+    });
+
+    expect(bucketLabels().map((node) => node.getAttribute("aria-pressed"))).toEqual([
+      "true",
+      "false",
+    ]);
+  });
+
+  it("lets a host refuse a bucket for its own reason, in its own words", async () => {
+    await mountWellsBy(host, {
+      state: state(),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+      applied: {},
+      bucketAffordance: () => ({
+        press: false,
+        title: "The map draws no column for this dimension, so the canvas cannot be narrowed by it.",
+      }),
+    });
+
+    const labels = bucketLabels();
+    expect(labels.every((node) => node.tagName)).toBe(true);
+    expect(labels.map((node) => node.tagName)).toEqual(["SPAN", "SPAN"]);
+    expect(labels[0]?.title).toContain("The map draws no column");
+  });
+
+  it("keeps the link-presence rule, and its exact copy, when the host offers nothing", async () => {
+    // The explore surface must be unchanged by the decoupling: a dimension /v1/wells cannot
+    // filter on still gets a plain label carrying the collection's own reason.
+    respondWith({
+      dimension: "completion_year",
+      buckets: [{ value: "2021", wells: figure("12", "y=2021"), links: {} }],
+    });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    const label = bucketLabels()[0];
+    expect(label?.tagName).toBe("SPAN");
+    expect(label?.title).toBe(
+      "The collection accepts no filter for this dimension, so it cannot be narrowed to one year.",
+    );
+  });
+
+  it("states the population a host counted over, above the ranking it counted", async () => {
+    await mountWellsBy(host, {
+      state: state(),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+      applied: {},
+      scopeNote: "Counted over every current well in North Dakota. This does not move when you pan.",
+    });
+
+    const note = host.querySelector<HTMLElement>(".gw-wells-by-scope");
+    expect(note?.textContent).toContain("does not move when you pan");
+    // Above the rows, not below them: a scope stated after the numbers is a correction.
+    expect(note?.compareDocumentPosition(host.querySelector(".gw-wells-by-rows")!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("carries no scope line at all where the host states none", async () => {
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    expect(host.querySelector(".gw-wells-by-scope")).toBeNull();
+  });
+});
+
+describe("the dimensions the panel offers", () => {
+  it("names the /v1/wells filter each one becomes, as facets.py declares it", async () => {
+    // Parsed rather than restated: the server decides which dimension narrows the collection by
+    // which parameter, and a second copy here would agree with itself while the API disagreed.
+    // Relative to the vitest root (web/), the way legend.test.ts reads src/map.css: happy-dom
+    // does not give this module a file: URL to resolve against.
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync("../src/glasswell/api/routers/facets.py", "utf8");
+    const declared = new Map(
+      [...source.matchAll(/"([a-z_]+)": \{\n\s+"column":[\s\S]*?"filter": "([a-z_]*)",/g)].map(
+        (match) => [match[1]!, match[2]! || null],
+      ),
+    );
+
+    expect(declared.size).toBe(DIMENSIONS.length);
+    for (const dimension of DIMENSIONS) {
+      expect(declared.get(dimension.id), dimension.id).toBe(dimension.filter);
+    }
   });
 });
