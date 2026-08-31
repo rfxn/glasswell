@@ -73,7 +73,11 @@ export interface WellFacets {
 export interface WellsByHooks {
   /** Commits panel state to the URL. Search churn replaces rather than pushes. */
   setPanel(values: Record<string, string | null>, mode: "push" | "replace"): void;
-  /** Narrows the grid beside this panel to one bucket, by every filter the bucket's link names. */
+  /**
+   * Narrows the grid beside this panel to one bucket, by every filter the bucket's link names.
+   * A name mapped to an empty list clears that filter — the un-press path removes exactly the
+   * terms the press added.
+   */
   applyFilter(filters: Record<string, string[]>): void;
 }
 
@@ -349,7 +353,7 @@ function direction(panel: Record<string, string>, options: WellsByOptions): HTML
   button.type = "button";
   button.className = "gw-wells-by-order";
   const descending = panel["order"] === "desc";
-  button.textContent = descending ? "highest first" : "lowest first";
+  button.textContent = directionLabel(panel["sort"] as string, descending);
   button.setAttribute("aria-label", `Ranking direction: ${button.textContent}. Click to flip.`);
   button.addEventListener(
     "click",
@@ -357,6 +361,16 @@ function direction(panel: Record<string, string>, options: WellsByOptions): HTML
     { signal: options.signal },
   );
   return button;
+}
+
+/**
+ * The words the caption uses for the same parameter (`facets.py` `_caption`). Count words on an
+ * alphabetical ranking described the wrong thing twice: `order=asc` on `sort=value` is A to Z,
+ * not the lowest anything.
+ */
+function directionLabel(sort: string, descending: boolean): string {
+  if (sort === "value") return descending ? "Z to A" : "A to Z";
+  return descending ? "highest first" : "lowest first";
 }
 
 /** The offered cuts, plus whatever the URL asked for: the control names the list it produced. */
@@ -438,13 +452,18 @@ function list(data: WellFacets, warnings: Warning[], options: WellsByOptions): H
   });
   if (data.buckets.length > 0) box.append(rows);
 
+  // A warning is rendered against what it points at: `absence_unregistered` restated the absence
+  // block's own paragraph 39 px below it with the total wedged between the two.
+  const aboutAbsence = data.absence ? warnings.filter((warning) => warning.pointer === "/absence") : [];
+  const rest = warnings.filter((warning) => !aboutAbsence.includes(warning));
+
   if (data.remainder) box.append(remainder(data.remainder));
-  if (data.absence) box.append(absence(data.absence));
+  if (data.absence) box.append(absence(data.absence, aboutAbsence));
   box.append(total(data));
   // The same panels the well card and the neighbour list render. Under a search the absence
   // bucket is the one figure on screen outside the visible arithmetic, and
   // `search_scopes_the_ranking` is the served sentence that says so.
-  box.append(...warningPanels(warnings));
+  box.append(...warningPanels(rest));
   return box;
 }
 
@@ -456,6 +475,15 @@ function narrowedBy(
   return Object.entries(filters).every(([name, values]) =>
     values.every((value) => applied[name]?.includes(value)),
   );
+}
+
+/**
+ * The same filter names with no values, which `withFilter` deletes. The `state` term goes with
+ * the dimension term rather than persisting: the press put it there, and a filter left behind
+ * by an un-press is one no control below 520 can clear.
+ */
+function released(filters: Record<string, string[]>): Record<string, string[]> {
+  return Object.fromEntries(Object.keys(filters).map((name) => [name, []]));
 }
 
 function row(
@@ -474,12 +502,17 @@ function row(
   const label = filters ? document.createElement("button") : document.createElement("span");
   label.className = "gw-wells-by-value";
   if (label instanceof HTMLButtonElement && filters) {
+    const pressed = narrowedBy(filters, applied);
     label.type = "button";
     label.setAttribute("aria-label", `Narrow the wells below to ${bucket.value} in ${data.state_name}`);
-    label.setAttribute("aria-pressed", String(narrowedBy(filters, applied)));
-    label.addEventListener("click", () => options.hooks.applyFilter(filters), {
-      signal: options.signal,
-    });
+    label.setAttribute("aria-pressed", String(pressed));
+    // A toggle button un-presses. At <=520 the grid's clear-filters line is display:none, so a
+    // press with no un-press is the only way back out of an unfiltered list — and there is none.
+    label.addEventListener(
+      "click",
+      () => options.hooks.applyFilter(pressed ? released(filters) : filters),
+      { signal: options.signal },
+    );
   } else {
     // A dimension /v1/wells cannot filter on gets no button: a control that looks clickable
     // and narrows nothing is worse than a plain label.
@@ -533,7 +566,7 @@ function remainder(value: NonNullable<WellFacets["remainder"]>): HTMLElement {
  * load this bucket holds 70,039 wells — more than any real operator — and a reader who mistook
  * it for one would conclude Texas has a dominant operator that does not exist.
  */
-function absence(value: NonNullable<WellFacets["absence"]>): HTMLElement {
+function absence(value: NonNullable<WellFacets["absence"]>, warnings: Warning[]): HTMLElement {
   const box = div("gw-wells-by-absence");
   const head = div("gw-wells-by-absence-head");
   const label = document.createElement("span");
@@ -555,6 +588,7 @@ function absence(value: NonNullable<WellFacets["absence"]>): HTMLElement {
     line.append(document.createTextNode("Registered as "), link);
     box.append(line);
   }
+  box.append(...warningPanels(warnings));
   return box;
 }
 

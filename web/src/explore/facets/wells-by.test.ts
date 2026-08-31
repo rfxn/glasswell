@@ -306,6 +306,46 @@ describe("what the envelope warns about reaches the surface", () => {
 
     expect(host.querySelector(".gw-warning")).toBeNull();
   });
+
+  it("renders a warning pointing at /absence inside the block it explains", async () => {
+    respondWith({ absence: { ...RESPONSE.absence!, rule_id: null, links: {} } }, [
+      {
+        code: "absence_unregistered",
+        detail: "Texas has wells with no operator and no registered rule.",
+        pointer: "/absence",
+      },
+      {
+        code: "list_truncated",
+        detail: "This list is a ranked cut, not the population.",
+        pointer: "/buckets",
+      },
+    ]);
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    expect(host.querySelector(".gw-wells-by-absence .gw-warning")?.textContent).toContain(
+      "absence_unregistered",
+    );
+    const trailing = [...host.querySelectorAll(".gw-wells-by-list > .gw-warning")].map(
+      (node) => node.textContent,
+    );
+    expect(trailing).toHaveLength(1);
+    expect(trailing[0]).toContain("list_truncated");
+  });
+
+  it("keeps an /absence warning on the surface when the response carries no absence block", async () => {
+    respondWith({ absence: null }, [
+      {
+        code: "absence_unregistered",
+        detail: "Texas has wells with no operator and no registered rule.",
+        pointer: "/absence",
+      },
+    ]);
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    expect(host.querySelector(".gw-wells-by-list > .gw-warning")?.textContent).toContain(
+      "absence_unregistered",
+    );
+  });
 });
 
 describe("a bucket narrows the grid beside it", () => {
@@ -409,6 +449,34 @@ describe("the cut is a control, not a URL the reader has to hand-edit", () => {
   });
 });
 
+describe("the direction control and the caption speak one vocabulary", () => {
+  it("names an alphabetical ranking A to Z, not in the count words", async () => {
+    await mountWellsBy(host, {
+      state: state({ "wb.sort": ["value"], "wb.order": ["asc"] }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+
+    expect(host.querySelector(".gw-wells-by-order")?.textContent).toBe("A to Z");
+  });
+
+  it("flips that ranking to Z to A rather than to `highest first`", async () => {
+    await mountWellsBy(host, {
+      state: state({ "wb.sort": ["value"] }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+
+    expect(host.querySelector(".gw-wells-by-order")?.textContent).toBe("Z to A");
+  });
+
+  it("keeps the count words where the ranking is a count", async () => {
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    expect(host.querySelector(".gw-wells-by-order")?.textContent).toBe("highest first");
+  });
+});
+
 describe("the bucket that is the applied filter says so", () => {
   function applied(value: string): Record<string, string[]> {
     return { "f.operator": [value], "f.state": ["42"] };
@@ -434,6 +502,32 @@ describe("the bucket that is the applied filter says so", () => {
     );
 
     expect(pressed).toEqual(["false", "false"]);
+  });
+
+  it("clears every filter the press committed when the pressed bucket is clicked again", async () => {
+    // The add path and the remove path are the same control: at <=520 the grid's own
+    // clear-filters line is display:none, so a press with no un-press is a one-way door.
+    await mountWellsBy(host, {
+      state: state(applied("PIONEER NATURAL RESOURCES USA INC")),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+
+    (host.querySelector('button.gw-wells-by-value[aria-pressed="true"]') as HTMLButtonElement).click();
+
+    expect(filterCommits).toEqual([{ operator: [], state: [] }]);
+  });
+
+  it("still applies an unpressed bucket while another bucket is the applied filter", async () => {
+    await mountWellsBy(host, {
+      state: state(applied("PIONEER NATURAL RESOURCES USA INC")),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+
+    (host.querySelector('button.gw-wells-by-value[aria-pressed="false"]') as HTMLButtonElement).click();
+
+    expect(filterCommits).toEqual([{ operator: ["DIAMONDBACK E&P LLC"], state: ["42"] }]);
   });
 
   it("presses nothing where the state does not match, so one county code is not two", async () => {

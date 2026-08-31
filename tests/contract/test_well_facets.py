@@ -316,12 +316,10 @@ def test_the_caption_names_the_direction_the_list_was_actually_ranked_in(
     assert caption("count", "asc") == (
         "The 2 operator values with the fewest wells, of 5 operator values in Texas."
     )
-    assert caption("value", "desc") == (
-        "2 of 5 operator values in Texas, ranked by value, descending."
-    )
-    assert caption("value", "asc") == (
-        "2 of 5 operator values in Texas, ranked by value, ascending."
-    )
+    # The button beside the caption reads `Z to A` / `A to Z` under `sort=value`; one
+    # vocabulary, or the two controls describe the same parameter in different words.
+    assert caption("value", "desc") == ("2 of 5 operator values in Texas, ranked by value, Z to A.")
+    assert caption("value", "asc") == ("2 of 5 operator values in Texas, ranked by value, A to Z.")
     # The prose is bound to the rows: ascending by count serves the two smallest operators.
     ascending = _facets(client, top=2, sort="count", order="asc")["data"]
     assert [bucket["value"] for bucket in ascending["buckets"]] == [
@@ -344,9 +342,7 @@ def test_a_complete_list_says_which_way_it_is_ranked_rather_than_only_by_what(
     assert caption("count", "asc") == (
         "All 5 operator values in Texas, ranked by well count, lowest first."
     )
-    assert caption("value", "asc") == (
-        "All 5 operator values in Texas, ranked by value, ascending."
-    )
+    assert caption("value", "asc") == ("All 5 operator values in Texas, ranked by value, A to Z.")
 
 
 def test_ranking_by_value_orders_by_the_value_and_not_the_count(
@@ -357,6 +353,17 @@ def test_ranking_by_value_orders_by_the_value_and_not_the_count(
 
     values = [bucket["value"] for bucket in data["buckets"]]
     assert values == sorted(values)
+
+
+def test_the_searched_caption_pluralises_on_what_it_counted(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """"All 1 operator values" was on screen at every width: the `q` arm hard-coded the s."""
+    _seed_tx(seeded)
+
+    assert _facets(client, top=50, q="chevron")["data"]["caption"] == (
+        "All 1 operator value matching 'chevron' in Texas, ranked by well count, highest first."
+    )
 
 
 def test_every_dimension_serves_and_sums(

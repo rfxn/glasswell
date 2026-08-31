@@ -149,16 +149,17 @@ button.gw-wells-by-value:focus-visible .gw-wells-by-name {
   text-decoration: underline;
 }
 
-/* The facet row's chip convention on a different control: the bucket that *is* the applied
-   filter is drawn in the accent, not in a severity colour. No padding, so a pressed row does
-   not shift its value column against the unpressed ones above and below it. */
+/* The chip convention on a different control (facets.css:75-79, style.css:315-317): state on the
+   ring, label left at the contrast it had unselected. The tint alone is 1.24:1 dark and 1.10:1
+   light, no indicator under 1.4.11; the ring is 10.9:1 and 4.32:1 — `--cyan-text` because
+   `--cyan` is 2.91:1 on the light page. Inset shadow and cancelled padding, so a pressed row
+   shifts its value column against neither its neighbours nor itself. */
 button.gw-wells-by-value[aria-pressed="true"] {
+  padding: 0 var(--gw-space-1);
+  margin: 0 calc(-1 * var(--gw-space-1));
   background: var(--tint-accent);
   border-radius: var(--gw-radius-xs);
-}
-
-button.gw-wells-by-value[aria-pressed="true"] .gw-wells-by-name {
-  color: var(--cyan-text);
+  box-shadow: inset 0 0 0 1px var(--cyan-text);
 }
 
 .gw-wells-by-name {
