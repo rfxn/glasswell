@@ -281,6 +281,55 @@ def test_the_caption_states_what_the_list_is_a_cut_of(
     assert "Texas" in data["caption"]
 
 
+def test_the_caption_names_the_direction_the_list_was_actually_ranked_in(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """`order=asc` serves the values with the fewest wells. A caption reading "with the most
+    wells" over that list is a served sentence that is false about the rows beside it."""
+    _seed_tx(seeded)
+
+    def caption(sort: str, order: str) -> str:
+        return _facets(client, top=2, sort=sort, order=order)["data"]["caption"]
+
+    assert caption("count", "desc") == (
+        "The 2 operator values with the most wells, of 5 operator values in Texas."
+    )
+    assert caption("count", "asc") == (
+        "The 2 operator values with the fewest wells, of 5 operator values in Texas."
+    )
+    assert caption("value", "desc") == (
+        "2 of 5 operator values in Texas, ranked by value, descending."
+    )
+    assert caption("value", "asc") == (
+        "2 of 5 operator values in Texas, ranked by value, ascending."
+    )
+    # The prose is bound to the rows: ascending by count serves the two smallest operators.
+    ascending = _facets(client, top=2, sort="count", order="asc")["data"]
+    assert [bucket["value"] for bucket in ascending["buckets"]] == [
+        "CHEVRON USA INC",
+        "DEVON ENERGY PRODUCTION CO LP",
+    ]
+
+
+def test_a_complete_list_says_which_way_it_is_ranked_rather_than_only_by_what(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    _seed_tx(seeded)
+
+    def caption(sort: str, order: str) -> str:
+        return _facets(client, top=50, sort=sort, order=order)["data"]["caption"]
+
+    assert caption("count", "desc") == (
+        "All 5 operator values in Texas, ranked by well count, highest first."
+    )
+    assert caption("count", "asc") == (
+        "All 5 operator values in Texas, ranked by well count, lowest first."
+    )
+    assert caption("value", "asc") == (
+        "All 5 operator values in Texas, ranked by value, ascending."
+    )
+
+
 def test_ranking_by_value_orders_by_the_value_and_not_the_count(
     client: TestClient, seeded: psycopg.Connection
 ) -> None:

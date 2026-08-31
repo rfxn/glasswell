@@ -430,9 +430,13 @@ def _remainder(
 
 
 def _caption(
-    *, dimension: str, state: str, shown: int, distinct: int, q: str | None, sort: str
+    *, dimension: str, state: str, shown: int, distinct: int, q: str | None, sort: str, order: str
 ) -> str:
-    """The one sentence that has to be true: what is on screen, and what it is a cut of."""
+    """The one sentence that has to be true: what is on screen, and what it is a cut of.
+
+    `order` is as load-bearing as `sort`: `count:asc` serves the values with the *fewest* wells,
+    and a sentence naming the most describes a list the reader is not looking at.
+    """
     noun = dimension.replace("_", " ")
     name = STATE_NAMES.get(state, f"state {state}")
     if distinct == 0:
@@ -448,13 +452,20 @@ def _caption(
         if q is None
         else f"{distinct:,} {noun} values{matching} in {name}"
     )
+    descending = order == "desc"
+    by_value = f"value, {'descending' if descending else 'ascending'}"
     if shown >= distinct:
-        return f"All {of}, ranked by {'well count' if sort == 'count' else 'value'}."
-    return (
-        f"The {shown:,} {noun} value{'s' if shown != 1 else ''} with the most wells, of {of}."
-        if sort == "count"
-        else f"{shown:,} of {of}, ranked by value."
-    )
+        ranking = (
+            f"well count, {'highest' if descending else 'lowest'} first"
+            if sort == "count"
+            else by_value
+        )
+        return f"All {of}, ranked by {ranking}."
+    if sort == "count":
+        extreme = "most" if descending else "fewest"
+        plural = "s" if shown != 1 else ""
+        return f"The {shown:,} {noun} value{plural} with the {extreme} wells, of {of}."
+    return f"{shown:,} of {of}, ranked by {by_value}."
 
 
 def _bucket_link(dimension: str, value: str, state: str) -> dict[str, str]:
@@ -662,6 +673,7 @@ def get_well_facets(
             ),
             q=q,
             sort=sort,
+            order=order,
         ),
         "buckets": [
             {
