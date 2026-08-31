@@ -503,6 +503,12 @@ def _staged_frames(
     connection: psycopg.Connection, *, manifest_id: str, batch_rows: int
 ) -> Iterator[pl.DataFrame]:
     columns = ["source_row_ordinal", *NM_COLUMNS[HEADER_TABLE]]
+    # Declared, never inferred: the staging table is 39 text columns and one integer, and every
+    # rule downstream is a `.str.` operation. Inference reads only the first rows of each batch,
+    # so a column that looks numeric there and later holds a state code refuses the whole frame.
+    schema: dict[str, pl.DataType] = {
+        name: pl.Int64() if name == "source_row_ordinal" else pl.String() for name in columns
+    }
     projection = ", ".join(f'"{name}"' for name in columns)
     statement = (
         f"select {projection} from {staging_table_for(HEADER_TABLE)}"
@@ -518,7 +524,7 @@ def _staged_frames(
             rows = cursor.fetchall()
         if not rows:
             return
-        yield pl.DataFrame(rows, schema=columns, orient="row")
+        yield pl.DataFrame(rows, schema=schema, orient="row")
         after = int(rows[-1][0]) + 1
 
 
