@@ -4,6 +4,7 @@ import { tileUrl } from "../api/client.ts";
 import type { BasemapVariant } from "./basemap.ts";
 import { DISPOSAL_COLOUR, disposalFilter } from "./disposal.ts";
 import {
+  all,
   any,
   coalesce,
   featureState,
@@ -203,6 +204,142 @@ export function statusFilter(atZoom: number, on: ReadonlySet<string>): Expr {
   // when counting. Matching the literal id instead let a well with an unknown *present* status
   // fall out of the map, the count and the legend at once, with nothing saying so.
   return any(named, not(inSet(statusProperty(), statusIds())));
+}
+
+/** One bucket of the Wells-By panel, applied to the canvas. One value: `wb.pick` is one press. */
+export interface FacetSelection {
+  dimension: string;
+  value: string;
+}
+
+/**
+ * The tile property each Wells-By dimension filters the canvas by. A dimension absent from this
+ * table cannot filter at all: `completion_year` rides one tile layer of thirteen and
+ * `geometry_provenance` three, so a press on either would narrow one state and leave the rest
+ * whole — which reads as "Texas has no wells of this year" rather than as a partial filter.
+ */
+export const FACET_TILE_PROPERTY: Readonly<Record<string, string>> = {
+  operator: "operator_name",
+  status: "status_canonical",
+  well_type: "well_type_reported",
+  county: "county_code",
+};
+
+export interface FacetLayer {
+  id: string;
+  /** The published tile layer it reads, which is what decides the columns it can filter on. */
+  source: string;
+  /** Whether the status gate owns this layer's filter slot, or the layer's own predicate does. */
+  gated: boolean;
+}
+
+/**
+ * Every style layer that draws a well or its bore, in draw order. Seven belong to the status
+ * gate; the other five carry a predicate of their own — the strike's status set, the disposal
+ * ring's type set, the trace layer's nothing — and a press that only rewrote the gate would
+ * leave struck plugs, disposal rings and survey traces painted for the operator just filtered
+ * away. facet-filter.test.ts holds this list against `dataLayers()` in both directions.
+ */
+export const FACET_FILTERED_LAYERS: readonly FacetLayer[] = [
+  { id: "laterals", source: LATERALS_SOURCE, gated: true },
+  { id: "survey-traces", source: TRACES_SOURCE, gated: false },
+  { id: "mt-paths", source: MT_PATHS_SOURCE, gated: true },
+  { id: "wells", source: WELLS_SOURCE, gated: true },
+  { id: "wells-struck", source: WELLS_SOURCE, gated: false },
+  { id: "disposal-wells", source: WELLS_SOURCE, gated: false },
+  { id: "tx-laterals", source: TX_LATERALS_SOURCE, gated: true },
+  { id: "tx-wells", source: TX_WELLS_SOURCE, gated: true },
+  { id: "tx-wells-struck", source: TX_WELLS_SOURCE, gated: false },
+  { id: "nm-wells", source: NM_WELLS_SOURCE, gated: true },
+  { id: "mt-wells", source: MT_WELLS_SOURCE, gated: true },
+  { id: "mt-wells-struck", source: MT_WELLS_SOURCE, gated: false },
+];
+
+/**
+ * The facet-bearing columns each tile layer publishes. `marts/tiles.py` is the source of truth
+ * — its `TileLayer.properties` tuple is the publication boundary — and this is the browser's
+ * copy of it, held equal by facet-filter.test.ts, which parses the Python rather than restating
+ * it. Operator and status are on all twelve; well type is on the four point layers only; county
+ * is Texas and New Mexico.
+ */
+export const TILE_FACET_PROPERTIES: Readonly<Record<string, readonly string[]>> = {
+  [WELLS_SOURCE]: ["operator_name", "status_canonical", "well_type_reported"],
+  [LATERALS_SOURCE]: ["operator_name", "status_canonical"],
+  [TRACES_SOURCE]: ["operator_name", "status_canonical"],
+  [TX_WELLS_SOURCE]: ["operator_name", "status_canonical", "well_type_reported", "county_code"],
+  [TX_LATERALS_SOURCE]: ["operator_name", "status_canonical", "county_code"],
+  [NM_WELLS_SOURCE]: ["operator_name", "status_canonical", "well_type_reported", "county_code"],
+  [MT_WELLS_SOURCE]: ["operator_name", "status_canonical", "well_type_reported"],
+  [MT_PATHS_SOURCE]: ["operator_name", "status_canonical"],
+};
+
+/** The property this layer can filter `dimension` by, or null where its tile publishes none. */
+export function facetTileProperty(layerId: string, dimension: string): string | null {
+  const property = FACET_TILE_PROPERTY[dimension];
+  const layer = FACET_FILTERED_LAYERS.find((entry) => entry.id === layerId);
+  if (!property || !layer) return null;
+  return TILE_FACET_PROPERTIES[layer.source]?.includes(property) ? property : null;
+}
+
+/** Whether any layer on the canvas can narrow by this dimension; a press on one that cannot is
+ *  a control that would look clickable and narrow nothing. */
+export function facetFilterable(dimension: string): boolean {
+  return FACET_FILTERED_LAYERS.some((layer) => facetTileProperty(layer.id, dimension) !== null);
+}
+
+/** The layers a press on this dimension leaves drawing unfiltered, in draw order, so the pill
+ *  can name them rather than leave the reader to notice the difference. */
+export function facetUnfilteredLayers(dimension: string): string[] {
+  return FACET_FILTERED_LAYERS.filter(
+    (layer) => facetTileProperty(layer.id, dimension) === null,
+  ).map((layer) => layer.id);
+}
+
+/** The press as a predicate over one layer, or null where the layer cannot carry it. */
+export function facetPredicate(layerId: string, facet: FacetSelection | null): Expr | null {
+  if (!facet) return null;
+  const property = facetTileProperty(layerId, facet.dimension);
+  return property === null ? null : inSet(get(property), [facet.value]);
+}
+
+let ownFilters: Map<string, Expr | undefined> | null = null;
+
+/**
+ * What an ungated well layer's filter slot already holds. Read off `dataLayers()` rather than
+ * restated, so a press conjoins onto the live predicate and cannot drift from it; memoised
+ * because these predicates are constants and this is called on every frame of a pinch.
+ */
+function declaredFilter(layerId: string): Expr | undefined {
+  if (!ownFilters) {
+    ownFilters = new Map(
+      dataLayers().map((layer) => [
+        layer.id,
+        ("filter" in layer ? layer.filter : undefined) as Expr | undefined,
+      ]),
+    );
+  }
+  return ownFilters.get(layerId);
+}
+
+/**
+ * The whole filter slot for one well layer: its own gate conjoined with the facet press.
+ *
+ * One expression rather than two writes, because `map.setFilter` replaces a layer's filter
+ * whole and the map rewrites the status gate on every `zoom` event — a press written into the
+ * slot separately is clobbered on the next frame of a pinch, which is the defect this signature
+ * exists to make unrepresentable. `undefined` means the slot should hold no filter at all.
+ */
+export function wellFilter(
+  atZoom: number,
+  on: ReadonlySet<string>,
+  facet: FacetSelection | null,
+  layerId: string,
+): Expr | undefined {
+  const gated = FACET_FILTERED_LAYERS.find((layer) => layer.id === layerId)?.gated === true;
+  const gate = gated ? statusFilter(atZoom, on) : declaredFilter(layerId);
+  const press = facetPredicate(layerId, facet);
+  if (!press) return gate;
+  return gate ? all(gate, press) : press;
 }
 
 function selectable<T>(selected: T, base: T | Expr): Expr {

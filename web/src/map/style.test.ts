@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { LayerSpecification } from "maplibre-gl";
 
 import type { BasemapVariant } from "./basemap.ts";
-import { DISPOSAL_COLOUR } from "./disposal.ts";
+import { DISPOSAL_COLOUR, disposalFilter } from "./disposal.ts";
 import { LAYERS } from "./registry.ts";
 import { METRICS_SECTIONS_SOURCE, METRICS_TOWNSHIPS_SOURCE } from "./thematics.ts";
 import { variantStyle } from "./variant-style.ts";
@@ -28,6 +28,7 @@ import {
   statusFilter,
   statusStyledLayerIds,
   visibleStatusesAt,
+  wellFilter,
 } from "./style.ts";
 import {
   SELECTION_COLOUR,
@@ -568,5 +569,69 @@ describe("the disposal ring's selected state", () => {
       expect(typeof base).toBe("number");
       expect(selected).toBeGreaterThan(base);
     }
+  });
+});
+
+describe("a Wells-By press on the canvas", () => {
+  const press = { dimension: "operator", value: "CONTINENTAL RESOURCES INC" };
+  const everyStatus = new Set(filterableStatusIds());
+  /** Whether a feature with these properties is drawn — evaluated, not pattern-matched. */
+  const shows = (filter: unknown, properties: Record<string, unknown>, atZoom = 12): boolean =>
+    featureFilter(filter as never).filter({ zoom: atZoom } as never, {
+      type: 1,
+      properties,
+    } as never, undefined as never);
+
+  it("composes with the status gate under `all` rather than replacing it", () => {
+    const filter = wellFilter(12, everyStatus, press, "wells");
+
+    expect(Array.isArray(filter) && filter[0]).toBe("all");
+    expect(shows(filter, { status_canonical: "active", operator_name: press.value })).toBe(true);
+    // Each half still bites on its own: the press does not widen the gate, the gate does not
+    // widen the press. `setFilter` replaces the whole slot, so one expression has to carry both.
+    expect(shows(filter, { status_canonical: "active", operator_name: "HESS" })).toBe(false);
+  });
+
+  it("keeps a status the reader switched off switched off under a press", () => {
+    const filter = wellFilter(12, new Set(["active"]), press, "wells");
+
+    expect(shows(filter, { status_canonical: "plugged", operator_name: press.value })).toBe(false);
+  });
+
+  it("is the same press at every zoom, so a pinch cannot shed it", () => {
+    // `zoom` fires on every animation frame of a pinch and rewrites the slot. The press is not
+    // an input to the zoom gate, so it has to be an input to the function the handler calls.
+    for (const atZoom of [4, 8, 12, 15]) {
+      const filter = wellFilter(atZoom, everyStatus, press, "wells");
+      expect(shows(filter, { status_canonical: "active", operator_name: "HESS" }, atZoom)).toBe(
+        false,
+      );
+    }
+  });
+
+  it("conjoins onto an ungated layer's own predicate instead of overwriting it", () => {
+    // The disposal ring's slot carries a well-type set, not the status gate. A press written
+    // into it flat would have drawn a ring around every well of the pressed operator.
+    const filter = wellFilter(12, everyStatus, press, "disposal-wells");
+
+    expect(shows(filter, { well_type_reported: "SWD", operator_name: press.value })).toBe(true);
+    expect(shows(filter, { well_type_reported: "OG", operator_name: press.value })).toBe(false);
+    expect(shows(filter, { well_type_reported: "SWD", operator_name: "HESS" })).toBe(false);
+  });
+
+  it("leaves an ungated layer's predicate exactly as it was when nothing is pressed", () => {
+    expect(wellFilter(12, everyStatus, null, "disposal-wells")).toEqual(disposalFilter());
+    // Survey traces declare no predicate at all, so an unpressed slot is empty rather than a
+    // tautology MapLibre would have to evaluate per feature.
+    expect(wellFilter(12, everyStatus, null, "survey-traces")).toBeUndefined();
+  });
+
+  it("leaves a layer the dimension is not on filtered by its gate alone", () => {
+    // Not narrowed to nothing: `well_type_reported` is on no line layer, so `in` would read the
+    // absent property as null and erase every lateral on the canvas.
+    const filter = wellFilter(12, everyStatus, { dimension: "well_type", value: "SWD" }, "laterals");
+
+    expect(filter).toEqual(statusFilter(12, everyStatus));
+    expect(shows(filter, { status_canonical: "active" })).toBe(true);
   });
 });

@@ -35,6 +35,7 @@ import {
 } from "./counts.ts";
 import type { Bbox, CountsState, WellStatusSummary } from "./counts.ts";
 import { EXTENT_PARAM, countedBbox, extentFilterOn } from "./extent.ts";
+import { facetFromSearch } from "./facet-pick.ts";
 import { createHoverCard } from "./hover-card.ts";
 import { createLayerPanel } from "./layer-panel.ts";
 import { createLegend, legendEnabled } from "./legend.ts";
@@ -50,13 +51,13 @@ import { LAYERS, defaultLayerSet, layerDef, layerIds } from "./registry.ts";
 import { createSelection } from "./selection.ts";
 import { filterableStatusIds } from "./status.ts";
 import {
+  FACET_FILTERED_LAYERS,
   OPACITY_OVERRIDE,
   WELL_POINT_LAYERS,
   dataLayers,
   sourceSpecs,
-  statusFilter,
-  statusStyledLayerIds,
   strikeGlyph,
+  wellFilter,
 } from "./style.ts";
 import { METRIC_FILL_LAYERS } from "./thematics.ts";
 import { createThematicsKey } from "./thematics-key.ts";
@@ -93,6 +94,10 @@ const MANIFEST_PATH = "/basemap/manifest.json";
  * never raised on the 24 levels the service advertises (`infra/basemap/README.md`).
  */
 export const MAP_MAX_ZOOM = 19;
+
+/** Built once: the style is rebuilt on every basemap swap and this set is a property of neither
+ *  the style nor the viewport. */
+const facetLayers = new Set(FACET_FILTERED_LAYERS.map((layer) => layer.id));
 
 const OPACITY_PROPERTY: Readonly<Record<string, string>> = {
   circle: "circle-opacity",
@@ -266,9 +271,9 @@ export function createMap(
   // The URL is the extent predicate's only home (M1-2): a shared link reconstructs the
   // population, and no session state can disagree with what the link says.
   let extentOn = extentFilterOn(window.location.search);
-  // Built once: `zoom` fires on every animation frame of a pinch, and the gated set is a
-  // property of the style, not of the viewport.
-  const statusGated = statusStyledLayerIds();
+  // The Wells-By press, from the URL for the reason the extent node is: a shared link has to
+  // reproduce the canvas, and no session state may disagree with what the link says.
+  let facet = facetFromSearch(window.location.search);
 
   const legend = createLegend({
     on: statuses,
@@ -277,7 +282,7 @@ export function createMap(
     onFilter: (next) => {
       statuses = next;
       writeCapabilitySet(STATUS_STORAGE_KEY, statuses, filterableStatusIds());
-      applyStatusFilter();
+      applyWellFilter();
       invalidateDrawn();
     },
     extentOn,
@@ -361,10 +366,19 @@ export function createMap(
     }
   }
 
-  function applyStatusFilter(): void {
-    const filter = statusFilter(map.getZoom(), statuses);
-    for (const id of statusGated) {
-      if (map.getLayer(id)) map.setFilter(id, filter as maplibregl.FilterSpecification);
+  /**
+   * One writer for one slot. `setFilter` replaces a layer's filter whole and this runs on every
+   * `zoom` event, so the status gate and the facet press have to be composed here rather than
+   * written separately — a press written on its own is clobbered on the next frame of a pinch.
+   * Every well layer, not only the status-gated seven: the strikes, the disposal ring and the
+   * survey traces carry their own predicate and would otherwise keep drawing what was filtered
+   * away.
+   */
+  function applyWellFilter(): void {
+    for (const { id } of FACET_FILTERED_LAYERS) {
+      if (!map.getLayer(id)) continue;
+      const filter = wellFilter(map.getZoom(), statuses, facet, id);
+      map.setFilter(id, filter as maplibregl.FilterSpecification | undefined);
     }
   }
 
@@ -525,7 +539,6 @@ export function createMap(
       variant,
       ...(typeof hollowFill === "string" ? { hollowFill } : {}),
     });
-    const gated = new Set(statusStyledLayerIds(built));
     const styled = built.map((layer) => {
       const owner = LAYERS.find((candidate) => candidate.styleLayers.includes(layer.id));
       if (owner && !on.has(owner.id)) {
@@ -538,13 +551,17 @@ export function createMap(
           layer.paint = { ...layer.paint, [property]: opacity } as typeof layer.paint;
         }
       }
-      if (gated.has(layer.id)) {
+      if (facetLayers.has(layer.id)) {
+        // The style is rebuilt wholesale on a basemap swap (`setStyle` runs with diff:false), so
+        // a press held only in a live filter slot vanishes when the reader picks satellite.
         // Circle and line layers, which the spec allows a filter on; the union type includes
         // `background`, which does not, so the narrowing has to be written out.
-        (layer as { filter?: maplibregl.FilterSpecification }).filter = statusFilter(
-          map.getZoom(),
-          statuses,
-        ) as maplibregl.FilterSpecification;
+        const slot = layer as { filter?: maplibregl.FilterSpecification };
+        const filter = wellFilter(map.getZoom(), statuses, facet, layer.id);
+        // Deleted rather than set to undefined: MapLibre validates a property that is present,
+        // so `filter: undefined` fails validation and the style never loads at all.
+        if (filter) slot.filter = filter as maplibregl.FilterSpecification;
+        else delete slot.filter;
       }
       return layer;
     });
@@ -614,7 +631,7 @@ export function createMap(
     map.on("sourcedata", (event) => {
       if (event.isSourceLoaded) scheduleCounts();
     });
-    map.on("zoom", applyStatusFilter);
+    map.on("zoom", applyWellFilter);
     map.on("styleimagemissing", (event) => {
       if (event.id === "gw-strike") installStrikeGlyph();
     });
