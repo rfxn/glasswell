@@ -1,10 +1,10 @@
 -- "Wells by ..." serves counted buckets over the well spine, so it asks the one question the
 -- spine had no index for: dedup an effective-dated state partition in api10 order, then group
--- by a dimension. Measured on the deployed database at 487,681 resident rows, the top-15 TX
--- operator facet read 269,438 shared buffers in 459 ms -- a full pass of wells_pkey with the
--- state filter applied per row. The covering index below answers the same query index-only
--- with 0 heap fetches, 4,395 buffers and 285 ms; the INCLUDE list is exactly the five served
--- dimensions, so no facet has to visit the heap. 48 MB against a 101 MB table.
+-- by a dimension. Measured on the deployed database on 2026-08-31 at 487,681 resident rows,
+-- the top-15 TX operator facet read 269,438 shared buffers in 459 ms -- a full pass of
+-- wells_pkey with the state filter applied per row. The covering index below answers the same
+-- query index-only with 0 heap fetches, 5,717 buffers and 354 ms; the INCLUDE list is exactly
+-- the five served dimensions, so no facet has to visit the heap. 62 MB against a 101 MB table.
 --
 -- The leading (state_code, api10) is not interchangeable with wells_state_effective_idx from
 -- 059: that one leads (state_code, effective_from desc) for the tile marts' `where state_code`
@@ -13,7 +13,7 @@
 -- `derivation_id` is in the INCLUDE list and is not optional: every bucket count is a figure
 -- and carries the derivation its wells were promoted under, so the aggregate selects it. Left
 -- out, the planner still uses this index but as a plain Index Scan with a heap visit per row --
--- measured at 182,523 buffers against 4,401 for the index-only plan, on the same query.
+-- measured at 182,523 buffers against 5,717 for the index-only plan, on the same query.
 create index if not exists wells_facet_dimensions_idx
     on canonical.wells (state_code, api10, effective_from desc, created_at desc)
     include (operator_name_reported, county_code_at_permit, status_canonical,
