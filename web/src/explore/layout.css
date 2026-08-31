@@ -353,13 +353,32 @@
 
 }
 
-/* 390 — §2.5's deliberate inversion. The grid has said it needs a wider window; the pane is
-   the product here, so it takes the surface instead of a capped band under a hidden table. */
+/* 390 — §2.5's deliberate inversion. The grid has said it needs a wider window, so the surface
+   goes to the counted list and the API guide, in that order, and neither is capped to a band. */
 @media (max-width: 520px) {
-  /* The pane takes the flexible row here and the grid's band is capped, which is the 1023 arm
-     inverted — the same "cap the row" rule, applied to the surface that is now the product. */
+  /* One document, not three scrollports. A 38% band was enough while the middle row held a
+     hidden table's refusal; with a counted list in it the total sat 327 px below a 253 px fold
+     and the band edge drew a warning sliced mid-line, with the pane painted through the rest.
+     Here the explorer scrolls the way a phone scrolls and nothing is clipped. The rail keeps a
+     cap of its own — its content is the whole class B register, and a percentage cannot cap a
+     row whose container no longer has a definite height. */
+  #gw-explore {
+    overflow-y: auto;
+  }
+
   .gw-explore {
-    grid-template-rows: fit-content(16%) fit-content(38%) minmax(0, 1fr);
+    height: auto;
+    min-height: 100%;
+    grid-template-rows: auto auto auto;
+  }
+
+  .gw-explore-rail {
+    max-height: 16vh;
+  }
+
+  .gw-explore-panel,
+  .gw-explore-pane {
+    overflow-y: visible;
   }
 
   .gw-explore-pane {
@@ -374,10 +393,9 @@
     flex-direction: column;
   }
 
-  /* `flex-shrink: 0`, because the panel's band is shorter than these three and the default
-     shrank the middle one to 10 px while its children went on painting their full 88 — the
-     refusal overlapping the sheet below it. They keep their heights and the panel scrolls,
-     which is what a scrollport is for. */
+  /* `flex-shrink: 0`: the default once shrank the middle one to 10 px while its children went
+     on painting their full 88, the refusal overlapping the sheet below it. They keep their
+     heights whatever the row above them resolves to. */
   .gw-explore-head,
   .gw-explore-grid,
   .gw-explore-facets,
