@@ -7,6 +7,207 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.71"></a>
+## v0.71 — 2026-08-31
+
+- [Fix] The "Wells by …" search box carries what the reader has typed across the rebuild its own
+      commit causes, not their caret alone. The rebuilt box is filled from the URL, which lags
+      the keyboard by a 250 ms debounce plus a round trip, so a reader typing slower than that —
+      anyone recalling an operator name — lost every letter after the second and lost the box
+      with them: measured on a branch instance at 300 ms a character, `energy` arrived as `en`
+      with `document.activeElement` back on `BODY`, and the rest of the word went nowhere. Fast
+      typing never saw it, because every keystroke landed inside one debounce window and only
+      one commit ever fired. The word the reader is mid-way through now survives the rebuild,
+      the caret sits where they left it, and no other control on the panel — dimension, state,
+      sort, cut or a bucket press — pulls them back into the box it rebuilt
+- [Fix] The "Wells by …" caption names the direction the list was ranked in. Asked for
+      `sort=count&order=asc` the endpoint serves the values with the fewest wells while the
+      caption read "with the most wells", beneath a button reading "lowest first" — a served
+      sentence that was false about the rows next to it. A complete list now says which way it
+      is ranked too, rather than only by what
+- [Fix] A facet bucket's `/v1/wells` link percent-encodes the value it carries, the same
+      `urlencode` the cursor links already use. Written verbatim, `DIAMONDBACK E&P LLC` ended
+      the value at the ampersand and minted a stray parameter, so the published link narrowed
+      to a different population than the count beside it, and the spaces made it a URL no
+      agent or auditor could issue at all
+- [Fix] The "Wells by …" panel renders the warnings the envelope serves, through the same
+      `warningPanels` the well card and the neighbour list use. `search_scopes_the_ranking`,
+      `list_truncated` and `absence_unregistered` were all served and all dropped, so under a
+      search the panel's arithmetic stopped closing on screen with nothing saying why
+- [Change] The absence bucket's `detail` says the search did not narrow it, names the search
+           and the state, and is composed beside the count so the sentence and the figure
+           cannot drift apart. Under a `q` every other figure in the response moves and this
+           one stays whole-state, and the total that would have been its denominator is no
+           longer on the surface
+- [Fix] Clicking a facet bucket narrows the grid by every filter the server's link carries,
+      the state included. The panel ignored `bucket.links` and rebuilt the filter from the
+      dimension alone, so Texas county 003 narrowed to Texas and North Dakota county 003
+      together — the crossing `state` was added to `/v1/wells` to stop. The link is now the
+      one source of truth for what a bucket narrows to, and a bucket the collection cannot
+      reproduce still renders as a plain label
+- [Change] `/v1/wells` declares `well_type` a facet. The collection has always applied the
+           filter, and a well-type bucket set it, but a filter the dataset does not declare
+           renders no chip and cannot be cleared on its own
+- [Fix] The "Wells by …" search keeps focus and the caret across the re-render its own
+      keystroke causes. Every debounced commit rebuilt the explorer and destroyed the focused
+      input, so any pause longer than 250 ms dropped the reader out of the box mid-word
+- [Change] A search commits with `replaceState` rather than `pushState`, on the convention the
+           viewport already follows — a seven-character search cost seven back presses.
+           Changing the dimension, the state, the ranking or its direction still pushes
+- [New] The "Wells by …" panel offers the cut as a control — 10, 15, 20, 25 or 50 — writing
+      `wb.top`. The API has always accepted `top` and the owner asked for "top 15 or 20", but
+      reaching 20 meant hand-editing the URL. A cut the URL names and the list does not offer
+      is shown rather than silently replaced by the default
+- [New] A bucket whose filter the grid beside it already carries is drawn and announced as
+      pressed, the same `aria-pressed` convention the enum chips in the facet row use. The
+      state term counts: the same county code in another state is not the applied filter
+- [New] The counted list is an `aria-live="polite"` region and the wait before it carries
+      `role="status"`, so the list changing under a control that keeps focus is announced
+      rather than replaced in silence
+- [Fix] A "Wells by …" picker shows the value the request actually used. Selectedness set
+      before an option is inserted does not survive the select's reset, so a picker could name
+      one dimension, state or ranking while the list beside it answered another
+- [Fix] The applied bucket in "Wells by …" carries its state on a cyan ring and keeps its label
+      at the contrast it had unselected — the facet chip convention it claimed to mirror and
+      did not. The 12% tint alone measured 1.24:1 dark and 1.10:1 light against the page where
+      WCAG 1.4.11 asks 3:1, and in light theme selecting a bucket dropped its own label from
+      17.11:1 to 3.91:1, making the selected row the least legible one in the list. Measured
+      after: ring 10.9:1 dark and 4.32:1 light, label 13.01:1 and 15.52:1, and the value column
+      does not move
+- [Fix] Clicking the pressed bucket clears the filter it applied instead of re-applying it. The
+      `aria-pressed` a bucket carries is a toggle contract the handler did not honour, and at
+      520 and below the grid's clear-filters line is `display: none` — so selecting a bucket on
+      a phone was a one-way door out of the unfiltered list. The un-press removes every term
+      the press added, the crossing `state` included
+- [Change] Below 520 the explorer scrolls as one document rather than three capped scrollports.
+           A 38% band was enough while the middle row held a hidden table's refusal; with a
+           counted list in it the total sat 327 px below a 253 px fold and the band edge drew a
+           warning sliced mid-line with the API guide painted through the rest. Nothing in the
+           panel is clipped now at 390 or 520, and the rail keeps a cap of its own
+- [Fix] The "Wells by …" direction button and the caption speak one vocabulary for one
+      parameter: under `sort=value` both say `A to Z` / `Z to A`. The button read "lowest
+      first" 40 px under a caption reading "ranked by value, ascending" — count words on an
+      alphabetical ranking, and two names for the same `order`
+- [Fix] "All 1 operator value matching …" — the searched arm of the facet caption pluralises on
+      what it counted. Only the unsearched arm did, so a search matching a single value said
+      "values" on screen at every width
+- [Change] A warning pointing at `/absence` renders inside the absence block it explains, and
+           `absence_unregistered` says what that block does not already say. It rendered 39 px
+           below the block with the total wedged between them, restating the block's own
+           paragraph, `(R8)` included
+- [Fix] `make serve-branch` refuses a `web/dist` older than `web/src` and names the build that
+      would fix it, the check `scripts/deploy.sh` already makes before shipping. The target
+      mounted whatever was last compiled, so a browser gate pointed at the instance judged code
+      that was never under review; `GW_WEB_STALE=ok` serves it anyway for runs that put their
+      own dev server in front of this API
+- [New] `GET /v1/wells/facets` counts wells by a dimension for one state — operator, county,
+      status, well type or completion year — ranked, searchable and sortable, with every
+      bucket count, the truncation remainder, the named absence bucket and the scoped total
+      served as figures carrying derivation handles that `?explain=true` resolves
+- [New] The explorer's wells dataset carries a "Wells by …" panel above the grid: the leading
+      values with counts and proportion bars, a caption stating what the list is a cut of, and
+      a bucket click that narrows the grid beside it to exactly that bucket
+- [New] Truncation is counted rather than implied: `remainder` states how many values fall
+      below the cut and how many wells they hold, `distinct_values` states how many the state
+      holds in total, and with no search in force `buckets` + `remainder` + `absence` sum to
+      `wells`; under a search the absence bucket stays outside it, so `buckets` + `remainder`
+      sum to `matched_wells` and the served description says which reconciliation applies
+- [New] Wells whose dimension has no value are their own named bucket, outside the ranking and
+      outside the search — on the current Texas load 70,039 wells report no operator, more
+      than any real operator holds, so ranking it would have put a non-operator at the top and
+      dropping it would have broken the sum
+- [New] `cr_tx_operator_absence_1` registers what a missing Texas operator means: not reported,
+      never withheld and never imputed, measured at 39,390 wells whose EWA wellbore record
+      carries an empty operator field and 30,649 that reach canonical from a county GIS layer
+      with no EWA record at all; Montana's `cr_mt_operator_absence_1` already stated the same
+      for its source and is cited beside it
+- [New] `/v1/wells` accepts `state`, an exact API state-code filter, so a facet bucket's link
+      narrows to the state the bucket was counted in
+- [New] Migration 070 adds `wells_facet_dimensions_idx`, a covering index over
+      `canonical.wells` that answers the facet aggregate index-only with no heap fetches;
+      measured on the deployed database the top-15 Texas operator facet falls from 269,438
+      shared buffers and 459 ms to 5,717 buffers and 354 ms
+- [Change] Scope is one state and is required. Operator names arrive per source and
+           `lineage.operator_aliases` carries no row for any state served, so summing a company
+           across a state border would be an aliasing decision no conformance rule has made
+- [Change] A state the spine holds no wells for is refused with the loaded states named, rather
+           than answered with an empty list — New Mexico's promotion is gated, and "no wells
+           loaded" is a different fact from "no operators found". The refusal carries the state
+           list as an RFC 9457 extension member so the picker survives it
+- [Change] Search runs over every value in the state before the ranking, not over the served
+           page: with 9,369 Texas operators a page-scoped search would answer "no such
+           operator" for the 9,354 it never loaded
+- [Change] Explorer route bundle budget re-measured 71,500 → 75,000 B gzipped for the panel,
+           which is on the route rather than split behind a dynamic import because it renders
+           on the dataset the explorer opens on
+- [Fix] An empty string in a facet dimension is treated as an absent value rather than a bucket
+      with no name, which would have ranked among the real values and minted a handle whose
+      selector the grammar cannot address
+- [Fix] The login ordering test no longer walks the address bucket to its limit through the
+      route. Twenty-one requests at the 250 ms login floor is a multi-second loop against a
+      limiter window that is a truncated UTC minute, so a run that crossed a boundary met a
+      reset counter and the last request answered 403 rather than 429; seven of the last
+      twenty CI runs on main failed that way and v0.69 was tagged red. It now seeds the
+      bucket and asserts the same 403-then-429 pair in two requests
+- [Fix] test_the_index_is_rate_limited asserts both edges of the type-curve index ceiling
+      against the shipped constant rather than walking thirty-one requests to it, which
+      carried the same window race with no margin
+- [New] await_rate_window, rate_window_remaining and spend_rate_window hold the limiter's
+      current window open for the request under test, measured on the database clock the
+      limiter reads rather than the runner's; fill_bucket waits through a boundary that is
+      about to fall, and test_a_seeded_bucket_outlives_the_request_it_was_seeded_for goes
+      red if that wait is removed
+- [Fix] The legend's rendered-wells census left New Mexico out: with New Mexico the
+      only well row switched on, the showing-N-of-M-in-view line vanished, and beside
+      another state the count silently excluded every New Mexico well on the canvas
+- [Fix] nm_wells: declare the staged header frame's dtypes instead of letting polars infer
+      them per batch. The staging table is 39 text columns and one integer, but a column null
+      across the inference window is typed Null, so the first state code below it refused the
+      whole frame and failed the promotion that opens the New Mexico gate
+- [Fix] 068: grant UPDATE on the New Mexico partition registry to glasswell_pipeline.
+      nm_ocd registers a partition with `insert ... on conflict do update`, which Postgres
+      checks for UPDATE, and migration 028 granted it only select and insert alongside its
+      eight append-only siblings; the first least-privileged staging run refused after 33
+      minutes with eight tables staged and the ninth denied
+- [New] test_staging_upsert_grants.py: a staging table the ingest path upserts must be
+      granted UPDATE by some migration, resolved through the module constant so an
+      f-string target is not silently skipped
+- [Change] status collector: canonical.production_monthly is inventoried by one bounded query
+           per registered source instead of one multi-arm filtered aggregate over the whole
+           table; 60,571 ms to 3,474 ms with the whole-table sort (1.88 GB spilled to temp
+           files) removed rather than made cheaper, measured on a synthetic 29,580,309-row
+           local fixture against 2 GB of shared_buffers, so the ratio and the plan shape are
+           what carry and the absolute times are not the deployed host's
+- [New] migration 069: production_monthly (source_id, entity_key) and
+      (source_id, created_at desc) indexes, so the per-source arms run index-only with no heap
+      fetch; on the same synthetic fixture max(created_at) was the column that forced the heap,
+      costing 25,934 ms for one source against 596 ms without it. Both builds are `if not
+      exists`, so an operator can build them CONCURRENTLY before the migrate rather than hold a
+      write lock on the table for the length of a build inside its transaction
+- [New] cr_nd_inventory_jurisdiction_1, cr_nm_wcproduction_inventory_jurisdiction_1,
+      cr_mt_inventory_jurisdiction_1 and cr_mt_pru_inventory_jurisdiction_1 register that each
+      source's production rows are inventoried under the jurisdiction its lineage.sources row
+      carries, not under an API-10 prefix (R8); a new state registers a source and a rule and
+      is inventoried without editing the collector
+- [Change] production inventory counts distinct entity_key rather than distinct api10, so the
+           Montana PRU lease grain is counted on the identity it carries; an API-10 prefix
+           predicate reached none of its 4,808,814 rows
+- [Change] New Mexico's production entity metric is identified and labelled as completion-pool
+           entities rather than wells, because that is the grain the source files and glasswell
+           rolls none of it up to the well
+- [New] Layer panel: the Well spine group nests its four state well rows under one `Wells`
+      parent switch, tri-state on `aria-pressed` (all on, all off, `mixed`), with the members
+      shut on first paint and each reading by its state alone
+- [Change] Layer labels state the state the same way on every row — `Wells (North Dakota)`,
+           `Wells (Texas)`, `Survey traces (North Dakota)`, `Well paths (Montana)` and the
+           six others — spelling the name out as the status page and the glossary already do
+- [Fix] The North Dakota wells row was labelled `Wells`, unqualified, while Texas, New Mexico
+      and Montana carried a state; first-ingested was reading to a reader as a distinction
+- [Fix] Layer search finds a state by name: `texas` and `new mexico` matched no row, and
+      `montana` matched only where a subtitle happened to spell it
+- [Fix] Layer switch and opacity slider announce the standalone layer name under the nesting,
+      so a screen reader hears `Show Wells (Texas)` rather than `Show Texas`
+
 <a id="v0.70"></a>
 ## v0.70 — 2026-08-30
 
