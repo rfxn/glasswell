@@ -7,12 +7,15 @@ they are written down; everything here seeds against those constants.
 
 from __future__ import annotations
 
+import os
+import shutil
 import time
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import httpx
 import psycopg
@@ -49,6 +52,7 @@ from glasswell.marts.neighbors import refresh_neighbors, resident_content_identi
 from glasswell.modeling import served
 from glasswell.modeling.model_dataset import MODEL_ROOT_ENV
 from glasswell.seed import seed_all
+from tests.conftest import TEMPLATE_DATABASE, create_database, drop_database
 from tests.support.fakes import FixedClock
 from tests.support.seed import FIXTURE_ENV, seed_manifest, seed_well, seed_well_spatial
 from tests.support.typecurve_fixture import (
@@ -58,6 +62,8 @@ from tests.support.typecurve_fixture import (
     write_control_artifact,
 )
 
+CONTRACT_TEMPLATE_DATABASE = "glasswell_contract_template"
+MODEL_ROOT = "models"
 MPR_SHA256 = "e" * 64
 GIS_SHA256 = "d" * 64
 FRACFOCUS_SHA256 = "c" * 64
@@ -571,8 +577,29 @@ CONTROL_SUBJECTS = (
 )
 
 
+@pytest.fixture(scope="session")
+def control_artifact(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, ControlArtifact]:
+    """The control artifact, written once and copied per test.
+
+    Every path it records is relative, for the reason `pinned_control` gives, so a copy under
+    another root is byte-identical and leaves EXAMPLE_PUBLICATION_ID where it is.
+    """
+    root = tmp_path_factory.mktemp("control")
+    previous = Path.cwd()
+    os.chdir(root)
+    try:
+        artifact = write_control_artifact(Path(MODEL_ROOT), subjects=CONTROL_SUBJECTS)
+    finally:
+        os.chdir(previous)
+    return root, artifact
+
+
 @pytest.fixture
-def pinned_control(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ControlArtifact:
+def pinned_control(
+    control_artifact: tuple[Path, ControlArtifact],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> ControlArtifact:
     """A registered control artifact under a model root the resolver will accept.
 
     `DEFAULT_MODEL_ROOT` is relative, so without this the type-curve routes are fail-closed
@@ -583,18 +610,69 @@ def pinned_control(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ControlAr
     content address over that document: an absolute temp path would move the published
     `EXAMPLE_PUBLICATION_ID` on every run. A relative root is a shape the real builder
     produces too — `resolve_model_root()` falls back to `data/models`.
+
+    The bytes are copied rather than rebuilt: the build is a duckdb write that produces the
+    same partition every time, and a test that adds a second one still needs its own root.
     """
+    root, artifact = control_artifact
+    shutil.copytree(root / MODEL_ROOT, tmp_path / MODEL_ROOT)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv(MODEL_ROOT_ENV, "models")
+    monkeypatch.setenv(MODEL_ROOT_ENV, MODEL_ROOT)
     served.clear_caches()
-    return write_control_artifact(Path("models"), subjects=CONTROL_SUBJECTS)
+    return artifact
+
+
+@pytest.fixture(scope="session")
+def contract_template(
+    migrated_template: str, control_artifact: tuple[Path, ControlArtifact]
+) -> str:
+    """The whole contract fixture, seeded once, as the database every test clones.
+
+    Seeding costs two orders of magnitude more than cloning and lands the same rows every
+    time. The assertions pinning the published example ids run here rather than per test;
+    they still fail the tier, once, when an example goes stale.
+    """
+    _, artifact = control_artifact
+    dsn = create_database(
+        migrated_template, CONTRACT_TEMPLATE_DATABASE, template=TEMPLATE_DATABASE
+    )
+    with psycopg.connect(dsn) as connection:
+        _seed_contract_fixture(connection, artifact)
+    return migrated_template
+
+
+@pytest.fixture
+def db(contract_template: str) -> Iterator[psycopg.Connection]:
+    """Overrides the tier-wide fixture: a contract database arrives seeded."""
+    name = f"gw_contract_{uuid4().hex[:12]}"
+    dsn = create_database(contract_template, name, template=CONTRACT_TEMPLATE_DATABASE)
+    connection = psycopg.connect(dsn)
+    try:
+        yield connection
+    finally:
+        connection.close()
+        drop_database(contract_template, name)
 
 
 @pytest.fixture
 def seeded(
     db: psycopg.Connection, raw_zone: Path, pinned_control: ControlArtifact
 ) -> psycopg.Connection:
-    """Registries, wells, geometry, production and quarantine, keyed to the examples."""
+    """Registries, wells, geometry, production and quarantine, keyed to the examples.
+
+    The rows arrive with the database. What is left is the one column the template cannot
+    carry, because the raw zone it addresses is a directory this test alone owns.
+    """
+    with db.cursor() as cursor:
+        cursor.execute(
+            "update lineage.manifests set storage_uri = %s where manifest_id = %s",
+            (str(raw_zone), EXAMPLE_MANIFEST_ID),
+        )
+    db.commit()
+    return db
+
+
+def _seed_contract_fixture(db: psycopg.Connection, pinned_control: ControlArtifact) -> None:
     seed_all(db)
     mpr_manifest = seed_manifest(db, sha256=MPR_SHA256, source_key="2026_06.xlsx")
     gis_manifest = seed_manifest(
@@ -607,11 +685,6 @@ def seeded(
         source_key="registryupload.zip",
     )
     assert mpr_manifest == EXAMPLE_MANIFEST_ID, "the documented manifest example must be seeded"
-    with db.cursor() as cursor:
-        cursor.execute(
-            "update lineage.manifests set storage_uri = %s where manifest_id = %s",
-            (str(raw_zone), mpr_manifest),
-        )
 
     promotion = _promotion_derivation(db, mpr_manifest)
     assert promotion == EXAMPLE_DERIVATION_ID, (
@@ -714,7 +787,7 @@ def seeded(
         # left the restatement-exemption arm of the R6 walker with nothing to defend.
         restatement_summary={RESTATED_MONTH.isoformat(): 1},
     )
-    return db
+    db.commit()
 
 
 def _seed_example_key(connection: psycopg.Connection) -> None:
