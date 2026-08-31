@@ -810,11 +810,26 @@
 
 /* ── active-layer pills ──────────────────────────────────────────────────── */
 
-.gw-pills {
+/* One column at the top left, because the layer pills and the applied-bucket pill are both
+   statements of what is applied and both want the same spot: two absolutely-positioned bands
+   on one point is the overlay defect surfaces.test.ts already pins for the fault banner. */
+.gw-map-topleft {
   position: absolute;
   top: 0.6rem;
   left: 0.6rem;
   right: 8rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  pointer-events: none;
+}
+
+.gw-map-topleft > * {
+  pointer-events: auto;
+}
+
+.gw-pills {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
@@ -1066,6 +1081,7 @@ body:has(.gw-hint:not([hidden])) .gw-banner {
     padding: 0.6rem 8rem 0 0.6rem;
   }
 
+  .gw-map-topleft,
   .gw-banner,
   .gw-pills {
     position: static;
@@ -1095,10 +1111,7 @@ body:has(.gw-hint:not([hidden])) .gw-banner {
    filter the reader cannot see or release is a one-way door. Above the legend's own column so
    the two never overlap at the narrow breakpoint. */
 .gw-facet-pill {
-  position: absolute;
-  top: 0.6rem;
-  left: 0.6rem;
-  max-width: min(22rem, calc(100% - 7rem));
+  max-width: min(22rem, 100%);
   padding: 0.3rem 0.45rem;
   border: 1px solid var(--cyan);
   border-radius: 6px;

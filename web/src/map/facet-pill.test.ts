@@ -129,6 +129,15 @@ describe("the pill's own frame", () => {
     expect(css).toContain(".gw-facet-pill");
     expect(/\.gw-facet-pill\[hidden\]\s*\{[^}]*display:\s*none/.test(css)).toBe(true);
   });
+
+  it("stacks with the layer pills rather than landing on them", () => {
+    // Both are statements of applied state and both want the top left. Absolutely positioning
+    // the second on the first's spot is the overlay defect surfaces.test.ts pins for the banner.
+    const css = readFileSync("src/map.css", "utf8");
+    expect(/\.gw-map-topleft\s*\{[^}]*flex-direction:\s*column/.test(css)).toBe(true);
+    expect(/\.gw-facet-pill\s*\{[^}]*position:\s*absolute/.test(css)).toBe(false);
+    expect(/\.gw-pills\s*\{[^}]*position:\s*absolute/.test(css)).toBe(false);
+  });
 });
 
 vi.mock("../chrome/status.ts", () => ({ toast: vi.fn() }));

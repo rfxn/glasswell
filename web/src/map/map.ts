@@ -361,11 +361,15 @@ export function createMap(
   const showLegend = legendEnabled(window.location.search);
   // `?legend=0` suppresses the thematic key with the status key: both are legends, and an
   // embed that asked for a clean canvas asked for both to go.
+  // One band, stacked: the layer pills and the applied-bucket pill both state what is applied
+  // and both want the top left, so they share a column rather than overlaying each other. The
+  // facet pill is not behind `?legend=0` — an embed that asked for a clean canvas did not ask
+  // for a filter it cannot see, and the pill is applied state rather than a key.
+  const topLeft = document.createElement("div");
+  topLeft.className = "gw-map-topleft";
+  topLeft.append(pills.element, facetPill.element);
   chrome.append(
-    ...(showLegend ? [pills.element, legend.element, thematics.element] : [pills.element]),
-    // Not behind `?legend=0`: an embed that asked for a clean canvas did not ask for a filter
-    // it cannot see. The pill is the applied state, not a key.
-    facetPill.element,
+    ...(showLegend ? [topLeft, legend.element, thematics.element] : [topLeft]),
     panel.element,
     wellsBy.element,
   );
