@@ -47,7 +47,12 @@ describe("one observer drives focus for every overlay (harvest item 7)", () => {
     expect(document.activeElement).toBe(trigger);
   });
 
-  it("does not throw when the restore target has left the document", async () => {
+  it("parks focus on the body when the restore target has left the document", async () => {
+    // Asserted on where focus ended up, not on the absence of a throw: `.focus()` on a
+    // detached element is a silent no-op, so an unguarded restore strands focus inside the
+    // panel that just closed while every assertion about another element still passes.
+    // This is happy-dom, which fires no blur when a focused element is removed -- so what is
+    // pinned is that this module moved focus itself rather than the removal doing it.
     registerOverlay(panel);
     trigger.focus();
     panel.hidden = false;
@@ -57,6 +62,8 @@ describe("one observer drives focus for every overlay (harvest item 7)", () => {
     panel.hidden = true;
     await settle();
 
+    expect(document.activeElement).toBe(document.body);
+    expect(panel.contains(document.activeElement)).toBe(false);
     expect(document.body.contains(panel)).toBe(true);
   });
 

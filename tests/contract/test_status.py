@@ -400,6 +400,7 @@ def test_quarantine_is_inventoried_by_reason_and_the_reasons_partition_the_total
     assert direct, "the fixture must hold open quarantine, or this test cannot fail"
     assert {key: value for key, value in metrics.items() if key != "open_rows"} == direct
     assert sum(direct.values()) == metrics["open_rows"]
+    assert quarantine.metrics, "the dataset carried no metric, or this test cannot fail"
     assert all(metric.precision == "exact" for metric in quarantine.metrics)
 
 

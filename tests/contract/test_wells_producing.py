@@ -8,12 +8,16 @@ it serves resolves to the derivation the production came from.
 
 from __future__ import annotations
 
+from collections import Counter
+
+import psycopg
 from fastapi.testclient import TestClient
 
 from glasswell.api.errors import TYPE_BASE
 from glasswell.api.examples import EXAMPLE_API10
-from glasswell.marts.producing import PRODUCING_RULE_IDS
+from glasswell.marts.producing import PRODUCING_CLASSES, PRODUCING_RULE_IDS
 from tests.contract.conftest import OTHER_API10S, TX_API10
+from tests.support.seed import seed_well_spatial
 
 BOX = "-105,46,-102,49"
 ZERO_FILED_WELL = OTHER_API10S[4]
@@ -204,12 +208,32 @@ def test_each_producing_rule_resolves_at_the_conformance_endpoint(client: TestCl
 
 
 def test_the_summary_counts_do_not_silently_omit_a_class_that_is_present(
-    client: TestClient,
+    client: TestClient, seeded: psycopg.Connection
 ) -> None:
-    """The summary and the collection are the same population classed the same way."""
-    data = client.get("/v1/wells/status-summary", params={"bbox": BOX}).json()["data"]
-    counted = {row["producing"]: int(row["wells"]["value"]) for row in data["producing"]}
+    """The summary and the collection are the same population classed the same way.
 
-    for name, total in counted.items():
-        listed = client.get("/v1/wells", params={"producing": name, "bbox": BOX, "limit": 200})
-        assert len(listed.json()["data"]) == total
+    Driven from the collection, which is what proves a class is present. Iterating the served
+    summary instead never visits a class the summary dropped, so a legend that omits an entire
+    class still reads as agreeing with the collection about every class it kept.
+
+    The shared fixture puts one geometry in this box, and one class cannot be short of another,
+    so the zero-filed well is given a point inside it: two classes in the box is what gives an
+    omission something to omit.
+    """
+    seed_well_spatial(
+        seeded, api10=ZERO_FILED_WELL, geom_type="surface", wkt="POINT(-103.4000 47.8000)"
+    )
+    seeded.commit()
+
+    listed = client.get("/v1/wells", params={"bbox": BOX, "limit": 200}).json()["data"]
+    present = Counter(item["producing"] for item in listed if item["producing"] is not None)
+
+    assert set(present) <= set(PRODUCING_CLASSES)
+    assert len(present) > 1, "the box holds one class, so an omission has nothing to omit"
+    data = client.get("/v1/wells/status-summary", params={"bbox": BOX}).json()["data"]
+    counted = Counter(
+        {row["producing"]: int(row["wells"]["value"]) for row in data["producing"]}
+    )
+
+    assert set(counted) == set(present), "the summary and the collection disagree on the classes"
+    assert counted == present

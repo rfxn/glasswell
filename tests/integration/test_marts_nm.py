@@ -10,6 +10,7 @@ asserting itself back at itself.
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 import psycopg
 import pytest
@@ -22,6 +23,7 @@ from glasswell.marts import nd_wells as nd_marts
 from glasswell.marts import nm_wells as nm_marts
 from glasswell.seed import seed_all
 from tests.integration.test_marts_nd import MARTIN_CONFIG, covering_tile, extent_of, rows, scalar
+from tests.support.layers import schema_reads_in
 from tests.support.mvt import attribute_keys, feature_count, layer_name, layers
 from tests.support.seed import seed_manifest, seed_well, seed_well_spatial
 
@@ -165,7 +167,9 @@ def test_the_mart_reads_canonical_only(refreshed):
         nm_marts._WELLS_SELECT + nm_marts._INPUT_DERIVATIONS + nm_marts._WELLS_AS_OF
     )
 
-    assert "staging." not in source
+    # Folded over the whole module rather than grepped over the three constants: a staging name
+    # spelled in pieces elsewhere in the file greps clean and still reads staging.
+    assert schema_reads_in(Path(nm_marts.__file__), "staging") == []
     assert "canonical.well_spatial" in source
     assert "canonical.wells" in source
 

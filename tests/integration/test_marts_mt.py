@@ -9,6 +9,7 @@ because cr_mt_basin_scope_1 leaves the state untagged.
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 import psycopg
 import pytest
@@ -21,6 +22,7 @@ from glasswell.marts import mt_wells as mt_marts
 from glasswell.marts import nd_wells as nd_marts
 from glasswell.seed import seed_all
 from tests.integration.test_marts_nd import MARTIN_CONFIG, covering_tile, extent_of, rows, scalar
+from tests.support.layers import schema_reads_in
 from tests.support.mvt import attribute_keys, feature_count, layer_name, layers
 from tests.support.seed import seed_manifest, seed_well, seed_well_spatial
 
@@ -265,7 +267,10 @@ def test_the_mart_reads_canonical_only(refreshed):
         mt_marts._WELLS_SELECT + mt_marts._PATHS_SELECT + mt_marts._INPUT_DERIVATIONS
     )
 
-    assert "staging." not in source
+    # The three statements the mart runs, and then the whole module: named constants prove
+    # what the mart selects, and the folded module read is what a name spelled in pieces
+    # somewhere else in the file cannot walk past.
+    assert schema_reads_in(Path(mt_marts.__file__), "staging") == []
     assert "canonical.well_spatial" in source
     assert "canonical.wells" in source
 

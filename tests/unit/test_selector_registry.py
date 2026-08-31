@@ -12,7 +12,12 @@ from glasswell.lineage.selector_registry import (
     identity_selector_term,
     validate_selector,
 )
-from glasswell.lineage.serialization import hash_payload
+
+# Pinned, not computed. `output_sha256=hash_payload(outputs)` builds the fixture with the same
+# function the implementation compares against, so the evidence-integrity check it is supposed
+# to exercise is satisfied by construction and any change to the canonicalisation stays green.
+SUMMARY_OUTPUT_SHA256 = "1b42ab08a064c4ca9b17c7fb253143331bfb569dc14a5b5300c10240055d2a43"
+DETAIL_OUTPUT_SHA256 = "0d44625912876f7c84a09907fe3e4618cd2feb2810277ea324094208fba99b90"
 
 
 class NoDatabase:
@@ -123,7 +128,7 @@ def test_response_selector_matches_exact_recorded_evidence_in_any_term_order() -
     row = derivation(
         operation="api.respond",
         output_dataset="api.well_status_summary",
-        output_sha256=hash_payload(outputs),
+        output_sha256=SUMMARY_OUTPUT_SHA256,
         params={"operation_id": "get_well_status_summary"},
     )
 
@@ -147,6 +152,27 @@ def test_response_selector_matches_exact_recorded_evidence_in_any_term_order() -
         )
 
 
+def test_recorded_evidence_that_does_not_hash_to_the_derivation_is_refused() -> None:
+    """What the pinned digests above make assertable: the check bites on a mismatch."""
+    selector = "bbox=-104.0:47.5:-103.0:48.5&col=wells&status=active"
+    row = derivation(
+        operation="api.respond",
+        output_dataset="api.well_status_summary",
+        output_sha256=SUMMARY_OUTPUT_SHA256,
+        params={"operation_id": "get_well_status_summary"},
+    )
+
+    with pytest.raises(InvalidSelector, match="does not match its hash"):
+        validate_selector(
+            NoDatabase(),  # type: ignore[arg-type]
+            row,
+            selector,
+            handle=f"drv_selector01#{selector}",
+            profiles=(RESPONSE_PROFILE,),
+            response_outputs={selector: {"value": "13", "unit": "wells"}},
+        )
+
+
 def test_identity_rendering_never_collapses_distinct_unsafe_values() -> None:
     first = identity_selector_term("status", "A B")
     second = identity_selector_term("status", "A?B")
@@ -164,7 +190,7 @@ def test_one_graph_loads_a_profile_once_for_many_handles() -> None:
     row = derivation(
         operation="api.respond",
         output_dataset="api.well_detail",
-        output_sha256=hash_payload(outputs),
+        output_sha256=DETAIL_OUTPUT_SHA256,
         params={"operation_id": "get_well"},
     )
     connection = RegistryConnection(outputs)

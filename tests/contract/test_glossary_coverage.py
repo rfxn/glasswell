@@ -45,6 +45,7 @@ def test_every_schema_binding_resolves(client: TestClient, term_ids: set[str]) -
 def test_labels_are_json_pointers(client: TestClient) -> None:
     labels = client.get(f"/v1/wells/{EXAMPLE_API10}").json()["meta"]["labels"]
 
+    assert labels, "the well detail bound no field to a term, or this test cannot fail"
     assert all(pointer.startswith("/") for pointer in labels)
 
 

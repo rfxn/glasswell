@@ -28,6 +28,7 @@ from glasswell.marts.nd_wells import main
 from glasswell.marts.tiles import simplify_tolerance, thin_key_sql
 from glasswell.seed import seed_all
 from glasswell.units import METRES_PER_FOOT
+from tests.support.layers import schema_reads_in
 from tests.support.mvt import attribute_keys, attribute_values, feature_count, layer_name, layers
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "nd_gis"
@@ -559,9 +560,16 @@ def test_the_module_runs_as_the_command_p7_documents():
 
 
 def test_the_marts_read_canonical_and_never_staging():
-    """Blueprint §3.0.1: marts read canonical only, and staging never serves."""
-    for source in sorted(MARTS_PACKAGE.glob("*.py")):
-        assert "staging." not in source.read_text(), f"{source.name} reads staging"
+    """Blueprint §3.0.1: marts read canonical only, and staging never serves.
+
+    Read from the parsed module, so a name spelled in pieces is folded before it is judged --
+    `"stag" + "ing" + ".nd_mpr_oil"` greps clean and still reads staging.
+    """
+    modules = sorted(MARTS_PACKAGE.glob("*.py"))
+
+    assert modules, "the marts package walked no modules, so this test cannot fail"
+    for source in modules:
+        assert schema_reads_in(source, "staging") == [], f"{source.name} reads staging"
 
 
 def test_the_martin_config_declares_the_same_layers_the_proxy_admits():
