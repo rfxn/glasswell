@@ -229,6 +229,7 @@ def test_every_count_addresses_itself_and_the_handles_are_distinct(
     data = summary(api_client, WIDE)["data"]
     addressed = [row["wells"]["d"] for row in data["statuses"]] + [data["wells"]["d"]]
 
+    assert data["statuses"], "the box held no bucket, so the per-bucket checks cannot fail"
     assert len(set(addressed)) == len(addressed)
     assert all("#col=wells" in handle for handle in addressed)
     assert "&status=active&" in next(

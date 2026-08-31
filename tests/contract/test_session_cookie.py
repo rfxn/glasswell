@@ -79,6 +79,7 @@ def test_the_cookie_value_is_not_the_stored_representation(
         cursor.execute("select sha256 from lineage.sessions")
         stored = [row[0] for row in cursor.fetchall()]
 
+    assert stored, "the login stored no session, so this test cannot fail"
     assert token not in stored
     assert all(len(value) == 64 for value in stored)
 

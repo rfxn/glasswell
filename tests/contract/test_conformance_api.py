@@ -34,6 +34,7 @@ def test_every_rule_carries_a_rationale_and_evidence(client: TestClient) -> None
     """Smoke check 10 asserts this off-box; assert it here so it cannot regress first."""
     data = client.get("/v1/conformance", params={"limit": 200}).json()["data"]
 
+    assert len(data) >= SEEDED_RULES, "the registry served no rule, or this test cannot fail"
     assert all(item["rationale"] for item in data)
     assert all(item["evidence_url"] for item in data)
     assert all(item["published_vintage"] for item in data)
