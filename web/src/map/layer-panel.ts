@@ -6,8 +6,9 @@ import { registerOverlay } from "../chrome/overlays.ts";
 import { applyCrossing, cross, whatsBehindThisLayer } from "../explore/bridge.ts";
 import type { Bbox, Crossing } from "../explore/bridge.ts";
 import { BASEMAPS } from "./basemap.ts";
-import { LAYERS, defaultLayerSet, groupedLayers } from "./registry.ts";
-import type { LayerDef } from "./registry.ts";
+import type { LayerFamily } from "./groups.ts";
+import { LAYERS, defaultLayerSet, familyState, groupEntries } from "./registry.ts";
+import type { GroupEntry, LayerDef } from "./registry.ts";
 import { layerSwatch } from "./swatch.ts";
 
 export interface LayerPanelOptions {
@@ -110,8 +111,8 @@ export function createLayerPanel(options: LayerPanelOptions): LayerPanelHandle {
 
   const rows = new Map<string, LayerRow>();
   const sections: LayerGroupSection[] = [];
-  for (const { group, layers } of groupedLayers()) {
-    const section = buildGroup(group.id, group.label, layers, options);
+  for (const { group, entries } of groupEntries()) {
+    const section = buildGroup(group.id, group.label, entries, options);
     for (const [id, row] of section.rows) rows.set(id, row);
     bodyElement.appendChild(section.element);
     sections.push(section);
@@ -161,9 +162,11 @@ export function createLayerPanel(options: LayerPanelOptions): LayerPanelHandle {
     },
     setZoom(zoom) {
       for (const row of rows.values()) row.setZoom(zoom);
+      for (const section of sections) section.refreshFamilies();
     },
     setCoverage(empty) {
       for (const [id, row] of rows) row.setEmpty(empty.has(id));
+      for (const section of sections) section.refreshFamilies();
     },
     setBasemap(id) {
       for (const [base, button] of baseButtons) {
@@ -200,12 +203,25 @@ interface LayerRow {
   setProvenance(derivationId: string): void;
   setCrossing(box: Bbox, resolved: string | null, extentOff: boolean): void;
   setForcedOpen(open: boolean): void;
+  /** What the parent aggregates over: drawn here, and drawing nothing here. */
+  isOn(): boolean;
+  isEmpty(): boolean;
+}
+
+interface LayerFamilySection {
+  element: HTMLElement;
+  rows: Map<string, LayerRow>;
+  setOn(on: ReadonlySet<string>): void;
+  /** Re-reads the members after anything that can move their marks: zoom, coverage, a toggle. */
+  refresh(): void;
+  setFiltered(filtering: boolean): void;
 }
 
 interface LayerGroupSection {
   element: HTMLElement;
   rows: Map<string, LayerRow>;
   setOn(on: ReadonlySet<string>): void;
+  refreshFamilies(): void;
   setFiltered(filtering: boolean): void;
 }
 
@@ -217,7 +233,7 @@ interface LayerGroupSection {
 function buildGroup(
   id: string,
   label: string,
-  layers: readonly LayerDef[],
+  entries: readonly GroupEntry[],
   options: LayerPanelOptions,
 ): LayerGroupSection {
   const element = document.createElement("div");
@@ -244,10 +260,21 @@ function buildGroup(
   head.setAttribute("aria-controls", body.id);
 
   const rows = new Map<string, LayerRow>();
-  for (const layer of layers) {
-    const row = buildRow(layer, options);
-    body.appendChild(row.element);
-    rows.set(layer.id, row);
+  const families: LayerFamilySection[] = [];
+  const layers: LayerDef[] = [];
+  for (const entry of entries) {
+    if (entry.kind === "layer") {
+      const row = buildRow(entry.layer, options);
+      body.appendChild(row.element);
+      rows.set(entry.layer.id, row);
+      layers.push(entry.layer);
+      continue;
+    }
+    const family = buildFamily(entry.family, entry.layers, options);
+    for (const [memberId, row] of family.rows) rows.set(memberId, row);
+    body.appendChild(family.element);
+    families.push(family);
+    layers.push(...entry.layers);
   }
   element.appendChild(body);
 
@@ -269,12 +296,18 @@ function buildGroup(
     element,
     rows,
     setOn(on) {
+      for (const family of families) family.setOn(on);
       const drawn = layers.filter((layer) => on.has(layer.id)).length;
       count.hidden = drawn === 0;
       // Switches in this panel, not a figure about the ground: no derivation resolves it.
+      // Members are counted one by one, so a shut family cannot hide four switches behind one.
       count.textContent = `${drawn} on`;
     },
+    refreshFamilies() {
+      for (const family of families) family.refresh();
+    },
     setFiltered(filtering) {
+      for (const family of families) family.setFiltered(filtering);
       const matched = [...rows.values()].filter((row) => !row.element.hidden).length;
       element.hidden = filtering && matched === 0;
       forced = filtering && matched > 0;
@@ -283,10 +316,146 @@ function buildGroup(
   };
 }
 
-function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
+/**
+ * The parent, and the members it governs. North Dakota was the unmarked default here only
+ * because it was ingested first; the parent is what replaces that accident with a structure —
+ * one switch for all states, one row each beneath it.
+ *
+ * It is derived, never stored: `familyState()` reads the members on every render, so a
+ * capability set written before this existed restores untouched (persist.test.ts).
+ */
+function buildFamily(
+  family: LayerFamily,
+  layers: readonly LayerDef[],
+  options: LayerPanelOptions,
+): LayerFamilySection {
   const element = document.createElement("div");
-  element.className = "gw-layer-row";
+  element.className = "gw-layer-family";
+  element.dataset["family"] = family.id;
+
+  // `.gw-layer-row` as well as its own class: the row grid aligns the parent with its siblings,
+  // and tests/e2e/chrome-fold.mjs measures this element against the fold like any other row.
+  const head = document.createElement("div");
+  head.className = "gw-layer-row gw-layer-family-head";
+
+  // No swatch of its own. Four regulators draw four colours, and one mark here would predict a
+  // canvas three of them contradict — the spacer keeps the parent's label on the siblings' rule.
+  const spacer = document.createElement("span");
+  spacer.className = "gw-layer-swatch gw-layer-swatch-none";
+  head.appendChild(spacer);
+
+  const name = document.createElement("button");
+  name.type = "button";
+  name.className = "gw-layer-name gw-layer-family-name";
+  const label = document.createElement("span");
+  label.className = "gw-layer-label";
+  label.textContent = family.label;
+  name.appendChild(label);
+
+  // Only while the parent is mixed. All-on and all-off are already on the switch, and a count
+  // standing beside a switch that says the same thing is a second reading of one fact.
+  const count = document.createElement("span");
+  count.className = "gw-layer-family-count";
+  count.hidden = true;
+  name.appendChild(count);
+
+  const empty = document.createElement("span");
+  empty.className = "gw-layer-empty";
+  empty.hidden = true;
+  empty.textContent = "none here";
+  name.appendChild(empty);
+  head.appendChild(name);
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "gw-layer-toggle gw-layer-family-toggle";
+  // A <button> with aria-pressed="mixed", not a checkbox with .indeterminate: it is the only
+  // tri-state the panel's own switch idiom already renders, it serialises into the DOM so a
+  // gate can read it, and Enter and Space operate it with no key handler of this module's own.
+  toggle.setAttribute("aria-label", `Show every ${family.childAxis}'s ${family.label.toLowerCase()}`);
+  head.appendChild(toggle);
+  element.appendChild(head);
+
+  const body = document.createElement("div");
+  body.className = "gw-layer-family-body";
+  body.id = `gw-layer-family-${family.id}`;
+  name.setAttribute("aria-controls", body.id);
+
+  const rows = new Map<string, LayerRow>();
+  for (const layer of layers) {
+    const row = buildRow(layer, options, family);
+    body.appendChild(row.element);
+    rows.set(layer.id, row);
+  }
+  element.appendChild(body);
+
+  // Shut on first paint whatever the members say, unlike a group. Every member is on by
+  // default, so "open when something inside is on" would never shut it, and the four rows it
+  // would cost are the four the parent exists to spare a reader who does not care which state.
+  let chosen = false;
+  let forced = false;
+  function applyDisclosure(): void {
+    const open = chosen || forced;
+    body.hidden = !open;
+    name.setAttribute("aria-expanded", String(open));
+  }
+  name.addEventListener("click", () => {
+    chosen = !chosen;
+    forced = false;
+    applyDisclosure();
+  });
+  applyDisclosure();
+
+  let state: boolean | "mixed" = false;
+  // Mixed resolves upward, then all-on falls to all-off: the parent is a two-step cycle whose
+  // third value is a report and never a destination. Filling up first is the additive move and
+  // it is the one a further click undoes.
+  toggle.addEventListener("click", () => {
+    const next = state !== true;
+    for (const layer of layers) options.onToggle(layer.id, next);
+  });
+
+  function refresh(): void {
+    const drawn = [...rows.values()].filter((row) => row.isOn());
+    // True of the parent only where it is true of every member drawing: a family with one
+    // member painting is not empty, and the reader opens it to see which one.
+    const blank = drawn.length > 0 && drawn.every((row) => row.isEmpty());
+    empty.hidden = !blank;
+    if (blank) head.setAttribute("data-empty", "true");
+    else head.removeAttribute("data-empty");
+  }
+
+  return {
+    element,
+    rows,
+    setOn(on) {
+      state = familyState(family.id, on);
+      toggle.setAttribute("aria-pressed", state === "mixed" ? "mixed" : String(state));
+      head.dataset["on"] = String(state);
+      const drawn = layers.filter((layer) => on.has(layer.id)).length;
+      count.hidden = state !== "mixed";
+      count.textContent = `${drawn} of ${layers.length}`;
+      refresh();
+    },
+    refresh,
+    setFiltered(filtering) {
+      const matched = [...rows.values()].filter((row) => !row.element.hidden).length;
+      // The parent's own row goes with its members: a header standing over nothing is worse
+      // than no header, and a hit inside a shut family is a hit the reader cannot see.
+      element.hidden = filtering && matched === 0;
+      forced = filtering && matched > 0;
+      applyDisclosure();
+    },
+  };
+}
+
+function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFamily): LayerRow {
+  const element = document.createElement("div");
+  element.className = family ? "gw-layer-row gw-layer-row-child" : "gw-layer-row";
   element.dataset["layer"] = layer.id;
+  // Under a parent the row reads by the axis it divides on; the parent above already carries
+  // the noun, and repeating it would put "Wells" four times under a row that says "Wells".
+  const rowLabel = family ? (layer.familyLabel ?? layer.label) : layer.label;
 
   const swatch = document.createElement("span");
   swatch.className = "gw-layer-swatch";
@@ -300,7 +469,7 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
   name.className = "gw-layer-name";
   const label = document.createElement("span");
   label.className = "gw-layer-label";
-  label.textContent = layer.label;
+  label.textContent = rowLabel;
   name.appendChild(label);
 
   const badge = document.createElement("span");
@@ -444,7 +613,10 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
   });
   applyDisclosure();
 
+  let drawn = false;
+  let blank = false;
   function setEmptyState(next: boolean): void {
+    blank = next;
     empty.hidden = !next;
     emptyReason.hidden = !next;
     if (next) element.setAttribute("data-empty", "true");
@@ -453,11 +625,14 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions): LayerRow {
 
   return {
     element,
+    isOn: () => drawn,
+    isEmpty: () => blank,
     setForcedOpen(open) {
       forced = open;
       applyDisclosure();
     },
     setOn(on) {
+      drawn = on;
       toggle.setAttribute("aria-pressed", String(on));
       element.dataset["on"] = String(on);
       // A row nobody is drawing cannot be empty; the mark would outlive the reason for it.

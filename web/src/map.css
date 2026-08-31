@@ -508,6 +508,40 @@
   display: inline-flex;
 }
 
+/* The parent carries no mark of its own — see layer-panel.ts. The spacer holds the swatch
+   track so the parent's label sits on the same rule as the rows either side of it. */
+.gw-layer-swatch-none {
+  width: 14px;
+}
+
+/* `.gw-layer-family-body` declares no `display`: a div is already block, and style.css's
+   `[hidden] { display: none !important }` is what shuts it. Measured, not assumed — removing a
+   `:not([hidden])` guard here changed nothing in hidden-display.mjs, because the global reset
+   is doing the work the per-rule guards elsewhere in this sheet predate. */
+
+/* Indented by the swatch track plus the row gap, so a member reads as belonging to the row
+   above it rather than as a sibling of it. The border is the rule the nesting is legible by. */
+.gw-layer-row-child {
+  padding-left: 0.85rem;
+  border-left: 1px solid var(--hairline);
+}
+
+.gw-layer-family-head .gw-layer-label {
+  font-weight: 650;
+}
+
+.gw-layer-family-count {
+  flex: 0 0 auto;
+  padding: 0 0.25rem;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  color: var(--cyan-text);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
 /* The disclosure. Not a <label> — the row forwards no activation to the switch beside it. */
 .gw-layer-name {
   grid-column: 2;
@@ -648,6 +682,18 @@
 .gw-layer-toggle[aria-pressed="true"]::after {
   left: 23px;
   background: var(--cyan);
+}
+
+/* Some but not all. The knob rests mid-track and reads hollow — neither end of the throw, so
+   the switch cannot be mistaken at a glance for either one. */
+.gw-layer-toggle[aria-pressed="mixed"] {
+  border-color: var(--cyan);
+}
+
+.gw-layer-toggle[aria-pressed="mixed"]::after {
+  left: 13px;
+  border: 2px solid var(--cyan);
+  background: var(--ink);
 }
 
 .gw-layer-toggle:disabled,

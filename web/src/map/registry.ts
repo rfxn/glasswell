@@ -5,8 +5,8 @@
  */
 import { LAND_SNAPSHOT, ND_SNAPSHOT, landCellCount, ndCoverage, ndWellCount } from "./coverage.ts";
 import { DISPOSAL_COLOUR } from "./disposal.ts";
-import { LAYER_GROUPS } from "./groups.ts";
-import type { LayerGroup, LayerGroupId } from "./groups.ts";
+import { LAYER_FAMILIES, LAYER_GROUPS } from "./groups.ts";
+import type { LayerFamily, LayerFamilyId, LayerGroup, LayerGroupId } from "./groups.ts";
 import { UNMAPPED_STATUS, statusColour } from "./status.ts";
 import { LAND_GRID_COLOUR, TRACE_COLOUR } from "./style.ts";
 import { LIQUID_RAMP } from "./thematics.ts";
@@ -43,6 +43,15 @@ export interface LayerDef {
   id: string;
   /** Required, so a layer added to the table cannot arrive with no place in the reader's list. */
   group: LayerGroupId;
+  /**
+   * The nested set this row is a member of, if any. Declared with `familyLabel`, never without:
+   * a row inside a family reads by the axis it divides on, because the parent above it already
+   * carries the noun.
+   */
+  family?: LayerFamilyId;
+  /** How the row reads under its parent. The state alone, where the family divides by state. */
+  familyLabel?: string;
+  /** The standalone name, for every surface that meets the row without its parent above it. */
   label: string;
   subtitle: string;
   swatch: LayerSwatch;
@@ -88,7 +97,7 @@ export const LAYERS: readonly LayerDef[] = [
     // in different sections), never this file's claim.
     id: "land-metrics",
     group: "derived",
-    label: "Liquid on the land grid (ND)",
+    label: "Liquid on the land grid (North Dakota)",
     subtitle:
       "Observed cumulative liquid (oil plus condensate as ND files it) summed per PLSS" +
       ` unit · ${landCellCount()} binned cells · wells assigned by lateral midpoint, else` +
@@ -113,7 +122,7 @@ export const LAYERS: readonly LayerDef[] = [
     // divergence are conformance rows (cr_blm_plss_publisher_1), not this file's claim.
     id: "land-grid",
     group: "land",
-    label: "PLSS land grid (ND)",
+    label: "PLSS land grid (North Dakota)",
     // Counts as published by BLM (F2): the promoted rows run 10-to-31 lower per the
     // quarantine's duplicate ledger, and the register quotes the publisher it names rather
     // than a number that moves with every re-poll.
@@ -135,7 +144,7 @@ export const LAYERS: readonly LayerDef[] = [
     // Geometry and labels split: the linework at one zoom band, the text two bands finer.
     id: "land-grid-labels",
     group: "land",
-    label: "PLSS grid labels (ND)",
+    label: "PLSS grid labels (North Dakota)",
     subtitle: "Township-range and section numbers carried on the land grid itself",
     swatch: { kind: "line", colours: [LAND_GRID_COLOUR] },
     defaultOn: false,
@@ -150,7 +159,7 @@ export const LAYERS: readonly LayerDef[] = [
   {
     id: "spacing-units",
     group: "land",
-    label: "Spacing units",
+    label: "Spacing units (North Dakota)",
     subtitle: "ND DMR drilling-unit polygons · 10,571 units · the unit an operator thinks in",
     swatch: { kind: "outline", colours: ["#4B6472"] },
     defaultOn: false,
@@ -166,7 +175,7 @@ export const LAYERS: readonly LayerDef[] = [
   {
     id: "plss-labels",
     group: "land",
-    label: "Spacing-unit labels",
+    label: "Spacing-unit labels (North Dakota)",
     subtitle:
       "Township-range description carried on the spacing unit · the surveyed grid itself is" +
       " the PLSS land grid row",
@@ -214,7 +223,7 @@ export const LAYERS: readonly LayerDef[] = [
     // absence here is not "no lateral", and the hole has a reason the subtitle names.
     id: "survey-traces",
     group: "spine",
-    label: "Survey traces (ND)",
+    label: "Survey traces (North Dakota)",
     subtitle:
       `The bore path ND filed as MD/INC/AZI/TVD stations · ${ndCoverage(ND_SNAPSHOT.traced)} · ` +
       "confidential wells excluded at source",
@@ -240,7 +249,7 @@ export const LAYERS: readonly LayerDef[] = [
     // centreline in either case, which is the fact the subtitle leads with.
     id: "mt-paths",
     group: "spine",
-    label: "Well paths (MT)",
+    label: "Well paths (Montana)",
     subtitle:
       "MBOGC well paths — laterals, sidetracks and wellbores as filed · cartographic" +
       " centrelines averaging 2.8 vertices, never a survey (cr_mt_paths_geometry_class_1) ·" +
@@ -264,7 +273,9 @@ export const LAYERS: readonly LayerDef[] = [
   {
     id: "wells",
     group: "spine",
-    label: "Wells",
+    family: "wells",
+    familyLabel: "North Dakota",
+    label: "Wells (North Dakota)",
     subtitle: `ND DMR GIS surface locations · ${ndWellCount()} points · culled by status below zoom 9`,
     swatch: { kind: "dot", colours: ["#3FA55E"] },
     defaultOn: true,
@@ -283,7 +294,7 @@ export const LAYERS: readonly LayerDef[] = [
     // The membership is a conformance row, not this file's — see disposal.ts.
     id: "disposal-wells",
     group: "spine",
-    label: "Disposal & injection (ND)",
+    label: "Disposal & injection (North Dakota)",
     subtitle:
       `Wells NDIC types SWD, WI, CO2I, AI, GI, SFI, MWUI or INJP · ${ndCoverage(ND_SNAPSHOT.disposal)} ` +
       "· the well_type code as filed, drawn as a ring over the status dot",
@@ -307,7 +318,9 @@ export const LAYERS: readonly LayerDef[] = [
   {
     id: "tx-wells",
     group: "spine",
-    label: "Wells (TX)",
+    family: "wells",
+    familyLabel: "Texas",
+    label: "Wells (Texas)",
     subtitle: "TX RRC GIS surface locations, 55 Permian-district counties · 355,463 points",
     // Not ND's green. Both basins share one status vocabulary and one set of status colours,
     // but a swatch is a prediction about what the canvas will look like, and Texas draws
@@ -327,7 +340,9 @@ export const LAYERS: readonly LayerDef[] = [
   {
     id: "nm-wells",
     group: "spine",
-    label: "Wells (NM)",
+    family: "wells",
+    familyLabel: "New Mexico",
+    label: "Wells (New Mexico)",
     subtitle:
       "NM OCD well-header surface locations · read from marts.nm_wells_tile at refresh, " +
       "all unmapped: the OCD publishes no status codebook (cr_nm_wellhistory_status_vocab_1)",
@@ -348,7 +363,9 @@ export const LAYERS: readonly LayerDef[] = [
   {
     id: "mt-wells",
     group: "spine",
-    label: "Wells (MT)",
+    family: "wells",
+    familyLabel: "Montana",
+    label: "Wells (Montana)",
     subtitle:
       "MBOGC surface locations · 42,026 points, 13 of the 19 filed status values mapped and" +
       " the other 6 quarantined rather than defaulted (cr_mt_gis_status_vocab_1) · no basin" +
@@ -430,4 +447,56 @@ export function groupedLayers(): GroupedLayers[] {
 export function layerRowState(id: string, on: ReadonlySet<string>): boolean | null {
   if (!BY_ID.has(id)) return null;
   return on.has(id);
+}
+
+export function familyMembers(id: LayerFamilyId): LayerDef[] {
+  return LAYERS.filter((layer) => layer.family === id);
+}
+
+/**
+ * The reader's order inside a group: a family stands where its first member would have, holding
+ * its members, and the rows it took are not listed twice. `disposal-wells` therefore moves from
+ * between two well rows to below the family — the ring is drawn over the dots and now reads
+ * that way, and nothing about the map's own draw order moved.
+ */
+export type GroupEntry =
+  | { kind: "layer"; layer: LayerDef }
+  | { kind: "family"; family: LayerFamily; layers: LayerDef[] };
+
+export interface GroupRows {
+  group: LayerGroup;
+  entries: GroupEntry[];
+}
+
+export function groupEntries(): GroupRows[] {
+  return groupedLayers().map(({ group, layers }) => {
+    const entries: GroupEntry[] = [];
+    const placed = new Set<LayerFamilyId>();
+    for (const layer of layers) {
+      if (!layer.family) {
+        entries.push({ kind: "layer", layer });
+        continue;
+      }
+      if (placed.has(layer.family)) continue;
+      placed.add(layer.family);
+      const family = LAYER_FAMILIES.find((candidate) => candidate.id === layer.family);
+      // A member naming a family the taxonomy does not declare stays a row of its own rather
+      // than vanishing into a parent that does not exist.
+      if (family) entries.push({ kind: "family", family, layers: familyMembers(family.id) });
+      else entries.push({ kind: "layer", layer });
+    }
+    return { group, entries };
+  });
+}
+
+/**
+ * What the parent switch reports: `true` all on, `false` all off, `"mixed"` some. Derived from
+ * the members on every render and stored nowhere, which is what lets a set saved before the
+ * family existed restore untouched — see persist.ts.
+ */
+export function familyState(id: LayerFamilyId, on: ReadonlySet<string>): boolean | "mixed" {
+  const members = familyMembers(id);
+  const drawn = members.filter((layer) => on.has(layer.id)).length;
+  if (drawn === 0) return false;
+  return drawn === members.length ? true : "mixed";
 }
