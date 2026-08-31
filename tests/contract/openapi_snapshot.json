@@ -15117,6 +15117,7 @@
             "api10",
             "status",
             "producing",
+            "well_type",
             "operator",
             "county",
             "state",

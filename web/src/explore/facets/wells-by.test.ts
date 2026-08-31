@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULTS_FOR_TEST, filterFor, mountWellsBy, panelState } from "./wells-by.ts";
+import { DEFAULTS_FOR_TEST, mountWellsBy, panelState } from "./wells-by.ts";
 import type { WellFacets } from "./wells-by.ts";
 import type { Figure, Warning } from "../../api/envelope.ts";
 import { DEFAULT_STATE } from "../../app/state.ts";
@@ -29,9 +29,18 @@ const RESPONSE: WellFacets = {
   top: 15,
   distinct_values: 9369,
   caption: "The 15 operator values with the most wells, of 9,369 operator values in Texas.",
+  // The links are the ones the server actually publishes, percent-encoded and state-scoped.
   buckets: [
-    { value: "PIONEER NATURAL RESOURCES USA INC", wells: figure("4312"), links: { wells: "/v1/wells?operator=PIONEER&state=42" } },
-    { value: "DIAMONDBACK E&P LLC", wells: figure("2201"), links: { wells: "/v1/wells?operator=DIAMONDBACK&state=42" } },
+    {
+      value: "PIONEER NATURAL RESOURCES USA INC",
+      wells: figure("4312"),
+      links: { wells: "/v1/wells?operator=PIONEER+NATURAL+RESOURCES+USA+INC&state=42" },
+    },
+    {
+      value: "DIAMONDBACK E&P LLC",
+      wells: figure("2201"),
+      links: { wells: "/v1/wells?operator=DIAMONDBACK+E%26P+LLC&state=42" },
+    },
   ],
   remainder: {
     values: 9367,
@@ -59,7 +68,7 @@ const RESPONSE: WellFacets = {
 let host: HTMLElement;
 let requested: string[];
 let panelCommits: Record<string, string | null>[];
-let filterCommits: [string, string[]][];
+let filterCommits: Record<string, string[]>[];
 
 function state(extra: Record<string, string[]> = {}): AppState {
   return { ...DEFAULT_STATE, view: "explore", ds: "wells", extra };
@@ -68,7 +77,7 @@ function state(extra: Record<string, string[]> = {}): AppState {
 function hooks() {
   return {
     setPanel: (values: Record<string, string | null>) => void panelCommits.push(values),
-    applyFilter: (name: string, values: string[]) => void filterCommits.push([name, values]),
+    applyFilter: (filters: Record<string, string[]>) => void filterCommits.push(filters),
   };
 }
 
@@ -237,28 +246,53 @@ describe("what the envelope warns about reaches the surface", () => {
 });
 
 describe("a bucket narrows the grid beside it", () => {
-  it("commits the collection filter the dimension maps to", async () => {
+  it("commits every filter the server's own link carries, the state included", async () => {
     await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     (host.querySelector("button.gw-wells-by-value") as HTMLButtonElement).click();
 
-    expect(filterCommits).toEqual([["operator", ["PIONEER NATURAL RESOURCES USA INC"]]]);
+    expect(filterCommits).toEqual([
+      { operator: ["PIONEER NATURAL RESOURCES USA INC"], state: ["42"] },
+    ]);
   });
 
-  it("renders a plain label, not a button, for a dimension the collection cannot filter", async () => {
-    respondWith({ dimension: "completion_year" });
+  it("narrows to the state the bucket was counted in, so county 003 is not two of them", async () => {
+    // The defect `state` was added to /v1/wells for: Texas county 003 and North Dakota county
+    // 003 are different counties, and a filter rebuilt from the dimension alone returns both.
+    respondWith({
+      dimension: "county",
+      buckets: [
+        { value: "003", wells: figure("120"), links: { wells: "/v1/wells?county=003&state=42" } },
+      ],
+    });
+    await mountWellsBy(host, {
+      state: state({ "wb.by": ["county"] }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+
+    (host.querySelector("button.gw-wells-by-value") as HTMLButtonElement).click();
+
+    expect(filterCommits).toEqual([{ county: ["003"], state: ["42"] }]);
+  });
+
+  it("decodes the link rather than committing its percent-encoded spelling", async () => {
+    await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    (host.querySelectorAll("button.gw-wells-by-value")[1] as HTMLButtonElement).click();
+
+    expect(filterCommits).toEqual([{ operator: ["DIAMONDBACK E&P LLC"], state: ["42"] }]);
+  });
+
+  it("renders a plain label, not a button, for a bucket the server published no link for", async () => {
+    respondWith({
+      dimension: "completion_year",
+      buckets: [{ value: "2019", wells: figure("120"), links: {} }],
+    });
     await mountWellsBy(host, { state: state(), hooks: hooks(), signal: new AbortController().signal });
 
     expect(host.querySelector("button.gw-wells-by-value")).toBeNull();
     expect(host.querySelector("span.gw-wells-by-value")).not.toBeNull();
-  });
-
-  it("maps only the four dimensions the collection actually accepts", () => {
-    expect(filterFor("operator")).toBe("operator");
-    expect(filterFor("county")).toBe("county");
-    expect(filterFor("status")).toBe("status");
-    expect(filterFor("well_type")).toBe("well_type");
-    expect(filterFor("completion_year")).toBeNull();
   });
 });
 

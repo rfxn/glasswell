@@ -69,8 +69,8 @@ export interface WellFacets {
 export interface WellsByHooks {
   /** Commits panel state to the URL. */
   setPanel(values: Record<string, string | null>): void;
-  /** Narrows the grid beside this panel to one bucket. */
-  applyFilter(name: string, values: string[]): void;
+  /** Narrows the grid beside this panel to one bucket, by every filter the bucket's link names. */
+  applyFilter(filters: Record<string, string[]>): void;
 }
 
 export interface WellsByOptions {
@@ -92,15 +92,21 @@ export function panelState(state: AppState): Record<string, string> {
   };
 }
 
-/** The filter each dimension becomes on /v1/wells; `completion_year` becomes none. */
-export function filterFor(dimension: string): string | null {
-  const links: Record<string, string> = {
-    operator: "operator",
-    county: "county",
-    status: "status",
-    well_type: "well_type",
-  };
-  return links[dimension] ?? null;
+/**
+ * The filters a bucket narrows the collection by, read out of the link the server published for
+ * it rather than rebuilt from the dimension here. The `state` term is why: a county-003 bucket
+ * counted in Texas narrows to Texas county 003, and a filter assembled from the dimension alone
+ * returns North Dakota's county 003 beside it. A bucket the collection cannot reproduce carries
+ * no link, and gets no filter rather than one that narrows to something else.
+ */
+function filtersOfLink(link: string | undefined): Record<string, string[]> | null {
+  const mark = link?.indexOf("?") ?? -1;
+  if (link === undefined || mark < 0) return null;
+  const filters: Record<string, string[]> = {};
+  for (const [name, value] of new URLSearchParams(link.slice(mark + 1))) {
+    (filters[name] ??= []).push(value);
+  }
+  return Object.keys(filters).length > 0 ? filters : null;
 }
 
 /**
@@ -394,13 +400,13 @@ function row(
   item.className = "gw-wells-by-row";
   item.dataset["value"] = bucket.value;
 
-  const filter = filterFor(data.dimension);
-  const label = filter ? document.createElement("button") : document.createElement("span");
+  const filters = filtersOfLink(bucket.links["wells"]);
+  const label = filters ? document.createElement("button") : document.createElement("span");
   label.className = "gw-wells-by-value";
-  if (label instanceof HTMLButtonElement) {
+  if (label instanceof HTMLButtonElement && filters) {
     label.type = "button";
-    label.setAttribute("aria-label", `Narrow the wells below to ${bucket.value}`);
-    label.addEventListener("click", () => options.hooks.applyFilter(filter as string, [bucket.value]), {
+    label.setAttribute("aria-label", `Narrow the wells below to ${bucket.value} in ${data.state_name}`);
+    label.addEventListener("click", () => options.hooks.applyFilter(filters), {
       signal: options.signal,
     });
   } else {

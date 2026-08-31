@@ -644,7 +644,20 @@ def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
             # `/producing` is a facet but not yet a default column: the explorer's grid
             # fixture is recorded from a served build, and this branch cannot re-record it,
             # so declaring the column would name one no recorded row carries.
-            facets=["api10", "status", "producing", "operator", "county", "state", "bbox", "q"],
+            # `well_type` is here because a "Wells by well type" bucket narrows the grid by it:
+            # an applied filter the dataset does not declare renders no chip and cannot be
+            # cleared on its own.
+            facets=[
+                "api10",
+                "status",
+                "producing",
+                "well_type",
+                "operator",
+                "county",
+                "state",
+                "bbox",
+                "q",
+            ],
             columns={
                 "default": [
                     "/api10",

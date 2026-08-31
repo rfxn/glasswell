@@ -17,3 +17,12 @@
            cannot drift apart. Under a `q` every other figure in the response moves and this
            one stays whole-state, and the total that would have been its denominator is no
            longer on the surface
+- [Fix] Clicking a facet bucket narrows the grid by every filter the server's link carries,
+      the state included. The panel ignored `bucket.links` and rebuilt the filter from the
+      dimension alone, so Texas county 003 narrowed to Texas and North Dakota county 003
+      together — the crossing `state` was added to `/v1/wells` to stop. The link is now the
+      one source of truth for what a bucket narrows to, and a bucket the collection cannot
+      reproduce still renders as a plain label
+- [Change] `/v1/wells` declares `well_type` a facet. The collection has always applied the
+           filter, and a well-type bucket set it, but a filter the dataset does not declare
+           renders no chip and cannot be cleared on its own

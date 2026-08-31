@@ -188,9 +188,16 @@ function renderWellsBy(next: AppState): void {
         }
         commit({ extra });
       },
-      applyFilter: (name, values) => {
+      // One commit for the whole set: a loop of commits re-renders under its own feet, and
+      // the state term is not optional decoration — it is what keeps the bucket's population
+      // and the grid's the same one.
+      applyFilter: (filters) => {
         if (!state) return;
-        commit({ extra: withFilter(state, name, values).extra });
+        let narrowed = state;
+        for (const [name, values] of Object.entries(filters)) {
+          narrowed = withFilter(narrowed, name, values);
+        }
+        commit({ extra: narrowed.extra });
       },
     },
     signal: wellsByAbort.signal,

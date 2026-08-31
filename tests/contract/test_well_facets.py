@@ -7,6 +7,7 @@ from datetime import date
 import psycopg
 from fastapi.testclient import TestClient
 
+from glasswell.api.routers.facets import DIMENSIONS
 from tests.support.seed import seed_well
 
 # Enough operators to be truncated by a small `top`, with a deliberate long tail and a
@@ -439,6 +440,21 @@ def test_a_dimension_the_collection_cannot_filter_on_publishes_no_link(
     bucket = _facets(client, by="completion_year", top=1)["data"]["buckets"][0]
 
     assert bucket["links"] == {}
+
+
+def test_the_collection_declares_every_filter_a_facet_bucket_narrows_by(
+    client: TestClient,
+) -> None:
+    """A bucket's link is only as good as the dataset declaration behind it: a filter the
+    collection applies but does not declare is one the grid cannot show a chip for, and one a
+    reader cannot clear on its own once a well-type bucket has set it."""
+    declaration = client.get("/openapi.json").json()["paths"]["/v1/wells"]["get"][
+        "x-glasswell-dataset"
+    ]
+
+    narrowed = {entry["filter"] for entry in DIMENSIONS.values() if entry["filter"]}
+
+    assert narrowed | {"state"} <= set(declaration["facets"])
 
 
 def test_the_state_name_matches_the_layer_panel_convention(
