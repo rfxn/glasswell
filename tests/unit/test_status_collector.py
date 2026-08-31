@@ -739,47 +739,99 @@ def test_a_drill_that_restored_an_old_dump_still_degrades(tmp_path: Path) -> Non
     assert "when the drill ran" in status.detail
 
 
-def test_the_production_inventory_is_read_only_through_its_source_bounded_query() -> None:
-    """The predicate this replaced, kept out of the production reads by name.
+class _RecordingCursor:
+    """Records every statement issued and answers it from a caller-supplied result table."""
 
-    `left(api10, 2)` is not indexable as written, so every arm using it read the whole table —
-    and it reached none of the Montana lease grain, which carries no API-10 at all. Both faults
-    return the moment someone adds a state by copying the arm above it, which is exactly how the
-    original grew. Jurisdiction is registry data now (R8); a literal here is the regression.
+    def __init__(self, executed: list, answers) -> None:
+        self._executed = executed
+        self._answers = answers
+        self._rows: list[dict] = []
 
-    Scoped to `canonical.production_monthly` deliberately. The `canonical.well_completions` arm
-    is still written the old way and is still a whole-table read; it was left alone because no
-    resident row count was available to size the fix against, and it is recorded as outstanding
-    rather than quietly swept in here.
+    def __enter__(self) -> _RecordingCursor:
+        return self
+
+    def __exit__(self, *_exception) -> bool:
+        return False
+
+    def execute(self, statement: str, parameters=None) -> None:
+        self._executed.append((statement, parameters))
+        self._rows = self._answers(statement)
+
+    def fetchall(self) -> list[dict]:
+        return self._rows
+
+    def fetchone(self) -> dict | None:
+        return self._rows[0] if self._rows else None
+
+
+class _RecordingConnection:
+    def __init__(self, registered: list[dict], counted: dict) -> None:
+        self.executed: list = []
+        self._registered = registered
+        self._counted = counted
+
+    def cursor(self, row_factory=None) -> _RecordingCursor:
+        return _RecordingCursor(
+            self.executed,
+            lambda statement: (
+                list(self._registered)
+                if "lineage.conformance_rules" in statement
+                else [dict(self._counted)]
+            ),
+        )
+
+
+def test_the_production_inventory_asks_one_bounded_question_per_registered_source() -> None:
+    """The defect was one aggregate whose cost grew with the union of every state's rows.
+
+    Driven rather than read: the function runs against three registered sources and every
+    statement it issues is recorded. Each arm has to carry its own `source_id` predicate and be
+    parameterised with the source it claims to count — separate scalar subqueries, so one arm
+    losing its predicate reads every state's rows while still returning a plausible number for
+    the source that was asked for. An unregistered source must still be counted, under the
+    presentation that claims nothing about its grain.
     """
-    source = Path(status_collector.__file__).read_text(encoding="utf-8")
-    reads = [line for line in source.splitlines() if "from canonical.production_monthly" in line]
-
-    assert "left(api10" not in status_collector._PRODUCTION_METRICS
-    assert len(reads) == 3, (
-        "every read of production_monthly must be one of the three source-bounded arms;"
-        f" found {len(reads)}"
-    )
-    for line in reads:
-        assert "where source_id = %(source_id)s" in line
-
-
-def test_every_production_inventory_read_is_bounded_to_one_source() -> None:
-    """An unbounded aggregate is the whole defect: cost that grows with the union of states.
-
-    Each arm of the metrics query must carry its own source predicate, because they are separate
-    scalar subqueries and one missing predicate silently reads every state's rows while still
-    returning a plausible number for the source that was asked for.
-    """
-    arms = [
-        arm
-        for arm in status_collector._PRODUCTION_METRICS.split("(select")[1:]
-        if "canonical.production_monthly" in arm
+    registered = [
+        {"source_id": "nd_mpr_xlsx", "name": "ND MPR", "jurisdiction": "ND"},
+        {"source_id": "mt_bogc_pru_production", "name": "MBOGC PRU", "jurisdiction": "MT"},
+        {"source_id": "zz_new_state", "name": "ZZ filings", "jurisdiction": "ZZ"},
     ]
+    connection = _RecordingConnection(
+        registered,
+        {
+            "rows": 4,
+            "months": 2,
+            "entities": 2,
+            "valid_from": None,
+            "valid_to": None,
+            "latest_knowledge": None,
+        },
+    )
 
-    assert len(arms) == 3, "the metrics query changed shape; re-check every arm is source-bounded"
-    for arm in arms:
-        assert "where source_id = %(source_id)s" in arm
+    inventory = status_collector._production_inventory(connection)  # type: ignore[arg-type]
+
+    assert [shown.dataset_id for shown, _ in inventory] == [
+        "canonical.production_monthly/nd",
+        "canonical.production_monthly/mt-lease",
+        "canonical.production_monthly/zz_new_state",
+    ]
+    counted = [
+        (statement, parameters)
+        for statement, parameters in connection.executed
+        if "canonical.production_monthly" in statement
+    ]
+    assert [parameters["source_id"] for _, parameters in counted] == [
+        source["source_id"] for source in registered
+    ]
+    for statement, _parameters in counted:
+        arms = [
+            arm
+            for arm in statement.split("(select")[1:]
+            if "canonical.production_monthly" in arm
+        ]
+        assert len(arms) == 3, "the metrics query changed shape; re-check every arm"
+        for arm in arms:
+            assert "where source_id = %(source_id)s" in arm
 
 
 INVENTORY_JURISDICTION_RULES = tuple(
