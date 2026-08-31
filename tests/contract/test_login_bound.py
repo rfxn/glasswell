@@ -15,6 +15,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from glasswell.api import accounts
 from glasswell.api.csrf import CSRF_HEADER
 from glasswell.api.deps import SESSION_COOKIE
 from glasswell.api.rate_limit import BUCKETS
@@ -57,6 +58,25 @@ def post_login(session: TestClient, address: str, *, csrf: str | None, password:
 @pytest.fixture
 def account(seeded) -> None:
     seed_user(seeded, username="bounded", password=OWNER_PASSWORD, role="owner")
+
+
+@pytest.fixture
+def verifies(monkeypatch) -> list[str]:
+    """Every Argon2id verify the login path performs, in order.
+
+    Counted on `accounts.verify_password` because that one global is what every verify on the
+    path resolves through -- the real hash via `verify_user_password`, and the two `DUMMY_HASH`
+    calls `authenticate` makes so an unknown or disabled account costs the same.
+    """
+    observed: list[str] = []
+    real = accounts.verify_password
+
+    def counted(encoded: str, password: str) -> bool:
+        observed.append(encoded)
+        return real(encoded, password)
+
+    monkeypatch.setattr(accounts, "verify_password", counted)
+    return observed
 
 
 def fill_bucket(connection, address: str, *, bucket: str, count: int) -> None:
@@ -133,21 +153,34 @@ def test_the_limiter_runs_before_the_csrf_check(client, account, seeded) -> None
     )
 
 
-def test_the_limiter_runs_before_any_password_hashing(client, account, seeded) -> None:
-    """A correct credential presented past the bucket must answer 429, not 201.
+def test_the_limiter_runs_before_any_password_hashing(
+    client, account, seeded, verifies
+) -> None:
+    """The hash must never be computed once the bound is spent -- asserted on the hash.
 
-    A 201 would mean the request reached `authenticate` -- and therefore an Argon2id verify --
-    after the bound was already spent, which is exactly the amplification the bound exists to
-    stop. It also proves the limiter precedes authentication rather than following it.
+    Not on the status code: authenticate-then-limit and limit-then-authenticate both answer
+    429, so a status assertion is satisfied by a route that runs a full 64 MiB Argon2id verify
+    for every unauthenticated attempt and refuses afterwards, which is the amplification the
+    bound exists to stop. Ordering-by-status only works where the two orderings are
+    distinguishable, as they are in the CSRF sibling above.
+
+    The first attempt is the floor: it proves the counter observes a verify at all, so a spy
+    that silently stopped counting cannot make the second assertion vacuous.
     """
     session = caller(client)
     address = "203.0.113.12"
-    fill_bucket(seeded, address, bucket="login", count=LOGIN_LIMIT)
 
+    unbounded = post_login(session, address, csrf=challenge(session), password="wrong")
+    assert unbounded.status_code == 403, "the unbounded attempt should have reached the hash"
+    assert verifies, "no verify was observed with the bucket open, so this test cannot fail"
+
+    fill_bucket(seeded, address, bucket="login", count=LOGIN_LIMIT)
+    verifies.clear()
     refused = post_login(session, address, csrf=challenge(session), password=OWNER_PASSWORD)
 
     assert refused.status_code == 429
     assert SESSION_COOKIE not in refused.cookies
+    assert verifies == [], "a spent bucket still bought an Argon2id verify"
 
 
 def test_the_challenge_route_is_bounded_on_the_address(client, seeded) -> None:
