@@ -505,7 +505,10 @@ export function createMap(
 
   function scheduleCounts(): void {
     clearTimeout(countTimer);
-    countTimer = setTimeout(refreshCounts, 250);
+    countTimer = setTimeout(() => {
+      // A debounce can outlive its map; a detached container has no window to read.
+      if (container.isConnected) refreshCounts();
+    }, 250);
   }
 
   function viewportBbox(): Bbox {
@@ -735,6 +738,7 @@ export function createMap(
     map.on("idle", scheduleCounts);
     map.on("idle", refreshCoverage);
     map.on("moveend", scheduleCounts);
+    map.on("remove", () => clearTimeout(countTimer));
     map.on("sourcedata", (event) => {
       if (event.isSourceLoaded) scheduleCounts();
     });
