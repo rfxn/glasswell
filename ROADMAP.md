@@ -153,8 +153,9 @@ rebuilt once the registry lands.
 
 State #5 is chosen on reachability first: bulk headers, bulk well-grain production, surface
 coordinates, a published status codebook, stated terms. The per-release track tables —
-worktrees, branches, migration numbers and exit criteria for v0.74, v0.75 and v0.76 — are in
-`work-output/po-review/PRODUCT-REVIEW.md` §5.
+worktrees, branches, migration numbers and exit criteria for v0.74, v0.75 and v0.76 — are
+working files under `work-output/`, which is git-excluded and reaches no clone. The table
+above is the tracked form, and it is the one every other document should cite.
 
 ## Timebox
 
