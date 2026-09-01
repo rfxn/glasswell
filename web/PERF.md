@@ -109,9 +109,17 @@ explorer's shell chunk and into the entry. Verified rather than inferred — `gw
 
 | budget | B gzipped | headroom over measured |
 |---|---:|---|
-| entry chunk | 22,500 | +5.4% over 21,340 |
+| entry chunk | 14,000 | +9.8% over 12,750 |
 | explorer route, map excluded | 75,000 | +4.9% over 71,511 |
 | map chunk | 330,000 | +5.2% over 313,823 |
+
+The entry was re-measured again when the well card moved to a dynamic import. `card/card.ts`
+and everything only it reaches — `gw-figure`, `card/format.ts`, the completion and neighbour
+panels, the status chip — had been in the entry chunk since C0, so every reader paid for a
+panel that renders only after a well is clicked, and a reader who opens the explorer never
+clicks one. The card became its own 4.5 kB chunk and the entry fell 21,340 → 12,750 B. The
+explorer route is measured with the card cut, on the same ruling its neighbour and status-chip
+branches were already cut under: it only ever renders over the map.
 
 The first two were re-measured when the production chart moved to a dynamic import. uPlot had
 been riding the entry chunk, which every reader downloads whether or not they open a card, and

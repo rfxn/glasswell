@@ -7,6 +7,7 @@ import { readState } from "../app/state.ts";
 import { toChartSeries } from "../chart/series.ts";
 import type { ProductionData } from "../chart/series.ts";
 import { EXPLAIN_EVENT, explainHandle } from "../chrome/handle.ts";
+import { emptyState, scopeLine, warningNotes } from "../chrome/notes.ts";
 import { focusPanel } from "../chrome/overlays.ts";
 import { crossingLink, openThisSeries, rowsForThisWell } from "../explore/bridge.ts";
 import { labelElement } from "../glossary/gw-term.ts";
@@ -16,6 +17,7 @@ import { absentValue, formatVintage } from "./format.ts";
 
 export interface WellDetail {
   api10: string;
+  api14: string | null;
   well_name: string | null;
   operator_name_reported: string | null;
   status_canonical: string | null;
@@ -33,6 +35,9 @@ export interface WellDetail {
   storage_crs: string;
   effective_from: string;
   surface_point: { lon: number; lat: number } | null;
+  ndic_file_no: string | null;
+  well_type_reported: string | null;
+  length_method: string | null;
 }
 
 export interface CompletionEvent {
@@ -76,26 +81,25 @@ export interface CardCallbacks {
 }
 
 /**
- * Four bands, in the order an engineer reads a well: who has it, where it is, what was drilled,
- * and which reading of the record this is. One flat list gave a compute CRS the same weight as
- * the operator.
+ * Three bands below the identity block, in the order an engineer reads a well: where it is,
+ * what was drilled, and which reading of the record this is. The operator used to be a fourth
+ * band — a heading and a rule for one datum — and now rides in the header beside the name.
  */
 const FACT_GROUPS: { title: string; fields: [keyof WellDetail, string, string][] }[] = [
-  {
-    title: "Operator",
-    fields: [["operator_name_reported", "Operator", "/operator_name_reported"]],
-  },
   {
     title: "Location",
     fields: [
       ["basin", "Basin", "/basin"],
-      ["county_code_at_permit", "County code", "/county_code_at_permit"],
+      ["county_code_at_permit", "County", "/county_code_at_permit"],
       ["land_unit_label", "Land unit", "/land_unit_label"],
     ],
   },
   {
-    title: "Drilling and completion",
-    fields: [["spud_date", "Spud date", "/spud_date"]],
+    title: "Drilling",
+    fields: [
+      ["spud_date", "Spud", "/spud_date"],
+      ["well_type_reported", "Well type", "/well_type_reported"],
+    ],
   },
   { title: "Record", fields: [] },
 ];
@@ -141,6 +145,16 @@ export async function renderWellCard(
   apiValue.setAttribute("data-no-glossary", "");
   apiValue.textContent = ` ${detail.api10}`;
   api.appendChild(apiValue);
+  // The 14 is the join key a reader pastes elsewhere, and it was served but never shown. It
+  // rides the same line at half emphasis rather than taking a fact row of its own.
+  if (detail.api14 && detail.api14 !== detail.api10) {
+    const api14 = document.createElement("span");
+    api14.className = "gw-card-api14";
+    api14.setAttribute("data-no-glossary", "");
+    api14.title = "API-14";
+    api14.textContent = detail.api14;
+    api.append(" ", api14);
+  }
   header.appendChild(api);
 
   // The same glyph grammar the map paints the well with, so the dot a reader clicked and the
@@ -157,6 +171,27 @@ export async function renderWellCard(
         fillStatusChip(statusSlot, detail, statusTerm),
       )
     : Promise.resolve();
+
+  // Who holds the well is identity, not a fact row: a band heading and a hairline for one
+  // datum cost more vertical room than the datum, and it was the first thing a reader looked
+  // for. Confidential rides beside it because it qualifies who is allowed to have reported.
+  if (detail.operator_name_reported || detail.confidential_flag) {
+    const operatorLine = document.createElement("p");
+    operatorLine.className = "gw-card-operator";
+    if (detail.operator_name_reported) {
+      operatorLine.appendChild(
+        labelElement(detail.operator_name_reported, labelFor(well, "/operator_name_reported")),
+      );
+    }
+    if (detail.confidential_flag) {
+      const chip = document.createElement("span");
+      chip.className = "gw-card-confidential";
+      chip.title = "Withheld by the regulator";
+      chip.appendChild(labelElement("confidential", labelFor(well, "/confidential_flag")));
+      operatorLine.append(" ", chip);
+    }
+    header.appendChild(operatorLine);
+  }
 
   // SB-08 §2.6 row 1, after the api10 line and ahead of the close button: the crossing
   // reads as part of the identity block rather than as one more control in the corner.
@@ -194,15 +229,19 @@ export async function renderWellCard(
     }
     bands.set(title, facts);
   }
-  const operator = bands.get("Operator")!;
-  const drilling = bands.get("Drilling and completion")!;
+  const location = bands.get("Location")!;
+  const drilling = bands.get("Drilling")!;
   const record = bands.get("Record")!;
 
-  if (detail.confidential_flag) {
-    operator.appendChild(term("Confidential", labelFor(well, "/confidential_flag")));
+  // Served since the spine landed and never drawn. The surface hole is the coordinate a
+  // reader copies into anything else they own, so it belongs beside the land unit.
+  if (detail.surface_point) {
+    location.appendChild(term("Surface", labelFor(well, "/surface_point")));
     const definition = document.createElement("dd");
-    definition.textContent = "withheld by the regulator";
-    operator.appendChild(definition);
+    definition.setAttribute("data-no-glossary", "");
+    definition.className = "gw-fact-mono";
+    definition.textContent = `${detail.surface_point.lat.toFixed(5)}, ${detail.surface_point.lon.toFixed(5)}`;
+    location.appendChild(definition);
   }
 
   if (detail.completion_date) {
@@ -223,6 +262,13 @@ export async function renderWellCard(
     definition.appendChild(
       figureElement(detail.lateral_length_ft, "lateral length", derivationFor(detail, "/lateral_length_ft")),
     );
+    // How the length was measured qualifies the figure; it is not a row of its own.
+    if (detail.length_method) {
+      const method = document.createElement("span");
+      method.className = "gw-fact-qualifier";
+      method.appendChild(labelElement(detail.length_method, labelFor(well, "/length_method")));
+      definition.append(" ", method);
+    }
     drilling.appendChild(definition);
   }
 
@@ -237,18 +283,60 @@ export async function renderWellCard(
 
   record.appendChild(term("As of", null));
   const asOfValue = document.createElement("dd");
-  asOfValue.textContent = `${formatVintage(well.meta.as_of.resolved)} (requested ${well.meta.as_of.requested})`;
+  asOfValue.setAttribute("data-no-glossary", "");
+  asOfValue.textContent = `${formatVintage(well.meta.as_of.resolved)} · asked ${well.meta.as_of.requested}`;
   record.appendChild(asOfValue);
   callbacks.onVintage?.(well.meta.as_of.resolved);
   if (detail.surface_point) callbacks.onLocated?.(detail.surface_point);
 
-  if (detail.compute_crs) {
-    record.appendChild(term("Compute CRS", labelFor(well, "/compute_crs")));
+  // The regulator's own file number: the identifier an operator quotes back on the phone,
+  // and the one a reader needs to reach the source filing.
+  if (detail.ndic_file_no) {
+    record.appendChild(term("NDIC file", labelFor(well, "/ndic_file_no")));
     const definition = document.createElement("dd");
     definition.setAttribute("data-no-glossary", "");
+    definition.className = "gw-fact-mono";
+    definition.textContent = detail.ndic_file_no;
+    record.appendChild(definition);
+  }
+
+  if (detail.compute_crs) {
+    record.appendChild(term("CRS", labelFor(well, "/compute_crs")));
+    const definition = document.createElement("dd");
+    definition.setAttribute("data-no-glossary", "");
+    definition.className = "gw-fact-mono";
     definition.textContent = `${detail.compute_crs} · stored ${detail.storage_crs}`;
     record.appendChild(definition);
   }
+
+  // The reading order the card is built in, and the change that matters most about it:
+  // production is what a reader opened the card for, and it used to sit at 49% of a 1,600px
+  // scroll behind two sections that are empty for most wells. Slots are placed first and
+  // filled by their own requests, so the order cannot drift with which response lands first.
+  const factsSlot = document.createElement("div");
+  factsSlot.className = "gw-card-facts";
+  const contextSlot = document.createElement("div");
+  const neighborSlot = document.createElement("div");
+  const notesSlot = document.createElement("div");
+  notesSlot.className = "gw-notes gw-card-notes";
+
+  // Title outside the swappable body: the placeholder, the plot and an error all land in
+  // .gw-frame-body, so none of them can take the frame's label down with them.
+  const chartFrame = document.createElement("section");
+  chartFrame.className = "gw-card-chart gw-production-chart";
+  const chartTitle = document.createElement("h3");
+  chartTitle.className = "gw-frame-title";
+  chartTitle.textContent = "Monthly production";
+  const chartHost = document.createElement("div");
+  chartHost.className = "gw-frame-body";
+  chartHost.appendChild(placeholder("Loading production…"));
+  // The chart owns .gw-frame-body and replaces it on every span change and theme repaint, so
+  // the series' warnings — R8's disclosure of the derivations behind a column — sit beside it.
+  const chartNotes = document.createElement("div");
+  chartNotes.className = "gw-chart-notes gw-notes";
+  chartFrame.append(chartTitle, chartHost, chartNotes);
+
+  body.append(chartFrame, factsSlot, contextSlot, neighborSlot, notesSlot);
 
   // A band whose every field was absent is a heading over nothing: dropped, not left standing.
   for (const { title } of FACT_GROUPS) {
@@ -260,14 +348,14 @@ export async function renderWellCard(
     heading.className = "gw-frame-title";
     heading.textContent = title;
     band.append(heading, facts);
-    body.appendChild(band);
+    factsSlot.appendChild(band);
   }
 
   // Everything except the codes a dedicated panel already renders, or the card shows the raw
   // internal warning line immediately above the polished version of the same sentence.
   const panelled = new Set([PENDING_ALLOCATION]);
   const generic = well.meta.warnings.filter((warning) => !panelled.has(warning.code));
-  for (const panel of warningPanels(generic)) body.appendChild(panel);
+  for (const note of warningNotes(generic)) notesSlot.appendChild(note);
 
   const contextFrame = document.createElement("section");
   contextFrame.className = "gw-card-chart gw-completion-context";
@@ -279,9 +367,9 @@ export async function renderWellCard(
   contextHost.dataset["state"] = "loading";
   contextHost.setAttribute("aria-busy", "true");
   contextHost.setAttribute("aria-live", "polite");
-  contextHost.appendChild(placeholder("Loading completion and formation context…"));
+  contextHost.appendChild(placeholder("Loading completions…"));
   contextFrame.append(contextTitle, contextHost);
-  body.appendChild(contextFrame);
+  contextSlot.appendChild(contextFrame);
 
   const contextRequest = loadCompletionContext(
     contextHost,
@@ -303,9 +391,9 @@ export async function renderWellCard(
     neighborHost.dataset["state"] = "loading";
     neighborHost.setAttribute("aria-busy", "true");
     neighborHost.setAttribute("aria-live", "polite");
-    neighborHost.appendChild(placeholder("Loading physical neighbours…"));
+    neighborHost.appendChild(placeholder("Loading neighbours…"));
     neighborFrame.append(neighborTitle, neighborHost);
-    body.appendChild(neighborFrame);
+    neighborSlot.appendChild(neighborFrame);
     neighborRequest = import("./neighbors.ts").then(({ loadNeighborContext }) =>
       loadNeighborContext(neighborHost, neighborPath, api10, { ...asOfQuery, limit: "5" }),
     );
@@ -316,30 +404,15 @@ export async function renderWellCard(
   // a Texas well whose lease reports every month (DIR-3, cr_tx_allocation_scope_1).
   const pending = well.meta.warnings.find((warning) => warning.code === PENDING_ALLOCATION);
   if (pending) {
+    chartFrame.replaceWith(
+      pendingProductionPanel(pending, well.links?.["reporting_rule"] ?? undefined),
+    );
     container.replaceChildren(card);
-    card.appendChild(pendingProductionPanel(pending, well.links?.["reporting_rule"] ?? undefined));
     highlight(card, termIndex());
     focusPanel(container);
     await Promise.all([statusRequest, contextRequest, neighborRequest]);
     return;
   }
-
-  // Title outside the swappable body: the placeholder, the plot and an error all land in
-  // .gw-frame-body, so none of them can take the frame's label down with them.
-  const chartFrame = document.createElement("section");
-  chartFrame.className = "gw-card-chart gw-production-chart";
-  const chartTitle = document.createElement("h3");
-  chartTitle.className = "gw-frame-title";
-  chartTitle.textContent = "Monthly production";
-  const chartHost = document.createElement("div");
-  chartHost.className = "gw-frame-body";
-  chartHost.appendChild(placeholder("Loading production…"));
-  // The chart owns .gw-frame-body and replaces it on every span change and theme repaint, so
-  // the series' warnings — R8's disclosure of the derivations behind a column — sit beside it.
-  const chartNotes = document.createElement("div");
-  chartNotes.className = "gw-chart-notes";
-  chartFrame.append(chartTitle, chartHost, chartNotes);
-  body.appendChild(chartFrame);
 
   container.replaceChildren(card);
   highlight(card, termIndex());
@@ -353,7 +426,7 @@ export async function renderWellCard(
       );
       const data = unwrap(production);
       if (data.streams.length === 0) {
-        chartHost.replaceChildren(placeholder("No production has been reported for this well."));
+        chartHost.replaceChildren(emptyState("No production reported."));
         return;
       }
       chartTitle.replaceChildren(
@@ -375,7 +448,7 @@ export async function renderWellCard(
         onExplain: callbacks.onExplain,
         labelTermFor: (pointer) => labelFor(production, pointer),
       });
-      for (const panel of warningPanels(production.meta.warnings)) chartNotes.appendChild(panel);
+      for (const note of warningNotes(production.meta.warnings)) chartNotes.appendChild(note);
       highlight(chartFrame, termIndex());
     } catch (error) {
       chartHost.replaceChildren(errorPanel(error, callbacks));
@@ -403,18 +476,14 @@ async function loadCompletionContext(
       throw new TypeError("Completion context did not match the required well and collections");
     }
     host.replaceChildren(completionContextBody(context, envelope));
-    for (const panel of warningPanels(envelope.meta.warnings)) host.appendChild(panel);
+    for (const note of warningNotes(envelope.meta.warnings)) host.appendChild(note);
     host.dataset["state"] =
       context.events.length === 0 && context.pools.length === 0
         ? "empty"
         : "populated";
     highlight(host, termIndex());
   } catch {
-    host.replaceChildren(
-      placeholder(
-        "Completion and formation context is unavailable because the API response could not be used.",
-      ),
-    );
+    host.replaceChildren(emptyState("Unavailable — the response could not be read."));
     host.dataset["state"] = "unavailable";
   } finally {
     host.setAttribute("aria-busy", "false");
@@ -427,33 +496,27 @@ function completionContextBody(
 ): DocumentFragment {
   const fragment = document.createDocumentFragment();
   if (context.events.length === 0 && context.pools.length === 0) {
-    fragment.appendChild(
-      placeholder(
-        "No source-reported completion events or completion-pool mappings are available for this well.",
-      ),
-    );
+    fragment.appendChild(emptyState("No events or pools reported."));
   } else {
     fragment.append(
       contextGroup(
         "Completion events",
         labelFor(envelope, "/events/0/event_kind"),
         context.events.map(completionEventItem),
-        "No source-reported completion event is available for this well.",
+        "None reported",
       ),
       contextGroup(
         "Reported pools",
         labelFor(envelope, "/pools/0/pool_reported"),
         context.pools.map(completionPoolItem),
-        "No source-reported completion-pool mapping is available for this well.",
+        "None reported",
       ),
     );
   }
 
-  const scope = document.createElement("p");
-  scope.className = "gw-context-scope";
-  scope.textContent =
-    "Completion design is not promoted; no design measurements or formation tops are served here.";
-  fragment.appendChild(scope);
+  // The absence is a served fact, not a load failure, so it stays on the card — as a scope
+  // line under the section it scopes rather than as the sentence it used to be.
+  fragment.appendChild(scopeLine(["Design and formation tops not served"]));
   return fragment;
 }
 
@@ -469,7 +532,7 @@ export function contextGroup(
   title.appendChild(labelElement(heading, termId));
   group.appendChild(title);
   if (items.length === 0) {
-    group.appendChild(placeholder(emptyText));
+    group.appendChild(emptyState(emptyText));
     return group;
   }
   const list = document.createElement("ul");
@@ -671,26 +734,6 @@ export function pendingProductionPanel(warning: ApiWarning, ruleLink?: string): 
   body.append(detail, link);
   frame.append(title, body);
   return frame;
-}
-
-/** One panel per code with its count: three identical warnings used to stack as a wall. */
-export function warningPanels(warnings: ApiWarning[]): HTMLElement[] {
-  const grouped = new Map<string, ApiWarning[]>();
-  for (const warning of warnings) {
-    grouped.set(warning.code, [...(grouped.get(warning.code) ?? []), warning]);
-  }
-  return [...grouped.entries()].map(([code, group]) => {
-    const element = document.createElement("p");
-    element.className = "gw-warning";
-    const count = group.length > 1 ? ` ×${group.length}` : "";
-    const pointers = group
-      .map((warning) => warning.pointer)
-      .filter((pointer): pointer is string => Boolean(pointer))
-      .join(", ");
-    element.textContent =
-      `${code}${count}: ${group[0]?.detail ?? ""}` + (pointers ? ` (${pointers})` : "");
-    return element;
-  });
 }
 
 export function errorPanel(

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 
-import { chartOptions } from "./options.ts";
+import { chartOptions, monthLabels } from "./options.ts";
 import { toChartSeries } from "./series.ts";
 import type { ProductionData } from "./series.ts";
 
@@ -72,5 +72,25 @@ describe("the uPlot options", () => {
 
   it("takes the width it is given, so a re-measure can rebuild at a new size", () => {
     expect(chartOptions(chart, 420).width).toBe(420);
+  });
+});
+
+describe("the month axis never shows one month as two", () => {
+  it("drops a repeated label rather than the tick under it", () => {
+    // uPlot's own splits for a 7-month series across a wide card: sub-month increments that
+    // all format to the same month. Measured at 820 px, where the card is a full-width sheet.
+    const september = Date.UTC(2025, 8, 1) / 1000;
+    const midSeptember = Date.UTC(2025, 8, 16) / 1000;
+    const october = Date.UTC(2025, 9, 1) / 1000;
+
+    expect(monthLabels([september, midSeptember, october])).toEqual(["Sep 2025", "", "Oct 2025"]);
+  });
+
+  it("leaves a run of distinct months untouched", () => {
+    const months = [Date.UTC(2025, 8, 1), Date.UTC(2025, 9, 1), Date.UTC(2025, 10, 1)].map(
+      (ms) => ms / 1000,
+    );
+
+    expect(monthLabels(months)).toEqual(["Sep 2025", "Oct 2025", "Nov 2025"]);
   });
 });

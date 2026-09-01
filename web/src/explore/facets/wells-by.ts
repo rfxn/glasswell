@@ -3,7 +3,7 @@ import "./wells-by.css";
 import { ApiError, getEnvelope } from "../../api/client.ts";
 import type { Figure, Warning } from "../../api/envelope.ts";
 import type { AppState } from "../../app/state.ts";
-import { warningPanels } from "../../card/card.ts";
+import { warningNotes } from "../../chrome/notes.ts";
 import "../../card/gw-figure.ts";
 
 /** §4.1: the panel rides the URL, so a shared link opens the list the sharer was reading. */
@@ -567,7 +567,7 @@ function list(data: WellFacets, warnings: Warning[], options: WellsByOptions): H
   // The same panels the well card and the neighbour list render. Under a search the absence
   // bucket is the one figure on screen outside the visible arithmetic, and
   // `search_scopes_the_ranking` is the served sentence that says so.
-  box.append(...warningPanels(rest));
+  box.append(...warningNotes(rest));
   return box;
 }
 
@@ -658,12 +658,17 @@ function figure(value: Figure, label: string): HTMLElement {
   return element;
 }
 
-/** The point of the surface: what the list leaves out, counted, never implied by its absence. */
+/**
+ * The point of the surface: what the list leaves out, counted, never implied by its absence.
+ * A label and a count, in the same shape as the rows above it — the sentence the server
+ * composes says the same thing at four times the width and stays reachable as the row's title.
+ */
 function remainder(value: NonNullable<WellFacets["remainder"]>): HTMLElement {
   const box = div("gw-wells-by-remainder");
+  box.title = value.detail;
   const detail = document.createElement("p");
   detail.className = "gw-wells-by-remainder-detail";
-  detail.textContent = value.detail;
+  detail.textContent = `${value.values.toLocaleString()} more values`;
   box.append(detail, figure(value.wells, "the remainder"));
   return box;
 }
@@ -695,7 +700,7 @@ function absence(value: NonNullable<WellFacets["absence"]>, warnings: Warning[])
     line.append(document.createTextNode("Registered as "), link);
     box.append(line);
   }
-  box.append(...warningPanels(warnings));
+  box.append(...warningNotes(warnings));
   return box;
 }
 

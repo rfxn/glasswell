@@ -1,7 +1,8 @@
-import { getEnvelope } from "../api/client.ts";
+import { ApiError, getEnvelope } from "../api/client.ts";
 import { unwrap } from "../api/envelope.ts";
 import type { Figure } from "../api/envelope.ts";
 import { selectWell } from "../bus.ts";
+import { disclosure, emptyState, scopeLine, warningNotes, warningTitle } from "../chrome/notes.ts";
 import { highlight } from "../glossary/index.ts";
 import { termIndex } from "../glossary/store.ts";
 import {
@@ -9,8 +10,6 @@ import {
   appendContextFact,
   contextGroup,
   figureElement,
-  placeholder,
-  warningPanels,
 } from "./card.ts";
 import { absentValue, formatVintage } from "./format.ts";
 
@@ -50,51 +49,60 @@ export async function loadNeighborContext(
       throw new TypeError("Neighbour context did not match the required well and contract");
     }
     host.replaceChildren(neighborContextBody(context));
-    host.append(...warningPanels(envelope.meta.warnings));
+    host.append(...warningNotes(envelope.meta.warnings));
     host.dataset["state"] = context.neighbors.length === 0 ? "empty" : "populated";
     highlight(host, termIndex());
-  } catch {
-    host.replaceChildren(
-      placeholder(
-        "Physical neighbours are unavailable for this well or requested historical view.",
-      ),
-    );
+  } catch (error) {
+    host.replaceChildren(...unavailable(error));
     host.dataset["state"] = "unavailable";
   } finally {
     host.setAttribute("aria-busy", "false");
   }
 }
 
+/**
+ * The endpoint refuses a subject with no completion anchor by naming the parameter that would
+ * unblock it. That refusal was being caught and replaced with "unavailable for this well or
+ * requested historical view", which is vaguer than what the server said and drops the way out.
+ */
+function unavailable(error: unknown): HTMLElement[] {
+  if (!(error instanceof ApiError)) {
+    return [emptyState("Unavailable — the response could not be read.")];
+  }
+  // The code over the title: `type` names what was refused, where `title` is the generic
+  // family ("Not authenticated") every problem of that status shares.
+  const named = error.problem.errors?.find((entry) => entry.code)?.code ?? error.code;
+  const detail = error.problem.errors?.[0]?.detail ?? error.problem.detail;
+  const summary = warningTitle(named);
+  return detail ? [disclosure(summary, detail)] : [emptyState(summary)];
+}
+
 function neighborContextBody(context: NeighborContext): DocumentFragment {
   const fragment = document.createDocumentFragment();
-  const scope = document.createElement("p");
-  scope.className = "gw-context-scope";
-  scope.textContent =
-    "Physical proximity only. These are not model analogs. Geometry is current-only;" +
-    ` eligibility keeps completions strictly before ${formatVintage(context.at_date)}.`;
   fragment.append(
-    scope,
+    scopeLine(["Proximity, not analogs", "current geometry", `completed before ${formatVintage(context.at_date)}`]),
     contextGroup(
       "Eligible neighbours",
       null,
       context.neighbors.map(neighborItem),
-      "No eligible physical neighbours were found inside the requested radius.",
+      "None inside the radius",
     ),
   );
+  // Three figures and two words, rather than a sentence with three figures inside it: the
+  // funnel is what the reader is being shown, and it reads as one now.
   const coverage = document.createElement("p");
-  coverage.className = "gw-context-scope gw-neighbor-coverage";
+  coverage.className = "gw-scope gw-neighbor-coverage";
   coverage.append(
-    "Showing ",
     figureElement(context.coverage.returned, "returned neighbours", context.coverage.returned.d),
-    " of ",
+    " shown · ",
     figureElement(context.coverage.eligible, "eligible neighbours", context.coverage.eligible.d),
-    " eligible from ",
+    " eligible · ",
     figureElement(
       context.coverage.spatial_candidates,
       "spatial candidates",
       context.coverage.spatial_candidates.d,
     ),
-    " spatial candidates.",
+    " in radius",
   );
   fragment.appendChild(coverage);
   return fragment;

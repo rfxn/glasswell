@@ -281,8 +281,10 @@ function operationBody(
   // design (C5 P1), and a line that promised both would be wrong on two parameters in seven.
   line.textContent =
     coverage.annotated === coverage.total
-      ? `all ${coverage.total} parameters are annotated`
-      : `${coverage.annotated} of ${coverage.total} parameters are annotated (${coverage.percent}%); the rest render WHAT only and are counted`;
+      ? `Annotated: all ${coverage.total}`
+      : `Annotated: ${coverage.annotated}/${coverage.total} (${coverage.percent}%)`;
+  // The unannotated ones render WHAT and a muted ? below, which is the statement itself.
+  line.title = "The rest render WHAT only, and are counted here rather than hidden.";
   body.append(line);
 
   const inPlay = new Set([...Object.keys(call.request.query), ...(call.dataset.pathParameters ?? [])]);
@@ -341,7 +343,7 @@ function fill(body: HTMLElement, parameter: ParameterSemantics): void {
   if (parameter.so) body.append(field("SO", parameter.so));
   for (const fact of parameter.facts) body.append(factRow(fact.label, fact.reason));
   if (!parameter.termId) {
-    body.append(note("No glossary term is bound to this parameter, so there is no WHY to show."));
+    body.append(note("No glossary term bound — no WHY to show."));
     return;
   }
   // WHY and SEE come from the term the operation named, and are appended when it answers.
@@ -421,8 +423,8 @@ function responseBody(call: ApiCall): HTMLElement {
   const count = element("p", "gw-api-bytes");
   count.textContent =
     shown === json
-      ? `${format(whole)} bytes, whole`
-      : `${format(bytesOf(shown))} of ${format(whole)} bytes. The rest is on the wire, not here`;
+      ? `${format(whole)} bytes · whole`
+      : `${format(bytesOf(shown))} of ${format(whole)} bytes · rest on the wire`;
   body.append(count);
   return body;
 }

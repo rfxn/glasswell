@@ -185,7 +185,7 @@ describe("well card", () => {
     expect(frame?.querySelector(".gw-frame-body")?.getAttribute("data-state")).toBe(
       "populated",
     );
-    expect(frame?.textContent).toContain("Physical proximity only. These are not model analogs");
+    expect(frame?.textContent).toContain("Proximity, not analogs · current geometry");
     expect(links).toHaveLength(2);
     expect(links?.[0]?.getAttribute("href")).toBe("/?well=3305310998");
     expect(frame?.querySelector("gw-figure")?.textContent).toContain("1,320.25 ft");
@@ -223,7 +223,7 @@ describe("well card", () => {
 
     const body = host.querySelector<HTMLElement>(".gw-neighbor-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("empty");
-    expect(body?.textContent).toContain("No eligible physical neighbours were found");
+    expect(body?.textContent).toContain("None inside the radius");
     expect(body?.textContent).not.toContain("unavailable for this well");
   });
 
@@ -247,7 +247,8 @@ describe("well card", () => {
 
     const body = host.querySelector<HTMLElement>(".gw-neighbor-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("unavailable");
-    expect(body?.textContent).toContain("requested historical view");
+    // The refusal the endpoint named, not the status family it shares with every other 422.
+    expect(body?.textContent).toContain("Current geometry only");
     expect(renderChart).toHaveBeenCalledOnce();
   });
 
@@ -345,21 +346,24 @@ describe("well card", () => {
 
     const bands = [...host.querySelectorAll<HTMLElement>(".gw-facts-band")];
     expect(bands.map((band) => band.querySelector(".gw-frame-title")?.textContent)).toEqual([
-      "Operator",
       "Location",
-      "Drilling and completion",
+      "Drilling",
       "Record",
     ]);
     // Every band that renders carries rows; a heading over nothing is dropped, not left standing.
     for (const band of bands) expect(band.querySelectorAll("dt").length).toBeGreaterThan(0);
-    const drilling = bands[2] as HTMLElement;
+    const drilling = bands[1] as HTMLElement;
     expect([...drilling.querySelectorAll("dt")].map((dt) => dt.textContent)).toContain("Lateral length");
-    expect(bands[3]?.textContent).toContain("Compute CRS");
+    expect(bands[2]?.textContent).toContain("CRS");
+    // The operator is identity, so it reads in the header and never as a band of its own.
+    expect(host.querySelector(".gw-panel-head .gw-card-operator")?.textContent).toContain(
+      "EOG RESOURCES",
+    );
   });
 
   it("drops a band whose every field is absent instead of heading an empty list", async () => {
     const bare = structuredClone(wellEnvelope);
-    for (const field of ["basin", "county_code_at_permit", "land_unit_label"]) {
+    for (const field of ["basin", "county_code_at_permit", "land_unit_label", "surface_point"]) {
       (bare.data as Record<string, unknown>)[field] = null;
     }
     vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: bare })));
@@ -367,7 +371,7 @@ describe("well card", () => {
 
     const titles = [...host.querySelectorAll(".gw-facts-band .gw-frame-title")].map((n) => n.textContent);
     expect(titles).not.toContain("Location");
-    expect(titles).toContain("Operator");
+    expect(titles).toContain("Record");
   });
 
   it("marks an absent value so a skimmed column separates it from a measured one", async () => {
@@ -457,7 +461,7 @@ describe("completion and formation context", () => {
       "Source": "nd_mpr_xlsx · report 2026-08-20",
     });
     expect(frame.textContent).toContain(
-      "Completion design is not promoted; no design measurements or formation tops are served here",
+      "Design and formation tops not served",
     );
     expect(frame.textContent).not.toMatch(/proppant|fluid volume|formation depth/i);
 
@@ -551,7 +555,7 @@ describe("completion and formation context", () => {
     await renderWellCard(host, API10, callbacks);
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
-    expect(frame.textContent).toContain("No source-reported completion event is available");
+    expect(frame.textContent).toContain("None reported");
     const pools = frame.querySelectorAll<HTMLElement>(".gw-context-list > li");
     expect(factsOf(pools[0] as HTMLElement)).toEqual({
       "Pool entity": "3305310451:BAKKEN",
@@ -599,9 +603,9 @@ describe("completion and formation context", () => {
     const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("empty");
     expect(body?.textContent).toContain(
-      "No source-reported completion events or completion-pool mappings are available",
+      "No events or pools reported",
     );
-    expect(body?.textContent).not.toContain("response could not be used");
+    expect(body?.textContent).not.toContain("could not be read");
   });
 
   it("shows source-history coverage warnings inside the context section", async () => {
@@ -631,10 +635,15 @@ describe("completion and formation context", () => {
 
     await renderWellCard(host, API10, callbacks);
 
-    const warning = host.querySelector(".gw-completion-context .gw-warning");
-    expect(warning?.textContent).toBe(
-      "source_history_unavailable: fracfocus_csv begins after the requested cut. (/events)",
+    // Summary reads on its own; the served detail and the code that raised it stay reachable
+    // under it rather than being printed as a line of internal vocabulary.
+    const note = host.querySelector<HTMLElement>(".gw-completion-context .gw-note-warning");
+    expect(note?.dataset["code"]).toBe("source_history_unavailable");
+    expect(note?.querySelector(".gw-note-summary")?.textContent).toBe("Source history unavailable");
+    expect(note?.querySelector(".gw-note-line")?.textContent).toBe(
+      "fracfocus_csv begins after the requested cut.",
     );
+    expect(note?.querySelector(".gw-note-source")?.textContent).toContain("/events");
   });
 
   it("leaves the well and production usable when the context request fails", async () => {
@@ -656,7 +665,7 @@ describe("completion and formation context", () => {
 
     const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("unavailable");
-    expect(body?.textContent).toContain("response could not be used");
+    expect(body?.textContent).toContain("could not be read");
     expect(host.querySelector("h2")?.textContent).toBe("Mandaree 50-2008H");
     expect(renderChart).toHaveBeenCalledOnce();
   });
@@ -682,7 +691,7 @@ describe("completion and formation context", () => {
     const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("unavailable");
     expect(body?.dataset["state"]).not.toBe("empty");
-    expect(body?.textContent).toContain("response could not be used");
+    expect(body?.textContent).toContain("could not be read");
   });
 
   it("refuses completion context echoed for a different well", async () => {

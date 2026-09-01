@@ -45,6 +45,39 @@
   --rule: rgb(255 255 255 / 16%);
 }
 
+/* Same ruling as `--rule`, for text. These panels stay dark in the light theme, so anything
+   inside them that reaches for --slate or --muted gets the light theme's dark greys on a dark
+   substrate: the scope line and the note summary measured 3.41:1 and the note body 2.94:1.
+   Declared on the substrate, consumed by the shared chrome below, so a panel that adopts the
+   notes primitive later inherits the fix rather than re-discovering the defect. */
+.gw-lg,
+.gw-sheet,
+.gw-map-banner {
+  --on-dark-quiet: rgb(230 237 243 / 62%);
+  --on-dark-text: rgb(230 237 243 / 80%);
+}
+
+.gw-lg .gw-scope,
+.gw-lg .gw-note-summary,
+.gw-sheet .gw-scope,
+.gw-sheet .gw-note-summary {
+  color: var(--on-dark-quiet);
+}
+
+.gw-lg .gw-note,
+.gw-lg .gw-note-detail,
+.gw-lg .gw-empty,
+.gw-sheet .gw-note,
+.gw-sheet .gw-note-detail,
+.gw-sheet .gw-empty {
+  color: var(--on-dark-text);
+}
+
+.gw-lg .gw-note-detail,
+.gw-sheet .gw-note-detail {
+  border-left-color: var(--rule, rgb(255 255 255 / 16%));
+}
+
 /* Wraps rather than breaking out of the 11rem pill at the narrow breakpoint. */
 .gw-lg-head {
   display: flex;
@@ -662,7 +695,7 @@
   grid-column: 2;
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.28rem;
   min-width: 0;
   padding: 0.35rem 0;
   border: 0;
@@ -693,9 +726,28 @@
   color: var(--paper);
 }
 
+/* One line, always: a wrapped label made its row taller than its neighbours and broke the
+   rhythm the list is scanned by. The full string stays reachable as the element's title. */
 .gw-layer-label {
   min-width: 0;
+  overflow: hidden;
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The jurisdiction a row is scoped to, at chip weight rather than inside the noun. Quieter
+   than the provenance badge beside it: scope answers "where", provenance answers "how good". */
+.gw-layer-jurisdiction {
+  flex: 0 0 auto;
+  padding: 0 0.22rem;
+  border-radius: 3px 0 0 3px;
+  background: var(--ink);
+  color: var(--slate);
+  font-family: var(--gw-font-mono);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .gw-layer-detail {
@@ -704,15 +756,24 @@
   padding-bottom: 0.3rem;
 }
 
+/* Sits directly against the jurisdiction chip when there is one, so scope and provenance read
+   as the one mark they describe together and cost one gap rather than two. */
 .gw-layer-badge {
-  padding: 0 0.25rem;
+  flex: 0 0 auto;
+  padding: 0 0.22rem;
   border: 1px solid var(--hairline);
   border-radius: 3px;
   color: var(--muted);
   font-size: 0.58rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
+}
+
+.gw-layer-jurisdiction + .gw-layer-badge {
+  margin-left: -0.28rem;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
 }
 
 .gw-layer-badge[data-kind="pending"] {

@@ -13,7 +13,6 @@ import type { AppState } from "./app/state.ts";
 import { loginPanel } from "./auth/login.ts";
 import { flyTo, onSelectWell, onUrlParam, selectWell, sessionBegan, wellSelected } from "./bus.ts";
 import type { SelectSource } from "./bus.ts";
-import { renderWellCard } from "./card/card.ts";
 import { EXPLAIN_EVENT } from "./chrome/handle.ts";
 import { setSignedIn, wireHeader } from "./chrome/header.ts";
 import { registerOverlay } from "./chrome/overlays.ts";
@@ -64,17 +63,23 @@ function showWell(api10: string | null, mode: "push" | "replace" = "push"): void
     return;
   }
   const source = pendingSource;
-  void renderWellCard(cardHost, api10, {
-    onExplain: (handle) => openExplain(handle),
-    onClose: () => selectWell(null, source),
-    onSignIn: () => showLoginPanel(),
-    onVintage: (resolved) => setVintage(resolved),
-    // Only a search hit moves the camera: a map click is already looking at the well, and a
-    // deep link carries its own ?map= viewport that the reader chose.
-    onLocated: (point) => {
-      if (source === "search") flyTo({ ...point, zoom: 12 });
-    },
-  });
+  // Loaded on the first well opened, not by every reader who loads the app: the card is the
+  // largest module on the entry path and a reader who never clicks a dot never needs it. The
+  // panel is raised here rather than inside it, so the chunk fetch is not a blank right rail.
+  cardHost.hidden = false;
+  void import("./card/card.ts").then(({ renderWellCard }) =>
+    renderWellCard(cardHost, api10, {
+      onExplain: (handle) => openExplain(handle),
+      onClose: () => selectWell(null, source),
+      onSignIn: () => showLoginPanel(),
+      onVintage: (resolved) => setVintage(resolved),
+      // Only a search hit moves the camera: a map click is already looking at the well, and a
+      // deep link carries its own ?map= viewport that the reader chose.
+      onLocated: (point) => {
+        if (source === "search") flyTo({ ...point, zoom: 12 });
+      },
+    }),
+  );
 }
 
 function openExplain(handle: string | null, mode: "push" | "replace" = "push"): void {

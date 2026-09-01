@@ -22,6 +22,22 @@ export function streamStroke(stream: string): string {
   return token(`--${stream}`, STREAM_STROKE[stream] ?? "#5FD3E8");
 }
 
+/**
+ * uPlot splits a time axis on its own scale, so a seven-month series across a wide card gets
+ * sub-month ticks and every label collapses to the same month: the axis read "Sep 2025 Sep
+ * 2025 Oct 2025 Oct 2025" at 820 px, which is two months claiming to be four. A repeat is
+ * dropped rather than the tick, so the gridline still marks where the value sits.
+ */
+export function monthLabels(splits: readonly number[]): string[] {
+  let previous: string | null = null;
+  return splits.map((split) => {
+    const month = formatMonth(epochToMonth(split));
+    if (month === previous) return "";
+    previous = month;
+    return month;
+  });
+}
+
 export function chartOptions(chart: ChartSeries, width: number): uPlot.Options {
   const axisStroke = token("--slate", "#9FB0BC");
   const grid = { stroke: token("--hairline", "#1d2a33") };
@@ -37,8 +53,7 @@ export function chartOptions(chart: ChartSeries, width: number): uPlot.Options {
         stroke: axisStroke,
         grid,
         ticks: grid,
-        values: (_: unknown, splits: number[]) =>
-          splits.map((split) => formatMonth(epochToMonth(split))),
+        values: (_: unknown, splits: number[]) => monthLabels(splits),
       },
       // uPlot's default axis size (50 px) clips a six-figure monthly volume.
       ...chart.scales.map((unit, position) => ({

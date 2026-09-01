@@ -1,6 +1,7 @@
 import { dispatchExplain, explainHandle, setExplainHandle } from "../chrome/handle.ts";
+import { disclosure } from "../chrome/notes.ts";
 import type { DimensionCounts, VocabularyLink } from "./counts.ts";
-import { PRODUCING_CLASSES, producingHref, producingNote } from "./producing.ts";
+import { PRODUCING_CLASSES, PRODUCING_RULINGS, producingHref, producingNote } from "./producing.ts";
 import type { ProducingCounts } from "./producing.ts";
 import { PROVENANCE_RULE } from "./provenance.ts";
 import { STATUS_CLASSES, STATUS_VOCAB_RULES, UNMAPPED_STATUS, statusClass } from "./status.ts";
@@ -250,8 +251,11 @@ export function createLegend(options: LegendOptions): LegendHandle {
   }
 
   const producingNoteEl = document.createElement("p");
-  producingNoteEl.className = "gw-lg-pnote";
+  producingNoteEl.className = "gw-lg-pnote gw-scope";
   producing.appendChild(producingNoteEl);
+  // The two standing rulings, folded: they qualify every producing count on every map and
+  // used to cost the key two of its four lines to repeat on each open.
+  producing.appendChild(disclosure("How this is judged", PRODUCING_RULINGS));
   body.appendChild(producing);
 
   // Between the rows and the note: the canvas is a subset of the box at low zoom, and the

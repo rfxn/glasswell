@@ -92,7 +92,11 @@ describe("the legend's producing section", () => {
     expect(note.textContent).toContain("2026-01-01");
     expect(note.textContent).toContain("2026-03-01");
     expect(note.textContent).toContain("oil+condensate");
-    expect(note.textContent).toMatch(/water/i);
+    // The two standing rulings are the same claim, folded: they do not vary by window, so
+    // they sit under the summary rather than repeating inside it on every open.
+    const rulings = section(element).querySelector<HTMLElement>(".gw-note-detail");
+    expect(rulings?.textContent).toMatch(/water/i);
+    expect(rulings?.textContent).toMatch(/regulator calls the well/i);
   });
 
   it("raises the explain event for the count's own handle", () => {

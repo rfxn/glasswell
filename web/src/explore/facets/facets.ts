@@ -21,7 +21,7 @@ export interface FacetOptions {
   signal: AbortSignal;
 }
 
-const BBOX_NOTE = "minx,miny,maxx,maxy in WGS84; the server caps the box at 4 degrees.";
+const BBOX_NOTE = "minx,miny,maxx,maxy · WGS84 · capped at 4°";
 
 export function renderFacets(host: HTMLElement, options: FacetOptions): void {
   const operation = operationFor(options.document, options.dataset.operationId);
@@ -61,7 +61,7 @@ function globalStrip(controls: Control[], options: FacetOptions): HTMLElement {
   for (const control of controls) strip.append(field(control, options, true));
   const note = document.createElement("span");
   note.className = "gw-facet-note";
-  note.textContent = "applies to every dataset, and travels with any link you share";
+  note.textContent = "every dataset · travels with the link";
   strip.append(note);
   return strip;
 }

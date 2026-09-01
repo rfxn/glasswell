@@ -75,22 +75,25 @@ export interface ProducingCounts {
 }
 
 /**
- * The sentence that has to travel with the numbers: a producing count means nothing without
- * the window it was taken over and the basis its liquids are on (blueprint vocabulary rule).
+ * What has to travel with the numbers: a producing count means nothing without the window it
+ * was taken over and the basis its liquids are on (blueprint vocabulary rule). The window is
+ * the summary a reader scans; the two rulings that qualify it — water, and filed against
+ * called — are the disclosure below it, because they do not change between wells.
  */
 export function producingNote(window: ProducingWindow | null): string {
   if (!window) {
     // Null covers an unregistered definition and a registry with no production loaded to
     // anchor on, so the note states what is not served rather than guessing which it was.
-    return "No producing window is served here, so these classes are not shown.";
+    return "No producing window served";
   }
   const streams = window.streams.join(" or ");
-  return (
-    `Judged over ${window.months} months, ${window.from} to ${window.to}, on filed ${streams}` +
-    ` volume. Liquids are ${window.liquids_basis}. Water is served but never counts as` +
-    " producing. Status is what the regulator calls the well; this is what it filed."
-  );
+  return `${window.months} mo · ${window.from} to ${window.to} · filed ${streams} · liquids ${window.liquids_basis}`;
 }
+
+/** The rulings the summary above is true under. Fixed wording: they are not per-window. */
+export const PRODUCING_RULINGS =
+  "Water is served but never counts as producing. Status is what the regulator calls the" +
+  " well; this is what it filed.";
 
 /** Where the wells behind a count are listed, scoped to the box the count was taken over. */
 export function producingHref(id: string, bbox: string): string {

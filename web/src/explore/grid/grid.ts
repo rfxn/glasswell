@@ -461,8 +461,10 @@ function coverageLine(columns: readonly Column[]): HTMLElement {
   line.className = "gw-grid-coverage";
   line.textContent =
     coverage.bound === coverage.total
-      ? `every column here is bound to a glossary term`
-      : `${coverage.bound} of ${coverage.total} column headers are bound to a glossary term (${coverage.percent}%); the rest carry ? and are counted, not hidden`;
+      ? "Glossary: every column bound"
+      : `Glossary: ${coverage.bound}/${coverage.total} columns (${coverage.percent}%)`;
+  // The unbound columns carry ? in the header itself, so the count no longer has to say so.
+  line.title = "Unbound headers carry ? — they are counted here, not hidden.";
   return line;
 }
 
