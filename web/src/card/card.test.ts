@@ -278,9 +278,9 @@ describe("well card", () => {
       "Water",
     ]);
     expect(cells.map((cell) => cell.querySelector(".gw-figure-value")?.textContent)).toEqual([
-      "21,000.000 bbl",
-      "50,400.000 mcf",
-      "12,000.000 bbl",
+      "21,000 bbl",
+      "50,400 mcf",
+      "12,000 bbl",
     ]);
     expect(
       cells.map((cell) => cell.querySelector("gw-figure")?.getAttribute("handle")),
@@ -289,6 +289,25 @@ describe("well card", () => {
       "drv_ljbmyy7avces77lwdnfa#api10=3305310451&col=gas_mcf",
       "drv_ljbmyy7avces77lwdnfa#api10=3305310451&col=water_bbl",
     ]);
+  });
+
+  it("rounds a cumulative to whole units while the lateral length keeps its decimals", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    const cumulative = [
+      ...host.querySelectorAll(".gw-well-cumulatives .gw-figure-value"),
+    ].map((value) => value.textContent ?? "");
+    expect(cumulative).toHaveLength(3);
+    // The precision is per call, not global: no cumulative cell carries a fractional part.
+    for (const text of cumulative) expect(text).not.toMatch(/\d\.\d/);
+    expect(cumulative).toEqual(["21,000 bbl", "50,400 mcf", "12,000 bbl"]);
+
+    // Same card, same element, untouched: two decimals are meaningful for a measured length.
+    const lateral = host.querySelector(
+      `gw-figure[handle="${LENGTH_HANDLE}"] .gw-figure-value`,
+    )?.textContent;
+    expect(lateral).toMatch(/\d\.\d/);
+    expect(lateral).toBe("15,065.44 ft");
   });
 
   it("resolves a cumulative figure's handle through the explain affordance", async () => {
@@ -362,7 +381,7 @@ describe("well card", () => {
     const cells = [...host.querySelectorAll(".gw-well-cumulatives .gw-cumulative-cell")];
     expect(
       cells.map((cell) => cell.querySelector(".gw-figure-value, .gw-absent")?.textContent),
-    ).toEqual(["21,000.000 bbl", "unavailable: withheld", "unavailable: no report"]);
+    ).toEqual(["21,000 bbl", "unavailable: withheld", "unavailable: no report"]);
     // The whole point: an absent month is never summed as a zero.
     expect(cells[1]?.textContent).not.toMatch(/\b0\b/);
     expect(cells[2]?.textContent).not.toMatch(/\b0\b/);

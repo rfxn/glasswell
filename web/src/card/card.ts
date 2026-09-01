@@ -582,7 +582,9 @@ function cumulativesBody(
     const value = document.createElement("dd");
     const figure = data.cumulative[key];
     if (figure) {
-      value.appendChild(figureElement(figure, label, figure.d ?? null));
+      // Whole units: a cumulative is no more measured to a thousandth of a barrel than a
+      // monthly volume is, and the three-decimal tail crowded the row at 390.
+      value.appendChild(figureElement(figure, label, figure.d ?? null, 0));
     } else {
       value.appendChild(absentValue(absentStreamReason(data.coverage[key])));
     }
@@ -936,7 +938,12 @@ function lineageButton(handle: string, label: string): HTMLButtonElement {
 }
 
 /** The <dt> beside it is the label, so the chip carries it for assistive tech only. */
-export function figureElement(figure: Figure, label: string, handle: string | null): HTMLElement {
+export function figureElement(
+  figure: Figure,
+  label: string,
+  handle: string | null,
+  digits?: number,
+): HTMLElement {
   const element = document.createElement("gw-figure");
   element.setAttribute("value", figure.value);
   element.setAttribute("unit", figure.unit);
@@ -944,6 +951,7 @@ export function figureElement(figure: Figure, label: string, handle: string | nu
   element.setAttribute("label", label);
   element.setAttribute("label-hidden", "");
   if (figure.granularity) element.setAttribute("granularity", figure.granularity);
+  if (digits !== undefined) element.setAttribute("digits", String(digits));
   return element;
 }
 
