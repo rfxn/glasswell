@@ -13,7 +13,6 @@ import type { AppState } from "./app/state.ts";
 import { loginPanel } from "./auth/login.ts";
 import { flyTo, onSelectWell, onUrlParam, selectWell, sessionBegan, wellSelected } from "./bus.ts";
 import type { SelectSource } from "./bus.ts";
-import { renderWellCard } from "./card/card.ts";
 import { EXPLAIN_EVENT } from "./chrome/handle.ts";
 import { setSignedIn, wireHeader } from "./chrome/header.ts";
 import { registerOverlay } from "./chrome/overlays.ts";
@@ -64,17 +63,38 @@ function showWell(api10: string | null, mode: "push" | "replace" = "push"): void
     return;
   }
   const source = pendingSource;
-  void renderWellCard(cardHost, api10, {
-    onExplain: (handle) => openExplain(handle),
-    onClose: () => selectWell(null, source),
-    onSignIn: () => showLoginPanel(),
-    onVintage: (resolved) => setVintage(resolved),
-    // Only a search hit moves the camera: a map click is already looking at the well, and a
-    // deep link carries its own ?map= viewport that the reader chose.
-    onLocated: (point) => {
-      if (source === "search") flyTo({ ...point, zoom: 12 });
-    },
-  });
+  // Loaded on the first well opened, not by every reader who loads the app: the card is the
+  // largest module on the entry path and a reader who never clicks a dot never needs it. The
+  // panel is raised by the card itself, once it has something to put in it — raising it here
+  // would show an empty rail for the length of the fetch.
+  void import("./card/card.ts")
+    .then(({ renderWellCard }) => {
+      // The chunk can land after the reader has closed the card or picked another well.
+      // `state.well` is the selection of record, so it is what the render is checked against
+      // — the renderView guards upstream use ++generation for the same reason.
+      if (state.well !== api10) return undefined;
+      return renderWellCard(cardHost, api10, {
+        onExplain: (handle) => openExplain(handle),
+        onClose: () => selectWell(null, source),
+        onSignIn: () => showLoginPanel(),
+        onVintage: (resolved) => setVintage(resolved),
+        // Only a search hit moves the camera: a map click is already looking at the well, and
+        // a deep link carries its own ?map= viewport that the reader chose.
+        onLocated: (point) => {
+          if (source === "search") flyTo({ ...point, zoom: 12 });
+        },
+      });
+    })
+    .catch((error: unknown) => {
+      // A chunk that will not load is the one failure the card cannot report itself. Silence
+      // here is a click that did nothing; an unhandled rejection is a click that did nothing
+      // and said so only to the console.
+      if (state.well === api10) {
+        cardHost.hidden = true;
+        cardHost.replaceChildren();
+      }
+      toast(`Well ${api10} could not be opened: ${String(error)}`);
+    });
 }
 
 function openExplain(handle: string | null, mode: "push" | "replace" = "push"): void {

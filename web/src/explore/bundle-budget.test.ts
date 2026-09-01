@@ -18,8 +18,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // It is on the route rather than split behind a dynamic import on purpose — it renders on the
 // wells dataset, which is the dataset the explorer opens on, so splitting it would buy a
 // second round trip for almost every reader rather than saving one a download.
+// Re-measured when the well card came off the entry path: the entry fell 21,340 → 12,750 B,
+// because the card and its tail — figures, formatting, the completion and neighbour panels —
+// had been riding it for every reader, including one who never opens a well. Re-tightened for
+// the same reason the chart's move was: leaving 9 kB of slack in place would stop it ratcheting.
 const BUDGET_BYTES = {
-  entryGzip: 22_500,
+  entryGzip: 14_000,
   explorerRouteGzip: 75_000,
   mapChunkGzip: 330_000,
 };
@@ -104,14 +108,24 @@ describe("what the explorer's shell costs the reader", () => {
     // renders on the map surface, so its lazy branches are cut here and asserted off the route
     // below. Cutting it also cuts the map status vocabulary and the swatch it reaches through.
     const statusChip = named("status-chip");
+    // The card itself joined its own lazy branches when it came off the entry path. Until then
+    // it rode inside the entry chunk, so an explorer reader was measured — and charged — for a
+    // panel that only ever renders over the map. Cutting it is the same ruling as its children.
+    const card = named("card");
     const route = reach(
       [...entryChunks(), named("shell")],
-      (name) => name === map || name === status || name === neighbors || name === statusChip,
+      (name) =>
+        name === map ||
+        name === status ||
+        name === neighbors ||
+        name === statusChip ||
+        name === card,
     );
     const measured = route.reduce((sum, name) => sum + gzip(name), 0);
 
     expect(route, "the map chunk is not on the explorer route").not.toContain(map);
     expect(route, "the Status chunk is not on the explorer route").not.toContain(status);
+    expect(route, "the well card is not on the explorer route").not.toContain(card);
     expect(route, "the well-card neighbour chunk is not on the explorer route").not.toContain(
       neighbors,
     );

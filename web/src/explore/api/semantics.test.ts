@@ -121,7 +121,7 @@ describe("WHAT, WHY, SO and SEE each have one source, and none of them is the cl
     ]);
     // v0.22 added explain/explain_depth (annotated) to this operation; api10 stays the
     // deliberately-unreached parameter this test exists to count.
-    expect(host.querySelector(".gw-api-coverage")?.textContent).toContain("6 of 7 parameters");
+    expect(host.querySelector(".gw-api-coverage")?.textContent).toContain("Annotated: 6/7 (86%)");
   });
 
   it("counts the parameters A-8 has not reached rather than hiding them", () => {

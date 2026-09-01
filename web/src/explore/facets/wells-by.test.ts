@@ -188,12 +188,16 @@ describe("what the list leaves out is on the surface, not inferred from it", () 
     expect(host.querySelector(".gw-wells-by-caption")?.textContent).toContain("of 9,369");
   });
 
-  it("prints the remainder's own sentence, so the tail is counted rather than implied", async () => {
+  it("counts the tail as a row, rather than implying it or footnoting it in a sentence", async () => {
     await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
-    expect(host.querySelector(".gw-wells-by-remainder-detail")?.textContent).toContain(
-      "9,367 further operator values hold 212,830 wells",
+    const row = host.querySelector<HTMLElement>(".gw-wells-by-remainder");
+    expect(row?.querySelector(".gw-wells-by-remainder-detail")?.textContent).toBe(
+      "9,367 more values",
     );
+    expect(row?.querySelector("gw-figure")?.getAttribute("value")).toBe("212830");
+    // The server's own wording is what the row is a rendering of, so it stays reachable.
+    expect(row?.title).toContain("9,367 further operator values hold 212,830 wells");
   });
 
   it("drops the remainder block entirely when the list is complete", async () => {
@@ -456,18 +460,16 @@ describe("what the envelope warns about reaches the surface", () => {
       signal: new AbortController().signal,
     });
 
-    const warnings = [...host.querySelectorAll(".gw-wells-by-list .gw-warning")].map(
-      (node) => node.textContent,
-    );
+    const warnings = [...host.querySelectorAll<HTMLElement>(".gw-wells-by-list .gw-note-warning")];
     expect(warnings).toHaveLength(2);
-    expect(warnings[0]).toContain("list_truncated");
-    expect(warnings[1]).toContain("The search ran over every value in the state");
+    expect(warnings[0]?.dataset["code"]).toBe("list_truncated");
+    expect(warnings[1]?.textContent).toContain("The search ran over every value in the state");
   });
 
   it("renders no warning line where the envelope carries none", async () => {
     await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
-    expect(host.querySelector(".gw-warning")).toBeNull();
+    expect(host.querySelector(".gw-note-warning")).toBeNull();
   });
 
   it("renders a warning pointing at /absence inside the block it explains", async () => {
@@ -485,14 +487,12 @@ describe("what the envelope warns about reaches the surface", () => {
     ]);
     await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
-    expect(host.querySelector(".gw-wells-by-absence .gw-warning")?.textContent).toContain(
-      "absence_unregistered",
-    );
-    const trailing = [...host.querySelectorAll(".gw-wells-by-list > .gw-warning")].map(
-      (node) => node.textContent,
-    );
+    expect(
+      host.querySelector<HTMLElement>(".gw-wells-by-absence .gw-note-warning")?.dataset["code"],
+    ).toBe("absence_unregistered");
+    const trailing = [...host.querySelectorAll<HTMLElement>(".gw-wells-by-list > .gw-note-warning")];
     expect(trailing).toHaveLength(1);
-    expect(trailing[0]).toContain("list_truncated");
+    expect(trailing[0]?.dataset["code"]).toBe("list_truncated");
   });
 
   it("keeps an /absence warning on the surface when the response carries no absence block", async () => {
@@ -505,9 +505,9 @@ describe("what the envelope warns about reaches the surface", () => {
     ]);
     await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
 
-    expect(host.querySelector(".gw-wells-by-list > .gw-warning")?.textContent).toContain(
-      "absence_unregistered",
-    );
+    expect(
+      host.querySelector<HTMLElement>(".gw-wells-by-list > .gw-note-warning")?.dataset["code"],
+    ).toBe("absence_unregistered");
   });
 });
 

@@ -206,7 +206,7 @@ describe("RESPONSE labels the envelope in place (§4.4)", () => {
     terminal.meta.next_cursor = null;
     mount({ envelope: terminal });
 
-    expect(host.querySelector(".gw-api-bytes")?.textContent).toMatch(/^[\d,]+ bytes, whole$/);
+    expect(host.querySelector(".gw-api-bytes")?.textContent).toMatch(/^[\d,]+ bytes · whole$/);
   });
 
   it("keeps the REQUEST block and names the problem when the call failed (§4.7)", () => {

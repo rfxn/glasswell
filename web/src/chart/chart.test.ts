@@ -73,7 +73,7 @@ describe("a back-loaded series on the card", () => {
 
   it("says on the surface how much of the record it is drawing", () => {
     const note = host.querySelector(".gw-window-note")?.textContent ?? "";
-    expect(note).toContain("60 of 131 months");
+    expect(note).toContain("60 of 131 mo");
     expect(note).toContain("May 2015");
   });
 
@@ -90,7 +90,7 @@ describe("a back-loaded series on the card", () => {
     const all = spans[spans.length - 1];
     all?.click();
     expect(host.querySelector(".gw-state-row")?.querySelectorAll(".gw-state-mark").length).toBe(131);
-    expect(host.querySelector(".gw-window-note")?.textContent).toContain("all 131 months");
+    expect(host.querySelector(".gw-window-note")?.textContent).toContain("all 131 mo");
   });
 
   it("leaves the month marks as marks: one hit surface per band, not one per month", () => {
@@ -166,7 +166,7 @@ describe("a well the back-load never reached", () => {
   });
 
   it("still states what it is drawing, because a count is never assumed", () => {
-    expect(host.querySelector(".gw-window-note")?.textContent).toContain("all 6 months");
+    expect(host.querySelector(".gw-window-note")?.textContent).toContain("all 6 mo");
   });
 });
 
@@ -175,7 +175,7 @@ describe("the explorer's wider redraw", () => {
     renderChart(host, dense, callbacks, { span: "served" });
     expect(host.querySelector(".gw-state-row")?.querySelectorAll(".gw-state-mark").length).toBe(131);
     expect(host.querySelector(".gw-window-note")?.textContent).toContain(
-      "all 131 months returned by this request",
+      "all 131 mo returned",
     );
     expect(host.querySelector(".gw-window-control")).toBeNull();
   });

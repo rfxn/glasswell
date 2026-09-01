@@ -63,7 +63,7 @@ describe("the panel the crossing lands on", () => {
   it("draws everything it was handed, because the facets above it are the window", () => {
     renderSeriesPanel(host, { envelope: productionEnvelope as unknown as Envelope });
     expect(host.querySelector(".gw-window-control")).toBeNull();
-    expect(host.querySelector(".gw-window-note")?.textContent).toContain("returned by this request");
+    expect(host.querySelector(".gw-window-note")?.textContent).toContain("all 6 mo returned");
   });
 
   it("names the facets as the way to narrow it, rather than implying it cannot be", () => {
@@ -101,7 +101,7 @@ describe("the panel the crossing lands on", () => {
     expect(renderSeriesPanel(host, { envelope: empty as unknown as Envelope })).toBe(true);
     expect(host.querySelector(".gw-chart-plot")).toBeNull();
     expect(host.querySelector(".gw-explore-series")?.textContent).toContain(
-      "No production months",
+      "No months on record",
     );
   });
 

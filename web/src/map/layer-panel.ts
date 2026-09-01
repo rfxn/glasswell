@@ -455,6 +455,20 @@ function buildFamily(
   };
 }
 
+const STATE_ABBREVIATION: Record<string, string> = {
+  "North Dakota": "ND",
+  Montana: "MT",
+  "New Mexico": "NM",
+  Texas: "TX",
+};
+
+/** `Survey traces (North Dakota)` → the noun and the jurisdiction that scopes it, separately. */
+export function splitScope(label: string): { name: string; scope: string | null } {
+  const match = /^(.*?)\s*\(([^()]+)\)\s*$/.exec(label);
+  if (!match?.[1] || !match[2]) return { name: label, scope: null };
+  return { name: match[1], scope: match[2] };
+}
+
 function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFamily): LayerRow {
   const element = document.createElement("div");
   element.className = family ? "gw-layer-row gw-layer-row-child" : "gw-layer-row";
@@ -473,10 +487,21 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFam
   const name = document.createElement("button");
   name.type = "button";
   name.className = "gw-layer-name";
+  const named = splitScope(rowLabel);
   const label = document.createElement("span");
   label.className = "gw-layer-label";
-  label.textContent = rowLabel;
+  label.textContent = named.name;
+  label.title = rowLabel;
   name.appendChild(label);
+  // "Survey traces (North Dakota)" wrapped to two lines and made its row 10 px taller than
+  // the one above it. The jurisdiction is a scope, not part of the noun, so it reads as one.
+  if (named.scope) {
+    const scopeTag = document.createElement("span");
+    scopeTag.className = "gw-layer-jurisdiction";
+    scopeTag.title = named.scope;
+    scopeTag.textContent = STATE_ABBREVIATION[named.scope] ?? named.scope;
+    name.appendChild(scopeTag);
+  }
 
   const badge = document.createElement("span");
   badge.className = "gw-layer-badge";

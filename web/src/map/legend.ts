@@ -1,6 +1,7 @@
 import { dispatchExplain, explainHandle, setExplainHandle } from "../chrome/handle.ts";
+import { disclosure } from "../chrome/notes.ts";
 import type { DimensionCounts, VocabularyLink } from "./counts.ts";
-import { PRODUCING_CLASSES, producingHref, producingNote } from "./producing.ts";
+import { PRODUCING_CLASSES, PRODUCING_RULINGS, producingHref, producingNote } from "./producing.ts";
 import type { ProducingCounts } from "./producing.ts";
 import { PROVENANCE_RULE } from "./provenance.ts";
 import { STATUS_CLASSES, STATUS_VOCAB_RULES, UNMAPPED_STATUS, statusClass } from "./status.ts";
@@ -250,8 +251,11 @@ export function createLegend(options: LegendOptions): LegendHandle {
   }
 
   const producingNoteEl = document.createElement("p");
-  producingNoteEl.className = "gw-lg-pnote";
+  producingNoteEl.className = "gw-lg-pnote gw-scope";
   producing.appendChild(producingNoteEl);
+  // The two standing rulings, folded: they qualify every producing count on every map and
+  // used to cost the key two of its four lines to repeat on each open.
+  producing.appendChild(disclosure("How this is judged", PRODUCING_RULINGS));
   body.appendChild(producing);
 
   // Between the rows and the note: the canvas is a subset of the box at low zoom, and the
@@ -338,7 +342,35 @@ export function createLegend(options: LegendOptions): LegendHandle {
     const count = rendered.filter(checked).length;
     const base =
       count === rendered.length ? "Well status" : `Well status · ${count}/${rendered.length}`;
-    title.textContent = extentBox.checked ? base : `${base} · everywhere`;
+    const scoped = extentBox.checked ? base : `${base} · everywhere`;
+    // How many wells this is a key to, on the pill rather than one click inside it. It is the
+    // first question asked of a map of dots and the only one that was answered by opening
+    // something; the sum moves with the filter, so the pill can never overstate the canvas.
+    title.textContent = shownWells() === null ? scoped : `${scoped} · ${shownWells()}`;
+  }
+
+  /**
+   * The classes left on, summed. Null while the counts are pending or unavailable, and null
+   * with every class off — the `0/9` already on the pill says that, and "· 0" beside it reads
+   * as a count of the data rather than of what the reader switched off.
+   */
+  function shownWells(): string | null {
+    if (mode !== "ready") return null;
+    const rendered = [...rows].filter(([, row]) => row.parentNode === body);
+    const on = rendered.filter(([, row]) => checked(row));
+    if (on.length === 0) return null;
+    // Unfiltered, the honest figure is the population's own — the same one the extent row
+    // carries with its handle. Summing the class rows instead would silently drop a well the
+    // box holds under no class this key lists.
+    if (on.length === rendered.length) {
+      const wells = totalCount?.wells;
+      return wells === null || wells === undefined ? null : NUMBER.format(wells);
+    }
+    // Filtered, the sum is over exactly the classes left on. A class the box does not hold has
+    // no count to report (see cellText) and contributes nothing rather than blocking the sum —
+    // but a selection where none of them has a count at all is unknown, not zero.
+    if (on.every(([id]) => counts[id] === undefined)) return null;
+    return NUMBER.format(on.reduce((sum, [id]) => sum + (counts[id] ?? 0), 0));
   }
 
   const report = (): void => {
@@ -525,6 +557,9 @@ export function createLegend(options: LegendOptions): LegendHandle {
     renderProducing();
     renderDimensions();
     renderPartial();
+    // The pill carries a count now, so it is part of what a new viewport's numbers repaint —
+    // without this it kept the sum from the box the reader has already panned away from.
+    syncTitle();
   }
 
   function setVocabulary(vocabulary: VocabularyLink[]): void {

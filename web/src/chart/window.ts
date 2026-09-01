@@ -131,23 +131,21 @@ function firstKept(months: readonly string[], span: number): number {
 
 /**
  * R6 applied to the axis itself: a chart drawing 60 of 131 months while implying it draws the
- * record is a naked number wearing a time series. The count, both ranges and the way back to
- * the rest are one sentence on the surface.
+ * record is a naked number wearing a time series. The range, the count and the population it
+ * is a count of are a label beside the span control, not two lines of prose above it — the
+ * control itself is the "way back to the rest" the sentence used to spell out.
  */
 export function describeWindow(window: SeriesWindow, served = false): string {
   if (window.total === 0 || window.from === null || window.to === null) {
-    return "No production months are on record for this well.";
+    return "No months on record";
   }
-  const shown = `${formatMonth(window.from)} to ${formatMonth(window.to)}`;
+  const shown = `${formatMonth(window.from)} – ${formatMonth(window.to)}`;
   if (!window.truncated) {
     // A request the reader narrowed with `from`/`to` returns part of the record, so a chart
     // drawing all of what it was handed must not call that all of what exists.
-    const population = served ? "returned by this request" : "on record";
-    return `Showing all ${window.total} months ${population}: ${shown}.`;
+    const population = served ? "returned" : "on record";
+    return `${shown} · all ${window.total} mo ${population}`;
   }
-  const record = `${formatMonth(window.firstOnRecord ?? window.from)} to ${formatMonth(window.lastOnRecord ?? window.to)}`;
-  return (
-    `Showing ${window.shown} of ${window.total} months on record: ${shown}.` +
-    ` The full record runs ${record}; widen the range to reach it.`
-  );
+  const record = `${formatMonth(window.firstOnRecord ?? window.from)} – ${formatMonth(window.lastOnRecord ?? window.to)}`;
+  return `${shown} · ${window.shown} of ${window.total} mo · record ${record}`;
 }

@@ -141,26 +141,26 @@ describe("windowing a series", () => {
   });
 });
 
-describe("the sentence the window is disclosed as", () => {
+describe("the label the window is disclosed as", () => {
   it("says how much of the record is on screen and where the rest is", () => {
-    const sentence = describeWindow(chartWindow(dense, DEFAULT_SPAN).window);
-    expect(sentence).toContain("60 of 131 months");
-    expect(sentence).toContain("Apr 2021");
-    expect(sentence).toContain("Mar 2026");
-    expect(sentence).toContain("May 2015");
+    const label = describeWindow(chartWindow(dense, DEFAULT_SPAN).window);
+    expect(label).toContain("60 of 131 mo");
+    expect(label).toContain("Apr 2021");
+    expect(label).toContain("Mar 2026");
+    expect(label).toContain("May 2015");
   });
 
   it("says so plainly when nothing is held back", () => {
-    const sentence = describeWindow(chartWindow(sparse, null).window);
-    expect(sentence).toContain("all 6 months on record");
-    expect(sentence).not.toContain(" of 6 months");
+    const label = describeWindow(chartWindow(sparse, null).window);
+    expect(label).toContain("all 6 mo on record");
+    expect(label).not.toContain(" of 6 mo");
   });
 
   it("never calls a narrowed response the whole record", () => {
     // The explorer's from/to facets narrow server-side, so the chart is handed part of the
     // record and has no way to count the rest. It says which it is drawing.
-    const sentence = describeWindow(chartWindow(sparse, null).window, true);
-    expect(sentence).toContain("all 6 months returned by this request");
-    expect(sentence).not.toContain("on record");
+    const label = describeWindow(chartWindow(sparse, null).window, true);
+    expect(label).toContain("all 6 mo returned");
+    expect(label).not.toContain("on record");
   });
 });

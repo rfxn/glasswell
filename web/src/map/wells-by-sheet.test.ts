@@ -169,9 +169,9 @@ describe("the Wells-By sheet on the map", () => {
     wellsBy.open();
     await settle();
 
-    expect(wellsBy.element.querySelector(".gw-wells-by-remainder-detail")?.textContent).toContain(
-      "1,588 further operator values",
-    );
+    const row = wellsBy.element.querySelector<HTMLElement>(".gw-wells-by-remainder");
+    expect(row?.querySelector(".gw-wells-by-remainder-detail")?.textContent).toBe("1,588 more values");
+    expect(row?.title).toContain("1,588 further operator values");
   });
 
   it("presses a bucket into a pick rather than into a grid filter", async () => {
