@@ -183,7 +183,11 @@ document.addEventListener(
     // each announces its own state off this attribute. One selector for both, because only one
     // of them is ever open.
     const sheet = document.querySelector<HTMLElement>(".gw-sheet:not([hidden])");
-    if (sheet) sheet.hidden = true;
+    if (!sheet) return;
+    sheet.hidden = true;
+    // Back to the control that opened it, found through the pair it already announces: focus
+    // otherwise fell to the brand mark and a keyboard reader lost the control cluster.
+    document.querySelector<HTMLElement>(`[aria-controls="${sheet.id}"]`)?.focus();
   },
   true,
 );

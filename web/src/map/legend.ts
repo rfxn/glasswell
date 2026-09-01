@@ -254,23 +254,6 @@ export function createLegend(options: LegendOptions): LegendHandle {
   producing.appendChild(producingNoteEl);
   body.appendChild(producing);
 
-  // The two dimensions /v1/wells/status-summary has always served beside the statuses. Rows are
-  // data-driven — the codes are the source's, not a roster — so each block rebuilds its rows
-  // when the served order changes and patches them in place otherwise, which is what keeps a ⌾
-  // from being torn out from under the pointer between two viewports holding the same classes.
-  const dimensionBlocks = new Map<string, DimensionView>();
-  for (const spec of DIMENSIONS) {
-    const view = buildDimension(spec);
-    dimensionBlocks.set(spec.id, view);
-    body.appendChild(view.element);
-  }
-
-  const crossref = document.createElement("p");
-  crossref.className = "gw-lg-crossref";
-  crossref.hidden = true;
-  crossref.textContent = CROSSREF_COPY;
-  body.appendChild(crossref);
-
   // Between the rows and the note: the canvas is a subset of the box at low zoom, and the
   // reader has to be able to see that without reading it as the counts disagreeing.
   const partial = document.createElement("p");
@@ -284,6 +267,32 @@ export function createLegend(options: LegendOptions): LegendHandle {
   fault.hidden = true;
   fault.setAttribute("role", "status");
   body.appendChild(fault);
+
+  // The only pointer from this key to the other surface, so nothing it says may depend on a
+  // scroll position: outside the body, and outside the region below.
+  const crossref = document.createElement("p");
+  crossref.className = "gw-lg-crossref";
+  crossref.hidden = true;
+  crossref.textContent = CROSSREF_COPY;
+  element.appendChild(crossref);
+
+  // Under the scroll body rather than inside it, on the vocabulary's precedent below: put in the
+  // body these two blocks added 575 px to a 384 px scrollport, so neither was reachable without
+  // scrolling at any width (visual-map-wells-by D5). Out here each is a disclosure always in
+  // frame, and the two share one scrollport so the key cannot grow past the map opening both.
+  const dims = document.createElement("div");
+  dims.className = "gw-lg-dims";
+
+  // Rows are data-driven — the codes are the source's, not a roster — so each block rebuilds its
+  // rows when the served order changes and patches them in place otherwise, which is what keeps
+  // a ⌾ from being torn out from under the pointer between two viewports holding the same classes.
+  const dimensionBlocks = new Map<string, DimensionView>();
+  for (const spec of DIMENSIONS) {
+    const view = buildDimension(spec);
+    dimensionBlocks.set(spec.id, view);
+    dims.appendChild(view.element);
+  }
+  element.appendChild(dims);
 
   // Outside the scroll body (visual-m12/m13): the note's tail sat below the fold at every
   // breakpoint, so the vocabulary gets an always-in-frame disclosure of its own instead.
@@ -357,9 +366,16 @@ export function createLegend(options: LegendOptions): LegendHandle {
   none.addEventListener("click", () => setAll(false));
 
   element.addEventListener("click", (event) => {
-    // A filter row, the bulk control and the vocabulary disclosure are controls, not the
-    // expand target.
-    if ((event.target as HTMLElement).closest(".gw-lg-row, .gw-lg-extent, .gw-lg-actions, .gw-lg-vocab")) return;
+    // Every row and every disclosure is a control, not the expand target. `.gw-lg-prow` and
+    // `.gw-lg-drow` carry a ⌾, and asking where a number came from used to shut the key over
+    // it and throw away the scroll position that reached it (visual-map-wells-by D6).
+    if (
+      (event.target as HTMLElement).closest(
+        ".gw-lg-row, .gw-lg-prow, .gw-lg-extent, .gw-lg-actions, .gw-lg-vocab, .gw-lg-dims",
+      )
+    ) {
+      return;
+    }
     const open = element.classList.toggle("gw-open");
     title.setAttribute("aria-expanded", String(open));
     actions.hidden = !open;
@@ -550,9 +566,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
     zoomNow = zoom;
     const unmapped = rows.get(UNMAPPED_STATUS.id);
     if (counts[UNMAPPED_STATUS.id] !== undefined && unmapped && unmapped.parentNode !== body) {
-      // Anchored on the first dimension block rather than on `partial`, so the row keeps the
-      // place it had when the producing group was the last thing in the body.
-      body.insertBefore(unmapped, dimensionBlocks.values().next().value?.element ?? partial);
+      body.insertBefore(unmapped, partial);
       syncTitle();
     }
     render();
@@ -612,19 +626,32 @@ function buildDimension(spec: DimensionSpec): DimensionView {
   element.setAttribute("role", "group");
   element.setAttribute("aria-label", spec.aria);
 
-  const title = document.createElement("p");
+  // Shut by default, like the vocabulary: the block's name is what has to be in frame, and its
+  // rows and its note together are 240-290 px the key cannot hold open beside the status list.
+  const title = document.createElement("button");
+  title.type = "button";
   title.className = "gw-lg-dtitle";
   title.textContent = spec.title;
+  title.setAttribute("aria-expanded", "false");
   element.appendChild(title);
+
+  const opened = document.createElement("div");
+  opened.className = "gw-lg-dbody";
+  opened.hidden = true;
+  element.appendChild(opened);
+  title.addEventListener("click", () => {
+    opened.hidden = !opened.hidden;
+    title.setAttribute("aria-expanded", String(!opened.hidden));
+  });
 
   const list = document.createElement("div");
   list.className = "gw-lg-drows";
-  element.appendChild(list);
+  opened.appendChild(list);
 
   const note = document.createElement("p");
   note.className = "gw-lg-dnote";
   note.textContent = spec.note;
-  element.appendChild(note);
+  opened.appendChild(note);
 
   const rows = new Map<string, HTMLElement>();
   let built: string[] = [];

@@ -30,6 +30,12 @@
   font-size: 0.72rem;
   line-height: 1.5;
   cursor: pointer;
+  /* The rule the key's groups are ruled off with. It rides the panel's own substrate rather
+     than the app theme, because this panel keeps its dark surface on a dark basemap whatever
+     the theme is — `--rule` was referenced by two rules and defined nowhere, so the white
+     fallback applied always and vanished on the light basemap's white panel at 1.00:1
+     (visual-map-wells-by D10). */
+  --rule: rgb(255 255 255 / 16%);
 }
 
 /* Wraps rather than breaking out of the 11rem pill at the narrow breakpoint. */
@@ -194,7 +200,7 @@
 .gw-lg-producing {
   margin-top: 0.4rem;
   padding-top: 0.35rem;
-  border-top: 1px solid var(--rule, rgb(255 255 255 / 12%));
+  border-top: 1px solid var(--rule);
 }
 
 .gw-lg-producing[hidden] {
@@ -232,13 +238,29 @@
   line-height: 1.4;
 }
 
-/* The two dimensions the summary serves beside the statuses. Ruled off like the producing
-   group and for the same reason — a different question of the same box — and, like it, with no
+.gw-lg:not(.gw-open) .gw-lg-dims,
+.gw-lg:not(.gw-open) .gw-lg-crossref {
+  display: none;
+}
+
+/* One scrollport for both blocks rather than one each: open together they came to 530 px below
+   a 384 px body, and the key — which grows upward off its bottom edge — pushed its own title
+   row off the top of the map. */
+.gw-lg-dims {
+  max-height: min(34vh, 16rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* The two dimensions the summary serves beside the statuses, each a disclosure under the scroll
+   body rather than rows inside it, on the vocabulary's precedent below: in the body they were
+   575 px of a 384 px scrollport and unreachable at every width (visual-map-wells-by D5). Ruled
+   off like the producing group — a different question of the same box — and, like it, with no
    swatch: the map draws no colour for a well-type code or a provenance class. */
 .gw-lg-dim {
   margin-top: 0.4rem;
   padding-top: 0.35rem;
-  border-top: 1px solid var(--rule, rgb(255 255 255 / 12%));
+  border-top: 1px solid var(--rule);
 }
 
 .gw-lg-dim[hidden] {
@@ -246,11 +268,34 @@
 }
 
 .gw-lg-dtitle {
-  margin: 0 0 0.15rem;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--muted);
+  font: inherit;
   font-size: 0.62rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  cursor: pointer;
+}
+
+.gw-lg-dtitle::after {
+  content: " ▸";
+  color: var(--cyan);
+  font-weight: 700;
+}
+
+.gw-lg-dtitle[aria-expanded="true"]::after {
+  content: " ▾";
+  color: var(--muted);
+}
+
+.gw-lg-dbody {
+  margin-top: 0.15rem;
+}
+
+.gw-lg-dbody[hidden] {
+  display: none;
 }
 
 .gw-lg-drow {
@@ -449,7 +494,6 @@
   overscroll-behavior: contain;
 }
 
-.gw-base-group h3,
 /* The sheet's cross-reference to the map key, above the panel it qualifies: a reader who opens
    this one is told the other scope exists rather than reading the two as disagreeing counts. */
 .gw-sheet-crossref {
@@ -460,12 +504,7 @@
   line-height: 1.4;
 }
 
-/* The panel inside the sheet is the explorer's own, at the sheet's column width rather than the
-   grid's: the controls wrap instead of scrolling sideways. */
-.gw-wells-by-sheet .gw-wells-by-controls {
-  flex-wrap: wrap;
-}
-
+.gw-base-group h3,
 .gw-layers-body h3 {
   margin: 0.3rem 0 0.3rem;
   color: var(--muted);
@@ -1003,6 +1042,13 @@ body:has(.gw-hint:not([hidden])) .gw-banner {
   box-shadow: 0 2px 10px rgb(0 0 0 / 35%);
 }
 
+/* On this substrate the key is painted in `--panel`, so its rule follows the theme's own
+   divider rather than the white it uses over the canvas. */
+[data-basemap="light"] .gw-lg,
+[data-basemap="satellite"] .gw-lg {
+  --rule: var(--hairline-strong);
+}
+
 [data-basemap="light"] .gw-sheet,
 [data-basemap="satellite"] .gw-sheet {
   background: var(--panel);
@@ -1046,6 +1092,10 @@ body:has(.gw-hint:not([hidden])) .gw-banner {
 }
 
 @media (width <= 768px) {
+  /* The container's height, not the viewport's: at 78dvh the drawer's top edge cut through the
+     control column — including the button that opens it and is also its close control, the
+     same defect the floating variant records having fixed once (visual-map-wells-by D7). 10rem
+     is the 146 px control stack plus its own top inset. */
   .gw-sheet {
     top: auto;
     right: 0;
@@ -1053,7 +1103,7 @@ body:has(.gw-hint:not([hidden])) .gw-banner {
     left: 0;
     width: 100%;
     max-width: none;
-    max-height: 78dvh;
+    max-height: calc(100% - 10rem);
     border-radius: 10px 10px 0 0;
     /* #gw-card and #gw-drawer already do this (style.css); the sheet was the one that did not,
        so its last row sat under the home indicator. */
@@ -1109,13 +1159,20 @@ body:has(.gw-hint:not([hidden])) .gw-banner {
 
 /* On the canvas, because the sheet can be shut — at 768 it covers the map entirely — and a
    filter the reader cannot see or release is a one-way door. Above the legend's own column so
-   the two never overlap at the narrow breakpoint. */
+   the two never overlap at the narrow breakpoint.
+
+   `--panel` and not the dark literal the sheets carry: this is the only overlay that has to
+   stay readable in every theme × basemap the reader can set, because it is the only statement
+   of the applied filter and the only way to release it with the sheet shut. Hardcoded, its
+   label measured 1.20:1 in light theme (visual-map-wells-by D1); `--cyan-text` on the border
+   for the same reason `button.gw-wells-by-value[aria-pressed]` uses it — `--cyan` is 2.91:1 on
+   the light page, under 1.4.11's floor of 3. */
 .gw-facet-pill {
   max-width: min(22rem, 100%);
   padding: 0.3rem 0.45rem;
-  border: 1px solid var(--cyan);
+  border: 1px solid var(--cyan-text);
   border-radius: 6px;
-  background: rgb(18 26 33 / 96%);
+  background: var(--panel);
   color: var(--paper);
   font-size: 0.72rem;
   line-height: 1.45;
