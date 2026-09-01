@@ -1,6 +1,6 @@
 # Current status
 
-Reconciled on **2026-08-31** against the v0.71 release line, the checked-in OpenAPI
+Reconciled on **2026-09-01** against the v0.72 release line, the checked-in OpenAPI
 snapshot, current `main` history, and a read-only census of the deployed database taken
 2026-08-31. This is the
 short current-state ledger;
@@ -17,8 +17,8 @@ this week.
 
 ## Shipped baseline
 
-- **Release line:** 52 tagged releases, v0.20 through v0.71, cut 2026-08-21 through
-  2026-08-31.
+- **Release line:** 53 tagged releases, v0.20 through v0.72, cut 2026-08-21 through
+  2026-09-01.
 - **North Dakota:** ingest, bitemporal promotion, quarantine, conformance, wells,
   geometry, monthly production, lineage, explain, glossary, API, tiles, and map are built.
 - **Production history:** the 125-workbook back-load is complete. `nd_mpr_xlsx` holds 131

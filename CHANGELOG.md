@@ -7,6 +7,120 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.72"></a>
+## v0.72 — 2026-09-01
+
+- [Fix] The auth matrix status-probes the six routes it used to skip. `POST /v1/session`,
+      `POST /v1/session/password` and the four `/v1/users` mutations sat in the table for
+      coverage and outside the status assertions, which is 54 of the suite's 55 skips and one
+      hole: what an anonymous, invalid-key, revoked-key or expired-session caller receives
+      from a user-administration route was asserted nowhere, and the four `/v1/users` rows had
+      been that way since the commit that added them. All 54 answer 403, or 200 for the owner
+- [New] A matrix row carries an optional request body, and the login row carries a CSRF token
+      bound to a pre-session nonce, so a POST, PATCH or DELETE case can be dispatched at all.
+      `NOT_STATUS_PROBED` is gone rather than shorter
+- [New] test_an_anonymous_caller_is_refused_before_their_body_is_read holds the five gated
+      body-taking routes to answering 403 and not 422. A validation body names the schema it
+      was validated against, and an uncredentialled caller's payload is never examined; the
+      test goes red when a route's gate moves out of the dependency tree into the handler
+- [Change] The matrix's principals speak https, including the key classes. A `__Host-` cookie
+           requires Secure, so over http the transport drops it and a key-class caller could
+           never hold the pre-session CSRF cookie the login row needs
+- [Change] Each POST row states its own body instead of every POST being handed the key-issue
+           one. `POST /v1/keys/{key_id}/rotate` takes no body and was being sent one, and a
+           body shared by rows that do not share a schema hides which row needs what
+- [New] map key: wells by reported well type and by geometry provenance, two
+      dimensions /v1/wells/status-summary already served and the client discarded;
+      every row is a served figure with its own derivation handle, the provenance
+      block states that its classes overlap and do not sum, and each block is a
+      disclosure under the key's scroll body rather than inside it, so neither it
+      nor the cross-reference to the other scope has to be scrolled to be found
+- [New] map: a Wells by sheet beside the layer panel, counting every current well
+      in one state rather than the map view and saying so on screen; each panel
+      carries a one-line cross-reference to the other scope
+- [New] map: pressing a bucket narrows the canvas to that value across every well
+      and bore layer, including the five whose filter slot is not the status
+      gate's; the applied bucket rides the URL as wb.pick, and back and forward
+      move the pill, the pressed row and the canvas filter with it
+- [New] map: an applied-bucket pill carrying the panel's own figure and handle,
+      never a count of the canvas; it names the layers a press does not reach,
+      states that the tiles keep one well per half pixel below zoom 8, and paints
+      on --panel so the filter it announces is readable in either theme
+- [Change] the Wells-By panel takes its applied filters, its press rule and its
+         scope line from its host, so the map and the explorer render one
+         component rather than two; it drops its rank and bar columns on its own
+         column width rather than the window's, and states on screen rather than
+         in a tooltip alone where the surface cannot be narrowed by a dimension;
+         the explore surface is unchanged
+- [Change] the wells dataset declares geometry_provenance as a facet, so a
+         crossing onto that filter renders a chip the reader can clear
+- [Change] the layer panel and the Wells by sheet share one frame declaration,
+         .gw-sheet; opening either shuts the other, Escape closes whichever is
+         open and hands focus back to the control that opened it, and at 768 and
+         under the drawer clears the map's own control column
+- [Fix] map key: the ⌾ on a producing or dimension row is a control rather than
+      the key's expand target, so asking where a count came from no longer
+      collapses the key and throws away the scroll position that reached it
+- [Fix] map key: the rule between the key's groups is a defined token that
+      follows the panel's substrate, not an undefined one falling back to a white
+      that measured 1.00:1 against a light basemap's white panel
+- [Fix] map key: the key is capped at the map's own height less its insets and
+      lays its blocks out as a column, so opening both dimension blocks on a
+      phone no longer grows it off the top of the map and under the app header —
+      where a tap aimed at the title that collapses it landed on the surface
+      switch and navigated the reader off the map
+- [Fix] tests: the R6 naked-numbers gate classifies a figure by the value of its `d` rather than
+      by the key's presence, and a handle position carrying a null or non-string value is now
+      reported as an offender instead of being skipped. Serving `d: null` on every figure in
+      the API left all eleven checks green, with the non-emptiness guard held up by the
+      `_lineage` sidecars
+- [Fix] tests: the login bound's ordering assertion counts Argon2id verifies on
+      `accounts.verify_password` rather than reading the status code. Authenticate-then-limit
+      and limit-then-authenticate both answer 429, so the status assertion was satisfied by a
+      route that ran a full 64 MiB verify for every unauthenticated attempt and refused
+      afterwards — the amplification the bound exists to stop
+- [Fix] tests: the constant-time guards read the parsed module. `hmac.compare_digest` must appear
+      as a call node rather than anywhere in the source text, and each `==` operand is followed
+      back through the renames that bound it, so `_a, _b = presented, owner_key` no longer hides
+      a variable-time comparison of the owner API key from the name allowlist
+- [Fix] tests: the layer-boundary guards fold every string a module builds — concatenations and
+      f-string parts alike — before searching it, so a schema name written in pieces is judged
+      on the value it executes as. Applied to the feature matrix, the whole marts package, the
+      Montana and New Mexico marts and the New Mexico wells GIS walk
+- [Fix] tests: the producing-summary omission check is driven from the collection and asserts set
+      equality, so a class the summary drops is visited rather than never iterated, and the box
+      is seeded a second class so an omission has something to omit
+- [Fix] tests: the `/v1/keys` at-rest scan reads every column rather than `sha256, label`, and
+      names the column a cleartext key reached; the claim was "sha256 is the only representation
+      at rest" while two of ten columns were looked at
+- [Fix] tests: non-emptiness guards on the glossary label, conformance rationale, quarantine
+      metric, stored session hash and status-bucket assertions, each of which an empty
+      collection made vacuously true
+- [Fix] tests: the selector registry fixtures pin `output_sha256` as a literal rather than
+      computing it with the same function the implementation compares against, and a mismatched
+      evidence hash is asserted to be refused
+- [Fix] web: the overlay restore test asserts focus lands on the body when the restore target has
+      left the document, rather than asserting a different element is still attached. `.focus()`
+      on a detached element is a silent no-op, so dropping the `isConnected` guard stranded
+      focus inside the panel that had just closed with all nine tests green
+- [Change] The contract tier seeds its fixture once into a template database every test
+           clones, rather than seeding it per test. `seed_all`, the eight wells, their
+           geometry and production, the neighbour mart, the quarantine rows and the pinned
+           control publication cost 0.32 s per test and land the same rows every time; the
+           assertions pinning the documented example ids run in the builder, once, and still
+           fail the tier when an example goes stale. Contract setup falls from 695.7 s to
+           262.6 s across 1,367 tests, and the full suite from 27:40 to 18:45 on one host
+- [Change] The ephemeral PostGIS container runs with fsync, synchronous_commit and
+           full_page_writes off at wal_level=minimal, and `create database` clones with
+           `strategy file_copy`. A server destroyed at the end of the session has nothing to
+           recover, and file_copy is the faster strategy only once the checkpoints it forces
+           are free: 67 ms of create-plus-drop per test against 118 ms measured on the
+           defaults, over the 2,749 databases a full run builds
+- [Change] The control artifact the contract tier publishes is written once per session and
+           copied per test rather than rebuilt through duckdb for each one. Every path it
+           records is relative, so a copy under another root is byte-identical and
+           EXAMPLE_PUBLICATION_ID does not move
+
 <a id="v0.71"></a>
 ## v0.71 — 2026-08-31
 
