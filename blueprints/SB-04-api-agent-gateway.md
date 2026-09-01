@@ -629,7 +629,34 @@ Two independent gates, composed. Neither is sufficient alone, and that is the po
 SB-06 §5.3's whole argument is that the origin validating the JWT is the difference
 between defense-in-depth and a single point of failure.
 
+**Amended 2026-09-01.** The two-gate composition holds; the identity edge changed. Gate 1
+shipped as the application's own session login rather than Cloudflare Access — see §3.1.
+
 ### 3.1 Gate 1 — Cloudflare Access JWT at the origin
+
+**Amended 2026-09-01.** Cloudflare Access is **not enabled on this account** and is not
+used: `access/apps` and `access/service_tokens` both answer
+`403 access.api.error.not_enabled`, and enabling it needs an irreversible team-name choice
+plus a second interactive login in front of the application's own (SB-06 §5, amended
+2026-08-29). **Gate 1 as shipped is the application's own session login.** Two roles,
+`owner` and `viewer`, over a `lineage.users` table; opaque server-side sessions in
+`lineage.sessions`; a `__Host-` cookie, `HttpOnly`, `Secure`, `SameSite`; CSRF on every
+state-changing route; Argon2id at rest; login throttling with backoff and lockout; uniform
+failure responses with no user enumeration. Accounts are **created by the owner only** —
+no registration path, no password-reset-by-email — which is the property the Access design
+was protecting, preserved without Access. The origin validates a server-side session record
+on every request and rejects anything without one, which is the same property "validates
+the Access JWT on every request" was buying. §3.2's `api_keys` is retained unchanged as the
+non-interactive path, and the static owner key is refused on the tunnel listener, so the
+credential with the weakest lifecycle is not reachable from the internet.
+`request.state.principal` carries `kind ∈ {owner, viewer, service, lan}`, and **`owner`
+versus `viewer` is a column on the users row, not `GLASSWELL_OWNER_EMAILS` in
+`/etc/glasswell/app.env` — a table, not config**, because roles are administered at runtime
+by the owner and config is not.
+
+**Superseded, and retained for reinstatement.** Everything below in §3.1 describes Gate 1
+as ruled and not built. It stands as the design to reinstate should Access ever be enabled,
+exactly as SB-06 §5.1–§5.6 do, and is not a description of shipped behaviour.
 
 SB-04 implements SB-06 §5.3's specification exactly. Restated here only where SB-04
 adds an implementation obligation:
@@ -837,6 +864,7 @@ without endpoints, and `bp:456-502` has none (§10 E-11).
 | `GET /v1/health` | — | Enveloped: per-source freshness, last job state per job type, store reachability; `state ∈ ok\|degraded` — `degraded` when any scheduled job failed or any source is beyond its pull window (`bp:544`) | — | C12, C26 | — |
 | `GET /healthz` | — | `{"ok": true}`, no envelope, ~0 cost | — | C12 | SB-06 §1.3's liveness probe. Unauthenticated **only** on the LAN listener (§10 E-14) |
 | `GET /v1/errors/{code}` | — | Problem-type description matching the `type` URI | `not_found` | C12 | Makes every `type` URI resolvable |
+| `GET /v1/states` | `code` str | Jurisdiction registry rows: API state code, name, regulator, identity scheme, source ids, the rule ids deciding status vocabulary, geometry provenance, liquids basis, production grain and unmapped action, tile layer id and colour, and a measured well count with the date it was measured | `not_found` | C12, C4 | R6, R8; **planned, v0.76.** The registry the promotion, inventory and serving paths read instead of an API-10 prefix (`bp:3.0.1a`) |
 
 ### 4.2 Wells and production
 
@@ -847,6 +875,7 @@ without endpoints, and `bp:456-502` has none (§10 E-11).
 | `GET /v1/wells/{api10}/production` | `stream` enum(`oil`,`gas`,`water`,`condensate`) repeatable · all; `from`/`to` production month `YYYY-MM`; `granularity` enum(`observed`,`allocated`,`any`) · `any`; `derived` enum(`gor`,`water_cut`) repeatable · none; `as_of` | Monthly series per stream in the SB-07 §9.1 sidecar form, with per-point `report_vintage` and `null_semantics` ∈ `reported_zero\|no_report\|withheld`; GOR and water-cut as derived series when requested | `not_found`, `as_of_out_of_range` | C12, C5 | R5, R6; U13, U21. **`granularity=allocated` responses carry `allocation_model_id` and `error_bounds` (4F.5)**; single-well leases pass through as `observed` with a 1:1 note (4F.6) |
 | `GET /v1/wells/{api10}/completions` | — | Completion events with design fields and **per-field** `null_semantics`; source attribution per field (FracFocus vs TX completion feed vs GIS-derived lateral length) | `not_found` | C12, C5 | R5, R6 |
 | `GET /v1/wells/{api10}/neighbors` | `radius_ft` int · 5280 · cap 26400; `formation_id` str; `at_date` date · well's completion date; `limit` int · 50 · 200 | Spatial neighbours with **projected** distances (basin compute CRS from `crs_registry`), completion dates, and the CRS used | `not_found`, `validation_failed` | C12, C6 | R6; distinct from analogs — the response says so in its description. Distances never computed in degrees (`bp:157`) |
+| `GET /v1/wells/facets` | `state` str · **required**; `by` enum(`operator`,`county`,`status`,`well_type`,`completion_year`) · **required**; `top` int · 15 · **50**; `q` case-insensitive substring of the value; `sort` enum(`count`,`value`) · `count`; `order` enum(`desc`,`asc`) · `desc` | Ranked buckets with counts and a `/v1/wells` link each; `distinct_values`; a `remainder` naming how many values fell below the cut and how many wells they hold, absent rather than zero when the list is complete; and an `absence` bucket carrying the count, the reason and the rule that decided it, never ranked and never searched | `validation_failed` | C12, C5 | R6, R8. `state` is **required as an R8 constraint, not a UX one**: operator names arrive per source and `lineage.operator_aliases` is empty, so a cross-state sum would be an unmade aliasing decision. `buckets + remainder + absence == wells` without a search, `buckets + remainder == matched_wells` under one, both asserted. Capped at 60 requests per principal per UTC minute |
 | `GET /v1/wells/{api10}/forecast` | `model_id` str · resolved from `as_of`; `stream` enum · `oil`; `horizon_months` int · 24 · cap 60 | P10/P50/P90 series, `model_id`, `feature_version`, `training_support` (4A.10), calibration ref, extrapolation flag where beyond the trained horizon (4A.9) | `not_found`, `model_not_promoted`, `unregistered_artifact` | C12, C7 | R5, R6, R7 |
 
 ### 4.3 Forecasting artifacts
