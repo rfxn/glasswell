@@ -24,6 +24,19 @@ export function facetFromSearch(search: string): FacetSelection | null {
 }
 
 /**
+ * Everything the URL says about the Wells-By panel, as one comparable string. The map follows
+ * `popstate` so a back press undoes a press, and this is how a history move it has no stake in —
+ * a well card, a lineage drawer — costs neither a filter rewrite nor a re-mount of the sheet.
+ */
+export function wellsByTerms(search: string): string {
+  return [...new URLSearchParams(search)]
+    .filter(([key]) => key.startsWith(WELLS_BY_PREFIX))
+    .map(([key, value]) => `${key}=${value}`)
+    .sort()
+    .join("&");
+}
+
+/**
  * The press in the shape `narrowedBy` compares against: the `/v1/wells` filter the pressed
  * dimension becomes, and the state it was counted in — which is exactly what `_bucket_link`
  * publishes, so the pressed bucket matches its own link and no other. Empty where nothing is

@@ -331,4 +331,118 @@ describe("the press, from the sheet to the canvas", () => {
     expect(layers.hidden).toBe(true);
     expect(sheet.hidden).toBe(false);
   });
+
+  it("shuts Wells by when Layers is opened over it, in the other order too", async () => {
+    // visual-map-wells-by D3: the rule was implemented one way, so opening Layers second left
+    // both sheets on the same column with both triggers announcing themselves expanded.
+    await mount("?map=12/47.8/-102.8");
+    const layers = document.querySelector<HTMLElement>("#gw-layers")!;
+    const sheet = document.querySelector<HTMLElement>("#gw-wells-by")!;
+
+    document.querySelector<HTMLButtonElement>(".gw-wells-by-button")!.click();
+    await settle();
+    expect(sheet.hidden).toBe(false);
+
+    document.querySelector<HTMLButtonElement>(".gw-layers-button")!.click();
+    await settle();
+
+    expect(sheet.hidden).toBe(true);
+    expect(layers.hidden).toBe(false);
+    expect(document.querySelector(".gw-wells-by-button")?.getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+    expect(document.querySelector(".gw-layers-button")?.getAttribute("aria-expanded")).toBe("true");
+  });
+});
+
+describe("the press and the back button", () => {
+  beforeEach(() => {
+    writes.length = 0;
+    handlers.clear();
+    transformStyle = null;
+    zoomNow = 12;
+    vi.resetModules();
+    window.localStorage.clear();
+    globalThis.fetch = ((input: RequestInfo | URL) =>
+      String(input).includes("/v1/wells/facets")
+        ? Promise.resolve(new Response(JSON.stringify(FACETS), { status: 200 }))
+        : Promise.reject(new Error("offline"))) as typeof fetch;
+  });
+
+  afterEach(() => {
+    document.body.replaceChildren();
+    window.history.replaceState({}, "", "/");
+  });
+
+  const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+  /**
+   * What the browser does on a back press, in a document that has no session history: the URL
+   * moves to the previous entry and `popstate` fires. happy-dom's `history.back()` does neither,
+   * so the entry is restored by hand and the event dispatched — the assertion is about what the
+   * map does when the URL has moved under it, which is the half that was missing.
+   */
+  const goBackTo = (search: string): void => {
+    window.history.replaceState(window.history.state, "", search);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
+
+  async function press(): Promise<void> {
+    document.querySelector<HTMLButtonElement>(".gw-wells-by-button")!.click();
+    await settle();
+    document
+      .querySelector<HTMLElement>("#gw-wells-by")!
+      .querySelector<HTMLButtonElement>("button.gw-wells-by-value")!
+      .click();
+    await settle();
+  }
+
+  it("releases the press when the reader goes back over it", async () => {
+    // visual-map-wells-by D2: `pushState` was added for this and only the URL moved. A link the
+    // reader copies after a back press has to reproduce the canvas they are looking at.
+    await mount("?map=12/47.8/-102.8");
+    await press();
+    expect(carries(lastWrite("wells"), "operator_name", "HESS CORP")).toBe(true);
+    expect(document.querySelector<HTMLElement>(".gw-facet-pill")!.hidden).toBe(false);
+
+    goBackTo("?map=12/47.8/-102.8");
+    await settle();
+
+    expect(window.location.search).not.toContain("wb.pick");
+    expect(document.querySelector<HTMLElement>(".gw-facet-pill")!.hidden).toBe(true);
+    expect(carries(lastWrite("wells"), "operator_name", "HESS CORP")).toBe(false);
+    expect(
+      [...document.querySelectorAll("#gw-wells-by button.gw-wells-by-value")].map((node) =>
+        node.getAttribute("aria-pressed"),
+      ),
+    ).not.toContain("true");
+  });
+
+  it("re-applies the press when the reader goes forward onto it again", async () => {
+    await mount("?map=12/47.8/-102.8");
+    await press();
+    goBackTo("?map=12/47.8/-102.8");
+    await settle();
+
+    goBackTo("?map=12/47.8/-102.8&wb.pick=HESS+CORP");
+    await settle();
+
+    expect(carries(lastWrite("wells"), "operator_name", "HESS CORP")).toBe(true);
+    const pill = document.querySelector<HTMLElement>(".gw-facet-pill")!;
+    expect(pill.hidden).toBe(false);
+    expect(pill.querySelector(".gw-facet-pill-label")?.textContent).toContain("HESS CORP");
+  });
+
+  it("leaves the canvas alone on a history move that carries no Wells-By term", async () => {
+    // The map is not the only writer of this URL: a card or a drawer moving in history must not
+    // cost a re-mount of the sheet or a rewrite of every filter slot.
+    await mount("?map=12/47.8/-102.8");
+    await press();
+    writes.length = 0;
+
+    goBackTo("?map=12/47.8/-102.8&wb.pick=HESS+CORP&well=3305300000");
+    await settle();
+
+    expect(writes).toHaveLength(0);
+  });
 });

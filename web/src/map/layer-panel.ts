@@ -18,6 +18,8 @@ export interface LayerPanelOptions {
   onOpacity(id: string, value: number): void;
   onBasemap(id: string): void;
   onReset?(next: Set<string>): void;
+  /** Asked to open. The host shuts the sibling sheet before this one appears. */
+  onOpen?(): void;
 }
 
 export interface LayerPanelHandle {
@@ -180,13 +182,17 @@ export function createLayerPanel(options: LayerPanelOptions): LayerPanelHandle {
       for (const row of rows.values()) row.setCrossing(box, resolved, extentOff ?? false);
     },
     open() {
+      options.onOpen?.();
       element.hidden = false;
+    },
+    // Through the pair rather than flipping the attribute, so the open path is one path and
+    // the sibling sheet is shut whichever control was used.
+    toggle() {
+      if (element.hidden) handle.open();
+      else handle.close();
     },
     close() {
       element.hidden = true;
-    },
-    toggle() {
-      element.hidden = !element.hidden;
     },
   };
 

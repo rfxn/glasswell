@@ -38,7 +38,7 @@ import { WELLS_BY_PREFIX } from "../explore/facets/wells-by.ts";
 import type { FacetBucket } from "../explore/facets/wells-by.ts";
 import { EXTENT_PARAM, countedBbox, extentFilterOn } from "./extent.ts";
 import { createFacetPill } from "./facet-pill.ts";
-import { PICK_PARAM, facetFromSearch } from "./facet-pick.ts";
+import { PICK_PARAM, facetFromSearch, wellsByTerms } from "./facet-pick.ts";
 import { createHoverCard } from "./hover-card.ts";
 import { createLayerPanel } from "./layer-panel.ts";
 import { createLegend, legendEnabled } from "./legend.ts";
@@ -305,6 +305,10 @@ export function createMap(
     onToggle: (id, next) => setLayer(id, next),
     onOpacity: (id, value) => setOpacity(id, value),
     onBasemap: (id) => setBasemap(id),
+    // The other half of the one-sheet-at-a-time rule the Wells-By hook states below. Declared
+    // one way it was not a rule: opening this one second left both on the column, each trigger
+    // announcing itself expanded (visual-map-wells-by D3).
+    onOpen: () => wellsBy.close(),
     onReset: (next) => {
       on = next;
       applyVisibility();
@@ -329,6 +333,7 @@ export function createMap(
       for (const [key, value] of Object.entries(values)) {
         setUrlParam(`${WELLS_BY_PREFIX}${key}`, value, mode);
       }
+      panelTerms = wellsByTerms(window.location.search);
       // A press belongs to the dimension and the state it was made in: carried across either, it
       // would narrow the canvas by a value the new ranking never listed.
       if ("by" in values || "state" in values) setPick(null, null);
@@ -340,12 +345,16 @@ export function createMap(
     onOpen: () => panel.close(),
   });
 
+  /** What the URL said about the panel when the map last acted on it. */
+  let panelTerms = wellsByTerms(window.location.search);
+
   /**
    * A press, committed. `push` and not `replace`: narrowing the map to one operator is a
    * decision the back button should undo, unlike a pan (`?extent`, `?layers`), which is churn.
    */
   function setPick(value: string | null, bucket: FacetBucket | null): void {
     setUrlParam(PICK_PARAM, value, "push");
+    panelTerms = wellsByTerms(window.location.search);
     facet = facetFromSearch(window.location.search);
     applyWellFilter();
     invalidateDrawn();
@@ -355,6 +364,25 @@ export function createMap(
     facetPill.setZoom(map.getZoom());
     wellsBy.refresh();
   }
+
+  /**
+   * The other end of that push. Without this the URL moved on a back press and nothing else did,
+   * so the pill still named a press the link no longer carried and a reader who copied it sent a
+   * map they were not looking at — the invariant stated above `facet` (visual-map-wells-by D2).
+   */
+  window.addEventListener("popstate", () => {
+    const next = wellsByTerms(window.location.search);
+    if (next === panelTerms) return;
+    panelTerms = next;
+    facet = facetFromSearch(window.location.search);
+    applyWellFilter();
+    invalidateDrawn();
+    // No figure: the panel has not answered for this bucket, and a census of the canvas would
+    // move when the reader pans. The same rule a press restored from a link follows.
+    facetPill.set(facet ? { dimension: facet.dimension, value: facet.value, wells: null } : null);
+    facetPill.setZoom(map.getZoom());
+    wellsBy.refresh();
+  });
 
   // The handle stays live either way: refreshCounts() writes to a detached legend without
   // knowing it is off-canvas, so nothing has to test for the suppressed case at every call.
