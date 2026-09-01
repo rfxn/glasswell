@@ -85,8 +85,8 @@ FREEZE = {
 REQUEST_ID_HEADER = "X-Request-Id"
 KEY_QUERY_PARAM = "key"
 # A credential in a query string reaches the access log verbatim and the Referer of every
-# outbound link. All three are refused rather than redacted.
-REFUSED_QUERY_PARAMS = ("key", "password", "token")
+# outbound link. All four are refused rather than redacted.
+REFUSED_QUERY_PARAMS = ("key", "password", "new_password", "token")
 ASSET_PREFIX = "/assets/"
 BASEMAP_PREFIX = "/basemap/"
 BASEMAP_MANIFEST = "/basemap/manifest.json"
