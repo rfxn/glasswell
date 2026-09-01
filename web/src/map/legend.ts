@@ -646,17 +646,22 @@ export function createLegend(options: LegendOptions): LegendHandle {
     },
     setVocabulary,
     activeStatuses,
+    // Each of these builds rows the render cycle has already been through, so each retouches:
+    // a value the served order introduced is otherwise left unlit until the next viewport.
     setProducing(next) {
       producingCounts = next;
       renderProducing();
+      teaching.retouch();
     },
     setWellTypes(next) {
       dimensionCounts.set("well_type", next);
       renderDimensions();
+      teaching.retouch();
     },
     setProvenance(next) {
       dimensionCounts.set("geometry_provenance", next);
       renderDimensions();
+      teaching.retouch();
     },
   };
 }

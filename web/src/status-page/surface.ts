@@ -778,6 +778,9 @@ function effectiveState(state: CheckState, snapshot: SnapshotState): CheckState 
 function badge(label: string, state: string): HTMLElement {
   const value = element("span", "gw-status-badge");
   value.dataset["state"] = state;
+  // A state, not vocabulary — and the pill is inline-flex, so a term splitting "Current
+  // snapshot" in two would drop the space between the halves.
+  value.setAttribute("data-no-glossary", "");
   value.textContent = label;
   return value;
 }

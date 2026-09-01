@@ -9,6 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createLegend } from "../map/legend.ts";
 import { stubFetch } from "../test/fixtures.ts";
 import {
   loadSeed,
@@ -209,4 +210,33 @@ it("fills a surface built before the index landed, not only one built after", as
   await store.loadGlossary();
 
   expect(shownIds(root).has("gt_geometry_provenance")).toBe(true);
+});
+
+describe("what the highlighter must not cost a surface", () => {
+  it("leaves a state pill's wording whole, spaces and all", async () => {
+    const root = await renderSurface("status page");
+    await loadGlossary();
+
+    // The pill is inline-flex, so splitting "Current snapshot" around a term would make two
+    // flex items and drop the space between them: the reader saw "Currentsnapshot".
+    expect([...root.querySelectorAll(".gw-status-badge")].map((one) => one.textContent)).toContain(
+      "Current snapshot",
+    );
+    expect(root.querySelector(".gw-status-badge gw-term")).toBeNull();
+  });
+
+  it("lights a legend row the next viewport introduced, without waiting for a render", async () => {
+    const legend = createLegend({ onFilter: () => {} });
+    document.body.append(legend.element);
+    await loadGlossary();
+
+    // The served order decides these rows, and setProvenance does not go through render().
+    legend.setProvenance({ counts: { lateral: 3 }, handles: {}, order: ["lateral"] });
+
+    expect(
+      legend.element
+        .querySelector('.gw-lg-drow[data-value="lateral"] gw-term')
+        ?.getAttribute("term-id"),
+    ).toBe("gt_lateral");
+  });
 });
