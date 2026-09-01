@@ -243,13 +243,14 @@ The tunnel is `3b2d209f-7671-4497-ae4f-740dcbc34788`; connector credentials are 
    family is draw order, which is ingest order, and will read as broken at eight states; and
    the collector's `canonical.well_completions` arm still uses the `left(api10, 2)` filtered
    aggregate that `069` removed from the production arm.
-9. Re-land N2. `feat/n2-enrich-views` holds 17 commits — the N2 schema, the cumulative marts,
+9. Merge the N2 re-land. `feat/n2-reland` carries the N2 schema, the cumulative marts,
    vintage cohorts, the FracFocus base-fluid-intensity promotion and
-   `/v1/wells/{api10}/cumulatives` — that never merged. `PLAN-HORIZON.md` records track T2 as
-   shipped in v0.67; v0.67 shipped a tunnel-assertion fix, and nothing in `src/` imports the
-   N2 surface. It branched at v0.64, so migration `055_n2_enrich_views.sql` renumbers to `071+`
-   and four of its nine conflicts are substantive. Re-land on a branch off current main rather
-   than merging the stale one, and correct the plan's release column in the same train.
+   `/v1/wells/{api10}/cumulatives`, cherry-picked from `feat/n2-enrich-views` onto current
+   main with the migration renumbered `055_n2_enrich_views.sql` to
+   `071_n2_enrich_views.sql`. `PLAN-HORIZON.md` records track T2 as shipped in v0.67; v0.67
+   shipped a tunnel-assertion fix, and nothing on main imports the N2 surface. Merge the
+   re-land rather than the stale branch, and correct the plan's release column in the same
+   train.
 
 ## Verification state
 
