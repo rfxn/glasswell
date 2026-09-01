@@ -491,7 +491,7 @@ describe("what the first paint asks for before it knows who is asking", () => {
     void fetch("/v1/tiles/nd_wells/7/33/45.pbf");
   };
 
-  function gatedFetch(): { seen: string[]; answer: () => void } {
+  function gatedFetch(sessionStatus = 200): { seen: string[]; answer: () => void } {
     const seen: string[] = [];
     let release: () => void = () => {};
     const held = new Promise<void>((resolve) => {
@@ -508,7 +508,7 @@ describe("what the first paint asks for before it knows who is asking", () => {
       // Held rather than slow: the assertion is that nothing raced past it, and a timeout
       // would make that a question about how long the test waited.
       if (path === "/v1/session") await held;
-      return problem(path === "/v1/session" ? 200 : 404);
+      return problem(path === "/v1/session" ? sessionStatus : 404);
     });
     return { seen, answer: release };
   }
@@ -534,17 +534,16 @@ describe("what the first paint asks for before it knows who is asking", () => {
     );
   });
 
-  it("still lets the basemap load anonymously, which is what /basemap is for", async () => {
-    const { seen, answer } = gatedFetch();
+  it("still mounts the map for a reader the probe refuses", async () => {
+    // The gate orders the first paint; it does not withhold it. A refused reader gets the
+    // substrate and the login modal, not a blank canvas — which is what /basemap is for.
+    const { answer } = gatedFetch(403);
 
     await bootAt("/", attachTileSources);
     await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(createMap).not.toHaveBeenCalled();
     answer();
     await vi.waitFor(() => expect(createMap).toHaveBeenCalledOnce());
-
-    // Nothing here gates /basemap, and nothing should: the substrate is served to anyone,
-    // and holding it behind the probe would blank the canvas for a reader who is signing in.
-    expect(seen.filter((path) => path.startsWith("/basemap/"))).toEqual([]);
   });
 
   it("asks who the reader is exactly once, however many surfaces wait on the answer", async () => {

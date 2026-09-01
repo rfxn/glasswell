@@ -496,7 +496,7 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       source: basins,
       "source-layer": basins,
       minzoom: BOUNDARY_MIN_ZOOM,
-      paint: { "fill-color": rgba(VARIANT_STYLES.dark.geology, 0.05) },
+      paint: { "fill-color": rgba(GEOLOGY_FRAME_COLOUR, 0.05) },
     },
     {
       id: "basins-line",
@@ -506,7 +506,7 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       minzoom: BOUNDARY_MIN_ZOOM,
       metadata: { [LINE_ROLE]: "geology" },
       paint: {
-        "line-color": VARIANT_STYLES.dark.geology,
+        "line-color": GEOLOGY_FRAME_COLOUR,
         "line-width": interpolate(zoom, [
           [BOUNDARY_MIN_ZOOM, 0.8],
           [8, 1.4],
@@ -526,7 +526,7 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       minzoom: BOUNDARY_MIN_ZOOM,
       metadata: { [LINE_ROLE]: "geology" },
       paint: {
-        "line-color": VARIANT_STYLES.dark.geology,
+        "line-color": GEOLOGY_FRAME_COLOUR,
         "line-width": interpolate(zoom, [
           [BOUNDARY_MIN_ZOOM, 0.5],
           [8, 0.9],
