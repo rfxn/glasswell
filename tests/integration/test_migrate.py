@@ -72,6 +72,9 @@ def test_the_serving_migration_registers_the_modeling_selector_profiles(db) -> N
             " where operation = 'api.respond' order by output_dataset"
         )
         assert cursor.fetchall() == [
+            # The jurisdiction registry serves every well count as a figure, so its request
+            # derivation has to be able to prove the selector each one addressed.
+            ("api.jurisdictions", "response_output"),
             ("api.modeling_publication", "response_output"),
             ("api.type_curve", "response_output"),
             ("api.type_curve_index", "response_output"),

@@ -39,3 +39,17 @@
       second dimension whose absence gets a rule is a row rather than another key in a
       tuple-keyed map; an unregistered dimension still counts its bucket and claims nothing
       further about it
+- [New] `GET /v1/jurisdictions` serves the registry: for each jurisdiction the regulator and
+      the address it publishes at, the identity scheme and prefix its wells are keyed by, every
+      conformance rule registered for it with which one serves, the liquids basis, the tile
+      layer and colour it is drawn with, what is built for it, and the wells last measured in
+      it. `as_of` is the registry's own knowledge cut, so a correction published after it is
+      not served under it and a cut before the first registration is refused rather than
+      answered with an empty page. Not `/v1/states`: `state` is already a lifecycle value and
+      a frozen query parameter meaning the API prefix, and a province is not a state
+- [New] Every well count on that route is a figure with a handle that resolves through
+      `?explain=true` to the government file the wells were promoted from, and a jurisdiction
+      with no measurement yet serves no count at all rather than a zero — "not measured" and
+      "no wells" are different facts. `Jurisdiction`, `Regulator` and `Identity scheme` are
+      glossary terms, and the identity prefix is the one number on the route exempted from
+      carrying a handle, because it is an identifier's prefix and says so in both places

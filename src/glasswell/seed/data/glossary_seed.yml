@@ -603,6 +603,49 @@
   related_terms: ["Conformance rule", "Audit stream"]
   source_refs: ["blueprint-v0.6 §9", "SB-07 §12"]
 
+- term: Identity scheme
+  aliases: ["Identity scheme"]
+  short_definition: >-
+    Which well identifier a jurisdiction's rows are keyed by - API-10 in the United States,
+    UWI in Canada.
+  expanded_definition: >-
+    Registered per jurisdiction rather than assumed, because a scheme that is assumed is a
+    scheme that silently takes the first two characters of something that is not an API-10.
+    Whether the identifier is a *key* is a separate fact and its own flag: a handful of states
+    reissue API-10s, which makes the number an identifier but not a unique one.
+  domain_tags: [identity, data-model]
+  related_terms: ["API-10 / API-12 / API-14", "Jurisdiction", "Spine"]
+  source_refs: ["blueprint-v0.6 §3.0", "R8"]
+
+- term: Jurisdiction
+  aliases: ["Jurisdiction", "Jurisdictions"]
+  short_definition: >-
+    A regulator's territory as glasswell registers it: a state or a province, with the rules
+    and the identity scheme its data is read under.
+  expanded_definition: >-
+    A registration, not a project. Every jurisdiction is a row in lineage.jurisdictions with a
+    rationale and two dates - the date it takes effect and the date glasswell published it -
+    and every cross-source decision it carries is a row beside it rather than a branch in code.
+    Serving a fifth jurisdiction is appending rows; it is not editing the routers that read
+    them. The word is deliberately not "state": a province is not one, and `state` is already
+    both a lifecycle value and a query parameter meaning the API prefix.
+  domain_tags: [data-model, conformance]
+  related_terms: ["Conformance rule", "Regulator", "Identity scheme"]
+  source_refs: ["blueprint-v0.6 §3.0", "R8"]
+
+- term: Regulator
+  short_definition: >-
+    The agency whose filings a jurisdiction is served from, named on the registration with
+    the address it publishes them at.
+  expanded_definition: >-
+    Named rather than implied, because "North Dakota says" is a claim about a specific agency
+    and a specific publication, and a reader checking a figure needs to reach the second one.
+    The regulator axis is not the coverage axis: a federal dataset covering one state is
+    registered as that state's coverage and has no regulator here.
+  domain_tags: [conformance, data-model]
+  related_terms: ["Jurisdiction", "Source", "Conformance rule"]
+  source_refs: ["blueprint-v0.6 §3.0", "R8"]
+
 - term: Quarantine state
   highlightable: false
   short_definition: >-

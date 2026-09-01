@@ -249,6 +249,17 @@ select r.jurisdiction_code, date '2026-09-01', date '2026-09-01',
  where exists (select 1 from lineage.conformance_rules c where c.rule_id = r.rule_id)
 on conflict do nothing;
 
+-- /v1/jurisdictions serves every well count as a figure, so the request derivation has to be
+-- able to prove the selector it addressed. Without this row every one of those handles is
+-- refused as ambiguous rather than resolved to the file the wells were promoted from.
+insert into lineage.selector_output_registry
+    (operation, output_dataset, selector_profile, rationale)
+values
+    ('api.respond', 'api.jurisdictions', 'response_output',
+     'The request derivation records the jurisdiction total and the per-status counts it'
+     ' returned for one page of the registry at one knowledge cut.')
+on conflict do nothing;
+
 grant select on lineage.jurisdiction_codes, lineage.jurisdictions, lineage.jurisdiction_rules,
     lineage.jurisdiction_well_counts to glasswell_api, glasswell_pipeline;
 grant execute on function lineage.jurisdictions_as_of(date, date)

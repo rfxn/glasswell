@@ -138,6 +138,7 @@ MATRIX: tuple[tuple, ...] = (
     ("GET", f"/v1/quarantine/{EXAMPLE_QUARANTINE_ID}", READ),
     ("GET", "/v1/glossary", READ),
     ("GET", "/v1/formations", READ),
+    ("GET", "/v1/jurisdictions", READ),
     ("GET", "/v1/glossary/index", READ),
     ("GET", f"/v1/glossary/{EXAMPLE_TERM_ID}", READ),
     ("GET", f"/v1/tiles/{TILE['layer']}/{TILE['z']}/{TILE['x']}/{TILE['y']}.pbf", READ),

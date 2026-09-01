@@ -27,6 +27,7 @@ VALID = date(2026, 9, 30)
 def registration(code: str, prefix: str | None, *, scheme: str = "api10", **overrides):
     row = {
         "jurisdiction_code": code,
+        "level": "state",
         "effective_from": date(2026, 9, 1),
         "published_at": date(2026, 9, 1),
         "evidence_tag": "v0.76",

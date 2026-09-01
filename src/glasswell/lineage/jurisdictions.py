@@ -38,6 +38,7 @@ class JurisdictionRule:
 @dataclass(frozen=True, slots=True)
 class Jurisdiction:
     jurisdiction_code: str
+    level: str
     effective_from: date
     published_at: date
     evidence_tag: str
@@ -98,8 +99,9 @@ class JurisdictionRegistry:
 
 
 _RESOLVED = """
-select j.*, coalesce(r.rules, '[]'::jsonb) as rules
+select j.*, c.level, coalesce(r.rules, '[]'::jsonb) as rules
   from lineage.jurisdictions_as_of(%(knowledge_as_of)s, %(valid_as_of)s) j
+  join lineage.jurisdiction_codes c on c.jurisdiction_code = j.jurisdiction_code
   left join lateral (
       select jsonb_agg(jsonb_build_object(
                  'decision', d.decision, 'rule_id', d.rule_id,

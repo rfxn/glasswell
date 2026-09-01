@@ -27,6 +27,9 @@
   reason: API state code carried as reported; an identifier, not a quantity.
 - pointer: /basins/*/state_code
   reason: API state code on a per-basin summary row; an identifier, not a quantity.
+- pointer: /*/identity/prefix
+  reason: >-
+    The two leading digits of every API-10 in a jurisdiction: an identifier's prefix, not a measured quantity.
 - pointer: /county_code_at_permit
   reason: County code as reported at permit; an identifier, not a quantity.
 - pointer: /*/county_code_at_permit
