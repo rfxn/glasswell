@@ -922,14 +922,14 @@ describe("the panel's own layout contract, read off the shipped sheets", () => {
 
   it("stops capping the panel at 34rem on a screen with room for the list", () => {
     // 544 px against 1,849 px of rows threw away 390 px of available height at 1600x1000.
-    expect(rule(MAP, ".gw-layers")).toContain("max-height: calc(100% - 1.2rem)");
-    expect(rule(MAP, ".gw-layers")).not.toContain("34rem");
+    expect(rule(MAP, ".gw-sheet")).toContain("max-height: calc(100% - 1.2rem)");
+    expect(rule(MAP, ".gw-sheet")).not.toContain("34rem");
   });
 
   it("clears the map's own control column instead of covering the button that opens it", () => {
     // Measured at 1600x1000: a 19.6 x 29 px intersection with .gw-layers-button, which is
     // also the close control — the frame read "ayers".
-    const offset = /\.gw-layers\s*\{[^}]*right:\s*([\d.]+)rem/.exec(MAP)?.[1];
+    const offset = /\.gw-sheet\s*\{[^}]*right:\s*([\d.]+)rem/.exec(MAP)?.[1];
     expect(offset).toBeTruthy();
     expect(Number(offset)).toBeGreaterThan(4.625);
   });

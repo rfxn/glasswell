@@ -116,6 +116,8 @@ function answerCounts(inView: number): void {
     totalHandle: null,
     vocabulary: [],
     producing: null,
+    wellTypes: null,
+    provenance: null,
     resolved: null,
   });
 }

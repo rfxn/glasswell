@@ -5,17 +5,21 @@ import type { Figure, Warning } from "../../api/envelope.ts";
 import type { AppState } from "../../app/state.ts";
 import { warningPanels } from "../../card/card.ts";
 import "../../card/gw-figure.ts";
-import { filtersOf } from "../router.ts";
 
 /** §4.1: the panel rides the URL, so a shared link opens the list the sharer was reading. */
 export const WELLS_BY_PREFIX = "wb.";
 
+/**
+ * The dimensions the panel offers, each with the `/v1/wells` parameter its buckets narrow the
+ * collection by — `facets.py`'s `DIMENSIONS[...]["filter"]`, which wells-by.test.ts parses and
+ * holds equal to this. `null` where the collection accepts no such filter at all.
+ */
 export const DIMENSIONS = [
-  { id: "operator", label: "operator" },
-  { id: "county", label: "county" },
-  { id: "status", label: "status" },
-  { id: "well_type", label: "well type" },
-  { id: "completion_year", label: "completion year" },
+  { id: "operator", label: "operator", filter: "operator" },
+  { id: "county", label: "county", filter: "county" },
+  { id: "status", label: "status", filter: "status" },
+  { id: "well_type", label: "well type", filter: "well_type" },
+  { id: "completion_year", label: "completion year", filter: null },
 ] as const;
 
 const SORTS = [
@@ -81,10 +85,43 @@ export interface WellsByHooks {
   applyFilter(filters: Record<string, string[]>): void;
 }
 
+/** Whether a bucket is a control on this surface, and — where it is not — why not. */
+export interface BucketAffordance {
+  press: boolean;
+  title?: string;
+}
+
 export interface WellsByOptions {
   state: AppState;
   hooks: WellsByHooks;
   signal: AbortSignal;
+  /**
+   * The filters the surface beside this panel already carries, which is what makes a bucket a
+   * pressed control. Handed in rather than read off `state.extra` here: the map surface has no
+   * grid and no `f.` prefix, and a panel that reached into the explorer's URL vocabulary could
+   * not be the one component both surfaces render.
+   */
+  applied: Record<string, string[]>;
+  /** The host's own press rule. Absent, the link-presence rule below stands. */
+  bucketAffordance?(dimension: string, bucket: FacetBucket): BucketAffordance;
+  /**
+   * One line above the ranking naming the population these counts were taken over. A function
+   * where the sentence needs the served state name: the map sheet says "every current well in
+   * North Dakota", and the name is the server's rather than a second copy of the code table.
+   */
+  scopeNote?: string | ((data: WellFacets) => string);
+}
+
+/** The collection's own refusal: a dimension /v1/wells accepts no filter for. */
+const COLLECTION_UNFILTERABLE =
+  "The collection accepts no filter for this dimension, so it cannot be narrowed to one year.";
+
+/** What the panel did before it served two surfaces: a bucket is pressable where the server
+ *  published a link for it, and a plain label where it did not. */
+function linkAffordance(_dimension: string, bucket: FacetBucket): BucketAffordance {
+  return filtersOfLink(bucket.links["wells"]) === null
+    ? { press: false, title: COLLECTION_UNFILTERABLE }
+    : { press: true };
 }
 
 export function panelState(state: AppState): Record<string, string> {
@@ -459,6 +496,38 @@ function list(data: WellFacets, warnings: Warning[], options: WellsByOptions): H
   caption.textContent = data.caption;
   box.append(caption);
 
+  // Above the ranking, never under it: a population stated after the numbers is a correction.
+  const scopeNote =
+    typeof options.scopeNote === "function" ? options.scopeNote(data) : options.scopeNote;
+  if (scopeNote) {
+    const scope = document.createElement("p");
+    scope.className = "gw-wells-by-scope";
+    scope.textContent = scopeNote;
+    box.append(scope);
+  }
+
+  // A press needs both: a host willing to take one, and a link naming the filters it would
+  // apply. Resolved once per bucket here so the sentence below and the rows agree on it.
+  const affordanceOf = options.bucketAffordance ?? linkAffordance;
+  const refusals = data.buckets.map((bucket) => {
+    const affordance = affordanceOf(data.dimension, bucket);
+    return affordance.press && filtersOfLink(bucket.links["wells"]) !== null
+      ? null
+      : (affordance.title ?? COLLECTION_UNFILTERABLE);
+  });
+
+  // On screen, not only in a `title`: a span renders identically to a button at rest, and on a
+  // touch surface there is no cursor and no hover, so a reader taps a count, nothing happens and
+  // nothing anywhere says why (visual-map-wells-by D8). Said once for the dimension rather than
+  // per row, and only where it holds for the whole ranking — it is a fact about the column.
+  const refused = refusals.length > 0 && refusals.every(Boolean) ? refusals[0] : null;
+  if (refused) {
+    const note = document.createElement("p");
+    note.className = "gw-wells-by-refusal";
+    note.textContent = refused;
+    box.append(note);
+  }
+
   if (data.buckets.length === 0) {
     const none = div("gw-wells-by-empty");
     const title = document.createElement("p");
@@ -481,9 +550,9 @@ function list(data: WellFacets, warnings: Warning[], options: WellsByOptions): H
   );
   const rows = document.createElement("ol");
   rows.className = "gw-wells-by-rows";
-  const applied = filtersOf(options.state);
+  const applied = options.applied;
   data.buckets.forEach((bucket, index) => {
-    rows.append(row(bucket, index + 1, widest, data, applied, options));
+    rows.append(row(bucket, index + 1, widest, data, applied, options, refusals[index] ?? null));
   });
   if (data.buckets.length > 0) box.append(rows);
 
@@ -528,13 +597,16 @@ function row(
   data: WellFacets,
   applied: Record<string, string[]>,
   options: WellsByOptions,
+  /** Why this bucket is not a control, or null where it is one. */
+  refusal: string | null,
 ): HTMLElement {
   const item = document.createElement("li");
   item.className = "gw-wells-by-row";
   item.dataset["value"] = bucket.value;
 
   const filters = filtersOfLink(bucket.links["wells"]);
-  const label = filters ? document.createElement("button") : document.createElement("span");
+  // A control that looks clickable and narrows nothing is worse than no control.
+  const label = refusal === null ? document.createElement("button") : document.createElement("span");
   label.className = "gw-wells-by-value";
   if (label instanceof HTMLButtonElement && filters) {
     const pressed = narrowedBy(filters, applied);
@@ -549,9 +621,9 @@ function row(
       { signal: options.signal },
     );
   } else {
-    // A dimension /v1/wells cannot filter on gets no button: a control that looks clickable
-    // and narrows nothing is worse than a plain label.
-    label.title = "The collection accepts no filter for this dimension, so it cannot be narrowed to one year.";
+    // Kept beside the line above the ranking: the pointer still gets the reason on the row it
+    // is over, and the reader without one has already been told.
+    label.title = refusal ?? COLLECTION_UNFILTERABLE;
   }
 
   const position = document.createElement("span");

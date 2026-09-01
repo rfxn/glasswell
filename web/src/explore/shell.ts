@@ -8,7 +8,7 @@ import { buildCatalogue } from "./catalogue.ts";
 import type { Catalogue, CatalogueDataset } from "./catalogue.ts";
 import { mountGrid } from "./grid/grid.ts";
 import { renderRail } from "./rail.ts";
-import { requestFor, withFilter } from "./router.ts";
+import { filtersOf, requestFor, withFilter } from "./router.ts";
 import { WELLS_BY_PREFIX, mountWellsBy } from "./facets/wells-by.ts";
 
 export interface ExplorerHooks {
@@ -179,6 +179,9 @@ function renderWellsBy(next: AppState): void {
   wellsByAbort = new AbortController();
   void mountWellsBy(host, {
     state: next,
+    // The grid's own filters, read here rather than inside the panel: the panel serves the map
+    // too, and the map has neither a grid nor the `f.` prefix these live under.
+    applied: filtersOf(next),
     hooks: {
       setPanel: (values, mode) => {
         const extra = { ...state?.extra };

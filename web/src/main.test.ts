@@ -421,4 +421,25 @@ describe("one Escape closes one layer (SB-05 §7)", () => {
     await vi.waitFor(() => expect(card.hidden).toBe(true));
     popover.remove();
   });
+
+  it("hands focus back to the control that opened the sheet", async () => {
+    // visual-map-wells-by D15: focus landed on the brand mark at the far top left, so a
+    // keyboard reader lost their place in the control cluster on every Escape.
+    await bootAt("/");
+    const sheet = document.createElement("section");
+    sheet.className = "gw-sheet";
+    sheet.id = "gw-wells-by";
+    const trigger = document.createElement("button");
+    trigger.className = "gw-wells-by-button";
+    trigger.setAttribute("aria-controls", sheet.id);
+    trigger.setAttribute("aria-expanded", "true");
+    document.body.append(sheet, trigger);
+
+    escape();
+
+    expect(sheet.hidden).toBe(true);
+    expect(document.activeElement).toBe(trigger);
+    sheet.remove();
+    trigger.remove();
+  });
 });
