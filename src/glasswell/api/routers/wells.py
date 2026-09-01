@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Path, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import JSONResponse
 
 from glasswell.api.deps import AsOf, Connection, Cursor, ExplainEffect, Principal, WellsLimit, rows
@@ -41,6 +41,11 @@ from glasswell.lineage.conformance import (
 from glasswell.lineage.envelope import Figure, collect_handles, distinct_handles, figure
 from glasswell.lineage.explain import MAX_HANDLES
 from glasswell.lineage.selector_registry import identity_selector_term
+from glasswell.marts.cumulatives import (
+    LIQUIDS_BASIS,
+    MART_STREAMS,
+    STATE_API_PREFIXES,
+)
 from glasswell.marts.producing import (
     PRODUCING_CLASSES,
     PRODUCING_RULE_IDS,
@@ -54,6 +59,14 @@ from glasswell.marts.producing import (
     window_start,
 )
 from glasswell.marts.tiles import TILE_BUFFER, TILE_EXTENT, TILE_MAX_ZOOM, WEB_MERCATOR
+from glasswell.marts.vintage_cohorts import (
+    COHORT_RULE,
+    POPULATION_SCOPE_DETAIL,
+    SPACING_ASSUMPTION_REASON,
+    SUPPORT_SCALE_NOTE,
+    cohort_rollup,
+    load_cohort_policy,
+)
 from glasswell.status_resolution import resolved_status, resolver_join
 from glasswell.units import metres_to_feet
 
@@ -109,6 +122,21 @@ DEFAULT_PROVENANCE_RULE = "cr_nd_geometry_provenance_1"
 # that cr_mt_paths_subkey_1 measured. The rule is served in the figure's place.
 LENGTH_SCOPE_RULES = {"25": "cr_mt_paths_length_scope_1"}
 LENGTH_NOT_SERVED = "not_served"
+
+# The cohort key is an identifier for a group, not a measurement about it. Byte-equal to the
+# non_figure_allowlist.yml entry that covers /cohorts/*/cohort_year (test_not_a_figure.py).
+COHORT_YEAR_REASON = (
+    "Cohort key. The year that identifies a cohort of wells; an identifier for the group, not"
+    " a quantity measured about it. Which year it is - spud or completion anchor - is stated"
+    " by cohort_basis and ruled by cohort_key_rule."
+)
+POPULATION_STATE_REASON = (
+    "API state prefix naming what this population covers; an identifier, not a quantity. Same"
+    " class as /state_code."
+)
+COHORT_STREAM_COLUMNS = dict(zip(MART_STREAMS, ("oil_bbl", "gas_mcf", "water_bbl"), strict=True))
+COHORT_STREAM_UNITS = {"liquid": "bbl", "gas": "mcf", "water": "bbl"}
+COHORT_STREAM_BASIS = {"liquid": LIQUIDS_BASIS, "gas": None, "water": "water"}
 
 WELL_LABELS = {
     "/api10": "gt_api_10_api_12_api_14",
@@ -1635,6 +1663,304 @@ def get_well_status_summary(
     )
 
 
+class CohortTotals(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    oil_bbl: FigureModel | None = Field(
+        description="Cohort liquids total; null where no well in the cohort filed one.",
+        json_schema_extra={GLOSSARY_KEY: "gt_liquids_policy"},
+    )
+    gas_mcf: FigureModel | None = Field(
+        description="Cohort gas total.", json_schema_extra={GLOSSARY_KEY: "gt_stream"}
+    )
+    water_bbl: FigureModel | None = Field(
+        description="Cohort produced-water total.",
+        json_schema_extra={GLOSSARY_KEY: "gt_stream"},
+    )
+
+
+class VintageCohort(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cohort_year: int | None = Field(
+        description="The year that identifies this cohort; null for the no-key cohort.",
+        json_schema_extra=not_a_figure(COHORT_YEAR_REASON),
+    )
+    cohort_key_semantics: str = Field(
+        description="spud_year, or no_spud_date where the regulator published none."
+    )
+    wells: FigureModel = Field(
+        description="Wells in the cohort.",
+        json_schema_extra={GLOSSARY_KEY: "gt_vintage_well_vintage"},
+    )
+    wells_with_a_filed_month: FigureModel = Field(
+        description=(
+            "Wells in the cohort whose record admits at least one month into these totals, per"
+            " cr_nd_vintage_cohort_1's support_measure. Not the producing classification of"
+            " cr_producing_window_1, which asks whether a well is producing now."
+        ),
+        json_schema_extra={GLOSSARY_KEY: "gt_cumulative_production"},
+    )
+    cumulative: CohortTotals = Field(description="Cohort totals per stream.")
+
+
+class PopulationScope(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    states_served: list[str] = Field(
+        description="API state prefixes in this population.",
+        json_schema_extra=not_a_figure(POPULATION_STATE_REASON),
+    )
+    basin_complete: bool = Field(description="Whether the population spans the whole basin.")
+    detail: str = Field(description="What the truncation means for a basin-level reading.")
+
+
+class SpacingAssumption(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    applies: bool = Field(description="Whether a spacing assumption underlies these figures.")
+    reason: str = Field(description="Why it does or does not apply (Protocol 4D).")
+
+
+class SupportDistribution(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scale: str = Field(description="Which support scale the bands are, and why this one.")
+    classes: dict[str, int] = Field(description="How many cohorts fall in each support band.")
+
+
+class WellVintageCohorts(BaseModel):
+    cohort_basis: str = Field(description="Which year the cohort key is, per its rule.")
+    cohort_key_rule: str = Field(
+        description="The conformance rule that chose the key.",
+        json_schema_extra={GLOSSARY_KEY: "gt_conformance_rule"},
+    )
+    snapshot_vintage: date = Field(
+        description="Knowledge vintage of the cumulative mart the totals were read from.",
+        json_schema_extra={GLOSSARY_KEY: "gt_report_vintage"},
+    )
+    spud_dates_read_at: date | None = Field(
+        description="Knowledge vintage the cohort key itself was read at.",
+        json_schema_extra={GLOSSARY_KEY: "gt_report_vintage"},
+    )
+    population_scope: PopulationScope = Field(description="What this population does not cover.")
+    spacing_assumption: SpacingAssumption = Field(description="Protocol 4D, stated not omitted.")
+    support_distribution: SupportDistribution = Field(
+        description="Protocol 4D's support statement, on the cohort scale."
+    )
+    cohorts: list[VintageCohort] = Field(description="One entry per cohort, oldest first.")
+
+
+@router.get(
+    "/wells/vintage-cohorts",
+    operation_id="get_well_vintage_cohorts",
+    summary="Wells and cumulative volume by vintage cohort",
+    description=(
+        "Drilled wells and their cumulative volumes, grouped by the year that identifies the"
+        " cohort. Which year that is — the spud year or the completion-anchor year — is not a"
+        " query's choice to make: of the ND wells carrying both dates, 47 percent fall in"
+        " different years, so the two are different charts. The key is committed as"
+        " cr_nd_vintage_cohort_1 with its measured rationale and its effective date, read here"
+        " at serve time, and the response names the rule so a reader can resolve why."
+        " Wells the regulator published no key for are their own cohort with cohort_year null,"
+        " never folded into a year and never dropped: on the deployed instance that is 6,970 ND"
+        " wells, of which 49 have production, so the cohort is large in count and small in"
+        " volume and the response says both."
+        " Protocol 4D is stated rather than assumed: a vintage cohort is a population of"
+        " drilled wells and not a set of admissible slots, so spacing_assumption.applies is"
+        " false with its reason, and support_distribution says how many wells stand behind each"
+        " cohort's figures on a scale cut for cohorts rather than for PLSS sections. The count"
+        " it is cut on is wells_with_a_filed_month, which cr_nd_vintage_cohort_1 defines and"
+        " which is deliberately not the producing classification served on /v1/wells."
+        " The population is North Dakota. The Williston basin is not, so population_scope says"
+        " so inside `data` rather than only in a warning a copied payload would lose."
+    ),
+    response_model=EnvelopeModel[WellVintageCohorts],
+    openapi_extra={
+        **request_example(),
+        **dataset(
+            id="vintage_cohorts",
+            title="Vintage cohorts",
+            group="wells",
+            collection_pointer="/cohorts",
+            anchors=["/cohort_basis", "/cohort_key_rule", "/snapshot_vintage"],
+            row_id=["/cohort_year"],
+            facets=[],
+            columns={
+                "default": [
+                    "/cohort_year",
+                    "/cohort_key_semantics",
+                    "/wells",
+                    "/wells_with_a_filed_month",
+                    "/cumulative/oil_bbl",
+                    "/cumulative/gas_mcf",
+                ],
+                "sort": "/cohort_year",
+            },
+            intro="nb_dataset_vintage_cohorts",
+            order=16,
+        ),
+        **semantics(
+            explain={
+                "glossary": "gt_derivation_handle",
+                "so": (
+                    "Every cohort carries a well count, a producing-well count and up to three"
+                    " totals, so a full basin's cohorts produce more handles than one"
+                    " /v1/explain call takes; the response says how many it left out rather"
+                    " than trimming quietly, and each figure still resolves alone."
+                ),
+            },
+            explain_depth={
+                "glossary": "gt_derivation_handle",
+                "so": (
+                    "A cohort total resolves through the cumulative mart to every promotion"
+                    " that fed it, so the chain is one hop longer than a per-well figure's."
+                ),
+            },
+        ),
+    },
+    responses=problem_responses("service_degraded"),
+)
+def get_well_vintage_cohorts(
+    request: Request,
+    connection: Connection,
+    explain: ExplainEffect,
+) -> JSONResponse:
+    policy = load_cohort_policy(connection)
+    cohorts, population = cohort_rollup(connection, policy)
+    snapshot = population["snapshot_vintage"]
+    data: dict[str, Any] = {
+        "cohort_basis": policy.cohort_key,
+        "cohort_key_rule": COHORT_RULE,
+        "snapshot_vintage": snapshot,
+        "spud_dates_read_at": population["spud_dates_read_at"],
+        "population_scope": {
+            "states_served": list(STATE_API_PREFIXES),
+            "basin_complete": False,
+            "detail": POPULATION_SCOPE_DETAIL,
+        },
+        "spacing_assumption": {"applies": False, "reason": SPACING_ASSUMPTION_REASON},
+        "support_distribution": {
+            "scale": SUPPORT_SCALE_NOTE,
+            "classes": population["support_distribution"],
+        },
+        "cohorts": [
+            _cohort(row, snapshot=snapshot, derivation=population["derivation_ids"][0])
+            for row in cohorts
+        ],
+    }
+    data = register_response_figures(
+        connection,
+        data,
+        dataset="api.well_vintage_cohorts",
+        operation_id="get_well_vintage_cohorts",
+        locator=request.url.path,
+        partition={"cohort_basis": policy.cohort_key, "as_of": iso(snapshot) or "latest"},
+        input_derivations=population["derivation_ids"],
+        correlation_id=request.state.request_id,
+        rule_ids=[COHORT_RULE, "cr_nd_null_semantics_1", "cr_nd_liquids_policy_1"],
+    )
+    return enveloped(
+        request,
+        data,
+        as_of=snapshot,
+        as_of_requested="latest",
+        labels=_cohort_labels(cohorts),
+        warnings=_cohort_warnings(data, cohorts),
+        links={
+            COHORT_RULE: f"/v1/conformance/{COHORT_RULE}",
+            "wells": "/v1/wells",
+        },
+        explain=inline_for(connection, explain),
+    )
+
+
+def _cohort(row: dict[str, Any], *, snapshot: date, derivation: str) -> dict[str, Any]:
+    """The mart derivation is the figure's until register_response_figures rebinds every one
+    of them to the request's own; a figure has to carry one to be built at all."""
+    key = row["cohort_year"] if row["cohort_year"] is not None else row["cohort_key_semantics"]
+    return {
+        "cohort_year": row["cohort_year"],
+        "cohort_key_semantics": row["cohort_key_semantics"],
+        "wells": figure(
+            str(row["wells"]),
+            unit=COUNT_UNIT,
+            derivation=derivation,
+            selector=f"cohort={key}&col=wells",
+        ),
+        "wells_with_a_filed_month": figure(
+            str(row["wells_with_a_filed_month"]),
+            unit=COUNT_UNIT,
+            derivation=derivation,
+            selector=f"cohort={key}&col=wells_with_a_filed_month",
+        ),
+        "cumulative": {
+            COHORT_STREAM_COLUMNS[stream]: (
+                None
+                if value is None
+                else figure(
+                    str(Decimal(value)),
+                    unit=COHORT_STREAM_UNITS[stream],
+                    derivation=derivation,
+                    selector=f"cohort={key}&col={COHORT_STREAM_COLUMNS[stream]}",
+                    granularity="well_observed",
+                    basis=COHORT_STREAM_BASIS[stream],
+                    report_vintage=snapshot,
+                )
+            )
+            for stream, value in row["totals"].items()
+        },
+    }
+
+
+def _cohort_labels(cohorts: list[dict[str, Any]]) -> dict[str, str]:
+    """One key per cohort present: `web/src/api/envelope.ts` looks a pointer up by exact
+    match, so a `/cohorts/*/...` key resolves for nobody (the same rule as _pool_labels)."""
+    labels = {
+        "/cohort_basis": "gt_vintage_well_vintage",
+        "/cohort_key_rule": "gt_conformance_rule",
+        "/snapshot_vintage": "gt_report_vintage",
+        "/spud_dates_read_at": "gt_spud_date",
+    }
+    for index in range(len(cohorts)):
+        labels |= {
+            f"/cohorts/{index}/cohort_year": "gt_vintage_well_vintage",
+            f"/cohorts/{index}/cohort_key_semantics": "gt_spud_date",
+            f"/cohorts/{index}/wells": "gt_vintage_well_vintage",
+            f"/cohorts/{index}/wells_with_a_filed_month": "gt_cumulative_production",
+            f"/cohorts/{index}/cumulative/oil_bbl": "gt_liquids_policy",
+            f"/cohorts/{index}/cumulative/gas_mcf": "gt_stream",
+            f"/cohorts/{index}/cumulative/water_bbl": "gt_stream",
+        }
+    return labels
+
+
+def _cohort_warnings(data: Any, cohorts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    warnings: list[dict[str, Any]] = [
+        {
+            "code": "population_state_truncated",
+            "detail": POPULATION_SCOPE_DETAIL,
+            "pointer": "/cohorts",
+        }
+    ]
+    handles = _handles(data)
+    if handles > MAX_HANDLES:
+        warnings.append(
+            {
+                "code": "explain_link_truncated",
+                "detail": (
+                    f"These {len(cohorts)} cohorts produced {handles} figures and links.explain"
+                    f" carries the first {MAX_HANDLES} handles, so {handles - MAX_HANDLES} are"
+                    " absent from it. Every figure still resolves on its own: read the figure's"
+                    " `d` and call /v1/explain?h=<d>&depth=full. The cap is /v1/explain's own"
+                    " (SB-07 §9.4), not this operation's."
+                ),
+                "pointer": "/cohorts",
+            }
+        )
+    return warnings
+
+
 @router.get(
     "/wells/{api10}",
     operation_id="get_well",
@@ -1854,6 +2180,13 @@ def get_well(
         warnings=warnings,
         links={
             "completions": f"/v1/wells/{api10}/completions",
+            # Absent outside the cumulative mart's states, so a card offered the link never
+            # reads a 404 as "this well produced nothing" — the two are different facts.
+            **(
+                {"cumulatives": f"/v1/wells/{api10}/cumulatives"}
+                if row["state_code"] in STATE_API_PREFIXES
+                else {}
+            ),
             "formations": "/v1/formations",
             **(
                 {"neighbors": f"/v1/wells/{api10}/neighbors"}

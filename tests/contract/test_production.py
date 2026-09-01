@@ -10,9 +10,11 @@ PATH = f"/v1/wells/{EXAMPLE_API10}/production"
 
 
 def test_the_series_is_the_sidecar_form(client: TestClient) -> None:
+    """The axis opens at 2025-12: a withheld month has no canonical row, and the ledger is
+    where the axis learns it exists at all (D2)."""
     data = client.get(PATH).json()["data"]
 
-    assert data["series"]["pm"] == [f"2026-0{month}" for month in range(1, 7)]
+    assert data["series"]["pm"] == ["2025-12", *(f"2026-0{month}" for month in range(1, 7))]
     assert data["_lineage"]["series.oil_bbl"].startswith("drv_")
     assert data["_units"]["series.oil_bbl"] == "bbl"
     assert data["_units"]["series.gas_mcf"] == "mcf"
@@ -30,7 +32,8 @@ def test_every_point_carries_its_report_vintage(client: TestClient) -> None:
 
     vintages = data["series"]["oil_bbl_report_vintage"]
     assert len(vintages) == len(data["series"]["oil_bbl"])
-    assert set(vintages) == {"2026-08-01"}
+    # The withheld month has no canonical row, so it has no vintage to report.
+    assert set(vintages) == {"2026-08-01", None}
 
 
 def test_null_semantics_are_not_collapsed(client: TestClient) -> None:
@@ -38,7 +41,10 @@ def test_null_semantics_are_not_collapsed(client: TestClient) -> None:
     data = client.get(PATH).json()["data"]
 
     assert data["series"]["water_bbl_null_semantics"][-1] == "withheld"
-    assert set(data["series"]["oil_bbl_null_semantics"]) == {"reported"}
+    # A month the ledger holds and a month canonical labels withheld are the same served
+    # fact reached two ways; neither is a gap.
+    assert data["series"]["oil_bbl_null_semantics"][0] == "withheld"
+    assert set(data["series"]["oil_bbl_null_semantics"]) == {"withheld", "reported"}
 
 
 def test_the_granularity_is_declared(client: TestClient) -> None:
@@ -84,7 +90,13 @@ def test_volumes_are_strings_not_floats(client: TestClient) -> None:
     """SB-07 §4.4: a float round-trip re-introduces summation-order nondeterminism."""
     data = client.get(PATH).json()["data"]
 
-    assert all(isinstance(value, str) for value in data["series"]["oil_bbl"])
+    assert all(
+        isinstance(value, str)
+        for value, semantics in zip(
+            data["series"]["oil_bbl"], data["series"]["oil_bbl_null_semantics"], strict=True
+        )
+        if semantics != "withheld"
+    )
 
 
 def test_the_series_labels_its_vintage_column(client: TestClient) -> None:

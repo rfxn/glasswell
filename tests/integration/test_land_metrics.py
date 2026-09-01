@@ -289,3 +289,51 @@ def test_both_grains_serve_as_decodable_tiles_with_numeric_measures(gridded):
     section_tile = scalar(db, "select marts.land_section_metrics(%s, %s, %s)", (zoom, x, y))
     pool = attribute_values(bytes(layers(bytes(section_tile))[0]))
     assert ("double", 1500.0) in pool
+
+
+def test_the_shared_cumulative_predicate_moves_no_land_metrics_total(gridded):
+    """The (a) arm of the N2 regression: adopting per_well_cumulative_cte is a no-op here.
+
+    The values are the ones the pre-change code produced. Alone this proves nothing about the
+    predicate — the fixture seeds no semantics variation — which is why the (b) arm below
+    seeds a row for it to exclude.
+    """
+    db, refresh = gridded
+
+    assert [cell(db, SECTION_B)[3:6], cell(db, SECTION_A)[3:6]] == [
+        (1500.0, 3000.0, 0.0),
+        (500.0, 0.0, 100.0),
+    ]
+    assert cell(db, TOWNSHIP_152)[3:6] == (2000.0, 3000.0, 100.0)
+    assert refresh.bin_frames["section"]["edges"][0] == 500.0
+    assert refresh.bin_frames["section"]["edges"][-1] == 1500.0
+
+
+def test_a_stored_no_report_row_is_excluded_from_a_land_metrics_total(gridded, lineage_env):
+    """The (b) arm: a no_report row carrying a non-zero volume must not reach a rollup.
+
+    Neither writer produces this state today — ingest/nd_mpr.py:291 and ingest/nm_ocd.py:846
+    both fill an absent volume with zero — and 009_nd_canonical_and_marts.sql:211-212
+    constrains the label, not the value. The row is here to test the CTE's stated contract,
+    not a reachable production state; delete it and the predicate goes back to untested.
+    """
+    db, _ = gridded
+    seed_production(
+        db,
+        api10=VERTICAL,
+        production_month=date(2024, 4, 1),
+        report_vintage=VINTAGE,
+        volume=Decimal("999999"),
+        stream="oil",
+        null_semantics="no_report",
+        manifest_id=seed_manifest(db, sha256="a" * 64, source_key="no_report.xlsx"),
+        derivation_id=seed_derivation(db, partition={"source_id": "nd_mpr_xlsx",
+                                                     "slice": "no_report"}),
+    )
+    db.commit()
+    with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env):
+        refresh_land_metrics(db)
+    db.commit()
+
+    assert cell(db, SECTION_A)[3] == 500.0
+    assert cell(db, TOWNSHIP_152)[3] == 2000.0

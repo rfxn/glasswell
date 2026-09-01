@@ -20,6 +20,7 @@ from glasswell.seed.conformance_nm_wells import NM_WELLS_GIS_RULES, NM_WELLS_RUL
 from glasswell.seed.conformance_producing import PRODUCING_RULES
 from glasswell.seed.conformance_tx import TX_RULES
 from glasswell.seed.conformance_typecurve import TYPECURVE_RULES
+from glasswell.seed.conformance_vintage import VINTAGE_RULES
 
 SEEDED_RULES = 14
 
@@ -108,6 +109,7 @@ def _seeded_policy_rule_ids() -> set[str]:
             PRODUCING_RULES,
             TX_RULES,
             TYPECURVE_RULES,
+            VINTAGE_RULES,
         )
         for rule in registry
         if rule.get("rule_kind") == "code_ref"

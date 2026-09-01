@@ -14,6 +14,7 @@ export class GwFigure extends HTMLElement {
     "label",
     "label-hidden",
     "granularity",
+    "digits",
   ];
 
   connectedCallback(): void {
@@ -30,9 +31,10 @@ export class GwFigure extends HTMLElement {
       unit: this.getAttribute("unit") ?? "",
       d: this.getAttribute("handle") ?? "",
     };
+    const digits = this.getAttribute("digits");
     let text: string;
     try {
-      text = formatFigure(figure);
+      text = formatFigure(figure, digits === null ? undefined : Number(digits));
     } catch (error) {
       if (STRICT) throw error;
       console.error(error);

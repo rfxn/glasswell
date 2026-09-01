@@ -94,8 +94,10 @@ MATRIX: tuple[tuple, ...] = (
     ("GET", "/v1/wells", READ),
     ("GET", "/v1/wells/facets?state=33&by=operator", READ),
     ("GET", f"/v1/wells/status-summary?bbox={EXAMPLE_BBOX}", READ),
+    ("GET", "/v1/wells/vintage-cohorts", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/completions", READ),
+    ("GET", f"/v1/wells/{EXAMPLE_API10}/cumulatives", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/neighbors", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production/pools", READ),
@@ -105,8 +107,10 @@ MATRIX: tuple[tuple, ...] = (
     # answer would be a second access rule on a surface this table already covers, and it
     # would be invisible here because the table keys on the path.
     ("GET", f"/v1/wells/status-summary?bbox={EXAMPLE_BBOX}&explain=true", READ),
+    ("GET", "/v1/wells/vintage-cohorts?explain=true", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}?explain=true&explain_depth=8", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/completions?explain=true", READ),
+    ("GET", f"/v1/wells/{EXAMPLE_API10}/cumulatives?explain=true", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/neighbors?explain=true", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production?explain=true", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production/pools?explain=true", READ),

@@ -147,6 +147,32 @@ describe("formatMonth", () => {
   });
 });
 
+describe("formatFigure digits", () => {
+  it("renders to a fixed precision when asked and as served when not", () => {
+    const figure = { value: "21000.000", unit: "bbl", d: "drv_x" };
+    expect(formatFigure(figure, 0)).toBe("21,000 bbl");
+    expect(formatFigure(figure)).toBe("21,000.000 bbl");
+  });
+
+  it("rounds half up and carries into the whole part", () => {
+    expect(formatFigure({ value: "9.5", unit: "bbl", d: "drv_x" }, 0)).toBe("10 bbl");
+    expect(formatFigure({ value: "9.49", unit: "bbl", d: "drv_x" }, 0)).toBe("9 bbl");
+    expect(formatFigure({ value: "1.056", unit: "bbl", d: "drv_x" }, 2)).toBe("1.06 bbl");
+    expect(formatFigure({ value: "0.04", unit: "bbl", d: "drv_x" }, 1)).toBe("0.0 bbl");
+    expect(formatFigure({ value: "0.05", unit: "bbl", d: "drv_x" }, 1)).toBe("0.1 bbl");
+  });
+
+  it("keeps a value already shorter than the precision asked for", () => {
+    expect(formatFigure({ value: "3000", unit: "ft", d: "drv_x" }, 2)).toBe("3,000 ft");
+  });
+
+  it("never routes a large value through a float", () => {
+    expect(
+      formatFigure({ value: "123456789012345678901.5", unit: "bbl", d: "drv_x" }, 0),
+    ).toBe("123,456,789,012,345,678,902 bbl");
+  });
+});
+
 describe("formatVolume", () => {
   it("rounds a monthly volume to whole units — three decimals on a month is noise", () => {
     expect(formatVolume("70965.000")).toBe("70,965");

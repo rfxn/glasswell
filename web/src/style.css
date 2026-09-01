@@ -947,6 +947,43 @@ main[data-drawer="open"] #gw-card {
   line-height: 1.45;
 }
 
+/* Three cells on one row, not three rows: the total is a glance, and stacking it would push
+   the fact bands below a second fold on a phone. minmax(0,1fr) so a long figure shrinks its
+   own cell rather than widening the grid. */
+.gw-well-cumulatives .gw-frame-body {
+  display: grid;
+  gap: var(--gw-space-2);
+}
+
+.gw-cumulative-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--gw-space-1) var(--gw-space-2);
+  margin: 0;
+}
+
+.gw-cumulative-cell {
+  min-width: 0;
+}
+
+.gw-cumulative-cell dt {
+  color: var(--slate);
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-cumulative-cell dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.gw-cumulative-cell gw-figure {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.25rem;
+}
+
 .gw-neighbor-context .gw-frame-body {
   display: grid;
   gap: var(--gw-space-3);

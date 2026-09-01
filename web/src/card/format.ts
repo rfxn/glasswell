@@ -45,14 +45,33 @@ export function formatValue(value: string): string {
   return sign + whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + fraction;
 }
 
-export function formatFigure(figure: Figure): string {
+/**
+ * Half-up to `digits` fraction digits on the decimal string, never through a float (SB-07
+ * §4.4) — the whole part is carried with BigInt, so a 21-digit volume rounds exactly.
+ */
+export function roundTo(value: string, digits: number): string {
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value.trim());
+  if (!match) return value;
+  const [, sign = "", whole = "0", fraction = ""] = match;
+  if (digits >= fraction.length) return sign + whole + (fraction ? `.${fraction}` : "");
+  const kept = fraction.slice(0, digits);
+  if (Number(fraction[digits] ?? "0") < 5) return sign + whole + (kept ? `.${kept}` : "");
+  // Pad back to width: carrying 0.0 -> 1 loses the leading zero the whole part needs.
+  const carried = (BigInt(whole + kept) + 1n).toString().padStart(whole.length + kept.length, "0");
+  const split = carried.length - digits;
+  return sign + carried.slice(0, split) + (digits ? `.${carried.slice(split)}` : "");
+}
+
+/** `digits` renders the figure to a fixed precision; omitted, it renders as served. */
+export function formatFigure(figure: Figure, digits?: number): string {
   if (!figure.unit) {
     throw new Error(`figure ${figure.value} has no unit; a naked number is a defect (R6)`);
   }
   if (!figure.d) {
     throw new Error(`figure ${figure.value} has no derivation handle; untraceable equals wrong`);
   }
-  return `${formatValue(figure.value)} ${figure.unit}`;
+  const value = digits === undefined ? figure.value : roundTo(figure.value, digits);
+  return `${formatValue(value)} ${figure.unit}`;
 }
 
 export function nullSemantics(state: string): NullSemanticsMark {
@@ -89,11 +108,7 @@ export function formatMonth(month: string): string {
 
 /** A monthly volume is not measured to a thousandth of a barrel; tooltips said `70965.000`. */
 export function formatVolume(value: string): string {
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value.trim());
-  if (!match) return value;
-  const [, sign = "", whole = "0", fraction = ""] = match;
-  const rounded = Number(fraction[0] ?? "0") >= 5 ? (BigInt(whole) + 1n).toString() : whole;
-  return sign + formatValue(rounded);
+  return formatValue(roundTo(value, 0));
 }
 
 export function formatVintage(vintage: string | null): string {

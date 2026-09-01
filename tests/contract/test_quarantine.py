@@ -10,8 +10,12 @@ from glasswell.api.examples import EXAMPLE_QUARANTINE_ID
 def test_rejected_rows_are_listed_with_their_reason(client: TestClient) -> None:
     data = client.get("/v1/quarantine").json()["data"]
 
-    assert len(data) == 3
-    assert {item["reason_code"] for item in data} == {"unknown_vocab", "impossible_volume"}
+    assert len(data) == 4
+    assert {item["reason_code"] for item in data} == {
+        "unknown_vocab",
+        "impossible_volume",
+        "confidential_withheld",
+    }
     assert all(item["rule_id"] for item in data)
 
 
@@ -47,14 +51,14 @@ def test_summary_is_not_shadowed_by_the_detail_route(client: TestClient) -> None
     response = client.get("/v1/quarantine/summary")
 
     assert response.status_code == 200
-    assert response.json()["data"]["total"] == 3
+    assert response.json()["data"]["total"] == 4
 
 
 def test_summary_groups_by_reason_code(client: TestClient) -> None:
     data = client.get("/v1/quarantine/summary").json()["data"]
 
     groups = {group["key"]: group["count"] for group in data["groups"]}
-    assert groups == {"unknown_vocab": 2, "impossible_volume": 1}
+    assert groups == {"unknown_vocab": 2, "impossible_volume": 1, "confidential_withheld": 1}
     assert data["group_by"] == "reason_code"
 
 
