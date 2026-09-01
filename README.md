@@ -90,8 +90,10 @@ rather than drawing an empty chart.
 **New Mexico — resident.** The OCD header ingest, coordinate policy and tile mart are live,
 and the promotion has run: a header row and a surface point per well are in
 `canonical.wells` and `canonical.well_spatial`, with OCD production beside them at the
-well-completion-pool grain. NM wells carry no canonical status class yet — the OCD
-vocabulary maps to nothing until the read-time resolver lands — so they draw unmapped.
+well-completion-pool grain. Since v0.74 an NM well's status class is resolved at read time
+from a registered OCD codebook rather than written at promotion, so NM draws in its classes;
+the four codes the regulator publishes and glasswell has no class for are served as their
+own class rather than guessed at or hidden.
 
 Forecasts, economics, scenarios, inventory, Texas allocation and the agent gateway are
 **not** in it. [SMOKE.md](SMOKE.md) is the deployment walkthrough; [STATUS.md](STATUS.md)
@@ -237,7 +239,7 @@ and recorded in a manifest before anything reads it.
 |-------|---------|
 | **North Dakota** (Bakken / Three Forks) | DMR well-level monthly production and public GIS wells, laterals, surveys and spacing units; FracFocus hydraulic-fracturing completion anchors |
 | **Texas** (Midland, TX Delaware) | RRC county GIS wells and well arcs, wellbore query export *(landed)*; PDQ lease production, W-2 / G-1 completions, W-1 permits, wellbore master *(designed, not ingested)* |
-| **New Mexico** (Delaware) | OCD well headers and surface geometry *(landed)*; OCD production at the well-completion-pool grain — a third spine, and the allocation validator *(landed)*. Canonical status resolution is not built yet |
+| **New Mexico** (Delaware) | OCD well headers and surface geometry *(landed)*; OCD production at the well-completion-pool grain — a third spine, and the allocation validator *(landed)*. Status resolves at read time from the OCD codebook, `cr_nm_wellhistory_status_vocab_2` |
 | **Montana** (Elm Coulee and the rest of the state) | MBOGC monthly production at both the well and lease grains, GIS surface points and well paths. No basin tag: Bakken is 4.6% of the state (`cr_mt_basin_scope_1`) |
 | **Cross-cutting** | FracFocus disclosure headers, PLSS and spacing units, operator registries |
 
