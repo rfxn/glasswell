@@ -10,10 +10,11 @@ short current-state ledger;
 
 **`main` is level with `origin/main`.** The unpushed backlog described here on 2026-08-31
 was pushed on 2026-09-01 when PR #44 merged at `bc2dba5`, so hosted CI has now run against
-all of it. Migrations `068`, `069` and `070` are in the repository and are not on the
-deployed host. Figures below are marked with where they were measured, because the
-repository, the deployed database and the deployed code version are three different states
-this week.
+all of it. **v0.72 is deployed** (`v0.72+1e78194`, verify 194/194, smoke 26/26), and the
+deployed schema head is `070` — `068`, `069` and `070` were applied on the host at
+2026-08-31 21:41–21:42Z, after the census this file was reconciled against, which is why
+the previous revision recorded them as absent. Repository, database and deployed code are
+level for the first time this week; figures below still carry where they were measured.
 
 ## Shipped baseline
 
@@ -218,11 +219,12 @@ The tunnel is `3b2d209f-7671-4497-ae4f-740dcbc34788`; connector credentials are 
 2. Build the persisted analog index and benchmark runner, enforce the identical split against
    accepted `tcv1.0`, and measure the control bracket and determinism gates end to end.
    `ANALOG_IQR_RATIO_MAX` is unset in SB-02 and is not executable as written.
-3. Deploy `068`, `069` and `070`, then re-run Tier 2. The gate is one statement away and has
-   failed twice for reasons now fixed in the repository and not on the host; until the deployed
-   head carries `068` the ninth OCD staging table cannot be written at all. Write
-   `lineage.operator_aliases` before any header promotion, or accept the permanent absence in
-   writing — `canonical.wells` is append-only and there is no after.
+3. Re-run NM Tier 2. The deploy blocker is cleared — the host has carried `068`, `069` and
+   `070` since 2026-08-31 21:41Z, so the ninth OCD staging table is now writable and the two
+   failures that stopped the last two attempts are fixed on the host rather than only in the
+   repository. What remains is the run itself. Write `lineage.operator_aliases` before any
+   header promotion, or accept the permanent absence in writing — `canonical.wells` is
+   append-only and there is no after.
 4. Run the boundary load, or drop the two pending Geology rows. `basins` and `plays` are
    published tile layers with an empty mart behind them and no layer-panel row in front of
    them, and the panel's two geology rows draw nothing by construction. The surface currently
