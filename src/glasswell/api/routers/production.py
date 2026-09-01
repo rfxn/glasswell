@@ -12,7 +12,7 @@ from fastapi import APIRouter, Path, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import JSONResponse
 
-from glasswell.api.deps import AsOf, Connection, ExplainEffect, rows
+from glasswell.api.deps import AsOf, Connection, ExplainEffect, jurisdictions, rows
 from glasswell.api.errors import ProblemError, problem_responses
 from glasswell.api.examples import (
     EXAMPLE_API10,
@@ -34,45 +34,38 @@ from glasswell.api.routers.wells import API10_PATTERN, RANKED_WELLS, pending_all
 from glasswell.lineage.conformance import lease_reporting_rule
 from glasswell.lineage.envelope import series
 from glasswell.lineage.ids import format_handle
+from glasswell.lineage.jurisdictions import JurisdictionRegistry
 from glasswell.lineage.selector_registry import identity_selector_term
 from glasswell.lineage.vintages import select_production
 
 router = APIRouter(tags=["wells"])
 
 # The liquids basis is mandatory on every served liquids figure (lineage/envelope.py), and it
-# is a per-jurisdiction decision: North Dakota's cr_nd_liquids_policy_1 folds condensate into
-# oil, New Mexico's cr_nm_wcproduction_liquids_1 measured 3,398 condensate filings and ruled the
-# opposite. Serving one state's policy on another state's barrel is the R8 failure the sidecar
-# exists to prevent, so the basis is resolved per figure from the API-10 prefix. The executors
-# are unimplemented in this slice, so the strings are pinned here and a contract test holds each
-# to its seeded rule.
-ND_LIQUIDS_BASIS = "oil+condensate"
-NM_LIQUIDS_BASIS = "oil"
-LIQUIDS_RULES = {"33": "cr_nd_liquids_policy_1", "30": "cr_nm_wcproduction_liquids_1"}
-LIQUIDS_BASIS = {"33": ND_LIQUIDS_BASIS, "30": NM_LIQUIDS_BASIS}
-
-# cr_nd_pool_rollup_1 legislates the sum a well figure carries when it filed in two pools;
-# cr_nm_wcproduction_pool_rollup_1 answers the same question for New Mexico the opposite way —
-# it files at pool grain and nothing rolls up. The ids are pinned here for the same reason as
-# the basis above, and held to the seeded rows by test_nm_wells_serving.py.
-ROLLUP_RULES = {"33": "cr_nd_pool_rollup_1", "30": "cr_nm_wcproduction_pool_rollup_1"}
+# is a per-jurisdiction decision: North Dakota folds condensate into oil, New Mexico measured
+# 3,398 condensate filings and ruled the opposite. Serving one state's policy on another
+# state's barrel is the R8 failure the sidecar exists to prevent, so both the basis and the
+# rule that decided it are read from the registration the API-10 prefix resolves to.
+LIQUIDS_STREAM = "oil"
+WATER_BASIS = "water"
+PRODUCTION_GRAIN = "production_grain"
 
 STREAM_COLUMNS = {"oil": "oil_bbl", "gas": "gas_mcf", "water": "water_bbl"}
 
 
-def stream_basis(stream: str, state_code: str | None) -> str | None:
+def stream_basis(stream: str, state_code: str | None, *, registry: JurisdictionRegistry):
     """The basis sidecar for one stream in one jurisdiction. Liquids carry a policy; water is
     water everywhere; gas carries none. An unregistered state gets no liquids basis rather than
     another state's."""
-    if stream == "water":
-        return "water"
-    if stream != "oil":
+    if stream == WATER_BASIS:
+        return WATER_BASIS
+    if stream != LIQUIDS_STREAM:
         return None
-    return LIQUIDS_BASIS.get(state_code or "")
+    row = registry.at_prefix(state_code)
+    return row.liquids_basis if row is not None else None
 
 
-def rollup_rule(state_code: str | None) -> str | None:
-    return ROLLUP_RULES.get(state_code or "")
+def rollup_rule(state_code: str | None, *, registry: JurisdictionRegistry) -> str | None:
+    return registry.rule_for(state_code, PRODUCTION_GRAIN)
 MONTH_FORMAT = r"^\d{4}-\d{2}$"
 
 _VINTAGE_BOUNDS = """
@@ -412,6 +405,7 @@ def get_well_production(
             ),
         )
 
+    registry = jurisdictions(connection)
     state_code = _state_code(connection, api10)
     observed = _rows_in_window(
         select_production(connection, as_of=as_of, api10=api10, entity_type="well"),
@@ -434,7 +428,11 @@ def get_well_production(
     warnings: list[dict[str, Any]] = _withheld_warning(withheld)
     if lease_reported:
         warnings.append(pending_allocation(lease_reported))
-    warnings.extend(_pool_grain_warning(connection, api10, state_code, observed, as_of=as_of))
+    warnings.extend(
+        _pool_grain_warning(
+            connection, api10, state_code, observed, as_of=as_of, registry=registry
+        )
+    )
     columns: list[str] = []
     for name in STREAM_COLUMNS:
         if name not in requested:
@@ -466,7 +464,7 @@ def get_well_production(
             derivation=first["derivation_id"],
             selector=f"api10={api10}&col={column}",
             granularity=first["granularity"],
-            basis=stream_basis(name, state_code),
+            basis=stream_basis(name, state_code, registry=registry),
             point_handles=(
                 [
                     None
@@ -490,7 +488,9 @@ def get_well_production(
             for month in months
         ]
         warnings.extend(
-            _aggregation_warning(points, column, api10=api10, state_code=state_code)
+            _aggregation_warning(
+                points, column, api10=api10, state_code=state_code, registry=registry
+            )
         )
 
     source_ids = sorted({row["source_id"] for row in observed})
@@ -507,7 +507,7 @@ def get_well_production(
     links = {"well": f"/v1/wells/{api10}"}
     if lease_reported:
         links["reporting_rule"] = f"/v1/conformance/{lease_reported['rule_id']}"
-    grain_rule = rollup_rule(state_code)
+    grain_rule = rollup_rule(state_code, registry=registry)
     if aggregated and grain_rule:
         links["pools"] = f"/v1/wells/{api10}/production/pools"
         links["aggregation_rule"] = f"/v1/conformance/{grain_rule}"
@@ -662,6 +662,7 @@ def get_well_production_pools(
     existence = {"as_of": None, "api10": api10}
     if not rows(connection, RANKED_WELLS + " and api10 = %(api10)s", existence):
         raise ProblemError("not_found", detail=f"no well {api10}")
+    registry = jurisdictions(connection)
     state_code = _state_code(connection, api10)
     requested = list(stream or STREAM_COLUMNS)
     observed = _rows_in_window(
@@ -699,7 +700,7 @@ def get_well_production_pools(
                 derivation=first["derivation_id"],
                 selector=f"{identity_selector_term('entity_key', entity_key)}&col={column}",
                 granularity=first["granularity"],
-                basis=stream_basis(name, state_code),
+                basis=stream_basis(name, state_code, registry=registry),
                 point_handles=handles if len(set(handles)) > 1 else None,
             )
             payload[f"{column}_report_vintage"] = [
@@ -737,7 +738,7 @@ def get_well_production_pools(
             "production": f"/v1/wells/{api10}/production",
             **(
                 {"aggregation_rule": f"/v1/conformance/{grain}"}
-                if (grain := rollup_rule(state_code))
+                if (grain := rollup_rule(state_code, registry=registry))
                 else {}
             ),
         },
@@ -791,11 +792,16 @@ def _point_aggregation(point: dict[str, Any] | None) -> str | None:
 
 
 def _aggregation_warning(
-    points: Mapping[date, dict[str, Any]], column: str, *, api10: str, state_code: str | None
+    points: Mapping[date, dict[str, Any]],
+    column: str,
+    *,
+    api10: str,
+    state_code: str | None,
+    registry: JurisdictionRegistry,
 ) -> list[dict[str, Any]]:
     """DIR-3: a summed figure says it is summed, names the rule, and offers the breakdown."""
     summed = sorted(month for month, row in points.items() if row["aggregation"] is not None)
-    rule = rollup_rule(state_code)
+    rule = rollup_rule(state_code, registry=registry)
     if not summed or not rule:
         return []
     months = ", ".join(month_label(month) for month in summed)
@@ -828,6 +834,7 @@ def _pool_grain_warning(
     observed: Sequence[Mapping[str, Any]],
     *,
     as_of: date | None,
+    registry: JurisdictionRegistry,
 ) -> list[dict[str, Any]]:
     """An empty well-level series over a well that filed at pool grain is not "no production".
 
@@ -836,7 +843,7 @@ def _pool_grain_warning(
     failure `pending_allocation` exists to prevent one jurisdiction upstream. The rule that
     decided it is named so the reader can resolve it.
     """
-    rule = rollup_rule(state_code)
+    rule = rollup_rule(state_code, registry=registry)
     if observed or not rule:
         return []
     if not rows(connection, _POOL_GRAIN_ROWS, {"api10": api10, "as_of": as_of})[0]["count"]:

@@ -21,9 +21,14 @@ from fastapi.testclient import TestClient
 from psycopg.types.json import Jsonb
 
 from glasswell.api.examples import EXAMPLE_API10
-from glasswell.api.routers.production import LIQUIDS_RULES, ROLLUP_RULES
-from glasswell.api.routers.wells import PROVENANCE_RULES, STATUS_VOCABULARY_RULES
+from glasswell.lineage.jurisdictions import clear_jurisdiction_cache, load_jurisdictions
 from tests.contract.conftest import TX_API10
+from tests.support.jurisdictions import (
+    declared_rule,
+    declared_rule_ids,
+    prefixes_registering,
+    restate,
+)
 from tests.support.seed import seed_well, seed_well_spatial
 
 NM_API10 = "3001599001"
@@ -150,7 +155,8 @@ def test_every_pinned_status_rule_resolves_to_a_seeded_row_that_decides_a_vocabu
     """Stronger than a kind check: a `vocab_map` must name the table it maps through, and a
     declaration must say in its own spec that no mapping exists. Both are decisions about the
     status vocabulary; only one of them is a mapping."""
-    for state_code, rule_id in sorted(STATUS_VOCABULARY_RULES.items()):
+    for state_code in sorted(prefixes_registering("status_vocabulary")):
+        rule_id = declared_rule(state_code, "status_vocabulary")
         response = client.get(f"/v1/conformance/{rule_id}")
         assert response.status_code == 200, (state_code, rule_id)
         rule = response.json()["data"]
@@ -175,8 +181,8 @@ def test_the_geometry_provenance_rule_is_new_mexicos(with_new_mexico: TestClient
     assert "cr_nd_geometry_provenance_1" not in envelope["links"]
 
 
-def test_every_pinned_provenance_rule_resolves(client: TestClient) -> None:
-    for rule_id in sorted(set(PROVENANCE_RULES.values())):
+def test_every_registered_provenance_rule_resolves(client: TestClient) -> None:
+    for rule_id in sorted(declared_rule_ids("geometry_provenance")):
         assert client.get(f"/v1/conformance/{rule_id}").status_code == 200, rule_id
 
 
@@ -190,6 +196,21 @@ def test_the_pool_series_cites_new_mexicos_grain_rule_not_north_dakotas(
         == "/v1/conformance/cr_nm_wcproduction_pool_rollup_1"
     )
     assert "cr_nd_pool_rollup_1" not in envelope["links"]["aggregation_rule"]
+
+
+def test_the_grain_rule_the_pool_series_links_is_a_registry_row(
+    with_new_mexico: TestClient, seeded: psycopg.Connection
+) -> None:
+    """§4: the grain rule comes from the row. Restating New Mexico's registration moves the
+    link, which no `ROLLUP_RULES` entry could have done."""
+    restate(seeded, "NM", rules={"production_grain": "cr_nm_wcproduction_amend_ind_1"})
+
+    envelope = body(with_new_mexico, f"/v1/wells/{NM_API10}/production/pools")
+
+    assert (
+        envelope["links"]["aggregation_rule"]
+        == "/v1/conformance/cr_nm_wcproduction_amend_ind_1"
+    )
 
 
 def test_the_liquids_basis_on_a_new_mexico_oil_figure_is_new_mexicos(
@@ -297,34 +318,47 @@ def test_the_north_dakota_equivalents_are_unchanged(client: TestClient) -> None:
 
     assert data["_basis"]["series.oil_bbl"] == "oil+condensate"
     assert data["_basis"]["series.water_bbl"] == "water"
-    assert STATUS_VOCABULARY_RULES["33"] == "cr_nd_status_vocab_1"
-    assert ROLLUP_RULES["33"] == "cr_nd_pool_rollup_1"
-    assert LIQUIDS_RULES["33"] == "cr_nd_liquids_policy_1"
-    assert PROVENANCE_RULES["33"] == "cr_nd_geometry_provenance_1"
+    assert declared_rule("33", "status_vocabulary") == "cr_nd_status_vocab_1"
+    assert declared_rule("33", "production_grain") == "cr_nd_pool_rollup_1"
+    assert declared_rule("33", "liquids") == "cr_nd_liquids_policy_1"
+    assert declared_rule("33", "geometry_provenance") == "cr_nd_geometry_provenance_1"
 
 
 def test_the_texas_equivalents_are_unchanged(client: TestClient) -> None:
     data = body(client, f"/v1/wells/{TX_API10}")["data"]
 
     assert data["state_code"] == "42"
-    assert STATUS_VOCABULARY_RULES["42"] == "cr_tx_status_vocab_1"
-    # A pre-existing residual, stated rather than silently inherited: the registry carries no
-    # cr_tx_geometry_provenance_1, so Texas cites North Dakota's classing rule as it always has.
-    assert PROVENANCE_RULES["42"] == "cr_nd_geometry_provenance_1"
-    assert "42" not in ROLLUP_RULES
-    assert "42" not in LIQUIDS_RULES
+    assert declared_rule("42", "status_vocabulary") == "cr_tx_status_vocab_1"
+    # No cr_tx_geometry_provenance_1 exists, so Texas registers no geometry_provenance decision
+    # and cites none. It used to inherit North Dakota's, which was a rule about ND geometry
+    # served on a Texas well; authoring a real Texas rule is R-4 and still open.
+    assert declared_rule("42", "geometry_provenance") is None
+    assert declared_rule("42", "production_grain") is None
+    assert declared_rule("42", "liquids") is None
 
 
-def test_a_state_with_no_registered_policy_gets_no_other_states_policy() -> None:
-    """The failure mode this phase exists to close, stated as a property of the resolvers."""
+def test_a_state_with_no_registered_policy_gets_no_other_states_policy(
+    seeded: psycopg.Connection,
+) -> None:
+    """The failure mode this phase exists to close, stated as a property of the resolvers.
+
+    Texas registers no liquids decision and no production_grain decision, so both resolvers
+    answer None for it — and an unregistered prefix is not an unregistered *registry*, which
+    is why this is a null and not a refusal.
+    """
     from glasswell.api.routers.production import rollup_rule, stream_basis
 
-    assert stream_basis("oil", "42") is None
-    assert stream_basis("oil", None) is None
-    assert stream_basis("water", "42") == "water"
-    assert stream_basis("gas", "33") is None
-    assert rollup_rule("42") is None
-    assert rollup_rule("30") == "cr_nm_wcproduction_pool_rollup_1"
+    clear_jurisdiction_cache()
+    registry = load_jurisdictions(seeded)
+
+    assert stream_basis("oil", "42", registry=registry) is None
+    assert stream_basis("oil", None, registry=registry) is None
+    assert stream_basis("water", "42", registry=registry) == "water"
+    assert stream_basis("gas", "33", registry=registry) is None
+    assert stream_basis("oil", "33", registry=registry) == "oil+condensate"
+    assert stream_basis("oil", "30", registry=registry) == "oil"
+    assert rollup_rule("42", registry=registry) is None
+    assert rollup_rule("30", registry=registry) == "cr_nm_wcproduction_pool_rollup_1"
 
 
 def test_the_new_mexico_quarantine_reason_is_servable_with_its_rule(

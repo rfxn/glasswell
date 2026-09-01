@@ -84,6 +84,18 @@ class JurisdictionRegistry:
     def __len__(self) -> int:
         return len(self.by_code)
 
+    def at_prefix(self, identity_prefix: str | None) -> Jurisdiction | None:
+        """The registration an API-10 prefix resolves to. Unregistered is None, not a guess."""
+        return self.by_prefix.get(identity_prefix or "")
+
+    def rule_for(self, identity_prefix: str | None, decision: str) -> str | None:
+        row = self.at_prefix(identity_prefix)
+        return row.rule(decision) if row is not None else None
+
+    def name_for(self, identity_prefix: str | None) -> str | None:
+        row = self.at_prefix(identity_prefix)
+        return row.name if row is not None else None
+
 
 _RESOLVED = """
 select j.*, coalesce(r.rules, '[]'::jsonb) as rules

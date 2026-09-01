@@ -10,7 +10,16 @@ from fastapi import APIRouter, Path, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import JSONResponse
 
-from glasswell.api.deps import AsOf, Connection, Cursor, ExplainEffect, Principal, WellsLimit, rows
+from glasswell.api.deps import (
+    AsOf,
+    Connection,
+    Cursor,
+    ExplainEffect,
+    Principal,
+    WellsLimit,
+    jurisdictions,
+    rows,
+)
 from glasswell.api.errors import ProblemError, problem_responses
 from glasswell.api.examples import (
     EXAMPLE_API10,
@@ -40,6 +49,7 @@ from glasswell.lineage.conformance import (
 )
 from glasswell.lineage.envelope import Figure, collect_handles, distinct_handles, figure
 from glasswell.lineage.explain import MAX_HANDLES
+from glasswell.lineage.jurisdictions import JurisdictionRegistry
 from glasswell.lineage.selector_registry import identity_selector_term
 from glasswell.marts.cumulatives import (
     LIQUIDS_BASIS,
@@ -84,43 +94,17 @@ LON_LIMIT = 180.0
 LAT_LIMIT = 90.0
 COUNT_UNIT = "wells"
 
-# R8: a count grouped by status_canonical is a count of one conformance rule's output, so the
-# summary names the rule per jurisdiction rather than implying one vocabulary spans both. The
-# registry has no state-code edge to walk — a vocab_map row is keyed by source — so the pairing
-# is pinned here for the same reason as production.ROLLUP_RULE, and
-# test_well_status_summary.py holds every id to a seeded registry row.
-STATUS_VOCABULARY_RULES = {
-    "33": "cr_nd_status_vocab_1",
-    "42": "cr_tx_status_vocab_1",
-    # New Mexico's class is resolved at read time from lineage.nm_wellhistory_status_map, not
-    # written by the promotion, and this is the rule that decides the mapping.
-    "30": "cr_nm_wellhistory_status_vocab_2",
-    "25": "cr_mt_gis_status_vocab_1",
-}
-# States the neighbour mart holds subjects for; the link is absent for anything else.
-NEIGHBOR_STATE_CODES = frozenset({"33", "25"})
-
-# Same pinning rationale as above: geometry_provenance is geom_type served verbatim, and the
-# row that says so is held to the seeded registry by test_well_status_summary.py. Per state,
-# because the row is per source. Texas is mapped to North Dakota's rule as it always has been:
-# the registry carries no cr_tx_geometry_provenance_1, and inventing one or dropping the handle
-# are both larger changes than this. Routed to the register as a pre-existing residual.
-PROVENANCE_RULES = {
-    "33": "cr_nd_geometry_provenance_1",
-    "42": "cr_nd_geometry_provenance_1",
-    "30": "cr_nm_wellhistory_geometry_provenance_1",
-    # Montana's `lateral` geom_type is a cartographic centreline, and this is the row that says
-    # so. Left on the ND default it would have cited a survey-derived provenance for a map
-    # stick — dormant while nothing Montana was served, a wrong claim the moment it is.
-    "25": "cr_mt_paths_geometry_class_1",
-}
-DEFAULT_PROVENANCE_RULE = "cr_nd_geometry_provenance_1"
-
-# States whose geometry has no registered length method. `lengths.length_rule_source` answers
-# nd_gis_horizontals_line for a well with no basin, so without this a Montana length would be
-# served under a rule about North Dakota geometry — and would sum the multiple paths per well
-# that cr_mt_paths_subkey_1 measured. The rule is served in the figure's place.
-LENGTH_SCOPE_RULES = {"25": "cr_mt_paths_length_scope_1"}
+# R8: every per-jurisdiction decision this router serves is a row in lineage.jurisdiction_rules
+# resolved at the request's knowledge cut, never a map in this module. status_vocabulary,
+# geometry_provenance and length_scope are decisions; whether the neighbour mart holds subjects
+# is the neighbors_available column. An unregistered prefix yields a null rule, which is an
+# answer; a registry that resolves nothing is service_degraded.
+STATUS_VOCABULARY = "status_vocabulary"
+GEOMETRY_PROVENANCE = "geometry_provenance"
+LENGTH_SCOPE = "length_scope"
+# Served in the figure's place where a jurisdiction registers a length_scope rule: the length
+# resolver answers nd_gis_horizontals_line for a well with no basin, so serving a length there
+# would put a rule about North Dakota geometry on a Montana map stick.
 LENGTH_NOT_SERVED = "not_served"
 
 # The cohort key is an identifier for a group, not a measurement about it. Byte-equal to the
@@ -515,7 +499,14 @@ class WellDetail(WellSummary):
     surface_point: SurfacePoint | None = Field(description="Surface hole location, if recorded.")
 
 
-def _summary(row: dict[str, Any]) -> dict[str, Any]:
+def _neighbours_available(registry: JurisdictionRegistry, state_code: str | None) -> bool:
+    """Whether the neighbour mart holds subjects for this jurisdiction: a registry column,
+    so a fifth state that registers it gets the link without an edit here."""
+    row = registry.at_prefix(state_code)
+    return row is not None and row.neighbors_available
+
+
+def _summary(row: dict[str, Any], registry: JurisdictionRegistry) -> dict[str, Any]:
     return {
         "api10": row["api10"],
         "well_name": row["well_name"],
@@ -524,7 +515,7 @@ def _summary(row: dict[str, Any]) -> dict[str, Any]:
         # The rule that decided the class, not the one the row's derivation happens to cite:
         # for New Mexico those differ, because the class is a read-time join and the promotion
         # still cites the rule that refuses the mapping.
-        "status_vocabulary_rule": STATUS_VOCABULARY_RULES.get(row["state_code"] or ""),
+        "status_vocabulary_rule": registry.rule_for(row["state_code"], STATUS_VOCABULARY),
         "county_code_at_permit": row["county_code_at_permit"],
         "land_unit_label": row["land_unit_label"],
         "spud_date": iso(row["spud_date"]),
@@ -946,6 +937,7 @@ def list_wells(
         )
     fingerprint = query_fingerprint(filters)
     envelope = _bbox(bbox)
+    registry = jurisdictions(connection)
     policy, producing_bindings = _producing(connection)
     if producing is not None and policy is None:
         raise ProblemError(
@@ -1025,7 +1017,7 @@ def list_wells(
     )
     return enveloped(
         request,
-        [_summary(row) for row in items],
+        [_summary(row, registry) for row in items],
         as_of=as_of,
         as_of_requested=iso(as_of) or "latest",
         next_cursor=next_cursor,
@@ -1354,7 +1346,9 @@ def _producing_window(
     }
 
 
-def _basins(found: list[dict[str, Any]], *, box: str) -> list[dict[str, Any]]:
+def _basins(
+    found: list[dict[str, Any]], *, box: str, registry: JurisdictionRegistry
+) -> list[dict[str, Any]]:
     grouped: dict[tuple[str | None, str | None], list[dict[str, Any]]] = {}
     for row in found:
         grouped.setdefault((row["basin"], row["state_code"]), []).append(row)
@@ -1367,7 +1361,7 @@ def _basins(found: list[dict[str, Any]], *, box: str) -> list[dict[str, Any]]:
             {
                 "basin": basin,
                 "state_code": state_code,
-                "status_vocabulary_rule": STATUS_VOCABULARY_RULES.get(state_code or ""),
+                "status_vocabulary_rule": registry.rule_for(state_code, STATUS_VOCABULARY),
                 "wells": _count(group, selector=f"col=wells{scope}&bbox={box}"),
                 "unmapped_wells": _count(
                     [row for row in group if row["status_canonical"] is None],
@@ -1572,6 +1566,7 @@ def get_well_status_summary(
         operation="get_well_status_summary",
         limit=STATUS_SUMMARY_REQUESTS_PER_MINUTE,
     )
+    registry = jurisdictions(connection)
     policy, producing_bindings = _producing(connection)
     found = rows(
         connection,
@@ -1589,21 +1584,24 @@ def get_well_status_summary(
     )
     box = _rendered_bbox(envelope, ",")
     selector_box = _rendered_bbox(envelope, ":")
-    basins = _basins(counted, box=selector_box)
+    basins = _basins(counted, box=selector_box, registry=registry)
     unregistered = sorted(
         {
             row["state_code"] or "unassigned"
             for row in counted
-            if not STATUS_VOCABULARY_RULES.get(row["state_code"] or "")
+            if not registry.rule_for(row["state_code"], STATUS_VOCABULARY)
         }
     )
     rules = sorted({rule for row in basins if (rule := row["status_vocabulary_rule"])})
     # One provenance rule per state actually in the box: geom_type is served verbatim, but the
     # row that legislates that is per source, so a two-state box cites two.
+    # Only what is registered. Texas has no geometry-provenance rule, and the ND default it
+    # used to inherit put a rule about North Dakota geometry on a Texas box (R-4).
     provenance_rules = sorted(
         {
-            PROVENANCE_RULES.get(row["state_code"] or "", DEFAULT_PROVENANCE_RULE)
+            rule
             for row in counted
+            if (rule := registry.rule_for(row["state_code"], GEOMETRY_PROVENANCE))
         }
     ) if classed else []
     response_rules = sorted({*rules, *provenance_rules})
@@ -2003,6 +2001,7 @@ def get_well(
     explain: ExplainEffect,
     as_of: AsOf = None,
 ) -> JSONResponse:
+    registry = jurisdictions(connection)
     policy, producing_bindings = _producing(connection)
     found = rows(
         connection,
@@ -2019,8 +2018,8 @@ def get_well(
         {"basin": row["basin"] or "williston", "as_of": as_of},
     )
     storage_epsg = crs[0]["storage_epsg"] if crs else STORAGE_EPSG
-    status_vocabulary_rule = STATUS_VOCABULARY_RULES.get(row["state_code"] or "")
-    length_scope_rule = LENGTH_SCOPE_RULES.get(row["state_code"] or "")
+    status_vocabulary_rule = registry.rule_for(row["state_code"], STATUS_VOCABULARY)
+    length_scope_rule = registry.rule_for(row["state_code"], LENGTH_SCOPE)
     # The basin's own rule, so a TX length's handle resolves to a rule about TX geometry. Not
     # resolved at all where a rule withholds the length: the resolver's no-basin default is
     # North Dakota's, and reading it would put that rule id on the response either way.
@@ -2135,7 +2134,7 @@ def get_well(
         )
 
     point = next((item for item in geometry if item["lon"] is not None), None)
-    data = _summary(row) | {
+    data = _summary(row, registry) | {
         "api14": row["api14"],
         "state_code": row["state_code"],
         "ndic_file_no": row["ndic_file_no"],
@@ -2190,7 +2189,7 @@ def get_well(
             "formations": "/v1/formations",
             **(
                 {"neighbors": f"/v1/wells/{api10}/neighbors"}
-                if row["state_code"] in NEIGHBOR_STATE_CODES and laterals
+                if _neighbours_available(registry, row["state_code"]) and laterals
                 else {}
             ),
             "production": f"/v1/wells/{api10}/production",

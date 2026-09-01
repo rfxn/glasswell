@@ -22,3 +22,20 @@
            migrations for placeholder publication evidence, in both quote styles, so a repoint
            that edits the migration and forgets its mirror is refused at `make release-check`
            rather than landing a permanent false claim about when the rows were published
+- [Change] `/v1/wells`, `/v1/wells/{api10}`, `/v1/wells/status-summary`, `/v1/wells/facets`
+           and both production routes read the jurisdiction registry instead of the nine
+           per-state maps they carried between them. `STATUS_VOCABULARY_RULES`,
+           `PROVENANCE_RULES`, `DEFAULT_PROVENANCE_RULE`, `LENGTH_SCOPE_RULES` and
+           `NEIGHBOR_STATE_CODES` in `wells.py`, `LIQUIDS_RULES`, `LIQUIDS_BASIS` and
+           `ROLLUP_RULES` in `production.py`, and `STATE_NAMES` and `ABSENCE_RULES` in
+           `facets.py` are deleted; the three modules now carry no two-digit state literal at
+           all except the one `/v1/wells/facets` needs in its own request example. A fifth
+           jurisdiction is a row in `lineage.jurisdictions`, not an edit to three routers
+- [Change] Texas no longer cites `cr_nd_geometry_provenance_1`. It inherited a rule about
+           *North Dakota* geometry through a module-level default; it registers no
+           geometry-provenance decision, so the surface serves none and says so. Authoring a
+           real Texas rule is separate R8 work
+- [New] `absence:operator` is a registered decision at (jurisdiction, dimension) grain, so the
+      second dimension whose absence gets a rule is a row rather than another key in a
+      tuple-keyed map; an unregistered dimension still counts its bucket and claims nothing
+      further about it
