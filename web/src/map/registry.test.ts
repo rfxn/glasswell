@@ -21,15 +21,80 @@ describe("the layer registry", () => {
   it("registers the four tiled rows this build actually serves", () => {
     for (const id of ["wells", "lateral-bores", "spacing-units", "tx-wells"]) {
       expect(layerIds()).toContain(id);
-      expect(layerDef(id)?.pendingSource).toBeFalsy();
+      expect(layerDef(id)?.styleLayers.length).toBeGreaterThan(0);
     }
   });
 
-  it("marks a layer with no ingested source as a stub rather than shipping a dead toggle", () => {
-    const play = layerDef("play-outline");
-    expect(play?.pendingSource).toBe(true);
-    expect(play?.defaultOn).toBe(false);
-    expect(play?.provenance[0]?.kind).toBe("pending");
+  it("ships no stub row at all: a registered row is one the reader can switch on", () => {
+    // The geology group carried two placeholders — an EIA play outline and a USGS assessment
+    // unit — long after the EIA boundaries were ingested, served and published as tiles. A
+    // row that renders disabled is a promise, and the two that were left were promising work
+    // that had already shipped and work nothing serves. The vocabulary went with them: a row
+    // now declares the source it draws or it is not in the table.
+    for (const layer of LAYERS) {
+      expect(layer.styleLayers.length, `${layer.id} draws nothing`).toBeGreaterThan(0);
+      expect(layer.provenance.length, `${layer.id} names no source`).toBeGreaterThan(0);
+    }
+  });
+
+  it("registers both EIA boundary rows against the mart the tiles are published from", () => {
+    for (const id of ["basins", "plays"]) {
+      const row = layerDef(id)!;
+      expect(row.group).toBe("geology");
+      expect(row.provenance).toEqual([
+        { kind: "official", source: "marts.basin_boundaries_tile" },
+      ]);
+      // Reference framing over four states drawn unasked is the land grid's own objection.
+      expect(row.defaultOn).toBe(false);
+      expect(defaultLayerSet()).not.toContain(id);
+    }
+    expect(layerDef("basins")!.styleLayers).toEqual(["basins-fill", "basins-line", "basins-label"]);
+    expect(layerDef("plays")!.styleLayers).toEqual(["plays-line"]);
+  });
+
+  it("names EIA and the rules the boundary decisions were made under, never a bare outline", () => {
+    // R8: the publisher's area is carried rather than recomputed, and a play is not a second
+    // basin. Both are conformance rows, and the panel is where a reader meets them.
+    const basins = layerDef("basins")!.subtitle;
+    const plays = layerDef("plays")!.subtitle;
+
+    for (const subtitle of [basins, plays]) {
+      expect(subtitle).toContain("EIA");
+      expect(subtitle).toContain("cr_eia_boundary_taxonomy_1");
+    }
+    expect(basins).toContain("cr_eia_area_provenance_1");
+    expect(basins).toMatch(/never recomputed/i);
+    expect(plays).toContain("cr_eia_geometry_repair_1");
+    // Slots, plays and basins are geometry. Nothing on these rows may imply a volume.
+    for (const subtitle of [basins, plays]) expect(subtitle).not.toMatch(/reserve|resource/i);
+  });
+
+  it("draws both boundary rows at state scale, from the lowest zoom the map allows", () => {
+    // A basin is most useful where the reader cannot yet see a well: gating it at the wells'
+    // z4 would withdraw the frame exactly where it is the only thing on the canvas.
+    for (const id of ["basins", "plays"]) {
+      expect(layerDef(id)!.minZoom).toBe(3);
+      expect(layerDef(id)!.zoomHint).toMatch(/zoom 3 and above/i);
+    }
+  });
+
+  it("gives the play the basin's colour one register down, not a second claim in hue", () => {
+    // Two objects, one geological frame (cr_eia_boundary_taxonomy_1): nested boundaries are
+    // told apart by weight and dash. A second hue would read as a difference in kind.
+    const basins = layerDef("basins")!.swatch;
+    const plays = layerDef("plays")!.swatch;
+
+    expect(basins.kind).toBe("outline");
+    expect(plays.kind).toBe("line");
+    expect(basins.colours).toEqual(plays.colours);
+    for (const status of [...STATUS_CLASSES, UNMAPPED_STATUS]) {
+      expect(status.colour, `${status.id} shares the geology frame colour`).not.toBe(
+        basins.colours[0],
+      );
+    }
+    expect(basins.colours[0]).not.toBe(SELECTION_COLOUR);
+    expect(basins.colours[0]).not.toBe(TRACE_COLOUR);
+    expect(basins.colours[0]).not.toBe(DISPOSAL_COLOUR);
   });
 
   it("gives every layer a label, an epistemic subtitle and a provenance kind", () => {
@@ -38,7 +103,7 @@ describe("the layer registry", () => {
       expect(layer.subtitle.length).toBeGreaterThan(0);
       expect(layer.provenance.length).toBeGreaterThan(0);
       for (const source of layer.provenance) {
-        expect(["official", "derived", "basemap", "pending"]).toContain(source.kind);
+        expect(["official", "derived", "basemap"]).toContain(source.kind);
       }
     }
   });
@@ -129,7 +194,6 @@ describe("the layer registry", () => {
     // 525 of the snapshot's 43,817 wells carry a trace. Drawn by default it reads as "almost no wells",
     // which is the coverage hole presented as a drilling fact.
     const traces = layerDef("survey-traces")!;
-    expect(traces.pendingSource).toBeFalsy();
     expect(traces.defaultOn).toBe(false);
     expect(defaultLayerSet()).not.toContain("survey-traces");
     expect(traces.provenance).toEqual([
@@ -176,7 +240,6 @@ describe("the layer registry", () => {
   it("registers the disposal ring as a served ND row, off until the reader asks for it", () => {
     // 4.5% of the basin drawn unasked would read as emphasis; the class is one row away.
     const disposal = layerDef("disposal-wells")!;
-    expect(disposal.pendingSource).toBeFalsy();
     expect(disposal.defaultOn).toBe(false);
     expect(defaultLayerSet()).not.toContain("disposal-wells");
     expect(disposal.provenance).toEqual([{ kind: "official", source: "marts.nd_wells_tile" }]);
@@ -232,7 +295,6 @@ describe("the layer registry", () => {
     const wells = layerDef("mt-wells")!;
     const paths = layerDef("mt-paths")!;
 
-    expect(wells.pendingSource).toBeFalsy();
     expect(wells.provenance).toEqual([{ kind: "official", source: "marts.mt_wells_tile" }]);
     expect(wells.styleLayers).toEqual(["mt-wells", "mt-wells-struck"]);
     expect(paths.provenance).toEqual([{ kind: "official", source: "marts.mt_paths_tile" }]);
@@ -316,10 +378,7 @@ describe("the layer registry", () => {
   });
 
   it("names the style layers each row drives, so nothing is toggled by guesswork", () => {
-    for (const layer of LAYERS) {
-      if (layer.pendingSource) expect(layer.styleLayers).toEqual([]);
-      else expect(layer.styleLayers.length).toBeGreaterThan(0);
-    }
+    for (const layer of LAYERS) expect(layer.styleLayers.length, layer.id).toBeGreaterThan(0);
   });
 
   it("gives every built style layer exactly one owning row", () => {
@@ -483,7 +542,7 @@ describe("every row states its state the same way", () => {
       const states = STATES.filter((state) => layer.subtitle.includes(state));
       const codes = [...layer.subtitle.matchAll(/\b(ND|TX|NM|MT)\b/g)].map((match) => match[1]);
       const single = new Set([...codes, ...states.map((state) => state.slice(0, 2))]).size === 1;
-      if (!single || layer.pendingSource) continue;
+      if (!single) continue;
       expect(layer.label, `${layer.id} names no state`).toMatch(/\(North Dakota|Texas|New Mexico|Montana\)$/);
     }
   });

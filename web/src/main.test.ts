@@ -54,7 +54,10 @@ function host(id: string): HTMLElement {
   return element;
 }
 
-async function bootAt(url: string): Promise<typeof import("./bus.ts")> {
+async function bootAt(
+  url: string,
+  onCreateMap?: () => void,
+): Promise<typeof import("./bus.ts")> {
   document.body.innerHTML = INDEX_BODY;
   window.history.replaceState(null, "", url);
   captureListeners(window);
@@ -66,6 +69,7 @@ async function bootAt(url: string): Promise<typeof import("./bus.ts")> {
     // map.ts:479 verbatim: connectMap's disposer is discarded, so a second mount is a
     // second handler and one click would select twice.
     bus.connectMap(handle);
+    onCreateMap?.();
     return handle;
   });
   await import("./main.ts");
@@ -472,5 +476,87 @@ describe("one Escape closes one layer (SB-05 §7)", () => {
     expect(document.activeElement).toBe(trigger);
     sheet.remove();
     trigger.remove();
+  });
+});
+
+/**
+ * A signed-out arrival used to mount the map first and resolve the session second, so every
+ * tile source and the status summary fired, 403'd behind the login modal, and stayed errored
+ * — MapLibre does not retry a source on its own, which is what `onSessionBegan` in map.ts
+ * exists to undo. The fix is an ordering one, so this is an ordering test.
+ */
+describe("what the first paint asks for before it knows who is asking", () => {
+  /** The mocked map stands in for `createMap`, which is where every tile source attaches. */
+  const attachTileSources = (): void => {
+    void fetch("/v1/tiles/nd_wells/7/33/45.pbf");
+  };
+
+  function gatedFetch(): { seen: string[]; answer: () => void } {
+    const seen: string[] = [];
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const problem = (status: number): Response =>
+      new Response(JSON.stringify({ type: "about:blank", title: "held", status }), {
+        status,
+        headers: { "content-type": "application/problem+json" },
+      });
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const path = String(input).split("?")[0] ?? "";
+      seen.push(path);
+      // Held rather than slow: the assertion is that nothing raced past it, and a timeout
+      // would make that a question about how long the test waited.
+      if (path === "/v1/session") await held;
+      return problem(path === "/v1/session" ? 200 : 404);
+    });
+    return { seen, answer: release };
+  }
+
+  it("asks for no tile until the session has answered", async () => {
+    const { seen, answer } = gatedFetch();
+
+    await bootAt("/", attachTileSources);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(seen).toContain("/v1/session");
+    expect(seen.filter((path) => path.startsWith("/v1/tiles"))).toEqual([]);
+    expect(createMap).not.toHaveBeenCalled();
+
+    answer();
+    await vi.waitFor(() => expect(createMap).toHaveBeenCalledOnce());
+    await vi.waitFor(() =>
+      expect(seen.some((path) => path.startsWith("/v1/tiles"))).toBe(true),
+    );
+    // The order, not merely the presence: the session is the first thing this page asks.
+    expect(seen.indexOf("/v1/session")).toBeLessThan(
+      seen.findIndex((path) => path.startsWith("/v1/tiles")),
+    );
+  });
+
+  it("still lets the basemap load anonymously, which is what /basemap is for", async () => {
+    const { seen, answer } = gatedFetch();
+
+    await bootAt("/", attachTileSources);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    answer();
+    await vi.waitFor(() => expect(createMap).toHaveBeenCalledOnce());
+
+    // Nothing here gates /basemap, and nothing should: the substrate is served to anyone,
+    // and holding it behind the probe would blank the canvas for a reader who is signing in.
+    expect(seen.filter((path) => path.startsWith("/basemap/"))).toEqual([]);
+  });
+
+  it("asks who the reader is exactly once, however many surfaces wait on the answer", async () => {
+    // boot() and the surface mount are two callers of one probe. Two probes would be two
+    // round trips for one question, and a second 403 toast for a reader already at the modal.
+    const { seen, answer } = gatedFetch();
+
+    await bootAt("/", attachTileSources);
+    answer();
+    await vi.waitFor(() => expect(createMap).toHaveBeenCalledOnce());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(seen.filter((path) => path === "/v1/session")).toHaveLength(1);
   });
 });

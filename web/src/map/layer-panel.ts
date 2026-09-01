@@ -505,8 +505,9 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFam
 
   const badge = document.createElement("span");
   badge.className = "gw-layer-badge";
-  // Every source on a row shares one kind — registry.test.ts refuses a row where they do not.
-  const kind = layer.provenance[0]?.kind ?? "pending";
+  // Every source on a row shares one kind — registry.test.ts refuses a row where they do not,
+  // and refuses a row with no source at all.
+  const kind = layer.provenance[0]?.kind ?? "official";
   badge.dataset["kind"] = kind;
   badge.textContent = kind;
   name.appendChild(badge);
@@ -537,9 +538,7 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFam
 
   const subtitle = document.createElement("p");
   subtitle.className = "gw-layer-sub";
-  subtitle.textContent = layer.pendingSource
-    ? `${layer.subtitle}: source not ingested`
-    : layer.subtitle;
+  subtitle.textContent = layer.subtitle;
   if (layer.snapshot) {
     subtitle.appendChild(
       explainHandle({
@@ -608,7 +607,6 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFam
   toggle.type = "button";
   toggle.className = "gw-layer-toggle";
   toggle.setAttribute("aria-label", `Show ${layer.label}`);
-  toggle.disabled = Boolean(layer.pendingSource);
   toggle.addEventListener("click", () => {
     options.onToggle(layer.id, toggle.getAttribute("aria-pressed") !== "true");
   });
@@ -622,7 +620,6 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFam
   opacity.step = "5";
   opacity.value = String(Math.round(layer.opacity * 100));
   opacity.setAttribute("aria-label", `${layer.label} opacity`);
-  opacity.disabled = Boolean(layer.pendingSource);
   opacity.addEventListener("input", () => {
     options.onOpacity(layer.id, Number(opacity.value) / 100);
   });

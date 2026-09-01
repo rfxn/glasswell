@@ -99,6 +99,30 @@ const MANIFEST_PATH = "/basemap/manifest.json";
  */
 export const MAP_MAX_ZOOM = 19;
 
+/**
+ * The shallowest zoom worth serving. Below it the whole basin fits in a fraction of the
+ * canvas and the rest is ocean, and every tile source is fetching a pyramid nothing on it
+ * can be read at. z3 holds the contiguous states plus a Canadian margin in one frame.
+ */
+export const MAP_MIN_ZOOM = 3;
+
+/**
+ * `[[west, south], [east, north]]`, which is the order MapLibre's LngLatBoundsLike takes.
+ *
+ * Generous on purpose: this build serves four states, the next ones are American and Canada
+ * is the stated direction, so the box holds the contiguous forty-eight, mainland Alaska, the
+ * Canadian provinces to Newfoundland, and Mexico. A pan floor and not a data extent — it
+ * claims no coverage of what it contains, only that outside it there is nothing to look at.
+ *
+ * A rectangle holding both Utqiagvik and Key West holds a corner of open Pacific with them;
+ * the western Aleutians are the one populated place deliberately outside, because a box drawn
+ * across the antimeridian to reach them would take the whole ocean.
+ */
+export const MAP_MAX_BOUNDS: [[number, number], [number, number]] = [
+  [-170, 18],
+  [-52, 75],
+];
+
 /** Built once: the style is rebuilt on every basemap swap and this set is a property of neither
  *  the style nor the viewport. */
 const facetLayers = new Set(FACET_FILTERED_LAYERS.map((layer) => layer.id));
@@ -226,7 +250,9 @@ export function createMap(
     center: [viewport.lon, viewport.lat],
     zoom: viewport.zoom,
     attributionControl: false,
+    minZoom: MAP_MIN_ZOOM,
     maxZoom: MAP_MAX_ZOOM,
+    maxBounds: MAP_MAX_BOUNDS,
     transformRequest: (url) => tileRequest(url),
   });
 
@@ -515,9 +541,7 @@ export function createMap(
    */
   function refreshCoverage(): void {
     const zoom = map.getZoom();
-    const drawable = LAYERS.filter(
-      (layer) => !layer.pendingSource && on.has(layer.id) && zoom >= layer.minZoom,
-    );
+    const drawable = LAYERS.filter((layer) => on.has(layer.id) && zoom >= layer.minZoom);
     const queried = drawable.flatMap((layer) => layer.styleLayers).filter((id) => map.getLayer(id));
     if (queried.length === 0) {
       panel.setCoverage(new Set());

@@ -119,13 +119,14 @@ function showLoginPanel(): void {
   keyHost.replaceChildren(
     loginPanel({
       reason,
-      // The panel hands back the session it just got, so nothing here re-asks who the reader is:
-      // `sessionResolved` latched on the probe that failed, and boot() would skip resolveSession.
+      // The panel hands back the session it just got, so nothing here re-asks who the reader
+      // is: the answer replaces the latched probe that failed, and boot() reads that.
       onSignedIn: (session) => {
         keyHost.hidden = true;
         hadSession = session.kind === "user";
         setSignedIn(session.username);
         setSessionState("ok");
+        sessionProbe = Promise.resolve(true);
         sessionBegan();
         void boot();
         if (state.view === "status") void renderView();
@@ -246,6 +247,13 @@ async function renderView(): Promise<void> {
   const view = state.view;
   hideMapOverlays();
 
+  /**
+   * Started here and awaited at each mount, rather than awaited here: the probe and the
+   * surface's own chunk are two round trips that have no reason to be sequential, and the
+   * only thing that must wait for the answer is the first request that needs a principal.
+   */
+  const known = sessionKnown();
+
   if (view === "explore") {
     const explorer = await import("./explore/shell.ts");
     if (generation !== renderGeneration || state.view !== view) return;
@@ -254,6 +262,8 @@ async function renderView(): Promise<void> {
     statusHost.hidden = true;
     mapHost.hidden = true;
     exploreHost.hidden = false;
+    await known;
+    if (generation !== renderGeneration || state.view !== view) return;
     await explorer.mountExplorer(exploreHost, state, { commit });
     if (generation !== renderGeneration || state.view !== view) return;
     return;
@@ -273,17 +283,18 @@ async function renderView(): Promise<void> {
     return;
   }
 
-  // Arriving here from Status, the probe boot() skipped is now worth making: this surface
-  // renders per-principal state and the header has to be right.
-  if (!sessionResolved) void resolveSession();
-
   unmountExplorer?.();
   unmountStatusPage?.();
   exploreHost.hidden = true;
   statusHost.hidden = true;
   mapHost.hidden = false;
   const { createMap } = await import("./map/map.ts");
+  await known;
   if (generation !== renderGeneration || state.view !== view) return;
+  // Every tile source and the status summary attach inside createMap, and MapLibre does not
+  // retry a source that errored — which is why a signed-out first paint used to spend a 403
+  // per source behind the login modal and need `onSessionBegan` to hand the tile lists back.
+  //
   // createMap is not idempotent and connectMap's disposer is discarded inside it, so a second
   // mount is a second canvas and a second bus handler. Mount once; the map lives behind the
   // explorer after that.
@@ -303,10 +314,21 @@ function shouldResolveSession(): boolean {
   return state.view !== "status" || hasSignedInBefore();
 }
 
-let sessionResolved = false;
+/** One probe per page: every caller that must not run before the answer awaits this one. */
+let sessionProbe: Promise<boolean> | null = null;
+
+/**
+ * Resolves when this page knows who the reader is, true when that answer is a principal.
+ * Status asks nothing on a first visit, so it resolves true without a request — the surface
+ * is public and has nothing to wait for.
+ */
+function sessionKnown(): Promise<boolean> {
+  if (!shouldResolveSession()) return Promise.resolve(true);
+  sessionProbe ??= resolveSession();
+  return sessionProbe;
+}
 
 async function resolveSession(): Promise<boolean> {
-  sessionResolved = true;
   try {
     const session = await whoami();
     hadSession = session.kind === "user";
@@ -322,7 +344,9 @@ async function resolveSession(): Promise<boolean> {
 }
 
 async function boot(): Promise<void> {
-  if (shouldResolveSession() && !sessionResolved && !(await resolveSession())) return;
+  // The same probe every surface awaited, not a second one: a refusal stops boot here rather
+  // than spending the index and the glossary on a session that has already answered nobody.
+  if (!(await sessionKnown())) return;
 
   try {
     const index = await getEnvelope<{ published_vintages: { vintage_date: string }[] }>("/v1");

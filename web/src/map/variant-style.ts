@@ -39,6 +39,15 @@ export interface VariantStyle {
   boundary: string;
   /** PLSS reference linework: the paper the data sits on, quieter than a boundary. */
   grid: string;
+  /**
+   * The geological frame — basin and play outlines. Its own token rather than the boundary's,
+   * because an administrative line and a geological one answer different questions and a
+   * reader who cannot tell them apart reads a county edge as rock. BRAND.md's Border light
+   * on the dark substrates, where frames and dividers are what it names; the pale substrate
+   * inverts the register rather than the hue, so the frame is the darkest reference line
+   * there as it is the brightest here.
+   */
+  geology: string;
   graticule: string;
 }
 
@@ -56,6 +65,7 @@ export const VARIANT_STYLES: Readonly<Record<BasemapVariant, VariantStyle>> = {
     spacingFillAlpha: 0.015,
     boundary: "#7C93A1",
     grid: "#7C8B96",
+    geology: "#D8E1E8",
     graticule: "#55707D",
   },
   light: {
@@ -67,6 +77,7 @@ export const VARIANT_STYLES: Readonly<Record<BasemapVariant, VariantStyle>> = {
     spacingFillAlpha: 0.015,
     boundary: "#557085",
     grid: "#7C8B96",
+    geology: "#33414D",
     graticule: "#557085",
   },
   satellite: {
@@ -79,6 +90,7 @@ export const VARIANT_STYLES: Readonly<Record<BasemapVariant, VariantStyle>> = {
     spacingFillAlpha: 0.015,
     boundary: "#FFFFFF",
     grid: "#FFFFFF",
+    geology: "#FFFFFF",
     graticule: "#FFFFFF",
   },
   none: {
@@ -90,6 +102,7 @@ export const VARIANT_STYLES: Readonly<Record<BasemapVariant, VariantStyle>> = {
     spacingFillAlpha: 0.015,
     boundary: "#7C93A1",
     grid: "#7C8B96",
+    geology: "#D8E1E8",
     graticule: "#55707D",
   },
 };
@@ -98,13 +111,15 @@ export const VARIANT_STYLES: Readonly<Record<BasemapVariant, VariantStyle>> = {
  * A context line names its own role where it is defined, and the pass styles whatever is
  * marked — VF-5's class failure was a hand-kept id list going stale as layers were added.
  */
-export type LineRole = "boundary" | "grid" | "graticule";
+export type LineRole = "boundary" | "grid" | "geology" | "graticule";
 export const LINE_ROLE = "gw:line-role";
+
+const LINE_ROLES: readonly string[] = ["boundary", "grid", "geology", "graticule"];
 
 export function lineRole(layer: LayerSpecification): LineRole | undefined {
   const metadata = layer.metadata as Record<string, unknown> | undefined;
   const role = metadata?.[LINE_ROLE];
-  return role === "boundary" || role === "grid" || role === "graticule" ? role : undefined;
+  return typeof role === "string" && LINE_ROLES.includes(role) ? (role as LineRole) : undefined;
 }
 
 export function rgba(colour: string, alpha: number): string {
@@ -184,12 +199,18 @@ export function applyVariantStyling(
     }
     const line = lineRole(layer);
     if (!line) return layer;
-    if (line === "grid") {
+    // The two roles the pass keys by colour alone. A basin outline and the play inside it are
+    // told apart by weight and dash, which an opacity rewrite here would flatten — the grid's
+    // own reason, one register up.
+    if (line === "grid" || line === "geology") {
       // Colour only: the township/section weights and opacities are the layer's own register
       // — the grid sits under the data — and the pass must not flatten that hierarchy.
       return {
         ...layer,
-        paint: { ...("paint" in layer ? layer.paint : {}), "line-color": tokens.grid },
+        paint: {
+          ...("paint" in layer ? layer.paint : {}),
+          "line-color": line === "grid" ? tokens.grid : tokens.geology,
+        },
       } as LayerSpecification;
     }
     return {
