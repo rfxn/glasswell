@@ -8,12 +8,12 @@ short current-state ledger;
 [`blueprint.md`](blueprint.md) remains the committed v0.5 contract and
 [`blueprint-v0.6-draft.md`](blueprint-v0.6-draft.md) is the rc5 amendment set.
 
-**`main` is 25 commits ahead of `origin/main`.** Everything from `a83f35e` onward — the
-status-collector scale track, the well-facets track, the well-layer nesting merge and two
-fix merges — is committed locally and unpushed, so no hosted CI job has run against any of
-it. Migrations `068`, `069` and `070` are in the repository and are not on the deployed
-host. Figures below are marked with where they were measured, because the repository, the
-deployed database and the deployed code version are three different states this week.
+**`main` is level with `origin/main`.** The unpushed backlog described here on 2026-08-31
+was pushed on 2026-09-01 when PR #44 merged at `bc2dba5`, so hosted CI has now run against
+all of it. Migrations `068`, `069` and `070` are in the repository and are not on the
+deployed host. Figures below are marked with where they were measured, because the
+repository, the deployed database and the deployed code version are three different states
+this week.
 
 ## Shipped baseline
 
@@ -241,6 +241,13 @@ The tunnel is `3b2d209f-7671-4497-ae4f-740dcbc34788`; connector credentials are 
    family is draw order, which is ingest order, and will read as broken at eight states; and
    the collector's `canonical.well_completions` arm still uses the `left(api10, 2)` filtered
    aggregate that `069` removed from the production arm.
+9. Re-land N2. `feat/n2-enrich-views` holds 17 commits — the N2 schema, the cumulative marts,
+   vintage cohorts, the FracFocus base-fluid-intensity promotion and
+   `/v1/wells/{api10}/cumulatives` — that never merged. `PLAN-HORIZON.md` records track T2 as
+   shipped in v0.67; v0.67 shipped a tunnel-assertion fix, and nothing in `src/` imports the
+   N2 surface. It branched at v0.64, so migration `055_n2_enrich_views.sql` renumbers to `071+`
+   and four of its nine conflicts are substantive. Re-land on a branch off current main rather
+   than merging the stale one, and correct the plan's release column in the same train.
 
 ## Verification state
 
