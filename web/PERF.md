@@ -109,7 +109,7 @@ explorer's shell chunk and into the entry. Verified rather than inferred — `gw
 
 | budget | B gzipped | headroom over measured |
 |---|---:|---|
-| entry chunk | 14,000 | +9.8% over 12,750 |
+| entry chunk | 14,000 | +3.8% over 13,482 |
 | explorer route, map excluded | 75,000 | +4.9% over 71,511 |
 | map chunk | 330,000 | +5.2% over 313,823 |
 
@@ -120,6 +120,13 @@ panel that renders only after a well is clicked, and a reader who opens the expl
 clicks one. The card became its own 4.5 kB chunk and the entry fell 21,340 → 12,750 B. The
 explorer route is measured with the card cut, on the same ruling its neighbour and status-chip
 branches were already cut under: it only ever renders over the map.
+
+The budget was set from 12,750 B, measured before the review round that followed it. The
+stale-selection guard, the rejection handler and the per-detail warning grouping put the
+entry shipped in v0.73 at **13,482 B** — 3.8% of headroom rather than the ~5% the other two
+budgets carry. That is tight enough to fire on the next addition to the entry path, which is
+the instrument working: the next thing to reach for is another dynamic import, not another
+notch on the budget.
 
 The first two were re-measured when the production chart moved to a dynamic import. uPlot had
 been riding the entry chunk, which every reader downloads whether or not they open a card, and
