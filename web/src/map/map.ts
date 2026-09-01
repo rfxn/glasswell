@@ -515,9 +515,7 @@ export function createMap(
    */
   function refreshCoverage(): void {
     const zoom = map.getZoom();
-    const drawable = LAYERS.filter(
-      (layer) => !layer.pendingSource && on.has(layer.id) && zoom >= layer.minZoom,
-    );
+    const drawable = LAYERS.filter((layer) => on.has(layer.id) && zoom >= layer.minZoom);
     const queried = drawable.flatMap((layer) => layer.styleLayers).filter((id) => map.getLayer(id));
     if (queried.length === 0) {
       panel.setCoverage(new Set());

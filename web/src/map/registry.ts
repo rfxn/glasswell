@@ -8,10 +8,10 @@ import { DISPOSAL_COLOUR } from "./disposal.ts";
 import { LAYER_FAMILIES, LAYER_GROUPS } from "./groups.ts";
 import type { LayerFamily, LayerFamilyId, LayerGroup, LayerGroupId } from "./groups.ts";
 import { UNMAPPED_STATUS, statusColour } from "./status.ts";
-import { LAND_GRID_COLOUR, TRACE_COLOUR } from "./style.ts";
+import { BOUNDARY_MIN_ZOOM, GEOLOGY_FRAME_COLOUR, LAND_GRID_COLOUR, TRACE_COLOUR } from "./style.ts";
 import { LIQUID_RAMP } from "./thematics.ts";
 
-export type ProvenanceKind = "official" | "derived" | "basemap" | "pending";
+export type ProvenanceKind = "official" | "derived" | "basemap";
 
 export interface LayerSwatch {
   kind: "dot" | "line" | "fill" | "outline" | "ring";
@@ -67,12 +67,10 @@ export interface LayerDef {
   snapshot?: string;
   /** One entry per source the row draws, in draw order. Never empty. */
   provenance: readonly LayerProvenance[];
-  /** MapLibre layer ids this row shows and hides. Empty for a stub. */
+  /** MapLibre layer ids this row shows and hides. Never empty. */
   styleLayers: string[];
   /** Ascending = drawn first = underneath. The panel lists rows in this order. */
   drawOrder: number;
-  /** True when the source is not ingested yet: the row renders, disabled, and says why. */
-  pendingSource?: boolean;
   collection: LayerCollection | null;
 }
 
@@ -89,6 +87,51 @@ const STATUS_KEYED_LINE: readonly [string, ...string[]] = [
 ];
 
 export const LAYERS: readonly LayerDef[] = [
+  {
+    // EIA and not USGS, for migration 063's reason: EIA publishes the basin/play distinction
+    // this repository has to keep, and USGS assessment units slice the same rock for
+    // assessment arithmetic. The USGS row this table used to carry is gone rather than
+    // shipped disabled — nothing serves an assessment-unit tile to switch on.
+    id: "basins",
+    group: "geology",
+    label: "Basins",
+    subtitle:
+      "EIA lower-48 basin boundaries · the published outline with the publisher's own area," +
+      " rounded and never recomputed (cr_eia_area_provenance_1) · a basin and a play are" +
+      " different objects and are drawn from different tiles (cr_eia_boundary_taxonomy_1)",
+    swatch: { kind: "outline", colours: [GEOLOGY_FRAME_COLOUR] },
+    // The land grid's reasoning at basin scale: a frame drawn unasked over four states reads
+    // as structure in the data, and this one covers every well on the canvas.
+    defaultOn: false,
+    minZoom: BOUNDARY_MIN_ZOOM,
+    zoomHint: "Visible at zoom 3 and above; names to zoom 9",
+    opacity: 1,
+    provenance: [{ kind: "official", source: "marts.basin_boundaries_tile" }],
+    styleLayers: ["basins-fill", "basins-line", "basins-label"],
+    drawOrder: 1,
+    // No served collection lists a boundary: /v1/wells is the spine, and a basin is not on it.
+    collection: null,
+  },
+  {
+    id: "plays",
+    group: "geology",
+    label: "Plays",
+    subtitle:
+      "EIA lower-48 shale-play outlines · a play sits inside a basin and is never a second" +
+      " one (cr_eia_boundary_taxonomy_1) · two rings arrived invalid and were repaired at" +
+      " promotion rather than dropped (cr_eia_geometry_repair_1)",
+    // The basin's colour, one register down: nested frames of one kind are told apart by
+    // weight and dash, and a second hue would claim a difference the taxonomy does not make.
+    swatch: { kind: "line", colours: [GEOLOGY_FRAME_COLOUR] },
+    defaultOn: false,
+    minZoom: BOUNDARY_MIN_ZOOM,
+    zoomHint: "Visible at zoom 3 and above",
+    opacity: 1,
+    provenance: [{ kind: "official", source: "marts.basin_boundaries_tile" }],
+    styleLayers: ["plays-line"],
+    drawOrder: 2,
+    collection: null,
+  },
   {
     // M2-3: the Grid Map done honestly — observed rollups binned on the land grid, every
     // cell carrying its support, bins frozen at refresh with a resolvable handle. Which
@@ -383,36 +426,6 @@ export const LAYERS: readonly LayerDef[] = [
     drawOrder: 44,
     // One spine, four tile marts: /v1/wells is state-agnostic, so every row lands on it.
     collection: { dataset: "wells", bbox: "bbox" },
-  },
-  {
-    id: "play-outline",
-    group: "geology",
-    label: "Play outlines",
-    subtitle: "EIA shale-play boundaries · no ingest recipe yet, so nothing is drawn",
-    swatch: { kind: "outline", colours: ["#7C8B96"] },
-    defaultOn: false,
-    minZoom: 0,
-    opacity: 1,
-    provenance: [{ kind: "pending", source: "EIA Shale Play Maps, not ingested" }],
-    styleLayers: [],
-    drawOrder: 50,
-    pendingSource: true,
-    collection: null,
-  },
-  {
-    id: "geology-au",
-    group: "geology",
-    label: "Assessment units",
-    subtitle: "USGS Williston assessment-unit boundaries · no ingest recipe yet",
-    swatch: { kind: "outline", colours: ["#7C8B96"] },
-    defaultOn: false,
-    minZoom: 0,
-    opacity: 1,
-    provenance: [{ kind: "pending", source: "USGS NOGA assessment units, not ingested" }],
-    styleLayers: [],
-    drawOrder: 60,
-    pendingSource: true,
-    collection: null,
   },
 ];
 

@@ -776,11 +776,6 @@
   border-bottom-left-radius: 0;
 }
 
-.gw-layer-badge[data-kind="pending"] {
-  color: var(--amber);
-  border-color: var(--amber);
-}
-
 .gw-layer-sub,
 .gw-layer-hint,
 .gw-layer-source {

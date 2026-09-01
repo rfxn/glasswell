@@ -135,7 +135,8 @@ describe("the variant token table", () => {
   it("keeps every context line above the non-text floor on its own substrate", () => {
     for (const variant of BASEMAP_VARIANTS) {
       const tokens = variantStyle(variant);
-      for (const line of [tokens.boundary, tokens.spacing, tokens.grid, tokens.graticule]) {
+      const lines = [tokens.boundary, tokens.spacing, tokens.grid, tokens.geology, tokens.graticule];
+      for (const line of lines) {
         const ratio = contrastRatio(line, tokens.substrate);
         expect(ratio, `${variant}: ${line} on ${tokens.substrate} is ${ratio.toFixed(2)}:1`)
           .toBeGreaterThanOrEqual(NON_TEXT_FLOOR);
@@ -182,10 +183,13 @@ describe("the variant styling pass", () => {
       for (const layer of styled) {
         const role = lineRole(layer);
         if (!role) continue;
-        if (role === "grid") {
-          expect(paintOf(layer)["line-color"], `${variant}/${layer.id}`).toBe(tokens.grid);
-          // The grid sits under the data at its own authored opacity; the pass keys the
-          // colour and must not flatten the township/section register to opaque.
+        if (role === "grid" || role === "geology") {
+          expect(paintOf(layer)["line-color"], `${variant}/${layer.id}`).toBe(
+            role === "grid" ? tokens.grid : tokens.geology,
+          );
+          // Both reference registers sit under the data at their own authored opacity; the
+          // pass keys the colour and must not flatten township against section, or a basin
+          // outline against the play dashed inside it.
           expect(paintOf(layer)["line-opacity"], `${variant}/${layer.id} opacity`).not.toBe(1);
           continue;
         }
@@ -204,6 +208,10 @@ describe("the variant styling pass", () => {
     expect(paintOf(byId("gw-boundaries-county")!)["line-color"]).toBe(variantStyle("light").boundary);
     expect(paintOf(byId("land-townships-line")!)["line-color"]).toBe(variantStyle("light").grid);
     expect(paintOf(byId("land-sections-line")!)["line-color"]).toBe(variantStyle("light").grid);
+    // The geological frame is the third register, and a near-white basin outline authored for
+    // the dark substrate is invisible on the pale one unless the pass reaches it too.
+    expect(paintOf(byId("basins-line")!)["line-color"]).toBe(variantStyle("light").geology);
+    expect(paintOf(byId("plays-line")!)["line-color"]).toBe(variantStyle("light").geology);
   });
 
   it("leaves no literal-coloured line undeclared — a line is data-coloured or role-marked", () => {

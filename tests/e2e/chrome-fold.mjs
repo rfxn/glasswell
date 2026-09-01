@@ -26,10 +26,10 @@ const BLOCKS = readFileSync(REGISTRY, "utf8").split(/\n {2}\{\n/).slice(1);
 const LAYERS = BLOCKS.map((block) => ({
   id: /\bid:\s*"([^"]+)"/.exec(block)?.[1],
   defaultOn: /\bdefaultOn:\s*true/.test(block),
-  pending: /\bpendingSource:\s*true/.test(block),
 })).filter((layer) => layer.id);
 if (LAYERS.length === 0) throw new Error(`no layers parsed from ${REGISTRY}`);
-const OPERABLE = LAYERS.filter((layer) => !layer.pending).map((layer) => layer.id);
+// Every registered row, because the registry no longer carries a row that renders disabled.
+const OPERABLE = LAYERS.map((layer) => layer.id);
 const DEFAULT_ON = LAYERS.filter((layer) => layer.defaultOn).map((layer) => layer.id);
 
 let passed = 0;
