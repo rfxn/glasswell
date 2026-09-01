@@ -1,6 +1,9 @@
-"""R9 / DIR-8 coverage: every term the API names resolves to a glossary row."""
+"""R9 / DIR-8 coverage: every term the API names or the frontend binds resolves to a row."""
 
 from __future__ import annotations
+
+import re
+from pathlib import Path
 
 import psycopg
 import pytest
@@ -10,6 +13,9 @@ from glasswell.api.examples import EXAMPLE_API10
 from tests.contract.test_naked_numbers import exercised
 
 GLOSSARY_EXTENSION = "x-glasswell-glossary"
+
+WEB_SOURCE = Path(__file__).resolve().parents[2] / "web" / "src"
+BOUND_TERM = re.compile(r'"(gt_[a-z0-9_]+)"')
 
 
 @pytest.fixture
@@ -39,6 +45,22 @@ def test_every_schema_binding_resolves(client: TestClient, term_ids: set[str]) -
     bound = _bindings(document)
 
     assert bound
+    assert bound - term_ids == set()
+
+
+def test_every_term_the_frontend_binds_by_hand_resolves(term_ids: set[str]) -> None:
+    """A bound id never travels in a response, so the two tests above cannot see it.
+
+    The surfaces that bind one are gated for what they teach in
+    web/src/glossary/coverage.test.ts; this is the half of that gate the seed owns.
+    """
+    bound: set[str] = set()
+    for path in sorted(WEB_SOURCE.rglob("*.ts")):
+        if path.name.endswith((".test.ts", "fixtures.ts")):
+            continue
+        bound |= set(BOUND_TERM.findall(path.read_text(encoding="utf-8")))
+
+    assert bound, "no frontend surface binds a term by hand, or this test cannot fail"
     assert bound - term_ids == set()
 
 
