@@ -901,6 +901,51 @@ describe("the panel serves a second surface without forking", () => {
 
     expect(host.querySelector(".gw-wells-by-scope")).toBeNull();
   });
+
+  it("puts the refusal on the screen, not only in a tooltip nothing on touch can open", async () => {
+    // visual-map-wells-by D8: a <span> is pixel-identical to a <button> at rest, and a `title`
+    // does not exist without a cursor. A count the reader cannot act on has to say so.
+    await mountWellsBy(host, {
+      state: state(),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+      applied: {},
+      bucketAffordance: () => ({
+        press: false,
+        title: "The tiles carry no column for this dimension, so the canvas cannot be narrowed by it here.",
+      }),
+    });
+
+    const refusal = host.querySelector<HTMLElement>(".gw-wells-by-refusal");
+    expect(refusal?.textContent).toContain("The tiles carry no column for this dimension");
+    // Above the ranking it applies to, on the scope line's own rule.
+    expect(refusal?.compareDocumentPosition(host.querySelector(".gw-wells-by-rows")!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("says nothing where every bucket is a control, which is the ordinary case", async () => {
+    await mountWellsBy(host, {
+      state: state(),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+      applied: {},
+    });
+
+    expect(host.querySelector(".gw-wells-by-refusal")).toBeNull();
+  });
+
+  it("states the collection's own reason where the host offers none", async () => {
+    respondWith({
+      dimension: "completion_year",
+      buckets: [{ value: "2021", wells: figure("12", "y=2021"), links: {} }],
+    });
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    expect(host.querySelector(".gw-wells-by-refusal")?.textContent).toBe(
+      "The collection accepts no filter for this dimension, so it cannot be narrowed to one year.",
+    );
+  });
 });
 
 describe("the dimensions the panel offers", () => {

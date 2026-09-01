@@ -506,6 +506,28 @@ function list(data: WellFacets, warnings: Warning[], options: WellsByOptions): H
     box.append(scope);
   }
 
+  // A press needs both: a host willing to take one, and a link naming the filters it would
+  // apply. Resolved once per bucket here so the sentence below and the rows agree on it.
+  const affordanceOf = options.bucketAffordance ?? linkAffordance;
+  const refusals = data.buckets.map((bucket) => {
+    const affordance = affordanceOf(data.dimension, bucket);
+    return affordance.press && filtersOfLink(bucket.links["wells"]) !== null
+      ? null
+      : (affordance.title ?? COLLECTION_UNFILTERABLE);
+  });
+
+  // On screen, not only in a `title`: a span renders identically to a button at rest, and on a
+  // touch surface there is no cursor and no hover, so a reader taps a count, nothing happens and
+  // nothing anywhere says why (visual-map-wells-by D8). Said once for the dimension rather than
+  // per row, and only where it holds for the whole ranking — it is a fact about the column.
+  const refused = refusals.length > 0 && refusals.every(Boolean) ? refusals[0] : null;
+  if (refused) {
+    const note = document.createElement("p");
+    note.className = "gw-wells-by-refusal";
+    note.textContent = refused;
+    box.append(note);
+  }
+
   if (data.buckets.length === 0) {
     const none = div("gw-wells-by-empty");
     const title = document.createElement("p");
@@ -530,7 +552,7 @@ function list(data: WellFacets, warnings: Warning[], options: WellsByOptions): H
   rows.className = "gw-wells-by-rows";
   const applied = options.applied;
   data.buckets.forEach((bucket, index) => {
-    rows.append(row(bucket, index + 1, widest, data, applied, options));
+    rows.append(row(bucket, index + 1, widest, data, applied, options, refusals[index] ?? null));
   });
   if (data.buckets.length > 0) box.append(rows);
 
@@ -575,18 +597,16 @@ function row(
   data: WellFacets,
   applied: Record<string, string[]>,
   options: WellsByOptions,
+  /** Why this bucket is not a control, or null where it is one. */
+  refusal: string | null,
 ): HTMLElement {
   const item = document.createElement("li");
   item.className = "gw-wells-by-row";
   item.dataset["value"] = bucket.value;
 
   const filters = filtersOfLink(bucket.links["wells"]);
-  const affordance = (options.bucketAffordance ?? linkAffordance)(data.dimension, bucket);
-  // A press needs both: a host willing to take one, and a link naming the filters it would
-  // apply. Either missing and the value is a label, because a control that looks clickable and
-  // narrows nothing is worse than no control.
-  const pressable = affordance.press && filters !== null;
-  const label = pressable ? document.createElement("button") : document.createElement("span");
+  // A control that looks clickable and narrows nothing is worse than no control.
+  const label = refusal === null ? document.createElement("button") : document.createElement("span");
   label.className = "gw-wells-by-value";
   if (label instanceof HTMLButtonElement && filters) {
     const pressed = narrowedBy(filters, applied);
@@ -601,9 +621,9 @@ function row(
       { signal: options.signal },
     );
   } else {
-    // Two reasons a bucket is not a control, and the host says which: the collection accepts no
-    // filter for this dimension, or the surface the press would narrow carries no column for it.
-    label.title = affordance.title ?? COLLECTION_UNFILTERABLE;
+    // Kept beside the line above the ranking: the pointer still gets the reason on the row it
+    // is over, and the reader without one has already been told.
+    label.title = refusal ?? COLLECTION_UNFILTERABLE;
   }
 
   const position = document.createElement("span");
