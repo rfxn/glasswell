@@ -51,7 +51,9 @@
 - [Change] the per-well cumulative has one definition. marts.cumulatives owns it
          and land_metrics reads it rather than its own copy; the predicate names
          what the total admits instead of relying on a NOT NULL column's fill
-         value staying zero
+         value staying zero. per_well_cumulative_cte takes the membership CTE to
+         bound its scan, so the land grid keeps the restriction that stops it
+         reading 24.8M rows it discards
 - [Fix] the well card rejected any design_availability other than not_promoted and
       replaced the whole completion panel with 'unavailable', so promoting the
       design server-side would have removed the panel from every card
@@ -59,3 +61,10 @@
          through an api.respond derivation, which lineage.sweep_ephemeral_derivations
          deletes once unreferenced and older than 90 days; the same inherited
          behaviour as the existing well-detail and status-summary figures
+- [Change] the N2 migration lands as 071_n2_enrich_views.sql. The track branched
+         at v0.64 and main's head migration is 070; discover_migrations refuses a
+         duplicate version as well as a gap
+- [Change] the completion-design and fluid-intensity sections are re-expressed
+         inside the well flyout's section grammar rather than the panel they were
+         written against: short empty states, a scope line of dense facts, and no
+         prose paragraph where the flyout carries none
