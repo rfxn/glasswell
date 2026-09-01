@@ -39,3 +39,22 @@
 - [Fix] The last-owner refusal names the field the caller sent: the pointer is a parameter of
       the guard, so the `DELETE` path — which has no body — no longer points at `/role`, a field
       that request never carried
+- [New] Accounts is a section of the Status surface for an owner and for nobody else, at
+      `?view=status#accounts`: the users list with role, creation, last sign-in and live
+      sessions; add a user; reset a password; disable and re-enable; and the session list with
+      a revoke. It is a section rather than a fourth header mode because the mode switch spends
+      373 of the 390 px a phone has and a fourth button needs 46 more than exist
+- [New] A minted password is rendered once, from the response that minted it, beside the
+      server's own `password_shown_once` warning and behind a `data-gw-secret` hook a
+      screenshot harness substitutes before it captures. It is never put in a URL, never sent
+      back, and leaves the document entirely when the panel is dismissed
+- [New] Disabling, resetting and revoking each open an inline `role="alertdialog"` naming what
+      ends, and send nothing until the reader confirms; re-enabling asks nothing, because
+      nothing ends. Every refusal renders the server's own `detail`, with the fields it named
+      only when it named some
+- [Change] `client.ts` gains `listUsers`, `createUser`, `updateUser`, `enableUser`,
+           `disableUser`, `resetPassword`, `listSessions` and `revokeSession` over a private
+           `mutateEnvelope`, which returns the whole envelope so a write can carry a warning;
+           `mutate` is now that function unwrapped, so the one-shot CSRF re-challenge stays in
+           one place. `main.ts` passes the role it already resolved into the Status surface
+           rather than letting a second probe answer the same question

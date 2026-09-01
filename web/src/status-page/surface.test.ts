@@ -614,3 +614,59 @@ describe("the Status surface", () => {
     expect(document.activeElement).toBe(host.querySelector(".gw-status-refresh"));
   });
 });
+
+describe("Accounts is a section of this page, for an owner and for nobody else", () => {
+  const ACCOUNT = {
+    user_id: "usr_owner",
+    username: "ryan",
+    role: "owner",
+    state: "active",
+    created_at: "2026-08-01T10:00:00Z",
+    created_by: "console",
+    password_changed_at: "2026-08-01T10:00:00Z",
+    last_login_at: "2026-09-01T09:30:00Z",
+    disabled_at: null,
+    disabled_by: null,
+    sessions_live: 1,
+  };
+
+  function routed(input: string): Response {
+    if (input.includes("/v1/users")) return envelope([ACCOUNT]);
+    if (input.includes("/v1/sessions")) return envelope([]);
+    return envelope(PAYLOAD);
+  }
+
+  it("renders the section for an owner, after the disclosures", async () => {
+    vi.stubGlobal("fetch", (input: string) => Promise.resolve(routed(input)));
+
+    await mountStatusPage(host, { onForbidden, role: "owner" });
+
+    expect([...host.querySelectorAll("section h2")].map((heading) => heading.textContent)).toEqual([
+      "Deployment",
+      "Architecture",
+      "Data footprint",
+      "Scheduled work",
+      "Source polls & freshness",
+      "Observability boundaries",
+      "Accounts",
+    ]);
+    // `?view=status#accounts` is the deep link, so the section has to be addressable.
+    expect(host.querySelector("#accounts")).not.toBeNull();
+    expect(host.querySelector('[data-user="ryan"]')).not.toBeNull();
+  });
+
+  it("renders no section, and asks nothing, for a viewer or an unresolved reader", async () => {
+    const fetch = vi.fn(() => Promise.resolve(envelope(PAYLOAD)));
+    vi.stubGlobal("fetch", fetch);
+
+    await mountStatusPage(host, { onForbidden, role: "viewer" });
+
+    expect(host.querySelector("#accounts")).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    await mountStatusPage(host, { onForbidden });
+
+    expect(host.querySelector("#accounts")).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+});
