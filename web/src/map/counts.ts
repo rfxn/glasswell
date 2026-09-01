@@ -31,6 +31,16 @@ export interface ProducingCount {
   wells: Figure;
 }
 
+export interface WellTypeCount {
+  well_type_reported: string;
+  wells: Figure;
+}
+
+export interface ProvenanceCount {
+  geometry_provenance: string;
+  wells: Figure;
+}
+
 export interface WellStatusSummary {
   bbox: string;
   wells: Figure | null;
@@ -41,6 +51,25 @@ export interface WellStatusSummary {
   /** Absent entirely where the producing definition is not registered. */
   producing?: ProducingCount[];
   producing_window?: ProducingWindow | null;
+  /**
+   * The two dimensions the summary has always served and this client used to drop on the
+   * floor: reported well type, verbatim, and the provenance class of the recorded geometry.
+   * Optional here rather than required because a build older than the fields is a response
+   * this parser still has to survive — and an absent list is not an empty one.
+   */
+  well_types?: WellTypeCount[];
+  geometry_provenance?: ProvenanceCount[];
+}
+
+/**
+ * One dimension of the same box, as the legend takes it. `order` is the response's own
+ * ranking — largest first — kept rather than re-sorted, so a block whose rows reshuffle
+ * between viewports cannot happen and the rows a reader is scanning stay put.
+ */
+export interface DimensionCounts {
+  counts: Record<string, number>;
+  handles: Record<string, string>;
+  order: string[];
 }
 
 export interface VocabularyLink {
@@ -72,6 +101,11 @@ export interface CountsReady {
   /** Null where the response carried no producing classes, which is how an unregistered
    *  definition reaches the legend without the legend inventing a reason for it. */
   producing: ProducingCounts | null;
+  /** Reported well type codes, verbatim. Null where the box holds no coded well. */
+  wellTypes: DimensionCounts | null;
+  /** Geometry provenance classes. Null where the jurisdiction serves none — Texas, whose
+   *  coordinate-source attribute is licence-gated (RF-1) and is served nowhere. */
+  provenance: DimensionCounts | null;
   /**
    * The vintage this answer resolved to. The map has no other reading of it — the rail's chip
    * is written by main.ts — and a crossing off this surface pins it so the link a reader
@@ -182,6 +216,50 @@ export function producingCountsOf(data: WellStatusSummary): ProducingCounts | nu
     handles: Object.fromEntries(rows.map((row) => [row.producing, row.wells.d])),
     window: data.producing_window ?? null,
     bbox: data.bbox,
+  };
+}
+
+/**
+ * The reported well type codes, or null where the box carries no coded well — which is not
+ * the same as a box holding none at all, because a well whose source filed no type is in no
+ * row here and is still counted in `wells`.
+ *
+ * A zero is dropped, which is `statusCounts()`'s rule and not `producingCountsOf()`'s: these
+ * codes are a data-driven roster with no fixed membership, so a code the box does not hold has
+ * no count to report rather than a zero to report, and the block simply does not list it.
+ */
+export function wellTypeCountsOf(data: WellStatusSummary): DimensionCounts | null {
+  return dimensionCounts(
+    data.well_types?.map((row) => [row.well_type_reported, row.wells] as const),
+    { keepZero: false },
+  );
+}
+
+/**
+ * The provenance classes of the recorded geometry, or null where the jurisdiction serves none.
+ *
+ * A zero is kept, which is `producingCountsOf()`'s rule: unlike the well type codes these are a
+ * registered vocabulary — cr_nd_geometry_provenance_1 names surface, bottomhole, lateral and
+ * survey_trace — so "0 survey traces in this box" is an answer about a class that exists,
+ * distinguishable from a jurisdiction that publishes no provenance at all.
+ */
+export function provenanceCountsOf(data: WellStatusSummary): DimensionCounts | null {
+  return dimensionCounts(
+    data.geometry_provenance?.map((row) => [row.geometry_provenance, row.wells] as const),
+    { keepZero: true },
+  );
+}
+
+function dimensionCounts(
+  rows: readonly (readonly [string, Figure])[] | undefined,
+  options: { keepZero: boolean },
+): DimensionCounts | null {
+  if (!rows || rows.length === 0) return null;
+  const kept = options.keepZero ? rows : rows.filter(([, wells]) => Number(wells.value) !== 0);
+  return {
+    counts: Object.fromEntries(kept.map(([value, wells]) => [value, Number(wells.value)])),
+    handles: Object.fromEntries(kept.map(([value, wells]) => [value, wells.d])),
+    order: kept.map(([value]) => value),
   };
 }
 
@@ -331,6 +409,8 @@ function ready(bbox: Bbox, envelope: Envelope<WellStatusSummary>): CountsReady {
     totalHandle: data.wells?.d ?? null,
     vocabulary: vocabularyLinks(data, envelope.links),
     producing: producingCountsOf(data),
+    wellTypes: wellTypeCountsOf(data),
+    provenance: provenanceCountsOf(data),
     resolved: envelope.meta.as_of.resolved,
   };
 }

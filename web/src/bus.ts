@@ -114,13 +114,21 @@ let urlMirror: ((key: string, value: string | null) => void) | undefined;
 
 /**
  * Layer and basemap choices belong in the URL so a shared link reproduces the reader's map.
- * `replaceState`, because a pan is not a navigation.
+ * `replaceState` by default, because a pan is not a navigation — but a decision is: narrowing
+ * the map to one operator is something the back button should undo, so the caller can ask for
+ * a history entry rather than the app deciding that for every parameter alike.
  */
-export function setUrlParam(key: string, value: string | null): void {
+export function setUrlParam(
+  key: string,
+  value: string | null,
+  mode: "push" | "replace" = "replace",
+): void {
   const url = new URL(window.location.href);
   if (value === null) url.searchParams.delete(key);
   else url.searchParams.set(key, value);
-  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  const href = `${url.pathname}${url.search}${url.hash}`;
+  if (mode === "push") window.history.pushState(window.history.state, "", href);
+  else window.history.replaceState(window.history.state, "", href);
   urlMirror?.(key, value);
 }
 

@@ -34,7 +34,11 @@ import {
   retainVintage,
 } from "./counts.ts";
 import type { Bbox, CountsState, WellStatusSummary } from "./counts.ts";
+import { WELLS_BY_PREFIX } from "../explore/facets/wells-by.ts";
+import type { FacetBucket } from "../explore/facets/wells-by.ts";
 import { EXTENT_PARAM, countedBbox, extentFilterOn } from "./extent.ts";
+import { createFacetPill } from "./facet-pill.ts";
+import { PICK_PARAM, facetFromSearch, wellsByTerms } from "./facet-pick.ts";
 import { createHoverCard } from "./hover-card.ts";
 import { createLayerPanel } from "./layer-panel.ts";
 import { createLegend, legendEnabled } from "./legend.ts";
@@ -50,19 +54,20 @@ import { LAYERS, defaultLayerSet, layerDef, layerIds } from "./registry.ts";
 import { createSelection } from "./selection.ts";
 import { filterableStatusIds } from "./status.ts";
 import {
+  FACET_FILTERED_LAYERS,
   OPACITY_OVERRIDE,
   WELL_POINT_LAYERS,
   dataLayers,
   sourceSpecs,
-  statusFilter,
-  statusStyledLayerIds,
   strikeGlyph,
+  wellFilter,
 } from "./style.ts";
 import { METRIC_FILL_LAYERS } from "./thematics.ts";
 import { createThematicsKey } from "./thematics-key.ts";
 import { createTileBanner } from "./tile-banner.ts";
 import { tileRequest } from "./tile-request.ts";
 import { applyVariantStyling } from "./variant-style.ts";
+import { createWellsBySheet } from "./wells-by-sheet.ts";
 
 // Exported for the archive-failure test: the degradation path is the one part of the map
 // module that only runs when something is broken, so it is the part most likely to rot.
@@ -93,6 +98,10 @@ const MANIFEST_PATH = "/basemap/manifest.json";
  * never raised on the 24 levels the service advertises (`infra/basemap/README.md`).
  */
 export const MAP_MAX_ZOOM = 19;
+
+/** Built once: the style is rebuilt on every basemap swap and this set is a property of neither
+ *  the style nor the viewport. */
+const facetLayers = new Set(FACET_FILTERED_LAYERS.map((layer) => layer.id));
 
 const OPACITY_PROPERTY: Readonly<Record<string, string>> = {
   circle: "circle-opacity",
@@ -266,9 +275,9 @@ export function createMap(
   // The URL is the extent predicate's only home (M1-2): a shared link reconstructs the
   // population, and no session state can disagree with what the link says.
   let extentOn = extentFilterOn(window.location.search);
-  // Built once: `zoom` fires on every animation frame of a pinch, and the gated set is a
-  // property of the style, not of the viewport.
-  const statusGated = statusStyledLayerIds();
+  // The Wells-By press, from the URL for the reason the extent node is: a shared link has to
+  // reproduce the canvas, and no session state may disagree with what the link says.
+  let facet = facetFromSearch(window.location.search);
 
   const legend = createLegend({
     on: statuses,
@@ -277,7 +286,7 @@ export function createMap(
     onFilter: (next) => {
       statuses = next;
       writeCapabilitySet(STATUS_STORAGE_KEY, statuses, filterableStatusIds());
-      applyStatusFilter();
+      applyWellFilter();
       invalidateDrawn();
     },
     extentOn,
@@ -296,6 +305,10 @@ export function createMap(
     onToggle: (id, next) => setLayer(id, next),
     onOpacity: (id, value) => setOpacity(id, value),
     onBasemap: (id) => setBasemap(id),
+    // The other half of the one-sheet-at-a-time rule the Wells-By hook states below. Declared
+    // one way it was not a rule: opening this one second left both on the column, each trigger
+    // announcing itself expanded (visual-map-wells-by D3).
+    onOpen: () => wellsBy.close(),
     onReset: (next) => {
       on = next;
       applyVisibility();
@@ -308,16 +321,91 @@ export function createMap(
     onOpen: () => panel.open(),
   });
 
+  // On the canvas rather than only inside the sheet: at 768 the sheet covers the map, so a
+  // reader who pressed a bucket and shut it would have no way to see or release the filter.
+  const facetPill = createFacetPill({
+    onClear: () => setPick(null, null),
+    onOpen: () => wellsBy.open(),
+  });
+
+  const wellsBy = createWellsBySheet({
+    setPanel: (values, mode) => {
+      for (const [key, value] of Object.entries(values)) {
+        setUrlParam(`${WELLS_BY_PREFIX}${key}`, value, mode);
+      }
+      panelTerms = wellsByTerms(window.location.search);
+      // A press belongs to the dimension and the state it was made in: carried across either, it
+      // would narrow the canvas by a value the new ranking never listed.
+      if ("by" in values || "state" in values) setPick(null, null);
+      else wellsBy.refresh();
+    },
+    onPick: (value, bucket) => setPick(value, bucket),
+    // One sheet at a time: the two share a column and a geometry, and two open sheets are one
+    // sheet with the other's rows behind it.
+    onOpen: () => panel.close(),
+  });
+
+  /** What the URL said about the panel when the map last acted on it. */
+  let panelTerms = wellsByTerms(window.location.search);
+
+  /**
+   * A press, committed. `push` and not `replace`: narrowing the map to one operator is a
+   * decision the back button should undo, unlike a pan (`?extent`, `?layers`), which is churn.
+   */
+  function setPick(value: string | null, bucket: FacetBucket | null): void {
+    setUrlParam(PICK_PARAM, value, "push");
+    panelTerms = wellsByTerms(window.location.search);
+    facet = facetFromSearch(window.location.search);
+    applyWellFilter();
+    invalidateDrawn();
+    facetPill.set(
+      facet ? { dimension: facet.dimension, value: facet.value, wells: bucket?.wells ?? null } : null,
+    );
+    facetPill.setZoom(map.getZoom());
+    wellsBy.refresh();
+  }
+
+  /**
+   * The other end of that push. Without this the URL moved on a back press and nothing else did,
+   * so the pill still named a press the link no longer carried and a reader who copied it sent a
+   * map they were not looking at — the invariant stated above `facet` (visual-map-wells-by D2).
+   */
+  window.addEventListener("popstate", () => {
+    const next = wellsByTerms(window.location.search);
+    if (next === panelTerms) return;
+    panelTerms = next;
+    facet = facetFromSearch(window.location.search);
+    applyWellFilter();
+    invalidateDrawn();
+    // No figure: the panel has not answered for this bucket, and a census of the canvas would
+    // move when the reader pans. The same rule a press restored from a link follows.
+    facetPill.set(facet ? { dimension: facet.dimension, value: facet.value, wells: null } : null);
+    facetPill.setZoom(map.getZoom());
+    wellsBy.refresh();
+  });
+
   // The handle stays live either way: refreshCounts() writes to a detached legend without
   // knowing it is off-canvas, so nothing has to test for the suppressed case at every call.
   const showLegend = legendEnabled(window.location.search);
   // `?legend=0` suppresses the thematic key with the status key: both are legends, and an
   // embed that asked for a clean canvas asked for both to go.
+  // One band, stacked: the layer pills and the applied-bucket pill both state what is applied
+  // and both want the top left, so they share a column rather than overlaying each other. The
+  // facet pill is not behind `?legend=0` — an embed that asked for a clean canvas did not ask
+  // for a filter it cannot see, and the pill is applied state rather than a key.
+  const topLeft = document.createElement("div");
+  topLeft.className = "gw-map-topleft";
+  topLeft.append(pills.element, facetPill.element);
   chrome.append(
-    ...(showLegend ? [pills.element, legend.element, thematics.element] : [pills.element]),
+    ...(showLegend ? [topLeft, legend.element, thematics.element] : [topLeft]),
     panel.element,
+    wellsBy.element,
   );
-  map.addControl(new LayerButton(() => panel.toggle()), "top-right");
+  map.addControl(new SheetButton("Layers", "gw-layers-button", () => panel.toggle()), "top-right");
+  map.addControl(
+    new SheetButton("Wells by", "gw-wells-by-button", () => wellsBy.toggle()),
+    "top-right",
+  );
 
   function persist(): void {
     writeCapabilitySet(LAYER_STORAGE_KEY, on, layerIds());
@@ -361,10 +449,19 @@ export function createMap(
     }
   }
 
-  function applyStatusFilter(): void {
-    const filter = statusFilter(map.getZoom(), statuses);
-    for (const id of statusGated) {
-      if (map.getLayer(id)) map.setFilter(id, filter as maplibregl.FilterSpecification);
+  /**
+   * One writer for one slot. `setFilter` replaces a layer's filter whole and this runs on every
+   * `zoom` event, so the status gate and the facet press have to be composed here rather than
+   * written separately — a press written on its own is clobbered on the next frame of a pinch.
+   * Every well layer, not only the status-gated seven: the strikes, the disposal ring and the
+   * survey traces carry their own predicate and would otherwise keep drawing what was filtered
+   * away.
+   */
+  function applyWellFilter(): void {
+    for (const { id } of FACET_FILTERED_LAYERS) {
+      if (!map.getLayer(id)) continue;
+      const filter = wellFilter(map.getZoom(), statuses, facet, id);
+      map.setFilter(id, filter as maplibregl.FilterSpecification | undefined);
     }
   }
 
@@ -505,6 +602,8 @@ export function createMap(
     });
     legend.setVocabulary(state.vocabulary);
     legend.setProducing(state.producing);
+    legend.setWellTypes(state.wellTypes);
+    legend.setProvenance(state.provenance);
     refreshDrawn();
   }
 
@@ -523,7 +622,6 @@ export function createMap(
       variant,
       ...(typeof hollowFill === "string" ? { hollowFill } : {}),
     });
-    const gated = new Set(statusStyledLayerIds(built));
     const styled = built.map((layer) => {
       const owner = LAYERS.find((candidate) => candidate.styleLayers.includes(layer.id));
       if (owner && !on.has(owner.id)) {
@@ -536,13 +634,17 @@ export function createMap(
           layer.paint = { ...layer.paint, [property]: opacity } as typeof layer.paint;
         }
       }
-      if (gated.has(layer.id)) {
+      if (facetLayers.has(layer.id)) {
+        // The style is rebuilt wholesale on a basemap swap (`setStyle` runs with diff:false), so
+        // a press held only in a live filter slot vanishes when the reader picks satellite.
         // Circle and line layers, which the spec allows a filter on; the union type includes
         // `background`, which does not, so the narrowing has to be written out.
-        (layer as { filter?: maplibregl.FilterSpecification }).filter = statusFilter(
-          map.getZoom(),
-          statuses,
-        ) as maplibregl.FilterSpecification;
+        const slot = layer as { filter?: maplibregl.FilterSpecification };
+        const filter = wellFilter(map.getZoom(), statuses, facet, layer.id);
+        // Deleted rather than set to undefined: MapLibre validates a property that is present,
+        // so `filter: undefined` fails validation and the style never loads at all.
+        if (filter) slot.filter = filter as maplibregl.FilterSpecification;
+        else delete slot.filter;
       }
       return layer;
     });
@@ -612,12 +714,18 @@ export function createMap(
     map.on("sourcedata", (event) => {
       if (event.isSourceLoaded) scheduleCounts();
     });
-    map.on("zoom", applyStatusFilter);
+    map.on("zoom", () => {
+      applyWellFilter();
+      // The thinning sentence is a fact about the zoom, and the pill is where it is stated.
+      facetPill.setZoom(map.getZoom());
+    });
     map.on("styleimagemissing", (event) => {
       if (event.id === "gw-strike") installStrikeGlyph();
     });
     panel.setZoom(map.getZoom());
     pills.setOn(on);
+    facetPill.set(facet ? { dimension: facet.dimension, value: facet.value, wells: null } : null);
+    facetPill.setZoom(map.getZoom());
   });
 
   map.on("moveend", () => {
@@ -674,12 +782,20 @@ export function createMap(
   return handle;
 }
 
-/** Opens the layer panel from the map's own control cluster, not from the app header. */
-class LayerButton implements maplibregl.IControl {
+/**
+ * Opens one of the map's sheets from its own control cluster, not from the app header. One
+ * class for both: they are the same control over the same frame, and the sheet each opens
+ * announces its own state back onto this button's `aria-expanded` off the class name.
+ */
+class SheetButton implements maplibregl.IControl {
+  private readonly label: string;
+  private readonly className: string;
   private readonly onClick: () => void;
   private container: HTMLElement | undefined;
 
-  constructor(onClick: () => void) {
+  constructor(label: string, className: string, onClick: () => void) {
+    this.label = label;
+    this.className = className;
     this.onClick = onClick;
   }
 
@@ -688,9 +804,9 @@ class LayerButton implements maplibregl.IControl {
     container.className = "maplibregl-ctrl maplibregl-ctrl-group";
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "gw-layers-button";
-    button.textContent = "Layers";
-    button.setAttribute("aria-label", "Layers");
+    button.className = this.className;
+    button.textContent = this.label;
+    button.setAttribute("aria-label", this.label);
     button.addEventListener("click", this.onClick);
     container.appendChild(button);
     this.container = container;

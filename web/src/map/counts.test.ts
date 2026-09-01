@@ -12,9 +12,11 @@ import {
   retainVintage,
   sameBbox,
   producingCountsOf,
+  provenanceCountsOf,
   statusCounts,
   statusHandles,
   vocabularyLinks,
+  wellTypeCountsOf,
 } from "./counts.ts";
 import type { Bbox, CountsState, WellStatusSummary } from "./counts.ts";
 import { UNMAPPED_STATUS } from "./status.ts";
@@ -589,6 +591,8 @@ describe("the vintage a crossing pins, across a run of answers", () => {
     totalHandle: null,
     vocabulary: [],
     producing: null,
+    wellTypes: null,
+    provenance: null,
     resolved,
   });
 
@@ -635,5 +639,98 @@ describe("the same area at two zooms", () => {
 
     expect(calls).toHaveLength(1);
     expect(atHighZoom).toBe(atLowZoom);
+  });
+});
+
+describe("the well-type classes the same box is counted by", () => {
+  it("reads every served code, verbatim, with its own handle", () => {
+    const data = summary(ND, {
+      well_types: [
+        { well_type_reported: "OG", wells: figure("31204", "col=well_type&c=OG") },
+        { well_type_reported: "SWD", wells: figure("1059", "col=well_type&c=SWD") },
+      ],
+    });
+
+    const parsed = wellTypeCountsOf(data);
+
+    expect(parsed?.counts).toEqual({ OG: 31204, SWD: 1059 });
+    expect(parsed?.handles["SWD"]).toContain("col=well_type&c=SWD");
+    // Order is the response's — largest first — because a block whose rows reshuffle between
+    // viewports is harder to read than one whose rows stay put.
+    expect(parsed?.order).toEqual(["OG", "SWD"]);
+  });
+
+  it("is null where the box carries no coded well at all, not an empty block", () => {
+    expect(wellTypeCountsOf(summary(ND))).toBeNull();
+    expect(wellTypeCountsOf(summary(ND, { well_types: [] }))).toBeNull();
+  });
+
+  it("drops a zero, on the status rule: a code the box does not hold has no count", () => {
+    const data = summary(ND, {
+      well_types: [
+        { well_type_reported: "OG", wells: figure("31204", "col=well_type&c=OG") },
+        { well_type_reported: "GI", wells: figure("0", "col=well_type&c=GI") },
+      ],
+    });
+
+    expect(wellTypeCountsOf(data)?.counts).toEqual({ OG: 31204 });
+    expect(wellTypeCountsOf(data)?.order).toEqual(["OG"]);
+  });
+});
+
+describe("the geometry-provenance classes the same box is counted by", () => {
+  it("reads every served class with its own handle", () => {
+    const data = summary(ND, {
+      geometry_provenance: [
+        { geometry_provenance: "surface", wells: figure("43817", "col=geom&c=surface") },
+        { geometry_provenance: "lateral", wells: figure("23228", "col=geom&c=lateral") },
+      ],
+    });
+
+    const parsed = provenanceCountsOf(data);
+
+    expect(parsed?.counts).toEqual({ surface: 43817, lateral: 23228 });
+    expect(parsed?.handles["lateral"]).toContain("col=geom&c=lateral");
+    expect(parsed?.order).toEqual(["surface", "lateral"]);
+  });
+
+  it("is null where the box serves no provenance, which is how Texas reaches the legend", () => {
+    expect(provenanceCountsOf(summary(ND))).toBeNull();
+    expect(provenanceCountsOf(summary(ND, { geometry_provenance: [] }))).toBeNull();
+  });
+
+  it("keeps a zero, on the producing rule: the classes are a registered vocabulary", () => {
+    const data = summary(ND, {
+      geometry_provenance: [
+        { geometry_provenance: "surface", wells: figure("43817", "col=geom&c=surface") },
+        { geometry_provenance: "survey_trace", wells: figure("0", "col=geom&c=survey_trace") },
+      ],
+    });
+
+    expect(provenanceCountsOf(data)?.counts).toEqual({ surface: 43817, survey_trace: 0 });
+  });
+});
+
+describe("a ready answer", () => {
+  it("carries the two dimensions the summary serves beside the status counts", async () => {
+    const { calls, load } = deferredLoader();
+    const { seen, onState } = collector();
+    createCountSource({ load, onState }).request(ND);
+    calls[0]!.settle(
+      envelope(
+        summary(ND, {
+          well_types: [{ well_type_reported: "OG", wells: figure("7", "col=well_type&c=OG") }],
+          geometry_provenance: [
+            { geometry_provenance: "surface", wells: figure("9", "col=geom&c=surface") },
+          ],
+        }),
+      ),
+    );
+    await flush();
+
+    const state = last(seen);
+    expect(state?.kind).toBe("ready");
+    expect(state?.kind === "ready" && state.wellTypes?.counts).toEqual({ OG: 7 });
+    expect(state?.kind === "ready" && state.provenance?.counts).toEqual({ surface: 9 });
   });
 });

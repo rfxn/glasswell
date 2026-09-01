@@ -217,6 +217,17 @@ describe("the legend", () => {
     expect(note).toContain("max-height: min(28vh, 12rem);");
   });
 
+  it("caps the key against the map it sits on rather than against the blocks it holds", () => {
+    // The key is anchored to the bottom and grows upward, so an uncapped one grows off the map
+    // and under the app header, taking its own collapse control with it (R1). The ceiling is
+    // the map's height less the key's insets and the column is what makes the head the last
+    // thing to give way; tests/e2e/map-key-hit.mjs measures what they buy in a real layout.
+    const css = readFileSync("src/map.css", "utf8");
+    const key = /\.gw-lg\s*\{[^}]*\}/.exec(css)?.[0] ?? "";
+    expect(key).toContain("max-height: calc(100% - 2.8rem);");
+    expect(key).toContain("flex-direction: column;");
+  });
+
   it("names the blue ring as the regulator's own well_type, and the rule that classes it", () => {
     // The ring is a data colour over a key that opens with "data colours, not severity colours",
     // and the sentence keeps the hue from claiming the class injects only water.
@@ -909,5 +920,187 @@ describe("the vocabulary disclosure (visual-m12/m13: the note sat below the scro
     legend.setVocabulary([{ rule: "cr_nd_status_vocab_1", href: null }]);
     expect(noteOf(legend.element).textContent).toContain("cr_nd_status_vocab_1");
     expect(noteOf(legend.element).textContent).toMatch(/TX geometry carries no provenance field/i);
+  });
+});
+
+describe("the two dimensions the summary serves and the key used to discard", () => {
+  const block = (root: HTMLElement, dimension: string): HTMLElement | null =>
+    root.querySelector<HTMLElement>(`.gw-lg-dim[data-dimension="${dimension}"]`);
+  const dimRows = (root: HTMLElement, dimension: string): HTMLElement[] => [
+    ...(block(root, dimension)?.querySelectorAll<HTMLElement>(".gw-lg-drow") ?? []),
+  ];
+  const dimNote = (root: HTMLElement, dimension: string): string =>
+    block(root, dimension)?.querySelector<HTMLElement>(".gw-lg-dnote")?.textContent ?? "";
+  const counts = (order: string[], values: number[]): {
+    counts: Record<string, number>;
+    handles: Record<string, string>;
+    order: string[];
+  } => ({
+    counts: Object.fromEntries(order.map((id, at) => [id, values[at]!])),
+    handles: Object.fromEntries(order.map((id) => [id, `drv_test#c=${id}`])),
+    order,
+  });
+
+  it("renders no block at all until the summary carries the dimension", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    expect(shown(block(legend.element, "well_type")!)).toBe(false);
+    expect(shown(block(legend.element, "geometry_provenance")!)).toBe(false);
+  });
+
+  it("lists every served well type code verbatim, in the response's own order", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 3 }, 12);
+    legend.setWellTypes(counts(["OG", "SWD"], [31204, 1059]));
+
+    expect(dimRows(legend.element, "well_type").map((row) => row.dataset["value"])).toEqual([
+      "OG",
+      "SWD",
+    ]);
+    expect(
+      dimRows(legend.element, "well_type")[0]?.querySelector(".gw-lg-count")?.textContent,
+    ).toBe("31,204");
+  });
+
+  it("gives a dimension row no swatch: the map draws no colour for these classes", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setWellTypes(counts(["OG"], [1]));
+    legend.setProvenance(counts(["surface"], [1]));
+
+    expect(legend.element.querySelectorAll(".gw-lg-drow .gw-lg-swatch")).toHaveLength(0);
+  });
+
+  it("carries a resolvable handle per row, so no figure on the block is naked", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 3 }, 12);
+    legend.setProvenance(counts(["surface", "lateral"], [43817, 23228]));
+
+    const handles = [
+      ...legend.element.querySelectorAll<HTMLButtonElement>(
+        '.gw-lg-dim[data-dimension="geometry_provenance"] .gw-lg-handle',
+      ),
+    ];
+    expect(handles).toHaveLength(2);
+    expect(handles.every((handle) => handle.dataset["handle"] !== "")).toBe(true);
+  });
+
+  it("says on the provenance block that its classes overlap and do not sum", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setProvenance(counts(["surface", "lateral"], [43817, 23228]));
+
+    expect(dimNote(legend.element, "geometry_provenance")).toMatch(/overlap/i);
+    expect(dimNote(legend.element, "geometry_provenance")).toMatch(/do not sum/i);
+    expect(dimNote(legend.element, "geometry_provenance")).toContain("cr_nd_geometry_provenance_1");
+  });
+
+  it("states each block's zero rule, because the two blocks do not share one", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setWellTypes(counts(["OG"], [1]));
+    legend.setProvenance(counts(["surface"], [1]));
+
+    // The status rule: a code the box does not hold is absent rather than zero.
+    expect(dimNote(legend.element, "well_type")).toMatch(/absent.*not zero|not zero/i);
+    // The producing rule: a registered class the box does not hold is a zero, which is an answer.
+    expect(dimNote(legend.element, "geometry_provenance")).toMatch(/zero/i);
+  });
+
+  it("withdraws the rows with the rest of the key while a request is out", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 3 }, 12);
+    legend.setWellTypes(counts(["OG"], [31204]));
+    expect(dimRows(legend.element, "well_type")[0]?.querySelector(".gw-lg-count")?.textContent)
+      .toBe("31,204");
+
+    legend.setPending(12);
+    expect(dimRows(legend.element, "well_type")[0]?.querySelector(".gw-lg-count")?.textContent)
+      .toBe("…");
+    const handle = legend.element.querySelector<HTMLButtonElement>(
+      '.gw-lg-dim[data-dimension="well_type"] .gw-lg-handle',
+    );
+    // A ⌾ over a "…" would offer to resolve a figure the cell is not showing.
+    expect(handle?.hidden).toBe(true);
+  });
+
+  it("names the other scope once, so the two Wells-By surfaces are not two answers", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setWellTypes(counts(["OG"], [1]));
+
+    const crossref = legend.element.querySelector<HTMLElement>(".gw-lg-crossref");
+    expect(shown(crossref!)).toBe(true);
+    expect(crossref?.textContent).toMatch(/map view/i);
+    expect(crossref?.textContent).toMatch(/Wells by/i);
+  });
+
+  it("keeps both blocks and the crossref out of the scroll body, so they are always in frame", () => {
+    // visual-map-wells-by D5: 575 px of new content went into a 384 px scrollport, which put
+    // both blocks and the one sentence pointing at the other surface below the fold at every
+    // width. The vocabulary note left that body for the same reason (visual-m12/m13).
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setWellTypes(counts(["OG"], [1]));
+    legend.setProvenance(counts(["surface"], [1]));
+
+    expect(block(legend.element, "well_type")!.closest(".gw-lg-body")).toBeNull();
+    expect(block(legend.element, "geometry_provenance")!.closest(".gw-lg-body")).toBeNull();
+    expect(legend.element.querySelector(".gw-lg-crossref")!.closest(".gw-lg-body")).toBeNull();
+  });
+
+  it("opens each block on its own disclosure, shut until it is asked for", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 3 }, 12);
+    legend.setWellTypes(counts(["OG", "SWD"], [31204, 1059]));
+    const view = block(legend.element, "well_type")!;
+    const title = view.querySelector<HTMLButtonElement>(".gw-lg-dtitle")!;
+    const shownRows = view.querySelector<HTMLElement>(".gw-lg-dbody")!;
+
+    expect(title.getAttribute("aria-expanded")).toBe("false");
+    expect(shownRows.hidden).toBe(true);
+
+    title.click();
+
+    expect(title.getAttribute("aria-expanded")).toBe("true");
+    expect(shownRows.hidden).toBe(false);
+    // A control on the key, not the key's own expand target.
+    expect(legend.element.classList.contains("gw-open")).toBe(false);
+  });
+
+  it("does not collapse the key when a dimension row's ⌾ is clicked", () => {
+    // visual-map-wells-by D6: asking where a number came from cost the reader the key they were
+    // reading and the scroll position they had reached it at.
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 3 }, 12);
+    legend.setWellTypes(counts(["OG"], [31204]));
+    expand(legend.element);
+    expect(legend.element.classList.contains("gw-open")).toBe(true);
+
+    dimRows(legend.element, "well_type")[0]!
+      .querySelector<HTMLButtonElement>(".gw-lg-handle")!
+      .click();
+
+    expect(legend.element.classList.contains("gw-open")).toBe(true);
+  });
+
+  it("does not collapse the key when a producing row's ⌾ is clicked either", () => {
+    // The same hole one class over, fixed as a class rather than for the new rows alone.
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ active: 3 }, 12);
+    legend.setProducing({
+      counts: { producing: 5 },
+      handles: { producing: "drv_test#producing" },
+      window: null,
+      bbox: "-105,31,-102,48",
+    });
+    expand(legend.element);
+
+    legend.element.querySelector<HTMLButtonElement>(".gw-lg-prow .gw-lg-handle")!.click();
+
+    expect(legend.element.classList.contains("gw-open")).toBe(true);
+  });
+
+  it("drops the block when a later answer no longer carries the dimension", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setProvenance(counts(["surface"], [1]));
+    expect(shown(block(legend.element, "geometry_provenance")!)).toBe(true);
+
+    legend.setProvenance(null);
+    expect(shown(block(legend.element, "geometry_provenance")!)).toBe(false);
   });
 });
