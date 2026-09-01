@@ -65,7 +65,7 @@ front of them, so the Geology group presents as pending while the data is live.
 | **P3** Forecasting and benchmark | Entry gate met; control served; modeling remains | Publication `p3pub_8b434525d8c621762e31b06ca660bfcd` accepted and its control served. Quantile-model writer, split-conformal calibration, model-registry writer, persisted analog index and benchmark runner remain. `fv2.0` is a one-feature set |
 | **P4** Dollars and scenarios | Not started | Entire phase |
 | **P5** Intelligence, agents and alerts | Not started | Entire phase |
-| **P6** Hardening | Partial | Six blocking CI jobs, session auth, rate limits, backup, restore drill, offsite receipt, public tunnel and Postgres tuning are live. Replacement-host recovery is mechanised and **never executed**; the last restore proof is at schema 47; the off-LAN credential exercise has not been run; Cloudflare Access is ruled out, not deferred |
+| **P6** Hardening | Partial | Six blocking CI jobs, session auth, rate limits, backup, restore drill, offsite receipt, public tunnel and Postgres tuning are live. Replacement-host recovery is mechanised and **never executed**; the last restore proof is at schema 47 (carried from the previous revision, not re-verified today); the off-LAN credential exercise has not been run; Cloudflare Access is ruled out, not deferred |
 | **P7** Permian | NM and MT resident; TX half unbuilt | **NM headers and surface geometry are resident** and **Tier 1 production is promoted — 17,597,960 rows at completion-pool grain**. NM status resolution is the v0.74 track. Montana is resident on both grains with tiles and paths. **TX lease production is unbuilt**, and with it allocation v0, both validators and a TX geometry-provenance rule of its own |
 | **P8** Living systems | Not started | Entire phase |
 
@@ -103,7 +103,7 @@ or the horizon in §4.
 5. **Glossary coverage** is absent from the status legend, the layers panel and the Status
    page — the three densest jargon surfaces. v0.75, `feat/glossary-coverage`.
 6. **Jurisdiction registry** — 465 hardcoded state references across 59 files, four per-state
-   dicts in `routers/wells.py` alone. v0.76, `feat/state-registry`.
+   dicts in `routers/wells.py` alone (`code-audit.md`, not re-measured here). v0.76.
 7. **User administration UI** — `/v1/users` CRUD is complete server-side and `web/src` never
    calls it; no session-list endpoint exists. v0.76, `feat/accounts-ui`.
 8. **Cadence-driven ingest scheduling** — the policy is a table; the unit is ten hand-written
