@@ -63,6 +63,7 @@ export const wellEnvelope = {
   },
   "links": {
     "completions": "/v1/wells/3305310451/completions",
+    "cumulatives": "/v1/wells/3305310451/cumulatives",
     "explain": "/v1/explain?h=drv_ga3f2mao5zgyb5xcniwq%23api10%3D3305310451%26col%3Dlateral_length_ft&depth=full",
     "formations": "/v1/formations",
     "neighbors": "/v1/wells/3305310451/neighbors",
@@ -662,6 +663,110 @@ export const problemBody = {
   "handle": "drv_doesnotexist",
   "last_resolved": null,
   "stop_reason": "unknown_id"
+};
+
+export const cumulativesEnvelope = {
+  "data": {
+    "api10": "3305310451",
+    "coverage": {
+      "_lineage": {
+        "gas_mcf": "drv_5f5pvsamtyvxto2unjmq#api10=3305310451&stream=gas&col=coverage",
+        "oil_bbl": "drv_5f5pvsamtyvxto2unjmq#api10=3305310451&stream=liquid&col=coverage",
+        "water_bbl": "drv_5f5pvsamtyvxto2unjmq#api10=3305310451&stream=water&col=coverage"
+      },
+      "_units": {
+        "gas_mcf": "months",
+        "oil_bbl": "months",
+        "water_bbl": "months"
+      },
+      "gas_mcf": {
+        "coverage_complete": false,
+        "first_month": "2025-12",
+        "last_month": "2026-06",
+        "months_no_report": 0,
+        "months_reported": 6,
+        "months_reported_zero": 0,
+        "months_withheld": 1,
+        "span_months": 7
+      },
+      "oil_bbl": {
+        "coverage_complete": false,
+        "first_month": "2025-12",
+        "last_month": "2026-06",
+        "months_no_report": 0,
+        "months_reported": 6,
+        "months_reported_zero": 0,
+        "months_withheld": 1,
+        "span_months": 7
+      },
+      "water_bbl": {
+        "coverage_complete": false,
+        "first_month": "2025-12",
+        "last_month": "2026-06",
+        "months_no_report": 0,
+        "months_reported": 5,
+        "months_reported_zero": 0,
+        "months_withheld": 2,
+        "span_months": 7
+      }
+    },
+    "coverage_outcome": "observed",
+    "cumulative": {
+      "gas_mcf": {
+        "d": "drv_ljbmyy7avces77lwdnfa#api10=3305310451&col=gas_mcf",
+        "granularity": "well_observed",
+        "report_vintage": "2026-08-01",
+        "unit": "mcf",
+        "value": "50400.000"
+      },
+      "oil_bbl": {
+        "basis": "oil+condensate",
+        "d": "drv_ljbmyy7avces77lwdnfa#api10=3305310451&col=oil_bbl",
+        "granularity": "well_observed",
+        "report_vintage": "2026-08-01",
+        "unit": "bbl",
+        "value": "21000.000"
+      },
+      "water_bbl": {
+        "basis": "water",
+        "d": "drv_ljbmyy7avces77lwdnfa#api10=3305310451&col=water_bbl",
+        "granularity": "well_observed",
+        "report_vintage": "2026-08-01",
+        "unit": "bbl",
+        "value": "12000.000"
+      }
+    },
+    "granularity": "well_observed",
+    "months_withheld": {
+      "d": "drv_ljbmyy7avces77lwdnfa#api10=3305310451&col=months_withheld",
+      "unit": "months",
+      "value": "1"
+    },
+    "snapshot_vintage": "2026-08-01"
+  },
+  "links": {
+    "production": "/v1/wells/3305310451/production",
+    "self": "/v1/wells/3305310451/cumulatives",
+    "well": "/v1/wells/3305310451"
+  },
+  "meta": {
+    "as_of": {
+      "requested": "latest",
+      "resolved": "2026-08-01"
+    },
+    "deprecations": [],
+    "labels": {
+      "/api10": "gt_api_10_api_12_api_14",
+      "/coverage": "gt_cumulative_production",
+      "/cumulative/gas_mcf": "gt_stream",
+      "/cumulative/oil_bbl": "gt_liquids_policy",
+      "/cumulative/water_bbl": "gt_stream",
+      "/granularity": "gt_granularity",
+      "/months_withheld": "gt_withheld",
+      "/snapshot_vintage": "gt_report_vintage"
+    },
+    "warnings": []
+  }
 };
 
 export function stubFetch(

@@ -19,6 +19,7 @@ const {
   LENGTH_HANDLE,
   OIL_HANDLE,
   completionContextEnvelope,
+  cumulativesEnvelope,
   neighborEnvelope,
   productionEnvelope,
   stubFetch,
@@ -40,6 +41,7 @@ beforeEach(() => {
     vi.fn(
       stubFetch({
         [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+        [`/v1/wells/${API10}/cumulatives`]: cumulativesEnvelope,
         [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
         [`/v1/wells/${API10}/production`]: productionEnvelope,
         [`/v1/wells/${API10}`]: wellEnvelope,
@@ -137,10 +139,11 @@ describe("a well whose regulator reports at the lease", () => {
 });
 
 describe("well card", () => {
-  it("pins the well, completion, and production requests to the route as_of", async () => {
+  it("pins the well, completion, cumulative and production requests to the route as_of", async () => {
     const requested = vi.fn(
       stubFetch({
         [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+        [`/v1/wells/${API10}/cumulatives`]: cumulativesEnvelope,
         [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
         [`/v1/wells/${API10}/production`]: productionEnvelope,
         [`/v1/wells/${API10}`]: wellEnvelope,
@@ -155,6 +158,7 @@ describe("well card", () => {
       [
         `/v1/wells/${API10}?as_of=2026-07-01`,
         `/v1/wells/${API10}/completions?as_of=2026-07-01`,
+        `/v1/wells/${API10}/cumulatives?as_of=2026-07-01`,
         `/v1/wells/${API10}/neighbors?as_of=2026-07-01&limit=5`,
         `/v1/wells/${API10}/production?as_of=2026-07-01`,
       ].sort(),
@@ -171,7 +175,7 @@ describe("well card", () => {
 
   it("renders lateral length through gw-figure, with its unit and its handle", async () => {
     await renderWellCard(host, API10, callbacks);
-    const figure = host.querySelector("gw-figure");
+    const figure = host.querySelector(`gw-figure[handle="${LENGTH_HANDLE}"]`);
     expect(figure?.getAttribute("unit")).toBe("ft");
     expect(figure?.getAttribute("handle")).toBe(LENGTH_HANDLE);
     expect(figure?.textContent).toContain("15,065.44 ft");
@@ -254,9 +258,175 @@ describe("well card", () => {
 
   it("opens the drawer from the figure's handle affordance", async () => {
     await renderWellCard(host, API10, callbacks);
-    const button = host.querySelector<HTMLButtonElement>("gw-figure button");
+    const button = host.querySelector<HTMLButtonElement>(
+      `gw-figure[handle="${LENGTH_HANDLE}"] button`,
+    );
     button?.click();
     expect(callbacks.onExplain).toHaveBeenCalledWith(LENGTH_HANDLE);
+  });
+
+  it("renders the cumulative row as three figures, each with its own handle", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    const frame = host.querySelector<HTMLElement>(".gw-well-cumulatives");
+    expect(frame?.querySelector(".gw-frame-body")?.getAttribute("data-state")).toBe("populated");
+
+    const cells = [...(frame?.querySelectorAll(".gw-cumulative-cell") ?? [])];
+    expect(cells.map((cell) => cell.querySelector("dt")?.textContent)).toEqual([
+      "Oil",
+      "Gas",
+      "Water",
+    ]);
+    expect(cells.map((cell) => cell.querySelector(".gw-figure-value")?.textContent)).toEqual([
+      "21,000.000 bbl",
+      "50,400.000 mcf",
+      "12,000.000 bbl",
+    ]);
+    expect(
+      cells.map((cell) => cell.querySelector("gw-figure")?.getAttribute("handle")),
+    ).toEqual([
+      "drv_ljbmyy7avces77lwdnfa#api10=3305310451&col=oil_bbl",
+      "drv_ljbmyy7avces77lwdnfa#api10=3305310451&col=gas_mcf",
+      "drv_ljbmyy7avces77lwdnfa#api10=3305310451&col=water_bbl",
+    ]);
+  });
+
+  it("resolves a cumulative figure's handle through the explain affordance", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    callbacks.onExplain.mockClear();
+    host
+      .querySelector<HTMLButtonElement>(
+        ".gw-well-cumulatives gw-figure[handle*='col=gas_mcf'] button",
+      )
+      ?.click();
+
+    expect(callbacks.onExplain).toHaveBeenCalledWith(
+      "drv_ljbmyy7avces77lwdnfa#api10=3305310451&col=gas_mcf",
+    );
+  });
+
+  it("states the window, the months admitted and the snapshot beside the totals", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    const scope = host.querySelector<HTMLElement>(".gw-well-cumulatives .gw-scope");
+    // 5-6 of 7, because the water stream carries one more withheld month than oil and gas:
+    // a single admitted count would be wrong for two of the three streams.
+    expect(scope?.textContent).toBe(
+      "Dec 2025 – Jun 2026 · 5–6 of 7 months admitted · snapshot 2026-08-01",
+    );
+  });
+
+  it("renders a withheld stream as withheld and a no-report stream as no report, never as 0", async () => {
+    const classes = {
+      ...cumulativesEnvelope,
+      data: {
+        ...cumulativesEnvelope.data,
+        cumulative: {
+          ...cumulativesEnvelope.data.cumulative,
+          gas_mcf: null,
+          water_bbl: null,
+        },
+        coverage: {
+          ...cumulativesEnvelope.data.coverage,
+          gas_mcf: {
+            ...cumulativesEnvelope.data.coverage.gas_mcf,
+            months_reported: 0,
+            months_no_report: 0,
+            months_withheld: 7,
+          },
+          water_bbl: {
+            ...cumulativesEnvelope.data.coverage.water_bbl,
+            months_reported: 0,
+            months_no_report: 7,
+            months_withheld: 0,
+          },
+        },
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+          [`/v1/wells/${API10}/cumulatives`]: classes,
+          [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const cells = [...host.querySelectorAll(".gw-well-cumulatives .gw-cumulative-cell")];
+    expect(
+      cells.map((cell) => cell.querySelector(".gw-figure-value, .gw-absent")?.textContent),
+    ).toEqual(["21,000.000 bbl", "unavailable: withheld", "unavailable: no report"]);
+    // The whole point: an absent month is never summed as a zero.
+    expect(cells[1]?.textContent).not.toMatch(/\b0\b/);
+    expect(cells[2]?.textContent).not.toMatch(/\b0\b/);
+    // Nothing is collapsed away — the four counts stay reachable on the cell.
+    expect(cells[1]?.getAttribute("title")).toBe(
+      "0 reported · 0 reported zero · 0 no report · 7 withheld of 7 months",
+    );
+  });
+
+  it("says nothing was ever filed rather than showing a zero cumulative", async () => {
+    const never = {
+      ...cumulativesEnvelope,
+      data: {
+        ...cumulativesEnvelope.data,
+        coverage_outcome: "never_reported",
+        cumulative: null,
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+          [`/v1/wells/${API10}/cumulatives`]: never,
+          [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const frame = host.querySelector<HTMLElement>(".gw-well-cumulatives");
+    expect(frame?.querySelector(".gw-frame-body")?.getAttribute("data-state")).toBe("empty");
+    expect(frame?.textContent).toContain("No cumulative — nothing ever filed.");
+    expect(frame?.querySelector("gw-figure")).toBeNull();
+    expect(frame?.textContent).not.toMatch(/\b0 bbl\b/);
+  });
+
+  it("omits the section entirely for a well the mart does not cover", async () => {
+    const unlinked = {
+      ...wellEnvelope,
+      links: Object.fromEntries(
+        Object.entries(wellEnvelope.links).filter(([key]) => key !== "cumulatives"),
+      ),
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+          [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: unlinked,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    // Not an empty section: "no cumulative" would say the well produced nothing, when the
+    // fact is that this jurisdiction is not summed here at all.
+    expect(host.querySelector(".gw-well-cumulatives")).toBeNull();
   });
 
   it("links labels the API named in meta.labels straight to their term (DIR-8)", async () => {

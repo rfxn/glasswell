@@ -68,3 +68,11 @@
          inside the well flyout's section grammar rather than the panel they were
          written against: short empty states, a scope line of dense facts, and no
          prose paragraph where the flyout carries none
+- [New] the well flyout carries a cumulative row under monthly production: oil, gas
+      and water as three figures, each with its own derivation handle, over a scope
+      line stating the window, the months admitted and the mart snapshot; a stream
+      with no admitted month reads withheld or no report and never a zero, and a
+      well that never filed reads as such rather than as three zeroes
+- [New] /v1/wells/{api10} links to cumulatives only where the mart holds a total, so
+      a client reads the link rather than testing the API prefix itself and a
+      jurisdiction outside the mart is never rendered as a well that produced nothing
