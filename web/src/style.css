@@ -75,6 +75,10 @@
      why it is a third of what it cost when a status line lived in it. */
   --gw-meta-w: 150px;
 
+  /* The flyout's column, declared once: the hint steps aside by exactly this much when a
+     panel is open, and the two drifting apart is how the coach lands back on the card. */
+  --gw-card-w: min(38vw, 540px);
+
   --gw-radius-xs: 4px;
   --gw-radius-sm: 6px;
   --gw-radius-md: 8px;
@@ -562,7 +566,7 @@ body {
    and drops the tick, which would otherwise point at nothing. */
 body:has(#gw-card:not([hidden])) .gw-hint,
 body:has(#gw-drawer:not([hidden])) .gw-hint {
-  right: calc(min(38vw, 460px) + var(--gw-space-4));
+  right: calc(var(--gw-card-w) + var(--gw-space-4));
 }
 
 body:has(#gw-card:not([hidden])) .gw-hint::before,
@@ -821,9 +825,13 @@ main {
   z-index: var(--gw-z-panel);
 }
 
+/* The cap was a flat 460 px, so a 2560 px display gave the flyout the column a 1280 px laptop
+   got and the map kept the difference. 38vw still governs the narrow end — the card may never
+   take more than a third of the canvas — and the ceiling is the width at which the plot and
+   the fact grid stop being cramped: 486 px at 1280, 540 from 1422 up. */
 #gw-card {
   right: 0.75rem;
-  width: min(38vw, 460px);
+  width: var(--gw-card-w);
 }
 
 /* The card used to sit at right: 480px whether or not the drawer was open, which put it

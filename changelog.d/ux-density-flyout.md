@@ -34,3 +34,11 @@
 - [Fix] Shared note chrome inside the map key and the map sheets takes panel-local greys
       rather than the theme's, which the light theme resolves to dark-on-dark; the light
       theme remains flagged off for the reasons `chrome/theme.ts` records
+- [New] The map key's collapsed pill carries the count it is a key to — the population's own
+      figure while nothing is filtered off, the sum of the classes left on when something is,
+      and nothing at all while the counts are pending; "how many wells am I looking at" was
+      the first question a map of dots raises and the only one answered by opening something
+- [Change] The well flyout's column is capped at 540 px rather than a flat 460 at every
+           desktop width, so the stream legend stops wrapping and the plot gets the room a
+           wide display already had; 38vw still holds it under a third of the canvas, and the
+           width is one token the first-run hint steps aside by

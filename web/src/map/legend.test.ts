@@ -1104,3 +1104,53 @@ describe("the two dimensions the summary serves and the key used to discard", ()
     expect(shown(block(legend.element, "geometry_provenance")!)).toBe(false);
   });
 });
+
+describe("the count on the collapsed pill", () => {
+  it("carries the population's own figure while nothing is filtered off", () => {
+    // Not the sum of the class rows: a well the box holds under a class this key does not
+    // list would be dropped from that sum without anything on screen saying so.
+    const legend = createLegend({ onFilter: () => {} });
+    const title = (): string => legend.element.querySelector(".gw-lg-title")!.textContent!;
+
+    legend.setCounts({ active: 23_977, plugged: 11_841, drilling: 423 }, 12, {}, {
+      wells: 52_564,
+      handle: "drv_total#bbox=1",
+    });
+
+    expect(title()).toBe("Well status · 52,564");
+  });
+
+  it("moves with the filter, so the pill can never overstate the canvas", () => {
+    const legend = createLegend({ on: new Set(["active"]), onFilter: () => {} });
+    const title = (): string => legend.element.querySelector(".gw-lg-title")!.textContent!;
+
+    legend.setCounts({ active: 23_977, plugged: 11_841 }, 12, {}, {
+      wells: 52_564,
+      handle: "drv_total#bbox=1",
+    });
+
+    expect(title()).toBe(`Well status · 1/${statusIds().length} · 23,977`);
+  });
+
+  it("says nothing while the counts are pending rather than leaving the last viewport's sum", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    const title = (): string => legend.element.querySelector(".gw-lg-title")!.textContent!;
+    legend.setCounts({ active: 23_977 }, 12, {}, { wells: 52_564, handle: "drv_total#bbox=1" });
+    expect(title()).toContain("52,564");
+
+    legend.setPending(12);
+
+    expect(title()).toBe("Well status");
+  });
+
+  it("says nothing when every class is off, because the class ratio already says it", () => {
+    const legend = createLegend({ onFilter: () => {} });
+    const title = (): string => legend.element.querySelector(".gw-lg-title")!.textContent!;
+    legend.setCounts({ active: 23_977 }, 12, {}, { wells: 52_564, handle: "drv_total#bbox=1" });
+    expand(legend.element);
+
+    control(legend.element, "none").click();
+
+    expect(title()).toBe(`Well status · 0/${statusIds().length}`);
+  });
+});
