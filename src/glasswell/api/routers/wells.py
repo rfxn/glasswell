@@ -54,6 +54,7 @@ from glasswell.marts.producing import (
     window_start,
 )
 from glasswell.marts.tiles import TILE_BUFFER, TILE_EXTENT, TILE_MAX_ZOOM, WEB_MERCATOR
+from glasswell.status_resolution import resolved_status, resolver_join
 from glasswell.units import metres_to_feet
 
 router = APIRouter(tags=["wells"])
@@ -78,10 +79,9 @@ COUNT_UNIT = "wells"
 STATUS_VOCABULARY_RULES = {
     "33": "cr_nd_status_vocab_1",
     "42": "cr_tx_status_vocab_1",
-    # New Mexico's row records a measured domain and an absent mapping: the OCD publishes no
-    # codebook, so every NM status_canonical is null and every NM well is counted unmapped.
-    # That count is a figure, and this is the rule it cites.
-    "30": "cr_nm_wellhistory_status_vocab_1",
+    # New Mexico's class is resolved at read time from lineage.nm_wellhistory_status_map, not
+    # written by the promotion, and this is the rule that decides the mapping.
+    "30": "cr_nm_wellhistory_status_vocab_2",
     "25": "cr_mt_gis_status_vocab_1",
 }
 # States the neighbour mart holds subjects for; the link is absent for anything else.
@@ -112,6 +112,7 @@ LENGTH_NOT_SERVED = "not_served"
 
 WELL_LABELS = {
     "/api10": "gt_api_10_api_12_api_14",
+    "/status_vocabulary_rule": "gt_conformance_rule",
     "/land_unit_label": "gt_land_unit",
     "/confidential_flag": "gt_confidential_well",
     "/lateral_length_ft": "gt_wellbore",
@@ -136,7 +137,9 @@ _PRODUCING_COLUMN = f"case when %(producing_registered)s::boolean then {_PRODUCI
 
 _COLUMNS = (
     "api10, api14, state_code, county_code_at_permit, ndic_file_no, operator_name_reported,"
-    " operator_id, well_name, status_canonical, status_reported, well_type_reported, spud_date,"
+    " operator_id, well_name,"
+    f" {resolved_status('ranked')} as status_canonical,"
+    " status_reported, well_type_reported, spud_date,"
     " confidential_flag, basin, land_unit_label, total_depth_ft, completion_date,"
     " effective_from, source_manifest_id, derivation_id,"
     " greatest(effective_from, manifest_vintage,"
@@ -166,15 +169,16 @@ with ranked as (
             or d.created_vintage <= %(as_of)s::date))
 select {columns}
   from ranked
+{resolver}
  where rn = 1
 """
 
 # Two projections of one spine. `/v1/wells` and the well card class each row; the production
 # routes read the same spine and bind none of the producing parameters, so widening the shared
 # constant would break them at query time rather than here.
-RANKED_WELLS = _SPINE.format(columns=_COLUMNS)
+RANKED_WELLS = _SPINE.format(columns=_COLUMNS, resolver=resolver_join("ranked"))
 RANKED_WELLS_PRODUCING = _SPINE.format(
-    columns=f"{_COLUMNS}, {_PRODUCING_COLUMN} as producing"
+    columns=f"{_COLUMNS}, {_PRODUCING_COLUMN} as producing", resolver=resolver_join("ranked")
 )
 
 # `tiled` asks the tile pipeline's own question of the deepest published zoom: a geometry that
@@ -222,12 +226,13 @@ with in_view as (
                          st_makeenvelope(%(minx)s, %(miny)s, %(maxx)s, %(maxy)s, 4326))),
      latest as (
     select distinct on (v.api10)
-           v.api10, w.status_canonical, w.basin, w.state_code, w.well_type_reported,
-           w.derivation_id, w.effective_from
+           v.api10, {resolved_status("w")} as status_canonical, w.basin, w.state_code,
+           w.well_type_reported, w.derivation_id, w.effective_from
       from in_view v
       left join canonical.wells w
              on w.api10 = v.api10
             and (%(as_of)s::date is null or w.effective_from <= %(as_of)s::date)
+     {resolver_join("w")}
      order by v.api10, w.effective_from desc nulls last, w.created_at desc nulls last),
      classed as (
     select ranked.*,
@@ -322,11 +327,22 @@ class WellSummary(BaseModel):
     status_canonical: str | None = Field(
         description=(
             "Status mapped through the source's own status vocabulary rule, one per"
-            " jurisdiction and served with the figure. Null where the source reported no"
-            " status at all, or where its vocabulary has no published codebook to map — two"
-            " different absences, and the rule says which."
+            " jurisdiction and named beside it in status_vocabulary_rule. Null where the"
+            " source reported no status at all, or where its vocabulary maps that code to"
+            " nothing — two different absences, and the rule says which."
         ),
         json_schema_extra={GLOSSARY_KEY: "gt_well_status"},
+    )
+    status_vocabulary_rule: str | None = Field(
+        description=(
+            "The conformance rule that decided status_canonical for this well's jurisdiction,"
+            " resolvable at /v1/conformance/{rule_id}. Named on the row because the class is"
+            " not always written by the promotion: New Mexico's is resolved at read time from"
+            " the registry, so the row's own derivation cites the superseded rule and would"
+            " send a reader to a decision that did not produce this value. Null where no rule"
+            " is registered for the state."
+        ),
+        json_schema_extra={GLOSSARY_KEY: "gt_conformance_rule"},
     )
     county_code_at_permit: str | None = Field(
         description="County code recorded at permit.",
@@ -477,6 +493,10 @@ def _summary(row: dict[str, Any]) -> dict[str, Any]:
         "well_name": row["well_name"],
         "operator_name_reported": row["operator_name_reported"],
         "status_canonical": row["status_canonical"],
+        # The rule that decided the class, not the one the row's derivation happens to cite:
+        # for New Mexico those differ, because the class is a read-time join and the promotion
+        # still cites the rule that refuses the mapping.
+        "status_vocabulary_rule": STATUS_VOCABULARY_RULES.get(row["state_code"] or ""),
         "county_code_at_permit": row["county_code_at_permit"],
         "land_unit_label": row["land_unit_label"],
         "spud_date": iso(row["spud_date"]),
@@ -716,8 +736,11 @@ def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
                 "glossary": "gt_well_status",
                 "so": (
                     "Filters on the canonical value rather than the code the state published,"
-                    " so `active` here means every source's version of active. A reported code"
-                    " with no mapping is quarantined, so it matches no status at all."
+                    " so `active` here means every source's version of active. What becomes of"
+                    " a code the vocabulary does not map is the jurisdiction's own rule: North"
+                    " Dakota, Texas and Montana quarantine it out of the spine, New Mexico"
+                    " passes it through unclassed. Either way it matches no status here — but"
+                    " a passed-through well is still served and still drawn."
                 ),
             },
             operator={
@@ -911,7 +934,7 @@ def list_wells(
         clauses.append("and (api10 = %(api10)s or api14 = %(api10)s)")
         params["api10"] = api10
     if status is not None:
-        clauses.append("and status_canonical = %(status)s")
+        clauses.append(f"and {resolved_status('ranked')} = %(status)s")
         params["status"] = status
     if operator is not None:
         clauses.append("and operator_name_reported ilike '%%' || %(operator)s || '%%'")
@@ -1670,6 +1693,7 @@ def get_well(
         {"basin": row["basin"] or "williston", "as_of": as_of},
     )
     storage_epsg = crs[0]["storage_epsg"] if crs else STORAGE_EPSG
+    status_vocabulary_rule = STATUS_VOCABULARY_RULES.get(row["state_code"] or "")
     length_scope_rule = LENGTH_SCOPE_RULES.get(row["state_code"] or "")
     # The basin's own rule, so a TX length's handle resolves to a rule about TX geometry. Not
     # resolved at all where a rule withholds the length: the resolver's no-basin default is
@@ -1847,6 +1871,11 @@ def get_well(
             **(
                 {"length_rule": f"/v1/conformance/{length_scope_rule}"}
                 if length_scope_rule
+                else {}
+            ),
+            **(
+                {"status_rule": f"/v1/conformance/{status_vocabulary_rule}"}
+                if status_vocabulary_rule
                 else {}
             ),
         },

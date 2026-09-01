@@ -15,11 +15,12 @@ import {
   statusMinZoom,
 } from "./status.ts";
 
-// The canonical set as the two status rules state it, transcribed from the live rules:
+// The canonical set as the status rules state it, transcribed from the live rules:
 // `cr_nd_status_vocab_1` gives active, plugged, dry, permitted, inactive, confidential,
 // drilling, temporarily_abandoned and expired, with the permit-lifecycle terminal codes
 // collapsing to expired; `cr_tx_status_vocab_1` adds service, which eleven of the RRC's
-// twenty-three well types map to and which is not a producer.
+// twenty-three well types map to and which is not a producer; `cr_nm_wellhistory_status_vocab_2`
+// adds documented_unmapped, for the four OCD codes it maps to no equivalent rather than to null.
 const CANONICAL = [
   "active",
   "plugged",
@@ -31,6 +32,7 @@ const CANONICAL = [
   "temporarily_abandoned",
   "expired",
   "service",
+  "documented_unmapped",
 ];
 
 describe("the status catalogue", () => {

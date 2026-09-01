@@ -108,14 +108,30 @@ describe("the layer panel", () => {
     expect(row.getAttribute("data-out-of-scale")).toBe(null);
   });
 
-  it("disables a stub layer and says the source is not ingested", () => {
+  it("offers no disabled promise: every row the panel renders is one that can be switched on", () => {
+    // The geology group shipped two stubs saying "no ingest recipe yet" for months after the
+    // EIA boundaries were ingested, served and published as tiles. A row a reader cannot
+    // press is a claim about the build, and this one was wrong.
     const { handle, events } = panel();
-    const play = rowFor(handle.element, "play-outline")!;
-    const toggle = play.querySelector<HTMLButtonElement>(".gw-layer-toggle")!;
-    expect(toggle.disabled).toBe(true);
-    toggle.click();
+    for (const row of layerRows(handle.element)) {
+      const id = row.dataset["layer"];
+      expect(row.querySelector<HTMLButtonElement>(".gw-layer-toggle")!.disabled, id).toBe(false);
+      expect(row.querySelector<HTMLInputElement>(".gw-layer-opacity")!.disabled, id).toBe(false);
+      expect(row.textContent, id).not.toMatch(/not ingested|no ingest recipe/i);
+    }
     expect(events).toEqual([]);
-    expect(play.textContent).toMatch(/not ingested|no ingest recipe/i);
+  });
+
+  it("finds the boundary rows by the publisher a reader would search for", () => {
+    const { handle } = panel();
+    const search = handle.element.querySelector<HTMLInputElement>(".gw-layer-search")!;
+    search.value = "eia";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const shown = layerRows(handle.element)
+      .filter((row) => !row.hidden)
+      .map((row) => row.dataset["layer"]);
+    expect(shown.sort()).toEqual(["basins", "plays"]);
   });
 
   it("reports a toggle rather than mutating the map itself", () => {

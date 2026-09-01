@@ -221,6 +221,10 @@ PLACEHOLDER_COMMIT = "0" * 40
 TRACK_RULE_PREFIXES = ("cr_nm_wellhistory_", "cr_nm_wcproduction_pool_rollup_", "cr_nm_wells_gis_",
                        "cr_land_agg_membership_2")
 TRACK_PUBLICATION_WRITER_COUNT = 3
+# One rule id shares this track's prefix and is not on this track: the read-time status
+# resolution, registered by its own migration on its own train with its own evidence pair. A
+# prefix cannot tell two trains apart, so the later one is named rather than version-floored.
+LATER_TRACK_RULE_IDS = frozenset({"cr_nm_wellhistory_status_vocab_2"})
 
 
 def _migrations_dir() -> Path:
@@ -262,7 +266,7 @@ def _track_publication_writers(root: Path) -> list[str]:
     return sorted(
         path.name
         for path in root.glob("*.sql")
-        if (published := _published_rule_ids(path.read_text("utf-8")))
+        if (published := _published_rule_ids(path.read_text("utf-8")) - LATER_TRACK_RULE_IDS)
         and all(rule.startswith(TRACK_RULE_PREFIXES) for rule in published)
     )
 

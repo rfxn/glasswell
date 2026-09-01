@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LayerSpecification, StyleSpecification } from "maplibre-gl";
 
 vi.mock("../chrome/status.ts", () => ({ toast: vi.fn() }));
+vi.mock("../app/state.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../app/state.ts")>();
+  return { ...actual, readState: vi.fn(actual.readState) };
+});
 vi.mock("./counts.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./counts.ts")>();
   return { ...actual, createCountSource: () => ({ request: vi.fn() }) };
@@ -196,14 +200,14 @@ describe("a Wells-By press written onto the canvas", () => {
     }
   });
 
-  it("reaches the five layers outside the status gate too", async () => {
+  it("reaches the six layers outside the status gate too", async () => {
     // The reported defect: struck plugs, disposal rings and survey traces carry their own
     // predicate, so a press that only rewrote the status gate left them drawing every operator.
     await mount("?wb.pick=HESS%20CORP");
     const { FACET_FILTERED_LAYERS } = await import("./style.ts");
 
     const ungated = FACET_FILTERED_LAYERS.filter((entry) => !entry.gated);
-    expect(ungated).toHaveLength(5);
+    expect(ungated).toHaveLength(6);
     for (const layer of ungated) {
       expect(carries(built(layer.id), "operator_name", "HESS CORP"), layer.id).toBe(true);
     }
@@ -444,5 +448,24 @@ describe("the press and the back button", () => {
     await settle();
 
     expect(writes).toHaveLength(0);
+  });
+});
+
+describe("a count refresh scheduled before the map was torn down", () => {
+  afterEach(() => {
+    document.body.replaceChildren();
+    window.history.replaceState({}, "", "/");
+  });
+
+  it("does not run once the container has left the document", async () => {
+    await mount("?wb.pick=HESS%20CORP");
+    const { readState } = await import("../app/state.ts");
+    const before = vi.mocked(readState).mock.calls.length;
+    // What CI saw: the environment tears down while a 250 ms debounce is still pending, and the
+    // crossing rebuild then reads a window that no longer exists.
+    document.body.replaceChildren();
+    fire("moveend");
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(vi.mocked(readState).mock.calls.length).toBe(before);
   });
 });

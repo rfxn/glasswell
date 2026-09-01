@@ -122,7 +122,7 @@ describe("a set stored before the two lateral rows were combined", () => {
     const beforeNesting = [
       "land-metrics", "land-grid", "land-grid-labels", "spacing-units", "plss-labels",
       "lateral-bores", "survey-traces", "mt-paths", "wells", "disposal-wells",
-      "tx-wells", "nm-wells", "mt-wells", "play-outline", "geology-au",
+      "tx-wells", "nm-wells", "mt-wells", "basins", "plays",
     ];
     expect(beforeNesting.sort()).toEqual([...layerIds()].sort());
 

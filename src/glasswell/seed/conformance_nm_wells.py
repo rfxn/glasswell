@@ -21,6 +21,9 @@ from psycopg.types.json import Jsonb
 # Valid time: the decisions describe the 2026-08-20 artifact, which is the date the rest of the
 # NM registry dates from. Knowledge time is the publication row, 2026-08-30, and is independent.
 EFFECTIVE_FROM = date(2026, 8, 20)
+# The status supersession describes a codebook, not the artifact, and dates from the day
+# that codebook entered evidence.
+STATUS_EFFECTIVE_FROM = date(2026, 9, 1)
 
 OCD_FTP_PAGE_URL = "https://wwwapps.emnrd.nm.gov/OCD/OCDPermitting/Data/Download.aspx"
 OCD_FTP_DESCRIPTIONS_URL = (
@@ -41,6 +44,68 @@ STATUS_DOMAIN = {
     "A": 206195, "P": 50211, "N": 36615, "C": 17400, "H": 4762, "T": 2512, "Q": 1652,
     "E": 733, "S": 506, "J": 486, "X": 331, "Z": 62, "D": 34, "&#x20;": 6, "I": 5,
 }
+# The OCD data dictionary, sheet "consolidated code list" rows 57-70, fetched 2026-09-01 and
+# byte-stable across independent fetches. It is what cr_nm_wellhistory_status_vocab_1 said it
+# was waiting for, and its publication is what lets _2 supersede that refusal.
+OCD_DATA_DICTIONARY_URL = (
+    "https://www.emnrd.nm.gov/ocd/wp-content/uploads/sites/6/"
+    "OCD-Interface-v1.1-Data-Dictionary-Protected.xlsx"
+)
+OCD_DATA_DICTIONARY_SHA256 = (
+    "b95c45d3e4e17f1f0c901f6a83777acacece08dc1c29166a4e8543224ff3c413"
+)
+
+# The regulator's own wording. I and J are printed the other way round in the dictionary; the
+# decodes here follow the live OCD services, which pair every letter with its label per well.
+STATUS_DECODES = {
+    "A": "Active",
+    "C": "Cancelled",
+    "D": "Dry Hole",
+    "E": "Temporary Abandonment (expired)",
+    "H": "Plugged (not released)",
+    "I": "Reclamation Fund Pending",
+    "J": "Reclamation Fund Approved",
+    "N": "New",
+    "P": "Plugged (site released)",
+    "Q": "Zone Plugged (permanent)",
+    "S": "Shut In",
+    "T": "Temporary Abandonment",
+    "X": "Never Drilled",
+    "Z": "Zone Plugged (temporary)",
+}
+# Ten codes reach a canonical class. Four are documented and have no equivalent, so they carry
+# a registered class of their own rather than a null: an absence with a reason, not a gap.
+DOCUMENTED_UNMAPPED_CLASS = "documented_unmapped"
+STATUS_CANONICAL_MAP = {
+    "A": "active",
+    "C": "expired",
+    "D": "dry",
+    "E": "temporarily_abandoned",
+    "H": "plugged",
+    "I": DOCUMENTED_UNMAPPED_CLASS,
+    "J": DOCUMENTED_UNMAPPED_CLASS,
+    "N": "permitted",
+    "P": "plugged",
+    "Q": DOCUMENTED_UNMAPPED_CLASS,
+    "S": "inactive",
+    "T": "temporarily_abandoned",
+    "X": "expired",
+    "Z": DOCUMENTED_UNMAPPED_CLASS,
+}
+# Wells, not records: canonical.wells is effective-dated and every served surface reads
+# wells_latest. Measured on the deployed database on 2026-09-01; it sums to DISTINCT_API10S.
+STATUS_DOMAIN_WELLS_LATEST = {
+    "A": 54326, "P": 48268, "N": 18176, "C": 17067, "H": 2758, "T": 513, "J": 470,
+    "E": 266, "X": 103, "Q": 25, "D": 15, "Z": 9, "I": 4,
+}
+# The trailing-24-month producing check the ratification asked for, over the A wells only.
+ACTIVE_PRODUCING_SHARE = {
+    "wells": 54326,
+    "with_reported_volume": 49117,
+    "window_months": 24,
+    "share": "90.4%",
+}
+
 WELL_TYPE_DOMAIN = {
     "O": 176989, "G": 116934, "I": 20404, "S": 4383, "C": 1774, "M": 705, "W": 320,
     "&#x20;": 1,
@@ -203,6 +268,87 @@ NM_WELLS_RULES: tuple[dict[str, object], ...] = (
         ),
         "evidence_url": OCD_FTP_DESCRIPTIONS_URL,
         "code_ref": "src/glasswell/ingest/nm_wells.py",
+    },
+    {
+        "rule_id": "cr_nm_wellhistory_status_vocab_2",
+        "supersedes_rule_id": "cr_nm_wellhistory_status_vocab_1",
+        "source_id": "nm_ocd_wellhistory",
+        "stage": "conform",
+        "rule_kind": "vocab_map",
+        "applies_to_fields": ["status"],
+        "effective_from": STATUS_EFFECTIVE_FROM,
+        "spec": {
+            "mapping_table": "nm_wellhistory_status_map",
+            "key_col": "status",
+            "value_col": "status_canonical",
+            "unmapped_action": "passthrough",
+            "resolved_at": "read_time",
+            "resolver_view": "canonical.status_resolution",
+            "promoted_to": "status_reported",
+            "writes_canonical_column": False,
+            "published_decodes": STATUS_DECODES,
+            "canonical_mapping": STATUS_CANONICAL_MAP,
+            "documented_without_equivalent": ["I", "J", "Q", "Z"],
+            "documented_without_equivalent_class": DOCUMENTED_UNMAPPED_CLASS,
+            "transposed_in_dictionary": ["I", "J"],
+            "measured_domain": STATUS_DOMAIN,
+            "measured_rows": RECORDS_MEASURED,
+            "measured_domain_wells_latest": STATUS_DOMAIN_WELLS_LATEST,
+            "measured_wells": DISTINCT_API10S,
+            "active_producing_share": ACTIVE_PRODUCING_SHARE,
+            "evidence_sha256": OCD_DATA_DICTIONARY_SHA256,
+            "evidence_sheet": "consolidated code list",
+            "corroborating_url": (
+                "https://gis.emnrd.nm.gov/arcgis/rest/services/OCDView/Wells_Public/"
+                "FeatureServer/0"
+            ),
+        },
+        "rule": (
+            "Map wellhistory.status onto the canonical status vocabulary through"
+            " lineage.nm_wellhistory_status_map, resolved at read time."
+            " status_reported keeps the filed letter, canonical.wells.status_canonical stays"
+            " null, and the served class is the join."
+        ),
+        "rationale": (
+            "cr_nm_wellhistory_status_vocab_1 refused to map these letters because no codebook"
+            " was in evidence, and stated the condition on which it could be superseded. That"
+            " condition is met: the OCD publishes a data dictionary on the EMNRD domain, sheet"
+            " consolidated code list rows 57 to 70, linked from the OCD data page and"
+            " byte-stable across independent fetches. The published domain is fourteen codes"
+            " and the measured domain is those same fourteen plus the CHAR padding blank, so"
+            " the vocabulary is closed against the regulator list rather than sampled."
+            " Ten codes reach a canonical class. Four do not: Q and Z are zone-plugged states"
+            " and I and J are reclamation-fund states, and glasswell has no class for a"
+            " wellbore whose zones are plugged or for a financial-assurance state. Forcing them"
+            " into plugged would strike 508 wells through on a claim the regulator never made,"
+            " and collapsing them into the unmapped class would erase the fact that the"
+            " regulator did say something, so they carry the registered class"
+            " documented_unmapped instead."
+            " The dictionary prints I and J the other way round from both live OCD services,"
+            " and the services win on a per-well check rather than on frequency: the four wells"
+            " carrying I in canonical.wells_latest are exactly the four the public layer labels"
+            " Reclamation Fund Pending, and the nine carrying Z are exactly the nine it labels"
+            " Zone Plugged (temporary)."
+            " Resolution is at read time because canonical.wells is append-only, its promotion"
+            " anti-joins on api10 and effective_from, and a re-promotion appends zero rows: the"
+            " only backfills available were to invent a valid time the OCD never filed or to"
+            " weaken the refusal. unmapped_action is passthrough rather than the quarantine"
+            " North Dakota and Montana use, because this rule reads a header table that is the"
+            " identity spine production joins to, and quarantining would drop 2,211 records"
+            " from it - a larger error than an unmapped status."
+            " Measured at the wells_latest grain every served surface reads, 142,000 wells:"
+            " A 54,326, P 48,268, N 18,176, C 17,067, H 2,758, T 513, J 470, E 266, X 103,"
+            " Q 25, D 15, Z 9 and I 4. N is the mapping worth arguing with. OCD decodes it as"
+            " New and its own wchistory sheet decodes the same letter as New, Not Drilled, so"
+            " it maps to permitted - yet 7,614 of those 18,176 wells reported volume in the"
+            " trailing 24 months, which is the OCD calculated status lagging rather than a"
+            " second meaning, and is recorded here so that nobody reads permitted as a claim"
+            " that no wellbore exists. A is the opposite case and the one the ratification"
+            " asked to be checked: 49,117 of 54,326 A wells reported volume over the same"
+            " window, 90.4 percent, so Active is a producing state here and not a records one."
+        ),
+        "evidence_url": OCD_DATA_DICTIONARY_URL,
+        "code_ref": "src/glasswell/marts/nm_wells.py",
     },
     {
         "rule_id": "cr_nm_wellhistory_well_type_1",

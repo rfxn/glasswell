@@ -8,11 +8,13 @@ import { LAYERS } from "./registry.ts";
 import { METRICS_SECTIONS_SOURCE, METRICS_TOWNSHIPS_SOURCE } from "./thematics.ts";
 import { variantStyle } from "./variant-style.ts";
 import {
+  BASINS_SOURCE,
   LATERALS_SOURCE,
   MT_PATHS_SOURCE,
   MT_WELLS_SOURCE,
   NM_WELLS_SOURCE,
   OPACITY_OVERRIDE,
+  PLAYS_SOURCE,
   SECTIONS_SOURCE,
   SOURCE_ID,
   SPACING_SOURCE,
@@ -351,12 +353,16 @@ describe("the data layers", () => {
 describe("the land grid (M1-4)", () => {
   it("draws the grid beneath every data layer — reference linework, never over", () => {
     const built = ids();
-    // The thematic wash sits under even the reference grid (M2-3): the grid must stay
-    // readable over the fill, and the fill is context beneath everything.
-    expect(built[0]).toBe("land-township-metrics-fill");
-    expect(built[1]).toBe("land-section-metrics-fill");
-    expect(built[2]).toBe("land-townships-line");
-    expect(built[3]).toBe("land-sections-line");
+    // Three registers, coarsest first: the geological frame is context for the whole canvas,
+    // the thematic wash is context for the wells (M2-3), and the surveyed grid must stay
+    // readable over both. Everything a reader clicks is drawn above all three.
+    expect(built[0]).toBe("basins-fill");
+    expect(built[1]).toBe("basins-line");
+    expect(built[2]).toBe("plays-line");
+    expect(built[3]).toBe("land-township-metrics-fill");
+    expect(built[4]).toBe("land-section-metrics-fill");
+    expect(built[5]).toBe("land-townships-line");
+    expect(built[6]).toBe("land-sections-line");
   });
 
   it("gates sections two zooms deeper than the townships they subdivide", () => {
@@ -456,21 +462,21 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
     }
   });
 
-  it("draws New Mexico as a point layer and adds no lateral sibling for it", () => {
+  it("draws New Mexico as a point layer and a strike, and adds no lateral sibling for it", () => {
     // No in-scope New Mexico source ships a lateral (cr_nm_wellhistory_geometry_scope_1), so a
-    // nm-laterals layer would draw a producing footprint nobody filed.
+    // nm-laterals layer would draw a producing footprint nobody filed. The strike is a
+    // modifier on the point, not a second geometry.
     const ids = dataLayers({ labels: true }).map((layer) => layer.id);
 
     expect(ids).toContain("nm-wells");
-    expect(ids.filter((id) => id.startsWith("nm-"))).toEqual(["nm-wells"]);
+    expect(ids.filter((id) => id.startsWith("nm-"))).toEqual(["nm-wells", "nm-wells-struck"]);
     const nmWells = dataLayers().find((layer) => layer.id === "nm-wells");
     expect(nmWells?.type).toBe("circle");
     expect("source" in nmWells! ? nmWells.source : "").toBe(NM_WELLS_SOURCE);
   });
 
-  it("draws Montana as a point layer with the struck sibling New Mexico cannot have", () => {
-    // Montana has a codebook (cr_mt_gis_status_vocab_1) where New Mexico has none, so the
-    // strike marks a class that can actually match — 63% of the state is plugged.
+  it("draws Montana as a point layer with a struck sibling of its own", () => {
+    // 63% of the state is plugged, so the class the strike marks is the largest one on it.
     const ids = dataLayers({ labels: true }).map((layer) => layer.id);
 
     expect(ids).toContain("mt-wells");
@@ -504,9 +510,9 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
     const row = LAYERS.find((layer) => layer.id === "nm-wells");
 
     expect(row).toBeDefined();
-    expect(row!.styleLayers).toEqual(["nm-wells"]);
+    expect(row!.styleLayers).toEqual(["nm-wells", "nm-wells-struck"]);
     expect(row!.provenance).toEqual([{ kind: "official", source: "marts.nm_wells_tile" }]);
-    expect(row!.subtitle).toContain("cr_nm_wellhistory_status_vocab_1");
+    expect(row!.subtitle).toContain("cr_nm_wellhistory_status_vocab_2");
   });
 
   it("carries the refusal into every place the id is interpolated, not just the url", () => {
@@ -518,7 +524,8 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
       "&nm_wells=..%2F..%2Fetc%2Fshadow" +
       "&mt_wells=..%2F..%2Fetc%2Fshadow&mt_paths=gw-evil-layer" +
       "&townships=..%2F..%2Fetc%2Fpasswd&sections=gw-evil-layer" +
-      "&township_metrics=..%2F..%2Fetc%2Fpasswd&section_metrics=gw-evil-layer";
+      "&township_metrics=..%2F..%2Fetc%2Fpasswd&section_metrics=gw-evil-layer" +
+      "&basins=..%2F..%2Fetc%2Fpasswd&plays=gw-evil-layer";
     const specs = sourceSpecs("https://gw.example", search);
     expect(Object.keys(specs).sort()).toEqual(
       [
@@ -535,6 +542,8 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
         SECTIONS_SOURCE,
         METRICS_TOWNSHIPS_SOURCE,
         METRICS_SECTIONS_SOURCE,
+        BASINS_SOURCE,
+        PLAYS_SOURCE,
       ].sort(),
     );
     const serialised = JSON.stringify(specs);

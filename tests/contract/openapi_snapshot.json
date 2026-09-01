@@ -7333,7 +7333,7 @@
                 "type": "null"
               }
             ],
-            "description": "Status mapped through the source's own status vocabulary rule, one per jurisdiction and served with the figure. Null where the source reported no status at all, or where its vocabulary has no published codebook to map \u2014 two different absences, and the rule says which.",
+            "description": "Status mapped through the source's own status vocabulary rule, one per jurisdiction and named beside it in status_vocabulary_rule. Null where the source reported no status at all, or where its vocabulary maps that code to nothing \u2014 two different absences, and the rule says which.",
             "title": "Status Canonical",
             "x-glasswell-glossary": "gt_well_status"
           },
@@ -7348,6 +7348,19 @@
             ],
             "description": "Status code exactly as the source wrote it.",
             "title": "Status Reported"
+          },
+          "status_vocabulary_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The conformance rule that decided status_canonical for this well's jurisdiction, resolvable at /v1/conformance/{rule_id}. Named on the row because the class is not always written by the promotion: New Mexico's is resolved at read time from the registry, so the row's own derivation cites the superseded rule and would send a reader to a decision that did not produce this value. Null where no rule is registered for the state.",
+            "title": "Status Vocabulary Rule",
+            "x-glasswell-glossary": "gt_conformance_rule"
           },
           "storage_crs": {
             "description": "CRS geometry is stored in; always EPSG:4326.",
@@ -7408,6 +7421,7 @@
           "well_name",
           "operator_name_reported",
           "status_canonical",
+          "status_vocabulary_rule",
           "county_code_at_permit",
           "land_unit_label",
           "spud_date",
@@ -7892,9 +7906,22 @@
                 "type": "null"
               }
             ],
-            "description": "Status mapped through the source's own status vocabulary rule, one per jurisdiction and served with the figure. Null where the source reported no status at all, or where its vocabulary has no published codebook to map \u2014 two different absences, and the rule says which.",
+            "description": "Status mapped through the source's own status vocabulary rule, one per jurisdiction and named beside it in status_vocabulary_rule. Null where the source reported no status at all, or where its vocabulary maps that code to nothing \u2014 two different absences, and the rule says which.",
             "title": "Status Canonical",
             "x-glasswell-glossary": "gt_well_status"
+          },
+          "status_vocabulary_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The conformance rule that decided status_canonical for this well's jurisdiction, resolvable at /v1/conformance/{rule_id}. Named on the row because the class is not always written by the promotion: New Mexico's is resolved at read time from the registry, so the row's own derivation cites the superseded rule and would send a reader to a decision that did not produce this value. Null where no rule is registered for the state.",
+            "title": "Status Vocabulary Rule",
+            "x-glasswell-glossary": "gt_conformance_rule"
           },
           "well_name": {
             "anyOf": [
@@ -7915,6 +7942,7 @@
           "well_name",
           "operator_name_reported",
           "status_canonical",
+          "status_vocabulary_rule",
           "county_code_at_permit",
           "land_unit_label",
           "spud_date",
@@ -15183,7 +15211,7 @@
             "x-glasswell-glossary": "gt_api_10_api_12_api_14"
           },
           "status": {
-            "so": "Filters on the canonical value rather than the code the state published, so `active` here means every source's version of active. A reported code with no mapping is quarantined, so it matches no status at all.",
+            "so": "Filters on the canonical value rather than the code the state published, so `active` here means every source's version of active. What becomes of a code the vocabulary does not map is the jurisdiction's own rule: North Dakota, Texas and Montana quarantine it out of the spine, New Mexico passes it through unclassed. Either way it matches no status here \u2014 but a passed-through well is still served and still drawn.",
             "x-glasswell-glossary": "gt_well_status"
           },
           "well_type": {

@@ -54,6 +54,11 @@ export const MT_PATHS_SOURCE = "mt_paths";
 export const TRACES_SOURCE = "nd_survey_traces";
 export const TOWNSHIPS_SOURCE = "land_townships";
 export const SECTIONS_SOURCE = "land_sections";
+// Two sources over one mart, because `marts.tile_basins` and `marts.tile_plays` are two
+// published functions: a play surface is never handed to a style that reads a basin
+// (cr_eia_boundary_taxonomy_1).
+export const BASINS_SOURCE = "basins";
+export const PLAYS_SOURCE = "plays";
 
 /**
  * Provenance-keyed, not status-keyed: what this layer distinguishes is the filed survey path
@@ -72,6 +77,21 @@ export const TRACE_COLOUR = "#C878D2";
  * variants this one colour could not (satellite), and this export is the swatch's colour.
  */
 export const LAND_GRID_COLOUR = VARIANT_STYLES.dark.grid;
+
+/**
+ * State-scale polygons, so the frame draws from the lowest zoom the map allows: a basin
+ * outline is most useful where the reader cannot yet see a well. The names come off above
+ * the band where the polygon is wider than the viewport and the label would sit off-screen.
+ */
+export const BOUNDARY_MIN_ZOOM = 3;
+const BASIN_LABEL_MAX_ZOOM = 9;
+
+/**
+ * The geological frame's swatch colour, which is the dark substrate's token: a swatch is one
+ * mark and the canvas has four substrates, so the panel shows the one the app opens on. The
+ * variant pass owns what actually renders (variant-style.ts).
+ */
+export const GEOLOGY_FRAME_COLOUR = VARIANT_STYLES.dark.geology;
 
 /** Published zoom thresholds: geometry at 8/10, labels at 9/12 — stated on the registry rows. */
 export const TOWNSHIP_MIN_ZOOM = 8;
@@ -148,6 +168,9 @@ export function sourceSpecs(origin?: string, search?: string): Record<string, So
     ["sections", SECTIONS_SOURCE, "land_unit_id"],
     ["township_metrics", METRICS_TOWNSHIPS_SOURCE, "land_unit_id"],
     ["section_metrics", METRICS_SECTIONS_SOURCE, "land_unit_id"],
+    // A boundary's identity is EIA's own feature id, which is what the mart keys on.
+    ["basins", BASINS_SOURCE, "boundary_id"],
+    ["plays", PLAYS_SOURCE, "boundary_id"],
   ] as const) {
     const name = publishedSource(parameter, fallback, search);
     specs[name] = {
@@ -251,6 +274,7 @@ export const FACET_FILTERED_LAYERS: readonly FacetLayer[] = [
   { id: "tx-wells", source: TX_WELLS_SOURCE, gated: true },
   { id: "tx-wells-struck", source: TX_WELLS_SOURCE, gated: false },
   { id: "nm-wells", source: NM_WELLS_SOURCE, gated: true },
+  { id: "nm-wells-struck", source: NM_WELLS_SOURCE, gated: false },
   { id: "mt-wells", source: MT_WELLS_SOURCE, gated: true },
   { id: "mt-wells-struck", source: MT_WELLS_SOURCE, gated: false },
 ];
@@ -459,8 +483,59 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
   const sectionMetrics = publishedSource(
     "section_metrics", METRICS_SECTIONS_SOURCE, options.search,
   );
+  const basins = publishedSource("basins", BASINS_SOURCE, options.search);
+  const plays = publishedSource("plays", PLAYS_SOURCE, options.search);
 
   const built: LayerSpecification[] = [
+    {
+      // The frame under the framework: a basin is the largest thing on the canvas and the
+      // wash is what says where its edge is at a zoom where the outline is off-screen. The
+      // alpha rides the colour rather than `fill-opacity`, which the row's slider owns.
+      id: "basins-fill",
+      type: "fill",
+      source: basins,
+      "source-layer": basins,
+      minzoom: BOUNDARY_MIN_ZOOM,
+      paint: { "fill-color": rgba(GEOLOGY_FRAME_COLOUR, 0.05) },
+    },
+    {
+      id: "basins-line",
+      type: "line",
+      source: basins,
+      "source-layer": basins,
+      minzoom: BOUNDARY_MIN_ZOOM,
+      metadata: { [LINE_ROLE]: "geology" },
+      paint: {
+        "line-color": GEOLOGY_FRAME_COLOUR,
+        "line-width": interpolate(zoom, [
+          [BOUNDARY_MIN_ZOOM, 0.8],
+          [8, 1.4],
+          [12, 2],
+        ]),
+        "line-opacity": 0.75,
+      },
+    },
+    {
+      // Dashed and finer than the basin it sits inside: two objects, one frame colour, told
+      // apart by register the way a nested boundary always is. A second hue would claim a
+      // difference in kind that cr_eia_boundary_taxonomy_1 does not make.
+      id: "plays-line",
+      type: "line",
+      source: plays,
+      "source-layer": plays,
+      minzoom: BOUNDARY_MIN_ZOOM,
+      metadata: { [LINE_ROLE]: "geology" },
+      paint: {
+        "line-color": GEOLOGY_FRAME_COLOUR,
+        "line-width": interpolate(zoom, [
+          [BOUNDARY_MIN_ZOOM, 0.5],
+          [8, 0.9],
+          [12, 1.3],
+        ]),
+        "line-dasharray": [3, 2],
+        "line-opacity": 0.7,
+      },
+    },
     {
       // The thematic wash under every mark and line: an aggregate is context, never cover.
       // Support rides in the colour's own alpha (thematics.ts), so the row's opacity slider
@@ -689,9 +764,9 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       },
     },
     {
-      // No struck sibling: the strike marks a status class, and every New Mexico
-      // status_canonical is null under cr_nm_wellhistory_status_vocab_1 — the OCD publishes
-      // no codebook — so the class can never be matched and the layer would be dead.
+      // New Mexico now has a struck sibling below, where it had none: its status class is
+      // resolved from the registry at read time under cr_nm_wellhistory_status_vocab_2, and
+      // 50,935 of its 141,778 tiled wells are plugged.
       id: "nm-wells",
       type: "circle",
       source: nmWells,
@@ -710,9 +785,9 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       },
     },
     {
-      // Montana draws from the same expressions as the other two, and unlike New Mexico it has
-      // a codebook to draw from: cr_mt_gis_status_vocab_1 maps thirteen of nineteen MBOGC
-      // values and quarantines the other six rather than defaulting them to active.
+      // Montana draws from the same expressions as the other three: cr_mt_gis_status_vocab_1
+      // maps thirteen of nineteen MBOGC values and quarantines the other six rather than
+      // defaulting them to active.
       id: "mt-wells",
       type: "circle",
       source: mtWells,
@@ -731,8 +806,25 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       },
     },
     {
-      // A struck sibling, where New Mexico has none: 63% of Montana's mapped wells are plugged,
-      // so the class the strike marks is the largest one on this canvas.
+      id: "nm-wells-struck",
+      type: "symbol",
+      source: nmWells,
+      "source-layer": nmWells,
+      minzoom: 11,
+      filter: inSet(statusProperty(), [...STRUCK_STATUSES]),
+      layout: {
+        "icon-image": "gw-strike",
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
+        "icon-size": interpolate(zoom, [
+          [11, 0.55],
+          [15, 1],
+        ]) as unknown as number,
+      },
+    },
+    {
+      // 63% of Montana's mapped wells are plugged, so the class the strike marks is the
+      // largest one on this canvas.
       id: "mt-wells-struck",
       type: "symbol",
       source: mtWells,
@@ -773,6 +865,12 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       unitLabelLayer("land-townships-label", townships, TOWNSHIP_LABEL_MIN_ZOOM, SPACING_LABEL_SIZE, tokens),
       unitLabelLayer("land-sections-label", sections, SECTION_LABEL_MIN_ZOOM, SPACING_LABEL_SIZE - 1, tokens),
       unitLabelLayer("spacing-units-label", spacing, SPACING_UNIT_LABEL_MIN_ZOOM, SPACING_LABEL_SIZE, tokens),
+      // EIA names the feature `name`, not `label`: the tile publishes the publisher's column
+      // rather than a renamed copy, so the layer reads what the mart actually carries.
+      unitLabelLayer("basins-label", basins, BOUNDARY_MIN_ZOOM, SPACING_LABEL_SIZE + 1, tokens, {
+        property: "name",
+        maxzoom: BASIN_LABEL_MAX_ZOOM,
+      }),
     );
   }
   return built;
@@ -787,12 +885,20 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
  * applyVariantStyling owns the per-variant bump, for these labels and the basemap's alike,
  * so the two cannot compound into a size neither declares.
  */
+interface UnitLabelOptions {
+  /** The tile column the text comes from, where the publisher does not call it `label`. */
+  property?: string;
+  /** A ceiling, for a unit wider than the viewport above it: the anchor is then off-screen. */
+  maxzoom?: number;
+}
+
 function unitLabelLayer(
   id: string,
   source: string,
   minzoom: number,
   size: number,
   tokens: VariantStyle,
+  options: UnitLabelOptions = {},
 ): LayerSpecification {
   return {
     id,
@@ -800,8 +906,9 @@ function unitLabelLayer(
     source,
     "source-layer": `${source}_label`,
     minzoom,
+    ...(options.maxzoom === undefined ? {} : { maxzoom: options.maxzoom }),
     layout: {
-      "text-field": ["coalesce", ["get", "label"], ""],
+      "text-field": ["coalesce", ["get", options.property ?? "label"], ""],
       "text-font": ["Noto Sans Regular"],
       "text-size": size,
       "symbol-placement": "point",

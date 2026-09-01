@@ -13,9 +13,10 @@ equal to; this table covers the layers whose refresh is an operator command:
 | `nm_wells` | `marts.nm_wells_tile` | POINT | `glasswell-nm-tiles --dsn …` |
 
 New Mexico publishes a point layer and no lateral: `cr_nm_wellhistory_geometry_scope_1` records
-that neither in-scope source ships one. Every `nm_wells` feature carries a null
-`status_canonical` beside its reported letter, so the layer draws entirely in the unmapped
-status class — see `cr_nm_wellhistory_status_vocab_1`.
+that neither in-scope source ships one. Every `nm_wells` feature carries its reported OCD letter
+and, beside it, the class `cr_nm_wellhistory_status_vocab_2` resolves that letter to — resolved
+at refresh from `lineage.nm_wellhistory_status_map`, because `canonical.wells.status_canonical`
+is null for New Mexico and stays that way.
 
 `ds_size_acres` is `double precision` and not `numeric` on purpose: ST_AsMVT has no numeric
 encoding and would put the acreage on the wire as a string (N-2, migration 015's class).

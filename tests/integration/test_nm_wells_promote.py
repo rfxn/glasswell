@@ -205,6 +205,8 @@ def test_every_promoted_row_cites_the_rules_that_shaped_it(db, staged) -> None:
     assert {
         "cr_nm_wellhistory_api10_1",
         "cr_nm_wellhistory_effective_1",
+        # _1 and not _2: the promotion reads the artifact at its own valid time, and the
+        # superseding row is effective from the day its codebook entered evidence.
         "cr_nm_wellhistory_status_vocab_1",
         "cr_nm_wellhistory_well_type_1",
         "cr_nm_wellhistory_datum_1",
@@ -215,8 +217,10 @@ def test_every_promoted_row_cites_the_rules_that_shaped_it(db, staged) -> None:
     } <= cited
 
 
-def test_the_status_letter_is_promoted_and_no_canonical_status_is_invented(db, staged) -> None:
-    """cr_nm_wellhistory_status_vocab_1: the OCD publishes no codebook for these letters."""
+def test_the_status_letter_is_promoted_and_no_canonical_status_is_written(db, staged) -> None:
+    """The promotion still writes no class, and that is now a decision rather than a refusal:
+    cr_nm_wellhistory_status_vocab_2 resolves it at read time, because canonical.wells is
+    append-only and a backfill would have to invent a valid time the OCD never filed."""
     promote(db)
     rows = query(
         db,

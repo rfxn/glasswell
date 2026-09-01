@@ -1,7 +1,12 @@
 import type { AppState, ViewMode } from "./state.ts";
 import { filtersOf, withFilter } from "../explore/router.ts";
 
-const WELL_FILTER = "q";
+/**
+ * The identity parameter, not `q`. `/v1/wells`'s `q` is a case-insensitive substring of
+ * `well_name`, so a crossing that wrote an API-10 into it answered with nothing — the same
+ * defect `bridge.ts` names on `TARGETS.wells`, on the other route into the same collection.
+ */
+export const WELL_FILTER = "api10";
 const API10 = /^\d{10}$/;
 
 /**
