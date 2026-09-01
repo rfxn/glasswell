@@ -12,8 +12,8 @@ numbering; its §10 governs when that changes.
 
 ## Where it stands
 
-54 tagged releases, v0.20 through v0.73 (`git tag | grep -c '^v'`), cut from 2026-08-21
-through 2026-09-01, run a **four-state** deployment on one VM: North Dakota end to end,
+54 tagged releases, v0.20 through v0.73, cut from 2026-08-21 through 2026-09-01, run
+a **four-state** deployment on one VM (`git tag | grep -c '^v'`): North Dakota end to end,
 Texas and Montana on the map, and New Mexico's headers, surface geometry and Tier 1
 production resident. The concise evidence ledger is [`STATUS.md`](STATUS.md), which owns
 every count and dates each one; status here is per phase and stated against the exit

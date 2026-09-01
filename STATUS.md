@@ -1,11 +1,16 @@
 # Current status
 
-Every figure below is dated and names its source. Three are carried forward from the previous
-revision and say so on the line; everything else was measured on **2026-09-01**. [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria;
+Reconciled on **2026-09-01** against the v0.73 release line, the checked-in OpenAPI
+snapshot, current `main` history and a read-only census of the deployed database. Every
+figure below is dated and names its source; three are carried forward from the previous
+revision and say so on the line. [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria;
 [`blueprint.md`](blueprint.md) is the committed v0.5 contract and
 [`blueprint-v0.6-draft.md`](blueprint-v0.6-draft.md) the rc5 amendment set.
 
 ## Deployed
+
+- **Release line:** 54 tagged releases, v0.20 through v0.73, cut 2026-08-21 through
+  2026-09-01.
 
 Measured on the deployed database (VM 111) and host, read-only, 2026-09-01.
 
