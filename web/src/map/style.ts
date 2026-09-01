@@ -251,6 +251,7 @@ export const FACET_FILTERED_LAYERS: readonly FacetLayer[] = [
   { id: "tx-wells", source: TX_WELLS_SOURCE, gated: true },
   { id: "tx-wells-struck", source: TX_WELLS_SOURCE, gated: false },
   { id: "nm-wells", source: NM_WELLS_SOURCE, gated: true },
+  { id: "nm-wells-struck", source: NM_WELLS_SOURCE, gated: false },
   { id: "mt-wells", source: MT_WELLS_SOURCE, gated: true },
   { id: "mt-wells-struck", source: MT_WELLS_SOURCE, gated: false },
 ];
@@ -689,9 +690,9 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       },
     },
     {
-      // No struck sibling: the strike marks a status class, and every New Mexico
-      // status_canonical is null under cr_nm_wellhistory_status_vocab_1 — the OCD publishes
-      // no codebook — so the class can never be matched and the layer would be dead.
+      // New Mexico now has a struck sibling below, where it had none: its status class is
+      // resolved from the registry at read time under cr_nm_wellhistory_status_vocab_2, and
+      // 50,935 of its 141,778 tiled wells are plugged.
       id: "nm-wells",
       type: "circle",
       source: nmWells,
@@ -710,9 +711,9 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       },
     },
     {
-      // Montana draws from the same expressions as the other two, and unlike New Mexico it has
-      // a codebook to draw from: cr_mt_gis_status_vocab_1 maps thirteen of nineteen MBOGC
-      // values and quarantines the other six rather than defaulting them to active.
+      // Montana draws from the same expressions as the other three: cr_mt_gis_status_vocab_1
+      // maps thirteen of nineteen MBOGC values and quarantines the other six rather than
+      // defaulting them to active.
       id: "mt-wells",
       type: "circle",
       source: mtWells,
@@ -731,8 +732,25 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
       },
     },
     {
-      // A struck sibling, where New Mexico has none: 63% of Montana's mapped wells are plugged,
-      // so the class the strike marks is the largest one on this canvas.
+      id: "nm-wells-struck",
+      type: "symbol",
+      source: nmWells,
+      "source-layer": nmWells,
+      minzoom: 11,
+      filter: inSet(statusProperty(), [...STRUCK_STATUSES]),
+      layout: {
+        "icon-image": "gw-strike",
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
+        "icon-size": interpolate(zoom, [
+          [11, 0.55],
+          [15, 1],
+        ]) as unknown as number,
+      },
+    },
+    {
+      // 63% of Montana's mapped wells are plugged, so the class the strike marks is the
+      // largest one on this canvas.
       id: "mt-wells-struck",
       type: "symbol",
       source: mtWells,

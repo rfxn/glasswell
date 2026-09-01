@@ -22,6 +22,10 @@ from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts import nd_wells as nd_marts
 from glasswell.marts import nm_wells as nm_marts
 from glasswell.seed import seed_all
+from glasswell.seed.conformance_nm_wells import (
+    DOCUMENTED_UNMAPPED_CLASS,
+    STATUS_CANONICAL_MAP,
+)
 from tests.integration.test_marts_nd import MARTIN_CONFIG, covering_tile, extent_of, rows, scalar
 from tests.support.layers import schema_reads_in
 from tests.support.mvt import attribute_keys, feature_count, layer_name, layers
@@ -121,9 +125,9 @@ def test_the_nd_mart_does_not_sweep_the_new_mexico_points_in(refreshed, lineage_
     assert rows(db, "select distinct left(api10, 2) from marts.nd_wells_tile") == [("33",)]
 
 
-def test_the_status_letter_reaches_the_tile_because_the_class_cannot(refreshed):
-    """Every New Mexico status_canonical is null by cr_nm_wellhistory_status_vocab_1, so the
-    reported letter is what a legend has to work with."""
+def test_the_status_letter_rides_the_tile_beside_the_class_it_resolves_to(refreshed):
+    """Both, not either: the class is what the map paints and the letter is what the regulator
+    filed, and carrying the letter is what makes the mapping readable on the card."""
     db, _ = refreshed
     row = rows(
         db,
@@ -131,7 +135,7 @@ def test_the_status_letter_reaches_the_tile_because_the_class_cannot(refreshed):
         (NM_API10S[0],),
     )
 
-    assert row == [(None, "A")]
+    assert row == [("active", "A")]
 
 
 def test_the_derivation_records_the_state_and_the_rules_it_cited(refreshed):
@@ -157,7 +161,7 @@ def test_the_derivation_records_the_state_and_the_rules_it_cited(refreshed):
         "cr_nm_wellhistory_datum_1",
         "cr_nm_wellhistory_geometry_provenance_1",
         "cr_nm_wellhistory_geometry_scope_1",
-        "cr_nm_wellhistory_status_vocab_1",
+        "cr_nm_wellhistory_status_vocab_2",
     } <= cited
 
 
@@ -199,3 +203,112 @@ def test_the_layer_serves_a_decodable_tile_with_its_declared_properties(refreshe
     assert layer_name(decoded[0]) == "nm_wells"
     assert feature_count(decoded[0]) == len(NM_API10S) + 1
     assert set(attribute_keys(decoded[0])) <= TILE_KEYS
+
+
+# One well per OCD letter the header table carries, so the mart's resolution is exercised over
+# the whole published vocabulary rather than over the one code the fixture above happens to use.
+RESOLVED_API10S = {
+    code: f"3001598{index:03d}" for index, code in enumerate(sorted(STATUS_CANONICAL_MAP), start=1)
+}
+
+
+@pytest.fixture
+def resolved(db: psycopg.Connection, lineage_env):
+    """Every published letter, promoted with a null class exactly as the ingest writes it."""
+    seed_all(db)
+    manifest = seed_manifest(db, sha256="c" * 64, source_id="nm_ocd_wellhistory")
+    for index, (code, api10) in enumerate(sorted(RESOLVED_API10S.items())):
+        seed_well(
+            db,
+            api10=api10,
+            state_code="30",
+            manifest_id=manifest,
+            status_canonical=None,
+            status_reported=code,
+        )
+        seed_well_spatial(
+            db,
+            api10=api10,
+            geom_type="surface",
+            wkt=f"POINT(-103.{500 + index} 32.500)",
+            manifest_id=manifest,
+        )
+    db.commit()
+    with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env):
+        nm_marts.refresh_all(db)
+    db.commit()
+    return db
+
+
+def test_every_published_letter_resolves_to_the_class_the_registry_maps_it_to(resolved):
+    """The whole point of the read-time resolver: canonical.wells still says null, and the
+    tile the map reads says what cr_nm_wellhistory_status_vocab_2 decided it says."""
+    served = dict(
+        rows(
+            resolved,
+            "select t.status_reported, t.status_canonical from marts.nm_wells_tile t"
+            " where t.api10 = any(%s)",
+            (list(RESOLVED_API10S.values()),),
+        )
+    )
+
+    assert served == STATUS_CANONICAL_MAP
+
+
+def test_the_promoted_column_is_still_null_because_nothing_was_backfilled(resolved):
+    """Append-only holds: the class is a join, not a write."""
+    assert scalar(
+        resolved,
+        "select count(*) from canonical.wells"
+        " where state_code = '30' and status_canonical is not null",
+    ) == 0
+
+
+def test_the_four_documented_codes_reach_the_tile_as_a_class_and_not_as_a_null(resolved):
+    served = rows(
+        resolved,
+        "select status_reported from marts.nm_wells_tile"
+        " where status_canonical = %s order by status_reported",
+        (DOCUMENTED_UNMAPPED_CLASS,),
+    )
+
+    assert [row[0] for row in served] == ["I", "J", "Q", "Z"]
+
+
+def test_a_letter_the_registry_does_not_map_passes_through_unclassed(db, lineage_env):
+    """`unmapped_action` is passthrough, so an unknown letter keeps its header and its point
+    and arrives at the map as the absence class — it is not quarantined out of the spine."""
+    seed_all(db)
+    manifest = seed_manifest(db, sha256="d" * 64, source_id="nm_ocd_wellhistory")
+    seed_well(
+        db,
+        api10="3001597001",
+        state_code="30",
+        manifest_id=manifest,
+        status_canonical=None,
+        status_reported="&",
+    )
+    seed_well_spatial(
+        db, api10="3001597001", geom_type="surface", wkt="POINT(-103.4 32.4)",
+        manifest_id=manifest,
+    )
+    db.commit()
+    with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env):
+        nm_marts.refresh_all(db)
+    db.commit()
+
+    assert rows(
+        db,
+        "select status_reported, status_canonical from marts.nm_wells_tile where api10 = %s",
+        ("3001597001",),
+    ) == [("&", None)]
+
+
+def test_no_other_states_letters_are_resolved_through_the_new_mexico_map(db, lineage_env):
+    """The resolver is keyed by state as well as by letter. A North Dakota `A` must not pick
+    up New Mexico's decode — the two vocabularies share letters and not meanings."""
+    seed_all(db)
+    assert scalar(
+        db,
+        "select count(*) from canonical.status_resolution where for_state_code <> '30'",
+    ) == 0

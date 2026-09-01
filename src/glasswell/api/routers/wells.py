@@ -54,6 +54,7 @@ from glasswell.marts.producing import (
     window_start,
 )
 from glasswell.marts.tiles import TILE_BUFFER, TILE_EXTENT, TILE_MAX_ZOOM, WEB_MERCATOR
+from glasswell.status_resolution import resolved_status, resolver_join
 from glasswell.units import metres_to_feet
 
 router = APIRouter(tags=["wells"])
@@ -78,10 +79,9 @@ COUNT_UNIT = "wells"
 STATUS_VOCABULARY_RULES = {
     "33": "cr_nd_status_vocab_1",
     "42": "cr_tx_status_vocab_1",
-    # New Mexico's row records a measured domain and an absent mapping: the OCD publishes no
-    # codebook, so every NM status_canonical is null and every NM well is counted unmapped.
-    # That count is a figure, and this is the rule it cites.
-    "30": "cr_nm_wellhistory_status_vocab_1",
+    # New Mexico's class is resolved at read time from lineage.nm_wellhistory_status_map, not
+    # written by the promotion, and this is the rule that decides the mapping.
+    "30": "cr_nm_wellhistory_status_vocab_2",
     "25": "cr_mt_gis_status_vocab_1",
 }
 # States the neighbour mart holds subjects for; the link is absent for anything else.
@@ -136,7 +136,9 @@ _PRODUCING_COLUMN = f"case when %(producing_registered)s::boolean then {_PRODUCI
 
 _COLUMNS = (
     "api10, api14, state_code, county_code_at_permit, ndic_file_no, operator_name_reported,"
-    " operator_id, well_name, status_canonical, status_reported, well_type_reported, spud_date,"
+    " operator_id, well_name,"
+    f" {resolved_status('ranked')} as status_canonical,"
+    " status_reported, well_type_reported, spud_date,"
     " confidential_flag, basin, land_unit_label, total_depth_ft, completion_date,"
     " effective_from, source_manifest_id, derivation_id,"
     " greatest(effective_from, manifest_vintage,"
@@ -166,15 +168,16 @@ with ranked as (
             or d.created_vintage <= %(as_of)s::date))
 select {columns}
   from ranked
+{resolver}
  where rn = 1
 """
 
 # Two projections of one spine. `/v1/wells` and the well card class each row; the production
 # routes read the same spine and bind none of the producing parameters, so widening the shared
 # constant would break them at query time rather than here.
-RANKED_WELLS = _SPINE.format(columns=_COLUMNS)
+RANKED_WELLS = _SPINE.format(columns=_COLUMNS, resolver=resolver_join("ranked"))
 RANKED_WELLS_PRODUCING = _SPINE.format(
-    columns=f"{_COLUMNS}, {_PRODUCING_COLUMN} as producing"
+    columns=f"{_COLUMNS}, {_PRODUCING_COLUMN} as producing", resolver=resolver_join("ranked")
 )
 
 # `tiled` asks the tile pipeline's own question of the deepest published zoom: a geometry that
@@ -222,12 +225,13 @@ with in_view as (
                          st_makeenvelope(%(minx)s, %(miny)s, %(maxx)s, %(maxy)s, 4326))),
      latest as (
     select distinct on (v.api10)
-           v.api10, w.status_canonical, w.basin, w.state_code, w.well_type_reported,
-           w.derivation_id, w.effective_from
+           v.api10, {resolved_status("w")} as status_canonical, w.basin, w.state_code,
+           w.well_type_reported, w.derivation_id, w.effective_from
       from in_view v
       left join canonical.wells w
              on w.api10 = v.api10
             and (%(as_of)s::date is null or w.effective_from <= %(as_of)s::date)
+     {resolver_join("w")}
      order by v.api10, w.effective_from desc nulls last, w.created_at desc nulls last),
      classed as (
     select ranked.*,
@@ -911,7 +915,7 @@ def list_wells(
         clauses.append("and (api10 = %(api10)s or api14 = %(api10)s)")
         params["api10"] = api10
     if status is not None:
-        clauses.append("and status_canonical = %(status)s")
+        clauses.append(f"and {resolved_status('ranked')} = %(status)s")
         params["status"] = status
     if operator is not None:
         clauses.append("and operator_name_reported ilike '%%' || %(operator)s || '%%'")

@@ -103,13 +103,14 @@ describe("the layers a facet press has to reach", () => {
   });
 
   it("holds the layers outside the status gate that would keep drawing filtered-out wells", () => {
-    // The defect this list exists to prevent: these five carry their own predicate, so a press
+    // The defect this list exists to prevent: these six carry their own predicate, so a press
     // that only rewrote the status gate would leave struck plugs, disposal rings and survey
     // traces painted for every operator the reader just filtered away.
     const ungated = FACET_FILTERED_LAYERS.filter((layer) => !layer.gated).map((layer) => layer.id);
     expect(ungated.sort()).toEqual([
       "disposal-wells",
       "mt-wells-struck",
+      "nm-wells-struck",
       "survey-traces",
       "tx-wells-struck",
       "wells-struck",

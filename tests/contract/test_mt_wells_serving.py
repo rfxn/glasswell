@@ -200,7 +200,7 @@ def test_the_other_states_lookups_are_unchanged(client: TestClient) -> None:
     assert body(client, f"/v1/wells/{TX_API10}")["data"]["state_code"] == "42"
     assert STATUS_VOCABULARY_RULES["33"] == "cr_nd_status_vocab_1"
     assert STATUS_VOCABULARY_RULES["42"] == "cr_tx_status_vocab_1"
-    assert STATUS_VOCABULARY_RULES["30"] == "cr_nm_wellhistory_status_vocab_1"
+    assert STATUS_VOCABULARY_RULES["30"] == "cr_nm_wellhistory_status_vocab_2"
     assert PROVENANCE_RULES["33"] == "cr_nd_geometry_provenance_1"
     # The pre-existing Texas residual, restated rather than quietly repaired here: the registry
     # carries no cr_tx_geometry_provenance_1, so Texas still cites North Dakota's.

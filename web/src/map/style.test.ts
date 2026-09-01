@@ -456,21 +456,21 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
     }
   });
 
-  it("draws New Mexico as a point layer and adds no lateral sibling for it", () => {
+  it("draws New Mexico as a point layer and a strike, and adds no lateral sibling for it", () => {
     // No in-scope New Mexico source ships a lateral (cr_nm_wellhistory_geometry_scope_1), so a
-    // nm-laterals layer would draw a producing footprint nobody filed.
+    // nm-laterals layer would draw a producing footprint nobody filed. The strike is a
+    // modifier on the point, not a second geometry.
     const ids = dataLayers({ labels: true }).map((layer) => layer.id);
 
     expect(ids).toContain("nm-wells");
-    expect(ids.filter((id) => id.startsWith("nm-"))).toEqual(["nm-wells"]);
+    expect(ids.filter((id) => id.startsWith("nm-"))).toEqual(["nm-wells", "nm-wells-struck"]);
     const nmWells = dataLayers().find((layer) => layer.id === "nm-wells");
     expect(nmWells?.type).toBe("circle");
     expect("source" in nmWells! ? nmWells.source : "").toBe(NM_WELLS_SOURCE);
   });
 
-  it("draws Montana as a point layer with the struck sibling New Mexico cannot have", () => {
-    // Montana has a codebook (cr_mt_gis_status_vocab_1) where New Mexico has none, so the
-    // strike marks a class that can actually match — 63% of the state is plugged.
+  it("draws Montana as a point layer with a struck sibling of its own", () => {
+    // 63% of the state is plugged, so the class the strike marks is the largest one on it.
     const ids = dataLayers({ labels: true }).map((layer) => layer.id);
 
     expect(ids).toContain("mt-wells");
@@ -504,9 +504,9 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
     const row = LAYERS.find((layer) => layer.id === "nm-wells");
 
     expect(row).toBeDefined();
-    expect(row!.styleLayers).toEqual(["nm-wells"]);
+    expect(row!.styleLayers).toEqual(["nm-wells", "nm-wells-struck"]);
     expect(row!.provenance).toEqual([{ kind: "official", source: "marts.nm_wells_tile" }]);
-    expect(row!.subtitle).toContain("cr_nm_wellhistory_status_vocab_1");
+    expect(row!.subtitle).toContain("cr_nm_wellhistory_status_vocab_2");
   });
 
   it("carries the refusal into every place the id is interpolated, not just the url", () => {

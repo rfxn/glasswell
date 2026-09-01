@@ -17,6 +17,7 @@ from glasswell.api.rate_limit import consume_rate_limit
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, inline_for, iso
 from glasswell.lineage.envelope import Figure, figure
 from glasswell.lineage.selector_registry import identity_selector_term
+from glasswell.status_resolution import resolved_status, resolver_join
 
 router = APIRouter(tags=["wells"])
 
@@ -45,8 +46,12 @@ DIMENSIONS: dict[str, dict[str, str]] = {
         "filter": "county",
         "title": "county code recorded at permit",
     },
+    # The only dimension that joins: New Mexico's class is resolved at read time, so a bucket
+    # read off the promoted column alone would count 141,778 wells as unmapped while the map
+    # draws them classed (cr_nm_wellhistory_status_vocab_2).
     "status": {
-        "column": "nullif(w.status_canonical, '')",
+        "column": f"nullif({resolved_status('w')}, '')",
+        "join": resolver_join("w"),
         "filter": "status",
         "title": "canonical well status",
     },
@@ -101,6 +106,7 @@ _VALUE_SORTS = {
 _SCOPED_LATEST = """
     select distinct on (w.api10) w.api10, {column} as value, w.derivation_id
       from canonical.wells w
+      {join}
      where w.state_code = %(state)s
      order by w.api10, w.effective_from desc, w.created_at desc
 """
@@ -113,6 +119,7 @@ _SCOPED_AS_OF = """
       from canonical.wells w
       join lineage.manifests m on m.manifest_id = w.source_manifest_id
       join lineage.derivations d on d.derivation_id = w.derivation_id
+      {join}
      where w.state_code = %(state)s
        and w.effective_from <= %(as_of)s::date
        and m.fetch_vintage <= %(as_of)s::date
@@ -647,7 +654,7 @@ def get_well_facets(
     )
     loaded = _require_state(connection, state)
     scoped = (_SCOPED_AS_OF if as_of is not None else _SCOPED_LATEST).format(
-        column=DIMENSIONS[by]["column"]
+        column=DIMENSIONS[by]["column"], join=DIMENSIONS[by].get("join", "")
     )
     statement = _FACETS.format(scoped=scoped, order=_VALUE_SORTS[(sort, order)])
     found = rows(
