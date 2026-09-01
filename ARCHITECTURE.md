@@ -57,10 +57,15 @@ top, permit, land unit, spacing unit, well status.
 to API-10 for joins.
 
 **Wellbore simplification (pinned decision).** One producing wellbore per API-10 is
-assumed. Sidetracks and multi-completion wellbores are detected — via the API-12
-suffix and multiple W-2 filings — and quarantined with a reason rather than
-mis-joined. The quarantined share is reported in the scorecard; if it exceeds 2%
-in a study area, the assumption gets revisited rather than defended.
+assumed. Sidetracks and multi-completion wellbores are detected and quarantined with
+a reason rather than mis-joined, on whatever the regulator publishes: the API-12
+suffix in North Dakota (`cr_nd_multilateral_1`), the RRC wellbore code in Texas,
+which files no API-12 (`cr_tx_multi_wellbore_1`), and nothing at all in New Mexico,
+where the policy is vacuously satisfied (`cr_nm_wchistory_wellbore_policy_1`). The
+quarantined share is reported in the scorecard per basin, and the revisit trigger is
+2% in North Dakota and 5% in the Permian rather than one global number — re-entry
+and multi-completion rates differ materially between the Bakken and a century-old
+Permian wellbore population (blueprint-v0.6 §3.0.5).
 
 ### Marts — serving
 
