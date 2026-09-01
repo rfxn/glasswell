@@ -1,6 +1,6 @@
 # Current status
 
-Reconciled on **2026-09-01** against the v0.72 release line, the checked-in OpenAPI
+Reconciled on **2026-09-01** against the v0.73 release line, the checked-in OpenAPI
 snapshot, current `main` history, and a read-only census of the deployed database taken
 2026-08-31. This is the
 short current-state ledger;
@@ -18,7 +18,7 @@ level for the first time this week; figures below still carry where they were me
 
 ## Shipped baseline
 
-- **Release line:** 53 tagged releases, v0.20 through v0.72, cut 2026-08-21 through
+- **Release line:** 54 tagged releases, v0.20 through v0.73, cut 2026-08-21 through
   2026-09-01.
 - **North Dakota:** ingest, bitemporal promotion, quarantine, conformance, wells,
   geometry, monthly production, lineage, explain, glossary, API, tiles, and map are built.
