@@ -64,7 +64,7 @@ export async function mountGrid(host: HTMLElement, options: GridOptions): Promis
   // reader who never sees the grid still learns what was asked for (C6 MUST-KNOW K1).
   host.replaceChildren(
     note(
-      `Requesting ${request.path} — ${(options.dataset.columns.default ?? []).join(", ")}`,
+      `Requesting ${request.path} · ${(options.dataset.columns.default ?? []).join(", ")}`,
       "gw-grid-loading",
     ),
   );
@@ -464,7 +464,7 @@ function coverageLine(columns: readonly Column[]): HTMLElement {
       ? "Glossary: every column bound"
       : `Glossary: ${coverage.bound}/${coverage.total} columns (${coverage.percent}%)`;
   // The unbound columns carry ? in the header itself, so the count no longer has to say so.
-  line.title = "Unbound headers carry ? — they are counted here, not hidden.";
+  line.title = "Unbound headers carry ? · they are counted here, not hidden.";
   return line;
 }
 

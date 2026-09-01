@@ -47,16 +47,16 @@ const DIMENSIONS: readonly DimensionSpec[] = [
     aria: "Wells by the well type their source reported",
     note:
       "Codes exactly as the source filed them: no decode and no classing. A code the box does" +
-      " not hold is absent here, not zero — the rule the status rows follow — and a well whose" +
-      " source filed no type is in no row at all while still counting in the total above.",
+      " not hold is absent here, not zero, which is the rule the status rows follow. A well" +
+      " whose source filed no type is in no row at all while still counting in the total above.",
   },
   {
     id: "geometry_provenance",
     title: "Geometry provenance",
     aria: "Wells by the provenance of their recorded geometry",
     note:
-      `Classed by ${PROVENANCE_RULE}, the class served verbatim. These classes overlap — one` +
-      " well can hold a surface hole, a lateral and a survey trace at once — so they do not sum" +
+      `Classed by ${PROVENANCE_RULE}, the class served verbatim. These classes overlap: one` +
+      " well can hold a surface hole, a lateral and a survey trace at once, so they do not sum" +
       " to the well count above and no share can be read off them. A registered class the box" +
       " does not hold reads zero rather than absent, which is the producing rows' rule: the" +
       " vocabulary names the class whether or not this box holds one.",
@@ -596,7 +596,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
       document.createTextNode(
         ". Laterals are ND DMR and TX RRC GIS bore geometry, not a directional survey trace." +
           " The orchid line is that trace: the bore path ND filed as survey stations." +
-          " The teal ring is NDIC's own well_type — disposal and injection wells of any" +
+          " The teal ring is NDIC's own well_type: disposal and injection wells of any" +
           " injected stream, classed by cr_nd_well_type_disposal_1, the code drawn as filed.",
       ),
     );

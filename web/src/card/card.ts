@@ -483,7 +483,7 @@ async function loadCompletionContext(
         : "populated";
     highlight(host, termIndex());
   } catch {
-    host.replaceChildren(emptyState("Unavailable — the response could not be read."));
+    host.replaceChildren(emptyState("Unavailable: the response could not be read."));
     host.dataset["state"] = "unavailable";
   } finally {
     host.setAttribute("aria-busy", "false");

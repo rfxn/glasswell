@@ -294,7 +294,7 @@ export const LAYERS: readonly LayerDef[] = [
     group: "spine",
     label: "Well paths (Montana)",
     subtitle:
-      "MBOGC well paths — laterals, sidetracks and wellbores as filed · cartographic" +
+      "MBOGC well paths: laterals, sidetracks and wellbores as filed · cartographic" +
       " centrelines averaging 2.8 vertices, never a survey (cr_mt_paths_geometry_class_1) ·" +
       " 2,836 carry one, of the 20,021 Montana wells that ever produced" +
       " (cr_mt_paths_coverage_1) · no length is served for a Montana bore" +

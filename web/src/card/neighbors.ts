@@ -67,7 +67,7 @@ export async function loadNeighborContext(
  */
 function unavailable(error: unknown): HTMLElement[] {
   if (!(error instanceof ApiError)) {
-    return [emptyState("Unavailable — the response could not be read.")];
+    return [emptyState("Unavailable: the response could not be read.")];
   }
   // The code over the title: `type` names what was refused, where `title` is the generic
   // family ("Not authenticated") every problem of that status shares.
