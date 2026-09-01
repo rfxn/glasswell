@@ -2156,6 +2156,13 @@ def get_well(
         warnings=warnings,
         links={
             "completions": f"/v1/wells/{api10}/completions",
+            # Absent outside the cumulative mart's states, so a card offered the link never
+            # reads a 404 as "this well produced nothing" — the two are different facts.
+            **(
+                {"cumulatives": f"/v1/wells/{api10}/cumulatives"}
+                if row["state_code"] in STATE_API_PREFIXES
+                else {}
+            ),
             "formations": "/v1/formations",
             **(
                 {"neighbors": f"/v1/wells/{api10}/neighbors"}

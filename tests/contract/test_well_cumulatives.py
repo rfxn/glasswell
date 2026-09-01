@@ -141,6 +141,17 @@ def test_a_well_outside_the_mart_is_refused_by_name(client: TestClient) -> None:
     assert "33" in response.json()["detail"]
 
 
+def test_the_well_offers_the_link_only_where_the_mart_holds_a_total(client: TestClient) -> None:
+    """The card reads the link rather than the API prefix: a jurisdiction test in the client
+    is a mapping decision living in code (R8), and it would turn this 404 into `no production`.
+    """
+    in_scope = client.get(f"/v1/wells/{EXAMPLE_API10}").json()["links"]
+    out_of_scope = client.get(f"/v1/wells/{TX_API10}").json()["links"]
+
+    assert in_scope["cumulatives"] == PATH
+    assert "cumulatives" not in out_of_scope
+
+
 def test_an_as_of_before_the_snapshot_is_refused_and_one_after_it_is_served(
     client: TestClient,
 ) -> None:
