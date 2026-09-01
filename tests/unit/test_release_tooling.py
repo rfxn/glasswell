@@ -443,6 +443,19 @@ EVIDENCE = re.compile(
 )
 
 
+# The statements that legitimately carry the placeholder pair. A file with none of them has no
+# evidence insert, so `_header` is the whole text and any quoted literal in it is caught.
+EVIDENCE_INSERTS = (
+    "insert into lineage.conformance_rule_publications",
+    "insert into lineage.jurisdictions (",
+)
+
+
+def _header(text: str) -> str:
+    cuts = [text.index(anchor) for anchor in EVIDENCE_INSERTS if anchor in text]
+    return text[: min(cuts)] if cuts else text
+
+
 def _evidence_migration() -> Path:
     """The newest migration that registers rule publication evidence.
 
@@ -552,9 +565,7 @@ class TestPlaceholderPublicationEvidence:
         assert migrations, "no migrations found; this pin would be vacuous"
         for path in migrations:
             text = path.read_text(encoding="utf-8")
-            # A migration with no evidence insert has no statement, so `header` is the whole
-            # file and any quoted literal in it is caught — which is the correct answer.
-            header, _, _ = text.partition("insert into lineage.conformance_rule_publications")
+            header = _header(text)
             for literal in (
                 f"'{release.PLACEHOLDER_EVIDENCE_TAG}'",
                 f"'{release.PLACEHOLDER_EVIDENCE_COMMIT}'",
@@ -564,6 +575,25 @@ class TestPlaceholderPublicationEvidence:
                     f"{path.name} quotes {literal} above its evidence insert, which re-arms "
                     "the release guard through prose"
                 )
+
+    def test_the_seed_mirroring_the_registrations_is_scanned_too(self, tmp_path):
+        """N-5: the jurisdiction registrations ship on two paths, so a repoint that edits the
+        migration and forgets the mirror is a half-repoint. The mirror is Python, which is why
+        the scan reads double quotes as well as single ones."""
+        _, repointed = _pair()
+        root = _repo(tmp_path)
+        mirror = root / release.EVIDENCE_MIRRORS[0]
+        mirror.parent.mkdir(parents=True, exist_ok=True)
+        mirror.write_text(
+            f'EVIDENCE_TAG = "{release.PLACEHOLDER_EVIDENCE_TAG}"\n'
+            f'EVIDENCE_COMMIT = "{release.PLACEHOLDER_EVIDENCE_COMMIT}"\n',
+            encoding="utf-8",
+        )
+        _with_migration(root, repointed)
+
+        blockers = release.preconditions(root, _pending(root), Version(0, 66))
+
+        assert any(mirror.name in blocker for blocker in blockers)
 
     def test_prose_naming_the_placeholder_does_not_block(self, tmp_path):
         """R-1 in one line: the guard reads the quoted SQL literal, never the word."""
