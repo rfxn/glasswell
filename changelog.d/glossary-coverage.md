@@ -20,6 +20,10 @@
       so splitting "Current snapshot" around a term dropped the space between the halves
 - [Fix] glossary: a term is no longer underlined inside a dotted identifier such as
       `marts.nm_wells_tile`; one ending a sentence is untouched
+- [Change] the glossary seeder upserts on the term id, so a corrected definition, an
+           extended alias list, new evidence or a changed `highlightable` reaches the
+           reader on the next seed run; it inserted with `on conflict do nothing` and left
+           the correction sitting in the file. `effective_from` is not re-dated
 - [Fix] ARCHITECTURE.md: the wellbore-quarantine revisit trigger reads per basin, 2% in
       North Dakota and 5% in the Permian, and the detection clause names what each
       regulator publishes rather than the W-2 count that measures completions, not bores
