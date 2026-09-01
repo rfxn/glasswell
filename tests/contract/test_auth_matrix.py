@@ -59,6 +59,9 @@ PROBE_USER_BODY = {"username": "matrix-target", "password": NEW_PASSWORD, "role"
 # no Argon2id work of its own.
 LOGIN_BODY = {"username": VIEWER_USERNAME, "password": VIEWER_PASSWORD}
 LOGIN = ("POST", "/v1/session")
+# The account whose session the `{session_id}` probe is aimed at: seeded by the fixture below,
+# revoked, and held by no principal the table admits.
+PROBE_SESSION_USERNAME = "expired-session"
 SESSION_PASSWORD = {"owner_session": OWNER_PASSWORD, "viewer_session": VIEWER_PASSWORD}
 
 
@@ -155,6 +158,11 @@ MATRIX: tuple[tuple, ...] = (
     ("PATCH", "/v1/users/{user_id}", OWNER, {"role": "viewer"}),
     ("DELETE", "/v1/users/{user_id}", OWNER),
     ("POST", "/v1/users/{user_id}/password", OWNER, {"new_password": NEW_PASSWORD}),
+    # OWNER, not SESSION: `_target` aims these at somebody else's session. That a viewer may
+    # revoke their *own* is asserted in test_sessions_surface.py, outside the table, because
+    # the table keys on the path and cannot express "the caller's own row".
+    ("GET", "/v1/sessions", OWNER),
+    ("DELETE", "/v1/sessions/{session_id}", OWNER),
     # Finding F-2: both were anonymous, and the coverage test below could not see it
     # because it walked document["paths"], which neither path is an entry in.
     ("GET", "/docs", READ),
@@ -249,6 +257,15 @@ def _target(path: str, owner: TestClient) -> str:
     if "{user_id}" in path:
         made = owner.post("/v1/users", json=PROBE_USER_BODY)
         return path.replace("{user_id}", made.json()["data"]["user_id"])
+    if "{session_id}" in path:
+        # Read back off the list, not minted here: `_target` holds no connection, and a login
+        # would put a 250 ms floor and an Argon2id verify in front of every parametrised case.
+        # The `expired-session` fixture's row is the target because no principal in the table
+        # holds it live -- so a caller the matrix expects to be refused cannot be refused for
+        # the wrong reason, by owning the session it was aimed at.
+        listed = owner.get("/v1/sessions").json()["data"]
+        target = next(row for row in listed if row["username"] == PROBE_SESSION_USERNAME)
+        return path.replace("{session_id}", target["session_id"])
     return path
 
 

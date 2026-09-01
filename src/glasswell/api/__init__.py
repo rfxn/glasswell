@@ -49,6 +49,7 @@ from glasswell.api.routers import (
     production,
     quarantine,
     session,
+    sessions,
     status,
     tiles,
     type_curves,
@@ -246,6 +247,7 @@ def create_app() -> FastAPI:
         glossary.router,
         keys.router,
         users.router,
+        sessions.router,
     ):
         app.include_router(
             router,

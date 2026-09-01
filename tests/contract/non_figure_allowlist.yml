@@ -90,6 +90,8 @@
   reason: Token count the highlighter uses to build its trie (SB-04 §6.2).
 - pointer: /expires_in
   reason: Lifetime in seconds of a CSRF token, a protocol parameter of the exchange.
+- pointer: /*/sessions_live
+  reason: Live sessions an account holds, a state counter rather than a measured quantity.
 
 # --- spine metadata ----------------------------------------------------------
 - pointer: /error_codes/*/status

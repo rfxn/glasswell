@@ -172,3 +172,72 @@ def test_an_owner_reset_revokes_the_targets_sessions(client: TestClient, seeded)
 def test_an_unknown_user_id_is_a_not_found(client: TestClient) -> None:
     assert client.get("/v1/users").status_code == 200
     assert client.delete("/v1/users/usr_does_not_exist").status_code == 404
+
+
+# --- the show-once password, and the model that is allowed to carry it ------------------------
+#
+# `keys.py` is the house pattern: `KeyRecordModel` carries no secret and serves the reads, and
+# `IssuedKey(KeyRecordModel)` adds one and serves only the two operations that mint. `/v1` is
+# frozen additive, so a `password` published on the list schema would be published for the life
+# of the surface -- which is why the split is asserted structurally rather than trusted.
+
+MINT_ROUTES = {("post", "/v1/users"), ("post", "/v1/users/{user_id}/password")}
+
+
+def data_schema(document: dict, path: str, method: str) -> str:
+    """The name of the schema an operation serves inside `data`."""
+    operation = document["paths"][path][method]
+    success = next(status for status in ("200", "201") if status in operation["responses"])
+    envelope = operation["responses"][success]["content"]["application/json"]["schema"]
+    resolved = document["components"]["schemas"][envelope["$ref"].rsplit("/", 1)[-1]]
+    data = resolved["properties"]["data"]
+    reference = data.get("$ref") or data.get("items", {}).get("$ref", "")
+    return reference.rsplit("/", 1)[-1]
+
+
+def test_the_user_model_declares_no_password(client: TestClient) -> None:
+    """The guard that keeps the show-once field off the list, permanently."""
+    schemas = client.get("/openapi.json").json()["components"]["schemas"]
+
+    assert "password" not in schemas["UserModel"]["properties"]
+    assert "password" in schemas["CreatedUser"]["properties"]
+
+
+def test_only_the_two_minting_operations_serve_the_password_model(client: TestClient) -> None:
+    document = client.get("/openapi.json").json()
+
+    serving = {
+        (method, path)
+        for path, operations in document["paths"].items()
+        for method in operations
+        if path.startswith("/v1/users") and data_schema(document, path, method) == "CreatedUser"
+    }
+
+    assert serving == MINT_ROUTES
+    assert data_schema(document, "/v1/users", "get") == "UserModel"
+    assert data_schema(document, "/v1/users/{user_id}", "patch") == "UserModel"
+    assert data_schema(document, "/v1/users/{user_id}", "delete") == "UserModel"
+
+
+def test_a_supplied_password_comes_back_null_rather_than_echoed(client: TestClient) -> None:
+    created = client.post(
+        "/v1/users", json={"username": "supplied", "password": NEW_PASSWORD, "role": "viewer"}
+    )
+
+    assert created.status_code == 201, created.text
+    assert created.json()["data"]["password"] is None
+    assert NEW_PASSWORD not in created.text
+
+
+def test_an_omitted_password_is_minted_once_and_warned_about(client: TestClient) -> None:
+    created = client.post("/v1/users", json={"username": "unsupplied", "role": "viewer"})
+
+    assert created.status_code == 201, created.text
+    minted = created.json()["data"]["password"]
+    assert minted is not None
+    assert [warning["code"] for warning in created.json()["meta"]["warnings"]] == [
+        "password_shown_once"
+    ]
+    user_id = created.json()["data"]["user_id"]
+    assert minted not in client.get("/v1/users").text
+    assert minted not in client.patch(f"/v1/users/{user_id}", json={"role": "owner"}).text

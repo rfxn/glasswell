@@ -385,6 +385,21 @@
   related_terms: ["Conformance rule", "Canonical", "Spine"]
   source_refs: ["canonical.wells.operator_name_reported", "SB-08 §7.1 O-6"]
 
+- term: Owner
+  highlightable: false
+  short_definition: >-
+    The role that administers a deployment: accounts, keys, sessions and every other
+    owner-scoped operation.
+  expanded_definition: >-
+    There are two roles and no others. An owner may create accounts, change roles, reset
+    passwords, disable accounts and revoke any session; a viewer may do none of those. The last
+    enabled owner cannot be demoted or disabled, because a deployment with no enabled owner
+    cannot be administered at all. Accounts exist because an owner made them - there is no
+    self-registration path and no reset by email.
+  domain_tags: [governance, identity]
+  related_terms: ["Role", "Viewer", "Session"]
+  source_refs: ["SB-06 §5", "SB-04 §3"]
+
 - term: Peer ladder
   aliases: ["Fallback level", "Peer fallback"]
   short_definition: >-
@@ -546,6 +561,18 @@
   related_terms: ["Report vintage", "Bitemporal", "Raw zone"]
   source_refs: ["blueprint-v0.6 §9", "DIR-2"]
 
+- term: Role
+  highlightable: false
+  short_definition: >-
+    What an account may do: owner or viewer.
+  expanded_definition: >-
+    The role is the user-facing concept and it is carried by the account, not by the screen.
+    Internally it resolves to a scope, which is what every authorization guard reads, so a role
+    change takes effect on the account's next request rather than on its next sign-in.
+  domain_tags: [governance, identity]
+  related_terms: ["Owner", "Viewer", "Session"]
+  source_refs: ["SB-06 §5", "SB-04 §3"]
+
 - term: Rule kind
   highlightable: false
   short_definition: >-
@@ -560,6 +587,19 @@
   domain_tags: [lineage, data-model, governance]
   related_terms: ["Conformance rule", "Datum", "Canonical"]
   source_refs: ["SB-07 §6.2", "migration 005_conformance.sql"]
+
+- term: Session
+  highlightable: false
+  short_definition: >-
+    A signed-in browser, held server-side as a row and presented as a cookie.
+  expanded_definition: >-
+    The cookie carries a token; the database holds only its sha256, so a stolen backup does not
+    yield a working credential. Every request re-reads the row, which is what makes revocation
+    take effect on the next request rather than at the next expiry. Two windows end a session
+    on their own: an idle window that slides on use, and an absolute cap that never moves.
+  domain_tags: [governance, identity]
+  related_terms: ["Role", "Owner", "Viewer"]
+  source_refs: ["SB-06 §5", "SB-04 §3"]
 
 - term: Slot
   highlightable: false
@@ -694,6 +734,18 @@
   domain_tags: [lineage, time]
   related_terms: ["Knowledge time", "Bitemporal", "Report vintage"]
   source_refs: ["SB-07 §12", "DIR-2"]
+
+- term: Viewer
+  highlightable: false
+  short_definition: >-
+    The role that reads this deployment and administers nothing in it.
+  expanded_definition: >-
+    A viewer reaches every read surface and no owner-scoped one: not accounts, not keys, not
+    the session list. A viewer may end their own session and change their own password, which
+    are operations about the caller rather than about the deployment.
+  domain_tags: [governance, identity]
+  related_terms: ["Role", "Owner", "Session"]
+  source_refs: ["SB-06 §5", "SB-04 §3"]
 
 - term: Vintage (well vintage)
   aliases: ["Well vintage", "Vintage"]

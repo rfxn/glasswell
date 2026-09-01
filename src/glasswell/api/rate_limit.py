@@ -80,6 +80,10 @@ BUCKETS: dict[str, int] = {
     # Argon2id verify and a threadpool slot per request on POST /v1/session.
     "login": 20,
     "challenge": 60,
+    # The two owner routes that hash a password. Named apart from `login` so a deploy-time
+    # reset cannot spend the budget POST /v1/session needs, and charged before the Argon2id
+    # call rather than after it.
+    "admin_write": 20,
 }
 # Rounded up to this, so the remaining-time value cannot be used to tell which bucket fired.
 RETRY_AFTER_GRANULARITY = 30
