@@ -304,6 +304,10 @@ def main() -> None:
     key = secrets.token_hex(32)
     KEY_FILE.write_text(key)
     KEY_FILE.chmod(0o600)
+    # Minted per run and never written down. Without it every CSRF mint raises and the login
+    # screen 500s, so a branch instance could serve every key-authenticated surface and none of
+    # the session ones -- which is the half the accounts gate signs in through.
+    csrf_key = os.environ.get("GLASSWELL_CSRF_KEY") or secrets.token_hex(32)
 
     name, volume, dsn = start_database()
     api: subprocess.Popen[bytes] | None = None
@@ -330,6 +334,7 @@ def main() -> None:
             "PYTHONPATH": str(ROOT / "src"),
             "GLASSWELL_DSN": dsn,
             "GLASSWELL_OWNER_KEY": key,
+            "GLASSWELL_CSRF_KEY": csrf_key,
             "GLASSWELL_WEB_ROOT": str(WEB_ROOT),
             "GLASSWELL_MODEL_ROOT": str(MODEL_ROOT),
         },

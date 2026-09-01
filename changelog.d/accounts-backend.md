@@ -58,3 +58,20 @@
            `mutate` is now that function unwrapped, so the one-shot CSRF re-challenge stays in
            one place. `main.ts` passes the role it already resolved into the Status surface
            rather than letting a second probe answer the same question
+- [New] `tests/e2e/accounts.mjs` runs the DIR-11 ladder at 1600, 1024 and 390 against a
+      branch-local instance and, in the same pass, the round trip the section exists for: an
+      owner creates a viewer, that viewer signs in, and the surface tells them nothing about
+      anyone else. No shot is taken while the panel holds a live value — the minted password is
+      registered as a secret before it is read and substituted before capture — and the gate
+      disables every account it created and replaces the seeded owner's password with one the
+      server minted and nobody read
+- [New] `registerSecret()` in the e2e library: a credential a gate reads out of the page is
+      redacted from the journal and refused in a target url and in argv, exactly as the owner
+      key is. `tests/support/serve_seed_accounts.py` is the throwaway owner the gate signs in as
+- [Fix] `serve_branch.py` mints a `GLASSWELL_CSRF_KEY` per run. Without one every CSRF mint
+      raised and the login screen answered 500, so a branch instance could serve every
+      key-authenticated surface and none of the session ones
+- [Change] The Accounts tables keep one line per row and their action buttons on one line, so a
+           timestamp no longer doubles every row's height at 1024 and the two controls no longer
+           stack; both tables scroll horizontally below their width, as the tables beside them
+           on this page already do

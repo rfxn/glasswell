@@ -26,27 +26,59 @@ export function ownerKey() {
   return key || null;
 }
 
-/** Returns the key after refusing to run with one visible in process.argv. */
+/**
+ * Credentials a gate reads out of the page — a minted password shown once, so far — which the
+ * journal, the target guard and the argv guard have to treat exactly as they treat the owner
+ * key. Registration happens *before* the value is read out of the DOM: a secret registered
+ * afterwards is one the journal may already have carried.
+ */
+const registered = new Set();
+
+export function registerSecret(value) {
+  if (typeof value === "string" && value.length >= MIN_SECRET_LENGTH) registered.add(value);
+  return value;
+}
+
+/** For the unit tier, which asserts on a clean registry between cases. */
+export function forgetSecrets() {
+  registered.clear();
+}
+
+// Short enough to be a word rather than a credential; redacting one would eat ordinary prose.
+const MIN_SECRET_LENGTH = 8;
+
+function secrets() {
+  const key = ownerKey();
+  return key ? [key, ...registered] : [...registered];
+}
+
+/** Returns the key after refusing to run with any known secret visible in process.argv. */
 export function keyGuard() {
   const key = ownerKey();
-  if (key && process.argv.some((argument) => argument.includes(key)))
-    throw new Error(`owner key found in process.argv — ${KEY_RULE}`);
+  for (const secret of secrets()) {
+    if (process.argv.some((argument) => argument.includes(secret)))
+      throw new Error(`a credential found in process.argv — ${KEY_RULE}`);
+  }
   return key;
 }
 
-/** Refuses any navigation target carrying the key (case-insensitively); unchanged otherwise. */
+/** Refuses any navigation target carrying a known secret (case-insensitively). */
 export function guardTarget(url) {
-  const key = ownerKey();
-  if (key && String(url).toLowerCase().includes(key.toLowerCase()))
-    throw new Error(`owner key found in a target url — ${KEY_RULE}`);
+  const target = String(url).toLowerCase();
+  for (const secret of secrets()) {
+    if (target.includes(secret.toLowerCase()))
+      throw new Error(`a credential found in a target url — ${KEY_RULE}`);
+  }
   return url;
 }
 
 export function redact(text) {
-  const key = ownerKey();
-  if (!key) return String(text);
-  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return String(text).replace(new RegExp(escaped, "gi"), "REDACTED");
+  let output = String(text);
+  for (const secret of secrets()) {
+    const escaped = secret.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    output = output.replace(new RegExp(escaped, "gi"), "REDACTED");
+  }
+  return output;
 }
 
 export function originOf(url) {

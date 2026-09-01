@@ -544,6 +544,15 @@
   min-width: 880px;
 }
 
+/* One line per cell: these tables are already scroll-on-overflow, and a wrapped timestamp
+   doubles every row's height at 1024 to save a horizontal swipe nobody asked for. */
+.gw-accounts-users td,
+.gw-accounts-sessions td,
+.gw-accounts-users th,
+.gw-accounts-sessions th {
+  white-space: nowrap;
+}
+
 .gw-accounts .gw-empty {
   margin: 0;
   padding: var(--gw-space-4);
@@ -552,7 +561,7 @@
 
 .gw-accounts-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: var(--gw-space-2);
 }
 
