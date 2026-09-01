@@ -21,7 +21,14 @@
   position: absolute;
   left: 0.6rem;
   bottom: 2.2rem;
+  display: flex;
+  flex-direction: column;
   max-width: 15rem;
+  /* Anchored to the bottom and growing upward, an uncapped key grows off the map and under the
+     app header, taking the title that collapses it with it (visual-map-wells-by R1). The ceiling
+     is the map's height less the key's insets, not a budget for today's blocks — a block added
+     later scrolls inside the key — and the column makes the head the last thing to give way. */
+  max-height: calc(100% - 2.8rem);
   padding: 0.35rem 0.5rem;
   border: 1px solid var(--hairline);
   border-radius: 6px;
@@ -243,9 +250,8 @@
   display: none;
 }
 
-/* One scrollport for both blocks rather than one each: open together they came to 530 px below
-   a 384 px body, and the key — which grows upward off its bottom edge — pushed its own title
-   row off the top of the map. */
+/* One scrollport for both blocks rather than one each: open together they came to 530 px below a
+   384 px body. It bounds this pair; what keeps the key on the map is the clamp on .gw-lg above. */
 .gw-lg-dims {
   max-height: min(34vh, 16rem);
   overflow-y: auto;

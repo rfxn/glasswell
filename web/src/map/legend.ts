@@ -279,7 +279,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
   // Under the scroll body rather than inside it, on the vocabulary's precedent below: put in the
   // body these two blocks added 575 px to a 384 px scrollport, so neither was reachable without
   // scrolling at any width (visual-map-wells-by D5). Out here each is a disclosure always in
-  // frame, and the two share one scrollport so the key cannot grow past the map opening both.
+  // frame, and the two share one scrollport; the key's own clamp is what keeps it on the map.
   const dims = document.createElement("div");
   dims.className = "gw-lg-dims";
 

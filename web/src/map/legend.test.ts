@@ -217,6 +217,17 @@ describe("the legend", () => {
     expect(note).toContain("max-height: min(28vh, 12rem);");
   });
 
+  it("caps the key against the map it sits on rather than against the blocks it holds", () => {
+    // The key is anchored to the bottom and grows upward, so an uncapped one grows off the map
+    // and under the app header, taking its own collapse control with it (R1). The ceiling is
+    // the map's height less the key's insets and the column is what makes the head the last
+    // thing to give way; tests/e2e/map-key-hit.mjs measures what they buy in a real layout.
+    const css = readFileSync("src/map.css", "utf8");
+    const key = /\.gw-lg\s*\{[^}]*\}/.exec(css)?.[0] ?? "";
+    expect(key).toContain("max-height: calc(100% - 2.8rem);");
+    expect(key).toContain("flex-direction: column;");
+  });
+
   it("names the blue ring as the regulator's own well_type, and the rule that classes it", () => {
     // The ring is a data colour over a key that opens with "data colours, not severity colours",
     // and the sentence keeps the hue from claiming the class injects only water.

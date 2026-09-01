@@ -33,3 +33,8 @@
 - [Fix] map key: the rule between the key's groups is a defined token that
       follows the panel's substrate, not an undefined one falling back to a white
       that measured 1.00:1 against a light basemap's white panel
+- [Fix] map key: the key is capped at the map's own height less its insets and
+      lays its blocks out as a column, so opening both dimension blocks on a
+      phone no longer grows it off the top of the map and under the app header —
+      where a tap aimed at the title that collapses it landed on the surface
+      switch and navigated the reader off the map
