@@ -316,7 +316,7 @@ function controls(
   // convention on the same nouns, so the two surfaces name a state identically.
   const states = (data?.states ?? knownStates).map((entry) => ({
     value: entry.code,
-    label: `Wells (${entry.name})${entry.loaded ? "" : " — not loaded"}`,
+    label: `Wells (${entry.name})${entry.loaded ? "" : " · not loaded"}`,
     disabled: !entry.loaded,
   }));
   line.append(

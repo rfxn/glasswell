@@ -91,7 +91,7 @@ export async function mountExplorer(
     // document would otherwise leave the reader on a surface with nothing on it at all.
     catalogue = null;
     pending = null;
-    console.warn(`explorer: the catalogue is unavailable — ${String(error)}`);
+    console.warn(`explorer: the catalogue is unavailable · ${String(error)}`);
   }
   if (mounted?.abort !== abort) return;
 

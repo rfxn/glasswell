@@ -59,7 +59,7 @@ export function failure(error: unknown): HTMLElement {
   const problem = error instanceof ApiError ? error.problem : null;
   return note(
     problem
-      ? `${problem.title} (${problem.status}) — ${problem.detail ?? "the API refused this request"}. The API guide pane renders the problem in full when it lands.`
+      ? `${problem.title} (${problem.status}): ${problem.detail ?? "the API refused this request"}. The API guide pane renders the problem in full when it lands.`
       : `This request did not complete: ${String(error)}`,
     "gw-grid-error",
   );

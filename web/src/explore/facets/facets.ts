@@ -161,7 +161,7 @@ function chips(
 function unsupported(names: readonly string[]): HTMLElement {
   const note = document.createElement("p");
   note.className = "gw-facet-unsupported";
-  note.textContent = `This collection cannot be narrowed by ${names.join(", ")} — the operation declares no such parameter, so neither the grid nor curl can ask for it.`;
+  note.textContent = `This collection cannot be narrowed by ${names.join(", ")}. The operation declares no such parameter, so neither the grid nor curl can ask for it.`;
   return note;
 }
 

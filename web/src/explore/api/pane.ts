@@ -24,7 +24,7 @@ const SIDECARS = ["_lineage", "_units", "_basis"] as const;
 const ANNOTATIONS: Record<string, string> = {
   data: "the resource. A collection puts its array here, never inside an items wrapper.",
   meta: "request_id, the as_of asked for and what it resolved to, labels, next_cursor, warnings.",
-  links: "self, next and explain — the navigation, which is why a row's fields do not list it.",
+  links: "self, next and explain: the navigation, which is why a row's fields do not list it.",
 };
 
 const SIDECAR_NOTE =
@@ -35,7 +35,7 @@ const UNIT_NOTE =
 const SERIES_UNIT_NOTE =
   "the units on this page are read off _units per response, never off the schema (O-1).";
 const CACHE_NOTE = "no cache class is declared yet (O-3), so this is the response's own Cache-Control.";
-const KEY_NOTE = "Your own key, never this page's — the owner issues them at POST /v1/keys.";
+const KEY_NOTE = "Your own key, never this page's. The owner issues them at POST /v1/keys.";
 
 // The reader's choice of dialect is not a property of the link they would share (§2.1), so it
 // stays here rather than in the URL.
@@ -343,7 +343,7 @@ function fill(body: HTMLElement, parameter: ParameterSemantics): void {
   if (parameter.so) body.append(field("SO", parameter.so));
   for (const fact of parameter.facts) body.append(factRow(fact.label, fact.reason));
   if (!parameter.termId) {
-    body.append(note("No glossary term bound — no WHY to show."));
+    body.append(note("No glossary term bound: no WHY to show."));
     return;
   }
   // WHY and SEE come from the term the operation named, and are appended when it answers.

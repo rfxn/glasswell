@@ -216,7 +216,7 @@ function namesOnlyLiveOperations(dataset: CatalogueDataset, served: Set<string>)
     const named = dataset[member];
     if (named !== undefined && !served.has(named)) {
       console.warn(
-        `explorer: dropping dataset ${dataset.id} — its ${member} ${named} is not in the document`,
+        `explorer: dropping dataset ${dataset.id} · its ${member} ${named} is not in the document`,
       );
       return false;
     }

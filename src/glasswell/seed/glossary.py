@@ -13,14 +13,26 @@ GLOSSARY_SEED_PATH = Path(__file__).parent / "data" / "glossary_seed.yml"
 
 _NOT_IDENTIFIER = re.compile(r"[^a-z0-9]+")
 
-_INSERT = """
+# The glossary is reference data, not append-only lineage: a corrected definition has to reach
+# the reader, and `on conflict do nothing` left it sitting in the file. `effective_from` is
+# deliberately absent from the update — the row keeps the date it took effect.
+_UPSERT = """
 insert into canonical.glossary_terms
     (term_id, term, aliases, short_definition, expanded_definition, domain_tags,
      related_terms, source_refs, first_surfaced_in, highlightable)
 values (%(term_id)s, %(term)s, %(aliases)s, %(short_definition)s, %(expanded_definition)s,
         %(domain_tags)s, %(related_terms)s, %(source_refs)s, %(first_surfaced_in)s,
         %(highlightable)s)
-on conflict do nothing
+on conflict (term_id) do update set
+    term                = excluded.term,
+    aliases             = excluded.aliases,
+    short_definition    = excluded.short_definition,
+    expanded_definition = excluded.expanded_definition,
+    domain_tags         = excluded.domain_tags,
+    related_terms       = excluded.related_terms,
+    source_refs         = excluded.source_refs,
+    first_surfaced_in   = excluded.first_surfaced_in,
+    highlightable       = excluded.highlightable
 """
 
 
@@ -50,8 +62,8 @@ def load_glossary_seed(path: Path | None = None) -> list[dict[str, Any]]:
         return [_normalized(entry) for entry in yaml.safe_load(handle)]
 
 
-def seed_glossary(connection: psycopg.Connection) -> int:
+def seed_glossary(connection: psycopg.Connection, path: Path | None = None) -> int:
     with connection.cursor() as cursor:
-        cursor.executemany(_INSERT, load_glossary_seed())
+        cursor.executemany(_UPSERT, load_glossary_seed(path))
         cursor.execute("select count(*) from canonical.glossary_terms")
         return int(cursor.fetchone()[0])
