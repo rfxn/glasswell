@@ -284,7 +284,7 @@ sys.exit(0 if card["state_code"] == "30" and card["geometry_provenance"] else 1)
 import json, sys
 basins = json.load(open(sys.argv[1]))["data"]["basins"]
 rules = {row["state_code"]: row["status_vocabulary_rule"] for row in basins}
-sys.exit(0 if rules.get("30") == "cr_nm_wellhistory_status_vocab_1" else 1)
+sys.exit(0 if rules.get("30") == "cr_nm_wellhistory_status_vocab_2" else 1)
 ' "$work_dir/body.json"
 else
     printf '  skip    New Mexico spine: /v1/status reports 0 NM headers, so the gate is not open here\n'
