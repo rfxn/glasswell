@@ -15,8 +15,8 @@
 
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-values ('cr_nm_wellhistory_status_vocab_2', date '2026-09-01', 'UNRELEASED',
-        '0000000000000000000000000000000000000000')
+values ('cr_nm_wellhistory_status_vocab_2', date '2026-09-01', 'v0.74',
+        'a4f9be5416e152b84a487ecf39ae4897cec901c7')
 on conflict (rule_id) do nothing;
 
 -- Not lineage.nm_status_map: that table is the declared target_map of the well-*completion*
