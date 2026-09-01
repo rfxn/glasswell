@@ -290,6 +290,38 @@ export function censusOfDrawn(
   return { wells: seen.size + anonymous, derivation };
 }
 
+/**
+ * The build handle each style layer's own features carry. Per layer and not per canvas: one
+ * handle broadcast over four wells rows puts North Dakota's build on the Texas row.
+ */
+export function drawnDerivations(
+  features: readonly { layer: { id: string }; properties?: Record<string, unknown> | null }[],
+): Map<string, string> {
+  const found = new Map<string, string>();
+  for (const feature of features) {
+    if (found.has(feature.layer.id)) continue;
+    const handle = (feature.properties ?? {})["derivation_id"];
+    if (typeof handle === "string" && handle !== "") found.set(feature.layer.id, handle);
+  }
+  return found;
+}
+
+/** The same handles against the registry rows the panel lists, so a row can resolve its own ⌾. */
+export function rowDerivations(
+  rows: readonly { id: string; styleLayers: readonly string[] }[],
+  features: readonly { layer: { id: string }; properties?: Record<string, unknown> | null }[],
+): Map<string, string> {
+  const byStyleLayer = drawnDerivations(features);
+  const found = new Map<string, string>();
+  for (const row of rows) {
+    const handle = row.styleLayers
+      .map((id) => byStyleLayer.get(id))
+      .find((one) => one !== undefined);
+    if (handle !== undefined) found.set(row.id, handle);
+  }
+  return found;
+}
+
 /** R8: the rules that shaped this answer, each with the row a reader can open, where served. */
 export function vocabularyLinks(data: WellStatusSummary, links: Links): VocabularyLink[] {
   return data.vocabulary_rules.map((rule) => ({ rule, href: links[rule] ?? null }));

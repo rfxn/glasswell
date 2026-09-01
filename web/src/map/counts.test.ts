@@ -7,9 +7,11 @@ import {
   bboxParam,
   censusOfDrawn,
   createCountSource,
+  drawnDerivations,
   normaliseBbox,
   parseBbox,
   retainVintage,
+  rowDerivations,
   sameBbox,
   producingCountsOf,
   provenanceCountsOf,
@@ -573,6 +575,55 @@ describe("the census of what the canvas drew", () => {
 
   it("is zero, and says nothing about a build, when nothing was drawn", () => {
     expect(censusOfDrawn([])).toEqual({ wells: 0, derivation: null });
+  });
+});
+
+/**
+ * R3: before this, `refreshDrawn` broadcast one census-wide handle over every wells row, so a
+ * reader on a four-state canvas could open the Texas row's ⌾ and land in North Dakota's build.
+ */
+describe("the build handle each drawn row resolves", () => {
+  const drawn = (layer: string, derivation?: unknown) => ({
+    layer: { id: layer },
+    properties: derivation === undefined ? {} : { derivation_id: derivation },
+  });
+
+  it("keeps each style layer's own handle rather than the first one on the canvas", () => {
+    expect(drawnDerivations([drawn("wells", "drv_nd"), drawn("tx-wells", "drv_tx")])).toEqual(
+      new Map([
+        ["wells", "drv_nd"],
+        ["tx-wells", "drv_tx"],
+      ]),
+    );
+  });
+
+  it("takes the first handle a layer offers and ignores the rest of its tiles", () => {
+    expect(drawnDerivations([drawn("basins", "drv_one"), drawn("basins", "drv_two")])).toEqual(
+      new Map([["basins", "drv_one"]]),
+    );
+  });
+
+  it("reports no handle for a layer whose tiles carry none, rather than an empty one", () => {
+    expect(drawnDerivations([drawn("plays"), drawn("plays", ""), drawn("plays", 7)])).toEqual(
+      new Map(),
+    );
+  });
+
+  it("resolves a row from whichever of its style layers drew", () => {
+    const rows = [
+      { id: "land-grid", styleLayers: ["land-townships-line", "land-sections-line"] },
+      { id: "spacing-units", styleLayers: ["spacing-units-fill", "spacing-units-line"] },
+    ];
+
+    expect(rowDerivations(rows, [drawn("land-sections-line", "drv_grid")])).toEqual(
+      new Map([["land-grid", "drv_grid"]]),
+    );
+  });
+
+  it("leaves a row nothing drew for out of the answer, so its ⌾ is never a stale one", () => {
+    const rows = [{ id: "survey-traces", styleLayers: ["survey-traces"] }];
+
+    expect(rowDerivations(rows, [drawn("laterals", "drv_lat")])).toEqual(new Map());
   });
 });
 

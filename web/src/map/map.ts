@@ -32,6 +32,7 @@ import {
   censusOfDrawn,
   createCountSource,
   retainVintage,
+  rowDerivations,
 } from "./counts.ts";
 import type { Bbox, CountsState, WellStatusSummary } from "./counts.ts";
 import { WELLS_BY_PREFIX } from "../explore/facets/wells-by.ts";
@@ -547,9 +548,12 @@ export function createMap(
       panel.setCoverage(new Set());
       return;
     }
-    const painted = new Set(
-      map.queryRenderedFeatures({ layers: queried }).map((feature) => feature.layer.id),
-    );
+    const features = map.queryRenderedFeatures({ layers: queried });
+    const painted = new Set(features.map((feature) => feature.layer.id));
+    // R3: every drawn row resolves its own ⌾ off the tile that drew it, not just the four
+    // wells rows and the thematic wash. A row with nothing on the canvas keeps its last
+    // handle rather than being blanked — the tile it named is still the tile it draws from.
+    for (const [id, handle] of rowDerivations(drawable, features)) panel.setProvenance(id, handle);
     panel.setCoverage(
       new Set(
         drawable
@@ -568,9 +572,16 @@ export function createMap(
       legend.setDrawn(null);
       return;
     }
-    const census = censusOfDrawn(map.queryRenderedFeatures({ layers: [...layers] }));
-    legend.setDrawn(census.wells);
-    if (census.derivation) for (const id of layers) panel.setProvenance(id, census.derivation);
+    const features = map.queryRenderedFeatures({ layers: [...layers] });
+    legend.setDrawn(censusOfDrawn(features).wells);
+    // Each state's row takes the handle of its own tile. WELL_POINT_LAYERS names ids that are
+    // both a style layer and a registry row, which is what lets one call key both.
+    for (const [id, handle] of rowDerivations(
+      layers.map((id) => ({ id, styleLayers: [id] })),
+      features,
+    )) {
+      panel.setProvenance(id, handle);
+    }
   }
 
   /**
