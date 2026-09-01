@@ -83,9 +83,12 @@ def test_every_rule_kind_is_one_the_registry_check_admits(db, registry) -> None:
 
 
 def test_every_evidence_url_points_at_a_registry_known_form(registry) -> None:
+    """Both EMNRD hosts and no third: the FTP application serves the archives and their
+    descriptions, the public site serves the data dictionary the status mapping rests on."""
+    admitted = ("https://wwwapps.emnrd.nm.gov/OCD/", "https://www.emnrd.nm.gov/ocd/")
     for rule_id, row in sorted(registry.items()):
         assert row["evidence_url"], rule_id
-        assert row["evidence_url"].startswith("https://wwwapps.emnrd.nm.gov/OCD/"), rule_id
+        assert row["evidence_url"].startswith(admitted), rule_id
 
 
 def test_the_header_api10_mirrors_the_spine_composition_per_segment(registry) -> None:
