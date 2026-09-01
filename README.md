@@ -354,7 +354,8 @@ Installed console scripts, for the pipelines an operator runs by hand rather tha
 
 ```
 glasswell-migrate            apply pending migrations
-glasswell-owner-bootstrap    create the owner key; glasswell-owner-reset rotates it
+glasswell-owner-bootstrap    create the first owner account, password on stdin only
+glasswell-owner-reset        break-glass: set a password and clear a lockout
 glasswell-features           build the feature matrix
 glasswell-model-dataset      build the model-ready dataset
 glasswell-typecurve-control  refresh the pinned type-curve control

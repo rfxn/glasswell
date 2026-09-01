@@ -20,3 +20,7 @@
 - [Fix] `assets/architecture.svg` named `TX RRC — PDQ lease production` in the source
       band, which is not a registered source and has no ingest module; the box now reads
       `TX RRC — GIS wells · wellbore export`, which is what Texas actually contributes
+- [Fix] `README.md` described `glasswell-owner-bootstrap` as creating "the owner key"
+      rotated by `glasswell-owner-reset`. Neither is a key: bootstrap creates the first
+      owner *account* with a password read from stdin only, and reset is the break-glass
+      path that sets a password and clears a lockout
