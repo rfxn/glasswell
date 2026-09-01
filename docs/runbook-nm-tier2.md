@@ -492,9 +492,11 @@ sudo -u postgres psql -d glasswell -tAc \
 # at G2-4, and use the same key in G2-3.
 ```
 
-`invented_status = 0` is not incidental. `cr_nm_wellhistory_status_vocab_1` records that the OCD
-publishes no codebook for its fifteen status letters, so New Mexico draws entirely in the
-unmapped status class. Any non-zero here is a rule violation, not a data improvement.
+`invented_status = 0` is not incidental, and it stays 0 after the status mapping landed.
+`cr_nm_wellhistory_status_vocab_2` resolves the OCD letter to a canonical class at read time,
+in `marts.nm_wells_tile` and on the serving path; it writes nothing back, because
+`canonical.wells` is append-only and a backfill would have to invent a valid time the OCD never
+filed. Any non-zero here is a rule violation, not a data improvement.
 
 `on_a_zero = 0` is the direct form of the reason the coordinate policy is a pair rule: four
 records carry a good New Mexico latitude and a longitude of exactly zero, and a latitude-only

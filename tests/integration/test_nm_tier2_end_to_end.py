@@ -121,14 +121,28 @@ def test_the_mart_publishes_one_tile_row_per_promoted_geometry(tier2, db) -> Non
 
 
 def test_no_new_mexico_well_carries_an_invented_status_class(tier2, db) -> None:
-    """The unmapped status class, end to end: the letter reaches the tile, the class stays null."""
+    """The status class, end to end: the letter reaches the tile, the class beside it is the
+    one the registry maps that letter to, and nothing was written back to the spine."""
     reported, canonical = rows(
         db,
         "select count(status_reported), count(status_canonical) from marts.nm_wells_tile",
     )[0]
 
     assert reported > 0
-    assert canonical == 0
+    assert canonical > 0
+    # Every class on the tile is a registry row, not a value a parser decided (R8).
+    assert rows(
+        db,
+        "select t.status_reported, t.status_canonical from marts.nm_wells_tile t"
+        " left join lineage.nm_wellhistory_status_map m on m.status = t.status_reported"
+        " where t.status_canonical is distinct from m.status_canonical",
+    ) == []
+    # And the spine is untouched: the class is a join, never a backfill.
+    assert scalar(
+        db,
+        "select count(*) from canonical.wells"
+        " where state_code = '30' and status_canonical is not null",
+    ) == 0
 
 
 def test_a_permian_tile_carries_new_mexico_points_on_the_wire(tier2, db) -> None:

@@ -19,9 +19,10 @@ const PRIORITY: Readonly<Record<string, number>> = {
   "wells-struck": 40,
   "tx-wells": 40,
   "tx-wells-struck": 40,
-  // New Mexico at the same rank and for the same reason. It has no struck sibling: the strike
-  // marks a status class and every NM status_canonical is null, so the class cannot match.
+  // New Mexico at the same rank and for the same reason, struck sibling included: its class
+  // is resolved from the registry at read time, so the strike now has a class to match.
   "nm-wells": 40,
+  "nm-wells-struck": 40,
   // Montana at the same rank, and it does have a struck sibling: it has a status codebook.
   "mt-wells": 40,
   "mt-wells-struck": 40,

@@ -130,8 +130,8 @@ def test_the_status_vocabulary_rule_is_new_mexicos(with_new_mexico: TestClient) 
     )["data"]
     basins = {row["state_code"]: row for row in summary["basins"]}
 
-    assert basins["30"]["status_vocabulary_rule"] == "cr_nm_wellhistory_status_vocab_1"
-    assert "cr_nm_wellhistory_status_vocab_1" in summary["vocabulary_rules"]
+    assert basins["30"]["status_vocabulary_rule"] == "cr_nm_wellhistory_status_vocab_2"
+    assert "cr_nm_wellhistory_status_vocab_2" in summary["vocabulary_rules"]
 
 
 def test_no_status_vocabulary_unavailable_warning_is_emitted_for_new_mexico(
@@ -346,3 +346,50 @@ def test_explain_resolves_a_new_mexico_figure_to_a_real_derivation(
     envelope = body(with_new_mexico, f"/v1/wells/{NM_API10}/production/pools", explain="true")
 
     assert envelope["_explain"]
+
+
+def test_the_well_card_serves_the_class_the_registry_resolves_and_not_a_null(
+    with_new_mexico: TestClient,
+) -> None:
+    """The whole reason the resolver is below the API rather than in it: `marts.tile_nm_wells`
+    and `/v1/wells/{api10}` read one view, so the map and the card cannot answer differently
+    about the same well on the same screen."""
+    detail = body(with_new_mexico, f"/v1/wells/{NM_API10}")["data"]
+
+    assert detail["status_reported"] == "A"
+    assert detail["status_canonical"] == "active"
+
+
+def test_the_collection_filters_new_mexico_by_the_resolved_class(
+    with_new_mexico: TestClient,
+) -> None:
+    """A filter that read the promoted column would return nothing for a class the map paints,
+    which is the same defect as the tiles and the card disagreeing."""
+    listed = body(with_new_mexico, "/v1/wells", status="active", state="30")["data"]
+
+    assert [row["api10"] for row in listed] == [NM_API10]
+    assert body(with_new_mexico, "/v1/wells", status="plugged", state="30")["data"] == []
+
+
+def test_the_status_summary_counts_new_mexico_under_a_class_rather_than_as_unmapped(
+    with_new_mexico: TestClient,
+) -> None:
+    summary = body(
+        with_new_mexico, "/v1/wells/status-summary", bbox="-104.5,31.5,-103.0,32.8"
+    )["data"]
+    permian_nm = next(row for row in summary["basins"] if row["state_code"] == "30")
+
+    assert [row["status"] for row in permian_nm["statuses"]] == ["active"]
+    assert permian_nm["unmapped_wells"] is None
+
+
+def test_the_status_facet_buckets_new_mexico_by_the_resolved_class(
+    with_new_mexico: TestClient,
+) -> None:
+    """Wells-By reads the spine directly rather than the tile, so it needs the same join or a
+    press on `Active` narrows the canvas and finds nothing to list."""
+    buckets = body(
+        with_new_mexico, "/v1/wells/facets", by="status", state="30"
+    )["data"]["buckets"]
+
+    assert [bucket["value"] for bucket in buckets] == ["active"]

@@ -196,14 +196,14 @@ describe("a Wells-By press written onto the canvas", () => {
     }
   });
 
-  it("reaches the five layers outside the status gate too", async () => {
+  it("reaches the six layers outside the status gate too", async () => {
     // The reported defect: struck plugs, disposal rings and survey traces carry their own
     // predicate, so a press that only rewrote the status gate left them drawing every operator.
     await mount("?wb.pick=HESS%20CORP");
     const { FACET_FILTERED_LAYERS } = await import("./style.ts");
 
     const ungated = FACET_FILTERED_LAYERS.filter((entry) => !entry.gated);
-    expect(ungated).toHaveLength(5);
+    expect(ungated).toHaveLength(6);
     for (const layer of ungated) {
       expect(carries(built(layer.id), "operator_name", "HESS CORP"), layer.id).toBe(true);
     }

@@ -5,9 +5,9 @@ content-addressed derivation per refresh. There is no `nm_laterals` projection b
 no New Mexico lateral: `cr_nm_wellhistory_geometry_scope_1` records that neither in-scope source
 ships one, and a layer the map could draw would imply a producing footprint nobody filed.
 
-`status_canonical` is null for every New Mexico well and is carried anyway, beside the reported
-letter. `cr_nm_wellhistory_status_vocab_1` is why: the OCD publishes no codebook for its status
-letters, so the map shows the well unstyled rather than inventing a class for it.
+`status_canonical` is null on every New Mexico row of `canonical.wells` and is resolved here
+instead, from the registry, on the reported letter (`cr_nm_wellhistory_status_vocab_2`). The
+serving path reads the same view, so the tile and the well card cannot disagree.
 """
 
 from __future__ import annotations
@@ -27,18 +27,19 @@ from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.serialization import hash_payload
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts.tiles import NM_LAYERS, install_tile_functions
+from glasswell.status_resolution import resolved_status, resolver_join
 
 STATE_CODE = "30"
 DATUM_RULE = "cr_nm_wellhistory_datum_1"
 PROVENANCE_RULE = "cr_nm_wellhistory_geometry_provenance_1"
 SCOPE_RULE = "cr_nm_wellhistory_geometry_scope_1"
-STATUS_RULE = "cr_nm_wellhistory_status_vocab_1"
+STATUS_RULE = "cr_nm_wellhistory_status_vocab_2"
 TILE_TABLE = "nm_wells_tile"
 
 _WELLS_AS_OF = """
 with wells_as_of as (
-    select distinct on (api10) api10, operator_name_reported, status_canonical, status_reported,
-           well_type_reported, county_code_at_permit, spud_date
+    select distinct on (api10) api10, state_code, operator_name_reported, status_canonical,
+           status_reported, well_type_reported, county_code_at_permit, spud_date
       from canonical.wells
      where state_code = %(state_code)s
        and (%(as_of)s::date is null or effective_from <= %(as_of)s::date)
@@ -50,10 +51,10 @@ with wells_as_of as (
 # while an ND or TX geometry is not in this mart at all.
 _WELLS_SELECT = (
     _WELLS_AS_OF
-    + """
+    + f"""
 select s.api10,
        w.operator_name_reported as operator_name,
-       w.status_canonical,
+       {resolved_status("w")} as status_canonical,
        w.status_reported,
        w.well_type_reported,
        w.county_code_at_permit as county_code,
@@ -61,6 +62,7 @@ select s.api10,
        s.geom
   from canonical.well_spatial s
   left join wells_as_of w on w.api10 = s.api10
+ {resolver_join("w")}
  where s.geom_type = 'surface' and left(s.api10, 2) = %(state_code)s
 """
 )
