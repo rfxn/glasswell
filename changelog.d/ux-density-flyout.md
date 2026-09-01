@@ -42,3 +42,10 @@
            desktop width, so the stream legend stops wrapping and the plot gets the room a
            wide display already had; 38vw still holds it under a third of the canvas, and the
            width is one token the first-run hint steps aside by
+- [Fix] A warning code the server repeats with different wording keeps every wording:
+      `series_spans_derivations` counts derivations per column, so one well can carry a
+      different figure against oil than against gas, and rendering only the first dropped a
+      served number while still listing every pointer under it
+- [Fix] Opening a well guards against the card chunk landing after the reader has closed it
+      or picked another, and reports a chunk that will not load instead of leaving an
+      unhandled rejection and a rail that never fills

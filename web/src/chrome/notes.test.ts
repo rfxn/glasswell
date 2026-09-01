@@ -87,6 +87,29 @@ describe("warning notes", () => {
     expect(note?.querySelector(".gw-note-line")?.textContent).toBe("");
   });
 
+  it("keeps every distinct wording a repeated code arrived with, against its own pointers", () => {
+    // series_spans_derivations counts derivations per column, so a repeated code is not a
+    // repeated sentence: collapsing to the first drops a served figure while still listing
+    // every pointer, which reads as one claim covering all three columns.
+    const [note] = warningNotes([
+      warning("series_spans_derivations", "7 derivations contributed.", "/series/oil_bbl"),
+      warning("series_spans_derivations", "7 derivations contributed.", "/series/gas_mcf"),
+      warning("series_spans_derivations", "5 derivations contributed.", "/series/water_bbl"),
+    ]);
+
+    expect(note?.querySelector(".gw-note-summary")?.textContent).toBe(
+      "Column spans derivations ×3",
+    );
+    expect([...note!.querySelectorAll(".gw-note-line")].map((n) => n.textContent)).toEqual([
+      "7 derivations contributed.",
+      "5 derivations contributed.",
+    ]);
+    expect([...note!.querySelectorAll(".gw-note-source")].map((n) => n.textContent)).toEqual([
+      "series_spans_derivations · /series/oil_bbl, /series/gas_mcf",
+      "series_spans_derivations · /series/water_bbl",
+    ]);
+  });
+
   it("returns nothing at all for an empty list, so an empty slot stays empty", () => {
     expect(warningNotes([])).toEqual([]);
   });

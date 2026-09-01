@@ -68,9 +68,15 @@ export interface NoteWarning {
 }
 
 /**
- * One `<details>` per code, with the count in the summary and the server's own detail inside.
+ * One `<details>` per code, with the count in the summary and the server's own wording inside.
  * The card used to print `code: detail (pointers)` verbatim, which put a 199-character
  * internal line above the polished panel saying the same thing.
+ *
+ * Grouped by code and then by detail, because a repeated code does not imply a repeated
+ * sentence: `series_spans_derivations` counts derivations *per column*
+ * (`api/routers/production.py`), so one well can carry "7 derivations" against oil and a
+ * different number against gas. Collapsing to the first would drop a served figure while
+ * still listing every pointer, which reads as one claim covering all of them.
  */
 export function warningNotes(warnings: readonly NoteWarning[]): HTMLElement[] {
   const grouped = new Map<string, NoteWarning[]>();
@@ -78,24 +84,36 @@ export function warningNotes(warnings: readonly NoteWarning[]): HTMLElement[] {
     grouped.set(warning.code, [...(grouped.get(warning.code) ?? []), warning]);
   }
   return [...grouped.entries()].map(([code, group]) => {
-    const pointers = group
-      .map((warning) => warning.pointer)
-      .filter((pointer): pointer is string => Boolean(pointer));
     const summary = warningTitle(code) + (group.length > 1 ? ` ×${group.length}` : "");
     const body = document.createElement("div");
-    const detail = document.createElement("p");
-    detail.className = "gw-note-line";
-    detail.textContent = group[0]?.detail ?? "";
-    body.appendChild(detail);
-    const source = document.createElement("p");
-    source.className = "gw-note-source";
-    source.setAttribute("data-no-glossary", "");
-    source.textContent = pointers.length ? `${code}${NOTE_SEPARATOR}${pointers.join(", ")}` : code;
-    body.appendChild(source);
+    for (const [text, pointers] of byDetail(group)) {
+      const detail = document.createElement("p");
+      detail.className = "gw-note-line";
+      detail.textContent = text;
+      const source = document.createElement("p");
+      source.className = "gw-note-source";
+      source.setAttribute("data-no-glossary", "");
+      source.textContent = pointers.length
+        ? `${code}${NOTE_SEPARATOR}${pointers.join(", ")}`
+        : code;
+      body.append(detail, source);
+    }
     const element = disclosure(summary, body, "warning");
     element.dataset["code"] = code;
     return element;
   });
+}
+
+/** The distinct wordings a code arrived with, each against the pointers that carried it. */
+function byDetail(group: readonly NoteWarning[]): Map<string, string[]> {
+  const details = new Map<string, string[]>();
+  for (const warning of group) {
+    const text = warning.detail ?? "";
+    const pointers = details.get(text) ?? [];
+    if (warning.pointer) pointers.push(warning.pointer);
+    details.set(text, pointers);
+  }
+  return details;
 }
 
 /** An empty slot states what is absent in the fewest words that stay true. */

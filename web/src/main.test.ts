@@ -14,7 +14,12 @@ const mountExplorer = vi.fn();
 const unmountExplorer = vi.fn();
 const mountStatusPage = vi.fn();
 const unmountStatusPage = vi.fn();
+// Typed to the real signature so `mock.calls[0][1]` is the api10 rather than never.
+const renderWellCard = vi.fn(
+  async (_container: HTMLElement, _api10: string, _callbacks: unknown): Promise<void> => {},
+);
 
+vi.mock("./card/card.ts", () => ({ renderWellCard }));
 vi.mock("./map/map.ts", () => ({ createMap }));
 vi.mock("./explore/shell.ts", () => ({ mountExplorer, unmountExplorer }));
 vi.mock("./status-page/surface.ts", () => ({ mountStatusPage, unmountStatusPage }));
@@ -113,6 +118,7 @@ function navigate(url: string): void {
 beforeEach(() => {
   createMap.mockClear();
   select.mockClear();
+  renderWellCard.mockClear();
   mountExplorer.mockReset();
   unmountExplorer.mockClear();
   mountExplorer.mockResolvedValue(undefined);
@@ -174,6 +180,31 @@ describe("one dispatch on view, three surfaces (SB-08 §2.1)", () => {
     expect(createMap).not.toHaveBeenCalled();
     expect(host("gw-map").hidden).toBe(true);
     expect(host("gw-explore").hidden).toBe(true);
+  });
+
+  it("renders the well the reader still has selected when the card chunk lands", async () => {
+    const bus = await bootAt("/");
+    await vi.waitFor(() => expect(createMap).toHaveBeenCalledOnce());
+
+    bus.selectWell("3305310451", "map");
+
+    await vi.waitFor(() => expect(renderWellCard).toHaveBeenCalledOnce());
+    expect(renderWellCard.mock.calls[0]?.[1]).toBe("3305310451");
+  });
+
+  it("does not render a well the reader closed while the card chunk was still loading", async () => {
+    // The card came off the entry path, so opening one is a fetch. Both calls below run
+    // before that fetch resolves — without the guard the chunk's callback would paint a card
+    // for a well nothing is selecting any more.
+    const bus = await bootAt("/");
+    await vi.waitFor(() => expect(createMap).toHaveBeenCalledOnce());
+
+    bus.selectWell("3305310451", "map");
+    bus.selectWell(null, "map");
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(renderWellCard).not.toHaveBeenCalled();
+    expect(host("gw-card").hidden).toBe(true);
   });
 
   it("takes a Status search selection to Map before restoring its well", async () => {
