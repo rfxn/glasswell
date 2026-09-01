@@ -393,3 +393,43 @@ def test_the_status_facet_buckets_new_mexico_by_the_resolved_class(
     )["data"]["buckets"]
 
     assert [bucket["value"] for bucket in buckets] == ["active"]
+
+
+def test_the_served_status_names_the_rule_that_decided_it_and_not_the_one_that_refused(
+    with_new_mexico: TestClient,
+) -> None:
+    """R8, the handle rather than the value. An NM well's row derivation is the promotion's,
+    which cites `_1` — the rule whose text says these letters map to nothing. The class was
+    decided by `_2`, so `_2` is what the row names and what the reader can open."""
+    envelope = body(with_new_mexico, f"/v1/wells/{NM_API10}")
+    detail = envelope["data"]
+
+    assert detail["status_canonical"] == "active"
+    assert detail["status_vocabulary_rule"] == "cr_nm_wellhistory_status_vocab_2"
+    assert envelope["links"]["status_rule"] == (
+        "/v1/conformance/cr_nm_wellhistory_status_vocab_2"
+    )
+    assert (
+        with_new_mexico.get("/v1/conformance/cr_nm_wellhistory_status_vocab_2").status_code
+        == 200
+    )
+
+
+def test_the_collection_row_names_the_deciding_rule_too(with_new_mexico: TestClient) -> None:
+    """The list row and the record answer with the same handle: a reader who never opens the
+    card must not get a class with no rule behind it."""
+    listed = body(with_new_mexico, "/v1/wells", status="active", state="30")["data"]
+
+    assert [row["status_vocabulary_rule"] for row in listed] == [
+        "cr_nm_wellhistory_status_vocab_2"
+    ]
+
+
+def test_the_other_states_still_name_their_own_status_rule(client: TestClient) -> None:
+    """The regression half: a third key in a lookup is where the first two get lost."""
+    nd = body(client, f"/v1/wells/{EXAMPLE_API10}")
+    tx = body(client, f"/v1/wells/{TX_API10}")
+
+    assert nd["data"]["status_vocabulary_rule"] == "cr_nd_status_vocab_1"
+    assert nd["links"]["status_rule"] == "/v1/conformance/cr_nd_status_vocab_1"
+    assert tx["data"]["status_vocabulary_rule"] == "cr_tx_status_vocab_1"

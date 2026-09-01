@@ -112,6 +112,7 @@ LENGTH_NOT_SERVED = "not_served"
 
 WELL_LABELS = {
     "/api10": "gt_api_10_api_12_api_14",
+    "/status_vocabulary_rule": "gt_conformance_rule",
     "/land_unit_label": "gt_land_unit",
     "/confidential_flag": "gt_confidential_well",
     "/lateral_length_ft": "gt_wellbore",
@@ -326,11 +327,22 @@ class WellSummary(BaseModel):
     status_canonical: str | None = Field(
         description=(
             "Status mapped through the source's own status vocabulary rule, one per"
-            " jurisdiction and served with the figure. Null where the source reported no"
-            " status at all, or where its vocabulary has no published codebook to map — two"
-            " different absences, and the rule says which."
+            " jurisdiction and named beside it in status_vocabulary_rule. Null where the"
+            " source reported no status at all, or where its vocabulary maps that code to"
+            " nothing — two different absences, and the rule says which."
         ),
         json_schema_extra={GLOSSARY_KEY: "gt_well_status"},
+    )
+    status_vocabulary_rule: str | None = Field(
+        description=(
+            "The conformance rule that decided status_canonical for this well's jurisdiction,"
+            " resolvable at /v1/conformance/{rule_id}. Named on the row because the class is"
+            " not always written by the promotion: New Mexico's is resolved at read time from"
+            " the registry, so the row's own derivation cites the superseded rule and would"
+            " send a reader to a decision that did not produce this value. Null where no rule"
+            " is registered for the state."
+        ),
+        json_schema_extra={GLOSSARY_KEY: "gt_conformance_rule"},
     )
     county_code_at_permit: str | None = Field(
         description="County code recorded at permit.",
@@ -481,6 +493,10 @@ def _summary(row: dict[str, Any]) -> dict[str, Any]:
         "well_name": row["well_name"],
         "operator_name_reported": row["operator_name_reported"],
         "status_canonical": row["status_canonical"],
+        # The rule that decided the class, not the one the row's derivation happens to cite:
+        # for New Mexico those differ, because the class is a read-time join and the promotion
+        # still cites the rule that refuses the mapping.
+        "status_vocabulary_rule": STATUS_VOCABULARY_RULES.get(row["state_code"] or ""),
         "county_code_at_permit": row["county_code_at_permit"],
         "land_unit_label": row["land_unit_label"],
         "spud_date": iso(row["spud_date"]),
@@ -720,8 +736,11 @@ def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
                 "glossary": "gt_well_status",
                 "so": (
                     "Filters on the canonical value rather than the code the state published,"
-                    " so `active` here means every source's version of active. A reported code"
-                    " with no mapping is quarantined, so it matches no status at all."
+                    " so `active` here means every source's version of active. What becomes of"
+                    " a code the vocabulary does not map is the jurisdiction's own rule: North"
+                    " Dakota, Texas and Montana quarantine it out of the spine, New Mexico"
+                    " passes it through unclassed. Either way it matches no status here — but"
+                    " a passed-through well is still served and still drawn."
                 ),
             },
             operator={
@@ -1674,6 +1693,7 @@ def get_well(
         {"basin": row["basin"] or "williston", "as_of": as_of},
     )
     storage_epsg = crs[0]["storage_epsg"] if crs else STORAGE_EPSG
+    status_vocabulary_rule = STATUS_VOCABULARY_RULES.get(row["state_code"] or "")
     length_scope_rule = LENGTH_SCOPE_RULES.get(row["state_code"] or "")
     # The basin's own rule, so a TX length's handle resolves to a rule about TX geometry. Not
     # resolved at all where a rule withholds the length: the resolver's no-basin default is
@@ -1851,6 +1871,11 @@ def get_well(
             **(
                 {"length_rule": f"/v1/conformance/{length_scope_rule}"}
                 if length_scope_rule
+                else {}
+            ),
+            **(
+                {"status_rule": f"/v1/conformance/{status_vocabulary_rule}"}
+                if status_vocabulary_rule
                 else {}
             ),
         },

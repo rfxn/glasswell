@@ -5,6 +5,11 @@ table is append-only and a re-promotion would have to invent a valid time the OC
 (cr_nm_wellhistory_status_vocab_2). The class is therefore a join, and it lives here rather
 than at any one call site so that the tile mart, the well card and the status summary cannot
 answer differently on the same screen.
+
+The invariant is one shared resolver, never a second mapping in the API: the tile mart and
+every serving path read `canonical.status_resolution`, and no surface translates a status code
+on its own. A mart-only resolver would leave the API serving null; an API-only one would leave
+the tiles serving null. Neither is what shipped.
 """
 
 from __future__ import annotations

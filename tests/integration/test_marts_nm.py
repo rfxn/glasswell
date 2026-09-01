@@ -15,8 +15,11 @@ from pathlib import Path
 import psycopg
 import pytest
 import yaml
+from psycopg.rows import dict_row
 
+from glasswell import status_resolution
 from glasswell.api.routers.tiles import PUBLISHED_LAYERS
+from glasswell.api.routers.wells import RANKED_WELLS
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts import nd_wells as nd_marts
@@ -172,8 +175,10 @@ def test_the_mart_reads_canonical_only(refreshed):
     )
 
     # Folded over the whole module rather than grepped over the three constants: a staging name
-    # spelled in pieces elsewhere in the file greps clean and still reads staging.
+    # spelled in pieces elsewhere in the file greps clean and still reads staging. The resolver
+    # module is folded with it because half of this mart's SQL is composed there.
     assert schema_reads_in(Path(nm_marts.__file__), "staging") == []
+    assert schema_reads_in(Path(status_resolution.__file__), "staging") == []
     assert "canonical.well_spatial" in source
     assert "canonical.wells" in source
 
@@ -305,9 +310,54 @@ def test_a_letter_the_registry_does_not_map_passes_through_unclassed(db, lineage
 
 
 def test_no_other_states_letters_are_resolved_through_the_new_mexico_map(db, lineage_env):
-    """The resolver is keyed by state as well as by letter. A North Dakota `A` must not pick
-    up New Mexico's decode — the two vocabularies share letters and not meanings."""
+    """The state key on the join, asserted on served values rather than on the view's own
+    literal — which would hold against an empty view and prove nothing.
+
+    Texas is the case that matters and it is asserted on the spine, not on the TX tile mart:
+    `marts/tx_wells.py` joins no resolver at all, so a tile assertion there is true whatever
+    the join says. `RANKED_WELLS` joins it for every state, and 68,186 Texas wells carry a
+    null promoted class beside the letter `A`, so a resolver keyed on the letter alone would
+    mint `active` for all of them out of New Mexico's codebook.
+    """
     seed_all(db)
+    manifest = seed_manifest(db, sha256="e" * 64, source_id="nm_ocd_wellhistory")
+    # North Dakota, with a promoted class New Mexico's map would contradict: NM reads `N` as
+    # `permitted`, and the promoted value must win rather than be re-decided here.
+    seed_well(
+        db, api10="3305399101", state_code="33", manifest_id=manifest,
+        status_canonical="inactive", status_reported="N",
+    )
+    seed_well_spatial(
+        db, api10="3305399101", geom_type="surface", wkt="POINT(-102.7850 47.9400)",
+        manifest_id=manifest,
+    )
+    # Texas, with no promoted class at all, beside the letter New Mexico reads as `active`.
+    seed_well(
+        db, api10="4232799101", state_code="42", manifest_id=manifest,
+        status_canonical=None, status_reported="A",
+    )
+    seed_well_spatial(
+        db, api10="4232799101", geom_type="surface", wkt="POINT(-102.1000 31.9000)",
+        manifest_id=manifest,
+    )
+    db.commit()
+    with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env):
+        nd_marts.refresh_all(db)
+    db.commit()
+
+    with db.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(
+            RANKED_WELLS + " and api10 = any(%(api10s)s) order by api10",
+            {"as_of": None, "api10s": ["3305399101", "4232799101"]},
+        )
+        served = {row["api10"]: row["status_canonical"] for row in cursor.fetchall()}
+
+    assert served["4232799101"] is None, "a Texas letter was decoded by New Mexico's map"
+    assert served["3305399101"] == "inactive", "a promoted class was overwritten by the join"
+    assert rows(
+        db, "select status_canonical from marts.nd_wells_tile where api10 = %s",
+        ("3305399101",),
+    ) == [("inactive",)]
     assert scalar(
         db,
         "select count(*) from canonical.status_resolution where for_state_code <> '30'",

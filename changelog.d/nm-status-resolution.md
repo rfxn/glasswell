@@ -22,3 +22,13 @@
            filed letter. `unmapped_action` is `passthrough` and not the `quarantine` North
            Dakota and Montana use, because the header table is the identity spine production
            joins to and quarantining would drop 2,211 records from it
+- [New] `/v1/wells` and `/v1/wells/{api10}` serve `status_vocabulary_rule` beside the class,
+      and the record links it at `/v1/conformance/{rule_id}`. New Mexico is the first state
+      whose served class is decided by a rule its own row derivation does not cite — the
+      promotion still cites the superseded `_1` — so without this a reader resolving the
+      handle behind an NM `active` reached the rule that refuses the mapping
+- [Fix] The `status` filter description and the `gt_well_status` glossary term said an
+      unmapped code is always quarantined, which stopped being true when
+      `cr_nm_wellhistory_status_vocab_2` registered the repository's first `passthrough`.
+      Both now name the two actions and which jurisdiction chooses which, and the glossary
+      enumerates `service` and `documented_unmapped`

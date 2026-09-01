@@ -564,11 +564,21 @@ def test_the_marts_read_canonical_and_never_staging():
 
     Read from the parsed module, so a name spelled in pieces is folded before it is judged --
     `"stag" + "ing" + ".nd_mpr_oil"` greps clean and still reads staging.
+
+    `status_resolution.py` is walked with the package though it sits outside it: the New
+    Mexico mart no longer holds all of its own SQL, and the shared resolver's join and
+    coalesce are composed there. It is not moved under `marts/` because the serving routers
+    read it too, and importing `glasswell.marts.*` from `api/routers/` would invert the very
+    layer direction this test protects.
     """
-    modules = sorted(MARTS_PACKAGE.glob("*.py"))
+    modules = [
+        *sorted(MARTS_PACKAGE.glob("*.py")),
+        MARTS_PACKAGE.parent / "status_resolution.py",
+    ]
 
     assert modules, "the marts package walked no modules, so this test cannot fail"
     for source in modules:
+        assert source.is_file(), f"{source} is not on disk, so this test cannot fail"
         assert schema_reads_in(source, "staging") == [], f"{source.name} reads staging"
 
 
