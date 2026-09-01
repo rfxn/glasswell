@@ -33,13 +33,14 @@ derivation handle back to a checksummed regulator file, or it does not ship.
 > Copyright (C) 2026 Ryan MacDonald &lt;ryan@rfxn.com&gt; &#183; All rights reserved
 
 > [!IMPORTANT]
-> **Early build, public source, proprietary, and not a product.** The repository holds the blueprint,
-> the collateral built from it, and a deployed North Dakota production slice with a
-> North Dakota/Texas map. glasswell is a personal single-operator build on public regulator
-> data. It is not commercial, not multi-tenant, not investment advice, and not a
-> source of verified reserves or ownership. Repository visibility grants no license; a public
-> hosted demo, regulator-data redistribution, and the capability matrix remain separate review
-> decisions under [`blueprint.md`](blueprint.md) §8.2.
+> **Early build, public source, proprietary, and not a product.** The repository holds the
+> blueprint, the collateral built from it, and a deployed four-state slice — North Dakota
+> end to end, Texas and Montana on the map, New Mexico's header spine behind a closed gate.
+> glasswell is a personal single-operator build on public regulator data. It is not
+> commercial, not multi-tenant, not investment advice, and not a source of verified reserves
+> or ownership. The deployed instance is reachable but credential-gated; repository
+> visibility grants no license. Regulator-data redistribution and the capability matrix
+> remain separate review decisions under [`blueprint.md`](blueprint.md) §8.2.
 
 ---
 
@@ -65,23 +66,32 @@ derivation handle back to a checksummed regulator file, or it does not ship.
 
 ## What runs today
 
-The first slice is North Dakota, end to end on one VM: NDIC monthly production and
-DMR GIS geometry in the raw zone under content-addressed manifests, conformed into a
-canonical model with a rule registry and a quarantine ledger, served through a
-FastAPI subset, drawn as vector tiles on a MapLibre map, and traceable — a
-production number on the chart resolves through one `/v1/explain` call to a
-SHA-256 and the `dmr.nd.gov` URL it came from.
+Four states on one VM, at four honest depths.
 
-Texas is on the map beside it, as far as it honestly goes: RRC county GIS well
-layers and the wellbore query export give the Permian districts their wells, their
-bore geometry and their operators, transformed out of NAD27 through a manifested
-NADCON grid. Texas production is **not** there, because the Railroad Commission
-reports it by lease: a Texas well card says production is pending allocation and
-names the rule, rather than drawing an empty chart.
+**North Dakota — end to end.** NDIC monthly production and DMR GIS geometry in the raw
+zone under content-addressed manifests, conformed into a canonical model with a rule
+registry and a quarantine ledger, served through FastAPI, drawn as vector tiles on a
+MapLibre map, and traceable — a production number on the chart resolves through one
+`/v1/explain` call to a SHA-256 and the `dmr.nd.gov` URL it came from.
 
-Forecasts, economics, scenarios, inventory, Texas production/allocation, New Mexico
-promotion, and the agent gateway are **not** in it. [SMOKE.md](SMOKE.md) is the
-fifteen-minute deployment walkthrough; [STATUS.md](STATUS.md) is the current ledger.
+**Montana — production promoted, on the map.** It arrived as conformance rows before it
+arrived as data, because MBOGC publishes two grains that each state their own liquids
+basis and null semantics; both reach canonical, and the lease grain carries no API-10, so
+every state predicate over it is written on `source_id`. It serves no basin tag
+deliberately — at 4.6% Bakken, tagging the state would corrupt the type-curve peer ladder.
+
+**Texas — geometry only.** RRC county GIS layers and the wellbore export give the Permian
+districts their wells, bore geometry and operators, transformed out of NAD27 through a
+manifested NADCON grid. Production is **not** there: the Railroad Commission reports by
+lease, so a Texas well card says production is pending allocation and names the rule
+rather than drawing an empty chart.
+
+**New Mexico — spine built, gate closed.** The OCD header ingest, coordinate policy and
+tile mart exist; the promotion into `canonical.wells` is owner-gated and has not run.
+
+Forecasts, economics, scenarios, inventory, Texas allocation and the agent gateway are
+**not** in it. [SMOKE.md](SMOKE.md) is the deployment walkthrough; [STATUS.md](STATUS.md)
+is the current ledger and owns every count.
 
 ## Why it exists
 
@@ -182,32 +192,20 @@ quarantined share is published in the scorecard.
 
 <p align="center"><img src="assets/forecast-to-dollars.svg" alt="Features feed a quantile model and a type-curve control, both scored on one temporal holdout, producing three-stream forecasts that drive discounted cash flow economics" width="1000"></p>
 
-The first modeling artifact boundary is implemented: immutable `fv1.0` records the original
-all-observed formation semantics, while semantic-major `fv2.0` selects the earliest MPR pool
-month, publishes simultaneous conflicts as null, records the measured 82-day median source
-lag, and writes content-addressed Parquet plus immutable missing/conflict coverage. Both
-well-time availability and pinned knowledge vintage remain enforced. P3 readiness has a
-source path: FracFocus `JobEndDate`, defined
-by its bundled dictionary as hydraulic-fracturing job completion, is captured as an append-only
-anchor observation; the earliest valid event per API-10 is selected without a spud-date or
-first-production fallback. All 40 current MPR pool labels have reviewed, vintaged formation
-aliases. The resident matrix and model-ready `mdv1.4` dataset replay byte-identically:
-105,378 three-stream cum12/cum24 labels, 1,172,586 producing-month curve rows, explicit
-censoring/rejection coverage, and eight content-addressed rolling splits. Pinned control-major
-`tcv1.0` now replays 2,300,400 rows over those exact splits, all three streams, and both
-normalization arms. Its rung-one share passes at 81.7089%, but its explicit unavailability
-gate in the immutable historical artifact is red at 12.9484% against a 5% ceiling. Accepted
-publication `p3pub_8b434525d8c621762e31b06ca660bfcd` advances the evaluation vintage to
-2026-08-28 while preserving all eight split hashes and the `fv2.0`, `mdv1.4`, and `tcv1.0`
-contracts. Two complete builds reproduce all eight artifacts and split files byte-identically;
-an independent read rehashes every file against the receipt. The source-faithful repair resolves all 318 TEST formation gaps
-without inferring any of the 38 source-absent laterals and measures 1.0798% unavailability
-(230 / 21,300), below the 5% ceiling. The ladder is not widened and those subjects are not
-dropped. Forecasts are still not live. The strict history and
-reconstructed-source clocks are distinguished in
-[`docs/p3-matrix-integrity.md`](docs/p3-matrix-integrity.md), and the dataset evidence is in
-[`docs/p3-model-ready-dataset.md`](docs/p3-model-ready-dataset.md). The control contract and
-gate evidence are in [`docs/p3-type-curve-control.md`](docs/p3-type-curve-control.md).
+**Forecasts are not live.** What exists is the artifact boundary underneath them: a feature
+set, a model-ready dataset and a pinned type-curve control, each content-addressed, each
+replaying byte-identically across independent builds, over eight fixed rolling splits that
+the model and the control must share. FracFocus `JobEndDate` anchors completion timing with
+no spud or first-production fallback. One gate is red — the control's unavailability share
+in the immutable historical artifact — and it is published red rather than widened.
+
+Current artifact versions, coverage percentages and the accepted publication id live in
+[STATUS.md](STATUS.md); the contracts and evidence are in
+[`docs/p3-matrix-integrity.md`](docs/p3-matrix-integrity.md) (the strict-history versus
+reconstructed-source clocks),
+[`docs/p3-model-ready-dataset.md`](docs/p3-model-ready-dataset.md) (labels, curves,
+censoring) and [`docs/p3-type-curve-control.md`](docs/p3-type-curve-control.md) (the control
+contract and its gate).
 
 The planned modeling path uses a gradient-boosted quantile model with conformal
 calibration to produce P10/P50/P90 on three streams — oil as the headline, gas and
@@ -234,8 +232,8 @@ and recorded in a manifest before anything reads it.
 | Basin | Sources |
 |-------|---------|
 | **North Dakota** (Bakken / Three Forks) | DMR well-level monthly production and public GIS wells, laterals, surveys and spacing units; FracFocus hydraulic-fracturing completion anchors |
-| **Texas** (Midland, TX Delaware) | RRC county GIS wells and well arcs, wellbore query export *(landed)*; PDQ lease production, W-2 / G-1 completions, W-1 permits, wellbore master |
-| **New Mexico** (Delaware) | OCD well-level production — a third spine, and the allocation validator |
+| **Texas** (Midland, TX Delaware) | RRC county GIS wells and well arcs, wellbore query export *(landed)*; PDQ lease production, W-2 / G-1 completions, W-1 permits, wellbore master *(designed, not ingested)* |
+| **New Mexico** (Delaware) | OCD well headers and surface geometry *(landed, gate closed)*; OCD well-level production — a third spine, and the allocation validator *(staged, not promoted)* |
 | **Montana** (Elm Coulee and the rest of the state) | MBOGC monthly production at both the well and lease grains, GIS surface points and well paths. No basin tag: Bakken is 4.6% of the state (`cr_mt_basin_scope_1`) |
 | **Cross-cutting** | FracFocus disclosure headers, PLSS and spacing units, operator registries |
 
@@ -246,61 +244,50 @@ bounds get measured against two independent validators and published.
 
 ## API surface
 
-API-first, with 34 operations in the frozen snapshot, 33 under `/v1`. The current surface
-serves health and operational status, wells, North Dakota production, source-observed
-completion context, current physical neighbours, canonical formations with alias counts,
-lineage, manifests, conformance, quarantine, glossary, key administration, and tiles:
+API-first: 49 operations across 44 paths in the frozen snapshot, 48 of them under `/v1`.
+The read surface covers health and operational status, wells and their facets, production,
+completion context, physical neighbours, formations, lineage, manifests, conformance,
+quarantine, glossary and tiles:
 
 ```
-GET  /v1/status                          GET  /v1/health
-GET  /v1/wells                           GET  /v1/wells/status-summary
+GET  /v1                                 GET  /v1/health
+GET  /v1/status                          GET  /v1/wells
+GET  /v1/wells/facets                    GET  /v1/wells/status-summary
 GET  /v1/wells/{api10}                   GET  /v1/wells/{api10}/production
 GET  /v1/wells/{api10}/production/pools  GET  /v1/wells/{api10}/completions
 GET  /v1/wells/{api10}/neighbors         GET  /v1/wells/{api10}/type-curve
 GET  /v1/type-curves                     GET  /v1/formations
-GET  /v1/modeling/publications           GET  /v1/modeling/publications/{publication_id}
-GET  /v1/explain?h={handle}              GET  /v1/derivations/{derivation_id}
-GET  /v1/manifests/{manifest_id}         GET  /v1/vintages/{vintage_id}
-GET  /v1/conformance                     GET  /v1/conformance/{rule_id}
-GET  /v1/quarantine                      GET  /v1/quarantine/summary
-GET  /v1/glossary                        GET  /v1/errors/{code}
-GET  /v1/keys                            GET  /v1/tiles/{layer}/{z}/{x}/{y}.pbf
+GET  /v1/modeling/publications           GET  /v1/modeling/publications/{id}
+GET  /v1/explain?h={handle}              GET  /v1/derivations[/{id}]
+GET  /v1/manifests[/{id}]                GET  /v1/vintages[/{id}]
+GET  /v1/conformance[/{rule_id}]         GET  /v1/quarantine[/{id}]
+GET  /v1/quarantine/summary              GET  /v1/glossary[/{term}]
+GET  /v1/errors/{code}                   GET  /v1/tiles/{layer}/{z}/{x}/{y}.pbf
 ```
 
-The snapshot in `tests/contract/openapi_snapshot.json` is the complete list; the
-collection siblings, `/healthz`, the key write operations and
-`/v1/manifests/{manifest_id}/bytes` are left out above only for width.
+Session, user and key administration add the write operations
+(`/v1/session`, `/v1/users`, `/v1/keys` and their sub-paths). The snapshot in
+`tests/contract/openapi_snapshot.json` is the complete list; `/healthz`,
+`/v1/glossary/index` and `/v1/manifests/{id}/bytes` are omitted above only for width.
 
-The application has three URL-backed surfaces: Map, Explore, and Status. North Dakota well
-cards show current physical neighbours for lateral-bearing wells, with strict earlier-completion
-cutoffs, exact distance and coverage lineage, and an explicit warning that proximity does not
-make a model analog. Status joins live
-API/PostgreSQL signals to a sanitized 15-minute host snapshot, exact inventory counts with
-declared grains, scheduled-job evidence, and independently committed poll outcomes with
-source-specific cadence and artifact identity for every source. Unchanged checks can keep older
-bytes current; failed, interrupted, or unresolved source-key checks cannot be masked by another
-key's success, and stale snapshots never retain green checks.
-Exact-vintage logical backup manifests and durable weekly restore results are freshness-checked;
-remote-copy recency and full replacement-VM recovery remain outside that evidence.
+The application has three URL-backed surfaces: **Map**, **Explore** and **Status**. Well
+cards show current physical neighbours for lateral-bearing wells, with strict
+earlier-completion cutoffs, exact distance and coverage lineage, and an explicit warning
+that proximity does not make a model analog. Status joins live API and PostgreSQL signals
+to a sanitised host snapshot, inventory counts with declared grains, and independently
+committed poll outcomes per source — one source key's success can never mask another's
+failure, and a stale snapshot never keeps a green check.
 
-The deployed v0.60 release validates every selector-bearing figure on the current API
-against a fail-closed persisted
-output profile. Request-computed well-length and viewport aggregates receive their own response
-derivations rather than borrowing one contributing row; exact response evidence lives outside
-derivation identity so changed output trips the determinism gate. The viewport summary that can
-create this evidence is capped at 30 requests per principal per UTC minute with one bounded
-database counter per principal. Conformance rules, lookup rows
-and CRS routing carry an immutable publication clock independent of their valid interval.
-`/v1/conformance` exposes both clocks while retaining the known version history when no valid-time
-cut is requested. Source-data vintages from before Glasswell use the first published policy as an
-explicit baseline, never a later backdated correction. A sandboxed nightly job removes only
-successful unreferenced ephemeral lineage older than 90 days and reports through Status.
-The release runs at schema head 52 and passed 111 host checks plus 20 API smoke checks; the
-latest recurring restore evidence still covers schema 47 until the next backup and drill.
+Two invariants hold across the surface. Every selector-bearing figure is validated against
+a fail-closed persisted output profile, so changed output trips the determinism gate rather
+than shipping. And conformance rules, lookup rows and CRS routing carry an immutable
+publication clock independent of their valid interval — `/v1/conformance` exposes both, and
+a pre-glasswell source vintage uses the first published policy as its baseline rather than
+a backdated correction.
 
-Forecast, valuation, sensitivity, scenario, agent, and undrilled-location inventory operations remain
-designed scope, not live routes. The UI consumes the same public API documented by the
-checked-in OpenAPI snapshot; there is no private endpoint behind it.
+Forecast, valuation, sensitivity, scenario, agent and undrilled-location inventory
+operations remain designed scope, not live routes. The UI consumes the same public API
+documented by the checked-in OpenAPI snapshot; there is no private endpoint behind it.
 
 ## Build phases
 
@@ -376,30 +363,32 @@ glasswell-neighbors          rebuild the physical-neighbour mart
 glasswell-fracfocus          ingest FracFocus completion anchors
 glasswell-mt-bogc            ingest MBOGC production, both grains
 glasswell-mt-gis             ingest the MBOGC GIS surface points and well paths
+glasswell-nm-wells           ingest the OCD well headers and surface geometry
+glasswell-nm-tiles           build the New Mexico tile mart
+glasswell-basin-boundaries   load basin boundaries; glasswell-eia-boundaries fetches them
 ```
 
-The Montana pair are run from [docs/runbook-mt-load.md](docs/runbook-mt-load.md); the mart
-refresh behind them is on the ingest timer.
+Each multi-step load has a runbook that states its commands, the user that runs each,
+expected counts and the undo: [Montana](docs/runbook-mt-load.md),
+[basins](docs/runbook-basin-load.md), and New Mexico in
+[two](docs/runbook-nm-tier2.md) [tiers](docs/runbook-nm-promotion.md).
 
-The integration tier starts one `postgis/postgis:16-3.4` container per session and clones
-a migrated template database per test. It honours an inherited `DOCKER_HOST`, then tries the
-local socket, then `tcp://127.0.0.1:2376` with TLS. Without a reachable docker daemon the
-tier skips with a reason and the unit tier still runs.
+The integration tier starts one `postgis/postgis:16-3.4` container per session and clones a
+migrated template database per test. It honours an inherited `DOCKER_HOST`, then the local
+socket, then `tcp://127.0.0.1:2376` with TLS; without a reachable daemon it skips with a
+reason and the unit tier still runs.
 
-A remote daemon changes one thing: a container's bridge IP is routable only from the daemon's
-own host, so against a remote daemon the harness publishes the database port and addresses it
-by the daemon's hostname, while containers a test starts keep using the bridge address.
-`daemon_address` in `tests/conftest.py` is the single place that decision is made, and
-`tests/integration/test_harness_hygiene.py` asserts the branch actually taken.
+A remote daemon changes one thing: a container's bridge IP routes only from the daemon's own
+host, so the harness publishes the database port and addresses it by the daemon's hostname
+while containers a test starts keep the bridge address. `daemon_address` in
+`tests/conftest.py` is the single place that decision is made, and
+`tests/integration/test_harness_hygiene.py` asserts the branch actually taken. The DSN
+carries keepalives and `tcp_user_timeout` so a collapsed LAN connection fails a test rather
+than hanging the session.
 
-Full suites and anything docker-heavy run on `anvil`, the lab CI host; a workstation runs
-single-file iteration. Nothing of glasswell's — service, timer, or dataset — is installed on a
-workstation, and `make check-workstation` is what says so out loud.
-
-A remote daemon puts every statement on the LAN, so a full run is several times slower than a
-local one and a straggler may need re-running while the CI host is reached over a wireless
-backhaul. The DSN carries keepalives and `tcp_user_timeout`, which turns a collapsed connection
-into a failed test rather than a hung session.
+Full suites run on `anvil`, the lab CI host; a workstation runs single-file iteration.
+Nothing of glasswell's — service, timer or dataset — is installed on a workstation, and
+`make check-workstation` is what says so out loud.
 
 Migrations are append-only: add `NNN_name.sql`, never edit an applied one — the runner
 records each file's checksum and refuses a changed migration.
