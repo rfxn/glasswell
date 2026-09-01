@@ -736,13 +736,19 @@
   highlightable: false
   short_definition: >-
     The well's lifecycle state mapped to one vocabulary across states - active, plugged, dry,
-    expired, inactive, confidential, permitted, drilling or temporarily_abandoned.
+    expired, inactive, confidential, permitted, drilling, temporarily_abandoned, service, or
+    documented_unmapped for a code a regulator publishes and this vocabulary has no word for.
   expanded_definition: >-
     Each regulator publishes its own codes, and every mapping onto this vocabulary is a
     conformance rule with a rationale - cr_nd_status_vocab_1 in North Dakota,
-    cr_tx_status_vocab_1 in Texas - so a canonical status resolves to the decision that
-    produced it. Empty is not the same as unknown: it means the source reported no status at
-    all, and a code the map does not recognise is quarantined rather than guessed at.
+    cr_tx_status_vocab_1 in Texas, cr_nm_wellhistory_status_vocab_2 in New Mexico - so a
+    canonical status resolves to the decision that produced it. Empty is not the same as
+    unknown: it means the source reported no status at all. What becomes of a code the
+    vocabulary does not map is the rule's own choice: North Dakota, Texas and Montana
+    quarantine it, New Mexico passes it through unclassed rather than drop a header the
+    identity spine joins production to. documented_unmapped is a third case again - the
+    regulator documents the code and glasswell has no equivalent class, which is a fact
+    worth serving rather than a null.
   domain_tags: [identity, data-model]
   related_terms: ["Conformance rule", "Confidential well", "Quarantine"]
   source_refs: ["migration 010_nd_reference_seed.sql", "migration 027_tx_slice.sql"]
