@@ -303,6 +303,11 @@ if [[ $with_cloudflared -eq 1 ]]; then
     command chmod 0640 "$CLOUDFLARED_DIR/config.yml"
     command install -o root -g root -m 0644 "$INFRA_DIR/systemd/cloudflared.service" \
         "$UNIT_DIR/cloudflared.service"
+    command install -o root -g root -m 0644 \
+        "$INFRA_DIR/cloudflared/99-cloudflared-udp.conf" \
+        /etc/sysctl.d/99-cloudflared-udp.conf
+    sysctl --quiet --load /etc/sysctl.d/99-cloudflared-udp.conf \
+        || printf 'warning: could not apply UDP buffer sysctls; they take effect at next boot\n' >&2
 
     # Placing the connector *is* the decision to be public, so the flag that turns on the
     # public refusals is set here rather than by an operator remembering a sed line. Left

@@ -12,6 +12,12 @@ tunnel: <tunnel-uuid>
 credentials-file: /etc/cloudflared/<tunnel-uuid>.json
 metrics: 127.0.0.1:20241
 
+# TCP, not QUIC: the uplink drops large frames (measured 47% loss at 1200 B and 100% at
+# 1300-1400 B to this subnet, 0% to the gateway), which shreds QUIC's UDP datagrams — 1,919
+# "no recent network activity" errors in six hours, and 530s at the edge. Remove this line
+# once the link carries a full-size frame reliably.
+protocol: http2
+
 originRequest:
   connectTimeout: 10s
   noTLSVerify: false
