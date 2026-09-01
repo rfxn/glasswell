@@ -1,5 +1,7 @@
 import { dispatchExplain, explainHandle, setExplainHandle } from "../chrome/handle.ts";
 import { disclosure } from "../chrome/notes.ts";
+import { labelElement } from "../glossary/gw-term.ts";
+import { teach } from "../glossary/teach.ts";
 import type { DimensionCounts, VocabularyLink } from "./counts.ts";
 import { PRODUCING_CLASSES, PRODUCING_RULINGS, producingHref, producingNote } from "./producing.ts";
 import type { ProducingCounts } from "./producing.ts";
@@ -9,6 +11,8 @@ import type { StatusClass } from "./status.ts";
 import { statusSwatch } from "./swatch.ts";
 
 const NUMBER = new Intl.NumberFormat("en-US");
+/** Not auto-highlighted anywhere: "producing" is an ordinary word on a page full of wells. */
+const PRODUCING_CLASS_TERM = "gt_producing_class";
 const PENDING_MARK = "…";
 const ABSENT_MARK = "—";
 const FAULT_COPY = "Counts for this area could not be read.";
@@ -134,6 +138,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
   title.className = "gw-lg-title";
   title.textContent = "Well status";
   title.setAttribute("aria-expanded", "false");
+  title.setAttribute("data-no-glossary", "");
   head.appendChild(title);
 
   // Hidden while the key is a pill: nine rows are what is being bulk-toggled, and a click
@@ -143,6 +148,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
   actions.hidden = true;
   actions.setAttribute("role", "group");
   actions.setAttribute("aria-label", "Show or hide every status class");
+  actions.setAttribute("data-no-glossary", "");
   const all = bulkButton("all", "All", "Show every status class");
   const none = bulkButton("none", "None", "Hide every status class");
   actions.append(all, none);
@@ -159,6 +165,8 @@ export function createLegend(options: LegendOptions): LegendHandle {
   // are of — and a tree reads root-first.
   const extentRow = document.createElement("label");
   extentRow.className = "gw-lg-extent";
+  // The row is the checkbox's label; the scope line below carries the same words as prose.
+  extentRow.setAttribute("data-no-glossary", "");
 
   const extentBox = document.createElement("input");
   extentBox.type = "checkbox";
@@ -222,7 +230,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
 
   const producingTitle = document.createElement("p");
   producingTitle.className = "gw-lg-ptitle";
-  producingTitle.textContent = "Producing";
+  producingTitle.appendChild(labelElement("Producing", PRODUCING_CLASS_TERM));
   producing.appendChild(producingTitle);
 
   const producingRows = new Map<string, HTMLElement>();
@@ -307,6 +315,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
   vocabTitle.className = "gw-lg-vocab-title";
   vocabTitle.textContent = "Vocabulary";
   vocabTitle.setAttribute("aria-expanded", "false");
+  vocabTitle.setAttribute("data-no-glossary", "");
   vocab.appendChild(vocabTitle);
   const note = document.createElement("p");
   note.className = "gw-lg-note";
@@ -317,6 +326,10 @@ export function createLegend(options: LegendOptions): LegendHandle {
     note.hidden = !note.hidden;
     vocabTitle.setAttribute("aria-expanded", String(!note.hidden));
   });
+
+  // Built before boot resolves the glossary, and its rows are rebuilt per viewport, so the
+  // key both waits for the index and re-runs the highlighter after every render.
+  const teaching = teach(element);
 
   const checked = (row: HTMLElement): boolean =>
     row.querySelector<HTMLInputElement>("input")?.checked === true;
@@ -557,6 +570,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
     renderProducing();
     renderDimensions();
     renderPartial();
+    teaching.retouch();
     // The pill carries a count now, so it is part of what a new viewport's numbers repaint —
     // without this it kept the sum from the box the reader has already panned away from.
     syncTitle();
@@ -586,6 +600,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
           " injected stream, classed by cr_nd_well_type_disposal_1, the code drawn as filed.",
       ),
     );
+    teaching.retouch();
   }
 
   function setCounts(
@@ -668,6 +683,7 @@ function buildDimension(spec: DimensionSpec): DimensionView {
   title.className = "gw-lg-dtitle";
   title.textContent = spec.title;
   title.setAttribute("aria-expanded", "false");
+  title.setAttribute("data-no-glossary", "");
   element.appendChild(title);
 
   const opened = document.createElement("div");
@@ -763,6 +779,8 @@ function buildRow(status: StatusClass, on: boolean): HTMLElement {
   row.className = "gw-lg-row";
   row.dataset["status"] = status.id;
   row.title = status.note;
+  // The whole row toggles its class; the vocabulary note below teaches the same words.
+  row.setAttribute("data-no-glossary", "");
 
   const box = document.createElement("input");
   box.type = "checkbox";

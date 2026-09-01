@@ -2,6 +2,9 @@ import "./surface.css";
 
 import { ApiError, getEnvelope } from "../api/client.ts";
 import "../components/gw-count.ts";
+import { labelElement } from "../glossary/gw-term.ts";
+import { teach } from "../glossary/teach.ts";
+import type { Teaching } from "../glossary/teach.ts";
 
 export type SnapshotState = "current" | "stale" | "unavailable" | "invalid";
 export type StatusState = "ok" | "degraded" | "partial";
@@ -107,6 +110,7 @@ interface Mount {
   host: HTMLElement;
   options: StatusPageOptions;
   controller: AbortController | null;
+  teaching: Teaching;
 }
 
 const SNAPSHOT_LABELS: Record<SnapshotState, string> = {
@@ -146,10 +150,11 @@ const TIERS: { id: CheckTier | null; label: string }[] = [
   { id: null, label: "Unclassified" },
 ];
 
-const LAYERS: { prefix: string; label: string }[] = [
-  { prefix: "canonical.", label: "canonical" },
-  { prefix: "marts.", label: "marts" },
-  { prefix: "lineage.", label: "lineage" },
+/** The storage layer a dataset lives in is vocabulary, but it is written as an identifier. */
+const LAYERS: { prefix: string; label: string; term: string | null }[] = [
+  { prefix: "canonical.", label: "canonical", term: "gt_canonical" },
+  { prefix: "marts.", label: "marts", term: "gt_marts" },
+  { prefix: "lineage.", label: "lineage", term: "gt_lineage" },
 ];
 
 type Posture = NonNullable<StatusPayload["deployment"]>;
@@ -198,6 +203,7 @@ let mounted: Mount | null = null;
 export function unmountStatusPage(): void {
   if (!mounted) return;
   mounted.controller?.abort();
+  mounted.teaching.release();
   mounted.host.removeAttribute("aria-busy");
   mounted.host.replaceChildren();
   mounted = null;
@@ -208,7 +214,8 @@ export async function mountStatusPage(
   options: StatusPageOptions,
 ): Promise<void> {
   unmountStatusPage();
-  const mount: Mount = { host, options, controller: null };
+  // The surface is public and paints before boot has the index, so it waits for one.
+  const mount: Mount = { host, options, controller: null, teaching: teach(host) };
   mounted = mount;
   await refresh(mount);
 }
@@ -279,10 +286,12 @@ function renderError(mount: Mount, error: unknown): void {
   retry.type = "button";
   retry.className = "gw-status-refresh";
   retry.textContent = "Retry";
+  retry.setAttribute("data-no-glossary", "");
   retry.addEventListener("click", () => void refresh(mount, true));
   section.append(retry);
   root.append(section);
   mount.host.replaceChildren(root);
+  mount.teaching.retouch();
 }
 
 function renderStatus(mount: Mount, payload: StatusPayload): void {
@@ -292,6 +301,7 @@ function renderStatus(mount: Mount, payload: StatusPayload): void {
   refreshButton.type = "button";
   refreshButton.className = "gw-status-refresh";
   refreshButton.textContent = "Refresh";
+  refreshButton.setAttribute("data-no-glossary", "");
   refreshButton.addEventListener("click", () => void refresh(mount, true));
   header.append(refreshButton);
 
@@ -310,6 +320,7 @@ function renderStatus(mount: Mount, payload: StatusPayload): void {
     announcement,
   );
   mount.host.replaceChildren(root);
+  mount.teaching.retouch();
 }
 
 function pageRoot(): HTMLElement {
@@ -445,7 +456,7 @@ function footprint(payload: StatusPayload): HTMLElement {
   const body = document.createElement("tbody");
 
   for (const layer of layersOf(payload.datasets)) {
-    body.append(layerRow(layer.label, layer.items.length));
+    body.append(layerRow(layer.label, layer.term, layer.items.length));
     for (const dataset of layer.items) body.append(footprintRow(dataset));
   }
   if (payload.datasets.length === 0) {
@@ -457,28 +468,44 @@ function footprint(payload: StatusPayload): HTMLElement {
   return section;
 }
 
-function layersOf(items: StatusDataset[]): { label: string; items: StatusDataset[] }[] {
-  const grouped = LAYERS.map((layer) => ({
+interface LayerGroup {
+  label: string;
+  term: string | null;
+  items: StatusDataset[];
+}
+
+function layersOf(items: StatusDataset[]): LayerGroup[] {
+  const grouped: LayerGroup[] = LAYERS.map((layer) => ({
     label: layer.label,
+    term: layer.term,
     items: items.filter((dataset) => dataset.dataset_id.startsWith(layer.prefix)),
   }));
   const rest = items.filter(
     (dataset) => !LAYERS.some((layer) => dataset.dataset_id.startsWith(layer.prefix)),
   );
-  if (rest.length > 0) grouped.push({ label: "other", items: rest });
+  if (rest.length > 0) grouped.push({ label: "other", term: null, items: rest });
   return grouped.filter((layer) => layer.items.length > 0);
 }
 
-function layerRow(label: string, count: number): HTMLTableRowElement {
+function layerRow(label: string, term: string | null, count: number): HTMLTableRowElement {
   const row = element("tr", "gw-status-layer-row");
   const cell = document.createElement("th");
   cell.scope = "colgroup";
   cell.colSpan = 6;
   const name = document.createElement("code");
   name.textContent = label;
-  cell.append(name, ` · ${count} ${count === 1 ? "dataset" : "datasets"}`);
+  cell.append(codeTerm(name, term), ` · ${count} ${count === 1 ? "dataset" : "datasets"}`);
   row.append(cell);
   return row;
+}
+
+/** The highlighter skips code spans, so an identifier that is also vocabulary is bound by hand. */
+function codeTerm(code: HTMLElement, termId: string | null): HTMLElement {
+  if (!termId) return code;
+  const term = document.createElement("gw-term");
+  term.setAttribute("term-id", termId);
+  term.append(code);
+  return term;
 }
 
 function footprintRow(dataset: StatusDataset): HTMLTableRowElement {
@@ -553,6 +580,7 @@ function datasetNote(dataset: StatusDataset): HTMLElement {
   const note = element("details", "gw-status-note gw-status-row-note");
   const summary = document.createElement("summary");
   summary.textContent = "What this counts";
+  summary.setAttribute("data-no-glossary", "");
   const detail = document.createElement("p");
   detail.textContent = dataset.detail;
   const counted = element("p", "gw-status-card-time");
@@ -626,9 +654,9 @@ function sources(items: StatusSource[]): HTMLElement {
     "Outcome",
     "Next expected",
     "Cadence",
-    "Artifact retrieved",
+    { label: "Artifact retrieved", term: "gt_retrieval_vintage" },
     "Declared vintage",
-    "Latest artifact",
+    { label: "Latest artifact", term: "gt_manifest" },
     "Artifacts",
     "Reason",
   ]);
@@ -716,6 +744,7 @@ function sectionNote(note: { summary: string; text: string }): HTMLElement {
   const disclosure = element("details", "gw-status-note");
   const summary = document.createElement("summary");
   summary.textContent = note.summary;
+  summary.setAttribute("data-no-glossary", "");
   const body = document.createElement("p");
   body.textContent = note.text;
   disclosure.append(summary, body);
@@ -799,13 +828,17 @@ function displayTime(value: string): string {
   return parsed.toISOString().replace("T", " ").replace(/:\d{2}\.\d{3}Z$/, " UTC");
 }
 
-function tableHead(labels: string[]): HTMLTableSectionElement {
+/** A column head is prose unless its wording is the product's name for something else. */
+type Column = string | { label: string; term: string };
+
+function tableHead(columns: readonly Column[]): HTMLTableSectionElement {
   const head = document.createElement("thead");
   const row = document.createElement("tr");
-  for (const label of labels) {
+  for (const column of columns) {
     const cell = document.createElement("th");
     cell.scope = "col";
-    cell.textContent = label;
+    if (typeof column === "string") cell.textContent = column;
+    else cell.append(labelElement(column.label, column.term));
     row.append(cell);
   }
   head.append(row);
