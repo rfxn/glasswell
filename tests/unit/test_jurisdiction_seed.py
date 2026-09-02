@@ -29,6 +29,8 @@ from glasswell.seed.jurisdictions import (
     PRESENTATION_COLUMNS,
     REGISTERED_ON,
     REQUIRED_DECISIONS,
+    RESTATED_EVIDENCE_COMMIT,
+    RESTATED_EVIDENCE_TAG,
     identity_pattern,
     rule_parameters,
 )
@@ -169,3 +171,16 @@ def test_every_wells_row_carries_a_subtitle_the_census_can_fill() -> None:
         assert row["wells_layer_id"] in str(row["wells_style_layer_ids"])
     orders = [row["wells_draw_order"] for row in JURISDICTIONS]
     assert len(set(orders)) == len(orders)
+
+
+def test_both_of_the_restatement_placeholders_are_literals_the_release_gate_can_see() -> None:
+    """`release.py` scans the mirror for the *quoted literal*, not for the value, so an
+    expression that evaluates to forty zeros is invisible to it: the tag alone would block, and
+    a repoint that moved the tag and left the commit would clear the gate with a placeholder
+    still on its way to an append-only table. Written as a literal, like `EVIDENCE_COMMIT`."""
+    mirror = (ROOT / "src/glasswell/seed/jurisdictions.py").read_text(encoding="utf-8")
+
+    assert f'"{RESTATED_EVIDENCE_TAG}"' in mirror
+    assert f'"{RESTATED_EVIDENCE_COMMIT}"' in mirror
+    assert '"0" * 40' not in mirror
+    assert REPOINTED_COMMIT.match(RESTATED_EVIDENCE_COMMIT)
