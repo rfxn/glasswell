@@ -417,6 +417,10 @@ export async function renderWellCard(
     well.links?.["completions"] ?? `/v1/wells/${api10}/completions`,
     api10,
     asOfQuery,
+    // Said once per card. The header and the completion design are two surfaces and both
+    // rightly disclose a withheld length, but on one screen the reader gets the sentence
+    // twice under the same title and reads the second as a second problem.
+    new Set(well.meta.warnings.map((warning) => warning.code)),
   );
 
   // Absent outside the mart's states: the API declines to offer a link it would 404, and a
@@ -681,6 +685,7 @@ async function loadCompletionContext(
   path: string,
   expectedApi10: string,
   query: Record<string, string>,
+  alreadySaid: ReadonlySet<string> = new Set(),
 ): Promise<void> {
   try {
     const envelope = await getEnvelope<CompletionContext>(path, query);
@@ -695,7 +700,8 @@ async function loadCompletionContext(
       throw new TypeError("Completion context did not match the required well and collections");
     }
     host.replaceChildren(completionContextBody(context, envelope));
-    for (const note of warningNotes(envelope.meta.warnings)) host.appendChild(note);
+    const unsaid = envelope.meta.warnings.filter((warning) => !alreadySaid.has(warning.code));
+    for (const note of warningNotes(unsaid)) host.appendChild(note);
     host.dataset["state"] =
       context.events.length === 0 && context.pools.length === 0 && context.design === null
         ? "empty"
