@@ -272,7 +272,7 @@ single green check. Append; do not overwrite.
 | 2026-08-21 | C11 | 44,192 | 62,817 | 313,823 | first measurement of the explorer route |
 | 2026-08-22 | M1-7 | 44,245 | 62,867 | 315,287 | disposal layer: +538 gz on the map chunk (base cda2e51 measured 314,749); entry unchanged |
 | 2026-08-22 | M1-3 | 44,014 | 62,615 | 314,293 | provenance wire field + snapshot coverage: +383 gz on the map chunk (base 88105aa measured 313,910 on this toolchain); entry +10, jitter class |
-| 2026-09-02 | facets-all-jurisdictions | 13,931 | 73,640 | 325,232 | scope becomes a set: +473 gz on the explorer route, +4 on the entry (jitter class — the panel is not on the entry path) and +15 on the map chunk, against a v0.76 baseline re-measured on this toolchain at 13,927 / 73,167 / 325,217. The map chunk figure is not comparable with the 313,823 two rows below: the v0.74–v0.76 layers moved it, and nothing here did |
+| 2026-09-02 | facets-all-jurisdictions | 13,930 | 73,634 | 325,700 | scope becomes a set: +473 gz on the explorer route, +4 on the entry (jitter class — the panel is not on the entry path) and +15 on the map chunk, against a v0.76 baseline re-measured on this toolchain at 13,927 / 73,167 / 325,217. Re-measured after merging v0.77, which is the row shown; the pre-merge measurement was 13,931 / 73,640 / 325,232. The map chunk figure is not comparable with the 313,823 two rows below: the v0.74–v0.76 layers moved it, and nothing here did |
 | 2026-08-31 | facets | 21,340 | 71,511 | 313,823 | "Wells by ..." panel: +3,362 gz on the explorer route, entry and map chunk unchanged. Not split behind a dynamic import — it renders on the `wells` dataset, the one the explorer opens on, so a split buys a second round trip for nearly every reader |
 
 ---
