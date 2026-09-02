@@ -298,8 +298,9 @@ describe("nothing ends until the reader says so", () => {
     ) as HTMLButtonElement;
     revoke.click();
 
+    // The name is the point: at 390 the table clamps it, so the question must carry it.
     expect(section.querySelector('[role="alertdialog"]')?.getAttribute("aria-label")).toBe(
-      "Revoke this session? They sign in again.",
+      "Revoke ryan's session? They sign in again.",
     );
   });
 });

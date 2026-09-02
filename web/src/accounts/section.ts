@@ -30,7 +30,7 @@ const ADD_USER = "Add user";
 const USERS_EMPTY = "No accounts yet.";
 const SESSIONS_EMPTY = "No sessions.";
 const SHOWN_ONCE = "Copy this password. It is not shown again.";
-const REVOKE_CONFIRM = "Revoke this session? They sign in again.";
+const revokeConfirm = (name: string): string => `Revoke ${name}'s session? They sign in again.`;
 const disableConfirm = (name: string): string => `Disable ${name}? Their sessions end now.`;
 const resetConfirm = (name: string): string => `Reset ${name}'s password? Their sessions end now.`;
 
@@ -209,7 +209,7 @@ function accountName(username: string): HTMLElement {
 
 function revokeButton(section: HTMLElement, session: SessionRecord): HTMLElement {
   const revoke = action("Revoke", () =>
-    ask(section, REVOKE_CONFIRM, "Revoke", () =>
+    ask(section, revokeConfirm(session.username), "Revoke", () =>
       run(section, () => revokeSession(session.session_id)),
     ),
   );

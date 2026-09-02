@@ -28,6 +28,7 @@ browser on a **software rasteriser**, which is the part that matters for §4.
 | host | `freedom` — AMD Ryzen 9 5900X, 6 cores visible to the container, 11 GiB RAM |
 | kernel | Linux 6.14.5-100.fc40.x86_64 |
 | browser | Google Chrome for Testing 149.0.7827.55 (playwright-core, headless) |
+| support floor | Chrome 105, Safari 15.4, Firefox 121: the `:has()` floor the stylesheets already require (`web/package.json` `browserslist`); the row above is the measurement browser, not the floor |
 | flags | `--no-sandbox --enable-unsafe-swiftshader --hide-scrollbars` |
 | GL renderer | `ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)` |
 | display cadence | 60 Hz — rAF intervals quantise to **16.7 ms** |

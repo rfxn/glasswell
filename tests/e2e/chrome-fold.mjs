@@ -130,7 +130,14 @@ for (const viewport of BREAKPOINTS) {
       shown: painted(word),
       wordClipped: painted(word) && clipped(word),
       strapClipped: painted(strap) && clipped(strap),
-      logoutNamed: (out.textContent ?? "").trim().length > 0,
+      // The accessible name, not textContent: a label hidden with display:none still has text
+      // but no name, and the button's runtime title would then be announced instead.
+      logoutNamed: (out.getAttribute("aria-label") ?? "").trim().length > 0
+        || [out, ...out.querySelectorAll("*")].some((el) => {
+          const style = getComputedStyle(el);
+          if (style.display === "none" || style.visibility === "hidden") return false;
+          return [...el.childNodes].some((n) => n.nodeType === Node.TEXT_NODE && n.textContent.trim().length > 0);
+        }),
     };
     out.hidden = before;
     return seen;
@@ -140,6 +147,12 @@ for (const viewport of BREAKPOINTS) {
   // the rest. Below 621 the phone posture stops painting the wordmark at all, so `shown` is
   // what makes the pass honest rather than vacuous: a clipped check on an unpainted element
   // proves nothing, and this reports which of the two it got.
+  // From 621 up the wordmark must be painted, or the clipped check below passes vacuously on an
+  // element that collapsed to zero width -- which at 621-900 is the defect, not an exemption.
+  if (viewport.width >= 621) {
+    assert(brand.shown, `${at} the wordmark is painted in a signed-in header`,
+      "the brand block collapsed the wordmark to zero width once Sign out was in the rail");
+  }
   assert(!brand.wordClipped, `${at} the wordmark survives a signed-in header${brand.shown ? "" : " (not painted at this width)"}`,
     "the brand block ellipsised the wordmark once Sign out was in the rail");
   assert(!brand.strapClipped, `${at} the strapline survives a signed-in header`,
