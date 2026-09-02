@@ -8,6 +8,7 @@ different facts and only one of them is true here.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -15,11 +16,12 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
+import glasswell.marts.counts as writer
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts.counts import refresh_jurisdiction_counts
 from glasswell.seed.jurisdictions import JURISDICTIONS, REGISTERED_ON
-from glasswell.status_resolution import UNMAPPED_CLASS
+from glasswell.status_resolution import UNMAPPED_CLASS, served_status_vocabulary
 from tests.contract.conftest import JURISDICTION_MEASURED_ON, ND_MEASURED, TX_API10
 from tests.support.fakes import FixedClock
 from tests.support.jurisdictions import restate
@@ -32,7 +34,9 @@ STATUSLESS_API10 = f"{TX_API10[:2]}00399991"
 REMEASURED_ON = JURISDICTION_MEASURED_ON + timedelta(days=1)
 
 
-def remeasure(connection: psycopg.Connection) -> str:
+def remeasure(
+    connection: psycopg.Connection, codes: Collection[str] | None = ("ND", "TX")
+) -> str:
     """The count writer, run again the way the host runs it, on a later day."""
     with lineage_session(
         recorder=PostgresRecorder(connection),
@@ -41,10 +45,32 @@ def remeasure(connection: psycopg.Connection) -> str:
         correlation_id="run_contract_recount",
     ):
         refresh = refresh_jurisdiction_counts(
-            connection, measured_on=REMEASURED_ON, codes=("ND", "TX")
+            connection, measured_on=REMEASURED_ON, codes=codes
         )
     connection.commit()
     return refresh.derivation_id
+
+
+def sum_identity(rows: list[dict[str, Any]]) -> tuple[int, list[str]]:
+    """Jurisdictions whose parts were compared with their whole, and where the two disagree.
+
+    The count is returned rather than left implicit because every arm of the comparison is
+    inside a branch an unmeasured jurisdiction skips: a registry that served no counts at all
+    would otherwise satisfy this silently, which is the one answer it must not be able to give.
+    """
+    checked = 0
+    broken = []
+    for row in rows:
+        code = row["jurisdiction_code"]
+        if row["well_count"] is None:
+            if row["well_counts_by_status"]:
+                broken.append(f"{code} serves classes under no total")
+            continue
+        checked += 1
+        classes = sum(int(item["wells"]["value"]) for item in row["well_counts_by_status"])
+        if classes != int(row["well_count"]["value"]):
+            broken.append(f"{code} classes sum to {classes}, total is {row['well_count']['value']}")
+    return checked, broken
 
 
 def body(client: TestClient, **params: Any) -> dict[str, Any]:
@@ -171,12 +197,97 @@ def test_every_jurisdictions_classes_sum_to_the_total_they_are_served_beside(
     seed_statusless_well(seeded, api10=STATUSLESS_API10, like=TX_API10)
     remeasure(seeded)
 
-    for row in body(client)["data"]:
-        if row["well_count"] is None:
-            assert row["well_counts_by_status"] == [], row["jurisdiction_code"]
-            continue
-        classes = sum(int(item["wells"]["value"]) for item in row["well_counts_by_status"])
-        assert classes == int(row["well_count"]["value"]), row["jurisdiction_code"]
+    checked, broken = sum_identity(body(client)["data"])
+
+    assert broken == []
+    assert checked >= 2, "no jurisdiction served a count, so this proves nothing"
+
+
+def test_the_sum_identity_cannot_be_satisfied_by_a_registry_that_served_no_counts() -> None:
+    """The vacuity the guard above refuses, made a case rather than left to be trusted: every
+    comparison sits inside a branch an unmeasured jurisdiction skips, so a refresh that silently
+    stopped writing would leave the check green over a registry serving nothing at all."""
+    unmeasured = [
+        {"jurisdiction_code": code, "well_count": None, "well_counts_by_status": []}
+        for code in ("MT", "ND", "NM", "TX")
+    ]
+
+    assert sum_identity(unmeasured) == (0, [])
+    assert sum_identity(
+        [{"jurisdiction_code": "ND", "well_count": None, "well_counts_by_status": [1]}]
+    ) == (0, ["ND serves classes under no total"])
+
+
+def test_a_day_whose_rows_name_two_runs_is_served_whole_and_each_row_resolves(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The host's own re-measure, on the wire rather than only in the ledger.
+
+    Run the writer on a day the ledger already holds and the per-row `on conflict do nothing`
+    inserts the keys that day is missing and keeps every key it has, so the day's rows name two
+    runs. That is exactly what the deployed ledger does the first time this train's writer meets
+    a v0.76 day: the classes already on it stay under the run that wrote them and the ones that
+    writer never measured arrive under the new one. Simulated by growing the vocabulary between
+    the runs, which is the same fact one layer up.
+
+    The population does not move between the two, so the identity has to survive the mixed day,
+    and each row has to resolve to the run that measured it rather than to whichever ran last.
+    """
+    seed_statusless_well(seeded, api10=STATUSLESS_API10, like=TX_API10)
+    vocabulary = served_status_vocabulary(seeded)
+    # A class the fixture holds no well of, so the narrowed run leaves it out altogether.
+    absent = next(item for item in vocabulary if item not in {"active", "plugged"})
+    # Its own context: the fixtures that build this client hold patches of their own on the
+    # test's `monkeypatch`, and undoing theirs to restore one of mine takes the session with it.
+    with pytest.MonkeyPatch.context() as narrowed:
+        narrowed.setattr(
+            writer,
+            "served_status_vocabulary",
+            lambda *_, **__: [item for item in vocabulary if item != absent],
+        )
+        first = remeasure(seeded, codes=None)
+
+    second = remeasure(seeded, codes=None)
+
+    assert first != second
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select status_key, derivation_id from lineage.jurisdiction_well_counts"
+            " where jurisdiction_code = 'TX' and measured_on = %s",
+            (REMEASURED_ON,),
+        )
+        wrote = dict(cursor.fetchall())
+    assert wrote[writer.TOTAL_STATUS_KEY] == first, "the total the first run wrote was rewritten"
+    assert wrote[UNMAPPED_CLASS] == first
+    assert wrote[absent] == second, "the class the day lacked did not land"
+
+    served = body(client)["data"]
+    row = next(item for item in served if item["jurisdiction_code"] == "TX")
+    classes = {item["status_canonical"] for item in row["well_counts_by_status"]}
+    assert classes == {*vocabulary, UNMAPPED_CLASS}, "the day is served in halves"
+    assert row["measured_on"] == REMEASURED_ON.isoformat()
+
+    checked, broken = sum_identity(served)
+    assert broken == []
+    assert checked >= 2
+
+    # One handle per figure and two runs behind it: the response's lineage names both, so a
+    # reader who asks where the day came from is not shown one run as if it had measured all
+    # of it. The served handle is the response's own (SB-07 §9.1) and the runs are its inputs.
+    walked = client.get(
+        "/v1/explain",
+        params={
+            "h": next(
+                item["wells"]["d"]
+                for item in row["well_counts_by_status"]
+                if item["status_canonical"] == absent
+            ),
+            "depth": "full",
+        },
+    )
+    assert walked.status_code == 200, walked.text
+    nodes = {node["id"] for node in walked.json()["data"]["chains"][0]["nodes"]}
+    assert {first, second} <= nodes, sorted(nodes)
 
 
 def test_a_well_whose_source_filed_no_status_is_served_as_the_absence_class(
