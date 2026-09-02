@@ -138,15 +138,22 @@ def test_no_absence_decision_claims_a_dimension_the_spine_carries_values_for(
     """
     registry = load_jurisdictions(db)
     claimed = {
-        (row.jurisdiction_code, rule.decision.split(":", 1)[1])
+        (row.jurisdiction_code, rule.decision.split(":", 1)[1], rule.rule_id)
         for row in registry
         for rule in row.rules
         if rule.serving and rule.decision.startswith("absence:")
     }
 
-    assert claimed == {("TX", "operator"), ("MT", "operator")}, (
-        "an absence decision was registered or removed; it must be measured against the"
-        " deployed spine before it lands, because the register cannot be corrected"
+    # The rule id is in the tuple, not only the pair it decides about. Swapping the rule behind
+    # an existing pair changes what /v1/conformance/<id> says about 70,039 wells while the set
+    # of pairs stands still, and this gate exists because the register cannot be corrected.
+    assert claimed == {
+        ("TX", "operator", "cr_tx_operator_absence_1"),
+        ("MT", "operator", "cr_mt_operator_absence_1"),
+    }, (
+        "an absence decision was registered, removed, or repointed at a different rule; it must"
+        " be measured against the deployed spine before it lands, because the register cannot"
+        " be corrected"
     )
 
 
