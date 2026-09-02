@@ -585,11 +585,13 @@ CO_RULES: tuple[dict[str, object], ...] = (
                 "no Colorado spacing-unit source is in scope",
                 "the modelling that produces training_support is unbuilt",
             ],
-            "module_function": "glasswell.marts.producing:no_well_series_states",
+            "module_function": "glasswell.marts.land_metrics:grid_scope_prefixes",
             "contract_note": "A registered refusal, not an omitted row: a consumer can tell"
-            " 'no inventory decision' from 'registry not loaded'. The symbol is the"
-            " producing mart's own reader of which jurisdictions have no well series,"
-            " which is the shape of refusal this row is: registered, and answering.",
+            " 'no inventory decision' from 'registry not loaded'. The symbol carries out the"
+            " first reason and can be followed to it -- it reads land_grid_scope off the"
+            " registrations, and Colorado's absence from its result is the grid not covering"
+            " Colorado. The other two reasons have no symbol because nothing that would read"
+            " them is built: no spacing source is registered and the support model is unwritten.",
         },
         "rule": (
             "Colorado serves no undrilled inventory. The refusal is registered rather than"
@@ -606,7 +608,7 @@ CO_RULES: tuple[dict[str, object], ...] = (
             " nothing here produces one and nothing served may imply otherwise."
         ),
         "evidence_url": WELLS_METADATA_URL,
-        "code_ref": "src/glasswell/marts/producing.py",
+        "code_ref": "src/glasswell/marts/land_metrics.py",
     },
     {
         "rule_id": "cr_co_production_liquids_1",
