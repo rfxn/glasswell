@@ -514,3 +514,121 @@ def test_no_serving_role_may_append_the_registry_row_that_selects_a_mapping_tabl
         # a rule spec reaches the resolver only through a jurisdiction_rules row.
         assert conformance in (True, False)
     assert others == [], f"a non-owner role may append a jurisdiction rule: {others}"
+
+
+DUPLICATE_MAP = "fixture_duplicate_status_map"
+
+
+def _plant_a_map_with_a_repeated_key(connection: psycopg.Connection) -> None:
+    """A registered map whose key column is not unique within it, and the rule naming it."""
+    seed_conformance_rule(
+        connection,
+        rule_id="cr_fixture_duplicate_key_1",
+        spec={
+            "resolved_at": "read_time",
+            "mapping_table": DUPLICATE_MAP,
+            "key_col": "status",
+            "value_col": "status_canonical",
+        },
+        rationale="Planted so the registration-time check has something to refuse.",
+    )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"create table if not exists lineage.{DUPLICATE_MAP} ("
+            " status text not null, status_canonical text not null)"
+        )
+        cursor.execute(
+            f"insert into lineage.{DUPLICATE_MAP} (status, status_canonical)"
+            " values ('A', 'active'), ('A', 'plugged')"
+        )
+        cursor.execute(
+            "insert into lineage.jurisdiction_codes (jurisdiction_code, level)"
+            " values (%s, 'state') on conflict do nothing",
+            (PLANTED_CODE,),
+        )
+        cursor.execute(
+            "insert into lineage.jurisdictions (jurisdiction_code, effective_from, published_at,"
+            " evidence_tag, evidence_commit, name, regulator_name, regulator_url,"
+            " identity_scheme, identity_prefix, identity_pattern, source_ids, rationale)"
+            " values (%s, %s, %s, 'harness-fixture', %s, 'Planted', 'regulator',"
+            " 'https://example.invalid/', 'api10', %s, %s, array['nd_mpr_xlsx'], 'fixture')"
+            " on conflict do nothing",
+            (
+                PLANTED_CODE,
+                REGISTERED_ON,
+                REGISTERED_ON,
+                "0" * 40,
+                PLANTED_PREFIX,
+                f"^{PLANTED_PREFIX}[0-9]{{8}}$",
+            ),
+        )
+
+
+def test_a_map_whose_key_repeats_is_refused_at_registration_and_named(
+    db: psycopg.Connection,
+) -> None:
+    """The precondition moved when the resolver stopped reading one known table, and nobody
+    wrote it down: the loop inserts into a relation keyed `(for_state_code, for_status_reported)`
+    and assumes the registered key column is unique within its map.
+
+    Left to the refresh, a repeated key surfaced as `status_resolution_resolved_pkey` from
+    inside a statement trigger -- naming the primary key rather than the registry row that
+    caused it, and aborting **every** later append to the registry, `seed_jurisdictions`
+    included, which would take `seed_all` and therefore the deploy down. It is refused at the
+    registration that introduces it now, by name.
+    """
+    seed_all(db)
+    db.commit()
+    _plant_a_map_with_a_repeated_key(db)
+
+    with db.cursor() as cursor, pytest.raises(psycopg.errors.RaiseException) as refused:
+        cursor.execute(
+            "insert into lineage.jurisdiction_rules (jurisdiction_code, effective_from,"
+            " published_at, decision, rule_id)"
+            " values (%s, %s, %s, 'status_vocabulary', 'cr_fixture_duplicate_key_1')",
+            (PLANTED_CODE, REGISTERED_ON, REGISTERED_ON),
+        )
+    db.rollback()
+
+    message = str(refused.value)
+    assert DUPLICATE_MAP in message
+    assert "cr_fixture_duplicate_key_1" in message
+    assert "status_resolution_resolved_pkey" not in message
+
+
+def test_a_refused_registration_leaves_every_other_append_alone(
+    db: psycopg.Connection,
+) -> None:
+    """The blast radius, which was the real defect: one bad map row poisoned the registry.
+
+    The refusal has to be the registration's own, not a later unrelated one's, so an append that
+    has nothing to do with the bad map still lands and the resolver still answers.
+    """
+    seed_all(db)
+    db.commit()
+    _plant_a_map_with_a_repeated_key(db)
+    with db.cursor() as cursor:
+        with pytest.raises(psycopg.errors.RaiseException):
+            cursor.execute(
+                "insert into lineage.jurisdiction_rules (jurisdiction_code, effective_from,"
+                " published_at, decision, rule_id)"
+                " values (%s, %s, %s, 'status_vocabulary', 'cr_fixture_duplicate_key_1')",
+                (PLANTED_CODE, REGISTERED_ON, REGISTERED_ON),
+            )
+    db.rollback()
+
+    # A new statement, after the refusal: the registry is still appendable and the resolver
+    # still resolves the jurisdictions whose maps are sound.
+    _plant_a_read_time_jurisdiction(db)
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select count(*) from canonical.status_resolution where for_state_code = %s",
+            (PLANTED_PREFIX,),
+        )
+        resolved = int(cursor.fetchone()[0])
+        cursor.execute("select count(*) from canonical.status_resolution")
+        total = int(cursor.fetchone()[0])
+    db.rollback()
+
+    assert resolved == 2
+    assert total > 2

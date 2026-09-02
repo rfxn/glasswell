@@ -20,6 +20,10 @@
       `no_wells_in_scope` rather than `absent_by_rule`: under an `as_of` before its
       promotion the emptiness is the knowledge cut's, and blaming a conformance rule
       for it is a claim with no row behind it
+- [Fix] a status map whose reported-code column repeats is refused at the registration
+      that introduces it, naming the rule and the table; left to the refresh it aborted
+      every later append to the registry from inside a statement trigger, naming a
+      primary key instead of its cause
 - [New] `/v1/status` carries a `status_resolver` check and `infra/verify.sh` asserts
       that every jurisdiction registered for read-time status resolution has resolver
       rows; a registered mapping table that has not landed is skipped with a notice

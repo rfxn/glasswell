@@ -115,6 +115,7 @@ declare
     registered record;
     resolved integer := 0;
     added integer;
+    repeated boolean;
 begin
     delete from lineage.status_resolution_resolved;
     for registered in
@@ -148,6 +149,19 @@ begin
             raise notice 'status resolver: % (%) registers lineage.% which does not exist; its wells resolve unmapped until it lands',
                 registered.jurisdiction_code, registered.identity_prefix,
                 registered.mapping_table;
+            continue;
+        end if;
+        execute format(
+            'select count(*) <> count(distinct m.%I) from lineage.%I m where m.%I is not null',
+            registered.key_col, registered.mapping_table, registered.key_col)
+          into repeated;
+        if repeated then
+            -- Refused at registration by the trigger below, so reaching this means a map went
+            -- non-unique after it was registered. Skipped rather than raised for the same
+            -- reason the missing table is: this runs inside a statement trigger, and aborting
+            -- would poison every later append to the registry rather than the one map at fault.
+            raise notice 'status resolver: lineage.% registered for % has a repeated %; its wells resolve unmapped until the map is keyed',
+                registered.mapping_table, registered.jurisdiction_code, registered.key_col;
             continue;
         end if;
         -- format %I quotes every identifier the registry named; nothing here is concatenated
@@ -187,6 +201,56 @@ comment on function lineage.refresh_status_resolution() is
     ' of rows. A registered mapping table that has not been created yet is skipped with a notice;'
     ' /v1/status''s status_resolver check and infra/verify.sh are what catch a skip that lasts.';
 
+-- The precondition the loop above rests on, checked where it is introduced rather than where
+-- it bites. `status_resolution_resolved` is keyed (for_state_code, for_status_reported), so a
+-- registered key column that repeats within its map is a duplicate key -- and left to the
+-- refresh it surfaced as `status_resolution_resolved_pkey` from inside a statement trigger,
+-- naming the primary key rather than the registry row that caused it, and aborting every later
+-- append to the registry including seed_jurisdictions, which would take seed_all and the deploy
+-- down with it. Refused at the registration that introduces it, by name, it costs one row.
+--
+-- Not `on conflict do nothing`: silently picking one of two mappings for a status letter is a
+-- claim about a regulator's vocabulary with no row behind it (R8).
+create or replace function lineage.assert_status_map_is_keyed() returns trigger
+language plpgsql as $$
+declare
+    spec jsonb;
+    repeated boolean;
+begin
+    if new.decision <> 'status_vocabulary' or not new.serving then
+        return new;
+    end if;
+    select c.spec into spec from lineage.conformance_rules c where c.rule_id = new.rule_id;
+    if spec is null or spec->>'resolved_at' is distinct from 'read_time'
+       or spec->>'mapping_table' is null or spec->>'key_col' is null
+       or to_regclass('lineage.' || quote_ident(spec->>'mapping_table')) is null then
+        return new;
+    end if;
+    execute format(
+        'select count(*) <> count(distinct m.%I) from lineage.%I m where m.%I is not null',
+        spec->>'key_col', spec->>'mapping_table', spec->>'key_col')
+      into repeated;
+    if repeated then
+        raise exception using
+            message = format(
+                'jurisdiction rule %s for %s registers lineage.%s, whose %s is not unique',
+                new.rule_id, new.jurisdiction_code, spec->>'mapping_table', spec->>'key_col'),
+            detail = 'A read-time status vocabulary resolves one canonical class per reported'
+                     ' code; two rows for one code is two answers and the resolver may not'
+                     ' pick between them.',
+            hint = 'Key the mapping table on its reported-code column, then register the rule.';
+    end if;
+    return new;
+end;
+$$;
+
+drop trigger if exists jurisdiction_rules_status_map_is_keyed on lineage.jurisdiction_rules;
+create trigger jurisdiction_rules_status_map_is_keyed
+    before insert on lineage.jurisdiction_rules
+    for each row execute function lineage.assert_status_map_is_keyed();
+
+grant execute on function lineage.assert_status_map_is_keyed() to glasswell_pipeline;
+
 -- Both sources are append-only, so an append is the only way their content can change and a
 -- statement trigger on it is exact. The refresh is also called by seed_jurisdictions(), which
 -- every deploy runs between migrate and the API restart, so a database restored from a dump
@@ -197,7 +261,8 @@ comment on function lineage.refresh_status_resolution() is
 -- the registry, so a new jurisdiction needs three rows and one trigger. (1) its mapping table
 -- in `lineage`, (2) a status-vocabulary conformance rule whose spec carries
 -- `"resolved_at": "read_time"` with `mapping_table`, `key_col` and `value_col`, (3) the
--- `jurisdiction_rules` row pointing at it -- and then a statement trigger on its own map, in
+-- `jurisdiction_rules` row pointing at it -- whose key column must be unique within the map,
+-- which the registration refuses without -- and then a statement trigger on its own map, in
 -- the same shape as the one below, plus `select lineage.refresh_status_resolution();` at the
 -- end of the migration. A second `create or replace view` on canonical.status_resolution would
 -- silently drop every other jurisdiction's arm, whichever order the two migrations merge in.
