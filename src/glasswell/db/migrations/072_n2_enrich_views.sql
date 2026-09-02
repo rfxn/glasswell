@@ -119,8 +119,8 @@ values
 -- below. Check it against the tag date rather than assuming it; the table is append-only.
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-select rule_id, date '2026-08-30', 'UNRELEASED',
-       '0000000000000000000000000000000000000000'
+select rule_id, date '2026-09-02', 'v0.75',
+       '001e8d8de6133902a21b28b6bfd229b21fe943d3'
   from unnest(array[
        'cr_nd_vintage_cohort_1', 'cr_ff_base_water_units_1', 'cr_ff_design_promote_1',
        'cr_ff_fluid_intensity_1'
