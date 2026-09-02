@@ -41,6 +41,7 @@ from glasswell.api.pagination import (
 from glasswell.api.provenance import register_response_figures
 from glasswell.api.rate_limit import consume_rate_limit
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, inline_for, iso
+from glasswell.api.routers.facets import ALL_JURISDICTIONS, StateTerm, state_set
 from glasswell.lengths import STORAGE_EPSG, resolve_length_method
 from glasswell.lineage.conformance import (
     LeaseReportingRule,
@@ -89,7 +90,6 @@ API10_PATTERN = r"^\d{10}$"
 # API-14 literal a reader is as likely to be holding.
 API_IDENTITY_PATTERN = r"^\d{10}(?:\d{4})?$"
 BBOX_PARTS = 4
-STATE_CODE_PATTERN = r"^\d{2}$"
 LON_LIMIT = 180.0
 LAT_LIMIT = 90.0
 COUNT_UNIT = "wells"
@@ -781,10 +781,14 @@ def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
             state={
                 "glossary": "gt_api_10_api_12_api_14",
                 "so": (
-                    "Matches the API state code exactly — the first two digits of every API-10"
-                    " in the answer. It is what scopes a `/v1/wells/facets` bucket link to the"
-                    " state the bucket was counted in; without it a county or status filter"
-                    " returns every jurisdiction that happens to share the code."
+                    "Matches the API state codes exactly — the first two digits of every"
+                    " API-10 in the answer. A set, not one code: repeat it, comma-separate the"
+                    " codes, or send `all` for every registered jurisdiction, read from the"
+                    " registry at request time. It is what scopes a `/v1/wells/facets` bucket"
+                    " link to the jurisdictions the bucket was counted in; without it a county"
+                    " or status filter returns every jurisdiction that happens to share the"
+                    " code, and with only one it answers a combined bucket with one state's"
+                    " rows."
                 ),
             },
             well_type={
@@ -874,14 +878,18 @@ def list_wells(
     county: Annotated[
         str | None, Query(description="County code as recorded at permit.")
     ] = None,
-    # Added for `/v1/wells/facets`: a facet bucket is counted within one state, so the link it
-    # publishes has to narrow to that state or it answers with a different population. Without
-    # it `?county=003` returns Texas county 003 and North Dakota county 003 together.
+    # Added for `/v1/wells/facets`: a facet bucket is counted within a set of jurisdictions, so
+    # the link it publishes has to narrow to that set or it answers with a different
+    # population. Without it `?county=003` returns Texas county 003 and North Dakota county 003
+    # together; with only one code it answers a two-state bucket with one state's rows.
     state: Annotated[
-        str | None,
+        list[StateTerm] | None,
         Query(
-            description="API state code, e.g. 33 for North Dakota. Matched exactly.",
-            pattern=STATE_CODE_PATTERN,
+            description=(
+                "API state codes, e.g. 33 for North Dakota. Repeat the parameter"
+                " (`?state=33&state=42`), comma-separate the codes (`?state=33,42`), or send"
+                " `all` for every registered jurisdiction. Matched exactly."
+            ),
         ),
     ] = None,
     well_type: Annotated[
@@ -906,13 +914,20 @@ def list_wells(
     ] = None,
     q: Annotated[str | None, Query(description="Case-insensitive substring of well name.")] = None,
 ) -> JSONResponse:
+    # Normalised before the fingerprint, so `?state=33,42` and `?state=42&state=33` are one
+    # query rather than three cursors that refuse each other's pages.
+    requested = state_set(state) if state is not None else ()
+    if state is None:
+        scoped_states = None
+    else:
+        scoped_states = [ALL_JURISDICTIONS] if requested is None else list(requested)
     filters = {
         "as_of": as_of,
         "api10": api10,
         "status": status,
         "operator": operator,
         "county": county,
-        "state": state,
+        "state": scoped_states,
         "well_type": well_type,
         "geometry_provenance": geometry_provenance,
         "producing": producing,
@@ -963,8 +978,12 @@ def list_wells(
         clauses.append("and county_code_at_permit = %(county)s")
         params["county"] = county
     if state is not None:
-        clauses.append("and state_code = %(state)s")
-        params["state"] = state
+        clauses.append("and state_code = any(%(state)s)")
+        # `all` is the registry's answer, resolved here rather than by the caller, so a bucket
+        # link minted against a four-state facet still names four states after a fifth loads.
+        params["state"] = (
+            sorted(registry.by_prefix) if requested is None else list(requested)
+        )
     if well_type is not None:
         clauses.append("and well_type_reported = %(well_type)s")
         params["well_type"] = well_type

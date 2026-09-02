@@ -3666,6 +3666,61 @@
         "title": "FacetBucket",
         "type": "object"
       },
+      "FacetJurisdiction": {
+        "description": "One jurisdiction the counts were taken over, and what it does with this dimension.",
+        "properties": {
+          "code": {
+            "description": "API state code.",
+            "title": "Code",
+            "type": "string",
+            "x-glasswell-not-a-figure": "API state code carried as reported; an identifier, not a quantity."
+          },
+          "dimension": {
+            "description": "`carried` where the jurisdiction holds at least one value of this dimension. `absent_by_rule` where it holds none and a registered rule says what that absence means -- those wells are counted here and are NOT in the `absence` bucket, because an explained absence and an unexplained one are two populations. `absent_unregistered` where it holds none and no rule states why, which is disclosed rather than answered as either of the other two (R8).",
+            "title": "Dimension",
+            "type": "string",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "name": {
+            "description": "The state's name, in the `Noun (Full state name)` convention.",
+            "title": "Name",
+            "type": "string"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The conformance rule registered for this jurisdiction's absence on this dimension, or null where none is.",
+            "title": "Rule Id",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "wells": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FigureModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Current wells this jurisdiction contributes to the scope; absent where it contributes none."
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "wells",
+          "dimension",
+          "rule_id"
+        ],
+        "title": "FacetJurisdiction",
+        "type": "object"
+      },
       "FacetRemainder": {
         "description": "What the served list leaves out, counted rather than implied.",
         "properties": {
@@ -8706,7 +8761,7 @@
         "type": "object"
       },
       "WellFacets": {
-        "description": "SB-04 \u00a72.2 data for one dimension of one state.",
+        "description": "SB-04 \u00a72.2 data for one dimension of one set of jurisdictions.",
         "properties": {
           "absence": {
             "anyOf": [
@@ -8717,7 +8772,7 @@
                 "type": "null"
               }
             ],
-            "description": "Absent when every well in scope carries a value."
+            "description": "Absent when every well in scope carries a value. It counts only the jurisdictions that carry the dimension: one whose absence a rule explains is named in `jurisdictions` instead."
           },
           "buckets": {
             "description": "The leading values, ranked as asked.",
@@ -8747,6 +8802,14 @@
             "title": "Distinct Values",
             "type": "integer",
             "x-glasswell-not-a-figure": "Cardinality of a value list, not a measured or modelled petroleum figure. How many operators exist is a fact about the vocabulary; how many wells they hold is the figure beside it, and that one carries a handle."
+          },
+          "jurisdictions": {
+            "description": "The set the counts were taken over, in code order, and what each one does with this dimension. A combined bucket is only readable beside this: it says which jurisdictions are in the number and which are outside the absence bucket.",
+            "items": {
+              "$ref": "#/components/schemas/FacetJurisdiction"
+            },
+            "title": "Jurisdictions",
+            "type": "array"
           },
           "matched_wells": {
             "anyOf": [
@@ -8802,13 +8865,13 @@
             "type": "string"
           },
           "state": {
-            "description": "API state code the counts are scoped to.",
+            "description": "Echo of the scope asked for: `all`, or the normalised comma list of API state codes the counts are scoped to.",
             "title": "State",
             "type": "string",
             "x-glasswell-not-a-figure": "API state code carried as reported; an identifier, not a quantity."
           },
           "state_name": {
-            "description": "The state's name, so a client renders `Wells (North Dakota)` without carrying a second copy of the mapping.",
+            "description": "The scope's name, so a client renders `Wells (North Dakota)` without carrying a second copy of the mapping. A set is named as a list, in code order.",
             "title": "State Name",
             "type": "string"
           },
@@ -8835,7 +8898,7 @@
                 "type": "null"
               }
             ],
-            "description": "Every current well in the scoped state, absent when the state holds none."
+            "description": "Every current well in the scope, absent when it holds none."
           }
         },
         "required": [
@@ -8854,6 +8917,7 @@
           "absence",
           "wells",
           "matched_wells",
+          "jurisdictions",
           "states",
           "rules"
         ],
@@ -16778,21 +16842,24 @@
             }
           },
           {
-            "description": "API state code, e.g. 33 for North Dakota. Matched exactly.",
+            "description": "API state codes, e.g. 33 for North Dakota. Repeat the parameter (`?state=33&state=42`), comma-separate the codes (`?state=33,42`), or send `all` for every registered jurisdiction. Matched exactly.",
             "in": "query",
             "name": "state",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "pattern": "^\\d{2}$",
-                  "type": "string"
+                  "items": {
+                    "pattern": "^(?:all|\\d{2}(?:,\\d{2})*)$",
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "API state code, e.g. 33 for North Dakota. Matched exactly.",
+              "description": "API state codes, e.g. 33 for North Dakota. Repeat the parameter (`?state=33&state=42`), comma-separate the codes (`?state=33,42`), or send `all` for every registered jurisdiction. Matched exactly.",
               "title": "State"
             }
           },
@@ -17063,7 +17130,7 @@
             "x-glasswell-glossary": "gt_well_name"
           },
           "state": {
-            "so": "Matches the API state code exactly \u2014 the first two digits of every API-10 in the answer. It is what scopes a `/v1/wells/facets` bucket link to the state the bucket was counted in; without it a county or status filter returns every jurisdiction that happens to share the code.",
+            "so": "Matches the API state codes exactly \u2014 the first two digits of every API-10 in the answer. A set, not one code: repeat it, comma-separate the codes, or send `all` for every registered jurisdiction, read from the registry at request time. It is what scopes a `/v1/wells/facets` bucket link to the jurisdictions the bucket was counted in; without it a county or status filter returns every jurisdiction that happens to share the code, and with only one it answers a combined bucket with one state's rows.",
             "x-glasswell-glossary": "gt_api_10_api_12_api_14"
           },
           "status": {
@@ -17078,19 +17145,22 @@
     },
     "/v1/wells/facets": {
       "get": {
-        "description": "How many current wells carry each value of one dimension, ranked, for one state. This is the question a screening pass opens with \u2014 who operates here, what is in this county, how old is the completion population \u2014 asked of the spine rather than of a page of it. The population is every current well the state has promoted, so the ranking does not move with the viewport, with paging, or with which rows a grid has fetched. Scope is one state and is required. Operator names arrive per source and `lineage.operator_aliases` carries no row for any state served here, so the same company spelled two ways in two jurisdictions is two values; summing them across a border would be an aliasing decision no conformance rule has made, and this operation declines to make it silently (R8). Three things about what the list is not are counted rather than implied: `remainder` holds every value below the cut and the wells they carry, `distinct_values` is how many values the state holds in total, and `absence` is its own named bucket for wells the dimension has no value for. The absence bucket never enters the ranking \u2014 on the current Texas load it would outrank all 9,369 operators \u2014 and never enters the search, because a well with no name matches no name. With no search in force, `buckets` + `remainder` + `absence` sum to `wells`. Under a `q` the ranked arms are searched and `absence` is not, so `buckets` + `remainder` sum to `matched_wells` instead and that is what the served figures reconcile against. Every count is a figure with a derivation handle, so a bucket resolves at /v1/explain to the government file its wells were promoted from. Because each distinct dimension, search and cut persists exact response evidence, this operation is capped at 60 requests per principal per UTC minute. It does not return the wells themselves \u2014 each bucket links to /v1/wells, which does.",
+        "description": "How many current wells carry each value of one dimension, ranked, over one jurisdiction or several. This is the question a screening pass opens with \u2014 who operates here, what is in this county, how old is the completion population \u2014 asked of the spine rather than of a page of it. The population is every current well the state has promoted, so the ranking does not move with the viewport, with paging, or with which rows a grid has fetched. Scope is a set of states and is required: repeat `state`, comma-separate the codes, or send `all` for every registered jurisdiction the spine carries wells for. `jurisdictions` names the set the counts were taken over and says, per jurisdiction, whether it carries this dimension. Operator names arrive per source and `lineage.operator_aliases` carries no row for any state served here, so the same company spelled two ways in two jurisdictions is two values; summing them across a border would be an aliasing decision no conformance rule has made, and this operation declines to make it silently (R8) \u2014 a combined bucket is one spelling in one column, never two spellings added together. Three things about what the list is not are counted rather than implied: `remainder` holds every value below the cut and the wells they carry, `distinct_values` is how many values the state holds in total, and `absence` is its own named bucket for wells the dimension has no value for. The absence bucket never enters the ranking \u2014 on the current Texas load it would outrank all 9,369 operators \u2014 and never enters the search, because a well with no name matches no name. It counts only jurisdictions that carry the dimension: one holding no value at all under a registered rule is named in `jurisdictions` instead, because a registered absence and an unexplained one summed together make a number with two meanings. With no search in force, `buckets` + `remainder` + `absence` + the `absent_by_rule` jurisdictions' `wells` sum to `wells`. Under a `q` the ranked arms are searched and `absence` is not, so `buckets` + `remainder` sum to `matched_wells` instead and that is what the served figures reconcile against. Every count is a figure with a derivation handle, so a bucket resolves at /v1/explain to the government file its wells were promoted from. Because each distinct dimension, search and cut persists exact response evidence, this operation is capped at 60 requests per principal per UTC minute. It does not return the wells themselves \u2014 each bucket links to /v1/wells, which does.",
         "operationId": "get_well_facets",
         "parameters": [
           {
-            "description": "API state code, e.g. 33 for North Dakota. Required.",
+            "description": "API state codes, e.g. 33 for North Dakota. Repeat the parameter (`?state=33&state=42`), comma-separate the codes (`?state=33,42`), or send `all` for every registered jurisdiction. Required.",
             "in": "query",
             "name": "state",
             "required": true,
             "schema": {
-              "description": "API state code, e.g. 33 for North Dakota. Required.",
-              "pattern": "^\\d{2}$",
+              "description": "API state codes, e.g. 33 for North Dakota. Repeat the parameter (`?state=33&state=42`), comma-separate the codes (`?state=33,42`), or send `all` for every registered jurisdiction. Required.",
+              "items": {
+                "pattern": "^(?:all|\\d{2}(?:,\\d{2})*)$",
+                "type": "string"
+              },
               "title": "State",
-              "type": "string"
+              "type": "array"
             }
           },
           {
@@ -17322,7 +17392,7 @@
             "x-glasswell-glossary": "gt_conformance_rule"
           },
           "state": {
-            "so": "The API state code, the first two digits of every API-10 in the bucket. Required, and refused when the spine holds no well for it: a state whose ingest has not run is a different answer from a state with no operators, and only one of them is worth serving as an empty list.",
+            "so": "The API state codes, the first two digits of every API-10 in the bucket. Repeat it, comma-separate the codes, or send `all` for every registered jurisdiction \u2014 `all` is read from the registry at request time, so a newly registered state joins the answer without a client change. Required, and refused when the spine holds no well for a code or the registry knows none: a state whose ingest has not run is a different answer from a state with no operators, and only one of them is worth serving as an empty list.",
             "x-glasswell-glossary": "gt_api_10_api_12_api_14"
           }
         }

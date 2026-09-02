@@ -253,3 +253,58 @@ def test_labels_bind_fields_to_glossary_terms(client: TestClient) -> None:
 
     assert labels["/api10"] == "gt_api_10_api_12_api_14"
     assert labels["/land_unit_label"] == "gt_land_unit"
+
+
+def test_the_collection_scopes_to_a_set_of_states_however_it_is_spelled(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """A facet bucket counted over two jurisdictions publishes a link with both in it, so the
+    collection has to read the set the same way the facet wrote it — repeated or comma-listed,
+    it is one question."""
+    repeated = client.get("/v1/wells?state=33&state=42&limit=200").json()["data"]
+    listed = client.get("/v1/wells?state=42,33&limit=200").json()["data"]
+    one = client.get("/v1/wells?state=42&limit=200").json()["data"]
+
+    assert [row["api10"] for row in repeated] == [row["api10"] for row in listed]
+    assert {row["api10"][:2] for row in repeated} == {"33", "42"}
+    assert {row["api10"][:2] for row in one} == {"42"}
+    assert len(repeated) > len(one)
+
+
+def test_the_collection_takes_all_for_every_registered_jurisdiction(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """`all` is the registry's answer rather than the caller's list, so a bucket link minted
+    against it still names the same population after a fifth jurisdiction registers."""
+    every = client.get("/v1/wells?state=all&limit=200").json()["data"]
+    unscoped = client.get("/v1/wells", params={"limit": 200}).json()["data"]
+
+    assert [row["api10"] for row in every] == [row["api10"] for row in unscoped]
+
+
+def test_a_cursor_minted_on_one_spelling_of_a_set_is_valid_on_the_other(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The fingerprint is over the normalised set, not over the query string: two spellings of
+    one filter are one traversal, and a page refused mid-scroll would be a defect the reader
+    could only escape by starting again."""
+    first = client.get("/v1/wells?state=33&state=42&limit=2").json()
+    cursor = first["meta"]["next_cursor"]
+
+    assert cursor
+    resumed = client.get(f"/v1/wells?state=42,33&limit=2&cursor={cursor}")
+    assert resumed.status_code == 200, resumed.text
+    assert resumed.json()["data"]
+
+
+def test_a_set_scoped_page_carries_the_set_into_its_own_next_link(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """A `next` that drops half the scope pages through a different population."""
+    body = client.get("/v1/wells?state=33&state=42&limit=2").json()
+    following = body["links"]["next"]
+
+    assert following
+    assert following.count("state=") == 2
+    followed = client.get(following)
+    assert followed.status_code == 200, followed.text
