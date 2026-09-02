@@ -139,7 +139,19 @@ begin
          order by j.identity_prefix
     loop
         -- format %I quotes every identifier the registry named; nothing here is concatenated
-        -- raw, and the three it interpolates are all read from a rule spec.
+        -- raw, and the three it interpolates are all read from a rule spec. That bounds the
+        -- syntax and not the choice of table: this loop will read whatever two columns of
+        -- whatever `lineage` relation a spec names, into a table glasswell_api may select and
+        -- resolved_status() reads as a well's served status class. Registered against
+        -- lineage.conformance_rules it copies 244 rows of rule text into the status vocabulary.
+        --
+        -- WHAT MAKES THAT SAFE IS A GRANT, NOT THE QUOTING. Selecting the table takes a
+        -- lineage.jurisdiction_rules row, and neither glasswell_api nor glasswell_pipeline may
+        -- append one -- only the owner, through a migration or the seed, both reviewed. The day
+        -- a migration grants either role insert there, this becomes an arbitrary-`lineage`-read
+        -- served as a status class. tests/integration/test_migration_075_*.py holds both halves:
+        -- one test copies conformance_rules through this loop to show the shape, the other
+        -- asserts no non-owner role holds the grant that would reach it.
         execute format(
             'insert into lineage.status_resolution_resolved (for_state_code,'
             ' for_status_reported, resolved_status, jurisdiction_code, built_for)'

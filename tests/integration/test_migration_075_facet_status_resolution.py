@@ -376,3 +376,132 @@ def test_a_registration_and_its_rules_reach_the_resolver_through_their_own_trigg
 
     assert followed == [("V", "plugged"), ("W", "active")]
     assert untouched > 0
+
+
+# The two roles a served request and a pipeline run actually connect as. The owner is excluded
+# for the reason test_layer_boundary.py excludes a superuser and says so: it holds every
+# privilege by definition, and on this harness the fixture connects as it. On the deployed host
+# `glasswell` is neither owner nor superuser and holds no insert here either, which was read
+# read-only during the gate; what a test can assert is the two roles below.
+SERVING_ROLES = ("glasswell_api", "glasswell_pipeline")
+
+
+def test_a_registered_mapping_table_is_read_verbatim_into_the_served_status_class(
+    db: psycopg.Connection,
+) -> None:
+    """The escalation the grant below is the only thing standing in front of.
+
+    `refresh_status_resolution()` reads whatever two columns of whatever `lineage` table a rule
+    spec names. The identifiers are `format(%I)`-quoted, so nothing injects — but quoting bounds
+    the *syntax*, not the *choice of table*. Registered against `lineage.conformance_rules`, the
+    refresh copies its rows straight into `lineage.status_resolution_resolved`, which
+    `glasswell_api` may select and which `resolved_status()` reads as a well's served status
+    class. Any populated two-column `lineage` table is reachable this way.
+
+    Asserted rather than argued, so the gate below is load-bearing and not decoration.
+    """
+    seed_all(db)
+    db.commit()
+    seed_conformance_rule(
+        db,
+        rule_id="cr_fixture_arbitrary_table_1",
+        spec={
+            "resolved_at": "read_time",
+            "mapping_table": "conformance_rules",
+            "key_col": "rule_id",
+            "value_col": "rationale",
+        },
+        rationale="Planted to show what the registry can name if anything may append to it.",
+    )
+    with db.cursor() as cursor:
+        cursor.execute("select count(*) from lineage.conformance_rules")
+        rules = int(cursor.fetchone()[0])
+        cursor.execute(
+            "insert into lineage.jurisdiction_codes (jurisdiction_code, level)"
+            " values (%s, 'state') on conflict do nothing",
+            (PLANTED_CODE,),
+        )
+        cursor.execute(
+            "insert into lineage.jurisdictions (jurisdiction_code, effective_from, published_at,"
+            " evidence_tag, evidence_commit, name, regulator_name, regulator_url,"
+            " identity_scheme, identity_prefix, identity_pattern, source_ids, rationale)"
+            " values (%s, %s, %s, 'harness-fixture', %s, 'Planted', 'regulator',"
+            " 'https://example.invalid/', 'api10', %s, %s, array['nd_mpr_xlsx'], 'fixture')",
+            (
+                PLANTED_CODE,
+                REGISTERED_ON,
+                REGISTERED_ON,
+                "0" * 40,
+                PLANTED_PREFIX,
+                f"^{PLANTED_PREFIX}[0-9]{{8}}$",
+            ),
+        )
+        cursor.execute(
+            "insert into lineage.jurisdiction_rules (jurisdiction_code, effective_from,"
+            " published_at, decision, rule_id)"
+            " values (%s, %s, %s, 'status_vocabulary', 'cr_fixture_arbitrary_table_1')",
+            (PLANTED_CODE, REGISTERED_ON, REGISTERED_ON),
+        )
+        cursor.execute(
+            "select count(*) from canonical.status_resolution where for_state_code = %s",
+            (PLANTED_PREFIX,),
+        )
+        leaked = int(cursor.fetchone()[0])
+    db.rollback()
+
+    assert rules > 200, "the fixture has to hold enough rules for the leak to be visible"
+    assert leaked == rules
+
+
+def test_no_serving_role_may_append_the_registry_row_that_selects_a_mapping_table(
+    db: psycopg.Connection,
+) -> None:
+    """The bound, made a gate instead of an absent grant nobody wrote down.
+
+    What makes the `%I` path safe is not the quoting — that bounds the syntax. It is that
+    selecting which table the refresh reads takes a `lineage.jurisdiction_rules` row, and no
+    role a request or a pipeline run acts as may append one: only the table owner, through a
+    migration or the seed, both of which are reviewed. The test above is what that grant is
+    standing in front of.
+
+    The day a migration grants `glasswell_pipeline` insert here — the cadence track registers
+    rules and job rows of its own — the escalation above becomes reachable and nothing else in
+    the tree would notice.
+    """
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select r.rolname,"
+            "       has_table_privilege(r.rolname, 'lineage.jurisdiction_rules', 'insert'),"
+            "       has_table_privilege(r.rolname, 'lineage.jurisdictions', 'insert'),"
+            "       has_table_privilege(r.rolname, 'lineage.conformance_rules', 'insert')"
+            "  from pg_roles r where r.rolname = any(%s) order by r.rolname",
+            (list(SERVING_ROLES),),
+        )
+        held = cursor.fetchall()
+        # Not a fixed list of roles: one added later must be caught the day it is created, not
+        # the day somebody remembers to name it here. `pg_*` are PostgreSQL's own predefined
+        # roles, which nothing connects as, and the owner and a superuser hold every privilege
+        # by definition -- the same exclusion test_layer_boundary.py makes and states.
+        cursor.execute(
+            "select r.rolname, has_table_privilege(r.rolname, c.oid, 'insert')"
+            "  from pg_roles r"
+            "  join pg_class c on c.relname = 'jurisdiction_rules'"
+            "  join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'lineage'"
+            " where not r.rolsuper and r.oid <> c.relowner and r.rolname not like %s"
+            " order by r.rolname",
+            (r"pg\_%",),
+        )
+        candidates = cursor.fetchall()
+    others = [role for role, may_insert in candidates if may_insert]
+
+    # A candidate set that had lost the serving roles would satisfy the assertion below by
+    # vacuity, which is the failure mode a grant gate is most likely to reach.
+    assert set(SERVING_ROLES) <= {role for role, _ in candidates}
+    assert [row[0] for row in held] == sorted(SERVING_ROLES)
+    for role, rules, registrations, conformance in held:
+        assert rules is False, f"{role} may append a jurisdiction rule"
+        assert registrations is False, f"{role} may append a registration"
+        # The pipeline legitimately seeds conformance rules, and that is not the escalation:
+        # a rule spec reaches the resolver only through a jurisdiction_rules row.
+        assert conformance in (True, False)
+    assert others == [], f"a non-owner role may append a jurisdiction rule: {others}"
