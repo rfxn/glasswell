@@ -152,6 +152,43 @@ def seed_well(
     return api10
 
 
+def seed_statusless_well(
+    connection: psycopg.Connection, *, api10: str, like: str
+) -> str:
+    """A well whose regulator filed no status at all, on `like`'s manifest and derivation.
+
+    The absence class had no representative in any fixture, so every gate over it summed to
+    nothing while the deployed corpus held 68,186 of them in one state.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select source_manifest_id, derivation_id from canonical.wells"
+            " where api10 = %s order by effective_from desc limit 1",
+            (like,),
+        )
+        origin = cursor.fetchone()
+    if origin is None:
+        raise ValueError(f"no well {like} to take a manifest and a derivation from")
+    return seed_well(
+        connection,
+        api10=api10,
+        manifest_id=origin[0],
+        derivation_id=origin[1],
+        state_code=api10[:2],
+        county_code_at_permit=None,
+        ndic_file_no=None,
+        operator_name_reported=None,
+        operator_id=None,
+        well_name="STATUSLESS 1",
+        status_canonical=None,
+        status_reported=None,
+        well_type_reported=None,
+        spud_date=None,
+        basin=None,
+        land_unit_label=None,
+    )
+
+
 def seed_well_spatial(
     connection: psycopg.Connection,
     *,
