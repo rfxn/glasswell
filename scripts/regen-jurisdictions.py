@@ -159,6 +159,7 @@ def roster() -> str:
         {
             "code": str(row["jurisdiction_code"]),
             "id": str(row["wells_layer_id"]),
+            "tileLayerId": _wells_layer_id(row),
             "styleLayers": list(row["wells_style_layer_ids"]),  # type: ignore[arg-type]
             "drawOrder": row["wells_draw_order"],
             "defaultOn": bool(row["wells_default_on"]),

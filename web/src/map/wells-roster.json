@@ -2,6 +2,7 @@
   {
     "code": "ND",
     "id": "wells",
+    "tileLayerId": "nd_wells",
     "styleLayers": [
       "wells",
       "wells-struck"
@@ -12,6 +13,7 @@
   {
     "code": "TX",
     "id": "tx-wells",
+    "tileLayerId": "tx_wells",
     "styleLayers": [
       "tx-wells",
       "tx-wells-struck"
@@ -22,6 +24,7 @@
   {
     "code": "NM",
     "id": "nm-wells",
+    "tileLayerId": "nm_wells",
     "styleLayers": [
       "nm-wells",
       "nm-wells-struck"
@@ -32,6 +35,7 @@
   {
     "code": "MT",
     "id": "mt-wells",
+    "tileLayerId": "mt_wells",
     "styleLayers": [
       "mt-wells",
       "mt-wells-struck"
