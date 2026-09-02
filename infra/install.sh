@@ -257,7 +257,6 @@ printf 'placed the %s ident map and reloaded postgresql — both files parse cle
 install -o root -g root -m 0600 /dev/null "$ETC_DIR/scheduler.env"
 printf 'GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql&user=glasswell_scheduler\n' \
     > "$ETC_DIR/scheduler.env"
-chmod 0600 "$ETC_DIR/scheduler.env"
 printf 'wrote %s/scheduler.env — password-free socket DSN, root:root 0600\n' "$ETC_DIR"
 
 if [[ $with_martin_config -eq 1 ]]; then

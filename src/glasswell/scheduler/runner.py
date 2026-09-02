@@ -194,9 +194,13 @@ def close_run(
 
 
 def _memory_peak(values: Mapping[str, str]) -> int | None:
-    """MemoryPeak needs systemd 254; where it is absent the row says so rather than zeroing."""
+    """MemoryPeak needs systemd 254; where it is absent the row says so rather than zeroing.
+
+    The sentinel a supporting systemd prints for a run it did not measure is `[not set]`,
+    which is not a number either, so one test covers both absences.
+    """
     raw = values.get("MemoryPeak", "")
-    return int(raw) if raw.isdigit() and raw != "[not set]" else None
+    return int(raw) if raw.isdigit() else None
 
 
 def reconcile(
