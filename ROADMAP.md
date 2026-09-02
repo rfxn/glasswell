@@ -87,7 +87,8 @@ building one, so it goes first under compression.
 **Montana follows the NM gate and precedes TX allocation v0.** It is not a phase and
 renumbers nothing; it extends P1's ND spine into a second Williston state. It is not one
 of the additional basins deferred until after P8, because it is the same Williston Bakken
-already trained on; Colorado and Wyoming would be.
+already trained on. Colorado and Wyoming open the Rockies rather than extending the
+Williston; §2.3's deferral is amended for them at v0.77, with the argument recorded there.
 
 Four reasons for that position. It extends the trained basin rather than opening a new
 one, so formation aliases and the peer ladder in `modeling/type_curve.py` reach across
@@ -148,8 +149,8 @@ rebuilt once the registry lands.
 | Horizon | Releases | Theme | Contents |
 |---------|----------|-------|----------|
 | **H1** | v0.74–v0.76 | Truth, retained work, foundations | v0.74 **shipped** — NM read-time status resolution, the Map→Explore crossing, and Basins and Plays drawn as real layer rows; v0.75 the N2 re-land and glossary coverage on the three densest surfaces; v0.76 the jurisdiction registry and an owner-only Accounts surface |
-| **H2** | v0.77–v0.80 | Prove the seam, fill the biggest hole | v0.77 state #5 through the registry plus a cadence-driven scheduler, with NM and MT scheduled at last; v0.78 Texas lease production, allocation v0 and both validators — P7b, the largest resident state finally carrying numbers; v0.79 status semantics on screen: producing beside active on the legend, a status timeline on the flyout, per-state legend notes; v0.80 full glossary coverage, the em-dash sweep, and Explore usable at 390 px |
-| **H3** | v0.81+ | The blueprint phases, on a registry | P3 modeling (quantile models, calibration, registry writer), P4 economics, P5 agents; Canada as a jurisdiction with a UWI identity scheme rather than a special case; PA/OH/WV as the first non-PLSS land question |
+| **H2** | v0.77–v0.80 | Prove the seam, fill the biggest hole | v0.77 state #5 lands as a registration · Colorado through the registry, one parameterised wells mart replacing the four per-state copies, the martin catalogue asserted against `TILE_LAYERS` in CI, the neighbour envelope and length-source defaults widened by rule, the glossary page cap removed, and the cadence-driven scheduler (C26) so NM and MT are scheduled; v0.78 Texas lease production, allocation v0 and both validators — P7b, the largest resident state finally carrying numbers; v0.79 status truth for N states: the legend and status vocabulary served from `/v1/jurisdictions`, `canonical.status_resolution` generalised past one jurisdiction, a jurisdiction row and regulator deep-link on the flyout, hover and provenance notes that name the well's own regulator; v0.80 glossary full coverage with an em-dash lint, Explore usable at 390 px (a media arm below 520 px), DOM-count budgets in PERF.md for the layer panel, legend and Status table |
+| **H3** | v0.81+ | The blueprint phases, on a registry | P3 modeling (quantile models, calibration, registry writer), P4 economics, P5 agents; Canada as a jurisdiction with a UWI identity scheme rather than a special case; PA/OH/WV as the first non-PLSS land question. The `/v1/wells` spine query is rewritten ahead of P3 modeling, not after |
 
 State #5 is chosen on reachability first: bulk headers, bulk well-grain production, surface
 coordinates, a published status codebook, stated terms. The per-release track tables —
@@ -238,7 +239,8 @@ in the cut order costs a success criterion.
 ## Deferred until after P8
 
 Canada · NGL three-stream economics beyond simple gas pricing · fault-aware
-geology · additional basins · TX inventory geometry · a public hosted demo and capability
+geology · additional basins beyond the Rockies sequence named under Horizon H2 · TX
+inventory geometry · a public hosted demo and capability
 matrix (IP-gated, see [`blueprint.md`](blueprint.md) §8.2). The source repository is public;
 its proprietary license and data-redistribution limits are unchanged.
 
@@ -274,7 +276,9 @@ Carried forward, to be resolved with evidence rather than preference:
 11. **TX inventory geometry** — with no PLSS, what is the unit: the operator's unit polygon, the lease, the abstract, or a synthetic grid? The land-unit abstraction keeps this a design question rather than a migration. It is also not a Texas question. Pennsylvania, West Virginia and Ohio are metes-and-bounds with no PLSS either, so `ingest/blm_plss.py`, `marts/land_units.py`, `marts/land_metrics.py`, the spacing-unit tiles and the whole Protocol 4D township-inventory story do not port to Appalachia at all. Whatever answers this answers those, and until it does, Appalachia inherits an open design question rather than an ingest job.
 12. **Attribute-bundle size ceiling** — the client-side join is measured at ND scale and the Permian is an order of magnitude larger. The declared feature cap turns this into an instrument that fires on real traffic rather than a measurement someone must remember to take.
 13. **Rule-change re-promotion cost** — at what rule-change frequency does re-vintaging become the dominant compute cost, and does a rule change ever justify a rebuild instead?
-14. **Vintage cohort key** — spud year or completion anchor year? Both inputs are already held: `spud_year` is a tile column, and `modeling/model_dataset.py` already bins subjects by anchor year. The two disagree for any well spudded in one year and completed in the next, which is most of them, so this is a conformance row with a rationale rather than a query-level choice.
+14. **Vintage cohort key** — spud year or completion anchor year? **Closed 2026-09-01** ·
+    `cr_nd_vintage_cohort_1` pins `spud_year` with its measured rationale
+    (`seed/conformance_vintage.py:26`), shipped in v0.75. Both inputs are already held: `spud_year` is a tile column, and `modeling/model_dataset.py` already bins subjects by anchor year. The two disagree for any well spudded in one year and completed in the next, which is most of them, so this is a conformance row with a rationale rather than a query-level choice.
 15. **Whether a shorter horizon earns its keep** — a six-month cumulative is cheap to compute and expensive to land: `HORIZONS = (12, 24)` is part of the pinned `mdv1.4` identity and the accepted publication references it, so adding one changes an immutable and forces a reproducibility re-run. Only worth it against measured evidence that cum12 is too long a feedback loop for the ledger.
 
 Two further questions — league-table normalisation, and whether upstream bandwidth
