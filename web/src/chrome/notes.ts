@@ -8,12 +8,33 @@
 
 export const NOTE_SEPARATOR = " · ";
 
-/** A `·`-joined line of short facts. Empty parts drop, so callers can pass conditionals. */
-export function scopeLine(parts: (string | null | undefined | false)[]): HTMLParagraphElement {
+/**
+ * A token that may not be broken across lines. A date is the case this exists for: wrapped at
+ * its own hyphen it reads as a truncated year at the end of a line ("snapshot 2026-" / "08-23").
+ */
+export function unbreakable(text: string): HTMLSpanElement {
+  const span = document.createElement("span");
+  span.className = "gw-nowrap";
+  span.textContent = text;
+  return span;
+}
+
+/**
+ * A `·`-joined line of short facts. Empty parts drop, so callers can pass conditionals, and a
+ * part may be a node so one token can refuse to wrap without the line refusing to.
+ * `textContent` reads exactly as it did when this joined strings.
+ */
+export function scopeLine(
+  parts: (string | Node | null | undefined | false)[],
+): HTMLParagraphElement {
   const element = document.createElement("p");
   element.className = "gw-scope";
   element.setAttribute("data-no-glossary", "");
-  element.textContent = parts.filter((part): part is string => Boolean(part)).join(NOTE_SEPARATOR);
+  const kept = parts.filter((part): part is string | Node => Boolean(part));
+  kept.forEach((part, index) => {
+    if (index > 0) element.appendChild(document.createTextNode(NOTE_SEPARATOR));
+    element.append(part);
+  });
   return element;
 }
 

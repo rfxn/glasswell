@@ -7,7 +7,7 @@ import { readState } from "../app/state.ts";
 import { toChartSeries } from "../chart/series.ts";
 import type { ProductionData } from "../chart/series.ts";
 import { EXPLAIN_EVENT, explainHandle } from "../chrome/handle.ts";
-import { emptyState, scopeLine, warningNotes } from "../chrome/notes.ts";
+import { emptyState, scopeLine, unbreakable, warningNotes } from "../chrome/notes.ts";
 import { focusPanel } from "../chrome/overlays.ts";
 import { crossingLink, openThisSeries, rowsForThisWell } from "../explore/bridge.ts";
 import { labelElement } from "../glossary/gw-term.ts";
@@ -568,7 +568,7 @@ function cumulativesBody(
   const fragment = document.createDocumentFragment();
   if (data.cumulative === null) {
     fragment.appendChild(emptyState("No cumulative: nothing ever filed."));
-    fragment.appendChild(scopeLine([`snapshot ${formatVintage(data.snapshot_vintage)}`]));
+    fragment.appendChild(scopeLine([unbreakable(`snapshot ${formatVintage(data.snapshot_vintage)}`)]));
     return fragment;
   }
 
@@ -620,7 +620,7 @@ function coverageTitle(coverage: StreamCoverage | undefined): string {
   );
 }
 
-function cumulativeScope(data: WellCumulatives): (string | false)[] {
+function cumulativeScope(data: WellCumulatives): (string | Node | false)[] {
   const blocks = CUMULATIVE_STREAMS.map(([key]) => data.coverage[key]).filter(
     (block): block is StreamCoverage => Boolean(block),
   );
@@ -641,7 +641,7 @@ function cumulativeScope(data: WellCumulatives): (string | false)[] {
   return [
     window,
     span > 0 && `${count} of ${span} months admitted`,
-    `snapshot ${formatVintage(data.snapshot_vintage)}`,
+    unbreakable(`snapshot ${formatVintage(data.snapshot_vintage)}`),
   ];
 }
 

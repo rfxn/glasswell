@@ -336,6 +336,19 @@ describe("well card", () => {
     );
   });
 
+  // gate-v075 defect 2: at 1024 and 390 the line wrapped at the vintage's own hyphen and read
+  // "snapshot 2026-" / "08-23", which scans as a truncated year at the end of a line.
+  it("keeps the snapshot vintage on one line without changing what the line says", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    const scope = host.querySelector<HTMLElement>(".gw-well-cumulatives .gw-scope");
+    const held = scope?.querySelector<HTMLElement>(".gw-nowrap");
+
+    expect(held?.textContent).toBe("snapshot 2026-08-01");
+    // The date is a real hyphen still, so the line reads and copies exactly as before.
+    expect(scope?.textContent).toContain("snapshot 2026-08-01");
+  });
+
   it("renders a withheld stream as withheld and a no-report stream as no report, never as 0", async () => {
     const classes = {
       ...cumulativesEnvelope,

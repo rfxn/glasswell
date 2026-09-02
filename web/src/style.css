@@ -1711,6 +1711,11 @@ a {
 
 /* chrome/notes.ts. A scope line is the same obligation the sentence carried, at a width a
    reader scans instead of reads; the disclosure below it holds the wording unchanged. */
+/* One token that must not break at its own hyphen; scopeLine's `unbreakable` puts it here. */
+.gw-nowrap {
+  white-space: nowrap;
+}
+
 .gw-scope,
 .gw-empty {
   margin: 0;

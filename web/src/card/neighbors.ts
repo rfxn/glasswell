@@ -2,7 +2,7 @@ import { ApiError, getEnvelope } from "../api/client.ts";
 import { unwrap } from "../api/envelope.ts";
 import type { Figure } from "../api/envelope.ts";
 import { selectWell } from "../bus.ts";
-import { disclosure, emptyState, scopeLine, warningNotes, warningTitle } from "../chrome/notes.ts";
+import { disclosure, emptyState, scopeLine, unbreakable, warningNotes, warningTitle } from "../chrome/notes.ts";
 import { highlight } from "../glossary/index.ts";
 import { termIndex } from "../glossary/store.ts";
 import {
@@ -80,7 +80,11 @@ function unavailable(error: unknown): HTMLElement[] {
 function neighborContextBody(context: NeighborContext): DocumentFragment {
   const fragment = document.createDocumentFragment();
   fragment.append(
-    scopeLine(["Proximity, not analogs", "current geometry", `completed before ${formatVintage(context.at_date)}`]),
+    scopeLine([
+      "Proximity, not analogs",
+      "current geometry",
+      unbreakable(`completed before ${formatVintage(context.at_date)}`),
+    ]),
     contextGroup(
       "Eligible neighbours",
       null,
