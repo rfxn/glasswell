@@ -139,7 +139,7 @@ class Capabilities(BaseModel):
     )
 
 
-class StatusCount(BaseModel):
+class JurisdictionStatusCount(BaseModel):
     status_canonical: str = Field(
         description="The canonical well status this count is for.",
         json_schema_extra={GLOSSARY_KEY: "gt_well_status"},
@@ -188,7 +188,7 @@ class JurisdictionRow(BaseModel):
             " until a refresh has produced one, and never served as zero in its place."
         )
     )
-    well_counts_by_status: list[StatusCount] = Field(
+    well_counts_by_status: list[JurisdictionStatusCount] = Field(
         description="The same measurement broken out by canonical status."
     )
     measured_on: str | None = Field(

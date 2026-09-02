@@ -197,7 +197,7 @@
           "statuses": {
             "description": "One entry per class present, largest first.",
             "items": {
-              "$ref": "#/components/schemas/glasswell__api__routers__wells__StatusCount"
+              "$ref": "#/components/schemas/StatusCount"
             },
             "title": "Statuses",
             "type": "array"
@@ -4603,7 +4603,7 @@
           "well_counts_by_status": {
             "description": "The same measurement broken out by canonical status.",
             "items": {
-              "$ref": "#/components/schemas/glasswell__api__routers__jurisdictions__StatusCount"
+              "$ref": "#/components/schemas/JurisdictionStatusCount"
             },
             "title": "Well Counts By Status",
             "type": "array"
@@ -4667,6 +4667,26 @@
           "note"
         ],
         "title": "JurisdictionRule",
+        "type": "object"
+      },
+      "JurisdictionStatusCount": {
+        "properties": {
+          "status_canonical": {
+            "description": "The canonical well status this count is for.",
+            "title": "Status Canonical",
+            "type": "string",
+            "x-glasswell-glossary": "gt_well_status"
+          },
+          "wells": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Wells measured in that status, with its handle."
+          }
+        },
+        "required": [
+          "status_canonical",
+          "wells"
+        ],
+        "title": "JurisdictionStatusCount",
         "type": "object"
       },
       "KeyRecordModel": {
@@ -7303,6 +7323,26 @@
         "title": "StatusCheck",
         "type": "object"
       },
+      "StatusCount": {
+        "properties": {
+          "status": {
+            "description": "Canonical status the wells in this bucket carry. Never null: a well the source reported no status for is counted in `unmapped_wells`, not here.",
+            "title": "Status",
+            "type": "string",
+            "x-glasswell-glossary": "gt_well_status"
+          },
+          "wells": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Wells in this class inside the box, with the handle the count resolves by."
+          }
+        },
+        "required": [
+          "status",
+          "wells"
+        ],
+        "title": "StatusCount",
+        "type": "object"
+      },
       "StatusDisclosure": {
         "additionalProperties": false,
         "properties": {
@@ -8947,7 +8987,7 @@
           "statuses": {
             "description": "One entry per canonical class present in the box, largest first.",
             "items": {
-              "$ref": "#/components/schemas/glasswell__api__routers__wells__StatusCount"
+              "$ref": "#/components/schemas/StatusCount"
             },
             "title": "Statuses",
             "type": "array"
@@ -9520,46 +9560,6 @@
           "neighbor_geom_key"
         ],
         "title": "WinningGeometry",
-        "type": "object"
-      },
-      "glasswell__api__routers__jurisdictions__StatusCount": {
-        "properties": {
-          "status_canonical": {
-            "description": "The canonical well status this count is for.",
-            "title": "Status Canonical",
-            "type": "string",
-            "x-glasswell-glossary": "gt_well_status"
-          },
-          "wells": {
-            "$ref": "#/components/schemas/FigureModel",
-            "description": "Wells measured in that status, with its handle."
-          }
-        },
-        "required": [
-          "status_canonical",
-          "wells"
-        ],
-        "title": "StatusCount",
-        "type": "object"
-      },
-      "glasswell__api__routers__wells__StatusCount": {
-        "properties": {
-          "status": {
-            "description": "Canonical status the wells in this bucket carry. Never null: a well the source reported no status for is counted in `unmapped_wells`, not here.",
-            "title": "Status",
-            "type": "string",
-            "x-glasswell-glossary": "gt_well_status"
-          },
-          "wells": {
-            "$ref": "#/components/schemas/FigureModel",
-            "description": "Wells in this class inside the box, with the handle the count resolves by."
-          }
-        },
-        "required": [
-          "status",
-          "wells"
-        ],
-        "title": "StatusCount",
         "type": "object"
       }
     },
