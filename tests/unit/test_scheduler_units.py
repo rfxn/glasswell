@@ -228,7 +228,6 @@ def test_install_places_both_units_generates_scheduler_env_and_ships_no_retired_
     install = INSTALL.read_text()
 
     assert "glasswell-scheduler.service glasswell-scheduler.timer" in install
-    assert "--enable-scheduler" in install
     assert "RETIRED_UNITS=()" in install, "the mechanism ships empty; v0.78 fills it"
     assert "user=glasswell_scheduler" in install
     assert "systemctl reload postgresql" in install
@@ -302,8 +301,8 @@ def test_the_retired_unit_mechanism_disables_and_removes_a_planted_unit(tmp_path
     assert "RETIRED_UNITS=()" in INSTALL.read_text(), "the shipped list stays empty"
 
 
-HBA_START = '    hba="$PG_ETC_DIR/pg_hba.conf"'
-HBA_END = "    install -d -o root -g root -m 0755 \"$PG_IDENT_DROPIN_DIR\""
+HBA_START = 'hba="$PG_ETC_DIR/pg_hba.conf"'
+HBA_END = 'install -d -o root -g root -m 0755 "$PG_IDENT_DROPIN_DIR"'
 
 
 def run_hba_guard(tmp_path, hba_body: str) -> subprocess.CompletedProcess:
@@ -350,7 +349,7 @@ def test_install_accepts_a_line_it_has_already_mapped_itself(tmp_path) -> None:
     assert result.returncode == 0, result.stderr
 
 
-IDENT_END = "    printf 'placed the %s ident map and reloaded postgresql"
+IDENT_END = "printf 'placed the %s ident map and reloaded postgresql"
 
 
 def run_ident_placement(tmp_path, hba_body: str, run_twice: bool = False):
@@ -405,3 +404,36 @@ def test_the_map_leaves_the_other_local_rules_untouched(tmp_path) -> None:
 
     assert len(mapped) == 1
     assert mapped[0].split()[:4] == ["local", "all", "all", "peer"]
+
+
+def top_level_lines(text: str) -> set[str]:
+    """Lines the script runs on every invocation: column zero, outside every flag branch."""
+    return {line.strip() for line in text.splitlines() if line and not line[0].isspace()}
+
+
+def test_the_ident_map_is_placed_on_every_run_and_not_behind_a_flag() -> None:
+    """`deploy.sh` runs `./install.sh` with no arguments, so anything behind `--with-postgres`
+    never reaches the host — the same defect the Caddyfile step exists to fix one row above."""
+    install = INSTALL.read_text()
+    top = top_level_lines(install)
+
+    assert 'install -d -o root -g root -m 0755 "$PG_IDENT_DROPIN_DIR"' in top
+    assert "systemctl reload postgresql || {" in top
+    assert "systemctl enable glasswell-scheduler.timer" in top
+    # The tuning drop-in is one-time provisioning and stays behind the flag.
+    assert "if [[ $with_postgres -eq 1 ]]; then" in top
+    assert '"$INFRA_DIR/postgres/postgresql.conf.d/glasswell.conf" "$PG_CONF_DIR/glasswell.conf"' \
+        not in top
+    # Named only in the comment that explains why it does not exist.
+    assert "enable_scheduler" not in install, (
+        "a flag nothing passes is how the map was lost; the timer arms on every run"
+    )
+
+
+def test_the_deploy_starts_the_scheduler_timer_the_way_it_starts_the_others() -> None:
+    deploy = (ROOT / "scripts" / "deploy.sh").read_text()
+
+    assert 'remote "systemctl start glasswell-scheduler.timer"' in deploy
+    assert "list-unit-files glasswell-scheduler.timer" not in deploy, (
+        "the unit is placed on every run now, so the existence guard is a way to skip silently"
+    )

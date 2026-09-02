@@ -301,10 +301,8 @@ fi
 # The timer only, never the service, for the reason cf-ranges gives above: a tick reads the
 # whole registry and every source's poll evidence, and a deploy step must not wait on it.
 # While every seeded row observes there is nothing for it to launch either way.
-if remote "systemctl list-unit-files glasswell-scheduler.timer >/dev/null 2>&1"; then
-    remote "systemctl start glasswell-scheduler.timer" \
-        || refuse "glasswell-scheduler timer did not start"
-fi
+remote "systemctl start glasswell-scheduler.timer" \
+    || refuse "glasswell-scheduler timer did not start"
 remote "systemctl start glasswell-status.service" \
     || refuse "glasswell-status did not produce a fresh snapshot"
 
