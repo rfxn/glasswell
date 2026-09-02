@@ -23,6 +23,7 @@ import psycopg
 from psycopg.pq import TransactionStatus
 from psycopg.types.json import Jsonb
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.db.migrate import discover_migrations
 from glasswell.ingest.base import CODE_VERSION_ENV, LOCKFILE_SHA256_ENV
 from glasswell.lineage.audit import emit
@@ -1158,11 +1159,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Publish the sealed P3 repaired-context artifact family."
     )
-    parser.add_argument("--dsn", required=True)
+    add_dsn_argument(parser)
     parser.add_argument("--eval-vintage", required=True)
     parser.add_argument("--feature-root", type=Path, required=True)
     parser.add_argument("--model-root", type=Path, required=True)
     arguments = parser.parse_args(argv)
+    arguments.dsn = resolve_dsn(arguments.dsn)
     try:
         eval_vintage = date.fromisoformat(arguments.eval_vintage)
     except ValueError:

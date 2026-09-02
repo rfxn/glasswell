@@ -8,8 +8,11 @@ boundary below before running anything: the two runbooks share a raw zone and tw
 preconditions, and they are not interchangeable.
 
 **Two databases, one letter apart.** `glasswell` is production. `glasswell_d1` is the
-disposable scratch database on the same host. Every command below states its `--dsn` or `-d`
-explicitly. If any command in the session omitted one, stop and re-verify what it touched.
+disposable scratch database on the same host. Every command below takes its database from
+`GLASSWELL_DSN`, or states `-d` where it is a `psql` invocation; no command carries a DSN on
+its own argument list, because an argument list is readable in `/proc` and lands in shell
+history. Export the variable once, check it with `echo "$GLASSWELL_DSN"` before you start, and
+if any command in the session ran against the wrong one, stop and re-verify what it touched.
 
 ---
 
@@ -86,7 +89,7 @@ Each one is a command with a pass condition. All seven, before Step 1.
 ```bash
 ssh root@192.168.2.111
 API=https://glasswell.rpx.sh          # or the LAN name, whichever this window uses
-DSN='postgresql:///glasswell?host=/var/run/postgresql'
+GLASSWELL_DSN='postgresql:///glasswell?host=/var/run/postgresql'
 ```
 
 **1 — the deployed tree carries this track.** The two console scripts are installed by
@@ -249,7 +252,8 @@ that stays absent across a re-run, and the present name that reaches the header 
 - Any step exits **2** with a `refused: …` line → stop. That is the guard working. The line is
   deliberately not JSON; do not pipe the step through `jq`. Do not delete rows, do not re-run
   the same day.
-- Any command that omitted an explicit `-d` / `--dsn` → stop and re-verify what it touched.
+- Any command that ran with the wrong `GLASSWELL_DSN` or `-d` → stop and re-verify what it
+  touched.
 
 ---
 
@@ -315,14 +319,14 @@ re-register under the same id: this is a re-index, not a re-acquisition.
 SIDECAR=$(find /data/raw/nm_ocd_wellhistory -name manifest.json)
 echo "$SIDECAR" | wc -l          # must print 1
 
-sudo -u glasswell /opt/glasswell/venv/bin/python \
+sudo --preserve-env=GLASSWELL_DSN -u glasswell /opt/glasswell/venv/bin/python \
   /opt/glasswell/src/scripts/ops/nm_reregister_manifests.py \
-  --dsn "$DSN" --expect-database glasswell --dry-run --sidecar "$SIDECAR"
+  --expect-database glasswell --dry-run --sidecar "$SIDECAR"
 ```
 
 **`--expect-database` is not optional here.** `glasswell` and `glasswell_d1` are one letter
-apart and only one of them is production; with the flag a mismatched `--dsn` exits 1 before any
-statement runs. Confirm the first line reads `database=glasswell` as well — the flag is the
+apart and only one of them is production; with the flag a mismatched `GLASSWELL_DSN` exits 1
+before any statement runs. Confirm the first line reads `database=glasswell` as well — the flag is the
 refusal, the line is the receipt.
 
 Expected: one `… would register …` line, one `man_…` id, `lineage.manifests` unchanged (the dry
@@ -331,9 +335,9 @@ run holds a read-only connection, so it cannot write even if it tried).
 Then the same command with `--dry-run` removed and **`--expect-database` still on it**:
 
 ```bash
-sudo -u glasswell /opt/glasswell/venv/bin/python \
+sudo --preserve-env=GLASSWELL_DSN -u glasswell /opt/glasswell/venv/bin/python \
   /opt/glasswell/src/scripts/ops/nm_reregister_manifests.py \
-  --dsn "$DSN" --expect-database glasswell --sidecar "$SIDECAR"
+  --expect-database glasswell --sidecar "$SIDECAR"
 
 sudo -u postgres psql -d glasswell -tAc \
   "select source_id, fetch_vintage from lineage.manifests where source_id = 'nm_ocd_wellhistory'"
@@ -375,7 +379,7 @@ sudo systemd-run --unit=t3-nm-t2-stage --collect \
   --property=EnvironmentFile=-/etc/glasswell/code-version.env \
   --setenv=GLASSWELL_STAGING_ROOT=/data/staging \
   /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_ocd \
-    --stage-only --tables wellhistory --dsn "$DSN"
+    --stage-only --tables wellhistory
 
 journalctl -u t3-nm-t2-stage -f
 systemctl show t3-nm-t2-stage -p Result -p ExecMainStatus   # after it exits
@@ -429,7 +433,7 @@ sudo systemd-run --unit=t3-nm-t2-headers --collect \
   --property=User=glasswell --property=Group=glasswell \
   --property=TimeoutStartSec=3600 --property=MemoryMax=6G \
   --property=EnvironmentFile=-/etc/glasswell/code-version.env \
-  /opt/glasswell/venv/bin/glasswell-nm-wells --dsn "$DSN"
+  /opt/glasswell/venv/bin/glasswell-nm-wells
 
 journalctl -u t3-nm-t2-headers -f
 systemctl show t3-nm-t2-headers -p Result -p ExecMainStatus   # after it exits
@@ -543,7 +547,7 @@ sudo systemd-run --unit=t3-nm-t2-tiles --collect \
   --property=User=glasswell --property=Group=glasswell \
   --property=TimeoutStartSec=1800 --property=MemoryMax=4G \
   --property=EnvironmentFile=-/etc/glasswell/code-version.env \
-  /opt/glasswell/venv/bin/glasswell-nm-tiles --dsn "$DSN"
+  /opt/glasswell/venv/bin/glasswell-nm-tiles
 
 journalctl -u t3-nm-t2-tiles -f
 ```

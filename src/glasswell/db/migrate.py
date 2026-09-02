@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
 import psycopg
+
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 _FILENAME_RE = re.compile(r"\A(\d{3})_([a-z0-9_]+)\.sql\Z")
@@ -102,11 +103,10 @@ def migrate(connection: psycopg.Connection, directory: Path | None = None) -> li
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Apply glasswell database migrations.")
-    parser.add_argument("--dsn", default=os.environ.get("GLASSWELL_DSN"))
+    add_dsn_argument(parser)
     parser.add_argument("--migrations-dir", type=Path, default=None)
     arguments = parser.parse_args(argv)
-    if not arguments.dsn:
-        parser.error("--dsn or GLASSWELL_DSN is required")
+    arguments.dsn = resolve_dsn(arguments.dsn)
 
     with psycopg.connect(arguments.dsn) as connection:
         applied = migrate(connection, arguments.migrations_dir)

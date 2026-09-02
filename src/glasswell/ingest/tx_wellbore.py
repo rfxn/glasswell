@@ -24,6 +24,7 @@ import httpx
 import polars as pl
 import psycopg
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import record_vintage_day, resolve_environment
 from glasswell.ingest.tx_mft import MftClient
 from glasswell.lineage import (
@@ -806,7 +807,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Load the TX RRC wellbore query export into staging and canonical."
     )
-    parser.add_argument("--dsn", required=True)
+    add_dsn_argument(parser)
     parser.add_argument("--url", default=None, help="override the resolved URL (testing only)")
     parser.add_argument("--raw-root", default=None)
     parser.add_argument("--env-id", default=None, help="override the fingerprinted env id")
@@ -815,6 +816,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--restage", action="store_true", help="re-parse from the stored bytes after a rule change"
     )
     arguments = parser.parse_args(argv)
+    arguments.dsn = resolve_dsn(arguments.dsn)
 
     with durable_fetch_attempts(arguments.dsn), psycopg.connect(arguments.dsn) as connection:
         environment = resolve_environment(

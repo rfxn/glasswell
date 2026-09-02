@@ -20,6 +20,7 @@ import openpyxl
 import polars as pl
 import psycopg
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.identity import api10_identity
 from glasswell.ingest.base import IngestRun, open_ingest_run, record_vintage_day
 from glasswell.lineage.audit import emit
@@ -1188,9 +1189,10 @@ def _append_completions(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Ingest one ND monthly production report.")
     parser.add_argument("--month", required=True, help="production month as YYYY-MM")
-    parser.add_argument("--dsn", required=True)
+    add_dsn_argument(parser)
     parser.add_argument("--raw-root")
     arguments = parser.parse_args(argv)
+    arguments.dsn = resolve_dsn(arguments.dsn)
     year, _, month = arguments.month.partition("-")
 
     with durable_fetch_attempts(arguments.dsn), psycopg.connect(arguments.dsn) as connection:

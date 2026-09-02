@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 import psycopg
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import resolve_environment
 from glasswell.lineage import (
     InputRef,
@@ -121,10 +122,11 @@ def _canonical_inputs(connection: psycopg.Connection) -> list[InputRef]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Refresh the land-grid tile mart.")
-    parser.add_argument("--dsn", required=True)
+    add_dsn_argument(parser)
     parser.add_argument("--env-id", default=None, help="override the fingerprinted env id")
     parser.add_argument("--code-version", default=None)
     arguments = parser.parse_args(argv)
+    arguments.dsn = resolve_dsn(arguments.dsn)
 
     with psycopg.connect(arguments.dsn) as connection:
         environment = resolve_environment(

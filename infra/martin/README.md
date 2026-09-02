@@ -10,7 +10,7 @@ equal to; this table covers the layers whose refresh is an operator command:
 | `nd_laterals` | `marts.nd_laterals_tile` | LINESTRING | `python -m glasswell.marts.nd_wells` |
 | `nd_wells` | `marts.nd_wells_tile` | POINT | same |
 | `nd_spacing_units` | `marts.nd_spacing_units_tile` (view over `canonical.spacing_units`) | MULTIPOLYGON | always current |
-| `nm_wells` | `marts.nm_wells_tile` | POINT | `glasswell-nm-tiles --dsn …` |
+| `nm_wells` | `marts.nm_wells_tile` | POINT | `glasswell-nm-tiles` |
 
 New Mexico publishes a point layer and no lateral: `cr_nm_wellhistory_geometry_scope_1` records
 that neither in-scope source ships one. Every `nm_wells` feature carries its reported OCD letter

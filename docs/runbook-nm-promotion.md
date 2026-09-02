@@ -9,8 +9,11 @@ continuing** — the expectations come from a full run against a scratch databas
 bytes, so a divergence means the inputs are not the inputs.
 
 **Two databases, one letter apart.** `glasswell` is production. `glasswell_d1` is the
-disposable scratch database on the same host. Every command below states its `--dsn` or `-d`
-explicitly. If any command in the session omitted one, stop and re-verify what it touched.
+disposable scratch database on the same host. Every command below takes its database from
+`GLASSWELL_DSN`, or states `-d` where it is a `psql` invocation; no command carries a DSN on
+its own argument list, because an argument list is readable in `/proc` and lands in shell
+history. Export the variable once, check it with `echo "$GLASSWELL_DSN"` before you start, and
+if any command in the session ran against the wrong one, stop and re-verify what it touched.
 
 ---
 
@@ -141,7 +144,7 @@ ls /etc/systemd/system/ | grep -c '^glasswell-'          # expect 14, matching t
 - Any step exits **2** with a `refused: …` line → stop. That is the guard working. Do not
   delete rows, do not re-run the same day, do not pipe the step through `jq` — the refusal line
   is deliberately not JSON. Re-run on a later day.
-- Any command that omitted an explicit `-d` / `--dsn` → stop and re-verify.
+- Any command that ran with the wrong `GLASSWELL_DSN` or `-d` → stop and re-verify.
 
 ---
 
@@ -212,9 +215,8 @@ ssh root@192.168.2.111
 SIDECARS=$(find /data/raw/nm_ocd_* -name manifest.json | sort)
 echo "$SIDECARS" | wc -l          # must print 9
 
-sudo -u glasswell /opt/glasswell/venv/bin/python \
+sudo --preserve-env=GLASSWELL_DSN -u glasswell /opt/glasswell/venv/bin/python \
   /opt/glasswell/src/scripts/ops/nm_reregister_manifests.py \
-  --dsn 'postgresql:///glasswell?host=/var/run/postgresql' \
   --expect-database glasswell \
   --dry-run \
   $(for s in $SIDECARS; do printf ' --sidecar %s' "$s"; done)
@@ -222,8 +224,8 @@ sudo -u glasswell /opt/glasswell/venv/bin/python \
 
 **`--expect-database` is not optional here.** `glasswell` and `glasswell_d1` are one letter
 apart and only one of them is production; without the flag the tool prints the database it
-resolved and trusts you to read the line, and with it a mismatched `--dsn` exits 1 before any
-statement runs. Confirm the first line of output reads `database=glasswell` as well — the flag
+resolved and trusts you to read the line, and with it a mismatched `GLASSWELL_DSN` exits 1
+before any statement runs. Confirm the first line of output reads `database=glasswell` as well — the flag
 is the refusal, the line is the receipt.
 
 Expected: nine `… would register …` lines, nine distinct `man_…` ids, and `lineage.manifests`
@@ -244,9 +246,8 @@ Every line must read `OK`. A mismatch aborts the whole track.
 ### 1c — register
 
 ```bash
-sudo -u glasswell /opt/glasswell/venv/bin/python \
+sudo --preserve-env=GLASSWELL_DSN -u glasswell /opt/glasswell/venv/bin/python \
   /opt/glasswell/src/scripts/ops/nm_reregister_manifests.py \
-  --dsn 'postgresql:///glasswell?host=/var/run/postgresql' \
   --expect-database glasswell \
   $(for s in $SIDECARS; do printf ' --sidecar %s' "$s"; done)
 ```
@@ -328,7 +329,7 @@ sudo systemd-run --unit=t3-nm-stage --collect \
   --property=TimeoutStartSec=7200 --property=MemoryMax=6G \
   --setenv=GLASSWELL_STAGING_ROOT=/data/staging \
   /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_ocd \
-    --stage-only --dsn 'postgresql:///glasswell?host=/var/run/postgresql'
+    --stage-only
 
 journalctl -u t3-nm-stage -f
 ```
@@ -403,7 +404,7 @@ sudo systemd-run --unit=t3-nm-promote --collect \
   --property=TimeoutStartSec=14400 --property=MemoryMax=6G \
   --setenv=GLASSWELL_STAGING_ROOT=/data/staging \
   /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_ocd \
-    --promote-only --dsn 'postgresql:///glasswell?host=/var/run/postgresql'
+    --promote-only
 
 journalctl -u t3-nm-promote -f
 systemctl show t3-nm-promote -p Result -p ExecMainStatus   # after it exits
@@ -495,7 +496,7 @@ sudo systemd-run --unit=t3-nm-dims --collect \
   --property=User=glasswell --property=Group=glasswell \
   --property=TimeoutStartSec=1800 --property=MemoryMax=4G \
   /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_dims \
-    --dsn 'postgresql:///glasswell?host=/var/run/postgresql'
+   
 ```
 
 Expected: observations read **426,529**; quarantined **0**; identity 426,529 = 426,529 + 0;

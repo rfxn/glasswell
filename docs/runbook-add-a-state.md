@@ -166,8 +166,8 @@ Add an `ExecStart=` line to `infra/systemd/glasswell-ingest.service`.
 ### 11. Run the mart, then the count writer
 
 ```bash
-sudo -u glasswell $VENV/bin/glasswell-tiles --dsn "$DSN" --jurisdiction <CODE>
-sudo -u glasswell $VENV/bin/python -m glasswell.marts.counts --dsn "$DSN"
+sudo --preserve-env=GLASSWELL_DSN -u glasswell $VENV/bin/glasswell-tiles --jurisdiction <CODE>
+sudo --preserve-env=GLASSWELL_DSN -u glasswell $VENV/bin/python -m glasswell.marts.counts
 ```
 
 > **Refuses otherwise:** `jurisdiction_well_counts.well_count` is `not null` and

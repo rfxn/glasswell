@@ -21,6 +21,7 @@ import polars as pl
 import psycopg
 from psycopg.rows import dict_row
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import record_vintage_day, resolve_environment
 from glasswell.ingest.shapefile import ShapefileRecord, ZippedShapefile
 from glasswell.lineage import (
@@ -808,7 +809,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         description="Load the EIA basin and play boundaries into PostGIS."
     )
     parser.add_argument("--layer", choices=[*LAYERS, "all"], required=True)
-    parser.add_argument("--dsn", required=True)
+    add_dsn_argument(parser)
     parser.add_argument("--raw-root", default=None)
     parser.add_argument("--env-id", default=None, help="override the fingerprinted env id")
     parser.add_argument("--code-version", default=None)
@@ -818,6 +819,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="re-parse and re-promote from the stored bytes after a rule or schema change",
     )
     arguments = parser.parse_args(argv)
+    arguments.dsn = resolve_dsn(arguments.dsn)
 
     # Basins first: a play whose Basin string resolves nothing must be an unresolved link and
     # never an unloaded basin layer (cr_eia_basin_link_1).
