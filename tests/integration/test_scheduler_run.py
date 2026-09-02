@@ -93,10 +93,10 @@ def register_probe_job(
     with connection.cursor() as cursor:
         cursor.execute(
             "insert into lineage.scheduled_jobs"
-            " (job_id, kind, entry_point, argv, anchor_source_id, jurisdiction, run_as,"
-            "  rationale)"
-            " values (%s, 'mart', 'glasswell.marts.counts', '{}', 'nd_mpr_xlsx', null,"
-            "         'glasswell', 'a probe job registered by a test, and nothing else')",
+            " (job_id, label, kind, entry_point, argv, anchor_source_id, jurisdiction,"
+            "  run_as, rationale)"
+            " values (%s, 'Probe job', 'mart', 'glasswell.marts.counts', '{}', 'nd_mpr_xlsx',"
+            "         null, 'glasswell', 'a probe job registered by a test, and nothing else')",
             (FAKE_JOB,),
         )
         if source_id is not None:

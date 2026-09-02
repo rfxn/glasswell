@@ -129,6 +129,7 @@ def test_gate_5_the_seed_tuple_is_what_the_registry_resolves(db: psycopg.Connect
     for job in registry:
         declared = next(row for row in JOBS if row["job_id"] == job.job_id)
         schedule = by_schedule[job.job_id]
+        assert job.label == declared["label"]
         assert job.kind == declared["kind"]
         assert job.entry_point == declared["entry_point"]
         assert list(job.argv) == list(declared["argv"])  # type: ignore[arg-type]
@@ -201,9 +202,10 @@ def test_gate_3_a_source_with_no_interval_and_no_fetch_history_stays_not_due(
     with db.cursor() as cursor:
         cursor.execute(
             "insert into lineage.scheduled_jobs"
-            " (job_id, kind, entry_point, anchor_source_id, run_as, rationale)"
-            " values ('ingest_null_interval_probe', 'ingest', 'glasswell.ingest.probe',"
-            "         'nm_ocd_pool', 'glasswell', 'a probe with a null-interval source')"
+            " (job_id, label, kind, entry_point, anchor_source_id, run_as, rationale)"
+            " values ('ingest_null_interval_probe', 'Probe', 'ingest',"
+            "         'glasswell.ingest.probe', 'nm_ocd_pool', 'glasswell',"
+            "         'a probe with a null-interval source')"
         )
         cursor.execute(
             "insert into lineage.job_sources (job_id, source_id)"

@@ -98,6 +98,7 @@ REFUSAL_CODES: tuple[tuple[str, str, str], ...] = (
 JOBS: tuple[dict[str, object], ...] = (
     {
         "job_id": "ingest_nd_gis",
+        "label": "North Dakota GIS ingest",
         "kind": "ingest",
         "entry_point": "glasswell.ingest.nd_gis",
         "argv": ["--layer", "all"],
@@ -108,6 +109,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "ingest_nd_mpr",
+        "label": "North Dakota production report",
         "kind": "ingest",
         "entry_point": "glasswell.ingest.nd_mpr",
         "argv": [],
@@ -119,6 +121,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "ingest_blm_plss",
+        "label": "BLM land grid ingest",
         "kind": "ingest",
         "entry_point": "glasswell.ingest.blm_plss",
         "argv": ["--layer", "all"],
@@ -129,6 +132,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "ingest_nm_c115b",
+        "label": "New Mexico C-115B capture",
         "kind": "ingest",
         "entry_point": "glasswell.ingest.nm_c115b",
         "argv": [],
@@ -139,6 +143,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "ingest_fracfocus",
+        "label": "FracFocus archive ingest",
         "kind": "ingest",
         "entry_point": "glasswell.ingest.fracfocus",
         "argv": ["--promote-design"],
@@ -149,6 +154,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "ingest_mt_bogc",
+        "label": "Montana production ingest",
         "kind": "ingest",
         "entry_point": "glasswell.ingest.mt_bogc",
         "argv": [],
@@ -160,6 +166,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "ingest_mt_gis",
+        "label": "Montana GIS ingest",
         "kind": "ingest",
         "entry_point": "glasswell.ingest.mt_gis",
         "argv": [],
@@ -170,6 +177,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "ingest_eia_boundaries",
+        "label": "EIA boundary ingest",
         "kind": "ingest",
         "entry_point": "glasswell.ingest.eia_boundaries",
         "argv": [],
@@ -180,6 +188,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "ingest_nm_ocd_stage",
+        "label": "New Mexico OCD staging",
         "kind": "ingest",
         "entry_point": "glasswell.ingest.nm_ocd",
         "argv": ["--stage-only"],
@@ -191,6 +200,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "ingest_nm_ocd_promote",
+        "label": "New Mexico OCD promotion",
         "kind": "ingest",
         "entry_point": "glasswell.ingest.nm_ocd",
         "argv": ["--promote-only"],
@@ -201,6 +211,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "ingest_nm_dims",
+        "label": "New Mexico dimensions",
         "kind": "ingest",
         "entry_point": "glasswell.ingest.nm_dims",
         "argv": [],
@@ -211,6 +222,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "ingest_nm_wells",
+        "label": "New Mexico wells spine",
         "kind": "ingest",
         "entry_point": "glasswell.ingest.nm_wells",
         "argv": [],
@@ -221,6 +233,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "ingest_nm_wells_gis",
+        "label": "New Mexico wells GIS ingest",
         "kind": "ingest",
         "entry_point": "glasswell.ingest.nm_wells_gis",
         "argv": [],
@@ -231,6 +244,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "ingest_tx_gis",
+        "label": "Texas surface GIS ingest",
         "kind": "ingest",
         "entry_point": "glasswell.ingest.tx_gis",
         "argv": [],
@@ -241,6 +255,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "ingest_tx_wellbore",
+        "label": "Texas wellbore ingest",
         "kind": "ingest",
         "entry_point": "glasswell.ingest.tx_wellbore",
         "argv": [],
@@ -251,6 +266,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "marts_nd_wells",
+        "label": "North Dakota wells mart",
         "kind": "mart",
         "entry_point": "glasswell.marts.nd_wells",
         "argv": [],
@@ -261,6 +277,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "marts_nm_wells",
+        "label": "New Mexico wells mart",
         "kind": "mart",
         "entry_point": "glasswell.marts.nm_wells",
         "argv": [],
@@ -271,6 +288,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "marts_mt_wells",
+        "label": "Montana wells mart",
         "kind": "mart",
         "entry_point": "glasswell.marts.mt_wells",
         "argv": [],
@@ -281,6 +299,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "marts_tx_wells",
+        "label": "Texas wells mart",
         "kind": "mart",
         "entry_point": "glasswell.marts.tx_wells",
         "argv": [],
@@ -291,6 +310,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "marts_land_units",
+        "label": "Land grid mart",
         "kind": "mart",
         "entry_point": "glasswell.marts.land_units",
         "argv": [],
@@ -301,6 +321,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "marts_land_metrics",
+        "label": "Land metrics mart",
         "kind": "mart",
         "entry_point": "glasswell.marts.land_metrics",
         "argv": [],
@@ -311,6 +332,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "marts_cumulatives",
+        "label": "Cumulatives mart",
         "kind": "mart",
         "entry_point": "glasswell.marts.cumulatives",
         "argv": [],
@@ -321,6 +343,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "marts_neighbors",
+        "label": "Neighbour index",
         "kind": "mart",
         "entry_point": "glasswell.marts.neighbors",
         "argv": [],
@@ -331,6 +354,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "marts_basin_boundaries",
+        "label": "Basin boundaries mart",
         "kind": "mart",
         "entry_point": "glasswell.marts.basin_boundaries",
         "argv": [],
@@ -342,6 +366,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "marts_jurisdiction_counts",
+        "label": "Jurisdiction well counts",
         "kind": "mart",
         "entry_point": "glasswell.marts.counts",
         "argv": [],
@@ -353,6 +378,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "platform_status",
+        "label": "Status snapshot",
         "kind": "maintenance",
         "entry_point": "glasswell.status.collector",
         "argv": [],
@@ -363,6 +389,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "platform_cf_ranges",
+        "label": "Cloudflare range refresh",
         "kind": "maintenance",
         "entry_point": "/usr/local/sbin/refresh-ranges.sh",
         "argv": [],
@@ -373,6 +400,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "platform_lineage_retention",
+        "label": "Lineage retention",
         "kind": "maintenance",
         "entry_point": "glasswell.lineage.retention",
         "argv": [],
@@ -383,6 +411,7 @@ JOBS: tuple[dict[str, object], ...] = (
     },
     {
         "job_id": "platform_backup",
+        "label": "Nightly backup",
         "kind": "maintenance",
         "entry_point": "/usr/local/sbin/glasswell-backup.sh",
         "argv": [],
@@ -845,8 +874,8 @@ def anchors() -> dict[str, str]:
 
 _JOB_INSERT = """
 insert into lineage.scheduled_jobs
-    (job_id, kind, entry_point, argv, anchor_source_id, jurisdiction, run_as, rationale)
-values (%(job_id)s, %(kind)s, %(entry_point)s, %(argv)s, %(anchor_source_id)s,
+    (job_id, label, kind, entry_point, argv, anchor_source_id, jurisdiction, run_as, rationale)
+values (%(job_id)s, %(label)s, %(kind)s, %(entry_point)s, %(argv)s, %(anchor_source_id)s,
         %(jurisdiction)s, %(run_as)s, %(rationale)s)
 on conflict do nothing
 """

@@ -40,6 +40,7 @@ class JobDependency:
 @dataclass(frozen=True, slots=True)
 class ScheduledJob:
     job_id: str
+    label: str
     kind: str
     entry_point: str
     argv: tuple[str, ...]
@@ -96,7 +97,8 @@ class ScheduleRegistry:
 
 
 _RESOLVED = """
-select s.*, j.kind, j.entry_point, j.argv, j.anchor_source_id, j.jurisdiction, j.run_as,
+select s.*, j.label, j.kind, j.entry_point, j.argv, j.anchor_source_id, j.jurisdiction,
+       j.run_as,
        j.rationale,
        coalesce(src.source_ids, array[]::text[]) as source_ids,
        coalesce(dep.dependencies, '[]'::jsonb) as dependencies

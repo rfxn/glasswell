@@ -34,6 +34,10 @@ comment on table lineage.refusal_codes is
 create table if not exists lineage.scheduled_jobs (
     job_id           text primary key check (job_id ~ '^[a-z][a-z0-9_]{2,63}$'),
     kind             text not null check (kind in ('ingest', 'mart', 'maintenance')),
+    -- Served rather than mapped again in the client, the way lineage.jurisdictions.name is:
+    -- a page that derived "North Dakota GIS ingest" from an identifier would be holding a
+    -- naming decision in code that no one could review or correct without a release.
+    label            text not null check (btrim(label) <> ''),
     -- One entry point per job: a job is one runnable command, which is what keeps the
     -- ceilings, the timeout, the transient unit and the run ledger one-to-one with a process.
     -- The second arm admits the two platform units that run a shell script rather than a

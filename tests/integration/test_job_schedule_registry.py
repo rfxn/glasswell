@@ -312,21 +312,21 @@ def test_a_maintenance_row_may_name_a_script_and_hold_no_uid_but_a_data_job_may_
     with pytest.raises(psycopg.errors.CheckViolation):
         seeded.execute(
             "insert into lineage.scheduled_jobs"
-            " (job_id, kind, entry_point, anchor_source_id, run_as, rationale)"
-            " values ('ingest_probe', 'ingest', '/usr/local/sbin/probe.sh', 'nd_mpr_xlsx',"
-            "         'glasswell', 'a data job may not name a script')"
+            " (job_id, label, kind, entry_point, anchor_source_id, run_as, rationale)"
+            " values ('ingest_probe', 'Probe', 'ingest', '/usr/local/sbin/probe.sh',"
+            "         'nd_mpr_xlsx', 'glasswell', 'a data job may not name a script')"
         )
     seeded.rollback()
     with pytest.raises(psycopg.errors.CheckViolation):
         seeded.execute(
             "insert into lineage.scheduled_jobs"
-            " (job_id, kind, entry_point, anchor_source_id, rationale)"
-            " values ('ingest_probe', 'ingest', 'glasswell.ingest.probe', 'nd_mpr_xlsx',"
-            "         'a data job must say which uid it drops to')"
+            " (job_id, label, kind, entry_point, anchor_source_id, rationale)"
+            " values ('ingest_probe', 'Probe', 'ingest', 'glasswell.ingest.probe',"
+            "         'nd_mpr_xlsx', 'a data job must say which uid it drops to')"
         )
     seeded.rollback()
     seeded.execute(
-        "insert into lineage.scheduled_jobs (job_id, kind, entry_point, rationale)"
-        " values ('platform_probe', 'maintenance', '/usr/local/sbin/probe.sh',"
+        "insert into lineage.scheduled_jobs (job_id, label, kind, entry_point, rationale)"
+        " values ('platform_probe', 'Probe', 'maintenance', '/usr/local/sbin/probe.sh',"
         "         'its own unit decides the uid')"
     )
