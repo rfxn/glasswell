@@ -736,7 +736,14 @@ FIXTURE_ABSENCE_RULE = "cr_fixture_well_type_absence_1"
 def _plant_an_absence_rule(
     connection: psycopg.Connection, *, jurisdiction: str, dimension: str
 ) -> None:
-    """A registered absence decision of the suite's own, at the resolving registration's triple."""
+    """A registered absence decision of the suite's own, on every clock the jurisdiction has.
+
+    Once per registration, not once at `current_date`. A restatement's `published_at` is
+    deliberately later than the day it is written, so `jurisdictions_as_of(current_date,
+    current_date)` resolves the founding row while a reader at the restatement's knowledge
+    instant resolves the restated one -- and a decision planted at only the first is absent
+    from the second. Every real decision rides both clocks; so must this one.
+    """
     seed_conformance_rule(
         connection,
         rule_id=FIXTURE_ABSENCE_RULE,
@@ -749,12 +756,24 @@ def _plant_an_absence_rule(
             " published_at, decision, rule_id, serving, note)"
             " select j.jurisdiction_code, j.effective_from, j.published_at, %s, %s, true,"
             " 'Planted by the suite.'"
-            "   from lineage.jurisdictions_as_of(current_date, current_date) j"
-            "  where j.jurisdiction_code = %s"
-            " on conflict do nothing",
+            "   from lineage.jurisdictions j"
+            "  where j.jurisdiction_code = %s",
             (f"absence:{dimension}", FIXTURE_ABSENCE_RULE, jurisdiction),
         )
+        planted = cursor.rowcount
+        cursor.execute(
+            "select count(*) from lineage.jurisdictions where jurisdiction_code = %s",
+            (jurisdiction,),
+        )
+        registrations = int(cursor.fetchone()[0])
     connection.commit()
+
+    # Loud rather than silent: an `on conflict do nothing` here would let a plant that landed
+    # on no clock, or on some of them, read as a jurisdiction that registers no such decision.
+    assert planted == registrations, (
+        f"planted {planted} rows over {registrations} registrations of {jurisdiction};"
+        " the arm under test would read a partially registered decision"
+    )
 
 
 def test_the_absent_by_rule_arm_reads_the_registry_and_not_a_jurisdiction(
