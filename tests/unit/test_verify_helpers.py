@@ -338,35 +338,79 @@ def test_the_double_run_guard_is_given_a_dsn_from_the_file_and_not_from_the_envi
     assert seen.read_text().strip().startswith("postgresql:///glasswell"), seen.read_text()
 
 
-def test_the_guard_reports_a_missing_dsn_as_a_missing_dsn_and_not_as_a_double_run(
-    tmp_path: Path,
-) -> None:
-    """"could not connect" and "a launch row would double-run" are different facts, and the
-    second one is a claim about the registry."""
-    verify = VERIFY.read_text(encoding="utf-8")
-    env_file = tmp_path / "scheduler.env"
-    env_file.write_text("# no GLASSWELL_DSN here\n")
+def guard_stub(tmp_path: Path, body: str) -> Path:
     stub = tmp_path / "python-stub"
     stub.write_text(
-        '#!/bin/bash\n'
+        "#!/bin/bash\n"
         'if [[ " $* " == *" --timer-owned "* ]]; then\n'
         '  printf "glasswell.marts.neighbors\\n"; exit 0\n'
-        'fi\n'
-        'printf "no database DSN: set GLASSWELL_DSN or DATABASE_URL\\n"; exit 1\n'
+        "fi\n" + body
     )
     stub.chmod(0o755)
+    return stub
+
+
+def run_guard_block(tmp_path: Path, stub: Path) -> subprocess.CompletedProcess[str]:
+    verify = VERIFY.read_text(encoding="utf-8")
+    env_file = tmp_path / "scheduler.env"
+    env_file.write_text("GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql\n")
     script = tmp_path / "guard.sh"
     script.write_text(
         _extract(verify, PRIMITIVES_START, PRIMITIVES_END)
-        + f'\nVENV_PY={stub}\nSCHEDULER_ENV={env_file}\n'
+        + f"\nVENV_PY={stub}\nSCHEDULER_ENV={env_file}\n"
         + _extract(verify, GUARD_START, GUARD_END)
     )
-    result = subprocess.run(
+    return subprocess.run(
         ["/bin/bash", str(script)], capture_output=True, text=True,
         env={"PATH": os.environ["PATH"]}, check=False,
     )
 
-    assert "FAIL" in result.stdout, result.stdout
-    assert "would double-run with an installed timer" not in result.stdout, (
-        "a guard that could not connect must not be reported as a registry hazard"
-    )
+
+HAZARD_CLAIM = "would double-run with an installed timer"
+# The four ways the guard can fail to check, each with the status cli.py returns for it. The
+# reviewer executed the peer-auth case against the real fragment and got the hazard sentence.
+NOT_CHECKED = [
+    ("no DSN", 3, "no DSN, so nothing was checked"),
+    ("peer auth", 4, "connection failed: FATAL:  Peer authentication failed"),
+    ("registry unreadable", 5, "the registry could not be read, so nothing was checked"),
+    ("no timer set", 6, "no installed timer drives any entry point"),
+]
+
+
+@pytest.mark.parametrize(("label", "status", "message"), NOT_CHECKED)
+def test_the_guard_never_reports_a_hazard_for_a_check_it_could_not_run(
+    tmp_path: Path, label: str, status: int, message: str
+) -> None:
+    """Read the status, never the prose: a message match cannot tell "no launch row resolved"
+    from "I never reached the database"."""
+    stub = guard_stub(tmp_path, f'printf "%s\\n" "{message}"; exit {status}\n')
+
+    result = run_guard_block(tmp_path, stub)
+
+    assert "FAIL" in result.stdout, f"{label} was not reported at all: {result.stdout}"
+    assert HAZARD_CLAIM not in result.stdout, f"{label} was reported as a double-run hazard"
+    assert f"exit {status}" in result.stdout, result.stdout
+
+
+def test_the_guard_reports_a_real_hazard_as_one(tmp_path: Path) -> None:
+    """The one status that is a claim about rows, and it has to still be made."""
+    stub = guard_stub(tmp_path, 'printf "marts_neighbors_probe\\n"; exit 1\n')
+
+    result = run_guard_block(tmp_path, stub)
+
+    assert HAZARD_CLAIM in result.stdout, result.stdout
+    assert "marts_neighbors_probe" in result.stdout
+
+
+def test_the_guard_passes_only_on_a_clean_zero(tmp_path: Path) -> None:
+    stub = guard_stub(tmp_path, "exit 0\n")
+
+    result = run_guard_block(tmp_path, stub)
+
+    assert "FAIL" not in result.stdout, result.stdout
+    assert "no launch row names an entry point a timer already drives" in result.stdout
+
+
+def test_the_dead_message_arm_is_gone(tmp_path: Path) -> None:
+    """`could not take` was matched by verify.sh and emitted by nothing in the tree."""
+    assert "could not take" not in VERIFY.read_text(encoding="utf-8")

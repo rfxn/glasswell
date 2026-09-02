@@ -121,7 +121,11 @@ systemctl is-active glasswell-ingest.service      # must be inactive
 # The one-shot re-promotion units must be ABSENT, not merely inert. Zero, or STOP.
 systemctl list-unit-files 'glasswell-repromote*' --no-pager
 ls /etc/systemd/system/glasswell-repromote.* 2>&1        # expect: No such file or directory
-ls /etc/systemd/system/ | grep -c '^glasswell-'          # expect 14, matching the tree
+# Derived, never counted: the host must carry exactly what the tree ships, which is what
+# verify.sh's own unit loop asserts. A literal here went stale twice.
+SRC=/opt/glasswell/src
+ls /etc/systemd/system/glasswell-* | wc -l        # must equal the next line
+ls $SRC/infra/systemd/glasswell-* | wc -l
 ```
 
 - `glasswell-restore-drill.timer` is `Sun *-*-* 04:00:00` with `RandomizedDelaySec=600`:
@@ -332,7 +336,7 @@ pgrep -a pg_restore || echo "no restore drill running"
 
 sudo systemd-run --unit=t3-nm-stage --collect \
   --property=User=glasswell --property=Group=glasswell \
-  --property=EnvironmentFile=/etc/glasswell/db.env \
+  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
   --property=TimeoutStartSec=7200 --property=MemoryMax=6G \
   --setenv=GLASSWELL_STAGING_ROOT=/data/staging \
   /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_ocd \
@@ -408,7 +412,7 @@ exclusive required group and the parser will reject the shorter spelling.
 ```bash
 sudo systemd-run --unit=t3-nm-promote --collect \
   --property=User=glasswell --property=Group=glasswell \
-  --property=EnvironmentFile=/etc/glasswell/db.env \
+  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
   --property=TimeoutStartSec=14400 --property=MemoryMax=6G \
   --setenv=GLASSWELL_STAGING_ROOT=/data/staging \
   /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_ocd \
@@ -502,7 +506,7 @@ is safe and idempotent for insert-only rows.
 ```bash
 sudo systemd-run --unit=t3-nm-dims --collect \
   --property=User=glasswell --property=Group=glasswell \
-  --property=EnvironmentFile=/etc/glasswell/db.env \
+  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
   --property=TimeoutStartSec=1800 --property=MemoryMax=4G \
   /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_dims
 ```

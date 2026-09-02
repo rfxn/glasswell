@@ -26,6 +26,7 @@ restricted `authorized_keys` `from=` clause and every probe in this repo use `.1
 | `glasswell-lineage-retention.service` + `.timer` | `glasswell` | Nightly removal of successful, unreferenced `ephemeral` derivations older than 90 days. Failed, permanent, recent, and referenced derivations remain. The timer is always enabled and is shown on Status |
 | `glasswell-ingest.service` + `.timer` | `glasswell` | Monthly ND pull: GIS layers, one production month, tile marts. Installed **disabled**; `install.sh --enable-ingest` arms it |
 | `glasswell-c115b.service` + `.timer` | `glasswell` | Monthly NM C-115B natural-gas-waste capture, staging terminus. The 12th, `Persistent=true`: `reporting_period` is a rolling ~13-month window and a month that rolls out is unrecoverable from the endpoint. Installed **disabled**; `install.sh --enable-c115b` arms it |
+| `glasswell-scheduler.service` + `.timer` | `root`, dropping per job | Hourly cadence tick: resolves `lineage.job_schedules`, computes what is due from the same freshness rule `/v1/health` reads, and records it. **v0.78 observes** — every seeded row is `launch_mode='observe'`, so it writes `would_run` rows and launches nothing while the ingest and C-115B timers remain what actually run those jobs. Root is not a preference: `systemd-run` calls `StartTransientUnit` on the system manager, which polkit gates at `auth_admin_keep`, and each transient unit drops to the uid its registry row names. The timer is always enabled by `install.sh`; see `docs/runbook-scheduler.md` |
 | `glasswell-alert@.service` | `glasswell` | `OnFailure=` target: logs to the journal and appends to `/var/lib/glasswell/health-events` |
 | `glasswell-backup.service` + `.timer` | `root` | Nightly custom-format `pg_dump`, globals and strict sidecar manifest plus an rsync of the dump and raw zones to forge, via `/usr/local/sbin/glasswell-backup.sh`. Dump and manifest counts share one exported repeatable-read snapshot. Installed **disabled**; `install.sh --enable-backup` arms it. **VM 111 has it enabled already** |
 | `glasswell-restore-drill.service` + `.timer` | `root:glasswell` | Weekly same-cluster logical restore of the newest private dump into a unique scratch database. It verifies archive identity, schema version, critical counts, representative reads and scratch cleanup, then atomically publishes `/var/lib/glasswell-restore-drill/result.json` from a dedicated root-owned, Status-readable state directory. It follows backup enablement and is not full VM/raw-zone disaster recovery |
@@ -722,7 +723,10 @@ rather than discovered.
 ## Usage
 
 ```bash
-./install.sh                     # place config, generate the owner key, enable glasswell-api
+./install.sh                     # place config and units, generate the owner key, enable
+                                 # glasswell-api, place the scheduler's pg_ident map and arm
+                                 # glasswell-scheduler.timer — all on every run, because
+                                 # deploy.sh calls this with no arguments
 ./install.sh --with-postgres     # additionally place the tuning drop-in — 22 settings sized
                                  # for 16 GiB / 8 vCPU; needs a PG restart and a martin restart
 ./install.sh --with-caddy        # additionally place the Caddyfile and caddy.service, validated
@@ -767,6 +771,24 @@ systemctl show glasswell-backup.service glasswell-restore-drill.service -p Resul
 `install.sh` generates `GLASSWELL_OWNER_KEY` into `/etc/glasswell/app.env` (`root:root 0600`)
 on first run and never prints it. Read it on the VM when you need the demo link; it is not in
 this repository and not in any log.
+
+### What the scheduler needs on the host, placed on every run
+
+`install.sh` takes no flag for any of this, because `scripts/deploy.sh` runs it with no
+arguments and a step behind a flag never reaches the host.
+
+| Artifact | What it is |
+|---|---|
+| `/etc/glasswell/scheduler.env` | `root:root 0600`, one line, **no secret**: `GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql&user=glasswell_scheduler`. The scheduler's control-plane connection and nothing else's. `db.env` is untouched — three units under two other uids read it |
+| `/etc/postgresql/16/main/pg_ident.d/glasswell.conf` | The map binding OS `root` to the `glasswell_scheduler` role, beside a regex self-map. The self-map is not decoration: naming a map removes PostgreSQL's implicit self-mapping, so `glasswell`, `postgres` and `martin` would stop authenticating without it |
+| `pg_ident.conf` | Gains one `include_if_exists 'pg_ident.d/glasswell.conf'` line, appended once |
+| `pg_hba.conf` | The single `local all all peer` rule gains `map=glasswell`. `install.sh` **refuses before writing** if that rule is missing, duplicated, or already carries a different map |
+| PostgreSQL reload | Both files are read from the postmaster's in-memory copy, so the edit is inert until `systemctl reload postgresql`. `install.sh` reloads and then refuses on any non-null `error` in `pg_hba_file_rules` or `pg_ident_file_mappings` — a malformed `pg_hba.conf` is tolerated on reload and fatal on the next restart |
+| `glasswell_scheduler` role | Created by migration, `login`, no superuser, no `glasswell_pipeline` membership. Granted `select` on the relations the tick reads and `insert`/`update` on `lineage.job_runs`; nothing in `canonical`, `staging` or `marts` |
+
+`verify.sh` pins all of it through PostgreSQL's own `pg_hba_file_rules` and
+`pg_ident_file_mappings` rather than by comparing bytes, because a rule that is written and
+not reloaded is a rule that is not in force, and it proves all four identities still connect.
 
 `load-nd-months.py` backfills a range of production months as **one** knowledge-time vintage.
 `lineage.vintages` is unique on `(source_id, vintage_date)`, so six same-day CLI runs would

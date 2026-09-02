@@ -173,7 +173,11 @@ ls -la --time-style=full-iso /data/backups/pg/glasswell-*.dump | tail -3
 pgrep -a pg_restore || echo "no restore drill running"
 systemctl is-active glasswell-ingest.service      # must be inactive
 systemctl list-unit-files 'glasswell-repromote*' --no-pager   # must be empty
-ls /etc/systemd/system/ | grep -c '^glasswell-'   # expect 14, matching the tree
+# Derived, never counted: the host must carry exactly what the tree ships, which is what
+# verify.sh's own unit loop asserts. A literal here went stale twice.
+SRC=/opt/glasswell/src
+ls /etc/systemd/system/glasswell-* | wc -l        # must equal the next line
+ls $SRC/infra/systemd/glasswell-* | wc -l
 df -h /var/lib/postgresql                         # < 40 GB available: stop, escalate
 ```
 
@@ -375,7 +379,7 @@ register.
 ```bash
 sudo systemd-run --unit=t3-nm-t2-stage --collect \
   --property=User=glasswell --property=Group=glasswell \
-  --property=EnvironmentFile=/etc/glasswell/db.env \
+  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
   --property=TimeoutStartSec=3600 --property=MemoryMax=6G \
   --property=EnvironmentFile=-/etc/glasswell/code-version.env \
   --setenv=GLASSWELL_STAGING_ROOT=/data/staging \
@@ -432,7 +436,7 @@ stop and investigate rather than waiting.
 ```bash
 sudo systemd-run --unit=t3-nm-t2-headers --collect \
   --property=User=glasswell --property=Group=glasswell \
-  --property=EnvironmentFile=/etc/glasswell/db.env \
+  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
   --property=TimeoutStartSec=3600 --property=MemoryMax=6G \
   --property=EnvironmentFile=-/etc/glasswell/code-version.env \
   /opt/glasswell/venv/bin/glasswell-nm-wells
@@ -547,7 +551,7 @@ still avoidable, and avoiding it costs nothing.
 ```bash
 sudo systemd-run --unit=t3-nm-t2-tiles --collect \
   --property=User=glasswell --property=Group=glasswell \
-  --property=EnvironmentFile=/etc/glasswell/db.env \
+  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
   --property=TimeoutStartSec=1800 --property=MemoryMax=4G \
   --property=EnvironmentFile=-/etc/glasswell/code-version.env \
   /opt/glasswell/venv/bin/glasswell-nm-tiles
