@@ -228,7 +228,7 @@ def test_the_schema_refuses_a_non_argon2_hash(db: psycopg.Connection) -> None:
 # --- the client label, and revocation as seen from the API ------------------------------------
 #
 # `user_agent_sha256` is one-way, so no read-time query can recover a family from it: the label
-# is written at login or it does not exist. Rows created before migration 072 carry null and the
+# is written at login or it does not exist. Rows created before migration 074 carry null and the
 # API serves `unknown` for them; nothing branches on the value.
 
 CHROME_MAC = (

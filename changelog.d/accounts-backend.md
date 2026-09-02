@@ -17,7 +17,7 @@
       serve, with a `password_shown_once` warning. `UserModel` declares no password and a
       contract test keeps it that way — `/v1` is frozen additive, so a field published on the
       list schema is published for good
-- [New] Migration `072_session_user_agent_family.sql` adds `lineage.sessions.user_agent_family`,
+- [New] Migration `074_session_user_agent_family.sql` adds `lineage.sessions.user_agent_family`,
       written at login from the user-agent header, and a `(created_at desc, session_id desc)`
       index the newest-first list orders on. The stored fingerprint is one-way, so the label
       cannot be recovered at read time; rows created before the column are served as `unknown`
