@@ -25,6 +25,11 @@ POLICY_RULES = tuple(sorted((
     # The land-grid publisher choice: the executor is the ingest module the spec names, and
     # the measured cross-publisher divergence rides in spec.divergence_measured (M1-4).
     "cr_blm_plss_publisher_1",
+    # Colorado's two: which of two disagreeing header sources governs, and that inventory is
+    # refused. Both are decisions a module carries out rather than a frame transformation, so
+    # both are code_ref and neither has an executor stage to run at.
+    "cr_co_inventory_not_served_1",
+    "cr_co_wells_source_selection_1",
     # The boundary-layer decisions: whose interpretation is drawn, that a basin and a play are
     # different objects, how a play links to its basin, that overlap is served rather than
     # arbitrated, how an invalid published ring is repaired, whose area is served, and how a

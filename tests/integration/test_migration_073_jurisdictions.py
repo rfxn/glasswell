@@ -22,6 +22,7 @@ from psycopg.rows import dict_row
 from glasswell.db.migrate import discover_migrations
 from glasswell.seed import seed_all
 from glasswell.seed.jurisdictions import (
+    FOUNDING_JURISDICTIONS,
     JURISDICTION_RESTATEMENTS,
     JURISDICTION_RULES_AS_FOUNDED,
     JURISDICTIONS,
@@ -125,7 +126,12 @@ def test_the_registry_ships_with_its_registrations_and_the_resolver_answers_for_
 ) -> None:
     """`glasswell-migrate` alone must yield a database that serves: the registrations are in
     the migration, not only in the seed."""
-    rows = resolved(db, REGISTERED_ON, REGISTERED_ON)
+    # The four this migration founded. A jurisdiction registered later resolves at this cut
+    # too -- its own instant is not earlier than this one -- so the claim is scoped to what
+    # this file writes rather than to how many registrations the registry happens to hold.
+    founded = {str(row["jurisdiction_code"]) for row in FOUNDING_JURISDICTIONS}
+    rows = [row for row in resolved(db, REGISTERED_ON, REGISTERED_ON)
+            if row["jurisdiction_code"] in founded]
 
     assert [row["jurisdiction_code"] for row in rows] == ["MT", "ND", "NM", "TX"]
     assert sorted(row["identity_prefix"] for row in rows) == ["25", "30", "33", "42"]
@@ -156,7 +162,16 @@ def test_the_migration_and_the_seed_write_the_same_rule_rows(
     """Two copies of a registry is one drift away from a lie; this is the guard on that."""
     db = seeded_without_the_registry_rules
     columns = "jurisdiction_code, effective_from, published_at, decision, rule_id, serving, note"
-    founding = f"select {columns} from lineage.jurisdiction_rules where published_at = %s"
+    # Scoped to the codes this migration writes: the seed also lands a later registration's
+    # rows at this instant, and comparing the two writers over rows only one of them owns
+    # would fail on a difference that is not a drift.
+    founded = ", ".join(
+        f"'{row['jurisdiction_code']}'" for row in FOUNDING_JURISDICTIONS
+    )
+    founding = (
+        f"select {columns} from lineage.jurisdiction_rules where published_at = %s"
+        f"   and jurisdiction_code in ({founded})"
+    )
     with db.cursor() as cursor:
         cursor.execute(migration_sql(MIGRATION))
         cursor.execute(f"{founding} order by 1, 4, 5", (REGISTERED_ON,))

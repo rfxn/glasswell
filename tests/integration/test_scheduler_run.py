@@ -230,7 +230,11 @@ def test_observing_writes_a_would_run_row_and_launches_nothing(seeded) -> None:
     recorded = runs(seeded, FAKE_JOB)
     assert [row["outcome"] for row in recorded] == ["would_run"]
     assert recorded[0]["started_at"] is None
-    assert control.argv == []
+    # This job launched nothing, which is what observing means. The tick as a whole may launch
+    # -- a registration that installs no unit is admitted to launch, and one now does -- so the
+    # assertion is scoped to the observing row rather than to the tick, which would otherwise
+    # read as "nothing in the registry may ever run" and pass only until something did.
+    assert not any(FAKE_JOB in " ".join(argv) for argv in control.argv)
 
 
 def test_a_second_tick_in_the_same_window_collapses_onto_the_first_row(seeded) -> None:

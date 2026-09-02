@@ -16,6 +16,7 @@ from psycopg.rows import dict_row
 from glasswell.db.migrate import discover_migrations
 from glasswell.seed import seed_all
 from glasswell.seed.jurisdictions import (
+    FOUNDING_JURISDICTIONS,
     JURISDICTION_RESTATEMENTS,
     JURISDICTION_RULES,
     JURISDICTION_RULES_AS_FOUNDED,
@@ -59,8 +60,13 @@ def test_the_restatement_resolves_and_carries_the_presentation_columns(
 ) -> None:
     rows = {row["jurisdiction_code"]: row for row in resolved(db, RESTATED_ON, RESTATED_ON)}
 
-    assert sorted(rows) == ["MT", "ND", "NM", "TX"]
-    for declared in JURISDICTIONS:
+    # The four this track restated, plus any registration founded since. A jurisdiction
+    # registered after the presentation columns existed is founded whole and has nothing to
+    # restate, so it resolves here at its own instant rather than at this track's.
+    restated = {str(row["jurisdiction_code"]) for row in FOUNDING_JURISDICTIONS}
+    assert sorted(restated) == ["MT", "ND", "NM", "TX"]
+    assert restated <= set(rows)
+    for declared in FOUNDING_JURISDICTIONS:
         landed = rows[str(declared["jurisdiction_code"])]
         assert landed["published_at"] == RESTATED_ON
         for column in PRESENTATION_COLUMNS:
@@ -76,8 +82,11 @@ def test_the_founding_registration_still_answers_under_its_own_knowledge_cut(
     """A restatement is an append. What was published on the founding day did not change."""
     rows = {row["jurisdiction_code"]: row for row in resolved(db, REGISTERED_ON, REGISTERED_ON)}
 
-    assert sorted(rows) == ["MT", "ND", "NM", "TX"]
-    for code, row in rows.items():
+    founding = {str(row["jurisdiction_code"]) for row in FOUNDING_JURISDICTIONS}
+    assert sorted(founding) == ["MT", "ND", "NM", "TX"]
+    assert founding <= set(rows)
+    for code in founding:
+        row = rows[code]
         assert row["published_at"] == REGISTERED_ON
         assert row["wells_layer_id"] is None, code
 
@@ -180,15 +189,26 @@ def test_the_restatement_re_appends_every_rule_row_it_declares(
     """Gate (b)'s migration-side twin: a restatement states what was known when it was
     published, so its rule rows travel with it or the registration claims fewer decisions."""
     seed_all(db)
+    # The rows published at this instant are the ones this track's restatement carried: rules
+    # for the four registrations it restated. A jurisdiction founded later declares its own at
+    # its own instant, so counting the whole rule set here would count its rows twice over.
+    restated = {str(row["jurisdiction_code"]) for row in FOUNDING_JURISDICTIONS}
+    declared = [
+        row
+        for row in JURISDICTION_RULES
+        if str(row["jurisdiction_code"]) in restated
+        and row.get("published_at", RESTATED_ON) == RESTATED_ON
+    ]
     with db.cursor() as cursor:
         cursor.execute(
             "select count(*) from lineage.jurisdiction_rules where published_at = %s",
             (RESTATED_ON,),
         )
-        assert cursor.fetchone()[0] == len(JURISDICTION_RULES)
+        assert cursor.fetchone()[0] == len(declared)
         cursor.execute(
-            "select count(*) from lineage.jurisdiction_rules where published_at = %s",
-            (REGISTERED_ON,),
+            "select count(*) from lineage.jurisdiction_rules where published_at = %s"
+            "   and jurisdiction_code = any(%s)",
+            (REGISTERED_ON, sorted(restated)),
         )
         assert cursor.fetchone()[0] == len(JURISDICTION_RULES_AS_FOUNDED)
 
