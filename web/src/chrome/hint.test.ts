@@ -95,7 +95,7 @@ describe("it leaves the moment the lesson has been learned", () => {
   it("goes when the reader gets on with their work somewhere else", () => {
     showHint(SENTENCE);
 
-    document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
 
     expect(hint.hidden).toBe(true);
   });
@@ -103,9 +103,30 @@ describe("it leaves the moment the lesson has been learned", () => {
   it("stays while the reader is inside it, or the close button could never be pressed", () => {
     showHint(SENTENCE);
 
-    closeButton().dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    closeButton().dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
 
     expect(hint.hidden).toBe(false);
+  });
+
+  // gate-v076 D3: at 390 the hint sat over the section title and its first control, so the tap
+  // aimed at `Add user` was spent dismissing it. It listens on pointerdown now, which arrives
+  // before the tap is routed, and it neither prevents nor stops the event.
+  it("does not swallow the press it was sitting in front of", () => {
+    const button = document.createElement("button");
+    let pressed = 0;
+    button.addEventListener("pointerdown", () => (pressed += 1));
+    button.addEventListener("click", () => (pressed += 1));
+    document.body.append(button);
+    showHint(SENTENCE);
+
+    const down = new MouseEvent("pointerdown", { bubbles: true, cancelable: true });
+    button.dispatchEvent(down);
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+    expect(hint.hidden).toBe(true);
+    expect(down.defaultPrevented).toBe(false);
+    expect(pressed).toBe(2);
+    button.remove();
   });
 });
 

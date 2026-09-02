@@ -2165,17 +2165,21 @@ a {
   }
 
   /* Anchored to the act group, the popover hung off a 390 px viewport; here it is the
-     viewport's, like the search panel above it. */
+     viewport's, like the search panel above it. Docked to the bottom rather than under the
+     rail: up there it sat exactly where a section title and its first control are, covered the
+     `Accounts` and `Status` headings, and took the tap aimed at `Add user` (gate-v076 D3). */
   .gw-hint {
     position: fixed;
-    top: calc(var(--gw-rail-band) + 2 * var(--gw-rail-pad-y) + var(--gw-space-2));
+    top: auto;
+    bottom: var(--gw-space-3);
     right: var(--gw-space-2);
     left: var(--gw-space-2);
     width: auto;
     max-width: none;
   }
 
+  /* The tick pointed at the help button in the rail, which is nowhere near it now. */
   .gw-hint::before {
-    right: 44px;
+    display: none;
   }
 }
