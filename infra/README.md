@@ -58,6 +58,12 @@ named authorisation instead.
 | `glasswell-fracfocus` | FracFocus completion-anchor ingest |
 | `glasswell-nm-wells` | promote NM well headers and surface geometry from staged `wellhistory` |
 | `glasswell-nm-tiles` | rebuild `marts.nm_wells_tile` from canonical and reinstall the tile function |
+| `glasswell-co-wells` | promote ECMC well headers and surface geometry from staged `co_ecmc_wells` |
+| `glasswell-co-production` | promote the staged ECMC rolling file at completion grain, with the well row beside it |
+
+The two Colorado promotions have short names because an operator hand-runs them; the two ECMC
+network ingests keep their `python -m glasswell.ingest.co_ecmc_{gis,production}` spelling for
+the reason above, and the scheduler is what runs them.
 
 `glasswell-nm-wells` and `glasswell-nm-tiles` are the New Mexico track's Tier 2 — the spine and
 the map. They are the two steps in `docs/runbook-nm-tier2.md`. The Tier 1 production-history

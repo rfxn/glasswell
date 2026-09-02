@@ -501,6 +501,42 @@ CO_RULES: tuple[dict[str, object], ...] = (
         "code_ref": "src/glasswell/ingest/co_ecmc_gis.py",
     },
     {
+        "rule_id": "cr_co_wells_effective_1",
+        "source_id": WELLS_SOURCE_ID,
+        "stage": "conform",
+        "rule_kind": "parse_directive",
+        "applies_to_fields": ["stat_date"],
+        "spec": {
+            "declares_fields": ["stat_date", "spud_date"],
+            "asserts_header": False,
+            "effective_from_field": "stat_date",
+            "on_missing": "manifest_vintage",
+            "promoted_to": "canonical.wells.effective_from",
+            "supersession": "by effective_from ordering; canonical.wells carries no valid-time"
+            " end column, so no interval is closed and none is served",
+            "measured_stat_date_present": HEADER_WELLS,
+            "measured_stat_date_absent": 0,
+        },
+        "rule": (
+            "A Colorado header's valid time is Stat_Date, the date ECMC stamped the status it"
+            " filed. A row with no Stat_Date takes the manifest's vintage instead."
+        ),
+        "rationale": (
+            "canonical.wells is keyed on (api10, effective_from) and is append-only, and ECMC"
+            " republishes the whole shapefile nightly. Keying on the pull would therefore"
+            " append 124,392 rows every night and make the spine a log of when glasswell"
+            " looked rather than of when the regulator said something. Stat_Date is the"
+            " regulator's own clock for exactly the field the status vocabulary reads, so a"
+            " new row appears when the status was restamped and not before. Measured, every"
+            " one of the 124,392 deduplicated rows carries a Stat_Date, so the fallback fires"
+            " on nothing today; it is registered because a header that arrives without one has"
+            " to promote as something, and the manifest vintage is honest about being"
+            " glasswell's clock rather than ECMC's."
+        ),
+        "evidence_url": WELLS_METADATA_URL,
+        "code_ref": "src/glasswell/ingest/co_wells.py",
+    },
+    {
         "rule_id": "cr_co_wells_well_type_1",
         "source_id": WELLS_SOURCE_ID,
         "stage": "conform",
