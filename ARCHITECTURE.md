@@ -79,13 +79,18 @@ Resident today: the PostGIS geometry martin turns into vector tiles
 in-scope New Mexico source ships one — `mt_wells_tile` and `mt_paths_tile` — whose lines are
 cartographic centrelines carrying `geometry_class` and `vertex_count` on every feature, and no
 length, because Montana carries no basin and so no registered length method —
+`co_wells_tile` — a point layer for the same
+reason New Mexico's is, and the only one carrying two geometry axes: `geometry_provenance`
+says which feature a point is and `loc_qual_class` says how good its coordinate is, because
+44.67% of Colorado's served points are permit locations rather than surveys —
 `land_units_tile`, `land_metrics_tile`, plus spacing
 units,
 which are a view rather than a table). Every one of the tile marts above is refreshed by
 `marts/wells.py`, one engine driven by a registration and a `MartProfile` row: the four
 per-state modules that used to hold a copy of the same lifecycle are fifteen-line shims kept
 because two applied migrations name them by module path. Adding a state adds a profile row and
-a registration, not a module. The engine also stops inheriting: which basin governs the compute
+a registration, not a module — Colorado is the first state that was added that way, and it
+has no module of its own at all. The engine also stops inheriting: which basin governs the compute
 CRS and which source measures a lateral are `jurisdiction_rules` decisions read at refresh
 time, so a jurisdiction that registers neither resolves no length rather than resolving North
 Dakota's. The `nd_well_card` table, and the current

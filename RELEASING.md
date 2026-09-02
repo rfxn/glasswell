@@ -105,6 +105,16 @@ those two literals, and the checklist at the head of each such migration is the 
 - Never write a date the deploy host has not reached. A future `effective_from` resolves no
   registration, so every registry-backed route serves `service_degraded` and the map draws the
   affected jurisdiction unmapped. `infra/verify.sh` catches it, but only after the API restart.
+  A jurisdiction whose statuses resolve at read time fails sooner and quieter: its arm on
+  `canonical.status_resolution` joins `jurisdictions_as_of(current_date, current_date)`, so a
+  future registration leaves that arm empty and every one of its wells reads unmapped with no
+  error anywhere.
+- **An applied migration's checklist is read, never corrected.** `migrate.py` records a sha256
+  over the whole file and refuses one that changed after it was applied, so editing a comment
+  in 071, 072 or 073 to improve its wording would stop `glasswell-migrate` on the deployed
+  host. Two of those files say "the head this branch was written against" where this section
+  says merge commit; this section is the authority and they are frozen history. A later
+  migration's checklist is where the corrected wording goes.
 
 ## 4. `MAJOR=1` — the exception, not a level
 
