@@ -9,6 +9,7 @@ duration are operational inventory, not petroleum quantities, and each is exempt
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date
 from typing import Annotated, Any
 
@@ -273,20 +274,28 @@ def _row(job: ScheduledJob, *, next_due: str | None) -> dict[str, Any]:
     }
 
 
-def _due_map(connection, registry: ScheduleRegistry) -> dict[str, str | None]:
+def _due_map(
+    connection, registry: ScheduleRegistry, job_ids: Sequence[str] | None = None
+) -> dict[str, str | None]:
     """Imported here rather than at module scope: the planner reads five lineage relations and
-    the API should pay for that only when this route is asked."""
+    the API should pay for that only when this route is asked.
+
+    `job_ids` narrows it. The list route needs every row's next-due; the detail route needs
+    one, and computing thirty to serve one runs the 84-line source-health query over every
+    registered source for nothing.
+    """
     from datetime import UTC, datetime
 
     from glasswell.scheduler.plan import collect_evidence, next_due_at
 
+    jobs = [job for job in registry if job_ids is None or job.job_id in set(job_ids)]
     now = datetime.now(UTC)
     evidence = collect_evidence(
         connection,
         now=now,
-        source_ids=[source for job in registry for source in job.source_ids],
+        source_ids=[source for job in jobs for source in job.source_ids],
     )
-    return {job.job_id: iso(next_due_at(job, evidence, now)) for job in registry}
+    return {job.job_id: iso(next_due_at(job, evidence, now)) for job in jobs}
 
 
 @router.get(
@@ -464,7 +473,7 @@ def get_schedule(
         raise ProblemError(
             "not_found", detail=f"{job_id} resolves to no schedule at this knowledge cut"
         )
-    due = _due_map(connection, registry)
+    due = _due_map(connection, registry, [job_id])
     history = rows(connection, _RECENT_RUNS, {"job_id": job_id, "limit": RUN_HISTORY})
     item = _row(job, next_due=due.get(job_id))
     item["last_runs"] = [
