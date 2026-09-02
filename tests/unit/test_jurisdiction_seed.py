@@ -29,6 +29,7 @@ from glasswell.seed.jurisdictions import (
     identity_pattern,
     rule_parameters,
 )
+from glasswell.status_resolution import UNMAPPED_CLASS
 
 pytestmark = pytest.mark.unit
 
@@ -41,6 +42,9 @@ MIGRATION = next(
 BRAND = ROOT / "BRAND.md"
 STATUS_CLASSES = ROOT / "web/src/map/status.ts"
 REPOINTED_COMMIT = re.compile(r"^[0-9a-f]{40}$")
+ABSENCE_CLASS = re.compile(
+    r"export const UNMAPPED_STATUS: StatusClass = \{\s*id: \"([a-z_]+)\",", re.S
+)
 
 
 def repoint_disagreements(migration: str) -> list[str]:
@@ -162,3 +166,22 @@ def test_the_allowlists_the_add_a_state_scan_reads_are_derived_from_the_rows() -
     assert sorted(CODES) == sorted(row["jurisdiction_code"] for row in JURISDICTION_CODES)
     assert sorted(NAMES) == sorted(row["name"] for row in JURISDICTIONS)
     assert len(PREFIXES) == len(JURISDICTIONS)
+
+
+def test_the_ledgers_absence_class_is_the_word_the_canvas_draws() -> None:
+    """One word, two languages, and nothing between them until this.
+
+    The server never emitted the string before v0.77: the client coalesced a null status to it
+    on the tile wire and the ledger dropped the bucket. Now the writer puts it in
+    `lineage.jurisdiction_well_counts` and the client keys its census on it, so a rename on
+    either side would leave every suite green and the absence class back to a muted row with no
+    measurement -- the exact state this train exists to leave.
+    """
+    source = STATUS_CLASSES.read_text(encoding="utf-8")
+    declared = ABSENCE_CLASS.search(source)
+
+    assert declared is not None, "web/src/map/status.ts declares no UNMAPPED_STATUS id"
+    assert declared.group(1) == UNMAPPED_CLASS
+    # Once, in the declaration: a bare copy elsewhere in the file is a third spelling that this
+    # comparison would not see move.
+    assert source.count(f'"{UNMAPPED_CLASS}"') == 1
