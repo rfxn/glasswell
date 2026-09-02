@@ -714,8 +714,11 @@ function row(
 }
 
 /**
- * The population, in the server's own words. `state_name` is the served list for a set, so the
- * only thing composed here is the preposition — one jurisdiction reads exactly as it always did.
+ * The population, in the server's own words. `state_name` is the served list for a set, and the
+ * preposition is the same rule the server applies to the caption and to the absence sentence
+ * (`facets.py` `_scope_phrase`): `across` for a set, `in` for one. Both sides say it the same
+ * way, which is the point — the caption is the largest sentence on this panel and it sits two
+ * lines above the scope note.
  */
 function population(data: WellFacets): string {
   return `${data.jurisdictions.length > 1 ? "across" : "in"} ${data.state_name}`;

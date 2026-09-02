@@ -858,3 +858,35 @@ def test_the_same_jurisdiction_is_absent_by_rule_once_its_wells_are_in_scope(
 
     assert by_code["25"]["dimension"] == "absent_by_rule"
     assert "dimension_absent_by_rule" in {w["code"] for w in body["meta"]["warnings"]}
+
+
+def test_the_server_and_the_panel_say_the_scope_the_same_way(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """One vocabulary, or two sentences describe the same set differently 40 px apart.
+
+    `_caption`'s own comment states the standard; the panel says `across` for a set, and the
+    caption two lines above it said `in`. The preposition is the server's to choose, because the
+    server is the one that knows how many jurisdictions are in the scope.
+    """
+    _seed_tx(seeded)
+    _seed_nd(seeded)
+    combined = client.get("/v1/wells/facets?state=33,42&by=operator&top=50").json()["data"]
+    one = _facets(client, top=50)["data"]
+
+    assert "across North Dakota and Texas" in combined["caption"]
+    assert " in North Dakota and Texas" not in combined["caption"]
+    assert "in Texas" in one["caption"]
+
+
+def test_the_absence_sentence_uses_the_same_preposition_under_a_search(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The `q` arm names the population the count belongs to, and names it the same way."""
+    _seed_tx(seeded)
+    _seed_nd(seeded)
+    data = client.get(
+        "/v1/wells/facets?state=33,42&by=operator&top=50&q=usa"
+    ).json()["data"]
+
+    assert "across North Dakota and Texas" in data["absence"]["detail"]

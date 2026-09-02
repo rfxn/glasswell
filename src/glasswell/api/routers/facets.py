@@ -553,6 +553,17 @@ def _scope_name(registry: JurisdictionRegistry, codes: Sequence[str]) -> str:
     return _named(_state_name(registry, code) for code in codes)
 
 
+def _scope_phrase(registry: JurisdictionRegistry, codes: Sequence[str]) -> str:
+    """The scope with the preposition that belongs to it, composed once and served.
+
+    The panel says `across` for a set and `in` for one, and the caption is the largest sentence
+    beside it. Two prepositions for one set 40 px apart is the drift `_caption`'s own comment
+    already objects to about the sort control, so the server chooses the word: it is the one
+    that knows how many jurisdictions are in the scope, and the client then composes nothing.
+    """
+    return f"{'across' if len(codes) > 1 else 'in'} {_scope_name(registry, codes)}"
+
+
 def _selector(
     dimension: str,
     scope: str,
@@ -589,7 +600,7 @@ def _absence(
     entries: Sequence[dict[str, Any]],
     *,
     scope: str,
-    scope_name: str,
+    scope_phrase: str,
     dimension: str,
     q: str | None,
 ) -> dict[str, Any] | None:
@@ -656,8 +667,8 @@ def _absence(
     if q is not None:
         detail += (
             f" The search for {q!r} did not narrow this bucket: a well with no {noun} matches"
-            f" no {noun} text, so this is every such well in"
-            f" {scope_name}, not a share of the matches."
+            f" no {noun} text, so this is every such well"
+            f" {scope_phrase}, not a share of the matches."
         )
     return {
         "label": ABSENCE_LABEL,
@@ -691,7 +702,7 @@ def _remainder(
 def _caption(
     *,
     dimension: str,
-    scope_name: str,
+    scope_phrase: str,
     shown: int,
     distinct: int,
     q: str | None,
@@ -704,16 +715,16 @@ def _caption(
     and a sentence naming the most describes a list the reader is not looking at.
     """
     noun = dimension.replace("_", " ")
-    name = scope_name
+    name = scope_phrase
     if distinct == 0:
         return (
-            f"No {noun} in {name} matches {q!r}. The search ran over all of them, so this is"
+            f"No {noun} {name} matches {q!r}. The search ran over all of them, so this is"
             " the whole answer."
             if q is not None
-            else f"No well in {name} carries a {noun}."
+            else f"No well {name} carries a {noun}."
         )
     matching = f" matching {q!r}" if q is not None else ""
-    of = f"{distinct:,} {noun} value{'s' if distinct != 1 else ''}{matching} in {name}"
+    of = f"{distinct:,} {noun} value{'s' if distinct != 1 else ''}{matching} {name}"
     descending = order == "desc"
     # The words the direction button beside this sentence uses (`wells-by.ts` directionLabel):
     # one vocabulary, or two controls describe the same parameter differently 40 px apart.
@@ -994,6 +1005,7 @@ def get_well_facets(
     # registry gains between the two calls.
     scope = ALL_JURISDICTIONS if requested is None else ",".join(codes)
     scope_name = _scope_name(registry, codes)
+    scope_phrase = _scope_phrase(registry, codes)
     scoped = (_SCOPED_AS_OF if as_of is not None else _SCOPED_LATEST).format(
         column=DIMENSIONS[by]["column"], join=DIMENSIONS[by].get("join", "")
     )
@@ -1011,7 +1023,7 @@ def get_well_facets(
     entries = _jurisdictions(
         found, codes=codes, dimension=by, scope=scope, registry=registry
     )
-    absence = _absence(entries, scope=scope, scope_name=scope_name, dimension=by, q=q)
+    absence = _absence(entries, scope=scope, scope_phrase=scope_phrase, dimension=by, q=q)
     remainder = _remainder(one.get("remainder"), scope=scope, dimension=by, q=q, top=top)
     scope_row = one.get("scope")
     data: dict[str, Any] = {
@@ -1026,7 +1038,7 @@ def get_well_facets(
         "distinct_values": int(scope_row["values"]) if scope_row and scope_row["values"] else 0,
         "caption": _caption(
             dimension=by,
-            scope_name=scope_name,
+            scope_phrase=scope_phrase,
             shown=len(listed),
             distinct=(
                 int(one["matched"]["values"])
