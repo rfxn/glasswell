@@ -53,3 +53,32 @@
       "no wells" are different facts. `Jurisdiction`, `Regulator` and `Identity scheme` are
       glossary terms, and the identity prefix is the one number on the route exempted from
       carrying a handle, because it is an identifier's prefix and says so in both places
+- [Change] The Status page's jurisdiction arms are generated from the registry. Sixteen
+           literals decided the wells arms and ten more the completions arms, and the
+           completions query still carried the `left(api10, 2) = '<literal>'` filtered
+           aggregate migration 069 took out of the production arm; all of it is one grouped
+           read and one comprehension now. A fifth registration yields a fifth wells dataset
+           and a fifth completions dataset with no edit, and an arm whose table holds nothing
+           reports `unavailable` rather than a zero — "not loaded" and "none" are different
+           facts, which is the guarantee the omitted Montana completions arm used to make by
+           being absent
+- [New] `marts/counts.py` appends the jurisdiction well-count ledger `/v1/jurisdictions`
+      serves: one measurement per registered jurisdiction, by canonical status and in total,
+      under the derivation that produced it. The total is the sum of the classes it is served
+      beside rather than a second `count(*)`, and the class is read from the same resolver the
+      map draws with, so the ledger cannot disagree with the canvas about a well
+- [Change] `land_metrics.py`'s two grid-prefix tuples and `neighbors.py`'s `STATE_CODES` read
+           the registry at import. The two land-grid names stay separately named and separately
+           sourced — each reads its own column — because collapsing them would silence the
+           anomaly alarm one of them exists to raise
+- [Change] map: the `Wells` family, its four jurisdiction rows and the status vocabulary rules
+           the legend prints take their names, swatch colours, tile layers and rule ids from
+           `jurisdictions.generated.ts`, rendered from the registry seed by
+           `make jurisdictions`. The rows stay literal — `tests/e2e/chrome-fold.mjs` parses the
+           file as text — and only the values inside them are imported
+- [Remove] map: `MEASURED_WELL_COUNTS`, `MEASURED_TX_WELL_COUNTS`, `MEASURED_NM_WELL_COUNTS`,
+           `MEASURED_MT_WELL_COUNTS` and `measuredWellCount`. Four count tables read by hand
+           against the deployed database and compiled into the bundle with no date on them; a
+           legend built from those claimed whatever somebody last measured. The census comes
+           from `/v1/jurisdictions` now, fetched off the entry path, and a class is hidden only
+           on an explicit measured zero — an unknown or degraded census hides nothing

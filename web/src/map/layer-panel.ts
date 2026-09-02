@@ -6,6 +6,7 @@ import { registerOverlay } from "../chrome/overlays.ts";
 import { applyCrossing, cross, whatsBehindThisLayer } from "../explore/bridge.ts";
 import type { Bbox, Crossing } from "../explore/bridge.ts";
 import { teach } from "../glossary/teach.ts";
+import { ABBREVIATION } from "./jurisdictions.generated.ts";
 import { BASEMAPS } from "./basemap.ts";
 import type { LayerFamily } from "./groups.ts";
 import { LAYERS, defaultLayerSet, familyState, groupEntries } from "./registry.ts";
@@ -463,12 +464,9 @@ function buildFamily(
   };
 }
 
-const STATE_ABBREVIATION: Record<string, string> = {
-  "North Dakota": "ND",
-  Montana: "MT",
-  "New Mexico": "NM",
-  Texas: "TX",
-};
+// Full name → registered code, generated from the registry. A fifth jurisdiction tags its own
+// rows without an edit here, and the panel cannot spell one differently from the map.
+const STATE_ABBREVIATION: Readonly<Record<string, string>> = ABBREVIATION;
 
 /** `Survey traces (North Dakota)` → the noun and the jurisdiction that scopes it, separately. */
 export function splitScope(label: string): { name: string; scope: string | null } {

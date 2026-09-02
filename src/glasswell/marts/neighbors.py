@@ -23,14 +23,18 @@ from glasswell.lineage.capture import current_session, derive, lineage_session
 from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.serialization import canonical_json, hash_payload
 from glasswell.lineage.store import PostgresRecorder
+from glasswell.seed.jurisdictions import JURISDICTIONS
 from glasswell.units import METRES_PER_FOOT
 
-# North Dakota and Montana. The mart is multi-state because the ND/MT line runs through the
-# Williston: an ND well within 26,400 ft of the border has offsets on the Montana side, and a
-# subject set scoped to one state truncates its neighbour list without saying so. NM is
-# deliberately absent: neither NM source ships a lateral, so an entry would build an empty
-# subject set.
-STATE_CODES: tuple[str, ...] = ("33", "25")
+# North Dakota and Montana today. The mart is multi-state because the ND/MT line runs through
+# the Williston: an ND well within 26,400 ft of the border has offsets on the Montana side, and
+# a subject set scoped to one state truncates its neighbour list without saying so. Which
+# jurisdictions the mart holds subjects for is the registry's `neighbors_available` column, not
+# a tuple here — NM is absent because neither NM source ships a lateral, and that is a fact
+# about the registration rather than about this module.
+STATE_CODES: tuple[str, ...] = tuple(
+    str(row["identity_prefix"]) for row in JURISDICTIONS if row["neighbors_available"]
+)
 FORMATION_SOURCE_ID = "nd_mpr_xlsx"
 COMPLETION_SOURCE_ID = "fracfocus_csv"
 MIN_ALIAS_CONFIDENCE = Decimal("0.800")

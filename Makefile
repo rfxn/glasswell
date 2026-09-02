@@ -20,7 +20,7 @@ TEST_LABEL ?= glasswell.test
 .PHONY: help venv install test test-anvil test-local test-unit test-integration test-e2e \
         dbtier-preflight serve-branch changelog changelog-page changelog-lint build-web \
         release release-check deploy ship \
-        lint fmt clean prune-test-volumes check-workstation snapshot
+        lint fmt clean prune-test-volumes check-workstation snapshot jurisdictions
 
 help:
 	@echo "venv              create $(VENV)"
@@ -46,6 +46,7 @@ help:
 	@echo "lint              ruff"
 	@echo "fmt               ruff --fix"
 	@echo "snapshot          rewrite tests/contract/openapi_snapshot.json from the document"
+	@echo "jurisdictions     regenerate web/src/map/jurisdictions.generated.ts from the seed"
 
 venv:
 	python3 -m venv $(VENV)
@@ -147,6 +148,9 @@ ship:
 # A generated artifact with no in-tree regeneration path is one an agent repairs by hand.
 snapshot:
 	$(PY) scripts/regen-snapshot.py
+
+jurisdictions:
+	$(PY) scripts/regen-jurisdictions.py
 
 clean:
 	rm -rf .pytest_cache .ruff_cache
