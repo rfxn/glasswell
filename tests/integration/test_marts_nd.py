@@ -23,7 +23,7 @@ from glasswell.ingest.nd_gis import (
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.explain import resolve_chain
 from glasswell.lineage.store import PostgresRecorder
-from glasswell.marts import ND_LAYERS, TILE_LAYERS, refresh_all
+from glasswell.marts import ND_LAYERS, TILE_LAYERS, refresh_for
 from glasswell.marts.nd_wells import main
 from glasswell.marts.tiles import simplify_tolerance, thin_key_sql
 from glasswell.seed import seed_all
@@ -137,7 +137,7 @@ def canonical_nd(db: psycopg.Connection, raw_root, lineage_env) -> psycopg.Conne
 @pytest.fixture
 def refreshed(canonical_nd: psycopg.Connection, lineage_env):
     with lineage_session(recorder=PostgresRecorder(canonical_nd), environment=lineage_env):
-        report = refresh_all(canonical_nd)
+        report = refresh_for(canonical_nd, "ND")
     canonical_nd.commit()
     return report
 
@@ -361,7 +361,7 @@ def test_every_tile_row_carries_a_handle_that_resolves_to_a_manifest(canonical_n
 def test_a_second_refresh_is_idempotent_and_content_addressed(canonical_nd, refreshed, lineage_env):
     before = _counts(canonical_nd)
     with lineage_session(recorder=PostgresRecorder(canonical_nd), environment=lineage_env):
-        again = refresh_all(canonical_nd)
+        again = refresh_for(canonical_nd, "ND")
     canonical_nd.commit()
 
     assert again.derivation_id == refreshed.derivation_id

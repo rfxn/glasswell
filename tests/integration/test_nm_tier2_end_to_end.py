@@ -26,7 +26,8 @@ from glasswell.ingest import nm_wells
 from glasswell.ingest.base import open_ingest_run
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.store import PostgresRecorder
-from glasswell.marts import nm_wells as nm_marts
+from glasswell.marts.tiles import NM_LAYERS
+from glasswell.marts.wells import refresh_for
 from tests.integration.test_marts_nd import rows, scalar, tile_of
 from tests.integration.test_nm_stage import stage
 from tests.integration.test_nm_stage import staging_root as _staging_root
@@ -78,7 +79,7 @@ def tier2(db, seeded, lineage_env, raw_root, staging_root, tmp_path, monkeypatch
         promotion = nm_wells.promote_headers(run)
     db.commit()
     with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env):
-        refresh = nm_marts.refresh_all(db)
+        refresh = refresh_for(db, "NM")
     db.commit()
     return staged, promotion, refresh
 
@@ -167,7 +168,7 @@ def test_a_permian_tile_carries_new_mexico_points_on_the_wire(tier2, db) -> None
     )
     assert resident > 0, "the fixture carries no Permian well; the tile assertion is vacuous"
     assert feature_count(decoded[0]) == resident
-    declared = {column for column, _ in nm_marts.NM_LAYERS[0].properties}
+    declared = {column for column, _ in NM_LAYERS[0].properties}
     assert set(attribute_keys(decoded[0])) <= declared
 
 
@@ -294,7 +295,7 @@ def test_an_operator_name_present_at_promotion_reaches_the_header_and_the_tile(
         nm_wells.promote_headers(run)
     db.commit()
     with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env):
-        nm_marts.refresh_all(db)
+        refresh_for(db, "NM")
     db.commit()
 
     assert rows(db, "select count(operator_name_reported) from canonical.wells")[0][0] > 0

@@ -19,7 +19,7 @@ from glasswell.ingest.nd_gis import load_laterals, load_wells
 from glasswell.lengths import resolve_length_method
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.store import PostgresRecorder
-from glasswell.marts import refresh_all
+from glasswell.marts import refresh_for
 from glasswell.seed import seed_all
 from glasswell.units import METRES_PER_FOOT
 from tests.integration.test_marts_nd import ARCHIVES, client_for, rows, scalar
@@ -44,7 +44,7 @@ def laterals_loaded(db: psycopg.Connection, raw_root: Path, lineage_env) -> psyc
             loader(db, raw_root=raw_root, client=client)
         db.commit()
     with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env):
-        refresh_all(db)
+        refresh_for(db, "ND")
     db.commit()
     return db
 
