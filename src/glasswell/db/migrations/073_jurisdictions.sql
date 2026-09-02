@@ -11,8 +11,21 @@
 --   2. evidence_commit forty zeros -> the first commit on main that contains these rows,
 --      which is the merge commit and not the head this branch was written against:
 --      v0.76 must contain what evidence_commit names (scripts/release.py says the same)
---   3. effective_from / published_at 2026-09-01 -> confirm it is the date the tag is cut, or
---      correct it
+--   3. effective_from / published_at 2026-09-01 -> the date the tag is cut. It appears TWICE
+--      in this file, at the lineage.jurisdictions insert and again at the
+--      lineage.jurisdiction_rules insert below it, and both must move together:
+--      jurisdiction_rules carries a composite foreign key on
+--      (jurisdiction_code, effective_from, published_at), so a half-repoint aborts the migrate.
+--   4. seed/jurisdictions.py REGISTERED_ON / EVIDENCE_TAG / EVIDENCE_COMMIT -> the same three
+--      values, in the same commit. The seed is the second writer and the release gate checks
+--      only the tag and commit literals, so a date-only half-repoint passes release-check and
+--      is caught later by test_jurisdiction_parity, which needs docker.
+--
+-- Six values across two files, and never a date the deploy host has not reached. A future
+-- effective_from resolves no registration -- jurisdictions_as_of filters effective_from <=
+-- valid_as_of, and load_jurisdictions reads today -- so every registry-backed route serves 503
+-- and New Mexico draws unmapped. verify.sh's tile-layer check catches it, but only after the
+-- API has already restarted.
 -- The jurisdiction codes and the rule ids are immutable and must not change during the
 -- repoint. Both literals appear exactly once each, in the registration insert below and
 -- nowhere else: a quoted placeholder anywhere above it re-arms the release guard through

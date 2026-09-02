@@ -89,6 +89,23 @@ means a build failure cannot strand a fresh tag; rebuilding after it means the s
 changelog page carry the version that was just cut, and `deploy.sh` refuses a `web/dist` older
 than `VERSION` or `CHANGELOG.md` in case anyone skips that step.
 
+### Publication evidence, before the tag
+
+A migration that registers conformance rules or jurisdictions ships with placeholder evidence,
+and `release-check` refuses while `UNRELEASED` or forty zeros remain. Repointing is more than
+those two literals, and the checklist at the head of each such migration is the authority:
+
+- `evidence_commit` is the **merge commit on `main` that first contains the rows**, not the head
+  the branch was written against. The gate requires the tag to contain what `evidence_commit`
+  names, so the branch head fails it.
+- The **date is not gated at all**, and it is usually copied in more places than the literals —
+  073 carries it in two inserts joined by a composite foreign key, plus a third copy in
+  `seed/jurisdictions.py`. A date-only half-repoint passes `release-check` and is caught later,
+  by a parity test that needs docker.
+- Never write a date the deploy host has not reached. A future `effective_from` resolves no
+  registration, so every registry-backed route serves `service_degraded` and the map draws the
+  affected jurisdiction unmapped. `infra/verify.sh` catches it, but only after the API restart.
+
 ## 4. `MAJOR=1` — the exception, not a level
 
 `make release MAJOR=1` jumps to `(X+1).0` without walking the rest of the odometer. It is for
