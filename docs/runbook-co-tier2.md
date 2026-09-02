@@ -56,6 +56,12 @@ sudo -u postgres psql -d glasswell -Atc \
 # 13. Fewer is a half-applied migration, not a partial codebook.
 ```
 
+**Memory.** Every Colorado job row sets `MemoryMax=6G` (`co_counts` 2G), which is the platform
+norm rather than a Colorado figure. The host carries 16 GB with about 10.5 GB available and the
+scheduler holds concurrency at 1, so one job at a time fits with room to spare. Hand-running a
+step below while something else is resident is the case to watch: these steps are not run under
+the scheduler and nothing bounds them to that envelope.
+
 ## Step 0 — baseline
 
 Capture what the four resident jurisdictions hold **before** anything runs. The whole point of

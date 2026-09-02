@@ -112,8 +112,9 @@ those two literals, and the checklist at the head of each such migration is the 
 - **An applied migration's checklist is read, never corrected.** `migrate.py` records a sha256
   over the whole file and refuses one that changed after it was applied, so editing a comment
   in 071, 072 or 073 to improve its wording would stop `glasswell-migrate` on the deployed
-  host. Two of those files say "the head this branch was written against" where this section
-  says merge commit; this section is the authority and they are frozen history. A later
+  host. `071` says "the main head this branch was written against" where this section says
+  merge commit; 072 and 073 already say merge commit, and 073 states the contrast. This
+  section is the authority and 071 is frozen history. A later
   migration's checklist is where the corrected wording goes.
 
 ## 4. `MAJOR=1` — the exception, not a level

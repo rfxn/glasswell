@@ -72,6 +72,13 @@ feed them into derivation params, so a second row for a code moves two mart addr
 `source_ids` is **complete, not curated**: every source registered to this jurisdiction, or the
 parity gate reddens. `identity_pattern` is derived from the prefix — do not spell it out.
 
+**A `status_vocabulary` rule that resolves at read time owes three spec keys, not one.**
+`lineage.refresh_status_resolution()` is driven by rows, and it selects on `mapping_table`,
+`key_col` **and** `value_col` together. `spec->>` on an absent key is SQL NULL, so a rule
+carrying only `mapping_table` is filtered out of the loop one step before the
+missing-table notice can fire: the jurisdiction is skipped in silence and every one of its
+wells resolves unmapped. Name the table and both of its columns.
+
 > **Refuses if skipped or wrong:** `jurisdiction_rules.rule_id` references
 > `lineage.conformance_rules`, so step 3 cannot be skipped; the composite foreign key refuses a
 > rule row with no registration at that `(effective_from, published_at)`; and the `coalesce`d

@@ -34,7 +34,7 @@ derivation handle back to a checksummed regulator file, or it does not ship.
 
 > [!IMPORTANT]
 > **Early build, public source, proprietary, and not a product.** The repository holds the
-> blueprint, the collateral built from it, and a deployed five-state slice — North Dakota
+> blueprint, the collateral built from it, and a five-state slice — North Dakota
 > end to end, Texas and Montana on the map, New Mexico's headers, surface geometry and
 > production resident, and Colorado registered through the registry rather than built.
 > glasswell is a personal single-operator build on public regulator data. It is not
