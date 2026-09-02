@@ -167,8 +167,9 @@ def test_no_row_decides_the_header_precedence_question_before_the_measurement():
     Asserted on the answer rather than on the id. `_2` exists now and decides nothing: it is a
     correction to a `module_function` that named a symbol never present in that module, derived
     from the row it supersedes so that "only the reference moved" is checkable rather than
-    claimed. The measurement's own supersession is the next version after it, and the condition
-    for it rides forward in `superseded_when`.
+    claimed. The measurement's own supersession is `_3`, which `_2`'s rationale says out loud
+    because a reader arriving from `cr_nm_wells_gis_parity_1` would otherwise reach for `_2`;
+    the condition for it rides forward in `superseded_when`.
     """
     from glasswell.seed.conformance_nm_wells import NM_WELLS_RULES
 
@@ -182,6 +183,7 @@ def test_no_row_decides_the_header_precedence_question_before_the_measurement():
     assert corrected["spec"]["corrects"] == "cr_nm_wellhistory_header_precedence_1"
     for key in ("authority", "second_source", "superseded_when"):
         assert corrected["spec"][key] == founding["spec"][key], key
+    assert "cr_nm_wellhistory_header_precedence_3" in str(corrected["rationale"])
 
 
 def test_the_source_stops_at_staging_on_purpose():

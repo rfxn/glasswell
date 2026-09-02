@@ -689,7 +689,12 @@ NM_WELLS_RULES = (
         ),
         module_function=f"{PROMOTE_MODULE}:promote_headers",
         effective_from=RESTATED_ON,
-        rationale=CORRECTED_REFERENCE.format(symbol="promote", module=PROMOTE_MODULE),
+        rationale=(
+            CORRECTED_REFERENCE.format(symbol="promote", module=PROMOTE_MODULE)
+            + " This correction consumed _2, so the supersession superseded_when still names --"
+            " the GIS parity measurement, cr_nm_wells_gis_parity_1 -- will be"
+            " cr_nm_wellhistory_header_precedence_3."
+        ),
     ),
 )
 
