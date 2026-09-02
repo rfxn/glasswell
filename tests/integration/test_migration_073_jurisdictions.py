@@ -257,7 +257,7 @@ def test_a_rule_row_needs_a_registration_at_its_own_triple(
         cursor.execute(
             "insert into lineage.jurisdiction_rules (jurisdiction_code, effective_from,"
             " published_at, decision, rule_id)"
-            " values ('ND', date '2026-09-02', date '2026-09-02', 'liquids',"
+            " values ('ND', date '2027-01-01', date '2027-01-01', 'liquids',"
             " 'cr_nd_liquids_policy_1')"
         )
 

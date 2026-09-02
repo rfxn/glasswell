@@ -136,6 +136,17 @@ sudo -u glasswell $VENV/bin/python -m glasswell.marts.<code>_wells --dsn "$DSN"
 sudo -u glasswell $VENV/bin/python -m glasswell.marts.counts --dsn "$DSN"
 ```
 
+The count writer measures every registration by default. `--codes ND,TX` narrows it to some of
+them, which is a partial measurement rather than a smaller claim: the jurisdictions left out
+keep whatever the ledger already holds. A code no registration carries is refused by name, so a
+typo cannot report success over a run that measured nothing.
+
+There is no `--measured-on`. The ledger's date is the day the measurement was taken, and the
+key is `(jurisdiction, measured_on, status)`: a second run on a day the ledger already holds
+inserts the rows that day lacks and keeps the rest, with the derivation each was written by. So
+the day's rows may name two runs, which is honest as long as the counted population did not
+move between them — run it on a day the ledger does not already hold if it did.
+
 > **Refuses otherwise:** `jurisdiction_well_counts.well_count` is `not null` and
 > `derivation_id` references `lineage.derivations` — there is no count without a refresh that
 > produced it. Until the second command runs, `/v1/jurisdictions` serves this jurisdiction with

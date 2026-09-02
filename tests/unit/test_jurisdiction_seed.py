@@ -9,26 +9,27 @@ that each registration carries the decision no jurisdiction may be without.
 from __future__ import annotations
 
 import re
+from datetime import date
 from pathlib import Path
 
 import pytest
 
+import glasswell.seed.jurisdictions as mirror
 from glasswell.db.migrate import discover_migrations
 from glasswell.marts.tiles import TILE_LAYERS
 from glasswell.seed.jurisdictions import (
     CODES,
     EVIDENCE_COMMIT,
-    EVIDENCE_TAG,
     JURISDICTION_CODES,
     JURISDICTION_RULES,
     JURISDICTIONS,
     NAMES,
     PREFIXES,
-    REGISTERED_ON,
     REQUIRED_DECISIONS,
     identity_pattern,
     rule_parameters,
 )
+from glasswell.status_resolution import UNMAPPED_CLASS
 
 pytestmark = pytest.mark.unit
 
@@ -41,17 +42,68 @@ MIGRATION = next(
 BRAND = ROOT / "BRAND.md"
 STATUS_CLASSES = ROOT / "web/src/map/status.ts"
 REPOINTED_COMMIT = re.compile(r"^[0-9a-f]{40}$")
+ABSENCE_CLASS = re.compile(
+    r"export const UNMAPPED_STATUS: StatusClass = \{\s*id: \"([a-z_]+)\",", re.S
+)
+
+
+def repoint_disagreements(migration: str) -> list[str]:
+    """Where the migration and the seed mirror disagree about the repoint, one line each.
+
+    Read through the module rather than off the names imported above, so a test can move one
+    writer and see the other stay put -- which is the half-repoint this file exists to catch.
+    """
+    found = []
+    if f"'{mirror.EVIDENCE_TAG}'" not in migration:
+        found.append(f"the migration does not quote evidence_tag {mirror.EVIDENCE_TAG}")
+    if f"'{mirror.EVIDENCE_COMMIT}'" not in migration:
+        found.append(f"the migration does not quote evidence_commit {mirror.EVIDENCE_COMMIT}")
+    if f"date '{mirror.REGISTERED_ON.isoformat()}'" not in migration:
+        found.append(f"the migration does not carry the clock {mirror.REGISTERED_ON}")
+    return found
 
 
 def test_the_migration_and_the_mirror_agree_about_being_repointed() -> None:
     """A half-repoint is two different claims about when these rows were published. The
-    release gate refuses one; this says so without waiting for a tag."""
+    release gate refuses one; this says so without waiting for a tag.
+
+    Both literals, whichever state the pair is in. The earlier form asserted the quoted tag was
+    absent *unless* it was the placeholder, which is true only while the tag is UNRELEASED and
+    false after every repoint by construction: it went red the day v0.76 did what the repoint
+    checklist asks, and stayed red on main from `1ab596c`. A gate that a correct repoint breaks
+    is a gate nobody can act on.
+    """
     migration = MIGRATION.read_text(encoding="utf-8")
 
-    assert (f"'{EVIDENCE_TAG}'" in migration) == (EVIDENCE_TAG == "UNRELEASED")
-    assert (f"'{EVIDENCE_COMMIT}'" in migration) == (EVIDENCE_COMMIT == "0" * 40)
+    assert repoint_disagreements(migration) == []
+    # Shape only. This pattern accepts the placeholder, and deliberately: an unrepointed pair is
+    # a legitimate state between writing a migration and cutting the release that publishes it,
+    # and `release.py`'s placeholder_evidence_blockers is what refuses to ship one.
     assert REPOINTED_COMMIT.match(EVIDENCE_COMMIT)
-    assert f"date '{REGISTERED_ON.isoformat()}'" in migration
+
+
+# One arm each, because a check with a negative case on one of three is two checks nobody has
+# tried to break. The clock is the one 073 spends five lines warning about: it is written twice
+# in the migration and both copies have to move together.
+MOVED_ALONE = (
+    ("EVIDENCE_TAG", "v9.99-never-cut", "does not quote evidence_tag v9.99-never-cut"),
+    ("EVIDENCE_COMMIT", "f" * 40, f"does not quote evidence_commit {'f' * 40}"),
+    ("REGISTERED_ON", date(2019, 1, 1), "does not carry the clock 2019-01-01"),
+)
+
+
+@pytest.mark.parametrize(
+    ("moved", "value", "named"), MOVED_ALONE, ids=[row[0] for row in MOVED_ALONE]
+)
+def test_a_mirror_moved_alone_is_caught_on_every_arm(
+    monkeypatch: pytest.MonkeyPatch, moved: str, value: object, named: str
+) -> None:
+    """The negative case the inverted form never had: move one value on the mirror and nothing
+    else, and the check has to name the writer that did not move with it."""
+    migration = MIGRATION.read_text(encoding="utf-8")
+    monkeypatch.setattr(mirror, moved, value)
+
+    assert repoint_disagreements(migration) == [f"the migration {named}"], moved
 
 
 def test_the_migration_carries_every_registration_and_every_rule() -> None:
@@ -129,3 +181,22 @@ def test_the_allowlists_the_add_a_state_scan_reads_are_derived_from_the_rows() -
     assert sorted(CODES) == sorted(row["jurisdiction_code"] for row in JURISDICTION_CODES)
     assert sorted(NAMES) == sorted(row["name"] for row in JURISDICTIONS)
     assert len(PREFIXES) == len(JURISDICTIONS)
+
+
+def test_the_ledgers_absence_class_is_the_word_the_canvas_draws() -> None:
+    """One word, two languages, and nothing between them until this.
+
+    The server never emitted the string before v0.77: the client coalesced a null status to it
+    on the tile wire and the ledger dropped the bucket. Now the writer puts it in
+    `lineage.jurisdiction_well_counts` and the client keys its census on it, so a rename on
+    either side would leave every suite green and the absence class back to a muted row with no
+    measurement -- the exact state this train exists to leave.
+    """
+    source = STATUS_CLASSES.read_text(encoding="utf-8")
+    declared = ABSENCE_CLASS.search(source)
+
+    assert declared is not None, "web/src/map/status.ts declares no UNMAPPED_STATUS id"
+    assert declared.group(1) == UNMAPPED_CLASS
+    # Once, in the declaration: a bare copy elsewhere in the file is a third spelling that this
+    # comparison would not see move.
+    assert source.count(f'"{UNMAPPED_CLASS}"') == 1
