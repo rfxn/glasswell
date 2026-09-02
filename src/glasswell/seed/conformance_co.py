@@ -253,6 +253,8 @@ CO_RULES: tuple[dict[str, object], ...] = (
             "writes_canonical_column": False,
             "resolver_view": "canonical.status_resolution",
             "mapping_table": "co_facility_status_map",
+            "key_col": "status",
+            "value_col": "status_canonical",
             "governing_set": "WELL STATUS CODES",
             "facility_type_measured": {"WELL": HEADER_FEATURES},
             "superseded_legends": {

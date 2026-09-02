@@ -183,17 +183,54 @@ def test_the_resolver_serves_colorado_wherever_the_resolved_table_exists(
                 " that its refresh covers every registered codebook and not New Mexico's alone"
             )
         cursor.execute(
-            "select count(*) from canonical.status_resolution r"
+            "select r.for_status_reported, r.resolved_status"
+            "  from canonical.status_resolution r"
             "  join lineage.jurisdictions_as_of(current_date, current_date) j"
             "    on j.identity_prefix = r.for_state_code"
             " where j.jurisdiction_code = 'CO'"
+            " order by r.for_status_reported"
         )
-        served = cursor.fetchone()[0]
+        served = cursor.fetchall()
 
-    assert served == 13, (
+    assert len(served) == 13, (
         "the resolved status table carries no Colorado rows: a refresh that names one"
         " regulator's map resolves one jurisdiction, and every Colorado well reads unmapped"
     )
+    assert dict(served) == {
+        code: str(row["status_canonical"]) for code, row in CO_STATUS_MAP.items()
+    }, "the resolver reached Colorado but resolved a different codebook than the one registered"
+
+
+def test_the_status_rule_carries_the_keys_the_registry_driven_resolver_reads(
+    db: psycopg.Connection,
+) -> None:
+    """The three spec keys a resolver driven by rows cannot work without.
+
+    `mapping_table` alone names where the classes live and not how to read it. The refresh
+    filters on `key_col` and `value_col` too, and `->>` on an absent key is null, so a spec
+    short of one is not skipped with a notice -- it never enters the loop, and the whole
+    jurisdiction resolves unmapped with nothing anywhere saying so. Asserted against the map's
+    own columns rather than against two strings, so a renamed column reddens here.
+    """
+    with db.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(
+            "select spec from lineage.conformance_rules where rule_id = %s",
+            ("cr_co_wells_status_vocab_1",),
+        )
+        spec = cursor.fetchone()["spec"]
+        cursor.execute(
+            "select column_name from information_schema.columns"
+            "  where table_schema = 'lineage' and table_name = %s",
+            (spec["mapping_table"],),
+        )
+        columns = {str(row["column_name"]) for row in cursor.fetchall()}
+
+    assert spec["resolved_at"] == "read_time"
+    assert {"mapping_table", "key_col", "value_col"} <= spec.keys(), (
+        "a read-time rule short of key_col or value_col is filtered out of"
+        " lineage.refresh_status_resolution()'s loop before the missing-table notice can fire"
+    )
+    assert {spec["key_col"], spec["value_col"]} <= columns
 
 
 def test_the_mart_table_and_its_view_are_installed_with_their_grants(
