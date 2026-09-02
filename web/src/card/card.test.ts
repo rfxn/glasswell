@@ -417,7 +417,7 @@ describe("well card", () => {
 
     const frame = host.querySelector<HTMLElement>(".gw-well-cumulatives");
     expect(frame?.querySelector(".gw-frame-body")?.getAttribute("data-state")).toBe("empty");
-    expect(frame?.textContent).toContain("No cumulative — nothing ever filed.");
+    expect(frame?.textContent).toContain("No cumulative: nothing ever filed.");
     expect(frame?.querySelector("gw-figure")).toBeNull();
     expect(frame?.textContent).not.toMatch(/\b0 bbl\b/);
   });
@@ -906,7 +906,7 @@ describe("completion and formation context", () => {
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     expect(frame.textContent).toContain("None disclosed");
     expect(frame.textContent).toContain(
-      "No design disclosed — FracFocus is voluntary · Formation tops not served",
+      "No design disclosed: FracFocus is voluntary · Formation tops not served",
     );
     expect(frame.querySelector<HTMLElement>(".gw-frame-body")?.dataset["state"]).toBe(
       "populated",

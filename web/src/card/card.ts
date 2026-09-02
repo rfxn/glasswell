@@ -550,11 +550,11 @@ async function loadWellCumulatives(
     // An ND well the snapshot has not absorbed yet. Distinct from "produced nothing", which
     // is the null cumulative above, and from a read failure, which is the line below.
     if (error instanceof ApiError && error.code === "not_found") {
-      host.replaceChildren(emptyState("No cumulative — not in the snapshot."));
+      host.replaceChildren(emptyState("No cumulative: not in the snapshot."));
       host.dataset["state"] = "empty";
       return;
     }
-    host.replaceChildren(emptyState("Unavailable — the response could not be read."));
+    host.replaceChildren(emptyState("Unavailable: the response could not be read."));
     host.dataset["state"] = "unavailable";
   } finally {
     host.setAttribute("aria-busy", "false");
@@ -567,7 +567,7 @@ function cumulativesBody(
 ): DocumentFragment {
   const fragment = document.createDocumentFragment();
   if (data.cumulative === null) {
-    fragment.appendChild(emptyState("No cumulative — nothing ever filed."));
+    fragment.appendChild(emptyState("No cumulative: nothing ever filed."));
     fragment.appendChild(scopeLine([`snapshot ${formatVintage(data.snapshot_vintage)}`]));
     return fragment;
   }
@@ -671,7 +671,7 @@ async function loadCompletionContext(
         : "populated";
     highlight(host, termIndex());
   } catch {
-    host.replaceChildren(emptyState("Unavailable — the response could not be read."));
+    host.replaceChildren(emptyState("Unavailable: the response could not be read."));
     host.dataset["state"] = "unavailable";
   } finally {
     host.setAttribute("aria-busy", "false");
@@ -713,7 +713,7 @@ function completionContextBody(
   fragment.appendChild(
     scopeLine([
       context.design === null
-        ? "No design disclosed — FracFocus is voluntary"
+        ? "No design disclosed: FracFocus is voluntary"
         : "Design as disclosed, measured against computed geometry",
       "Formation tops not served",
     ]),

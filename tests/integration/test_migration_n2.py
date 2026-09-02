@@ -131,16 +131,36 @@ def test_the_cumulative_marts_are_keyed_the_way_their_grains_differ(db: psycopg.
     assert keys["marts.well_withholding"] == ["api10"]
 
 
-def test_no_new_relation_carries_a_single_state_regex(db: psycopg.Connection):
-    """R14: Montana widens a Python constant, never an ALTER (045_nd_neighbors.sql:5,55)."""
+# The three relations this migration adds, named rather than discovered: a schema-wide sweep
+# would fail on 045_nd_neighbors, whose ^33 regex is a deliberate pre-existing scope.
+_ADDED_RELATIONS = (
+    "marts.well_cumulatives",
+    "marts.well_withholding",
+    "canonical.well_completion_design",
+)
+
+
+def test_the_relations_this_migration_adds_carry_no_single_state_regex(db: psycopg.Connection):
+    """R14: Montana widens a Python constant, never an ALTER (045_nd_neighbors.sql:5,55).
+
+    Constraints and indexes both: a partial index with a `^33` predicate scopes the relation
+    just as hard as a CHECK does, and the earlier name claimed every new relation while the
+    body read three tables' constraints (gate-v075 NIT-4).
+    """
+    relations = ", ".join(f"'{name}'::regclass" for name in _ADDED_RELATIONS)
     with db.cursor() as cursor:
         cursor.execute(
             "select conname, pg_get_constraintdef(oid) from pg_constraint"
-            " where conrelid in ('marts.well_cumulatives'::regclass,"
-            "                    'marts.well_withholding'::regclass,"
-            "                    'canonical.well_completion_design'::regclass)"
+            f" where conrelid in ({relations})"
         )
         definitions = [row[1] for row in cursor.fetchall()]
+        cursor.execute(
+            "select indexname, indexdef from pg_indexes"
+            " where schemaname || '.' || tablename = any(%(names)s)",
+            {"names": list(_ADDED_RELATIONS)},
+        )
+        definitions += [row[1] for row in cursor.fetchall()]
+    assert definitions, "no constraint or index found: the query no longer sees the relations"
     assert not [item for item in definitions if "33" in item and "~" in item]
 
 
