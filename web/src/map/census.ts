@@ -13,9 +13,18 @@
  */
 import { getEnvelope } from "../api/client.ts";
 
+/** One jurisdiction's measurement: the count, the handle that resolves it, and its date. */
+export interface JurisdictionFigure {
+  readonly wells: number;
+  readonly handle: string | null;
+  readonly measuredOn: string | null;
+}
+
 export interface JurisdictionCensus {
   /** Canonical status id → wells measured in it across every registered jurisdiction. */
   readonly byStatus: Readonly<Record<string, number>>;
+  /** Registered code → that jurisdiction's own measurement. Absent until one is served. */
+  readonly byJurisdiction: Readonly<Record<string, JurisdictionFigure>>;
   /** Wells measured in total. Null when no jurisdiction has been measured yet. */
   readonly total: number | null;
   /** The most recent measurement date any jurisdiction carries, or null. */
@@ -26,9 +35,12 @@ export interface JurisdictionCensus {
 
 interface CountFigure {
   readonly value?: string;
+  /** The derivation handle, spelled as the envelope spells it. */
+  readonly d?: string;
 }
 
 interface CensusRow {
+  readonly jurisdiction_code?: string;
   readonly well_count?: CountFigure | null;
   readonly well_counts_by_status?: readonly { status_canonical: string; wells: CountFigure }[];
   readonly measured_on?: string | null;
@@ -36,6 +48,7 @@ interface CensusRow {
 
 export const EMPTY_CENSUS: JurisdictionCensus = {
   byStatus: {},
+  byJurisdiction: {},
   total: null,
   measuredOn: null,
   degraded: false,
@@ -53,6 +66,7 @@ const figure = (value: CountFigure | null | undefined): number | null => {
 
 export function censusOf(rows: readonly CensusRow[]): JurisdictionCensus {
   const byStatus: Record<string, number> = {};
+  const byJurisdiction: Record<string, JurisdictionFigure> = {};
   let total: number | null = null;
   let measuredOn: string | null = null;
   for (const row of rows) {
@@ -61,6 +75,13 @@ export function censusOf(rows: readonly CensusRow[]): JurisdictionCensus {
     // wells, and adding a zero for it would make the total read as if it had been measured.
     if (counted === null) continue;
     total = (total ?? 0) + counted;
+    if (row.jurisdiction_code) {
+      byJurisdiction[row.jurisdiction_code] = {
+        wells: counted,
+        handle: row.well_count?.d ?? null,
+        measuredOn: row.measured_on ?? null,
+      };
+    }
     if (row.measured_on && (measuredOn === null || row.measured_on > measuredOn)) {
       measuredOn = row.measured_on;
     }
@@ -70,7 +91,7 @@ export function censusOf(rows: readonly CensusRow[]): JurisdictionCensus {
       byStatus[entry.status_canonical] = (byStatus[entry.status_canonical] ?? 0) + wells;
     }
   }
-  return { byStatus, total, measuredOn, degraded: false };
+  return { byStatus, byJurisdiction, total, measuredOn, degraded: false };
 }
 
 /** Fetch once per session. A refusal is a degraded census, never an empty one. */
@@ -101,6 +122,11 @@ export function census(): JurisdictionCensus {
 export function measuredWellCount(id: string): number | null {
   if (resident.total === null) return null;
   return resident.byStatus[id] ?? null;
+}
+
+/** One jurisdiction's measured well count, or null where the registry has served none. */
+export function measuredJurisdiction(code: string): JurisdictionFigure | null {
+  return resident.byJurisdiction[code] ?? null;
 }
 
 /** Test seam: the module holds one session's answer, and a suite runs many sessions. */

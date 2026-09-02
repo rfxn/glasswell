@@ -8,10 +8,24 @@ import type { Bbox, Crossing } from "../explore/bridge.ts";
 import { teach } from "../glossary/teach.ts";
 import { ABBREVIATION } from "./jurisdictions.generated.ts";
 import { BASEMAPS } from "./basemap.ts";
+import { loadCensus, measuredJurisdiction } from "./census.ts";
 import type { LayerFamily } from "./groups.ts";
-import { LAYERS, defaultLayerSet, familyState, groupEntries } from "./registry.ts";
+import { COUNT_SLOT, LAYERS, defaultLayerSet, familyState, groupEntries } from "./registry.ts";
 import type { GroupEntry, LayerDef } from "./registry.ts";
 import { layerSwatch } from "./swatch.ts";
+
+const NUMBER = new Intl.NumberFormat("en-US");
+/** The legend's mark for a count that has not arrived. Never a literal that has drifted. */
+const PENDING_MARK = "…";
+
+/** The subtitle as one string, with whatever the registry has served in the count slot. */
+function subtitleText(layer: LayerDef): string {
+  const measured = layer.jurisdiction ? measuredJurisdiction(layer.jurisdiction) : null;
+  return layer.subtitle.replace(
+    COUNT_SLOT,
+    measured === null ? PENDING_MARK : NUMBER.format(measured.wells),
+  );
+}
 
 export interface LayerPanelOptions {
   on: ReadonlySet<string>;
@@ -546,7 +560,17 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFam
 
   const subtitle = document.createElement("p");
   subtitle.className = "gw-layer-sub";
-  subtitle.textContent = layer.subtitle;
+  // Split rather than interpolated, so the served count keeps its own node and its own handle:
+  // the number is patched in when the registry answers, and the prose around it never moves.
+  const [opening, ...rest] = layer.subtitle.split(COUNT_SLOT);
+  const count = document.createElement("span");
+  count.className = "gw-layer-count";
+  const countHandle = explainHandle({
+    className: "gw-layer-count-handle",
+    label: `the ${layer.label.toLowerCase()} count`,
+  });
+  subtitle.append(opening ?? layer.subtitle);
+  if (rest.length > 0) subtitle.append(count, rest.join(COUNT_SLOT), countHandle);
   if (layer.snapshot) {
     subtitle.appendChild(
       explainHandle({
@@ -557,6 +581,22 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFam
     );
   }
   text.appendChild(subtitle);
+
+  /** The served count, or the pending mark: a row states no number it cannot resolve. */
+  function paintCount(): void {
+    if (rest.length === 0) return;
+    const measured = layer.jurisdiction ? measuredJurisdiction(layer.jurisdiction) : null;
+    count.textContent = measured === null ? PENDING_MARK : NUMBER.format(measured.wells);
+    count.title = measured?.measuredOn
+      ? `Measured ${measured.measuredOn}, from the jurisdiction registry`
+      : "No well count has been measured for this jurisdiction yet.";
+    setExplainHandle(countHandle, measured?.handle ?? null);
+    if (!element.hasAttribute("data-out-of-scale")) element.title = subtitleText(layer);
+  }
+  paintCount();
+  // The panel is built before the map has asked the registry anything, so the row paints what
+  // is resident and repaints when the answer lands. It never paints a compiled-in count.
+  void loadCensus().then(paintCount);
 
   // Only where the row draws more than one. With a single source the subtitle already names
   // it, and the line would say nothing the row has not said; with two, the subtitle can carry
@@ -689,7 +729,7 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFam
         setEmptyState(false);
       } else {
         element.removeAttribute("data-out-of-scale");
-        element.title = layer.subtitle;
+        element.title = subtitleText(layer);
       }
     },
     setEmpty(next) {
