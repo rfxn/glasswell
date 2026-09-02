@@ -82,32 +82,84 @@ comment on column lineage.status_resolution_resolved.built_for is
     ' than this has not reached the resolver: the refresh is driven by appends and by every'
     ' deploy, not by the calendar.';
 
+-- Registry-driven, and it has to be. Which jurisdictions resolve at read time, and which table
+-- and columns each one's classes live in, are already rows: `jurisdiction_rules.decision =
+-- status_vocabulary` names the rule, and the rule's own spec carries `resolved_at`,
+-- `mapping_table`, `key_col` and `value_col`. This is the same pair of queries
+-- `glasswell/status_resolution.py` reads (`_RESOLVER_RULES`, `_VOCABULARY_SOURCES`), so the
+-- resolver and the serving path answer from one definition.
+--
+-- A jurisdiction named by the registry but whose mapping table has not arrived yet is skipped
+-- rather than raised on: migrations arrive in merge order and a registration can precede the
+-- table its rule names, and a refresh that aborted would take the migration -- or the deploy's
+-- seed that calls it -- down with it.
 create or replace function lineage.refresh_status_resolution() returns integer
 language plpgsql as $$
 declare
-    resolved integer;
+    registered record;
+    resolved integer := 0;
+    added integer;
 begin
     delete from lineage.status_resolution_resolved;
-    insert into lineage.status_resolution_resolved
-        (for_state_code, for_status_reported, resolved_status, jurisdiction_code, built_for)
-    select j.identity_prefix, m.status, m.status_canonical, j.jurisdiction_code, current_date
-      from lineage.nm_wellhistory_status_map m
-      join lineage.jurisdictions_as_of(current_date, current_date) j
-        on j.jurisdiction_code = 'NM'
-     where j.identity_prefix is not null;
-    get diagnostics resolved = row_count;
+    for registered in
+        select j.identity_prefix, j.jurisdiction_code,
+               c.spec->>'mapping_table' as mapping_table,
+               c.spec->>'key_col'       as key_col,
+               c.spec->>'value_col'     as value_col
+          from lineage.jurisdictions_as_of(current_date, current_date) j
+          join lineage.jurisdiction_rules r
+            on r.jurisdiction_code = j.jurisdiction_code
+           and r.effective_from = j.effective_from
+           and r.published_at = j.published_at
+           and r.decision = 'status_vocabulary'
+           and r.serving
+          join lineage.conformance_rules c on c.rule_id = r.rule_id
+         where j.identity_prefix is not null
+           and c.spec->>'resolved_at' = 'read_time'
+           and c.spec->>'mapping_table' is not null
+           and c.spec->>'key_col' is not null
+           and c.spec->>'value_col' is not null
+           and to_regclass('lineage.' || quote_ident(c.spec->>'mapping_table')) is not null
+         order by j.identity_prefix
+    loop
+        -- format %I quotes every identifier the registry named; nothing here is concatenated
+        -- raw, and the three it interpolates are all read from a rule spec.
+        execute format(
+            'insert into lineage.status_resolution_resolved (for_state_code,'
+            ' for_status_reported, resolved_status, jurisdiction_code, built_for)'
+            ' select %L, m.%I::text, m.%I::text, %L, current_date'
+            '   from lineage.%I m'
+            '  where m.%I is not null and m.%I is not null',
+            registered.identity_prefix, registered.key_col, registered.value_col,
+            registered.jurisdiction_code, registered.mapping_table,
+            registered.key_col, registered.value_col);
+        get diagnostics added = row_count;
+        resolved := resolved + added;
+    end loop;
     return resolved;
 end;
 $$;
 
 comment on function lineage.refresh_status_resolution() is
-    'Rebuilds lineage.status_resolution_resolved from the registration resolving today and the'
-    ' per-regulator status map. Idempotent, and cheap: the product is tens of rows.';
+    'Rebuilds lineage.status_resolution_resolved from every registration resolving today whose'
+    ' status-vocabulary rule says resolved_at = read_time, reading the mapping table and its'
+    ' key and value columns out of that rule spec. Idempotent, and cheap: the product is tens'
+    ' of rows. A registered mapping table that has not been created yet is skipped.';
 
 -- Both sources are append-only, so an append is the only way their content can change and a
 -- statement trigger on it is exact. The refresh is also called by seed_jurisdictions(), which
 -- every deploy runs between migrate and the API restart, so a database restored from a dump
 -- lands a correct resolver without an append.
+--
+-- FOR A LATER JURISDICTION THAT RESOLVES AT READ TIME. Do not redefine
+-- canonical.status_resolution and do not add an arm to anything here: the function above reads
+-- the registry, so a new jurisdiction needs three rows and one trigger. (1) its mapping table
+-- in `lineage`, (2) a status-vocabulary conformance rule whose spec carries
+-- `"resolved_at": "read_time"` with `mapping_table`, `key_col` and `value_col`, (3) the
+-- `jurisdiction_rules` row pointing at it -- and then a statement trigger on its own map, in
+-- the same shape as the one below, plus `select lineage.refresh_status_resolution();` at the
+-- end of the migration. A second `create or replace view` on canonical.status_resolution would
+-- silently drop every other jurisdiction's arm, whichever order the two migrations merge in.
 create or replace function lineage.status_resolution_refresh() returns trigger
 language plpgsql as $$
 begin

@@ -16,6 +16,10 @@
          `wells_facet_dimensions_idx` answers index-only over a set: measured on the
          deployed 585,864 wells at 12,780 buffers and 592 ms against 279,288 and
          1,031 ms for the api10-only partition (web/PERF.md §7)
+- [Change] `canonical.status_resolution` is registry-driven: it resolves every
+         jurisdiction whose status-vocabulary rule says `resolved_at: read_time`,
+         reading the mapping table and its key and value columns out of that rule's own
+         spec, so a later jurisdiction registers rows rather than redefining the view
 - [Change] `wells_facet_dimensions_idx` carries `status_reported`, and
          `canonical.status_resolution` is backed by a relation keyed on (state, reported
          code) rather than a view; the status facet over a set of states goes from an index

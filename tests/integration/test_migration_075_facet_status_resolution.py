@@ -11,6 +11,9 @@ import psycopg
 import pytest
 
 from glasswell.api.routers.facets import _FACETS, _SCOPED_LATEST, _VALUE_SORTS, DIMENSIONS
+from glasswell.seed import seed_all
+from glasswell.seed.jurisdictions import REGISTERED_ON
+from tests.support.seed import seed_conformance_rule
 
 pytestmark = pytest.mark.integration
 
@@ -119,8 +122,11 @@ def test_the_resolver_matches_the_registry_it_was_built_from(db: psycopg.Connect
     """Materialised data with no authority of its own has one obligation: to equal its source.
 
     Read-time resolution was exact by construction before this; now it is exact by refresh, and
-    this is the gate that says so.
+    this is the gate that says so. Seeded, because the rule rows the registry answers from are
+    the seed's by design (073's own comment says so) and a migrate-only database has no
+    status-vocabulary rule for any jurisdiction.
     """
+    seed_all(db)
     with db.cursor() as cursor:
         cursor.execute(
             "select for_state_code, for_status_reported, resolved_status"
@@ -159,6 +165,8 @@ def test_the_resolver_matches_the_registry_it_was_built_from(db: psycopg.Connect
 def test_appending_to_the_status_map_reaches_the_resolver(db: psycopg.Connection) -> None:
     """Both sources are append-only, so an append is the only way their content can change and
     a statement trigger on it is exact. Without the refresh the resolver is a stale copy."""
+    seed_all(db)
+    db.commit()
     with db.cursor() as cursor:
         cursor.execute(
             "insert into lineage.nm_wellhistory_status_map"
@@ -174,3 +182,126 @@ def test_appending_to_the_status_map_reaches_the_resolver(db: psycopg.Connection
 
     assert [row[0] for row in resolved] == ["inactive"]
 
+
+
+# A jurisdiction the registry has never carried and no regulator answers to: `ZZ` passes
+# `lineage.jurisdiction_codes`' `^[A-Z]{2}$` check and `99` collides with no registered prefix.
+# The point is that nothing about the resolver knows which jurisdictions resolve at read time
+# except the registry, so a fifth one is rows and not an edit.
+PLANTED_CODE = "ZZ"
+PLANTED_PREFIX = "99"
+PLANTED_RULE = "cr_fixture_read_time_vocab_1"
+PLANTED_MAP = "fixture_read_time_status_map"
+
+
+def _plant_a_read_time_jurisdiction(connection: psycopg.Connection) -> None:
+    """A registration, a read-time status vocabulary and the map its rule names."""
+    seed_conformance_rule(
+        connection,
+        rule_id=PLANTED_RULE,
+        spec={
+            "resolved_at": "read_time",
+            "mapping_table": PLANTED_MAP,
+            "key_col": "status",
+            "value_col": "status_canonical",
+        },
+        rationale="Planted so the resolver is proved to read the registry rather than a state.",
+    )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"create table if not exists lineage.{PLANTED_MAP} ("
+            " status text primary key, status_canonical text not null)"
+        )
+        cursor.execute(
+            f"insert into lineage.{PLANTED_MAP} (status, status_canonical)"
+            " values ('W', 'active'), ('V', 'plugged') on conflict do nothing"
+        )
+        cursor.execute(
+            "insert into lineage.jurisdiction_codes (jurisdiction_code, level)"
+            " values (%s, 'state') on conflict do nothing",
+            (PLANTED_CODE,),
+        )
+        cursor.execute(
+            "insert into lineage.jurisdictions (jurisdiction_code, effective_from, published_at,"
+            " evidence_tag, evidence_commit, name, regulator_name, regulator_url,"
+            " identity_scheme, identity_prefix, identity_pattern, source_ids, rationale)"
+            " values (%s, %s, %s, 'harness-fixture', %s, 'Planted', 'regulator',"
+            " 'https://example.invalid/', 'api10', %s, %s, array['nd_mpr_xlsx'], 'fixture')"
+            " on conflict do nothing",
+            (
+                PLANTED_CODE,
+                REGISTERED_ON,
+                REGISTERED_ON,
+                "0" * 40,
+                PLANTED_PREFIX,
+                f"^{PLANTED_PREFIX}[0-9]{{8}}$",
+            ),
+        )
+        cursor.execute(
+            "insert into lineage.jurisdiction_rules (jurisdiction_code, effective_from,"
+            " published_at, decision, rule_id) values (%s, %s, %s, 'status_vocabulary', %s)"
+            " on conflict do nothing",
+            (PLANTED_CODE, REGISTERED_ON, REGISTERED_ON, PLANTED_RULE),
+        )
+
+
+def test_a_fifth_read_time_jurisdiction_resolves_without_an_edit(
+    db: psycopg.Connection,
+) -> None:
+    """The resolver is the registry's answer, not New Mexico's.
+
+    Colorado registers a read-time status vocabulary in this same train and brings its own
+    mapping table. If the refresh named one jurisdiction, its wells would resolve to null and
+    the whole Colorado spine would draw unmapped — the defect v0.77 shipped a release to repair
+    over Texas. So the function reads which jurisdictions resolve at read time, and which table
+    and columns each one's rule names, out of `lineage.jurisdiction_rules` and the rule's own
+    spec, and a jurisdiction the suite invents is answered for on the same terms.
+    """
+    seed_all(db)
+    db.commit()
+    _plant_a_read_time_jurisdiction(db)
+    with db.cursor() as cursor:
+        cursor.execute("select lineage.refresh_status_resolution()")
+        cursor.execute(
+            "select for_status_reported, resolved_status from canonical.status_resolution"
+            " where for_state_code = %s order by 1",
+            (PLANTED_PREFIX,),
+        )
+        resolved = cursor.fetchall()
+    db.rollback()
+
+    assert resolved == [("V", "plugged"), ("W", "active")]
+
+
+def test_a_registered_jurisdiction_whose_mapping_table_has_not_landed_is_skipped(
+    db: psycopg.Connection,
+) -> None:
+    """Migrations arrive in merge order and a registration can precede the table its rule names.
+
+    A refresh that aborted on the missing table would abort the migration or the deploy's seed
+    that called it, which is a worse failure than resolving one jurisdiction late.
+    """
+    seed_all(db)
+    db.commit()
+    seed_conformance_rule(
+        db,
+        rule_id="cr_fixture_read_time_vocab_2",
+        spec={
+            "resolved_at": "read_time",
+            "mapping_table": "fixture_table_that_does_not_exist",
+            "key_col": "status",
+            "value_col": "status_canonical",
+        },
+    )
+    with db.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.jurisdiction_rules (jurisdiction_code, effective_from,"
+            " published_at, decision, rule_id) values ('MT', %s, %s, 'status_vocabulary', %s)"
+            " on conflict do nothing",
+            (REGISTERED_ON, REGISTERED_ON, "cr_fixture_read_time_vocab_2"),
+        )
+        cursor.execute("select lineage.refresh_status_resolution()")
+        resolved = int(cursor.fetchone()[0])
+    db.rollback()
+
+    assert resolved > 0
