@@ -62,10 +62,14 @@ a reason rather than mis-joined, on whatever the regulator publishes: the API-12
 suffix in North Dakota (`cr_nd_multilateral_1`), the RRC wellbore code in Texas,
 which files no API-12 (`cr_tx_multi_wellbore_1`), and nothing at all in New Mexico,
 where the policy is vacuously satisfied (`cr_nm_wchistory_wellbore_policy_1`). The
-quarantined share is reported in the scorecard per basin, and the revisit trigger is
-2% in North Dakota and 5% in the Permian rather than one global number — re-entry
-and multi-completion rates differ materially between the Bakken and a century-old
-Permian wellbore population (blueprint-v0.6 §3.0.5).
+pinned decision is [`blueprint.md`](blueprint.md) §3.0.5, and each jurisdiction
+carrying its own R8 rule for it is §3.0.1a, promoted into the committed contract on
+2026-09-02. The quarantined share is reported in the scorecard per basin, and the
+revisit trigger is 2% in North Dakota and 5% in the Permian rather than one global
+number · re-entry and multi-completion rates differ materially between the Bakken and
+a century-old Permian wellbore population. That per-basin trigger is
+[`blueprint-v0.6-draft.md`](blueprint-v0.6-draft.md) §3.0.5 and remains a draft `[D]`
+item pending the §11 review; the committed contract states a single global 2%.
 
 ### Marts — serving
 

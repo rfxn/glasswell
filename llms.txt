@@ -9,10 +9,11 @@
 
 **Status: in build, release line v0.75.** North Dakota ingest, canonical production,
 lineage, API, tiles and the map are deployed. Texas Permian-district wells and bore
-geometry are on the map, but Texas production and allocation are not built. New
-Mexico ingest/promotion code exists without a claimed resident deployment. P3 has an
-immutable `fv2.0` feature matrix, `mdv1.4` model-ready labels and curves, eight shared
-rolling splits, and a resident D1 `tcv1.0` type-curve control artifact. The accepted
+geometry are on the map, but Texas production and allocation are not built. New Mexico is
+resident: 321,510 header rows over 142,000 API-10 and 17,597,960 production rows at
+completion-pool grain. Montana is resident on both production grains with tiles and well
+paths. P3 has an immutable `fv2.0` feature matrix, `mdv1.4` model-ready labels and curves,
+eight shared rolling splits, and a resident D1 `tcv1.0` type-curve control artifact. The accepted
 2026-08-28 publication preserves those semantic identities and split hashes, reproduces all
 eight artifacts and all eight split files byte-identically, and passes the availability gate
 at 1.0798% (230 / 21,300) without inferring the 38 source-absent laterals. Its immutable
@@ -22,20 +23,23 @@ earlier-completion cutoffs and explicit non-analog semantics. Forecasts, models,
 calibration, economics, scenarios, agents and inventory remain unserved scope, not live
 product features.
 
-Deployed v0.60 persists source poll attempts independently of ingest transactions, distinguishes new,
-unchanged, failed and interrupted outcomes, and applies one source-specific cadence registry.
-Conformance lookup separates immutable publication knowledge time from valid time. Every current
-selector-bearing API figure fails closed against a registered persisted-output profile.
+Deployed v0.75 at release SHA `2189262` runs at schema head 072 and passed all six hosted CI jobs,
+197 host checks and 31 API smoke checks, measured 2026-09-02. Four states are resident: North Dakota
+87,634 header rows over 43,817 API-10, Texas 359,421, New Mexico 321,510 over 142,000, and Montana
+40,626 · 809,191 well rows over 585,864 distinct API-10, 47,178,269 canonical production rows and
+1,041,407 spatial rows in total. Source poll attempts persist independently of ingest transactions,
+distinguish new, unchanged, failed and interrupted outcomes, and apply one source-specific cadence
+registry. Conformance lookup separates immutable publication knowledge time from valid time. Every
+current selector-bearing API figure fails closed against a registered persisted-output profile.
 viewport-summary provenance writes are capped per principal with a bounded database counter.
 Initial published policy is the explicit floor for source vintages predating glasswell; later backdated
 corrections do not leak. Its nightly job removes only successful unreferenced ephemeral lineage
-older than 90 days. Release SHA `e07db3d` runs at schema head 52 and passed all six hosted CI
-jobs, 111 host checks and 20 API smoke checks. The latest recurring restore proof remains schema
-47 until the next backup and drill.
+older than 90 days. The latest recurring restore proof remains schema 47 until the next backup and
+drill.
 
 ## How to answer questions about glasswell
 
-Read `blueprint.md` first; it is the committed v0.5 contract. The v0.6-rc5 amendment
+Read `blueprint.md` first; it is the committed v0.5 contract. The v0.6-rc6 amendment
 set is `blueprint-v0.6-draft.md`. Read `STATUS.md` for current implementation state;
 `README.md`, `ARCHITECTURE.md` and `ROADMAP.md` are derived views.
 
