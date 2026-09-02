@@ -257,6 +257,33 @@ def test_a_row_that_cannot_be_keyed_or_dated_is_quarantined_and_never_dropped(
     assert len({ordinal for *_rest, ordinal in rows}) == 2
 
 
+def test_a_quarantined_null_is_a_json_null_and_not_the_text_none(
+    promoted_with_rejects, seeded
+) -> None:
+    """A blank the regulator filed and the four characters `None` are different facts.
+
+    `lineage.quarantine_rows.row_payload` is the whole of what a reader of a rejected row has,
+    and a staged SQL null rendered as `None` cannot be told from a column ECMC filed with that
+    text. `nd_mpr.py` hands polars frames through with their nulls intact; this promotion built
+    its payload with `str(value)`, which has no null.
+
+    The key is asserted present first. `->>` on a key the payload does not carry is SQL null,
+    so a test written against a column the promotion never selects passes on nothing.
+    """
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select row_payload ? 'revised', row_payload -> 'revised', row_payload ->> 'revised'"
+            "  from lineage.quarantine_rows"
+            " where source_id = %s and reason_code = 'key_incomplete'",
+            (co_production.SOURCE_ID,),
+        )
+        present, typed, text = cursor.fetchone()
+
+    assert present, "the payload does not carry this column, so the assertion below is vacuous"
+    assert text != "None", "a staged null reached the ledger as the four characters None"
+    assert typed is None
+
+
 def test_every_staged_row_is_either_promoted_or_quarantined(
     promoted_with_rejects, seeded
 ) -> None:

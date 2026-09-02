@@ -351,7 +351,12 @@ def _quarantine(
     session = current_session()
     quarantine(
         connection,
-        pl.DataFrame([{key: str(value) for key, value in row.items()} for row in rows]),
+        pl.DataFrame(
+            [
+                {key: None if value is None else str(value) for key, value in row.items()}
+                for row in rows
+            ]
+        ),
         reason_code=reason_code,
         manifest_id=manifest_id,
         source_id=SOURCE_ID,
