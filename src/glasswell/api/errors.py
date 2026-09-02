@@ -77,7 +77,9 @@ ERROR_REGISTRY: Mapping[str, ErrorSpec] = {
         422,
         "Cursor does not match this query",
         "The cursor was minted against a different filter set. Continuing would return a"
-        " page from a different result set (SB-04 §2.3).",
+        " page from a different result set (SB-04 §2.3). If you did not change a filter,"
+        " a jurisdiction registered while you were paging and `all` now resolves to a"
+        " different set; start again from the first page.",
     ),
     "as_of_out_of_range": ErrorSpec(
         422,
