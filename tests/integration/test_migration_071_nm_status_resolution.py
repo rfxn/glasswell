@@ -22,6 +22,7 @@ from glasswell.seed.conformance_nm_wells import (
     STATUS_DOMAIN_WELLS_LATEST,
     seed_conformance_nm_wells,
 )
+from glasswell.status_resolution import resolver_rules
 
 pytestmark = pytest.mark.integration
 
@@ -153,7 +154,7 @@ def test_the_four_documented_codes_carry_a_class_of_their_own_and_never_a_null(
         assert cursor.fetchone()[0] == 0
 
 
-def test_the_resolver_answers_for_new_mexico_and_for_no_other_state(
+def test_the_resolver_answers_for_new_mexico_and_for_no_state_nobody_registered(
     seeded: psycopg.Connection,
 ) -> None:
     """Seeded rather than migrate-only, because the resolver reads the registry now.
@@ -162,8 +163,13 @@ def test_the_resolver_answers_for_new_mexico_and_for_no_other_state(
     spec, and 073's own comment says those rows are the seed's on a fresh database -- so a
     migrate-only database has no read-time jurisdiction at all, which is already what
     `status_resolution.resolver_rules()` and therefore the tile mart answer there. The view used
-    to disagree with them by carrying a hard-coded jurisdiction; it no longer does. The claim
-    itself is unchanged: New Mexico resolves to exactly this map and no other state resolves.
+    to disagree with them by carrying a hard-coded jurisdiction; it no longer does.
+
+    The second half was `for_state_code <> '30'` is empty, which was the same claim as this one
+    only while New Mexico was the only registered read-time map. Colorado registers one now and
+    a sixth jurisdiction will, so the set is derived from the registry: the resolver answers for
+    exactly the jurisdictions registered for read-time resolution, and never for one nobody
+    registered -- which is the property a hard-coded resolver would have broken.
     """
     db = seeded
     with db.cursor() as cursor:
@@ -172,10 +178,13 @@ def test_the_resolver_answers_for_new_mexico_and_for_no_other_state(
             " where for_state_code = '30'"
         )
         assert dict(cursor.fetchall()) == STATUS_CANONICAL_MAP
-        cursor.execute(
-            "select count(*) from canonical.status_resolution where for_state_code <> '30'"
-        )
-        assert cursor.fetchone()[0] == 0
+        cursor.execute("select distinct for_state_code from canonical.status_resolution")
+        resolving = {row[0] for row in cursor.fetchall()}
+
+    registered = set(resolver_rules(db))
+    assert registered, "no jurisdiction registers read-time resolution; the check is vacuous"
+    assert resolving == registered
+    assert "30" in resolving
 
 
 def test_new_mexico_passes_an_unmapped_letter_through_rather_than_quarantining_it(
