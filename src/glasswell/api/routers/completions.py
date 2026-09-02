@@ -15,7 +15,7 @@ from fastapi import APIRouter, Path, Request
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import JSONResponse
 
-from glasswell.api.deps import AsOf, Connection, ExplainEffect, rows, today
+from glasswell.api.deps import AsOf, Connection, ExplainEffect, jurisdictions, rows, today
 from glasswell.api.errors import ProblemError, problem_responses
 from glasswell.api.examples import (
     EXAMPLE_API10,
@@ -28,8 +28,13 @@ from glasswell.api.examples import (
 from glasswell.api.provenance import register_response_figures
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, inline_for, iso
 from glasswell.api.routers.health import source_health_data
-from glasswell.api.routers.wells import API10_PATTERN, RANKED_WELLS
-from glasswell.lengths import resolve_length_method
+from glasswell.api.routers.wells import (
+    API10_PATTERN,
+    LENGTH_SCOPE,
+    LENGTH_SCOPE_UNREGISTERED,
+    RANKED_WELLS,
+)
+from glasswell.lengths import LengthRuleUnregistered, resolve_length_method
 from glasswell.lineage.conformance import load_rules, rule_for_family
 from glasswell.lineage.envelope import figure
 from glasswell.lineage.ids import format_handle
@@ -480,11 +485,28 @@ def get_well_completions(
     design_rows = rows(connection, _DESIGN, params)
     policy, policy_warnings = _intensity_policy(connection)
     warnings.extend(policy_warnings)
-    method = resolve_length_method(
-        connection, basin=well["basin"], valid_at=as_of, knowledge_at=as_of
+    # The same two questions the well card asks, asked here too. This call was unconditional,
+    # so a Montana well with a FracFocus disclosure was served a lateral_length_ft computed
+    # under cr_nd_compute_crs while cr_mt_paths_length_scope_1's own contract note said the
+    # figure was null on every Montana well and this rule was the reason.
+    registry = jurisdictions(connection)
+    length_scope_rule = registry.rule_for(well["state_code"], LENGTH_SCOPE)
+    method = None
+    length_unregistered = False
+    if not length_scope_rule:
+        try:
+            method = resolve_length_method(
+                connection, basin=well["basin"], valid_at=as_of, knowledge_at=as_of
+            )
+        except LengthRuleUnregistered:
+            length_unregistered = True
+    laterals = (
+        rows(connection, _LATERALS.format(length_metres=method.metres_sql("s.geom")), params)
+        if method is not None
+        else []
     )
-    laterals = rows(
-        connection, _LATERALS.format(length_metres=method.metres_sql("s.geom")), params
+    warnings.extend(
+        _length_refusal(length_scope_rule, unregistered=length_unregistered)
     )
     design, design_warnings, design_rules = _design(
         connection,
@@ -523,6 +545,41 @@ def get_well_completions(
         },
         explain=inline_for(connection, explain),
     )
+
+
+def _length_refusal(
+    length_scope_rule: str | None, *, unregistered: bool
+) -> list[dict[str, Any]]:
+    """The two ways a lateral length can be absent, told apart on the wire.
+
+    A registered `length_scope` rule withholds a figure that could be computed and names
+    itself; an unregistered basin has no rule to name at all, which is a registry gap.
+    """
+    if length_scope_rule:
+        return [
+            {
+                "code": "length_not_served",
+                "detail": (
+                    "No lateral length is served for this jurisdiction, so the fluid intensity"
+                    f" has no divisor; {length_scope_rule} is the rule that withholds it"
+                ),
+                "pointer": "/design/lateral_length_ft",
+                "rule_id": length_scope_rule,
+            }
+        ]
+    if unregistered:
+        return [
+            {
+                "code": LENGTH_SCOPE_UNREGISTERED,
+                "detail": (
+                    "No length rule is registered for this well's basin, so no lateral length"
+                    " and no fluid intensity are served; this is a registry gap rather than a"
+                    " fact about the well"
+                ),
+                "pointer": "/design/lateral_length_ft",
+            }
+        ]
+    return []
 
 
 def _intensity_or_reason(
@@ -659,7 +716,9 @@ def _design(
             else None
         ),
     }
-    rule_ids = [UNITS_RULE_ID, PROMOTE_RULE_ID, method.rule_id]
+    rule_ids = [UNITS_RULE_ID, PROMOTE_RULE_ID]
+    if method is not None:
+        rule_ids.append(method.rule_id)
     if policy:
         rule_ids.append(policy.rule_id)
     if any(computed.values()):
@@ -697,7 +756,8 @@ def _design(
         "report_vintage": iso(row["report_vintage"]),
         **computed,
     }
-    return design, warnings, sorted({*rule_ids} - {method.rule_id})
+    cited = {*rule_ids} - ({method.rule_id} if method is not None else set())
+    return design, warnings, sorted(cited)
 
 
 def _design_coverage_warning() -> dict[str, Any]:

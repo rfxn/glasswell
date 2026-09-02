@@ -8,7 +8,7 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-from glasswell.lengths import resolve_length_method
+from glasswell.lengths import LATERALS_SOURCE_ID, resolve_length_method
 from glasswell.lineage.conformance import RULE_KINDS, apply_registry_rules, apply_rules, load_rules
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_nd import ND_RULES
@@ -533,7 +533,9 @@ def test_only_the_superseding_identity_rule_is_loaded_for_every_source_on_the_sp
 
 
 def test_the_active_length_method_is_zone_free(db, seeded):
-    method = resolve_length_method(db)
+    """Explicit source, because a basin-less resolve is a refusal now rather than an
+    inheritance of North Dakota's: which source governs is a registration."""
+    method = resolve_length_method(db, source_id=LATERALS_SOURCE_ID)
 
     assert (method.rule_id, method.method, method.compute_epsg) == (
         "cr_nd_compute_crs_2",

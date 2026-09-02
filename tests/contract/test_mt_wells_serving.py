@@ -216,3 +216,71 @@ def test_montana_is_registered_in_both_lookups_rather_than_falling_back(
         "33", "geometry_provenance"
     )
     assert declared_rule("25", "length_scope") == "cr_mt_paths_length_scope_2"
+
+
+def test_the_withholding_rule_is_true_on_completions_as_well_as_on_the_well_card(
+    with_montana: TestClient, seeded: psycopg.Connection
+) -> None:
+    """cr_mt_paths_length_scope_2 asserts lateral_length_ft is null for every Montana well.
+    That was true on /v1/wells and false on /completions, which called the length resolver
+    unconditionally: `_LATERALS` matches on geom_type = 'lateral' and the Montana mart stores
+    its paths as laterals, so any Montana well with a FracFocus disclosure was served a length
+    computed under cr_nd_compute_crs and an intensity divided by it."""
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "insert into canonical.well_completion_design (disclosure_id, api10,"
+            " base_water_volume, base_water_unit, base_water_null_semantics, source_id,"
+            " report_vintage, source_manifest_id, derivation_id)"
+            " select 'ff-montana-0001', %s, 9000000, 'gal', 'reported', 'fracfocus_csv',"
+            "        report_vintage, source_manifest_id, derivation_id"
+            "   from canonical.well_completion_design limit 1",
+            (MT_API10,),
+        )
+    seeded.commit()
+
+    envelope = with_montana.get(f"/v1/wells/{MT_API10}/completions").json()
+    design = envelope["data"]["design"]
+
+    assert design["lateral_length_ft"] is None
+    assert design["fluid_intensity"] is None
+    assert design["intensity_null_semantics"] == "lateral_length_unavailable"
+    withheld = [
+        warning
+        for warning in envelope["meta"]["warnings"]
+        if warning["code"] == "length_not_served"
+    ]
+    assert [warning["rule_id"] for warning in withheld] == ["cr_mt_paths_length_scope_2"]
+    assert withheld[0]["pointer"] == "/design/lateral_length_ft"
+
+
+def test_an_unregistered_basin_is_a_registry_gap_on_completions_and_not_a_withheld_figure(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The other half of M-3: two ways for a length to be absent, told apart on the wire."""
+    api10 = "3001577003"
+    seed_well(seeded, api10=api10, state_code="30", basin=None, spud_date=None)
+    seed_well_spatial(seeded, api10=api10, geom_type="lateral")
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "insert into canonical.well_completion_design (disclosure_id, api10,"
+            " base_water_volume, base_water_unit, base_water_null_semantics, source_id,"
+            " report_vintage, source_manifest_id, derivation_id)"
+            " select 'ff-newmexico-0001', %s, 9000000, 'gal', 'reported', 'fracfocus_csv',"
+            "        report_vintage, source_manifest_id, derivation_id"
+            "   from canonical.well_completion_design limit 1",
+            (api10,),
+        )
+    seeded.commit()
+
+    envelope = client.get(f"/v1/wells/{api10}/completions").json()
+    design = envelope["data"]["design"]
+
+    assert design["lateral_length_ft"] is None
+    assert design["intensity_null_semantics"] == "lateral_length_unavailable"
+    gaps = [
+        warning
+        for warning in envelope["meta"]["warnings"]
+        if warning["code"] == "length_scope_unregistered"
+    ]
+    assert len(gaps) == 1
+    assert "rule_id" not in gaps[0]

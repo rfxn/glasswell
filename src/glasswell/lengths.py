@@ -23,6 +23,14 @@ COMPUTE_CRS_FAMILY = "cr_nd_compute_crs"
 LATERALS_SOURCE_ID = "nd_gis_horizontals_line"
 LENGTH_PURPOSE = "length_computation"
 
+class LengthRuleUnregistered(LookupError):
+    """No compute-CRS rule governs this jurisdiction's geometry, so no length is computable.
+
+    Distinct from a registered `length_scope` rule, which withholds a length that *could* be
+    computed and cites itself in its place. Both serve a null; only one has a rule to name.
+    """
+
+
 GEODESIC = "geodesic"
 PROJECTED = "projected"
 STORAGE_EPSG = 4326
@@ -108,9 +116,18 @@ def length_rule_source(
     valid_at: date | None = None,
     knowledge_at: date | None = None,
 ) -> str:
-    """Which source's compute-CRS rule governs a basin. The registry answers, not a constant."""
+    """Which source's compute-CRS rule governs a basin. The registry answers, not a constant.
+
+    An unregistered basin is a refusal rather than North Dakota's source. Returning
+    LATERALS_SOURCE_ID here served every basin-less well a figure whose handle resolved to a
+    rule about North Dakota geometry, on two endpoints, dormant until a second jurisdiction
+    with no basin arrived.
+    """
     if not basin:
-        return LATERALS_SOURCE_ID
+        raise LengthRuleUnregistered(
+            "no basin is registered for this well, so lineage.crs_registry names no length"
+            " rule source and no length is computable"
+        )
     effective_cut = valid_at or as_of or utc_today()
     knowledge_cut = knowledge_at or utc_today()
     with connection.cursor() as cursor:
@@ -120,7 +137,9 @@ def length_rule_source(
         )
         row = cursor.fetchone()
     if row is None:
-        raise LookupError(f"lineage.crs_registry names no length rule source for basin {basin!r}")
+        raise LengthRuleUnregistered(
+            f"lineage.crs_registry names no length rule source for basin {basin!r}"
+        )
     return str(row[0])
 
 
