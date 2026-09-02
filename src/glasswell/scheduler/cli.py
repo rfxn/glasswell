@@ -13,6 +13,8 @@ import os
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
+import psycopg
+
 from glasswell.lineage.schedules import (
     ScheduleRegistry,
     ScheduleRegistryError,
@@ -38,6 +40,17 @@ from glasswell.scheduler.units import installed_timer_owned_entry_points
 
 DSN_ENV = "GLASSWELL_DSN"
 FALLBACK_DSN_ENV = "DATABASE_URL"
+
+# The double-run guard answers with a status, never with prose. A gate that read the
+# message could not tell "no launch row resolved" from "I never reached the database",
+# and the second is what a first deploy hits: a peer-auth failure was reported as a
+# double-run hazard, which is a claim about rows nothing had read.
+GUARD_CLEAN = 0
+GUARD_HAZARD = 1
+GUARD_NO_DSN = 3
+GUARD_UNREACHABLE = 4
+GUARD_UNREADABLE = 5
+GUARD_NO_TIMER_SET = 6
 
 
 def resolved_dsn() -> str:
@@ -143,6 +156,39 @@ def run_one(
     return [entry], 0 if row and row[0] == "ran" else 1
 
 
+def double_run_check() -> int:
+    """The permanent guard, and every way of failing to run it, each with its own status.
+
+    Outside the tick's session lock and outside its connection: the guard is a read that needs
+    no mutual exclusion, and it has to be able to report that it never reached the database
+    without that being mistaken for a clean registry.
+    """
+    try:
+        dsn = resolved_dsn()
+    except SystemExit as refusal:
+        print(f"no DSN, so nothing was checked: {refusal}")
+        return GUARD_NO_DSN
+    try:
+        connection = control_connection(dsn)
+    except psycopg.OperationalError as unreachable:
+        print(f"the database could not be reached, so nothing was checked: {unreachable}")
+        return GUARD_UNREACHABLE
+    with connection:
+        try:
+            load_schedules(connection)
+        except ScheduleRegistryError as refusal:
+            print(f"the registry could not be read, so nothing was checked: {refusal}")
+            return GUARD_UNREADABLE
+        timer_owned = installed_timer_owned_entry_points()
+        if not timer_owned:
+            print("no installed timer drives any entry point, so this guard checked nothing")
+            return GUARD_NO_TIMER_SET
+        offending = double_run_rows(connection, timer_owned)
+        for job_id in offending:
+            print(job_id)
+        return GUARD_HAZARD if offending else GUARD_CLEAN
+
+
 def main(argv: Sequence[str] | None = None, control: SystemdControl | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Resolve the job registry, compute what is due, and record what happened."
@@ -177,30 +223,12 @@ def main(argv: Sequence[str] | None = None, control: SystemdControl | None = Non
         for relation in sorted(read_relations()):
             print(relation)
         return 0
+    if arguments.double_run_check:
+        return double_run_check()
     control = control or SystemctlControl()
     now = datetime.now(UTC)
 
     with control_connection(resolved_dsn()) as connection:
-        # Ahead of the lock, deliberately. The guard is a read and needs no mutual exclusion,
-        # and behind the lock it returned 0 without examining a row whenever a tick was
-        # running -- which is every deploy, because step 7c starts the timer immediately
-        # before the gate reads this. A guard that reports a clean registry it never read is
-        # worse than no guard.
-        if arguments.double_run_check:
-            try:
-                registry = load_schedules(connection)
-            except ScheduleRegistryError as refusal:
-                print(f"the registry could not be read, so nothing was checked: {refusal}")
-                return 1
-            timer_owned = installed_timer_owned_entry_points()
-            if not timer_owned:
-                print("no installed timer drives any entry point, so this guard checked nothing")
-                return 1
-            offending = double_run_rows(connection, timer_owned)
-            for job_id in offending:
-                print(job_id)
-            return 1 if offending else 0
-
         if not take_session_lock(connection):
             # A previous tick is still working. The follower exits silently rather than
             # appending an hourly refusal about a job that is visibly running.

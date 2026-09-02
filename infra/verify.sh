@@ -820,16 +820,20 @@ if systemctl list-unit-files glasswell-scheduler.timer >/dev/null 2>&1; then
         guard_output="$(GLASSWELL_DSN="$scheduler_dsn" \
             "$VENV_PY" -m glasswell.scheduler.cli --double-run-check 2>&1)"
         guard_status=$?
-        if [[ $guard_status -eq 0 ]]; then
-            ok "no launch row names an entry point a timer already drives"
-        elif [[ $guard_output == *"no database DSN"* || $guard_output == *"could not take"* ]]; then
-            # Not the same fact. "I could not read the registry" must never be reported as
-            # "a launch row would double-run with an installed timer".
-            bad "the double-run guard ran at all" "${guard_output//$'\n'/ }"
-        else
-            bad "no launch row names an entry point a timer already drives" \
-                "${guard_output//$'\n'/ } would double-run with an installed timer"
-        fi
+        # The status, never the message. A substring match could not tell "no launch row
+        # resolved" from "I never reached the database", and reported a peer-auth failure --
+        # the likeliest failure on a first deploy -- as a double-run hazard.
+        case $guard_status in
+            0) ok "no launch row names an entry point a timer already drives" ;;
+            1)
+                bad "no launch row names an entry point a timer already drives" \
+                    "${guard_output//$'\n'/ } would double-run with an installed timer"
+                ;;
+            *)
+                bad "the double-run guard ran at all" \
+                    "exit $guard_status: ${guard_output//$'\n'/ }"
+                ;;
+        esac
     fi
     # The v0.78 posture, which inverts at the flag flip: every row this track seeds observes.
     launching="$("${PSQL[@]}" "select count(*) from lineage.job_schedules_as_of(current_date, current_date) s join lineage.scheduled_jobs j on j.job_id = s.job_id where s.launch_mode = 'launch' and (j.jurisdiction in ('ND','TX','NM','MT') or j.jurisdiction is null)")"

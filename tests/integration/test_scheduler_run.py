@@ -519,7 +519,7 @@ def test_the_double_run_guard_refuses_an_empty_registry_rather_than_reporting_it
     launch row resolved."""
     monkeypatch.setenv("GLASSWELL_DSN", db.info.dsn + f" password={db.info.password}")
 
-    assert cli.main(["--double-run-check"], control=StubControl()) == 1
+    assert cli.main(["--double-run-check"], control=StubControl()) == cli.GUARD_UNREADABLE
 
 
 def test_a_unit_that_finished_is_closed_from_its_own_evidence_and_not_lost(seeded) -> None:
@@ -549,3 +549,76 @@ def test_systemd_answers_a_missing_unit_with_success_which_is_why_loadstate_deci
     assert SYSTEMD_UNKNOWN_UNIT["ExecMainStatus"] == "0"
     assert SYSTEMD_UNKNOWN_UNIT["ActiveState"] == "inactive"
     assert SYSTEMD_UNKNOWN_UNIT["LoadState"] != SYSTEMD_FINISHED_UNIT["LoadState"]
+
+
+def tree_timer_owned():
+    return installed_timer_owned_entry_points(
+        ROOT / "infra" / "systemd", ROOT / "pyproject.toml"
+    )
+
+
+def test_the_guard_reports_each_way_of_not_checking_with_its_own_exit_status(
+    seeded, dsn, monkeypatch
+) -> None:
+    """The gate reads the number, never the prose.
+
+    A substring match cannot tell "no launch row resolved" from "I never reached the
+    database", and the second is what a first deploy actually hits: the reviewer ran the real
+    `verify.sh` fragment against a peer-auth failure and it reported a double-run hazard.
+    """
+    monkeypatch.setattr(cli, "installed_timer_owned_entry_points", tree_timer_owned)
+
+    assert cli.main(["--double-run-check"], control=StubControl()) == cli.GUARD_CLEAN
+
+    monkeypatch.delenv("GLASSWELL_DSN")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    assert cli.main(["--double-run-check"], control=StubControl()) == cli.GUARD_NO_DSN
+
+    # A unix socket directory that does not exist: the shape a peer-auth failure takes here,
+    # without needing a database that refuses one.
+    monkeypatch.setenv("GLASSWELL_DSN", "postgresql:///glasswell?host=/nonexistent-gw-probe")
+    assert cli.main(["--double-run-check"], control=StubControl()) == cli.GUARD_UNREACHABLE
+
+    monkeypatch.setenv("GLASSWELL_DSN", dsn)
+    monkeypatch.setattr(cli, "installed_timer_owned_entry_points", frozenset)
+    assert cli.main(["--double-run-check"], control=StubControl()) == cli.GUARD_NO_TIMER_SET
+
+
+def test_the_guard_reports_a_hazard_with_its_own_status_and_names_the_row(
+    seeded, dsn, monkeypatch, capsys
+) -> None:
+    monkeypatch.setattr(cli, "installed_timer_owned_entry_points", tree_timer_owned)
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.scheduled_jobs"
+            " (job_id, label, kind, entry_point, anchor_source_id, run_as, rationale)"
+            " values ('marts_neighbors_probe', 'Planted neighbour index', 'mart',"
+            "         'glasswell.marts.neighbors', 'fracfocus_csv', 'glasswell',"
+            "         'a planted row the guard must refuse')"
+        )
+        cursor.execute(
+            "insert into lineage.job_schedules"
+            " (job_id, effective_from, published_at, rule_id, trigger, launch_mode,"
+            "  cadence_interval, cadence_note, memory_max, timeout_seconds)"
+            " values ('marts_neighbors_probe', current_date, current_date,"
+            "         'cr_job_cadence_marts_neighbors_1', 'cadence', 'launch',"
+            "         interval '35 days', 'a planted launch row', '6G', 3600)"
+        )
+    seeded.commit()
+
+    assert cli.main(["--double-run-check"], control=StubControl()) == cli.GUARD_HAZARD
+    assert "marts_neighbors_probe" in capsys.readouterr().out
+
+
+def test_every_guard_status_is_distinct() -> None:
+    """Four ways of not checking that shared one status is what the gate could not tell apart."""
+    statuses = (
+        cli.GUARD_CLEAN,
+        cli.GUARD_HAZARD,
+        cli.GUARD_NO_DSN,
+        cli.GUARD_UNREACHABLE,
+        cli.GUARD_UNREADABLE,
+        cli.GUARD_NO_TIMER_SET,
+    )
+
+    assert len(set(statuses)) == len(statuses)
