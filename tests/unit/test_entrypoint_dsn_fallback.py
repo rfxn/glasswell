@@ -157,3 +157,82 @@ def test_every_entry_point_reads_the_environment_when_the_flag_is_absent(
     with pytest.raises((SystemExit, Exception)) as failure:  # any failure but the refusal
         entry.main([])
     assert "no database DSN" not in str(failure.value), module
+
+
+DOCS = ROOT / "docs"
+# Any language tag, not just bash: an unmatched opener desynchronises the pairing and
+# every later block reads as prose.
+FENCE = re.compile(r"^```[a-z]*\n(.*?)^```", re.MULTILINE | re.DOTALL)
+# A `\`-continued shell command, rejoined, so a property three lines below the invocation is
+# read as part of it rather than as its own line.
+CONTINUED = re.compile(r"\\\n\s*")
+RUNS_GLASSWELL = re.compile(r"(glasswell/venv/bin/|\$VENV/bin/|-m\s+glasswell\.)")
+NAMES_A_DSN = re.compile(
+    r"--property=EnvironmentFile=-?/etc/glasswell/\S+|--setenv=(GLASSWELL_DSN|DATABASE_URL)="
+)
+
+
+def fenced_commands(text: str) -> list[str]:
+    joined = []
+    for block in FENCE.findall(text):
+        joined.extend(CONTINUED.sub(" ", block).splitlines())
+    return joined
+
+
+def test_no_operator_document_passes_a_dsn_on_an_argument_list() -> None:
+    """Proof 4. An argument list is readable in /proc and lands in shell history."""
+    offenders = [
+        f"{path.name}: {line.strip()}"
+        for path in sorted(DOCS.glob("*.md"))
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if "--dsn" in line
+    ]
+
+    assert offenders == []
+
+
+def test_every_systemd_run_of_a_glasswell_command_names_where_its_dsn_comes_from() -> None:
+    """The other half of proof 4, and the half the deletion alone would satisfy.
+
+    A transient unit gets PID 1's environment, not the operator's shell, so removing `--dsn`
+    without naming an environment file or a `--setenv` leaves the command with no database at
+    all -- which is how six procedures, one of them the 89-minute production promotion, would
+    have exited on `no database DSN`.
+    """
+    silent = []
+    for path in sorted(DOCS.glob("*.md")):
+        for command in fenced_commands(path.read_text(encoding="utf-8")):
+            if "systemd-run" not in command or not RUNS_GLASSWELL.search(command):
+                continue
+            if not NAMES_A_DSN.search(command):
+                silent.append(f"{path.name}: {command.strip()[:90]}")
+
+    assert silent == []
+
+
+def test_the_systemd_run_walk_reaches_the_blocks_it_is_meant_to_judge() -> None:
+    """A walker that matched nothing would satisfy the assertion above by vacuity."""
+    found = [
+        command
+        for path in sorted(DOCS.glob("*.md"))
+        for command in fenced_commands(path.read_text(encoding="utf-8"))
+        if "systemd-run" in command and RUNS_GLASSWELL.search(command)
+    ]
+
+    assert len(found) >= 8, found
+
+
+def test_every_preserve_env_names_a_variable_its_own_document_exports() -> None:
+    """`sudo --preserve-env=X` carries nothing when nothing ever exported X."""
+    unexported = []
+    for path in sorted(DOCS.glob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        for command in fenced_commands(text):
+            for match in re.finditer(r"--preserve-env=([A-Z0-9_,]+)", command):
+                for name in match.group(1).split(","):
+                    if name in ("GLASSWELL_CODE_VERSION", "GLASSWELL_LOCKFILE_SHA256"):
+                        continue  # sourced from code-version.env under `set -a`
+                    if not re.search(rf"^export {name}=", text, re.MULTILINE):
+                        unexported.append(f"{path.name}: {name}")
+
+    assert unexported == []

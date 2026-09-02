@@ -166,6 +166,8 @@ Add an `ExecStart=` line to `infra/systemd/glasswell-ingest.service`.
 ### 11. Run the mart, then the count writer
 
 ```bash
+export VENV=/opt/glasswell/venv
+export GLASSWELL_DSN='postgresql:///glasswell?host=/var/run/postgresql'
 sudo --preserve-env=GLASSWELL_DSN -u glasswell $VENV/bin/glasswell-tiles --jurisdiction <CODE>
 sudo --preserve-env=GLASSWELL_DSN -u glasswell $VENV/bin/python -m glasswell.marts.counts
 ```

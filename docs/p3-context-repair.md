@@ -60,6 +60,8 @@ in PostgreSQL:
 set -a
 . /etc/glasswell/code-version.env
 set +a
+# code-version.env carries the code identity and no DSN; this is the other half.
+export GLASSWELL_DSN='postgresql:///glasswell?host=/var/run/postgresql'
 cd /opt/glasswell/src
 sudo --preserve-env=GLASSWELL_CODE_VERSION,GLASSWELL_LOCKFILE_SHA256,GLASSWELL_DSN \
   -u glasswell \
