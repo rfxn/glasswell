@@ -4,7 +4,7 @@ import { ApiError, getEnvelope } from "../../api/client.ts";
 import type { Figure, Warning } from "../../api/envelope.ts";
 import type { AppState } from "../../app/state.ts";
 import { warningNotes } from "../../chrome/notes.ts";
-import { JURISDICTIONS } from "../../map/jurisdictions.generated.ts";
+import { DEFAULT_JURISDICTION } from "../../map/jurisdictions.generated.ts";
 import "../../card/gw-figure.ts";
 
 /** §4.1: the panel rides the URL, so a shared link opens the list the sharer was reading. */
@@ -31,11 +31,10 @@ const SORTS = [
 /** Every size the operation accepts a cut at: `ge=1, le=50` on the server, 15 by default. */
 const TOPS = ["10", "15", "20", "25", "50"] as const;
 
-// The prefix comes from the registration rather than from a literal here. *Which* jurisdiction
-// the explorer opens on is still a product decision and not a registry fact — there is no
-// "default" column and no "loaded" column — so the choice is named by code and stays ND rather
-// than becoming whichever registration happens to sort first.
-const DEFAULT_STATE = JURISDICTIONS.ND.prefix;
+// Which jurisdiction the explorer opens on is a registry row now: exactly one registration
+// carries `explorer_default`, and its rationale is the reason — the only jurisdiction serving
+// well-grain production history end to end. Nothing here decides it.
+const DEFAULT_STATE = DEFAULT_JURISDICTION.prefix;
 const DEFAULTS = { state: DEFAULT_STATE, by: "operator", sort: "count", order: "desc", top: "15" };
 
 /** Exported so the suite asserts against the shipped defaults rather than a copy of them. */

@@ -44,6 +44,7 @@ def registration(code: str, prefix: str | None, *, scheme: str = "api10", **over
         "wells_tile_layer_id": None,
         "map_colour": None,
         "neighbors_available": False,
+        "explorer_default": False,
         "land_grid_state": False,
         "land_grid_scope": False,
         "status_dataset_detail": None,

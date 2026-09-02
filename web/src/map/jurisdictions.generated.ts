@@ -11,6 +11,8 @@ export interface GeneratedJurisdiction {
   readonly prefix: string;
   readonly colour: string;
   readonly wellsTileLayerId: string;
+  /** Whether the explorer opens on this jurisdiction. Exactly one registration carries it. */
+  readonly explorerDefault: boolean;
   /** Serving rule id per decision, as registered. */
   readonly rules: Readonly<Record<string, string>>;
 }
@@ -22,6 +24,7 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
     prefix: "25",
     colour: "#7C8B96",
     wellsTileLayerId: "mt_wells",
+    explorerDefault: false,
     rules: {
       "absence:operator": "cr_mt_operator_absence_1",
       geometry_provenance: "cr_mt_paths_geometry_class_1",
@@ -37,6 +40,7 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
     prefix: "33",
     colour: "#3FA55E",
     wellsTileLayerId: "nd_wells",
+    explorerDefault: true,
     rules: {
       geometry_provenance: "cr_nd_geometry_provenance_1",
       identity: "cr_nd_api_identity_1",
@@ -52,6 +56,7 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
     prefix: "30",
     colour: "#3FA55E",
     wellsTileLayerId: "nm_wells",
+    explorerDefault: false,
     rules: {
       geometry_provenance: "cr_nm_wellhistory_geometry_provenance_1",
       identity: "cr_nm_wchistory_api10_1",
@@ -67,6 +72,7 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
     prefix: "42",
     colour: "#7C8B96",
     wellsTileLayerId: "tx_wells",
+    explorerDefault: false,
     rules: {
       "absence:operator": "cr_tx_operator_absence_1",
       identity: "cr_tx_api10_build_1",
@@ -86,6 +92,10 @@ export const JURISDICTIONS = {
 /** Registered API prefix → registration. The wire carries the prefix, not the code. */
 export const BY_PREFIX: Readonly<Record<string, GeneratedJurisdiction>> =
   Object.fromEntries(JURISDICTION_LIST.map((row) => [row.prefix, row]));
+
+/** The jurisdiction the explorer opens on, registered rather than chosen here. */
+export const DEFAULT_JURISDICTION: GeneratedJurisdiction =
+  JURISDICTION_LIST.find((row) => row.explorerDefault) ?? JURISDICTION_LIST[0]!;
 
 /** Full name → code, for a label that spells the jurisdiction out. */
 export const ABBREVIATION: Readonly<Record<string, string>> =

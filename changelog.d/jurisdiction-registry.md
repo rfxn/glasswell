@@ -92,3 +92,10 @@
 - [New] `docs/runbook-add-a-state.md`: eleven steps from registering the source to running the
       count writer, each naming the refusal that stops it being done out of order — and naming
       the one step, the ingest timer, that still has no gate behind it
+- [New] `lineage.jurisdictions.explorer_default` decides which jurisdiction the Explorer opens
+      on. It was a code choice — first a literal `"33"`, then whichever registration sorted
+      first, which is Montana and an accident of alphabetisation. Exactly one registration
+      carries the flag and its rationale says why: the only jurisdiction serving well-grain
+      production history end to end. A partial unique index holds it to one per registration
+      instant and a standing gate holds it to exactly one across the resolved set, because two
+      registrations a day apart both resolve and no index can see that

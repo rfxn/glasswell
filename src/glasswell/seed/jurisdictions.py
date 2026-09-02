@@ -23,6 +23,12 @@ EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
 # unregistered has no rule to cite for the class every well on the map is drawn by.
 REQUIRED_DECISIONS = ("status_vocabulary",)
 
+# Exactly one registration carries explorer_default, and it is a fact about the data rather
+# than a preference: the explorer opens on the jurisdiction whose production history it can
+# actually walk. A partial unique index holds it to one per registration instant; the resolved
+# set is the wider claim, and test_jurisdiction_parity.py is what makes it.
+EXPLORER_DEFAULT_CODE = "ND"
+
 SHARED_STATUS_DETAIL = "Current effective-dated well entities, not accumulated source revisions."
 
 JURISDICTION_CODES: tuple[dict[str, object], ...] = (
@@ -52,6 +58,7 @@ JURISDICTIONS: tuple[dict[str, object], ...] = (
         "wells_tile_layer_id": "nd_wells",
         "map_colour": "#3FA55E",
         "neighbors_available": True,
+        "explorer_default": True,
         "land_grid_state": True,
         "land_grid_scope": True,
         "status_dataset_detail": SHARED_STATUS_DETAIL,
@@ -59,7 +66,9 @@ JURISDICTIONS: tuple[dict[str, object], ...] = (
             "The founding jurisdiction: NDIC DMR files the monthly production report and the"
             " GIS layers the spine was built on. The two BLM PLSS layers are registered here"
             " because ND is the extent they were loaded for, which is what"
-            " lineage.sources.jurisdiction records."
+            " lineage.sources.jurisdiction records. It carries explorer_default because it is"
+            " the only jurisdiction serving well-grain production history end to end, which is"
+            " what the explorer opens on rather than an alphabetical accident."
         ),
     },
     {
@@ -75,6 +84,7 @@ JURISDICTIONS: tuple[dict[str, object], ...] = (
         "wells_tile_layer_id": "tx_wells",
         "map_colour": "#7C8B96",
         "neighbors_available": False,
+        "explorer_default": False,
         "land_grid_state": False,
         "land_grid_scope": False,
         "status_dataset_detail": SHARED_STATUS_DETAIL,
@@ -108,6 +118,7 @@ JURISDICTIONS: tuple[dict[str, object], ...] = (
         "wells_tile_layer_id": "nm_wells",
         "map_colour": "#3FA55E",
         "neighbors_available": False,
+        "explorer_default": False,
         "land_grid_state": False,
         "land_grid_scope": False,
         "status_dataset_detail": SHARED_STATUS_DETAIL,
@@ -134,6 +145,7 @@ JURISDICTIONS: tuple[dict[str, object], ...] = (
         "wells_tile_layer_id": "mt_wells",
         "map_colour": "#7C8B96",
         "neighbors_available": True,
+        "explorer_default": False,
         "land_grid_state": False,
         "land_grid_scope": False,
         "status_dataset_detail": (
@@ -216,14 +228,15 @@ insert into lineage.jurisdictions (
     jurisdiction_code, effective_from, published_at, evidence_tag, evidence_commit,
     name, regulator_name, regulator_url, identity_scheme, identity_is_unique,
     identity_prefix, identity_pattern, source_ids, liquids_basis, wells_tile_layer_id,
-    map_colour, neighbors_available, land_grid_state, land_grid_scope,
+    map_colour, neighbors_available, explorer_default, land_grid_state, land_grid_scope,
     status_dataset_detail, rationale)
 values (
     %(jurisdiction_code)s, %(effective_from)s, %(published_at)s, %(evidence_tag)s,
     %(evidence_commit)s, %(name)s, %(regulator_name)s, %(regulator_url)s, %(identity_scheme)s,
     %(identity_is_unique)s, %(identity_prefix)s, %(identity_pattern)s, %(source_ids)s,
     %(liquids_basis)s, %(wells_tile_layer_id)s, %(map_colour)s, %(neighbors_available)s,
-    %(land_grid_state)s, %(land_grid_scope)s, %(status_dataset_detail)s, %(rationale)s)
+    %(explorer_default)s, %(land_grid_state)s, %(land_grid_scope)s, %(status_dataset_detail)s,
+    %(rationale)s)
 on conflict do nothing
 """
 

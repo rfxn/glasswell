@@ -43,6 +43,9 @@ create table if not exists lineage.jurisdictions (
     wells_tile_layer_id  text,
     map_colour           text check (map_colour ~ '^#[0-9A-F]{6}$'),
     neighbors_available  boolean not null default false,
+    -- Which jurisdiction the explorer opens on is a fact about the data, not a choice in the
+    -- client: exactly one registration carries it, and the reason is in `rationale`.
+    explorer_default     boolean not null default false,
     land_grid_state      boolean not null default false,
     land_grid_scope      boolean not null default false,
     status_dataset_detail text,
@@ -65,6 +68,12 @@ comment on table lineage.jurisdictions is
 comment on column lineage.jurisdictions.identity_is_unique is
     'False where API-10 is not a well key (UT, AK, AL, MS). A property of the key, not of the'
     ' scheme, which is why it is its own boolean rather than a widened identity_scheme.';
+
+-- At most one default per registration instant. The resolved set is the wider claim and no
+-- index can make it: two registrations a day apart both resolve, so the standing gate in
+-- test_jurisdiction_parity.py is what requires exactly one, and requires it to exist.
+create unique index if not exists jurisdictions_explorer_default_key
+    on lineage.jurisdictions (effective_from, published_at) where explorer_default;
 
 create unique index if not exists jurisdictions_prefix_key
     on lineage.jurisdictions (identity_prefix, effective_from, published_at)
@@ -154,14 +163,14 @@ insert into lineage.jurisdictions (
     jurisdiction_code, effective_from, published_at, evidence_tag, evidence_commit,
     name, regulator_name, regulator_url, identity_scheme, identity_is_unique,
     identity_prefix, identity_pattern, source_ids, liquids_basis, wells_tile_layer_id,
-    map_colour, neighbors_available, land_grid_state, land_grid_scope,
+    map_colour, neighbors_available, explorer_default, land_grid_state, land_grid_scope,
     status_dataset_detail, rationale)
 select r.jurisdiction_code, date '2026-09-01', date '2026-09-01',
        'UNRELEASED', '0000000000000000000000000000000000000000',
        r.name, r.regulator_name, r.regulator_url, 'api10', true,
        r.identity_prefix, '^' || r.identity_prefix || '[0-9]{8}$', r.source_ids,
        r.liquids_basis, r.wells_tile_layer_id, r.map_colour,
-       r.neighbors_available, r.land_grid_state, r.land_grid_scope,
+       r.neighbors_available, r.explorer_default, r.land_grid_state, r.land_grid_scope,
        r.status_dataset_detail, r.rationale
   from (values
     ('ND', 'North Dakota',
@@ -169,17 +178,20 @@ select r.jurisdiction_code, date '2026-09-01', date '2026-09-01',
      'https://www.dmr.nd.gov/oilgas/mprindex.asp', '33',
      array['nd_mpr_xlsx', 'nd_gis_wells', 'nd_gis_horizontals_line', 'nd_gis_spacing_units',
            'nd_gis_directionals', 'blm_plss_townships', 'blm_plss_sections']::text[],
-     'oil+condensate'::text, 'nd_wells'::text, '#3FA55E'::text, true, true, true,
+     'oil+condensate'::text, 'nd_wells'::text, '#3FA55E'::text, true, true, true, true,
      'Current effective-dated well entities, not accumulated source revisions.'::text,
      'The founding jurisdiction: NDIC DMR files the monthly production report and the GIS'
      ' layers the spine was built on. The two BLM PLSS layers are registered here because ND'
-     ' is the extent they were loaded for, which is what lineage.sources.jurisdiction records.'),
+     ' is the extent they were loaded for, which is what lineage.sources.jurisdiction records.'
+     ' It carries explorer_default because it is the only jurisdiction serving well-grain'
+     ' production history end to end, which is what the explorer opens on rather than an'
+     ' alphabetical accident.'),
     ('TX', 'Texas',
      'Railroad Commission of Texas',
      'https://www.rrc.texas.gov/resource-center/research/data-sets-available-for-download/',
      '42',
      array['tx_gis_wells_county', 'tx_wellbore_ewa_csv']::text[],
-     null::text, 'tx_wells'::text, '#7C8B96'::text, false, false, false,
+     null::text, 'tx_wells'::text, '#7C8B96'::text, false, false, false, false,
      'Current effective-dated well entities, not accumulated source revisions.'::text,
      'Served from the RRC county GIS layers and the Wellbore Query export. Texas files'
      ' production at the lease, so no liquids basis and no pool-rollup decision are registered'
@@ -190,7 +202,7 @@ select r.jurisdiction_code, date '2026-09-01', date '2026-09-01',
      array['nm_ocd_wcproduction', 'nm_ocd_wellhistory', 'nm_ocd_wchistory', 'nm_ocd_podwc',
            'nm_ocd_pod', 'nm_ocd_ogrid', 'nm_ocd_pool', 'nm_ocd_spacingunit',
            'nm_ocd_property', 'nm_ocd_wells_gis', 'nm_c115b_upstream']::text[],
-     'oil'::text, 'nm_wells'::text, '#3FA55E'::text, false, false, false,
+     'oil'::text, 'nm_wells'::text, '#3FA55E'::text, false, false, false, false,
      'Current effective-dated well entities, not accumulated source revisions.'::text,
      'Served from the OCD FTP tables, the public wells layer and the C-115B waste service.'
      ' The status class is resolved at read time rather than written by the promotion, and'
@@ -200,7 +212,7 @@ select r.jurisdiction_code, date '2026-09-01', date '2026-09-01',
      'https://bogfiles.dnrc.mt.gov', '25',
      array['mt_gis_wells', 'mt_gis_well_paths', 'mt_bogc_well_production',
            'mt_bogc_pru_production']::text[],
-     'oil+condensate'::text, 'mt_wells'::text, '#7C8B96'::text, true, false, false,
+     'oil+condensate'::text, 'mt_wells'::text, '#7C8B96'::text, true, false, false, false,
      'Headers only for the statuses cr_mt_gis_status_vocab_1 promotes; the six it does not'
      ' quarantine as unknown_status, so this is below the surface-point count and the'
      ' difference is in the quarantine ledger, not lost.'::text,
@@ -208,8 +220,8 @@ select r.jurisdiction_code, date '2026-09-01', date '2026-09-01',
      ' reports at lease grain, so its inventory rule is registered and not serving; the well'
      ' paths are cartographic centrelines, which is why length has its own scope decision.')
   ) as r(jurisdiction_code, name, regulator_name, regulator_url, identity_prefix, source_ids,
-         liquids_basis, wells_tile_layer_id, map_colour, neighbors_available, land_grid_state,
-         land_grid_scope, status_dataset_detail, rationale)
+         liquids_basis, wells_tile_layer_id, map_colour, neighbors_available, explorer_default,
+         land_grid_state, land_grid_scope, status_dataset_detail, rationale)
 on conflict do nothing;
 
 -- Guarded on residency for the reason 071's rule insert is: migrations run before the seed, so

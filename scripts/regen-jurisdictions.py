@@ -37,6 +37,8 @@ export interface GeneratedJurisdiction {
   readonly prefix: string;
   readonly colour: string;
   readonly wellsTileLayerId: string;
+  /** Whether the explorer opens on this jurisdiction. Exactly one registration carries it. */
+  readonly explorerDefault: boolean;
   /** Serving rule id per decision, as registered. */
   readonly rules: Readonly<Record<string, string>>;
 }
@@ -46,6 +48,10 @@ FOOTER = """
 /** Registered API prefix → registration. The wire carries the prefix, not the code. */
 export const BY_PREFIX: Readonly<Record<string, GeneratedJurisdiction>> =
   Object.fromEntries(JURISDICTION_LIST.map((row) => [row.prefix, row]));
+
+/** The jurisdiction the explorer opens on, registered rather than chosen here. */
+export const DEFAULT_JURISDICTION: GeneratedJurisdiction =
+  JURISDICTION_LIST.find((row) => row.explorerDefault) ?? JURISDICTION_LIST[0]!;
 
 /** Full name → code, for a label that spells the jurisdiction out. */
 export const ABBREVIATION: Readonly<Record<string, string>> =
@@ -87,6 +93,7 @@ def _row(registration: dict[str, object]) -> str:
         f'    prefix: "{registration["identity_prefix"]}",\n'
         f'    colour: "{registration["map_colour"]}",\n'
         f'    wellsTileLayerId: "{registration["wells_tile_layer_id"]}",\n'
+        f"    explorerDefault: {'true' if registration['explorer_default'] else 'false'},\n"
         "    rules: {\n"
         f"{rules}"
         "    },\n"

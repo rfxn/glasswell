@@ -55,6 +55,7 @@ class Jurisdiction:
     wells_tile_layer_id: str | None
     map_colour: str | None
     neighbors_available: bool
+    explorer_default: bool
     land_grid_state: bool
     land_grid_scope: bool
     status_dataset_detail: str | None

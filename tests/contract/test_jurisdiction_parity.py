@@ -26,6 +26,7 @@ from glasswell.seed.conformance_land import LAND_SOURCES
 from glasswell.seed.conformance_nm_wells import NM_WELLS_GIS_SOURCES
 from glasswell.seed.conformance_tx import TX_SOURCES
 from glasswell.seed.jurisdictions import (
+    EXPLORER_DEFAULT_CODE,
     JURISDICTION_RULES,
     JURISDICTIONS,
     REGISTERED_ON,
@@ -114,6 +115,61 @@ def test_every_resolved_registration_carries_the_rule_rows_it_declares(
         assert resident == declared[row.jurisdiction_code]
         for decision in REQUIRED_DECISIONS:
             assert row.rule(decision) is not None
+
+
+def test_exactly_one_resolved_registration_is_the_explorer_default(
+    db: psycopg.Connection,
+) -> None:
+    """The standing gate the partial unique index cannot make. The index holds it to one per
+    `(effective_from, published_at)`; two registrations a day apart both resolve, and a client
+    that finds two defaults — or none — has to pick, which is the thing being taken away."""
+    registry = load_jurisdictions(db)
+    defaults = [row for row in registry if row.explorer_default]
+
+    assert [row.jurisdiction_code for row in defaults] == [EXPLORER_DEFAULT_CODE]
+    assert "explorer_default" in defaults[0].rationale
+
+
+def test_a_second_explorer_default_at_one_instant_is_refused_by_the_index(
+    db: psycopg.Connection,
+) -> None:
+    with db.cursor() as cursor:
+        cursor.execute("insert into lineage.jurisdiction_codes values ('CO', 'state')")
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            cursor.execute(
+                "insert into lineage.jurisdictions (jurisdiction_code, effective_from,"
+                " published_at, evidence_tag, evidence_commit, name, regulator_name,"
+                " regulator_url, identity_scheme, identity_prefix, identity_pattern,"
+                " source_ids, rationale, explorer_default)"
+                " values ('CO', %s, %s, 'v0.76', %s, 'Colorado', 'COGCC',"
+                " 'https://ecmc.state.co.us', 'api10', '05', '^05[0-9]{8}$',"
+                " array['nd_mpr_xlsx'], 'planted', true)",
+                (REGISTERED_ON, REGISTERED_ON, "a" * 40),
+            )
+
+
+def test_a_second_explorer_default_a_day_later_is_caught_by_the_gate_the_index_cannot_make(
+    db: psycopg.Connection,
+) -> None:
+    """The N-3 shape again, on a different column: accepted by the index, refused by the set."""
+    later = REGISTERED_ON + timedelta(days=1)
+    with db.cursor() as cursor:
+        cursor.execute("insert into lineage.jurisdiction_codes values ('CO', 'state')")
+        cursor.execute(
+            "insert into lineage.jurisdictions (jurisdiction_code, effective_from,"
+            " published_at, evidence_tag, evidence_commit, name, regulator_name, regulator_url,"
+            " identity_scheme, identity_prefix, identity_pattern, source_ids, rationale,"
+            " explorer_default)"
+            " values ('CO', %s, %s, 'v0.76', %s, 'Colorado', 'COGCC',"
+            " 'https://ecmc.state.co.us', 'api10', '05', '^05[0-9]{8}$',"
+            " array['nd_mpr_xlsx'], 'planted', true)",
+            (later, later, "a" * 40),
+        )
+    clear_jurisdiction_cache()
+
+    registry = load_jurisdictions(db, later)
+
+    assert len([row for row in registry if row.explorer_default]) == 2
 
 
 def test_every_registration_lists_every_source_registered_to_it(
