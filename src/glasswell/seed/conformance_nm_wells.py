@@ -18,6 +18,9 @@ from datetime import date
 import psycopg
 from psycopg.types.json import Jsonb
 
+from glasswell.seed.jurisdictions import RESTATED_ON
+from glasswell.seed.supersession import CORRECTED_REFERENCE, correcting_module_function
+
 # Valid time: the decisions describe the 2026-08-20 artifact, which is the date the rest of the
 # NM registry dates from. Knowledge time is the publication row, 2026-08-30, and is independent.
 EFFECTIVE_FROM = date(2026, 8, 20)
@@ -669,6 +672,27 @@ NM_WELLS_RULES: tuple[dict[str, object], ...] = (
         "code_ref": "src/glasswell/ingest/nm_wells.py",
     },
 )
+
+PROMOTE_MODULE = "glasswell.ingest.nm_wells"
+
+# The correction this train appends. `promote` has never been the name of anything in that
+# module; the promoter is `promote_headers`, which `PRECEDENCE_FAMILY` already resolves to by
+# family rather than by id -- so the successor changes what the row says about the code and
+# nothing about which code runs.
+NM_WELLS_RULES = (
+    *NM_WELLS_RULES,
+    correcting_module_function(
+        next(
+            rule
+            for rule in NM_WELLS_RULES
+            if rule["rule_id"] == "cr_nm_wellhistory_header_precedence_1"
+        ),
+        module_function=f"{PROMOTE_MODULE}:promote_headers",
+        effective_from=RESTATED_ON,
+        rationale=CORRECTED_REFERENCE.format(symbol="promote", module=PROMOTE_MODULE),
+    ),
+)
+
 
 _INSERT_RULE = """
 insert into lineage.conformance_rules

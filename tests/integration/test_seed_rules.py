@@ -30,6 +30,11 @@ POLICY_RULES = tuple(sorted((
     # well is judged inside a boundary. Each executor is the module its spec names.
     "cr_eia_area_provenance_1",
     "cr_eia_basin_link_1",
+    # The three reference corrections this train appends. A successor to a code_ref rule is a
+    # code_ref rule: the decision did not move, the symbol it names did.
+    "cr_eia_basin_link_2",
+    "cr_eia_geometry_repair_2",
+    "cr_nm_wellhistory_header_precedence_2",
     "cr_eia_boundary_overlap_1",
     "cr_eia_boundary_publisher_1",
     "cr_eia_boundary_taxonomy_1",

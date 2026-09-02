@@ -216,11 +216,16 @@ def test_the_header_archive_still_names_itself_sole_authority(db, seeded) -> Non
         )
         spec = cursor.fetchone()[0]
         cursor.execute(
-            "select count(*) from lineage.conformance_rules where rule_id = %s",
+            "select spec from lineage.conformance_rules where rule_id = %s",
             ("cr_nm_wellhistory_header_precedence_2",),
         )
-        superseding = cursor.fetchone()[0]
+        corrected = cursor.fetchone()[0]
 
     assert set(spec["authority"].values()) == {"nm_ocd_wellhistory"}
     assert spec["second_source"] is None
-    assert superseding == 0
+    # A corrected successor exists and decides nothing: it names the promoter its ancestor
+    # named wrongly, and carries the same authority and the same condition for the supersession
+    # this measurement is actually for.
+    assert set(corrected["authority"].values()) == {"nm_ocd_wellhistory"}
+    assert corrected["second_source"] is None
+    assert corrected["superseded_when"] == spec["superseded_when"]

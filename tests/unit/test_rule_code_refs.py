@@ -45,22 +45,30 @@ def rule_specs() -> list[tuple[str, str, str]]:
     return sorted(set(found))
 
 
-# Three rules published before this gate existed name a symbol that has since been renamed.
-# They are not corrected in place: all three are on applied migrations and
-# `lineage.conformance_rules` is append-only, so the correction is an appended successor rule
-# and a repoint of everything citing it -- the shape `cr_mt_paths_length_scope_2` took -- not an
-# edit to a row a deployed database already holds. Named with the symbol each one meant, so
-# whoever appends the successor is not re-deriving it. Routed to the owner (gate-seam H-1).
-PUBLISHED_BEFORE_THIS_GATE = {
-    # glasswell.ingest.eia_boundaries:_promote_plays -> :_promote
-    "cr_eia_basin_link_1",
-    "cr_eia_geometry_repair_1",
-    # glasswell.ingest.nm_wells:promote -> :promote_headers
-    "cr_nm_wellhistory_header_precedence_1",
-}
+def superseded_rule_ids() -> set[str]:
+    """Every rule id some other seeded rule declares it supersedes."""
+    found: set[str] = set()
+    for info in pkgutil.iter_modules(glasswell.seed.__path__):
+        if not info.name.startswith("conformance_"):
+            continue
+        module = importlib.import_module(f"glasswell.seed.{info.name}")
+        for value in vars(module).values():
+            if not isinstance(value, tuple):
+                continue
+            for row in value:
+                if isinstance(row, dict) and row.get("supersedes_rule_id"):
+                    found.add(str(row["supersedes_rule_id"]))
+    return found
+
 
 SPECS = rule_specs()
-LIVE = [item for item in SPECS if item[1] not in PUBLISHED_BEFORE_THIS_GATE]
+# A rule a successor supersedes is history: it stays served at `/v1/conformance/<id>` and the
+# derivations that cite it go on citing what shaped them, but what has to resolve is what is in
+# force. There is no exception list and deliberately no way to write one -- the only thing that
+# takes a row out of this gate is an appended successor, which is a row with a rationale and a
+# date, and which the last test below holds to resolving itself.
+SUPERSEDED = superseded_rule_ids()
+LIVE = [item for item in SPECS if item[1] not in SUPERSEDED]
 
 
 def test_the_walk_finds_the_rules_it_is_meant_to_guard() -> None:
@@ -68,6 +76,8 @@ def test_the_walk_finds_the_rules_it_is_meant_to_guard() -> None:
     assert len(SPECS) >= 38
     named = {rule_id for _, rule_id, _ in SPECS}
     assert {"cr_nd_neighbors_scope_1", "cr_mt_neighbors_scope_1"} <= named
+    # The skip is narrow: a supersession takes one row out, not a tier of them.
+    assert len(LIVE) >= len(SPECS) - 10
 
 
 @pytest.mark.parametrize(
@@ -86,15 +96,19 @@ def test_every_module_function_a_rule_names_resolves(
     )
 
 
-def test_the_carried_exceptions_are_still_the_only_ones_and_still_broken() -> None:
-    """An allowlist nothing matches is a hole. Each of the three has to still be unresolvable,
-    or it has been corrected and belongs back under the gate."""
+def test_a_supersession_cannot_be_used_to_hide_an_unresolvable_successor() -> None:
+    """The one way past this gate is an appended successor, so the successor is held to the
+    thing its ancestor failed: a `_2` naming a symbol that does not exist would otherwise
+    retire its `_1` and inherit the silence."""
     by_id = {rule_id: reference for _, rule_id, reference in SPECS}
+    families = {item.rpartition("_")[0] for item in SUPERSEDED}
+    successors = {
+        rule_id
+        for _, rule_id, _ in SPECS
+        if rule_id not in SUPERSEDED and rule_id.rpartition("_")[0] in families
+    }
 
-    assert set(by_id) >= PUBLISHED_BEFORE_THIS_GATE
-    for rule_id in PUBLISHED_BEFORE_THIS_GATE:
+    assert successors, "no successor row exists; this check would be vacuous"
+    for rule_id in successors:
         module_name, _, symbol = by_id[rule_id].partition(":")
-        module = importlib.import_module(module_name)
-        assert not hasattr(module, symbol), (
-            f"{rule_id} resolves now; drop it from PUBLISHED_BEFORE_THIS_GATE"
-        )
+        assert hasattr(importlib.import_module(module_name), symbol), rule_id
