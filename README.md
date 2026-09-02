@@ -419,6 +419,7 @@ records each file's checksum and refuses a changed migration.
 | [docs/runbook-mt-load.md](docs/runbook-mt-load.md) | Loading Montana on the deployed host: commands, expected counts, success versus partial, and how to undo |
 | [docs/runbook-nm-tier2.md](docs/runbook-nm-tier2.md) | Tier 2 — opening the New Mexico gate: well headers, surface geometry and the tile mart, with the preconditions, gates and the one decision that cannot be taken afterwards |
 | [docs/runbook-nm-promotion.md](docs/runbook-nm-promotion.md) | Tier 1 — the New Mexico production-history load: nine manifests, the staged spine and its ~24.8M appended rows |
+| [docs/runbook-scheduler.md](docs/runbook-scheduler.md) | The cadence-driven scheduler: reading the plan, running one job by hand, every refusal code and its severity, registering a job, and what observing means |
 | [BRAND.md](BRAND.md) | Visual system, palette, and asset regeneration |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How changes are made, and what review rejects |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting |

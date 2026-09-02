@@ -34,6 +34,10 @@ OFFSITE_RECEIPT_MAX_AGE_DAYS=2
 PUBLIC_HOST=glasswell.rpx.sh
 CLOUDFLARED_DIR=/etc/cloudflared
 CADDY_FILE=/etc/caddy/Caddyfile
+SCHEDULER_ENV=/etc/glasswell/scheduler.env
+SCHEDULER_UNIT=glasswell-scheduler.service
+PG_IDENT_DROPIN=/etc/postgresql/16/main/pg_ident.d/glasswell.conf
+PG_IDENT_MAP=glasswell
 CF_RANGES=/etc/glasswell/cloudflare-ips.txt
 # Lab DNS is split-horizon and NXDOMAINs the public record, so the host cannot resolve the
 # name its own edge answers on. Probes carry the address instead of pinning it in /etc/hosts.
@@ -757,6 +761,117 @@ if [[ -f $CLOUDFLARED_DIR/config.yml ]]; then
     assert_false "the installed ingress names no tile server" "127.0.0.1:3000 is published" \
         grep -q '3000' "$CLOUDFLARED_DIR/config.yml"
 fi
+
+printf 'scheduled work\n'
+if systemctl list-unit-files glasswell-scheduler.timer >/dev/null 2>&1; then
+    assert "glasswell-scheduler.timer enabled" enabled \
+        "$(systemctl is-enabled glasswell-scheduler.timer)"
+    assert "glasswell-scheduler.timer active" active \
+        "$(systemctl is-active glasswell-scheduler.timer)"
+    scheduler_ran="$(last_run_state "$SCHEDULER_UNIT")"
+    if [[ $scheduler_ran == ran ]]; then
+        assert "glasswell-scheduler.service last result" success \
+            "$(systemctl show "$SCHEDULER_UNIT" -p Result --value)"
+    else
+        ok "glasswell-scheduler.service has not ticked yet (timer just armed)"
+    fi
+
+    # The units loop above already pins the file byte-for-byte against the tree. What that
+    # cannot prove is that the running manager loaded it, so these read the applied values:
+    # a unit placed and never daemon-reloaded is a sandbox that is written and not in force.
+    assert "the scheduler unit runs as root" root \
+        "$(systemctl show "$SCHEDULER_UNIT" -p User --value)"
+    assert "the scheduler drops every capability" "" \
+        "$(systemctl show "$SCHEDULER_UNIT" -p CapabilityBoundingSet --value)"
+    assert "the scheduler cannot gain privileges" yes \
+        "$(systemctl show "$SCHEDULER_UNIT" -p NoNewPrivileges --value)"
+    assert "the scheduler's filesystem is read-only" strict \
+        "$(systemctl show "$SCHEDULER_UNIT" -p ProtectSystem --value)"
+    assert_false "the scheduler runs under a system-call filter" "no filter is applied" \
+        test -z "$(systemctl show "$SCHEDULER_UNIT" -p SystemCallFilter --value)"
+
+    env_mode="$(stat -c '%U:%G %a' "$SCHEDULER_ENV" 2>/dev/null)"
+    assert "scheduler.env ownership and mode" 'root:root 600' "$env_mode"
+    assert_false "scheduler.env carries no password" "a password reached $SCHEDULER_ENV" \
+        grep -qi 'password' "$SCHEDULER_ENV"
+
+    # Proof 3, the permanent half: no row may launch a job an installed timer already drives.
+    # The timer-owned set is derived by the scheduler itself, so a unit line that names a
+    # console script rather than a module is resolved through [project.scripts] rather than
+    # missed — which is exactly how the neighbour index would have slipped the guard.
+    timer_owned="$("$VENV_PY" -m glasswell.scheduler.cli --timer-owned 2>/dev/null | wc -l)"
+    if [[ ${timer_owned:-0} -lt 1 ]]; then
+        bad "the timer-owned entry-point set" "resolved nothing; the guard would pass vacuously"
+    else
+        assert_true "no launch row names an entry point a timer already drives" \
+            "a resolved launch row would double-run with an installed timer" \
+            "$VENV_PY" -m glasswell.scheduler.cli --double-run-check
+    fi
+    # The v0.77 posture, which inverts at the flag flip: every row this track seeds observes.
+    launching="$("${PSQL[@]}" "select count(*) from lineage.job_schedules_as_of(current_date, current_date) s join lineage.scheduled_jobs j on j.job_id = s.job_id where s.launch_mode = 'launch' and (j.jurisdiction in ('ND','TX','NM','MT') or j.jurisdiction is null)")"
+    assert "every resident and cross-jurisdiction row observes" 0 "$launching"
+    scheduler_runs="$("${PSQL[@]}" "select count(*) from lineage.job_runs where launched_by = 'scheduler' and outcome in ('ran','failed','interrupted')")"
+    assert "the scheduler has launched nothing" 0 "$scheduler_runs"
+
+    # The CHECKs are in the migration; this asserts the resolved rows stay inside them, which
+    # a row appended after the migration could otherwise leave.
+    stray="$("${PSQL[@]}" "select count(*) from lineage.job_schedules_as_of(current_date, current_date) s join lineage.scheduled_jobs j on j.job_id = s.job_id where (j.run_as is not null and j.run_as not in ('glasswell','postgres')) or (j.kind <> 'maintenance' and j.entry_point !~ '^glasswell[.]')")"
+    assert "no resolved row names an unknown uid or module" 0 "$stray"
+
+    for mart in marts_nm_wells marts_mt_wells; do
+        resolved="$("${PSQL[@]}" "select count(*) from lineage.job_schedules_as_of(current_date, current_date) where job_id = '$mart' and enabled")"
+        assert "$mart resolves an enabled schedule" 1 "$resolved"
+    done
+    overdue="$(api_curl -sf --max-time 20 -H "X-Glasswell-Key: $owner_key" \
+        "$API/v1/schedules/marts_nm_wells" \
+        | "$VENV_PY" -c 'import json,sys; row = json.load(sys.stdin)["data"]; print(0 if row["cadence"]["note"] else 1)' 2>/dev/null)"
+    assert "marts_nm_wells serves its cadence" 0 "${overdue:-1}"
+else
+    ok "glasswell-scheduler.timer is not installed on this host yet"
+fi
+
+printf 'scheduler identity\n'
+assert "no role named root exists" 0 \
+    "$("${PSQL[@]}" "select count(*) from pg_roles where rolname = 'root'")"
+assert "glasswell_scheduler can log in and is not a superuser" 'f|t' \
+    "$("${PSQL[@]}" "select rolsuper || '|' || rolcanlogin from pg_roles where rolname = 'glasswell_scheduler'")"
+assert "glasswell_scheduler holds no pipeline membership" f \
+    "$("${PSQL[@]}" "select pg_has_role('glasswell_scheduler', 'glasswell_pipeline', 'MEMBER')")"
+# Derived, never enumerated: a list here would have ratified whatever it forgot, which is how
+# two relations the due rule reads were left ungranted in the first place.
+missing_grants=0
+while read -r relation; do
+    [[ -n $relation ]] || continue
+    granted="$("${PSQL[@]}" "select has_table_privilege('glasswell_scheduler', '$relation', 'SELECT')")"
+    [[ $granted == t ]] || { bad "glasswell_scheduler reads $relation" "no select privilege"; missing_grants=1; }
+done < <("$VENV_PY" -m glasswell.scheduler.cli --read-relations 2>/dev/null)
+[[ $missing_grants -eq 0 ]] && ok "glasswell_scheduler reads every relation the tick names"
+outside="$("${PSQL[@]}" "select count(*) from information_schema.role_table_grants where grantee = 'glasswell_scheduler' and table_schema <> 'lineage'")"
+assert "glasswell_scheduler holds no grant outside lineage" 0 "$outside"
+
+# Read from PostgreSQL's own catalogue, not from the bytes on disk: a rule that is written
+# and not reloaded is a rule that is not in force, and pg_hba.conf is package-managed with no
+# tree counterpart to compare against. The drop-in does have one, so it keeps its byte pin.
+ident_rows="$("${PSQL[@]}" "select count(*) from pg_ident_file_mappings where map_name = '$PG_IDENT_MAP' and error is null")"
+assert "both ident mappings are live and parse clean" 2 "$ident_rows"
+mapped_role="$("${PSQL[@]}" "select pg_username from pg_ident_file_mappings where map_name = '$PG_IDENT_MAP' and sys_name = 'root'")"
+assert "OS root maps to the scheduler role" glasswell_scheduler "$mapped_role"
+hba_mapped="$("${PSQL[@]}" "select count(*) from pg_hba_file_rules where type = 'local' and database = '{all}' and user_name = '{all}' and error is null and 'map=$PG_IDENT_MAP' = any(options)")"
+assert "the local all/all rule names the map" 1 "$hba_mapped"
+hba_errors="$("${PSQL[@]}" "select count(*) from pg_hba_file_rules where error is not null")"
+assert "no pg_hba rule failed to parse" 0 "$hba_errors"
+if [[ -f $PG_IDENT_DROPIN ]]; then
+    assert_true "the ident drop-in equals the tree" "drifted at $PG_IDENT_DROPIN" \
+        cmp -s "$INFRA_DIR/postgres/pg_ident.d/glasswell.conf" "$PG_IDENT_DROPIN"
+fi
+# Naming a map removes PostgreSQL's implicit self-mapping, so the three identities that
+# authenticated before it are the ones a mistake here would silently lock out.
+assert_true "glasswell still authenticates over the socket" "peer auth broke for glasswell" \
+    runuser -u glasswell -- psql -d glasswell -tAc 'select 1'
+assert_true "martin still authenticates over the socket" "peer auth broke for martin" \
+    sudo -u martin psql -d glasswell -tAc 'select 1'
+assert_true "root authenticates as the scheduler role through the map" "the map is not in force" \
+    psql -d 'postgresql:///glasswell?host=/var/run/postgresql&user=glasswell_scheduler' -tAc 'select 1'
 
 # The front door owns the CSP and is the more security-relevant of the two configs, yet only
 # the connector was drift-checked; deploy never installs the Caddyfile, so the two diverge

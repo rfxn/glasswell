@@ -8,6 +8,7 @@ page and for the plan.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -385,3 +386,52 @@ def plan_tick(
                 )
             )
     return TickPlan(observed_at=now, entries=tuple(entries))
+
+
+def read_relations() -> frozenset[str]:
+    """Every `lineage` relation the tick's own SQL names, extracted from the SQL itself.
+
+    A grant assertion written as a list beside the queries ratifies whatever the list forgot;
+    derived from the statements, a query one of these modules grows brings its own grant.
+    """
+    from glasswell.lineage import schedules as registry
+    from glasswell.status import source_health
+
+    statements = (
+        _LAST_RAN,
+        _LAST_OUTCOME,
+        _NEW_FETCHES,
+        _SOURCE_INTERVALS,
+        registry._RESOLVED,
+        registry._REFUSAL_CODES,
+        registry._LATEST_PUBLISHED,
+        source_health._SOURCES,
+    )
+    named = set(re.findall(r"\blineage\.[a-z_]+\b", "\n".join(statements)))
+    # The resolver is a function, not a relation; it is granted separately.
+    return frozenset(named - {"lineage.job_schedules_as_of"})
+
+
+_LAUNCHING_ROWS = """
+select s.job_id, j.entry_point
+  from lineage.job_schedules_as_of(current_date, current_date) s
+  join lineage.scheduled_jobs j on j.job_id = s.job_id
+ where s.launch_mode = 'launch'
+ order by s.job_id
+"""
+
+
+def double_run_rows(
+    connection: psycopg.Connection, timer_owned: frozenset[str]
+) -> tuple[str, ...]:
+    """Resolved `launch` rows whose entry point an installed timer already drives.
+
+    The permanent guard, and deliberately narrower than the v0.77 posture: the hazard is two
+    drivers, so a jurisdiction registered after the retirement has no timer to double-run
+    against and is not blocked by it.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(_LAUNCHING_ROWS)
+        return tuple(
+            job_id for job_id, entry_point in cursor.fetchall() if entry_point in timer_owned
+        )

@@ -8,7 +8,9 @@ the first time the file changes.
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -134,3 +136,272 @@ def test_a_service_with_no_timer_is_not_in_the_set_the_caller_builds() -> None:
     assert named.group(1).strip() == "glasswell-ingest.service"
     assert not (SYSTEMD / "glasswell-api.timer").exists()
     assert not (SYSTEMD / "glasswell-alert@.timer").exists()
+
+
+SCHEDULER_UNIT = SYSTEMD / "glasswell-scheduler.service"
+SCHEDULER_TIMER = SYSTEMD / "glasswell-scheduler.timer"
+STATUS_UNIT = SYSTEMD / "glasswell-status.service"
+CF_RANGES_UNIT = SYSTEMD / "glasswell-cf-ranges.service"
+INSTALL = ROOT / "infra" / "install.sh"
+VERIFY = ROOT / "infra" / "verify.sh"
+IDENT_MAP = ROOT / "infra" / "postgres" / "pg_ident.d" / "glasswell.conf"
+
+# `install -o root -g postgres` needs root, and none of that is what these tests are about.
+INSTALL_STUB = """#!/bin/bash
+dirmode=0
+files=()
+while (( $# )); do
+    case "$1" in
+        -d) dirmode=1 ;;
+        -o|-g|-m) shift ;;
+        -*) ;;
+        *) files+=("$1") ;;
+    esac
+    shift
+done
+if (( dirmode )); then mkdir -p "${files[@]}"; else cp "${files[0]}" "${files[1]}"; fi
+"""
+
+
+def service_block(text: str) -> list[str]:
+    body = text.split("[Service]", 1)[-1].split("[Install]", 1)[0]
+    return [line.strip() for line in body.splitlines() if line.strip() and not line.startswith("#")]
+
+
+def hardening(text: str) -> list[str]:
+    keys = ("NoNewPrivileges", "Protect", "Private", "Restrict", "Lock", "Capability",
+            "SystemCall", "Proc")
+    return [line for line in service_block(text) if line.startswith(keys)]
+
+
+def test_the_scheduler_unit_carries_the_status_units_hardening_minus_its_state_lines() -> None:
+    """N-17: not cf-ranges' block, which grants /etc/glasswell write and omits the caps drop."""
+    scheduler = hardening(SCHEDULER_UNIT.read_text())
+    status = hardening(STATUS_UNIT.read_text())
+
+    assert scheduler == status
+    assert len(scheduler) == 21, scheduler
+    assert "CapabilityBoundingSet=" in scheduler
+    body = service_block(SCHEDULER_UNIT.read_text())
+    assert not any(line.startswith("StateDirectory") for line in body)
+    assert not any(line.startswith("ReadWritePaths") for line in body)
+    # cf-ranges is the block rev 2 pointed at, and it is the wrong one twice over.
+    cf_ranges = hardening(CF_RANGES_UNIT.read_text())
+    assert "ReadWritePaths=/etc/glasswell" in service_block(CF_RANGES_UNIT.read_text())
+    assert "CapabilityBoundingSet=" not in cf_ranges
+
+
+def test_the_scheduler_unit_runs_as_root_and_reads_only_its_own_environment_file() -> None:
+    body = service_block(SCHEDULER_UNIT.read_text())
+
+    assert "User=root" in body
+    assert "EnvironmentFile=/etc/glasswell/scheduler.env" in body
+    assert not any(line.startswith("EnvironmentFile=/etc/glasswell/db.env") for line in body)
+    assert "TimeoutStartSec=6h" in body
+    assert not any("--dsn" in line for line in body)
+    assert "OnFailure=glasswell-alert@%n.service" in SCHEDULER_UNIT.read_text()
+
+
+def test_the_timer_names_its_unit_and_survives_a_missed_tick() -> None:
+    timer = SCHEDULER_TIMER.read_text()
+
+    assert "Unit=glasswell-scheduler.service" in timer
+    assert "OnCalendar=hourly" in timer
+    assert "RandomizedDelaySec=300" in timer
+    assert "Persistent=true" in timer
+
+
+def test_the_ident_map_keeps_every_existing_peer_identity() -> None:
+    """A map removes the implicit self-mapping, so the regex line is what stops a lockout."""
+    lines = [
+        line.split()
+        for line in IDENT_MAP.read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+
+    assert ["glasswell", "root", "glasswell_scheduler"] in lines
+    assert ["glasswell", "/^(.*)$", r"\1"] in lines
+    assert len(lines) == 2
+
+
+def test_install_places_both_units_generates_scheduler_env_and_ships_no_retired_unit() -> None:
+    install = INSTALL.read_text()
+
+    assert "glasswell-scheduler.service glasswell-scheduler.timer" in install
+    assert "--enable-scheduler" in install
+    assert "RETIRED_UNITS=()" in install, "the mechanism ships empty; v0.78 fills it"
+    assert "user=glasswell_scheduler" in install
+    assert "systemctl reload postgresql" in install
+    assert "pg_hba_file_rules where error is not null" in install
+    assert "pg_ident_file_mappings where error is not null" in install
+    assert "$ETC_DIR/db.env" not in install, "db.env has three readers and is not ours to write"
+
+
+def test_verify_pins_the_rules_through_the_catalogue_and_the_dropin_by_bytes() -> None:
+    """N-23: a text pin proves a rule is written; the catalogue proves it is in force."""
+    verify = VERIFY.read_text()
+
+    assert "pg_ident_file_mappings" in verify
+    assert "pg_hba_file_rules" in verify
+    assert "cmp -s" in verify
+    assert "--timer-owned" in verify
+    assert "--read-relations" in verify
+    assert "no role named root exists" in verify
+
+
+def extract(text: str, start: str, end: str) -> str:
+    assert start in text, f"anchor missing: {start!r}"
+    assert end in text, f"anchor missing: {end!r}"
+    return start + text.split(start, 1)[1].split(end, 1)[0]
+
+
+def run_fragment(tmp_path, fragment: str, preamble: str = "") -> subprocess.CompletedProcess:
+    stub = tmp_path / "bin"
+    stub.mkdir(exist_ok=True)
+    (stub / "systemctl").write_text(
+        '#!/bin/bash\nprintf "%s\\n" "$*" >> "$SYSTEMCTL_LOG"\nexit 0\n'
+    )
+    (stub / "systemctl").chmod(0o755)
+    # `install` needs root for -o/-g and psql needs a server; neither is what is under test.
+    (stub / "install").write_text(INSTALL_STUB)
+    (stub / "install").chmod(0o755)
+    (stub / "sudo").write_text('#!/bin/bash\nprintf "0\\n"\n')
+    (stub / "sudo").chmod(0o755)
+    script = tmp_path / "fragment.sh"
+    script.write_text(f"set -euo pipefail\n{preamble}\n{fragment}\n")
+    return subprocess.run(
+        ["/bin/bash", str(script)],
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "PATH": f"{stub}:{os.environ['PATH']}",
+            "SYSTEMCTL_LOG": str(tmp_path / "systemctl.log"),
+        },
+        check=False,
+    )
+
+
+def test_the_retired_unit_mechanism_disables_and_removes_a_planted_unit(tmp_path) -> None:
+    """It ships empty, so this is the only place it is ever exercised before v0.78 fills it."""
+    unit_dir = tmp_path / "units"
+    unit_dir.mkdir()
+    planted = unit_dir / "glasswell-planted.timer"
+    planted.write_text("[Unit]\nDescription=planted\n")
+    fragment = extract(INSTALL.read_text(), "RETIRED_UNITS=()", "\ndone\n") + "\ndone\n"
+    fragment = fragment.replace(
+        "RETIRED_UNITS=()", 'RETIRED_UNITS=(glasswell-planted.timer)', 1
+    )
+
+    result = run_fragment(tmp_path, fragment, preamble=f'UNIT_DIR={unit_dir}')
+
+    assert result.returncode == 0, result.stderr
+    assert not planted.exists()
+    assert "disable --now glasswell-planted.timer" in (tmp_path / "systemctl.log").read_text()
+    assert "retired glasswell-planted.timer" in result.stdout
+    assert "RETIRED_UNITS=()" in INSTALL.read_text(), "the shipped list stays empty"
+
+
+HBA_START = '    hba="$PG_ETC_DIR/pg_hba.conf"'
+HBA_END = "    install -d -o root -g root -m 0755 \"$PG_IDENT_DROPIN_DIR\""
+
+
+def run_hba_guard(tmp_path, hba_body: str) -> subprocess.CompletedProcess:
+    etc = tmp_path / "pg"
+    etc.mkdir(exist_ok=True)
+    (etc / "pg_hba.conf").write_text(hba_body)
+    (etc / "pg_ident.conf").write_text("# MAPNAME SYSTEM-USERNAME PG-USERNAME\n")
+    fragment = extract(INSTALL.read_text(), HBA_START, HBA_END)
+    return run_fragment(
+        tmp_path, fragment, preamble=f'PG_ETC_DIR={etc}\nPG_IDENT_MAP=glasswell'
+    )
+
+
+@pytest.mark.parametrize(
+    ("label", "body"),
+    [
+        ("absent", "local all postgres peer\nhost all all 127.0.0.1/32 scram-sha-256\n"),
+        ("duplicated", "local all all peer\nlocal all all peer\n"),
+        ("already mapped", "local all all peer map=someone_else\n"),
+    ],
+)
+def test_install_refuses_before_writing_when_the_target_hba_line_is_wrong(
+    tmp_path, label, body
+) -> None:
+    """N-22: refuse before writing. A guess about which rule to edit is a lockout."""
+    result = run_hba_guard(tmp_path, body)
+
+    assert result.returncode != 0, f"{label} was accepted: {result.stdout}"
+    assert result.stderr.strip(), f"{label} refused without saying why"
+
+
+def test_install_accepts_the_one_line_it_expects(tmp_path) -> None:
+    body = "local all postgres peer\nlocal all all peer\nlocal replication all peer\n"
+
+    result = run_hba_guard(tmp_path, body)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_install_accepts_a_line_it_has_already_mapped_itself(tmp_path) -> None:
+    """A second install.sh run is a no-op, which is what idempotent has to mean here."""
+    result = run_hba_guard(tmp_path, "local all all peer map=glasswell\n")
+
+    assert result.returncode == 0, result.stderr
+
+
+IDENT_END = "    printf 'placed the %s ident map and reloaded postgresql"
+
+
+def run_ident_placement(tmp_path, hba_body: str, run_twice: bool = False):
+    etc = tmp_path / "pg"
+    etc.mkdir(exist_ok=True)
+    (etc / "pg_hba.conf").write_text(hba_body)
+    (etc / "pg_ident.conf").write_text("# MAPNAME SYSTEM-USERNAME PG-USERNAME\n")
+    fragment = extract(INSTALL.read_text(), HBA_START, IDENT_END)
+    if run_twice:
+        fragment = f"{fragment}\n{fragment}"
+    result = run_fragment(
+        tmp_path,
+        fragment,
+        preamble=(
+            f"PG_ETC_DIR={etc}\n"
+            f"PG_IDENT_DROPIN_DIR={etc}/pg_ident.d\n"
+            "PG_IDENT_MAP=glasswell\n"
+            f"INFRA_DIR={ROOT / 'infra'}"
+        ),
+    )
+    return result, etc
+
+
+HOST_HBA = (
+    "local   all             postgres                                peer\n"
+    "local   all             all                                     peer\n"
+    "local   replication     all                                     peer\n"
+)
+
+
+def test_the_map_is_placed_once_and_a_second_run_changes_nothing(tmp_path) -> None:
+    """The raw sed is not idempotent, so the guard in front of it is what has to be."""
+    result, etc = run_ident_placement(tmp_path, HOST_HBA, run_twice=True)
+
+    assert result.returncode == 0, result.stderr
+    hba = (etc / "pg_hba.conf").read_text()
+    assert hba.count("map=glasswell") == 1, hba
+    assert "local   all             postgres                                peer\n" in hba
+    assert "local   replication     all                                     peer\n" in hba
+    ident = (etc / "pg_ident.conf").read_text()
+    assert ident.count("include_if_exists 'pg_ident.d/glasswell.conf'") == 1, ident
+    assert (etc / "pg_ident.d" / "glasswell.conf").exists()
+    assert "systemctl.log" in str(tmp_path / "systemctl.log")
+    assert "reload postgresql" in (tmp_path / "systemctl.log").read_text()
+
+
+def test_the_map_leaves_the_other_local_rules_untouched(tmp_path) -> None:
+    """A map on the wrong rule is a lockout, and the other two rules are how root and
+    replication get in."""
+    _result, etc = run_ident_placement(tmp_path, HOST_HBA)
+    mapped = [line for line in (etc / "pg_hba.conf").read_text().splitlines() if "map=" in line]
+
+    assert len(mapped) == 1
+    assert mapped[0].split()[:4] == ["local", "all", "all", "peer"]

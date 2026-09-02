@@ -238,8 +238,10 @@ second database that has to be kept in sync with the first.
 
 One VM. Parquet plus DuckDB for the analytical path, PostGIS for geometry, martin
 for tiles, and systemd timers for ingest, the NM C-115B snapshot, the nightly
-logical backup, the weekly restore drill, the lineage-retention sweep, and the
-sanitized operational Status snapshot. Alerting is contracted at C23 and has no
+logical backup, the weekly restore drill, the lineage-retention sweep, the
+sanitized operational Status snapshot, and the hourly cadence-driven scheduler,
+whose schedule is rows rather than unit lines and which observes what those
+timers do rather than replacing them yet. Alerting is contracted at C23 and has no
 deployed timer. No distributed infrastructure and no service that cannot be rebuilt
 from the raw zone by replaying recipes.
 

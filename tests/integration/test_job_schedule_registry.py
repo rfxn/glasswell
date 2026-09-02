@@ -12,6 +12,7 @@ import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 
 import psycopg
 import pytest
@@ -19,6 +20,8 @@ import pytest
 from glasswell.lineage import schedules as schedule_sql
 from glasswell.lineage.schedules import ScheduleRegistryError, load_schedules
 from glasswell.scheduler import plan as planner_sql
+from glasswell.scheduler.plan import double_run_rows
+from glasswell.scheduler.units import installed_timer_owned_entry_points
 from glasswell.seed import seed_all
 from glasswell.status import source_health
 
@@ -330,3 +333,72 @@ def test_a_maintenance_row_may_name_a_script_and_hold_no_uid_but_a_data_job_may_
         " values ('platform_probe', 'Probe', 'maintenance', '/usr/local/sbin/probe.sh',"
         "         'its own unit decides the uid')"
     )
+
+
+def test_the_double_run_guard_is_red_against_a_planted_launch_row(seeded) -> None:
+    """N-25's red fixture: a guard that has never been shown red is one nobody has proven.
+
+    The planted row names the neighbour index, which the shipped ingest unit drives through a
+    console script rather than a module path -- the one line a `-m <module>` parse misses, and
+    the heaviest concurrent-run hazard on the box.
+    """
+    root = Path(__file__).resolve().parents[2]
+    timer_owned = installed_timer_owned_entry_points(
+        root / "infra" / "systemd", root / "pyproject.toml"
+    )
+    assert "glasswell.marts.neighbors" in timer_owned
+
+    assert double_run_rows(seeded, timer_owned) == ()
+
+    # A second job over the same entry point rather than a restatement of the first: the
+    # two clocks make "a row that resolves today" a supersession of a row published today,
+    # and the guard is about the entry point, not about which row names it.
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.scheduled_jobs"
+            " (job_id, label, kind, entry_point, anchor_source_id, run_as, rationale)"
+            " values ('marts_neighbors_probe', 'Planted neighbour index', 'mart',"
+            "         'glasswell.marts.neighbors', 'fracfocus_csv', 'glasswell',"
+            "         'a planted row the guard must refuse')"
+        )
+        cursor.execute(
+            "insert into lineage.job_schedules"
+            " (job_id, effective_from, published_at, rule_id, trigger, launch_mode,"
+            "  cadence_interval, cadence_note, memory_max, timeout_seconds)"
+            " values ('marts_neighbors_probe', current_date, current_date,"
+            "         'cr_job_cadence_marts_neighbors_1', 'cadence', 'launch',"
+            "         interval '35 days', 'a planted launch row', '6G', 3600)"
+        )
+    seeded.commit()
+
+    assert double_run_rows(seeded, timer_owned) == ("marts_neighbors_probe",)
+
+
+def test_a_launch_row_for_a_job_no_timer_drives_is_admitted(seeded) -> None:
+    """The re-ruled invariant: a jurisdiction with no legacy timer is not blocked by it."""
+    root = Path(__file__).resolve().parents[2]
+    timer_owned = installed_timer_owned_entry_points(
+        root / "infra" / "systemd", root / "pyproject.toml"
+    )
+    assert "glasswell.marts.tx_wells" not in timer_owned
+
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.scheduled_jobs"
+            " (job_id, label, kind, entry_point, anchor_source_id, run_as, rationale)"
+            " values ('marts_tx_wells_probe', 'Planted Texas mart', 'mart',"
+            "         'glasswell.marts.tx_wells', 'tx_gis_wells_county', 'glasswell',"
+            "         'a state with no legacy timer may launch from the start')"
+        )
+        cursor.execute(
+            "insert into lineage.job_schedules"
+            " (job_id, effective_from, published_at, rule_id, trigger, launch_mode,"
+            "  cadence_interval, cadence_note, memory_max, timeout_seconds)"
+            " values ('marts_tx_wells_probe', current_date, current_date,"
+            "         'cr_job_cadence_marts_tx_wells_1', 'cadence', 'launch',"
+            "         interval '35 days', 'a state with no legacy timer may launch',"
+            "         '6G', 3600)"
+        )
+    seeded.commit()
+
+    assert double_run_rows(seeded, timer_owned) == ()

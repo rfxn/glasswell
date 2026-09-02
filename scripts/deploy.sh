@@ -177,6 +177,27 @@ remote "printf 'GLASSWELL_CODE_VERSION=%s\nGLASSWELL_LOCKFILE_SHA256=%s\n' '$cod
 printf '  GLASSWELL_CODE_VERSION=%s\n' "$code_version"
 printf '  GLASSWELL_LOCKFILE_SHA256=%s...\n' "${lock_here:0:12}"
 
+# install.sh places the Caddyfile only under --with-caddy, which a routine deploy never
+# passes, so a log-filter change shipped in the tree never reached the host and verify.sh
+# failed "caddy config equals the tree" until someone installed it by hand. Same shape as 5b.
+step "5d. caddy config from the tree"
+if remote "test -f /etc/caddy/Caddyfile"; then
+    if remote "cmp -s $DEPLOY_SRC/infra/caddy/Caddyfile /etc/caddy/Caddyfile"; then
+        printf '  /etc/caddy/Caddyfile already equals the tree\n'
+    else
+        remote "install -D -o root -g root -m 0644 $DEPLOY_SRC/infra/caddy/Caddyfile /etc/caddy/Caddyfile" \
+            || refuse "could not install /etc/caddy/Caddyfile"
+        # The reload validates with the unit's own environment, which is where CF_API_TOKEN
+        # lives. Validating outside it cannot read the token the tls block needs, and would
+        # refuse a config that is correct.
+        remote "systemctl reload caddy" || refuse "caddy did not reload the tree's config"
+        printf '  tree copy installed and caddy reloaded\n'
+    fi
+    remote "systemctl is-active --quiet caddy" || refuse "caddy is not active after the config step"
+else
+    printf '  no /etc/caddy/Caddyfile on the host — caddy is not installed here\n'
+fi
+
 code_env="GLASSWELL_CODE_VERSION=$code_version GLASSWELL_LOCKFILE_SHA256=$lock_here"
 head_query="sudo -u postgres psql -d glasswell -tAc \"select case when to_regclass('public.schema_migrations') is null then 0 else (select coalesce(max(version), 0) from public.schema_migrations) end\""
 integer_re='^[0-9]+$'
@@ -276,6 +297,13 @@ remote "systemctl start glasswell-lineage-retention.service" \
 if remote "systemctl is-enabled --quiet glasswell-restore-drill.timer"; then
     remote "systemctl start glasswell-restore-drill.timer" \
         || refuse "enabled restore-drill timer did not start"
+fi
+# The timer only, never the service, for the reason cf-ranges gives above: a tick reads the
+# whole registry and every source's poll evidence, and a deploy step must not wait on it.
+# While every seeded row observes there is nothing for it to launch either way.
+if remote "systemctl list-unit-files glasswell-scheduler.timer >/dev/null 2>&1"; then
+    remote "systemctl start glasswell-scheduler.timer" \
+        || refuse "glasswell-scheduler timer did not start"
 fi
 remote "systemctl start glasswell-status.service" \
     || refuse "glasswell-status did not produce a fresh snapshot"

@@ -14,7 +14,13 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from glasswell.lineage.schedules import ScheduleRegistryError, load_schedules
-from glasswell.scheduler.plan import PlanEntry, hour_of, plan_tick
+from glasswell.scheduler.plan import (
+    PlanEntry,
+    double_run_rows,
+    hour_of,
+    plan_tick,
+    read_relations,
+)
 from glasswell.scheduler.runner import (
     Runner,
     SystemctlControl,
@@ -24,6 +30,7 @@ from glasswell.scheduler.runner import (
     reconcile,
     take_session_lock,
 )
+from glasswell.scheduler.units import installed_timer_owned_entry_points
 
 DSN_ENV = "GLASSWELL_DSN"
 FALLBACK_DSN_ENV = "DATABASE_URL"
@@ -134,7 +141,32 @@ def main(argv: Sequence[str] | None = None, control: SystemdControl | None = Non
     parser.add_argument("--force", action="store_true", help="bypass the due test and enabled")
     parser.add_argument("--wait-for-lock", type=float, default=0.0, metavar="SECONDS")
     parser.add_argument("--dry-run", action="store_true", help="compute the plan, write nothing")
+    # Two read-only introspections the deploy gate joins its assertions to, so the gate
+    # derives them from the code that runs rather than keeping a second copy in shell.
+    parser.add_argument(
+        "--timer-owned",
+        action="store_true",
+        help="print the entry points an installed timer already drives, one per line",
+    )
+    parser.add_argument(
+        "--read-relations",
+        action="store_true",
+        help="print the lineage relations the tick reads, one per line",
+    )
+    parser.add_argument(
+        "--double-run-check",
+        action="store_true",
+        help="refuse if a launch row names an entry point an installed timer already drives",
+    )
     arguments = parser.parse_args(argv)
+    if arguments.timer_owned:
+        for entry_point in sorted(installed_timer_owned_entry_points()):
+            print(entry_point)
+        return 0
+    if arguments.read_relations:
+        for relation in sorted(read_relations()):
+            print(relation)
+        return 0
     control = control or SystemctlControl()
     now = datetime.now(UTC)
 
@@ -148,6 +180,12 @@ def main(argv: Sequence[str] | None = None, control: SystemdControl | None = Non
         except ScheduleRegistryError as refusal:
             print(str(refusal))
             return 1
+
+        if arguments.double_run_check:
+            offending = double_run_rows(connection, installed_timer_owned_entry_points())
+            for job_id in offending:
+                print(job_id)
+            return 1 if offending else 0
 
         if arguments.run is not None:
             entries, code = run_one(

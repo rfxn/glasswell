@@ -10,7 +10,9 @@ assertion tracks the shipped unit rather than a copy of it.
 from __future__ import annotations
 
 import re
+import tomllib
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 
 VENV_PYTHON = "/opt/glasswell/venv/bin/python"
 # No password reaches the process table: the same socket DSN the pipeline units carry today.
@@ -112,3 +114,39 @@ def timer_owned_entry_points(
                 if re.search(rf"(?:^|[\s'\"])/\S*/bin/{re.escape(name)}(?:\s|$|['\"])", value):
                     owned.add(target.split(":", 1)[0])
     return frozenset(owned)
+
+
+UNIT_DIR = Path("/etc/systemd/system")
+PYPROJECT = Path("/opt/glasswell/src/pyproject.toml")
+
+
+def console_scripts(pyproject: Path = PYPROJECT) -> dict[str, str]:
+    with pyproject.open("rb") as handle:
+        return dict(tomllib.load(handle)["project"].get("scripts", {}))
+
+
+def timer_driven_services(unit_dir: Path = UNIT_DIR) -> tuple[Path, ...]:
+    """Installed `glasswell-*.timer` files resolved to the service each one triggers.
+
+    Timer to `Unit=` to service, rather than every installed `glasswell-*.service`: the API
+    and the alert template have no timer at all, so their commands are not timer-owned and
+    including them would refuse a schedule row for a reason that is not true.
+    """
+    services: list[Path] = []
+    for timer in sorted(unit_dir.glob("glasswell-*.timer")):
+        named = re.search(r"^Unit=(.+)$", timer.read_text(), re.MULTILINE)
+        service = named.group(1).strip() if named else f"{timer.stem}.service"
+        candidate = unit_dir / service
+        if candidate.exists():
+            services.append(candidate)
+    return tuple(services)
+
+
+def installed_timer_owned_entry_points(
+    unit_dir: Path = UNIT_DIR, pyproject: Path = PYPROJECT
+) -> frozenset[str]:
+    """What an installed timer already drives on this host, for the double-run guard."""
+    return timer_owned_entry_points(
+        [service.read_text() for service in timer_driven_services(unit_dir)],
+        console_scripts(pyproject),
+    )
