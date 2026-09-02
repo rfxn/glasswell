@@ -440,8 +440,10 @@ button.gw-wells-by-value[aria-pressed="true"] {
 
   /* The picker keeps its own line under 520: it is the tallest control on the bar and the one
      a reader has to see all of, and sharing a row with `Wells by` left it two rows deep beside
-     a single-line select. */
-  .gw-wells-by-line .gw-wells-by-pair:last-child {
+     a single-line select. Named rather than positional -- `:last-child` worked only because the
+     scope pair happens to be appended last, and a control added to this line would have taken
+     the row from it silently. */
+  .gw-wells-by-line .gw-wells-by-pair:has(.gw-wells-by-state) {
     flex: 1 1 100%;
   }
 }

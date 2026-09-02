@@ -261,6 +261,17 @@ def test_a_rule_row_needs_a_registration_at_its_own_triple(
     """
     db = seeded_without_the_registry_rules
     unregistered = REGISTERED_ON + timedelta(days=1)
+    # The premise, asserted rather than assumed. Deriving the date is not enough on its own:
+    # arithmetic on a repointable constant can land on a triple something else registered, and
+    # both sibling branches plant a restatement one clock away from this one. A guard that
+    # cannot see its own precondition is a guard that goes quiet without saying so.
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select count(*) from lineage.jurisdictions"
+            " where jurisdiction_code = 'ND' and effective_from = %s and published_at = %s",
+            (unregistered, unregistered),
+        )
+        assert cursor.fetchone()[0] == 0, "the triple this plants at is registered after all"
     with db.cursor() as cursor, pytest.raises(psycopg.errors.ForeignKeyViolation):
         cursor.execute(
             "insert into lineage.jurisdiction_rules (jurisdiction_code, effective_from,"

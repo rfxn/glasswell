@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_JURISDICTION, JURISDICTION_LIST } from "../../map/jurisdictions.generated.ts";
 import {
+  ABSENCE_LABEL,
   DEFAULTS_FOR_TEST,
   DIMENSIONS,
   WELLS_BY_PREFIX,
@@ -1142,5 +1143,18 @@ describe("the scope is a set of jurisdictions, not one", () => {
     expect(filterCommits).toEqual([
       { operator: ["PIONEER NATURAL RESOURCES USA INC"], state: ["33,42"] },
     ]);
+  });
+});
+
+describe("what the panel copies from the server", () => {
+  it("calls the absence bucket what facets.py calls it", async () => {
+    // The by-rule block says its wells are counted "rather than in <label>", so the two have to
+    // be the same string. Parsed for the reason DIMENSIONS is parsed: a second copy would agree
+    // with itself while the API disagreed.
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync("../src/glasswell/api/routers/facets.py", "utf8");
+    const declared = /^ABSENCE_LABEL = "([^"]+)"$/m.exec(source);
+
+    expect(declared?.[1]).toBe(ABSENCE_LABEL);
   });
 });

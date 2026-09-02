@@ -131,8 +131,13 @@ export interface WellsByOptions {
   scopeNote?: string | ((data: WellFacets) => string);
 }
 
-/** What the server calls the bucket for wells with no value; `facets.py` ABSENCE_LABEL. */
-const ABSENCE_LABEL = "not reported";
+/**
+ * What the server calls the bucket for wells with no value. A copy, because the by-rule prose
+ * has to name it in the same words the block above it is labelled with, and pinned to
+ * `facets.py`'s own ABSENCE_LABEL by wells-by.test.ts so the day the server renames the bucket
+ * this sentence cannot go on quoting the old name.
+ */
+export const ABSENCE_LABEL = "not reported";
 
 /** The collection's own refusal: a dimension /v1/wells accepts no filter for. */
 const COLLECTION_UNFILTERABLE =
@@ -388,7 +393,7 @@ function search(
     : "the whole scope, not this page";
   input.setAttribute(
     "aria-label",
-    "Search every value in the state, not only the ones listed below",
+    "Search every value in the scope, not only the ones listed below",
   );
 
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -492,7 +497,9 @@ function scope(
   element.className = "gw-wells-by-select gw-wells-by-state";
   element.multiple = true;
   element.size = Math.min(offered.length, 5);
-  element.setAttribute("aria-label", "state");
+  // Not the bare word `state` the single dropdown carried: a screen-reader user has no other
+  // signal that this control takes several, and the scope is a set now.
+  element.setAttribute("aria-label", "Jurisdictions to count over, one or more");
   const picked = new Set(asked === ALL_JURISDICTIONS ? [ALL_JURISDICTIONS] : asked.split(","));
   for (const option of offered) {
     const node = document.createElement("option");
