@@ -12,7 +12,7 @@ numbering; its §10 governs when that changes.
 
 ## Where it stands
 
-56 tagged releases, v0.20 through v0.75, cut from 2026-08-21 through 2026-09-01, run
+56 tagged releases, v0.20 through v0.75, cut from 2026-08-21 through 2026-09-02, run
 a **four-state** deployment on one VM (`git tag | grep -c '^v'`): North Dakota end to end,
 Texas and Montana on the map, and New Mexico's headers, surface geometry and Tier 1
 production resident. The concise evidence ledger is [`STATUS.md`](STATUS.md), which owns
@@ -148,7 +148,7 @@ rebuilt once the registry lands.
 
 | Horizon | Releases | Theme | Contents |
 |---------|----------|-------|----------|
-| **H1** | v0.74–v0.76 | Truth, retained work, foundations | v0.74 **shipped** — NM read-time status resolution, the Map→Explore crossing, and Basins and Plays drawn as real layer rows; v0.75 the N2 re-land and glossary coverage on the three densest surfaces; v0.76 the jurisdiction registry and an owner-only Accounts surface — **merged on `release/v0.76` as of 2026-09-01, neither tagged nor deployed**: migration 073 registers the four jurisdictions with their two clocks and serves them at `GET /v1/jurisdictions`, migration 074 carries the session client label behind `GET`/`DELETE /v1/sessions`, and the per-state dicts the elevation names are rows |
+| **H1** | v0.74–v0.76 | Truth, retained work, foundations | v0.74 **shipped** — NM read-time status resolution, the Map→Explore crossing, and Basins and Plays drawn as real layer rows; v0.75 the N2 re-land and glossary coverage on the three densest surfaces; v0.76 the jurisdiction registry and an owner-only Accounts surface — **merged on `release/v0.76` as of 2026-09-02, neither tagged nor deployed**: migration 073 registers the four jurisdictions with their two clocks and serves them at `GET /v1/jurisdictions`, migration 074 carries the session client label behind `GET`/`DELETE /v1/sessions`, and the per-state dicts the elevation names are rows |
 | **H2** | v0.77–v0.80 | Prove the seam, fill the biggest hole | v0.77 state #5 lands as a registration · Colorado through the registry, one parameterised wells mart replacing the four per-state copies, the martin catalogue asserted against `TILE_LAYERS` in CI, the neighbour envelope and length-source defaults widened by rule, the glossary page cap removed, and the cadence-driven scheduler (C26) so NM and MT are scheduled; v0.78 Texas lease production, allocation v0 and both validators — P7b, the largest resident state finally carrying numbers; v0.79 status truth for N states: the legend and status vocabulary served from `/v1/jurisdictions`, `canonical.status_resolution` generalised past one jurisdiction, a jurisdiction row and regulator deep-link on the flyout, hover and provenance notes that name the well's own regulator; v0.80 glossary full coverage with an em-dash lint, Explore usable at 390 px (a media arm below 520 px), DOM-count budgets in PERF.md for the layer panel, legend and Status table |
 | **H3** | v0.81+ | The blueprint phases, on a registry | P3 modeling (quantile models, calibration, registry writer), P4 economics, P5 agents; Canada as a jurisdiction with a UWI identity scheme rather than a special case; PA/OH/WV as the first non-PLSS land question. The `/v1/wells` spine query is rewritten ahead of P3 modeling, not after |
 

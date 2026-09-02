@@ -1,8 +1,9 @@
 # Current status
 
-Reconciled on **2026-09-01** against the v0.75 release line, the checked-in OpenAPI
-snapshot, current `main` history and a read-only census of the deployed database. Every figure
-below is dated and names its source; one is carried forward from the previous revision and says
+Reconciled on **2026-09-02** against the v0.75 release line, the checked-in OpenAPI
+snapshot, current `main` history and a read-only census of the deployed database. Dates are
+UTC, the serving clock `lineage/clock.py` defines; v0.75 was cut 2026-09-01 20:33 -0500, which
+is 2026-09-02. Every figure below is dated and names its source; one is carried forward from the previous revision and says
 so on the line. [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria;
 [`blueprint.md`](blueprint.md) is the committed v0.5 contract and
 [`blueprint-v0.6-draft.md`](blueprint-v0.6-draft.md) the rc6 amendment set.
@@ -10,7 +11,7 @@ so on the line. [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria;
 ## Deployed
 
 - **Release line:** 56 tagged releases, v0.20 through v0.75, cut 2026-08-21 through
-  2026-09-01.
+  2026-09-02.
 
 Measured on the deployed database (VM 111) and host, read-only, 2026-09-02.
 
@@ -40,7 +41,7 @@ than a phase; ROADMAP's N3 owns its exit criteria.
 ## Serving surface
 
 **54 operations across 49 paths, 53 under `/v1`**, counted from `tests/contract/openapi_snapshot.json`
-on 2026-09-01 — the three added on `release/v0.76` are `GET /v1/jurisdictions` and `GET`/`DELETE` on
+on 2026-09-02 — the three added on `release/v0.76` are `GET /v1/jurisdictions` and `GET`/`DELETE` on
 the session list. Covered: health, operational status, wells and their facets, ND production, per-well
 cumulatives, vintage cohorts, completion context and promoted completion design, ND physical
 neighbours, formations, the jurisdiction registry, lineage, manifests, derivations, vintages,
@@ -99,7 +100,7 @@ Each item names the release that carries it in [`ROADMAP.md`](ROADMAP.md) "Horiz
 **Landed in v0.74:** NM read-time status resolution; the Map→Explore crossing; Basins and Plays as
 real Geology-group layer rows. **Landed in v0.75:** the N2 re-land · per-well cumulatives, vintage
 cohorts and promoted completion design · and glossary coverage on the legend, layers and Status.
-**Merged on `release/v0.76`, neither tagged nor deployed as of 2026-09-01:** the jurisdiction registry
+**Merged on `release/v0.76`, neither tagged nor deployed as of 2026-09-02:** the jurisdiction registry
 (migration 073, `/v1/jurisdictions`, the per-state dicts now rows) and the Accounts surface with the
 session list (migration 074); the two items this list carried for v0.76 close when that train ships.
 
