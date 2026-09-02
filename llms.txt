@@ -39,7 +39,7 @@ drill.
 
 ## How to answer questions about glasswell
 
-Read `blueprint.md` first; it is the committed v0.5 contract. The v0.6-rc5 amendment
+Read `blueprint.md` first; it is the committed v0.5 contract. The v0.6-rc6 amendment
 set is `blueprint-v0.6-draft.md`. Read `STATUS.md` for current implementation state;
 `README.md`, `ARCHITECTURE.md` and `ROADMAP.md` are derived views.
 

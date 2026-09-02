@@ -16,7 +16,7 @@ web/src/test/               export-ignore
 web/src/test/**             export-ignore
 web/src/**/*.test.ts        export-ignore
 
-# Internal sub-blueprints: SB-01..07 are the contracts the build specs against and
+# Internal sub-blueprints: SB-01..08 are the contracts the build specs against and
 # they are committed; they are not release-archive content. The v0.6 blueprint is
 # release-gated the same way — blueprint.md is the shipped contract until the §11
 # [D] review closes and v0.6 goes final

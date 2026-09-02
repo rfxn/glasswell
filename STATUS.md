@@ -5,7 +5,7 @@ snapshot, current `main` history and a read-only census of the deployed database
 below is dated and names its source; one is carried forward from the previous revision and says
 so on the line. [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria;
 [`blueprint.md`](blueprint.md) is the committed v0.5 contract and
-[`blueprint-v0.6-draft.md`](blueprint-v0.6-draft.md) the rc5 amendment set.
+[`blueprint-v0.6-draft.md`](blueprint-v0.6-draft.md) the rc6 amendment set.
 
 ## Deployed
 
