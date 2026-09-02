@@ -18,8 +18,9 @@ from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.jurisdictions import clear_jurisdiction_cache
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts.counts import TOTAL_STATUS_KEY, refresh_jurisdiction_counts
+from glasswell.seed.jurisdictions import CODES
 from glasswell.status.collector import EMPTY_ARM, _inventory
-from glasswell.status_resolution import UNMAPPED_CLASS
+from glasswell.status_resolution import UNMAPPED_CLASS, served_status_vocabulary
 from tests.contract.conftest import TX_API10
 from tests.support.fakes import FixedClock
 from tests.support.jurisdictions import restate
@@ -196,6 +197,31 @@ def test_a_well_whose_source_filed_no_status_is_counted_in_a_class_of_its_own(
             if owner == code and key != TOTAL_STATUS_KEY
         ]
         assert sum(classes) == measurement[(code, TOTAL_STATUS_KEY)][0], code
+
+
+def test_a_class_no_well_carries_is_measured_at_zero_rather_than_left_out(
+    seeded: psycopg.Connection,
+) -> None:
+    """"None of these here" is a measurement; "nobody has counted" is not, and only the writer
+    can tell the client which it is. `group by` yields no group for a class nothing carries, so
+    the zero has to be emitted rather than left to be inferred from an absence -- which is the
+    same mistake, one layer up, as the null bucket that was dropped on the way out."""
+    measured = date(2026, 8, 29)
+
+    counted(seeded, measured)
+
+    measurement = ledger(seeded, measured)
+    vocabulary = set(served_status_vocabulary(seeded)) | {UNMAPPED_CLASS}
+    assert len(vocabulary) > 5, vocabulary
+    for code in CODES:
+        classes = {
+            key for (owner, key), _ in measurement.items() if owner == code
+        } - {TOTAL_STATUS_KEY}
+        assert classes == vocabulary, code
+    # The fixture's North Dakota holds active and plugged wells and nothing else.
+    assert measurement[("ND", "active")][0] > 0
+    assert measurement[("ND", "drilling")][0] == 0
+    assert measurement[("ND", UNMAPPED_CLASS)][0] == 0
 
 
 def test_a_class_the_day_does_not_hold_lands_on_it_without_rewriting_what_does(

@@ -646,12 +646,14 @@ export function createLegend(options: LegendOptions): LegendHandle {
   }
 
   setVocabulary(STATUS_VOCAB_RULES.map((rule) => ({ rule, href: null })));
-  // What the legend may list used to be four undated count maps compiled into the bundle.
-  // It is a served measurement now: a class the registry has measured at zero everywhere has
-  // never been drawn, so listing it would promise a colour the canvas cannot produce. The
-  // census only arrives, though — what it means for a row is renderRows's, so a later
-  // viewport cannot leave a stale `hidden` behind and no row is hidden by a census that
-  // never came.
+  // What the legend may list used to be four undated count maps compiled into the bundle. It
+  // is a served measurement now, and the writer measures every registered class rather than
+  // only the ones it finds, so a zero here is a jurisdiction that was counted and holds none —
+  // a class at zero everywhere has never been drawn, and listing it would promise a colour the
+  // canvas cannot produce. A class the census does not carry was not measured (a ledger day
+  // written before that writer, which is every day before v0.77) and keeps its row. The census
+  // only arrives here; what it means for a row is renderRows's, so no stale `hidden` survives
+  // a viewport and no row is hidden by a census that never came.
   void loadCensus().then(render);
   syncTitle();
   render();

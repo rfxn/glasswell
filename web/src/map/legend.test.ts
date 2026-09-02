@@ -89,10 +89,11 @@ describe("the legend", () => {
   });
 
   it("keeps a class the census does not carry, because absent is unmeasured and not zero", async () => {
-    // The census /v1/jurisdictions served over Texas: classes measured, and the absence class
-    // not among them because the ledger had no row for it. Read as a measured zero it hid the
-    // row 56,423 wells in view were drawn in — with its filter switch inside it, so a reader
-    // could neither learn what the slate meant nor turn it off (v0.76 D1).
+    // The census /v1/jurisdictions served over Texas, and still serves from any ledger day
+    // written before the count writer began measuring every class: the rows are the classes
+    // the data happened to hold, and the absence class is not among them. Read as a measured
+    // zero it hid the row 56,423 wells in view were drawn in — with its filter switch inside
+    // it, so a reader could neither learn what the slate meant nor turn it off (v0.76 D1).
     resetCensus(
       censusOf([
         {
@@ -117,15 +118,17 @@ describe("the legend", () => {
   });
 
   it("hides only a class the census measured at zero, which is one never drawn anywhere", async () => {
+    // The shape the writer emits: every registered class, at whatever the jurisdiction holds
+    // of it, the absence class included and zeroes written rather than left out. A zero here
+    // is a class that was looked for and found empty, which is why it is the one that hides.
     resetCensus(
       censusOf([
         {
           well_count: { value: "100" },
           measured_on: "2026-09-02",
-          well_counts_by_status: STATUS_CLASSES.map((status) => ({
-            status_canonical: status.id,
-            wells: { value: status.id === "dry" ? "0" : "10" },
-          })),
+          well_counts_by_status: [...STATUS_CLASSES.map((status) => status.id), "unmapped"].map(
+            (id) => ({ status_canonical: id, wells: { value: id === "dry" ? "0" : "10" } }),
+          ),
         },
       ]),
     );

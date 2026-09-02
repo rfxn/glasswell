@@ -17,6 +17,7 @@ from __future__ import annotations
 from datetime import date
 
 import psycopg
+from psycopg import sql
 
 from glasswell.lineage.jurisdictions import load_jurisdictions
 
@@ -48,6 +49,60 @@ select j.identity_prefix, r.rule_id
    and c.spec->>'resolved_at' = %(read_time)s
  order by j.identity_prefix
 """
+
+
+# Every registered vocabulary names the table its classes live in and the column they live
+# under, in the rule's own spec (`vocab_map`). The canonical class list is therefore registry
+# data rather than a roster: a fifth jurisdiction's classes join the vocabulary through its
+# rule row, and a class renamed in one map is renamed here without an edit. This is the same
+# list the client's closed eleven come from -- each of `web/src/map/status.ts`'s classes cites
+# one of these rules -- so the two cannot drift apart silently.
+_VOCABULARY_SOURCES = """
+select distinct c.spec->>'mapping_table' as mapping_table,
+                c.spec->>'value_col'     as value_col
+  from lineage.jurisdictions_as_of(%(knowledge_as_of)s, %(valid_as_of)s) j
+  join lineage.jurisdiction_rules r
+    on r.jurisdiction_code = j.jurisdiction_code
+   and r.effective_from = j.effective_from
+   and r.published_at = j.published_at
+   and r.decision = 'status_vocabulary'
+   and r.serving
+  join lineage.conformance_rules c on c.rule_id = r.rule_id
+ where c.spec->>'mapping_table' is not null
+   and c.spec->>'value_col' is not null
+ order by 1, 2
+"""
+
+
+def served_status_vocabulary(
+    connection: psycopg.Connection, as_of: date | None = None
+) -> list[str]:
+    """Every canonical class the registered status vocabularies name, in one sorted list.
+
+    The absence class is not in it: no mapping produces `unmapped`, which is what makes it the
+    absence class. A caller measuring classes wants both and adds it.
+    """
+    registry = load_jurisdictions(connection, as_of)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            _VOCABULARY_SOURCES,
+            {
+                "knowledge_as_of": registry.knowledge_as_of,
+                "valid_as_of": registry.valid_as_of,
+            },
+        )
+        sources = cursor.fetchall()
+    classes: set[str] = set()
+    with connection.cursor() as cursor:
+        for table, column in sources:
+            # Identifiers, so a registered table name cannot be a parameter and cannot be
+            # concatenated: the rule spec is data, and data does not compose SQL here.
+            cursor.execute(
+                sql.SQL("select distinct {column} from {table} where {column} is not null")
+                .format(column=sql.Identifier(column), table=sql.Identifier("lineage", table))
+            )
+            classes.update(str(value) for (value,) in cursor.fetchall())
+    return sorted(classes)
 
 
 def resolver_rules(

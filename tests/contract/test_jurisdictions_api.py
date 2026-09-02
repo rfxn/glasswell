@@ -149,9 +149,14 @@ def test_a_measured_count_is_a_figure_with_a_handle_and_a_date(client: TestClien
     assert row["well_count"]["unit"] == "wells"
     assert row["well_count"]["d"].endswith("#jurisdiction=ND")
     by_status = {item["status_canonical"]: item for item in row["well_counts_by_status"]}
-    assert set(by_status) == {"active", "plugged"}
+    # Every registered class, at whatever this jurisdiction holds of it: a class no well
+    # carries is measured at zero rather than left out, because absent and zero are different
+    # facts and the client hides only one of them.
+    assert set(by_status) > {"active", "plugged", "drilling", UNMAPPED_CLASS}
     assert by_status["active"]["wells"]["value"] == str(ND_MEASURED["active"])
     assert by_status["active"]["wells"]["d"].endswith("#jurisdiction=ND&status=active")
+    assert by_status["drilling"]["wells"]["value"] == "0"
+    assert by_status["drilling"]["wells"]["d"].endswith("#jurisdiction=ND&status=drilling")
 
 
 def test_every_jurisdictions_classes_sum_to_the_total_they_are_served_beside(
@@ -217,9 +222,25 @@ def test_explain_resolves_a_count_to_the_manifest_the_file_arrived_in(
     assert chain["terminals"], chain
     assert all(terminal.startswith("man_") for terminal in chain["terminals"])
     assert chain["truncated"] is False
-    assert not [
-        item for item in envelope["meta"]["warnings"] if item["code"].startswith("explain_")
-    ]
+
+    # A figure per class per jurisdiction is more handles than `_explain` inlines -- SB-07
+    # §9.4's cap of 20, not this operation's -- so the response says so rather than dropping
+    # them quietly, and a handle it left out still resolves. That is what makes the cap a cap
+    # and not a hole.
+    assert [
+        item["code"] for item in envelope["meta"]["warnings"] if item["code"].startswith("explain_")
+    ] == ["explain_inline_truncated"]
+    left_out = next(
+        item["wells"]["d"]
+        for jurisdiction in envelope["data"]
+        for item in jurisdiction["well_counts_by_status"]
+        if item["wells"]["d"] not in inlined
+    )
+    resolved = client.get("/v1/explain", params={"h": left_out, "depth": "full"})
+    assert resolved.status_code == 200, resolved.text
+    walked = resolved.json()["data"]["chains"][0]
+    assert walked["handle"] == left_out
+    assert all(terminal.startswith("man_") for terminal in walked["terminals"]), walked
 
 
 def test_the_level_filter_narrows_to_the_registrations_at_that_level(

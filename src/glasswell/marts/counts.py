@@ -30,6 +30,7 @@ from glasswell.status_resolution import (
     resolved_status,
     resolver_join,
     resolver_rules,
+    served_status_vocabulary,
 )
 
 TOTAL_STATUS_KEY = "*total*"
@@ -108,32 +109,43 @@ def refresh_jurisdiction_counts(
     measured = measured_on or utc_today()
 
     read_time = resolver_rules(connection)
+    # The registered vocabulary, crossed with every jurisdiction below. `group by` yields no
+    # group for a class nothing carries, so without this a class with no wells is absent from
+    # the ledger and indistinguishable from one nobody has counted -- and the client cannot
+    # tell "none here" from "not measured" if the writer does not say which.
+    vocabulary = [*served_status_vocabulary(connection), UNMAPPED_CLASS]
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(_COUNTS, {"prefixes": prefixes})
         counted = [dict(row) for row in cursor.fetchall()]
 
     appended: list[dict[str, object]] = []
     for row in registered:
-        classes = [item for item in counted if item["state_code"] == row.identity_prefix]
+        # The null bucket is the absence class the canvas already paints and the legend already
+        # keys on, not a gap between the total and the rows served beside it.
+        classes = {
+            str(item["status_canonical"] or UNMAPPED_CLASS): int(item["well_count"])
+            for item in counted
+            if item["state_code"] == row.identity_prefix
+        }
         # The total is the sum of the classes rather than a second `count(*)`: two queries are
         # two chances for the parts not to add up to the whole a reader is shown beside them.
         appended.append(
             {
                 "jurisdiction_code": row.jurisdiction_code,
                 "status_canonical": None,
-                "well_count": sum(int(item["well_count"]) for item in classes),
+                "well_count": sum(classes.values()),
             }
         )
-        # Every bucket, the null one included: it is the absence class the canvas already
-        # paints and the legend already keys on, not a gap between the total and the rows
-        # served beside it. Dropping it here is what made those two disagree.
+        # The vocabulary's classes at whatever this jurisdiction holds of them, zero included,
+        # plus any class the data holds that no vocabulary names -- a bucket is never dropped
+        # for being unexpected, which is the whole of what went wrong here.
         appended += [
             {
                 "jurisdiction_code": row.jurisdiction_code,
-                "status_canonical": item["status_canonical"] or UNMAPPED_CLASS,
-                "well_count": int(item["well_count"]),
+                "status_canonical": status,
+                "well_count": classes.get(status, 0),
             }
-            for item in classes
+            for status in sorted({*vocabulary, *classes})
         ]
 
     with derive(
@@ -154,6 +166,9 @@ def refresh_jurisdiction_counts(
             # The class a null status is counted under, so the run names the decision rather
             # than leaving a reader to infer it from a word in the rows.
             "null_status_class": UNMAPPED_CLASS,
+            # Which classes were measured, so a zero row resolves to a run that says it looked
+            # for that class rather than to one that happened not to find it.
+            "measured_classes": sorted(vocabulary),
         },
         inputs=_canonical_inputs(connection),
         # The rules that decided the class every count is grouped by: each jurisdiction's
