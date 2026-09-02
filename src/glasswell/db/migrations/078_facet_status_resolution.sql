@@ -175,7 +175,7 @@ begin
         -- lineage.jurisdiction_rules row, and neither glasswell_api nor glasswell_pipeline may
         -- append one -- only the owner, through a migration or the seed, both reviewed. The day
         -- a migration grants either role insert there, this becomes an arbitrary-`lineage`-read
-        -- served as a status class. tests/integration/test_migration_075_*.py holds both halves:
+        -- served as a status class. tests/integration/test_migration_078_*.py holds both halves:
         -- one test copies conformance_rules through this loop to show the shape, the other
         -- asserts no non-owner role holds the grant that would reach it.
         execute format(
