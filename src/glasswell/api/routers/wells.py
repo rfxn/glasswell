@@ -114,6 +114,11 @@ LENGTH_NOT_SERVED = "not_served"
 # distinction matters on the wire because a withheld figure names the rule that withheld it and
 # this one has none to name.
 LENGTH_SCOPE_UNREGISTERED = "length_scope_unregistered"
+# `neighbors_available` is the registration: this jurisdiction has laterals to offer. The
+# neighbour mart's *measured domain* is a second decision, and a registration outside it is
+# excluded from the mart -- so the card is told why rather than shown an empty frame.
+NEIGHBORS_SCOPE = "neighbors_scope"
+NEIGHBORS_NOT_COVERED = "neighbors_domain_not_covered"
 
 # The cohort key is an identifier for a group, not a measurement about it. Byte-equal to the
 # non_figure_allowlist.yml entry that covers /cohorts/*/cohort_year (test_not_a_figure.py).
@@ -505,13 +510,29 @@ class WellDetail(WellSummary):
     )
     geometry: list[Geometry] = Field(description="Geometry rows held for this well.")
     surface_point: SurfacePoint | None = Field(description="Surface hole location, if recorded.")
+    neighbors_reason: str | None = Field(
+        description="Why no neighbour context is offered, where the jurisdiction registers"
+        " laterals but the neighbour mart's measured domain does not reach it. Null where"
+        " neighbours are served and where none were ever registered."
+    )
 
 
-def _neighbours_available(registry: JurisdictionRegistry, state_code: str | None) -> bool:
-    """Whether the neighbour mart holds subjects for this jurisdiction: a registry column,
-    so a fifth state that registers it gets the link without an edit here."""
+def _neighbours(
+    registry: JurisdictionRegistry, state_code: str | None
+) -> tuple[bool, str | None, str | None]:
+    """Whether the neighbour mart holds subjects here, and the rule or the reason.
+
+    Two registrations, not one. `neighbors_available` says the jurisdiction has laterals to
+    offer; a serving `neighbors_scope` rule says the mart's measured envelope and zone set
+    reach it. The second missing is a reason the reader gets, not a blank frame.
+    """
     row = registry.at_prefix(state_code)
-    return row is not None and row.neighbors_available
+    if row is None or not row.neighbors_available:
+        return False, None, None
+    rule = row.rule(NEIGHBORS_SCOPE)
+    if rule is None:
+        return False, None, NEIGHBORS_NOT_COVERED
+    return True, rule, None
 
 
 def _summary(row: dict[str, Any], registry: JurisdictionRegistry) -> dict[str, Any]:
@@ -2038,6 +2059,9 @@ def get_well(
     storage_epsg = crs[0]["storage_epsg"] if crs else STORAGE_EPSG
     status_vocabulary_rule = registry.rule_for(row["state_code"], STATUS_VOCABULARY)
     length_scope_rule = registry.rule_for(row["state_code"], LENGTH_SCOPE)
+    neighbours_served, neighbours_rule, neighbours_reason = _neighbours(
+        registry, row["state_code"]
+    )
     # The basin's own rule, so a TX length's handle resolves to a rule about TX geometry. Not
     # resolved at all where a rule withholds the length: the resolver's no-basin default is
     # North Dakota's, and reading it would put that rule id on the response either way.
@@ -2201,6 +2225,7 @@ def get_well(
             for item in geometry
         ],
         "surface_point": {"lon": point["lon"], "lat": point["lat"]} if point else None,
+        "neighbors_reason": neighbours_reason,
     }
     return enveloped(
         request,
@@ -2221,7 +2246,14 @@ def get_well(
             "formations": "/v1/formations",
             **(
                 {"neighbors": f"/v1/wells/{api10}/neighbors"}
-                if _neighbours_available(registry, row["state_code"]) and laterals
+                if neighbours_served and laterals
+                else {}
+            ),
+            # The decision behind the section, reachable from the response rather than only
+            # implied by the link's absence.
+            **(
+                {"neighbors_rule": f"/v1/conformance/{neighbours_rule}"}
+                if neighbours_rule
                 else {}
             ),
             "production": f"/v1/wells/{api10}/production",

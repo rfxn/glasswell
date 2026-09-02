@@ -43,6 +43,7 @@ export const wellEnvelope = {
       "value": "15065.44"
     },
     "length_method": "geodesic",
+    "neighbors_reason": null,
     "links": {
       "production": "/v1/wells/3305310451/production",
       "self": "/v1/wells/3305310451"

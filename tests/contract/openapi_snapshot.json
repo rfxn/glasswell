@@ -242,7 +242,7 @@
             "type": "boolean"
           },
           "neighbors": {
-            "description": "Whether the neighbour mart holds subjects here.",
+            "description": "Whether the neighbour mart holds subjects here: registered as having laterals, and inside the domain the mart's geometry was measured over.",
             "title": "Neighbors",
             "type": "boolean"
           }
@@ -8528,6 +8528,18 @@
             "title": "Ndic File No",
             "x-glasswell-not-a-figure": "The NDIC file number is the regulator's identifier for the well."
           },
+          "neighbors_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why no neighbour context is offered, where the jurisdiction registers laterals but the neighbour mart's measured domain does not reach it. Null where neighbours are served and where none were ever registered.",
+            "title": "Neighbors Reason"
+          },
           "operator_name_reported": {
             "anyOf": [
               {
@@ -8700,7 +8712,8 @@
           "total_depth_ft",
           "completion_date",
           "geometry",
-          "surface_point"
+          "surface_point",
+          "neighbors_reason"
         ],
         "title": "WellDetail",
         "type": "object"
