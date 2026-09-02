@@ -28,7 +28,7 @@ export function glossaryTruncated(): boolean {
  * `/v1/glossary/index` is uncapped, so the highlighter never had this ceiling.
  *
  * Its own module, and not for tidiness: `main.ts` is the entry chunk and the entry chunk has
- * 70 bytes of headroom, so a fetch path that runs exactly once per boot is imported when it is
+ * 50 bytes of headroom, so a fetch path that runs exactly once per boot is imported when it is
  * needed rather than paid for in every reader's first paint.
  */
 export async function loadGlossary(): Promise<void> {

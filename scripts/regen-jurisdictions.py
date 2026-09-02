@@ -106,21 +106,36 @@ def _optional(value: object) -> str:
     return "null" if value is None else f'"{value}"'
 
 
-def _wells_layer_id(registration: dict[str, object]) -> str:
-    """Refused rather than rendered: `wells_tile_layer_id` is nullable, and an f-string turned
-    an explicit None into the literal string "None", which became a provenance source reading
-    `marts.None_tile` and a style layer that 404s every tile it asks for."""
-    layer = registration.get("wells_tile_layer_id")
-    if layer is None:
+# Every column this file interpolates bare and the DDL leaves nullable. An f-string renders an
+# explicit None as the four characters `None`, so a null here becomes a tile source reading
+# `marts.None_tile`, a style layer id and click-router key of "None", or `None` as the sentence
+# under a Wells row -- all silent, all valid TypeScript. The other presentation columns raise on
+# their own (`_string_array` and `int` both refuse a None), so these are the three that need it.
+INTERPOLATED_NULLABLE = ("wells_tile_layer_id", "wells_layer_id", "wells_subtitle_template")
+
+
+def _required(registration: dict[str, object], column: str) -> str:
+    value = registration.get(column)
+    if value is None:
         code = registration["jurisdiction_code"]
         raise SystemExit(
-            f"{code} registers no wells_tile_layer_id; a registration with no tile layer"
-            " cannot be rendered as a wells row"
+            f"{code} registers no {column}; a registration missing it cannot be rendered as a"
+            " wells row, and rendering the null would put the four characters that spell it"
+            " into a layer id, a tile source or a subtitle"
         )
-    return str(layer)
+    return str(value)
+
+
+def _checked(registration: dict[str, object]) -> dict[str, object]:
+    """Refuse first, render second. One place, so the module and the roster cannot disagree
+    about which registrations are renderable."""
+    for column in INTERPOLATED_NULLABLE:
+        _required(registration, column)
+    return registration
 
 
 def _row(registration: dict[str, object]) -> str:
+    _checked(registration)
     code = str(registration["jurisdiction_code"])
     rules = "".join(
         f'      {decision if decision.isidentifier() else f'"{decision}"'}: "{rule_id}",\n'
@@ -132,7 +147,7 @@ def _row(registration: dict[str, object]) -> str:
         f'    name: "{registration["name"]}",\n'
         f'    prefix: "{registration["identity_prefix"]}",\n'
         f'    colour: "{registration["map_colour"]}",\n'
-        f'    wellsTileLayerId: "{_wells_layer_id(registration)}",\n'
+        f'    wellsTileLayerId: "{_required(registration, "wells_tile_layer_id")}",\n'
         f"    explorerDefault: {'true' if registration['explorer_default'] else 'false'},\n"
         f'    wellsLayerId: "{registration["wells_layer_id"]}",\n'
         f"    wellsStyleLayerIds: {_string_array(registration['wells_style_layer_ids'])},\n"
@@ -158,13 +173,16 @@ def roster() -> str:
     rows = [
         {
             "code": str(row["jurisdiction_code"]),
-            "id": str(row["wells_layer_id"]),
-            "tileLayerId": _wells_layer_id(row),
+            "id": _required(row, "wells_layer_id"),
+            "tileLayerId": _required(row, "wells_tile_layer_id"),
             "styleLayers": list(row["wells_style_layer_ids"]),  # type: ignore[arg-type]
             "drawOrder": row["wells_draw_order"],
             "defaultOn": bool(row["wells_default_on"]),
         }
-        for row in sorted(JURISDICTIONS, key=lambda row: int(row["wells_draw_order"]))
+        for row in sorted(
+            (_checked(row) for row in JURISDICTIONS),
+            key=lambda row: int(row["wells_draw_order"]),  # type: ignore[arg-type]
+        )
     ]
     return json.dumps(rows, indent=2) + "\n"
 

@@ -85,6 +85,7 @@
               id="gw-help-btn"
               type="button"
               class="gw-icon-btn"
+              aria-label="Help"
               aria-expanded="false"
               aria-controls="gw-help-panel"
             >
@@ -95,7 +96,12 @@
               </svg>
               <span class="gw-ctl-lbl">Help</span>
             </button>
-            <button id="gw-logout-btn" type="button" class="gw-icon-btn" hidden>
+            <!-- The name is an attribute, not the label span alone: the compact rail hides
+                 that span with display:none below 901 px, which takes it out of the
+                 accessibility tree and leaves the runtime title -- the session, not the
+                 action -- to be announced as this button's name. Same words as the span,
+                 which header.test.ts holds equal (WCAG 2.5.3). -->
+            <button id="gw-logout-btn" type="button" class="gw-icon-btn" aria-label="Sign out" hidden>
               <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
                 <path d="M12.4 5.2V3.6H4.2v12.8h8.2v-1.6" />
                 <path d="M8.6 10h8.2M14.2 7.4 16.8 10l-2.6 2.6" />

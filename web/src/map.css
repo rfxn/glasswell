@@ -391,6 +391,12 @@
   opacity: 0.45;
 }
 
+/* Listed, switchable, and carrying no measurement from the registry census: the class recedes
+   rather than disappearing, because a row taken off the key takes its filter switch with it. */
+.gw-lg-row[data-unmeasured] .gw-lg-label {
+  color: var(--muted);
+}
+
 /* U+2191, not U+2912: no declared unicode-range covers U+2912, so it never reached a shipped
    face and drew from the reader's system font or from tofu. The row's title says the rest. */
 .gw-lg-row[data-out-of-scale] .gw-lg-count::after {

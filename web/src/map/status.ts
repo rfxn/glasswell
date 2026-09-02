@@ -233,7 +233,9 @@ export function statusMinZoom(id: string | null | undefined): number {
 }
 
 export function statusProperty(): Expr {
-  return lower(coalesce(get("status_canonical"), "unmapped"));
+  // The constant, not the word again: the ledger writes this class name too now, and a third
+  // spelling in the file that declares it is one the parity gate cannot see move.
+  return lower(coalesce(get("status_canonical"), UNMAPPED_STATUS.id));
 }
 
 export function statusColourExpression(): Expr {

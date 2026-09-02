@@ -385,7 +385,7 @@ async function boot(): Promise<void> {
 
   try {
     // Imported here rather than at module scope: the fetch runs once per boot and the
-    // entry chunk is measured against a budget with 70 bytes in it.
+    // entry chunk is measured against a budget with 50 bytes in it.
     const { loadGlossary } = await import("./glossary/load.ts");
     await loadGlossary();
     highlight(document.querySelector("#gw-help-panel") ?? document.body, termIndex());

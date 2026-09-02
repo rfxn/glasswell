@@ -60,6 +60,9 @@ export function mountThemeToggle(button: HTMLElement): void {
     button.title = COPY[theme].title;
     const label = button.querySelector(".gw-ctl-lbl");
     if (label) label.textContent = COPY[theme].label;
+    // Set with the label rather than once at mount: the compact rail hides that span below
+    // 901 px, and a name frozen at the initial state would announce the wrong destination.
+    button.setAttribute("aria-label", COPY[theme].label);
   }
 
   // The markup ships it hidden so the flag-off build never paints a control it then removes.

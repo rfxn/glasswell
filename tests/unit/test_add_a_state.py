@@ -48,6 +48,13 @@ ALTERNATION_GROUP = re.compile(r"\((?:\d{2}\|)+\d{2}\)")
 # the alternation arm, and the project already knows that shape exists because 045 carries it.
 PREFIXED_API10 = re.compile(r"\d{2}(?:\[0-9\]|\\d)\{\d")
 CODES_LITERAL = re.compile(r"""['"]([A-Z]{2})['"]""")
+# Not scanned, and deliberately: a jurisdiction also appears lowercase inside a conformance
+# rule id (`cr_tx_status_vocab_1`), and two STATUS_CLASSES rows cite one by family for the
+# reason `rule_for_family` exists -- a supersession changes the id and must not be missed, and
+# New Mexico's is already `_2`. Every row in that list already carries a `rule:` field citing a
+# conformance rule, so citing a family is the R8-approved form rather than a way past this
+# gate. Recorded here so the shape is a decision a reader can find, not one the scan walks
+# past in silence (gate-seam N-1).
 API10_LITERAL = re.compile(r"\b(\d{2})[0-9]{8}\b")
 PREFIX_PATTERN = re.compile(r"~ '\^(\d\d)")
 TS_COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)

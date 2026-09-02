@@ -1394,7 +1394,7 @@ MT_RULES: tuple[dict[str, object], ...] = (
         "rule_kind": "code_ref",
         "applies_to_fields": ["state_code"],
         "spec": {
-            "module_function": "glasswell.marts.neighbors:refresh",
+            "module_function": "glasswell.marts.neighbors:refresh_neighbors",
             "contract_note": (
                 "the neighbour mart's measured domain covers this jurisdiction; a registration"
                 " without this row is excluded from the subject set and told why, rather than"

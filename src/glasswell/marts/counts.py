@@ -20,13 +20,19 @@ from psycopg.rows import dict_row
 
 from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import resolve_environment
-from glasswell.lineage import PostgresRecorder, lineage_session
-from glasswell.lineage.capture import derive
+from glasswell.lineage.capture import derive, lineage_session
 from glasswell.lineage.clock import utc_today
 from glasswell.lineage.jurisdictions import load_jurisdictions
 from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.serialization import hash_payload
-from glasswell.status_resolution import resolved_status, resolver_join, resolver_rules
+from glasswell.lineage.store import PostgresRecorder
+from glasswell.status_resolution import (
+    UNMAPPED_CLASS,
+    resolved_status,
+    resolver_join,
+    resolver_rules,
+    served_status_vocabulary,
+)
 
 TOTAL_STATUS_KEY = "*total*"
 
@@ -93,6 +99,13 @@ def refresh_jurisdiction_counts(
     no number served (R-3). It exists for a re-measure after one jurisdiction's backfill.
     """
     registry = load_jurisdictions(connection)
+    if codes is not None:
+        # A code nobody registered narrows the refresh to nothing, and a run that measured
+        # nothing reports success: the owner runs this by hand on a production host, one
+        # command after a deploy, and `--codes ND,TZ` must not answer "done".
+        unknown = set(codes) - {row.jurisdiction_code for row in registry}
+        if unknown:
+            raise ValueError(f"not a registered jurisdiction: {', '.join(sorted(unknown))}")
     registered = [
         row
         for row in registry
@@ -104,30 +117,43 @@ def refresh_jurisdiction_counts(
     measured = measured_on or utc_today()
 
     read_time = resolver_rules(connection)
+    # The registered vocabulary, crossed with every jurisdiction below. `group by` yields no
+    # group for a class nothing carries, so without this a class with no wells is absent from
+    # the ledger and indistinguishable from one nobody has counted -- and the client cannot
+    # tell "none here" from "not measured" if the writer does not say which.
+    vocabulary = [*served_status_vocabulary(connection), UNMAPPED_CLASS]
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(_COUNTS, {"prefixes": prefixes})
         counted = [dict(row) for row in cursor.fetchall()]
 
     appended: list[dict[str, object]] = []
     for row in registered:
-        classes = [item for item in counted if item["state_code"] == row.identity_prefix]
+        # The null bucket is the absence class the canvas already paints and the legend already
+        # keys on, not a gap between the total and the rows served beside it.
+        classes = {
+            str(item["status_canonical"] or UNMAPPED_CLASS): int(item["well_count"])
+            for item in counted
+            if item["state_code"] == row.identity_prefix
+        }
         # The total is the sum of the classes rather than a second `count(*)`: two queries are
         # two chances for the parts not to add up to the whole a reader is shown beside them.
         appended.append(
             {
                 "jurisdiction_code": row.jurisdiction_code,
                 "status_canonical": None,
-                "well_count": sum(int(item["well_count"]) for item in classes),
+                "well_count": sum(classes.values()),
             }
         )
+        # The vocabulary's classes at whatever this jurisdiction holds of them, zero included,
+        # plus any class the data holds that no vocabulary names -- a bucket is never dropped
+        # for being unexpected, which is the whole of what went wrong here.
         appended += [
             {
                 "jurisdiction_code": row.jurisdiction_code,
-                "status_canonical": item["status_canonical"],
-                "well_count": int(item["well_count"]),
+                "status_canonical": status,
+                "well_count": classes.get(status, 0),
             }
-            for item in classes
-            if item["status_canonical"] is not None
+            for status in sorted({*vocabulary, *classes})
         ]
 
     with derive(
@@ -145,6 +171,12 @@ def refresh_jurisdiction_counts(
             # A count whose class came from a join has to name the rule that made the join.
             "read_time_resolution": read_time,
             "total_policy": "sum_of_measured_classes",
+            # The class a null status is counted under, so the run names the decision rather
+            # than leaving a reader to infer it from a word in the rows.
+            "null_status_class": UNMAPPED_CLASS,
+            # Which classes were measured, so a zero row resolves to a run that says it looked
+            # for that class rather than to one that happened not to find it.
+            "measured_classes": sorted(vocabulary),
         },
         inputs=_canonical_inputs(connection),
         # The rules that decided the class every count is grouped by: each jurisdiction's
@@ -191,18 +223,20 @@ def refresh_jurisdiction_counts(
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Measure the jurisdiction well-count ledger and append today's counts."
+        description="Append today's jurisdiction well-count measurement to the ledger."
     )
     add_dsn_argument(parser)
     parser.add_argument(
         "--codes",
         default=None,
-        help="comma-separated jurisdiction codes; the default measures every registered one",
+        help="comma-separated jurisdiction codes; the default measures every registration",
     )
     parser.add_argument("--env-id", default=None, help="override the fingerprinted env id")
     parser.add_argument("--code-version", default=None)
     arguments = parser.parse_args(argv)
     arguments.dsn = resolve_dsn(arguments.dsn)
+    # No --measured-on. The ledger's date is the day the measurement was taken, and a flag that
+    # moved it is the one edit an append-only ledger cannot survive.
     codes = (
         tuple(code.strip() for code in arguments.codes.split(",") if code.strip())
         if arguments.codes
@@ -213,10 +247,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         environment = resolve_environment(
             connection, env_id=arguments.env_id, code_version=arguments.code_version
         )
-        with lineage_session(recorder=PostgresRecorder(connection), environment=environment):
-            refresh = refresh_jurisdiction_counts(connection, codes=codes)
+        try:
+            with lineage_session(
+                recorder=PostgresRecorder(connection), environment=environment
+            ):
+                refresh = refresh_jurisdiction_counts(connection, codes=codes)
+        except ValueError as unregistered:
+            parser.error(str(unregistered))
         connection.commit()
-        print(json.dumps(refresh.as_dict(), sort_keys=True))
+    print(json.dumps(refresh.as_dict(), sort_keys=True))
     return 0
 
 

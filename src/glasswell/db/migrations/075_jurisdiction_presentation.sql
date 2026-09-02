@@ -57,6 +57,11 @@ comment on column lineage.jurisdictions.wells_draw_order is
     'A real per-row integer, not a rank over the family: disposal-wells sits at 41, between'
     ' North Dakota at 40 and Texas at 42.';
 
+comment on column lineage.jurisdictions.wells_default_on is
+    'Whether this jurisdiction''s wells draw at first paint. A registration rather than a'
+    ' client preference: what a reader sees before they touch anything is a claim about which'
+    ' data this build stands behind, and it is answered where the rest of the registration is.';
+
 comment on column lineage.jurisdictions.wells_snapshot_key is
     'Which measured coverage snapshot the row cites, by key. Null where none is published.'
     ' A key rather than a value: the number and the refresh it was read from live in one'

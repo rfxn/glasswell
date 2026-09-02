@@ -24,7 +24,11 @@ EVIDENCE_COMMIT = "6f2e9e6e97952000985568e6aa04d479ec84fe83"
 # registration on that instant and the partial unique indexes would refuse them.
 RESTATED_ON = date(2026, 9, 4)
 RESTATED_EVIDENCE_TAG = "UNRELEASED"
-RESTATED_EVIDENCE_COMMIT = "0" * 40
+# Spelled out rather than computed: release.py scans this file for the quoted placeholder, and
+# an expression that evaluates to it is invisible to that scan, so the tag alone would have
+# blocked and a half-repoint would have cleared the gate with a placeholder bound for an
+# append-only table.
+RESTATED_EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
 
 # The web Wells rows as registration data. Seven facts that lived as object literals in
 # `web/src/map/registry.ts`, so a fifth jurisdiction is a row rather than a hand edit.

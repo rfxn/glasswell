@@ -182,26 +182,41 @@ capture() {
         PYTHONPATH="$root/src" "$PY" -m "$module" --dsn "$DSN" \
             --code-version gw-mart-address-probe --env-id env_probe > "$WORK/$label-$code.json"
     done
+    # The branch's own tree for the read-back: the profiles name the projections, and the
+    # baseline checkout has no such declaration to ask.
     PYTHONPATH="$BRANCH_ROOT/src" "$PY" - "$DSN" "$WORK" "$label" "$out" <<'READBACK'
 import json
 import sys
 
 import psycopg
 
+from glasswell.marts.wells import MART_PROFILES
+
 dsn, work, label, out = sys.argv[1:5]
-tables = {"ND": "nd_wells_tile", "TX": "tx_wells_tile", "NM": "nm_wells_tile",
-          "MT": "mt_wells_tile"}
+# Every projection each profile publishes, not just the wells one. Reading back a single table
+# left ND's laterals and survey traces, TX's laterals and MT's paths visible only as a row
+# count, and a row count cannot see a reordered or renamed column -- which is difference #13,
+# the one `md5(p::text)` makes load-bearing. `set_output_hash` does span them, but it is only
+# consulted when an id repeats, so a run where the address moved for an unrelated reason would
+# have left the secondary projections unchecked in the very run that needed it most.
+tables = {
+    profile.jurisdiction_code: [p.table for p in profile.projections]
+    for profile in MART_PROFILES
+}
 capture = {}
 with psycopg.connect(dsn) as connection, connection.cursor() as cursor:
-    for code, table in tables.items():
+    for code, projections in tables.items():
         report = json.loads(open(f"{work}/{label}-{code}.json", encoding="utf-8").read())
         # The digest is NOT in the address (capture.py) and is not in to_dict() either, so a
         # refactor that preserved the id and reordered a published column would pass a
-        # to_dict() diff. It is read back from the mart itself.
-        cursor.execute(
-            f"select md5(string_agg(t::text, '' order by api10)) from marts.{table} t"
-        )
-        capture[code] = {**report, "tile_digest": cursor.fetchone()[0]}
+        # to_dict() diff. It is read back from the marts themselves.
+        digests = {}
+        for table in projections:
+            cursor.execute(
+                f"select md5(string_agg(t::text, '' order by api10)) from marts.{table} t"
+            )
+            digests[table] = cursor.fetchone()[0]
+        capture[code] = {**report, "tile_digests": digests}
 print(json.dumps(capture, indent=2, sort_keys=True), file=open(out, "w", encoding="utf-8"))
 READBACK
 }
