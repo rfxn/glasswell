@@ -171,9 +171,15 @@ FENCE = re.compile(r"^```[a-z]*\n(.*?)^```", re.MULTILINE | re.DOTALL)
 # read as part of it rather than as its own line.
 CONTINUED = re.compile(r"\\\n\s*")
 RUNS_GLASSWELL = re.compile(r"(glasswell/venv/bin/|\$VENV/bin/|-m\s+glasswell\.)")
+# An explicit DSN variable, and nothing else. The earlier form accepted any file under
+# /etc/glasswell/, which let `code-version.env` -- two code-identity variables and no
+# database -- stand in as a DSN source.
 NAMES_A_DSN = re.compile(
-    r"--property=EnvironmentFile=-?/etc/glasswell/\S+|--setenv=(GLASSWELL_DSN|DATABASE_URL)="
+    r"--setenv=(GLASSWELL_DSN|DATABASE_URL)=|--property=Environment=GLASSWELL_DSN="
 )
+# db.env carries GLASSWELL_DB_PASSWORD and a DATABASE_URL over loopback TCP, and DR-B5 records
+# that install.sh does not create it. N-3 chose the password-free socket DSN over it by name.
+PASSWORD_FILE = re.compile(r"EnvironmentFile=-?/etc/glasswell/db\.env")
 
 
 def fenced_commands(text: str) -> list[str]:
@@ -212,6 +218,33 @@ def test_every_systemd_run_of_a_glasswell_command_names_where_its_dsn_comes_from
                 silent.append(f"{path.name}: {command.strip()[:90]}")
 
     assert silent == []
+
+
+def test_no_systemd_run_block_authenticates_with_the_password_file() -> None:
+    """N-3: peer auth is preserved, not traded away. Every one of these drops to a uid the
+    socket already authenticates, and db.env is a file install.sh has never created."""
+    offenders = [
+        f"{path.name}: {command.strip()[:90]}"
+        for path in sorted(DOCS.glob("*.md"))
+        for command in fenced_commands(path.read_text(encoding="utf-8"))
+        if "systemd-run" in command and PASSWORD_FILE.search(command)
+    ]
+
+    assert offenders == []
+
+
+def test_a_code_identity_file_is_not_accepted_as_a_database(tmp_path) -> None:
+    """H-19: the gate going forward, not a block in the tree today."""
+    block = (
+        "sudo systemd-run --unit=probe --property=User=glasswell "
+        "--property=EnvironmentFile=-/etc/glasswell/code-version.env "
+        "/opt/glasswell/venv/bin/python -m glasswell.ingest.nm_ocd --stage-only"
+    )
+
+    assert NAMES_A_DSN.search(block) is None
+    assert NAMES_A_DSN.search(
+        block + " --property=Environment=GLASSWELL_DSN=postgresql:///glasswell"
+    )
 
 
 def test_the_systemd_run_walk_reaches_the_blocks_it_is_meant_to_judge() -> None:

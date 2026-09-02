@@ -375,7 +375,7 @@ register.
 ```bash
 sudo systemd-run --unit=t3-nm-t2-stage --collect \
   --property=User=glasswell --property=Group=glasswell \
-  --property=EnvironmentFile=/etc/glasswell/db.env \
+  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
   --property=TimeoutStartSec=3600 --property=MemoryMax=6G \
   --property=EnvironmentFile=-/etc/glasswell/code-version.env \
   --setenv=GLASSWELL_STAGING_ROOT=/data/staging \
@@ -432,7 +432,7 @@ stop and investigate rather than waiting.
 ```bash
 sudo systemd-run --unit=t3-nm-t2-headers --collect \
   --property=User=glasswell --property=Group=glasswell \
-  --property=EnvironmentFile=/etc/glasswell/db.env \
+  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
   --property=TimeoutStartSec=3600 --property=MemoryMax=6G \
   --property=EnvironmentFile=-/etc/glasswell/code-version.env \
   /opt/glasswell/venv/bin/glasswell-nm-wells
@@ -547,7 +547,7 @@ still avoidable, and avoiding it costs nothing.
 ```bash
 sudo systemd-run --unit=t3-nm-t2-tiles --collect \
   --property=User=glasswell --property=Group=glasswell \
-  --property=EnvironmentFile=/etc/glasswell/db.env \
+  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
   --property=TimeoutStartSec=1800 --property=MemoryMax=4G \
   --property=EnvironmentFile=-/etc/glasswell/code-version.env \
   /opt/glasswell/venv/bin/glasswell-nm-tiles
