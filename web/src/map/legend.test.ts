@@ -11,7 +11,7 @@ import {
   restoreCapabilitySet,
   writeCapabilitySet,
 } from "./persist.ts";
-import { censusOf, measuredWellCount, resetCensus } from "./census.ts";
+import { censusOf, loadCensus, measuredWellCount, resetCensus } from "./census.ts";
 import { STATUS_CLASSES, filterableStatusIds, statusIds } from "./status.ts";
 
 const rows = (root: HTMLElement): HTMLElement[] => [...root.querySelectorAll<HTMLElement>(".gw-lg-row")];
@@ -86,6 +86,70 @@ describe("the legend", () => {
     expect(listed).not.toContain("producing");
     for (const id of listed) expect(measuredWellCount(id!)).toBeGreaterThan(0);
     resetCensus();
+  });
+
+  it("keeps a class the census does not carry, because absent is unmeasured and not zero", async () => {
+    // The census /v1/jurisdictions served over Texas: classes measured, and the absence class
+    // not among them because the ledger had no row for it. Read as a measured zero it hid the
+    // row 56,423 wells in view were drawn in — with its filter switch inside it, so a reader
+    // could neither learn what the slate meant nor turn it off (v0.76 D1).
+    resetCensus(
+      censusOf([
+        {
+          well_count: { value: "100" },
+          measured_on: "2026-09-02",
+          well_counts_by_status: [{ status_canonical: "active", wells: { value: "100" } }],
+        },
+      ]),
+    );
+    const legend = createLegend({ onFilter: () => {} });
+    await loadCensus();
+    legend.setCounts({ active: 100, unmapped: 56_423 }, 12);
+
+    const row = rowFor(legend.element, "unmapped")!;
+    expect(measuredWellCount("unmapped")).toBeNull();
+    expect(shown(row)).toBe(true);
+    expect(row.querySelector<HTMLInputElement>("input")!.disabled).toBe(false);
+    expect(countFor(legend.element, "unmapped")).toBe("56,423");
+    // The row says the registry has measured nothing here, rather than saying zero by hiding.
+    expect(row.getAttribute("data-unmeasured")).toBe("true");
+    resetCensus();
+  });
+
+  it("hides only a class the census measured at zero, which is one never drawn anywhere", async () => {
+    resetCensus(
+      censusOf([
+        {
+          well_count: { value: "100" },
+          measured_on: "2026-09-02",
+          well_counts_by_status: STATUS_CLASSES.map((status) => ({
+            status_canonical: status.id,
+            wells: { value: status.id === "dry" ? "0" : "10" },
+          })),
+        },
+      ]),
+    );
+    const legend = createLegend({ onFilter: () => {} });
+    await loadCensus();
+
+    expect(shown(rowFor(legend.element, "dry")!)).toBe(false);
+    expect(shown(rowFor(legend.element, "active")!)).toBe(true);
+    expect(rowFor(legend.element, "active")!.getAttribute("data-unmeasured")).toBe(null);
+    resetCensus();
+  });
+
+  it("marks no row unmeasured while the census is still unknown, which is not the same fact", async () => {
+    // A slow or refused /v1/jurisdictions must not paint every class as unmeasured: unknown
+    // and measured-at-nothing are different, and only one of them is true here.
+    resetCensus();
+    const legend = createLegend({ onFilter: () => {} });
+    await loadCensus();
+    legend.setCounts({ active: 10 }, 12);
+
+    for (const row of rows(legend.element)) {
+      expect(shown(row), row.dataset["status"]).toBe(true);
+      expect(row.getAttribute("data-unmeasured"), row.dataset["status"]).toBe(null);
+    }
   });
 
   it("reports the filtered set back when a row is toggled", () => {

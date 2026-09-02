@@ -92,14 +92,22 @@ export function census(): JurisdictionCensus {
   return resident;
 }
 
-/** Wells measured in one canonical class, or null while the census is unknown. */
+/**
+ * Wells measured in one canonical class. Null where nothing has measured it: while the census
+ * is unknown, and for a class the census carries no row for. A `?? 0` here read the second as
+ * "the registry measured none of these", which is a claim the registry never made — and it
+ * hid the class 68,186 Texas wells are in (v0.76 D1).
+ */
 export function measuredWellCount(id: string): number | null {
   if (resident.total === null) return null;
-  return resident.byStatus[id] ?? 0;
+  return resident.byStatus[id] ?? null;
 }
 
 /** Test seam: the module holds one session's answer, and a suite runs many sessions. */
 export function resetCensus(next: JurisdictionCensus = EMPTY_CENSUS): void {
-  pending = null;
+  // A seeded census is a settled one, so `loadCensus()` resolves to it rather than reaching
+  // for a fetch. Without this the pass that reads the census and the census itself could not
+  // be exercised in one test, which is how both stayed green over the defect between them.
+  pending = Promise.resolve(next);
   resident = next;
 }
