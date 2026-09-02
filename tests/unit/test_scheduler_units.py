@@ -53,7 +53,7 @@ def test_the_rendered_argv_carries_every_hardening_directive_the_retired_unit_ca
     shipped = hardening_directives(INGEST_UNIT.read_text())
 
     assert len(shipped) == 14, shipped
-    assert TRANSIENT_HARDENING == shipped
+    assert shipped == TRANSIENT_HARDENING
     argv = rendered()
     for directive in shipped:
         assert f"--property={directive}" in argv

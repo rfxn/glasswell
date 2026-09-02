@@ -168,7 +168,8 @@ def test_registering_a_job_at_a_one_minute_cadence_runs_it_and_writes_no_unit_fi
     assert recorded[0]["launched_by"] == "manual"
     duration = recorded[0]["completed_at"] - recorded[0]["started_at"]
     assert duration > timedelta(0)
-    assert control.argv and "--property=User=glasswell" in control.argv[0]
+    assert control.argv != []
+    assert "--property=User=glasswell" in control.argv[0]
     assert not any(token.startswith("--dsn") for token in control.argv[0])
 
 
