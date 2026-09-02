@@ -155,6 +155,16 @@ later. Migrations are opt-in (`--with-migrations`, or `MIGRATIONS=1` through the
 the tile-function reinstall stays a hand step because it is conditional on
 `src/glasswell/marts/tiles.py` having moved.
 
+**Before `MIGRATIONS=1`, read the migrations the train carries.** Migrations run at step 6
+against a live API — the restart is later — so a migration that rebuilds an index on a served
+table holds an exclusive lock on it until the transaction commits, and every new read queues
+behind the waiting request. Any such migration should carry `set local lock_timeout` so a busy
+spine refuses the deploy instead of stalling it; check that it does, and **do not deploy inside
+the 02:00 backup window**, where the in-VM `pg_dump` holds a read lock on every table for its
+whole run. A refused migrate is a retry. The alternative — run that file alone, out of band,
+with `create index concurrently` outside a transaction, then record the version by hand — is
+written at the head of the migration that needs it.
+
 ## 7. Cadence
 
 A merge train is a release. Fold the train, cut the notch, deploy the tag. Six trains landing

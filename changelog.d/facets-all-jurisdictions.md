@@ -28,4 +28,7 @@
          `canonical.status_resolution` is backed by a relation keyed on (state, reported
          code) rather than a view; the status facet over a set of states goes from an index
          scan with a heap visit per row to an index-only scan with a keyed resolver lookup,
-         measured at 809,191 rows as 32,598 buffers and 1,285 ms against 12,484 and 818 ms
+         measured at 809,191 rows as 32,598 buffers and 1,285 ms against 12,484 and 818 ms.
+         The index is rebuilt in place, so deploying this train holds a brief exclusive lock
+         on the well spine at migrate time; the migration bounds it at five seconds and
+         RELEASING.md says not to deploy inside the backup window
