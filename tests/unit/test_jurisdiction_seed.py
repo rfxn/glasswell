@@ -48,8 +48,11 @@ def test_the_migration_and_the_mirror_agree_about_being_repointed() -> None:
     release gate refuses one; this says so without waiting for a tag."""
     migration = MIGRATION.read_text(encoding="utf-8")
 
-    assert (f"'{EVIDENCE_TAG}'" in migration) == (EVIDENCE_TAG == "UNRELEASED")
-    assert (f"'{EVIDENCE_COMMIT}'" in migration) == (EVIDENCE_COMMIT == "0" * 40)
+    # Both literals, in both files, whatever state the repoint is in: the earlier form
+    # asserted they were present only while UNRELEASED, so a correct repoint turned it red.
+    assert f"'{EVIDENCE_TAG}'" in migration
+    assert f"'{EVIDENCE_COMMIT}'" in migration
+    assert (EVIDENCE_TAG == "UNRELEASED") == (EVIDENCE_COMMIT == "0" * 40)
     assert REPOINTED_COMMIT.match(EVIDENCE_COMMIT)
     assert f"date '{REGISTERED_ON.isoformat()}'" in migration
 
