@@ -700,7 +700,7 @@ function sources(items: StatusSource[]): HTMLElement {
       tableCell(timeOrFallback(source.declared_vintage, "Not declared")),
       tableCell(textValue(source.last_manifest_id ?? "None", source.last_manifest_id !== null)),
       tableCell(countedValue(source.manifest_count, "artifacts", MANIFEST_COUNT_REASON)),
-      tableCell(textValue(source.freshness_reason)),
+      reasonCell(source.freshness_reason),
     );
     body.append(row);
   }
@@ -855,6 +855,19 @@ function tableHead(columns: readonly Column[]): HTMLTableSectionElement {
   }
   head.append(row);
   return head;
+}
+
+/**
+ * gate-v076 D5: this note is the eleventh column of eleven and wrapped to 128 px, which made a
+ * row 153 px tall for 32 px of visible content -- roughly 3,600 px of dead space over the 30
+ * rows on the page. Clamped to two lines, with the whole sentence on the cell's title, because
+ * the column is off screen at every width shot and the note is the least-read thing in it.
+ */
+function reasonCell(reason: string): HTMLTableCellElement {
+  const cell = tableCell(textValue(reason));
+  cell.className = "gw-status-reason";
+  cell.title = reason;
+  return cell;
 }
 
 function tableCell(value: Node): HTMLTableCellElement {

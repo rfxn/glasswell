@@ -366,6 +366,18 @@
   background: var(--panel);
 }
 
+/* Two lines, not eleven. The full sentence is on the cell's title. */
+.gw-status-reason {
+  max-width: 22rem;
+}
+
+.gw-status-reason > * {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .gw-status-table {
   width: 100%;
   min-width: 760px;
