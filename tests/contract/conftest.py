@@ -910,9 +910,12 @@ def _seed_contract_fixture(db: psycopg.Connection, pinned_control: ControlArtifa
 # North Dakota and Texas only. New Mexico and Montana are registered and unmeasured, which is
 # the state every jurisdiction is in before its first refresh — and the one the surface has to
 # serve as an absence rather than as a zero (R-3).
+#
+# ND_MEASURED is what the writer produces from the seeded wells, restated here so a test can
+# name the number it expects. There is no TX equivalent: nothing asserted one, and a constant
+# no test reads is a claim about the fixture that nothing checks.
 JURISDICTION_MEASURED_ON = date(2026, 8, 27)
 ND_MEASURED = {None: 7, "active": 4, "plugged": 3}
-TX_MEASURED = {None: 1, "active": 1}
 
 
 def _seed_jurisdiction_counts(connection: psycopg.Connection) -> None:
