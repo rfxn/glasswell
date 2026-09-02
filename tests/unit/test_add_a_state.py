@@ -34,6 +34,9 @@ MIGRATIONS = SOURCE / "db" / "migrations"
 APPLIED_HISTORY_CEILING = 71
 
 PYTHON_TREES = ("marts", "api/routers", "status", "lineage")
+# The package root as well as the four trees: `status_resolution.py` sat outside every one of
+# them and carried `{"30": "cr_nm_wellhistory_status_vocab_2"}` for exactly that reason.
+PACKAGE_ROOT_FILES = ("identity.py", "lengths.py", "status_resolution.py", "units.py")
 
 TWO_DIGIT_LITERAL = re.compile(r"""['"](\d{2})['"]""")
 API10_LITERAL = re.compile(r"\b(\d{2})[0-9]{8}\b")
@@ -120,12 +123,19 @@ def _registry_block(path: Path, line: str) -> str:
 
 
 def python_files() -> list[Path]:
-    return sorted(
+    scanned = [
         path
         for tree in PYTHON_TREES
         for path in (SOURCE / tree).glob("*.py")
         if path.name != "__init__.py"
+    ]
+    # Named rather than globbed: a new module at the package root should have to be looked at
+    # and added here, not silently inherit a scan somebody else argued for.
+    resident = {path.name for path in SOURCE.glob("*.py")} - {"__init__.py"}
+    assert resident == set(PACKAGE_ROOT_FILES), (
+        f"package root modules changed: {sorted(resident)} — add them to PACKAGE_ROOT_FILES"
     )
+    return sorted(scanned + [SOURCE / name for name in PACKAGE_ROOT_FILES])
 
 
 def web_files() -> list[Path]:

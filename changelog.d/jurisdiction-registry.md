@@ -99,3 +99,11 @@
       production history end to end. A partial unique index holds it to one per registration
       instant and a standing gate holds it to exactly one across the resolved set, because two
       registrations a day apart both resolve and no index can see that
+- [Change] Which jurisdictions resolve their well status at read time, and under which rule,
+           is read off `lineage.jurisdiction_rules` rather than pinned in a dict. New Mexico
+           was `{"30": "cr_nm_wellhistory_status_vocab_2"}` in `status_resolution.py`, a module
+           at the package root that no scan looked at; the add-a-state gate now scans there
+           too. `canonical.status_resolution` stays one canonical-layer view the tile mart and
+           every serving path read, and takes its API prefix from the registration instead of a
+           literal — a fifth state with read-time resolution still brings its own codebook, but
+           whether it resolves that way is a row

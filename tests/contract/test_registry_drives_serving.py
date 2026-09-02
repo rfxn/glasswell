@@ -17,6 +17,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_API10, EXAMPLE_BBOX
+from glasswell.lineage.jurisdictions import clear_jurisdiction_cache
+from glasswell.status_resolution import resolver_rules
 from tests.contract.conftest import TX_API10
 from tests.contract.test_well_facets import _seed_tx
 from tests.support.jurisdictions import restate
@@ -40,8 +42,6 @@ def body(client: TestClient, path: str, **params: Any) -> dict[str, Any]:
 
 @pytest.fixture(autouse=True)
 def _uncached() -> None:
-    from glasswell.lineage.jurisdictions import clear_jurisdiction_cache
-
     clear_jurisdiction_cache()
 
 
@@ -209,6 +209,57 @@ def test_a_well_vintage_cut_does_not_narrow_the_registry(
     envelope = body(client, "/v1/wells/status-summary", bbox=BOTH_STATES_BOX, as_of="2019-01-01")
 
     assert envelope["data"]["wells"] is None or envelope["data"]["basins"] == []
+    assert body(client, f"/v1/wells/{EXAMPLE_API10}")["data"]["status_vocabulary_rule"] == (
+        "cr_nd_status_vocab_1"
+    )
+
+
+def test_which_jurisdictions_resolve_at_read_time_is_a_registry_row(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """P5-R1. `RESOLVER_RULES = {"30": "cr_nm_wellhistory_status_vocab_2"}` was a dict in
+    `status_resolution.py` — a jurisdiction keyed by API prefix, outside every tree the
+    add-a-state scan looked at. It is a join now: the registered status-vocabulary rule, for
+    every jurisdiction whose rule says in its own spec that it resolves at read time."""
+    assert resolver_rules(seeded) == {"30": "cr_nm_wellhistory_status_vocab_2"}
+
+    # A fifth jurisdiction registering the same read-time rule appears without an edit.
+    with seeded.cursor() as cursor:
+        cursor.execute("insert into lineage.jurisdiction_codes values ('CO', 'state')")
+        cursor.execute(
+            "insert into lineage.jurisdictions (jurisdiction_code, effective_from,"
+            " published_at, evidence_tag, evidence_commit, name, regulator_name, regulator_url,"
+            " identity_scheme, identity_prefix, identity_pattern, source_ids, rationale)"
+            " select 'CO', effective_from, published_at, evidence_tag, evidence_commit,"
+            " 'Colorado', 'COGCC', 'https://ecmc.state.co.us', 'api10', '05', '^05[0-9]{8}$',"
+            " array['nd_mpr_xlsx'], 'a fifth jurisdiction resolving at read time'"
+            " from lineage.jurisdictions where jurisdiction_code = 'ND'"
+        )
+        cursor.execute(
+            "insert into lineage.jurisdiction_rules (jurisdiction_code, effective_from,"
+            " published_at, decision, rule_id)"
+            " select 'CO', effective_from, published_at, 'status_vocabulary',"
+            " 'cr_nm_wellhistory_status_vocab_2'"
+            " from lineage.jurisdictions where jurisdiction_code = 'CO'"
+        )
+    clear_jurisdiction_cache()
+
+    assert resolver_rules(seeded) == {
+        "05": "cr_nm_wellhistory_status_vocab_2",
+        "30": "cr_nm_wellhistory_status_vocab_2",
+    }
+
+
+def test_a_restatement_moves_which_rule_the_resolver_is_read_under(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The move-proof: a registry row change, and the resolver's answer follows it. New Mexico
+    restated onto a rule that resolves at promotion time stops resolving at read time."""
+    assert "30" in resolver_rules(seeded)
+
+    restate(seeded, "NM", rules={"status_vocabulary": "cr_nm_wchistory_status_domain_1"})
+
+    assert resolver_rules(seeded) == {}
     assert body(client, f"/v1/wells/{EXAMPLE_API10}")["data"]["status_vocabulary_rule"] == (
         "cr_nd_status_vocab_1"
     )

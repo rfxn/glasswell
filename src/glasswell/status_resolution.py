@@ -14,8 +14,52 @@ the tiles serving null. Neither is what shipped.
 
 from __future__ import annotations
 
+from datetime import date
+
+import psycopg
+
+from glasswell.lineage.jurisdictions import load_jurisdictions
+
 RESOLVER_VIEW = "canonical.status_resolution"
-RESOLVER_RULES = {"30": "cr_nm_wellhistory_status_vocab_2"}
+
+# A jurisdiction resolves at read time when its registered status-vocabulary rule says so in
+# its own spec, which is where 071 put the fact. Read off the registry rather than pinned here:
+# a fifth state with read-time resolution is a `jurisdiction_rules` row and this answers for it
+# without an edit. The mapping *table* is still per-regulator and still arrives in a migration
+# — no row can conjure one — but which jurisdiction it answers for is registry data.
+READ_TIME = "read_time"
+
+_RESOLVER_RULES = """
+select j.identity_prefix, r.rule_id
+  from lineage.jurisdictions_as_of(%(knowledge_as_of)s, %(valid_as_of)s) j
+  join lineage.jurisdiction_rules r
+    on r.jurisdiction_code = j.jurisdiction_code
+   and r.effective_from = j.effective_from
+   and r.published_at = j.published_at
+   and r.decision = 'status_vocabulary'
+   and r.serving
+  join lineage.conformance_rules c on c.rule_id = r.rule_id
+ where j.identity_prefix is not null
+   and c.spec->>'resolved_at' = %(read_time)s
+ order by j.identity_prefix
+"""
+
+
+def resolver_rules(
+    connection: psycopg.Connection, as_of: date | None = None
+) -> dict[str, str]:
+    """API state code -> the rule that resolves its status at read time, for those that do."""
+    registry = load_jurisdictions(connection, as_of)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            _RESOLVER_RULES,
+            {
+                "knowledge_as_of": registry.knowledge_as_of,
+                "valid_as_of": registry.valid_as_of,
+                "read_time": READ_TIME,
+            },
+        )
+        return dict(cursor.fetchall())
 
 
 def resolver_join(spine: str, *, resolver: str = "sr") -> str:

@@ -272,6 +272,23 @@ values
      ' returned for one page of the registry at one knowledge cut.')
 on conflict do nothing;
 
+-- 071 labelled every row of the read-time status resolver with a literal '30'. Which
+-- jurisdiction New Mexico's map answers for is registry data, so the label comes from the
+-- registration instead. The mapping table is still per-regulator and a fifth state with
+-- read-time resolution still brings its own table and its own arm here — no row can conjure a
+-- codebook — but its API prefix, and whether it resolves at read time at all, are rows.
+--
+-- The coupling this creates is deliberate and worth naming: with no resolved NM registration
+-- the view yields nothing and New Mexico's statuses read as unmapped. That is the same
+-- refusal `load_jurisdictions` makes, one layer down, and the registry ships with its rows.
+create or replace view canonical.status_resolution as
+select j.identity_prefix as for_state_code,
+       m.status          as for_status_reported,
+       m.status_canonical as resolved_status
+  from lineage.nm_wellhistory_status_map m
+  join lineage.jurisdictions_as_of(current_date, current_date) j
+    on j.jurisdiction_code = 'NM';
+
 grant select on lineage.jurisdiction_codes, lineage.jurisdictions, lineage.jurisdiction_rules,
     lineage.jurisdiction_well_counts to glasswell_api, glasswell_pipeline;
 grant execute on function lineage.jurisdictions_as_of(date, date)

@@ -20,7 +20,7 @@ from glasswell.lineage.clock import utc_today
 from glasswell.lineage.jurisdictions import load_jurisdictions
 from glasswell.lineage.models import OutputSpec
 from glasswell.lineage.serialization import hash_payload
-from glasswell.status_resolution import resolved_status, resolver_join
+from glasswell.status_resolution import resolved_status, resolver_join, resolver_rules
 
 TOTAL_STATUS_KEY = "*total*"
 
@@ -65,6 +65,7 @@ def refresh_jurisdiction_counts(
     owner = {row.identity_prefix: row.jurisdiction_code for row in registered}
     measured = measured_on or utc_today()
 
+    read_time = resolver_rules(connection)
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(_COUNTS, {"prefixes": prefixes})
         counted = [dict(row) for row in cursor.fetchall()]
@@ -102,6 +103,9 @@ def refresh_jurisdiction_counts(
         params={
             "jurisdictions": sorted(owner.values()),
             "status_source": "canonical.status_resolution_else_promoted_class",
+            # Which jurisdictions were counted under a read-time class, and under which rule.
+            # A count whose class came from a join has to name the rule that made the join.
+            "read_time_resolution": read_time,
             "total_policy": "sum_of_measured_classes",
         },
         inputs=[],
