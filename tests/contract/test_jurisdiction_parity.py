@@ -27,12 +27,13 @@ from glasswell.seed.conformance_nm_wells import NM_WELLS_GIS_SOURCES
 from glasswell.seed.conformance_tx import TX_SOURCES
 from glasswell.seed.jurisdictions import (
     EXPLORER_DEFAULT_CODE,
+    FOUNDING_JURISDICTIONS,
     JURISDICTION_RESTATEMENTS,
     JURISDICTION_RULES,
-    JURISDICTIONS,
     REGISTERED_ON,
     REQUIRED_DECISIONS,
     RESTATED_ON,
+    colorado_parameters,
     registration_parameters,
     restatement_parameters,
     rule_parameters,
@@ -84,12 +85,12 @@ def test_every_resolved_prefix_belongs_to_exactly_one_jurisdiction(
 
     collision = REGISTERED_ON + timedelta(days=1)
     with db.cursor() as cursor:
-        cursor.execute("insert into lineage.jurisdiction_codes values ('CO', 'state')")
+        cursor.execute("insert into lineage.jurisdiction_codes values ('WY', 'state')")
         cursor.execute(
             "insert into lineage.jurisdictions (jurisdiction_code, effective_from,"
             " published_at, evidence_tag, evidence_commit, name, regulator_name, regulator_url,"
             " identity_scheme, identity_prefix, identity_pattern, source_ids, rationale)"
-            " values ('CO', %s, %s, 'v0.76', %s, 'Colorado', 'COGCC', 'https://ecmc.state.co.us',"
+            " values ('WY', %s, %s, 'v0.76', %s, 'Wyoming', 'WOGCC', 'https://wogcc.wyo.gov',"
             " 'api10', '33', '^33[0-9]{8}$', array['nd_mpr_xlsx'], 'planted')",
             (collision, collision, "a" * 40),
         )
@@ -137,15 +138,15 @@ def test_a_second_explorer_default_at_one_instant_is_refused_by_the_index(
     db: psycopg.Connection,
 ) -> None:
     with db.cursor() as cursor:
-        cursor.execute("insert into lineage.jurisdiction_codes values ('CO', 'state')")
+        cursor.execute("insert into lineage.jurisdiction_codes values ('WY', 'state')")
         with pytest.raises(psycopg.errors.UniqueViolation):
             cursor.execute(
                 "insert into lineage.jurisdictions (jurisdiction_code, effective_from,"
                 " published_at, evidence_tag, evidence_commit, name, regulator_name,"
                 " regulator_url, identity_scheme, identity_prefix, identity_pattern,"
                 " source_ids, rationale, explorer_default)"
-                " values ('CO', %s, %s, 'v0.76', %s, 'Colorado', 'COGCC',"
-                " 'https://ecmc.state.co.us', 'api10', '05', '^05[0-9]{8}$',"
+                " values ('WY', %s, %s, 'v0.76', %s, 'Wyoming', 'WOGCC',"
+                " 'https://wogcc.wyo.gov', 'api10', '49', '^49[0-9]{8}$',"
                 " array['nd_mpr_xlsx'], 'planted', true)",
                 (REGISTERED_ON, REGISTERED_ON, "a" * 40),
             )
@@ -157,14 +158,14 @@ def test_a_second_explorer_default_a_day_later_is_caught_by_the_gate_the_index_c
     """The N-3 shape again, on a different column: accepted by the index, refused by the set."""
     later = REGISTERED_ON + timedelta(days=1)
     with db.cursor() as cursor:
-        cursor.execute("insert into lineage.jurisdiction_codes values ('CO', 'state')")
+        cursor.execute("insert into lineage.jurisdiction_codes values ('WY', 'state')")
         cursor.execute(
             "insert into lineage.jurisdictions (jurisdiction_code, effective_from,"
             " published_at, evidence_tag, evidence_commit, name, regulator_name, regulator_url,"
             " identity_scheme, identity_prefix, identity_pattern, source_ids, rationale,"
             " explorer_default)"
-            " values ('CO', %s, %s, 'v0.76', %s, 'Colorado', 'COGCC',"
-            " 'https://ecmc.state.co.us', 'api10', '05', '^05[0-9]{8}$',"
+            " values ('WY', %s, %s, 'v0.76', %s, 'Wyoming', 'WOGCC',"
+            " 'https://wogcc.wyo.gov', 'api10', '49', '^49[0-9]{8}$',"
             " array['nd_mpr_xlsx'], 'planted', true)",
             (later, later, "a" * 40),
         )
@@ -221,7 +222,10 @@ def test_the_migration_and_the_seed_module_write_the_same_registrations(
     expected = sorted(
         (
             *(registration_parameters(row) for row in JURISDICTION_RESTATEMENTS),
-            *(restatement_parameters(row) for row in JURISDICTIONS),
+            *(restatement_parameters(row) for row in FOUNDING_JURISDICTIONS),
+            # Founded whole at its own instant: a registration that arrives after the
+            # presentation columns exist has nothing to restate, so it is one row and not two.
+            colorado_parameters(),
         ),
         key=lambda row: (str(row["jurisdiction_code"]), row["published_at"]),
     )

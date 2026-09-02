@@ -167,7 +167,7 @@ def test_the_facet_state_name_and_picker_come_from_the_registration(
     after = body(client, "/v1/wells/facets", state="42", by="operator")["data"]
     assert after["state_name"] == "Texas (RRC)"
     assert {row["code"]: row["name"] for row in after["states"]}["42"] == "Texas (RRC)"
-    assert sorted(row["code"] for row in after["states"]) == ["25", "30", "33", "42"]
+    assert sorted(row["code"] for row in after["states"]) == ["05", "25", "30", "33", "42"]
 
 
 def test_the_absence_bucket_cites_the_rule_at_the_jurisdiction_and_dimension_grain(
@@ -221,32 +221,36 @@ def test_which_jurisdictions_resolve_at_read_time_is_a_registry_row(
     `status_resolution.py` — a jurisdiction keyed by API prefix, outside every tree the
     add-a-state scan looked at. It is a join now: the registered status-vocabulary rule, for
     every jurisdiction whose rule says in its own spec that it resolves at read time."""
-    assert resolver_rules(seeded) == {"30": "cr_nm_wellhistory_status_vocab_2"}
+    assert resolver_rules(seeded) == {
+        "05": "cr_co_wells_status_vocab_1",
+        "30": "cr_nm_wellhistory_status_vocab_2",
+    }
 
     # A fifth jurisdiction registering the same read-time rule appears without an edit.
     with seeded.cursor() as cursor:
-        cursor.execute("insert into lineage.jurisdiction_codes values ('CO', 'state')")
+        cursor.execute("insert into lineage.jurisdiction_codes values ('WY', 'state')")
         cursor.execute(
             "insert into lineage.jurisdictions (jurisdiction_code, effective_from,"
             " published_at, evidence_tag, evidence_commit, name, regulator_name, regulator_url,"
             " identity_scheme, identity_prefix, identity_pattern, source_ids, rationale)"
-            " select 'CO', effective_from, published_at, evidence_tag, evidence_commit,"
-            " 'Colorado', 'COGCC', 'https://ecmc.state.co.us', 'api10', '05', '^05[0-9]{8}$',"
+            " select 'WY', effective_from, published_at, evidence_tag, evidence_commit,"
+            " 'Wyoming', 'WOGCC', 'https://wogcc.wyo.gov', 'api10', '49', '^49[0-9]{8}$',"
             " array['nd_mpr_xlsx'], 'a fifth jurisdiction resolving at read time'"
             " from lineage.jurisdictions where jurisdiction_code = 'ND'"
         )
         cursor.execute(
             "insert into lineage.jurisdiction_rules (jurisdiction_code, effective_from,"
             " published_at, decision, rule_id)"
-            " select 'CO', effective_from, published_at, 'status_vocabulary',"
+            " select 'WY', effective_from, published_at, 'status_vocabulary',"
             " 'cr_nm_wellhistory_status_vocab_2'"
-            " from lineage.jurisdictions where jurisdiction_code = 'CO'"
+            " from lineage.jurisdictions where jurisdiction_code = 'WY'"
         )
     clear_jurisdiction_cache()
 
     assert resolver_rules(seeded) == {
-        "05": "cr_nm_wellhistory_status_vocab_2",
+        "05": "cr_co_wells_status_vocab_1",
         "30": "cr_nm_wellhistory_status_vocab_2",
+        "49": "cr_nm_wellhistory_status_vocab_2",
     }
 
 
@@ -259,7 +263,9 @@ def test_a_restatement_moves_which_rule_the_resolver_is_read_under(
 
     restate(seeded, "NM", rules={"status_vocabulary": "cr_nm_wchistory_status_domain_1"})
 
-    assert resolver_rules(seeded) == {}
+    # Colorado is registered at read time too, so restating New Mexico leaves its arm
+    # standing: the proof is that NM's entry goes, not that the resolver empties.
+    assert resolver_rules(seeded) == {"05": "cr_co_wells_status_vocab_1"}
     assert body(client, f"/v1/wells/{EXAMPLE_API10}")["data"]["status_vocabulary_rule"] == (
         "cr_nd_status_vocab_1"
     )

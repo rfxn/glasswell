@@ -42,5 +42,16 @@
     ],
     "drawOrder": 44,
     "defaultOn": true
+  },
+  {
+    "code": "CO",
+    "id": "co-wells",
+    "tileLayerId": "co_wells",
+    "styleLayers": [
+      "co-wells",
+      "co-wells-struck"
+    ],
+    "drawOrder": 45,
+    "defaultOn": true
   }
 ]

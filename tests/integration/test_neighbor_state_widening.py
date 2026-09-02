@@ -169,7 +169,7 @@ def test_a_registration_the_measured_domain_does_not_reach_is_excluded_not_an_ou
     registry = load_jurisdictions(db)
 
     assert neighbors.subject_prefixes(registry) == ("33", "25")
-    assert neighbors.excluded_prefixes(registry) == ("05",)
+    assert neighbors.excluded_prefixes(registry) == ("49",)
 
 
 def test_a_registration_that_does_claim_the_domain_and_leaves_it_still_raises(
@@ -186,7 +186,7 @@ def test_a_registration_that_does_claim_the_domain_and_leaves_it_still_raises(
     clear_jurisdiction_cache()
     registry = load_jurisdictions(db)
 
-    assert "05" in neighbors.subject_prefixes(registry)
+    assert "49" in neighbors.subject_prefixes(registry)
 
 
 def test_the_python_envelope_and_the_migration_constraint_name_the_same_zones() -> None:
@@ -206,12 +206,12 @@ def test_the_python_envelope_and_the_migration_constraint_name_the_same_zones() 
 
 
 def _register_out_of_domain(db: psycopg.Connection, *, with_scope_rule: bool = False) -> None:
-    """A fifth registration that is neighbours-available and outside both bounds: Colorado's
+    """A fifth registration that is neighbours-available and outside both bounds: Wyoming's
     prefix, west of the longitude floor is not the point -- it is south of 44.30 and its
     midpoint zone is 32613, so it exercises the envelope arm."""
     with db.cursor() as cursor:
         cursor.execute(
-            "insert into lineage.jurisdiction_codes values ('CO', 'state')"
+            "insert into lineage.jurisdiction_codes values ('WY', 'state')"
             " on conflict do nothing"
         )
         cursor.execute(
@@ -219,8 +219,8 @@ def _register_out_of_domain(db: psycopg.Connection, *, with_scope_rule: bool = F
             " published_at, evidence_tag, evidence_commit, name, regulator_name,"
             " regulator_url, identity_scheme, identity_prefix, identity_pattern, source_ids,"
             " rationale, neighbors_available)"
-            " values ('CO', %s, %s, 'v0.77', %s, 'Colorado', 'ECMC',"
-            " 'https://ecmc.state.co.us', 'api10', '05', '^05[0-9]{8}$',"
+            " values ('WY', %s, %s, 'v0.77', %s, 'Wyoming', 'WOGCC',"
+            " 'https://wogcc.wyo.gov', 'api10', '49', '^49[0-9]{8}$',"
             " array['nd_mpr_xlsx'], 'planted', true)",
             # Valid from the founding instant, published at the restatement's: a future
             # effective_from resolves no registration, which the loader reads as absent.
@@ -230,6 +230,6 @@ def _register_out_of_domain(db: psycopg.Connection, *, with_scope_rule: bool = F
             cursor.execute(
                 "insert into lineage.jurisdiction_rules (jurisdiction_code, effective_from,"
                 " published_at, decision, rule_id)"
-                " values ('CO', %s, %s, 'neighbors_scope', 'cr_nd_neighbors_scope_1')",
+                " values ('WY', %s, %s, 'neighbors_scope', 'cr_nd_neighbors_scope_1')",
                 (REGISTERED_ON, RESTATED_ON),
             )

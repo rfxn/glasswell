@@ -221,7 +221,7 @@ def test_two_registrations_cannot_claim_one_draw_order_at_one_instant(
     """The order is a real per-row integer -- disposal-wells sits between ND and TX -- so two
     jurisdictions claiming one slot is a silent overdraw on the canvas."""
     with db.cursor() as cursor:
-        cursor.execute("insert into lineage.jurisdiction_codes values ('CO', 'state')")
+        cursor.execute("insert into lineage.jurisdiction_codes values ('WY', 'state')")
         with pytest.raises(psycopg.errors.UniqueViolation):
             cursor.execute(
                 "insert into lineage.jurisdictions (jurisdiction_code, effective_from,"
@@ -229,8 +229,8 @@ def test_two_registrations_cannot_claim_one_draw_order_at_one_instant(
                 " regulator_url, identity_scheme, identity_prefix, identity_pattern,"
                 " source_ids, rationale, wells_layer_id, wells_style_layer_ids,"
                 " wells_draw_order)"
-                " values ('CO', %s, %s, 'v0.77', %s, 'Colorado', 'ECMC',"
-                " 'https://ecmc.state.co.us', 'api10', '05', '^05[0-9]{8}$',"
+                " values ('WY', %s, %s, 'v0.77', %s, 'Wyoming', 'WOGCC',"
+                " 'https://wogcc.wyo.gov', 'api10', '49', '^49[0-9]{8}$',"
                 " array['nd_mpr_xlsx'], 'planted', 'co-wells',"
                 " array['co-wells', 'co-wells-struck'], 40)",
                 (REGISTERED_ON, RESTATED_ON, "a" * 40),
@@ -239,15 +239,15 @@ def test_two_registrations_cannot_claim_one_draw_order_at_one_instant(
 
 def test_a_wells_row_names_its_style_layers_or_neither(db: psycopg.Connection) -> None:
     with db.cursor() as cursor:
-        cursor.execute("insert into lineage.jurisdiction_codes values ('CO', 'state')")
+        cursor.execute("insert into lineage.jurisdiction_codes values ('WY', 'state')")
         with pytest.raises(psycopg.errors.CheckViolation):
             cursor.execute(
                 "insert into lineage.jurisdictions (jurisdiction_code, effective_from,"
                 " published_at, evidence_tag, evidence_commit, name, regulator_name,"
                 " regulator_url, identity_scheme, identity_prefix, identity_pattern,"
                 " source_ids, rationale, wells_layer_id)"
-                " values ('CO', %s, %s, 'v0.77', %s, 'Colorado', 'ECMC',"
-                " 'https://ecmc.state.co.us', 'api10', '05', '^05[0-9]{8}$',"
+                " values ('WY', %s, %s, 'v0.77', %s, 'Wyoming', 'WOGCC',"
+                " 'https://wogcc.wyo.gov', 'api10', '49', '^49[0-9]{8}$',"
                 " array['nd_mpr_xlsx'], 'planted', 'co-wells')",
                 (RESTATED_ON, RESTATED_ON, "a" * 40),
             )
@@ -259,15 +259,15 @@ def test_a_subtitle_template_that_cannot_carry_a_count_is_refused(
     """No naked numbers, and no place to put the measured one either: the template is the
     contract that the census fills it at render time rather than a constant being baked."""
     with db.cursor() as cursor:
-        cursor.execute("insert into lineage.jurisdiction_codes values ('CO', 'state')")
+        cursor.execute("insert into lineage.jurisdiction_codes values ('WY', 'state')")
         with pytest.raises(psycopg.errors.CheckViolation):
             cursor.execute(
                 "insert into lineage.jurisdictions (jurisdiction_code, effective_from,"
                 " published_at, evidence_tag, evidence_commit, name, regulator_name,"
                 " regulator_url, identity_scheme, identity_prefix, identity_pattern,"
                 " source_ids, rationale, wells_subtitle_template)"
-                " values ('CO', %s, %s, 'v0.77', %s, 'Colorado', 'ECMC',"
-                " 'https://ecmc.state.co.us', 'api10', '05', '^05[0-9]{8}$',"
+                " values ('WY', %s, %s, 'v0.77', %s, 'Wyoming', 'WOGCC',"
+                " 'https://wogcc.wyo.gov', 'api10', '49', '^49[0-9]{8}$',"
                 " array['nd_mpr_xlsx'], 'planted', 'ECMC surface locations')",
                 (RESTATED_ON, RESTATED_ON, "a" * 40),
             )

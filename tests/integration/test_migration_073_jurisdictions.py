@@ -233,9 +233,9 @@ def test_a_restatement_is_accepted_and_resolves_at_the_later_knowledge_time(
 
 def test_two_registrations_cannot_share_a_prefix_at_one_instant(db: psycopg.Connection) -> None:
     with db.cursor() as cursor:
-        cursor.execute("insert into lineage.jurisdiction_codes values ('CO', 'state')")
+        cursor.execute("insert into lineage.jurisdiction_codes values ('WY', 'state')")
     with pytest.raises(psycopg.errors.UniqueViolation):
-        register(db, "CO", prefix="33", pattern="^33[0-9]{8}$")
+        register(db, "WY", prefix="33", pattern="^33[0-9]{8}$")
 
 
 def test_a_land_grid_state_that_is_not_in_scope_is_rejected(db: psycopg.Connection) -> None:

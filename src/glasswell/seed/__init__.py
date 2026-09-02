@@ -10,6 +10,7 @@ from glasswell.seed.conformance_c115b import (
     seed_conformance_c115b,
     seed_nm_waste_types,
 )
+from glasswell.seed.conformance_co import CO_RULES, seed_conformance_co
 from glasswell.seed.conformance_fracfocus import FRACFOCUS_RULES, seed_conformance_fracfocus
 from glasswell.seed.conformance_land import LAND_RULES, seed_conformance_land
 from glasswell.seed.conformance_mt import MT_RULES, seed_conformance_mt
@@ -57,6 +58,7 @@ from glasswell.seed.schedules import (
 __all__ = [
     "BASIN_RULES",
     "C115B_RULES",
+    "CO_RULES",
     "CRS_ROWS",
     "FEATURE_SPECS",
     "FEATURE_VERSION",
@@ -136,6 +138,10 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
         # seeders below count by source-id prefix and a cadence rule carries one of those
         # prefixes: seeded after them, the first run's totals would differ from the second's.
         "conformance_rules_schedules": seed_conformance_schedules(connection),
+        # After seed_sources, which registers the five ECMC sources these rules are filed
+        # under, and before seed_jurisdictions, whose Colorado rule rows FK to them. Its
+        # count is over its own ids, so no sibling seeder's total moves when it grows.
+        "conformance_rules_co": seed_conformance_co(connection),
         "crs_registry": seed_crs(connection),
         "conformance_rules_fracfocus": seed_conformance_fracfocus(connection),
         # Before the ND seeder for the same reason TX is before everything: these rows carry an
