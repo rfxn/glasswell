@@ -11,6 +11,7 @@ import psycopg
 import pytest
 
 from glasswell.api.routers.facets import _FACETS, _SCOPED_LATEST, _VALUE_SORTS, DIMENSIONS
+from glasswell.db.migrate import discover_migrations
 from glasswell.seed import seed_all
 from glasswell.seed.jurisdictions import REGISTERED_ON
 from tests.support.seed import seed_conformance_rule
@@ -18,6 +19,11 @@ from tests.support.seed import seed_conformance_rule
 pytestmark = pytest.mark.integration
 
 FACET_INDEX = "wells_facet_dimensions_idx"
+
+
+def migration_sql(name: str) -> str:
+    """By name: the version integer is assigned by merge order and this file will be renumbered."""
+    return next(item.sql for item in discover_migrations() if item.name == name)
 
 
 def _indexdef(connection: psycopg.Connection, name: str) -> str:
@@ -305,3 +311,18 @@ def test_a_registered_jurisdiction_whose_mapping_table_has_not_landed_is_skipped
     db.rollback()
 
     assert resolved > 0
+
+
+def test_the_index_rebuild_is_bounded_by_a_lock_timeout() -> None:
+    """An unbounded ACCESS EXCLUSIVE on the serving spine is an outage; a refusal is a retry.
+
+    `migrate.py` runs each file in one transaction, so `create index concurrently` is refused
+    and the drop takes ACCESS EXCLUSIVE on `canonical.wells` until commit. The deployed host has
+    `lock_timeout = 0` and `deploy.sh` applies migrations while the API is still serving, so
+    without a bound the DROP waits for the longest in-flight reader — and every new read queues
+    behind the waiting request. `set local` because the whole file is one transaction.
+    """
+    body = migration_sql("facet_status_resolution")
+    timeout = body.index("set local lock_timeout")
+    assert timeout < body.index("drop index if exists canonical."), "the bound precedes the lock"
+    assert "'5s'" in body[timeout : timeout + 60]

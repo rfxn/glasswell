@@ -26,12 +26,28 @@
 -- 98 MB. The deployed heap is larger, so budget a few seconds rather than one. A deploy that
 -- cannot afford even that should run this file alone, out of band, with the two statements
 -- split into `drop index concurrently` and `create index concurrently` outside a transaction,
--- and record the version by hand afterwards.
+-- and record the version by hand afterwards. Either way, do not run it inside the 02:00 backup
+-- window: pg_dump holds ACCESS SHARE on the spine for its whole run and the lock_timeout below
+-- will refuse the migrate rather than wait behind it.
 --
 -- The gain depends on the visibility map, because an index-only scan that cannot consult it
 -- falls back to a heap fetch per row: measured on that same fixture, the rebuilt index reads
 -- 809,191 heap fetches before a vacuum and 0 after. The deployed table is autovacuumed, so this
 -- is a note about a restore, not about the deploy.
+
+-- Bounded, because nothing else bounds it. The host runs `lock_timeout = 0`, so without this
+-- the DROP below waits for the longest in-flight reader to finish -- and a waiting ACCESS
+-- EXCLUSIVE request sits at the head of the lock queue, so every new read on canonical.wells
+-- queues behind it for the same duration. The readers on that host include the status facet at
+-- 1.7 s, the mart refreshes, and a nightly in-VM pg_dump that holds ACCESS SHARE on every table
+-- for its whole run. The exposure was never the 1.25 s rebuild; it was whatever was already
+-- open in front of it.
+--
+-- `set local`, because migrate.py runs the whole file in one transaction. On timeout the
+-- transaction aborts and deploy.sh refuses, which is this project's own posture: a refused
+-- migrate is a retry, an unbounded exclusive lock on the serving spine is an outage. Retry
+-- outside the backup window, or run the two statements out of band per the note above.
+set local lock_timeout = '5s';
 
 -- (a) status_reported joins the covering list. It is the one dimension column the INCLUDE did
 -- not carry, because until this train the read-time resolver was joined only on surfaces that
