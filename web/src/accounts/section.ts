@@ -303,11 +303,31 @@ function reveal(section: HTMLElement, minted: Envelope<MintedUser>): void {
   value.setAttribute("data-gw-secret", "");
   value.textContent = password;
 
-  const copy = action("Copy", () => void navigator.clipboard?.writeText(password));
+  // The panel above says the password is not shown again, so a Copy that quietly does nothing
+  // costs the reader the credential. `navigator.clipboard` is undefined in a non-secure
+  // context — which the LAN host is, on plain http — and writeText rejects on a denied
+  // permission or an unfocused document. Both say so here rather than to the console.
+  const copied = element("span", "gw-accounts-copy-state");
+  copied.setAttribute("role", "status");
+  copied.setAttribute("data-no-glossary", "");
+  const said = (outcome: string): void => {
+    copied.textContent = outcome;
+  };
+  const copy = action("Copy", () => {
+    const written = navigator.clipboard?.writeText(password);
+    if (!written) {
+      said("No clipboard on this connection. Select the value above.");
+      return;
+    }
+    void written.then(
+      () => said("Copied."),
+      () => said("Copy refused. Select the value above."),
+    );
+  });
   const dismiss = action("Dismiss", () => slot.replaceChildren());
 
   const actions = element("div", "gw-accounts-secret-actions");
-  actions.append(copy, dismiss);
+  actions.append(copy, dismiss, copied);
   panel.append(line, value, actions);
   // The server states the show-once rule in `meta.warnings`; the panel renders what it said
   // rather than a second sentence of its own.

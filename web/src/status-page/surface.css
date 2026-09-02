@@ -679,6 +679,13 @@
   gap: var(--gw-space-2);
 }
 
+/* Reads in the density grammar the panel already uses: muted, micro, beside the controls. */
+.gw-accounts-copy-state {
+  align-self: center;
+  color: var(--muted);
+  font-size: var(--gw-fs-micro);
+}
+
 .gw-accounts-secret-value {
   display: block;
   margin: 0 0 var(--gw-space-3);

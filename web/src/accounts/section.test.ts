@@ -337,6 +337,54 @@ describe("the password is shown once and then it is gone", () => {
     expect(section.querySelector('.gw-note[data-code="password_shown_once"]')).not.toBeNull();
   });
 
+  // gate-v076 H-8: the panel says the password is not shown again, so a Copy that quietly does
+  // nothing costs the reader the credential. The LAN host is plain http, where the clipboard
+  // API does not exist at all.
+  it("says so when there is no clipboard, rather than doing nothing", async () => {
+    const original = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    try {
+      const section = mount("owner");
+      await create(section);
+
+      const copy = [...section.querySelectorAll("button")].find(
+        (button) => button.textContent === "Copy",
+      );
+      copy?.click();
+
+      const state = section.querySelector(".gw-accounts-copy-state");
+      expect(state?.textContent).toBe("No clipboard on this connection. Select the value above.");
+      expect(state?.getAttribute("role")).toBe("status");
+    } finally {
+      if (original) Object.defineProperty(navigator, "clipboard", original);
+    }
+  });
+
+  it("says so when the clipboard refuses, rather than only in the console", async () => {
+    const original = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: () => Promise.reject(new Error("denied")) },
+      configurable: true,
+    });
+    try {
+      const section = mount("owner");
+      await create(section);
+
+      const copy = [...section.querySelectorAll("button")].find(
+        (button) => button.textContent === "Copy",
+      );
+      copy?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(section.querySelector(".gw-accounts-copy-state")?.textContent).toBe(
+        "Copy refused. Select the value above.",
+      );
+    } finally {
+      if (original) Object.defineProperty(navigator, "clipboard", original);
+    }
+  });
+
   it("never sends the password anywhere: not in a URL, not in a body", async () => {
     const base = collections();
     const fetch = vi.fn((input: string, init?: RequestInit) => {
