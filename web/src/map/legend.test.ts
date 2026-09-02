@@ -195,6 +195,19 @@ describe("the legend", () => {
     expect(row!.querySelector<HTMLInputElement>("input")!.disabled).toBe(false);
   });
 
+  it("lists the absence class among the status rows, not below the group that follows them", () => {
+    // Listed after the producing group it landed 47 px below the key's own scrollport at 1600
+    // — present, unhidden, and reachable only by scrolling past a block answering a different
+    // question. It is a status class; it belongs with the status classes.
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ unmapped: 4 }, 12);
+    const body = legend.element.querySelector<HTMLElement>(".gw-lg-body")!;
+    const order = [...body.children].map((node) => (node as HTMLElement).dataset["status"] ?? node.className);
+
+    expect(order.indexOf("unmapped")).toBe(STATUS_CLASSES.length + order.indexOf("active"));
+    expect(order.indexOf("unmapped")).toBeLessThan(order.indexOf("gw-lg-producing"));
+  });
+
   it("filters the unmapped row like any other, because it is the largest class on some maps", () => {
     const seen: string[][] = [];
     const legend = createLegend({ onFilter: (on) => seen.push([...on].sort()) });

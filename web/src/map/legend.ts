@@ -625,8 +625,11 @@ export function createLegend(options: LegendOptions): LegendHandle {
     totalCount = total ?? null;
     zoomNow = zoom;
     const unmapped = rows.get(UNMAPPED_STATUS.id);
+    // Among the status rows, not after the producing group: it is one of the classes the
+    // canvas paints, and listed below a different vocabulary it lands outside the key's own
+    // scrollport — reachable only by scrolling past a block that answers another question.
     if (counts[UNMAPPED_STATUS.id] !== undefined && unmapped && unmapped.parentNode !== body) {
-      body.insertBefore(unmapped, partial);
+      body.insertBefore(unmapped, producing);
       syncTitle();
     }
     render();
