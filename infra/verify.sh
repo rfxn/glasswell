@@ -386,6 +386,18 @@ assert_true "ND neighbour subjects populated ($neighbor_subjects)" "mart is empt
     test "${neighbor_subjects:-0}" -gt 0
 assert_true "ND neighbour edges populated ($neighbor_edges)" "mart is empty" \
     test "${neighbor_edges:-0}" -gt 0
+# P5-R5. The registry ships its rows in 073 and `seed_all` re-asserts them on every deploy, so
+# an unregistered tile layer means one of the two did not land. It is not a cosmetic gap:
+# canonical.status_resolution joins the resolved NM registration, so with no row New Mexico's
+# statuses resolve to nothing and the map draws it unmapped rather than refusing.
+unregistered_layers="$("${PSQL[@]}" "select coalesce(string_agg(layer, ', ' order by layer), '')
+  from (select replace(table_name, '_tile', '') as layer
+          from information_schema.tables
+         where table_schema = 'marts' and table_name like '%\_wells\_tile') t
+ where not exists (
+    select 1 from lineage.jurisdictions_as_of(current_date, current_date) j
+     where j.wells_tile_layer_id = t.layer)")"
+assert "every wells tile layer has a resolved jurisdiction registration" "" "$unregistered_layers"
 cumulatives="$("${PSQL[@]}" "select count(*) from marts.well_cumulatives")"
 withholding="$("${PSQL[@]}" "select count(*) from marts.well_withholding")"
 assert_true "per-well cumulatives populated ($cumulatives)" "mart is empty" \
