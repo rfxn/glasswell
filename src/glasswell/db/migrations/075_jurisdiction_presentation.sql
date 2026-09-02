@@ -10,6 +10,15 @@
 -- unrepointed clock would otherwise collide with the founding key, be absorbed in silence, and
 -- leave all seven columns null while the migration reported success.
 --
+-- It also appends three corrected successors. `cr_eia_basin_link_1`,
+-- `cr_eia_geometry_repair_1` and `cr_nm_wellhistory_header_precedence_1` each declare a
+-- `module_function` naming a symbol that has never existed in the module it points at, which
+-- is R8's failure in its mirror image: a published claim a reader cannot follow to the code.
+-- The rows are on applied migrations and the table is append-only, so each is superseded by a
+-- `_2` carrying the corrected symbol at a later effective date, with the decision, the spec
+-- and the behaviour unchanged. Every derivation that cites a `_1` goes on citing it: it is
+-- what shaped them.
+--
 -- This train also registers the decisions the mart engine and the neighbour mart read: which
 -- basin governs a jurisdiction's compute CRS, which source computes its lateral length, and
 -- whether the neighbour mart's measured domain reaches it. `length_scope` gains no new row --
@@ -117,7 +126,13 @@ select rule_id, date '2026-09-02', 'UNRELEASED',
        'cr_nd_basin_scope_1', 'cr_tx_basin_scope_1',
        'cr_nd_length_source_1', 'cr_tx_length_source_1',
        'cr_nd_neighbors_scope_1', 'cr_mt_neighbors_scope_1',
-       'cr_mt_paths_length_scope_2'
+       'cr_mt_paths_length_scope_2',
+       -- Three corrections to a reference, not to a decision: each names a symbol that has
+       -- never existed in the module it points at, and lineage.conformance_rules is
+       -- append-only, so the fix is an appended successor rather than an edit to a row the
+       -- deployed database already holds. The rows they supersede stay served and historical.
+       'cr_eia_basin_link_2', 'cr_eia_geometry_repair_2',
+       'cr_nm_wellhistory_header_precedence_2'
   ]::text[]) rule_id
 on conflict (rule_id) do nothing;
 
