@@ -384,8 +384,8 @@ function search(
   input.className = "gw-wells-by-search-input";
   input.value = panel["q"] as string;
   input.placeholder = data
-    ? `every ${data.dimension_title.split(",")[0]} in ${data.state_name}`
-    : "the whole state, not this page";
+    ? `every ${data.dimension_title.split(",")[0]} ${population(data)}`
+    : "the whole scope, not this page";
   input.setAttribute(
     "aria-label",
     "Search every value in the state, not only the ones listed below",

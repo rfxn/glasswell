@@ -70,6 +70,22 @@ select.gw-wells-by-state {
   overflow-y: auto;
 }
 
+/* The list box is three times the height of every other control on the line, and centring the
+   row against it left `Wells by`, the dimension and `in` floating at its midpoint with nothing
+   beside them. Each pair still centres its own label against its own control; what changes is
+   where the pairs sit in the row. */
+.gw-wells-by-line {
+  align-items: flex-start;
+}
+
+.gw-wells-by-line .gw-wells-by-pair:has(.gw-wells-by-state) {
+  align-items: flex-start;
+}
+
+.gw-wells-by-line .gw-wells-by-pair:has(.gw-wells-by-state) .gw-wells-by-lead {
+  padding-top: 0.5rem;
+}
+
 select.gw-wells-by-state option {
   padding: 0.1rem var(--gw-space-2);
 }
