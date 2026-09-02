@@ -377,7 +377,7 @@ JURISDICTION_RULES_AS_FOUNDED: tuple[dict[str, object], ...] = (
 )
 
 
-# Colorado's decisions, at Colorado's own instant. Thirteen rows: every §3 rule that decides
+# Colorado's decisions, at Colorado's own instant. Fourteen rows: every §3 rule that decides
 # something the serving path resolves through the registry. The two parse rules that ride with
 # the production grain are conformance rows without being registry decisions, and the six
 # cadence rules are registered in the scheduler's tables rather than here.
@@ -403,6 +403,7 @@ COLORADO_DECISIONS: tuple[dict[str, object], ...] = tuple(
         ("liquids", "cr_co_production_liquids_1"),
         ("entity_key", "cr_co_production_entity_key_1"),
         ("production_grain", "cr_co_production_grain_1"),
+        ("cumulatives_scope", "cr_co_production_grain_1"),
     )
 )
 
@@ -432,6 +433,12 @@ JURISDICTION_RULES: tuple[dict[str, object], ...] = (
      "rule_id": "cr_nd_neighbors_scope_1"},
     {"jurisdiction_code": "MT", "decision": "neighbors_scope",
      "rule_id": "cr_mt_neighbors_scope_1"},
+    # Which jurisdictions the per-well cumulative mart covers, as rows rather than as a tuple
+    # in the mart. The rule each names is the one that decides whether the jurisdiction writes
+    # a well-grain row at all: without one the mart would enter every well, match no month and
+    # write never_reported over a jurisdiction whose production is sitting in canonical.
+    {"jurisdiction_code": "ND", "decision": "cumulatives_scope",
+     "rule_id": "cr_nd_pool_rollup_1"},
     *COLORADO_DECISIONS,
 )
 

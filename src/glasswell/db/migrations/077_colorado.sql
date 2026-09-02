@@ -197,6 +197,19 @@ grant select, insert, delete on staging.co_ecmc_directional_bh to glasswell_pipe
 grant select, insert, delete on staging.co_ecmc_directional_lines to glasswell_pipeline;
 grant select, insert, delete on staging.co_ecmc_production to glasswell_pipeline;
 
+-- How good a coordinate is, on the row that holds the coordinate. Nullable, so no resident
+-- jurisdiction's geometry moves: only a promotion that has a location-qualifier rule writes it,
+-- and Colorado's is cr_co_wells_location_qualifier_1. It is not geometry_provenance, which
+-- answers which feature this is; the two are orthogonal axes with disjoint vocabularies, and
+-- registering the second under the first's key would serve two answers on one screen.
+alter table canonical.well_spatial
+    add column if not exists location_qualifier text;
+
+comment on column canonical.well_spatial.location_qualifier is
+    'The class the source''s own coordinate-quality field maps to, where the jurisdiction'
+    ' registers a location_qualifier decision. Null where none is registered, which is a'
+    ' different fact from a coordinate whose quality the regulator did not state.';
+
 -- The codebook, as rows. decode is ECMC's own wording, kept beside the mapping so the decision
 -- can be read against its source; status_canonical is never null, because two codes are
 -- documented and have no equivalent and carry a registered class rather than a gap.
@@ -399,7 +412,8 @@ select r.jurisdiction_code, date '2026-09-02', date '2026-09-02',
     ('CO', 'inventory_jurisdiction', 'cr_co_inventory_not_served_1'),
     ('CO', 'liquids', 'cr_co_production_liquids_1'),
     ('CO', 'entity_key', 'cr_co_production_entity_key_1'),
-    ('CO', 'production_grain', 'cr_co_production_grain_1')
+    ('CO', 'production_grain', 'cr_co_production_grain_1'),
+    ('CO', 'cumulatives_scope', 'cr_co_production_grain_1')
   ) as r(jurisdiction_code, decision, rule_id)
  where exists (select 1 from lineage.conformance_rules c where c.rule_id = r.rule_id)
 on conflict do nothing;
@@ -507,4 +521,19 @@ select d.job_id, d.depends_on_job_id, 'changed', d.rationale
   ) as d(job_id, depends_on_job_id, rationale)
  where exists (select 1 from lineage.scheduled_jobs j where j.job_id = d.job_id)
    and exists (select 1 from lineage.scheduled_jobs p where p.job_id = d.depends_on_job_id)
+on conflict do nothing;
+
+-- Which jurisdictions the per-well cumulative mart covers, as a registry dimension rather than
+-- a tuple in the mart. North Dakota's row is appended at its own restatement instant, where
+-- 075 left its rules; the rule each names is the one deciding whether the jurisdiction writes a
+-- well-grain row, because the mart reads only those and a jurisdiction in scope without one
+-- would publish never_reported over production that is sitting in canonical.
+insert into lineage.jurisdiction_rules
+    (jurisdiction_code, effective_from, published_at, decision, rule_id, serving, note)
+select 'ND', date '2026-09-02', date '2026-09-04', 'cumulatives_scope',
+       'cr_nd_pool_rollup_1', true, null::text
+ where exists (select 1 from lineage.conformance_rules where rule_id = 'cr_nd_pool_rollup_1')
+   and exists (select 1 from lineage.jurisdictions
+                where jurisdiction_code = 'ND' and effective_from = date '2026-09-02'
+                  and published_at = date '2026-09-04')
 on conflict do nothing;

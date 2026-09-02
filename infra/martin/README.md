@@ -11,6 +11,17 @@ equal to; this table covers the layers whose refresh is an operator command:
 | `nd_wells` | `marts.nd_wells_tile` | POINT | same |
 | `nd_spacing_units` | `marts.nd_spacing_units_tile` (view over `canonical.spacing_units`) | MULTIPOLYGON | always current |
 | `nm_wells` | `marts.nm_wells_tile` | POINT | `glasswell-nm-tiles` |
+| `co_wells` | `marts.co_wells_tile` | POINT | `glasswell-tiles --jurisdiction CO` |
+
+Colorado publishes a point layer and no lateral either, and for its own measured reason:
+`cr_co_wells_geometry_scope_1` records that the two directional archives cover 37,482 of
+124,392 wells, so promoting them would leave seven wells in ten with no path and no statement
+of why. Its features carry two axes that are not the same axis. `geometry_provenance` says
+which feature the point is, `surface` on every one; `loc_qual_class` says how good the
+coordinate is, and 44.67% of them are `planned` -- a permit location on a well that may since
+have been drilled somewhere else. `cr_co_wells_location_qualifier_1` is the row that classes
+it, and a client that drew the two as one axis would be telling a reader a permit application
+is a survey.
 
 New Mexico publishes a point layer and no lateral: `cr_nm_wellhistory_geometry_scope_1` records
 that neither in-scope source ships one. Every `nm_wells` feature carries its reported OCD letter

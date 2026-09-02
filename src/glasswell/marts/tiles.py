@@ -371,6 +371,31 @@ BASIN_LAYERS: tuple[TileLayer, ...] = (
     ),
 )
 
+# A point layer and nothing else, for the reason New Mexico has one: no Colorado lateral is
+# promoted this release, and cr_co_wells_geometry_scope_1 is the row that says so. loc_qual_class
+# is on the wire because 44.67% of these points are permit locations rather than surveys, and a
+# map that does not say so is drawing a permit application as a well.
+CO_LAYERS: tuple[TileLayer, ...] = (
+    TileLayer(
+        name="co_wells",
+        source="marts.tile_co_wells",
+        geometry_type="POINT",
+        properties=(
+            ("api10", "text"),
+            ("operator_name", "text"),
+            ("status_canonical", "text"),
+            ("status_reported", "text"),
+            ("well_type_reported", "text"),
+            ("county_code", "text"),
+            ("spud_year", "int4"),
+            ("loc_qual_class", "text"),
+            ("geometry_provenance", "text"),
+            ("derivation_id", "text"),
+        ),
+        thin=True,
+    ),
+)
+
 TILE_LAYERS: tuple[TileLayer, ...] = (
     *ND_LAYERS,
     *LAND_LAYERS,
@@ -378,6 +403,7 @@ TILE_LAYERS: tuple[TileLayer, ...] = (
     *TX_LAYERS,
     *NM_LAYERS,
     *MT_LAYERS,
+    *CO_LAYERS,
     *BASIN_LAYERS,
 )
 

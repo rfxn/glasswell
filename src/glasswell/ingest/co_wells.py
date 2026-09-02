@@ -87,10 +87,10 @@ on conflict (api10, effective_from) do nothing
 
 _APPEND_SPATIAL = f"""
 insert into {CANONICAL_SPATIAL} (
-    api10, geom_type, geom_key, geom, source_datum, transform_rule_id, source_manifest_id,
-    derivation_id)
+    api10, geom_type, geom_key, geom, source_datum, transform_rule_id, location_qualifier,
+    source_manifest_id, derivation_id)
 select %(api10)s, %(geom_type)s, %(geom_key)s, s.geom, %(source_datum)s,
-       %(transform_rule_id)s, %(manifest_id)s, %(derivation_id)s
+       %(transform_rule_id)s, %(location_qualifier)s, %(manifest_id)s, %(derivation_id)s
   from {STAGING_TABLE} s
  where s.manifest_id = %(manifest_id)s and s.source_row_ordinal = %(ordinal)s
    and s.geom is not null
@@ -116,6 +116,24 @@ def label_conforms(row: dict[str, Any], spec: dict[str, Any]) -> bool:
 
     label = str(row.get(str(spec["label_col"])) or "").strip()
     return re.fullmatch(str(spec["label_pattern"]), label) is not None
+
+
+def location_qualifier(row: dict[str, Any], spec: dict[str, Any]) -> str:
+    """Loc_Qual's first token, case-folded, which is the class the rule registers.
+
+    ECMC files sixteen strings differing only in that token's case, so the fold is the whole
+    mapping; a value the rule does not register is refused rather than passed through, because
+    an unclassed coordinate quality served as a class is the naked claim this rule removes.
+    """
+    raw = str(row.get("loc_qual") or "").strip()
+    token = raw.split(" ")[0].lower() if raw else ""
+    if not token:
+        return str(spec["blank_class"])
+    if token not in spec["classes"]:
+        raise ValueError(
+            f"{raw} folds to {token}, which cr_co_wells_location_qualifier_1 does not register"
+        )
+    return token
 
 
 def effective_from(row: dict[str, Any], spec: dict[str, Any], fallback: date) -> date:
@@ -204,6 +222,7 @@ def promote_headers(run: IngestRun) -> HeaderReport:
     conform = load_rules(connection, source_id=SOURCE_ID, stage="conform", as_of=run.as_of)
     validate = load_rules(connection, source_id=SOURCE_ID, stage="validate", as_of=run.as_of)
     identity = rule_for_family(conform, IDENTITY_FAMILY)
+    qualifier = rule_for_family(conform, QUALIFIER_FAMILY)
     dedup = rule_for_family(validate, DEDUP_FAMILY)
     datum = rule_for_family(conform, DATUM_FAMILY)
     effective = rule_for_family(conform, EFFECTIVE_FAMILY)
@@ -213,7 +232,7 @@ def promote_headers(run: IngestRun) -> HeaderReport:
         effective.rule_id,
         rule_for_family(conform, STATUS_FAMILY).rule_id,
         rule_for_family(conform, WELL_TYPE_FAMILY).rule_id,
-        rule_for_family(conform, QUALIFIER_FAMILY).rule_id,
+        qualifier.rule_id,
     ]
     spatial_cited = [
         datum.rule_id,
@@ -255,6 +274,7 @@ def promote_headers(run: IngestRun) -> HeaderReport:
                 "well_type_reported": row["well_class"],
                 "spud_date": _date(row["spud_date"]),
                 "effective_from": effective_from(row, dict(effective.spec), vintage),
+                "location_qualifier": location_qualifier(row, dict(qualifier.spec)),
                 "ordinal": row["source_row_ordinal"],
             }
         )
@@ -293,6 +313,7 @@ def promote_headers(run: IngestRun) -> HeaderReport:
                     "geom_key": manifest_id,
                     "source_datum": str(datum.spec["source_prj"]),
                     "transform_rule_id": datum.rule_id,
+                    "location_qualifier": row["location_qualifier"],
                 }
                 for row in promoted
             ],

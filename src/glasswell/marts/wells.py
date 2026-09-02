@@ -34,6 +34,7 @@ from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.serialization import hash_payload
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts.tiles import (
+    CO_LAYERS,
     MT_LAYERS,
     ND_LAYERS,
     NM_LAYERS,
@@ -232,6 +233,23 @@ select s.api10,
  where s.geom_type = 'surface' and left(s.api10, 2) = %(state_code)s
 """
 
+_CO_WELLS = f"""
+select s.api10,
+       w.operator_name_reported as operator_name,
+       {resolved_status("w")} as status_canonical,
+       w.status_reported,
+       w.well_type_reported,
+       w.county_code_at_permit as county_code,
+       extract(year from w.spud_date)::int as spud_year,
+       s.location_qualifier as loc_qual_class,
+       s.geom_type as geometry_provenance,
+       s.geom
+  from canonical.well_spatial s
+  left join wells_as_of w on w.api10 = s.api10
+ {resolver_join("w")}
+ where s.geom_type = 'surface' and left(s.api10, 2) = %(state_code)s
+"""
+
 _MT_WELLS = """
 select s.api10,
        w.operator_name_reported as operator_name,
@@ -362,6 +380,38 @@ MART_PROFILES: tuple[MartProfile, ...] = (
             "cr_nm_wellhistory_status_vocab_2",
         ),
         emit_extra=(("state", "NM"), ("geometry_scope", "surface_only")),
+    ),
+    MartProfile(
+        jurisdiction_code="CO",
+        dataset="marts.co_tiles",
+        layers=CO_LAYERS,
+        projections=(
+            _Projection(
+                table="co_wells_tile",
+                columns=(
+                    "api10", "operator_name", "status_canonical", "status_reported",
+                    "well_type_reported", "county_code", "spud_year", "loc_qual_class",
+                    "geometry_provenance", "geom",
+                ),
+                select=_CO_WELLS,
+            ),
+        ),
+        # state_code for the same reason New Mexico carries it: resolver_join joins on it, and
+        # Colorado is the second jurisdiction whose status class is resolved at read time.
+        cte_columns=(
+            "state_code", "operator_name_reported", "status_canonical", "status_reported",
+            "well_type_reported", "county_code_at_permit", "spud_date",
+        ),
+        params_extra=(("geometry_scope", "surface_only"),),
+        rule_ids=(
+            "cr_co_wells_datum_1",
+            "cr_co_wells_geometry_provenance_1",
+            "cr_co_wells_geometry_scope_1",
+            "cr_co_wells_location_qualifier_1",
+            "cr_co_wells_source_selection_1",
+            "cr_co_wells_status_vocab_1",
+        ),
+        emit_extra=(("state", "CO"), ("geometry_scope", "surface_only")),
     ),
     MartProfile(
         jurisdiction_code="MT",
