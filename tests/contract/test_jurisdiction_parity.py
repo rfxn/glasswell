@@ -27,11 +27,14 @@ from glasswell.seed.conformance_nm_wells import NM_WELLS_GIS_SOURCES
 from glasswell.seed.conformance_tx import TX_SOURCES
 from glasswell.seed.jurisdictions import (
     EXPLORER_DEFAULT_CODE,
+    JURISDICTION_RESTATEMENTS,
     JURISDICTION_RULES,
     JURISDICTIONS,
     REGISTERED_ON,
     REQUIRED_DECISIONS,
+    RESTATED_ON,
     registration_parameters,
+    restatement_parameters,
     rule_parameters,
 )
 from glasswell.seed.reference import SOURCES
@@ -212,9 +215,15 @@ def test_the_migration_and_the_seed_module_write_the_same_registrations(
         )
         resident = cursor.fetchall()
 
+    # An explicit key, not declaration order plus a stable sort: the database emits founding
+    # before restated per code, and a concatenation that happened to emit them the other way
+    # round paired every row with its own restatement and failed on evidence_tag with no hint.
     expected = sorted(
-        (registration_parameters(row) for row in JURISDICTIONS),
-        key=lambda row: str(row["jurisdiction_code"]),
+        (
+            *(registration_parameters(row) for row in JURISDICTION_RESTATEMENTS),
+            *(restatement_parameters(row) for row in JURISDICTIONS),
+        ),
+        key=lambda row: (str(row["jurisdiction_code"]), row["published_at"]),
     )
     assert len(resident) == len(expected)
     for landed, declared in zip(resident, expected, strict=True):
@@ -239,7 +248,9 @@ def test_a_registration_published_after_the_cut_is_not_served_under_it(
             " select jurisdiction_code, effective_from, %s, evidence_tag, evidence_commit,"
             " name, regulator_name, %s, identity_scheme, identity_prefix, identity_pattern,"
             " source_ids, 'regulator_url typo corrected' from lineage.jurisdictions"
-            " where jurisdiction_code = 'ND'",
+            " where jurisdiction_code = 'ND' and published_at ="
+            "   (select max(published_at) from lineage.jurisdictions"
+            "     where jurisdiction_code = 'ND')",
             (later, corrected),
         )
 
@@ -248,6 +259,7 @@ def test_a_registration_published_after_the_cut_is_not_served_under_it(
     after = load_jurisdictions(db, later)
 
     assert before.by_code["ND"].regulator_url.endswith("mprindex.asp")
+    assert before.by_code["ND"].published_at == RESTATED_ON
     assert after.by_code["ND"].regulator_url == corrected
     assert after.by_code["ND"].published_at == later
 

@@ -15,7 +15,7 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
-from glasswell.seed.jurisdictions import JURISDICTIONS, REGISTERED_ON
+from glasswell.seed.jurisdictions import JURISDICTIONS, REGISTERED_ON, RESTATED_ON
 from tests.contract.conftest import JURISDICTION_MEASURED_ON, ND_MEASURED
 from tests.support.jurisdictions import restate
 
@@ -76,7 +76,7 @@ def test_a_row_carries_the_regulator_the_identity_and_the_capabilities(
     assert row["map"] == {"wells_tile_layer_id": "nd_wells", "colour": "#3FA55E"}
     assert row["liquids_basis"] == "oil+condensate"
     assert row["effective_from"] == REGISTERED_ON.isoformat()
-    assert row["published_at"] == REGISTERED_ON.isoformat()
+    assert row["published_at"] == RESTATED_ON.isoformat()
 
 
 def test_montanas_two_inventory_rules_are_both_visible_and_one_serves(
@@ -185,9 +185,9 @@ def test_a_registration_published_after_the_cut_is_not_served_under_it(
     current-state view could not have honoured."""
     corrected = "https://www.dmr.nd.gov/oilgas/"
     restate(seeded, "ND", regulator_url=corrected)
-    later = REGISTERED_ON + timedelta(days=1)
+    later = RESTATED_ON + timedelta(days=1)
 
-    before = body(client, as_of=REGISTERED_ON.isoformat())
+    before = body(client, as_of=RESTATED_ON.isoformat())
     after = body(client, as_of=later.isoformat())
 
     assert next(r for r in before["data"] if r["jurisdiction_code"] == "ND")["regulator"][

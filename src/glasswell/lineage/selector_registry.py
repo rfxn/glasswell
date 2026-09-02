@@ -14,13 +14,14 @@ import psycopg
 
 from glasswell.lineage.errors import InvalidSelector, LineageUnresolved
 from glasswell.lineage.ids import format_selector, parse_selector
+from glasswell.lineage.jurisdictions import (
+    NEIGHBORS_SCOPE,
+    JurisdictionRegistry,
+    load_jurisdictions,
+)
 from glasswell.lineage.serialization import hash_payload
 
 NEIGHBOR_DATASET = "marts.nd_neighbors"
-# The neighbour mart spans North Dakota and Montana: the ND/MT line runs through the Williston
-# and a subject on either side has offsets on the other. Kept in step with the mart CHECK in
-# the neighbours multi-state migration and with marts.neighbors.STATE_CODES.
-_NEIGHBOR_API10_PATTERN = r"(25|33)[0-9]{8}"
 
 PRODUCTION_PROFILE = "production_series"
 COMPLETION_POOL_PROFILE = "completion_pool"
@@ -209,6 +210,29 @@ def _validate_neighbor(
     _require_one(connection, statement, parameters, derivation=derivation, handle=handle)
 
 
+def neighbor_api10_pattern(registry: JurisdictionRegistry) -> str:
+    """The API-10 shape a neighbour selector may carry, built from the registrations.
+
+    It was a two-prefix alternation literal: a fourth spelling of a set already written down in
+    the mart, in the migration CHECK and in the registry, and one the add-a-state gate could not
+    see, because its generic rule needs the quote immediately before the digits and an
+    alternation group puts a parenthesis there. A registry argument rather than a module-scope
+    read, because `lineage/` importing `glasswell.seed` would be a new dependency edge.
+    """
+    prefixes = sorted(
+        row.identity_prefix
+        for row in registry
+        if row.neighbors_available
+        and row.identity_prefix is not None
+        and row.rule(NEIGHBORS_SCOPE) is not None
+    )
+    if not prefixes:
+        raise InvalidSelector(
+            f"{NEIGHBOR_DATASET} holds subjects for no registered jurisdiction"
+        )
+    return f"({'|'.join(prefixes)})[0-9]{{8}}"
+
+
 def _validate_neighbor_coverage(
     connection: psycopg.Connection,
     derivation: Mapping[str, Any],
@@ -226,7 +250,8 @@ def _validate_neighbor_coverage(
     limit = terms.pop("limit", None)
     after_distance = terms.pop("after_distance_m", None)
     after_api10 = terms.pop("after_api10", None)
-    if terms or not re.fullmatch(_NEIGHBOR_API10_PATTERN, api10):
+    api10_pattern = neighbor_api10_pattern(load_jurisdictions(connection))
+    if terms or not re.fullmatch(api10_pattern, api10):
         raise InvalidSelector("ND neighbour coverage selector has invalid keys or API-10")
     try:
         parsed_radius = Decimal(radius_m)
@@ -247,7 +272,7 @@ def _validate_neighbor_coverage(
                 Decimal(after_distance)
             except InvalidOperation:
                 raise InvalidSelector("returned coverage selector has invalid distance") from None
-            if re.fullmatch(_NEIGHBOR_API10_PATTERN, str(after_api10)) is None:
+            if re.fullmatch(api10_pattern, str(after_api10)) is None:
                 raise InvalidSelector("returned coverage selector has invalid API-10")
     elif limit is not None or after_distance is not None or after_api10 is not None:
         raise InvalidSelector("only returned coverage accepts page terms")

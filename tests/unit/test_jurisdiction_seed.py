@@ -20,10 +20,13 @@ from glasswell.seed.jurisdictions import (
     EVIDENCE_COMMIT,
     EVIDENCE_TAG,
     JURISDICTION_CODES,
+    JURISDICTION_RESTATEMENTS,
     JURISDICTION_RULES,
+    JURISDICTION_RULES_AS_FOUNDED,
     JURISDICTIONS,
     NAMES,
     PREFIXES,
+    PRESENTATION_COLUMNS,
     REGISTERED_ON,
     REQUIRED_DECISIONS,
     identity_pattern,
@@ -48,10 +51,13 @@ def test_the_migration_and_the_mirror_agree_about_being_repointed() -> None:
     release gate refuses one; this says so without waiting for a tag."""
     migration = MIGRATION.read_text(encoding="utf-8")
 
-    # Both literals, in both files, whatever state the repoint is in: the earlier form
-    # asserted they were present only while UNRELEASED, so a correct repoint turned it red.
+    # Both literals, whichever state the pair is in: the migration writes them and the mirror
+    # restates them, so a repoint that touches one file is what this catches. The earlier form
+    # asserted the quoted tag was absent unless it was the placeholder, which inverted the day
+    # v0.76 did what the checklist asked and has been red on main since.
     assert f"'{EVIDENCE_TAG}'" in migration
     assert f"'{EVIDENCE_COMMIT}'" in migration
+    # And the pair agrees with itself, which is the half-repoint the release gate refuses.
     assert (EVIDENCE_TAG == "UNRELEASED") == (EVIDENCE_COMMIT == "0" * 40)
     assert REPOINTED_COMMIT.match(EVIDENCE_COMMIT)
     assert f"date '{REGISTERED_ON.isoformat()}'" in migration
@@ -64,7 +70,9 @@ def test_the_migration_carries_every_registration_and_every_rule() -> None:
     for row in JURISDICTIONS:
         assert f"'{row['jurisdiction_code']}', '{row['name']}'" in migration
         assert f"'{row['identity_prefix']}'" in migration
-    for rule in JURISDICTION_RULES:
+    # The founding set alone: the decisions this train registers are published by the
+    # presentation migration, whose own test reads them there.
+    for rule in JURISDICTION_RULES_AS_FOUNDED:
         assert f"'{rule['rule_id']}'" in migration
 
 
@@ -132,3 +140,34 @@ def test_the_allowlists_the_add_a_state_scan_reads_are_derived_from_the_rows() -
     assert sorted(CODES) == sorted(row["jurisdiction_code"] for row in JURISDICTION_CODES)
     assert sorted(NAMES) == sorted(row["name"] for row in JURISDICTIONS)
     assert len(PREFIXES) == len(JURISDICTIONS)
+
+
+def test_every_runtime_consumer_still_reads_four_rows() -> None:
+    """M-16. Two consumers build *tuples* from JURISDICTIONS and put them straight into
+    derivation params, so a seed that grew to eight rows would have moved two mart addresses --
+    `marts.nd_neighbors` and `marts.land_metrics` -- from a phase that touches neither."""
+    from glasswell.marts.land_metrics import GRID_SCOPE_API_PREFIXES, GRID_STATE_API_PREFIXES
+    from glasswell.marts.neighbors import STATE_CODES
+
+    assert len(JURISDICTIONS) == 4
+    assert len(STATE_CODES) == 2
+    assert len(set(STATE_CODES)) == len(STATE_CODES)
+    assert GRID_STATE_API_PREFIXES == ("33",)
+    assert GRID_SCOPE_API_PREFIXES == ("33",)
+
+
+def test_the_founding_rows_are_the_resolved_ones_without_the_presentation_columns() -> None:
+    """One declaration, two clocks. A second copy of four rationales would drift on the first
+    correction that touched one and not the other."""
+    assert len(JURISDICTION_RESTATEMENTS) == len(JURISDICTIONS)
+    for founding, resolved in zip(JURISDICTION_RESTATEMENTS, JURISDICTIONS, strict=True):
+        assert set(resolved) - set(founding) == set(PRESENTATION_COLUMNS)
+        assert all(founding[key] == resolved[key] for key in founding)
+
+
+def test_every_wells_row_carries_a_subtitle_the_census_can_fill() -> None:
+    for row in JURISDICTIONS:
+        assert "{count}" in str(row["wells_subtitle_template"])
+        assert row["wells_layer_id"] in str(row["wells_style_layer_ids"])
+    orders = [row["wells_draw_order"] for row in JURISDICTIONS]
+    assert len(set(orders)) == len(orders)

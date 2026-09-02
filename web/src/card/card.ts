@@ -38,6 +38,9 @@ export interface WellDetail {
   ndic_file_no: string | null;
   well_type_reported: string | null;
   length_method: string | null;
+  /** Why no neighbour context is offered, where the jurisdiction registers laterals but the
+   *  neighbour mart's measured domain does not reach it. Null where neighbours are served. */
+  neighbors_reason: string | null;
 }
 
 export interface CompletionEvent {
@@ -440,6 +443,24 @@ export async function renderWellCard(
 
   let neighborRequest: Promise<void> = Promise.resolve();
   const neighborPath = well.links?.["neighbors"];
+  // A third case beside served and absent: the jurisdiction registers laterals and the mart's
+  // measured domain does not reach it. Rendering nothing at all reads as "this well has no
+  // neighbours", which is a different claim from "nobody measured here".
+  if (!neighborPath && detail.neighbors_reason) {
+    const refusalFrame = document.createElement("section");
+    refusalFrame.className = "gw-card-chart gw-neighbor-context";
+    const refusalTitle = document.createElement("h3");
+    refusalTitle.className = "gw-frame-title";
+    refusalTitle.textContent = "Physical neighbours";
+    const refusalHost = document.createElement("div");
+    refusalHost.className = "gw-frame-body";
+    refusalHost.dataset["state"] = "not_covered";
+    refusalFrame.append(refusalTitle, refusalHost);
+    neighborSlot.appendChild(refusalFrame);
+    neighborRequest = import("./neighbors.ts").then(({ renderNeighborRefusal }) => {
+      refusalHost.replaceChildren(renderNeighborRefusal(detail.neighbors_reason as string));
+    });
+  }
   if (neighborPath) {
     const neighborFrame = document.createElement("section");
     neighborFrame.className = "gw-card-chart gw-neighbor-context";

@@ -18,7 +18,7 @@ from glasswell.ingest.nd_gis import LAYERS, load_surveys, load_wells
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.explain import resolve_chain
 from glasswell.lineage.store import PostgresRecorder
-from glasswell.marts import refresh_all
+from glasswell.marts import refresh_for
 from glasswell.seed import seed_all
 from tests.support.seed import seed_well
 
@@ -498,7 +498,7 @@ def test_a_wells_load_beside_the_surveys_leaves_the_two_geometries_distinguishab
 @pytest.fixture
 def refreshed(surveys_loaded, wells_seeded, lineage_env):
     with lineage_session(recorder=PostgresRecorder(wells_seeded), environment=lineage_env):
-        report = refresh_all(wells_seeded)
+        report = refresh_for(wells_seeded, "ND")
     wells_seeded.commit()
     return report
 

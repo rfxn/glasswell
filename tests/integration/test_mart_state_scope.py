@@ -14,7 +14,7 @@ import pytest
 
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.store import PostgresRecorder
-from glasswell.marts import nd_wells, tx_wells
+from glasswell.marts.wells import refresh_for
 from tests.integration.test_tx_gis_load import (  # noqa: F401
     client_for,
     identity,
@@ -47,8 +47,8 @@ def both_basins(seeded: psycopg.Connection, tx_loaded, lineage_env):  # noqa: F8
     )
     seeded.commit()
     with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env):
-        nd = nd_wells.refresh_all(seeded)
-        tx = tx_wells.refresh_all(seeded)
+        nd = refresh_for(seeded, "ND")
+        tx = refresh_for(seeded, "TX")
     seeded.commit()
     return {"nd": nd, "tx": tx, "tx_load": tx_loaded}
 

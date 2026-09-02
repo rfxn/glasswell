@@ -81,13 +81,23 @@ cartographic centrelines carrying `geometry_class` and `vertex_count` on every f
 length, because Montana carries no basin and so no registered length method —
 `land_units_tile`, `land_metrics_tile`, plus spacing
 units,
-which are a view rather than a table), the `nd_well_card` table, and the current
+which are a view rather than a table). Every one of the tile marts above is refreshed by
+`marts/wells.py`, one engine driven by a registration and a `MartProfile` row: the four
+per-state modules that used to hold a copy of the same lifecycle are fifteen-line shims kept
+because two applied migrations name them by module path. Adding a state adds a profile row and
+a registration, not a module. The engine also stops inheriting: which basin governs the compute
+CRS and which source measures a lateral are `jurisdiction_rules` decisions read at refresh
+time, so a jurisdiction that registers neither resolves no length rather than resolving North
+Dakota's. The `nd_well_card` table, and the current
 physical-neighbour pair `nd_neighbor_subjects` / `nd_neighbor_edges`, and the per-well
 cumulative pair `well_cumulatives` / `well_withholding` — two grains rather than one,
 because withholding is month-grained and cumulative volume is stream-grained, and folding
 them together would either duplicate one fact three times or invent a per-stream breakdown
 the regulator never published. Neither carries a state regex: the scope is a Python
-constant, so a second state widens code rather than shipped DDL. martin reads
+constant, so a second state widens code rather than shipped DDL. The neighbour mart's own
+scope is no longer a constant either — the envelope and the UTM zone set it was measured over
+are a `neighbors_scope` registration, so a jurisdiction outside them is an excluded subject
+with a reason on the card rather than a `RuntimeError` that aborts the monthly run. martin reads
 none of those directly: it selects from the `marts.tile_*` views over them, which is
 where the tile-layer allowlist is enforced. `well_features` is resident as well, but on the analytical path
 as the content-addressed `features.well_features` Parquet matrix rather than as a

@@ -786,6 +786,56 @@ TX_RULES: tuple[dict[str, object], ...] = (
         ),
         "evidence_url": DOWNLOADS_PAGE,
     },
+    {
+        "rule_id": "cr_tx_basin_scope_1",
+        "source_id": "tx_gis_wells_county",
+        "stage": "conform",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["basin"],
+        "spec": {
+            "module_function": "glasswell.marts.wells:refresh_for",
+            "contract_note": (
+                "the Texas wells mart resolves its lateral length through the permian row in"
+                " lineage.crs_registry, and this row is where that basin is named"
+            ),
+            "basin": "permian",
+        },
+        "rule": "Texas's served geometry is scoped to the Permian basin.",
+        "rationale": (
+            "cr_tx_county_scope_1 narrows the slice to the 55 Permian-district counties, so the"
+            " basin is a property of what was loaded rather than a claim about the state. The"
+            " mart carried it as a module constant, which no reader could cite and no"
+            " supersession could reach; registered here it is a row, and lineage.crs_registry"
+            " already holds the permian entry it resolves to."
+        ),
+        "evidence_url": DOWNLOADS_PAGE,
+    },
+    {
+        "rule_id": "cr_tx_length_source_1",
+        "source_id": "tx_gis_wells_county",
+        "stage": "conform",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["lateral_length_ft"],
+        "spec": {
+            "module_function": "glasswell.marts.wells:refresh_for",
+            "contract_note": (
+                "a Texas lateral is measured under the compute-CRS rule lineage.crs_registry"
+                " names for the basin cr_tx_basin_scope_1 registers, and the served figure"
+                " cites that rule's id"
+            ),
+            "basin": "permian",
+        },
+        "rule": "A Texas lateral is measured under the compute-CRS rule its registered basin"
+        " resolves to.",
+        "rationale": (
+            "Texas resolves through the basin rather than naming a source directly, because"
+            " lineage.crs_registry is keyed by basin and already answers the question: the"
+            " permian row names tx_gis_wells_county and cr_tx_compute_crs_1 is what measures"
+            " the arc. Naming the source here as well would be a second copy of an answer the"
+            " registry already gives, and the two would drift the first time a zone moved."
+        ),
+        "evidence_url": DOWNLOADS_PAGE,
+    },
 )
 
 _INSERT_SOURCE = """

@@ -37,17 +37,46 @@ import {
   observedFilter,
 } from "./thematics.ts";
 import { LINE_ROLE, VARIANT_STYLES, rgba, variantStyle } from "./variant-style.ts";
+import WELLS_ROSTER_JSON from "./wells-roster.json";
 import type { VariantStyle } from "./variant-style.ts";
 
-export const WELLS_SOURCE = "nd_wells";
+export interface WellsRosterRow {
+  /** The registry's own code, e.g. ND. */
+  readonly code: string;
+  /** The style layer id of the point layer, and the stem of its struck sibling. */
+  readonly id: string;
+  readonly styleLayers: readonly string[];
+  /** The published tile function this row draws from. */
+  readonly tileLayerId: string;
+  readonly drawOrder: number;
+  readonly defaultOn: boolean;
+}
+
+/**
+ * The wells rows as the registry publishes them: layer id, style layers, tile source, draw
+ * order and first-paint default, one entry per registration. Four parallel constants and four
+ * copies of one layer definition stood here, and none of them was a shape any gate could read
+ * — a fifth jurisdiction was a hand edit in each.
+ */
+export const WELLS_ROSTER: readonly WellsRosterRow[] = WELLS_ROSTER_JSON;
+
+/** The tile source each wells row draws from, keyed by its style layer id. */
+export const WELLS_SOURCE_BY_LAYER: Readonly<Record<string, string>> = Object.fromEntries(
+  WELLS_ROSTER.map((row) => [row.id, row.tileLayerId]),
+);
+
+/** The query parameter that overrides a wells source. `nd-wells` never existed: the founding
+ *  row's layer id is the bare `wells`, and the parameter follows the layer rather than the
+ *  source so a saved permalink keeps working. */
+const sourceParameter = (row: WellsRosterRow): string => row.id.split("-").join("_");
+
+/** The disposal ring is a North Dakota well-type fact and reads the row that carries it:
+ *  the lowest draw order, which is the founding registration by construction. */
+const DEFAULT_WELLS_SOURCE = WELLS_ROSTER[0]!.tileLayerId;
+
 export const LATERALS_SOURCE = "nd_laterals";
 export const SPACING_SOURCE = "nd_spacing_units";
-export const TX_WELLS_SOURCE = "tx_wells";
 export const TX_LATERALS_SOURCE = "tx_laterals";
-// A point source and no lateral sibling: no in-scope New Mexico source ships one, and
-// cr_nm_wellhistory_geometry_scope_1 is the row that says so.
-export const NM_WELLS_SOURCE = "nm_wells";
-export const MT_WELLS_SOURCE = "mt_wells";
 // Not `mt_laterals`: the source carries laterals, sidetracks and vertical wellbores alike, and
 // cr_mt_paths_geometry_class_1 keeps the map-stick class off the lateral vocabulary.
 export const MT_PATHS_SOURCE = "mt_paths";
@@ -100,8 +129,8 @@ const TOWNSHIP_LABEL_MIN_ZOOM = 9;
 const SECTION_LABEL_MIN_ZOOM = 12;
 const SPACING_UNIT_LABEL_MIN_ZOOM = 11;
 
-/** One point layer per wells-family row; registry.test.ts holds the two in step as states land. */
-export const WELL_POINT_LAYERS = ["wells", "tx-wells", "nm-wells", "mt-wells"] as const;
+/** One point layer per wells-family row, in registered draw order. */
+export const WELL_POINT_LAYERS: readonly string[] = WELLS_ROSTER.map((row) => row.id);
 
 const INK = "#0B1014";
 const SPACING_LABEL_SIZE = 10;
@@ -154,13 +183,12 @@ function lowestDrawnZoom(source: string, search?: string): number {
 export function sourceSpecs(origin?: string, search?: string): Record<string, SourceSpecification> {
   const specs: Record<string, SourceSpecification> = {};
   for (const [parameter, fallback, featureId] of [
-    ["wells", WELLS_SOURCE, "api10"],
+    ...WELLS_ROSTER.map(
+      (row) => [sourceParameter(row), row.tileLayerId, "api10"] as [string, string, string],
+    ),
     ["laterals", LATERALS_SOURCE, "api10"],
     ["spacing", SPACING_SOURCE, "api10"],
-    ["tx_wells", TX_WELLS_SOURCE, "api10"],
     ["tx_laterals", TX_LATERALS_SOURCE, "api10"],
-    ["nm_wells", NM_WELLS_SOURCE, "api10"],
-    ["mt_wells", MT_WELLS_SOURCE, "api10"],
     ["mt_paths", MT_PATHS_SOURCE, "api10"],
     ["traces", TRACES_SOURCE, "api10"],
     // The land grid's identity is the publisher's unit id, not a well spine key.
@@ -267,16 +295,15 @@ export const FACET_FILTERED_LAYERS: readonly FacetLayer[] = [
   { id: "laterals", source: LATERALS_SOURCE, gated: true },
   { id: "survey-traces", source: TRACES_SOURCE, gated: false },
   { id: "mt-paths", source: MT_PATHS_SOURCE, gated: true },
-  { id: "wells", source: WELLS_SOURCE, gated: true },
-  { id: "wells-struck", source: WELLS_SOURCE, gated: false },
-  { id: "disposal-wells", source: WELLS_SOURCE, gated: false },
   { id: "tx-laterals", source: TX_LATERALS_SOURCE, gated: true },
-  { id: "tx-wells", source: TX_WELLS_SOURCE, gated: true },
-  { id: "tx-wells-struck", source: TX_WELLS_SOURCE, gated: false },
-  { id: "nm-wells", source: NM_WELLS_SOURCE, gated: true },
-  { id: "nm-wells-struck", source: NM_WELLS_SOURCE, gated: false },
-  { id: "mt-wells", source: MT_WELLS_SOURCE, gated: true },
-  { id: "mt-wells-struck", source: MT_WELLS_SOURCE, gated: false },
+  // The point layer is gated by the status filter and its struck sibling is not: the strike
+  // marks a class the filter may have just removed, and repainting it would contradict the
+  // press. Two rows per registration, and the disposal ring reads the founding row's source.
+  ...WELLS_ROSTER.flatMap((row) => [
+    { id: row.id, source: row.tileLayerId, gated: true },
+    { id: `${row.id}-struck`, source: row.tileLayerId, gated: false },
+  ]),
+  { id: "disposal-wells", source: DEFAULT_WELLS_SOURCE, gated: false },
 ];
 
 /**
@@ -287,13 +314,13 @@ export const FACET_FILTERED_LAYERS: readonly FacetLayer[] = [
  * is Texas and New Mexico.
  */
 export const TILE_FACET_PROPERTIES: Readonly<Record<string, readonly string[]>> = {
-  [WELLS_SOURCE]: ["operator_name", "status_canonical", "well_type_reported"],
+  [WELLS_SOURCE_BY_LAYER["wells"]!]: ["operator_name", "status_canonical", "well_type_reported"],
   [LATERALS_SOURCE]: ["operator_name", "status_canonical"],
   [TRACES_SOURCE]: ["operator_name", "status_canonical"],
-  [TX_WELLS_SOURCE]: ["operator_name", "status_canonical", "well_type_reported", "county_code"],
+  [WELLS_SOURCE_BY_LAYER["tx-wells"]!]: ["operator_name", "status_canonical", "well_type_reported", "county_code"],
   [TX_LATERALS_SOURCE]: ["operator_name", "status_canonical", "county_code"],
-  [NM_WELLS_SOURCE]: ["operator_name", "status_canonical", "well_type_reported", "county_code"],
-  [MT_WELLS_SOURCE]: ["operator_name", "status_canonical", "well_type_reported"],
+  [WELLS_SOURCE_BY_LAYER["nm-wells"]!]: ["operator_name", "status_canonical", "well_type_reported", "county_code"],
+  [WELLS_SOURCE_BY_LAYER["mt-wells"]!]: ["operator_name", "status_canonical", "well_type_reported"],
   [MT_PATHS_SOURCE]: ["operator_name", "status_canonical"],
 };
 
@@ -462,17 +489,69 @@ export interface DataLayerOptions {
   search?: string;
 }
 
+/** A registration's point layer. Every jurisdiction draws from the same status expressions:
+ *  the vocabulary is canonical and the rule each class cites is the registry's. */
+function wellPointLayer(
+  row: WellsRosterRow, source: string, hollow: string,
+): LayerSpecification {
+  return {
+    id: row.id,
+    type: "circle",
+    source,
+    "source-layer": source,
+    minzoom: 4,
+    metadata: STATUS_GATED,
+    paint: {
+      "circle-color": selectable(SELECTION_COLOUR, statusFillExpression(hollow)),
+      "circle-stroke-color": selectable(SELECTION_COLOUR, statusColourExpression()),
+      "circle-stroke-width": interpolate(zoom, [
+        [4, 0.4],
+        [9, 0.7],
+        [12, 1.2],
+      ]),
+      "circle-radius": wellRadius(),
+    },
+  };
+}
+
+/** The strike over a plugged wellbore. A well symbol is a data mark, not a label: collision
+ *  placement would drop marks silently, which is the same defect class as an unlabelled
+ *  status. */
+function wellStruckLayer(row: WellsRosterRow, source: string): LayerSpecification {
+  return {
+    id: `${row.id}-struck`,
+    type: "symbol",
+    source,
+    "source-layer": source,
+    minzoom: 11,
+    filter: inSet(statusProperty(), [...STRUCK_STATUSES]),
+    layout: {
+      "icon-image": "gw-strike",
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
+      "icon-size": interpolate(zoom, [
+        [11, 0.55],
+        [15, 1],
+      ]) as unknown as number,
+    },
+  };
+}
+
 export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[] {
   const hollow = options.hollowFill ?? INK;
   const variant = options.variant ?? "dark";
   const tokens = variantStyle(variant);
-  const wells = publishedSource("wells", WELLS_SOURCE, options.search);
+  // One resolved source per registration, keyed by layer id: a fifth row needs no line here.
+  const wellsSources: Record<string, string> = Object.fromEntries(
+    WELLS_ROSTER.map((row) => [
+      row.id,
+      publishedSource(sourceParameter(row), row.tileLayerId, options.search),
+    ]),
+  );
+  const wells = wellsSources["wells"]!;
   const laterals = publishedSource("laterals", LATERALS_SOURCE, options.search);
   const spacing = publishedSource("spacing", SPACING_SOURCE, options.search);
-  const txWells = publishedSource("tx_wells", TX_WELLS_SOURCE, options.search);
   const txLaterals = publishedSource("tx_laterals", TX_LATERALS_SOURCE, options.search);
-  const nmWells = publishedSource("nm_wells", NM_WELLS_SOURCE, options.search);
-  const mtWells = publishedSource("mt_wells", MT_WELLS_SOURCE, options.search);
   const mtPaths = publishedSource("mt_paths", MT_PATHS_SOURCE, options.search);
   const traces = publishedSource("traces", TRACES_SOURCE, options.search);
   const townships = publishedSource("townships", TOWNSHIPS_SOURCE, options.search);
@@ -665,43 +744,10 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
         "line-opacity": selectable(1, 0.85),
       },
     },
-    {
-      id: "wells",
-      type: "circle",
-      source: wells,
-      "source-layer": wells,
-      minzoom: 4,
-      metadata: STATUS_GATED,
-      paint: {
-        "circle-color": selectable(SELECTION_COLOUR, statusFillExpression(hollow)),
-        "circle-stroke-color": selectable(SELECTION_COLOUR, statusColourExpression()),
-        "circle-stroke-width": interpolate(zoom, [
-          [4, 0.4],
-          [9, 0.7],
-          [12, 1.2],
-        ]),
-        "circle-radius": wellRadius(),
-      },
-    },
-    {
-      id: "wells-struck",
-      type: "symbol",
-      source: wells,
-      "source-layer": wells,
-      minzoom: 11,
-      filter: inSet(statusProperty(), [...STRUCK_STATUSES]),
-      layout: {
-        "icon-image": "gw-strike",
-        // A well symbol is a data mark, not a label: collision placement would drop marks
-        // silently, which is the same defect class as an unlabelled status.
-        "icon-allow-overlap": true,
-        "icon-ignore-placement": true,
-        "icon-size": interpolate(zoom, [
-          [11, 0.55],
-          [15, 1],
-        ]) as unknown as number,
-      },
-    },
+    // One point layer per registration, in registered draw order. The four were byte-identical
+    // but for their id and their source, and every one of the differences that mattered --
+    // which status expressions, which radius, which gate -- was the same in all four.
+    ...WELLS_ROSTER.map((row) => wellPointLayer(row, wellsSources[row.id]!, hollow)),
     {
       // A ring over the wellhead, not a second dot: the status colour stays visible inside
       // it, because a disposal well still has a status. Type-keyed, so the legend's status
@@ -745,119 +791,9 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
         "line-opacity": selectable(1, 0.85),
       },
     },
-    {
-      id: "tx-wells",
-      type: "circle",
-      source: txWells,
-      "source-layer": txWells,
-      minzoom: 4,
-      metadata: STATUS_GATED,
-      paint: {
-        "circle-color": selectable(SELECTION_COLOUR, statusFillExpression(hollow)),
-        "circle-stroke-color": selectable(SELECTION_COLOUR, statusColourExpression()),
-        "circle-stroke-width": interpolate(zoom, [
-          [4, 0.4],
-          [9, 0.7],
-          [12, 1.2],
-        ]),
-        "circle-radius": wellRadius(),
-      },
-    },
-    {
-      // New Mexico now has a struck sibling below, where it had none: its status class is
-      // resolved from the registry at read time under cr_nm_wellhistory_status_vocab_2, and
-      // 50,935 of its 141,778 tiled wells are plugged.
-      id: "nm-wells",
-      type: "circle",
-      source: nmWells,
-      "source-layer": nmWells,
-      minzoom: 4,
-      metadata: STATUS_GATED,
-      paint: {
-        "circle-color": selectable(SELECTION_COLOUR, statusFillExpression(hollow)),
-        "circle-stroke-color": selectable(SELECTION_COLOUR, statusColourExpression()),
-        "circle-stroke-width": interpolate(zoom, [
-          [4, 0.4],
-          [9, 0.7],
-          [12, 1.2],
-        ]),
-        "circle-radius": wellRadius(),
-      },
-    },
-    {
-      // Montana draws from the same expressions as the other three: cr_mt_gis_status_vocab_1
-      // maps thirteen of nineteen MBOGC values and quarantines the other six rather than
-      // defaulting them to active.
-      id: "mt-wells",
-      type: "circle",
-      source: mtWells,
-      "source-layer": mtWells,
-      minzoom: 4,
-      metadata: STATUS_GATED,
-      paint: {
-        "circle-color": selectable(SELECTION_COLOUR, statusFillExpression(hollow)),
-        "circle-stroke-color": selectable(SELECTION_COLOUR, statusColourExpression()),
-        "circle-stroke-width": interpolate(zoom, [
-          [4, 0.4],
-          [9, 0.7],
-          [12, 1.2],
-        ]),
-        "circle-radius": wellRadius(),
-      },
-    },
-    {
-      id: "nm-wells-struck",
-      type: "symbol",
-      source: nmWells,
-      "source-layer": nmWells,
-      minzoom: 11,
-      filter: inSet(statusProperty(), [...STRUCK_STATUSES]),
-      layout: {
-        "icon-image": "gw-strike",
-        "icon-allow-overlap": true,
-        "icon-ignore-placement": true,
-        "icon-size": interpolate(zoom, [
-          [11, 0.55],
-          [15, 1],
-        ]) as unknown as number,
-      },
-    },
-    {
-      // 63% of Montana's mapped wells are plugged, so the class the strike marks is the
-      // largest one on this canvas.
-      id: "mt-wells-struck",
-      type: "symbol",
-      source: mtWells,
-      "source-layer": mtWells,
-      minzoom: 11,
-      filter: inSet(statusProperty(), [...STRUCK_STATUSES]),
-      layout: {
-        "icon-image": "gw-strike",
-        "icon-allow-overlap": true,
-        "icon-ignore-placement": true,
-        "icon-size": interpolate(zoom, [
-          [11, 0.55],
-          [15, 1],
-        ]) as unknown as number,
-      },
-    },
-    {
-      id: "tx-wells-struck",
-      type: "symbol",
-      source: txWells,
-      "source-layer": txWells,
-      minzoom: 11,
-      filter: inSet(statusProperty(), [...STRUCK_STATUSES]),
-      layout: {
-        "icon-image": "gw-strike",
-        "icon-allow-overlap": true,
-        "icon-ignore-placement": true,
-        "icon-size": interpolate(zoom, [
-          [11, 0.55],
-          [15, 1],
-        ]) as unknown as number,
-      },
-    },
+    // The struck siblings, in the same order. A strike is a symbol over a class the status
+    // filter may have just removed, so it is ungated where the point layer is gated.
+    ...WELLS_ROSTER.map((row) => wellStruckLayer(row, wellsSources[row.id]!)),
   ];
 
   if (options.labels) {

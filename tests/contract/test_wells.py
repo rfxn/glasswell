@@ -11,6 +11,7 @@ import glasswell.api.routers.wells as wells_router
 from glasswell.api.examples import EXAMPLE_API10
 from glasswell.lineage.ids import parse_handle
 from tests.contract.conftest import ALL_API10S, TX_API10
+from tests.support.seed import seed_well, seed_well_spatial
 
 
 def test_the_collection_lists_every_seeded_well(client: TestClient) -> None:
@@ -253,3 +254,57 @@ def test_labels_bind_fields_to_glossary_terms(client: TestClient) -> None:
 
     assert labels["/api10"] == "gt_api_10_api_12_api_14"
     assert labels["/land_unit_label"] == "gt_land_unit"
+
+
+def _length_warning(envelope: dict, code: str) -> list[dict]:
+    return [item for item in envelope["meta"]["warnings"] if item["code"] == code]
+
+
+def test_a_jurisdiction_with_no_registered_length_rule_is_a_reason_and_not_north_dakotas(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The inheritance this track removes. `lengths.length_rule_source` returned North
+    Dakota's source on a falsy basin, so a New Mexico well -- which registers no basin by
+    cr_nm_wellhistory_basin_scope_1 and no length_scope rule either -- was served a
+    length_method and a compute CRS computed under a rule about North Dakota geometry."""
+    api10 = "3001577001"
+    seed_well(seeded, api10=api10, state_code="30", basin=None, spud_date=None)
+    seed_well_spatial(seeded, api10=api10, geom_type="surface")
+    # A lateral, so the figure is one the card would otherwise have served: with no geometry
+    # the null is an absent measurement rather than an unmeasurable one.
+    seed_well_spatial(seeded, api10=api10, geom_type="lateral")
+    seeded.commit()
+
+    response = client.get(f"/v1/wells/{api10}")
+
+    assert response.status_code == 200
+    envelope = response.json()
+    data = envelope["data"]
+    assert data["lateral_length_ft"] is None
+    assert data["length_method"] == "not_served"
+    assert data["compute_crs"] is None
+    refusals = _length_warning(envelope, "length_scope_unregistered")
+    assert len(refusals) == 1
+    assert "no length rule is registered" in refusals[0]["detail"]
+    assert refusals[0]["pointer"] == "/lateral_length_ft"
+    # A refusal, not a citation: there is no rule to name, which is the whole difference
+    # between this and Montana's withheld length.
+    assert "rule_id" not in refusals[0]
+    assert "length_rule" not in envelope["links"]
+
+
+def test_a_basin_less_well_resolves_an_as_of_rather_than_inheriting_a_crs_vintage(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """N-11. `row["basin"] or "williston"` fed North Dakota's crs_registry effective_from into
+    resolved_vintages for every well with no basin, so the served as_of was another
+    jurisdiction's clock."""
+    api10 = "3001577002"
+    seed_well(seeded, api10=api10, state_code="30", basin=None, spud_date=None)
+    seed_well_spatial(seeded, api10=api10, geom_type="surface")
+    seeded.commit()
+
+    envelope = client.get(f"/v1/wells/{api10}").json()
+
+    assert envelope["meta"]["as_of"]
+    assert envelope["data"]["storage_crs"] == "EPSG:4326"

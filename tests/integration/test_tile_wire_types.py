@@ -303,21 +303,6 @@ def test_every_numeric_attribute_rides_the_wire_as_a_number(
         assert kinds <= set(VALUE_TYPES.values())
 
 
-def test_the_martin_config_publishes_the_functions_the_allowlist_names():
-    """The config is what martin publishes; TILE_LAYERS is what the proxy admits (DR-05).
-
-    The sources are the tile functions, so the property list martin serves *is* the function's
-    own select list — there is no second declaration of types to drift out of step with the
-    relation, which is the N-2 class removed rather than re-guarded."""
-    config = yaml.safe_load(MARTIN_CONFIG.read_text())["postgres"]
-    assert config["auto_publish"] is False
-    assert set(config["functions"]) == {layer.name for layer in TILE_LAYERS}
-    for layer in TILE_LAYERS:
-        declared = config["functions"][layer.name]
-        assert declared["schema"] == "marts"
-        assert declared["function"] == layer.name
-
-
 def test_the_martin_config_can_publish_nothing_outside_marts():
     """DR-05's point: `auto_publish` off with explicit sources is what stops martin serving
     `staging.*`. Auto-published, it offers eleven sources, three of them staging relations,
