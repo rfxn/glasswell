@@ -32,7 +32,7 @@
 --      tests/contract/test_jurisdiction_parity.py holds the two copies to each other.
 -- The jurisdiction code and the rule ids are immutable and must not change during the repoint.
 
--- The evidence pair, written once for all twenty-one Colorado rules: fifteen data rules and the
+-- The evidence pair, written once for all twenty-two Colorado rules: sixteen data rules and the
 -- six cadence rules the schedule rows point at. 049's trigger refuses a conformance rule whose
 -- publication is not registered, so this lands before any seeder that carries them.
 insert into lineage.conformance_rule_publications
@@ -526,12 +526,21 @@ on conflict do nothing;
 -- 075 left its rules; the rule each names is the one deciding whether the jurisdiction writes a
 -- well-grain row, because the mart reads only those and a jurisdiction in scope without one
 -- would publish never_reported over production that is sitting in canonical.
+--
+-- That instant is read from the registry rather than written down. It is 075's RESTATED_ON,
+-- which is one of the five values the integrator repoints at the train, and a literal here
+-- would match nothing the moment it moved -- leaving North Dakota with no cumulatives_scope
+-- row and the migration reporting success.
 insert into lineage.jurisdiction_rules
     (jurisdiction_code, effective_from, published_at, decision, rule_id, serving, note)
-select 'ND', date '2026-09-02', date '2026-09-04', 'cumulatives_scope',
+select j.jurisdiction_code, j.effective_from, j.published_at, 'cumulatives_scope',
        'cr_nd_pool_rollup_1', true, null::text
- where exists (select 1 from lineage.conformance_rules where rule_id = 'cr_nd_pool_rollup_1')
-   and exists (select 1 from lineage.jurisdictions
-                where jurisdiction_code = 'ND' and effective_from = date '2026-09-02'
-                  and published_at = date '2026-09-04')
+  from lineage.jurisdictions j
+ where j.jurisdiction_code = 'ND'
+   and (j.effective_from, j.published_at) = (
+           select effective_from, published_at from lineage.jurisdictions
+            where jurisdiction_code = 'ND'
+            order by published_at desc, effective_from desc
+            limit 1)
+   and exists (select 1 from lineage.conformance_rules where rule_id = 'cr_nd_pool_rollup_1')
 on conflict do nothing;

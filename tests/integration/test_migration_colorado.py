@@ -233,6 +233,58 @@ def test_the_status_rule_carries_the_keys_the_registry_driven_resolver_reads(
     assert {spec["key_col"], spec["value_col"]} <= columns
 
 
+def cumulatives_scope_statement() -> str:
+    """The migration's own ND `cumulatives_scope` insert, read out of the file it ships in."""
+    statements = [
+        statement
+        for statement in re.sub(r"--[^\n]*", "", migration_sql(MIGRATION)).split(";")
+        if "cumulatives_scope" in statement
+        and "cr_nd_pool_rollup_1" in statement
+        and "insert into lineage.jurisdiction_rules" in statement
+    ]
+    assert len(statements) == 1, "the migration no longer has one ND cumulatives_scope insert"
+    return statements[0]
+
+
+def test_north_dakotas_cumulatives_row_follows_a_repointed_restatement_clock(
+    db: psycopg.Connection,
+) -> None:
+    """The deployed path, where this insert is the writer rather than the seed.
+
+    Migrations run before the seed, so on a fresh database 075's restatement lands nothing and
+    seed/jurisdictions.py supplies these rows; on the deployed database, already seeded, this
+    statement is what lands them. Its clock is the seam track's RESTATED_ON, one of the five
+    values the integrator repoints at the train, and it used to be written here as a literal
+    twice -- once selected and once in a guard. Repoint the clock and the guard matches
+    nothing: North Dakota gets no cumulatives_scope row, and the migration reports success.
+
+    So the repoint is performed. A second ND registration is appended at a later instant, the
+    migration's own statement is re-run against it, and the row has to arrive at the new clock.
+    """
+    repointed = date(2026, 9, 6)
+    with db.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.jurisdictions"
+            " select (jsonb_populate_record(null::lineage.jurisdictions,"
+            "         to_jsonb(j) || jsonb_build_object('published_at', %s::text))).*"
+            "   from lineage.jurisdictions j where j.jurisdiction_code = 'ND'"
+            "  order by j.published_at desc, j.effective_from desc limit 1",
+            (repointed,),
+        )
+        cursor.execute(cumulatives_scope_statement())
+        cursor.execute(
+            "select published_at, rule_id, serving from lineage.jurisdiction_rules"
+            " where jurisdiction_code = 'ND' and decision = 'cumulatives_scope'"
+            " order by published_at"
+        )
+        rows = cursor.fetchall()
+
+    assert (repointed, "cr_nd_pool_rollup_1", True) in rows, (
+        "the migration's cumulatives_scope insert did not follow the registration's clock, so a"
+        " repointed restatement leaves North Dakota out of the cumulative mart's population"
+    )
+
+
 def test_the_mart_table_and_its_view_are_installed_with_their_grants(
     db: psycopg.Connection,
 ) -> None:
