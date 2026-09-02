@@ -48,6 +48,7 @@ from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.serialization import hash_payload
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.lineage.vintages import open_vintage
+from glasswell.marts.counts import refresh_jurisdiction_counts
 from glasswell.marts.cumulatives import refresh_well_cumulatives
 from glasswell.marts.neighbors import refresh_neighbors, resident_content_identity
 from glasswell.modeling import served
@@ -873,6 +874,7 @@ def _seed_contract_fixture(db: psycopg.Connection, pinned_control: ControlArtifa
     ):
         refresh_neighbors(db)
     _seed_neighbor_mart(db)
+    _seed_jurisdiction_counts(db)
     _seed_quarantine(db, mpr_manifest)
     # After the ledger, never before: the withheld months the coverage record counts are
     # quarantine rows, so a refresh that ran first would report a span short of one month.
@@ -903,6 +905,37 @@ def _seed_contract_fixture(db: psycopg.Connection, pinned_control: ControlArtifa
         restatement_summary={RESTATED_MONTH.isoformat(): 1},
     )
     db.commit()
+
+
+# North Dakota and Texas only. New Mexico and Montana are registered and unmeasured, which is
+# the state every jurisdiction is in before its first refresh — and the one the surface has to
+# serve as an absence rather than as a zero (R-3).
+#
+# ND_MEASURED is what the writer produces from the seeded wells, restated here so a test can
+# name the number it expects. There is no TX equivalent: nothing asserted one, and a constant
+# no test reads is a claim about the fixture that nothing checks.
+JURISDICTION_MEASURED_ON = date(2026, 8, 27)
+ND_MEASURED = {None: 7, "active": 4, "plugged": 3}
+
+
+def _seed_jurisdiction_counts(connection: psycopg.Connection) -> None:
+    """The measurement ledger as the production writer builds it.
+
+    gate-v076 H-1: this used to hand-write the rows against the derivation the *wells* were
+    promoted by, so `test_explain_resolves_a_count_to_the_manifest_the_file_arrived_in`
+    resolved a borrowed handle and passed while the real writer emitted `inputs=[]`. Calling
+    the writer is what makes that test measure the thing it names.
+    """
+    with lineage_session(
+        recorder=PostgresRecorder(connection),
+        environment=FIXTURE_ENV,
+        clock=FixedClock(datetime(2026, 8, 27, 6, 0, 0, tzinfo=UTC)),
+        correlation_id="run_contract_jurisdiction_counts",
+    ):
+        refresh_jurisdiction_counts(
+            connection, measured_on=JURISDICTION_MEASURED_ON, codes=("ND", "TX")
+        )
+    connection.commit()
 
 
 def _seed_example_key(connection: psycopg.Connection) -> None:

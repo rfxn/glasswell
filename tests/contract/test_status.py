@@ -555,17 +555,23 @@ def test_montana_wells_are_inventoried_under_montana(seeded: psycopg.Connection)
     }
 
 
-def test_no_montana_completions_arm_is_claimed_because_no_source_files_them(
+def test_no_montana_completions_arm_claims_a_measurement_nothing_takes(
     seeded: psycopg.Connection,
 ) -> None:
-    """Checked per block rather than assumed symmetric. `canonical.well_completions` is written
-    only by nd_mpr and nm_dims; no Montana ingest touches it, so an arm here would be a figure
-    of zero standing in for a measurement nothing takes."""
+    """`canonical.well_completions` is written only by nd_mpr and nm_dims; no Montana ingest
+    touches it. The arm used to be omitted so that a figure of zero could not stand in for a
+    measurement nothing takes. The arms are generated from the registry now — a fifth
+    jurisdiction gets one without an edit — so the same guarantee is made explicitly instead:
+    the arm is present, and it reports `unavailable` rather than a zero."""
     datasets, _ = _inventory(seeded, datetime(2026, 8, 30, 18, tzinfo=UTC))
     inventory = {dataset.dataset_id: dataset for dataset in datasets}
 
-    assert "canonical.well_completions/mt" not in inventory
+    montana = inventory["canonical.well_completions/mt"]
+    assert montana.state == "unavailable"
+    assert montana.latest_knowledge_at is None
+    assert montana.valid_from is None
     assert {"canonical.well_completions/nd", "canonical.well_completions/nm"} <= set(inventory)
+    assert inventory["canonical.well_completions/nd"].state == "available"
 
 
 def test_new_mexico_production_reports_zero_before_its_rows_arrive(

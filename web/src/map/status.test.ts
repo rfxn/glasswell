@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { census, censusOf, measuredWellCount, resetCensus } from "./census.ts";
+import { JURISDICTIONS } from "./jurisdictions.generated.ts";
 import {
-  MEASURED_TX_WELL_COUNTS,
-  MEASURED_WELL_COUNTS,
   SELECTION_COLOUR,
   STATUS_CLASSES,
   STATUS_VOCAB_RULE,
@@ -10,7 +10,6 @@ import {
   UNMAPPED_STATUS,
   statusClass,
   statusColour,
-  measuredWellCount,
   statusIds,
   statusMinZoom,
 } from "./status.ts";
@@ -44,13 +43,20 @@ describe("the status catalogue", () => {
   });
 
   it("cites the conformance rule that defines the vocabulary", () => {
-    expect(STATUS_VOCAB_RULE).toBe("cr_nd_status_vocab_1");
+    // The value is a registry row now, not a literal here: the generated module is rendered
+    // from the same seed the parity gate holds to the migration's rows.
+    expect(STATUS_VOCAB_RULE).toBe(JURISDICTIONS.ND.rules["status_vocabulary"]);
     // A class carries the rule that put it in the vocabulary, and every one of those rules is
     // named in STATUS_VOCAB_RULES, which is what the legend prints.
     for (const status of STATUS_CLASSES) {
       expect(STATUS_VOCAB_RULES as readonly string[]).toContain(status.rule);
     }
-    expect(statusClass("service").rule).toBe("cr_tx_status_vocab_1");
+    expect(statusClass("service").rule).toBe(JURISDICTIONS.TX.rules["status_vocabulary"]);
+    expect([...STATUS_VOCAB_RULES].sort()).toEqual(
+      [
+        ...new Set(Object.values(JURISDICTIONS).map((row) => row.rules["status_vocabulary"])),
+      ].sort(),
+    );
   });
 
   it("does not give absence the quarantine colour, or confidential's hue", () => {
@@ -122,13 +128,35 @@ describe("the status catalogue", () => {
     expect(statusColour("")).toBe(UNMAPPED_STATUS.colour);
   });
 
-  it("records the measured well counts for every canonical status", () => {
-    // Per basin, and every class is measured somewhere: ND draws no service well and TX draws
-    // no dry hole, so a single table would have had to claim a zero neither slice measured.
-    for (const id of CANONICAL) expect(measuredWellCount(id)).toBeGreaterThan(0);
-    expect(Object.values(MEASURED_WELL_COUNTS).reduce((sum, n) => sum + n, 0)).toBe(43_817);
-    expect(Object.values(MEASURED_TX_WELL_COUNTS).reduce((sum, n) => sum + n, 0)).toBe(289_778);
-    expect(MEASURED_WELL_COUNTS["service"]).toBeUndefined();
-    expect(MEASURED_TX_WELL_COUNTS["dry"]).toBeUndefined();
+  it("takes its census from the served registry rather than from four undated maps", () => {
+    // The four MEASURED_*_WELL_COUNTS tables were hand-read against the deployed database and
+    // carried no date, so a legend built from them claimed whatever somebody last measured.
+    // The census comes from /v1/jurisdictions now, which serves each count with the derivation
+    // that produced it and the date it was measured on — and answers "unknown", never zero.
+    resetCensus();
+    expect(measuredWellCount("active")).toBeNull();
+
+    resetCensus(
+      censusOf([
+        {
+          well_count: { value: "40" },
+          measured_on: "2026-09-01",
+          well_counts_by_status: [
+            { status_canonical: "active", wells: { value: "25" } },
+            { status_canonical: "plugged", wells: { value: "15" } },
+          ],
+        },
+        // Registered and never refreshed: absent, and absent is not a zero to be added in.
+        { well_count: null, measured_on: null },
+      ]),
+    );
+
+    expect(measuredWellCount("active")).toBe(25);
+    expect(measuredWellCount("plugged")).toBe(15);
+    expect(measuredWellCount("service")).toBe(0);
+    expect(census().total).toBe(40);
+    expect(census().measuredOn).toBe("2026-09-01");
+    expect(census().degraded).toBe(false);
+    resetCensus();
   });
 });

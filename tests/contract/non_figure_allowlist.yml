@@ -27,6 +27,9 @@
   reason: API state code carried as reported; an identifier, not a quantity.
 - pointer: /basins/*/state_code
   reason: API state code on a per-basin summary row; an identifier, not a quantity.
+- pointer: /*/identity/prefix
+  reason: >-
+    The two leading digits of every API-10 in a jurisdiction: an identifier's prefix, not a measured quantity.
 - pointer: /county_code_at_permit
   reason: County code as reported at permit; an identifier, not a quantity.
 - pointer: /*/county_code_at_permit
@@ -103,6 +106,8 @@
   reason: Token count the highlighter uses to build its trie (SB-04 §6.2).
 - pointer: /expires_in
   reason: Lifetime in seconds of a CSRF token, a protocol parameter of the exchange.
+- pointer: /*/sessions_live
+  reason: Live sessions an account holds, a state counter rather than a measured quantity.
 
 # --- spine metadata ----------------------------------------------------------
 - pointer: /error_codes/*/status

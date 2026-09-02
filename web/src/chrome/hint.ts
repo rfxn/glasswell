@@ -28,7 +28,11 @@ export function mountHint(element: HTMLElement): void {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") dismiss();
   });
-  document.addEventListener("mousedown", (event) => {
+  // pointerdown, not mousedown: on touch the synthetic mouse event arrives after the tap has
+  // already been routed, so the first tap outside was spent dismissing and never reached what
+  // it was aimed at. Nothing is prevented or stopped here -- the coach mark gets out of the
+  // way and the tap carries on to its target (gate-v076 D3).
+  document.addEventListener("pointerdown", (event) => {
     const target = event.target;
     if (target instanceof Node && host?.contains(target)) return;
     dismiss();

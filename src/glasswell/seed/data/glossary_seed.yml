@@ -475,6 +475,21 @@
   related_terms: ["Conformance rule", "Canonical", "Spine"]
   source_refs: ["canonical.wells.operator_name_reported", "SB-08 §7.1 O-6"]
 
+- term: Owner
+  highlightable: false
+  short_definition: >-
+    The role that administers a deployment: accounts, keys, sessions and every other
+    owner-scoped operation.
+  expanded_definition: >-
+    There are two roles and no others. An owner may create accounts, change roles, reset
+    passwords, disable accounts and revoke any session; a viewer may do none of those. The last
+    enabled owner cannot be demoted or disabled, because a deployment with no enabled owner
+    cannot be administered at all. Accounts exist because an owner made them - there is no
+    self-registration path and no reset by email.
+  domain_tags: [governance, identity]
+  related_terms: ["Role", "Viewer", "Session"]
+  source_refs: ["SB-06 §5", "SB-04 §3"]
+
 - term: Peer ladder
   aliases: ["Fallback level", "Peer fallback"]
   short_definition: >-
@@ -603,6 +618,49 @@
   related_terms: ["Conformance rule", "Audit stream"]
   source_refs: ["blueprint-v0.6 §9", "SB-07 §12"]
 
+- term: Identity scheme
+  aliases: ["Identity scheme"]
+  short_definition: >-
+    Which well identifier a jurisdiction's rows are keyed by - API-10 in the United States,
+    UWI in Canada.
+  expanded_definition: >-
+    Registered per jurisdiction rather than assumed, because a scheme that is assumed is a
+    scheme that silently takes the first two characters of something that is not an API-10.
+    Whether the identifier is a *key* is a separate fact and its own flag: a handful of states
+    reissue API-10s, which makes the number an identifier but not a unique one.
+  domain_tags: [identity, data-model]
+  related_terms: ["API-10 / API-12 / API-14", "Jurisdiction", "Spine"]
+  source_refs: ["blueprint-v0.6 §3.0", "R8"]
+
+- term: Jurisdiction
+  aliases: ["Jurisdiction", "Jurisdictions"]
+  short_definition: >-
+    A regulator's territory as glasswell registers it: a state or a province, with the rules
+    and the identity scheme its data is read under.
+  expanded_definition: >-
+    A registration, not a project. Every jurisdiction is a row in lineage.jurisdictions with a
+    rationale and two dates - the date it takes effect and the date glasswell published it -
+    and every cross-source decision it carries is a row beside it rather than a branch in code.
+    Serving a fifth jurisdiction is appending rows; it is not editing the routers that read
+    them. The word is deliberately not "state": a province is not one, and `state` is already
+    both a lifecycle value and a query parameter meaning the API prefix.
+  domain_tags: [data-model, conformance]
+  related_terms: ["Conformance rule", "Regulator", "Identity scheme"]
+  source_refs: ["blueprint-v0.6 §3.0", "R8"]
+
+- term: Regulator
+  short_definition: >-
+    The agency whose filings a jurisdiction is served from, named on the registration with
+    the address it publishes them at.
+  expanded_definition: >-
+    Named rather than implied, because "North Dakota says" is a claim about a specific agency
+    and a specific publication, and a reader checking a figure needs to reach the second one.
+    The regulator axis is not the coverage axis: a federal dataset covering one state is
+    registered as that state's coverage and has no regulator here.
+  domain_tags: [conformance, data-model]
+  related_terms: ["Jurisdiction", "Source", "Conformance rule"]
+  source_refs: ["blueprint-v0.6 §3.0", "R8"]
+
 - term: Quarantine state
   highlightable: false
   short_definition: >-
@@ -674,6 +732,18 @@
   related_terms: ["Report vintage", "Bitemporal", "Raw zone"]
   source_refs: ["blueprint-v0.6 §9", "DIR-2"]
 
+- term: Role
+  highlightable: false
+  short_definition: >-
+    What an account may do: owner or viewer.
+  expanded_definition: >-
+    The role is the user-facing concept and it is carried by the account, not by the screen.
+    Internally it resolves to a scope, which is what every authorization guard reads, so a role
+    change takes effect on the account's next request rather than on its next sign-in.
+  domain_tags: [governance, identity]
+  related_terms: ["Owner", "Viewer", "Session"]
+  source_refs: ["SB-06 §5", "SB-04 §3"]
+
 - term: Rule kind
   highlightable: false
   short_definition: >-
@@ -713,6 +783,18 @@
   domain_tags: [geospatial, data-model]
   related_terms: ["PLSS", "Township", "Land unit"]
   source_refs: ["blueprint-v0.6 §9", "cr_blm_plss_publisher_1", "marts.land_units_tile"]
+- term: Session
+  highlightable: false
+  short_definition: >-
+    A signed-in browser, held server-side as a row and presented as a cookie.
+  expanded_definition: >-
+    The cookie carries a token; the database holds only its sha256, so a stolen backup does not
+    yield a working credential. Every request re-reads the row, which is what makes revocation
+    take effect on the next request rather than at the next expiry. Two windows end a session
+    on their own: an idle window that slides on use, and an absolute cap that never moves.
+  domain_tags: [governance, identity]
+  related_terms: ["Role", "Owner", "Viewer"]
+  source_refs: ["SB-06 §5", "SB-04 §3"]
 
 - term: Slot
   highlightable: false
@@ -900,6 +982,17 @@
   related_terms: ["Knowledge time", "Bitemporal", "Report vintage"]
   source_refs: ["SB-07 §12", "DIR-2"]
 
+- term: Viewer
+  highlightable: false
+  short_definition: >-
+    The role that reads this deployment and administers nothing in it.
+  expanded_definition: >-
+    A viewer reaches every read surface and no owner-scoped one: not accounts, not keys, not
+    the session list. A viewer may end their own session and change their own password, which
+    are operations about the caller rather than about the deployment.
+  domain_tags: [governance, identity]
+  related_terms: ["Role", "Owner", "Session"]
+  source_refs: ["SB-06 §5", "SB-04 §3"]
 - term: Viewport
   aliases: ["Map view"]
   short_definition: >-

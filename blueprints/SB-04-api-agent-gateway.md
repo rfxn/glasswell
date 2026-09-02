@@ -835,6 +835,23 @@ without endpoints, and `bp:456-502` has none (§10 E-11).
 | `POST /v1/keys/{key_id}/rotate` | `owner` | Issues a successor, auto-revokes the predecessor, one transaction, show-once secret |
 | `DELETE /v1/keys/{key_id}` | `owner` | Revokes; the row is never deleted |
 
+### 3.6 Registry and account endpoints
+
+**Added 2026-09-02.** The jurisdiction registry and the account surface both shipped
+routes this document did not carry. They split cleanly by auth class: the registry is a
+read of served reference data, so it takes the same keyed path every other `/v1` GET
+takes; every account and session operation is owner-only, because §3.1's whole property
+is that accounts are created and revoked by the owner and by nobody else.
+
+| Method / path | Scope | Notes |
+|---|---|---|
+| `GET /v1/jurisdictions` | keyed (`owner` \| `guest` \| `agent` read) | Registrations resolved under two clocks with their R8 rule set and last measured counts. `as_of` and `explain` apply; a registration published after `as_of` is not served under it |
+| `GET /v1/users` | `owner` | Collection, newest first. No password material is serialised; the list answers *who exists*, not *what they know* |
+| `POST /v1/users` | `owner` | The only way an account comes into existence after the first: no self-registration, no reset by email. Supply `password` or the server mints one, shown once |
+| `PATCH /v1/users/{user_id}` | `owner` | Changes an account's role, or re-enables it |
+| `GET /v1/sessions` | `owner` | Live sessions with their account and their standing against the idle and absolute windows. Neither the token, nor its hash, nor the client address appears |
+| `DELETE /v1/sessions/{session_id}` | `owner` | Revokes one session. CSRF applies, as on every state-changing route |
+
 ---
 
 ## 4. Endpoint catalog

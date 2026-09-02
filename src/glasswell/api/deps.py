@@ -40,6 +40,11 @@ from glasswell.api.principal import (
 from glasswell.api.rate_limit import consume_bucket
 from glasswell.lineage.clock import utc_today
 from glasswell.lineage.explain import DEFAULT_DEPTH, MAX_DEPTH
+from glasswell.lineage.jurisdictions import (
+    JurisdictionRegistry,
+    JurisdictionRegistryError,
+    load_jurisdictions,
+)
 
 OWNER_KEY_ENV = "GLASSWELL_OWNER_KEY"
 ALLOW_ANON_ENV = "GLASSWELL_ALLOW_ANON"
@@ -235,6 +240,27 @@ def rows(connection: psycopg.Connection, statement: str, params: object = None) 
 
 def today() -> date:
     return utc_today()
+
+
+def jurisdictions(
+    connection: psycopg.Connection, as_of: date | None = None
+) -> JurisdictionRegistry:
+    """The registry at a knowledge cut, or a refusal.
+
+    R8: an unregistered code yields a null rule, which is an answer. A registry that resolves
+    nothing is a service fault, and every route that reads it says so rather than serving a
+    jurisdiction's decisions as absent.
+
+    `as_of` is the *registry's* knowledge clock and only /v1/jurisdictions passes one. On the
+    well, facet and production routes `as_of` selects well and production vintages, which is a
+    different subject: the rule cited beside a status is the rule that decided that class, not
+    the rule that existed when the well was filed. Passing a well-vintage cut here would take a
+    retrospective read to 503, and a liquids figure — whose basis is mandatory — to 500.
+    """
+    try:
+        return load_jurisdictions(connection, as_of)
+    except JurisdictionRegistryError as refusal:
+        raise ProblemError("service_degraded", detail=str(refusal)) from refusal
 
 
 Connection = Annotated[psycopg.Connection, Depends(get_connection)]

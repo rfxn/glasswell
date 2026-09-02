@@ -11,9 +11,13 @@ import re
 ACCESS_LOGGER = "uvicorn.access"
 REDACTED = "REDACTED"
 
-# Every credential-shaped query parameter, not just `key`. The API refuses three of these
-# outright; this is the second line, for anything that reaches the log first.
-_CREDENTIAL_QUERY_RE = re.compile(r"(?i)\b(key|password|token|session|csrf)=[^&\s\"']+")
+# Every credential-shaped query parameter, not just `key`, and the match runs *inside* an
+# identifier: `\b` before a bare `password` fails on `new_password=`, because `_` is a word
+# character. Over-redacting `monkey=` is the safe direction -- a redacted log value is
+# recoverable from the request, a leaked credential is not.
+_CREDENTIAL_QUERY_RE = re.compile(
+    r"(?i)\b([\w-]*(?:key|password|token|session|csrf))=[^&\s\"']+"
+)
 # A session token anywhere in a record, not only in a query string -- a stray repr() of a
 # cookie header would otherwise put a live credential in journald.
 _SESSION_TOKEN_RE = re.compile(r"gws_[A-Za-z0-9_-]{20,}")

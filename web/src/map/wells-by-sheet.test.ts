@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WellFacets } from "../explore/facets/wells-by.ts";
+import { DEFAULT_JURISDICTION } from "./jurisdictions.generated.ts";
 import { createWellsBySheet } from "./wells-by-sheet.ts";
 
 const figure = (value: string, handle = "drv_test#col=wells") => ({
@@ -12,9 +13,11 @@ const figure = (value: string, handle = "drv_test#col=wells") => ({
   d: handle,
 });
 
+// The sheet renders whatever jurisdiction the panel opened on, and the panel opens on the
+// registered explorer default — so the fixture reads it rather than pinning a second copy.
 const ND: WellFacets = {
-  state: "33",
-  state_name: "North Dakota",
+  state: DEFAULT_JURISDICTION.prefix,
+  state_name: DEFAULT_JURISDICTION.name,
   dimension: "operator",
   dimension_title: "current operator, as the source reported it",
   sort: "count",

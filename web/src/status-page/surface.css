@@ -279,14 +279,17 @@
   box-shadow: 0 0 0 1px var(--hairline);
 }
 
+/* 2px, not 0: a gw-term's dotted rule is a border on an *inline* box, so it paints below the
+   line box and, with no room here, under the dd's opaque fill. The dd gives the 2px back so the
+   gap between term and value is the same 4px it always was. */
 .gw-status-facts dt {
-  padding-bottom: 0;
+  padding-bottom: 2px;
   color: var(--muted);
   font-size: var(--gw-fs-micro);
 }
 
 .gw-status-facts dd {
-  padding-top: var(--gw-space-1);
+  padding-top: 2px;
   color: var(--paper);
   font-family: var(--gw-font-mono);
   overflow-wrap: anywhere;
@@ -361,6 +364,18 @@
   border: 1px solid var(--hairline);
   border-radius: var(--gw-radius-sm);
   background: var(--panel);
+}
+
+/* Two lines, not eleven. The full sentence is on the cell's title. */
+.gw-status-reason {
+  max-width: 22rem;
+}
+
+.gw-status-reason > * {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .gw-status-table {
@@ -529,6 +544,217 @@
   }
 }
 
+/* Accounts: owner-only, and a section of this page rather than a fourth header mode --
+   at 390 px the mode switch already spends 373 of the 390 px a phone has. */
+
+.gw-accounts .gw-status-table-wrap + .gw-status-table-wrap {
+  margin-top: var(--gw-space-4);
+}
+
+.gw-accounts-users {
+  min-width: 620px;
+}
+
+.gw-accounts-sessions {
+  min-width: 880px;
+}
+
+/* gate-v076 D2: the sessions table is 880 px of minimum inside a 961 px viewport at 1024 and
+   the Revoke button sat 161 px past the visible edge (758 px at 390), behind a 2 px scrollbar
+   with no fade, shadow or mask. A reader on a laptop saw a complete-looking list with no cue
+   that the section's only destructive control existed. It is pinned to the right edge instead:
+   the data columns scroll under it, Revoke never leaves the viewport, and the shadow is the
+   cue that there is more to the left of it. */
+.gw-accounts-sessions th:last-child,
+.gw-accounts-sessions td:last-child,
+.gw-accounts-users th:last-child,
+.gw-accounts-users td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: var(--panel);
+  /* box-shadow rather than border-left: `border-collapse: collapse` drops one side of a
+     sticky cell's border as it detaches from the collapsed grid. */
+  box-shadow: inset 1px 0 0 var(--hairline);
+}
+
+/* gate-v076 N3: the pinned column is opaque, so anything sliding under it is painted over --
+   at 390 the last ~5 px of a long username, chopped mid-stroke with nothing to say so, and
+   invisible to every width assertion because the cell does not overflow. The name is held short
+   of the pinned column's left edge instead, and ellipsises there. Above 520 the row has room
+   and the name is left whole. */
+.gw-accounts-name {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+/* The head cell outranks its own column, or the first row scrolls over it. */
+.gw-accounts-sessions thead th:last-child,
+.gw-accounts-users thead th:last-child {
+  z-index: 2;
+}
+
+/* One line per cell: these tables are already scroll-on-overflow, and a wrapped timestamp
+   doubles every row's height at 1024 to save a horizontal swipe nobody asked for. */
+.gw-accounts-users td,
+.gw-accounts-sessions td,
+.gw-accounts-users th,
+.gw-accounts-sessions th {
+  white-space: nowrap;
+}
+
+.gw-accounts .gw-empty {
+  margin: 0;
+  padding: var(--gw-space-4);
+  color: var(--muted);
+}
+
+.gw-accounts-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--gw-space-2);
+}
+
+.gw-accounts-action,
+.gw-accounts-submit,
+.gw-accounts-confirm-go,
+.gw-accounts-confirm-cancel {
+  min-height: 32px;
+  padding: 0 var(--gw-space-3);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-sm);
+  background: var(--panel);
+  color: var(--paper);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+.gw-accounts-action:hover:not(:disabled),
+.gw-accounts-submit:hover,
+.gw-accounts-confirm-go:hover,
+.gw-accounts-confirm-cancel:hover {
+  border-color: var(--cyan-text);
+}
+
+.gw-accounts-action:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.gw-accounts-role {
+  min-height: 32px;
+  padding: 0 var(--gw-space-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-sm);
+  background: var(--panel);
+  color: var(--paper);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-accounts-state {
+  margin-left: var(--gw-space-2);
+  color: var(--muted);
+  font-size: var(--gw-fs-micro);
+  font-weight: 400;
+}
+
+.gw-accounts-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gw-space-2) var(--gw-space-3);
+  margin-top: var(--gw-space-4);
+  padding: var(--gw-space-3) var(--gw-space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--gw-radius-sm);
+  background: var(--panel);
+}
+
+.gw-accounts-form label {
+  color: var(--muted);
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-accounts-form input {
+  min-height: 32px;
+  padding: 0 var(--gw-space-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-sm);
+  background: var(--ink);
+  color: var(--paper);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-accounts-confirm,
+.gw-accounts-secret,
+.gw-accounts-refusal {
+  margin-top: var(--gw-space-4);
+  padding: var(--gw-space-3) var(--gw-space-4);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-sm);
+  background: var(--panel);
+}
+
+.gw-accounts-refusal {
+  border-color: var(--amber);
+}
+
+.gw-accounts-confirm-line,
+.gw-accounts-secret-line,
+.gw-accounts-refusal-line {
+  margin: 0 0 var(--gw-space-2);
+  color: var(--paper);
+}
+
+.gw-accounts-refusal-line {
+  color: var(--amber-text);
+}
+
+.gw-accounts-refusal-fields {
+  margin: 0;
+  padding-left: var(--gw-space-4);
+  color: var(--slate);
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-accounts-confirm-actions,
+.gw-accounts-secret-actions {
+  display: flex;
+  gap: var(--gw-space-2);
+}
+
+/* Reads in the density grammar the panel already uses: muted, micro, beside the controls. */
+.gw-accounts-copy-state {
+  align-self: center;
+  color: var(--muted);
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-accounts-secret-value {
+  display: block;
+  margin: 0 0 var(--gw-space-3);
+  padding: var(--gw-space-2) var(--gw-space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--gw-radius-sm);
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-fs-mono);
+  /* A 43-character credential does not fit 390 px, and wrapping it orphaned a single glyph
+     onto a second line. It scrolls instead of wrapping: `overflow: hidden` would have put
+     the tail of a shown-once secret out of reach, and this keeps every character selectable. */
+  white-space: nowrap;
+  overflow-x: auto;
+  user-select: all;
+}
+
 @media (max-width: 900px) {
   .gw-status-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -536,6 +762,28 @@
 }
 
 @media (max-width: 520px) {
+  /* Short of where the pinned action column starts at this width, so a long name ellipsises in
+     the open rather than being painted over by it. */
+  .gw-accounts-name {
+    max-width: 7.5rem;
+  }
+
+  /* A phone press is a finger, not a cursor: every Accounts control reaches the 44 px floor
+     the rest of the chrome holds. */
+  .gw-accounts-action,
+  .gw-accounts-submit,
+  .gw-accounts-confirm-go,
+  .gw-accounts-confirm-cancel,
+  .gw-accounts-role,
+  .gw-accounts-form input {
+    min-height: 44px;
+  }
+
+  .gw-accounts-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .gw-status-page {
     padding: var(--gw-space-4) var(--gw-space-3) var(--gw-space-5);
   }
@@ -560,8 +808,10 @@
     grid-template-columns: 1fr;
   }
 
+  /* Still 2px, for the reason the base rule states: this is the width with no hover, so the
+     dotted rule is the only thing saying a definition is behind the term. */
   .gw-status-facts dt {
-    padding-bottom: 0;
+    padding-bottom: 2px;
   }
 
   .gw-status-facts dd {

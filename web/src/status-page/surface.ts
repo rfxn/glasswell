@@ -1,5 +1,7 @@
 import "./surface.css";
 
+import { accountsSection, loadAccounts } from "../accounts/section.ts";
+import { displayTime, element } from "./dom.ts";
 import { ApiError, getEnvelope } from "../api/client.ts";
 import "../components/gw-count.ts";
 import { labelElement } from "../glossary/gw-term.ts";
@@ -104,6 +106,11 @@ export interface StatusPayload {
 
 export interface StatusPageOptions {
   onForbidden(error: ApiError): void;
+  /**
+   * The role `main.ts` already resolved, not a second probe: Accounts renders for an owner and
+   * for nobody else, and an absent role is nobody.
+   */
+  role?: string | null;
 }
 
 interface Mount {
@@ -230,8 +237,11 @@ async function refresh(mount: Mount, restoreFocus = false): Promise<void> {
     const envelope = await getEnvelope<unknown>("/v1/status", {}, controller.signal);
     const payload = statusPayload(envelope.data);
     if (mounted !== mount || controller.signal.aborted) return;
-    renderStatus(mount, payload);
+    const rendered = renderStatus(mount, payload);
     if (restoreFocus) focusRefresh(mount);
+    // The page is already on screen; this awaits the section's own two requests so a caller --
+    // and a test -- can tell when the surface has finished, not when it first painted.
+    await rendered;
   } catch (error) {
     if (mounted !== mount || controller.signal.aborted || aborted(error)) return;
     const forbidden = error instanceof ApiError && error.problem.status === 403;
@@ -294,7 +304,7 @@ function renderError(mount: Mount, error: unknown): void {
   mount.teaching.retouch();
 }
 
-function renderStatus(mount: Mount, payload: StatusPayload): void {
+function renderStatus(mount: Mount, payload: StatusPayload): Promise<void> | undefined {
   const root = pageRoot();
   const header = pageHeader();
   const refreshButton = document.createElement("button");
@@ -309,6 +319,7 @@ function renderStatus(mount: Mount, payload: StatusPayload): void {
   announcement.setAttribute("role", "status");
   announcement.textContent = `${SNAPSHOT_LABELS[payload.snapshot_state]}. Status updated.`;
 
+  const accounts = accountsSection(mount.options.role);
   root.append(
     header,
     deployment(payload),
@@ -317,10 +328,15 @@ function renderStatus(mount: Mount, payload: StatusPayload): void {
     jobs(payload),
     sources(payload.sources),
     disclosures(payload.disclosures),
+    ...(accounts ? [accounts] : []),
     announcement,
   );
   mount.host.replaceChildren(root);
   mount.teaching.retouch();
+  if (!accounts) return undefined;
+  // The section fills after this paint, and its rows carry the vocabulary the glossary now
+  // defines (Session, Role, Viewer, Owner), so the teaching layer has to reach them as well.
+  return loadAccounts(accounts).then(() => mount.teaching.retouch());
 }
 
 function pageRoot(): HTMLElement {
@@ -684,7 +700,7 @@ function sources(items: StatusSource[]): HTMLElement {
       tableCell(timeOrFallback(source.declared_vintage, "Not declared")),
       tableCell(textValue(source.last_manifest_id ?? "None", source.last_manifest_id !== null)),
       tableCell(countedValue(source.manifest_count, "artifacts", MANIFEST_COUNT_REASON)),
-      tableCell(textValue(source.freshness_reason)),
+      reasonCell(source.freshness_reason),
     );
     body.append(row);
   }
@@ -824,13 +840,6 @@ function timeOrFallback(value: string | null, fallback: string): HTMLElement {
   return time;
 }
 
-function displayTime(value: string): string {
-  if (/^\d{4}-\d{2}(-\d{2})?$/.test(value)) return value;
-  const parsed = new Date(value);
-  if (!Number.isFinite(parsed.getTime())) return value;
-  return parsed.toISOString().replace("T", " ").replace(/:\d{2}\.\d{3}Z$/, " UTC");
-}
-
 /** A column head is prose unless its wording is the product's name for something else. */
 type Column = string | { label: string; term: string };
 
@@ -846,6 +855,19 @@ function tableHead(columns: readonly Column[]): HTMLTableSectionElement {
   }
   head.append(row);
   return head;
+}
+
+/**
+ * gate-v076 D5: this note is the eleventh column of eleven and wrapped to 128 px, which made a
+ * row 153 px tall for 32 px of visible content -- roughly 3,600 px of dead space over the 30
+ * rows on the page. Clamped to two lines, with the whole sentence on the cell's title, because
+ * the column is off screen at every width shot and the note is the least-read thing in it.
+ */
+function reasonCell(reason: string): HTMLTableCellElement {
+  const cell = tableCell(textValue(reason));
+  cell.className = "gw-status-reason";
+  cell.title = reason;
+  return cell;
 }
 
 function tableCell(value: Node): HTMLTableCellElement {
@@ -875,15 +897,6 @@ function emptyBlock(message: string): HTMLElement {
   const item = element("p", "gw-status-empty");
   item.textContent = message;
   return item;
-}
-
-function element<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className: string,
-): HTMLElementTagNameMap[K] {
-  const created = document.createElement(tag);
-  created.className = className;
-  return created;
 }
 
 function aborted(error: unknown): boolean {

@@ -180,6 +180,13 @@ body {
   outline-offset: 3px;
 }
 
+/* Except when the app moved focus there itself and the reader has pressed nothing: a deep link
+   opening a card painted this ring around its title at every width. chrome/overlays.ts drops
+   the attribute on the first keydown, so a keyboard reader keeps the affordance. */
+[tabindex="-1"][data-gw-quiet-focus]:focus-visible {
+  outline: none;
+}
+
 /* The eyebrow: straps, axis labels, the null-semantics key, popover metadata. One treatment,
    so the small uppercase type in the app reads as one voice rather than five near-misses. */
 .gw-strap,
@@ -971,6 +978,13 @@ main[data-drawer="open"] #gw-card {
   font-size: var(--gw-fs-micro);
 }
 
+/* Its own line under the stream label: at 390 the three cells share ~113px each, so a chip
+   sitting inline with the label would either crowd the number or clip. */
+.gw-cumulative-basis {
+  display: table;
+  margin-top: 0.1rem;
+}
+
 .gw-cumulative-cell dd {
   min-width: 0;
   margin: 0;
@@ -1711,6 +1725,11 @@ a {
 
 /* chrome/notes.ts. A scope line is the same obligation the sentence carried, at a width a
    reader scans instead of reads; the disclosure below it holds the wording unchanged. */
+/* One token that must not break at its own hyphen; scopeLine's `unbreakable` puts it here. */
+.gw-nowrap {
+  white-space: nowrap;
+}
+
 .gw-scope,
 .gw-empty {
   margin: 0;
@@ -1914,6 +1933,49 @@ a {
   }
 }
 
+/* gate-v076 D1: signed in at 1024 the Sign-out control took the brand block from 205 px to
+   140 px and the wordmark ellipsised to `glass…` with the strap clipped to `NO NAKED`. The
+   label goes, the button does not: it is the one control that only exists for a reader who
+   has something to sign out of, and the icon carries it at this rung. Hidden from the eye and
+   not from the accessibility tree, because the label *is* the button's accessible name --
+   `display: none` here would leave an unnamed button. */
+@media (min-width: 901px) and (max-width: 1100px) {
+  #gw-logout-btn .gw-ctl-lbl {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* The strapline moves up from its 620 px breakpoint to here. BRAND.md allows the wordmark to
+     stand alone; it does not allow it to read `glass…`, and at this rung the rail cannot afford
+     both the strap and a Sign-out control. Bounded below at 901 because the tablet and phone
+     postures below it have their own answer, and their search field is sized by a later rule. */
+  .gw-strap {
+    display: none;
+  }
+
+  /* The brand stops being the item that pays for the rest. It carries `min-width: 0` so a phone
+     can ellipsise the wordmark, which also made it the first thing flexbox shrank once a fourth
+     control joined the rail. */
+  .gw-brand {
+    flex: none;
+  }
+
+  /* And the search gives back what the brand no longer yields, so the rail's status message --
+     `Session expired` and its siblings, the one live region up here -- is not what pays
+     instead. `min(22rem, 26vw)` is a capped fixed width, not an elastic one, so under pressure
+     it never shrank at all. */
+  .gw-search-input {
+    width: min(13rem, 20vw);
+  }
+}
+
 /* The stylesheet had no media query at all: below 940 px the card left the viewport and at
    390 px it sat at x -550, so tapping a lateral appeared to do nothing. */
 @media (max-width: 900px) {
@@ -2002,6 +2064,29 @@ a {
 
   .gw-brand {
     gap: var(--gw-space-2);
+  }
+}
+
+/* gate-v076 N1: the compact rail below 901 px reverted every rule the 901-1100 block added --
+   the brand went back to `flex: 0 1 auto` and the strapline came back and clipped -- so a
+   signed-in owner at 820, a rung on the project's own ladder, read `glas…` / `— NO NAK`, worse
+   than the string that was just fixed one rung above.
+   Scoped to a session rather than to the width, which is the real condition: signed out the
+   rail has no Sign-out control and 820 already held. Above 620, because below it the wordmark
+   shrinks and then the brand text goes entirely, which is that posture's own answer. */
+@media (min-width: 621px) and (max-width: 900px) {
+  #gw-header:has(#gw-logout-btn:not([hidden])) .gw-strap {
+    display: none;
+  }
+
+  #gw-header:has(#gw-logout-btn:not([hidden])) .gw-brand {
+    flex: none;
+  }
+
+  /* The search shrinks rather than disappears: it is the only elastic thing on the rail, and a
+     field a reader can still see and type in is worth more than the 40 px a collapse would buy. */
+  #gw-header:has(#gw-logout-btn:not([hidden])) .gw-search-input {
+    width: min(9rem, 17vw);
   }
 }
 
@@ -2110,17 +2195,21 @@ a {
   }
 
   /* Anchored to the act group, the popover hung off a 390 px viewport; here it is the
-     viewport's, like the search panel above it. */
+     viewport's, like the search panel above it. Docked to the bottom rather than under the
+     rail: up there it sat exactly where a section title and its first control are, covered the
+     `Accounts` and `Status` headings, and took the tap aimed at `Add user` (gate-v076 D3). */
   .gw-hint {
     position: fixed;
-    top: calc(var(--gw-rail-band) + 2 * var(--gw-rail-pad-y) + var(--gw-space-2));
+    top: auto;
+    bottom: var(--gw-space-3);
     right: var(--gw-space-2);
     left: var(--gw-space-2);
     width: auto;
     max-width: none;
   }
 
+  /* The tick pointed at the help button in the rail, which is nowhere near it now. */
   .gw-hint::before {
-    right: 44px;
+    display: none;
   }
 }

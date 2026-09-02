@@ -443,6 +443,19 @@ EVIDENCE = re.compile(
 )
 
 
+# The statements that legitimately carry the placeholder pair. A file with none of them has no
+# evidence insert, so `_header` is the whole text and any quoted literal in it is caught.
+EVIDENCE_INSERTS = (
+    "insert into lineage.conformance_rule_publications",
+    "insert into lineage.jurisdictions (",
+)
+
+
+def _header(text: str) -> str:
+    cuts = [text.index(anchor) for anchor in EVIDENCE_INSERTS if anchor in text]
+    return text[: min(cuts)] if cuts else text
+
+
 def _evidence_migration() -> Path:
     """The newest migration that registers rule publication evidence.
 
@@ -552,9 +565,7 @@ class TestPlaceholderPublicationEvidence:
         assert migrations, "no migrations found; this pin would be vacuous"
         for path in migrations:
             text = path.read_text(encoding="utf-8")
-            # A migration with no evidence insert has no statement, so `header` is the whole
-            # file and any quoted literal in it is caught — which is the correct answer.
-            header, _, _ = text.partition("insert into lineage.conformance_rule_publications")
+            header = _header(text)
             for literal in (
                 f"'{release.PLACEHOLDER_EVIDENCE_TAG}'",
                 f"'{release.PLACEHOLDER_EVIDENCE_COMMIT}'",
@@ -564,6 +575,25 @@ class TestPlaceholderPublicationEvidence:
                     f"{path.name} quotes {literal} above its evidence insert, which re-arms "
                     "the release guard through prose"
                 )
+
+    def test_the_seed_mirroring_the_registrations_is_scanned_too(self, tmp_path):
+        """N-5: the jurisdiction registrations ship on two paths, so a repoint that edits the
+        migration and forgets the mirror is a half-repoint. The mirror is Python, which is why
+        the scan reads double quotes as well as single ones."""
+        _, repointed = _pair()
+        root = _repo(tmp_path)
+        mirror = root / release.EVIDENCE_MIRRORS[0]
+        mirror.parent.mkdir(parents=True, exist_ok=True)
+        mirror.write_text(
+            f'EVIDENCE_TAG = "{release.PLACEHOLDER_EVIDENCE_TAG}"\n'
+            f'EVIDENCE_COMMIT = "{release.PLACEHOLDER_EVIDENCE_COMMIT}"\n',
+            encoding="utf-8",
+        )
+        _with_migration(root, repointed)
+
+        blockers = release.preconditions(root, _pending(root), Version(0, 66))
+
+        assert any(mirror.name in blocker for blocker in blockers)
 
     def test_prose_naming_the_placeholder_does_not_block(self, tmp_path):
         """R-1 in one line: the guard reads the quoted SQL literal, never the word."""
@@ -1600,3 +1630,96 @@ def test_the_deploy_installs_tile_functions_before_restarting_martin() -> None:
         "tile functions are installed after martin restarts, so a layer whose mart has never"
         " been refreshed still stops martin from booting and takes every tile with it"
     )
+
+
+# gate-v075 MAJOR-3, then gate-v076 H-2: the served operation count is quoted in four
+# documents and drifted out of agreement twice, in the same direction, one release apart.
+# The v0.75 round closed it by hand and nothing held it, so this is the thing that holds it.
+SNAPSHOT = ROOT / "tests" / "contract" / "openapi_snapshot.json"
+COUNTED_IN = ("STATUS.md", "ROADMAP.md", "llms.txt", "README.md")
+HTTP_METHODS = frozenset(
+    {"get", "put", "post", "delete", "patch", "head", "options", "trace"}
+)
+TENS = {
+    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
+    "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
+}
+UNITS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9,
+}
+# A number, then up to two words of prose, then the noun: "54 operations" and "Fifty-four
+# snapshot-pinned operations" are the same claim written two ways.
+CLAIM = r"([A-Za-z0-9-]+)\s+(?:[A-Za-z-]+\s+){0,2}%s"
+
+
+def _as_number(token: str) -> int | None:
+    if token.isdigit():
+        return int(token)
+    word = token.lower()
+    if word in UNITS:
+        return UNITS[word]
+    if word in TENS:
+        return TENS[word]
+    if "-" in word:
+        tens, _, unit = word.partition("-")
+        if tens in TENS and unit in UNITS:
+            return TENS[tens] + UNITS[unit]
+    return None
+
+
+def _claimed(text: str, noun: str) -> list[int]:
+    """Every count a document states for one noun. Prose that happens to end in the noun —
+    "well paths", "inventory operations" — carries no number and drops out here."""
+    found = []
+    for match in re.finditer(CLAIM % noun, text):
+        value = _as_number(match.group(1))
+        if value is not None:
+            found.append(value)
+    return found
+
+
+def _served_counts() -> tuple[int, int, int]:
+    import json
+
+    document = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+    paths = document["paths"]
+    operations = [
+        (path, method)
+        for path, item in paths.items()
+        for method in item
+        if method.lower() in HTTP_METHODS
+    ]
+    under_v1 = [path for path, _ in operations if path.startswith("/v1")]
+    return len(operations), len(paths), len(under_v1)
+
+
+def test_every_document_quoting_the_operation_count_agrees_with_the_snapshot() -> None:
+    operations, paths, under_v1 = _served_counts()
+    disagreements: list[str] = []
+    for name in COUNTED_IN:
+        text = (ROOT / name).read_text(encoding="utf-8")
+        for noun, truth in (
+            ("operations", operations),
+            ("paths", paths),
+            (r"under `/v1`", under_v1),
+        ):
+            for stated in _claimed(text, noun):
+                if stated != truth:
+                    disagreements.append(f"{name}: {stated} {noun}, snapshot says {truth}")
+
+    assert disagreements == [], (
+        "a document quotes an operation count the snapshot contradicts; "
+        + "; ".join(disagreements)
+    )
+
+
+def test_the_operation_census_is_not_vacuous() -> None:
+    """A sweep that matches nothing is what let this reopen once already: if the sentence is
+    reworded past the pattern, this fails rather than going quietly green."""
+    operations, _, _ = _served_counts()
+    for name in COUNTED_IN:
+        text = (ROOT / name).read_text(encoding="utf-8")
+        assert operations in _claimed(text, "operations"), (
+            f"{name} no longer states the operation count in a form the census can read"
+        )

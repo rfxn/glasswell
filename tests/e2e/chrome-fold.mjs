@@ -112,6 +112,42 @@ for (const viewport of BREAKPOINTS) {
   // dismissed, so a click while it is up lands on neither position.
   await page.evaluate(() => document.querySelector(".gw-hint-close")?.click());
   await page.waitForTimeout(400);
+
+  // gate-v076 D1: signed in at 1024 the Sign-out control took the brand block to 140 px and the
+  // wordmark ellipsised to `glass…` with the strap clipped to `NO NAKED`. Signed out at the same
+  // width it read in full, so no gate that shot the signed-out header could see it. The state is
+  // reachable from the bundle alone -- setSignedIn only unhides the button -- so this belongs
+  // here with the rest of the chrome geometry rather than behind an instance with sessions.
+  const brand = await page.evaluate(() => {
+    const out = document.getElementById("gw-logout-btn");
+    const before = out.hidden;
+    out.hidden = false;
+    const word = document.querySelector(".gw-wordmark");
+    const strap = document.querySelector(".gw-strap");
+    const painted = (el) => el.getBoundingClientRect().width > 0;
+    const clipped = (el) => el.scrollWidth > el.clientWidth + 0.5;
+    const seen = {
+      shown: painted(word),
+      wordClipped: painted(word) && clipped(word),
+      strapClipped: painted(strap) && clipped(strap),
+      logoutNamed: (out.textContent ?? "").trim().length > 0,
+    };
+    out.hidden = before;
+    return seen;
+  });
+  // Every rung, unbounded. The brand now holds with a session from 621 px up, so 820 -- the
+  // tablet-portrait rung on this ladder, where it read `glas…` / `— NO NAK` -- is judged like
+  // the rest. Below 621 the phone posture stops painting the wordmark at all, so `shown` is
+  // what makes the pass honest rather than vacuous: a clipped check on an unpainted element
+  // proves nothing, and this reports which of the two it got.
+  assert(!brand.wordClipped, `${at} the wordmark survives a signed-in header${brand.shown ? "" : " (not painted at this width)"}`,
+    "the brand block ellipsised the wordmark once Sign out was in the rail");
+  assert(!brand.strapClipped, `${at} the strapline survives a signed-in header`,
+    "the strapline clipped mid-phrase once Sign out was in the rail");
+  // Hiding the label to buy that width must not cost the button its accessible name.
+  assert(brand.logoutNamed, `${at} the Sign-out control keeps an accessible name`,
+    "the control renders with no text in the accessibility tree");
+
   await page.click(".gw-layers-button");
   await page.waitForTimeout(400);
 

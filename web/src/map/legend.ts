@@ -6,6 +6,7 @@ import type { DimensionCounts, VocabularyLink } from "./counts.ts";
 import { PRODUCING_CLASSES, PRODUCING_RULINGS, producingHref, producingNote } from "./producing.ts";
 import type { ProducingCounts } from "./producing.ts";
 import { PROVENANCE_RULE } from "./provenance.ts";
+import { loadCensus, measuredWellCount } from "./census.ts";
 import { STATUS_CLASSES, STATUS_VOCAB_RULES, UNMAPPED_STATUS, statusClass } from "./status.ts";
 import type { StatusClass } from "./status.ts";
 import { statusSwatch } from "./swatch.ts";
@@ -633,6 +634,16 @@ export function createLegend(options: LegendOptions): LegendHandle {
   }
 
   setVocabulary(STATUS_VOCAB_RULES.map((rule) => ({ rule, href: null })));
+  // What the legend may list used to be four undated count maps compiled into the bundle.
+  // It is a served measurement now: a class the registry has measured at zero everywhere has
+  // never been drawn, so listing it would promise a colour the canvas cannot produce. Hidden
+  // only once the census has settled and only on an explicit zero — an unknown census hides
+  // nothing, so a slow or degraded /v1/jurisdictions never empties the legend.
+  void loadCensus().then(() => {
+    for (const [id, row] of rows) {
+      if (measuredWellCount(id) === 0) row.hidden = true;
+    }
+  });
   syncTitle();
   render();
   return {

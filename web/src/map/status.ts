@@ -1,4 +1,5 @@
 import { coalesce, get, lower, match } from "./expr.ts";
+import { jurisdictionRule, rulesFor } from "./jurisdictions.generated.ts";
 import type { Expr } from "./expr.ts";
 
 /**
@@ -7,17 +8,23 @@ import type { Expr } from "./expr.ts";
  * `cr_nd_status_vocab_1`; the glyph grammar follows the ND DMR `STATUS-TYPE` legend, where
  * plugging is a modifier struck through the fluid glyph rather than a colour of its own.
  */
-export const STATUS_VOCAB_RULE = "cr_nd_status_vocab_1";
+/** The registry decision that names a jurisdiction's status vocabulary. */
+const STATUS_VOCABULARY = "status_vocabulary";
+
+function statusVocabularyRule(code: string): string {
+  const rule = jurisdictionRule(code, STATUS_VOCABULARY);
+  // A registry that names no status vocabulary for a jurisdiction it registers is a defect,
+  // not a fallback: the class every well is drawn with would have no rule to cite.
+  if (rule === null) throw new Error(`no status vocabulary registered for ${code}`);
+  return rule;
+}
+
+export const STATUS_VOCAB_RULE = statusVocabularyRule("ND");
 /** One canonical class list, one vocabulary rule per source. Both are named where counts are. */
-export const STATUS_VOCAB_RULES = [
-  "cr_nd_status_vocab_1",
-  "cr_tx_status_vocab_1",
-  "cr_nm_wellhistory_status_vocab_2",
-  "cr_mt_gis_status_vocab_1",
-] as const;
-export const TX_STATUS_VOCAB_RULE = "cr_tx_status_vocab_1";
-export const NM_STATUS_VOCAB_RULE = "cr_nm_wellhistory_status_vocab_2";
-export const MT_STATUS_VOCAB_RULE = "cr_mt_gis_status_vocab_1";
+export const STATUS_VOCAB_RULES: readonly string[] = rulesFor(STATUS_VOCABULARY);
+export const TX_STATUS_VOCAB_RULE = statusVocabularyRule("TX");
+export const NM_STATUS_VOCAB_RULE = statusVocabularyRule("NM");
+export const MT_STATUS_VOCAB_RULE = statusVocabularyRule("MT");
 
 /** Reserved for selection. No layer and no status may paint with it (UX P1-5). */
 export const SELECTION_COLOUR = "#5FD3E8";
@@ -33,86 +40,6 @@ export interface StatusClass {
   /** Zoom at or above which this class renders. Low-information classes recede (market §2.8.3). */
   minZoom: number;
   rule: string;
-}
-
-/**
- * `select status_canonical, count(*) from marts.nd_wells_tile group by 1` against the
- * deployed ND slice on 2026-08-20. Held in source so a legend row can never claim a class
- * the data does not contain, and so the zoom gates below can be argued from real counts.
- */
-export const MEASURED_WELL_COUNTS: Readonly<Record<string, number>> = {
-  active: 20_643,
-  plugged: 7_316,
-  dry: 6_347,
-  expired: 5_769,
-  inactive: 1_598,
-  confidential: 968,
-  permitted: 610,
-  drilling: 343,
-  temporarily_abandoned: 223,
-};
-
-/**
- * The same query against `marts.tx_wells_tile`, on the full load of the 2026-08-20 RRC export
- * over the 55 Permian-district counties. A further 65,685 wells carry no status: the identity
- * export reported none for them, which the legend shows as unmapped rather than inventing a
- * class for. 2,157 of the plugged were drawn as one of the other four until the identity
- * tie-break was ordered to prefer a filed plugging date (cr_tx_identity_collapse_1).
- */
-export const MEASURED_TX_WELL_COUNTS: Readonly<Record<string, number>> = {
-  active: 113_991,
-  plugged: 104_839,
-  inactive: 42_272,
-  service: 24_497,
-  temporarily_abandoned: 4_179,
-};
-
-/**
- * The 141,778 rows of `marts.nm_wells_tile` on the deployed host, grouped by the class
- * `cr_nm_wellhistory_status_vocab_2` resolves their OCD letter to, on 2026-09-01 — a
- * wells_latest measurement, not a record-level one. The distinction is worth four: the header
- * archive holds 321,510 revision records against 142,000 wells, and its 206,195 `A` records
- * are the 54,325 active wells below. 222 wells carry no surface point and so are on no tile.
- * The 507 in `documented_unmapped` are the zone-plugged and reclamation-fund codes the OCD
- * documents and glasswell has no class for; they are a registered absence, not a gap.
- */
-export const MEASURED_NM_WELL_COUNTS: Readonly<Record<string, number>> = {
-  active: 54_325,
-  plugged: 50_935,
-  permitted: 18_161,
-  expired: 17_056,
-  temporarily_abandoned: 779,
-  documented_unmapped: 507,
-  dry: 15,
-};
-
-/**
- * `select status_canonical, count(*) from marts.mt_wells_tile group by 1`, read from a full
- * MBOGC load of the 2026-08-18 Wells.zip into an ephemeral database — not from the deployed
- * host, which carries no Montana yet (docs/runbook-mt-load.md is what puts it there). A further
- * 1,400 of the 42,026 points carry no class: their MBOGC Status is one of the six
- * cr_mt_gis_status_vocab_1 does not promote, so they quarantine as unknown_status and the
- * legend draws them unmapped rather than defaulting a water well to active. Re-read at the
- * first deployed refresh.
- */
-export const MEASURED_MT_WELL_COUNTS: Readonly<Record<string, number>> = {
-  plugged: 25_766,
-  active: 9_351,
-  inactive: 4_704,
-  temporarily_abandoned: 504,
-  permitted: 169,
-  drilling: 93,
-  expired: 39,
-};
-
-/** What the legend may list: a class any basin has actually drawn. */
-export function measuredWellCount(id: string): number {
-  return (
-    (MEASURED_WELL_COUNTS[id] ?? 0)
-    + (MEASURED_TX_WELL_COUNTS[id] ?? 0)
-    + (MEASURED_NM_WELL_COUNTS[id] ?? 0)
-    + (MEASURED_MT_WELL_COUNTS[id] ?? 0)
-  );
 }
 
 export const STATUS_CLASSES: readonly StatusClass[] = [

@@ -8,7 +8,7 @@ import {
   purgeLegacyKey,
   whoami,
 } from "./api/client.ts";
-import { DEFAULT_STATE, readState, serializeState, writeState } from "./app/state.ts";
+import { DEFAULT_STATE, parseViewport, readState, serializeState, writeState } from "./app/state.ts";
 import type { AppState } from "./app/state.ts";
 import { loginPanel } from "./auth/login.ts";
 import { flyTo, onSelectWell, onUrlParam, selectWell, sessionBegan, wellSelected } from "./bus.ts";
@@ -34,6 +34,15 @@ const statusHost = required("gw-status-page");
 const shell = required("gw-main");
 
 let state: AppState = readState();
+// A `?well=` link that carries no `?map=` of its own has not chosen a viewport, so the default
+// one — the Williston Basin — is North Dakota by accident rather than by the reader's intent,
+// and a New Mexico well opened its card 700 km off screen. Read before the first writeState,
+// which gives every map-view URL a `map=` whether the reader picked one or not, and consumed
+// once so only the opening deep link moves the camera.
+let deepLinkNeedsCamera =
+  state.view === "map" &&
+  state.well !== null &&
+  parseViewport(new URLSearchParams(window.location.search).get("map")) === null;
 let mapHandle: MapHandle | undefined;
 let pendingSource: SelectSource = "url";
 let historySource: SelectSource | null = null;
@@ -78,10 +87,12 @@ function showWell(api10: string | null, mode: "push" | "replace" = "push"): void
         onClose: () => selectWell(null, source),
         onSignIn: () => showLoginPanel(),
         onVintage: (resolved) => setVintage(resolved),
-        // Only a search hit moves the camera: a map click is already looking at the well, and
-        // a deep link carries its own ?map= viewport that the reader chose.
+        // A map click is already looking at the well, and a deep link that chose a viewport
+        // keeps it. A search hit, and a deep link that named only a well, do not.
         onLocated: (point) => {
-          if (source === "search") flyTo({ ...point, zoom: 12 });
+          const opening = source === "url" && deepLinkNeedsCamera;
+          if (opening) deepLinkNeedsCamera = false;
+          if (source === "search" || opening) flyTo({ ...point, zoom: 12 });
         },
       });
     })
@@ -116,6 +127,10 @@ function showLoginPanel(): void {
   const reason = hadSession ? "expired" : "required";
   setSessionState(reason);
   setSignedIn(null);
+  // The role is latched from the session that just ended, and Status renders its owner-only
+  // Accounts section from it. Left standing, a signed-out reader got that section and the two
+  // owner-scoped requests behind it until the next whoami answered.
+  sessionRole = null;
   keyHost.replaceChildren(
     loginPanel({
       reason,
@@ -124,6 +139,7 @@ function showLoginPanel(): void {
       onSignedIn: (session) => {
         keyHost.hidden = true;
         hadSession = session.kind === "user";
+        sessionRole = session.role;
         setSignedIn(session.username);
         setSessionState("ok");
         sessionProbe = Promise.resolve(true);
@@ -276,8 +292,14 @@ async function renderView(): Promise<void> {
     mapHost.hidden = true;
     exploreHost.hidden = true;
     statusHost.hidden = false;
+    // Awaited here as the other two surfaces do: Status is public and an anonymous first visit
+    // resolves this without a request, but an owner's Accounts section needs the answer to
+    // exist before the page renders rather than popping in under it.
+    await known;
+    if (generation !== renderGeneration || state.view !== view) return;
     await statusPage.mountStatusPage(statusHost, {
       onForbidden: (error) => handleApiError(error, "Status"),
+      role: sessionRole,
     });
     if (generation !== renderGeneration || state.view !== view) return;
     return;
@@ -316,6 +338,8 @@ function shouldResolveSession(): boolean {
 
 /** One probe per page: every caller that must not run before the answer awaits this one. */
 let sessionProbe: Promise<boolean> | null = null;
+/** What the resolved session said this reader is. Status reads it; nothing asks a second time. */
+let sessionRole: string | null = null;
 
 /**
  * Resolves when this page knows who the reader is, true when that answer is a principal.
@@ -332,10 +356,12 @@ async function resolveSession(): Promise<boolean> {
   try {
     const session = await whoami();
     hadSession = session.kind === "user";
+    sessionRole = session.role;
     setSignedIn(session.username);
     setSessionState("ok");
     return true;
   } catch (error) {
+    sessionRole = null;
     handleApiError(error, "Session");
     // Nothing further in boot can succeed without a principal; signing in runs it again.
     if (error instanceof ApiError && error.problem.status === 403) return false;

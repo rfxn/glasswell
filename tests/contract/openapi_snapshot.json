@@ -229,6 +229,32 @@
         "title": "BasinStatusCounts",
         "type": "object"
       },
+      "Capabilities": {
+        "properties": {
+          "land_grid_scope": {
+            "description": "Whether land metrics are scoped to it. A state in the grid is always in scope; the reverse does not hold.",
+            "title": "Land Grid Scope",
+            "type": "boolean"
+          },
+          "land_grid_state": {
+            "description": "Whether the PLSS land grid covers this state.",
+            "title": "Land Grid State",
+            "type": "boolean"
+          },
+          "neighbors": {
+            "description": "Whether the neighbour mart holds subjects here.",
+            "title": "Neighbors",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "neighbors",
+          "land_grid_state",
+          "land_grid_scope"
+        ],
+        "title": "Capabilities",
+        "type": "object"
+      },
       "Chain": {
         "properties": {
           "as_of_vintage": {
@@ -1136,11 +1162,18 @@
         "additionalProperties": false,
         "properties": {
           "password": {
-            "description": "Argon2id-hashed on arrival. Never stored, echoed or logged in clear.",
-            "maxLength": 1024,
-            "minLength": 12,
-            "title": "Password",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "minLength": 12,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Argon2id-hashed on arrival. Never stored, echoed or logged in clear. Omit it and the server mints one, returned once in the response and never again.",
+            "title": "Password"
           },
           "role": {
             "description": "owner or viewer.",
@@ -1162,10 +1195,118 @@
         },
         "required": [
           "username",
-          "password",
           "role"
         ],
         "title": "CreateUserRequest",
+        "type": "object"
+      },
+      "CreatedUser": {
+        "description": "The two operations that mint a password, mirroring `IssuedKey(KeyRecordModel)`.",
+        "properties": {
+          "created_at": {
+            "description": "When the account was created.",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "description": "Principal that created it.",
+            "title": "Created By",
+            "type": "string"
+          },
+          "disabled_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it was disabled, if it was.",
+            "title": "Disabled At"
+          },
+          "disabled_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Principal that disabled it.",
+            "title": "Disabled By"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last successful login.",
+            "title": "Last Login At"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Minted password. Returned once; null when the caller supplied one.",
+            "title": "Password"
+          },
+          "password_changed_at": {
+            "description": "Last password change.",
+            "title": "Password Changed At",
+            "type": "string"
+          },
+          "role": {
+            "description": "owner or viewer.",
+            "title": "Role",
+            "type": "string"
+          },
+          "sessions_live": {
+            "description": "Sessions this account currently holds.",
+            "title": "Sessions Live",
+            "type": "integer"
+          },
+          "state": {
+            "description": "active or disabled.",
+            "title": "State",
+            "type": "string"
+          },
+          "user_id": {
+            "description": "Stable id; safe to log and to reference.",
+            "title": "User Id",
+            "type": "string"
+          },
+          "username": {
+            "description": "Lowercased account name.",
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "username",
+          "role",
+          "state",
+          "created_at",
+          "created_by",
+          "password_changed_at",
+          "last_login_at",
+          "disabled_at",
+          "disabled_by",
+          "sessions_live",
+          "password"
+        ],
+        "title": "CreatedUser",
         "type": "object"
       },
       "CumulativeBand": {
@@ -1925,6 +2066,39 @@
         "title": "EnvelopeModel[ConformanceRuleDetail]",
         "type": "object"
       },
+      "EnvelopeModel_CreatedUser_": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "$ref": "#/components/schemas/CreatedUser"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[CreatedUser]",
+        "type": "object"
+      },
       "EnvelopeModel_Derivation_": {
         "properties": {
           "_explain": {
@@ -2418,6 +2592,39 @@
           "links"
         ],
         "title": "EnvelopeModel[SessionModel]",
+        "type": "object"
+      },
+      "EnvelopeModel_SessionRecordModel_": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SessionRecordModel"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[SessionRecordModel]",
         "type": "object"
       },
       "EnvelopeModel_Status_": {
@@ -2964,6 +3171,43 @@
         "title": "EnvelopeModel[list[GlossaryTerm]]",
         "type": "object"
       },
+      "EnvelopeModel_list_JurisdictionRow__": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/JurisdictionRow"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[list[JurisdictionRow]]",
+        "type": "object"
+      },
       "EnvelopeModel_list_KeyRecordModel__": {
         "properties": {
           "_explain": {
@@ -3110,6 +3354,43 @@
           "links"
         ],
         "title": "EnvelopeModel[list[QuarantineRow]]",
+        "type": "object"
+      },
+      "EnvelopeModel_list_SessionRecordModel__": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SessionRecordModel"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[list[SessionRecordModel]]",
         "type": "object"
       },
       "EnvelopeModel_list_UserModel__": {
@@ -3843,6 +4124,57 @@
         "title": "Health",
         "type": "object"
       },
+      "Identity": {
+        "properties": {
+          "is_unique": {
+            "description": "Whether the identifier is a well key here. False where a state reissues API-10s, which is a property of the key rather than of the scheme.",
+            "title": "Is Unique",
+            "type": "boolean",
+            "x-glasswell-glossary": "gt_identity_scheme"
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The regular expression a well identifier in this jurisdiction matches.",
+            "title": "Pattern",
+            "x-glasswell-glossary": "gt_api_10_api_12_api_14"
+          },
+          "prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The two leading digits of every API-10 in this jurisdiction, or null where the scheme is not API-10. These are API codes, not FIPS: 25 is Montana.",
+            "title": "Prefix",
+            "x-glasswell-glossary": "gt_api_10_api_12_api_14",
+            "x-glasswell-not-a-figure": "The two leading digits of every API-10 in a jurisdiction: an identifier's prefix, not a measured quantity."
+          },
+          "scheme": {
+            "description": "`api10` or `uwi`: which well identifier this jurisdiction is keyed by.",
+            "title": "Scheme",
+            "type": "string",
+            "x-glasswell-glossary": "gt_identity_scheme"
+          }
+        },
+        "required": [
+          "scheme",
+          "prefix",
+          "pattern",
+          "is_unique"
+        ],
+        "title": "Identity",
+        "type": "object"
+      },
       "IndexEntry": {
         "properties": {
           "n_words": {
@@ -4163,6 +4495,198 @@
           "detail"
         ],
         "title": "JobStatus",
+        "type": "object"
+      },
+      "JurisdictionRow": {
+        "properties": {
+          "capabilities": {
+            "$ref": "#/components/schemas/Capabilities",
+            "description": "What is built for it, not what is planned."
+          },
+          "effective_from": {
+            "description": "Valid time: the date this registration takes effect from.",
+            "title": "Effective From",
+            "type": "string",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "identity": {
+            "$ref": "#/components/schemas/Identity",
+            "description": "How a well is identified here."
+          },
+          "jurisdiction_code": {
+            "description": "The registry's own code for the jurisdiction, e.g. ND.",
+            "title": "Jurisdiction Code",
+            "type": "string",
+            "x-glasswell-glossary": "gt_jurisdiction"
+          },
+          "level": {
+            "description": "`state` or `province`.",
+            "title": "Level",
+            "type": "string",
+            "x-glasswell-glossary": "gt_jurisdiction"
+          },
+          "liquids_basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What a liquid barrel means here, carried beside every liquids figure served for this jurisdiction. Null where no liquids policy is registered.",
+            "title": "Liquids Basis",
+            "x-glasswell-glossary": "gt_liquids_policy"
+          },
+          "map": {
+            "$ref": "#/components/schemas/MapPresentation",
+            "description": "How this jurisdiction is drawn."
+          },
+          "measured_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The date the counts were measured. Absent when they are.",
+            "title": "Measured On"
+          },
+          "name": {
+            "description": "The jurisdiction's name, served rather than mapped again in the client.",
+            "title": "Name",
+            "type": "string",
+            "x-glasswell-glossary": "gt_jurisdiction"
+          },
+          "published_at": {
+            "description": "Knowledge time: the date glasswell published this registration.",
+            "title": "Published At",
+            "type": "string",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "regulator": {
+            "$ref": "#/components/schemas/Regulator",
+            "description": "Whose filings this jurisdiction is served from.",
+            "x-glasswell-glossary": "gt_regulator"
+          },
+          "rules": {
+            "description": "Every conformance rule registered for this jurisdiction, by decision.",
+            "items": {
+              "$ref": "#/components/schemas/JurisdictionRule"
+            },
+            "title": "Rules",
+            "type": "array",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "source_ids": {
+            "description": "Every registered source carrying this jurisdiction's coverage.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Ids",
+            "type": "array",
+            "x-glasswell-glossary": "gt_source"
+          },
+          "well_count": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FigureModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Wells measured in this jurisdiction at `measured_on`, with its handle. Absent until a refresh has produced one, and never served as zero in its place."
+          },
+          "well_counts_by_status": {
+            "description": "The same measurement broken out by canonical status.",
+            "items": {
+              "$ref": "#/components/schemas/JurisdictionStatusCount"
+            },
+            "title": "Well Counts By Status",
+            "type": "array"
+          }
+        },
+        "required": [
+          "jurisdiction_code",
+          "name",
+          "level",
+          "regulator",
+          "identity",
+          "source_ids",
+          "rules",
+          "liquids_basis",
+          "map",
+          "capabilities",
+          "well_count",
+          "well_counts_by_status",
+          "measured_on",
+          "effective_from",
+          "published_at"
+        ],
+        "title": "JurisdictionRow",
+        "type": "object"
+      },
+      "JurisdictionRule": {
+        "properties": {
+          "decision": {
+            "description": "What this rule decides for this jurisdiction.",
+            "title": "Decision",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why a registered rule is not the serving one.",
+            "title": "Note"
+          },
+          "rule_id": {
+            "description": "The conformance rule, resolvable at /v1/conformance/{rule_id}.",
+            "title": "Rule Id",
+            "type": "string",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "serving": {
+            "description": "Whether this is the rule the serving path reads. A decision may register more than one rule \u2014 Montana files inventory at two grains \u2014 and exactly one serves.",
+            "title": "Serving",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "decision",
+          "rule_id",
+          "serving",
+          "note"
+        ],
+        "title": "JurisdictionRule",
+        "type": "object"
+      },
+      "JurisdictionStatusCount": {
+        "properties": {
+          "status_canonical": {
+            "description": "The canonical well status this count is for.",
+            "title": "Status Canonical",
+            "type": "string",
+            "x-glasswell-glossary": "gt_well_status"
+          },
+          "wells": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Wells measured in that status, with its handle."
+          }
+        },
+        "required": [
+          "status_canonical",
+          "wells"
+        ],
+        "title": "JurisdictionStatusCount",
         "type": "object"
       },
       "KeyRecordModel": {
@@ -4503,6 +5027,40 @@
           "fetch_derivation_id"
         ],
         "title": "Manifest",
+        "type": "object"
+      },
+      "MapPresentation": {
+        "properties": {
+          "colour": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The swatch colour that layer is drawn with.",
+            "title": "Colour"
+          },
+          "wells_tile_layer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The published tile layer the `Wells` family draws for this jurisdiction.",
+            "title": "Wells Tile Layer Id"
+          }
+        },
+        "required": [
+          "wells_tile_layer_id",
+          "colour"
+        ],
+        "title": "MapPresentation",
         "type": "object"
       },
       "MetaModel": {
@@ -6173,6 +6731,26 @@
         "title": "QuarantineSummary",
         "type": "object"
       },
+      "Regulator": {
+        "properties": {
+          "name": {
+            "description": "The agency that files the data glasswell ingests.",
+            "title": "Name",
+            "type": "string"
+          },
+          "url": {
+            "description": "Where that agency publishes it.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "url"
+        ],
+        "title": "Regulator",
+        "type": "object"
+      },
       "ServiceIndex": {
         "properties": {
           "api_version": {
@@ -6281,19 +6859,124 @@
         "title": "SessionModel",
         "type": "object"
       },
-      "SetPasswordRequest": {
-        "additionalProperties": false,
+      "SessionRecordModel": {
         "properties": {
-          "new_password": {
-            "maxLength": 1024,
-            "minLength": 12,
-            "title": "New Password",
+          "absolute_expires_at": {
+            "description": "Hard cap; never extended.",
+            "title": "Absolute Expires At",
+            "type": "string"
+          },
+          "address_class": {
+            "description": "lan, remote or unknown, derived from the address the session was created from. The address itself is not served by any operation.",
+            "title": "Address Class",
+            "type": "string"
+          },
+          "created_at": {
+            "description": "When the session was created.",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "description": "When idleness ends this session.",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "last_seen_at": {
+            "description": "Last request this session authenticated.",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it was revoked, if it was.",
+            "title": "Revoked At"
+          },
+          "revoked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it was revoked, if it was.",
+            "title": "Revoked Reason"
+          },
+          "role": {
+            "description": "owner or viewer.",
+            "title": "Role",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Stable id of the session row; safe to log.",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "state": {
+            "description": "active, revoked or expired.",
+            "title": "State",
+            "type": "string"
+          },
+          "user_agent_family": {
+            "description": "Coarse client label recorded at login; `unknown` where none was resolved.",
+            "title": "User Agent Family",
+            "type": "string"
+          },
+          "user_id": {
+            "description": "Account holding the session.",
+            "title": "User Id",
+            "type": "string"
+          },
+          "username": {
+            "description": "Lowercased account name.",
+            "title": "Username",
             "type": "string"
           }
         },
         "required": [
-          "new_password"
+          "session_id",
+          "user_id",
+          "username",
+          "role",
+          "state",
+          "created_at",
+          "last_seen_at",
+          "expires_at",
+          "absolute_expires_at",
+          "revoked_at",
+          "revoked_reason",
+          "user_agent_family",
+          "address_class"
         ],
+        "title": "SessionRecordModel",
+        "type": "object"
+      },
+      "SetPasswordRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "new_password": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "minLength": 12,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Omit it and the server mints one, returned once in the response.",
+            "title": "New Password"
+          }
+        },
         "title": "SetPasswordRequest",
         "type": "object"
       },
@@ -7253,6 +7936,19 @@
             ],
             "description": "New role, when changing one.",
             "title": "Role"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "const": "active",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Re-enable a disabled account. `active` is the only value this operation accepts; disabling is `DELETE /v1/users/{user_id}`, which also revokes the sessions.",
+            "title": "State"
           }
         },
         "title": "UpdateUserRequest",
@@ -7316,6 +8012,12 @@
             "title": "Role",
             "type": "string"
           },
+          "sessions_live": {
+            "description": "Sessions this account currently holds.",
+            "title": "Sessions Live",
+            "type": "integer",
+            "x-glasswell-not-a-figure": "Live sessions an account holds, a state counter rather than a measured quantity."
+          },
           "state": {
             "description": "active or disabled.",
             "title": "State",
@@ -7342,7 +8044,8 @@
           "password_changed_at",
           "last_login_at",
           "disabled_at",
-          "disabled_by"
+          "disabled_by",
+          "sessions_live"
         ],
         "title": "UserModel",
         "type": "object"
@@ -10969,6 +11672,265 @@
         }
       }
     },
+    "/v1/jurisdictions": {
+      "get": {
+        "description": "Every jurisdiction glasswell serves, with the regulator it is served from, the identity scheme its wells are keyed by, the conformance rules that decide its status vocabulary, geometry provenance, liquids policy and production grain, and the wells last measured in it. Registrations are append-only under two clocks: `as_of` is the knowledge cut, so a registration published after it is not served under it. Counts are absent until a refresh has produced them and are never served as zero in their place. This is a registry of registrations, not of reserves.",
+        "operationId": "list_jurisdictions",
+        "parameters": [
+          {
+            "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size, 100 by default, 200 at most.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Page size, 100 by default, 200 at most.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+              "title": "As Of"
+            }
+          },
+          {
+            "description": "Filter to one registration level.",
+            "in": "query",
+            "name": "level",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one registration level.",
+              "title": "Level"
+            }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_list_JurisdictionRow__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "as_of_out_of_range": {
+                    "summary": "as_of precedes the captured history",
+                    "value": {
+                      "detail": "`as_of` is earlier than the earliest captured vintage for every contributing source. An empty result would be indistinguishable from nothing happening.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "as_of precedes the captured history",
+                      "type": "/v1/errors/as_of_out_of_range"
+                    }
+                  },
+                  "cursor_malformed": {
+                    "summary": "Cursor malformed",
+                    "value": {
+                      "detail": "The cursor did not decode to the four declared fields.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor malformed",
+                      "type": "/v1/errors/cursor_malformed"
+                    }
+                  },
+                  "cursor_query_mismatch": {
+                    "summary": "Cursor does not match this query",
+                    "value": {
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor does not match this query",
+                      "type": "/v1/errors/cursor_query_mismatch"
+                    }
+                  },
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "List registered jurisdictions",
+        "tags": [
+          "vocabulary"
+        ],
+        "x-glasswell-dataset": {
+          "anchors": [],
+          "collection_pointer": "",
+          "columns": {
+            "default": [
+              "/jurisdiction_code",
+              "/name",
+              "/level",
+              "/regulator",
+              "/identity",
+              "/well_count",
+              "/measured_on"
+            ],
+            "hidden": [],
+            "hidden_reason": {},
+            "sort": "/jurisdiction_code"
+          },
+          "facets": [
+            "level"
+          ],
+          "group": "vocabulary",
+          "id": "jurisdictions",
+          "intro": "nb_dataset_jurisdictions",
+          "order": 42,
+          "row_id": [
+            "/jurisdiction_code"
+          ],
+          "title": "Jurisdictions"
+        },
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {
+            "level": "state",
+            "limit": 5
+          }
+        },
+        "x-glasswell-semantics": {
+          "as_of": {
+            "so": "Serves the registration published at or before the cut, and the measurement measured at or before it. A correction published later is not visible under an earlier cut, which is what a static current-state view could not honour.",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "cursor": {
+            "so": "Pins the page to jurisdiction code, the filters that opened it, and both clocks, so a registration appended mid-traversal cannot shift it."
+          },
+          "level": {
+            "so": "Filters to `state` or `province`. A province is not a state, which is why this collection is not /v1/states.",
+            "x-glasswell-glossary": "gt_jurisdiction"
+          },
+          "limit": {
+            "so": "Capped at 200; the default remains 100. The registry is small, and it is a page rather than a dump so that it stays one when a fifth jurisdiction registers."
+          }
+        }
+      }
+    },
     "/v1/keys": {
       "get": {
         "deprecated": true,
@@ -13653,6 +14615,279 @@
         }
       }
     },
+    "/v1/sessions": {
+      "get": {
+        "description": "Every session this deployment holds a row for, newest first, with the account it belongs to and where it stands against the idle and absolute windows. Neither the token nor its hash nor the client address appears here \u2014 the list answers *who is signed in*, not *what they hold* or *where they are*.",
+        "operationId": "list_sessions",
+        "parameters": [
+          {
+            "description": "Page size, 100 by default, 200 at most (SB-07 \u00a79.5 caps the spine collections lower than the data ones).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Page size, 100 by default, 200 at most (SB-07 \u00a79.5 caps the spine collections lower than the data ones).",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_list_SessionRecordModel__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "forbidden": {
+                    "summary": "Forbidden",
+                    "value": {
+                      "detail": "Authenticated, but out of scope for this operation.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 403,
+                      "title": "Forbidden",
+                      "type": "/v1/errors/forbidden"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "List sessions",
+        "tags": [
+          "sessions"
+        ],
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {
+            "limit": 20
+          }
+        }
+      }
+    },
+    "/v1/sessions/{session_id}": {
+      "delete": {
+        "description": "Ends a session server-side. The owner may revoke any session; anyone else may revoke the one they are calling with and nothing else. The holder's very next request is refused, because every request re-reads the row rather than trusting a cache.\n\nRevoking an already-revoked session returns the same record and writes no second audit event, so a retry after a timeout is safe. The example id is the contract fixture's. Session ids are minted at login and exist only on the deployment that issued them, so read one off `GET /v1/sessions`.",
+        "operationId": "revoke_session",
+        "parameters": [
+          {
+            "description": "Id of the session to revoke.",
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "description": "Id of the session to revoke.",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
+            "in": "header",
+            "name": "X-Glasswell-CSRF",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Token from `GET /v1/session/challenge`, bound to the calling session and signed. Required on every state-changing request made with a session cookie; a caller presenting an API key does not send one, because a key is not ambient authority.",
+              "title": "X-Glasswell-Csrf"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_SessionRecordModel_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "forbidden": {
+                    "summary": "Forbidden",
+                    "value": {
+                      "detail": "Authenticated, but out of scope for this operation.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 403,
+                      "title": "Forbidden",
+                      "type": "/v1/errors/forbidden"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Revoke a session",
+        "tags": [
+          "sessions"
+        ],
+        "x-glasswell-request-example": {
+          "path": {
+            "session_id": "ses_01JBQ7M0Z8K2V4N6X8R0T2Y4W6"
+          },
+          "query": {}
+        }
+      }
+    },
     "/v1/status": {
       "get": {
         "description": "A live API/PostgreSQL signal joined to a sanitized scheduled snapshot of the tile service, HTTPS edge, storage, jobs and exact dataset inventory. Stale snapshots never preserve a green infrastructure state. Source freshness combines independently committed poll attempts with artifact age and source-specific cadence; unchanged checks can preserve freshness, while failed or interrupted checks cannot. This is current operational telemetry, not a historical `as_of` surface.",
@@ -14432,7 +15667,7 @@
         }
       },
       "post": {
-        "description": "Owner-only. There is no self-registration path and no password reset by email, so this is the only way an account comes into existence after the first one.",
+        "description": "Owner-only. There is no self-registration path and no password reset by email, so this is the only way an account comes into existence after the first one. Supply `password` and the response carries `password: null`; omit it and the server mints one, returns it once here with a `password_shown_once` warning, and stores only the Argon2id hash. There is no second chance to read it.",
         "operationId": "create_user",
         "parameters": [
           {
@@ -14469,7 +15704,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EnvelopeModel_UserModel_"
+                  "$ref": "#/components/schemas/EnvelopeModel_CreatedUser_"
                 }
               }
             },
@@ -14730,7 +15965,7 @@
         }
       },
       "patch": {
-        "description": "Owner-only. The last enabled owner cannot be demoted; the check takes a row lock on the enabled-owner set, because a handler-only count races under concurrency. The example id is the contract fixture's. User ids are minted by `POST /v1/users` and exist only on the deployment that created them, so read one off `GET /v1/users`.",
+        "description": "Owner-only. The last enabled owner cannot be demoted; the check takes a row lock on the enabled-owner set, because a handler-only count races under concurrency.\n\n`state: active` re-enables a disabled account and is the only value the field accepts. Disabling stays on `DELETE /v1/users/{user_id}`, which revokes the account's sessions in the same transaction; a PATCH that could disable would be a second lockout path with neither guard. Re-enabling an account that is already active is refused rather than answered silently: the list the caller acted on said it was disabled, so the list is stale and the answer has to say so. The example id is the contract fixture's. User ids are minted by `POST /v1/users` and exist only on the deployment that created them, so read one off `GET /v1/users`.",
         "operationId": "update_user",
         "parameters": [
           {
@@ -14890,7 +16125,7 @@
             "APIKeyHeader": []
           }
         ],
-        "summary": "Change an account's role",
+        "summary": "Change an account's role or re-enable it",
         "tags": [
           "users"
         ],
@@ -14904,7 +16139,7 @@
     },
     "/v1/users/{user_id}/password": {
       "post": {
-        "description": "Owner-only reset. Every session that account holds is revoked, because a password reset whose old sessions survive has not taken effect. The example id is the contract fixture's. User ids are minted by `POST /v1/users` and exist only on the deployment that created them, so read one off `GET /v1/users`.",
+        "description": "Owner-only reset. Every session that account holds is revoked, because a password reset whose old sessions survive has not taken effect. Supply `password` and the response carries `password: null`; omit it and the server mints one, returns it once here with a `password_shown_once` warning, and stores only the Argon2id hash. There is no second chance to read it. The example id is the contract fixture's. User ids are minted by `POST /v1/users` and exist only on the deployment that created them, so read one off `GET /v1/users`.",
         "operationId": "set_user_password",
         "parameters": [
           {
@@ -14952,7 +16187,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EnvelopeModel_UserModel_"
+                  "$ref": "#/components/schemas/EnvelopeModel_CreatedUser_"
                 }
               }
             },

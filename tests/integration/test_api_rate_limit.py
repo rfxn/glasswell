@@ -50,7 +50,8 @@ def test_the_bucket_table_carries_the_ruled_limits_and_the_stated_additions() ->
     # deploy: verify.sh + smoke.sh are 64 requests back to back and would self-throttle.
     # login/challenge: the two open session routes run before a principal exists, so the
     # resolved address is the only key available.
-    assert set(BUCKETS) - set(ruled) == {"deploy", "login", "challenge"}
+    # admin_write: the two owner routes that hash a password, kept off login's budget.
+    assert set(BUCKETS) - set(ruled) == {"deploy", "login", "challenge", "admin_write"}
 
 
 @pytest.mark.parametrize(
@@ -74,6 +75,29 @@ def test_each_principal_class_falls_in_its_ruled_bucket(kind, scope, path, expec
     principal = Principal(id="probe", kind=kind, scope=scope)
 
     assert bucket_for(principal, path)[0] == expected
+
+
+def test_the_password_hashing_routes_are_bounded_before_they_hash() -> None:
+    """POST /v1/users and POST /v1/users/{id}/password both run Argon2id at 64 MiB. The bucket
+    is charged as the handler's first statement, so a caller cannot buy the work by being
+    refused later in the route."""
+    import inspect
+
+    from glasswell.api.rate_limit import BUCKETS
+    from glasswell.api.routers.users import create_user, set_user_password
+
+    assert BUCKETS["admin_write"] == BUCKETS["login"]
+    for handler in (create_user, set_user_password):
+        body = [
+            line.strip()
+            for line in inspect.getsource(handler).splitlines()
+            if line.strip() and not line.strip().startswith(("#", '"""'))
+        ]
+        charged = next(index for index, line in enumerate(body) if "consume_login_bucket" in line)
+        hashed = next(
+            (index for index, line in enumerate(body) if "password=" in line), len(body)
+        )
+        assert charged < hashed, f"{handler.__name__} hashes before it charges"
 
 
 def test_the_deploy_credential_is_bounded_not_exempt() -> None:

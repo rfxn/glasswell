@@ -70,14 +70,19 @@ def test_a_credential_in_the_query_string_is_refused(client, parameter: str) -> 
 
 
 def test_a_session_token_in_a_log_record_is_redacted() -> None:
+    """Two rules reach a token, and which one fires depends on what precedes it. In a cookie
+    header the credential-parameter pattern takes the whole assignment; standing on its own the
+    token pattern takes the token. Neither survives, which is the property that matters."""
     from glasswell.api.access_log import redact
 
     line = 'GET /v1/wells cookie=__Host-gw_session=gws_QMDbEGaFjZUGhPEdmL2mFAPKJCCl6nqv'
 
     scrubbed = redact(line)
+    bare = redact("gws_QMDbEGaFjZUGhPEdmL2mFAPKJCCl6nqv")
 
     assert "gws_QMDbEGaFjZUGhPEdmL2mFAPKJCCl6nqv" not in scrubbed
-    assert "gws_REDACTED" in scrubbed
+    assert scrubbed.endswith("__Host-gw_session=REDACTED")
+    assert bare == "gws_REDACTED"
 
 
 @pytest.mark.parametrize("name", ["key", "password", "token", "session", "csrf"])

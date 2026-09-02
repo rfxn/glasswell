@@ -223,3 +223,105 @@ def test_the_schema_refuses_a_non_argon2_hash(db: psycopg.Connection) -> None:
             " created_by, password_changed_at) values (%s, %s, %s, %s, %s, %s, %s)",
             (new_user_id(NOW), "plain", "hunter2", "owner", NOW, "test", NOW),
         )
+
+
+# --- the client label, and revocation as seen from the API ------------------------------------
+#
+# `user_agent_sha256` is one-way, so no read-time query can recover a family from it: the label
+# is written at login or it does not exist. Rows created before migration 074 carry null and the
+# API serves `unknown` for them; nothing branches on the value.
+
+CHROME_MAC = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)"
+    " Chrome/140.0.0.0 Safari/537.36"
+)
+
+
+def stored_family(connection: psycopg.Connection, session_id: str) -> str | None:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select user_agent_family from lineage.sessions where session_id = %s", (session_id,)
+        )
+        return cursor.fetchone()[0]
+
+
+def test_the_client_family_is_written_when_the_session_is_created(db: psycopg.Connection) -> None:
+    user = make_user(db)
+
+    labelled, _ = create_session(db, user=user, now=NOW, user_agent=CHROME_MAC)
+    unlabelled, _ = create_session(db, user=user, now=NOW)
+
+    assert stored_family(db, labelled.session_id) == "Chrome on macOS"
+    assert stored_family(db, unlabelled.session_id) == "unknown"
+
+
+def test_a_row_written_before_the_column_existed_is_served_as_unknown(
+    db: psycopg.Connection, api_client
+) -> None:
+    """The upgrade path: nothing backfills, so the serializer answers for a null."""
+    user = make_user(db, username="pre-migration")
+    session, _ = create_session(db, user=user, now=NOW)
+    with db.cursor() as cursor:
+        cursor.execute(
+            "update lineage.sessions set user_agent_family = null where session_id = %s",
+            (session.session_id,),
+        )
+    db.commit()
+
+    listed = api_client.get("/v1/sessions").json()["data"]
+
+    assert next(
+        row["user_agent_family"] for row in listed if row["session_id"] == session.session_id
+    ) == "unknown"
+
+
+def test_a_revoked_sessions_very_next_request_is_refused(
+    db: psycopg.Connection, api_client
+) -> None:
+    """No cache sits in front of the row: `require_principal` opens a connection per request."""
+    from fastapi.testclient import TestClient
+
+    from glasswell.api.accounts import ConnectionSessionStore
+    from glasswell.api.deps import SESSION_COOKIE, get_session_store
+
+    user = make_user(db, username="revocable", role="viewer")
+    session, token = create_session(db, user=user, now=datetime.now(UTC))
+    db.commit()
+    # The tier-wide client binds only the request connection; the session store resolves itself
+    # from the environment, which names no database here.
+    api_client.app.dependency_overrides[get_session_store] = lambda: ConnectionSessionStore(db)
+    holder = TestClient(api_client.app, base_url="https://testserver")
+    holder.cookies.set(SESSION_COOKIE, token)
+    assert holder.get("/v1/health").status_code == 200
+
+    api_client.delete(f"/v1/sessions/{session.session_id}")
+
+    assert holder.get("/v1/health").status_code == 403
+
+
+def revocation_events(connection: psycopg.Connection, session_id: str) -> int:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select count(*) from lineage.audit_events"
+            " where event_type = 'session.ended' and subject_id = %s",
+            (session_id,),
+        )
+        return int(cursor.fetchone()[0])
+
+
+def test_a_second_revoke_answers_the_same_record_and_writes_no_second_event(
+    db: psycopg.Connection, api_client
+) -> None:
+    """`revoke_session` is `where revoked_at is null`, so the event follows the rowcount rather
+    than the request: a retry after a timeout is safe and leaves one fact in the stream."""
+    user = make_user(db, username="twice-revoked", role="viewer")
+    session, _ = create_session(db, user=user, now=datetime.now(UTC))
+    db.commit()
+
+    first = api_client.delete(f"/v1/sessions/{session.session_id}")
+    second = api_client.delete(f"/v1/sessions/{session.session_id}")
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert first.json()["data"] == second.json()["data"]
+    assert revocation_events(db, session.session_id) == 1

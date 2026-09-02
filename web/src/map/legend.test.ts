@@ -11,7 +11,8 @@ import {
   restoreCapabilitySet,
   writeCapabilitySet,
 } from "./persist.ts";
-import { STATUS_CLASSES, filterableStatusIds, measuredWellCount, statusIds } from "./status.ts";
+import { censusOf, measuredWellCount, resetCensus } from "./census.ts";
+import { STATUS_CLASSES, filterableStatusIds, statusIds } from "./status.ts";
 
 const rows = (root: HTMLElement): HTMLElement[] => [...root.querySelectorAll<HTMLElement>(".gw-lg-row")];
 const rowFor = (root: HTMLElement, id: string): HTMLElement | undefined =>
@@ -65,10 +66,26 @@ describe("the legend", () => {
   });
 
   it("never lists a class the data does not contain", () => {
+    // The census is served now, so this asserts against one: every listed class has wells in
+    // the measurement /v1/jurisdictions returned, and `producing` — which no rule produces —
+    // is listed by nobody.
+    resetCensus(
+      censusOf([
+        {
+          well_count: { value: "100" },
+          measured_on: "2026-09-01",
+          well_counts_by_status: STATUS_CLASSES.map((status) => ({
+            status_canonical: status.id,
+            wells: { value: "1" },
+          })),
+        },
+      ]),
+    );
     const legend = createLegend({ onFilter: () => {} });
     const listed = rows(legend.element).map((row) => row.dataset["status"]);
     expect(listed).not.toContain("producing");
     for (const id of listed) expect(measuredWellCount(id!)).toBeGreaterThan(0);
+    resetCensus();
   });
 
   it("reports the filtered set back when a row is toggled", () => {

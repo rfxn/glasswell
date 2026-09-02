@@ -20,14 +20,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_API10
-from glasswell.api.routers.wells import (
-    DEFAULT_PROVENANCE_RULE,
-    LENGTH_SCOPE_RULES,
-    NEIGHBOR_STATE_CODES,
-    PROVENANCE_RULES,
-    STATUS_VOCABULARY_RULES,
-)
 from tests.contract.conftest import TX_API10
+from tests.support.jurisdictions import declared_rule, declared_rule_ids, registration
 from tests.support.seed import seed_well, seed_well_spatial
 
 MT_API10 = "2508321001"
@@ -100,16 +94,16 @@ def test_the_geometry_provenance_rule_is_montanas_and_not_north_dakotas(
         envelope["links"]["cr_mt_paths_geometry_class_1"]
         == "/v1/conformance/cr_mt_paths_geometry_class_1"
     )
-    assert DEFAULT_PROVENANCE_RULE not in envelope["links"]
+    assert "cr_nd_geometry_provenance_1" not in envelope["links"]
 
 
-def test_every_pinned_provenance_rule_resolves(client: TestClient) -> None:
-    for rule_id in sorted(set(PROVENANCE_RULES.values())):
+def test_every_registered_provenance_rule_resolves(client: TestClient) -> None:
+    for rule_id in sorted(declared_rule_ids("geometry_provenance")):
         assert client.get(f"/v1/conformance/{rule_id}").status_code == 200, rule_id
 
 
-def test_every_pinned_status_vocabulary_rule_resolves(client: TestClient) -> None:
-    for rule_id in sorted(set(STATUS_VOCABULARY_RULES.values())):
+def test_every_registered_status_vocabulary_rule_resolves(client: TestClient) -> None:
+    for rule_id in sorted(declared_rule_ids("status_vocabulary")):
         assert client.get(f"/v1/conformance/{rule_id}").status_code == 200, rule_id
 
 
@@ -180,7 +174,7 @@ def test_the_north_dakota_length_is_still_served_under_its_own_rule(client: Test
 
     assert data["length_method"] == "geodesic"
     assert data["compute_crs"] == "EPSG:4326"
-    assert "33" not in LENGTH_SCOPE_RULES
+    assert declared_rule("33", "length_scope") is None
 
 
 def test_a_montana_well_offers_the_neighbour_link_the_repaired_mart_supports(
@@ -190,7 +184,7 @@ def test_a_montana_well_offers_the_neighbour_link_the_repaired_mart_supports(
     reaches it."""
     envelope = body(with_montana, f"/v1/wells/{MT_API10}")
 
-    assert "25" in NEIGHBOR_STATE_CODES
+    assert registration("25")["neighbors_available"] is True
     assert envelope["links"]["neighbors"] == f"/v1/wells/{MT_API10}/neighbors"
 
 
@@ -198,21 +192,27 @@ def test_the_other_states_lookups_are_unchanged(client: TestClient) -> None:
     """The regression half. A fourth key in a lookup is where the first three get lost."""
     assert body(client, f"/v1/wells/{EXAMPLE_API10}")["data"]["state_code"] == "33"
     assert body(client, f"/v1/wells/{TX_API10}")["data"]["state_code"] == "42"
-    assert STATUS_VOCABULARY_RULES["33"] == "cr_nd_status_vocab_1"
-    assert STATUS_VOCABULARY_RULES["42"] == "cr_tx_status_vocab_1"
-    assert STATUS_VOCABULARY_RULES["30"] == "cr_nm_wellhistory_status_vocab_2"
-    assert PROVENANCE_RULES["33"] == "cr_nd_geometry_provenance_1"
-    # The pre-existing Texas residual, restated rather than quietly repaired here: the registry
-    # carries no cr_tx_geometry_provenance_1, so Texas still cites North Dakota's.
-    assert PROVENANCE_RULES["42"] == "cr_nd_geometry_provenance_1"
-    assert PROVENANCE_RULES["30"] == "cr_nm_wellhistory_geometry_provenance_1"
+    assert declared_rule("33", "status_vocabulary") == "cr_nd_status_vocab_1"
+    assert declared_rule("42", "status_vocabulary") == "cr_tx_status_vocab_1"
+    assert declared_rule("30", "status_vocabulary") == "cr_nm_wellhistory_status_vocab_2"
+    assert declared_rule("33", "geometry_provenance") == "cr_nd_geometry_provenance_1"
+    # No longer North Dakota's. Texas registers no geometry_provenance decision, so it cites
+    # none rather than inheriting a rule about ND geometry (R-4 is still open; the inheritance
+    # is not).
+    assert declared_rule("42", "geometry_provenance") is None
+    assert (
+        declared_rule("30", "geometry_provenance")
+        == "cr_nm_wellhistory_geometry_provenance_1"
+    )
 
 
 def test_montana_is_registered_in_both_lookups_rather_than_falling_back(
     client: TestClient,
 ) -> None:
-    """The failure this file exists to close, stated as a property of the tables themselves."""
-    assert STATUS_VOCABULARY_RULES["25"] == "cr_mt_gis_status_vocab_1"
-    assert PROVENANCE_RULES["25"] == "cr_mt_paths_geometry_class_1"
-    assert PROVENANCE_RULES["25"] != DEFAULT_PROVENANCE_RULE
-    assert LENGTH_SCOPE_RULES["25"] == "cr_mt_paths_length_scope_1"
+    """The failure this file exists to close, stated as a property of the registrations."""
+    assert declared_rule("25", "status_vocabulary") == "cr_mt_gis_status_vocab_1"
+    assert declared_rule("25", "geometry_provenance") == "cr_mt_paths_geometry_class_1"
+    assert declared_rule("25", "geometry_provenance") != declared_rule(
+        "33", "geometry_provenance"
+    )
+    assert declared_rule("25", "length_scope") == "cr_mt_paths_length_scope_1"

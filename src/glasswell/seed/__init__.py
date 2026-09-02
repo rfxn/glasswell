@@ -28,6 +28,12 @@ from glasswell.seed.conformance_vintage import VINTAGE_RULES, seed_conformance_v
 from glasswell.seed.features import FEATURE_SPECS, FEATURE_VERSION, seed_features
 from glasswell.seed.formations_nd import FORMATION_ALIASES, seed_nd_formation_aliases
 from glasswell.seed.glossary import GLOSSARY_SEED_PATH, load_glossary_seed, seed_glossary, slug
+from glasswell.seed.jurisdictions import (
+    JURISDICTION_CODES,
+    JURISDICTION_RULES,
+    JURISDICTIONS,
+    seed_jurisdictions,
+)
 from glasswell.seed.reference import (
     CRS_ROWS,
     NM_STREAM_ROWS,
@@ -46,6 +52,9 @@ __all__ = [
     "FORMATION_ALIASES",
     "FRACFOCUS_RULES",
     "GLOSSARY_SEED_PATH",
+    "JURISDICTIONS",
+    "JURISDICTION_CODES",
+    "JURISDICTION_RULES",
     "LAND_RULES",
     "MT_RULES",
     "ND_RULES",
@@ -76,6 +85,7 @@ __all__ = [
     "seed_crs",
     "seed_features",
     "seed_glossary",
+    "seed_jurisdictions",
     "seed_nd_formation_aliases",
     "seed_nm_streams",
     "seed_nm_waste_types",
@@ -127,4 +137,7 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
         "nm_waste_type_map": seed_nm_waste_types(connection),
         "glossary_terms": seed_glossary(connection),
         "feature_specs": seed_features(connection),
+        # Last: its rule rows FK to lineage.conformance_rules, so every conformance seeder
+        # has to have run, and the count it returns is a registry total.
+        "jurisdictions": seed_jurisdictions(connection),
     }
