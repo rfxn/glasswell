@@ -256,6 +256,12 @@ grant execute on function lineage.assert_status_map_is_keyed() to glasswell_pipe
 -- every deploy runs between migrate and the API restart, so a database restored from a dump
 -- lands a correct resolver without an append.
 --
+-- The triggers are per statement and psycopg's executemany sends one statement per row, so a
+-- deploy rebuilds the resolver once per registration and once per rule row rather than once.
+-- Measured at 26 refreshes and about 11 ms per seed_all before Colorado, against 8.3 ms for 20
+-- direct refreshes: the cost scales with the registry, not with the well spine. It is worth
+-- re-measuring only if a jurisdiction ever arrives with a thousand-row map.
+--
 -- FOR A LATER JURISDICTION THAT RESOLVES AT READ TIME. Do not redefine
 -- canonical.status_resolution and do not add an arm to anything here: the function above reads
 -- the registry, so a new jurisdiction needs three rows and one trigger. (1) its mapping table

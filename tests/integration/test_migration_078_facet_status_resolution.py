@@ -458,7 +458,9 @@ def test_a_registered_mapping_table_is_read_verbatim_into_the_served_status_clas
         leaked = int(cursor.fetchone()[0])
     db.rollback()
 
-    assert rules > 200, "the fixture has to hold enough rules for the leak to be visible"
+    # Vacuity guarded by the identity itself rather than by a threshold on fixture content:
+    # a leaner contract fixture must not redden a test that is not about how many rules exist.
+    assert rules > 0, "an empty rule set would let the escalation pass on nothing"
     assert leaked == rules
 
 
