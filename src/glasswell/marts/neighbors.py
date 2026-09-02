@@ -20,6 +20,7 @@ from psycopg.pq import TransactionStatus
 from glasswell.ingest.base import resolve_environment
 from glasswell.lineage.audit import emit
 from glasswell.lineage.capture import current_session, derive, lineage_session
+from glasswell.lineage.jurisdictions import JurisdictionRegistry, load_jurisdictions
 from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.serialization import canonical_json, hash_payload
 from glasswell.lineage.store import PostgresRecorder
@@ -35,6 +36,15 @@ from glasswell.units import METRES_PER_FOOT
 STATE_CODES: tuple[str, ...] = tuple(
     str(row["identity_prefix"]) for row in JURISDICTIONS if row["neighbors_available"]
 )
+# Whether the mart's *measured* domain reaches a registration is a second decision, and it was
+# two pairs of float constants and a four-element tuple bound to nothing. A jurisdiction
+# registered neighbours-available outside either bound was picked up as a subject, counted as
+# an outlier, and aborted the whole monthly run with a message beginning "ND neighbour geometry
+# falls outside" while reporting another state's well.
+NEIGHBORS_SCOPE = "neighbors_scope"
+# Registration order, so the subject list this feeds -- a derivation param -- is byte-identical
+# for the resident pair. Anything registered later sorts after it, by code.
+_REGISTRATION_ORDER = tuple(str(row["identity_prefix"]) for row in JURISDICTIONS)
 FORMATION_SOURCE_ID = "nd_mpr_xlsx"
 COMPLETION_SOURCE_ID = "fracfocus_csv"
 MIN_ALIAS_CONFIDENCE = Decimal("0.800")
@@ -55,6 +65,12 @@ SUPPORTED_ZONE_EPSGS = (32611, 32612, 32613, 32614)
 # needs candidates out to about -104.16, so -104.15 was already too tight for ND alone.
 SUPPORTED_LONGITUDE_MIN = Decimal("-116.10")
 SUPPORTED_LONGITUDE_MAX = Decimal("-96.50")
+# The same measurement on the other axis, and it had no rationale beside it at all: Montana's
+# southern edge is 44.36N and the 49th parallel is the international boundary both states end
+# at. The floor clears the discovery radius south of Montana's line and the ceiling clears the
+# border by a pad, so a subject on either edge still finds its offsets. 066's CHECK restates
+# the longitude pair; the test that holds the two spellings equal is what stops one being
+# widened alone.
 SUPPORTED_LATITUDE_MIN = Decimal("44.30")
 SUPPORTED_LATITUDE_MAX = Decimal("49.05")
 # EPSG:5070 is equal-area rather than equidistant. A two-percent discovery pad prevents its
@@ -253,7 +269,7 @@ select max(created_vintage)
 """
 
 _OUTSIDE_SUPPORTED_DOMAIN = """
-select count(*), min(api10 || ':' || geom_key)
+select left(api10, 2) as state_code, count(*), min(api10 || ':' || geom_key)
   from canonical.well_spatial
  where geom_type = 'lateral'
    and left(api10, 2) = any(%(state_codes)s)
@@ -262,6 +278,8 @@ select count(*), min(api10 || ':' || geom_key)
        st_makeenvelope(
            %(longitude_min)s, %(latitude_min)s,
            %(longitude_max)s, %(latitude_max)s, 4326))
+ group by 1
+ order by 1
 """
 
 _ALIAS_IDENTITY = """
@@ -331,6 +349,47 @@ class NeighborRefresh:
         }
 
 
+def subject_prefixes(registry: JurisdictionRegistry) -> tuple[str, ...]:
+    """The registered subjects whose domain this mart's measurement actually reaches.
+
+    `neighbors_available` says a registration has laterals to offer; a serving `neighbors_scope`
+    rule says the envelope and the UTM zone set this mart measured cover it. One without the
+    other is an exclusion with a reason, never an outlier that stops the run.
+    """
+    covered = [
+        row.identity_prefix
+        for row in registry
+        if row.neighbors_available
+        and row.identity_prefix is not None
+        and row.rule(NEIGHBORS_SCOPE) is not None
+    ]
+    return tuple(
+        sorted(
+            covered,
+            key=lambda prefix: (
+                _REGISTRATION_ORDER.index(prefix)
+                if prefix in _REGISTRATION_ORDER
+                else len(_REGISTRATION_ORDER),
+                prefix,
+            ),
+        )
+    )
+
+
+def excluded_prefixes(registry: JurisdictionRegistry) -> tuple[str, ...]:
+    """Registered neighbours-available jurisdictions the measured domain does not reach."""
+    covered = set(subject_prefixes(registry))
+    return tuple(
+        sorted(
+            row.identity_prefix
+            for row in registry
+            if row.neighbors_available
+            and row.identity_prefix is not None
+            and row.identity_prefix not in covered
+        )
+    )
+
+
 def refresh_neighbors(connection: psycopg.Connection) -> NeighborRefresh:
     """Atomically rebuild directed ND neighbour subjects and edges from canonical inputs."""
     if connection.info.transaction_status != TransactionStatus.IDLE:
@@ -342,13 +401,16 @@ def refresh_neighbors(connection: psycopg.Connection) -> NeighborRefresh:
         if cursor.fetchone()[0] != "repeatable read":
             raise RuntimeError("neighbor refresh requires repeatable read")
 
-    inputs = _inputs(connection)
+    registry = load_jurisdictions(connection)
+    subjects = subject_prefixes(registry)
+    excluded = excluded_prefixes(registry)
+    inputs = _inputs(connection, subjects)
     snapshot_vintage = max(
         (item.as_of_vintage for item in inputs if item.as_of_vintage is not None),
         default=current_session().vintage,
     )
     parameters = {
-        "state_codes": list(STATE_CODES),
+        "state_codes": list(subjects),
         "completion_source_id": COMPLETION_SOURCE_ID,
         "formation_source_id": FORMATION_SOURCE_ID,
         "min_confidence": MIN_ALIAS_CONFIDENCE,
@@ -362,11 +424,18 @@ def refresh_neighbors(connection: psycopg.Connection) -> NeighborRefresh:
     }
     with connection.cursor() as cursor:
         cursor.execute(_OUTSIDE_SUPPORTED_DOMAIN, parameters)
-        outside_count, first_outside = cursor.fetchone()
-    if outside_count:
+        outside = cursor.fetchall()
+    if outside:
+        # Named, and per jurisdiction. A registration with a serving neighbors_scope rule whose
+        # geometry still leaves the envelope is a measurement that has stopped being true, and
+        # the message has to say whose geometry it found rather than North Dakota's by habit.
+        found = "; ".join(
+            f"{registry.name_for(state_code) or state_code}: {count} component(s),"
+            f" first {first}"
+            for state_code, count, first in outside
+        )
         raise RuntimeError(
-            "ND neighbour geometry falls outside the measured candidate-CRS domain: "
-            f"{outside_count} component(s), first {first_outside}"
+            "neighbour geometry falls outside the measured candidate-CRS domain: " + found
         )
     _materialize(connection, parameters)
     subject_rows, subject_digest = _digest(connection, _SUBJECT_DIGEST)
@@ -381,7 +450,7 @@ def refresh_neighbors(connection: psycopg.Connection) -> NeighborRefresh:
             schema_version="1",
         ),
         params={
-            "state_codes": list(STATE_CODES),
+            "state_codes": list(subjects),
             "geometry_scope": "current_only",
             "geometry_type": "lateral",
             "candidate_epsg": CANDIDATE_EPSG,
@@ -441,6 +510,13 @@ def refresh_neighbors(connection: psycopg.Connection) -> NeighborRefresh:
             "subject_rows": subject_rows,
             "edge_rows": edge_rows,
             "changed": changed,
+            # Only when there is something to say: an empty key on every run would change what
+            # a reader of lineage.audit_events sees for a mart that excluded nothing.
+            **(
+                {"excluded_jurisdictions": list(excluded)}
+                if excluded
+                else {}
+            ),
         },
         correlation_id=session.correlation_id,
         occurred_at=session.clock.now(),
@@ -454,9 +530,9 @@ def refresh_neighbors(connection: psycopg.Connection) -> NeighborRefresh:
     )
 
 
-def _inputs(connection: psycopg.Connection) -> list[InputRef]:
+def _inputs(connection: psycopg.Connection, subjects: Sequence[str]) -> list[InputRef]:
     params = {
-        "state_codes": list(STATE_CODES),
+        "state_codes": list(subjects),
         "completion_source_id": COMPLETION_SOURCE_ID,
         "formation_source_id": FORMATION_SOURCE_ID,
     }
