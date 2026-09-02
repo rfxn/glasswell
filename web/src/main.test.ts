@@ -356,7 +356,7 @@ describe("one dispatch on view, three surfaces (SB-08 §2.1)", () => {
       });
     }
 
-    const flownTo = (): unknown[] =>
+    const flownTo = (): unknown[][] =>
       (createMap.mock.results[0]?.value as { flyTo: { mock: { calls: unknown[][] } } }).flyTo.mock
         .calls;
 
