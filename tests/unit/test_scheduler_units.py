@@ -437,3 +437,21 @@ def test_the_deploy_starts_the_scheduler_timer_the_way_it_starts_the_others() ->
     assert "list-unit-files glasswell-scheduler.timer" not in deploy, (
         "the unit is placed on every run now, so the existence guard is a way to skip silently"
     )
+
+
+def test_the_add_a_state_runbook_registers_rows_and_does_not_edit_a_unit_file() -> None:
+    """It told a new state to add an ExecStart line, which puts its entry point in the
+    timer-owned set and makes the double-run guard forbid the launch rows that state wants."""
+    runbook = (ROOT / "docs" / "runbook-add-a-state.md").read_text()
+
+    assert "Add an `ExecStart=` line" not in runbook
+    assert "runbook-scheduler.md" in runbook
+    for shape in ("seed/schedules.py", "conformance_schedules.py",
+                  "conformance_rule_publications", "launch_mode"):
+        assert shape in runbook, shape
+
+
+def test_the_two_runbooks_agree_about_where_a_schedule_lives() -> None:
+    scheduler = (ROOT / "docs" / "runbook-scheduler.md").read_text()
+
+    assert "it has not been a unit-file edit since v0.78" in scheduler
