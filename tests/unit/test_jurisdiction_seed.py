@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+import glasswell.seed.jurisdictions as mirror
 from glasswell.db.migrate import discover_migrations
 from glasswell.marts.tiles import TILE_LAYERS
 from glasswell.seed.jurisdictions import (
@@ -24,7 +25,6 @@ from glasswell.seed.jurisdictions import (
     JURISDICTIONS,
     NAMES,
     PREFIXES,
-    REGISTERED_ON,
     REQUIRED_DECISIONS,
     identity_pattern,
     rule_parameters,
@@ -43,15 +43,48 @@ STATUS_CLASSES = ROOT / "web/src/map/status.ts"
 REPOINTED_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 
 
+def repoint_disagreements(migration: str) -> list[str]:
+    """Where the migration and the seed mirror disagree about the repoint, one line each.
+
+    Read through the module rather than off the names imported above, so a test can move one
+    writer and see the other stay put -- which is the half-repoint this file exists to catch.
+    """
+    found = []
+    if f"'{mirror.EVIDENCE_TAG}'" not in migration:
+        found.append(f"the migration does not quote evidence_tag {mirror.EVIDENCE_TAG}")
+    if f"'{mirror.EVIDENCE_COMMIT}'" not in migration:
+        found.append(f"the migration does not quote evidence_commit {mirror.EVIDENCE_COMMIT}")
+    if f"date '{mirror.REGISTERED_ON.isoformat()}'" not in migration:
+        found.append(f"the migration does not carry the clock {mirror.REGISTERED_ON}")
+    return found
+
+
 def test_the_migration_and_the_mirror_agree_about_being_repointed() -> None:
     """A half-repoint is two different claims about when these rows were published. The
-    release gate refuses one; this says so without waiting for a tag."""
+    release gate refuses one; this says so without waiting for a tag.
+
+    Both literals, whichever state the pair is in. The earlier form asserted the quoted tag was
+    absent *unless* it was the placeholder, which is true only while the tag is UNRELEASED and
+    false after every repoint by construction: it went red the day v0.76 did what the repoint
+    checklist asks, and stayed red on main from `1ab596c`. A gate that a correct repoint breaks
+    is a gate nobody can act on.
+    """
     migration = MIGRATION.read_text(encoding="utf-8")
 
-    assert (f"'{EVIDENCE_TAG}'" in migration) == (EVIDENCE_TAG == "UNRELEASED")
-    assert (f"'{EVIDENCE_COMMIT}'" in migration) == (EVIDENCE_COMMIT == "0" * 40)
+    assert repoint_disagreements(migration) == []
     assert REPOINTED_COMMIT.match(EVIDENCE_COMMIT)
-    assert f"date '{REGISTERED_ON.isoformat()}'" in migration
+    assert EVIDENCE_TAG
+
+
+def test_a_mirror_repointed_alone_is_caught(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The negative case the inverted form never had: move the mirror's tag and nothing else,
+    and the check has to name the file that did not move with it."""
+    migration = MIGRATION.read_text(encoding="utf-8")
+    monkeypatch.setattr(mirror, "EVIDENCE_TAG", "v9.99-never-cut")
+
+    assert repoint_disagreements(migration) == [
+        "the migration does not quote evidence_tag v9.99-never-cut"
+    ]
 
 
 def test_the_migration_carries_every_registration_and_every_rule() -> None:
