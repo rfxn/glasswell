@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { censusOf, loadCensus, resetCensus } from "./census.ts";
+import { EMPTY_CENSUS, censusOf, loadCensus, resetCensus } from "./census.ts";
 import { LAYER_GROUPS } from "./groups.ts";
 import { JURISDICTIONS } from "./jurisdictions.generated.ts";
 import { createLayerPanel } from "./layer-panel.ts";
@@ -102,6 +102,60 @@ describe("the layer panel", () => {
     const count = subtitle.querySelector<HTMLButtonElement>(".gw-layer-count-handle")!;
     expect(count.dataset["handle"]).toBe("drv_tx_counts#jurisdiction=TX");
     expect(count.hidden).toBe(false);
+    resetCensus();
+  });
+
+  it("says the count is unread while it is unread, and absent only once it is", async () => {
+    // Copilot on PR #49: the cell claimed "No well count has been measured for this
+    // jurisdiction yet" from the moment the panel mounted — an absence asserted about a
+    // registry nobody had finished asking. Loading and measured-nothing are different facts,
+    // and the second is a claim about the data rather than about the fetch.
+    const title = (id: string): string =>
+      rowFor(panel().handle.element, id)!.querySelector<HTMLElement>(".gw-layer-count")!.title;
+
+    resetCensus();
+    expect(title("tx-wells")).toBe("Reading the well count from the jurisdiction registry.");
+
+    // Resolved, and carrying a measurement for somebody else: Texas has none of its own, and
+    // now that is a fact about Texas rather than about how far the request got.
+    resetCensus(
+      censusOf([
+        {
+          jurisdiction_code: JURISDICTIONS.ND.code,
+          well_count: { value: "43817", d: "drv_nd_counts#jurisdiction=ND" },
+          measured_on: "2026-09-02",
+          well_counts_by_status: [],
+        },
+      ]),
+    );
+    expect(title("tx-wells")).toBe("No well count has been measured for this jurisdiction yet.");
+
+    // And measured, where the third sentence is the only one that names a date.
+    resetCensus(
+      censusOf([
+        {
+          jurisdiction_code: JURISDICTIONS.TX.code,
+          well_count: { value: "359421", d: "drv_tx_counts#jurisdiction=TX" },
+          measured_on: "2026-09-02",
+          well_counts_by_status: [],
+        },
+      ]),
+    );
+    expect(title("tx-wells")).toBe("Measured 2026-09-02, from the jurisdiction registry");
+
+    resetCensus();
+  });
+
+  it("says the registry could not be read, rather than that it holds nothing", async () => {
+    // A refused or unreachable /v1/jurisdictions is a fault, not an absence. `loadCensus`
+    // catches into a degraded census precisely so this surface can say which.
+    resetCensus({ ...EMPTY_CENSUS, degraded: true, resolved: true });
+
+    const cell = rowFor(panel().handle.element, "tx-wells")!.querySelector<HTMLElement>(
+      ".gw-layer-count",
+    )!;
+
+    expect(cell.title).toBe("The jurisdiction registry could not be read.");
     resetCensus();
   });
 

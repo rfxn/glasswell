@@ -31,6 +31,12 @@ export interface JurisdictionCensus {
   readonly measuredOn: string | null;
   /** True when the registry could not be read at all — never presented as an empty census. */
   readonly degraded: boolean;
+  /**
+   * Whether the registry has answered at all. `total` cannot carry this: it is null both
+   * before the fetch and after one that measured nothing anywhere, and a surface that reads
+   * the first as the second claims an absence about a question nobody has finished asking.
+   */
+  readonly resolved: boolean;
 }
 
 interface CountFigure {
@@ -52,9 +58,11 @@ export const EMPTY_CENSUS: JurisdictionCensus = {
   total: null,
   measuredOn: null,
   degraded: false,
+  resolved: false,
 };
 
-const DEGRADED_CENSUS: JurisdictionCensus = { ...EMPTY_CENSUS, degraded: true };
+// Resolved: a refusal is an answer, and the surfaces that say so need to know it arrived.
+const DEGRADED_CENSUS: JurisdictionCensus = { ...EMPTY_CENSUS, degraded: true, resolved: true };
 
 let pending: Promise<JurisdictionCensus> | null = null;
 let resident: JurisdictionCensus = EMPTY_CENSUS;
@@ -91,7 +99,7 @@ export function censusOf(rows: readonly CensusRow[]): JurisdictionCensus {
       byStatus[entry.status_canonical] = (byStatus[entry.status_canonical] ?? 0) + wells;
     }
   }
-  return { byStatus, byJurisdiction, total, measuredOn, degraded: false };
+  return { byStatus, byJurisdiction, total, measuredOn, degraded: false, resolved: true };
 }
 
 /** Fetch once per session. A refusal is a degraded census, never an empty one. */

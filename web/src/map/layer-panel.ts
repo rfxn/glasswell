@@ -8,7 +8,7 @@ import type { Bbox, Crossing } from "../explore/bridge.ts";
 import { teach } from "../glossary/teach.ts";
 import { ABBREVIATION } from "./jurisdictions.generated.ts";
 import { BASEMAPS } from "./basemap.ts";
-import { loadCensus, measuredJurisdiction } from "./census.ts";
+import { census, loadCensus, measuredJurisdiction } from "./census.ts";
 import type { JurisdictionFigure } from "./census.ts";
 import type { LayerFamily } from "./groups.ts";
 import { COUNT_SLOT, LAYERS, defaultLayerSet, familyState, groupEntries } from "./registry.ts";
@@ -26,6 +26,22 @@ const PENDING_MARK = "…";
  */
 function countText(measured: JurisdictionFigure | null): string {
   return measured?.handle ? NUMBER.format(measured.wells) : PENDING_MARK;
+}
+
+/**
+ * What the cell may say about the count it is showing, in the three states the registry can
+ * be in. Loading is not an absence: the panel used to state "no well count has been measured"
+ * from the moment it mounted, which is a claim about the data made before the question had
+ * been answered, and a refused registry is a fault rather than an empty one.
+ */
+function countTitle(measured: JurisdictionFigure | null): string {
+  if (measured?.handle) {
+    return `Measured ${measured.measuredOn ?? "on an unstated date"}, from the jurisdiction registry`;
+  }
+  const answered = census();
+  if (!answered.resolved) return "Reading the well count from the jurisdiction registry.";
+  if (answered.degraded) return "The jurisdiction registry could not be read.";
+  return "No well count has been measured for this jurisdiction yet.";
 }
 
 /** The subtitle as one string, with whatever the registry has served in the count slot. */
@@ -599,9 +615,7 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFam
     if (!countHandle) return;
     const measured = layer.jurisdiction ? measuredJurisdiction(layer.jurisdiction) : null;
     count.textContent = countText(measured);
-    count.title = measured?.measuredOn
-      ? `Measured ${measured.measuredOn}, from the jurisdiction registry`
-      : "No well count has been measured for this jurisdiction yet.";
+    count.title = countTitle(measured);
     setExplainHandle(countHandle, measured?.handle ?? null);
     if (!element.hasAttribute("data-out-of-scale")) element.title = subtitleText(layer);
   }
