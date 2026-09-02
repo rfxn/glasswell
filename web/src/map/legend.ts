@@ -7,6 +7,7 @@ import { PRODUCING_CLASSES, PRODUCING_RULINGS, producingHref, producingNote } fr
 import type { ProducingCounts } from "./producing.ts";
 import { PROVENANCE_RULE } from "./provenance.ts";
 import { loadCensus, measuredWellCount } from "./census.ts";
+import { JURISDICTION_LIST } from "./jurisdictions.generated.ts";
 import { STATUS_CLASSES, STATUS_VOCAB_RULES, UNMAPPED_STATUS, statusClass } from "./status.ts";
 import type { StatusClass } from "./status.ts";
 import { statusSwatch } from "./swatch.ts";
@@ -592,6 +593,13 @@ export function createLegend(options: LegendOptions): LegendHandle {
     for (const [index, entry] of vocabulary.entries()) {
       if (index > 0) note.appendChild(document.createTextNode(", "));
       note.appendChild(ruleNode(entry));
+    }
+    // Per-jurisdiction sentences arrive as registration data. A note that has to be written
+    // here names a state here, which is exactly what a fifth one must not cost, so the
+    // registry carries the sentence and this renders whatever it holds.
+    for (const entry of JURISDICTION_LIST) {
+      if (!entry.legendNote) continue;
+      note.appendChild(document.createTextNode(` ${entry.legendNote}`));
     }
     note.appendChild(
       document.createTextNode(

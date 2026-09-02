@@ -321,6 +321,12 @@ export const TILE_FACET_PROPERTIES: Readonly<Record<string, readonly string[]>> 
   [TX_LATERALS_SOURCE]: ["operator_name", "status_canonical", "county_code"],
   [WELLS_SOURCE_BY_LAYER["nm-wells"]!]: ["operator_name", "status_canonical", "well_type_reported", "county_code"],
   [WELLS_SOURCE_BY_LAYER["mt-wells"]!]: ["operator_name", "status_canonical", "well_type_reported"],
+  [WELLS_SOURCE_BY_LAYER["co-wells"]!]: [
+    "operator_name",
+    "status_canonical",
+    "well_type_reported",
+    "county_code",
+  ],
   [MT_PATHS_SOURCE]: ["operator_name", "status_canonical"],
 };
 
