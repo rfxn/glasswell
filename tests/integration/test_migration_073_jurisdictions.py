@@ -56,6 +56,7 @@ def migration_sql(name: str) -> str:
     return next(item.sql for item in discover_migrations() if item.name == name)
 
 
+
 def register(connection: psycopg.Connection, code: str, **overrides) -> None:
     parameters = {
         "code": code,
@@ -270,14 +271,32 @@ def test_a_land_grid_state_that_is_not_in_scope_is_rejected(db: psycopg.Connecti
 def test_a_rule_row_needs_a_registration_at_its_own_triple(
     seeded_without_the_registry_rules: psycopg.Connection,
 ) -> None:
-    """The composite FK is what makes the runbook's order the only order that works."""
+    """The composite FK is what makes the runbook's order the only order that works.
+
+    The triple is one day past the registered one, and is derived rather than written down: a
+    literal equal to `REGISTERED_ON` names a triple the fixture has just registered, so the row
+    is valid, nothing is violated and the guard passes only by accident of ordering. It went
+    vacuous the day a repoint moved REGISTERED_ON onto the date this test had hard-coded.
+    """
     db = seeded_without_the_registry_rules
+    unregistered = REGISTERED_ON + timedelta(days=1)
+    # The premise, asserted rather than assumed. Deriving the date is not enough on its own:
+    # arithmetic on a repointable constant can land on a triple something else registered, and
+    # both sibling branches plant a restatement one clock away from this one. A guard that
+    # cannot see its own precondition is a guard that goes quiet without saying so.
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select count(*) from lineage.jurisdictions"
+            " where jurisdiction_code = 'ND' and effective_from = %s and published_at = %s",
+            (unregistered, unregistered),
+        )
+        assert cursor.fetchone()[0] == 0, "the triple this plants at is registered after all"
     with db.cursor() as cursor, pytest.raises(psycopg.errors.ForeignKeyViolation):
         cursor.execute(
             "insert into lineage.jurisdiction_rules (jurisdiction_code, effective_from,"
             " published_at, decision, rule_id)"
-            " values ('ND', date '2027-01-01', date '2027-01-01', 'liquids',"
-            " 'cr_nd_liquids_policy_1')"
+            " values ('ND', %s, %s, 'liquids', 'cr_nd_liquids_policy_1')",
+            (unregistered, unregistered),
         )
 
 

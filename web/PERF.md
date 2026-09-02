@@ -291,4 +291,102 @@ single green check. Append; do not overwrite.
 | 2026-08-21 | C11 | 44,192 | 62,817 | 313,823 | first measurement of the explorer route |
 | 2026-08-22 | M1-7 | 44,245 | 62,867 | 315,287 | disposal layer: +538 gz on the map chunk (base cda2e51 measured 314,749); entry unchanged |
 | 2026-08-22 | M1-3 | 44,014 | 62,615 | 314,293 | provenance wire field + snapshot coverage: +383 gz on the map chunk (base 88105aa measured 313,910 on this toolchain); entry +10, jitter class |
+| 2026-09-02 | facets-all-jurisdictions | 13,930 | 73,634 | 325,700 | scope becomes a set: +473 gz on the explorer route, +4 on the entry (jitter class — the panel is not on the entry path) and +15 on the map chunk, against a v0.76 baseline re-measured on this toolchain at 13,927 / 73,167 / 325,217. Re-measured after merging v0.77, which is the row shown; the pre-merge measurement was 13,931 / 73,640 / 325,232. The map chunk figure is not comparable with the 313,823 two rows below: the v0.74–v0.76 layers moved it, and nothing here did |
 | 2026-08-31 | facets | 21,340 | 71,511 | 313,823 | "Wells by ..." panel: +3,362 gz on the explorer route, entry and map chunk unchanged. Not split behind a dynamic import — it renders on the `wells` dataset, the one the explorer opens on, so a split buys a second round trip for nearly every reader |
+
+---
+
+## 7. API cost — the counted-facet query
+
+The one measurement in this file that is not about bytes or frames. `/v1/wells/facets`
+scopes to a set of jurisdictions as of v0.78, and `all` asks the spine one question over
+every promoted well rather than over one state's share of them, so what it costs is a
+number this track owed rather than an estimate it could offer.
+
+**Instance:** the deployed database, VM 111, 2026-09-02, **809,191 spine rows over 585,864
+distinct API-10** in four jurisdictions. Read-only, `explain (analyze, buffers)` over the
+exact statement `facets.py` emits, `top=15`, `sort=count:desc`, no `q`, no `as_of`. Warm
+cache, three consecutive runs, the range reported. This is the deployed instance, not a
+harness: the numbers are claims about production.
+
+| dimension | `state=all` | `state=42` (Texas) | `state=33` (North Dakota) | buffers, `all` |
+|---|---:|---:|---:|---:|
+| operator | 611–613 ms | 320–334 ms | 53–54 ms | 12,787 |
+| county | 493–501 ms | 262–282 ms | 44–45 ms | 12,778 |
+| **status** | **1,561–1,647 ms** | 397–418 ms | 85–86 ms | **296,767** |
+| well_type | 490–497 ms | 256–257 ms | 45–46 ms | 12,778 |
+| completion_year | 557–573 ms | 317–319 ms | 47–49 ms | 12,778 |
+
+Four of the five are answered index-only off `wells_facet_dimensions_idx` with **0 heap
+fetches**, which is what deduping per `(state_code, api10)` buys: the api10-only partition
+the operation shipped with cannot use that index over a set at all, and the same `all`
+operator facet measured **279,288 buffers and 1,031 ms** in that shape against 12,780 and
+592 ms in this one.
+
+**`status` was the exception, and the fix is an index and a keyed relation rather than a
+cache.** The paragraphs below are the diagnosis as measured on the deployed database *before*
+the migration this track added; the section that follows them is the before/after on a fixture
+of the same size, and what it predicts for the host.
+
+**`status` is the exception and it is not a cache's problem.** It is the one dimension that
+joins — New Mexico's class is resolved at read time (`cr_nm_wellhistory_status_vocab_2`) —
+and the join costs it the index-only scan: 296,767 buffers against 12,778, all of it heap.
+Two things are wrong with the plan and both are addressable:
+
+1. `w.status_reported` is not in the covering index's `INCLUDE` list, so the outer side of
+   the join has to visit the heap for every one of 809,191 rows. Adding it restores the
+   index-only scan. Measured share: the single-state ND status facet reads 89,111 buffers
+   for 87,634 rows, which scales to the 296,762 the four-state one reads.
+2. The planner merges on `state_code` alone and applies `status = status_reported` as a
+   join filter, so **4,179,636 rows are removed by the filter** — every well compared
+   against all fourteen New Mexico map rows. A `canonical.status_resolution` the planner can
+   merge on both keys (a materialisation keyed `(for_state_code, for_status_reported)`, or
+   an index on the underlying map that supports it) is the other half.
+
+Forcing a hash join instead (`enable_mergejoin = off`, session-local, measured) drops the
+buffers to 20,791 and makes it **worse** — 2,248 ms — because the hash destroys the index
+order the `distinct on` needs and the sort of 809,191 rows costs more than the heap did. The
+index change is the fix; the plan hint is not.
+
+### What the migration changes, measured before and after
+
+Both faults are addressed by the migration this track carries: `status_reported` joins the
+covering index's `INCLUDE`, and `canonical.status_resolution` is backed by a keyed relation the
+planner can look up instead of a view it can only scan.
+
+**The deployed database cannot answer a before/after read-only** — the comparison needs an index
+that does not exist there yet — so it was measured on an ephemeral PostGIS loaded to the
+deployed row count: **809,191 spine rows over four states, ND/TX/NM/MT in their deployed
+proportions, New Mexico's `status_canonical` null so the resolver join is live.** Same statement,
+`vacuum (analyze)` before each measurement, three runs, the last reported.
+
+| | buffers | time | spine scan | resolver |
+|---|---:|---:|---|---|
+| before (v0.76 index, view resolver) | 32,598 | 1,285 ms | `Index Scan` — a heap visit per row | scanned |
+| **after** (this migration) | **12,484** | **818 ms** | `Index Only Scan`, **Heap Fetches 0** | `Index Scan using status_resolution_resolved_pkey` |
+
+**−62% buffers and −36% time on the fixture.** The index rebuild itself takes **1.25 s** at that
+size and grows the index from **95 MB to 98 MB**.
+
+**What that predicts for the host, stated as a prediction.** The fixture's heap is 160 MB and the
+deployed one is larger — which is exactly why the same `Index Scan` reads 296,767 buffers there
+against 32,598 here. The change does not make the heap visit cheaper; it removes it, so the
+deployed status facet should read the same order of buffers as the other four dimensions
+(~12,800, a ~23× fall) and its 4,179,636 join-filter comparisons should become one index probe
+per New Mexico row. On that basis it should land near the 490–613 ms band rather than at
+1,561–1,647 ms. **This is not a measurement of the deployed database and must be re-measured
+there after the deploy** — `web/PERF.md` gets the real number then, and this paragraph is what it
+will be checked against.
+
+One caveat that is not about the deploy: an index-only scan reads the visibility map, so the
+gain is realised only on a vacuumed table. On the same fixture the rebuilt index recorded
+809,191 heap fetches before a vacuum and 0 after. The deployed table is autovacuumed; a freshly
+restored one is not, until it is.
+
+No cache is shipped, and the facet rate limit is unchanged at 60 requests per principal per
+UTC minute. A cached facet is a figure whose derivation handle no longer describes when it
+was computed, and `all` was under two seconds warm even before this.
+
+**On the fixture** (contract tier, 36 wells over three jurisdictions, whole request including
+the `api.respond` derivation write): 11–16 ms per dimension. It measures the code path, not
+the data — the deployed table above is the number that means anything.

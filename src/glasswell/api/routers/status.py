@@ -37,6 +37,7 @@ from glasswell.status.models import (
     StatusSnapshot,
 )
 from glasswell.status.source_health import source_health_data
+from glasswell.status_resolution import unresolved_read_time_jurisdictions
 
 router = APIRouter(tags=["service"])
 
@@ -73,6 +74,45 @@ class Status(BaseModel):
     )
     disclosures: list[StatusDisclosure] = Field(
         description="Known limits that prevent a broader health claim."
+    )
+
+
+def _resolver_check(connection: Connection, now: datetime) -> StatusCheck:
+    """Whether every jurisdiction registered for read-time status resolution has resolver rows.
+
+    `refresh_status_resolution()` skips a registration whose mapping table has not landed rather
+    than aborting, which is the right call and self-heals inside a deploy. What it cannot do is
+    say so afterwards, and the consequence of a `mapping_table` misspelt in a rule spec, or a
+    map renamed by a later migration, is that jurisdiction's whole spine drawing in the
+    `unmapped` class. This is where that becomes visible, on the surface that reports faults.
+    """
+    unresolved = unresolved_read_time_jurisdictions(connection)
+    if not unresolved:
+        return StatusCheck(
+            id="status_resolver",
+            label="Read-time status resolution",
+            state="ok",
+            observed_at=now,
+            detail="Every jurisdiction registered for read-time status resolution has rows.",
+            tier="data",
+            probe="this request",
+        )
+    named = "; ".join(
+        f"{row['name']} ({row['identity_prefix']}) wants lineage.{row['mapping_table']}"
+        f"{', which does not exist' if row['map_absent'] else ', which resolved nothing'}"
+        for row in unresolved
+    )
+    return StatusCheck(
+        id="status_resolver",
+        label="Read-time status resolution",
+        state="degraded",
+        observed_at=now,
+        detail=(
+            f"{len(unresolved)} registered read-time jurisdiction(s) resolve no status at all,"
+            f" so their wells are served unmapped: {named}."
+        ),
+        tier="data",
+        probe="this request",
     )
 
 
@@ -205,6 +245,7 @@ def get_status(request: Request, connection: Connection) -> JSONResponse:
             tier="data",
             probe="this request",
         ),
+        _resolver_check(connection, now),
         StatusCheck(
             id="status_snapshot",
             label="Status telemetry",

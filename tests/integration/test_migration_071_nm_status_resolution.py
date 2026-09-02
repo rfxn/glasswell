@@ -154,8 +154,18 @@ def test_the_four_documented_codes_carry_a_class_of_their_own_and_never_a_null(
 
 
 def test_the_resolver_answers_for_new_mexico_and_for_no_other_state(
-    db: psycopg.Connection,
+    seeded: psycopg.Connection,
 ) -> None:
+    """Seeded rather than migrate-only, because the resolver reads the registry now.
+
+    Which jurisdictions resolve at read time is a `jurisdiction_rules` row joined to its rule's
+    spec, and 073's own comment says those rows are the seed's on a fresh database -- so a
+    migrate-only database has no read-time jurisdiction at all, which is already what
+    `status_resolution.resolver_rules()` and therefore the tile mart answer there. The view used
+    to disagree with them by carrying a hard-coded jurisdiction; it no longer does. The claim
+    itself is unchanged: New Mexico resolves to exactly this map and no other state resolves.
+    """
+    db = seeded
     with db.cursor() as cursor:
         cursor.execute(
             "select for_status_reported, resolved_status from canonical.status_resolution"

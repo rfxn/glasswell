@@ -25,6 +25,8 @@
   reason: API state code carried as reported; an identifier, not a quantity.
 - pointer: /states/*/code
   reason: API state code carried as reported; an identifier, not a quantity.
+- pointer: /jurisdictions/*/code
+  reason: API state code carried as reported; an identifier, not a quantity.
 - pointer: /basins/*/state_code
   reason: API state code on a per-basin summary row; an identifier, not a quantity.
 - pointer: /*/identity/prefix

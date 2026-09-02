@@ -402,6 +402,29 @@ unregistered_layers="$("${PSQL[@]}" "select coalesce(string_agg(layer, ', ' orde
     select 1 from lineage.jurisdictions_as_of(current_date, current_date) j
      where j.wells_tile_layer_id = t.layer)")"
 assert "every wells tile layer has a resolved jurisdiction registration" "" "$unregistered_layers"
+# The other half of the same defect class, and the one no other check can see. A jurisdiction
+# whose status vocabulary resolves at read time serves its class out of
+# lineage.status_resolution_resolved; the refresh skips a registration whose mapping table has
+# not landed, because aborting would take a migration or the deploy's seed down with it. A skip
+# that lasts -- a mapping_table misspelt in a rule spec, or a map renamed by a later migration --
+# draws that jurisdiction's whole spine unmapped and self-heals never. /v1/status serves the same
+# fact as its `status_resolver` check; this is the one that catches it six months later.
+unresolved_read_time="$("${PSQL[@]}" "select coalesce(string_agg(
+        j.identity_prefix || ' ' || j.jurisdiction_code || ' wants lineage.' ||
+        (c.spec->>'mapping_table'), ', ' order by j.identity_prefix), '')
+  from lineage.jurisdictions_as_of(current_date, current_date) j
+  join lineage.jurisdiction_rules r
+    on r.jurisdiction_code = j.jurisdiction_code
+   and r.effective_from = j.effective_from
+   and r.published_at = j.published_at
+   and r.decision = 'status_vocabulary'
+   and r.serving
+  join lineage.conformance_rules c on c.rule_id = r.rule_id
+ where j.identity_prefix is not null
+   and c.spec->>'resolved_at' = 'read_time'
+   and not exists (select 1 from lineage.status_resolution_resolved s
+                    where s.for_state_code = j.identity_prefix)")"
+assert "every read-time status vocabulary has resolver rows" "" "$unresolved_read_time"
 cumulatives="$("${PSQL[@]}" "select count(*) from marts.well_cumulatives")"
 withholding="$("${PSQL[@]}" "select count(*) from marts.well_withholding")"
 assert_true "per-well cumulatives populated ($cumulatives)" "mart is empty" \

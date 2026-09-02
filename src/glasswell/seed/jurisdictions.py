@@ -579,5 +579,9 @@ def seed_jurisdictions(connection: psycopg.Connection) -> int:
             [rule_parameters(row) for row in JURISDICTION_RULES_AS_FOUNDED]
             + [rule_parameters(row, published_at=RESTATED_ON) for row in JURISDICTION_RULES],
         )
+        # The read-time status resolver is derived from the rows above, and a database restored
+        # from a dump lands them without an append for the trigger to see. Every deploy runs
+        # this, between migrate and the API restart.
+        cursor.execute("select lineage.refresh_status_resolution()")
         cursor.execute("select count(*) from lineage.jurisdictions")
         return int(cursor.fetchone()[0])

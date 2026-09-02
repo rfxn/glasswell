@@ -117,6 +117,15 @@ const FACETS = {
     absence: null,
     wells: figure("87634", "drv_test#wells"),
     matched_wells: null,
+    jurisdictions: [
+      {
+        code: "33",
+        name: "North Dakota",
+        wells: figure("43817", "drv_test#jurisdiction"),
+        dimension: "carried",
+        rule_id: null,
+      },
+    ],
     states: [{ code: "33", name: "North Dakota", loaded: true }],
     rules: [],
   },

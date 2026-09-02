@@ -8,7 +8,8 @@ import psycopg
 from fastapi.testclient import TestClient
 
 from glasswell.api.routers.facets import DIMENSIONS
-from tests.support.seed import seed_well
+from glasswell.lineage.ids import parse_handle
+from tests.support.seed import seed_conformance_rule, seed_derivation, seed_well
 
 # Enough operators to be truncated by a small `top`, with a deliberate long tail and a
 # deliberate absence, because both are what this surface exists to state.
@@ -472,3 +473,420 @@ def test_the_state_name_matches_the_layer_panel_convention(
     _seed_tx(seeded)
 
     assert _facets(client)["data"]["state_name"] == "Texas"
+
+
+# --- the scope is a set -------------------------------------------------------
+
+_ND_OPERATOR = "A ND OPERATOR"
+_MT_WELLS = 3
+
+
+def _seed_nd(connection: psycopg.Connection) -> str:
+    """North Dakota under a derivation of its own, so a combined bucket has two to reach."""
+    derivation = seed_derivation(
+        connection, params={"source_key": "nd.xlsx", "liquids_basis": "oil+condensate"}
+    )
+    for serial in range(1, 4):
+        seed_well(
+            connection,
+            api10=f"33{serial:08d}",
+            state_code="33",
+            county_code_at_permit="053",
+            operator_name_reported=_ND_OPERATOR,
+            derivation_id=derivation,
+        )
+    connection.commit()
+    return derivation
+
+
+def _seed_mt(connection: psycopg.Connection) -> None:
+    """Montana with no operator on any well.
+
+    A seeded shape, not an observed one: the deployed Montana carries 3,257 distinct operators
+    over all 40,626 of its wells, and on the deployed spine no (jurisdiction, dimension) pair is
+    `absent_by_rule` at all. What is real is the registered decision: `cr_mt_operator_absence_1`
+    exists and says what a blank Montana operator means. What is seeded is a population carrying
+    nothing but blanks, so the arm that reads the two together has something to read.
+    `test_the_absent_by_rule_arm_reads_the_registry_and_not_a_jurisdiction` is the same mechanism
+    over a planted rule of the suite's own, with no real regulator named at all.
+    """
+    for serial in range(1, _MT_WELLS + 1):
+        seed_well(
+            connection,
+            api10=f"25{serial:08d}",
+            state_code="25",
+            county_code_at_permit="019",
+            operator_name_reported=None,
+            basin=None,
+        )
+    connection.commit()
+
+
+def test_a_repeated_state_and_a_comma_list_ask_the_same_question(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """One grammar, two spellings. A reader who types one and a link that carries the other
+    must land on the same population, or the panel and its own URL disagree."""
+    _seed_tx(seeded)
+    _seed_nd(seeded)
+    repeated = client.get(
+        "/v1/wells/facets?state=42&state=33&by=operator&top=50"
+    ).json()["data"]
+    listed = client.get("/v1/wells/facets?state=33,42&by=operator&top=50").json()["data"]
+
+    assert repeated["state"] == listed["state"] == "33,42"
+    assert repeated["caption"] == listed["caption"]
+    assert [bucket["value"] for bucket in repeated["buckets"]] == [
+        bucket["value"] for bucket in listed["buckets"]
+    ]
+    assert int(repeated["wells"]["value"]) == int(listed["wells"]["value"])
+
+
+def test_all_is_every_registered_jurisdiction_the_spine_carries(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """Read from the registry at request time, which is what lets a fifth state join the
+    answer without a client, a query string or a line of this module changing."""
+    _seed_tx(seeded)
+    _seed_nd(seeded)
+    _seed_mt(seeded)
+    data = client.get("/v1/wells/facets?state=all&by=operator&top=50").json()["data"]
+
+    loaded = sorted(row["code"] for row in data["states"] if row["loaded"])
+    assert data["state"] == "all"
+    assert [row["code"] for row in data["jurisdictions"]] == loaded
+    assert int(data["wells"]["value"]) == sum(
+        int(row["wells"]["value"]) for row in data["jurisdictions"]
+    )
+
+
+def test_all_cannot_be_combined_with_a_code(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """One of the two would be ignored and the response could not say which."""
+    _seed_tx(seeded)
+    response = client.get("/v1/wells/facets?state=all&state=42&by=operator")
+
+    assert response.status_code == 422
+    assert response.json()["errors"][0]["code"] == "state_set_mixed"
+
+
+def test_a_code_no_jurisdiction_is_registered_under_is_refused_by_name(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """A code the registry does not carry names no jurisdiction at all, which is a different
+    refusal from a registered state whose ingest has not run — and the reader needs to know
+    which, because only one of them is waiting on a load."""
+    _seed_tx(seeded)
+    response = client.get("/v1/wells/facets", params={"state": "99", "by": "operator"})
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["errors"][0]["code"] == "state_not_registered"
+    assert "Texas" in body["detail"]
+    assert {row["code"] for row in body["states"]}
+
+
+def test_the_jurisdictions_say_which_of_them_carries_the_dimension(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """R8 at the (jurisdiction, dimension) grain, over the seeded population `_seed_mt` lays
+    down: given a jurisdiction that contributes no value and a registered decision about that
+    absence, the wells leave the shared `not reported` bucket. Folded into it they would read as
+    the same absence Texas's blanks are, and they are not the same fact. The registered decision
+    is real; the population is the fixture's, and the deployed Montana is not in it."""
+    _seed_tx(seeded)
+    _seed_nd(seeded)
+    _seed_mt(seeded)
+    data = client.get("/v1/wells/facets?state=all&by=operator&top=50").json()["data"]
+    by_code = {row["code"]: row for row in data["jurisdictions"]}
+
+    assert by_code["25"]["dimension"] == "absent_by_rule"
+    assert by_code["25"]["rule_id"] == "cr_mt_operator_absence_1"
+    assert int(by_code["25"]["wells"]["value"]) == _MT_WELLS
+    assert by_code["33"]["dimension"] == "carried"
+    assert by_code["42"]["dimension"] == "carried"
+    assert by_code["42"]["rule_id"] == "cr_tx_operator_absence_1"
+    assert "cr_mt_operator_absence_1" in data["rules"]
+
+
+def test_a_jurisdiction_absent_by_rule_is_outside_the_not_reported_bucket(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The reconciliation the whole surface rests on, restated for a set: everything is still
+    counted, and the wells whose absence a rule explains are counted where the rule is."""
+    _seed_tx(seeded)
+    _seed_nd(seeded)
+    _seed_mt(seeded)
+    data = client.get("/v1/wells/facets?state=all&by=operator&top=50").json()["data"]
+
+    listed = sum(int(bucket["wells"]["value"]) for bucket in data["buckets"])
+    absent = int(data["absence"]["wells"]["value"])
+    by_rule = sum(
+        int(row["wells"]["value"])
+        for row in data["jurisdictions"]
+        if row["dimension"] == "absent_by_rule"
+    )
+
+    assert absent == _TX_ABSENT
+    assert by_rule == _MT_WELLS
+    assert listed + absent + by_rule == int(data["wells"]["value"])
+    warned = _facets(client, state="all", top=50)["meta"]["warnings"]
+    codes = {warning["code"] for warning in warned}
+    assert "dimension_absent_by_rule" in codes
+
+
+def test_a_combined_bucket_reaches_every_promotion_behind_it(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """A number over two jurisdictions whose lineage reaches one of them is a number nobody
+    can audit: the half it does not name is invisible and still inside the count."""
+    _seed_tx(seeded)
+    nd_derivation = _seed_nd(seeded)
+    tx_derivation = seeded.execute(
+        "select max(derivation_id) from canonical.wells where state_code = '42'"
+    ).fetchone()[0]
+    handle = client.get(
+        "/v1/wells/facets?state=33,42&by=operator&top=50"
+    ).json()["data"]["wells"]["d"]
+
+    seeded.rollback()
+    response_derivation = parse_handle(handle).derivation_id
+    reached = {
+        row[0]
+        for row in seeded.execute(
+            "select ref_id from lineage.derivation_inputs where derivation_id = %s",
+            (response_derivation,),
+        ).fetchall()
+    }
+
+    assert {nd_derivation, tx_derivation} <= reached
+    resolved = client.get("/v1/explain", params={"h": handle})
+    assert resolved.status_code == 200, resolved.text
+
+
+def test_a_bucket_link_narrows_the_collection_to_exactly_the_set_it_was_counted_over(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The link is the control. Counted over two jurisdictions and narrowing to one, it hands
+    the reader a shorter list than the number they pressed."""
+    _seed_tx(seeded)
+    _seed_nd(seeded)
+    bucket = next(
+        row
+        for row in client.get(
+            "/v1/wells/facets?state=33,42&by=county&top=50"
+        ).json()["data"]["buckets"]
+        if row["value"] == "003"
+    )
+
+    assert bucket["links"]["wells"] == "/v1/wells?county=003&state=33%2C42"
+    followed = client.get(f"{bucket['links']['wells']}&limit=200")
+    assert followed.status_code == 200, followed.text
+    assert len(followed.json()["data"]) == int(bucket["wells"]["value"])
+
+
+def test_a_set_names_itself_in_the_served_prose(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The panel says the population in the server's words, so two surfaces cannot spell one
+    set two ways — and a set of one reads exactly as it always did."""
+    _seed_tx(seeded)
+    _seed_nd(seeded)
+    combined = client.get("/v1/wells/facets?state=33,42&by=operator&top=50").json()["data"]
+
+    assert combined["state_name"] == "North Dakota and Texas"
+    assert "North Dakota and Texas" in combined["caption"]
+    assert _facets(client)["data"]["state_name"] == "Texas"
+
+
+def test_a_response_carrying_more_handles_than_explain_inlines_says_so(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """`all` over four jurisdictions puts the per-jurisdiction figures on top of the ranking,
+    which is exactly where /v1/explain's own cap of twenty starts to bite. The truncation is
+    served rather than left for a reader to notice that a handle has no chain."""
+    _seed_tx(seeded)
+    _seed_nd(seeded)
+    _seed_mt(seeded)
+    for serial in range(100, 120):
+        seed_well(
+            seeded,
+            api10=f"42{serial:08d}",
+            state_code="42",
+            operator_name_reported=f"OPERATOR {serial}",
+        )
+    seeded.commit()
+    body = client.get("/v1/wells/facets?state=all&by=operator&top=50&explain=true").json()
+
+    codes = {warning["code"] for warning in body["meta"]["warnings"]}
+    assert "explain_inline_truncated" in codes
+    assert len(body["_explain"]) == 20
+
+
+
+# The rule id and its evidence tag are the suite's, not a regulator's: `seed_conformance_rule`
+# registers `harness-fixture` publication evidence, and nothing about this row is a claim that
+# any real jurisdiction reports nothing. It exists so the `absent_by_rule` arm is exercised by a
+# decision the fixture owns end to end — on the deployed spine no (jurisdiction, dimension) pair
+# is absent by rule, and the gate report's H-1 is why no row was appended to make one.
+FIXTURE_ABSENCE_RULE = "cr_fixture_well_type_absence_1"
+
+
+def _plant_an_absence_rule(
+    connection: psycopg.Connection, *, jurisdiction: str, dimension: str
+) -> None:
+    """A registered absence decision of the suite's own, at the resolving registration's triple."""
+    seed_conformance_rule(
+        connection,
+        rule_id=FIXTURE_ABSENCE_RULE,
+        source_id="nd_mpr_xlsx",
+        rationale="Planted by the suite so the absent-by-rule arm has a decision to read.",
+    )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.jurisdiction_rules (jurisdiction_code, effective_from,"
+            " published_at, decision, rule_id, serving, note)"
+            " select j.jurisdiction_code, j.effective_from, j.published_at, %s, %s, true,"
+            " 'Planted by the suite.'"
+            "   from lineage.jurisdictions_as_of(current_date, current_date) j"
+            "  where j.jurisdiction_code = %s"
+            " on conflict do nothing",
+            (f"absence:{dimension}", FIXTURE_ABSENCE_RULE, jurisdiction),
+        )
+    connection.commit()
+
+
+def test_the_absent_by_rule_arm_reads_the_registry_and_not_a_jurisdiction(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The mechanism, over a decision the fixture owns: no real regulator is named.
+
+    Montana here files no well type on any of its wells and a registered rule says what that
+    means, so its wells leave the shared bucket and are counted against the rule instead. The
+    arm is registry-driven — it fires for whatever `absence:<dimension>` row resolves, which is
+    the property worth testing, and not for the two `absence:operator` rows that happen to exist.
+    """
+    _seed_tx(seeded)
+    for serial in range(1, 4):
+        seed_well(
+            seeded,
+            api10=f"25{serial:08d}",
+            state_code="25",
+            well_type_reported=None,
+            basin=None,
+        )
+    seeded.commit()
+    _plant_an_absence_rule(seeded, jurisdiction="MT", dimension="well_type")
+    data = client.get("/v1/wells/facets?state=25,42&by=well_type&top=50").json()["data"]
+    by_code = {row["code"]: row for row in data["jurisdictions"]}
+
+    assert by_code["25"]["dimension"] == "absent_by_rule"
+    assert by_code["25"]["rule_id"] == FIXTURE_ABSENCE_RULE
+    assert by_code["42"]["dimension"] == "carried"
+    listed = sum(int(bucket["wells"]["value"]) for bucket in data["buckets"])
+    absent = int(data["absence"]["wells"]["value"]) if data["absence"] else 0
+    assert listed + absent + int(by_code["25"]["wells"]["value"]) == int(data["wells"]["value"])
+
+
+def test_the_arm_stays_shut_where_the_registry_holds_no_decision(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The other half, and the one the deployed data is in: a jurisdiction that reports nothing
+    with no rule to explain it stays in the shared bucket, which then cites none and says so."""
+    _seed_tx(seeded)
+    for serial in range(1, 4):
+        seed_well(
+            seeded,
+            api10=f"25{serial:08d}",
+            state_code="25",
+            well_type_reported=None,
+            basin=None,
+        )
+    seeded.commit()
+    body = client.get("/v1/wells/facets?state=25,42&by=well_type&top=50").json()
+    by_code = {row["code"]: row for row in body["data"]["jurisdictions"]}
+
+    assert by_code["25"]["dimension"] == "absent_unregistered"
+    assert by_code["25"]["rule_id"] is None
+    assert body["data"]["absence"]["rule_id"] is None
+    assert "absence_unregistered" in {w["code"] for w in body["meta"]["warnings"]}
+
+
+def test_a_jurisdiction_with_no_wells_at_the_asked_vintage_is_not_blamed_on_a_rule(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The knowledge-time arm, which this surface had no test for at all.
+
+    `all` resolves against what the spine carries *today*; the counts are taken as of the date
+    asked for. A jurisdiction promoted after that date is therefore in the set and contributes
+    nothing — and a jurisdiction that contributes nothing has exercised no absence rule. Read as
+    `absent_by_rule` it would say a conformance decision explains an emptiness whose real cause
+    is the reader's own `as_of`, which is a claim with no row behind it.
+    """
+    _seed_tx(seeded)
+    for serial in range(1, 4):
+        seed_well(
+            seeded,
+            api10=f"25{serial:08d}",
+            state_code="25",
+            effective_from=date(2026, 9, 1),
+            operator_name_reported=None,
+            basin=None,
+        )
+    seeded.commit()
+    body = client.get(
+        "/v1/wells/facets?state=all&by=operator&top=50&as_of=2026-08-15"
+    ).json()
+    by_code = {row["code"]: row for row in body["data"]["jurisdictions"]}
+
+    assert by_code["25"]["dimension"] == "no_wells_in_scope"
+    assert by_code["25"]["rule_id"] == "cr_mt_operator_absence_1"
+    assert by_code["25"]["wells"] is None
+    assert by_code["42"]["dimension"] == "carried"
+    assert "dimension_absent_by_rule" not in {w["code"] for w in body["meta"]["warnings"]}
+
+
+def test_the_same_jurisdiction_is_absent_by_rule_once_its_wells_are_in_scope(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The other side of the same seed: at `latest` the wells are there and the rule applies."""
+    _seed_tx(seeded)
+    _seed_mt(seeded)
+    body = client.get("/v1/wells/facets?state=all&by=operator&top=50").json()
+    by_code = {row["code"]: row for row in body["data"]["jurisdictions"]}
+
+    assert by_code["25"]["dimension"] == "absent_by_rule"
+    assert "dimension_absent_by_rule" in {w["code"] for w in body["meta"]["warnings"]}
+
+
+def test_the_server_and_the_panel_say_the_scope_the_same_way(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """One vocabulary, or two sentences describe the same set differently 40 px apart.
+
+    `_caption`'s own comment states the standard; the panel says `across` for a set, and the
+    caption two lines above it said `in`. The preposition is the server's to choose, because the
+    server is the one that knows how many jurisdictions are in the scope.
+    """
+    _seed_tx(seeded)
+    _seed_nd(seeded)
+    combined = client.get("/v1/wells/facets?state=33,42&by=operator&top=50").json()["data"]
+    one = _facets(client, top=50)["data"]
+
+    assert "across North Dakota and Texas" in combined["caption"]
+    assert " in North Dakota and Texas" not in combined["caption"]
+    assert "in Texas" in one["caption"]
+
+
+def test_the_absence_sentence_uses_the_same_preposition_under_a_search(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The `q` arm names the population the count belongs to, and names it the same way."""
+    _seed_tx(seeded)
+    _seed_nd(seeded)
+    data = client.get(
+        "/v1/wells/facets?state=33,42&by=operator&top=50&q=usa"
+    ).json()["data"]
+
+    assert "across North Dakota and Texas" in data["absence"]["detail"]

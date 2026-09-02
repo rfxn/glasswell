@@ -121,6 +121,35 @@ def test_every_resolved_registration_carries_the_rule_rows_it_declares(
             assert row.rule(decision) is not None
 
 
+def test_no_absence_decision_claims_a_dimension_the_spine_carries_values_for(
+    db: psycopg.Connection,
+) -> None:
+    """R8 runs both ways: a registered decision has to be true of the data it decides about.
+
+    An `absence:<dimension>` row says a jurisdiction reports no value of that dimension at all,
+    which is what takes its wells out of the shared `not reported` bucket. The register is
+    append-only, so a row asserting it of a jurisdiction that does report the dimension can only
+    be superseded, never corrected — and on the deployed spine Texas carries 228,169 completion
+    dates over 107 distinct years, which is what this gate was written after.
+
+    The two rows that exist are both `absence:operator`, and both say what a *blank* operator
+    means rather than that the jurisdiction files none; the facet only reads them as
+    `absent_by_rule` where the jurisdiction contributes no value at all, which neither does.
+    """
+    registry = load_jurisdictions(db)
+    claimed = {
+        (row.jurisdiction_code, rule.decision.split(":", 1)[1])
+        for row in registry
+        for rule in row.rules
+        if rule.serving and rule.decision.startswith("absence:")
+    }
+
+    assert claimed == {("TX", "operator"), ("MT", "operator")}, (
+        "an absence decision was registered or removed; it must be measured against the"
+        " deployed spine before it lands, because the register cannot be corrected"
+    )
+
+
 def test_exactly_one_resolved_registration_is_the_explorer_default(
     db: psycopg.Connection,
 ) -> None:
