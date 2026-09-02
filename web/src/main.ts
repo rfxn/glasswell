@@ -8,7 +8,7 @@ import {
   purgeLegacyKey,
   whoami,
 } from "./api/client.ts";
-import { DEFAULT_STATE, readState, serializeState, writeState } from "./app/state.ts";
+import { DEFAULT_STATE, parseViewport, readState, serializeState, writeState } from "./app/state.ts";
 import type { AppState } from "./app/state.ts";
 import { loginPanel } from "./auth/login.ts";
 import { flyTo, onSelectWell, onUrlParam, selectWell, sessionBegan, wellSelected } from "./bus.ts";
@@ -34,6 +34,15 @@ const statusHost = required("gw-status-page");
 const shell = required("gw-main");
 
 let state: AppState = readState();
+// A `?well=` link that carries no `?map=` of its own has not chosen a viewport, so the default
+// one — the Williston Basin — is North Dakota by accident rather than by the reader's intent,
+// and a New Mexico well opened its card 700 km off screen. Read before the first writeState,
+// which gives every map-view URL a `map=` whether the reader picked one or not, and consumed
+// once so only the opening deep link moves the camera.
+let deepLinkNeedsCamera =
+  state.view === "map" &&
+  state.well !== null &&
+  parseViewport(new URLSearchParams(window.location.search).get("map")) === null;
 let mapHandle: MapHandle | undefined;
 let pendingSource: SelectSource = "url";
 let historySource: SelectSource | null = null;
@@ -78,10 +87,12 @@ function showWell(api10: string | null, mode: "push" | "replace" = "push"): void
         onClose: () => selectWell(null, source),
         onSignIn: () => showLoginPanel(),
         onVintage: (resolved) => setVintage(resolved),
-        // Only a search hit moves the camera: a map click is already looking at the well, and
-        // a deep link carries its own ?map= viewport that the reader chose.
+        // A map click is already looking at the well, and a deep link that chose a viewport
+        // keeps it. A search hit, and a deep link that named only a well, do not.
         onLocated: (point) => {
-          if (source === "search") flyTo({ ...point, zoom: 12 });
+          const opening = source === "url" && deepLinkNeedsCamera;
+          if (opening) deepLinkNeedsCamera = false;
+          if (source === "search" || opening) flyTo({ ...point, zoom: 12 });
         },
       });
     })

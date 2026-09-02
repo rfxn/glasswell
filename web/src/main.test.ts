@@ -344,6 +344,40 @@ describe("one dispatch on view, three surfaces (SB-08 §2.1)", () => {
     await vi.waitFor(() => expect(select).toHaveBeenCalledWith("3305310451"));
     expect(select).toHaveBeenCalledTimes(1);
   });
+
+  // A deep link that names only a well has chosen no viewport, so the default one is North
+  // Dakota by accident. A New Mexico well opened its card 700 km off the visible map.
+  describe("a ?well= deep link and the camera", () => {
+    const NM = { lon: -103.9, lat: 32.7 };
+
+    function locates(): void {
+      renderWellCard.mockImplementationOnce(async (_container, _api10, callbacks) => {
+        (callbacks as { onLocated: (point: typeof NM) => void }).onLocated(NM);
+      });
+    }
+
+    const flownTo = (): unknown[] =>
+      (createMap.mock.results[0]?.value as { flyTo: { mock: { calls: unknown[][] } } }).flyTo.mock
+        .calls;
+
+    it("flies to the well when the link named no viewport of its own", async () => {
+      locates();
+
+      await bootAt("/?view=map&well=3003912345");
+
+      await vi.waitFor(() => expect(flownTo()).toHaveLength(1));
+      expect(flownTo()[0]?.[0]).toEqual({ ...NM, zoom: 12 });
+    });
+
+    it("leaves the camera where a link that did choose a viewport put it", async () => {
+      locates();
+
+      await bootAt("/?view=map&well=3003912345&map=9/32.9/-104.1");
+
+      await vi.waitFor(() => expect(select).toHaveBeenCalledWith("3003912345"));
+      expect(flownTo()).toHaveLength(0);
+    });
+  });
 });
 
 describe("the as_of chip honours a pinned route at boot (gate-c12 R5 / visual F3)", () => {
