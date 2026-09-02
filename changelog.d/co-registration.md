@@ -1,10 +1,11 @@
 - [New] Colorado is resident, and it arrived as a registration rather than as a project: one
-      `lineage.jurisdictions` row with prefix `05`, thirteen `jurisdiction_rules` decisions
+      `lineage.jurisdictions` row with prefix `05`, fourteen `jurisdiction_rules` decisions
       and twenty-two conformance rules with published ECMC evidence, and no edit to
       `api/routers/wells.py`, `facets.py`, the legend census constants or the status collector
 - [New] `cr_co_wells_status_vocab_1` maps the thirteen published ECMC Well Status codes:
       eleven to a canonical class and `SO` and `UN` to `documented_unmapped`, resolved at read
-      time through a Colorado arm on `canonical.status_resolution`. The shapefile's in-band
+      time from `lineage.co_facility_status_map` through the registry-driven resolver, which
+      the rule's own spec hands the table and the two columns to read. The shapefile's in-band
       legend is the stale one, and the rule says which of the three published legends governs
 - [New] `cr_co_wells_location_qualifier_1` and `canonical.well_spatial.location_qualifier`:
       how good a coordinate is, on the row that holds the coordinate and on a separate axis
