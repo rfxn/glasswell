@@ -185,3 +185,91 @@ def test_the_sum_is_over_the_filings_that_reported_and_not_over_their_absences()
 
     mixed = [{"volume": None, "days": 5}, {"volume": Decimal("3"), "days": 31}]
     assert co_production.sum_over_pools(mixed) == (Decimal("3"), 31)
+
+
+def _plant(connection, manifest_id: str, ordinal: int, **columns: str | None) -> None:
+    """One staged row, at an ordinal past the fixture's own, with the defaults of a good row."""
+    row = {
+        "manifest_id": manifest_id,
+        "source_row_ordinal": ordinal,
+        "apicountycode": "123",
+        "apisequencenumber": "45678",
+        "apisidetrack": "00",
+        "formationcode": "CODELL",
+        "facilityid": "999999",
+        "reportyear": "2026",
+        "reportmonth": "4",
+        "daysproduced": "30",
+        "oilproduced": "10",
+        "gasproduced": "20",
+        "waterproduced": "30",
+        **columns,
+    }
+    names = ", ".join(row)
+    placeholders = ", ".join(f"%({name})s" for name in row)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"insert into staging.co_ecmc_production ({names}) values ({placeholders})", row
+        )
+
+
+@pytest.fixture
+def promoted_with_rejects(staged_rolling, seeded, lineage_env) -> co_production.ProductionReport:
+    """Two rows the promotion cannot place: one with no readable API-10, one with no month."""
+    ordinal = staged_rolling.rows_staged + 1
+    _plant(seeded, staged_rolling.manifest_id, ordinal, apicountycode="")
+    _plant(seeded, staged_rolling.manifest_id, ordinal + 1, reportmonth="13")
+    seeded.commit()
+    with open_ingest_run(
+        seeded, source_id=co_production.SOURCE_ID, environment=lineage_env
+    ) as run:
+        report = co_production.promote_production(run)
+    seeded.commit()
+    return report
+
+
+def test_a_row_that_cannot_be_keyed_or_dated_is_quarantined_and_never_dropped(
+    promoted_with_rejects, seeded
+) -> None:
+    """The hard rule, on the path that had no ledger entry at all.
+
+    `cr_co_production_entity_key_1` publishes `on_missing: quarantine`, and until this test the
+    promotion answered it with `continue`: a row ECMC files with a blank county code or a
+    thirteenth month vanished between staging and canonical with no count, no reason and no
+    query that could find it. The rolling file is clean today, which is why nothing fired; the
+    archive backfill is where it would have.
+    """
+    assert promoted_with_rejects.quarantined == {"key_incomplete": 1, "out_of_range_date": 1}
+
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select reason_code, rule_id, state, row_payload->>'source_row_ordinal'"
+            "  from lineage.quarantine_rows"
+            " where source_id = %s and staging_table = %s order by reason_code",
+            (co_production.SOURCE_ID, co_production.STAGING_TABLE),
+        )
+        rows = cursor.fetchall()
+
+    assert [(reason, rule, state) for reason, rule, state, _ in rows] == [
+        ("key_incomplete", "cr_co_production_entity_key_1", "open"),
+        ("out_of_range_date", "cr_co_production_grain_1", "open"),
+    ]
+    assert len({ordinal for *_rest, ordinal in rows}) == 2
+
+
+def test_every_staged_row_is_either_promoted_or_quarantined(
+    promoted_with_rejects, seeded
+) -> None:
+    """The identity that makes the count above meaningful rather than decorative."""
+    report = promoted_with_rejects
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select count(distinct (api10, production_month))"
+            "  from canonical.production_monthly where source_id = %s",
+            (co_production.SOURCE_ID,),
+        )
+        well_months = cursor.fetchone()[0]
+
+    assert report.rows_read == report.rows_keyed + sum(report.quarantined.values())
+    assert report.rows_keyed > 0
+    assert well_months > 0

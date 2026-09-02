@@ -22,16 +22,18 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+import polars as pl
 import psycopg
 
 from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import IngestRun, open_ingest_run, resolve_environment
 from glasswell.ingest.co_wells import build_api10
 from glasswell.ingest.promote import classify_null_semantics
-from glasswell.lineage.capture import derive
+from glasswell.lineage.capture import current_session, derive
 from glasswell.lineage.conformance import load_rules, rule_for_family
 from glasswell.lineage.fetch_attempts import durable_fetch_attempts
 from glasswell.lineage.models import InputRef, OutputSpec
+from glasswell.lineage.quarantine import quarantine
 from glasswell.lineage.serialization import hash_payload
 
 __rule_version__ = "1"
@@ -62,22 +64,36 @@ STREAMS: tuple[tuple[str, str, str], ...] = (
 class ProductionReport:
     manifest_id: str
     rows_read: int
+    rows_keyed: int
     pool_rows: int
     well_rows: int
     aggregate_rows: int
     completions: int
+    quarantined: dict[str, int]
     derivation_id: str
 
     def to_dict(self) -> dict[str, object]:
         return {
             "manifest_id": self.manifest_id,
             "rows_read": self.rows_read,
+            "rows_keyed": self.rows_keyed,
             "pool_rows": self.pool_rows,
             "well_rows": self.well_rows,
             "aggregate_rows": self.aggregate_rows,
             "completions": self.completions,
+            "quarantined": dict(sorted(self.quarantined.items())),
             "derivation_id": self.derivation_id,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class PromotionRecords:
+    pool_rows: list[dict[str, Any]]
+    well_rows: list[dict[str, Any]]
+    completions: list[dict[str, Any]]
+    rows_keyed: int
+    keyless: list[dict[str, Any]]
+    undated: list[dict[str, Any]]
 
 
 _INSERT_CANONICAL = f"""
@@ -209,10 +225,19 @@ def promotion_records(
     *,
     identity_spec: Mapping[str, Any],
     key_spec: Mapping[str, Any],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    """Pool rows, well rows and the completions beneath them, per API-10 month and stream."""
+) -> PromotionRecords:
+    """Pool rows, well rows and the completions beneath them, per API-10 month and stream.
+
+    A row this cannot key or cannot date is carried out rather than skipped: it has no place in
+    canonical and no reader would ever find it again, so it leaves here in the list the caller
+    quarantines it from. The two are disjoint by construction -- a row loses its key first --
+    so the caller can reconcile what it read against what it wrote.
+    """
     groups: dict[tuple[str, date, str], list[dict[str, Any]]] = {}
     completions: dict[tuple[str, str, date], dict[str, Any]] = {}
+    keyless: list[dict[str, Any]] = []
+    undated: list[dict[str, Any]] = []
+    rows_keyed = 0
     for row in staged:
         api10 = build_api10(
             {
@@ -222,8 +247,13 @@ def promotion_records(
             dict(identity_spec),
         )
         month = _month(row)
-        if api10 is None or month is None:
+        if api10 is None:
+            keyless.append(dict(row))
             continue
+        if month is None:
+            undated.append(dict(row))
+            continue
+        rows_keyed += 1
         key, completion = completion_key(row, api10, key_spec)
         # Written for a one-completion month too, unlike North Dakota: ECMC files a formation
         # code on every row, so every well-month has a named completion and dropping it would
@@ -290,7 +320,14 @@ def promotion_records(
                 days=days,
             )
         )
-    return pool_rows, well_rows, list(completions.values())
+    return PromotionRecords(
+        pool_rows=pool_rows,
+        well_rows=well_rows,
+        completions=list(completions.values()),
+        rows_keyed=rows_keyed,
+        keyless=keyless,
+        undated=undated,
+    )
 
 
 def _month(row: Mapping[str, Any]) -> date | None:
@@ -299,6 +336,32 @@ def _month(row: Mapping[str, Any]) -> date | None:
     if year is None or month is None or not 1 <= month <= 12:
         return None
     return date(year, month, 1)
+
+
+def _quarantine(
+    connection: psycopg.Connection,
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    reason_code: str,
+    manifest_id: str,
+    rule_id: str | None,
+) -> int:
+    if not rows:
+        return 0
+    session = current_session()
+    quarantine(
+        connection,
+        pl.DataFrame([{key: str(value) for key, value in row.items()} for row in rows]),
+        reason_code=reason_code,
+        manifest_id=manifest_id,
+        source_id=SOURCE_ID,
+        staging_table=STAGING_TABLE,
+        stage="conform",
+        seen_at=session.clock.now(),
+        rule_id=rule_id,
+        correlation_id=session.correlation_id,
+    )
+    return len(rows)
 
 
 def _staged(connection: psycopg.Connection, manifest_id: str) -> list[dict[str, Any]]:
@@ -343,8 +406,11 @@ def promote_production(run: IngestRun) -> ProductionReport:
     liquids = rule_for_family(conform, LIQUIDS_FAMILY)
     manifest_id, vintage = _latest_manifest(connection)
     staged = _staged(connection, manifest_id)
-    pool_rows, well_rows, completions = promotion_records(
+    records = promotion_records(
         staged, identity_spec=identity.spec, key_spec=key_rule.spec
+    )
+    pool_rows, well_rows, completions = (
+        records.pool_rows, records.well_rows, records.completions
     )
 
     with derive(
@@ -382,13 +448,26 @@ def promote_production(run: IngestRun) -> ProductionReport:
         cursor.executemany(
             _INSERT_COMPLETION, [{**row, **written} for row in completions]
         )
+
+    quarantined = {
+        str(key_rule.spec["reason_code"]): _quarantine(
+            connection, records.keyless, reason_code=str(key_rule.spec["reason_code"]),
+            manifest_id=manifest_id, rule_id=key_rule.rule_id,
+        ),
+        str(grain.spec["reason_code"]): _quarantine(
+            connection, records.undated, reason_code=str(grain.spec["reason_code"]),
+            manifest_id=manifest_id, rule_id=grain.rule_id,
+        ),
+    }
     return ProductionReport(
         manifest_id=manifest_id,
         rows_read=len(staged),
+        rows_keyed=records.rows_keyed,
         pool_rows=len(pool_rows),
         well_rows=len(well_rows),
         aggregate_rows=sum(1 for row in well_rows if row["aggregation"] == AGGREGATION),
         completions=len(completions),
+        quarantined=quarantined,
         derivation_id=promotion.derivation_id,
     )
 

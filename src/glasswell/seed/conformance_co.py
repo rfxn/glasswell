@@ -703,6 +703,9 @@ CO_RULES: tuple[dict[str, object], ...] = (
             "aggregate_null_semantics": "reported unless every completion filing is absent,"
             " then no_report",
             "single_completion_month_carries_aggregation": False,
+            "month_fields": ["reportyear", "reportmonth"],
+            "unreadable_report_month": "quarantine",
+            "reason_code": "out_of_range_date",
             "cumulatives_scope": True,
             "coverage_span_note": ROLLING_SPAN_NOTE,
             "measured_span": {
@@ -719,7 +722,9 @@ CO_RULES: tuple[dict[str, object], ...] = (
             "ECMC files each completion's volumes directly, so Colorado promotes one row per"
             " completion plus one well row carrying their exact sum, disclosed as"
             " sum_over_pools. There is no allocation step. A well-month with exactly one"
-            " completion promotes as the well and carries no aggregation."
+            " completion promotes as the well and carries no aggregation. A row whose"
+            " ReportYear and ReportMonth will not read has no month to be filed under and is"
+            " quarantined as out_of_range_date rather than dated by default."
         ),
         "rationale": (
             "The measured key -- ApiCountyCode, ApiSequenceNumber, ApiSidetrack, FormationCode,"
