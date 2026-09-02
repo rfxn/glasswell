@@ -23,7 +23,7 @@ from glasswell.api.deps import (
 from glasswell.api.errors import problem_responses
 from glasswell.api.examples import request_example
 from glasswell.api.responses import EnvelopeModel, enveloped
-from glasswell.api.routers.health import SourceHealth, source_health_data
+from glasswell.api.routers.health import SourceHealth
 from glasswell.api.security import REPORT_ONLY_ENV
 from glasswell.status.collector import DEFAULT_SNAPSHOT, SNAPSHOT_ENV
 from glasswell.status.models import (
@@ -37,6 +37,7 @@ from glasswell.status.models import (
     StatusDisclosure,
     StatusSnapshot,
 )
+from glasswell.status.source_health import source_health_data
 
 router = APIRouter(tags=["service"])
 

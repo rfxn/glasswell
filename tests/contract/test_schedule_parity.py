@@ -8,11 +8,13 @@ it, in the phase that builds the due rule.
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
 
 import psycopg
 import pytest
 
 from glasswell.lineage.schedules import load_schedules
+from glasswell.scheduler.plan import collect_evidence, due_for
 from glasswell.seed.conformance_schedules import SCHEDULE_RULES
 from glasswell.seed.schedules import (
     DEPENDENCIES,
@@ -153,3 +155,91 @@ def test_gate_5_every_row_this_track_seeds_observes(db: psycopg.Connection) -> N
 
     launching = [job.job_id for job in registry if job.launch_mode != "observe"]
     assert launching == []
+
+
+# Far enough forward that a 35-day interval has certainly elapsed, so a row that still cannot
+# produce an instant is one the due rule can never produce one for.
+FUTURE = datetime(2030, 1, 15, 9, tzinfo=UTC)
+
+
+def _evidence_for(db: psycopg.Connection, registry):
+    return collect_evidence(
+        db,
+        now=FUTURE,
+        source_ids=[source for job in registry.resolvable() for source in job.source_ids],
+    )
+
+
+def test_gate_3_every_cadence_row_can_produce_a_planned_instant(db: psycopg.Connection) -> None:
+    """M-12: an interval nothing can compute a due time from is a schedule that never fires.
+
+    The gate calls the planner rather than re-deriving the condition, which is why it lands
+    with the planner and not with the migration: testing `expected_poll_interval is not null`
+    passes for a source that has an interval and has never been fetched, which is exactly the
+    case that left three registered jobs permanently not due.
+    """
+    registry = load_schedules(db)
+    evidence = _evidence_for(db, registry)
+
+    cadence_jobs = [job for job in registry.resolvable() if job.trigger == "cadence"]
+    assert len(cadence_jobs) >= 8, "too few cadence rows for this gate to be a real check"
+    undueable = [
+        job.job_id
+        for job in cadence_jobs
+        if due_for(job, registry, evidence, FUTURE) is None
+    ]
+    assert undueable == [], (
+        f"{undueable} carry a cadence the due rule can produce no instant for, so they would"
+        " never fire: give their sources an interval, or make them manual"
+    )
+
+
+def test_gate_3_a_source_with_no_interval_and_no_fetch_history_stays_not_due(
+    db: psycopg.Connection,
+) -> None:
+    """The negative half, so the gate is not vacuous: this is the row that must redden."""
+    with db.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.scheduled_jobs"
+            " (job_id, kind, entry_point, anchor_source_id, run_as, rationale)"
+            " values ('ingest_null_interval_probe', 'ingest', 'glasswell.ingest.probe',"
+            "         'nm_ocd_pool', 'glasswell', 'a probe with a null-interval source')"
+        )
+        cursor.execute(
+            "insert into lineage.job_sources (job_id, source_id)"
+            " values ('ingest_null_interval_probe', 'nm_ocd_pool')"
+        )
+        cursor.execute(
+            "insert into lineage.job_schedules"
+            " (job_id, effective_from, published_at, rule_id, trigger, cadence_interval,"
+            "  cadence_note, memory_max, timeout_seconds)"
+            " values ('ingest_null_interval_probe', current_date, current_date,"
+            "         'cr_job_cadence_ingest_nd_gis_1', 'cadence', interval '35 days',"
+            "         'a probe cadence over a source with no interval', '1G', 60)"
+        )
+    db.commit()
+    registry = load_schedules(db)
+    evidence = _evidence_for(db, registry)
+    probe = registry.by_job["ingest_null_interval_probe"]
+
+    assert due_for(probe, registry, evidence, FUTURE) is None
+
+
+def test_gate_3_a_35_day_source_with_no_fetch_history_is_due_at_the_hour(
+    db: psycopg.Connection,
+) -> None:
+    """The fixture the rule exists for: an interval, and nothing has ever polled it."""
+    registry = load_schedules(db)
+    evidence = _evidence_for(db, registry)
+    job = registry.by_job["ingest_tx_gis"]
+
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select count(*) from lineage.fetch_attempts where source_id = 'tx_gis_wells_county'"
+        )
+        assert cursor.fetchone()[0] == 0, "the fixture needs a source nothing has polled"
+
+    entry = due_for(job, registry, evidence, FUTURE)
+
+    assert entry is not None
+    assert entry.planned_at == FUTURE.replace(minute=0, second=0, microsecond=0)

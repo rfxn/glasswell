@@ -16,10 +16,11 @@ from datetime import UTC, date, datetime, timedelta
 import psycopg
 import pytest
 
-from glasswell.api.routers import health
 from glasswell.lineage import schedules as schedule_sql
 from glasswell.lineage.schedules import ScheduleRegistryError, load_schedules
+from glasswell.scheduler import plan as planner_sql
 from glasswell.seed import seed_all
+from glasswell.status import source_health
 
 pytestmark = pytest.mark.integration
 
@@ -248,15 +249,19 @@ def test_the_scheduler_role_can_log_in_and_holds_no_pipeline_membership(db) -> N
 def planner_relations() -> set[str]:
     """The relations the planner's own SQL names, extracted rather than kept beside it.
 
-    P3 moves the source-health query into `glasswell.status.source_health`; until then it is
-    read from where it lives, and P3 updates this import with the move.
+    Derived from the modules the tick actually runs, so a query one of them grows later brings
+    its own grant with it instead of waiting for someone to remember a list.
     """
     sql = "\n".join(
         [
             schedule_sql._RESOLVED,
             schedule_sql._REFUSAL_CODES,
             schedule_sql._LATEST_PUBLISHED,
-            health._SOURCES,
+            planner_sql._LAST_RAN,
+            planner_sql._LAST_OUTCOME,
+            planner_sql._NEW_FETCHES,
+            planner_sql._SOURCE_INTERVALS,
+            source_health._SOURCES,
         ]
     )
     return set(re.findall(r"\blineage\.[a-z_]+\b", sql)) - {
