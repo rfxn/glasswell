@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, timedelta
 
 import psycopg
 import pytest
@@ -368,3 +368,56 @@ def test_only_the_pipeline_role_appends_a_measurement(db: psycopg.Connection) ->
             cursor.execute(statement, (REGISTERED_ON, derivation_id))
     with acting_as(db, "glasswell_pipeline") as cursor:
         cursor.execute(statement, (REGISTERED_ON, derivation_id))
+
+
+def test_a_thousand_distinct_as_of_values_leave_one_cache_entry(
+    db: psycopg.Connection,
+) -> None:
+    """gate-v076 H-3. `load_jurisdictions` caches per clock pair in a module-level dict with no
+    cap, no TTL and no eviction, and `/v1/jurisdictions?as_of=` put the caller's date straight
+    into the key — so a caller walking distinct dates grew the process's memory for its
+    lifetime, on a VM with a stated RAM constraint and a publicly reachable API.
+
+    Both clocks gate `jurisdictions_as_of`, so the answer only changes at an instant in
+    `published_at` or `effective_from`. Resolving to those instants before the key is built is
+    exact: the registration set is identical, and the key space is the registry's own history.
+    """
+    from glasswell.lineage.jurisdictions import (
+        _CACHE,
+        clear_jurisdiction_cache,
+        load_jurisdictions,
+    )
+
+    seed_jurisdictions(db)
+    db.commit()
+    clear_jurisdiction_cache()
+
+    first = load_jurisdictions(db, REGISTERED_ON)
+    codes = sorted(row.jurisdiction_code for row in first)
+    # A thousand dates on both sides of the only publication instant this registry has.
+    for offset in range(1, 1001):
+        registry = load_jurisdictions(db, REGISTERED_ON + timedelta(days=offset))
+        assert sorted(row.jurisdiction_code for row in registry) == codes
+
+    assert len(_CACHE) == 1, sorted(_CACHE)
+    clear_jurisdiction_cache()
+
+
+def test_the_registry_still_reports_the_clock_it_was_asked_for(
+    db: psycopg.Connection,
+) -> None:
+    """The instants bound the cache; they are not what the surface reports. `/v1/jurisdictions`
+    serves `registry.knowledge_as_of` as its `as_of` and mints its cursor from it, so resolving
+    the reported value would have moved the envelope and broken paging across a cut."""
+    from glasswell.lineage.jurisdictions import clear_jurisdiction_cache, load_jurisdictions
+
+    seed_jurisdictions(db)
+    db.commit()
+    clear_jurisdiction_cache()
+
+    asked = REGISTERED_ON + timedelta(days=500)
+    registry = load_jurisdictions(db, asked)
+
+    assert registry.knowledge_as_of == asked
+    assert registry.valid_as_of == asked
+    clear_jurisdiction_cache()

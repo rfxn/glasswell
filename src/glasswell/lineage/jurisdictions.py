@@ -117,13 +117,25 @@ select j.*, c.level, coalesce(r.rules, '[]'::jsonb) as rules
 
 _LATEST_PUBLISHED = "select max(published_at) from lineage.jurisdictions"
 
+# The instants at which the answer can change. Both clocks gate `jurisdictions_as_of`, so the
+# resolved registration set is identical for every date between one instant and the next, and
+# a cache keyed on the instants holds one entry per registry state rather than one per date a
+# caller can type. gate-v076 H-3: `?as_of=` fed the caller's date straight into the key.
+_CLOCK_INSTANTS = """
+select max(published_at) filter (where published_at <= %(knowledge_as_of)s) as knowledge_instant,
+       max(effective_from) filter (where effective_from <= %(valid_as_of)s) as valid_instant
+  from lineage.jurisdictions
+"""
+
 _ROW_FIELDS = tuple(
     name for name in Jurisdiction.__dataclass_fields__ if name not in ("source_ids", "rules")
 )
 
-# Keyed on the clock pair R-2 names, and on the database the rows came from: the suite gives
-# every test its own, and a cache that could not tell them apart would serve one another's.
-_CACHE: dict[tuple[str, str, str, date, date], JurisdictionRegistry] = {}
+# Keyed on the resolved clock pair R-2 names, and on the database the rows came from: the suite
+# gives every test its own, and a cache that could not tell them apart would serve one another's.
+# Rows rather than a built registry, because the registry carries the clocks it was *asked* for
+# and two callers can ask differently and resolve to the same instants.
+_CACHE: dict[tuple[str, str, str, date, date], tuple[Jurisdiction, ...]] = {}
 
 
 def clear_jurisdiction_cache() -> None:
@@ -195,24 +207,39 @@ def load_jurisdictions(
             "the jurisdiction registry holds no registration: nothing has been published"
         )
 
-    key = (*_instance(connection), knowledge_as_of, valid_as_of)
-    cached = _CACHE.get(key)
-    if cached is not None:
-        return cached
-
+    # Resolved before the key is built, never after: this is what bounds the cache to the
+    # registry's own history instead of to the set of dates a caller can send.
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(
-            _RESOLVED, {"knowledge_as_of": knowledge_as_of, "valid_as_of": valid_as_of}
+            _CLOCK_INSTANTS,
+            {"knowledge_as_of": knowledge_as_of, "valid_as_of": valid_as_of},
         )
-        rows = cursor.fetchall()
-    if not rows:
+        instants = cursor.fetchone()
+    resolved_knowledge = instants["knowledge_instant"]
+    resolved_valid = instants["valid_instant"]
+    if resolved_knowledge is None or resolved_valid is None:
         raise JurisdictionRegistryError(
             "the jurisdiction registry resolves no registration at knowledge"
             f" {knowledge_as_of.isoformat()} / valid {valid_as_of.isoformat()}"
         )
 
-    registry = build_registry(
-        [jurisdiction_from_row(row) for row in rows], knowledge_as_of, valid_as_of
-    )
-    _CACHE[key] = registry
-    return registry
+    key = (*_instance(connection), resolved_knowledge, resolved_valid)
+    rows = _CACHE.get(key)
+    if rows is None:
+        with connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                _RESOLVED,
+                {"knowledge_as_of": resolved_knowledge, "valid_as_of": resolved_valid},
+            )
+            fetched = cursor.fetchall()
+        if not fetched:
+            raise JurisdictionRegistryError(
+                "the jurisdiction registry resolves no registration at knowledge"
+                f" {knowledge_as_of.isoformat()} / valid {valid_as_of.isoformat()}"
+            )
+        rows = tuple(jurisdiction_from_row(row) for row in fetched)
+        _CACHE[key] = rows
+
+    # The registry reports the clocks it was asked for, not the instants those resolved to, so
+    # the served `as_of` and the cursor minted from it are byte-identical to before.
+    return build_registry(list(rows), knowledge_as_of, valid_as_of)
