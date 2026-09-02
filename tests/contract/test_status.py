@@ -23,6 +23,7 @@ from glasswell.status.models import (
     StatusDisclosure,
     StatusSnapshot,
 )
+from tests.support.seed import seed_conformance_rule
 
 
 def _snapshot(observed_at: datetime) -> StatusSnapshot:
@@ -766,3 +767,77 @@ def test_the_lease_grain_is_counted_on_the_identity_it_actually_carries(
     assert distinct_api10 == 0, "the fixture stopped exercising the null-api10 grain"
     assert counted["lease_units"] == distinct_entity > 0
     assert counted["rows"] == rows
+
+
+def _plant_a_read_time_rule_with_no_map(connection: psycopg.Connection) -> None:
+    """A registered read-time vocabulary whose mapping table does not exist.
+
+    The shape a typo in a rule spec makes, and the shape a later migration makes by renaming a
+    map out from under a rule that still names the old one.
+    """
+    seed_conformance_rule(
+        connection,
+        rule_id="cr_fixture_absent_map_1",
+        spec={
+            "resolved_at": "read_time",
+            "mapping_table": "map_that_never_landed",
+            "key_col": "status",
+            "value_col": "status_canonical",
+        },
+        rationale="Planted so the resolver has a registration it cannot satisfy.",
+    )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.jurisdiction_codes (jurisdiction_code, level)"
+            " values ('ZZ', 'state') on conflict do nothing"
+        )
+        cursor.execute(
+            "insert into lineage.jurisdictions (jurisdiction_code, effective_from, published_at,"
+            " evidence_tag, evidence_commit, name, regulator_name, regulator_url,"
+            " identity_scheme, identity_prefix, identity_pattern, source_ids, rationale)"
+            " select 'ZZ', effective_from, published_at, 'harness-fixture', %s, 'Planted',"
+            " 'regulator', 'https://example.invalid/', 'api10', '99', '^99[0-9]{8}$',"
+            " array['nd_mpr_xlsx'], 'fixture'"
+            "   from lineage.jurisdictions_as_of(current_date, current_date) limit 1",
+            ("0" * 40,),
+        )
+        cursor.execute(
+            "insert into lineage.jurisdiction_rules (jurisdiction_code, effective_from,"
+            " published_at, decision, rule_id)"
+            " select 'ZZ', effective_from, published_at, 'status_vocabulary',"
+            " 'cr_fixture_absent_map_1' from lineage.jurisdictions"
+            "  where jurisdiction_code = 'ZZ'"
+        )
+    connection.commit()
+
+
+def test_status_reports_the_read_time_resolver_as_ok_when_every_map_has_landed(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The live half of the check: it is computed on the request, like `api` and `postgres`."""
+    checks = {check["id"]: check for check in client.get("/v1/status").json()["data"]["checks"]}
+
+    assert checks["status_resolver"]["state"] == "ok"
+    assert checks["status_resolver"]["tier"] == "data"
+    assert checks["status_resolver"]["probe"] == "this request"
+
+
+def test_status_degrades_where_a_registered_read_time_map_has_not_landed(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """A skip the refresh makes silently, made observable on the surface that reports faults.
+
+    `refresh_status_resolution()` skips a registration whose mapping table is absent rather than
+    aborting, which is right — a refresh that raised would take the migration or the deploy's
+    seed down with it. But nothing said so afterwards, and the consequence is that jurisdiction's
+    whole spine drawing in the `unmapped` class: the defect v0.77 shipped a release to repair,
+    arriving by a different door. The check names the jurisdiction and the table it wanted.
+    """
+    _plant_a_read_time_rule_with_no_map(seeded)
+    body = client.get("/v1/status").json()
+    checks = {check["id"]: check for check in body["data"]["checks"]}
+
+    assert checks["status_resolver"]["state"] == "degraded"
+    assert "map_that_never_landed" in checks["status_resolver"]["detail"]
+    assert "Planted" in checks["status_resolver"]["detail"]
+    assert body["data"]["state"] == "degraded"

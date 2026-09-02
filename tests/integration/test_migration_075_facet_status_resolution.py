@@ -211,8 +211,14 @@ PLANTED_RULE = "cr_fixture_read_time_vocab_1"
 PLANTED_MAP = "fixture_read_time_status_map"
 
 
-def _plant_a_read_time_jurisdiction(connection: psycopg.Connection) -> None:
-    """A registration, a read-time status vocabulary and the map its rule names."""
+def _plant_a_read_time_jurisdiction(
+    connection: psycopg.Connection, *, with_map: bool = True
+) -> None:
+    """A registration, a read-time status vocabulary and the map its rule names.
+
+    `with_map=False` registers the rule and leaves the table absent, which is the shape a typo
+    in a spec makes and the shape a later migration makes by renaming a map.
+    """
     seed_conformance_rule(
         connection,
         rule_id=PLANTED_RULE,
@@ -225,14 +231,15 @@ def _plant_a_read_time_jurisdiction(connection: psycopg.Connection) -> None:
         rationale="Planted so the resolver is proved to read the registry rather than a state.",
     )
     with connection.cursor() as cursor:
-        cursor.execute(
-            f"create table if not exists lineage.{PLANTED_MAP} ("
-            " status text primary key, status_canonical text not null)"
-        )
-        cursor.execute(
-            f"insert into lineage.{PLANTED_MAP} (status, status_canonical)"
-            " values ('W', 'active'), ('V', 'plugged') on conflict do nothing"
-        )
+        if with_map:
+            cursor.execute(
+                f"create table if not exists lineage.{PLANTED_MAP} ("
+                " status text primary key, status_canonical text not null)"
+            )
+            cursor.execute(
+                f"insert into lineage.{PLANTED_MAP} (status, status_canonical)"
+                " values ('W', 'active'), ('V', 'plugged') on conflict do nothing"
+            )
         cursor.execute(
             "insert into lineage.jurisdiction_codes (jurisdiction_code, level)"
             " values (%s, 'state') on conflict do nothing",
@@ -296,32 +303,34 @@ def test_a_registered_jurisdiction_whose_mapping_table_has_not_landed_is_skipped
     """Migrations arrive in merge order and a registration can precede the table its rule names.
 
     A refresh that aborted on the missing table would abort the migration or the deploy's seed
-    that called it, which is a worse failure than resolving one jurisdiction late.
+    that called it, which is a worse failure than resolving one jurisdiction late. What the skip
+    must not be is silent: the notice reaches the migrate log and `seed_all`'s output, and
+    `/v1/status`'s `status_resolver` check and `infra/verify.sh` are what catch a skip that
+    lasts -- a `mapping_table` misspelt in a spec, or a map renamed out from under a rule.
+
+    Planted on a jurisdiction of the suite's own: a second serving `status_vocabulary` rule on a
+    real one is refused by the registry's own partial unique index, so a test written that way
+    plants nothing and passes on the refresh it never changed.
     """
     seed_all(db)
     db.commit()
-    seed_conformance_rule(
-        db,
-        rule_id="cr_fixture_read_time_vocab_2",
-        spec={
-            "resolved_at": "read_time",
-            "mapping_table": "fixture_table_that_does_not_exist",
-            "key_col": "status",
-            "value_col": "status_canonical",
-        },
-    )
+    notices: list[str] = []
+    db.add_notice_handler(lambda notice: notices.append(notice.message_primary or ""))
+    _plant_a_read_time_jurisdiction(db, with_map=False)
+
     with db.cursor() as cursor:
-        cursor.execute(
-            "insert into lineage.jurisdiction_rules (jurisdiction_code, effective_from,"
-            " published_at, decision, rule_id) values ('MT', %s, %s, 'status_vocabulary', %s)"
-            " on conflict do nothing",
-            (REGISTERED_ON, REGISTERED_ON, "cr_fixture_read_time_vocab_2"),
-        )
         cursor.execute("select lineage.refresh_status_resolution()")
         resolved = int(cursor.fetchone()[0])
+        cursor.execute(
+            "select count(*) from canonical.status_resolution where for_state_code = %s",
+            (PLANTED_PREFIX,),
+        )
+        planted = int(cursor.fetchone()[0])
     db.rollback()
 
-    assert resolved > 0
+    assert resolved > 0, "one unlanded map must not cost the jurisdictions that did land"
+    assert planted == 0
+    assert any(PLANTED_MAP in notice for notice in notices), notices
 
 
 def test_the_index_rebuild_is_bounded_by_a_lock_timeout() -> None:

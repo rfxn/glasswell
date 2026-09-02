@@ -135,9 +135,21 @@ begin
            and c.spec->>'mapping_table' is not null
            and c.spec->>'key_col' is not null
            and c.spec->>'value_col' is not null
-           and to_regclass('lineage.' || quote_ident(c.spec->>'mapping_table')) is not null
          order by j.identity_prefix
     loop
+        -- Skipped, and said. Aborting would take the migration or the deploy's seed down with
+        -- it, and the transient case -- a registration landing in a merge before the migration
+        -- that creates its map -- self-heals within one deploy. The non-transient case, a
+        -- mapping_table misspelt in a rule spec or a map renamed out from under it, would
+        -- otherwise draw that jurisdiction's whole spine unmapped with no signal anywhere. The
+        -- notice reaches the migrate log and seed_all's output; /v1/status's status_resolver
+        -- check and infra/verify.sh are what catch it six months later.
+        if to_regclass('lineage.' || quote_ident(registered.mapping_table)) is null then
+            raise notice 'status resolver: % (%) registers lineage.% which does not exist; its wells resolve unmapped until it lands',
+                registered.jurisdiction_code, registered.identity_prefix,
+                registered.mapping_table;
+            continue;
+        end if;
         -- format %I quotes every identifier the registry named; nothing here is concatenated
         -- raw, and the three it interpolates are all read from a rule spec. That bounds the
         -- syntax and not the choice of table: this loop will read whatever two columns of
@@ -172,7 +184,8 @@ comment on function lineage.refresh_status_resolution() is
     'Rebuilds lineage.status_resolution_resolved from every registration resolving today whose'
     ' status-vocabulary rule says resolved_at = read_time, reading the mapping table and its'
     ' key and value columns out of that rule spec. Idempotent, and cheap: the product is tens'
-    ' of rows. A registered mapping table that has not been created yet is skipped.';
+    ' of rows. A registered mapping table that has not been created yet is skipped with a notice;'
+    ' /v1/status''s status_resolver check and infra/verify.sh are what catch a skip that lasts.';
 
 -- Both sources are append-only, so an append is the only way their content can change and a
 -- statement trigger on it is exact. The refresh is also called by seed_jurisdictions(), which

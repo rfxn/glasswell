@@ -20,6 +20,10 @@
       `no_wells_in_scope` rather than `absent_by_rule`: under an `as_of` before its
       promotion the emptiness is the knowledge cut's, and blaming a conformance rule
       for it is a claim with no row behind it
+- [New] `/v1/status` carries a `status_resolver` check and `infra/verify.sh` asserts
+      that every jurisdiction registered for read-time status resolution has resolver
+      rows; a registered mapping table that has not landed is skipped with a notice
+      instead of silently drawing that jurisdiction's spine unmapped
 - [Change] `canonical.status_resolution` is registry-driven: it resolves every
          jurisdiction whose status-vocabulary rule says `resolved_at: read_time`,
          reading the mapping table and its key and value columns out of that rule's own
