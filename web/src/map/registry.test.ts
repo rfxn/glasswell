@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import { LAND_SNAPSHOT, ND_SNAPSHOT, landCellCount, ndCoverage, ndWellCount } from "./coverage.ts";
 import { DISPOSAL_COLOUR } from "./disposal.ts";
 import { LAYER_FAMILIES, LAYER_GROUPS, layerFamily } from "./groups.ts";
+import { JURISDICTIONS } from "./jurisdictions.generated.ts";
 import {
+  COUNT_SLOT,
   LAYERS,
   defaultLayerSet,
   familyMembers,
@@ -271,6 +273,35 @@ describe("the layer registry", () => {
     for (const layer of LAYERS) {
       const denominator = layer.subtitle.match(/of ([\d,]+) wells/);
       if (denominator) expect(denominator[1]).toBe(ndWellCount());
+    }
+  });
+
+  it("states no Wells count the reader cannot resolve to a measurement", () => {
+    // v0.76 D3: three of the four Wells rows stated a count compiled into the bundle, with no
+    // handle and disagreeing with the registry the same release put on the wire — Texas by
+    // 3,958, New Mexico by 222 and Montana by 1,400, in the wrong direction. A count in one of
+    // these subtitles is either pinned to a snapshot handle or served: the row carries the
+    // slot and names the jurisdiction whose measurement fills it at render time.
+    const family = LAYERS.filter((layer) => layer.family === "wells");
+    expect(family.length).toBeGreaterThan(1);
+    for (const layer of family) {
+      const stated = /\d[\d,]*\s+points/.exec(layer.subtitle)?.[0];
+      if (stated) {
+        expect(layer.snapshot, `${layer.id} states ${stated} with no handle`).toBeTruthy();
+      } else {
+        expect(layer.subtitle, layer.id).toContain(COUNT_SLOT);
+        expect(layer.jurisdiction, layer.id).toBeTruthy();
+      }
+    }
+  });
+
+  it("names a registered jurisdiction wherever a row leaves its count to be served", () => {
+    for (const layer of LAYERS) {
+      if (layer.subtitle.includes(COUNT_SLOT)) {
+        expect(Object.keys(JURISDICTIONS), layer.id).toContain(layer.jurisdiction);
+      } else {
+        expect(layer.jurisdiction, layer.id).toBeUndefined();
+      }
     }
   });
 

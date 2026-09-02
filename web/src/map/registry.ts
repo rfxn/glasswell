@@ -14,6 +14,13 @@ import { LIQUID_RAMP } from "./thematics.ts";
 
 export type ProvenanceKind = "official" | "derived" | "basemap";
 
+/**
+ * Where a served well count goes in a subtitle. The panel fills it from /v1/jurisdictions at
+ * render time: a count compiled in here carries no date, no handle and nothing to keep it
+ * level with the registry, which is how three of the four Wells rows came to contradict it.
+ */
+export const COUNT_SLOT = "{count}";
+
 export interface LayerSwatch {
   kind: "dot" | "line" | "fill" | "outline" | "ring";
   /** More than one only where the row paints from an expression instead of a fixed colour. */
@@ -55,6 +62,11 @@ export interface LayerDef {
   /** The standalone name, for every surface that meets the row without its parent above it. */
   label: string;
   subtitle: string;
+  /**
+   * The registered code whose measured well count fills `COUNT_SLOT`. Declared with the slot
+   * and never without: a row that names no jurisdiction has no measurement to ask for.
+   */
+  jurisdiction?: string;
   swatch: LayerSwatch;
   defaultOn: boolean;
   minZoom: number;
@@ -365,7 +377,9 @@ export const LAYERS: readonly LayerDef[] = [
     family: "wells",
     familyLabel: JURISDICTIONS.TX.name,
     label: `Wells (${JURISDICTIONS.TX.name})`,
-    subtitle: "TX RRC GIS surface locations, 55 Permian-district counties · 355,463 points",
+    jurisdiction: JURISDICTIONS.TX.code,
+    subtitle:
+      `TX RRC GIS surface locations, 55 Permian-district counties · ${COUNT_SLOT} points`,
     // Not ND's green. Both basins share one status vocabulary and one set of status colours,
     // but a swatch is a prediction about what the canvas will look like, and Texas draws
     // mostly plugged grey: 29% of its wells are plugged and 18% carry no status at all, so a
@@ -387,9 +401,10 @@ export const LAYERS: readonly LayerDef[] = [
     family: "wells",
     familyLabel: JURISDICTIONS.NM.name,
     label: `Wells (${JURISDICTIONS.NM.name})`,
+    jurisdiction: JURISDICTIONS.NM.code,
     subtitle:
-      "NM OCD well-header surface locations · 141,778 points, ten of the fourteen OCD status " +
-      "codes mapped and four documented without an equivalent " +
+      `NM OCD well-header surface locations · ${COUNT_SLOT} points, ten of the fourteen OCD ` +
+      "status codes mapped and four documented without an equivalent " +
       "(cr_nm_wellhistory_status_vocab_2)",
     // Active green, narrowly: the mart measures 54,325 active against 50,935 plugged, so the
     // plurality is the only single ink the canvas supports. A dot carries one.
@@ -410,10 +425,12 @@ export const LAYERS: readonly LayerDef[] = [
     family: "wells",
     familyLabel: JURISDICTIONS.MT.name,
     label: `Wells (${JURISDICTIONS.MT.name})`,
+    jurisdiction: JURISDICTIONS.MT.code,
     subtitle:
-      "MBOGC surface locations · 42,026 points, 13 of the 19 filed status values mapped and" +
-      " the other 6 quarantined rather than defaulted (cr_mt_gis_status_vocab_1) · no basin" +
-      " tag: Bakken is 4.6% of Montana (cr_mt_basin_scope_1) · completion year, never a spud",
+      `MBOGC surface locations · ${COUNT_SLOT} points, 13 of the 19 filed status values` +
+      " mapped and the other 6 quarantined rather than defaulted (cr_mt_gis_status_vocab_1)" +
+      " · no basin tag: Bakken is 4.6% of Montana (cr_mt_basin_scope_1) · completion year," +
+      " never a spud",
     // Plugged grey, for Texas's reason rather than by imitation: 63% of Montana's mapped
     // wells are plugged and 3% carry no class, so a green dot would promise a canvas that
     // does not arrive.

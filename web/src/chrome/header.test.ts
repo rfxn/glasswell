@@ -368,6 +368,48 @@ describe("the sign-out control", () => {
     expect(element("gw-logout-btn").title).toBe("");
   });
 
+  it("carries its own accessible name, so no stylesheet can leave the button unnamed", () => {
+    // gate-v077: below 901 px `.gw-controls .gw-ctl-lbl { display: none }` takes the label out
+    // of the accessibility tree, and chrome-fold failed at 820 and 390 for exactly that. A name
+    // that depends on a media query is a name a reader loses by holding a narrower device.
+    const button = element("gw-logout-btn");
+
+    expect(button.getAttribute("aria-label")).toBe("Sign out");
+    // The visible words and the announced ones are the same words (WCAG 2.5.3).
+    expect(button.querySelector(".gw-ctl-lbl")?.textContent?.trim()).toBe(
+      button.getAttribute("aria-label"),
+    );
+  });
+
+  it("keeps that name when the label span is not in the accessibility tree", () => {
+    // `display: none` is not observable in happy-dom, so the span is removed outright: the
+    // stronger form of the same question, and the one the compact rail asks at 390.
+    const button = element("gw-logout-btn");
+    button.querySelector(".gw-ctl-lbl")?.remove();
+    setSignedIn("ryan");
+
+    expect(button.getAttribute("aria-label")).toBe("Sign out");
+    expect(button.textContent?.trim()).toBe("");
+    // The title names the session; it must never be what a screen reader calls the button.
+    expect(button.title).toContain("ryan");
+    expect(button.title).not.toBe(button.getAttribute("aria-label"));
+  });
+
+  it("names every control in the rail, not only the one the gate happened to shoot", () => {
+    // One `display: none` on `.gw-controls .gw-ctl-lbl` unnames all of them below 901 px, so
+    // the fix is the class rather than the control the CI job happened to measure. The theme
+    // toggle is behind a flag that removes it, and a control the build does not ship is not
+    // one this can name — `mounts` says so rather than the loop skipping it silently.
+    const mounted = ["gw-logout-btn", "gw-help-btn"].map((id) => element(id));
+
+    expect(mounted.every(Boolean)).toBe(true);
+    for (const control of mounted) {
+      const visible = control.querySelector(".gw-ctl-lbl")?.textContent?.trim();
+      expect(control.getAttribute("aria-label"), control.id).toBe(visible);
+      expect(control.getAttribute("aria-label")?.length, control.id).toBeGreaterThan(0);
+    }
+  });
+
   it("hands the press to the caller rather than ending the session itself", () => {
     setSignedIn("ryan");
 

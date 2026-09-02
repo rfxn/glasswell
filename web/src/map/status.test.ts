@@ -153,7 +153,10 @@ describe("the status catalogue", () => {
 
     expect(measuredWellCount("active")).toBe(25);
     expect(measuredWellCount("plugged")).toBe(15);
-    expect(measuredWellCount("service")).toBe(0);
+    // Absent from the census, not measured at zero in it. The registry serves a row for a
+    // class it counted; a class no row names is one nothing has measured, and reading that as
+    // a zero is what hid the absence class over Texas.
+    expect(measuredWellCount("service")).toBeNull();
     expect(census().total).toBe(40);
     expect(census().measuredOn).toBe("2026-09-01");
     expect(census().degraded).toBe(false);

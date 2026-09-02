@@ -11,7 +11,7 @@ import {
   restoreCapabilitySet,
   writeCapabilitySet,
 } from "./persist.ts";
-import { censusOf, measuredWellCount, resetCensus } from "./census.ts";
+import { censusOf, loadCensus, measuredWellCount, resetCensus } from "./census.ts";
 import { STATUS_CLASSES, filterableStatusIds, statusIds } from "./status.ts";
 
 const rows = (root: HTMLElement): HTMLElement[] => [...root.querySelectorAll<HTMLElement>(".gw-lg-row")];
@@ -88,6 +88,73 @@ describe("the legend", () => {
     resetCensus();
   });
 
+  it("keeps a class the census does not carry, because absent is unmeasured and not zero", async () => {
+    // The census /v1/jurisdictions served over Texas, and still serves from any ledger day
+    // written before the count writer began measuring every class: the rows are the classes
+    // the data happened to hold, and the absence class is not among them. Read as a measured
+    // zero it hid the row 56,423 wells in view were drawn in — with its filter switch inside
+    // it, so a reader could neither learn what the slate meant nor turn it off (v0.76 D1).
+    resetCensus(
+      censusOf([
+        {
+          well_count: { value: "100" },
+          measured_on: "2026-09-02",
+          well_counts_by_status: [{ status_canonical: "active", wells: { value: "100" } }],
+        },
+      ]),
+    );
+    const legend = createLegend({ onFilter: () => {} });
+    await loadCensus();
+    legend.setCounts({ active: 100, unmapped: 56_423 }, 12);
+
+    const row = rowFor(legend.element, "unmapped")!;
+    expect(measuredWellCount("unmapped")).toBeNull();
+    expect(shown(row)).toBe(true);
+    expect(row.querySelector<HTMLInputElement>("input")!.disabled).toBe(false);
+    expect(countFor(legend.element, "unmapped")).toBe("56,423");
+    // The row says the registry has measured nothing here, rather than saying zero by hiding.
+    expect(row.getAttribute("data-unmeasured")).toBe("true");
+    resetCensus();
+  });
+
+  it("hides only a class the census measured at zero, which is one never drawn anywhere", async () => {
+    // The shape the writer emits: every registered class, at whatever the jurisdiction holds
+    // of it, the absence class included and zeroes written rather than left out. A zero here
+    // is a class that was looked for and found empty, which is why it is the one that hides.
+    resetCensus(
+      censusOf([
+        {
+          well_count: { value: "100" },
+          measured_on: "2026-09-02",
+          well_counts_by_status: [...STATUS_CLASSES.map((status) => status.id), "unmapped"].map(
+            (id) => ({ status_canonical: id, wells: { value: id === "dry" ? "0" : "10" } }),
+          ),
+        },
+      ]),
+    );
+    const legend = createLegend({ onFilter: () => {} });
+    await loadCensus();
+
+    expect(shown(rowFor(legend.element, "dry")!)).toBe(false);
+    expect(shown(rowFor(legend.element, "active")!)).toBe(true);
+    expect(rowFor(legend.element, "active")!.getAttribute("data-unmeasured")).toBe(null);
+    resetCensus();
+  });
+
+  it("marks no row unmeasured while the census is still unknown, which is not the same fact", async () => {
+    // A slow or refused /v1/jurisdictions must not paint every class as unmeasured: unknown
+    // and measured-at-nothing are different, and only one of them is true here.
+    resetCensus();
+    const legend = createLegend({ onFilter: () => {} });
+    await loadCensus();
+    legend.setCounts({ active: 10 }, 12);
+
+    for (const row of rows(legend.element)) {
+      expect(shown(row), row.dataset["status"]).toBe(true);
+      expect(row.getAttribute("data-unmeasured"), row.dataset["status"]).toBe(null);
+    }
+  });
+
   it("reports the filtered set back when a row is toggled", () => {
     const seen: string[][] = [];
     const legend = createLegend({ onFilter: (on) => seen.push([...on].sort()) });
@@ -129,6 +196,19 @@ describe("the legend", () => {
     expect(row).toBeTruthy();
     expect(row!.querySelector(".gw-lg-count")?.textContent).toBe("4");
     expect(row!.querySelector<HTMLInputElement>("input")!.disabled).toBe(false);
+  });
+
+  it("lists the absence class among the status rows, not below the group that follows them", () => {
+    // Listed after the producing group it landed 47 px below the key's own scrollport at 1600
+    // — present, unhidden, and reachable only by scrolling past a block answering a different
+    // question. It is a status class; it belongs with the status classes.
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setCounts({ unmapped: 4 }, 12);
+    const body = legend.element.querySelector<HTMLElement>(".gw-lg-body")!;
+    const order = [...body.children].map((node) => (node as HTMLElement).dataset["status"] ?? node.className);
+
+    expect(order.indexOf("unmapped")).toBe(STATUS_CLASSES.length + order.indexOf("active"));
+    expect(order.indexOf("unmapped")).toBeLessThan(order.indexOf("gw-lg-producing"));
   });
 
   it("filters the unmapped row like any other, because it is the largest class on some maps", () => {
