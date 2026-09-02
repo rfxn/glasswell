@@ -78,12 +78,18 @@ def test_the_serving_migration_registers_the_modeling_selector_profiles(db) -> N
             ("api.modeling_publication", "response_output"),
             ("api.type_curve", "response_output"),
             ("api.type_curve_index", "response_output"),
+            # N2's three: the cumulative and coverage figures, the cohort aggregates, and the
+            # serve-time fluid intensity are all request-computed, so each needs the profile
+            # that lets /v1/explain resolve a handle the response carries.
+            ("api.well_completions", "response_output"),
+            ("api.well_cumulatives", "response_output"),
             ("api.well_detail", "response_output"),
             # 070: every "wells by" bucket count, remainder and absence figure is
             # request-computed, so the profile is what keeps /v1/explain from answering 422 on
             # a handle the response carries.
             ("api.well_facets", "response_output"),
             ("api.well_status_summary", "response_output"),
+            ("api.well_vintage_cohorts", "response_output"),
         ]
 
 
