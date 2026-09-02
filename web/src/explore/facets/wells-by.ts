@@ -4,6 +4,7 @@ import { ApiError, getEnvelope } from "../../api/client.ts";
 import type { Figure, Warning } from "../../api/envelope.ts";
 import type { AppState } from "../../app/state.ts";
 import { warningNotes } from "../../chrome/notes.ts";
+import { DEFAULT_JURISDICTION } from "../../map/jurisdictions.generated.ts";
 import "../../card/gw-figure.ts";
 
 /** §4.1: the panel rides the URL, so a shared link opens the list the sharer was reading. */
@@ -30,7 +31,11 @@ const SORTS = [
 /** Every size the operation accepts a cut at: `ge=1, le=50` on the server, 15 by default. */
 const TOPS = ["10", "15", "20", "25", "50"] as const;
 
-const DEFAULTS = { state: "33", by: "operator", sort: "count", order: "desc", top: "15" };
+// Which jurisdiction the explorer opens on is a registry row now: exactly one registration
+// carries `explorer_default`, and its rationale is the reason — the only jurisdiction serving
+// well-grain production history end to end. Nothing here decides it.
+const DEFAULT_STATE = DEFAULT_JURISDICTION.prefix;
+const DEFAULTS = { state: DEFAULT_STATE, by: "operator", sort: "count", order: "desc", top: "15" };
 
 /** Exported so the suite asserts against the shipped defaults rather than a copy of them. */
 export const DEFAULTS_FOR_TEST = DEFAULTS;

@@ -197,7 +197,7 @@
           "statuses": {
             "description": "One entry per class present, largest first.",
             "items": {
-              "$ref": "#/components/schemas/StatusCount"
+              "$ref": "#/components/schemas/glasswell__api__routers__wells__StatusCount"
             },
             "title": "Statuses",
             "type": "array"
@@ -227,6 +227,32 @@
           "statuses"
         ],
         "title": "BasinStatusCounts",
+        "type": "object"
+      },
+      "Capabilities": {
+        "properties": {
+          "land_grid_scope": {
+            "description": "Whether land metrics are scoped to it. A state in the grid is always in scope; the reverse does not hold.",
+            "title": "Land Grid Scope",
+            "type": "boolean"
+          },
+          "land_grid_state": {
+            "description": "Whether the PLSS land grid covers this state.",
+            "title": "Land Grid State",
+            "type": "boolean"
+          },
+          "neighbors": {
+            "description": "Whether the neighbour mart holds subjects here.",
+            "title": "Neighbors",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "neighbors",
+          "land_grid_state",
+          "land_grid_scope"
+        ],
+        "title": "Capabilities",
         "type": "object"
       },
       "Chain": {
@@ -2964,6 +2990,43 @@
         "title": "EnvelopeModel[list[GlossaryTerm]]",
         "type": "object"
       },
+      "EnvelopeModel_list_JurisdictionRow__": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/JurisdictionRow"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[list[JurisdictionRow]]",
+        "type": "object"
+      },
       "EnvelopeModel_list_KeyRecordModel__": {
         "properties": {
           "_explain": {
@@ -3843,6 +3906,57 @@
         "title": "Health",
         "type": "object"
       },
+      "Identity": {
+        "properties": {
+          "is_unique": {
+            "description": "Whether the identifier is a well key here. False where a state reissues API-10s, which is a property of the key rather than of the scheme.",
+            "title": "Is Unique",
+            "type": "boolean",
+            "x-glasswell-glossary": "gt_identity_scheme"
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The regular expression a well identifier in this jurisdiction matches.",
+            "title": "Pattern",
+            "x-glasswell-glossary": "gt_api_10_api_12_api_14"
+          },
+          "prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The two leading digits of every API-10 in this jurisdiction, or null where the scheme is not API-10. These are API codes, not FIPS: 25 is Montana.",
+            "title": "Prefix",
+            "x-glasswell-glossary": "gt_api_10_api_12_api_14",
+            "x-glasswell-not-a-figure": "The two leading digits of every API-10 in a jurisdiction: an identifier's prefix, not a measured quantity."
+          },
+          "scheme": {
+            "description": "`api10` or `uwi`: which well identifier this jurisdiction is keyed by.",
+            "title": "Scheme",
+            "type": "string",
+            "x-glasswell-glossary": "gt_identity_scheme"
+          }
+        },
+        "required": [
+          "scheme",
+          "prefix",
+          "pattern",
+          "is_unique"
+        ],
+        "title": "Identity",
+        "type": "object"
+      },
       "IndexEntry": {
         "properties": {
           "n_words": {
@@ -4163,6 +4277,178 @@
           "detail"
         ],
         "title": "JobStatus",
+        "type": "object"
+      },
+      "JurisdictionRow": {
+        "properties": {
+          "capabilities": {
+            "$ref": "#/components/schemas/Capabilities",
+            "description": "What is built for it, not what is planned."
+          },
+          "effective_from": {
+            "description": "Valid time: the date this registration takes effect from.",
+            "title": "Effective From",
+            "type": "string",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "identity": {
+            "$ref": "#/components/schemas/Identity",
+            "description": "How a well is identified here."
+          },
+          "jurisdiction_code": {
+            "description": "The registry's own code for the jurisdiction, e.g. ND.",
+            "title": "Jurisdiction Code",
+            "type": "string",
+            "x-glasswell-glossary": "gt_jurisdiction"
+          },
+          "level": {
+            "description": "`state` or `province`.",
+            "title": "Level",
+            "type": "string",
+            "x-glasswell-glossary": "gt_jurisdiction"
+          },
+          "liquids_basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What a liquid barrel means here, carried beside every liquids figure served for this jurisdiction. Null where no liquids policy is registered.",
+            "title": "Liquids Basis",
+            "x-glasswell-glossary": "gt_liquids_policy"
+          },
+          "map": {
+            "$ref": "#/components/schemas/MapPresentation",
+            "description": "How this jurisdiction is drawn."
+          },
+          "measured_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The date the counts were measured. Absent when they are.",
+            "title": "Measured On"
+          },
+          "name": {
+            "description": "The jurisdiction's name, served rather than mapped again in the client.",
+            "title": "Name",
+            "type": "string",
+            "x-glasswell-glossary": "gt_jurisdiction"
+          },
+          "published_at": {
+            "description": "Knowledge time: the date glasswell published this registration.",
+            "title": "Published At",
+            "type": "string",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "regulator": {
+            "$ref": "#/components/schemas/Regulator",
+            "description": "Whose filings this jurisdiction is served from.",
+            "x-glasswell-glossary": "gt_regulator"
+          },
+          "rules": {
+            "description": "Every conformance rule registered for this jurisdiction, by decision.",
+            "items": {
+              "$ref": "#/components/schemas/JurisdictionRule"
+            },
+            "title": "Rules",
+            "type": "array",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "source_ids": {
+            "description": "Every registered source carrying this jurisdiction's coverage.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Ids",
+            "type": "array",
+            "x-glasswell-glossary": "gt_source"
+          },
+          "well_count": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FigureModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Wells measured in this jurisdiction at `measured_on`, with its handle. Absent until a refresh has produced one, and never served as zero in its place."
+          },
+          "well_counts_by_status": {
+            "description": "The same measurement broken out by canonical status.",
+            "items": {
+              "$ref": "#/components/schemas/glasswell__api__routers__jurisdictions__StatusCount"
+            },
+            "title": "Well Counts By Status",
+            "type": "array"
+          }
+        },
+        "required": [
+          "jurisdiction_code",
+          "name",
+          "level",
+          "regulator",
+          "identity",
+          "source_ids",
+          "rules",
+          "liquids_basis",
+          "map",
+          "capabilities",
+          "well_count",
+          "well_counts_by_status",
+          "measured_on",
+          "effective_from",
+          "published_at"
+        ],
+        "title": "JurisdictionRow",
+        "type": "object"
+      },
+      "JurisdictionRule": {
+        "properties": {
+          "decision": {
+            "description": "What this rule decides for this jurisdiction.",
+            "title": "Decision",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why a registered rule is not the serving one.",
+            "title": "Note"
+          },
+          "rule_id": {
+            "description": "The conformance rule, resolvable at /v1/conformance/{rule_id}.",
+            "title": "Rule Id",
+            "type": "string",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "serving": {
+            "description": "Whether this is the rule the serving path reads. A decision may register more than one rule \u2014 Montana files inventory at two grains \u2014 and exactly one serves.",
+            "title": "Serving",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "decision",
+          "rule_id",
+          "serving",
+          "note"
+        ],
+        "title": "JurisdictionRule",
         "type": "object"
       },
       "KeyRecordModel": {
@@ -4503,6 +4789,40 @@
           "fetch_derivation_id"
         ],
         "title": "Manifest",
+        "type": "object"
+      },
+      "MapPresentation": {
+        "properties": {
+          "colour": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The swatch colour that layer is drawn with.",
+            "title": "Colour"
+          },
+          "wells_tile_layer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The published tile layer the `Wells` family draws for this jurisdiction.",
+            "title": "Wells Tile Layer Id"
+          }
+        },
+        "required": [
+          "wells_tile_layer_id",
+          "colour"
+        ],
+        "title": "MapPresentation",
         "type": "object"
       },
       "MetaModel": {
@@ -6173,6 +6493,26 @@
         "title": "QuarantineSummary",
         "type": "object"
       },
+      "Regulator": {
+        "properties": {
+          "name": {
+            "description": "The agency that files the data glasswell ingests.",
+            "title": "Name",
+            "type": "string"
+          },
+          "url": {
+            "description": "Where that agency publishes it.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "url"
+        ],
+        "title": "Regulator",
+        "type": "object"
+      },
       "ServiceIndex": {
         "properties": {
           "api_version": {
@@ -6638,26 +6978,6 @@
           "detail"
         ],
         "title": "StatusCheck",
-        "type": "object"
-      },
-      "StatusCount": {
-        "properties": {
-          "status": {
-            "description": "Canonical status the wells in this bucket carry. Never null: a well the source reported no status for is counted in `unmapped_wells`, not here.",
-            "title": "Status",
-            "type": "string",
-            "x-glasswell-glossary": "gt_well_status"
-          },
-          "wells": {
-            "$ref": "#/components/schemas/FigureModel",
-            "description": "Wells in this class inside the box, with the handle the count resolves by."
-          }
-        },
-        "required": [
-          "status",
-          "wells"
-        ],
-        "title": "StatusCount",
         "type": "object"
       },
       "StatusDisclosure": {
@@ -8284,7 +8604,7 @@
           "statuses": {
             "description": "One entry per canonical class present in the box, largest first.",
             "items": {
-              "$ref": "#/components/schemas/StatusCount"
+              "$ref": "#/components/schemas/glasswell__api__routers__wells__StatusCount"
             },
             "title": "Statuses",
             "type": "array"
@@ -8857,6 +9177,46 @@
           "neighbor_geom_key"
         ],
         "title": "WinningGeometry",
+        "type": "object"
+      },
+      "glasswell__api__routers__jurisdictions__StatusCount": {
+        "properties": {
+          "status_canonical": {
+            "description": "The canonical well status this count is for.",
+            "title": "Status Canonical",
+            "type": "string",
+            "x-glasswell-glossary": "gt_well_status"
+          },
+          "wells": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Wells measured in that status, with its handle."
+          }
+        },
+        "required": [
+          "status_canonical",
+          "wells"
+        ],
+        "title": "StatusCount",
+        "type": "object"
+      },
+      "glasswell__api__routers__wells__StatusCount": {
+        "properties": {
+          "status": {
+            "description": "Canonical status the wells in this bucket carry. Never null: a well the source reported no status for is counted in `unmapped_wells`, not here.",
+            "title": "Status",
+            "type": "string",
+            "x-glasswell-glossary": "gt_well_status"
+          },
+          "wells": {
+            "$ref": "#/components/schemas/FigureModel",
+            "description": "Wells in this class inside the box, with the handle the count resolves by."
+          }
+        },
+        "required": [
+          "status",
+          "wells"
+        ],
+        "title": "StatusCount",
         "type": "object"
       }
     },
@@ -10966,6 +11326,265 @@
         "x-glasswell-request-example": {
           "path": {},
           "query": {}
+        }
+      }
+    },
+    "/v1/jurisdictions": {
+      "get": {
+        "description": "Every jurisdiction glasswell serves, with the regulator it is served from, the identity scheme its wells are keyed by, the conformance rules that decide its status vocabulary, geometry provenance, liquids policy and production grain, and the wells last measured in it. Registrations are append-only under two clocks: `as_of` is the knowledge cut, so a registration published after it is not served under it. Counts are absent until a refresh has produced them and are never served as zero in their place. This is a registry of registrations, not of reserves.",
+        "operationId": "list_jurisdictions",
+        "parameters": [
+          {
+            "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size, 100 by default, 200 at most.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Page size, 100 by default, 200 at most.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+              "title": "As Of"
+            }
+          },
+          {
+            "description": "Filter to one registration level.",
+            "in": "query",
+            "name": "level",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one registration level.",
+              "title": "Level"
+            }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_list_JurisdictionRow__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "as_of_out_of_range": {
+                    "summary": "as_of precedes the captured history",
+                    "value": {
+                      "detail": "`as_of` is earlier than the earliest captured vintage for every contributing source. An empty result would be indistinguishable from nothing happening.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "as_of precedes the captured history",
+                      "type": "/v1/errors/as_of_out_of_range"
+                    }
+                  },
+                  "cursor_malformed": {
+                    "summary": "Cursor malformed",
+                    "value": {
+                      "detail": "The cursor did not decode to the four declared fields.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor malformed",
+                      "type": "/v1/errors/cursor_malformed"
+                    }
+                  },
+                  "cursor_query_mismatch": {
+                    "summary": "Cursor does not match this query",
+                    "value": {
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor does not match this query",
+                      "type": "/v1/errors/cursor_query_mismatch"
+                    }
+                  },
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "List registered jurisdictions",
+        "tags": [
+          "vocabulary"
+        ],
+        "x-glasswell-dataset": {
+          "anchors": [],
+          "collection_pointer": "",
+          "columns": {
+            "default": [
+              "/jurisdiction_code",
+              "/name",
+              "/level",
+              "/regulator",
+              "/identity",
+              "/well_count",
+              "/measured_on"
+            ],
+            "hidden": [],
+            "hidden_reason": {},
+            "sort": "/jurisdiction_code"
+          },
+          "facets": [
+            "level"
+          ],
+          "group": "vocabulary",
+          "id": "jurisdictions",
+          "intro": "nb_dataset_jurisdictions",
+          "order": 42,
+          "row_id": [
+            "/jurisdiction_code"
+          ],
+          "title": "Jurisdictions"
+        },
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {
+            "level": "state",
+            "limit": 5
+          }
+        },
+        "x-glasswell-semantics": {
+          "as_of": {
+            "so": "Serves the registration published at or before the cut, and the measurement measured at or before it. A correction published later is not visible under an earlier cut, which is what a static current-state view could not honour.",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "cursor": {
+            "so": "Pins the page to jurisdiction code, the filters that opened it, and both clocks, so a registration appended mid-traversal cannot shift it."
+          },
+          "level": {
+            "so": "Filters to `state` or `province`. A province is not a state, which is why this collection is not /v1/states.",
+            "x-glasswell-glossary": "gt_jurisdiction"
+          },
+          "limit": {
+            "so": "Capped at 200; the default remains 100. The registry is small, and it is a page rather than a dump so that it stays one when a fifth jurisdiction registers."
+          }
         }
       }
     },

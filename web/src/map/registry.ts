@@ -4,6 +4,7 @@
  * nothing downstream keeps a second list to drift against it.
  */
 import { LAND_SNAPSHOT, ND_SNAPSHOT, landCellCount, ndCoverage, ndWellCount } from "./coverage.ts";
+import { JURISDICTIONS } from "./jurisdictions.generated.ts";
 import { DISPOSAL_COLOUR } from "./disposal.ts";
 import { LAYER_FAMILIES, LAYER_GROUPS } from "./groups.ts";
 import type { LayerFamily, LayerFamilyId, LayerGroup, LayerGroupId } from "./groups.ts";
@@ -317,10 +318,10 @@ export const LAYERS: readonly LayerDef[] = [
     id: "wells",
     group: "spine",
     family: "wells",
-    familyLabel: "North Dakota",
-    label: "Wells (North Dakota)",
+    familyLabel: JURISDICTIONS.ND.name,
+    label: `Wells (${JURISDICTIONS.ND.name})`,
     subtitle: `ND DMR GIS surface locations · ${ndWellCount()} points · culled by status below zoom 9`,
-    swatch: { kind: "dot", colours: ["#3FA55E"] },
+    swatch: { kind: "dot", colours: [JURISDICTIONS.ND.colour] },
     defaultOn: true,
     minZoom: 4,
     zoomHint: "Visible at zoom 4 and above",
@@ -362,14 +363,14 @@ export const LAYERS: readonly LayerDef[] = [
     id: "tx-wells",
     group: "spine",
     family: "wells",
-    familyLabel: "Texas",
-    label: "Wells (Texas)",
+    familyLabel: JURISDICTIONS.TX.name,
+    label: `Wells (${JURISDICTIONS.TX.name})`,
     subtitle: "TX RRC GIS surface locations, 55 Permian-district counties · 355,463 points",
     // Not ND's green. Both basins share one status vocabulary and one set of status colours,
     // but a swatch is a prediction about what the canvas will look like, and Texas draws
     // mostly plugged grey: 29% of its wells are plugged and 18% carry no status at all, so a
     // green dot promises a green map and delivers a grey one.
-    swatch: { kind: "dot", colours: ["#7C8B96"] },
+    swatch: { kind: "dot", colours: [JURISDICTIONS.TX.colour] },
     defaultOn: true,
     minZoom: 4,
     zoomHint: "Visible at zoom 4 and above",
@@ -384,15 +385,15 @@ export const LAYERS: readonly LayerDef[] = [
     id: "nm-wells",
     group: "spine",
     family: "wells",
-    familyLabel: "New Mexico",
-    label: "Wells (New Mexico)",
+    familyLabel: JURISDICTIONS.NM.name,
+    label: `Wells (${JURISDICTIONS.NM.name})`,
     subtitle:
       "NM OCD well-header surface locations · 141,778 points, ten of the fourteen OCD status " +
       "codes mapped and four documented without an equivalent " +
       "(cr_nm_wellhistory_status_vocab_2)",
     // Active green, narrowly: the mart measures 54,325 active against 50,935 plugged, so the
     // plurality is the only single ink the canvas supports. A dot carries one.
-    swatch: { kind: "dot", colours: [statusColour("active")] },
+    swatch: { kind: "dot", colours: [JURISDICTIONS.NM.colour] },
     defaultOn: true,
     minZoom: 4,
     zoomHint: "Visible at zoom 4 and above",
@@ -407,8 +408,8 @@ export const LAYERS: readonly LayerDef[] = [
     id: "mt-wells",
     group: "spine",
     family: "wells",
-    familyLabel: "Montana",
-    label: "Wells (Montana)",
+    familyLabel: JURISDICTIONS.MT.name,
+    label: `Wells (${JURISDICTIONS.MT.name})`,
     subtitle:
       "MBOGC surface locations · 42,026 points, 13 of the 19 filed status values mapped and" +
       " the other 6 quarantined rather than defaulted (cr_mt_gis_status_vocab_1) · no basin" +
@@ -416,7 +417,7 @@ export const LAYERS: readonly LayerDef[] = [
     // Plugged grey, for Texas's reason rather than by imitation: 63% of Montana's mapped
     // wells are plugged and 3% carry no class, so a green dot would promise a canvas that
     // does not arrive.
-    swatch: { kind: "dot", colours: [statusColour("plugged")] },
+    swatch: { kind: "dot", colours: [JURISDICTIONS.MT.colour] },
     defaultOn: true,
     minZoom: 4,
     zoomHint: "Visible at zoom 4 and above",

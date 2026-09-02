@@ -30,6 +30,7 @@ from glasswell.lineage import (
 )
 from glasswell.lineage.audit import emit
 from glasswell.lineage.serialization import hash_payload
+from glasswell.seed.jurisdictions import JURISDICTIONS
 
 NULL_SEMANTICS_RULE = "cr_nd_null_semantics_1"
 LIQUIDS_RULE = "cr_nd_liquids_policy_1"
@@ -51,17 +52,29 @@ MONTH_CLASS_PARTS = (
     "withheld_quarantined",
 )
 
-# Keyed by state so widening is a mapping entry rather than an edit. Texas withholding is
+# Keyed by jurisdiction code so widening is a mapping entry rather than an edit, and resolved
+# to an API prefix through the registry rather than spelling one here. Texas withholding is
 # field-level under cr_tx_ewa_measures_1 (053_tx_measure_withholding.sql:1-2), a different
 # grain, so adding it is a reader as well as an entry — which is what this shape says.
 WITHHOLDING_SOURCES: dict[str, tuple[tuple[str, str], ...]] = {
-    "33": (("nd_mpr_xlsx", "confidential_withheld"),),
+    "ND": (("nd_mpr_xlsx", "confidential_withheld"),),
 }
-# The states the cumulative mart covers, and the population every figure built from it is
-# stated over. Kept separate from WITHHOLDING_SOURCES on purpose: a state can be in scope with
-# nothing withheld, and registering a withholding source is not a decision to widen coverage
-# (land_metrics.py:128-131 draws the same line for the PLSS grid).
-STATE_API_PREFIXES: tuple[str, ...] = ("33",)
+_PREFIX_OF = {
+    str(row["jurisdiction_code"]): str(row["identity_prefix"]) for row in JURISDICTIONS
+}
+WITHHOLDING_BY_PREFIX: dict[str, tuple[tuple[str, str], ...]] = {
+    _PREFIX_OF[code]: sources for code, sources in WITHHOLDING_SOURCES.items()
+}
+
+# The jurisdictions the cumulative mart covers, and the population every figure built from it
+# is stated over. Kept separate from WITHHOLDING_SOURCES on purpose: a state can be in scope
+# with nothing withheld, and registering a withholding source is not a decision to widen
+# coverage (land_metrics.py:128-131 draws the same line for the PLSS grid). Declared as codes
+# and resolved through the registry, so no API prefix is spelled in this module.
+CUMULATIVE_JURISDICTIONS: tuple[str, ...] = ("ND",)
+STATE_API_PREFIXES: tuple[str, ...] = tuple(
+    _PREFIX_OF[code] for code in CUMULATIVE_JURISDICTIONS
+)
 
 MART_STREAMS = ("liquid", "gas", "water")
 STREAM_UNITS = {"liquid": "bbl", "gas": "mcf", "water": "bbl"}
@@ -286,7 +299,7 @@ def _withholding_pairs() -> tuple[list[str], list[str]]:
     """Only the states in scope, so a source registered for a state the mart does not cover
     cannot reach the ledger query."""
     pairs = [
-        pair for state in STATE_API_PREFIXES for pair in WITHHOLDING_SOURCES.get(state, ())
+        pair for state in STATE_API_PREFIXES for pair in WITHHOLDING_BY_PREFIX.get(state, ())
     ]
     return sorted({pair[0] for pair in pairs}), sorted({pair[1] for pair in pairs})
 
@@ -454,7 +467,7 @@ def refresh_well_cumulatives(connection: psycopg.Connection) -> CumulativesRefre
             "null_semantics_admitted": list(ADMITTED_NULL_SEMANTICS),
             "month_class_parts": list(MONTH_CLASS_PARTS),
             "withholding_sources": {
-                state: [list(pair) for pair in WITHHOLDING_SOURCES.get(state, ())]
+                state: [list(pair) for pair in WITHHOLDING_BY_PREFIX.get(state, ())]
                 for state in STATE_API_PREFIXES
             },
             "state_api_prefixes": list(STATE_API_PREFIXES),

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { DEFAULT_JURISDICTION, JURISDICTION_LIST } from "../../map/jurisdictions.generated.ts";
 import {
   DEFAULTS_FOR_TEST,
   DIMENSIONS,
@@ -130,6 +131,15 @@ const mount = (options: {
 }): Promise<void> => mountWellsBy(host, { ...options, applied: filtersOf(options.state) });
 
 describe("the panel reads its question off the URL", () => {
+  it("opens on the jurisdiction the registry marks as the explorer default", () => {
+    // Not a literal, and not "whichever registration sorts first" either — that was Montana,
+    // on an accident of alphabetisation. Exactly one registration carries explorer_default,
+    // and its rationale is the reason.
+    expect(DEFAULTS_FOR_TEST.state).toBe(DEFAULT_JURISDICTION.prefix);
+    expect(JURISDICTION_LIST.filter((row) => row.explorerDefault)).toHaveLength(1);
+    expect(DEFAULT_JURISDICTION.explorerDefault).toBe(true);
+  });
+
   it("defaults to the top 15 operators of one state rather than every state at once", () => {
     expect(panelState(state())).toMatchObject({
       state: DEFAULTS_FOR_TEST.state,

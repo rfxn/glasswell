@@ -9,13 +9,14 @@ from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 
-from glasswell.api.deps import AsOf, Connection, ExplainEffect, Principal, rows
+from glasswell.api.deps import AsOf, Connection, ExplainEffect, Principal, jurisdictions, rows
 from glasswell.api.errors import ProblemError, problem_responses
 from glasswell.api.examples import GLOSSARY_KEY, not_a_figure, request_example, semantics
 from glasswell.api.provenance import register_response_figures
 from glasswell.api.rate_limit import consume_rate_limit
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, inline_for, iso
 from glasswell.lineage.envelope import Figure, figure
+from glasswell.lineage.jurisdictions import JurisdictionRegistry
 from glasswell.lineage.selector_registry import identity_selector_term
 from glasswell.status_resolution import resolved_status, resolver_join
 
@@ -77,17 +78,23 @@ STATE_PATTERN = r"^\d{2}$"
 
 # The map's layer panel renamed every state row to `Noun (Full state name)` when it grew a
 # `Wells` parent, so the name is served rather than mapped again in the client: two spellings of
-# "North Dakota" 200 px apart is the drift that convention was introduced to end. Keyed by API
-# state code, which is not FIPS — 25 is Montana here, not Massachusetts.
-STATE_NAMES = {"25": "Montana", "30": "New Mexico", "33": "North Dakota", "42": "Texas"}
-
+# "North Dakota" 200 px apart is the drift that convention was introduced to end. It comes from
+# the registration the API state code resolves to, which is not FIPS — 25 is Montana here.
+#
 # R8: what an absent value means is a per-source decision with a rationale and a date, never an
-# inference this module makes. A state/dimension pair absent from this map has no registered
-# rule, and the response says so rather than implying the absence is understood.
-ABSENCE_RULES = {
-    ("42", "operator"): "cr_tx_operator_absence_1",
-    ("25", "operator"): "cr_mt_operator_absence_1",
-}
+# inference this module makes. It is a jurisdiction_rules decision at (jurisdiction, dimension)
+# grain, so a dimension with no registered rule says so rather than implying the absence is
+# understood.
+ABSENCE_DECISION = "absence"
+
+
+def _state_name(registry: JurisdictionRegistry, state: str) -> str:
+    """An unregistered code is shown as itself rather than guessed at."""
+    return registry.name_for(state) or f"state {state}"
+
+
+def _absence_rule(registry: JurisdictionRegistry, state: str, dimension: str) -> str | None:
+    return registry.rule_for(state, f"{ABSENCE_DECISION}:{dimension}")
 
 # The name a bucket is given when the dimension has no value. It is never a value in the
 # ranking: on the 2026-08-30 Texas load it would outrank all 9,369 real operators.
@@ -295,7 +302,9 @@ class WellFacets(BaseModel):
     )
 
 
-def _require_state(connection: Any, state: str) -> list[dict[str, Any]]:
+def _require_state(
+    connection: Any, state: str, registry: JurisdictionRegistry
+) -> list[dict[str, Any]]:
     """The scope is required and refused when empty, because a facet cannot say so afterwards.
 
     A state with no rows would otherwise answer 200 with an empty list, which reads as "this
@@ -306,7 +315,7 @@ def _require_state(connection: Any, state: str) -> list[dict[str, Any]]:
     if any(row["state_code"] == state for row in found):
         return found
     carried = ", ".join(
-        f"{row['state_code']} — {STATE_NAMES.get(row['state_code'], 'unnamed')}"
+        f"{row['state_code']} — {_state_name(registry, row['state_code'])}"
         f" ({row['wells']:,} wells)"
         for row in found
     )
@@ -320,7 +329,7 @@ def _require_state(connection: Any, state: str) -> list[dict[str, Any]]:
         # not say what you *can* ask for is a dead end: the panel's state picker is rebuilt
         # from this, and without it a link to a gated state renders a control with nothing in
         # it and no way back except editing the URL.
-        extra={"states": _states(found)},
+        extra={"states": _states(found, registry)},
         errors=[
             {
                 "pointer": "/query/state",
@@ -347,16 +356,20 @@ def _partition_term(name: str, value: str) -> tuple[str, str]:
     return key, encoded
 
 
-def _states(loaded: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _states(
+    loaded: list[dict[str, Any]], registry: JurisdictionRegistry
+) -> list[dict[str, Any]]:
     """Every known state, with the ones holding no wells said rather than omitted.
 
     A picker built from the loaded set alone cannot distinguish "New Mexico has no operators"
     from "New Mexico is not promoted yet", and the second is the true one today.
     """
     carrying = {row["state_code"] for row in loaded}
-    codes = sorted(set(STATE_NAMES) | carrying)
+    # The registry key here is the identity prefix, because `code` on this surface is the API
+    # state code the collection filters by, not the jurisdiction code.
+    codes = sorted(set(registry.by_prefix) | carrying)
     return [
-        {"code": code, "name": STATE_NAMES.get(code, f"state {code}"), "loaded": code in carrying}
+        {"code": code, "name": _state_name(registry, code), "loaded": code in carrying}
         for code in codes
     ]
 
@@ -383,7 +396,12 @@ def _figure(row: dict[str, Any] | None, selector: str) -> Figure | None:
 
 
 def _absence(
-    row: dict[str, Any] | None, *, state: str, dimension: str, q: str | None
+    row: dict[str, Any] | None,
+    *,
+    state: str,
+    dimension: str,
+    q: str | None,
+    registry: JurisdictionRegistry,
 ) -> dict[str, Any] | None:
     """The named bucket for wells the dimension has no value for.
 
@@ -394,7 +412,7 @@ def _absence(
     """
     if row is None or row["wells"] == 0:
         return None
-    rule = ABSENCE_RULES.get((state, dimension))
+    rule = _absence_rule(registry, state, dimension)
     counted = _figure(row, _selector(dimension, state, q, "absent_wells"))
     if counted is None:
         return None
@@ -416,7 +434,7 @@ def _absence(
         detail += (
             f" The search for {q!r} did not narrow this bucket: a well with no {noun} matches"
             f" no {noun} text, so this is every such well in"
-            f" {STATE_NAMES.get(state, f'state {state}')}, not a share of the matches."
+            f" {_state_name(registry, state)}, not a share of the matches."
         )
     return {
         "label": ABSENCE_LABEL,
@@ -448,7 +466,15 @@ def _remainder(
 
 
 def _caption(
-    *, dimension: str, state: str, shown: int, distinct: int, q: str | None, sort: str, order: str
+    *,
+    dimension: str,
+    state: str,
+    shown: int,
+    distinct: int,
+    q: str | None,
+    sort: str,
+    order: str,
+    registry: JurisdictionRegistry,
 ) -> str:
     """The one sentence that has to be true: what is on screen, and what it is a cut of.
 
@@ -456,7 +482,7 @@ def _caption(
     and a sentence naming the most describes a list the reader is not looking at.
     """
     noun = dimension.replace("_", " ")
-    name = STATE_NAMES.get(state, f"state {state}")
+    name = _state_name(registry, state)
     if distinct == 0:
         return (
             f"No {noun} in {name} matches {q!r}. The search ran over all of them, so this is"
@@ -652,7 +678,8 @@ def get_well_facets(
     consume_rate_limit(
         connection, principal, operation="get_well_facets", limit=FACET_REQUESTS_PER_MINUTE
     )
-    loaded = _require_state(connection, state)
+    registry = jurisdictions(connection)
+    loaded = _require_state(connection, state, registry)
     scoped = (_SCOPED_AS_OF if as_of is not None else _SCOPED_LATEST).format(
         column=DIMENSIONS[by]["column"], join=DIMENSIONS[by].get("join", "")
     )
@@ -666,12 +693,12 @@ def get_well_facets(
     one = {kind: group[0] for kind, group in by_kind.items() if kind != "bucket"}
     listed = sorted(by_kind.get("bucket", []), key=lambda row: row["rank"])
 
-    absence = _absence(one.get("absence"), state=state, dimension=by, q=q)
+    absence = _absence(one.get("absence"), state=state, dimension=by, q=q, registry=registry)
     remainder = _remainder(one.get("remainder"), state=state, dimension=by, q=q, top=top)
     scope = one.get("scope")
     data: dict[str, Any] = {
         "state": state,
-        "state_name": STATE_NAMES.get(state, f"state {state}"),
+        "state_name": _state_name(registry, state),
         "dimension": by,
         "dimension_title": DIMENSIONS[by]["title"],
         "sort": sort,
@@ -691,6 +718,7 @@ def get_well_facets(
             q=q,
             sort=sort,
             order=order,
+            registry=registry,
         ),
         "buckets": [
             {
@@ -708,7 +736,7 @@ def get_well_facets(
             if q is not None
             else None
         ),
-        "states": _states(loaded),
+        "states": _states(loaded, registry),
         "rules": sorted({absence["rule_id"]} if absence and absence["rule_id"] else set()),
     }
     data = register_response_figures(

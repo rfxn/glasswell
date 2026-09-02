@@ -28,6 +28,7 @@ from glasswell.lineage.audit import emit
 from glasswell.lineage.serialization import hash_payload
 from glasswell.marts.cumulatives import per_well_cumulative_cte
 from glasswell.marts.tiles import METRIC_LAYERS, install_tile_functions
+from glasswell.seed.jurisdictions import JURISDICTIONS
 
 MEMBERSHIP_RULE = "cr_land_agg_membership_2"
 LIQUIDS_RULE = "cr_nd_liquids_policy_1"
@@ -125,10 +126,27 @@ select member.plssid as land_unit_id,
 # signal is the grid-state count — with the surface fallback it is expected 0 and any
 # nonzero is a well the grid cannot hold at all. Widening the grid is a superseding
 # membership rule, same as widening the PLSS scope.
-GRID_STATE_API_PREFIXES = ("33",)
-# The states the PLSS grid covers at all. Kept separate from GRID_STATE_API_PREFIXES on
-# purpose: collapsing the two would silence the anomaly alarm that one exists to raise.
-GRID_SCOPE_API_PREFIXES: tuple[str, ...] = ("33",)
+#
+# Read from the registry at import: this module has no connection at module scope, and the
+# declaration is `seed/jurisdictions.py`, which the parity gate holds to the resolved rows.
+# The two stay separately named and separately sourced — each reads its own registry column —
+# because collapsing them would silence the anomaly alarm one of them exists to raise.
+def grid_state_prefixes() -> tuple[str, ...]:
+    """Jurisdictions the PLSS grid can hold a well in."""
+    return tuple(
+        str(row["identity_prefix"]) for row in JURISDICTIONS if row["land_grid_state"]
+    )
+
+
+def grid_scope_prefixes() -> tuple[str, ...]:
+    """Jurisdictions the PLSS grid covers at all."""
+    return tuple(
+        str(row["identity_prefix"]) for row in JURISDICTIONS if row["land_grid_scope"]
+    )
+
+
+GRID_STATE_API_PREFIXES: tuple[str, ...] = grid_state_prefixes()
+GRID_SCOPE_API_PREFIXES: tuple[str, ...] = grid_scope_prefixes()
 
 # Three counters, not two, and the universe is unfiltered. 355,463 Texas surface points are
 # already in `anchor`; scoping the universe would have collapsed a served figure to zero while

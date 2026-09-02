@@ -25,6 +25,7 @@ from glasswell.marts import land_metrics
 from glasswell.marts.land_metrics import refresh_land_metrics
 from glasswell.marts.land_units import refresh_land_units
 from glasswell.seed import seed_all
+from glasswell.seed.jurisdictions import JURISDICTIONS
 from tests.integration.test_blm_plss_load import load_all
 from tests.integration.test_land_metrics import (
     HORIZONTAL,
@@ -151,20 +152,34 @@ def test_the_derivation_params_carry_all_three_and_both_prefix_sets(three_states
     assert params["grid_scope_api_prefixes"] == ["33"]
 
 
-def test_the_two_prefix_constants_stay_separate() -> None:
+def test_the_two_prefix_sources_stay_separate() -> None:
     """Collapsing them would silence the anomaly alarm one of them exists to raise.
 
     Equal today and equal for a while: the grid covers one state and that state is in scope.
-    What must not happen is one name becoming an alias of the other, so the assertion is on the
-    two declarations rather than on two values that Python interns to one object.
+    What must not happen is one name becoming an alias of the other — so the assertion is that
+    each reads its own registry column, rather than on two values Python interns to one object.
+
+    Rewritten from an exact-declaration-text check when the prefixes moved into the registry
+    (R-12). The invariant is the same one, asserted one layer down: the two remain separately
+    named and separately sourced, and neither is derived from the other.
     """
     source = Path(land_metrics.__file__).read_text(encoding="utf-8")
 
     assert land_metrics.GRID_STATE_API_PREFIXES == ("33",)
     assert land_metrics.GRID_SCOPE_API_PREFIXES == ("33",)
-    assert source.count("\nGRID_STATE_API_PREFIXES = ") == 1
-    assert source.count("\nGRID_SCOPE_API_PREFIXES: tuple[str, ...] = ") == 1
-    assert "GRID_SCOPE_API_PREFIXES = GRID_STATE_API_PREFIXES" not in source
+    # Separately sourced: each reads the registry column named for it, and only that one.
+    assert source.count('row["land_grid_state"]') == 1
+    assert source.count('row["land_grid_scope"]') == 1
+    assert source.count("\ndef grid_state_prefixes() -> tuple[str, ...]:") == 1
+    assert source.count("\ndef grid_scope_prefixes() -> tuple[str, ...]:") == 1
+    # Separately named, and neither an alias of the other in either direction.
+    assert "GRID_SCOPE_API_PREFIXES: tuple[str, ...] = GRID_STATE_API_PREFIXES" not in source
+    assert "GRID_STATE_API_PREFIXES: tuple[str, ...] = GRID_SCOPE_API_PREFIXES" not in source
+    assert land_metrics.grid_state_prefixes is not land_metrics.grid_scope_prefixes
+    # And the registry can tell them apart: a jurisdiction in scope need not be in the grid.
+    scoped = {row["jurisdiction_code"] for row in JURISDICTIONS if row["land_grid_scope"]}
+    gridded = {row["jurisdiction_code"] for row in JURISDICTIONS if row["land_grid_state"]}
+    assert gridded <= scoped
 
 
 def test_the_cells_are_unchanged_by_the_presence_of_two_other_states(three_states) -> None:

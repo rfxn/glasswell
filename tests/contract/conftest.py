@@ -873,6 +873,7 @@ def _seed_contract_fixture(db: psycopg.Connection, pinned_control: ControlArtifa
     ):
         refresh_neighbors(db)
     _seed_neighbor_mart(db)
+    _seed_jurisdiction_counts(db, nd_wells=nd_wells, tx_wells=tx_wells)
     _seed_quarantine(db, mpr_manifest)
     # After the ledger, never before: the withheld months the coverage record counts are
     # quarantine rows, so a refresh that ran first would report a span short of one month.
@@ -903,6 +904,35 @@ def _seed_contract_fixture(db: psycopg.Connection, pinned_control: ControlArtifa
         restatement_summary={RESTATED_MONTH.isoformat(): 1},
     )
     db.commit()
+
+
+# North Dakota and Texas only. New Mexico and Montana are registered and unmeasured, which is
+# the state every jurisdiction is in before its first refresh — and the one the surface has to
+# serve as an absence rather than as a zero (R-3).
+JURISDICTION_MEASURED_ON = date(2026, 8, 27)
+ND_MEASURED = {None: 7, "active": 4, "plugged": 3}
+TX_MEASURED = {None: 1, "active": 1}
+
+
+def _seed_jurisdiction_counts(
+    connection: psycopg.Connection, *, nd_wells: str, tx_wells: str
+) -> None:
+    """The measurement ledger, keyed to the same derivations the wells were promoted by, so
+    a count's handle walks to the manifest the file arrived in."""
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            "insert into lineage.jurisdiction_well_counts (jurisdiction_code, measured_on,"
+            " status_canonical, well_count, derivation_id) values (%s, %s, %s, %s, %s)",
+            [
+                (code, JURISDICTION_MEASURED_ON, status, wells, derivation)
+                for code, derivation, measured in (
+                    ("ND", nd_wells, ND_MEASURED),
+                    ("TX", tx_wells, TX_MEASURED),
+                )
+                for status, wells in measured.items()
+            ],
+        )
+    connection.commit()
 
 
 def _seed_example_key(connection: psycopg.Connection) -> None:

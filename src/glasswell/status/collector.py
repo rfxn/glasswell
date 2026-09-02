@@ -24,6 +24,7 @@ from psycopg.pq import TransactionStatus
 from psycopg.rows import dict_row
 from pydantic import BaseModel, ValidationError
 
+from glasswell.lineage.jurisdictions import load_jurisdictions
 from glasswell.status.models import (
     DATABASE_BYTES_REASON,
     INVENTORY_REASON,
@@ -625,13 +626,37 @@ class _ProductionPresentation:
 
 _VINTAGE_NOTE = "Includes retained report vintages; it is not a count of physical wells."
 
-# The scope string a jurisdiction reads as. An unregistered code is shown as itself rather than
-# guessed at, so a new state reads its own code until someone names it.
-JURISDICTION_SCOPES = {
-    "ND": "North Dakota",
-    "NM": "New Mexico",
-    "MT": "Montana",
-    "TX": "Texas",
+
+@dataclass(frozen=True, slots=True)
+class _CompletionsPresentation:
+    """How one jurisdiction's completion inventory is named and qualified.
+
+    Prose only, and keyed by jurisdiction code rather than by API prefix. Which jurisdictions
+    are counted is registry data; the grain wording and the caveats that grain forces are not
+    in any registry row. A jurisdiction with no entry is still counted, under the default.
+    """
+
+    label_suffix: str
+    grain: str
+    detail: str
+
+
+_DEFAULT_WELLS_DETAIL = (
+    "Current effective-dated well entities, not accumulated source revisions."
+)
+
+_DEFAULT_COMPLETIONS = _CompletionsPresentation(
+    label_suffix="completion observations",
+    grain="one source-vintage effective-dated completion dimension observation",
+    detail="Effective-dated completion dimensions; zero remains an exact unpromoted inventory.",
+)
+
+_COMPLETIONS_PRESENTATION: dict[str, _CompletionsPresentation] = {
+    "ND": _CompletionsPresentation(
+        label_suffix="completion-pool observations",
+        grain="one source-vintage completion-month pool observation",
+        detail="Repeated source-month observations are not physical completion events.",
+    ),
 }
 
 _PRODUCTION_PRESENTATION: dict[str, _ProductionPresentation] = {
@@ -689,6 +714,16 @@ _PRODUCTION_PRESENTATION: dict[str, _ProductionPresentation] = {
 }
 
 
+EMPTY_ARM = "unavailable"
+
+
+def _by_state(connection: psycopg.Connection, statement: str) -> dict[str, dict[str, Any]]:
+    """One grouped read indexed by API state code, so an arm per jurisdiction costs no query."""
+    with connection.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(statement)
+        return {row["state_code"]: dict(row) for row in cursor.fetchall()}
+
+
 def _production_presentation(source_id: str, name: str) -> _ProductionPresentation:
     known = _PRODUCTION_PRESENTATION.get(source_id)
     if known is not None:
@@ -735,46 +770,32 @@ def _inventory(
         " pg_database_size(current_database()) as database_bytes"
         " from public.schema_migrations",
     )
-    wells = _one(
+    # Grouped, not one filtered arm per state: a fifth jurisdiction is a registry row and this
+    # query does not know how many there are.
+    # R8: which jurisdictions exist, what they are called and which API prefix each owns are
+    # rows, read at the registry's own latest publication. The collector runs as glasswell_api,
+    # which holds select on the tables and execute on the resolver.
+    registry = load_jurisdictions(connection)
+    scopes = {row.jurisdiction_code: row.name for row in registry}
+    wells = _by_state(
         connection,
-        "select count(*) filter (where state_code = '33') as nd_rows,"
-        " min(effective_from) filter (where state_code = '33') as nd_valid_from,"
-        " max(effective_from) filter (where state_code = '33') as nd_valid_to,"
-        " max(created_at) filter (where state_code = '33') as nd_latest_knowledge,"
-        " count(*) filter (where state_code = '42') as tx_rows,"
-        " min(effective_from) filter (where state_code = '42') as tx_valid_from,"
-        " max(effective_from) filter (where state_code = '42') as tx_valid_to,"
-        " max(created_at) filter (where state_code = '42') as tx_latest_knowledge,"
-        " count(*) filter (where state_code = '30') as nm_rows,"
-        " min(effective_from) filter (where state_code = '30') as nm_valid_from,"
-        " max(effective_from) filter (where state_code = '30') as nm_valid_to,"
-        " max(created_at) filter (where state_code = '30') as nm_latest_knowledge,"
-        " count(*) filter (where state_code = '25') as mt_rows,"
-        " min(effective_from) filter (where state_code = '25') as mt_valid_from,"
-        " max(effective_from) filter (where state_code = '25') as mt_valid_to,"
-        " max(created_at) filter (where state_code = '25') as mt_latest_knowledge"
-        " from canonical.wells_latest",
+        "select state_code, count(*) as rows,"
+        " min(effective_from) as valid_from, max(effective_from) as valid_to,"
+        " max(created_at) as latest_knowledge"
+        " from canonical.wells_latest where state_code is not null group by state_code",
     )
     production = _production_inventory(connection)
-    completions = _one(
+    # 069 took the `left(api10, 2) = '<literal>'` filtered aggregate out of the production arm;
+    # this is the same removal on the completions arm. The prefix is still derived in SQL, but
+    # which prefix belongs to which jurisdiction is the registry's answer, not this query's.
+    completions = _by_state(
         connection,
-        "select count(*) filter (where left(api10, 2) = '33') as nd_rows,"
-        " count(distinct (source_id, completion_key))"
-        "   filter (where left(api10, 2) = '33') as nd_completion_keys,"
-        " min(coalesce(production_month, effective_from))"
-        "   filter (where left(api10, 2) = '33') as nd_valid_from,"
-        " max(coalesce(production_month, effective_from))"
-        "   filter (where left(api10, 2) = '33') as nd_valid_to,"
-        " max(created_at) filter (where left(api10, 2) = '33') as nd_latest_knowledge,"
-        " count(*) filter (where left(api10, 2) = '30') as nm_rows,"
-        " count(distinct (source_id, completion_key))"
-        "   filter (where left(api10, 2) = '30') as nm_completion_keys,"
-        " min(coalesce(production_month, effective_from))"
-        "   filter (where left(api10, 2) = '30') as nm_valid_from,"
-        " max(coalesce(production_month, effective_from))"
-        "   filter (where left(api10, 2) = '30') as nm_valid_to,"
-        " max(created_at) filter (where left(api10, 2) = '30') as nm_latest_knowledge"
-        " from canonical.well_completions",
+        "select left(api10, 2) as state_code, count(*) as rows,"
+        " count(distinct (source_id, completion_key)) as completion_keys,"
+        " min(coalesce(production_month, effective_from)) as valid_from,"
+        " max(coalesce(production_month, effective_from)) as valid_to,"
+        " max(created_at) as latest_knowledge"
+        " from canonical.well_completions group by left(api10, 2)",
     )
     anchors = _one(
         connection,
@@ -853,13 +874,14 @@ def _inventory(
         valid_from: Any = None,
         valid_to: Any = None,
         latest_knowledge: Any = None,
+        state: str = "available",
     ) -> DatasetInventory:
         return DatasetInventory(
             dataset_id=dataset_id,
             label=label,
             scope=scope,
             grain=grain,
-            state="available",
+            state=state,
             counted_at=observed_at,
             latest_knowledge_at=latest_knowledge.isoformat() if latest_knowledge else None,
             metrics=metrics,
@@ -868,60 +890,32 @@ def _inventory(
             detail=detail,
         )
 
+    # Every jurisdiction arm, generated. A fifth registration yields a fifth wells dataset and a
+    # fifth completions dataset with no edit here; an arm the tables hold nothing for reports
+    # `unavailable` rather than a zero, because "not loaded" and "none" are different facts.
+    registered = [row for row in registry if row.identity_prefix is not None]
     datasets = [
-        dataset(
-            "canonical.wells_latest/nd",
-            "Current North Dakota wells",
-            "North Dakota",
-            "one latest effective row per API-10",
-            [_metric("rows", "Current wells", wells["nd_rows"], "wells")],
-            "Current effective-dated well entities, not accumulated source revisions.",
-            wells["nd_valid_from"],
-            wells["nd_valid_to"],
-            wells["nd_latest_knowledge"],
-        ),
-        dataset(
-            "canonical.wells_latest/tx",
-            "Current Texas wells",
-            "Texas",
-            "one latest effective row per API-10",
-            [_metric("rows", "Current wells", wells["tx_rows"], "wells")],
-            "Current effective-dated well entities, not accumulated source revisions.",
-            wells["tx_valid_from"],
-            wells["tx_valid_to"],
-            wells["tx_latest_knowledge"],
-        ),
-        dataset(
-            "canonical.wells_latest/nm",
-            "Current New Mexico wells",
-            "New Mexico",
-            "one latest effective row per API-10",
-            [_metric("rows", "Current wells", wells["nm_rows"], "wells")],
-            "Current effective-dated well entities, not accumulated source revisions.",
-            wells["nm_valid_from"],
-            wells["nm_valid_to"],
-            wells["nm_latest_knowledge"],
-        ),
-        dataset(
-            "canonical.wells_latest/mt",
-            "Current Montana wells",
-            "Montana",
-            "one latest effective row per API-10",
-            [_metric("rows", "Current wells", wells["mt_rows"], "wells")],
-            (
-                "Headers only for the statuses cr_mt_gis_status_vocab_1 promotes; the six it"
-                " does not quarantine as unknown_status, so this is below the surface-point"
-                " count and the difference is in the quarantine ledger, not lost."
-            ),
-            wells["mt_valid_from"],
-            wells["mt_valid_to"],
-            wells["mt_latest_knowledge"],
+        *(
+            dataset(
+                f"canonical.wells_latest/{row.jurisdiction_code.lower()}",
+                f"Current {row.name} wells",
+                row.name,
+                "one latest effective row per API-10",
+                [_metric("rows", "Current wells", counted.get("rows", 0), "wells")],
+                row.status_dataset_detail or _DEFAULT_WELLS_DETAIL,
+                counted.get("valid_from"),
+                counted.get("valid_to"),
+                counted.get("latest_knowledge"),
+                state="available" if counted else EMPTY_ARM,
+            )
+            for row in registered
+            for counted in (wells.get(row.identity_prefix, {}),)
         ),
         *(
             dataset(
                 shown.dataset_id,
                 shown.label,
-                JURISDICTION_SCOPES.get(counted["jurisdiction"], counted["jurisdiction"]),
+                scopes.get(counted["jurisdiction"], counted["jurisdiction"]),
                 shown.grain,
                 [
                     _metric("rows", "Observation rows", counted["rows"], "rows"),
@@ -944,43 +938,32 @@ def _inventory(
             )
             for shown, counted in production
         ),
-        dataset(
-            "canonical.well_completions/nd",
-            "North Dakota completion-pool observations",
-            "North Dakota",
-            "one source-vintage completion-month pool observation",
-            [
-                _metric("rows", "Observation rows", completions["nd_rows"], "rows"),
-                _metric(
-                    "completion_keys",
-                    "Distinct source-scoped keys",
-                    completions["nd_completion_keys"],
-                    "keys",
-                ),
-            ],
-            "Repeated source-month observations are not physical completion events.",
-            completions["nd_valid_from"],
-            completions["nd_valid_to"],
-            completions["nd_latest_knowledge"],
-        ),
-        dataset(
-            "canonical.well_completions/nm",
-            "New Mexico completion observations",
-            "New Mexico",
-            "one source-vintage effective-dated completion dimension observation",
-            [
-                _metric("rows", "Observation rows", completions["nm_rows"], "rows"),
-                _metric(
-                    "completion_keys",
-                    "Distinct source-scoped keys",
-                    completions["nm_completion_keys"],
-                    "keys",
-                ),
-            ],
-            "Effective-dated completion dimensions; zero remains an exact unpromoted inventory.",
-            completions["nm_valid_from"],
-            completions["nm_valid_to"],
-            completions["nm_latest_knowledge"],
+        *(
+            dataset(
+                f"canonical.well_completions/{row.jurisdiction_code.lower()}",
+                f"{row.name} {shown.label_suffix}",
+                row.name,
+                shown.grain,
+                [
+                    _metric("rows", "Observation rows", counted.get("rows", 0), "rows"),
+                    _metric(
+                        "completion_keys",
+                        "Distinct source-scoped keys",
+                        counted.get("completion_keys", 0),
+                        "keys",
+                    ),
+                ],
+                shown.detail,
+                counted.get("valid_from"),
+                counted.get("valid_to"),
+                counted.get("latest_knowledge"),
+                state="available" if counted else EMPTY_ARM,
+            )
+            for row in registered
+            for shown in (
+                _COMPLETIONS_PRESENTATION.get(row.jurisdiction_code, _DEFAULT_COMPLETIONS),
+            )
+            for counted in (completions.get(row.identity_prefix, {}),)
         ),
         dataset(
             "canonical.well_completion_anchors",

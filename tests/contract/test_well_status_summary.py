@@ -16,9 +16,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_API10, EXAMPLE_BBOX
-from glasswell.api.routers.wells import STATUS_VOCABULARY_RULES
 from tests.contract.conftest import TX_API10
 from tests.contract.test_naked_numbers import handles, naked_numbers
+from tests.support.jurisdictions import declared_rule_ids
 
 SUMMARY = "/v1/wells/status-summary"
 # The published example: the seeded ND well's surface hole and its lateral. OTHER_API10S carry
@@ -112,8 +112,8 @@ def test_the_counts_are_split_per_basin_with_the_rule_that_mapped_them(client: T
 
 
 def test_the_vocabulary_rules_it_names_are_rows_in_the_registry(client: TestClient) -> None:
-    """The pinned map is held to the seeded registry: a rule id that resolves nowhere is a
-    citation to nothing.
+    """Every status_vocabulary decision the jurisdiction registry serves resolves: a rule id
+    that resolves nowhere is a citation to nothing.
 
     The kind check is per rule rather than fixed at `vocab_map`, and it is stricter for it: a
     mapping rule has to name the table it maps through, and a rule that records an *absent*
@@ -122,7 +122,7 @@ def test_the_vocabulary_rules_it_names_are_rows_in_the_registry(client: TestClie
     neither. Every id here still decides a status vocabulary; not every vocabulary decision is
     a mapping.
     """
-    for rule_id in sorted(set(STATUS_VOCABULARY_RULES.values())):
+    for rule_id in sorted(declared_rule_ids("status_vocabulary")):
         rule = client.get(f"/v1/conformance/{rule_id}")
 
         assert rule.status_code == 200, rule_id

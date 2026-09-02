@@ -17,8 +17,9 @@ from glasswell.api.routers import production
 from glasswell.marts import cumulatives
 from glasswell.marts.cumulatives import (
     ADMITTED_NULL_SEMANTICS,
+    CUMULATIVE_JURISDICTIONS,
     STATE_API_PREFIXES,
-    WITHHOLDING_SOURCES,
+    WITHHOLDING_BY_PREFIX,
     cumulative_semantics_predicate,
     filed_span,
     month_class_counts,
@@ -51,7 +52,7 @@ def test_the_admitted_set_excludes_everything_the_producing_rule_refuses_as_evid
 
 def test_the_withholding_mapping_agrees_with_the_series_endpoint() -> None:
     """One ledger predicate: the mart and /production must read the same rows (M2)."""
-    source_id, reason_code = WITHHOLDING_SOURCES["33"][0]
+    source_id, reason_code = WITHHOLDING_BY_PREFIX["33"][0]
 
     assert f"source_id = '{source_id}'" in production._WITHHELD_MONTHS
     assert f"reason_code = '{reason_code}'" in production._WITHHELD_MONTHS
@@ -67,10 +68,10 @@ def test_registering_a_withholding_source_does_not_widen_the_population_served()
     it has no production at all, so the mart would have claimed 359,421 wells as
     never_reported.
     """
-    hypothetical = dict(WITHHOLDING_SOURCES)
+    hypothetical = dict(WITHHOLDING_BY_PREFIX)
     hypothetical["42"] = (("tx_ewa_xlsx", "confidential_withheld"),)
 
-    with mock.patch.object(cumulatives, "WITHHOLDING_SOURCES", hypothetical):
+    with mock.patch.object(cumulatives, "WITHHOLDING_BY_PREFIX", hypothetical):
         assert cumulatives.STATE_API_PREFIXES == ("33",)
         sources, reasons = cumulatives._withholding_pairs()
 
@@ -79,13 +80,22 @@ def test_registering_a_withholding_source_does_not_widen_the_population_served()
     assert reasons == ["confidential_withheld"]
 
 
-def test_the_served_scope_is_a_literal_rather_than_a_view_of_the_withholding_registry() -> None:
-    """Guards the shape, not just today's value: `tuple(WITHHOLDING_SOURCES)` reintroduces
-    MAJOR-1 while every value assertion above still passes."""
+def test_the_served_scope_is_its_own_declaration_and_not_a_view_of_the_withholding_registry(
+) -> None:
+    """Guards the shape, not just today's value: deriving the scope from either withholding
+    mapping reintroduces MAJOR-1 while every value assertion above still passes.
+
+    The declaration is jurisdiction codes resolved through the registry, so the scope moves
+    only when someone edits it, and no API prefix is spelled in the module (P5's scan).
+    """
     source = Path(cumulatives.__file__).read_text(encoding="utf-8")
 
-    assert source.count("\nSTATE_API_PREFIXES: tuple[str, ...] = (") == 1
+    assert source.count("\nCUMULATIVE_JURISDICTIONS: tuple[str, ...] = (") == 1
+    assert "for code in CUMULATIVE_JURISDICTIONS" in source
     assert "STATE_API_PREFIXES = tuple(WITHHOLDING_SOURCES)" not in source
+    assert "for code in WITHHOLDING_SOURCES" not in source
+    assert "tuple(WITHHOLDING_BY_PREFIX)" not in source
+    assert CUMULATIVE_JURISDICTIONS == ("ND",)
     assert STATE_API_PREFIXES == ("33",)
 
 

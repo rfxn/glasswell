@@ -45,6 +45,8 @@ RELEASE_SURFACE_FILES = ("README.md", "STATUS.md", "ROADMAP.md", "llms.txt")
 MIGRATIONS_DIR = Path("src/glasswell/db/migrations")
 PLACEHOLDER_EVIDENCE_TAG = "UNRELEASED"
 PLACEHOLDER_EVIDENCE_COMMIT = "0" * 40
+# Files outside the migrations directory that carry the same placeholder pair (N-5).
+EVIDENCE_MIRRORS = (Path("src/glasswell/seed/jurisdictions.py"),)
 
 
 @dataclass(frozen=True, order=True)
@@ -172,24 +174,34 @@ def preconditions(root: Path, fragments: list[Path], target: Version) -> list[st
 
 
 def placeholder_evidence_blockers(root: Path, target: Version) -> list[str]:
-    """Refuse to cut a release while a migration still carries placeholder rule evidence."""
+    """Refuse to cut a release while a migration, or a seed mirroring one, still carries
+    placeholder evidence."""
     directory = root / MIGRATIONS_DIR
-    if not directory.is_dir():
+    candidates = sorted(directory.glob("*.sql")) if directory.is_dir() else []
+    # N-5: migration 072's registrations are mirrored in a seed module that seed_all runs on
+    # every deploy, so a repoint that touches only the migration is a half-repoint the scan
+    # would otherwise pass. Both quote styles: the mirror is Python.
+    candidates += [path for path in (root / name for name in EVIDENCE_MIRRORS) if path.is_file()]
+    if not candidates:
         return []
-    # The quoted SQL literals, not the bare words. A bare-word scan matched the migration's own
+    # The quoted literals, not the bare words. A bare-word scan matched the migration's own
     # header prose, so a correctly repointed file went on refusing and nothing in the repository
     # could cut a tag; and a bare forty-zero run is a substring of any longer all-zero digest.
-    literals = (f"'{PLACEHOLDER_EVIDENCE_TAG}'", f"'{PLACEHOLDER_EVIDENCE_COMMIT}'")
+    literals = tuple(
+        f"{quote}{value}{quote}"
+        for value in (PLACEHOLDER_EVIDENCE_TAG, PLACEHOLDER_EVIDENCE_COMMIT)
+        for quote in ("'", '"')
+    )
     pending = sorted(
         path.name
-        for path in directory.glob("*.sql")
+        for path in candidates
         if any(literal in path.read_text(encoding="utf-8") for literal in literals)
     )
     if not pending:
         return []
     listed = ", ".join(pending)
     return [
-        f"{len(pending)} migration(s) still carry {PLACEHOLDER_EVIDENCE_TAG} publication "
+        f"{len(pending)} file(s) still carry {PLACEHOLDER_EVIDENCE_TAG} publication "
         f"evidence ({listed}) — repoint evidence_tag to {target.tag}, evidence_commit to the "
         "first commit on main that contains the rule (the merge commit, not the head it was "
         f"written against — {target.tag} must contain what evidence_commit names), and "
