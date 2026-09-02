@@ -10926,7 +10926,7 @@
                   "cursor_query_mismatch": {
                     "summary": "Cursor does not match this query",
                     "value": {
-                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3). If you did not change a filter, a jurisdiction registered while you were paging and `all` now resolves to a different set; start again from the first page.",
                       "instance": "/v1",
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
@@ -11375,7 +11375,7 @@
                   "cursor_query_mismatch": {
                     "summary": "Cursor does not match this query",
                     "value": {
-                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3). If you did not change a filter, a jurisdiction registered while you were paging and `all` now resolves to a different set; start again from the first page.",
                       "instance": "/v1",
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
@@ -12078,7 +12078,7 @@
                   "cursor_query_mismatch": {
                     "summary": "Cursor does not match this query",
                     "value": {
-                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3). If you did not change a filter, a jurisdiction registered while you were paging and `all` now resolves to a different set; start again from the first page.",
                       "instance": "/v1",
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
@@ -12303,7 +12303,7 @@
                   "cursor_query_mismatch": {
                     "summary": "Cursor does not match this query",
                     "value": {
-                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3). If you did not change a filter, a jurisdiction registered while you were paging and `all` now resolves to a different set; start again from the first page.",
                       "instance": "/v1",
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
@@ -12804,7 +12804,7 @@
                   "cursor_query_mismatch": {
                     "summary": "Cursor does not match this query",
                     "value": {
-                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3). If you did not change a filter, a jurisdiction registered while you were paging and `all` now resolves to a different set; start again from the first page.",
                       "instance": "/v1",
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
@@ -13728,7 +13728,7 @@
                   "cursor_query_mismatch": {
                     "summary": "Cursor does not match this query",
                     "value": {
-                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3). If you did not change a filter, a jurisdiction registered while you were paging and `all` now resolves to a different set; start again from the first page.",
                       "instance": "/v1",
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
@@ -14210,7 +14210,7 @@
                   "cursor_query_mismatch": {
                     "summary": "Cursor does not match this query",
                     "value": {
-                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3). If you did not change a filter, a jurisdiction registered while you were paging and `all` now resolves to a different set; start again from the first page.",
                       "instance": "/v1",
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
@@ -14687,7 +14687,7 @@
                   "cursor_query_mismatch": {
                     "summary": "Cursor does not match this query",
                     "value": {
-                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3). If you did not change a filter, a jurisdiction registered while you were paging and `all` now resolves to a different set; start again from the first page.",
                       "instance": "/v1",
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
@@ -15230,7 +15230,7 @@
                   "cursor_query_mismatch": {
                     "summary": "Cursor does not match this query",
                     "value": {
-                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3). If you did not change a filter, a jurisdiction registered while you were paging and `all` now resolves to a different set; start again from the first page.",
                       "instance": "/v1",
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
@@ -16803,7 +16803,7 @@
                   "cursor_query_mismatch": {
                     "summary": "Cursor does not match this query",
                     "value": {
-                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3). If you did not change a filter, a jurisdiction registered while you were paging and `all` now resolves to a different set; start again from the first page.",
                       "instance": "/v1",
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
@@ -18353,7 +18353,7 @@
                   "cursor_query_mismatch": {
                     "summary": "Cursor does not match this query",
                     "value": {
-                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3). If you did not change a filter, a jurisdiction registered while you were paging and `all` now resolves to a different set; start again from the first page.",
                       "instance": "/v1",
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
@@ -19916,7 +19916,7 @@
                   "cursor_query_mismatch": {
                     "summary": "Cursor does not match this query",
                     "value": {
-                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3). If you did not change a filter, a jurisdiction registered while you were paging and `all` now resolves to a different set; start again from the first page.",
                       "instance": "/v1",
                       "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
                       "status": 422,
