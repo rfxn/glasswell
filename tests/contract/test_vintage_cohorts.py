@@ -178,3 +178,27 @@ def test_explain_changes_no_value_in_data(client: TestClient) -> None:
     explained = client.get(PATH, params={"explain": "true"}).json()
 
     assert explained["data"] == plain["data"]
+
+
+def test_an_unrefreshed_mart_is_refused_by_name_rather_than_served_a_null_vintage(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """gate-v075 MINOR-4.
+
+    `max(snapshot_vintage)` over an empty rollup is null, and the endpoint served it against a
+    schema that declares snapshot_vintage a required date — FastAPI does not catch it because
+    the handler returns a JSONResponse. An empty `cohorts` beside it would have read as "North
+    Dakota has no cohorts", which is a statement about the wells rather than about the refresh.
+    The per-well sibling already refuses by name in this state.
+    """
+    with seeded.cursor() as cursor:
+        cursor.execute("delete from marts.well_cumulatives")
+    seeded.commit()
+
+    response = client.get(PATH)
+    body = response.json()
+
+    assert response.status_code == 503, response.text
+    assert body["type"].endswith("service_degraded")
+    assert "marts.well_cumulatives" in body["detail"]
+    assert "not a statement that no cohort exists" in body["detail"]

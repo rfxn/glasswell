@@ -57,7 +57,11 @@ MONTH_CLASS_PARTS = (
 WITHHOLDING_SOURCES: dict[str, tuple[tuple[str, str], ...]] = {
     "33": (("nd_mpr_xlsx", "confidential_withheld"),),
 }
-STATE_API_PREFIXES = tuple(WITHHOLDING_SOURCES)
+# The states the cumulative mart covers, and the population every figure built from it is
+# stated over. Kept separate from WITHHOLDING_SOURCES on purpose: a state can be in scope with
+# nothing withheld, and registering a withholding source is not a decision to widen coverage
+# (land_metrics.py:128-131 draws the same line for the PLSS grid).
+STATE_API_PREFIXES: tuple[str, ...] = ("33",)
 
 MART_STREAMS = ("liquid", "gas", "water")
 STREAM_UNITS = {"liquid": "bbl", "gas": "mcf", "water": "bbl"}
@@ -279,7 +283,11 @@ def _rows(connection: psycopg.Connection, statement: str, params: dict[str, Any]
 
 
 def _withholding_pairs() -> tuple[list[str], list[str]]:
-    pairs = [pair for entries in WITHHOLDING_SOURCES.values() for pair in entries]
+    """Only the states in scope, so a source registered for a state the mart does not cover
+    cannot reach the ledger query."""
+    pairs = [
+        pair for state in STATE_API_PREFIXES for pair in WITHHOLDING_SOURCES.get(state, ())
+    ]
     return sorted({pair[0] for pair in pairs}), sorted({pair[1] for pair in pairs})
 
 
@@ -349,6 +357,13 @@ def _cumulative_rows(
     pending: tuple[str, dict[str, dict[date, str]]] | None = next(groups, None)
     for well in collected["wells"]:
         api10 = well["api10"]
+        # The merge advances on a Python comparison over a Postgres ordering; the two agree
+        # only while every key is the same width and ASCII. No DB-level CHECK enforces that,
+        # and a short api10 would silently skip a well's months and report it never_reported.
+        if len(api10) != 10 or not api10.isdigit():
+            raise ValueError(
+                f"api10 {api10!r} is not ten digits: the ordered merge cannot be trusted for it"
+            )
         while pending is not None and pending[0] < api10:
             pending = next(groups, None)
         months: dict[str, dict[date, str]] = {}
@@ -439,8 +454,8 @@ def refresh_well_cumulatives(connection: psycopg.Connection) -> CumulativesRefre
             "null_semantics_admitted": list(ADMITTED_NULL_SEMANTICS),
             "month_class_parts": list(MONTH_CLASS_PARTS),
             "withholding_sources": {
-                state: [list(pair) for pair in pairs]
-                for state, pairs in WITHHOLDING_SOURCES.items()
+                state: [list(pair) for pair in WITHHOLDING_SOURCES.get(state, ())]
+                for state in STATE_API_PREFIXES
             },
             "state_api_prefixes": list(STATE_API_PREFIXES),
             "streams": list(MART_STREAMS),

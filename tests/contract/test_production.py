@@ -87,15 +87,20 @@ def test_the_resolved_vintage_is_reported(client: TestClient) -> None:
 
 
 def test_volumes_are_strings_not_floats(client: TestClient) -> None:
-    """SB-07 §4.4: a float round-trip re-introduces summation-order nondeterminism."""
-    data = client.get(PATH).json()["data"]
+    """SB-07 §4.4: a float round-trip re-introduces summation-order nondeterminism.
 
+    Both arms, because filtering the withheld points out would pass just as well against a
+    series that had quietly stopped carrying them (gate-v075 NIT-5): a withheld month is null,
+    never a zero and never a string.
+    """
+    data = client.get(PATH).json()["data"]
+    points = list(
+        zip(data["series"]["oil_bbl"], data["series"]["oil_bbl_null_semantics"], strict=True)
+    )
+
+    assert [value for value, semantics in points if semantics == "withheld"] == [None]
     assert all(
-        isinstance(value, str)
-        for value, semantics in zip(
-            data["series"]["oil_bbl"], data["series"]["oil_bbl_null_semantics"], strict=True
-        )
-        if semantics != "withheld"
+        isinstance(value, str) for value, semantics in points if semantics != "withheld"
     )
 
 

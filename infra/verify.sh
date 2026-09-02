@@ -390,8 +390,28 @@ cumulatives="$("${PSQL[@]}" "select count(*) from marts.well_cumulatives")"
 withholding="$("${PSQL[@]}" "select count(*) from marts.well_withholding")"
 assert_true "per-well cumulatives populated ($cumulatives)" "mart is empty" \
     test "${cumulatives:-0}" -gt 0
-assert_true "well withholding populated ($withholding)" "mart is empty" \
-    test "${withholding:-0}" -gt 0
+# Three states, one query, same discipline as the design check below: the mart is written by
+# the cumulatives refresh, so before that has ever run an empty table says nothing about the
+# system, and after it has run an empty table is only a fault if there were open withheld rows
+# to hold. Refusing unconditionally asserted that NDIC still withholds something.
+withholding_state="$("${PSQL[@]}" "select case
+    when (select count(*) from lineage.derivations
+           where operation = 'mart.refresh'
+             and output_dataset = 'marts.well_cumulatives') = 0 then 'pending'
+    when (select count(*) from marts.well_withholding) > 0 then 'ok'
+    when (select count(*) from lineage.quarantine_rows
+           where reason_code = 'confidential_withheld' and state = 'open') = 0 then 'none_open'
+    else 'bad' end")"
+case "$withholding_state" in
+    pending)
+        ok "well withholding not yet refreshed — no mart.refresh has run on this host" ;;
+    none_open)
+        ok "well withholding empty — no open confidential_withheld row to hold" ;;
+    *)
+        assert_true "well withholding populated ($withholding)" \
+            "the refresh has run and open confidential_withheld rows exist, but the mart is empty" \
+            test "$withholding_state" = "ok" ;;
+esac
 # Conditional, and this is the one honest exception: a host that has never fetched the 440 MB
 # voluntary-disclosure archive has no design rows to hold, and refusing its deploy would be
 # asserting a fact about the source rather than about the system. The condition is one query,

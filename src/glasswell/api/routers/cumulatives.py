@@ -383,6 +383,10 @@ def _coverage(by_stream: dict[str, dict[str, Any]], *, api10: str) -> dict[str, 
     lineage: dict[str, str] = {}
     units: dict[str, str] = {}
     for stream, column in STREAM_COLUMNS.items():
+        # Subscript, not .get, and deliberately: _cumulative_rows writes all three streams for
+        # every well, so a missing one is a broken mart. A coverage block of zeros invented for
+        # it would be a lie about the record; _cumulative's .get can serve a null total here
+        # because a null total is a statement, and a zeroed coverage record is not.
         row = by_stream[stream]
         no_report = row["months_no_report_stored"] + row["months_absent"]
         withheld = row["months_withheld_stored"] + row["months_withheld_quarantined"]

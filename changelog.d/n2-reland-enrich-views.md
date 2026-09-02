@@ -76,3 +76,20 @@
 - [New] /v1/wells/{api10} links to cumulatives only where the mart holds a total, so
       a client reads the link rather than testing the API prefix itself and a
       jurisdiction outside the mart is never rendered as a well that produced nothing
+- [Fix] the cumulative mart's served population is its own constant rather than a
+      view of the withholding registry; registering a quarantine source for a state
+      the mart does not cover no longer widens states_served, the well card's
+      cumulatives link or the mart refresh
+- [Fix] cr_nd_vintage_cohort_1's cohort_key_field is held to the column the executor
+      actually reads, so a rule repointed at another column refuses at load rather
+      than publishing a statement the served cohorts do not follow
+- [Fix] /v1/wells/vintage-cohorts refuses with service_degraded naming the empty mart
+      instead of serving snapshot_vintage null against a schema that requires a date;
+      an empty cohort list would have read as North Dakota having none
+- [Fix] verify.sh reports the withholding mart as not yet refreshed before any
+      mart.refresh has run, and as empty-with-nothing-to-hold where no open
+      confidential_withheld row exists, refusing only when a refresh has run and rows
+      were there to hold; every branch still reports a check
+- [Fix] the cumulative refresh refuses an api10 that is not ten digits rather than
+      silently skipping its months, since the ordered merge compares in Python what
+      Postgres ordered
