@@ -32,7 +32,21 @@ export function registerOverlay(element: HTMLElement, options?: { modal?: boolea
 export function focusPanel(element: HTMLElement): void {
   const active = document.activeElement;
   if (active !== null && active !== document.body && !element.contains(active)) return;
-  element.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+  const landing = element.querySelector<HTMLElement>(FOCUSABLE);
+  if (!landing) return;
+  // gate-v076 D4: a `tabindex="-1"` landing spot is only ever reached programmatically, and on
+  // a deep link there has been no interaction at all -- which is precisely the state Chromium
+  // resolves `:focus-visible` as true in. So a reader who arrived by URL was shown a dashed
+  // ring around the card title they never asked to focus. Focus still moves, and is still
+  // announced; only the ring is held back, and only until the reader touches a key, after
+  // which the affordance a keyboard user needs is back.
+  landing.dataset["gwQuietFocus"] = "";
+  const restore = (): void => {
+    delete landing.dataset["gwQuietFocus"];
+  };
+  landing.addEventListener("blur", restore, { once: true });
+  document.addEventListener("keydown", restore, { once: true });
+  landing.focus();
 }
 
 export function releaseOverlays(): void {

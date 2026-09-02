@@ -180,6 +180,13 @@ body {
   outline-offset: 3px;
 }
 
+/* Except when the app moved focus there itself and the reader has pressed nothing: a deep link
+   opening a card painted this ring around its title at every width. chrome/overlays.ts drops
+   the attribute on the first keydown, so a keyboard reader keeps the affordance. */
+[tabindex="-1"][data-gw-quiet-focus]:focus-visible {
+  outline: none;
+}
+
 /* The eyebrow: straps, axis labels, the null-semantics key, popover metadata. One treatment,
    so the small uppercase type in the app reads as one voice rather than five near-misses. */
 .gw-strap,

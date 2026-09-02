@@ -107,6 +107,24 @@ describe("one observer drives focus for every overlay (harvest item 7)", () => {
     expect(document.activeElement).toBe(heading);
   });
 
+  // gate-v076 D4: the landing spot is only ever reached programmatically, and on a deep link
+  // there has been no interaction, which is the state Chromium calls :focus-visible — so every
+  // deep-linked card painted a dashed ring around a title the reader never focused.
+  it("lands focus quietly, and gives the ring back at the first keypress", () => {
+    document.body.focus();
+
+    focusPanel(panel);
+
+    expect(document.activeElement).toBe(heading);
+    expect(heading.hasAttribute("data-gw-quiet-focus")).toBe(true);
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+
+    expect(heading.hasAttribute("data-gw-quiet-focus")).toBe(false);
+    // Focus itself never moved: only the painted ring was held back.
+    expect(document.activeElement).toBe(heading);
+  });
+
   it("leaves focus where the reader put it, outside the panel", () => {
     trigger.focus();
 
