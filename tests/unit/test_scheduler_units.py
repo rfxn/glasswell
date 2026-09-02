@@ -479,3 +479,31 @@ def test_the_two_runbooks_compare_the_host_against_the_tree_instead() -> None:
         text = (ROOT / "docs" / name).read_text(encoding="utf-8")
         assert "ls /etc/systemd/system/glasswell-* | wc -l" in text, name
         assert "ls $SRC/infra/systemd/glasswell-* | wc -l" in text, name
+
+
+INFRA_README = ROOT / "infra" / "README.md"
+
+
+def test_the_host_readme_documents_what_install_now_always_does() -> None:
+    """It is the host's unit inventory and its `/etc` inventory, and after the flag fix
+    `install.sh` unconditionally edits two PostgreSQL config files, places a drop-in, reloads
+    the server, writes an env file, places two units and arms an hourly timer. None of that
+    was in it."""
+    readme = INFRA_README.read_text(encoding="utf-8")
+
+    for shape in (
+        "glasswell-scheduler.service",
+        "glasswell-scheduler.timer",
+        "/etc/glasswell/scheduler.env",
+        "pg_ident.d/glasswell.conf",
+        "glasswell_scheduler",
+        "map=glasswell",
+    ):
+        assert shape in readme, shape
+
+
+def test_the_readme_usage_block_no_longer_says_the_flag_is_what_places_the_map() -> None:
+    usage = INFRA_README.read_text(encoding="utf-8").split("## Usage", 1)[1][:900]
+
+    assert "--enable-scheduler" not in usage
+    assert "scheduler" in usage.lower()
