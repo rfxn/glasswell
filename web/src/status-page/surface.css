@@ -529,6 +529,167 @@
   }
 }
 
+/* Accounts: owner-only, and a section of this page rather than a fourth header mode --
+   at 390 px the mode switch already spends 373 of the 390 px a phone has. */
+
+.gw-accounts .gw-status-table-wrap + .gw-status-table-wrap {
+  margin-top: var(--gw-space-4);
+}
+
+.gw-accounts-users {
+  min-width: 620px;
+}
+
+.gw-accounts-sessions {
+  min-width: 880px;
+}
+
+/* One line per cell: these tables are already scroll-on-overflow, and a wrapped timestamp
+   doubles every row's height at 1024 to save a horizontal swipe nobody asked for. */
+.gw-accounts-users td,
+.gw-accounts-sessions td,
+.gw-accounts-users th,
+.gw-accounts-sessions th {
+  white-space: nowrap;
+}
+
+.gw-accounts .gw-empty {
+  margin: 0;
+  padding: var(--gw-space-4);
+  color: var(--muted);
+}
+
+.gw-accounts-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--gw-space-2);
+}
+
+.gw-accounts-action,
+.gw-accounts-submit,
+.gw-accounts-confirm-go,
+.gw-accounts-confirm-cancel {
+  min-height: 32px;
+  padding: 0 var(--gw-space-3);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-sm);
+  background: var(--panel);
+  color: var(--paper);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+.gw-accounts-action:hover:not(:disabled),
+.gw-accounts-submit:hover,
+.gw-accounts-confirm-go:hover,
+.gw-accounts-confirm-cancel:hover {
+  border-color: var(--cyan-text);
+}
+
+.gw-accounts-action:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.gw-accounts-role {
+  min-height: 32px;
+  padding: 0 var(--gw-space-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-sm);
+  background: var(--panel);
+  color: var(--paper);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-accounts-state {
+  margin-left: var(--gw-space-2);
+  color: var(--muted);
+  font-size: var(--gw-fs-micro);
+  font-weight: 400;
+}
+
+.gw-accounts-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gw-space-2) var(--gw-space-3);
+  margin-top: var(--gw-space-4);
+  padding: var(--gw-space-3) var(--gw-space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--gw-radius-sm);
+  background: var(--panel);
+}
+
+.gw-accounts-form label {
+  color: var(--muted);
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-accounts-form input {
+  min-height: 32px;
+  padding: 0 var(--gw-space-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-sm);
+  background: var(--ink);
+  color: var(--paper);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-accounts-confirm,
+.gw-accounts-secret,
+.gw-accounts-refusal {
+  margin-top: var(--gw-space-4);
+  padding: var(--gw-space-3) var(--gw-space-4);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-sm);
+  background: var(--panel);
+}
+
+.gw-accounts-refusal {
+  border-color: var(--amber);
+}
+
+.gw-accounts-confirm-line,
+.gw-accounts-secret-line,
+.gw-accounts-refusal-line {
+  margin: 0 0 var(--gw-space-2);
+  color: var(--paper);
+}
+
+.gw-accounts-refusal-line {
+  color: var(--amber-text);
+}
+
+.gw-accounts-refusal-fields {
+  margin: 0;
+  padding-left: var(--gw-space-4);
+  color: var(--slate);
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-accounts-confirm-actions,
+.gw-accounts-secret-actions {
+  display: flex;
+  gap: var(--gw-space-2);
+}
+
+.gw-accounts-secret-value {
+  display: block;
+  margin: 0 0 var(--gw-space-3);
+  padding: var(--gw-space-2) var(--gw-space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--gw-radius-sm);
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-fs-mono);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
 @media (max-width: 900px) {
   .gw-status-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -536,6 +697,22 @@
 }
 
 @media (max-width: 520px) {
+  /* A phone press is a finger, not a cursor: every Accounts control reaches the 44 px floor
+     the rest of the chrome holds. */
+  .gw-accounts-action,
+  .gw-accounts-submit,
+  .gw-accounts-confirm-go,
+  .gw-accounts-confirm-cancel,
+  .gw-accounts-role,
+  .gw-accounts-form input {
+    min-height: 44px;
+  }
+
+  .gw-accounts-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .gw-status-page {
     padding: var(--gw-space-4) var(--gw-space-3) var(--gw-space-5);
   }

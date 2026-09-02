@@ -61,6 +61,7 @@ http://:8080 {
 				request>uri query {
 					delete key
 					delete password
+					delete new_password
 					delete token
 				}
 			}
@@ -149,6 +150,7 @@ glasswell.lab.rpx.sh {
 				request>uri query {
 					delete key
 					delete password
+					delete new_password
 					delete token
 				}
 			}

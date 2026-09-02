@@ -9,11 +9,13 @@ import { afterEach, beforeEach, test } from "node:test";
 import {
   KEY_HEADER,
   authenticate,
+  forgetSecrets,
   guardTarget,
   instrumentedPage,
   keyGuard,
   ownerKey,
   redact,
+  registerSecret,
 } from "./lib.mjs";
 
 const FAKE_KEY = "deadbeef".repeat(8);
@@ -27,6 +29,7 @@ beforeEach(() => {
   }
 });
 afterEach(() => {
+  forgetSecrets();
   for (const name of VARS) {
     if (SAVED[name] === undefined) delete process.env[name];
     else process.env[name] = SAVED[name];
@@ -225,4 +228,46 @@ test("auth: false builds a context with no route and no header", async () => {
   const { browser, seen } = fakeBrowser();
   await instrumentedPage(browser, { auth: false });
   assert.equal(seen.routes.length, 0);
+});
+
+// S-3: a minted password is a credential the harness reads out of the DOM, so the journal, the
+// url guard and the argv guard have to treat it exactly as they treat the owner key.
+const MINTED = "a-43-character-minted-password-nobody-typed";
+
+test("a registered secret is redacted out of captured text, with no key configured", () => {
+  registerSecret(MINTED);
+
+  assert.equal(redact(`the page showed ${MINTED} once`), "the page showed REDACTED once");
+});
+
+test("a registered secret is refused in a navigation target", () => {
+  registerSecret(MINTED);
+
+  assert.throws(() => guardTarget(`https://example.test/?p=${MINTED}`), /credential/);
+  assert.equal(guardTarget("https://example.test/?view=status"), "https://example.test/?view=status");
+});
+
+test("a registered secret is refused in argv", () => {
+  registerSecret(MINTED);
+  const saved = process.argv;
+  process.argv = [...saved, `--password=${MINTED}`];
+
+  try {
+    assert.throws(() => keyGuard(), /credential/);
+  } finally {
+    process.argv = saved;
+  }
+});
+
+test("a value too short to be a credential is not registered, so prose survives", () => {
+  registerSecret("owner");
+
+  assert.equal(redact("the owner opened it"), "the owner opened it");
+});
+
+test("forgetting the registry restores the passthrough", () => {
+  registerSecret(MINTED);
+  forgetSecrets();
+
+  assert.equal(redact(MINTED), MINTED);
 });

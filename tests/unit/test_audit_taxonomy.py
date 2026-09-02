@@ -39,6 +39,24 @@ def test_every_event_type_is_dotted_and_lowercase():
         assert event_type.count(".") == 1
 
 
+# The accounts surface adds operations, not event names. `session.revoked` is the name an
+# implementer reaches for and the one the taxonomy does not have: a revocation is
+# `session.ended` with a reason, so the stream has one name for a session ending.
+ACCOUNTS_EVENTS = ("session.ended", "user.updated", "user.created", "user.disabled")
+
+
+@pytest.mark.parametrize("event_type", ACCOUNTS_EVENTS)
+def test_the_accounts_surface_emits_only_names_the_taxonomy_already_carries(event_type):
+    validate_event_type(event_type)
+
+
+def test_session_revoked_is_not_a_name_this_taxonomy_has():
+    """A tripwire. Adding it would split one fact across two names retroactively."""
+    assert "session.revoked" not in AUDIT_EVENT_TYPES
+    with pytest.raises(UnknownAuditEvent):
+        validate_event_type("session.revoked")
+
+
 def test_subject_types_are_enforced():
     for subject_type in SUBJECT_TYPES:
         validate_subject_type(subject_type)

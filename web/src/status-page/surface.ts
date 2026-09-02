@@ -1,5 +1,6 @@
 import "./surface.css";
 
+import { accountsSection, loadAccounts } from "../accounts/section.ts";
 import { ApiError, getEnvelope } from "../api/client.ts";
 import "../components/gw-count.ts";
 import { labelElement } from "../glossary/gw-term.ts";
@@ -104,6 +105,11 @@ export interface StatusPayload {
 
 export interface StatusPageOptions {
   onForbidden(error: ApiError): void;
+  /**
+   * The role `main.ts` already resolved, not a second probe: Accounts renders for an owner and
+   * for nobody else, and an absent role is nobody.
+   */
+  role?: string | null;
 }
 
 interface Mount {
@@ -230,8 +236,11 @@ async function refresh(mount: Mount, restoreFocus = false): Promise<void> {
     const envelope = await getEnvelope<unknown>("/v1/status", {}, controller.signal);
     const payload = statusPayload(envelope.data);
     if (mounted !== mount || controller.signal.aborted) return;
-    renderStatus(mount, payload);
+    const rendered = renderStatus(mount, payload);
     if (restoreFocus) focusRefresh(mount);
+    // The page is already on screen; this awaits the section's own two requests so a caller --
+    // and a test -- can tell when the surface has finished, not when it first painted.
+    await rendered;
   } catch (error) {
     if (mounted !== mount || controller.signal.aborted || aborted(error)) return;
     const forbidden = error instanceof ApiError && error.problem.status === 403;
@@ -294,7 +303,7 @@ function renderError(mount: Mount, error: unknown): void {
   mount.teaching.retouch();
 }
 
-function renderStatus(mount: Mount, payload: StatusPayload): void {
+function renderStatus(mount: Mount, payload: StatusPayload): Promise<void> | undefined {
   const root = pageRoot();
   const header = pageHeader();
   const refreshButton = document.createElement("button");
@@ -309,6 +318,7 @@ function renderStatus(mount: Mount, payload: StatusPayload): void {
   announcement.setAttribute("role", "status");
   announcement.textContent = `${SNAPSHOT_LABELS[payload.snapshot_state]}. Status updated.`;
 
+  const accounts = accountsSection(mount.options.role);
   root.append(
     header,
     deployment(payload),
@@ -317,10 +327,15 @@ function renderStatus(mount: Mount, payload: StatusPayload): void {
     jobs(payload),
     sources(payload.sources),
     disclosures(payload.disclosures),
+    ...(accounts ? [accounts] : []),
     announcement,
   );
   mount.host.replaceChildren(root);
   mount.teaching.retouch();
+  if (!accounts) return undefined;
+  // The section fills after this paint, and its rows carry the vocabulary the glossary now
+  // defines (Session, Role, Viewer, Owner), so the teaching layer has to reach them as well.
+  return loadAccounts(accounts).then(() => mount.teaching.retouch());
 }
 
 function pageRoot(): HTMLElement {
@@ -824,7 +839,8 @@ function timeOrFallback(value: string | null, fallback: string): HTMLElement {
   return time;
 }
 
-function displayTime(value: string): string {
+/** Exported beside `element`, so the Accounts tables stamp a time the way this page does. */
+export function displayTime(value: string): string {
   if (/^\d{4}-\d{2}(-\d{2})?$/.test(value)) return value;
   const parsed = new Date(value);
   if (!Number.isFinite(parsed.getTime())) return value;
@@ -877,7 +893,9 @@ function emptyBlock(message: string): HTMLElement {
   return item;
 }
 
-function element<K extends keyof HTMLElementTagNameMap>(
+/** Exported for `accounts/`, which mounts inside this surface: three private copies of this
+ * helper already exist in the tree and a fourth would be one more than the tree needs. */
+export function element<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className: string,
 ): HTMLElementTagNameMap[K] {

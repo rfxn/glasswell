@@ -124,6 +124,7 @@ function showLoginPanel(): void {
       onSignedIn: (session) => {
         keyHost.hidden = true;
         hadSession = session.kind === "user";
+        sessionRole = session.role;
         setSignedIn(session.username);
         setSessionState("ok");
         sessionProbe = Promise.resolve(true);
@@ -276,8 +277,14 @@ async function renderView(): Promise<void> {
     mapHost.hidden = true;
     exploreHost.hidden = true;
     statusHost.hidden = false;
+    // Awaited here as the other two surfaces do: Status is public and an anonymous first visit
+    // resolves this without a request, but an owner's Accounts section needs the answer to
+    // exist before the page renders rather than popping in under it.
+    await known;
+    if (generation !== renderGeneration || state.view !== view) return;
     await statusPage.mountStatusPage(statusHost, {
       onForbidden: (error) => handleApiError(error, "Status"),
+      role: sessionRole,
     });
     if (generation !== renderGeneration || state.view !== view) return;
     return;
@@ -316,6 +323,8 @@ function shouldResolveSession(): boolean {
 
 /** One probe per page: every caller that must not run before the answer awaits this one. */
 let sessionProbe: Promise<boolean> | null = null;
+/** What the resolved session said this reader is. Status reads it; nothing asks a second time. */
+let sessionRole: string | null = null;
 
 /**
  * Resolves when this page knows who the reader is, true when that answer is a principal.
@@ -332,6 +341,7 @@ async function resolveSession(): Promise<boolean> {
   try {
     const session = await whoami();
     hadSession = session.kind === "user";
+    sessionRole = session.role;
     setSignedIn(session.username);
     setSessionState("ok");
     return true;

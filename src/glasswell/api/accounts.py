@@ -42,6 +42,26 @@ UNKNOWN_IP = "unknown"
 USERNAME_MIN = 3
 USERNAME_MAX = 64
 PASSWORD_MIN = 12
+UNKNOWN_USER_AGENT = "unknown"
+
+# Browser x OS, matched in this order because an Edge string also says Chrome and Safari, and a
+# Chrome string also says Safari. Anything unrecognised is `unknown`; nothing authorises on it.
+_BROWSERS: tuple[tuple[str, str], ...] = (
+    ("edg/", "Edge"),
+    ("opr/", "Opera"),
+    ("firefox/", "Firefox"),
+    ("chrome/", "Chrome"),
+    ("safari/", "Safari"),
+)
+_SYSTEMS: tuple[tuple[str, str], ...] = (
+    ("android", "Android"),
+    ("iphone", "iOS"),
+    ("ipad", "iOS"),
+    ("mac os x", "macOS"),
+    ("windows", "Windows"),
+    ("cros", "ChromeOS"),
+    ("linux", "Linux"),
+)
 
 Role = Literal["owner", "viewer"]
 ROLES: tuple[Role, ...] = ("owner", "viewer")
@@ -76,6 +96,7 @@ class Session(Frozen):
     revoked_reason: str | None = None
     created_ip: str = UNKNOWN_IP
     user_agent_sha256: str | None = None
+    user_agent_family: str | None = None
 
 
 _USER_COLUMNS = (
@@ -84,13 +105,29 @@ _USER_COLUMNS = (
 )
 _SESSION_COLUMNS = (
     "session_id, user_id, created_at, last_seen_at, idle_expires_at, absolute_expires_at,"
-    " revoked_at, revoked_reason, created_ip, user_agent_sha256"
+    " revoked_at, revoked_reason, created_ip, user_agent_sha256, user_agent_family"
 )
 
 
 def normalise_username(username: str) -> str:
     """Lowercased and trimmed before any lookup or counter, so case cannot split a bucket."""
     return username.strip().lower()
+
+
+def user_agent_family(user_agent: str | None) -> str:
+    """`<browser> on <system>` for the session list, or `unknown`.
+
+    The stored fingerprint is one-way and dictionary-recoverable outside the database, so the
+    label has to be derived here, at write time, rather than in SQL over the hash.
+    """
+    if not user_agent:
+        return UNKNOWN_USER_AGENT
+    lowered = user_agent.lower()
+    browser = next((name for token, name in _BROWSERS if token in lowered), None)
+    system = next((name for token, name in _SYSTEMS if token in lowered), None)
+    if browser is None or system is None:
+        return UNKNOWN_USER_AGENT
+    return f"{browser} on {system}"
 
 
 def mint_session_token() -> str:
@@ -152,13 +189,14 @@ def create_session(
         absolute_expires_at=now + ABSOLUTE_WINDOW,
         created_ip=client_ip or UNKNOWN_IP,
         user_agent_sha256=fingerprint(user_agent) if user_agent else None,
+        user_agent_family=user_agent_family(user_agent),
     )
     with connection.cursor() as cursor:
         cursor.execute(
             f"insert into lineage.sessions ({_SESSION_COLUMNS}, sha256)"
             " values (%(session_id)s, %(user_id)s, %(created_at)s, %(last_seen_at)s,"
             " %(idle_expires_at)s, %(absolute_expires_at)s, null, null, %(created_ip)s,"
-            " %(user_agent_sha256)s, %(sha256)s)",
+            " %(user_agent_sha256)s, %(user_agent_family)s, %(sha256)s)",
             {**session.model_dump(), "sha256": session_fingerprint(token)},
         )
         cursor.execute(
@@ -215,13 +253,16 @@ def touch_session(connection: psycopg.Connection, session: Session, *, now: date
 
 def revoke_session(
     connection: psycopg.Connection, session_id: str, *, reason: RevokeReason, now: datetime
-) -> None:
+) -> int:
+    """Rows revoked: 0 when the session was already revoked, which is what makes a re-revoke
+    idempotent rather than a second audit event."""
     with connection.cursor() as cursor:
         cursor.execute(
             "update lineage.sessions set revoked_at = %(now)s, revoked_reason = %(reason)s"
             " where session_id = %(session_id)s and revoked_at is null",
             {"now": now, "reason": reason, "session_id": session_id},
         )
+        return cursor.rowcount
 
 
 def revoke_user_sessions(
