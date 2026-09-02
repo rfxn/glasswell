@@ -856,6 +856,11 @@ def test_the_inventory_rules_declare_the_one_place_the_jurisdiction_is_read_from
     `jurisdiction` key in the same spec is a second copy of that fact which the collector's
     coalesce would prefer, leaving the declared discriminator unread and the rationale false.
     """
+    # Four, and a fifth jurisdiction does not move it: these rules are per production-bearing
+    # SOURCE, not per state. Colorado registers an inventory decision -- a served refusal, since
+    # Protocol 4D admits no slot without a spacing assumption and a support score -- and
+    # registers no production-inventory rule, so the count stays where it is and would move
+    # only if a source started counting itself in a way the collector had to be told about.
     assert len(INVENTORY_JURISDICTION_RULES) == 4, "one rule per production-bearing source"
     for rule in INVENTORY_JURISDICTION_RULES:
         spec = rule["spec"]
