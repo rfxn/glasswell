@@ -1,6 +1,6 @@
 # Current status
 
-Reconciled on **2026-09-01** against the v0.74 release line, the checked-in OpenAPI
+Reconciled on **2026-09-01** against the v0.75 release line, the checked-in OpenAPI
 snapshot, current `main` history and a read-only census of the deployed database. Every
 figure below is dated and names its source; three are carried forward from the previous
 revision and say so on the line. [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria;
@@ -9,7 +9,7 @@ revision and say so on the line. [`ROADMAP.md`](ROADMAP.md) owns phase scope and
 
 ## Deployed
 
-- **Release line:** 55 tagged releases, v0.20 through v0.74, cut 2026-08-21 through
+- **Release line:** 56 tagged releases, v0.20 through v0.75, cut 2026-08-21 through
   2026-09-01.
 
 Measured on the deployed database (VM 111) and host, read-only, 2026-09-01.

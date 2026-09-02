@@ -12,7 +12,7 @@ numbering; its §10 governs when that changes.
 
 ## Where it stands
 
-55 tagged releases, v0.20 through v0.74, cut from 2026-08-21 through 2026-09-01, run
+56 tagged releases, v0.20 through v0.75, cut from 2026-08-21 through 2026-09-01, run
 a **four-state** deployment on one VM (`git tag | grep -c '^v'`): North Dakota end to end,
 Texas and Montana on the map, and New Mexico's headers, surface geometry and Tier 1
 production resident. The concise evidence ledger is [`STATUS.md`](STATUS.md), which owns
