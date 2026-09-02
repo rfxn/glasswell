@@ -180,8 +180,8 @@ insert into lineage.jurisdictions (
     identity_prefix, identity_pattern, source_ids, liquids_basis, wells_tile_layer_id,
     map_colour, neighbors_available, explorer_default, land_grid_state, land_grid_scope,
     status_dataset_detail, rationale)
-select r.jurisdiction_code, date '2026-09-01', date '2026-09-01',
-       'UNRELEASED', '0000000000000000000000000000000000000000',
+select r.jurisdiction_code, date '2026-09-02', date '2026-09-02',
+       'v0.76', '6f2e9e6e97952000985568e6aa04d479ec84fe83',
        r.name, r.regulator_name, r.regulator_url, 'api10', true,
        r.identity_prefix, '^' || r.identity_prefix || '[0-9]{8}$', r.source_ids,
        r.liquids_basis, r.wells_tile_layer_id, r.map_colour,
@@ -245,7 +245,7 @@ on conflict do nothing;
 -- deployed one -- this is the statement that lands them.
 insert into lineage.jurisdiction_rules
     (jurisdiction_code, effective_from, published_at, decision, rule_id, serving, note)
-select r.jurisdiction_code, date '2026-09-01', date '2026-09-01',
+select r.jurisdiction_code, date '2026-09-02', date '2026-09-02',
        r.decision, r.rule_id, r.serving, r.note
   from (values
     ('ND', 'status_vocabulary', 'cr_nd_status_vocab_1', true, null::text),

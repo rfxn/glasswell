@@ -15,9 +15,9 @@ import psycopg
 
 # Valid time and knowledge time of the founding registrations. The integrator repoints this
 # beside the evidence pair, per the REPOINT CHECKLIST at the head of the migration.
-REGISTERED_ON = date(2026, 9, 1)
-EVIDENCE_TAG = "UNRELEASED"
-EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
+REGISTERED_ON = date(2026, 9, 2)
+EVIDENCE_TAG = "v0.76"
+EVIDENCE_COMMIT = "6f2e9e6e97952000985568e6aa04d479ec84fe83"
 
 # The one decision no registration may be without: a jurisdiction whose status vocabulary is
 # unregistered has no rule to cite for the class every well on the map is drawn by.
