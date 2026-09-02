@@ -397,7 +397,7 @@ def _offsite_copy_job(
         detail = (
             f"Offsite push recorded (age {age_hours}h) for generation {receipt.generation};"
             f" {pushed.files_transferred} files and {pushed.bytes_transferred} bytes sent,"
-            " covering the generation's dump. Sending-side evidence only — the remote grant is"
+            " covering the generation's dump. Sending-side evidence only: the remote grant is"
             " write-only, so no read-back was performed."
         )
     return JobStatus(
@@ -1046,7 +1046,7 @@ def _inventory(
             (
                 "The paths are cartographic centrelines, never directional surveys"
                 " (cr_mt_paths_geometry_class_1), and they cover a seventh of the wells that"
-                " ever produced (cr_mt_paths_coverage_1) — absence is the normal case."
+                " ever produced (cr_mt_paths_coverage_1). Absence is the normal case."
             ),
             latest_knowledge=map_rows["mt_latest_knowledge"],
         ),
