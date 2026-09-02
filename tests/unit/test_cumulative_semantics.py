@@ -8,12 +8,16 @@ exists to close, so the parts are asserted to reconcile to the span in every cas
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
+from unittest import mock
 
 import pytest
 
 from glasswell.api.routers import production
+from glasswell.marts import cumulatives
 from glasswell.marts.cumulatives import (
     ADMITTED_NULL_SEMANTICS,
+    STATE_API_PREFIXES,
     WITHHOLDING_SOURCES,
     cumulative_semantics_predicate,
     filed_span,
@@ -51,6 +55,38 @@ def test_the_withholding_mapping_agrees_with_the_series_endpoint() -> None:
 
     assert f"source_id = '{source_id}'" in production._WITHHELD_MONTHS
     assert f"reason_code = '{reason_code}'" in production._WITHHELD_MONTHS
+
+
+def test_registering_a_withholding_source_does_not_widen_the_population_served() -> None:
+    """The served scope is its own decision (gate-v075 MAJOR-1).
+
+    STATE_API_PREFIXES scopes the mart refresh, `population_scope.states_served` on
+    /v1/wells/vintage-cohorts, the cumulatives link on the well card and the per-well 404
+    text. Deriving it from WITHHOLDING_SOURCES made all four move when someone registered a
+    quarantine source — Texas is named two lines above the registry as the next entrant, and
+    it has no production at all, so the mart would have claimed 359,421 wells as
+    never_reported.
+    """
+    hypothetical = dict(WITHHOLDING_SOURCES)
+    hypothetical["42"] = (("tx_ewa_xlsx", "confidential_withheld"),)
+
+    with mock.patch.object(cumulatives, "WITHHOLDING_SOURCES", hypothetical):
+        assert cumulatives.STATE_API_PREFIXES == ("33",)
+        sources, reasons = cumulatives._withholding_pairs()
+
+    # The ledger query stays scoped too: an out-of-scope state's source cannot reach it.
+    assert sources == ["nd_mpr_xlsx"]
+    assert reasons == ["confidential_withheld"]
+
+
+def test_the_served_scope_is_a_literal_rather_than_a_view_of_the_withholding_registry() -> None:
+    """Guards the shape, not just today's value: `tuple(WITHHOLDING_SOURCES)` reintroduces
+    MAJOR-1 while every value assertion above still passes."""
+    source = Path(cumulatives.__file__).read_text(encoding="utf-8")
+
+    assert source.count("\nSTATE_API_PREFIXES: tuple[str, ...] = (") == 1
+    assert "STATE_API_PREFIXES = tuple(WITHHOLDING_SOURCES)" not in source
+    assert STATE_API_PREFIXES == ("33",)
 
 
 def test_a_span_is_the_union_of_every_class_and_the_withheld_ledger() -> None:
