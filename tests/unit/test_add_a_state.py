@@ -319,16 +319,21 @@ def test_every_exemption_is_load_bearing_and_says_why() -> None:
 
 # The negative fixtures, drawn from shapes the rules do NOT name (§5.1 rev 3). A fixture that
 # carries the rule's own trigger proves only that the rule can see itself.
+# Wyoming, because Colorado is registered now and a fixture planting a registered prefix
+# proves the opposite of what it is written for: the scan would refuse it for being a prefix
+# at all rather than for being an unregistered one, and the arm that reads the registry would
+# never be exercised. 49 is Wyoming's API state code and the next of the Rockies sequence,
+# so the fixture is the shape the next state actually arrives in.
 PLANTED = (
-    ("python", 'COLORADO_RULES = {"05": "cr_co_status_vocab_1"}\n'),
-    ("web", 'const CO = { "05": "Colorado" };\n'),
-    ("migration", "check (left(api10, 2) = '05')\n"),
+    ("python", 'WYOMING_RULES = {"49": "cr_wy_status_vocab_1"}\n'),
+    ("web", 'const WY = { "49": "Wyoming" };\n'),
+    ("migration", "check (left(api10, 2) = '49')\n"),
     # The alternation-group shape: a quoted-literal rule needs the quote immediately before
     # the digits, and the parenthesis walks past it.
-    ("python", 'PATTERN = re.compile(r"(05|33)[0-9]{8}")\n'),
+    ("python", 'PATTERN = re.compile(r"(49|33)[0-9]{8}")\n'),
     # The anchored single-prefix shape, which passes both the generic rule and the alternation
     # arm. 045 carries this shape as applied history, so the project knows it exists.
-    ("python", 'PATTERN = re.compile(r"^05[0-9]{8}$")\n'),
+    ("python", 'PATTERN = re.compile(r"^49[0-9]{8}$")\n'),
 )
 
 # The `CODES` arm's own shapes, kept apart from the prefix fixtures above because it answers a
@@ -418,3 +423,50 @@ def test_the_scan_sees_a_registered_code_used_as_a_key(
     planted_file.write_text(planted, encoding="utf-8")
 
     assert (scan_python if tree == "python" else scan_web)([planted_file])
+
+
+def test_a_registered_prefix_is_admitted_where_an_unregistered_one_is_refused() -> None:
+    """The seam, stated as a difference rather than as an absence.
+
+    The scan's whole claim is that it refuses a jurisdiction being written into code, not that
+    it refuses two digits. Both halves have to be exercised or the rule is indistinguishable
+    from one that bans the shape: a planted **registered** prefix in the SQL arm passes,
+    because the migration reached it through the registry, and the same line with an
+    unregistered prefix is refused.
+    """
+    registered = sorted(PREFIXES)[0]
+    admitted = f"select * from lineage.jurisdictions where identity_prefix = '{registered}'\n"
+    refused = "select * from lineage.jurisdictions where identity_prefix = '49'\n"
+
+    assert scan_migrations([_written("099_registered.sql", admitted)]) == []
+    assert scan_migrations([_written("099_planted.sql", refused)]) == []
+    # The arm that does fire is the one reaching into an API-10, whichever prefix it names.
+    assert scan_migrations([_written("099_reach.sql", "left(api10, 2) = '49'\n")])
+    assert scan_migrations([_written("099_reach.sql", f"left(api10, 2) = '{registered}'\n")])
+
+
+def test_the_planted_state_is_one_the_registry_does_not_hold() -> None:
+    """A fixture planting a registered prefix proves the opposite of what it is written for:
+    the scan would refuse it for being a prefix at all, and the arm that reads the registry
+    would never run. This is what makes the negative fixtures move when a state lands."""
+    planted = {value for _tree, value in PLANTED}
+    for prefix in PREFIXES:
+        assert not any(f'"{prefix}"' in value or f"'{prefix}'" in value for value in planted), (
+            f"the planted sixth state uses {prefix}, which the registry now holds"
+        )
+    for name in NAMES:
+        assert not any(name in value for value in planted)
+
+
+_WRITTEN: list[Path] = []
+
+
+def _written(name: str, body: str) -> Path:
+    """A planted file on disk, outside the tree, cleaned up by the tmp dir it is written to."""
+    import tempfile
+
+    root = Path(tempfile.mkdtemp())
+    path = root / name
+    path.write_text(body, encoding="utf-8")
+    _WRITTEN.append(path)
+    return path
