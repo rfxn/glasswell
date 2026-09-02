@@ -168,6 +168,29 @@ try {
             covered: onScreenVertically && !(topmost === button || button.contains(topmost)),
           };
         }),
+        // gate-v076 N3: the pinned action column is opaque, so anything sliding under it is
+        // painted over — at 390 the last ~5 px of a username, chopped mid-stroke. The DOM says
+        // the text is fully laid out, so no scrollWidth assertion can see it; only a hit-test
+        // on the last *painted* glyph can. With an ellipsis the logical last character is
+        // clipped out of the box entirely, so its own rect says nothing about what is visible.
+        names: [...document.querySelectorAll("#accounts .gw-accounts-name")].map((name) => {
+          const box = name.getBoundingClientRect();
+          const painted = Math.min(box.right, box.left + name.clientWidth);
+          const cell = name.closest("th");
+          const action = cell?.parentElement?.querySelector("td:last-child") ?? null;
+          const onScreen = box.bottom > 0 && box.top < window.innerHeight;
+          const topmost = onScreen
+            ? document.elementFromPoint(Math.round(painted - 1), Math.round(box.top + box.height / 2))
+            : null;
+          return {
+            text: (name.textContent ?? "").trim(),
+            truncated: name.scrollWidth > name.clientWidth + 0.5,
+            paintedRight: Math.round(painted),
+            actionLeft: action ? Math.round(action.getBoundingClientRect().left) : null,
+            occluded: onScreen && action !== null && action.contains(topmost),
+            titled: name.getAttribute("title") === (name.textContent ?? "").trim(),
+          };
+        }),
         modes: document.querySelectorAll(".gw-mode-btn").length,
       };
     });
@@ -185,6 +208,25 @@ try {
         ? "no .gw-accounts-action was found, so this assertion proves nothing"
         : unreachable.map((c) => `${c.label} ${c.past}px past the edge`).join(", "),
     );
+    const painted = seen.names.filter((name) => name.occluded);
+    assert(
+      seen.names.length > 0 && painted.length === 0,
+      `${at} no account name is painted over by the pinned action column`,
+      seen.names.length === 0
+        ? "no .gw-accounts-name was found, so this assertion proves nothing"
+        : painted
+            .map((n) => `${n.text} ends at ${n.paintedRight}, action column at ${n.actionLeft}`)
+            .join(", "),
+    );
+    // A name held short of that column has to say so, or it is the same silent loss with a
+    // tidier edge.
+    const untitled = seen.names.filter((name) => name.truncated && !name.titled);
+    assert(
+      untitled.length === 0,
+      `${at} a shortened name still carries the whole one`,
+      untitled.map((n) => n.text).join(", "),
+    );
+
     const buried = seen.controls.filter((control) => control.covered);
     assert(
       buried.length === 0,

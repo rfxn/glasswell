@@ -578,6 +578,20 @@
   box-shadow: inset 1px 0 0 var(--hairline);
 }
 
+/* gate-v076 N3: the pinned column is opaque, so anything sliding under it is painted over --
+   at 390 the last ~5 px of a long username, chopped mid-stroke with nothing to say so, and
+   invisible to every width assertion because the cell does not overflow. The name is held short
+   of the pinned column's left edge instead, and ellipsises there. Above 520 the row has room
+   and the name is left whole. */
+.gw-accounts-name {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
 /* The head cell outranks its own column, or the first row scrolls over it. */
 .gw-accounts-sessions thead th:last-child,
 .gw-accounts-users thead th:last-child {
@@ -748,6 +762,12 @@
 }
 
 @media (max-width: 520px) {
+  /* Short of where the pinned action column starts at this width, so a long name ellipsises in
+     the open rather than being painted over by it. */
+  .gw-accounts-name {
+    max-width: 7.5rem;
+  }
+
   /* A phone press is a finger, not a cursor: every Accounts control reaches the 44 px floor
      the rest of the chrome holds. */
   .gw-accounts-action,

@@ -120,7 +120,7 @@ function usersTable(section: HTMLElement, users: readonly UserRecord[]): HTMLEle
     row.dataset["user"] = user.username;
     const name = document.createElement("th");
     name.scope = "row";
-    name.textContent = user.username;
+    name.append(accountName(user.username));
     if (user.state === "disabled") name.append(state("Disabled"));
     row.append(
       name,
@@ -155,7 +155,7 @@ function sessionsTable(section: HTMLElement, sessions: readonly SessionRecord[])
     row.dataset["session"] = session.session_id;
     const who = document.createElement("th");
     who.scope = "row";
-    who.textContent = session.username;
+    who.append(accountName(session.username));
     if (session.state !== "active") who.append(state(capitalise(session.state)));
     row.append(
       who,
@@ -191,6 +191,20 @@ function userActions(section: HTMLElement, user: UserRecord): HTMLElement {
         );
   actions.append(reset, toggle);
   return actions;
+}
+
+/**
+ * gate-v076 N3: the pinned action column paints an opaque background over whatever slides under
+ * it, and at 390 a long username's last glyphs ended 5 px inside that column -- chopped
+ * mid-stroke with no ellipsis, on a row carrying `Disable`. A `td` ignores `max-width` under
+ * auto table layout, so the constraint has to live on an element inside it. The full name stays
+ * on the title, and the ellipsis is what says there is more.
+ */
+function accountName(username: string): HTMLElement {
+  const name = element("span", "gw-accounts-name");
+  name.textContent = username;
+  name.title = username;
+  return name;
 }
 
 function revokeButton(section: HTMLElement, session: SessionRecord): HTMLElement {

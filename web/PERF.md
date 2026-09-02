@@ -109,7 +109,7 @@ explorer's shell chunk and into the entry. Verified rather than inferred — `gw
 
 | budget | B gzipped | headroom over measured |
 |---|---:|---|
-| entry chunk | 14,000 | +0.5% over 13,931 (v0.76; was +3.8% over 13,482 in v0.73) |
+| entry chunk | 14,000 | +0.5% over 13,928 (v0.76; was +3.8% over 13,482 in v0.73) |
 | explorer route, map excluded | 75,000 | +4.9% over 71,511 |
 | map chunk | 330,000 | +5.2% over 313,823 |
 
@@ -130,13 +130,13 @@ notch on the budget.
 
 Re-measured across the v0.76 train, which put two tracks on the entry path at once, and again
 after each of its three fix rounds. The Accounts surface took it to 13,680 B, the jurisdiction
-registry to 13,842 B, the sentinel round to 13,871 B, and the visual round to **13,931 B** —
-**69 B under the budget**, where v0.73 had 518. The registry's generated module is not the
+registry to 13,842 B, the sentinel round to 13,871 B, the visual round to 13,931 B, and the
+chrome round that followed it to **13,928 B** — **72 B under the budget**, where v0.73 had 518. The registry's generated module is not the
 reason: the jurisdiction rows the client reads (names, identity prefixes, tile-layer ids)
 resolve into a lazy branch, and no state name appears in the entry chunk at all. What landed
 there is chrome and wiring, a little at a time.
 
-The budget is not raised. 69 B is the instrument doing exactly what the paragraph above says it
+The budget is not raised. 72 B is the instrument doing exactly what the paragraph above says it
 should, and it is now tight enough that the next addition to the entry path fires it — which
 means the next thing to reach for is a dynamic import, not another notch. **Re-measure before
 adding anything to `main.ts`, `chrome/` or `style.css`, and treat a failure as the answer
