@@ -48,6 +48,7 @@ from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.serialization import hash_payload
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.lineage.vintages import open_vintage
+from glasswell.marts.counts import refresh_jurisdiction_counts
 from glasswell.marts.cumulatives import refresh_well_cumulatives
 from glasswell.marts.neighbors import refresh_neighbors, resident_content_identity
 from glasswell.modeling import served
@@ -873,7 +874,7 @@ def _seed_contract_fixture(db: psycopg.Connection, pinned_control: ControlArtifa
     ):
         refresh_neighbors(db)
     _seed_neighbor_mart(db)
-    _seed_jurisdiction_counts(db, nd_wells=nd_wells, tx_wells=tx_wells)
+    _seed_jurisdiction_counts(db)
     _seed_quarantine(db, mpr_manifest)
     # After the ledger, never before: the withheld months the coverage record counts are
     # quarantine rows, so a refresh that ran first would report a span short of one month.
@@ -914,23 +915,22 @@ ND_MEASURED = {None: 7, "active": 4, "plugged": 3}
 TX_MEASURED = {None: 1, "active": 1}
 
 
-def _seed_jurisdiction_counts(
-    connection: psycopg.Connection, *, nd_wells: str, tx_wells: str
-) -> None:
-    """The measurement ledger, keyed to the same derivations the wells were promoted by, so
-    a count's handle walks to the manifest the file arrived in."""
-    with connection.cursor() as cursor:
-        cursor.executemany(
-            "insert into lineage.jurisdiction_well_counts (jurisdiction_code, measured_on,"
-            " status_canonical, well_count, derivation_id) values (%s, %s, %s, %s, %s)",
-            [
-                (code, JURISDICTION_MEASURED_ON, status, wells, derivation)
-                for code, derivation, measured in (
-                    ("ND", nd_wells, ND_MEASURED),
-                    ("TX", tx_wells, TX_MEASURED),
-                )
-                for status, wells in measured.items()
-            ],
+def _seed_jurisdiction_counts(connection: psycopg.Connection) -> None:
+    """The measurement ledger as the production writer builds it.
+
+    gate-v076 H-1: this used to hand-write the rows against the derivation the *wells* were
+    promoted by, so `test_explain_resolves_a_count_to_the_manifest_the_file_arrived_in`
+    resolved a borrowed handle and passed while the real writer emitted `inputs=[]`. Calling
+    the writer is what makes that test measure the thing it names.
+    """
+    with lineage_session(
+        recorder=PostgresRecorder(connection),
+        environment=FIXTURE_ENV,
+        clock=FixedClock(datetime(2026, 8, 27, 6, 0, 0, tzinfo=UTC)),
+        correlation_id="run_contract_jurisdiction_counts",
+    ):
+        refresh_jurisdiction_counts(
+            connection, measured_on=JURISDICTION_MEASURED_ON, codes=("ND", "TX")
         )
     connection.commit()
 

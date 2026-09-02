@@ -9,6 +9,7 @@ no number rather than a zero, because "not measured yet" and "no wells" are diff
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import date
 
@@ -18,7 +19,7 @@ from psycopg.rows import dict_row
 from glasswell.lineage.capture import derive
 from glasswell.lineage.clock import utc_today
 from glasswell.lineage.jurisdictions import load_jurisdictions
-from glasswell.lineage.models import OutputSpec
+from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.serialization import hash_payload
 from glasswell.status_resolution import resolved_status, resolver_join, resolver_rules
 
@@ -27,6 +28,16 @@ TOTAL_STATUS_KEY = "*total*"
 # The status a well is counted under is the one the map draws it with, which for New Mexico is
 # resolved at read time rather than written by the promotion — so the count reads the same view
 # `/v1/wells` does, and the ledger cannot disagree with the canvas about a well's class.
+# The wells the count reads, as derivation refs: without them the refresh is a graph node with
+# no edge leaving it, and a served count resolves to a run that cannot be walked back to the
+# regulator file. The sibling marts pass the same shape (cumulatives.py, land_metrics.py).
+_INPUT_DERIVATIONS = """
+select derivation_id, created_vintage
+  from lineage.derivations
+ where derivation_id in (select derivation_id from canonical.wells)
+ order by derivation_id
+"""
+
 _COUNTS = f"""
 select w.state_code, {resolved_status("w")} as status_canonical, count(*)::int as well_count
   from canonical.wells_latest w
@@ -50,17 +61,39 @@ class CountRefresh:
         }
 
 
+def _canonical_inputs(connection: psycopg.Connection) -> list[InputRef]:
+    with connection.cursor() as cursor:
+        cursor.execute(_INPUT_DERIVATIONS)
+        return [
+            InputRef(kind="derivation", ref_id=derivation_id, as_of_vintage=vintage)
+            for derivation_id, vintage in cursor.fetchall()
+        ]
+
+
 def refresh_jurisdiction_counts(
-    connection: psycopg.Connection, *, measured_on: date | None = None
+    connection: psycopg.Connection,
+    *,
+    measured_on: date | None = None,
+    codes: Collection[str] | None = None,
 ) -> CountRefresh:
     """Append one measurement per registered jurisdiction, by status and in total.
 
     Idempotent within a day by refusal rather than by overwrite: the ledger is append-only and
     its key is (jurisdiction, measured_on, status), so a second run on the same day conflicts
     and is skipped. A corrected count is a measurement on a later day, never an edit.
+
+    `codes` narrows the refresh to some of the registered jurisdictions; the default is all of
+    them. Narrowing is a partial measurement, not a smaller claim: the jurisdictions left out
+    keep whatever the ledger already held, which for one never measured is no row and therefore
+    no number served (R-3). It exists for a re-measure after one jurisdiction's backfill.
     """
     registry = load_jurisdictions(connection)
-    registered = [row for row in registry if row.identity_prefix is not None]
+    registered = [
+        row
+        for row in registry
+        if row.identity_prefix is not None
+        and (codes is None or row.jurisdiction_code in codes)
+    ]
     prefixes = [row.identity_prefix for row in registered]
     owner = {row.identity_prefix: row.jurisdiction_code for row in registered}
     measured = measured_on or utc_today()
@@ -108,7 +141,15 @@ def refresh_jurisdiction_counts(
             "read_time_resolution": read_time,
             "total_policy": "sum_of_measured_classes",
         },
-        inputs=[],
+        inputs=_canonical_inputs(connection),
+        # The rules that decided the class every count is grouped by: each jurisdiction's
+        # registered status vocabulary, plus the read-time resolvers, whose join inside _COUNTS
+        # is what gives New Mexico a class at all. R8: a rule is referenced by the derivations
+        # it shaped, and these shaped every row here.
+        rules=sorted(
+            {rule for row in registered if (rule := row.rule("status_vocabulary")) is not None}
+            | set(read_time.values())
+        ),
     ) as context:
         context.set_rows(len(appended))
         context.set_output_hash(
