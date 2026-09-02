@@ -64,6 +64,11 @@ Two files, and they must agree:
 - `src/glasswell/seed/jurisdictions.py` — the same rows in `JURISDICTION_CODES`,
   `JURISDICTIONS` and `JURISDICTION_RULES`.
 
+`JURISDICTIONS` is the **resolved** set — one row per code, carrying the latest published
+values. The founding rows a restatement supersedes live in `JURISDICTION_RESTATEMENTS`, and
+both writers emit both. Two runtime consumers build tuples straight out of `JURISDICTIONS` and
+feed them into derivation params, so a second row for a code moves two mart addresses.
+
 `source_ids` is **complete, not curated**: every source registered to this jurisdiction, or the
 parity gate reddens. `identity_pattern` is derived from the prefix — do not spell it out.
 
@@ -84,13 +89,31 @@ parity gate reddens. `identity_pattern` is derived from the prefix — do not sp
 > **Refuses otherwise:** the pipeline role's grants, and `tests/support/layers.py`
 > `schema_reads_in`.
 
-### 6. Write the mart, with `STATE_CODE = "<PREFIX>"` at the module head
+### 6. Add the mart profile row
 
-One literal per mart module is the honest declaration of which regulator's data it promotes,
-and it is the only two-digit literal `marts/` is allowed.
+There is no mart module to write. `src/glasswell/marts/wells.py` refreshes every jurisdiction's
+tile marts from one engine, and what differs between them is a `MartProfile` row beside
+`TILE_LAYERS`: the dataset, the layers, the projections with their ordered published columns
+and their select SQL, the spine columns the CTE selects, the params keys this jurisdiction adds,
+the rules its refresh cites, and the audit payload it emits.
 
-> **Refuses if the prefix is unregistered:** `tests/unit/test_add_a_state.py` — the exemption
-> matches `STATE_CODE = "<p>"` only for a `<p>` the registry carries.
+Everything the registry can answer, the engine asks it rather than the profile. The API prefix
+comes from the registration. Which basin governs the compute CRS is a `basin_scope` rule; which
+source measures a lateral is a `length_source` rule; whether a lateral is served at all is
+`length_scope`, whose *presence* means withheld. A jurisdiction that publishes no length column
+registers neither of the last two and the engine makes no call.
+
+Optionally add a shim module — `JURISDICTION_CODE` and a four-line `main` that delegates — if
+something outside the tree needs to type `python -m glasswell.marts.<code>_wells`. The four
+resident ones exist because two applied migrations name them and the deployed timer executes a
+third; a new jurisdiction needs one only if an operator command is going to name it, and
+`glasswell-tiles --jurisdiction <CODE>` covers the ordinary case.
+
+> **Refuses if the profile and the registration disagree:** `tests/unit/test_mart_profiles.py`
+> holds each profile's `rule_ids` and params key set to what its address already carried, and
+> the engine refuses at load time if a profile publishes a length column under a registration
+> whose `length_scope` rule withholds one — a refusal rather than a `KeyError` inside a refresh.
+> A profile for an unregistered code raises `MartProfileError` naming the registered ones.
 
 ### 7. Add the tile layer, then name it
 
@@ -111,12 +134,23 @@ Add the layer to `infra/martin/config.yaml`.
 ### 9. Regenerate the client
 
 ```bash
-make jurisdictions        # rewrites web/src/map/jurisdictions.generated.ts
+make jurisdictions        # rewrites jurisdictions.generated.ts and wells-roster.json
 ```
 
-The map's `Wells` family row, its swatch colour, the layer panel's abbreviation tag and the
-status vocabulary rules the legend prints all come from that file. Nothing in `web/src` names a
-jurisdiction, and the gate above holds it that way.
+Two artifacts, because two readers need different things. The generated module is what the
+bundle imports; `web/src/map/wells-roster.json` is the same wells rows as data, for
+`tests/e2e/chrome-fold.mjs`, which is plain node ESM and cannot import a TypeScript module.
+
+The map's `Wells` family row, its swatch colour, its style layers, its draw order, its
+first-paint default, its subtitle template, the layer panel's abbreviation tag and the status
+vocabulary rules the legend prints all come from those two files. So do the point layer and the
+struck sibling `style.ts` draws and the rank `click-router.ts` gives them. Nothing in `web/src`
+names a jurisdiction, and the gate above holds it that way.
+
+> **The subtitle carries `{count}`, never a number.** The count is fetched from
+> `/v1/jurisdictions` at render time with the date it was measured on beside it. A registration
+> with a null `wells_tile_layer_id` is refused by name rather than rendered as the string
+> `"None"`.
 
 > **Refuses if skipped:** `tests/unit/test_regen_jurisdictions.py` fails while the committed
 > file is stale.
@@ -132,9 +166,16 @@ Add an `ExecStart=` line to `infra/systemd/glasswell-ingest.service`.
 ### 11. Run the mart, then the count writer
 
 ```bash
-sudo -u glasswell $VENV/bin/python -m glasswell.marts.<code>_wells --dsn "$DSN"
+sudo -u glasswell $VENV/bin/glasswell-tiles --dsn "$DSN" --jurisdiction <CODE>
 sudo -u glasswell $VENV/bin/python -m glasswell.marts.counts --dsn "$DSN"
 ```
+
+> **Run `seed_all` first, and not only for the API.** The tile refresh reads the registry now:
+> it resolves the registration, its `basin_scope` and its `length_source` before it measures
+> anything, and refuses by name if they are not there. The migration's `jurisdiction_rules`
+> insert is guarded on conformance-rule residency, so on a fresh database those rows land only
+> after the seed has run. `scripts/deploy.sh` already orders it that way (6a migrate, 6b
+> `seed_all`, then the marts); what changed is that the mart is no longer indifferent to it.
 
 The count writer measures every registration by default. `--codes ND,TX` narrows it to some of
 them, which is a partial measurement rather than a smaller claim: the jurisdictions left out
@@ -160,6 +201,7 @@ move between them — run it on a day the ledger does not already hold if it did
 ```bash
 make lint
 pytest tests/unit/test_add_a_state.py tests/unit/test_regen_jurisdictions.py -q
+pytest tests/unit/test_mart_profiles.py -q
 pytest tests/contract/test_jurisdiction_parity.py -q
 npm --prefix web run typecheck && npm --prefix web run test
 node tests/e2e/chrome-fold.mjs

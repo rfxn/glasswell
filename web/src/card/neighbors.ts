@@ -61,6 +61,22 @@ export async function loadNeighborContext(
 }
 
 /**
+ * The reasons the neighbour section can be absent, told rather than shown as a blank frame.
+ * Keyed on the server's own reason code so the client never invents a second vocabulary.
+ */
+const REFUSAL_REASONS: Record<string, string> = {
+  neighbors_domain_not_covered:
+    "No neighbour context here: this jurisdiction is registered as carrying laterals, but the" +
+    " neighbour mart's measured envelope and its UTM zone set do not reach it, so no subject" +
+    " was built. This is a gap in what has been measured, not a well with no neighbours.",
+};
+
+/** The third state, beside `empty` and `populated`: a reason, not an absence. */
+export function renderNeighborRefusal(reason: string): HTMLElement {
+  return emptyState(REFUSAL_REASONS[reason] ?? warningTitle(reason));
+}
+
+/**
  * The endpoint refuses a subject with no completion anchor by naming the parameter that would
  * unblock it. That refusal was being caught and replaced with "unavailable for this well or
  * requested historical view", which is vaguer than what the server said and drops the way out.

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { LAND_SNAPSHOT, ND_SNAPSHOT, landCellCount, ndCoverage, ndWellCount } from "./coverage.ts";
+import { JURISDICTION_LIST } from "./jurisdictions.generated.ts";
 import { DISPOSAL_COLOUR } from "./disposal.ts";
 import { LAYER_FAMILIES, LAYER_GROUPS, layerFamily } from "./groups.ts";
 import { JURISDICTIONS } from "./jurisdictions.generated.ts";
@@ -266,7 +267,10 @@ describe("the layer registry", () => {
     // snapshot is the one denominator, named with the refresh it was read from, and no row
     // may carry a hand-written wells total of its own.
     expect(ND_SNAPSHOT.refresh).toMatch(/^drv_[a-z0-9]+$/);
-    expect(layerDef("wells")!.subtitle).toContain(`${ndWellCount()} points`);
+    // The Wells row's own count left the bundle entirely: it is a registration now and the
+    // panel fills its slot from /v1/jurisdictions. What the snapshot still denominates is the
+    // coverage statements — a share of the wells the mart holds — and those must stay level.
+    expect(layerDef("wells")!.subtitle).toContain(COUNT_SLOT);
     for (const id of ["survey-traces", "disposal-wells"]) {
       expect(layerDef(id)!.subtitle).toContain(`of ${ndWellCount()} wells`);
     }
@@ -612,5 +616,47 @@ describe("the panel's reading order", () => {
         flat.layers.map((layer) => layer.id),
       );
     }
+  });
+});
+
+describe("the Wells rows as registrations", () => {
+  it("builds one row per registration, from the registration", () => {
+    // The four were object literals: seven facts each that no gate could read, and a fifth
+    // jurisdiction was four hand edits with nothing to catch a missed one.
+    const family = LAYERS.filter((layer) => layer.family === "wells");
+
+    expect(family).toHaveLength(JURISDICTION_LIST.length);
+    for (const row of JURISDICTION_LIST) {
+      const built = family.find((layer) => layer.jurisdiction === row.code)!;
+      expect(built, row.code).toBeTruthy();
+      expect(built.id).toBe(row.wellsLayerId);
+      expect(built.styleLayers).toEqual(row.wellsStyleLayerIds);
+      expect(built.drawOrder).toBe(row.wellsDrawOrder);
+      expect(built.defaultOn).toBe(row.wellsDefaultOn);
+      expect(built.familyLabel).toBe(row.name);
+      expect(built.subtitle).toBe(row.wellsSubtitleTemplate);
+      expect(built.swatch.colours).toEqual([row.colour]);
+      expect(built.provenance[0]!.source).toBe(`marts.${row.wellsTileLayerId}_tile`);
+    }
+  });
+
+  it("leaves every Wells count to be served, North Dakota's included", () => {
+    // The founding row was the one that kept a compiled count, from a snapshot rather than
+    // from the registry. It carried a handle, so it was honest — and it was also the only
+    // Wells row a reader could not compare with /v1/jurisdictions.
+    for (const layer of LAYERS.filter((layer) => layer.family === "wells")) {
+      expect(layer.subtitle, layer.id).toContain(COUNT_SLOT);
+      expect(layer.jurisdiction, layer.id).toBeTruthy();
+      expect(layer.subtitle, layer.id).not.toMatch(/\d[\d,]*\s+points/);
+    }
+  });
+
+  it("keeps the disposal ring a declared row, because it is not a registration", () => {
+    // A well_type class inside one jurisdiction, not a jurisdiction: it has no registry row
+    // and generating it would need one that says nothing true.
+    const ring = layerDef("disposal-wells")!;
+
+    expect(ring.family).toBeUndefined();
+    expect(ring.jurisdiction).toBeUndefined();
   });
 });

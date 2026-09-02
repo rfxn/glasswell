@@ -140,15 +140,18 @@ describe("the layers a facet press has to reach", () => {
       "mt-paths",
       "tx-laterals",
     ]);
+    // The wells rows in registered draw order, then the disposal ring: the ring reads the
+    // founding row's source and is declared after the rows it overlays rather than inside
+    // them, which is where a per-jurisdiction list used to put it.
     expect(facetUnfilteredLayers("county")).toEqual([
       "laterals",
       "survey-traces",
       "mt-paths",
       "wells",
       "wells-struck",
-      "disposal-wells",
       "mt-wells",
       "mt-wells-struck",
+      "disposal-wells",
     ]);
   });
 });

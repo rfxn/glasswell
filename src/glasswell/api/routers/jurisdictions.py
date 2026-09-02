@@ -28,6 +28,7 @@ from glasswell.api.pagination import (
 )
 from glasswell.api.provenance import register_response_figures
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, inline_for, iso
+from glasswell.api.routers.wells import NEIGHBORS_SCOPE
 from glasswell.lineage.envelope import figure
 from glasswell.lineage.jurisdictions import Jurisdiction
 
@@ -131,7 +132,10 @@ class MapPresentation(BaseModel):
 
 
 class Capabilities(BaseModel):
-    neighbors: bool = Field(description="Whether the neighbour mart holds subjects here.")
+    neighbors: bool = Field(
+        description="Whether the neighbour mart holds subjects here: registered as having"
+        " laterals, and inside the domain the mart's geometry was measured over."
+    )
     land_grid_state: bool = Field(description="Whether the PLSS land grid covers this state.")
     land_grid_scope: bool = Field(
         description="Whether land metrics are scoped to it. A state in the grid is always"
@@ -257,7 +261,12 @@ def _row(registration: Jurisdiction, measured: list[dict[str, Any]]) -> dict[str
             "colour": registration.map_colour,
         },
         "capabilities": {
-            "neighbors": registration.neighbors_available,
+            # The same two registrations the well card reads, so the card and this surface
+            # cannot disagree about whether a jurisdiction has neighbours.
+            "neighbors": (
+                registration.neighbors_available
+                and registration.rule(NEIGHBORS_SCOPE) is not None
+            ),
             "land_grid_state": registration.land_grid_state,
             "land_grid_scope": registration.land_grid_scope,
         },

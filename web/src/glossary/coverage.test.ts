@@ -20,7 +20,7 @@ import {
 } from "../test/glossary-seed.ts";
 import { SURFACE_NAMES, renderSurface, statusEnvelope } from "../test/surfaces.ts";
 import type { SurfaceName } from "../test/surfaces.ts";
-import { loadGlossary } from "./store.ts";
+import { loadGlossary } from "./load.ts";
 
 const SEED = loadSeed();
 const BY_TERM = new Map(SEED.map((row) => [row.term, row]));
@@ -201,7 +201,7 @@ it("covers the vocabulary the track was asked to teach, somewhere", () => {
 it("fills a surface built before the index landed, not only one built after", async () => {
   vi.resetModules();
   const fresh = await import("../test/surfaces.ts");
-  const store = await import("./store.ts");
+  const store = await import("./load.ts");
   const root = await fresh.renderSurface("map status legend");
 
   // Only what the legend binds by hand: the highlighter has no index to work from yet.

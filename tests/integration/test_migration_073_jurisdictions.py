@@ -22,9 +22,11 @@ from psycopg.rows import dict_row
 from glasswell.db.migrate import discover_migrations
 from glasswell.seed import seed_all
 from glasswell.seed.jurisdictions import (
-    JURISDICTION_RULES,
+    JURISDICTION_RESTATEMENTS,
+    JURISDICTION_RULES_AS_FOUNDED,
     JURISDICTIONS,
     REGISTERED_ON,
+    RESTATED_ON,
     seed_jurisdictions,
 )
 from tests.support.seed import seed_derivation
@@ -95,6 +97,7 @@ def seeded_without_the_registry_rules(db: psycopg.Connection) -> psycopg.Connect
     """
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr("glasswell.seed.jurisdictions.JURISDICTION_RULES", ())
+        patch.setattr("glasswell.seed.jurisdictions.JURISDICTION_RULES_AS_FOUNDED", ())
         seed_all(db)
     db.commit()
     with db.cursor() as cursor:
@@ -138,7 +141,7 @@ def test_the_rule_rows_wait_for_the_conformance_registry_and_then_land(
     with db.cursor() as cursor:
         cursor.execute(migration_sql(MIGRATION))
         cursor.execute("select count(*) from lineage.jurisdiction_rules")
-        assert cursor.fetchone()[0] == len(JURISDICTION_RULES)
+        assert cursor.fetchone()[0] == len(JURISDICTION_RULES_AS_FOUNDED)
         cursor.execute(
             "select rule_id from lineage.jurisdiction_rules"
             " where jurisdiction_code = 'MT' and decision = 'inventory_jurisdiction'"
@@ -153,19 +156,20 @@ def test_the_migration_and_the_seed_write_the_same_rule_rows(
     """Two copies of a registry is one drift away from a lie; this is the guard on that."""
     db = seeded_without_the_registry_rules
     columns = "jurisdiction_code, effective_from, published_at, decision, rule_id, serving, note"
+    founding = f"select {columns} from lineage.jurisdiction_rules where published_at = %s"
     with db.cursor() as cursor:
         cursor.execute(migration_sql(MIGRATION))
-        cursor.execute(f"select {columns} from lineage.jurisdiction_rules order by 1, 4, 5")
+        cursor.execute(f"{founding} order by 1, 4, 5", (REGISTERED_ON,))
         from_migration = cursor.fetchall()
     db.rollback()
 
     seed_jurisdictions(db)
     with db.cursor() as cursor:
-        cursor.execute(f"select {columns} from lineage.jurisdiction_rules order by 1, 4, 5")
+        cursor.execute(f"{founding} order by 1, 4, 5", (REGISTERED_ON,))
         from_seed = cursor.fetchall()
 
     assert from_migration == from_seed
-    assert len(from_seed) == len(JURISDICTION_RULES)
+    assert len(from_seed) == len(JURISDICTION_RULES_AS_FOUNDED)
 
 
 def test_running_the_migration_twice_changes_nothing(
@@ -176,9 +180,9 @@ def test_running_the_migration_twice_changes_nothing(
         cursor.execute(migration_sql(MIGRATION))
         cursor.execute(migration_sql(MIGRATION))
         cursor.execute("select count(*) from lineage.jurisdictions")
-        assert cursor.fetchone()[0] == len(JURISDICTIONS)
+        assert cursor.fetchone()[0] == len(JURISDICTIONS) + len(JURISDICTION_RESTATEMENTS)
         cursor.execute("select count(*) from lineage.jurisdiction_rules")
-        assert cursor.fetchone()[0] == len(JURISDICTION_RULES)
+        assert cursor.fetchone()[0] == len(JURISDICTION_RULES_AS_FOUNDED)
 
 
 def test_an_api10_registration_with_no_prefix_is_rejected(db: psycopg.Connection) -> None:
@@ -220,7 +224,7 @@ def test_a_restatement_is_accepted_and_resolves_at_the_later_knowledge_time(
     restated = resolved(db, AFTER_THE_RESTATEMENT, AFTER_THE_RESTATEMENT)
 
     assert next(r for r in founding if r["jurisdiction_code"] == "ND")["published_at"] == (
-        REGISTERED_ON
+        RESTATED_ON
     )
     later = next(r for r in restated if r["jurisdiction_code"] == "ND")
     assert later["published_at"] == LATER_KNOWLEDGE
@@ -354,6 +358,8 @@ def test_the_api_role_reads_every_object_and_the_resolver(db: psycopg.Connection
             (REGISTERED_ON, REGISTERED_ON),
         )
         assert cursor.fetchone()[0] == len(JURISDICTIONS)
+        cursor.execute("select count(*) from lineage.jurisdictions")
+        assert cursor.fetchone()[0] == len(JURISDICTIONS) + len(JURISDICTION_RESTATEMENTS)
 
 
 def test_only_the_pipeline_role_appends_a_measurement(db: psycopg.Connection) -> None:
@@ -399,7 +405,10 @@ def test_a_thousand_distinct_as_of_values_leave_one_cache_entry(
         registry = load_jurisdictions(db, REGISTERED_ON + timedelta(days=offset))
         assert sorted(row.jurisdiction_code for row in registry) == codes
 
-    assert len(_CACHE) == 1, sorted(_CACHE)
+    # One entry per publication instant the registry actually has, which is now two: the
+    # founding day and the restatement. The property is that the key space is the registry's
+    # own history, not that the history has one entry in it.
+    assert len(_CACHE) == 2, sorted(_CACHE)
     clear_jurisdiction_cache()
 
 

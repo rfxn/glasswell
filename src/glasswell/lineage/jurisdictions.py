@@ -18,6 +18,10 @@ from psycopg.rows import dict_row
 from glasswell.lineage.clock import utc_today
 from glasswell.lineage.errors import LineageError
 
+# The registry decisions this package names. Spelled here rather than in each consumer: three
+# modules read `neighbors_scope` and a fourth spelling is how a decision name drifts.
+NEIGHBORS_SCOPE = "neighbors_scope"
+
 
 class JurisdictionRegistryError(LineageError):
     """R8: the definition is rows, so a missing registry is a refusal, never a default.

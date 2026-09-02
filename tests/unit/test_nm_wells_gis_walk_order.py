@@ -160,15 +160,28 @@ def test_the_parity_rule_is_a_prohibition_because_the_distribution_is_not_measur
     assert spec["cardinality_measured"]["ftp_distinct_api10_2026_08_20"] == 142_000
 
 
-def test_no_superseding_header_precedence_row_is_seeded_before_the_measurement():
-    """cr_nm_wellhistory_header_precedence_2 is the row this measurement is for, and seeding it
-    now would decide a question on evidence that does not exist yet."""
+def test_no_row_decides_the_header_precedence_question_before_the_measurement():
+    """The question this measurement is for is which archive wins per field, and no row may
+    answer it on evidence that does not exist yet.
+
+    Asserted on the answer rather than on the id. `_2` exists now and decides nothing: it is a
+    correction to a `module_function` that named a symbol never present in that module, derived
+    from the row it supersedes so that "only the reference moved" is checkable rather than
+    claimed. The measurement's own supersession is the next version after it, and the condition
+    for it rides forward in `superseded_when`.
+    """
     from glasswell.seed.conformance_nm_wells import NM_WELLS_RULES
 
-    ids = {str(item["rule_id"]) for item in (*NM_WELLS_RULES, *NM_WELLS_GIS_RULES)}
+    rows_by_id = {
+        str(item["rule_id"]): item for item in (*NM_WELLS_RULES, *NM_WELLS_GIS_RULES)
+    }
+    founding = rows_by_id["cr_nm_wellhistory_header_precedence_1"]
+    corrected = rows_by_id["cr_nm_wellhistory_header_precedence_2"]
 
-    assert "cr_nm_wellhistory_header_precedence_1" in ids
-    assert "cr_nm_wellhistory_header_precedence_2" not in ids
+    assert corrected["supersedes_rule_id"] == "cr_nm_wellhistory_header_precedence_1"
+    assert corrected["spec"]["corrects"] == "cr_nm_wellhistory_header_precedence_1"
+    for key in ("authority", "second_source", "superseded_when"):
+        assert corrected["spec"][key] == founding["spec"][key], key
 
 
 def test_the_source_stops_at_staging_on_purpose():

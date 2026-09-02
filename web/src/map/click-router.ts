@@ -1,5 +1,7 @@
 import type { MapGeoJSONFeature, MapMouseEvent, Map as MapLibreMap, PointLike } from "maplibre-gl";
 
+import { WELLS_ROSTER } from "./style.ts";
+
 /**
  * One map-level click handler with a priority sort, rather than one handler per layer.
  * Per-layer handlers hit-test the exact pixel, so a 1.8 px lateral stroke is effectively
@@ -8,24 +10,24 @@ import type { MapGeoJSONFeature, MapMouseEvent, Map as MapLibreMap, PointLike } 
  */
 export const PICK_RADIUS_PX = 6;
 
+/**
+ * Every registration's wells layers at one rank, struck siblings included. One rank and not
+ * one per jurisdiction: the tile marts never overlap geographically, so no click can be
+ * ambiguous between two of them, and a jurisdiction ranked below another was genuinely
+ * unpickable — topHit returned null over 355,463 Texas points for exactly that reason
+ * (gate-m17 R-5, pre-existing on every build since the TX layers landed).
+ */
+const WELLS_RANK = 40;
+
+const WELLS_PRIORITY: Readonly<Record<string, number>> = Object.fromEntries(
+  WELLS_ROSTER.flatMap((row) => row.styleLayers.map((layer) => [layer, WELLS_RANK])),
+);
+
 const PRIORITY: Readonly<Record<string, number>> = {
   // Above the wellhead it rings: the ink on top, and the pickable mark when the wells row
   // is off. Both hits carry the same api10, so the rank never changes what is selected.
   "disposal-wells": 41,
-  // Texas at North Dakota's rank, for the laterals' reason: the two basins never overlap,
-  // and TX dots absent from this map were genuinely unpickable — topHit returned null over
-  // 355,463 points (gate-m17 R-5, pre-existing on every build since the TX layers landed).
-  wells: 40,
-  "wells-struck": 40,
-  "tx-wells": 40,
-  "tx-wells-struck": 40,
-  // New Mexico at the same rank and for the same reason, struck sibling included: its class
-  // is resolved from the registry at read time, so the strike now has a class to match.
-  "nm-wells": 40,
-  "nm-wells-struck": 40,
-  // Montana at the same rank, and it does have a struck sibling: it has a status codebook.
-  "mt-wells": 40,
-  "mt-wells-struck": 40,
+  ...WELLS_PRIORITY,
   // Both of the laterals row's style layers, at one rank: the two never overlap — they are
   // different basins — and one row that selected in North Dakota and did nothing in the
   // Permian would be the toggle contradicting itself.

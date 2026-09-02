@@ -42,7 +42,7 @@ def test_the_class_the_mart_writes_is_the_one_the_layer_publishes():
 
 
 def test_neither_montana_layer_publishes_a_length():
-    """cr_mt_paths_length_scope_1: Montana carries no basin, so no length method is registered
+    """cr_mt_paths_length_scope_2: Montana carries no basin, so no length method is registered
     for it, and a served length would be a figure with no rule to cite."""
     for layer in MT_LAYERS:
         assert not any("length" in column for column in layer.columns), layer.name

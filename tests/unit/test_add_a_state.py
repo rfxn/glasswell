@@ -39,6 +39,22 @@ PYTHON_TREES = ("marts", "api/routers", "status", "lineage")
 PACKAGE_ROOT_FILES = ("identity.py", "lengths.py", "status_resolution.py", "units.py")
 
 TWO_DIGIT_LITERAL = re.compile(r"""['"](\d{2})['"]""")
+# Narrowed, never widened. The generic rule needs the quote immediately before the digits, so
+# a two-digit alternation group -- `(25|33)[0-9]{8}` -- put a parenthesis there and walked past
+# it. Measured over the four scanned trees, thirteen raw-string regex literals contain a
+# two-digit run and every one of them is a quantifier or a hex class; none matches this.
+ALTERNATION_GROUP = re.compile(r"\((?:\d{2}\|)+\d{2}\)")
+# The anchored single-prefix shape beside it: `^05[0-9]{8}$` passes both the generic rule and
+# the alternation arm, and the project already knows that shape exists because 045 carries it.
+PREFIXED_API10 = re.compile(r"\d{2}(?:\[0-9\]|\\d)\{\d")
+CODES_LITERAL = re.compile(r"""['"]([A-Z]{2})['"]""")
+# Not scanned, and deliberately: a jurisdiction also appears lowercase inside a conformance
+# rule id (`cr_tx_status_vocab_1`), and two STATUS_CLASSES rows cite one by family for the
+# reason `rule_for_family` exists -- a supersession changes the id and must not be missed, and
+# New Mexico's is already `_2`. Every row in that list already carries a `rule:` field citing a
+# conformance rule, so citing a family is the R8-approved form rather than a way past this
+# gate. Recorded here so the shape is a decision a reader can find, not one the scan walks
+# past in silence (gate-seam N-1).
 API10_LITERAL = re.compile(r"\b(\d{2})[0-9]{8}\b")
 PREFIX_PATTERN = re.compile(r"~ '\^(\d\d)")
 TS_COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
@@ -54,15 +70,55 @@ class Exemption:
         self.matches = matches
 
 
+# The mart-module STATE_CODE exemption is gone rather than unmatched: the four modules that
+# declared a prefix are shims now and the engine takes its prefix from the registration it
+# loads, so there is no literal left for the exemption to cover and an exemption nothing
+# matches is a hole waiting for something to fall through it.
 PYTHON_EXEMPTIONS = (
     Exemption(
-        "a mart module's own STATE_CODE",
-        "One literal per module is the honest declaration of which regulator's data it parses"
-        " or promotes; §5.2 step 6 requires it to equal a registered identity_prefix.",
+        "a mart's own jurisdiction registration",
+        "The engine's profile rows and the four shims each declare which registration they"
+        " refresh, and that declaration is the one place a code may be written down: every"
+        " other fact about the jurisdiction is resolved from the row it names.",
         lambda path, line, value: (
             path.parent.name == "marts"
-            and value in PREFIXES
-            and re.fullmatch(rf'STATE_CODE(: str)? = "{value}"', line.strip()) is not None
+            and value in CODES
+            and (
+                re.fullmatch(rf'JURISDICTION_CODE(: str)? = "{value}"', line.strip()) is not None
+                or (
+                    path.name == "wells.py"
+                    and (f'jurisdiction_code="{value}"' in line or f'"{value}"),' in line)
+                )
+            )
+        ),
+    ),
+    Exemption(
+        "marts/neighbors.py's output partition",
+        "The neighbours mart's own output partition, which sits inside the derivation address"
+        " beside params_hash. Rekeying it moves marts.nd_neighbors, whose rows carry a"
+        " derivation_id and whose figures are served with handles.",
+        lambda path, line, value: (
+            path.name == "neighbors.py" and "partition" in line
+        ),
+    ),
+    Exemption(
+        "status/collector.py's per-jurisdiction presentation record",
+        "Per-jurisdiction prose rather than a mapping decision: the sentence an operator reads"
+        " beside a completions count. The registry spec left it as a declaration, and a fifth"
+        " jurisdiction adds its row here in the same phase that registers it.",
+        lambda path, line, value: (
+            path.name == "collector.py" and "_CompletionsPresentation" in line
+        ),
+    ),
+    Exemption(
+        "marts/cumulatives.py's withholding map",
+        "WITHHOLDING_BY_PREFIX and STATE_API_PREFIXES both derive from it and both are"
+        " derivation params, so a flat (source_id, class) tuple rebuilds neither at the same"
+        " value: params_hash moves and with it the mart.refresh id for"
+        " marts.well_withholding, whose figures are served with handles. Rekeying a served"
+        " address for a naming property is the wrong trade.",
+        lambda path, line, value: (
+            path.name == "cumulatives.py" and value in CODES
         ),
     ),
     Exemption(
@@ -172,15 +228,23 @@ def _exempt(exemptions, path: Path, line: str, value: str) -> Exemption | None:
 
 def scan_python(files: list[Path]) -> list[str]:
     """Any two-digit string literal, whatever its value: an unregistered one is a new
-    jurisdiction slipping in, a registered one is a decision that belongs in a row."""
+    jurisdiction slipping in, a registered one is a decision that belongs in a row. Plus a
+    registered code, and the two regex shapes a quoted-literal rule cannot see."""
     found = []
     for path in files:
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if line.lstrip().startswith("#"):
                 continue
-            for match in TWO_DIGIT_LITERAL.finditer(line):
-                if _exempt(PYTHON_EXEMPTIONS, path, line, match.group(1)) is None:
-                    found.append(f"{_named(path)}:{number}: {match.group(0)}")
+            for pattern in (TWO_DIGIT_LITERAL, CODES_LITERAL):
+                for match in pattern.finditer(line):
+                    if match.group(1) not in CODES and pattern is CODES_LITERAL:
+                        continue
+                    if _exempt(PYTHON_EXEMPTIONS, path, line, match.group(1)) is None:
+                        found.append(f"{_named(path)}:{number}: {match.group(0)}")
+            for pattern in (ALTERNATION_GROUP, PREFIXED_API10):
+                for match in pattern.finditer(line):
+                    if _exempt(PYTHON_EXEMPTIONS, path, line, match.group(0)) is None:
+                        found.append(f"{_named(path)}:{number}: {match.group(0)}")
     return found
 
 
@@ -190,9 +254,12 @@ def scan_web(files: list[Path]) -> list[str]:
     for path in files:
         body = TS_COMMENT.sub("", path.read_text(encoding="utf-8"))
         for number, line in enumerate(body.splitlines(), 1):
-            for match in TWO_DIGIT_LITERAL.finditer(line):
-                if _exempt(WEB_EXEMPTIONS, path, line, match.group(1)) is None:
-                    found.append(f"{_named(path)}:{number}: {match.group(0)}")
+            for pattern in (TWO_DIGIT_LITERAL, CODES_LITERAL):
+                for match in pattern.finditer(line):
+                    if match.group(1) not in CODES and pattern is CODES_LITERAL:
+                        continue
+                    if _exempt(WEB_EXEMPTIONS, path, line, match.group(1)) is None:
+                        found.append(f"{_named(path)}:{number}: {match.group(0)}")
             for name in NAMES:
                 if name in line and _exempt(WEB_EXEMPTIONS, path, line, name) is None:
                     found.append(f"{_named(path)}:{number}: {name!r}")
@@ -256,10 +323,42 @@ PLANTED = (
     ("python", 'COLORADO_RULES = {"05": "cr_co_status_vocab_1"}\n'),
     ("web", 'const CO = { "05": "Colorado" };\n'),
     ("migration", "check (left(api10, 2) = '05')\n"),
+    # The alternation-group shape: a quoted-literal rule needs the quote immediately before
+    # the digits, and the parenthesis walks past it.
+    ("python", 'PATTERN = re.compile(r"(05|33)[0-9]{8}")\n'),
+    # The anchored single-prefix shape, which passes both the generic rule and the alternation
+    # arm. 045 carries this shape as applied history, so the project knows it exists.
+    ("python", 'PATTERN = re.compile(r"^05[0-9]{8}$")\n'),
+)
+
+# The `CODES` arm's own shapes, kept apart from the prefix fixtures above because it answers a
+# different question: not "is a new jurisdiction slipping in" but "is a decision about a
+# registered one written as a code here instead of resolved from its row". Scoped to registered
+# codes deliberately -- an unrestricted two-uppercase rule matches the NDIC well-type codes AI,
+# GI and WI, a link relation and two unrelated keys, and would cost five exemptions to buy one.
+PLANTED_CODES = (
+    ("python", 'PRESENTATION = {"MT": _Presentation(scope="Montana")}\n'),
+    ("web", 'const RULES = { rule: jurisdictionRule("MT", "status_vocabulary") };\n'),
+)
+
+# Every raw-string regex literal in the scanned trees that contains a two-digit run and is a
+# quantifier or a hex class rather than a jurisdiction. Neither new arm may match one.
+QUANTIFIER_LITERALS = (
+    r'API10_PATTERN = r"^[0-9]{10}$"',
+    r'HANDLE = re.compile(r"^drv_[0-9a-z]{20}$")',
+    r'_SHA256 = re.compile(r"^[0-9a-f]{64}$")',
+    r'_KEY = re.compile(r"^[a-z0-9_]{1,64}$")',
+    r'_COLOUR = re.compile(r"^#[0-9A-F]{6}$")',
+    r'_TOKEN = re.compile(r"[A-Za-z0-9]{12,}")',
+    r'_ID = re.compile(r"^[a-z][a-z0-9_]{2,63}$")',
 )
 
 
-@pytest.mark.parametrize(("tree", "planted"), PLANTED, ids=[item[0] for item in PLANTED])
+@pytest.mark.parametrize(
+    ("tree", "planted"),
+    PLANTED,
+    ids=[f"{item[0]}-{index}" for index, item in enumerate(PLANTED)],
+)
 def test_the_scan_sees_a_new_prefix_in_every_tree(tmp_path: Path, tree: str, planted: str) -> None:
     """A dict body with no trigger word, an object literal with none, and a `left(api10, 2)`
     check that matches neither the API-10 nor the anchored-pattern form."""
@@ -283,3 +382,39 @@ def test_the_allowlist_is_the_registry_and_not_a_second_copy_of_it() -> None:
     assert NAMES
     assert CODES
     assert all(len(prefix) == 2 and prefix.isdigit() for prefix in PREFIXES)
+
+
+@pytest.mark.parametrize("literal", QUANTIFIER_LITERALS)
+def test_neither_new_arm_matches_a_quantifier_or_a_hex_class(
+    tmp_path: Path, literal: str
+) -> None:
+    """M-8's whole point: the gate is narrowed, not widened. A rule that reddened on
+    `{10}` or `[0-9a-f]{64}` would be paid for in exemptions, and an exemption is a hole."""
+    assert ALTERNATION_GROUP.search(literal) is None, literal
+    assert PREFIXED_API10.search(literal) is None, literal
+
+    planted = tmp_path / "quantifiers.py"
+    planted.write_text(literal + "\n", encoding="utf-8")
+    assert scan_python([planted]) == []
+
+
+def test_the_exemption_count_is_stated_as_a_number_and_not_as_an_absence() -> None:
+    """"No new exemptions" is unfalsifiable. Eight is not: six Python and two web, each named
+    above with its reason and each proven load-bearing by the test before this one."""
+    assert len(PYTHON_EXEMPTIONS) == 6
+    assert len(WEB_EXEMPTIONS) == 2
+    assert len(PYTHON_EXEMPTIONS) + len(WEB_EXEMPTIONS) == 8
+
+
+@pytest.mark.parametrize(
+    ("tree", "planted"), PLANTED_CODES, ids=[item[0] for item in PLANTED_CODES]
+)
+def test_the_scan_sees_a_registered_code_used_as_a_key(
+    tmp_path: Path, tree: str, planted: str
+) -> None:
+    """The four sites §1.5 inventories are all this shape: a per-jurisdiction dict keyed on a
+    code, with no two-digit literal and no jurisdiction name anywhere on the line."""
+    planted_file = tmp_path / ("montana.py" if tree == "python" else "montana.ts")
+    planted_file.write_text(planted, encoding="utf-8")
+
+    assert (scan_python if tree == "python" else scan_web)([planted_file])

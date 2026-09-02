@@ -8,7 +8,7 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-from glasswell.lengths import resolve_length_method
+from glasswell.lengths import LATERALS_SOURCE_ID, resolve_length_method
 from glasswell.lineage.conformance import RULE_KINDS, apply_registry_rules, apply_rules, load_rules
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_nd import ND_RULES
@@ -30,6 +30,11 @@ POLICY_RULES = tuple(sorted((
     # well is judged inside a boundary. Each executor is the module its spec names.
     "cr_eia_area_provenance_1",
     "cr_eia_basin_link_1",
+    # The three reference corrections this train appends. A successor to a code_ref rule is a
+    # code_ref rule: the decision did not move, the symbol it names did.
+    "cr_eia_basin_link_2",
+    "cr_eia_geometry_repair_2",
+    "cr_nm_wellhistory_header_precedence_2",
     "cr_eia_boundary_overlap_1",
     "cr_eia_boundary_publisher_1",
     "cr_eia_boundary_taxonomy_1",
@@ -50,6 +55,17 @@ POLICY_RULES = tuple(sorted((
     # semantics and grain uniqueness, because they are separate sources whose registries must
     # not share an assumption; the rest record what the parsers decided and what they refused.
     "cr_mt_basin_scope_1",
+    # The seam-hardening registrations: which basin governs a jurisdiction's compute CRS, which
+    # source measures its lateral, whether the neighbour mart's domain reaches it, and Montana's
+    # appended length_scope successor. Their executor is the mart engine or the router the spec
+    # names; none of them transforms a frame.
+    "cr_mt_neighbors_scope_1",
+    "cr_mt_paths_length_scope_2",
+    "cr_nd_basin_scope_1",
+    "cr_nd_length_source_1",
+    "cr_nd_neighbors_scope_1",
+    "cr_tx_basin_scope_1",
+    "cr_tx_length_source_1",
     "cr_mt_formation_rollup_1",
     "cr_mt_gis_border_outliers_1",
     "cr_mt_grain_uniqueness_1",
@@ -522,7 +538,9 @@ def test_only_the_superseding_identity_rule_is_loaded_for_every_source_on_the_sp
 
 
 def test_the_active_length_method_is_zone_free(db, seeded):
-    method = resolve_length_method(db)
+    """Explicit source, because a basin-less resolve is a refusal now rather than an
+    inheritance of North Dakota's: which source governs is a registration."""
+    method = resolve_length_method(db, source_id=LATERALS_SOURCE_ID)
 
     assert (method.rule_id, method.method, method.compute_epsg) == (
         "cr_nd_compute_crs_2",

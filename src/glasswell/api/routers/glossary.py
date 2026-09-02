@@ -183,8 +183,10 @@ def _term(row: dict[str, Any]) -> dict[str, Any]:
             },
             limit={
                 "so": (
-                    "Capped at 200, which is more than the whole vocabulary — this collection"
-                    " is meant to be read end to end rather than paged through."
+                    "Capped at 200. The whole vocabulary is smaller than that today, but a"
+                    " client that means to hold it must follow `meta.next_cursor` rather than"
+                    " assume one page: `limit=201` is a 422 and the envelope carries no total,"
+                    " so paging is the only mechanism there is."
                 ),
             },
             q={
