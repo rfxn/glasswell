@@ -144,6 +144,30 @@ try {
         ),
         addresses: /\b\d{1,3}(\.\d{1,3}){3}\b/.test(section?.textContent ?? ""),
         overflow,
+        // gate-v076 D2: `clipped` measures the *section* box, and the section is as wide as the
+        // viewport whatever its tables do — so a Revoke button 161 px past the right edge sat
+        // inside a section that measured clean. Every action is measured on its own now, and
+        // hit-tested, because a control can be inside the viewport and still under a sticky
+        // neighbour.
+        controls: [...document.querySelectorAll("#accounts .gw-accounts-action")].map((button) => {
+          const box = button.getBoundingClientRect();
+          const edge = document.documentElement.clientWidth;
+          const onScreenVertically = box.bottom > 0 && box.top < window.innerHeight;
+          const topmost = onScreenVertically
+            ? document.elementFromPoint(
+                Math.round(box.left + box.width / 2),
+                Math.round(box.top + box.height / 2),
+              )
+            : null;
+          return {
+            label: (button.textContent ?? "").trim(),
+            left: Math.round(box.left),
+            right: Math.round(box.right),
+            past: Math.round(Math.max(0, box.right - edge)),
+            outside: box.right > edge + 1 || box.left < -1,
+            covered: onScreenVertically && !(topmost === button || button.contains(topmost)),
+          };
+        }),
         modes: document.querySelectorAll(".gw-mode-btn").length,
       };
     });
@@ -152,6 +176,21 @@ try {
     assert(seen.users >= 3, `${at} the users list has rows to judge`, String(seen.users));
     assert(seen.sessions >= 1, `${at} the sessions list has rows to judge`, String(seen.sessions));
     assert(!seen.clipped, `${at} the section is not clipped by the viewport`, JSON.stringify(seen));
+    // The section's only destructive control must be reachable without a horizontal swipe.
+    const unreachable = seen.controls.filter((control) => control.outside);
+    assert(
+      seen.controls.length > 0 && unreachable.length === 0,
+      `${at} every account control is inside the viewport`,
+      seen.controls.length === 0
+        ? "no .gw-accounts-action was found, so this assertion proves nothing"
+        : unreachable.map((c) => `${c.label} ${c.past}px past the edge`).join(", "),
+    );
+    const buried = seen.controls.filter((control) => control.covered);
+    assert(
+      buried.length === 0,
+      `${at} no account control is painted under something else`,
+      buried.map((c) => c.label).join(", "),
+    );
     assert(
       seen.modes === 3,
       `${at} the header still carries three modes, not a fourth`,

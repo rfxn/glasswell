@@ -547,6 +547,31 @@
   min-width: 880px;
 }
 
+/* gate-v076 D2: the sessions table is 880 px of minimum inside a 961 px viewport at 1024 and
+   the Revoke button sat 161 px past the visible edge (758 px at 390), behind a 2 px scrollbar
+   with no fade, shadow or mask. A reader on a laptop saw a complete-looking list with no cue
+   that the section's only destructive control existed. It is pinned to the right edge instead:
+   the data columns scroll under it, Revoke never leaves the viewport, and the shadow is the
+   cue that there is more to the left of it. */
+.gw-accounts-sessions th:last-child,
+.gw-accounts-sessions td:last-child,
+.gw-accounts-users th:last-child,
+.gw-accounts-users td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: var(--panel);
+  /* box-shadow rather than border-left: `border-collapse: collapse` drops one side of a
+     sticky cell's border as it detaches from the collapsed grid. */
+  box-shadow: inset 1px 0 0 var(--hairline);
+}
+
+/* The head cell outranks its own column, or the first row scrolls over it. */
+.gw-accounts-sessions thead th:last-child,
+.gw-accounts-users thead th:last-child {
+  z-index: 2;
+}
+
 /* One line per cell: these tables are already scroll-on-overflow, and a wrapped timestamp
    doubles every row's height at 1024 to save a horizontal swipe nobody asked for. */
 .gw-accounts-users td,
