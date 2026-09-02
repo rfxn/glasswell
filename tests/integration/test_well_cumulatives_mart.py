@@ -20,7 +20,7 @@ from glasswell.marts.cumulatives import (
     MART_STREAMS,
     NEVER_REPORTED,
     OBSERVED,
-    WITHHOLDING_SOURCES,
+    WITHHOLDING_BY_PREFIX,
     refresh_well_cumulatives,
 )
 from glasswell.seed import seed_all
@@ -107,7 +107,7 @@ def refreshed(db: psycopg.Connection, lineage_env):
 
     filing(WITHHELD_LEDGER, JAN, "oil", Decimal("600"))
     filing(WITHHELD_LEDGER, MAR, "oil", Decimal("700"))
-    source_id, reason_code = WITHHOLDING_SOURCES["33"][0]
+    source_id, reason_code = WITHHOLDING_BY_PREFIX["33"][0]
     with db.cursor() as cursor:
         cursor.execute(
             _QUARANTINE,

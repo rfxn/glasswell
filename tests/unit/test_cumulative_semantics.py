@@ -14,7 +14,7 @@ import pytest
 from glasswell.api.routers import production
 from glasswell.marts.cumulatives import (
     ADMITTED_NULL_SEMANTICS,
-    WITHHOLDING_SOURCES,
+    WITHHOLDING_BY_PREFIX,
     cumulative_semantics_predicate,
     filed_span,
     month_class_counts,
@@ -47,7 +47,7 @@ def test_the_admitted_set_excludes_everything_the_producing_rule_refuses_as_evid
 
 def test_the_withholding_mapping_agrees_with_the_series_endpoint() -> None:
     """One ledger predicate: the mart and /production must read the same rows (M2)."""
-    source_id, reason_code = WITHHOLDING_SOURCES["33"][0]
+    source_id, reason_code = WITHHOLDING_BY_PREFIX["33"][0]
 
     assert f"source_id = '{source_id}'" in production._WITHHELD_MONTHS
     assert f"reason_code = '{reason_code}'" in production._WITHHELD_MONTHS

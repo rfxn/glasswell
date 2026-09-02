@@ -30,6 +30,7 @@ from glasswell.lineage import (
 )
 from glasswell.lineage.audit import emit
 from glasswell.lineage.serialization import hash_payload
+from glasswell.seed.jurisdictions import JURISDICTIONS
 
 NULL_SEMANTICS_RULE = "cr_nd_null_semantics_1"
 LIQUIDS_RULE = "cr_nd_liquids_policy_1"
@@ -51,13 +52,20 @@ MONTH_CLASS_PARTS = (
     "withheld_quarantined",
 )
 
-# Keyed by state so widening is a mapping entry rather than an edit. Texas withholding is
+# Keyed by jurisdiction code so widening is a mapping entry rather than an edit, and resolved
+# to an API prefix through the registry rather than spelling one here. Texas withholding is
 # field-level under cr_tx_ewa_measures_1 (053_tx_measure_withholding.sql:1-2), a different
 # grain, so adding it is a reader as well as an entry — which is what this shape says.
 WITHHOLDING_SOURCES: dict[str, tuple[tuple[str, str], ...]] = {
-    "33": (("nd_mpr_xlsx", "confidential_withheld"),),
+    "ND": (("nd_mpr_xlsx", "confidential_withheld"),),
 }
-STATE_API_PREFIXES = tuple(WITHHOLDING_SOURCES)
+_PREFIX_OF = {
+    str(row["jurisdiction_code"]): str(row["identity_prefix"]) for row in JURISDICTIONS
+}
+STATE_API_PREFIXES = tuple(_PREFIX_OF[code] for code in WITHHOLDING_SOURCES)
+WITHHOLDING_BY_PREFIX: dict[str, tuple[tuple[str, str], ...]] = {
+    _PREFIX_OF[code]: sources for code, sources in WITHHOLDING_SOURCES.items()
+}
 
 MART_STREAMS = ("liquid", "gas", "water")
 STREAM_UNITS = {"liquid": "bbl", "gas": "mcf", "water": "bbl"}
@@ -440,7 +448,7 @@ def refresh_well_cumulatives(connection: psycopg.Connection) -> CumulativesRefre
             "month_class_parts": list(MONTH_CLASS_PARTS),
             "withholding_sources": {
                 state: [list(pair) for pair in pairs]
-                for state, pairs in WITHHOLDING_SOURCES.items()
+                for state, pairs in WITHHOLDING_BY_PREFIX.items()
             },
             "state_api_prefixes": list(STATE_API_PREFIXES),
             "streams": list(MART_STREAMS),

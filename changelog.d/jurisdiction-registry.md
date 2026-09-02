@@ -82,3 +82,13 @@
            legend built from those claimed whatever somebody last measured. The census comes
            from `/v1/jurisdictions` now, fetched off the entry path, and a class is hidden only
            on an explicit measured zero — an unknown or degraded census hides nothing
+- [New] `tests/unit/test_add_a_state.py` refuses a two-digit API prefix or a jurisdiction's
+      name anywhere the serving path reads: `marts/`, `api/routers/`, `status/`, `lineage/`,
+      every migration written after the registry, and `web/src` with comments stripped. The
+      rule is positive and keyword-free, which is the point — an earlier form gated on a
+      trigger word and seventeen of the nineteen literals it existed to catch sat in dict
+      bodies with no such word on the line. Six exemptions, each with its reason in the file
+      and each proved load-bearing by a test that removes it and expects the scan to speak
+- [New] `docs/runbook-add-a-state.md`: eleven steps from registering the source to running the
+      count writer, each naming the refusal that stops it being done out of order — and naming
+      the one step, the ingest timer, that still has no gate behind it
