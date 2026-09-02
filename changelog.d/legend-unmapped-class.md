@@ -12,7 +12,12 @@
       the handle that resolves it, in place of the compiled literals three of the four rows
       carried — Texas 355,463, New Mexico 141,778 and Montana 42,026 against a registry
       serving 359,421, 142,000 and 40,626 — and state no number at all until one arrives
+- [Change] The count writer measures every class the registered status vocabularies name, for
+           every registered jurisdiction, so a class no well carries is a measured zero rather
+           than an absent row; the vocabulary is read off the `vocab_map` rules themselves, and
+           the legend hides a class measured at zero everywhere while listing an unmeasured one
 - [New] `python -m glasswell.marts.counts --dsn ...` appends a jurisdiction well-count
       measurement, the command the add-a-state runbook has named since step 11 and the
-      module never carried. It takes no `--measured-on`: the ledger's date is the day the
+      module never carried; `--codes ND,TX` narrows it and refuses a code no registration
+      carries by name. It takes no `--measured-on`: the ledger's date is the day the
       measurement was taken

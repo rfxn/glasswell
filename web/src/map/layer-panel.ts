@@ -9,6 +9,7 @@ import { teach } from "../glossary/teach.ts";
 import { ABBREVIATION } from "./jurisdictions.generated.ts";
 import { BASEMAPS } from "./basemap.ts";
 import { loadCensus, measuredJurisdiction } from "./census.ts";
+import type { JurisdictionFigure } from "./census.ts";
 import type { LayerFamily } from "./groups.ts";
 import { COUNT_SLOT, LAYERS, defaultLayerSet, familyState, groupEntries } from "./registry.ts";
 import type { GroupEntry, LayerDef } from "./registry.ts";
@@ -18,13 +19,19 @@ const NUMBER = new Intl.NumberFormat("en-US");
 /** The legend's mark for a count that has not arrived. Never a literal that has drifted. */
 const PENDING_MARK = "…";
 
+/**
+ * The count a row may state: the served figure, or the pending mark where there is none — and
+ * where there is no handle to resolve one with, which is the same thing under the first hard
+ * rule. A figure whose derivation went missing is a naked number, not a number.
+ */
+function countText(measured: JurisdictionFigure | null): string {
+  return measured?.handle ? NUMBER.format(measured.wells) : PENDING_MARK;
+}
+
 /** The subtitle as one string, with whatever the registry has served in the count slot. */
 function subtitleText(layer: LayerDef): string {
   const measured = layer.jurisdiction ? measuredJurisdiction(layer.jurisdiction) : null;
-  return layer.subtitle.replace(
-    COUNT_SLOT,
-    measured === null ? PENDING_MARK : NUMBER.format(measured.wells),
-  );
+  return layer.subtitle.replace(COUNT_SLOT, countText(measured));
 }
 
 export interface LayerPanelOptions {
@@ -565,12 +572,17 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFam
   const [opening, ...rest] = layer.subtitle.split(COUNT_SLOT);
   const count = document.createElement("span");
   count.className = "gw-layer-count";
-  const countHandle = explainHandle({
-    className: "gw-layer-count-handle",
-    label: `the ${layer.label.toLowerCase()} count`,
-  });
+  // Built only where a row states a served count. Every other row was constructing a handle,
+  // validating its label and dropping it — fifteen buttons a panel that nothing ever appends.
+  const countHandle =
+    rest.length > 0
+      ? explainHandle({
+          className: "gw-layer-count-handle",
+          label: `the ${layer.label.toLowerCase()} count`,
+        })
+      : null;
   subtitle.append(opening ?? layer.subtitle);
-  if (rest.length > 0) subtitle.append(count, rest.join(COUNT_SLOT), countHandle);
+  if (countHandle) subtitle.append(count, rest.join(COUNT_SLOT), countHandle);
   if (layer.snapshot) {
     subtitle.appendChild(
       explainHandle({
@@ -584,9 +596,9 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFam
 
   /** The served count, or the pending mark: a row states no number it cannot resolve. */
   function paintCount(): void {
-    if (rest.length === 0) return;
+    if (!countHandle) return;
     const measured = layer.jurisdiction ? measuredJurisdiction(layer.jurisdiction) : null;
-    count.textContent = measured === null ? PENDING_MARK : NUMBER.format(measured.wells);
+    count.textContent = countText(measured);
     count.title = measured?.measuredOn
       ? `Measured ${measured.measuredOn}, from the jurisdiction registry`
       : "No well count has been measured for this jurisdiction yet.";

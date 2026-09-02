@@ -190,7 +190,7 @@ def test_a_well_whose_source_filed_no_status_is_counted_in_a_class_of_its_own(
 
     measurement = ledger(seeded, measured)
     assert measurement[("TX", UNMAPPED_CLASS)][0] == 1
-    for code in ("ND", "TX", "NM", "MT"):
+    for code in CODES:
         classes = [
             wells
             for (owner, key), (wells, _) in measurement.items()
@@ -240,6 +240,15 @@ def test_a_class_the_day_does_not_hold_lands_on_it_without_rewriting_what_does(
     measurement = ledger(seeded, measured)
     assert measurement[("TX", UNMAPPED_CLASS)] == (1, second.derivation_id)
     assert measurement[("ND", TOTAL_STATUS_KEY)][1] == first.derivation_id
+
+
+def test_a_code_the_registry_does_not_hold_is_refused_by_name(
+    seeded: psycopg.Connection,
+) -> None:
+    """An unregistered code narrows the refresh to nothing, and a run that measured nothing
+    reports success. The owner runs this by hand on a production host after a deploy."""
+    with pytest.raises(ValueError, match="not a registered jurisdiction: TZ"):
+        counted(seeded, date(2026, 8, 28), codes=("ND", "TZ"))
 
 
 def test_a_second_run_on_the_same_day_appends_nothing_rather_than_rewriting(

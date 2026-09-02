@@ -105,6 +105,37 @@ describe("the layer panel", () => {
     resetCensus();
   });
 
+  it("states no number for a figure with no handle, since that is a naked number", async () => {
+    // The rule the row exists to keep: a count on this panel resolves or it is not stated. The
+    // wire cannot omit `d` today — the ledger's derivation_id is not null — so this is the
+    // guard rather than a reproduction, and it is the one clause that makes the comment true.
+    resetCensus(
+      censusOf([
+        {
+          jurisdiction_code: JURISDICTIONS.TX.code,
+          well_count: { value: "359421" },
+          measured_on: "2026-09-02",
+          well_counts_by_status: [],
+        },
+      ]),
+    );
+    const { handle } = panel();
+    await loadCensus();
+
+    const subtitle = rowFor(handle.element, "tx-wells")!.querySelector<HTMLElement>(".gw-layer-sub")!;
+    expect(subtitle.textContent).not.toContain("359,421");
+    expect(subtitle.querySelector<HTMLButtonElement>(".gw-layer-count-handle")!.hidden).toBe(true);
+    resetCensus();
+  });
+
+  it("builds a count handle only for a row that states a served count", () => {
+    const { handle } = panel();
+    const handles = handle.element.querySelectorAll(".gw-layer-count-handle");
+
+    expect(handles).toHaveLength(LAYERS.filter((layer) => layer.subtitle.includes("{count}")).length);
+    expect(handles.length).toBeGreaterThan(0);
+  });
+
   it("states no number in a Wells subtitle until one is served, rather than a stale literal", () => {
     resetCensus();
     const { handle } = panel();

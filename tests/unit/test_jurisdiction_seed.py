@@ -9,6 +9,7 @@ that each registration carries the decision no jurisdiction may be without.
 from __future__ import annotations
 
 import re
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -19,7 +20,6 @@ from glasswell.marts.tiles import TILE_LAYERS
 from glasswell.seed.jurisdictions import (
     CODES,
     EVIDENCE_COMMIT,
-    EVIDENCE_TAG,
     JURISDICTION_CODES,
     JURISDICTION_RULES,
     JURISDICTIONS,
@@ -76,19 +76,34 @@ def test_the_migration_and_the_mirror_agree_about_being_repointed() -> None:
     migration = MIGRATION.read_text(encoding="utf-8")
 
     assert repoint_disagreements(migration) == []
+    # Shape only. This pattern accepts the placeholder, and deliberately: an unrepointed pair is
+    # a legitimate state between writing a migration and cutting the release that publishes it,
+    # and `release.py`'s placeholder_evidence_blockers is what refuses to ship one.
     assert REPOINTED_COMMIT.match(EVIDENCE_COMMIT)
-    assert EVIDENCE_TAG
 
 
-def test_a_mirror_repointed_alone_is_caught(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The negative case the inverted form never had: move the mirror's tag and nothing else,
-    and the check has to name the file that did not move with it."""
+# One arm each, because a check with a negative case on one of three is two checks nobody has
+# tried to break. The clock is the one 073 spends five lines warning about: it is written twice
+# in the migration and both copies have to move together.
+MOVED_ALONE = (
+    ("EVIDENCE_TAG", "v9.99-never-cut", "does not quote evidence_tag v9.99-never-cut"),
+    ("EVIDENCE_COMMIT", "f" * 40, f"does not quote evidence_commit {'f' * 40}"),
+    ("REGISTERED_ON", date(2019, 1, 1), "does not carry the clock 2019-01-01"),
+)
+
+
+@pytest.mark.parametrize(
+    ("moved", "value", "named"), MOVED_ALONE, ids=[row[0] for row in MOVED_ALONE]
+)
+def test_a_mirror_moved_alone_is_caught_on_every_arm(
+    monkeypatch: pytest.MonkeyPatch, moved: str, value: object, named: str
+) -> None:
+    """The negative case the inverted form never had: move one value on the mirror and nothing
+    else, and the check has to name the writer that did not move with it."""
     migration = MIGRATION.read_text(encoding="utf-8")
-    monkeypatch.setattr(mirror, "EVIDENCE_TAG", "v9.99-never-cut")
+    monkeypatch.setattr(mirror, moved, value)
 
-    assert repoint_disagreements(migration) == [
-        "the migration does not quote evidence_tag v9.99-never-cut"
-    ]
+    assert repoint_disagreements(migration) == [f"the migration {named}"], moved
 
 
 def test_the_migration_carries_every_registration_and_every_rule() -> None:

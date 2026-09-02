@@ -98,6 +98,13 @@ def refresh_jurisdiction_counts(
     no number served (R-3). It exists for a re-measure after one jurisdiction's backfill.
     """
     registry = load_jurisdictions(connection)
+    if codes is not None:
+        # A code nobody registered narrows the refresh to nothing, and a run that measured
+        # nothing reports success: the owner runs this by hand on a production host, one
+        # command after a deploy, and `--codes ND,TZ` must not answer "done".
+        unknown = set(codes) - {row.jurisdiction_code for row in registry}
+        if unknown:
+            raise ValueError(f"not a registered jurisdiction: {', '.join(sorted(unknown))}")
     registered = [
         row
         for row in registry
@@ -238,8 +245,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         environment = resolve_environment(
             connection, env_id=arguments.env_id, code_version=arguments.code_version
         )
-        with lineage_session(recorder=PostgresRecorder(connection), environment=environment):
-            refresh = refresh_jurisdiction_counts(connection, codes=codes)
+        try:
+            with lineage_session(
+                recorder=PostgresRecorder(connection), environment=environment
+            ):
+                refresh = refresh_jurisdiction_counts(connection, codes=codes)
+        except ValueError as unregistered:
+            parser.error(str(unregistered))
         connection.commit()
     print(json.dumps(refresh.as_dict(), sort_keys=True))
     return 0
