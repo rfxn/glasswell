@@ -18,6 +18,7 @@ import re
 import tomllib
 from pathlib import Path
 
+import psycopg
 import pytest
 
 pytestmark = pytest.mark.unit
@@ -79,7 +80,6 @@ def test_the_discovery_finds_both_halves_of_the_set() -> None:
 def test_no_entry_point_requires_a_dsn_on_its_command_line(module: str) -> None:
     text = source_of(module)
 
-    assert 'required=True' not in text.split('"--dsn"')[0][-200:] or '"--dsn"' not in text
     assert '"--dsn", required=True' not in text
     assert "add_dsn_argument(parser)" in text or '"--dsn"' in text
 
@@ -145,16 +145,20 @@ def test_every_entry_point_reads_the_environment_when_the_flag_is_absent(
 ) -> None:
     """The behaviour, not the source: a main that parses its argv and never resolves would
     pass a text check and still refuse on the host."""
-    monkeypatch.setenv("DATABASE_URL", "postgresql://probe@127.0.0.1:1/probe")
+    # A unix socket directory that does not exist: local, instant, and no listener anywhere.
+    monkeypatch.setenv("DATABASE_URL", "postgresql:///probe?host=/nonexistent-gw-probe")
     monkeypatch.delenv("GLASSWELL_DSN", raising=False)
     entry = importlib.import_module(module)
     source = source_of(module)
     if "add_dsn_argument(parser)" not in source:
         pytest.skip(f"{module} keeps its own default; its fallback is asserted above")
 
-    # The parser is built inside main, so the resolution is observed through the failure the
-    # connection attempt raises rather than by reaching into the module.
-    with pytest.raises((SystemExit, Exception)) as failure:  # any failure but the refusal
+    # The parser is built inside main, so the resolution is observed through what fails
+    # afterwards. Two outcomes are correct and one is not: psycopg refusing the unreachable
+    # socket means the DSN resolved, and argparse exiting 2 means the parser refused a
+    # different missing argument before the DSN was ever a question. Refusing *for want of a
+    # DSN* is the failure this asserts against.
+    with pytest.raises((SystemExit, psycopg.OperationalError)) as failure:
         entry.main([])
     assert "no database DSN" not in str(failure.value), module
 

@@ -392,7 +392,6 @@ def test_the_map_is_placed_once_and_a_second_run_changes_nothing(tmp_path) -> No
     ident = (etc / "pg_ident.conf").read_text()
     assert ident.count("include_if_exists 'pg_ident.d/glasswell.conf'") == 1, ident
     assert (etc / "pg_ident.d" / "glasswell.conf").exists()
-    assert "systemctl.log" in str(tmp_path / "systemctl.log")
     assert "reload postgresql" in (tmp_path / "systemctl.log").read_text()
 
 
