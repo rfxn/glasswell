@@ -31,7 +31,9 @@ from glasswell.seed.conformance_tx import EWA_LINK, GIS_LINK
 from glasswell.seed.schedules import JOB_SOURCES, SCHEDULES, anchors, cadence_rule_id
 
 EFFECTIVE_FROM = date(2026, 9, 2)
-PLANNER = "glasswell.scheduler.plan:due_jobs"
+# The symbol the planner really exports. `due_jobs` was a name nobody wrote, which is a
+# published claim a reader cannot check -- the thing the register exists to prevent.
+PLANNER = "glasswell.scheduler.plan:due_for"
 
 # The one derivation every ingest cadence shares, stated once and cited by each rule that uses
 # it, so a shorter policy on any one source shortens its job without a second decision.
