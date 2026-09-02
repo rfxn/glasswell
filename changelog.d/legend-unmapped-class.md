@@ -21,3 +21,7 @@
       module never carried; `--codes ND,TX` narrows it and refuses a code no registration
       carries by name. It takes no `--measured-on`: the ledger's date is the day the
       measurement was taken
+- [Fix] chrome: the Sign-out, Help and theme controls carry their own accessible name, so the
+      compact rail's `display: none` on their label span below 901 px no longer leaves them
+      unnamed — at 820 and 390 the Sign-out button had no text in the accessibility tree and
+      its runtime title, "Signed in as <account>", would have been announced as its name
