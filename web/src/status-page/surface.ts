@@ -1,6 +1,7 @@
 import "./surface.css";
 
 import { accountsSection, loadAccounts } from "../accounts/section.ts";
+import { displayTime, element } from "./dom.ts";
 import { ApiError, getEnvelope } from "../api/client.ts";
 import "../components/gw-count.ts";
 import { labelElement } from "../glossary/gw-term.ts";
@@ -839,14 +840,6 @@ function timeOrFallback(value: string | null, fallback: string): HTMLElement {
   return time;
 }
 
-/** Exported beside `element`, so the Accounts tables stamp a time the way this page does. */
-export function displayTime(value: string): string {
-  if (/^\d{4}-\d{2}(-\d{2})?$/.test(value)) return value;
-  const parsed = new Date(value);
-  if (!Number.isFinite(parsed.getTime())) return value;
-  return parsed.toISOString().replace("T", " ").replace(/:\d{2}\.\d{3}Z$/, " UTC");
-}
-
 /** A column head is prose unless its wording is the product's name for something else. */
 type Column = string | { label: string; term: string };
 
@@ -891,17 +884,6 @@ function emptyBlock(message: string): HTMLElement {
   const item = element("p", "gw-status-empty");
   item.textContent = message;
   return item;
-}
-
-/** Exported for `accounts/`, which mounts inside this surface: three private copies of this
- * helper already exist in the tree and a fourth would be one more than the tree needs. */
-export function element<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className: string,
-): HTMLElementTagNameMap[K] {
-  const created = document.createElement(tag);
-  created.className = className;
-  return created;
 }
 
 function aborted(error: unknown): boolean {

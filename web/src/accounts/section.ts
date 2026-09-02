@@ -22,7 +22,7 @@ import type { MintedUser, SessionRecord, UserRecord } from "../api/client.ts";
 import type { Envelope } from "../api/envelope.ts";
 import { emptyState, warningNotes } from "../chrome/notes.ts";
 import { labelElement } from "../glossary/gw-term.ts";
-import { displayTime, element } from "../status-page/surface.ts";
+import { displayTime, element } from "../status-page/dom.ts";
 import { confirmDialog } from "./confirm.ts";
 
 const TITLE = "Accounts";
