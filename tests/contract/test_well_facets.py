@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from glasswell.api.routers.facets import DIMENSIONS
 from glasswell.lineage.ids import parse_handle
+from tests.contract.conftest import TX_API10
 from tests.support.seed import seed_derivation, seed_well
 
 # Enough operators to be truncated by a small `top`, with a deliberate long tail and a
@@ -712,3 +713,81 @@ def test_a_response_carrying_more_handles_than_explain_inlines_says_so(
     codes = {warning["code"] for warning in body["meta"]["warnings"]}
     assert "explain_inline_truncated" in codes
     assert len(body["_explain"]) == 20
+
+
+def _withhold_tx_completion_dates(connection: psycopg.Connection) -> None:
+    """`cr_tx_ewa_measures_1`: the RRC withholds COMPLETION_DATE, so no Texas well carries one.
+
+    The fixture's Texas well is restated rather than edited — canonical.wells is append-only and
+    a later effective_from is what makes the withheld value the current one.
+    """
+    seed_well(
+        connection,
+        api10=TX_API10,
+        state_code="42",
+        effective_from=date(2026, 9, 1),
+        county_code_at_permit="003",
+        basin="permian",
+        operator_name_reported="PIONEER NATURAL RESOURCES USA INC",
+        completion_date=None,
+    )
+    for serial in range(1, 6):
+        seed_well(
+            connection,
+            api10=f"42{serial:08d}",
+            state_code="42",
+            county_code_at_permit="003",
+            basin="permian",
+            operator_name_reported="APACHE CORPORATION",
+            completion_date=None,
+        )
+    seed_well(
+        connection,
+        api10="3390000001",
+        state_code="33",
+        operator_name_reported="A ND OPERATOR",
+        completion_date=date(2021, 6, 4),
+    )
+    connection.commit()
+
+
+def test_texas_reports_no_completion_year_and_the_registry_says_so(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The case the whole `absent_by_rule` arm exists for. Texas withholds COMPLETION_DATE under
+    `cr_tx_ewa_measures_1`, so on the deployed load 359,421 wells carry none; folded into the
+    shared `not reported` bucket beside North Dakota's genuinely missing dates they would read as
+    one population, and the two are not the same fact (R8)."""
+    _withhold_tx_completion_dates(seeded)
+    body = client.get("/v1/wells/facets?state=33,42&by=completion_year&top=50").json()
+    data = body["data"]
+    by_code = {row["code"]: row for row in data["jurisdictions"]}
+
+    assert by_code["42"]["dimension"] == "absent_by_rule"
+    assert by_code["42"]["rule_id"] == "cr_tx_ewa_measures_1"
+    assert by_code["33"]["dimension"] == "carried"
+    assert "cr_tx_ewa_measures_1" in data["rules"]
+    assert body["links"]["cr_tx_ewa_measures_1"] == "/v1/conformance/cr_tx_ewa_measures_1"
+
+
+def test_the_withheld_texas_wells_are_outside_the_not_reported_bucket(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """Counted where the rule is, and still counted: the reconciliation holds with them out."""
+    _withhold_tx_completion_dates(seeded)
+    data = client.get("/v1/wells/facets?state=33,42&by=completion_year&top=50").json()["data"]
+    by_code = {row["code"]: row for row in data["jurisdictions"]}
+
+    listed = sum(int(bucket["wells"]["value"]) for bucket in data["buckets"])
+    absent = int(data["absence"]["wells"]["value"]) if data["absence"] else 0
+    by_rule = int(by_code["42"]["wells"]["value"])
+    texas = int(
+        client.get("/v1/wells/facets?state=42&by=operator&top=1").json()["data"]["wells"]["value"]
+    )
+
+    assert by_rule == texas
+    assert listed + absent + by_rule == int(data["wells"]["value"])
+    # The shared bucket is North Dakota's alone, and cites no rule because North Dakota has
+    # none registered for this dimension — which is the R8 disclosure, not a defect.
+    assert data["absence"]["rule_id"] is None
+    assert "Texas" in data["absence"]["detail"]

@@ -16,3 +16,12 @@
          `wells_facet_dimensions_idx` answers index-only over a set: measured on the
          deployed 585,864 wells at 12,780 buffers and 592 ms against 279,288 and
          1,031 ms for the api10-only partition (web/PERF.md §7)
+- [New] `absence:completion_year` is registered for Texas against
+      `cr_tx_ewa_measures_1`: the RRC withholds COMPLETION_DATE, so a Texas well with no
+      completion year is a withheld value and the facet names it rather than folding it in
+      beside a missing one (R8)
+- [Change] `wells_facet_dimensions_idx` carries `status_reported`, and
+         `canonical.status_resolution` is backed by a relation keyed on (state, reported
+         code) rather than a view; the status facet over a set of states goes from an index
+         scan with a heap visit per row to an index-only scan with a keyed resolver lookup,
+         measured at 809,191 rows as 32,598 buffers and 1,285 ms against 12,484 and 818 ms

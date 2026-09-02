@@ -304,6 +304,11 @@ the operation shipped with cannot use that index over a set at all, and the same
 operator facet measured **279,288 buffers and 1,031 ms** in that shape against 12,780 and
 592 ms in this one.
 
+**`status` was the exception, and the fix is an index and a keyed relation rather than a
+cache.** The paragraphs below are the diagnosis as measured on the deployed database *before*
+the migration this track added; the section that follows them is the before/after on a fixture
+of the same size, and what it predicts for the host.
+
 **`status` is the exception and it is not a cache's problem.** It is the one dimension that
 joins — New Mexico's class is resolved at read time (`cr_nm_wellhistory_status_vocab_2`) —
 and the join costs it the index-only scan: 296,767 buffers against 12,778, all of it heap.
@@ -324,9 +329,44 @@ buffers to 20,791 and makes it **worse** — 2,248 ms — because the hash destr
 order the `distinct on` needs and the sort of 809,191 rows costs more than the heap did. The
 index change is the fix; the plan hint is not.
 
+### What the migration changes, measured before and after
+
+Both faults are addressed by the migration this track carries: `status_reported` joins the
+covering index's `INCLUDE`, and `canonical.status_resolution` is backed by a keyed relation the
+planner can look up instead of a view it can only scan.
+
+**The deployed database cannot answer a before/after read-only** — the comparison needs an index
+that does not exist there yet — so it was measured on an ephemeral PostGIS loaded to the
+deployed row count: **809,191 spine rows over four states, ND/TX/NM/MT in their deployed
+proportions, New Mexico's `status_canonical` null so the resolver join is live.** Same statement,
+`vacuum (analyze)` before each measurement, three runs, the last reported.
+
+| | buffers | time | spine scan | resolver |
+|---|---:|---:|---|---|
+| before (v0.76 index, view resolver) | 32,598 | 1,285 ms | `Index Scan` — a heap visit per row | scanned |
+| **after** (this migration) | **12,484** | **818 ms** | `Index Only Scan`, **Heap Fetches 0** | `Index Scan using status_resolution_resolved_pkey` |
+
+**−62% buffers and −36% time on the fixture.** The index rebuild itself takes **1.25 s** at that
+size and grows the index from **95 MB to 98 MB**.
+
+**What that predicts for the host, stated as a prediction.** The fixture's heap is 160 MB and the
+deployed one is larger — which is exactly why the same `Index Scan` reads 296,767 buffers there
+against 32,598 here. The change does not make the heap visit cheaper; it removes it, so the
+deployed status facet should read the same order of buffers as the other four dimensions
+(~12,800, a ~23× fall) and its 4,179,636 join-filter comparisons should become one index probe
+per New Mexico row. On that basis it should land near the 490–613 ms band rather than at
+1,561–1,647 ms. **This is not a measurement of the deployed database and must be re-measured
+there after the deploy** — `web/PERF.md` gets the real number then, and this paragraph is what it
+will be checked against.
+
+One caveat that is not about the deploy: an index-only scan reads the visibility map, so the
+gain is realised only on a vacuumed table. On the same fixture the rebuilt index recorded
+809,191 heap fetches before a vacuum and 0 after. The deployed table is autovacuumed; a freshly
+restored one is not, until it is.
+
 No cache is shipped, and the facet rate limit is unchanged at 60 requests per principal per
 UTC minute. A cached facet is a figure whose derivation handle no longer describes when it
-was computed, and `all` is under two seconds warm today.
+was computed, and `all` was under two seconds warm even before this.
 
 **On the fixture** (contract tier, 36 wells over three jurisdictions, whole request including
 the `api.respond` derivation write): 11–16 ms per dimension. It measures the code path, not

@@ -178,6 +178,15 @@ JURISDICTION_RULES: tuple[dict[str, object], ...] = (
     {"jurisdiction_code": "TX", "decision": "identity", "rule_id": "cr_tx_api10_build_1"},
     {"jurisdiction_code": "TX", "decision": "absence:operator",
      "rule_id": "cr_tx_operator_absence_1"},
+    # The RRC withholds COMPLETION_DATE on every well, so a Texas well with no completion year
+    # is a withheld value rather than one the regulator failed to record. Registered at the
+    # (jurisdiction, dimension) grain the facet surface resolves absence at, so a count over
+    # several states names Texas rather than folding it in beside genuinely missing dates.
+    {"jurisdiction_code": "TX", "decision": "absence:completion_year",
+     "rule_id": "cr_tx_ewa_measures_1",
+     "note": "The RRC withholds COMPLETION_DATE on every well in the Wellbore Query export, so"
+             " a Texas well carrying no completion year is a withheld value under"
+             " cr_tx_ewa_measures_1 and not a value the regulator failed to record."},
     # _2 rather than the _1 the spec table names: the successor is what serves on this base, and
     # a registry naming a superseded rule would be a false claim on the day it is written.
     {"jurisdiction_code": "NM", "decision": "status_vocabulary",
@@ -286,5 +295,9 @@ def seed_jurisdictions(connection: psycopg.Connection) -> int:
             _INSERT_JURISDICTION, [registration_parameters(row) for row in JURISDICTIONS]
         )
         cursor.executemany(_INSERT_RULE, [rule_parameters(row) for row in JURISDICTION_RULES])
+        # The read-time status resolver is derived from the rows above, and a database restored
+        # from a dump lands them without an append for the trigger to see. Every deploy runs
+        # this, between migrate and the API restart.
+        cursor.execute("select lineage.refresh_status_resolution()")
         cursor.execute("select count(*) from lineage.jurisdictions")
         return int(cursor.fetchone()[0])
