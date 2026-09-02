@@ -8,17 +8,12 @@
 -- addresses both. web/PERF.md section 7 carries the measurements and the plans.
 --
 -- REPOINT CHECKLIST (integrator, at the merge train):
---   1. The jurisdiction_rules row below carries NO date literal. Its (effective_from,
---      published_at) are read from the Texas registration resolving at apply time, so the pair
---      073's checklist repoints is inherited rather than restated here. Nothing to move.
---   2. seed/jurisdictions.py's JURISDICTION_RULES gains the same row and writes it at
---      REGISTERED_ON, which 073's checklist already governs. Do not add a second date.
---   3. The publication evidence below is 053's, NOT this train's. cr_tx_ewa_measures_1 was
---      first published in v0.62 on 2026-08-29 and that fact is immutable; the insert is a
---      no-op on any database at schema 53 or later and lands only on one restored below it.
---      Repointing those three literals would claim a first publication that did not happen.
---      Leave them. They are 053's own values, copied byte for byte.
---   4. This file's version integer lives in its filename and nowhere else, so a renumber is a
+--   1. Nothing dated. This file registers no conformance rule, appends no jurisdiction row
+--      and cites no publication evidence, so it carries no tag, commit or vintage to move.
+--      An earlier revision of it registered a Texas absence decision; that row was withdrawn
+--      before it was ever applied, because the deployed spine carries 228,169 Texas
+--      completion dates and the rationale on it was false. See the gate report, H-1.
+--   2. This file's version integer lives in its filename and nowhere else, so a renumber is a
 --      rename. No identifier, event id or payload below carries it.
 --
 -- DEPLOY NOTE. glasswell-migrate applies each file inside one transaction
@@ -150,47 +145,3 @@ grant execute on function lineage.refresh_status_resolution() to glasswell_pipel
 
 select lineage.refresh_status_resolution();
 
--- (c) R8: what a missing Texas completion year means is a registered decision, not an
--- inference the facet makes. The RRC's Wellbore Query export withholds COMPLETION_DATE for
--- every well, which cr_tx_ewa_measures_1 already states as a field-level withholding; this
--- registers it at the (jurisdiction, dimension) grain the facet surface resolves absence at,
--- so `state=all&by=completion_year` names Texas as absent by rule instead of folding 359,421
--- withheld wells into the same "not reported" bucket as North Dakota's genuinely missing dates.
---
--- No date literal: the pair is the Texas registration resolving at apply time. On a fresh
--- database lineage.jurisdictions is empty when migrations run and seed/jurisdictions.py
--- supplies the row; on the deployed one this is the statement that lands it.
-insert into lineage.conformance_rule_publications
-    (rule_id, published_vintage, evidence_tag, evidence_commit)
-values ('cr_tx_ewa_measures_1', date '2026-08-29', 'v0.62',
-        '307d65d25dc85785c0d87ac9097ef59085ec819a')
-    on conflict (rule_id) do nothing;
-
-insert into lineage.jurisdiction_rules
-    (jurisdiction_code, effective_from, published_at, decision, rule_id, serving, note)
-select j.jurisdiction_code, j.effective_from, j.published_at,
-       'absence:completion_year', 'cr_tx_ewa_measures_1', true,
-       'The RRC withholds COMPLETION_DATE on every well in the Wellbore Query export, so a'
-       ' Texas well carrying no completion year is a withheld value under'
-       ' cr_tx_ewa_measures_1 and not a value the regulator failed to record.'
-  from lineage.jurisdictions_as_of(current_date, current_date) j
- where j.jurisdiction_code = 'TX'
-   and exists (select 1 from lineage.conformance_rules c
-                where c.rule_id = 'cr_tx_ewa_measures_1')
-on conflict do nothing;
-
-insert into lineage.audit_events (event_id, occurred_at, actor, event_type, subject_type,
-                                  subject_id, payload)
-select 'evt_tx_absence_completion_year_registered', now(), 'system:migration',
-       'conformance.rule_added', 'rule', 'cr_tx_ewa_measures_1',
-       jsonb_build_object('jurisdiction', 'TX',
-                          'decision', 'absence:completion_year',
-                          'surface', '/v1/wells/facets',
-                          'effect', 'withheld completion years leave the shared'
-                                    ' not-reported bucket and are counted per jurisdiction',
-                          'migration', 'facet_status_resolution')
- where exists (select 1 from lineage.jurisdiction_rules
-                where rule_id = 'cr_tx_ewa_measures_1'
-                  and decision = 'absence:completion_year')
-   and not exists (select 1 from lineage.audit_events
-                    where event_id = 'evt_tx_absence_completion_year_registered');

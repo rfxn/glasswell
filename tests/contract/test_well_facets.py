@@ -9,8 +9,7 @@ from fastapi.testclient import TestClient
 
 from glasswell.api.routers.facets import DIMENSIONS
 from glasswell.lineage.ids import parse_handle
-from tests.contract.conftest import TX_API10
-from tests.support.seed import seed_derivation, seed_well
+from tests.support.seed import seed_conformance_rule, seed_derivation, seed_well
 
 # Enough operators to be truncated by a small `top`, with a deliberate long tail and a
 # deliberate absence, because both are what this surface exists to state.
@@ -501,7 +500,16 @@ def _seed_nd(connection: psycopg.Connection) -> str:
 
 
 def _seed_mt(connection: psycopg.Connection) -> None:
-    """Montana with no operator on any well: `cr_mt_operator_absence_1` is what says so."""
+    """Montana with no operator on any well.
+
+    A seeded shape, not an observed one: the deployed Montana carries 3,257 distinct operators
+    over all 40,626 of its wells, and on the deployed spine no (jurisdiction, dimension) pair is
+    `absent_by_rule` at all. What is real is the registered decision: `cr_mt_operator_absence_1`
+    exists and says what a blank Montana operator means. What is seeded is a population carrying
+    nothing but blanks, so the arm that reads the two together has something to read.
+    `test_the_absent_by_rule_arm_reads_the_registry_and_not_a_jurisdiction` is the same mechanism
+    over a planted rule of the suite's own, with no real regulator named at all.
+    """
     for serial in range(1, _MT_WELLS + 1):
         seed_well(
             connection,
@@ -582,10 +590,11 @@ def test_a_code_no_jurisdiction_is_registered_under_is_refused_by_name(
 def test_the_jurisdictions_say_which_of_them_carries_the_dimension(
     client: TestClient, seeded: psycopg.Connection
 ) -> None:
-    """R8 at the (jurisdiction, dimension) grain: Montana reports no operator on any well and
-    `cr_mt_operator_absence_1` is the row that says what that means. Folded into the shared
-    `not reported` bucket it would read as the same absence Texas's blanks are, and they are
-    not the same fact."""
+    """R8 at the (jurisdiction, dimension) grain, over the seeded population `_seed_mt` lays
+    down: given a jurisdiction that contributes no value and a registered decision about that
+    absence, the wells leave the shared `not reported` bucket. Folded into it they would read as
+    the same absence Texas's blanks are, and they are not the same fact. The registered decision
+    is real; the population is the fixture's, and the deployed Montana is not in it."""
     _seed_tx(seeded)
     _seed_nd(seeded)
     _seed_mt(seeded)
@@ -715,79 +724,90 @@ def test_a_response_carrying_more_handles_than_explain_inlines_says_so(
     assert len(body["_explain"]) == 20
 
 
-def _withhold_tx_completion_dates(connection: psycopg.Connection) -> None:
-    """`cr_tx_ewa_measures_1`: the RRC withholds COMPLETION_DATE, so no Texas well carries one.
 
-    The fixture's Texas well is restated rather than edited — canonical.wells is append-only and
-    a later effective_from is what makes the withheld value the current one.
-    """
-    seed_well(
+# The rule id and its evidence tag are the suite's, not a regulator's: `seed_conformance_rule`
+# registers `harness-fixture` publication evidence, and nothing about this row is a claim that
+# any real jurisdiction reports nothing. It exists so the `absent_by_rule` arm is exercised by a
+# decision the fixture owns end to end — on the deployed spine no (jurisdiction, dimension) pair
+# is absent by rule, and the gate report's H-1 is why no row was appended to make one.
+FIXTURE_ABSENCE_RULE = "cr_fixture_well_type_absence_1"
+
+
+def _plant_an_absence_rule(
+    connection: psycopg.Connection, *, jurisdiction: str, dimension: str
+) -> None:
+    """A registered absence decision of the suite's own, at the resolving registration's triple."""
+    seed_conformance_rule(
         connection,
-        api10=TX_API10,
-        state_code="42",
-        effective_from=date(2026, 9, 1),
-        county_code_at_permit="003",
-        basin="permian",
-        operator_name_reported="PIONEER NATURAL RESOURCES USA INC",
-        completion_date=None,
+        rule_id=FIXTURE_ABSENCE_RULE,
+        source_id="nd_mpr_xlsx",
+        rationale="Planted by the suite so the absent-by-rule arm has a decision to read.",
     )
-    for serial in range(1, 6):
-        seed_well(
-            connection,
-            api10=f"42{serial:08d}",
-            state_code="42",
-            county_code_at_permit="003",
-            basin="permian",
-            operator_name_reported="APACHE CORPORATION",
-            completion_date=None,
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.jurisdiction_rules (jurisdiction_code, effective_from,"
+            " published_at, decision, rule_id, serving, note)"
+            " select j.jurisdiction_code, j.effective_from, j.published_at, %s, %s, true,"
+            " 'Planted by the suite.'"
+            "   from lineage.jurisdictions_as_of(current_date, current_date) j"
+            "  where j.jurisdiction_code = %s"
+            " on conflict do nothing",
+            (f"absence:{dimension}", FIXTURE_ABSENCE_RULE, jurisdiction),
         )
-    seed_well(
-        connection,
-        api10="3390000001",
-        state_code="33",
-        operator_name_reported="A ND OPERATOR",
-        completion_date=date(2021, 6, 4),
-    )
     connection.commit()
 
 
-def test_texas_reports_no_completion_year_and_the_registry_says_so(
+def test_the_absent_by_rule_arm_reads_the_registry_and_not_a_jurisdiction(
     client: TestClient, seeded: psycopg.Connection
 ) -> None:
-    """The case the whole `absent_by_rule` arm exists for. Texas withholds COMPLETION_DATE under
-    `cr_tx_ewa_measures_1`, so on the deployed load 359,421 wells carry none; folded into the
-    shared `not reported` bucket beside North Dakota's genuinely missing dates they would read as
-    one population, and the two are not the same fact (R8)."""
-    _withhold_tx_completion_dates(seeded)
-    body = client.get("/v1/wells/facets?state=33,42&by=completion_year&top=50").json()
-    data = body["data"]
+    """The mechanism, over a decision the fixture owns: no real regulator is named.
+
+    Montana here files no well type on any of its wells and a registered rule says what that
+    means, so its wells leave the shared bucket and are counted against the rule instead. The
+    arm is registry-driven — it fires for whatever `absence:<dimension>` row resolves, which is
+    the property worth testing, and not for the two `absence:operator` rows that happen to exist.
+    """
+    _seed_tx(seeded)
+    for serial in range(1, 4):
+        seed_well(
+            seeded,
+            api10=f"25{serial:08d}",
+            state_code="25",
+            well_type_reported=None,
+            basin=None,
+        )
+    seeded.commit()
+    _plant_an_absence_rule(seeded, jurisdiction="MT", dimension="well_type")
+    data = client.get("/v1/wells/facets?state=25,42&by=well_type&top=50").json()["data"]
     by_code = {row["code"]: row for row in data["jurisdictions"]}
 
-    assert by_code["42"]["dimension"] == "absent_by_rule"
-    assert by_code["42"]["rule_id"] == "cr_tx_ewa_measures_1"
-    assert by_code["33"]["dimension"] == "carried"
-    assert "cr_tx_ewa_measures_1" in data["rules"]
-    assert body["links"]["cr_tx_ewa_measures_1"] == "/v1/conformance/cr_tx_ewa_measures_1"
-
-
-def test_the_withheld_texas_wells_are_outside_the_not_reported_bucket(
-    client: TestClient, seeded: psycopg.Connection
-) -> None:
-    """Counted where the rule is, and still counted: the reconciliation holds with them out."""
-    _withhold_tx_completion_dates(seeded)
-    data = client.get("/v1/wells/facets?state=33,42&by=completion_year&top=50").json()["data"]
-    by_code = {row["code"]: row for row in data["jurisdictions"]}
-
+    assert by_code["25"]["dimension"] == "absent_by_rule"
+    assert by_code["25"]["rule_id"] == FIXTURE_ABSENCE_RULE
+    assert by_code["42"]["dimension"] == "carried"
     listed = sum(int(bucket["wells"]["value"]) for bucket in data["buckets"])
     absent = int(data["absence"]["wells"]["value"]) if data["absence"] else 0
-    by_rule = int(by_code["42"]["wells"]["value"])
-    texas = int(
-        client.get("/v1/wells/facets?state=42&by=operator&top=1").json()["data"]["wells"]["value"]
-    )
+    assert listed + absent + int(by_code["25"]["wells"]["value"]) == int(data["wells"]["value"])
 
-    assert by_rule == texas
-    assert listed + absent + by_rule == int(data["wells"]["value"])
-    # The shared bucket is North Dakota's alone, and cites no rule because North Dakota has
-    # none registered for this dimension — which is the R8 disclosure, not a defect.
-    assert data["absence"]["rule_id"] is None
-    assert "Texas" in data["absence"]["detail"]
+
+def test_the_arm_stays_shut_where_the_registry_holds_no_decision(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The other half, and the one the deployed data is in: a jurisdiction that reports nothing
+    with no rule to explain it stays in the shared bucket, which then cites none and says so."""
+    _seed_tx(seeded)
+    for serial in range(1, 4):
+        seed_well(
+            seeded,
+            api10=f"25{serial:08d}",
+            state_code="25",
+            well_type_reported=None,
+            basin=None,
+        )
+    seeded.commit()
+    body = client.get("/v1/wells/facets?state=25,42&by=well_type&top=50").json()
+    by_code = {row["code"]: row for row in body["data"]["jurisdictions"]}
+
+    assert by_code["25"]["dimension"] == "absent_unregistered"
+    assert by_code["25"]["rule_id"] is None
+    assert body["data"]["absence"]["rule_id"] is None
+    assert "absence_unregistered" in {w["code"] for w in body["meta"]["warnings"]}

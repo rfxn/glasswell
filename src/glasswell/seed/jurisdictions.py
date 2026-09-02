@@ -178,15 +178,6 @@ JURISDICTION_RULES: tuple[dict[str, object], ...] = (
     {"jurisdiction_code": "TX", "decision": "identity", "rule_id": "cr_tx_api10_build_1"},
     {"jurisdiction_code": "TX", "decision": "absence:operator",
      "rule_id": "cr_tx_operator_absence_1"},
-    # The RRC withholds COMPLETION_DATE on every well, so a Texas well with no completion year
-    # is a withheld value rather than one the regulator failed to record. Registered at the
-    # (jurisdiction, dimension) grain the facet surface resolves absence at, so a count over
-    # several states names Texas rather than folding it in beside genuinely missing dates.
-    {"jurisdiction_code": "TX", "decision": "absence:completion_year",
-     "rule_id": "cr_tx_ewa_measures_1",
-     "note": "The RRC withholds COMPLETION_DATE on every well in the Wellbore Query export, so"
-             " a Texas well carrying no completion year is a withheld value under"
-             " cr_tx_ewa_measures_1 and not a value the regulator failed to record."},
     # _2 rather than the _1 the spec table names: the successor is what serves on this base, and
     # a registry naming a superseded rule would be a false claim on the day it is written.
     {"jurisdiction_code": "NM", "decision": "status_vocabulary",

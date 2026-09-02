@@ -11,7 +11,6 @@ import psycopg
 import pytest
 
 from glasswell.api.routers.facets import _FACETS, _SCOPED_LATEST, _VALUE_SORTS, DIMENSIONS
-from glasswell.seed import seed_all
 
 pytestmark = pytest.mark.integration
 
@@ -175,41 +174,3 @@ def test_appending_to_the_status_map_reaches_the_resolver(db: psycopg.Connection
 
     assert [row[0] for row in resolved] == ["inactive"]
 
-
-def test_the_texas_completion_year_absence_is_a_registered_decision(
-    db: psycopg.Connection,
-) -> None:
-    """R8 at the (jurisdiction, dimension) grain the facet surface resolves absence at.
-
-    Seeded here rather than left to the migration: this fixture is migrated and not seeded, and
-    the migration's own insert is guarded on the conformance rule being resident, which is the
-    deployed path. On a fresh database the seed is the writer, and that is the path under test.
-    """
-    seed_all(db)
-    with db.cursor() as cursor:
-        cursor.execute(
-            "select r.rule_id, r.serving, r.note"
-            "  from lineage.jurisdictions_as_of(current_date, current_date) j"
-            "  join lineage.jurisdiction_rules r"
-            "    on r.jurisdiction_code = j.jurisdiction_code"
-            "   and r.effective_from = j.effective_from"
-            "   and r.published_at = j.published_at"
-            " where j.jurisdiction_code = 'TX' and r.decision = 'absence:completion_year'"
-        )
-        registered = cursor.fetchall()
-
-    assert [(row[0], row[1]) for row in registered] == [("cr_tx_ewa_measures_1", True)]
-    assert "withholds COMPLETION_DATE" in str(registered[0][2])
-
-
-def test_the_withholding_rule_carries_its_publication_evidence(db: psycopg.Connection) -> None:
-    """A jurisdiction rule may only cite a rule glasswell can say when it first published."""
-    with db.cursor() as cursor:
-        cursor.execute(
-            "select evidence_tag, published_vintage from lineage.conformance_rule_publications"
-            " where rule_id = 'cr_tx_ewa_measures_1'"
-        )
-        published = cursor.fetchone()
-
-    assert published is not None
-    assert published[0] == "v0.62"

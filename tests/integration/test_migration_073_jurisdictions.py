@@ -32,11 +32,6 @@ from tests.support.seed import seed_derivation
 pytestmark = pytest.mark.integration
 
 MIGRATION = "jurisdictions"
-# The registry's rule rows are no longer one migration's. This one registered twenty-two of
-# them; a later one added Texas's `absence:completion_year` against cr_tx_ewa_measures_1, and
-# the seed declares the union. Both are named here by name for the reason `migration_sql` is:
-# a migration number is assigned by merge order and either file may be renumbered.
-LATER_RULE_MIGRATION = "facet_status_resolution"
 LATER_KNOWLEDGE = date(2026, 11, 1)
 BEFORE_THE_RESTATEMENT = date(2026, 10, 15)
 AFTER_THE_RESTATEMENT = date(2026, 12, 1)
@@ -57,16 +52,6 @@ def migration_sql(name: str) -> str:
     """By name: a migration number is assigned by merge order and this one will be renumbered."""
     return next(item.sql for item in discover_migrations() if item.name == name)
 
-
-def apply_the_rule_migrations(cursor: psycopg.Cursor) -> None:
-    """Every migration that writes a jurisdiction_rules row, in order.
-
-    The seed declares the union of them, so a test that compares the migration path against the
-    seed has to walk all of it. Running only the first is what makes such a test read as a
-    missing row rather than as a partial application.
-    """
-    cursor.execute(migration_sql(MIGRATION))
-    cursor.execute(migration_sql(LATER_RULE_MIGRATION))
 
 
 def register(connection: psycopg.Connection, code: str, **overrides) -> None:
@@ -152,7 +137,7 @@ def test_the_rule_rows_wait_for_the_conformance_registry_and_then_land(
 ) -> None:
     db = seeded_without_the_registry_rules
     with db.cursor() as cursor:
-        apply_the_rule_migrations(cursor)
+        cursor.execute(migration_sql(MIGRATION))
         cursor.execute("select count(*) from lineage.jurisdiction_rules")
         assert cursor.fetchone()[0] == len(JURISDICTION_RULES)
         cursor.execute(
@@ -170,7 +155,7 @@ def test_the_migration_and_the_seed_write_the_same_rule_rows(
     db = seeded_without_the_registry_rules
     columns = "jurisdiction_code, effective_from, published_at, decision, rule_id, serving, note"
     with db.cursor() as cursor:
-        apply_the_rule_migrations(cursor)
+        cursor.execute(migration_sql(MIGRATION))
         cursor.execute(f"select {columns} from lineage.jurisdiction_rules order by 1, 4, 5")
         from_migration = cursor.fetchall()
     db.rollback()
@@ -189,8 +174,8 @@ def test_running_the_migration_twice_changes_nothing(
 ) -> None:
     db = seeded_without_the_registry_rules
     with db.cursor() as cursor:
-        apply_the_rule_migrations(cursor)
-        apply_the_rule_migrations(cursor)
+        cursor.execute(migration_sql(MIGRATION))
+        cursor.execute(migration_sql(MIGRATION))
         cursor.execute("select count(*) from lineage.jurisdictions")
         assert cursor.fetchone()[0] == len(JURISDICTIONS)
         cursor.execute("select count(*) from lineage.jurisdiction_rules")
