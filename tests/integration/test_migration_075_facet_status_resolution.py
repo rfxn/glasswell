@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import psycopg
 import pytest
+from psycopg import sql
 
 from glasswell.api.routers.facets import _FACETS, _SCOPED_LATEST, _VALUE_SORTS, DIMENSIONS
 from glasswell.db.migrate import discover_migrations
 from glasswell.seed import seed_all
 from glasswell.seed.jurisdictions import REGISTERED_ON
+from glasswell.status_resolution import resolver_rules
 from tests.support.seed import seed_conformance_rule
 
 pytestmark = pytest.mark.integration
@@ -124,6 +126,35 @@ def test_the_resolver_can_be_looked_up_by_both_keys(db: psycopg.Connection) -> N
     assert ("for_state_code", "for_status_reported") in keyed, keyed
 
 
+def _live_registry_resolution(connection: psycopg.Connection) -> set[tuple[str, str, str]]:
+    """What the registry says the resolver should hold, evaluated fresh and independently.
+
+    Deliberately not the migration's own SELECT re-typed: a two-way `except` against a copy of
+    the function body proves the function ran, never that it computes what the registry means.
+    This walks the registry the *serving path* reads — `status_resolution.resolver_rules()` is
+    the same query `marts/counts.py` uses to decide which jurisdictions resolve at read time —
+    and then reads each rule's own spec for the table and columns its classes live in.
+    """
+    resolved: set[tuple[str, str, str]] = set()
+    for prefix, rule_id in resolver_rules(connection).items():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "select spec->>'mapping_table', spec->>'key_col', spec->>'value_col'"
+                "  from lineage.conformance_rules where rule_id = %s",
+                (rule_id,),
+            )
+            table, key_column, value_column = cursor.fetchone()
+            cursor.execute(
+                sql.SQL("select {key}::text, {value}::text from {table}").format(
+                    key=sql.Identifier(key_column),
+                    value=sql.Identifier(value_column),
+                    table=sql.Identifier("lineage", table),
+                )
+            )
+            resolved |= {(prefix, row[0], row[1]) for row in cursor.fetchall() if row[1]}
+    return resolved
+
+
 def test_the_resolver_matches_the_registry_it_was_built_from(db: psycopg.Connection) -> None:
     """Materialised data with no authority of its own has one obligation: to equal its source.
 
@@ -133,39 +164,19 @@ def test_the_resolver_matches_the_registry_it_was_built_from(db: psycopg.Connect
     status-vocabulary rule for any jurisdiction.
     """
     seed_all(db)
+    db.commit()
     with db.cursor() as cursor:
         cursor.execute(
             "select for_state_code, for_status_reported, resolved_status"
             "  from canonical.status_resolution"
-            " except"
-            " select j.identity_prefix, m.status, m.status_canonical"
-            "   from lineage.nm_wellhistory_status_map m"
-            "   join lineage.jurisdictions_as_of(current_date, current_date) j"
-            "     on j.jurisdiction_code = 'NM'"
-            "  where j.identity_prefix is not null"
         )
-        extra = cursor.fetchall()
-        cursor.execute(
-            "select j.identity_prefix, m.status, m.status_canonical"
-            "  from lineage.nm_wellhistory_status_map m"
-            "  join lineage.jurisdictions_as_of(current_date, current_date) j"
-            "    on j.jurisdiction_code = 'NM'"
-            " where j.identity_prefix is not null"
-            " except"
-            " select for_state_code, for_status_reported, resolved_status"
-            "   from canonical.status_resolution"
-        )
-        missing = cursor.fetchall()
+        held = {(row[0], row[1], row[2]) for row in cursor.fetchall()}
+    expected = _live_registry_resolution(db)
 
-    with db.cursor() as cursor:
-        cursor.execute("select count(*) from canonical.status_resolution")
-        resolved = int(cursor.fetchone()[0])
-
-    # A resolver that resolves nothing satisfies both differences by vacuity, and the registry
-    # this fixture carries is the migration's own.
-    assert resolved > 0
-    assert extra == []
-    assert missing == []
+    # A resolver that resolves nothing satisfies the equality by vacuity, and the registry this
+    # fixture carries is the seed's own.
+    assert expected
+    assert held == expected
 
 
 def test_appending_to_the_status_map_reaches_the_resolver(db: psycopg.Connection) -> None:
@@ -326,3 +337,42 @@ def test_the_index_rebuild_is_bounded_by_a_lock_timeout() -> None:
     timeout = body.index("set local lock_timeout")
     assert timeout < body.index("drop index if exists canonical."), "the bound precedes the lock"
     assert "'5s'" in body[timeout : timeout + 60]
+
+
+def test_a_registration_and_its_rules_reach_the_resolver_through_their_own_triggers(
+    db: psycopg.Connection,
+) -> None:
+    """The registry path, fired rather than called. No refresh is invoked anywhere below.
+
+    A jurisdiction arrives as a registration and then, because of the composite foreign key, as
+    its rule rows — and the rules are the fact the refresh reads, so the registration's own
+    trigger runs one statement too early to see them. Nothing in the tree exercised either
+    trigger on the registry side before this; only the status map's was under test. If they do
+    not fire, the resolver never hears about the jurisdiction and the assertions read that back.
+    """
+    seed_all(db)
+    db.commit()
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select count(*) from canonical.status_resolution where for_state_code = %s",
+            (PLANTED_PREFIX,),
+        )
+        assert cursor.fetchone()[0] == 0
+
+    _plant_a_read_time_jurisdiction(db)
+
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select for_status_reported, resolved_status from canonical.status_resolution"
+            " where for_state_code = %s order by 1",
+            (PLANTED_PREFIX,),
+        )
+        followed = cursor.fetchall()
+        cursor.execute(
+            "select count(*) from canonical.status_resolution where for_state_code = '30'"
+        )
+        untouched = int(cursor.fetchone()[0])
+    db.rollback()
+
+    assert followed == [("V", "plugged"), ("W", "active")]
+    assert untouched > 0

@@ -189,6 +189,15 @@ create trigger jurisdictions_refresh_status_resolution
     after insert on lineage.jurisdictions
     for each statement execute function lineage.status_resolution_refresh();
 
+-- The rule rows are the fact the refresh actually reads: a registration alone says nothing
+-- about read-time resolution, and a jurisdiction's rules are appended after it because of the
+-- composite foreign key. Without this trigger the registration's own refresh runs one statement
+-- too early and the jurisdiction is resolved only at the next deploy.
+drop trigger if exists jurisdiction_rules_refresh_status_resolution on lineage.jurisdiction_rules;
+create trigger jurisdiction_rules_refresh_status_resolution
+    after insert on lineage.jurisdiction_rules
+    for each statement execute function lineage.status_resolution_refresh();
+
 drop trigger if exists status_map_refresh_status_resolution
     on lineage.nm_wellhistory_status_map;
 create trigger status_map_refresh_status_resolution
