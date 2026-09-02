@@ -353,21 +353,12 @@ def plan_tick(
         if entry is not None:
             proposed[job.job_id] = entry
 
+    # `ordered` and `cycled` are disjoint by construction: order_jobs removes a job from the
+    # remainder at the moment it appends it, and returns what is left as the cycle.
     ordered, cycled = order_jobs(proposed, registry)
     entries: list[PlanEntry] = []
     for job_id in ordered:
         entry = proposed[job_id]
-        if job_id in cycled:
-            entries.append(
-                PlanEntry(
-                    job_id,
-                    hour_of(now),
-                    "refused",
-                    "dependency_cycle",
-                    "this job sits in a dependency cycle, so no order over it exists to run",
-                )
-            )
-            continue
         job = registry.by_job[job_id]
         if entry.action == "would_run" and job.launch_mode == "launch":
             entry = PlanEntry(job_id, entry.planned_at, "run")
@@ -375,16 +366,15 @@ def plan_tick(
     # A cycle member is never orderable, so it never reaches the loop above; it is still a fact
     # the ledger has to carry, and only its own members are refused.
     for job_id in sorted(cycled & set(proposed)):
-        if all(entry.job_id != job_id for entry in entries):
-            entries.append(
-                PlanEntry(
-                    job_id,
-                    hour_of(now),
-                    "refused",
-                    "dependency_cycle",
-                    "this job sits in a dependency cycle, so no order over it exists to run",
-                )
+        entries.append(
+            PlanEntry(
+                job_id,
+                hour_of(now),
+                "refused",
+                "dependency_cycle",
+                "this job sits in a dependency cycle, so no order over it exists to run",
             )
+        )
     return TickPlan(observed_at=now, entries=tuple(entries))
 
 
