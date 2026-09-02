@@ -71,12 +71,10 @@ DIMENSIONS: dict[str, dict[str, str]] = {
 Dimension = Literal["operator", "county", "status", "well_type", "completion_year"]
 
 # The states the spine actually carries rows for is a fact about the load, not about this
-# module, so the enum is not pinned here — `_require_state` reads it from the data and names
+# module, so the enum is not pinned here — `_require_states` reads it from the data and names
 # what it found. Montana and New Mexico prove why: MT holds 40,626 wells whose GIS layer has
 # not been published, and NM's promotion is gated, so a hard-coded four-state enum would be
 # wrong in both directions within one release.
-STATE_PATTERN = r"^\d{2}$"
-
 # The scope is a set. One `state` term may carry a comma list and the term may repeat, so the
 # grammar below is one term's, not the whole set's; `all` is the registry read at request time,
 # which is what lets a fifth jurisdiction join the answer without an edit here.
@@ -814,14 +812,24 @@ def _warnings(
     by_rule = [entry for entry in jurisdictions if entry["dimension"] == ABSENT_BY_RULE]
     if by_rule:
         named = _named(entry["name"] for entry in by_rule)
+        # The identity named here is the unsearched one. Under a `q` the ranked arms read the
+        # matched population and reconcile against `matched_wells`, which is what the operation
+        # description says two paragraphs earlier -- so naming `wells` under a search sends the
+        # reader to check an arithmetic that does not hold on the response in front of them.
+        reconciles = (
+            "so buckets and remainder sum to `matched_wells`, and neither they nor the"
+            " absence bucket account for these"
+            if q is not None
+            else "so buckets, remainder and absence sum to the total only once they are"
+            " added back"
+        )
         warnings.append(
             {
                 "code": "dimension_absent_by_rule",
                 "detail": (
                     f"{named} carries no value of this dimension at all, under a registered"
                     " rule. Those wells are counted in `jurisdictions` and are outside the"
-                    " `not reported` bucket, so buckets, remainder and absence sum to the"
-                    " total only once they are added back."
+                    f" `not reported` bucket, {reconciles}."
                 ),
                 "pointer": "/jurisdictions",
             }
