@@ -77,6 +77,30 @@ class StubControl:
         self.reset.append(unit)
 
 
+# Recorded from VM 111 (systemd 255) with the same --property= list runner.py sends. An
+# unknown unit does not answer with empty values: it answers Result=success and
+# ExecMainStatus=0, so a lost run would have been closed `ran`. LoadState is the only
+# property that tells the two apart.
+SYSTEMD_UNKNOWN_UNIT = {
+    "Result": "success",
+    "ExecMainExitTimestamp": "",
+    "ExecMainStatus": "0",
+    "MemoryPeak": "[not set]",
+    "LoadState": "not-found",
+    "ActiveState": "inactive",
+    "SubState": "dead",
+}
+SYSTEMD_FINISHED_UNIT = {
+    "Result": "success",
+    "ExecMainExitTimestamp": "Wed 2026-09-02 17:15:52 UTC",
+    "ExecMainStatus": "0",
+    "MemoryPeak": "50974720",
+    "LoadState": "loaded",
+    "ActiveState": "inactive",
+    "SubState": "dead",
+}
+
+
 class Ticking:
     """An injected clock, so a stubbed launch records a real duration and not a real month."""
 
@@ -308,7 +332,7 @@ def test_a_unit_that_no_longer_exists_closes_the_row_interrupted(seeded) -> None
         )
     seeded.commit()
 
-    reconciliation = reconcile(seeded, StubControl({}), now=NOW)
+    reconciliation = reconcile(seeded, StubControl(SYSTEMD_UNKNOWN_UNIT), now=NOW)
 
     assert reconciliation.in_flight == frozenset()
     recorded = runs(seeded, FAKE_JOB)[0]
@@ -496,3 +520,32 @@ def test_the_double_run_guard_refuses_an_empty_registry_rather_than_reporting_it
     monkeypatch.setenv("GLASSWELL_DSN", db.info.dsn + f" password={db.info.password}")
 
     assert cli.main(["--double-run-check"], control=StubControl()) == 1
+
+
+def test_a_unit_that_finished_is_closed_from_its_own_evidence_and_not_lost(seeded) -> None:
+    """The other half of the same recorded pair: a loaded unit that exited 0 really did run."""
+    register_probe_job(seeded)
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.job_runs"
+            " (run_id, job_id, planned_at, started_at, launched_by, transient_unit)"
+            " values ('jrn_0000000000000000000000000E', %s, %s, %s, 'scheduler', 'gw-job-z')",
+            (FAKE_JOB, NOW - timedelta(hours=2), NOW - timedelta(hours=2)),
+        )
+    seeded.commit()
+
+    reconcile(seeded, StubControl(SYSTEMD_FINISHED_UNIT), now=NOW)
+
+    recorded = runs(seeded, FAKE_JOB)[0]
+    assert (recorded["outcome"], recorded["refusal_code"]) == ("ran", None)
+
+
+def test_systemd_answers_a_missing_unit_with_success_which_is_why_loadstate_decides(
+    seeded,
+) -> None:
+    """The premise the old code rested on -- "an unknown unit answers with empty values" --
+    is false on the host, and the value it answers with is `success`."""
+    assert SYSTEMD_UNKNOWN_UNIT["Result"] == "success"
+    assert SYSTEMD_UNKNOWN_UNIT["ExecMainStatus"] == "0"
+    assert SYSTEMD_UNKNOWN_UNIT["ActiveState"] == "inactive"
+    assert SYSTEMD_UNKNOWN_UNIT["LoadState"] != SYSTEMD_FINISHED_UNIT["LoadState"]

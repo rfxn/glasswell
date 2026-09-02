@@ -31,7 +31,10 @@ SESSION_LOCK_KEY = "glasswell.scheduler"
 TICK_BUDGET_SECONDS = 21600
 ACTIVE_STATES = frozenset({"active", "activating", "reloading", "deactivating"})
 
-_PROPERTIES = ("ActiveState", "SubState", "Result", "ExecMainStatus",
+# LoadState is here because it is the only one of these that tells a unit that finished
+# from a unit that never existed: measured on systemd 255, an unknown unit answers
+# Result=success, ExecMainStatus=0, ActiveState=inactive, SubState=dead.
+_PROPERTIES = ("LoadState", "ActiveState", "SubState", "Result", "ExecMainStatus",
                "ExecMainExitTimestamp", "MemoryPeak")
 
 
@@ -42,7 +45,9 @@ class SystemdControl(Protocol):
 
 
 class SystemctlControl:
-    """The real thing. `show` on an unknown unit answers with empty values, not an error."""
+    """The real thing. `show` on an unknown unit exits 0 and answers `LoadState=not-found`
+    beside a full set of default values, so the caller discriminates on that and never on an
+    empty answer."""
 
     def show(self, unit: str) -> Mapping[str, str]:
         completed = subprocess.run(
@@ -216,7 +221,9 @@ def reconcile(
         if state in ACTIVE_STATES:
             in_flight.add(job_id)
             continue
-        if not state:
+        # A unit that never existed answers `success` and exit 0 like one that finished, so
+        # closing on those would record a run nobody can account for as a successful one.
+        if not values or values.get("LoadState") == "not-found":
             close_run(
                 connection,
                 run_id,
