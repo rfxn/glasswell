@@ -150,12 +150,44 @@ def test_gate_5_the_seed_tuple_is_what_the_registry_resolves(db: psycopg.Connect
         }
 
 
-def test_gate_5_every_row_this_track_seeds_observes(db: psycopg.Connection) -> None:
-    """The v0.77 posture, measured rather than asserted. v0.78 inverts this."""
+def test_gate_5_no_launching_row_shares_an_entry_point_with_an_installed_timer(
+    db: psycopg.Connection,
+) -> None:
+    """The invariant, in the form that survived the first jurisdiction to launch.
+
+    The hazard was never `launch` itself: it is two runners over one command. The four legacy
+    jurisdictions stay armed through `glasswell-ingest.service`, so their rows observe and this
+    gate says so by naming the unit rather than the posture; a jurisdiction that installs no
+    unit has no second runner and may launch when its own cadence rule argues for it.
+    """
     registry = load_schedules(db)
 
-    launching = [job.job_id for job in registry if job.launch_mode != "observe"]
-    assert launching == []
+    launching = [job for job in registry if job.launch_mode != "observe"]
+    assert launching, "no row launches; this gate would be vacuous"
+    assert [job.job_id for job in launching if job.legacy_unit is not None] == []
+    timer_driven = {
+        job.entry_point for job in registry if job.trigger == "external_timer"
+    }
+    assert [job.job_id for job in launching if job.entry_point in timer_driven] == []
+    observing = {job.job_id for job in registry if job.launch_mode == "observe"}
+    assert {job.job_id for job in registry if job.legacy_unit is not None} <= observing
+
+    # The published half. A cadence rule states its job's posture in a spec a consumer parses,
+    # and the row is what actually runs; a rule that says observe over a row that launches is
+    # a served conformance rule contradicting the decision it was written to carry.
+    # A timer-driven job has no cadence rule to disagree with, which is the one exemption.
+    governed = [job for job in registry if job.trigger != "external_timer"]
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select rule_id, spec->>'launch_mode' from lineage.conformance_rules"
+            " where rule_id = any(%s)",
+            ([cadence_rule_id(job.job_id) for job in governed],),
+        )
+        published = dict(cursor.fetchall())
+
+    assert published == {
+        cadence_rule_id(job.job_id): job.launch_mode for job in governed
+    }, "a cadence rule publishes a launch_mode its own schedule row contradicts"
 
 
 # Far enough forward that a 35-day interval has certainly elapsed, so a row that still cannot
@@ -269,7 +301,7 @@ def test_gate_5_the_seed_tuple_is_what_slash_v1_schedules_serves(client) -> None
         assert row["entry_point"] == job["entry_point"]
         assert row["run_as"] == job["run_as"]
         assert row["trigger"] == schedule["trigger"]
-        assert row["launch_mode"] == "observe"
+        assert row["launch_mode"] == schedule.get("launch_mode", "observe")
         assert row["cadence"]["note"] == schedule["cadence_note"]
         assert row["cadence"]["monthly_on_day"] == schedule.get("cadence_monthly_on_day")
         assert row["limits"]["memory_max"] == schedule.get("memory_max")

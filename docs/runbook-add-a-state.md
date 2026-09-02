@@ -72,6 +72,13 @@ feed them into derivation params, so a second row for a code moves two mart addr
 `source_ids` is **complete, not curated**: every source registered to this jurisdiction, or the
 parity gate reddens. `identity_pattern` is derived from the prefix — do not spell it out.
 
+**A `status_vocabulary` rule that resolves at read time owes three spec keys, not one.**
+`lineage.refresh_status_resolution()` is driven by rows, and it selects on `mapping_table`,
+`key_col` **and** `value_col` together. `spec->>` on an absent key is SQL NULL, so a rule
+carrying only `mapping_table` is filtered out of the loop one step before the
+missing-table notice can fire: the jurisdiction is skipped in silence and every one of its
+wells resolves unmapped. Name the table and both of its columns.
+
 > **Refuses if skipped or wrong:** `jurisdiction_rules.rule_id` references
 > `lineage.conformance_rules`, so step 3 cannot be skipped; the composite foreign key refuses a
 > rule row with no registration at that `(effective_from, published_at)`; and the `coalesce`d
@@ -144,8 +151,14 @@ bundle imports; `web/src/map/wells-roster.json` is the same wells rows as data, 
 The map's `Wells` family row, its swatch colour, its style layers, its draw order, its
 first-paint default, its subtitle template, the layer panel's abbreviation tag and the status
 vocabulary rules the legend prints all come from those two files. So do the point layer and the
-struck sibling `style.ts` draws and the rank `click-router.ts` gives them. Nothing in `web/src`
-names a jurisdiction, and the gate above holds it that way.
+struck sibling `style.ts` draws, the rank `click-router.ts` gives them, and the facet columns
+`TILE_FACET_PROPERTIES` can press on — the roster carries the tile function's published columns,
+read out of `marts/tiles.py` by the generator, so a jurisdiction whose tile publishes a
+different column set needs no edit in `web/src`.
+
+Nothing in `web/src` names a jurisdiction, and the gate above holds it that way — including
+jurisdiction-scoped layer ids such as `co-wells`, which carry no prefix and no state name and
+which the two-digit rule alone could not see.
 
 > **The subtitle carries `{count}`, never a number.** The count is fetched from
 > `/v1/jurisdictions` at render time with the date it was measured on beside it. A registration

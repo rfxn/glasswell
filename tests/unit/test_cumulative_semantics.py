@@ -72,10 +72,11 @@ def test_registering_a_withholding_source_does_not_widen_the_population_served()
     hypothetical["42"] = (("tx_ewa_xlsx", "confidential_withheld"),)
 
     with mock.patch.object(cumulatives, "WITHHOLDING_BY_PREFIX", hypothetical):
-        assert cumulatives.STATE_API_PREFIXES == ("33",)
+        assert cumulatives.STATE_API_PREFIXES == ("33", "05")
         sources, reasons = cumulatives._withholding_pairs()
 
-    # The ledger query stays scoped too: an out-of-scope state's source cannot reach it.
+    # The ledger query stays scoped too: an out-of-scope state's source cannot reach it, and a
+    # state that is in scope with nothing withheld contributes nothing to it either.
     assert sources == ["nd_mpr_xlsx"]
     assert reasons == ["confidential_withheld"]
 
@@ -85,18 +86,38 @@ def test_the_served_scope_is_its_own_declaration_and_not_a_view_of_the_withholdi
     """Guards the shape, not just today's value: deriving the scope from either withholding
     mapping reintroduces MAJOR-1 while every value assertion above still passes.
 
-    The declaration is jurisdiction codes resolved through the registry, so the scope moves
-    only when someone edits it, and no API prefix is spelled in the module (P5's scan).
+    The scope is a registry dimension now, so it moves when a registration adds a
+    `cumulatives_scope` row with a rule and a date behind it, never when a withholding source
+    is registered and never by an edit to this module. No API prefix is spelled here either.
     """
     source = Path(cumulatives.__file__).read_text(encoding="utf-8")
 
-    assert source.count("\nCUMULATIVE_JURISDICTIONS: tuple[str, ...] = (") == 1
+    assert 'row["decision"] == CUMULATIVES_SCOPE' in source
     assert "for code in CUMULATIVE_JURISDICTIONS" in source
     assert "STATE_API_PREFIXES = tuple(WITHHOLDING_SOURCES)" not in source
     assert "for code in WITHHOLDING_SOURCES" not in source
     assert "tuple(WITHHOLDING_BY_PREFIX)" not in source
-    assert CUMULATIVE_JURISDICTIONS == ("ND",)
-    assert STATE_API_PREFIXES == ("33",)
+    # Both jurisdictions that write a well-grain production row, and only those.
+    assert CUMULATIVE_JURISDICTIONS == ("ND", "CO")
+    assert STATE_API_PREFIXES == ("33", "05")
+
+
+def test_the_scope_is_a_row_a_registration_carries_and_not_a_tuple_in_this_module() -> None:
+    """M-23. A jurisdiction enters the mart by registering the decision, so the widening
+    carries a rule and an effective date like every other cross-source decision does."""
+    from glasswell.seed.jurisdictions import JURISDICTION_RULES
+
+    scoped = {
+        str(row["jurisdiction_code"]): str(row["rule_id"])
+        for row in JURISDICTION_RULES
+        if row["decision"] == cumulatives.CUMULATIVES_SCOPE
+    }
+
+    assert scoped == {
+        "ND": "cr_nd_pool_rollup_1",
+        "CO": "cr_co_production_grain_1",
+    }
+    assert tuple(scoped) == CUMULATIVE_JURISDICTIONS
 
 
 def test_a_span_is_the_union_of_every_class_and_the_withheld_ledger() -> None:

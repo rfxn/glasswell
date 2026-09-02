@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal
+
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_API10
+from tests.support.seed import (
+    seed_derivation,
+    seed_placeholder_manifest,
+    seed_production,
+    seed_well,
+)
 
 PATH = f"/v1/wells/{EXAMPLE_API10}/production"
 
@@ -119,3 +128,91 @@ def test_source_freshness_is_reported_alongside_the_series(client: TestClient) -
     meta = client.get(PATH).json()["meta"]
 
     assert meta["source_freshness"]["nd_mpr_xlsx"]["retrieval_vintage"] == "2026-08-01"
+
+
+COLORADO_API10 = "0512324638"
+COLORADO_MONTHS = (date(2026, 4, 1), date(2026, 5, 1))
+
+
+def _seed_colorado(connection) -> None:
+    """A Colorado well with the dual write beneath it: two completions in one month, one in
+    the next, and the well row that carries their sum."""
+    manifest_id = seed_placeholder_manifest(connection)
+    derivation_id = seed_derivation(connection)
+    seed_well(connection, api10=COLORADO_API10, state_code="05", basin=None)
+    for month, completions in zip(COLORADO_MONTHS, ((10, 5), (7,)), strict=True):
+        for index, volume in enumerate(completions):
+            if len(completions) == 1:
+                continue
+            seed_production(
+                connection,
+                api10=COLORADO_API10,
+                production_month=month,
+                report_vintage=date(2026, 8, 14),
+                volume=Decimal(volume),
+                manifest_id=manifest_id,
+                derivation_id=derivation_id,
+                source_id="co_ecmc_monthly_prod",
+                entity_type="well_completion_pool",
+                entity_key=f"{COLORADO_API10}:00:POOL{index}:200221",
+                reporting_level="well_completion_pool",
+                well_completion_pool=f"00:POOL{index}:200221",
+            )
+        total = Decimal(sum(completions))
+        aggregated = len(completions) > 1
+        seed_production(
+            connection,
+            api10=COLORADO_API10,
+            production_month=month,
+            report_vintage=date(2026, 8, 14),
+            volume=total,
+            manifest_id=manifest_id,
+            derivation_id=derivation_id,
+            source_id="co_ecmc_monthly_prod",
+            entity_type="well",
+            entity_key=COLORADO_API10,
+            reporting_level="well_completion_pool" if aggregated else "well",
+            well_completion_pool=None if aggregated else "00:POOL0:200221",
+            aggregation="sum_over_pools" if aggregated else None,
+        )
+    connection.commit()
+
+
+def test_a_colorado_wells_own_series_is_not_empty(client: TestClient, seeded) -> None:
+    """M-20's positive test. The route asks for entity_type='well'; pool rows alone would
+    render an empty chart on a well that filed every month."""
+    _seed_colorado(seeded)
+
+    data = client.get(f"/v1/wells/{COLORADO_API10}/production").json()["data"]
+
+    assert data["series"]["pm"] == ["2026-04", "2026-05"]
+    assert data["series"]["oil_bbl"] == ["15.000", "7.000"]
+
+
+def test_a_colorado_series_states_that_liquid_means_oil_plus_condensate(
+    client: TestClient, seeded
+) -> None:
+    """ECMC files one liquid stream and no condensate column, so the basis is the shape of the
+    filing rather than a glasswell rollup -- and it travels with the figure either way."""
+    _seed_colorado(seeded)
+
+    data = client.get(f"/v1/wells/{COLORADO_API10}/production").json()["data"]
+
+    assert data["_basis"]["series.oil_bbl"] == "oil+condensate"
+
+
+def test_a_colorado_month_says_which_of_its_completions_it_summed(
+    client: TestClient, seeded
+) -> None:
+    """production.py serves the reporting level and links the rule that decided the rollup,
+    so a reader can tell a summed month from a single-completion one rather than seeing one
+    number for both. The rule id comes from Colorado's own registration, not North Dakota's."""
+    _seed_colorado(seeded)
+
+    envelope = client.get(f"/v1/wells/{COLORADO_API10}/production").json()
+
+    assert envelope["data"]["reporting_level"] == "well_completion_pool"
+    assert envelope["links"]["pools"] == f"/v1/wells/{COLORADO_API10}/production/pools"
+    assert envelope["links"]["aggregation_rule"] == (
+        "/v1/conformance/cr_co_production_grain_1"
+    )

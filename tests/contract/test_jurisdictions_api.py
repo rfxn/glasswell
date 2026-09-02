@@ -97,7 +97,7 @@ def test_it_serves_every_registration_as_a_bare_array_in_code_order(client: Test
     data = envelope["data"]
 
     assert isinstance(data, list)
-    assert [row["jurisdiction_code"] for row in data] == ["MT", "ND", "NM", "TX"]
+    assert [row["jurisdiction_code"] for row in data] == ["CO", "MT", "ND", "NM", "TX"]
     assert len(data) == len(JURISDICTIONS)
     assert envelope["links"]["self"] == PATH
 
@@ -364,11 +364,14 @@ def test_the_level_filter_narrows_to_the_registrations_at_that_level(
 def test_the_page_is_a_page_and_its_cursor_walks_the_rest(client: TestClient) -> None:
     first = body(client, limit=2)
 
-    assert [row["jurisdiction_code"] for row in first["data"]] == ["MT", "ND"]
+    assert [row["jurisdiction_code"] for row in first["data"]] == ["CO", "MT"]
     assert first["meta"]["next_cursor"]
     second = body(client, limit=2, cursor=first["meta"]["next_cursor"])
-    assert [row["jurisdiction_code"] for row in second["data"]] == ["NM", "TX"]
-    assert second["meta"]["next_cursor"] is None
+    assert [row["jurisdiction_code"] for row in second["data"]] == ["ND", "NM"]
+    assert second["meta"]["next_cursor"]
+    third = body(client, limit=2, cursor=second["meta"]["next_cursor"])
+    assert [row["jurisdiction_code"] for row in third["data"]] == ["TX"]
+    assert third["meta"]["next_cursor"] is None
 
 
 def test_a_registration_published_after_the_cut_is_not_served_under_it(

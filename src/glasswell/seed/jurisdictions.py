@@ -13,6 +13,13 @@ from datetime import date
 
 import psycopg
 
+from glasswell.seed.conformance_co import (
+    CLASSED_COUNT,
+    CO_STATUS_MAP,
+    DOCUMENTED_COUNT,
+    PLANNED_SHARE,
+)
+
 # Valid time and knowledge time of the founding registrations. The integrator repoints this
 # beside the evidence pair, per the REPOINT CHECKLIST at the head of the migration.
 REGISTERED_ON = date(2026, 9, 2)
@@ -29,6 +36,18 @@ RESTATED_EVIDENCE_TAG = "UNRELEASED"
 # blocked and a half-repoint would have cleared the gate with a placeholder bound for an
 # append-only table.
 RESTATED_EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
+
+# Colorado's own clock, named separately so the integrator can repoint it on its own train.
+# It is registered after the presentation columns exist, so it is founded whole: there is no
+# instant at which it was published without them and nothing to restate. It is NOT later than
+# the restatement, and cannot be: canonical.status_resolution resolves its arm through
+# jurisdictions_as_of(current_date, current_date), so a registration dated ahead of the deploy
+# host's today resolves nowhere and Colorado's statuses read as unmapped on the map.
+CO_REGISTERED_ON = REGISTERED_ON
+CO_EVIDENCE_TAG = "UNRELEASED"
+# Spelled out, not computed: the release gate greps for the literal, and a placeholder it
+# cannot see is a placeholder that ships.
+CO_EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
 
 # The web Wells rows as registration data. Seven facts that lived as object literals in
 # `web/src/map/registry.ts`, so a fifth jurisdiction is a row rather than a hand edit.
@@ -71,9 +90,10 @@ JURISDICTION_CODES: tuple[dict[str, object], ...] = (
     {"jurisdiction_code": "TX", "level": "state"},
     {"jurisdiction_code": "NM", "level": "state"},
     {"jurisdiction_code": "MT", "level": "state"},
+    {"jurisdiction_code": "CO", "level": "state"},
 )
 
-JURISDICTIONS: tuple[dict[str, object], ...] = (
+FOUNDING_JURISDICTIONS: tuple[dict[str, object], ...] = (
     {
         "jurisdiction_code": "ND",
         "name": "North Dakota",
@@ -240,13 +260,81 @@ JURISDICTIONS: tuple[dict[str, object], ...] = (
     },
 )
 
+# Small integers as words, the way every other subtitle spells them. The map exists so the
+# two counts below can be computed from the seeded codebook rather than typed: they are served
+# UI text, and an earlier hand-written pair of them was wrong.
+_SPELLED = {
+    2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine",
+    10: "ten", 11: "eleven", 12: "twelve", 13: "thirteen", 14: "fourteen", 15: "fifteen",
+    16: "sixteen", 17: "seventeen", 18: "eighteen", 19: "nineteen", 20: "twenty",
+}
+
+CO_SUBTITLE = (
+    f"ECMC well headers \u00b7 {{count}} points, {_SPELLED[CLASSED_COUNT]} of"
+    f" {_SPELLED[len(CO_STATUS_MAP)]} published status codes classed and"
+    f" {_SPELLED[DOCUMENTED_COUNT]} documented without an equivalent"
+    f" (cr_co_wells_status_vocab_1) \u00b7 {PLANNED_SHARE} of points are permit locations, not"
+    " surveyed (cr_co_wells_location_qualifier_1) \u00b7 surface points only"
+)
+
+COLORADO: dict[str, object] = {
+    "jurisdiction_code": "CO",
+    "name": "Colorado",
+    "regulator_name": "Colorado Energy and Carbon Management Commission",
+    "regulator_url": "https://ecmc.state.co.us",
+    "identity_prefix": "05",
+    "source_ids": (
+        "co_ecmc_wells_shp",
+        "co_ecmc_directional_bh",
+        "co_ecmc_directional_lines",
+        "co_ecmc_monthly_prod",
+        "co_ecmc_prod_reports",
+    ),
+    "liquids_basis": "oil+condensate",
+    "wells_tile_layer_id": "co_wells",
+    # The plugged grey, on a measured reason rather than by imitation: plugged is 44.75% of
+    # Colorado against active's 28.62%, so a green dot would promise a canvas that never comes.
+    "map_colour": "#7C8B96",
+    "neighbors_available": False,
+    "explorer_default": False,
+    "land_grid_state": False,
+    "land_grid_scope": False,
+    "status_dataset_detail": SHARED_STATUS_DETAIL,
+    "wells_layer_id": "co-wells",
+    "wells_style_layer_ids": ("co-wells", "co-wells-struck"),
+    # After Montana's 44. A real per-row integer, and above the founding row's 40, which the
+    # client reads as the default wells source.
+    "wells_draw_order": 45,
+    "wells_default_on": True,
+    "wells_snapshot_key": None,
+    "wells_subtitle_template": CO_SUBTITLE,
+    # The measured share is in the rule's own spec with the date it was taken, and the note
+    # cites it: ECMC refreshes daily, so a count baked into a served string is the defect the
+    # presentation columns exist to remove.
+    "legend_note": (
+        "Colorado's AL code is a vacated permit, not an abandoned well: those points have no"
+        " wellbore and are drawn as expired permits (cr_co_wells_status_vocab_1)."
+    ),
+    "rationale": (
+        "Served from the ECMC GIS shapefiles and the rolling production CSV. The status class"
+        " is resolved at read time rather than written by the promotion, because the header"
+        " refreshes daily against an append-only spine; ECMC files one liquid stream with no"
+        " condensate column, so the liquids basis is oil plus condensate by the shape of the"
+        " filing rather than by a rollup; and inventory is a registered refusal rather than an"
+        " omission, because no PLSS grid, no spacing-unit source and no support score exist for"
+        " Colorado and Protocol 4D admits no slot without them."
+    ),
+}
+
+JURISDICTIONS: tuple[dict[str, object], ...] = (*FOUNDING_JURISDICTIONS, COLORADO)
+
 # The founding rows, for the migration mirror and the parity gate. Named for what they restate
 # rather than for what they hold, which reads backwards on first grep: they are `JURISDICTIONS`
 # as v0.76 published them, before the seven presentation columns. Derived, never restated --
 # a second copy of four rationales is the drift this registry exists to remove.
 JURISDICTION_RESTATEMENTS: tuple[dict[str, object], ...] = tuple(
     {key: value for key, value in row.items() if key not in PRESENTATION_COLUMNS}
-    for row in JURISDICTIONS
+    for row in FOUNDING_JURISDICTIONS
 )
 
 JURISDICTION_RULES_AS_FOUNDED: tuple[dict[str, object], ...] = (
@@ -294,6 +382,37 @@ JURISDICTION_RULES_AS_FOUNDED: tuple[dict[str, object], ...] = (
      "rule_id": "cr_mt_operator_absence_1"},
 )
 
+
+# Colorado's decisions, at Colorado's own instant. Fourteen rows: every §3 rule that decides
+# something the serving path resolves through the registry. The two parse rules that ride with
+# the production grain are conformance rows without being registry decisions, and the six
+# cadence rules are registered in the scheduler's tables rather than here.
+COLORADO_DECISIONS: tuple[dict[str, object], ...] = tuple(
+    {
+        "jurisdiction_code": "CO",
+        "decision": decision,
+        "rule_id": rule_id,
+        "effective_from": CO_REGISTERED_ON,
+        "published_at": CO_REGISTERED_ON,
+    }
+    for decision, rule_id in (
+        ("status_vocabulary", "cr_co_wells_status_vocab_1"),
+        ("identity", "cr_co_wells_api10_1"),
+        ("deduplication", "cr_co_wells_dedup_1"),
+        ("source_selection", "cr_co_wells_source_selection_1"),
+        ("crs", "cr_co_wells_datum_1"),
+        ("geometry_provenance", "cr_co_wells_geometry_provenance_1"),
+        ("location_qualifier", "cr_co_wells_location_qualifier_1"),
+        ("geometry_scope", "cr_co_wells_geometry_scope_1"),
+        ("absence:well_type", "cr_co_wells_well_type_1"),
+        ("inventory_jurisdiction", "cr_co_inventory_not_served_1"),
+        ("liquids", "cr_co_production_liquids_1"),
+        ("entity_key", "cr_co_production_entity_key_1"),
+        ("production_grain", "cr_co_production_grain_1"),
+        ("cumulatives_scope", "cr_co_production_grain_1"),
+    )
+)
+
 # The resolved set. Montana's length_scope repoints to the appended successor, whose spec drops
 # the sentence describing the North Dakota default this track removes; four basin_scope rows say
 # which basin governs a jurisdiction's compute CRS; two length_source rows say which source
@@ -320,6 +439,13 @@ JURISDICTION_RULES: tuple[dict[str, object], ...] = (
      "rule_id": "cr_nd_neighbors_scope_1"},
     {"jurisdiction_code": "MT", "decision": "neighbors_scope",
      "rule_id": "cr_mt_neighbors_scope_1"},
+    # Which jurisdictions the per-well cumulative mart covers, as rows rather than as a tuple
+    # in the mart. The rule each names is the one that decides whether the jurisdiction writes
+    # a well-grain row at all: without one the mart would enter every well, match no month and
+    # write never_reported over a jurisdiction whose production is sitting in canonical.
+    {"jurisdiction_code": "ND", "decision": "cumulatives_scope",
+     "rule_id": "cr_nd_pool_rollup_1"},
+    *COLORADO_DECISIONS,
 )
 
 PREFIXES = frozenset(str(row["identity_prefix"]) for row in JURISDICTIONS)
@@ -374,6 +500,7 @@ on conflict do nothing
 def registration_parameters(
     row: dict[str, object],
     *,
+    effective_from: date = REGISTERED_ON,
     published_at: date = REGISTERED_ON,
     evidence_tag: str = EVIDENCE_TAG,
     evidence_commit: str = EVIDENCE_COMMIT,
@@ -387,7 +514,7 @@ def registration_parameters(
     return {
         **row,
         **presentation,
-        "effective_from": REGISTERED_ON,
+        "effective_from": effective_from,
         "published_at": published_at,
         "evidence_tag": evidence_tag,
         "evidence_commit": evidence_commit,
@@ -396,6 +523,17 @@ def registration_parameters(
         "identity_pattern": identity_pattern(prefix),
         "source_ids": list(row["source_ids"]),  # type: ignore[arg-type]
     }
+
+
+def colorado_parameters() -> dict[str, object]:
+    """The fifth registration, founded whole at its own instant with its own evidence pair."""
+    return registration_parameters(
+        COLORADO,
+        effective_from=CO_REGISTERED_ON,
+        published_at=CO_REGISTERED_ON,
+        evidence_tag=CO_EVIDENCE_TAG,
+        evidence_commit=CO_EVIDENCE_COMMIT,
+    )
 
 
 def restatement_parameters(row: dict[str, object]) -> dict[str, object]:
@@ -411,12 +549,13 @@ def restatement_parameters(row: dict[str, object]) -> dict[str, object]:
 def rule_parameters(
     row: dict[str, object], *, published_at: date = REGISTERED_ON
 ) -> dict[str, object]:
+    """A row may carry its own clock: a registration founded later declares its rules there."""
     return {
         "effective_from": REGISTERED_ON,
         "serving": True,
         "note": None,
         **row,
-        "published_at": published_at,
+        "published_at": row.get("published_at", published_at),
     }
 
 
@@ -432,7 +571,8 @@ def seed_jurisdictions(connection: psycopg.Connection) -> int:
         cursor.executemany(
             _INSERT_JURISDICTION,
             [registration_parameters(row) for row in JURISDICTION_RESTATEMENTS]
-            + [restatement_parameters(row) for row in JURISDICTIONS],
+            + [restatement_parameters(row) for row in FOUNDING_JURISDICTIONS]
+            + [colorado_parameters()],
         )
         cursor.executemany(
             _INSERT_RULE,

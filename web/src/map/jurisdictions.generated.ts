@@ -33,6 +33,37 @@ export interface GeneratedJurisdiction {
 
 export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
   {
+    code: "CO",
+    name: "Colorado",
+    prefix: "05",
+    colour: "#7C8B96",
+    wellsTileLayerId: "co_wells",
+    explorerDefault: false,
+    wellsLayerId: "co-wells",
+    wellsStyleLayerIds: ["co-wells", "co-wells-struck"],
+    wellsDrawOrder: 45,
+    wellsDefaultOn: true,
+    wellsSnapshotKey: null,
+    wellsSubtitleTemplate: "ECMC well headers · {count} points, eleven of thirteen published status codes classed and two documented without an equivalent (cr_co_wells_status_vocab_1) · 44.67% of points are permit locations, not surveyed (cr_co_wells_location_qualifier_1) · surface points only",
+    legendNote: "Colorado's AL code is a vacated permit, not an abandoned well: those points have no wellbore and are drawn as expired permits (cr_co_wells_status_vocab_1).",
+    rules: {
+      "absence:well_type": "cr_co_wells_well_type_1",
+      crs: "cr_co_wells_datum_1",
+      cumulatives_scope: "cr_co_production_grain_1",
+      deduplication: "cr_co_wells_dedup_1",
+      entity_key: "cr_co_production_entity_key_1",
+      geometry_provenance: "cr_co_wells_geometry_provenance_1",
+      geometry_scope: "cr_co_wells_geometry_scope_1",
+      identity: "cr_co_wells_api10_1",
+      inventory_jurisdiction: "cr_co_inventory_not_served_1",
+      liquids: "cr_co_production_liquids_1",
+      location_qualifier: "cr_co_wells_location_qualifier_1",
+      production_grain: "cr_co_production_grain_1",
+      source_selection: "cr_co_wells_source_selection_1",
+      status_vocabulary: "cr_co_wells_status_vocab_1",
+    },
+  },
+  {
     code: "MT",
     name: "Montana",
     prefix: "25",
@@ -73,6 +104,7 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
     legendNote: null,
     rules: {
       basin_scope: "cr_nd_basin_scope_1",
+      cumulatives_scope: "cr_nd_pool_rollup_1",
       geometry_provenance: "cr_nd_geometry_provenance_1",
       identity: "cr_nd_api_identity_1",
       inventory_jurisdiction: "cr_nd_inventory_jurisdiction_1",
@@ -133,10 +165,11 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
 
 /** Registered code → registration. Keys are literal so a typo is a type error. */
 export const JURISDICTIONS = {
-  MT: JURISDICTION_LIST[0]!,
-  ND: JURISDICTION_LIST[1]!,
-  NM: JURISDICTION_LIST[2]!,
-  TX: JURISDICTION_LIST[3]!,
+  CO: JURISDICTION_LIST[0]!,
+  MT: JURISDICTION_LIST[1]!,
+  ND: JURISDICTION_LIST[2]!,
+  NM: JURISDICTION_LIST[3]!,
+  TX: JURISDICTION_LIST[4]!,
 } as const satisfies Readonly<Record<string, GeneratedJurisdiction>>;
 
 /** Registered API prefix → registration. The wire carries the prefix, not the code. */

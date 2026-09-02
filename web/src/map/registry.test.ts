@@ -507,13 +507,13 @@ describe("the registry declares no vocabulary nothing reads", () => {
 });
 
 describe("the wells family", () => {
-  it("holds the four state well-point rows and nothing else", () => {
+  it("holds one state well-point row per registration and nothing else", () => {
     // The boundary is "one point per well, surface hole, differing only by which regulator
     // filed it". A path is not a well: mt-paths and survey-traces draw bore geometry, and
     // disposal-wells cuts the same points by well_type rather than by state — nesting either
     // under a parent whose children are states would read as a fifth state.
     expect(familyMembers("wells").map((layer) => layer.id)).toEqual([
-      "wells", "tx-wells", "nm-wells", "mt-wells",
+      "wells", "tx-wells", "nm-wells", "mt-wells", "co-wells",
     ]);
     for (const sibling of ["mt-paths", "survey-traces", "disposal-wells", "lateral-bores"]) {
       expect(layerDef(sibling)!.family, `${sibling} was nested`).toBeUndefined();
@@ -535,7 +535,7 @@ describe("the wells family", () => {
     expect(layerFamily("wells")!.label).toBe("Wells");
     expect(layerFamily("wells")!.childAxis).toBe("state");
     expect(familyMembers("wells").map((layer) => layer.familyLabel)).toEqual([
-      "North Dakota", "Texas", "New Mexico", "Montana",
+      "North Dakota", "Texas", "New Mexico", "Montana", "Colorado",
     ]);
     // The standalone name still says what the row is: a pill reading "Texas" alone would not.
     for (const layer of familyMembers("wells")) {
@@ -552,7 +552,12 @@ describe("the wells family", () => {
     expect(familyState("wells", new Set())).toBe(false);
     expect(familyState("wells", new Set(["wells"]))).toBe("mixed");
     expect(familyState("wells", new Set(["wells", "tx-wells", "nm-wells"]))).toBe("mixed");
-    expect(familyState("wells", new Set(["wells", "tx-wells", "nm-wells", "mt-wells"]))).toBe(true);
+    // Every member, read off the registry rather than typed: a sixth registration must not
+    // leave this asserting that five of six is the whole family.
+    expect(familyState("wells", new Set(familyMembers("wells").map((row) => row.id)))).toBe(true);
+    expect(
+      familyState("wells", new Set(["wells", "tx-wells", "nm-wells", "mt-wells"])),
+    ).toBe("mixed");
     // A layer outside the family cannot move the parent, in either direction.
     expect(familyState("wells", new Set(["mt-paths"]))).toBe(false);
   });
@@ -561,7 +566,7 @@ describe("the wells family", () => {
 describe("every row states its state the same way", () => {
   // North Dakota was the unmarked default only because it was ingested first — an accident of
   // build order presented to the reader as a distinction, which gets worse with every state.
-  const STATES = ["North Dakota", "Texas", "New Mexico", "Montana"];
+  const STATES = ["North Dakota", "Texas", "New Mexico", "Montana", "Colorado"];
 
   it("spells the state out rather than shipping a postal code the panel alone would use", () => {
     // The status page names all four in full across seventeen dataset rows and the glossary
@@ -604,7 +609,7 @@ describe("the panel's reading order", () => {
     ).toEqual(["lateral-bores", "survey-traces", "mt-paths", "family:wells", "disposal-wells"]);
     const family = spine.entries.find((row) => row.kind === "family")!;
     expect(family.kind === "family" && family.layers.map((layer) => layer.id)).toEqual([
-      "wells", "tx-wells", "nm-wells", "mt-wells",
+      "wells", "tx-wells", "nm-wells", "mt-wells", "co-wells",
     ]);
   });
 

@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 import glasswell
-from glasswell.seed.jurisdictions import CODES, NAMES, PREFIXES
+from glasswell.seed.jurisdictions import CODES, JURISDICTIONS, NAMES, PREFIXES
 
 pytestmark = pytest.mark.unit
 
@@ -222,6 +222,19 @@ def _named(path: Path) -> str:
         return path.name
 
 
+# A layer id that spells a jurisdiction code is a jurisdiction literal, and the two-digit rule
+# cannot see it: `co-wells` carries no prefix, no name and no alternation group. North Dakota's
+# `wells` is deliberately not in this set -- it predates the per-jurisdiction spelling, spells no
+# code, and every saved permalink froze it.
+JURISDICTION_LAYER_IDS = frozenset(
+    str(value)
+    for row in JURISDICTIONS
+    for column in ("wells_layer_id", "wells_tile_layer_id")
+    if (value := row.get(column)) is not None
+    and str(row["jurisdiction_code"]).lower() in str(value).lower()
+)
+
+
 def _exempt(exemptions, path: Path, line: str, value: str) -> Exemption | None:
     return next((item for item in exemptions if item.matches(path, line, value)), None)
 
@@ -263,6 +276,11 @@ def scan_web(files: list[Path]) -> list[str]:
             for name in NAMES:
                 if name in line and _exempt(WEB_EXEMPTIONS, path, line, name) is None:
                     found.append(f"{_named(path)}:{number}: {name!r}")
+            for layer_id in JURISDICTION_LAYER_IDS:
+                if f'"{layer_id}"' in line and _exempt(
+                    WEB_EXEMPTIONS, path, line, layer_id
+                ) is None:
+                    found.append(f"{_named(path)}:{number}: {layer_id!r}")
     return found
 
 
@@ -289,6 +307,18 @@ def test_no_python_serving_module_names_a_jurisdiction() -> None:
 
 def test_no_web_module_names_a_jurisdiction() -> None:
     assert scan_web(web_files()) == []
+
+
+def test_the_layer_id_rule_covers_every_registration_but_the_irregular_one() -> None:
+    """The set the web scan reads, checked so it cannot quietly go empty.
+
+    A jurisdiction-scoped layer id is the shape a two-digit scan is blind to, and it is the one
+    the wells family multiplies: two ids per registration, in a roster that grows by a row per
+    state. North Dakota's `wells` is the exception and stays out by spelling no code.
+    """
+    assert len(JURISDICTION_LAYER_IDS) >= 2 * (len(CODES) - 1)
+    assert "wells" not in JURISDICTION_LAYER_IDS
+    assert {"co-wells", "co_wells"} <= JURISDICTION_LAYER_IDS
 
 
 def test_no_migration_written_after_the_registry_hardcodes_a_prefix() -> None:
@@ -319,16 +349,21 @@ def test_every_exemption_is_load_bearing_and_says_why() -> None:
 
 # The negative fixtures, drawn from shapes the rules do NOT name (§5.1 rev 3). A fixture that
 # carries the rule's own trigger proves only that the rule can see itself.
+# Wyoming, because Colorado is registered now and a fixture planting a registered prefix
+# proves the opposite of what it is written for: the scan would refuse it for being a prefix
+# at all rather than for being an unregistered one, and the arm that reads the registry would
+# never be exercised. 49 is Wyoming's API state code and the next of the Rockies sequence,
+# so the fixture is the shape the next state actually arrives in.
 PLANTED = (
-    ("python", 'COLORADO_RULES = {"05": "cr_co_status_vocab_1"}\n'),
-    ("web", 'const CO = { "05": "Colorado" };\n'),
-    ("migration", "check (left(api10, 2) = '05')\n"),
+    ("python", 'WYOMING_RULES = {"49": "cr_wy_status_vocab_1"}\n'),
+    ("web", 'const WY = { "49": "Wyoming" };\n'),
+    ("migration", "check (left(api10, 2) = '49')\n"),
     # The alternation-group shape: a quoted-literal rule needs the quote immediately before
     # the digits, and the parenthesis walks past it.
-    ("python", 'PATTERN = re.compile(r"(05|33)[0-9]{8}")\n'),
+    ("python", 'PATTERN = re.compile(r"(49|33)[0-9]{8}")\n'),
     # The anchored single-prefix shape, which passes both the generic rule and the alternation
     # arm. 045 carries this shape as applied history, so the project knows it exists.
-    ("python", 'PATTERN = re.compile(r"^05[0-9]{8}$")\n'),
+    ("python", 'PATTERN = re.compile(r"^49[0-9]{8}$")\n'),
 )
 
 # The `CODES` arm's own shapes, kept apart from the prefix fixtures above because it answers a
@@ -418,3 +453,47 @@ def test_the_scan_sees_a_registered_code_used_as_a_key(
     planted_file.write_text(planted, encoding="utf-8")
 
     assert (scan_python if tree == "python" else scan_web)([planted_file])
+
+
+def test_what_the_migration_scan_refuses_is_the_reach_into_an_api10_not_the_prefix(
+    tmp_path: Path,
+) -> None:
+    """The seam, stated as a difference rather than as an absence.
+
+    The scan's whole claim is that it refuses a jurisdiction being written into code, not that
+    it refuses two digits. Both halves have to be exercised or the rule is indistinguishable
+    from one that bans the shape. So: a registered prefix and an unregistered one, on the same
+    query against the registry, are **both** admitted -- neither reaches into an API-10 -- and
+    the same two prefixes inside a `left(api10, 2)` are both refused. The arm that fires is the
+    one that reaches, whichever prefix it names.
+    """
+    registered = sorted(PREFIXES)[0]
+    unregistered = "select * from lineage.jurisdictions where identity_prefix = '49'\n"
+    admitted = f"select * from lineage.jurisdictions where identity_prefix = '{registered}'\n"
+
+    assert scan_migrations([_written(tmp_path, "099_registered.sql", admitted)]) == []
+    assert scan_migrations([_written(tmp_path, "099_planted.sql", unregistered)]) == []
+    assert scan_migrations([_written(tmp_path, "099_reach.sql", "left(api10, 2) = '49'\n")])
+    assert scan_migrations(
+        [_written(tmp_path, "099_reach_registered.sql", f"left(api10, 2) = '{registered}'\n")]
+    )
+
+
+def test_the_planted_state_is_one_the_registry_does_not_hold() -> None:
+    """A fixture planting a registered prefix proves the opposite of what it is written for:
+    the scan would refuse it for being a prefix at all, and the arm that reads the registry
+    would never run. This is what makes the negative fixtures move when a state lands."""
+    planted = {value for _tree, value in PLANTED}
+    for prefix in PREFIXES:
+        assert not any(f'"{prefix}"' in value or f"'{prefix}'" in value for value in planted), (
+            f"the planted sixth state uses {prefix}, which the registry now holds"
+        )
+    for name in NAMES:
+        assert not any(name in value for value in planted)
+
+
+def _written(root: Path, name: str, body: str) -> Path:
+    """A planted file outside the tree, in a directory pytest removes after the run."""
+    path = root / name
+    path.write_text(body, encoding="utf-8")
+    return path

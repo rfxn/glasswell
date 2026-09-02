@@ -9,6 +9,7 @@ import {
   writeCapabilitySet,
 } from "./persist.ts";
 import { defaultLayerSet, layerIds } from "./registry.ts";
+import { WELLS_ROSTER } from "./style.ts";
 
 // Three ids standing in for a registry: these hold the mechanism, not this build's rows. The
 // block at the foot of the file is the one that reads the real registry.
@@ -118,23 +119,41 @@ describe("a set stored before the two lateral rows were combined", () => {
     // The migration this track owes, and the reason the parent is derived rather than stored:
     // nesting moved no id, so the pre-nesting roster IS the current one for every member and
     // `restoreCapabilitySet` has nothing to migrate. A reader who had turned three states off
-    // and kept North Dakota gets exactly that back — not four states, and not the defaults.
+    // and kept North Dakota gets exactly that back — not every state, and not the defaults.
+    //
+    // The stored set is deliberately the roster as it stood, so a jurisdiction registered
+    // since is genuinely absent from it: that is the case being tested, and it is what proves
+    // a reader's saved set survives a state arriving rather than being reset by one.
     const beforeNesting = [
       "land-metrics", "land-grid", "land-grid-labels", "spacing-units", "plss-labels",
       "lateral-bores", "survey-traces", "mt-paths", "wells", "disposal-wells",
       "tx-wells", "nm-wells", "mt-wells", "basins", "plays",
     ];
-    expect(beforeNesting.sort()).toEqual([...layerIds()].sort());
+    const sinceStored = [...layerIds()].filter((id) => !beforeNesting.includes(id));
+    expect(beforeNesting.concat(sinceStored).sort()).toEqual([...layerIds()].sort());
 
     const stored = { on: ["wells", "lateral-bores"], known: beforeNesting };
     const restored = restoreCapabilitySet(stored, layerIds(), defaultLayerSet());
-    expect([...restored].sort()).toEqual(["lateral-bores", "wells"]);
+
+    // Every id the reader knew about comes back exactly as they left it. A layer registered
+    // since they last visited was in no stored decision of theirs, so it takes its own
+    // default and appears -- which is the contract for any new layer and not a wells-family
+    // special case. Silently withholding a jurisdiction from a returning reader would be the
+    // worse answer: the map would be missing a state with nothing on screen saying why.
+    const knownBack = [...restored].filter((id) => beforeNesting.includes(id)).sort();
+    expect(knownBack).toEqual(["lateral-bores", "wells"]);
+    expect([...restored].sort()).toEqual(
+      ["lateral-bores", "wells", ...sinceStored.filter((id) => defaultLayerSet().includes(id))]
+        .sort(),
+    );
   });
 
   it("adds no parent id to the persisted roster, so the family costs the store nothing", () => {
     // A parent that were a real row would arrive absent from every stored `known`, take its
     // own default, and then either mean nothing or force its members on over the reader's set.
     for (const id of layerIds()) expect(id).not.toMatch(/^wells-(all|family|parent)$/);
-    expect(layerIds()).toHaveLength(15);
+    // One row per registered jurisdiction plus the eleven that are not per-jurisdiction, so a
+    // fifth registration grows the roster by exactly one and adds no parent to the store.
+    expect(layerIds()).toHaveLength(WELLS_ROSTER.length + 11);
   });
 });

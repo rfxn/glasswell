@@ -20,6 +20,7 @@ from psycopg.types.json import Jsonb
 
 from glasswell.seed.conformance_basins import MAPS_URL
 from glasswell.seed.conformance_c115b import LAYER_URL as C115B_LAYER_URL
+from glasswell.seed.conformance_co import CO_CADENCE_DECISIONS, CO_CADENCE_EVIDENCE
 from glasswell.seed.conformance_fracfocus import DOWNLOAD_URL as FRACFOCUS_URL
 from glasswell.seed.conformance_land import SERVICE_URL as PLSS_SERVICE_URL
 from glasswell.seed.conformance_mt import GIS_PATHS_URL, PRODUCTION_URL
@@ -39,7 +40,7 @@ PLANNER = "glasswell.scheduler.plan:due_for"
 # it, so a shorter policy on any one source shortens its job without a second decision.
 INTERVAL_DERIVATION = "min(expected_poll_interval) over the job's lineage.job_sources rows"
 
-EVIDENCE: dict[str, str] = {
+_EVIDENCE: dict[str, str] = {
     "blm_plss_sections": PLSS_SERVICE_URL,
     "eia_sedimentary_basins": MAPS_URL,
     "fracfocus_csv": FRACFOCUS_URL,
@@ -56,7 +57,7 @@ EVIDENCE: dict[str, str] = {
     "tx_wellbore_ewa_csv": EWA_LINK,
 }
 
-DECISIONS: dict[str, dict[str, str]] = {
+_DECISIONS: dict[str, dict[str, str]] = {
     "ingest_nd_gis": {
         "rule": "Pull the four NDIC OGD layers every 35 days, at the shortest interval any of"
         " them carries.",
@@ -240,12 +241,18 @@ DECISIONS: dict[str, dict[str, str]] = {
 SCHEDULE_RULES: tuple[dict[str, object], ...] = ()
 
 
+# A later jurisdiction track declares its own cadence decisions beside its other rules and
+# they are merged here, so one builder writes every cr_job_cadence_<job>_1 row and the grammar
+# cannot fork.
+EVIDENCE: dict[str, str] = {**_EVIDENCE, **CO_CADENCE_EVIDENCE}
+DECISIONS: dict[str, dict[str, str]] = {**_DECISIONS, **CO_CADENCE_DECISIONS}
+
 def _spec(job_id: str, schedule: dict[str, object], anchor: str) -> dict[str, object]:
     interval = schedule.get("cadence_interval")
     return {
         "job_id": job_id,
         "trigger": schedule["trigger"],
-        "launch_mode": "observe",
+        "launch_mode": schedule.get("launch_mode", "observe"),
         "anchor_source_id": anchor,
         "sources": list(JOB_SOURCES.get(job_id, ())),
         "cadence_interval_days": interval.days if interval is not None else None,

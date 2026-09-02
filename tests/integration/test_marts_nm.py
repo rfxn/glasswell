@@ -360,7 +360,16 @@ def test_no_other_states_letters_are_resolved_through_the_new_mexico_map(db, lin
         db, "select status_canonical from marts.nd_wells_tile where api10 = %s",
         ("3305399101",),
     ) == [("inactive",)]
+    # The view has a second arm now -- Colorado is the other read-time jurisdiction -- so the
+    # claim is that New Mexico's codebook reaches only New Mexico's prefix, not that the view
+    # answers for one state. Each arm joins its own mapping table to its own registration.
     assert scalar(
         db,
-        "select count(*) from canonical.status_resolution where for_state_code <> '30'",
+        "select count(*) from canonical.status_resolution r"
+        "  join lineage.nm_wellhistory_status_map m on m.status = r.for_status_reported"
+        "   and m.status_canonical = r.resolved_status"
+        " where r.for_state_code <> '30'"
+        "   and not exists (select 1 from lineage.co_facility_status_map c"
+        "                    where c.status = r.for_status_reported"
+        "                      and c.status_canonical = r.resolved_status)",
     ) == 0

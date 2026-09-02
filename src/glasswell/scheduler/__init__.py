@@ -1,10 +1,10 @@
 """The cadence-driven scheduler: what is due, in what order, and what each tick observed.
 
-v0.77 ships observing. Every schedule row the registry seeds is `launch_mode='observe'`, so a
-tick resolves the registry, computes the plan and appends `would_run` rows without launching
-anything; the two pipeline units stay armed and remain the thing that actually runs. The launch
-path, the per-job lock, the reconciler, the calendar rule and the tick budget are all built and
-exercised through `--run`, so v0.78 is rows plus a green suite.
+A tick resolves the registry, computes the plan and appends what it decided. A job whose row
+observes is recorded `would_run` and left to whatever already drives it -- the two pipeline
+units the four legacy jurisdictions stay armed through. A job whose row launches is run, which
+is admissible only where no installed timer drives the same entry point; `double_run_rows` is
+the standing guard on that, and Colorado is the first jurisdiction registered under it.
 """
 
 from __future__ import annotations

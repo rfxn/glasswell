@@ -684,6 +684,12 @@ function cumulativeScope(data: WellCumulatives): (string | Node | false)[] {
   return [
     window,
     span > 0 && `${count} of ${span} months admitted`,
+    // The span is the months this source has filed for this well, not the well's life, and
+    // the two are far apart where a regulator publishes a rolling window rather than a
+    // history. Said generically because it is true of every jurisdiction: a total over what
+    // was filed is the only total there is, and a reader who takes it for a life-of-well
+    // figure has been told something false by omission.
+    span > 0 && "over the months filed, not the well's life",
     unbreakable(`snapshot ${formatVintage(data.snapshot_vintage)}`),
   ];
 }

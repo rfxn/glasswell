@@ -4,8 +4,10 @@ Cadence used to be ten `ExecStart=` lines and a runbook sentence, so a registere
 not a scheduled source and no query could tell which was which. These rows are the answer, and
 every schedule row cites the `cr_job_cadence_*` conformance rule that decided it.
 
-Every row seeded here is `launch_mode='observe'`: the two pipeline units stay armed through
-v0.77, the tick records `would_run` and launches nothing, and v0.78 appends `launch` rows.
+A row launches only where nothing else already drives its entry point. The four legacy
+jurisdictions stay armed through the two pipeline units, so their rows observe and the tick
+records `would_run`; Colorado installs no unit, so its six rows launch and each one's
+`cr_job_cadence_<job>_1` rationale says why.
 """
 
 from __future__ import annotations
@@ -93,6 +95,177 @@ REFUSAL_CODES: tuple[tuple[str, str, str], ...] = (
         "The transient unit for a started run no longer exists, so its outcome is unknown.",
     ),
 )
+
+# Colorado's six, one entry point each, appended under the invitation this module's own
+# comment extends to a later jurisdiction track. They are the first rows in the registry that
+# launch rather than observe: Colorado adds no unit file, so no installed timer drives any of
+# these entry points and there is nothing for a launched run to collide with.
+CO_JOBS: tuple[dict[str, object], ...] = (
+    {
+        "job_id": "co_ecmc_gis",
+        "label": "Colorado ECMC GIS ingest",
+        "kind": "ingest",
+        "entry_point": "glasswell.ingest.co_ecmc_gis",
+        "argv": ["--layer", "all"],
+        "jurisdiction": "CO",
+        "run_as": "glasswell",
+        "rationale": "The three ECMC archives are republished together every night and are"
+        " pulled in one pass, so one job carries three job_sources rows and takes the shortest"
+        " of their intervals.",
+    },
+    {
+        "job_id": "co_ecmc_production",
+        "label": "Colorado ECMC rolling production ingest",
+        "kind": "ingest",
+        "entry_point": "glasswell.ingest.co_ecmc_production",
+        "argv": ["--file", "rolling"],
+        "jurisdiction": "CO",
+        "run_as": "glasswell",
+        "rationale": "The rolling file only. The 2.49 GB annual archives are their own dispatch"
+        " and no schedule claims them, which is why their source carries no interval.",
+    },
+    {
+        "job_id": "co_wells",
+        "label": "Colorado header promotion",
+        "kind": "ingest",
+        "entry_point": "glasswell.ingest.co_wells",
+        "argv": [],
+        "jurisdiction": "CO",
+        "run_as": "glasswell",
+        "rationale": "The promotion reads the staged header table, so it reacts to the ingest"
+        " that wrote it rather than to a clock of its own.",
+    },
+    {
+        "job_id": "co_production",
+        "label": "Colorado production promotion",
+        "kind": "ingest",
+        "entry_point": "glasswell.ingest.co_production",
+        "argv": [],
+        "jurisdiction": "CO",
+        "run_as": "glasswell",
+        "rationale": "The promotion projects the staged rolling file and has nothing to do when"
+        " the pull was unchanged.",
+    },
+    {
+        "job_id": "co_tiles",
+        "label": "Colorado tile mart",
+        "kind": "mart",
+        "entry_point": "glasswell.marts.wells",
+        "argv": ["--jurisdiction", "CO"],
+        "jurisdiction": "CO",
+        "run_as": "glasswell",
+        "rationale": "One engine, one entry point: the jurisdiction is an argument and the"
+        " profile it names is a row, so a fifth mart is this row and no module.",
+    },
+    {
+        "job_id": "co_counts",
+        # Cross-jurisdiction on purpose: the writer measures the whole registry, so scoping it
+        # to Colorado would claim a jurisdiction the run does not respect. It shares the default
+        # concurrency group with the platform's own counts row, which is what keeps two
+        # schedule rows over one entry point from ever running at once.
+        "label": "Registry well counts after Colorado",
+        "kind": "mart",
+        "entry_point": "glasswell.marts.counts",
+        "argv": [],
+        "jurisdiction": None,
+        "run_as": "glasswell",
+        "rationale": "marts.counts has no natural source of its own -- it measures whatever the"
+        " registry holds -- so it anchors on the source its dependency anchors on, and this row"
+        " exists because /v1/jurisdictions serves a new registration with no well_count and no"
+        " measured_on until something has measured it.",
+    },
+)
+
+CO_SCHEDULES: tuple[dict[str, object], ...] = (
+    {
+        "job_id": "co_ecmc_gis",
+        "trigger": "cadence",
+        "cadence_interval": timedelta(days=1),
+        "cadence_note": "Daily, the cadence the three archives' own stamps show",
+        "launch_mode": "launch",
+        "memory_max": "6G",
+        "timeout_seconds": 3600,
+    },
+    {
+        "job_id": "co_ecmc_production",
+        "trigger": "cadence",
+        "cadence_interval": timedelta(days=35),
+        "cadence_note": "Every 35 days; the rolling file carries one mid-month stamp",
+        "launch_mode": "launch",
+        "memory_max": "6G",
+        "timeout_seconds": 3600,
+    },
+    {
+        "job_id": "co_wells",
+        "trigger": "after_dependency",
+        "cadence_note": "After the GIS ingest that stages the header table",
+        "launch_mode": "launch",
+        "memory_max": "6G",
+        "timeout_seconds": 3600,
+    },
+    {
+        "job_id": "co_production",
+        "trigger": "after_dependency",
+        "cadence_note": "After the ingest that stages the rolling production file",
+        "launch_mode": "launch",
+        "memory_max": "6G",
+        "timeout_seconds": 3600,
+    },
+    {
+        "job_id": "co_tiles",
+        "trigger": "after_dependency",
+        "cadence_note": "After the two promotions it projects",
+        "launch_mode": "launch",
+        "memory_max": "6G",
+        "timeout_seconds": 3600,
+    },
+    {
+        "job_id": "co_counts",
+        "trigger": "after_dependency",
+        "cadence_note": "After the Colorado mart, so the served counts are measured",
+        "launch_mode": "launch",
+        "memory_max": "2G",
+        "timeout_seconds": 1800,
+    },
+)
+
+CO_DEPENDENCIES: tuple[tuple[str, str, str, str], ...] = (
+    (
+        "co_wells",
+        "co_ecmc_gis",
+        "changed",
+        "The header promotion reads what the GIS ingest staged, so a pull that changed nothing"
+        " leaves it with nothing to promote.",
+    ),
+    (
+        "co_production",
+        "co_ecmc_production",
+        "changed",
+        "The production promotion reads the staged rolling file and reacts to a pull that"
+        " actually moved rows.",
+    ),
+    (
+        "co_tiles",
+        "co_wells",
+        "changed",
+        "The tile mart projects the promoted header spine.",
+    ),
+    (
+        "co_tiles",
+        "co_production",
+        "changed",
+        "The mart's status and production facets are read from the promoted rows, so it waits"
+        " on both promotions rather than drawing a header spine with no volumes behind it.",
+    ),
+    (
+        "co_counts",
+        "co_tiles",
+        "changed",
+        "The registry's served counts are measured after the mart that changed what there is to"
+        " count, never asserted.",
+    ),
+)
+
 
 # job_id -> (kind, entry_point, argv, jurisdiction, run_as, rationale)
 JOBS: tuple[dict[str, object], ...] = (
@@ -420,6 +593,7 @@ JOBS: tuple[dict[str, object], ...] = (
         "rationale": "The nightly dump is a shell script run by root; it is registered for"
         " visibility and the scheduler holds no opinion about when or as whom it runs.",
     },
+    *CO_JOBS,
 )
 
 NM_OCD_SOURCES = (
@@ -455,12 +629,25 @@ JOB_SOURCES: dict[str, tuple[str, ...]] = {
     "ingest_nm_wells_gis": ("nm_ocd_wells_gis",),
     "ingest_tx_gis": ("tx_gis_wells_county",),
     "ingest_tx_wellbore": ("tx_wellbore_ewa_csv",),
+    # The GIS job covers three archives, so its cadence resolves over all three rather than
+    # over the one its anchor names. The two promotions read one staged table each and say so.
+    "co_ecmc_gis": (
+        "co_ecmc_directional_bh",
+        "co_ecmc_directional_lines",
+        "co_ecmc_wells_shp",
+    ),
+    "co_ecmc_production": ("co_ecmc_monthly_prod",),
+    "co_wells": ("co_ecmc_wells_shp",),
+    "co_production": ("co_ecmc_monthly_prod",),
 }
 
 # A NOAA datum grid moves when the dependency pin moves, so there is no job to fetch it, and
 # tx_pdq_dsv carries a policy row with no lineage.sources row at all. Both are named here
 # rather than left to a membership check, so gate 1 stays a two-sided set equality.
-UNJOBBED_SOURCES = frozenset({"proj_grid_nad27", "tx_pdq_dsv"})
+# co_ecmc_prod_reports is the third: the 2.49 GB annual archives are a later dispatch and no
+# job polls them in this release, so the source is registered with a null interval and named
+# here rather than given a schedule that would claim a poll nothing performs.
+UNJOBBED_SOURCES = frozenset({"proj_grid_nad27", "tx_pdq_dsv", "co_ecmc_prod_reports"})
 
 DEPENDENCIES: tuple[tuple[str, str, str, str], ...] = (
     (
@@ -599,6 +786,7 @@ DEPENDENCIES: tuple[tuple[str, str, str, str], ...] = (
         "Texas is the fourth resident jurisdiction; a fifth adds an edge here rather than a"
         " code change.",
     ),
+    *CO_DEPENDENCIES,
 )
 
 # job_id -> (trigger, interval, monthly_day, note, memory_max, timeout_seconds, legacy_unit)
@@ -827,6 +1015,7 @@ SCHEDULES: tuple[dict[str, object], ...] = (
         "external_timer_unit": "glasswell-backup.timer",
         "external_service_unit": "glasswell-backup.service",
     },
+    *CO_SCHEDULES,
 )
 
 
@@ -921,8 +1110,10 @@ def _schedule_row(schedule: dict[str, object]) -> dict[str, object]:
         "published_at": REGISTERED_ON,
         "rule_id": None if external else cadence_rule_id(job_id),
         "trigger": schedule["trigger"],
-        # Every row this track seeds observes. v0.78 appends one launch row per job.
-        "launch_mode": "observe",
+        # Observing unless the row says otherwise: the four legacy jurisdictions stay armed
+        # through their own units, and a row may launch only where no timer drives its entry
+        # point, which is what the job's own cadence rule has to argue.
+        "launch_mode": schedule.get("launch_mode", "observe"),
         "cadence_interval": schedule.get("cadence_interval"),
         "cadence_monthly_on_day": schedule.get("cadence_monthly_on_day"),
         "cadence_note": schedule["cadence_note"],

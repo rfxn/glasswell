@@ -837,6 +837,23 @@ _PRODUCTION_PRESENTATION: dict[str, _ProductionPresentation] = {
             + _VINTAGE_NOTE
         ),
     ),
+    "co_ecmc_monthly_prod": _ProductionPresentation(
+        dataset_id="canonical.production_monthly/co",
+        label="Colorado production observations",
+        grain="one append-only source revision per completion, month and stream, plus the"
+        " well row that sums them",
+        entity_metric_id="entities",
+        entity_label="Distinct completion and well entities",
+        entity_unit="entities",
+        detail=(
+            "Two grains in one count, and they are not added to each other by anything served:"
+            " ECMC files per completion, and cr_co_production_grain_1 writes a well row beside"
+            " those carrying their exact sum, disclosed as sum_over_pools. Oil is oil plus"
+            " condensate because ECMC files one liquid stream and no condensate column exists"
+            " (cr_co_production_liquids_1). The rolling file is the source, so this covers the"
+            " months it carries rather than a well's life. " + _VINTAGE_NOTE
+        ),
+    ),
     "mt_bogc_well_production": _ProductionPresentation(
         dataset_id="canonical.production_monthly/mt-well",
         label="Montana well-grain production observations",

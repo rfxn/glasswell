@@ -5,6 +5,7 @@ from __future__ import annotations
 import psycopg
 from fastapi.testclient import TestClient
 
+from glasswell.marts.cumulatives import STATE_API_PREFIXES
 from tests.contract.test_well_cumulatives import handles
 
 PATH = "/v1/wells/vintage-cohorts"
@@ -127,7 +128,10 @@ def test_the_population_says_where_it_stops(client: TestClient) -> None:
     scope = body["data"]["population_scope"]
     assert scope["basin_complete"] is False
     assert "Montana" in scope["detail"]
-    assert scope["states_served"] == ["33"]
+    # Every jurisdiction the registry puts in the cumulatives scope, read from that scope
+    # rather than typed: the cohort mart is built over the same population, so a state
+    # registered into one is served by the other and a literal here would say otherwise.
+    assert scope["states_served"] == list(STATE_API_PREFIXES)
     codes = {warning["code"] for warning in body["meta"]["warnings"]}
     assert "population_state_truncated" in codes
 

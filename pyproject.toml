@@ -56,6 +56,10 @@ glasswell-mt-gis = "glasswell.ingest.mt_gis:main"
 # Tier 2 of the New Mexico track only. `glasswell.ingest.nm_ocd` and `.nm_dims` deliberately
 # keep their `python -m` spelling: docs/runbook-nm-tier2.md states why.
 glasswell-nm-wells = "glasswell.ingest.nm_wells:main"
+# The two Colorado promotions an operator hand-runs. The two network ingests keep their
+# `python -m` spelling, as the New Mexico FTP pair does: they are the scheduler's to run.
+glasswell-co-wells = "glasswell.ingest.co_wells:main"
+glasswell-co-production = "glasswell.ingest.co_production:main"
 glasswell-nm-tiles = "glasswell.marts.nm_wells:main"
 
 [tool.setuptools.packages.find]

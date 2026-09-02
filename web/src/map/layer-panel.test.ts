@@ -887,7 +887,7 @@ describe("the wells parent", () => {
     const labels = [...familyBody(handle.element, "wells").querySelectorAll(".gw-layer-label")].map(
       (node) => node.textContent,
     );
-    expect(labels).toEqual(["North Dakota", "Texas", "New Mexico", "Montana"]);
+    expect(labels).toEqual(["North Dakota", "Texas", "New Mexico", "Montana", "Colorado"]);
     expect(
       familyOf(handle.element, "wells").querySelector(".gw-layer-family-name .gw-layer-label")!
         .textContent,

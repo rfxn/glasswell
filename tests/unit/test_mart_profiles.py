@@ -147,11 +147,14 @@ def test_a_withholding_registration_over_a_length_profile_is_refused_not_discove
 
 
 def test_an_unregistered_jurisdiction_has_no_profile_and_says_so() -> None:
+    """Wyoming rather than Colorado: Colorado is a registered profile now, and a refusal test
+    keyed on a code the engine answers for proves the opposite of what it is written for."""
     with pytest.raises(MartProfileError) as refused:
-        profile_for("CO")
+        profile_for("WY")
 
-    assert "CO" in str(refused.value)
+    assert "WY" in str(refused.value)
     assert "ND" in str(refused.value)
+    assert "CO" in str(refused.value), "the refusal has to list the profiles that do exist"
 
 
 def test_the_constant_the_length_default_lived_in_has_no_caller_left_in_the_marts() -> None:

@@ -7,6 +7,7 @@ import { PRODUCING_CLASSES, PRODUCING_RULINGS, producingHref, producingNote } fr
 import type { ProducingCounts } from "./producing.ts";
 import { PROVENANCE_RULE } from "./provenance.ts";
 import { census, loadCensus, measuredWellCount } from "./census.ts";
+import { JURISDICTION_LIST } from "./jurisdictions.generated.ts";
 import { STATUS_CLASSES, STATUS_VOCAB_RULES, UNMAPPED_STATUS, statusClass } from "./status.ts";
 import type { StatusClass } from "./status.ts";
 import { statusSwatch } from "./swatch.ts";
@@ -610,6 +611,13 @@ export function createLegend(options: LegendOptions): LegendHandle {
           " injected stream, classed by cr_nd_well_type_disposal_1, the code drawn as filed.",
       ),
     );
+    // Per-jurisdiction sentences arrive as registration data, and last: a note written here
+    // would name a state here, which is exactly what a fifth one must not cost. Appended after
+    // the closing sentence rather than into the middle of it, so the paragraph reads as one.
+    for (const entry of JURISDICTION_LIST) {
+      if (!entry.legendNote) continue;
+      note.appendChild(document.createTextNode(` ${entry.legendNote}`));
+    }
     teaching.retouch();
   }
 

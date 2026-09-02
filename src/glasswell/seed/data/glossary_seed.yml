@@ -1165,14 +1165,16 @@
   expanded_definition: >-
     Each regulator publishes its own codes, and every mapping onto this vocabulary is a
     conformance rule with a rationale - cr_nd_status_vocab_1 in North Dakota,
-    cr_tx_status_vocab_1 in Texas, cr_nm_wellhistory_status_vocab_2 in New Mexico - so a
+    cr_tx_status_vocab_1 in Texas, cr_nm_wellhistory_status_vocab_2 in New Mexico,
+    cr_mt_gis_status_vocab_1 in Montana and cr_co_wells_status_vocab_1 in Colorado - so a
     canonical status resolves to the decision that produced it. Empty is not the same as
     unknown: it means the source reported no status at all. What becomes of a code the
     vocabulary does not map is the rule's own choice: North Dakota, Texas and Montana
-    quarantine it, New Mexico passes it through unclassed rather than drop a header the
-    identity spine joins production to. documented_unmapped is a third case again - the
-    regulator documents the code and glasswell has no equivalent class, which is a fact
-    worth serving rather than a null.
+    quarantine it, while New Mexico and Colorado pass it through unclassed rather than drop a
+    header the identity spine joins production to. documented_unmapped is a third case again -
+    the regulator documents the code and glasswell has no equivalent class, which is a fact
+    worth serving rather than a null; Colorado's SO and UN are that case, and so are four OCD
+    letters in New Mexico.
   domain_tags: [identity, data-model]
   related_terms: ["Conformance rule", "Confidential well", "Quarantine"]
   source_refs: ["migration 010_nd_reference_seed.sql", "migration 027_tx_slice.sql"]
@@ -1213,3 +1215,102 @@
   domain_tags: [quality, production]
   related_terms: ["Confidential well", "First production"]
   source_refs: ["blueprint-v0.6 §9", "blueprint-v0.6 §3.0.3"]
+
+- term: ECMC
+  aliases: ["COGCC", "Colorado Energy and Carbon Management Commission"]
+  short_definition: >-
+    Colorado's oil and gas regulator, renamed from the COGCC and serving the same host.
+  expanded_definition: >-
+    The Colorado Oil and Gas Conservation Commission became the Energy and Carbon Management
+    Commission; the old host 301-redirects to the new one, so a citation written under either
+    name still resolves. The rename matters to a reader for one reason: the shapefile's own
+    in-band status legend dates from the COGCC era and omits three codes the live reference
+    list publishes, which is why cr_co_wells_status_vocab_1 says which legend governs.
+  domain_tags: [governance, data-model]
+  related_terms: ["Conformance rule", "Well status"]
+  source_refs: ["lineage.jurisdictions", "cr_co_wells_status_vocab_1"]
+
+- term: Facil_Stat
+  short_definition: >-
+    The status code ECMC files on a Colorado well, mapped onto the canonical vocabulary by
+    cr_co_wells_status_vocab_1 at read time.
+  expanded_definition: >-
+    Thirteen codes are published for a well. Eleven map to a canonical class and two, SO and
+    UN, are documented with no equivalent, so they carry documented_unmapped and the code the
+    regulator filed. The class is resolved when a row is read rather than written at
+    promotion, because the header refreshes daily against an append-only spine and a class
+    written at promotion would invent a valid time ECMC never filed.
+  domain_tags: [identity, data-model]
+  related_terms: ["Well status", "ECMC", "Documented, no class"]
+  source_refs: ["lineage.co_facility_status_map", "cr_co_wells_status_vocab_1"]
+
+- term: Loc_Qual
+  aliases: ["Location qualifier", "loc_qual_class"]
+  short_definition: >-
+    ECMC's own statement of how a Colorado coordinate was arrived at: planned, actual, or one
+    it placed itself.
+  expanded_definition: >-
+    A different axis from geometry provenance, which says which feature a point is. This says
+    how good the coordinate is, and it is the reason a Colorado point can be a permit location
+    on a well that was drilled somewhere else. Nearly half of Colorado's served points are
+    planned, so a map that did not carry it would be drawing permit applications as surveys.
+    The class is the first word of the filed string, case-folded, under
+    cr_co_wells_location_qualifier_1.
+  domain_tags: [geospatial, data-model]
+  related_terms: ["Geometry provenance", "ECMC", "Conformance rule"]
+  source_refs: ["canonical.well_spatial.location_qualifier", "cr_co_wells_location_qualifier_1"]
+
+- term: Well_Class
+  short_definition: >-
+    ECMC's code for what a Colorado well is, served exactly as filed because the publisher
+    documents no vocabulary for it.
+  expanded_definition: >-
+    The honest counterpart to Facil_Stat. The status vocabulary turned out to be published
+    after all; this one genuinely is not - the FGDC metadata record carries no Well_Class
+    attribute at all - so cr_co_wells_well_type_1 serves the seventeen filed values with no
+    decode and no class. Inventing one would be a mapping decision with no evidence behind it.
+  domain_tags: [data-model, quality]
+  related_terms: ["Well type", "ECMC", "Conformance rule"]
+  source_refs: ["cr_co_wells_well_type_1", "Wells_Metadata.html"]
+
+- term: ApiSidetrack
+  aliases: ["Sidetrack code"]
+  short_definition: >-
+    The two-digit wellbore suffix ECMC files beside a Colorado API-10, making the filing an
+    API-12.
+  expanded_definition: >-
+    A sidetrack is a second wellbore from one surface hole, so it is part of a well's identity
+    at the production grain and not at the header grain. It is a component of the completion
+    key cr_co_production_entity_key_1 builds, which is what keeps two wellbores' volumes from
+    being promoted as one series or quarantined as duplicates of each other.
+  domain_tags: [identity, data-model]
+  related_terms: ["API-10 / API-12 / API-14", "Completion event", "Conformance rule"]
+  source_refs: ["cr_co_production_entity_key_1", "canonical.well_completions"]
+
+- term: FormationCode
+  short_definition: >-
+    The producing formation ECMC names on a Colorado production filing, carried as filed
+    before any vocabulary mapping.
+  expanded_definition: >-
+    ECMC files each completion's volumes against a formation code, which is what makes
+    Colorado's production per completion rather than per lease and removes the allocation
+    step Texas needs. The code is stored as pool_reported, unmapped, so the pool rollup the
+    well row discloses can always be read back to the codes it summed.
+  domain_tags: [data-model, geology]
+  related_terms: ["Completion event", "Pool", "ApiSidetrack"]
+  source_refs: ["canonical.well_completions.pool_reported", "cr_co_production_grain_1"]
+
+- term: Documented, no class
+  aliases: ["documented_unmapped"]
+  short_definition: >-
+    A status the regulator publishes and defines, for which this vocabulary has no equivalent
+    word.
+  expanded_definition: >-
+    Three facts are kept apart. Empty means the source filed no status. Unmapped means a code
+    arrived that no rule anticipated. This is the third: the regulator documents the code, and
+    glasswell declines to force it into a class it does not fit. Colorado's SO - operations
+    suspended before total depth, so the well is neither drilling nor temporarily abandoned
+    nor dry - is the clearest instance, and it is served with the code beside it.
+  domain_tags: [data-model, quality]
+  related_terms: ["Well status", "Facil_Stat", "Quarantine"]
+  source_refs: ["cr_co_wells_status_vocab_1", "cr_nm_wellhistory_status_vocab_2"]

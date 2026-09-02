@@ -14,6 +14,7 @@ from glasswell.lineage.clock import utc_today
 from glasswell.seed import (
     BASIN_RULES,
     C115B_RULES,
+    CO_RULES,
     FRACFOCUS_RULES,
     LAND_RULES,
     MT_RULES,
@@ -40,6 +41,7 @@ def _seeded_rule_ids() -> set[str]:
         str(rule["rule_id"])
         for registry in (
             BASIN_RULES,
+            CO_RULES,
             C115B_RULES,
             FRACFOCUS_RULES,
             LAND_RULES,

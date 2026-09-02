@@ -53,6 +53,19 @@ MT_GEOMETRY_LICENSE_NOTE = (
     " lines), so it is a map stick, not a survey trace."
 )
 
+# Colorado is the one in-scope jurisdiction that publishes terms granting use. Quoted verbatim
+# from Wells_Metadata.html: Access_Constraints is None and Use_Constraints states a disclaimer
+# and no redistribution clause, so redistributable is True and the disclaimer travels with it.
+CO_LICENSE_NOTE = (
+    "Access_Constraints: None. Use_Constraints, verbatim: \u201cThere are no restrictions on the"
+    " use of this data provided that the user accepts the following disclaimer: The Colorado"
+    " Department of Natural Resources (DNR) is not responsible and shall not be liable to the"
+    " user for damages of any kind arising out of the use of data or information provided by the"
+    " DNR, including the installation of the data or information, its use, or the results"
+    " obtained from its use \u2026 provided \u2018as is\u2019 without warranty of any kind.\u201d"
+    " No redistribution clause appears anywhere in the record."
+)
+
 NM_TABLES: tuple[tuple[str, str], ...] = (
     ("wcproduction", "well-completion monthly volumes"),
     ("wellhistory", "well header history"),
@@ -152,6 +165,41 @@ SOURCES: tuple[dict[str, object], ...] = (
         "jurisdiction": "MT",
         "license_note": MT_GEOMETRY_LICENSE_NOTE,
         "redistributable": False,
+    },
+    {
+        "source_id": "co_ecmc_wells_shp",
+        "name": "ECMC well headers, GIS shapefile (WELLS_SHP.ZIP)",
+        "jurisdiction": "CO",
+        "license_note": CO_LICENSE_NOTE,
+        "redistributable": True,
+    },
+    {
+        "source_id": "co_ecmc_directional_bh",
+        "name": "ECMC directional bottom-hole locations (DIRECTIONAL_BOTTOMHOLE_LOCATIONS_SHP.ZIP)",
+        "jurisdiction": "CO",
+        "license_note": CO_LICENSE_NOTE,
+        "redistributable": True,
+    },
+    {
+        "source_id": "co_ecmc_directional_lines",
+        "name": "ECMC directional lateral polylines (DIRECTIONAL_LINES_SHP.ZIP)",
+        "jurisdiction": "CO",
+        "license_note": CO_LICENSE_NOTE,
+        "redistributable": True,
+    },
+    {
+        "source_id": "co_ecmc_monthly_prod",
+        "name": "ECMC rolling monthly production (monthly_prod.csv)",
+        "jurisdiction": "CO",
+        "license_note": CO_LICENSE_NOTE,
+        "redistributable": True,
+    },
+    {
+        "source_id": "co_ecmc_prod_reports",
+        "name": "ECMC annual production report archives (<YYYY>_prod_reports.csv)",
+        "jurisdiction": "CO",
+        "license_note": CO_LICENSE_NOTE,
+        "redistributable": True,
     },
 )
 

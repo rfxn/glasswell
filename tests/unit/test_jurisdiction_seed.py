@@ -20,6 +20,7 @@ from glasswell.marts.tiles import TILE_LAYERS
 from glasswell.seed.jurisdictions import (
     CODES,
     EVIDENCE_COMMIT,
+    FOUNDING_JURISDICTIONS,
     JURISDICTION_CODES,
     JURISDICTION_RESTATEMENTS,
     JURISDICTION_RULES,
@@ -43,6 +44,11 @@ ROOT = Path(__file__).resolve().parents[2]
 # already moved twice.
 MIGRATION = next(
     item.path for item in discover_migrations() if item.name == "jurisdictions"
+)
+# The fifth registration ships in its own file, for the reason 073 could not carry it: a
+# migration is immutable once applied, so a jurisdiction registered later arrives beside it.
+COLORADO_MIGRATION = next(
+    item.path for item in discover_migrations() if item.name == "colorado"
 )
 BRAND = ROOT / "BRAND.md"
 STATUS_CLASSES = ROOT / "web/src/map/status.ts"
@@ -119,10 +125,15 @@ def test_a_mirror_moved_alone_is_caught_on_every_arm(
 def test_the_migration_carries_every_registration_and_every_rule() -> None:
     """Not a parse: the database gate compares rows. This catches a mirror edited alone."""
     migration = MIGRATION.read_text(encoding="utf-8")
+    colorado = COLORADO_MIGRATION.read_text(encoding="utf-8")
 
-    for row in JURISDICTIONS:
+    for row in JURISDICTION_RESTATEMENTS:
         assert f"'{row['jurisdiction_code']}', '{row['name']}'" in migration
         assert f"'{row['identity_prefix']}'" in migration
+    founded = {row["jurisdiction_code"] for row in FOUNDING_JURISDICTIONS}
+    for row in (item for item in JURISDICTIONS if item["jurisdiction_code"] not in founded):
+        assert f"'{row['jurisdiction_code']}', '{row['name']}'" in colorado
+        assert f"'{row['identity_prefix']}'" in colorado
     # The founding set alone: the decisions this train registers are published by the
     # presentation migration, whose own test reads them there.
     for rule in JURISDICTION_RULES_AS_FOUNDED:
@@ -166,7 +177,9 @@ def test_every_tile_layer_named_by_a_registration_is_a_published_layer() -> None
     published = {layer.name for layer in TILE_LAYERS}
 
     for row in JURISDICTIONS:
-        assert row["wells_tile_layer_id"] in published
+        assert row["wells_tile_layer_id"] in published, (
+            f"{row['jurisdiction_code']} names a layer marts/tiles.py does not publish"
+        )
 
 
 def test_every_map_colour_is_a_brand_colour_or_a_status_class_colour() -> None:
@@ -189,20 +202,22 @@ def test_the_identity_pattern_is_derived_from_the_prefix_and_not_restated() -> N
 def test_the_allowlists_the_add_a_state_scan_reads_are_derived_from_the_rows() -> None:
     """P5's scan takes its allowlist from here. Restated by hand it would drift on the first
     registration that is added to one and not the other."""
-    assert sorted(PREFIXES) == ["25", "30", "33", "42"]
+    assert sorted(PREFIXES) == ["05", "25", "30", "33", "42"]
     assert sorted(CODES) == sorted(row["jurisdiction_code"] for row in JURISDICTION_CODES)
     assert sorted(NAMES) == sorted(row["name"] for row in JURISDICTIONS)
     assert len(PREFIXES) == len(JURISDICTIONS)
 
 
-def test_every_runtime_consumer_still_reads_four_rows() -> None:
+def test_a_fifth_registration_moves_no_mart_address() -> None:
     """M-16. Two consumers build *tuples* from JURISDICTIONS and put them straight into
-    derivation params, so a seed that grew to eight rows would have moved two mart addresses --
-    `marts.nd_neighbors` and `marts.land_metrics` -- from a phase that touches neither."""
+    derivation params, so a registration that widened either would have moved two mart
+    addresses -- `marts.nd_neighbors` and `marts.land_metrics` -- from a phase that touches
+    neither. Both tuples are filtered by a registry flag, and Colorado carries neither, so the
+    count below moving is safe exactly as long as the three assertions under it hold."""
     from glasswell.marts.land_metrics import GRID_SCOPE_API_PREFIXES, GRID_STATE_API_PREFIXES
     from glasswell.marts.neighbors import STATE_CODES
 
-    assert len(JURISDICTIONS) == 4
+    assert len(JURISDICTIONS) == 5
     assert len(STATE_CODES) == 2
     assert len(set(STATE_CODES)) == len(STATE_CODES)
     assert GRID_STATE_API_PREFIXES == ("33",)
@@ -212,8 +227,10 @@ def test_every_runtime_consumer_still_reads_four_rows() -> None:
 def test_the_founding_rows_are_the_resolved_ones_without_the_presentation_columns() -> None:
     """One declaration, two clocks. A second copy of four rationales would drift on the first
     correction that touched one and not the other."""
-    assert len(JURISDICTION_RESTATEMENTS) == len(JURISDICTIONS)
-    for founding, resolved in zip(JURISDICTION_RESTATEMENTS, JURISDICTIONS, strict=True):
+    assert len(JURISDICTION_RESTATEMENTS) == len(FOUNDING_JURISDICTIONS)
+    for founding, resolved in zip(
+        JURISDICTION_RESTATEMENTS, FOUNDING_JURISDICTIONS, strict=True
+    ):
         assert set(resolved) - set(founding) == set(PRESENTATION_COLUMNS)
         assert all(founding[key] == resolved[key] for key in founding)
 

@@ -186,10 +186,10 @@ def test_a_jurisdiction_outside_the_measured_domain_is_told_why_rather_than_show
     """`neighbors_available` and `neighbors_scope` are two registrations. A jurisdiction with
     the first and not the second used to get no link and no explanation, which renders as an
     absent section rather than as a decision."""
-    api10 = "0512300001"
+    api10 = "4912300001"
     with seeded.cursor() as cursor:
         cursor.execute(
-            "insert into lineage.jurisdiction_codes values ('CO', 'state')"
+            "insert into lineage.jurisdiction_codes values ('WY', 'state')"
             " on conflict do nothing"
         )
         cursor.execute(
@@ -197,12 +197,12 @@ def test_a_jurisdiction_outside_the_measured_domain_is_told_why_rather_than_show
             " published_at, evidence_tag, evidence_commit, name, regulator_name,"
             " regulator_url, identity_scheme, identity_prefix, identity_pattern, source_ids,"
             " rationale, neighbors_available)"
-            " values ('CO', %s, %s, 'v0.77', %s, 'Colorado', 'ECMC',"
-            " 'https://ecmc.state.co.us', 'api10', '05', '^05[0-9]{8}$',"
+            " values ('WY', %s, %s, 'v0.77', %s, 'Wyoming', 'WOGCC',"
+            " 'https://wogcc.wyo.gov', 'api10', '49', '^49[0-9]{8}$',"
             " array['nd_mpr_xlsx'], 'planted', true)",
             (REGISTERED_ON, RESTATED_ON, "a" * 40),
         )
-    seed_well(seeded, api10=api10, state_code="05", basin=None, spud_date=None)
+    seed_well(seeded, api10=api10, state_code="49", basin=None, spud_date=None)
     seed_well_spatial(seeded, api10=api10, geom_type="surface")
     seed_well_spatial(seeded, api10=api10, geom_type="lateral")
     seeded.commit()
@@ -215,8 +215,8 @@ def test_a_jurisdiction_outside_the_measured_domain_is_told_why_rather_than_show
     assert "neighbors_rule" not in envelope["links"]
 
     rows_served = client.get("/v1/jurisdictions").json()["data"]
-    colorado = next(row for row in rows_served if row["jurisdiction_code"] == "CO")
-    assert colorado["capabilities"]["neighbors"] is False
+    wyoming = next(row for row in rows_served if row["jurisdiction_code"] == "WY")
+    assert wyoming["capabilities"]["neighbors"] is False
 
 
 def test_a_covered_jurisdiction_cites_the_rule_that_says_the_domain_reaches_it(
