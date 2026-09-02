@@ -37,6 +37,7 @@ import {
   observedFilter,
 } from "./thematics.ts";
 import { LINE_ROLE, VARIANT_STYLES, rgba, variantStyle } from "./variant-style.ts";
+import { DEFAULT_JURISDICTION } from "./jurisdictions.generated.ts";
 import WELLS_ROSTER_JSON from "./wells-roster.json";
 import type { VariantStyle } from "./variant-style.ts";
 
@@ -70,9 +71,19 @@ export const WELLS_SOURCE_BY_LAYER: Readonly<Record<string, string>> = Object.fr
  *  source so a saved permalink keeps working. */
 const sourceParameter = (row: WellsRosterRow): string => row.id.split("-").join("_");
 
-/** The disposal ring is a North Dakota well-type fact and reads the row that carries it:
- *  the lowest draw order, which is the founding registration by construction. */
-const DEFAULT_WELLS_SOURCE = WELLS_ROSTER[0]!.tileLayerId;
+/** The tile source each wells row draws from, keyed by its registration code. */
+export const WELLS_SOURCE_BY_CODE: Readonly<Record<string, string>> = Object.fromEntries(
+  WELLS_ROSTER.map((row) => [row.code, row.tileLayerId]),
+);
+
+/**
+ * The disposal ring is a North Dakota well-type fact — `disposalFilter()` matches NDIC's own
+ * codes — so it reads the registration those codes were filed under, by code. Read positionally
+ * it was correct only while nothing registered a lower draw order, and that is a column any
+ * migration may write: a fifth jurisdiction at 39 would have repointed an NDIC filter at its
+ * tiles, drawn nothing or drawn over the wrong basin, and failed no check.
+ */
+const DEFAULT_WELLS_SOURCE = WELLS_SOURCE_BY_CODE[DEFAULT_JURISDICTION.code]!;
 
 export const LATERALS_SOURCE = "nd_laterals";
 export const SPACING_SOURCE = "nd_spacing_units";

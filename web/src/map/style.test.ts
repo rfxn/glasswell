@@ -5,6 +5,7 @@ import type { LayerSpecification } from "maplibre-gl";
 import type { BasemapVariant } from "./basemap.ts";
 import { DISPOSAL_COLOUR, disposalFilter } from "./disposal.ts";
 import { LAYERS } from "./registry.ts";
+import { DEFAULT_JURISDICTION } from "./jurisdictions.generated.ts";
 import { METRICS_SECTIONS_SOURCE, METRICS_TOWNSHIPS_SOURCE } from "./thematics.ts";
 import { variantStyle } from "./variant-style.ts";
 import {
@@ -22,6 +23,7 @@ import {
   WELL_POINT_LAYERS,
   TX_LATERALS_SOURCE,
   WELLS_ROSTER,
+  WELLS_SOURCE_BY_CODE,
   WELLS_SOURCE_BY_LAYER,
   dataLayers,
   publishedSource,
@@ -701,5 +703,30 @@ describe("the order the layers are declared in", () => {
       expect(order.indexOf(id)).toBeLessThan(order.indexOf("disposal-wells"));
     }
     expect(order.indexOf("disposal-wells")).toBeLessThan(order.indexOf("wells-struck"));
+  });
+});
+
+describe("the disposal ring's source", () => {
+  it("is the registration that carries the well-type fact, found by code and not by position", () => {
+    // `disposalFilter()` matches NDIC's own well_type codes, so the ring belongs to the
+    // registration those codes were filed under. Reading `WELLS_ROSTER[0]` made that true only
+    // while nothing registered a lower draw order — a column any migration may write — and a
+    // fifth jurisdiction at 39 would have silently repointed an NDIC filter at its tiles.
+    const ring = dataLayers().find((layer) => layer.id === "disposal-wells");
+    const founding = WELLS_ROSTER.find((row) => row.code === DEFAULT_JURISDICTION.code)!;
+
+    expect("source" in ring! ? ring.source : "").toBe(founding.tileLayerId);
+    expect(WELLS_SOURCE_BY_CODE[DEFAULT_JURISDICTION.code]).toBe(founding.tileLayerId);
+  });
+
+  it("survives a registration taking a lower draw order than the founding one", () => {
+    const reordered = [...WELLS_ROSTER].sort((a, b) => a.drawOrder - b.drawOrder);
+    const lowest = reordered[0]!;
+    const byCode = WELLS_SOURCE_BY_CODE[DEFAULT_JURISDICTION.code];
+
+    // Today they agree, which is exactly why a positional read looked correct. The assertion
+    // is that the ring follows the code even when they stop agreeing.
+    expect(lowest.code).toBe(DEFAULT_JURISDICTION.code);
+    expect(byCode).toBe(WELLS_ROSTER.find((row) => row.code === DEFAULT_JURISDICTION.code)!.tileLayerId);
   });
 });
