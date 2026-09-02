@@ -2067,6 +2067,29 @@ a {
   }
 }
 
+/* gate-v076 N1: the compact rail below 901 px reverted every rule the 901-1100 block added --
+   the brand went back to `flex: 0 1 auto` and the strapline came back and clipped -- so a
+   signed-in owner at 820, a rung on the project's own ladder, read `glas…` / `— NO NAK`, worse
+   than the string that was just fixed one rung above.
+   Scoped to a session rather than to the width, which is the real condition: signed out the
+   rail has no Sign-out control and 820 already held. Above 620, because below it the wordmark
+   shrinks and then the brand text goes entirely, which is that posture's own answer. */
+@media (min-width: 621px) and (max-width: 900px) {
+  #gw-header:has(#gw-logout-btn:not([hidden])) .gw-strap {
+    display: none;
+  }
+
+  #gw-header:has(#gw-logout-btn:not([hidden])) .gw-brand {
+    flex: none;
+  }
+
+  /* The search shrinks rather than disappears: it is the only elastic thing on the rail, and a
+     field a reader can still see and type in is worth more than the 40 px a collapse would buy. */
+  #gw-header:has(#gw-logout-btn:not([hidden])) .gw-search-input {
+    width: min(9rem, 17vw);
+  }
+}
+
 /* Phone posture. The labelled brand link and mark keep the product identity while the live
    wordmark yields enough width for all three first-class surfaces and the action controls. */
 @media (max-width: 520px) {

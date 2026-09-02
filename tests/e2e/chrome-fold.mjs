@@ -135,16 +135,15 @@ for (const viewport of BREAKPOINTS) {
     out.hidden = before;
     return seen;
   });
-  // Above 900 only. Below it the tablet and phone postures shrink the wordmark and then drop
-  // the brand text by design, and at 820 a signed-in rail still truncates it -- pre-existing,
-  // measured at brandText 13 of 104, and not what this round changed. Asserting it here would
-  // be asserting a defect nobody has fixed rather than guarding the one that was.
-  if (viewport.width > 900) {
-    assert(!brand.wordClipped, `${at} the wordmark survives a signed-in header`,
-      "the brand block ellipsised the wordmark once Sign out was in the rail");
-    assert(!brand.strapClipped, `${at} the strapline survives a signed-in header`,
-      "the strapline clipped mid-phrase once Sign out was in the rail");
-  }
+  // Every rung, unbounded. The brand now holds with a session from 621 px up, so 820 -- the
+  // tablet-portrait rung on this ladder, where it read `glas…` / `— NO NAK` -- is judged like
+  // the rest. Below 621 the phone posture stops painting the wordmark at all, so `shown` is
+  // what makes the pass honest rather than vacuous: a clipped check on an unpainted element
+  // proves nothing, and this reports which of the two it got.
+  assert(!brand.wordClipped, `${at} the wordmark survives a signed-in header${brand.shown ? "" : " (not painted at this width)"}`,
+    "the brand block ellipsised the wordmark once Sign out was in the rail");
+  assert(!brand.strapClipped, `${at} the strapline survives a signed-in header`,
+    "the strapline clipped mid-phrase once Sign out was in the rail");
   // Hiding the label to buy that width must not cost the button its accessible name.
   assert(brand.logoutNamed, `${at} the Sign-out control keeps an accessible name`,
     "the control renders with no text in the accessibility tree");
