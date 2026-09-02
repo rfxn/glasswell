@@ -172,6 +172,23 @@ def test_gate_5_no_launching_row_shares_an_entry_point_with_an_installed_timer(
     observing = {job.job_id for job in registry if job.launch_mode == "observe"}
     assert {job.job_id for job in registry if job.legacy_unit is not None} <= observing
 
+    # The published half. A cadence rule states its job's posture in a spec a consumer parses,
+    # and the row is what actually runs; a rule that says observe over a row that launches is
+    # a served conformance rule contradicting the decision it was written to carry.
+    # A timer-driven job has no cadence rule to disagree with, which is the one exemption.
+    governed = [job for job in registry if job.trigger != "external_timer"]
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select rule_id, spec->>'launch_mode' from lineage.conformance_rules"
+            " where rule_id = any(%s)",
+            ([cadence_rule_id(job.job_id) for job in governed],),
+        )
+        published = dict(cursor.fetchall())
+
+    assert published == {
+        cadence_rule_id(job.job_id): job.launch_mode for job in governed
+    }, "a cadence rule publishes a launch_mode its own schedule row contradicts"
+
 
 # Far enough forward that a 35-day interval has certainly elapsed, so a row that still cannot
 # produce an instant is one the due rule can never produce one for.

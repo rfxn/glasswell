@@ -4,8 +4,10 @@ Cadence used to be ten `ExecStart=` lines and a runbook sentence, so a registere
 not a scheduled source and no query could tell which was which. These rows are the answer, and
 every schedule row cites the `cr_job_cadence_*` conformance rule that decided it.
 
-Every row seeded here is `launch_mode='observe'`: the two pipeline units stay armed through
-v0.77, the tick records `would_run` and launches nothing, and v0.78 appends `launch` rows.
+A row launches only where nothing else already drives its entry point. The four legacy
+jurisdictions stay armed through the two pipeline units, so their rows observe and the tick
+records `would_run`; Colorado installs no unit, so its six rows launch and each one's
+`cr_job_cadence_<job>_1` rationale says why.
 """
 
 from __future__ import annotations

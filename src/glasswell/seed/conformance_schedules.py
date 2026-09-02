@@ -252,7 +252,7 @@ def _spec(job_id: str, schedule: dict[str, object], anchor: str) -> dict[str, ob
     return {
         "job_id": job_id,
         "trigger": schedule["trigger"],
-        "launch_mode": "observe",
+        "launch_mode": schedule.get("launch_mode", "observe"),
         "anchor_source_id": anchor,
         "sources": list(JOB_SOURCES.get(job_id, ())),
         "cadence_interval_days": interval.days if interval is not None else None,
