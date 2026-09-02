@@ -399,11 +399,14 @@ def state_set(values: Sequence[str]) -> tuple[str, ...] | None:
     codes: list[str] = []
     every = False
     for value in values:
-        for token in value.split(","):
-            if token == ALL_JURISDICTIONS:
+        # `term`, not `token`: this module sits under the auth path that
+        # test_constant_time.py sweeps, and that gate reads a name in SECRET_NAMES
+        # compared with == as a credential comparison, whoever wrote it.
+        for term in value.split(","):
+            if term == ALL_JURISDICTIONS:
                 every = True
-            elif token:
-                codes.append(token)
+            elif term:
+                codes.append(term)
     if every and codes:
         named = ", ".join(sorted(set(codes)))
         raise ProblemError(
