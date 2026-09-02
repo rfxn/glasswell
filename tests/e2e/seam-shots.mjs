@@ -21,6 +21,19 @@ const CO = "0512300001";
 const ND = "3305310451";
 mkdirSync(OUT, { recursive: true });
 
+/** The tile and hint toasts sit over the map chrome at narrow widths. Dismissed rather than
+ *  waited out: they have no timeout and a shot taken behind one photographs the toast. */
+async function dismissToasts(page) {
+  for (const selector of ["button[aria-label='Dismiss']", ".gw-toast button", "button:has-text('×')"]) {
+    const buttons = page.locator(selector);
+    for (let i = (await buttons.count()) - 1; i >= 0; i -= 1) {
+      await buttons.nth(i).click({ timeout: 1500 }).catch(() => {});
+    }
+  }
+  await page.waitForTimeout(300);
+}
+
+let failures = 0;
 const browser = await launch({ executablePath: chromeExecutable() });
 for (const bp of BREAKPOINTS) {
   const { page, context } = await instrumentedPage(browser, { viewport: { width: bp.width, height: bp.height } });
@@ -30,12 +43,34 @@ for (const bp of BREAKPOINTS) {
     await page.waitForTimeout(2500);
     // The panel open: the wells rows, their order and their first-paint defaults are what
     // the generated roster now decides, so that is what a reviewer has to be able to see.
-    const layers = page.locator("button:has-text('Layers')").first();
-    if (await layers.count()) {
-      await layers.click().catch(() => {});
+    //
+    // Loudly. At 390 the tile toast overlays the Layers button, Playwright's actionability
+    // check timed out, a bare `.catch(() => {})` discarded it, and the shot was taken with the
+    // panel shut — a file that looks like evidence and is not. The toast is dismissed first
+    // and a failure names itself in the filename and on stdout.
+    await dismissToasts(page);
+    let opened = true;
+    try {
+      await page.locator("button:has-text('Layers')").first().click({ timeout: 5000 });
       await page.waitForTimeout(800);
+    } catch (error) {
+      opened = false;
+      console.log(`  WARN ${bp.width}: layer panel did not open — ${String(error).split("\n")[0]}`);
     }
-    await page.screenshot({ path: `${OUT}/map-layers-${bp.width}.png`, fullPage: false });
+    const suffix = opened ? "" : "-PANEL-SHUT";
+    await page.screenshot({ path: `${OUT}/map-layers-${bp.width}${suffix}.png`, fullPage: false });
+    if (!opened) failures += 1;
+
+    // The four child rows are the generated ones, and their subtitles are where the served
+    // count lands. Closed, the family shows one parent and says nothing about them.
+    if (opened) {
+      // The family head, by its own class: `:has-text("Wells")` matched the survey-traces row,
+      // whose subtitle says "525 of 43,817 wells", and photographed that instead.
+      const disclosure = page.locator(".gw-layer-family-head button[aria-expanded]").first();
+      await disclosure.click({ timeout: 4000 }).catch(() => {});
+      await page.waitForTimeout(600);
+      await page.screenshot({ path: `${OUT}/map-wells-family-${bp.width}.png`, fullPage: false });
+    }
 
     await page.goto(`${BASE}/?view=map&well=${CO}`, { waitUntil: "networkidle" });
     await page.waitForTimeout(3000);
@@ -50,3 +85,7 @@ for (const bp of BREAKPOINTS) {
   }
 }
 await browser.close();
+if (failures > 0) {
+  console.error(`${failures} shot(s) were taken with the panel shut; they are named -PANEL-SHUT`);
+  process.exit(1);
+}

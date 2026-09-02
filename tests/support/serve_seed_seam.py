@@ -5,7 +5,7 @@
 from datetime import date
 
 from glasswell.seed.jurisdictions import REGISTERED_ON, RESTATED_ON
-from tests.support.seed import seed_well, seed_well_spatial
+from tests.support.seed import seed_derivation, seed_well, seed_well_spatial
 
 CO_API10 = "0512300001"
 
@@ -37,3 +37,18 @@ seed_well_spatial(connection, api10=CO_API10, geom_type="surface")  # noqa: F821
 seed_well_spatial(connection, api10=CO_API10, geom_type="lateral")  # noqa: F821
 connection.commit()  # noqa: F821
 print(f"planted Colorado registration and well {CO_API10}")
+
+# Measured counts for two of the five, so a shot shows both halves of the slot: a served number
+# beside the date it was measured on, and the pending mark where nothing has measured yet.
+MEASURED_ON = date(2026, 8, 30)
+MEASURED = {"ND": 43_817, "TX": 355_463}
+
+derivation = seed_derivation(connection)  # noqa: F821
+with connection.cursor() as cursor:  # noqa: F821
+    cursor.executemany(
+        "insert into lineage.jurisdiction_well_counts (jurisdiction_code, measured_on,"
+        " well_count, derivation_id) values (%s, %s, %s, %s) on conflict do nothing",
+        [(code, MEASURED_ON, wells, derivation) for code, wells in MEASURED.items()],
+    )
+connection.commit()  # noqa: F821
+print(f"measured {sorted(MEASURED)} on {MEASURED_ON}")
