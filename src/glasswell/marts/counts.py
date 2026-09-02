@@ -9,19 +9,28 @@ no number rather than a zero, because "not measured yet" and "no wells" are diff
 
 from __future__ import annotations
 
-from collections.abc import Collection
+import argparse
+import json
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from datetime import date
 
 import psycopg
 from psycopg.rows import dict_row
 
-from glasswell.lineage.capture import derive
+from glasswell.ingest.base import resolve_environment
+from glasswell.lineage.capture import derive, lineage_session
 from glasswell.lineage.clock import utc_today
 from glasswell.lineage.jurisdictions import load_jurisdictions
 from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.serialization import hash_payload
-from glasswell.status_resolution import resolved_status, resolver_join, resolver_rules
+from glasswell.lineage.store import PostgresRecorder
+from glasswell.status_resolution import (
+    UNMAPPED_CLASS,
+    resolved_status,
+    resolver_join,
+    resolver_rules,
+)
 
 TOTAL_STATUS_KEY = "*total*"
 
@@ -115,14 +124,16 @@ def refresh_jurisdiction_counts(
                 "well_count": sum(int(item["well_count"]) for item in classes),
             }
         )
+        # Every bucket, the null one included: it is the absence class the canvas already
+        # paints and the legend already keys on, not a gap between the total and the rows
+        # served beside it. Dropping it here is what made those two disagree.
         appended += [
             {
                 "jurisdiction_code": row.jurisdiction_code,
-                "status_canonical": item["status_canonical"],
+                "status_canonical": item["status_canonical"] or UNMAPPED_CLASS,
                 "well_count": int(item["well_count"]),
             }
             for item in classes
-            if item["status_canonical"] is not None
         ]
 
     with derive(
@@ -140,6 +151,9 @@ def refresh_jurisdiction_counts(
             # A count whose class came from a join has to name the rule that made the join.
             "read_time_resolution": read_time,
             "total_policy": "sum_of_measured_classes",
+            # The class a null status is counted under, so the run names the decision rather
+            # than leaving a reader to infer it from a word in the rows.
+            "null_status_class": UNMAPPED_CLASS,
         },
         inputs=_canonical_inputs(connection),
         # The rules that decided the class every count is grouped by: each jurisdiction's
@@ -182,3 +196,39 @@ def refresh_jurisdiction_counts(
             ],
         )
     return CountRefresh(derivation_id=derivation_id, measured_on=measured, rows=len(appended))
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Append today's jurisdiction well-count measurement to the ledger."
+    )
+    parser.add_argument("--dsn", required=True)
+    parser.add_argument(
+        "--codes",
+        default=None,
+        help="comma-separated jurisdiction codes; the default measures every registration",
+    )
+    parser.add_argument("--env-id", default=None, help="override the fingerprinted env id")
+    parser.add_argument("--code-version", default=None)
+    arguments = parser.parse_args(argv)
+    # No --measured-on. The ledger's date is the day the measurement was taken, and a flag that
+    # moved it is the one edit an append-only ledger cannot survive.
+    codes = (
+        tuple(code.strip() for code in arguments.codes.split(",") if code.strip())
+        if arguments.codes
+        else None
+    )
+
+    with psycopg.connect(arguments.dsn) as connection:
+        environment = resolve_environment(
+            connection, env_id=arguments.env_id, code_version=arguments.code_version
+        )
+        with lineage_session(recorder=PostgresRecorder(connection), environment=environment):
+            refresh = refresh_jurisdiction_counts(connection, codes=codes)
+        connection.commit()
+    print(json.dumps(refresh.as_dict(), sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

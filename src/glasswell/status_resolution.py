@@ -22,6 +22,11 @@ from glasswell.lineage.jurisdictions import load_jurisdictions
 
 RESOLVER_VIEW = "canonical.status_resolution"
 
+# The class where neither the promotion nor the registry resolves one: the source filed no
+# status. Not documented_unmapped, which is a code the regulator did publish and glasswell has
+# no word for. The canvas already coalesces a null status to this name, so the ledger uses it.
+UNMAPPED_CLASS = "unmapped"
+
 # A jurisdiction resolves at read time when its registered status-vocabulary rule says so in
 # its own spec, which is where 071 put the fact. Read off the registry rather than pinned here:
 # a fifth state with read-time resolution is a `jurisdiction_rules` row and this answers for it

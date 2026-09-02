@@ -8,20 +8,43 @@ different facts and only one of them is true here.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
+from glasswell.lineage.capture import lineage_session
+from glasswell.lineage.store import PostgresRecorder
+from glasswell.marts.counts import refresh_jurisdiction_counts
 from glasswell.seed.jurisdictions import JURISDICTIONS, REGISTERED_ON
-from tests.contract.conftest import JURISDICTION_MEASURED_ON, ND_MEASURED
+from glasswell.status_resolution import UNMAPPED_CLASS
+from tests.contract.conftest import JURISDICTION_MEASURED_ON, ND_MEASURED, TX_API10
+from tests.support.fakes import FixedClock
 from tests.support.jurisdictions import restate
+from tests.support.seed import FIXTURE_ENV, seed_statusless_well
 
 pytestmark = pytest.mark.contract
 
 PATH = "/v1/jurisdictions"
+STATUSLESS_API10 = f"{TX_API10[:2]}00399991"
+REMEASURED_ON = JURISDICTION_MEASURED_ON + timedelta(days=1)
+
+
+def remeasure(connection: psycopg.Connection) -> str:
+    """The count writer, run again the way the host runs it, on a later day."""
+    with lineage_session(
+        recorder=PostgresRecorder(connection),
+        environment=FIXTURE_ENV,
+        clock=FixedClock(datetime(2026, 8, 28, 6, 0, 0, tzinfo=UTC)),
+        correlation_id="run_contract_recount",
+    ):
+        refresh = refresh_jurisdiction_counts(
+            connection, measured_on=REMEASURED_ON, codes=("ND", "TX")
+        )
+    connection.commit()
+    return refresh.derivation_id
 
 
 def body(client: TestClient, **params: Any) -> dict[str, Any]:
@@ -129,6 +152,44 @@ def test_a_measured_count_is_a_figure_with_a_handle_and_a_date(client: TestClien
     assert set(by_status) == {"active", "plugged"}
     assert by_status["active"]["wells"]["value"] == str(ND_MEASURED["active"])
     assert by_status["active"]["wells"]["d"].endswith("#jurisdiction=ND&status=active")
+
+
+def test_every_jurisdictions_classes_sum_to_the_total_they_are_served_beside(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """No naked numbers, in the direction that matters: the parts of a served figure resolve.
+
+    A well whose regulator filed no status was inside the total and inside no class, so a
+    reader who added up what was served got a different number from the one served beside it
+    (68,186 wells in Texas on the deployed build).
+    """
+    seed_statusless_well(seeded, api10=STATUSLESS_API10, like=TX_API10)
+    remeasure(seeded)
+
+    for row in body(client)["data"]:
+        if row["well_count"] is None:
+            assert row["well_counts_by_status"] == [], row["jurisdiction_code"]
+            continue
+        classes = sum(int(item["wells"]["value"]) for item in row["well_counts_by_status"])
+        assert classes == int(row["well_count"]["value"]), row["jurisdiction_code"]
+
+
+def test_a_well_whose_source_filed_no_status_is_served_as_the_absence_class(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """`unmapped`, not `documented_unmapped`: the regulator published no code to map, which is
+    an absence rather than a code glasswell has no word for. Both are served, and they are
+    different facts."""
+    seed_statusless_well(seeded, api10=STATUSLESS_API10, like=TX_API10)
+    remeasure(seeded)
+
+    row = next(item for item in body(client)["data"] if item["jurisdiction_code"] == "TX")
+    classes = {item["status_canonical"]: item["wells"] for item in row["well_counts_by_status"]}
+
+    assert classes[UNMAPPED_CLASS]["value"] == "1"
+    assert classes[UNMAPPED_CLASS]["unit"] == "wells"
+    assert classes[UNMAPPED_CLASS]["d"].endswith(f"#jurisdiction=TX&status={UNMAPPED_CLASS}")
+    assert row["measured_on"] == REMEASURED_ON.isoformat()
 
 
 def test_an_unmeasured_jurisdiction_serves_no_count_rather_than_a_zero(
