@@ -799,15 +799,39 @@ if systemctl list-unit-files glasswell-scheduler.timer >/dev/null 2>&1; then
     # The timer-owned set is derived by the scheduler itself, so a unit line that names a
     # console script rather than a module is resolved through [project.scripts] rather than
     # missed — which is exactly how the neighbour index would have slipped the guard.
+    # The double-run guard's own connection. Everything else here reaches PostgreSQL as
+    # `postgres`, and the deploy invokes this script over a non-interactive ssh command whose
+    # environment carries no DSN at all -- so the guard is handed the one install.sh writes for
+    # exactly this identity, rather than left to find one that is not there.
     timer_owned="$("$VENV_PY" -m glasswell.scheduler.cli --timer-owned 2>/dev/null | wc -l)"
+    # Read, never sourced. This is a systemd EnvironmentFile, which systemd parses
+    # literally: the DSN carries `&user=glasswell_scheduler`, and `.` would read that as a
+    # background operator and hand the guard half a DSN.
+    scheduler_dsn=""
+    if [[ -r $SCHEDULER_ENV ]]; then
+        scheduler_dsn="$(sed -n 's/^GLASSWELL_DSN=//p' "$SCHEDULER_ENV" | head -1)"
+    fi
     if [[ ${timer_owned:-0} -lt 1 ]]; then
         bad "the timer-owned entry-point set" "resolved nothing; the guard would pass vacuously"
+    elif [[ -z $scheduler_dsn ]]; then
+        bad "the scheduler's DSN file names a DSN" \
+            "$SCHEDULER_ENV carries no GLASSWELL_DSN, so the guard could not run at all"
     else
-        assert_true "no launch row names an entry point a timer already drives" \
-            "a resolved launch row would double-run with an installed timer" \
-            "$VENV_PY" -m glasswell.scheduler.cli --double-run-check
+        guard_output="$(GLASSWELL_DSN="$scheduler_dsn" \
+            "$VENV_PY" -m glasswell.scheduler.cli --double-run-check 2>&1)"
+        guard_status=$?
+        if [[ $guard_status -eq 0 ]]; then
+            ok "no launch row names an entry point a timer already drives"
+        elif [[ $guard_output == *"no database DSN"* || $guard_output == *"could not take"* ]]; then
+            # Not the same fact. "I could not read the registry" must never be reported as
+            # "a launch row would double-run with an installed timer".
+            bad "the double-run guard ran at all" "${guard_output//$'\n'/ }"
+        else
+            bad "no launch row names an entry point a timer already drives" \
+                "${guard_output//$'\n'/ } would double-run with an installed timer"
+        fi
     fi
-    # The v0.77 posture, which inverts at the flag flip: every row this track seeds observes.
+    # The v0.78 posture, which inverts at the flag flip: every row this track seeds observes.
     launching="$("${PSQL[@]}" "select count(*) from lineage.job_schedules_as_of(current_date, current_date) s join lineage.scheduled_jobs j on j.job_id = s.job_id where s.launch_mode = 'launch' and (j.jurisdiction in ('ND','TX','NM','MT') or j.jurisdiction is null)")"
     assert "every resident and cross-jurisdiction row observes" 0 "$launching"
     scheduler_runs="$("${PSQL[@]}" "select count(*) from lineage.job_runs where launched_by = 'scheduler' and outcome in ('ran','failed','interrupted')")"
