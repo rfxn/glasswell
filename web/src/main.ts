@@ -18,7 +18,7 @@ import { setSignedIn, wireHeader } from "./chrome/header.ts";
 import { registerOverlay } from "./chrome/overlays.ts";
 import { setSessionState, setStatus, setVintage, toast } from "./chrome/status.ts";
 import { highlight } from "./glossary/index.ts";
-import { loadGlossary, termIndex } from "./glossary/store.ts";
+import { termIndex } from "./glossary/store.ts";
 import "./glossary/gw-term.ts";
 import { renderLineageDrawer } from "./lineage/drawer.ts";
 // Type-only, so it emits no import edge and the map stays out of the entry chunk.
@@ -384,6 +384,9 @@ async function boot(): Promise<void> {
   }
 
   try {
+    // Imported here rather than at module scope: the fetch runs once per boot and the
+    // entry chunk is measured against a budget with 70 bytes in it.
+    const { loadGlossary } = await import("./glossary/load.ts");
     await loadGlossary();
     highlight(document.querySelector("#gw-help-panel") ?? document.body, termIndex());
   } catch (error) {

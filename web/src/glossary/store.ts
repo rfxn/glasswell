@@ -1,7 +1,7 @@
 import { getEnvelope } from "../api/client.ts";
 import { unwrap } from "../api/envelope.ts";
 import { buildIndex } from "./index.ts";
-import type { GlossaryIndexPayload, TermIndex } from "./index.ts";
+import type { TermIndex } from "./index.ts";
 
 export interface TermSummary {
   term_id: string;
@@ -45,17 +45,15 @@ export function termSummary(termId: string): TermSummary | null {
   return summaries.get(termId) ?? null;
 }
 
-/** DIR-8: one boot fetch of the index and the definitions, so a hover never costs a request. */
-export async function loadGlossary(): Promise<TermIndex> {
-  const [indexEnvelope, termsEnvelope] = await Promise.all([
-    getEnvelope<GlossaryIndexPayload>("/v1/glossary/index"),
-    getEnvelope<TermSummary[]>("/v1/glossary", { limit: "200" }),
-  ]);
-  for (const term of unwrap(termsEnvelope)) summaries.set(term.term_id, term);
-  index = buildIndex(unwrap(indexEnvelope));
+/**
+ * Hand the loaded vocabulary over. Called once, by `./load.ts`, which is where the fetch
+ * lives so that the entry chunk does not carry a boot-only round trip.
+ */
+export function publishGlossary(built: TermIndex, terms: Map<string, TermSummary>): void {
+  for (const [termId, term] of terms) summaries.set(termId, term);
+  index = built;
   loaded = true;
   for (const listener of [...listeners]) listener();
-  return index;
 }
 
 export function termDetail(termId: string): Promise<TermDetail> {

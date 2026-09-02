@@ -110,7 +110,7 @@ explorer's shell chunk and into the entry. Verified rather than inferred — `gw
 
 | budget | B gzipped | headroom over measured |
 |---|---:|---|
-| entry chunk | 14,000 | +0.5% over 13,928 (v0.76; was +3.8% over 13,482 in v0.73) |
+| entry chunk | 14,000 | +0.4% over 13,950 (v0.78; was +0.5% over 13,928 in v0.76) |
 | explorer route, map excluded | 75,000 | +4.9% over 71,511 |
 | map chunk | 330,000 | +5.2% over 313,823 |
 
@@ -132,7 +132,15 @@ notch on the budget.
 Re-measured across the v0.76 train, which put two tracks on the entry path at once, and again
 after each of its three fix rounds. The Accounts surface took it to 13,680 B, the jurisdiction
 registry to 13,842 B, the sentinel round to 13,871 B, the visual round to 13,931 B, and the
-chrome round that followed it to **13,928 B** — **72 B under the budget**, where v0.73 had 518. The registry's generated module is not the
+chrome round that followed it to **13,928 B** — **72 B under the budget**, where v0.73 had 518.
+
+Re-measured across the v0.78 seam-hardening train, which is where the budget did the work it
+exists for. The mart engine, the served length and neighbour refusals and the narrowed
+add-a-state gate cost the entry **2 B**; the glossary paging loop then cost **79**, which is
+more headroom than there was. It was split rather than paid for: `loadGlossary` is a boot-only
+round trip and now lives in `glossary/load.ts`, imported when it runs rather than in every
+reader's first paint, and the store keeps only its state. Net **13,950 B — 50 B under the
+budget**, and the loop that reads a 2,000-term vocabulary is off the entry path entirely. The registry's generated module is not the
 reason: the jurisdiction rows the client reads (names, identity prefixes, tile-layer ids)
 resolve into a lazy branch, and no state name appears in the entry chunk at all. What landed
 there is chrome and wiring, a little at a time.
