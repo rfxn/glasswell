@@ -17,6 +17,7 @@ import polars as pl
 import psycopg
 from psycopg.rows import dict_row
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import resolve_environment
 from glasswell.lineage.as_of import AsOfViolation, read_feature_snapshot
 from glasswell.lineage.capture import derive, lineage_session
@@ -646,7 +647,7 @@ def _lockfile_sha256(connection: psycopg.Connection, env_id: str) -> str | None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build a pinned feature matrix partition.")
-    parser.add_argument("--dsn", required=True)
+    add_dsn_argument(parser)
     parser.add_argument("--as-of", required=True, help="knowledge-time cut, YYYY-MM-DD")
     parser.add_argument("--feature-version", default=DEFAULT_FEATURE_VERSION)
     parser.add_argument("--feature-set", default=DEFAULT_FEATURE_SET)
@@ -654,6 +655,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--env-id", default=None)
     parser.add_argument("--code-version", default=None)
     arguments = parser.parse_args(argv)
+    arguments.dsn = resolve_dsn(arguments.dsn)
     with psycopg.connect(arguments.dsn) as connection:
         environment = resolve_environment(
             connection, env_id=arguments.env_id, code_version=arguments.code_version

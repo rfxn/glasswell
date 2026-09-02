@@ -81,6 +81,11 @@ def test_the_migration_and_the_mirror_agree_about_being_repointed() -> None:
     migration = MIGRATION.read_text(encoding="utf-8")
 
     assert repoint_disagreements(migration) == []
+    # And the pair agrees with itself: a tag repointed without its commit, or the reverse, is
+    # the half-repoint the release gate refuses, and neither file's own copy can see it.
+    assert (mirror.EVIDENCE_TAG == "UNRELEASED") == (
+        mirror.EVIDENCE_COMMIT == "0" * 40
+    )
     # Shape only. This pattern accepts the placeholder, and deliberately: an unrepointed pair is
     # a legitimate state between writing a migration and cutting the release that publishes it,
     # and `release.py`'s placeholder_evidence_blockers is what refuses to ship one.

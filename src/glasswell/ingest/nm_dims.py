@@ -27,6 +27,7 @@ from typing import Any
 import polars as pl
 import psycopg
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import (
     IngestRun,
     open_ingest_run,
@@ -914,11 +915,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Promote the NM completion dimension from the staged sibling tables."
     )
-    parser.add_argument("--dsn", required=True)
+    add_dsn_argument(parser)
     parser.add_argument("--batch-rows", type=int, default=BATCH_ROWS)
     parser.add_argument("--env-id", default=None)
     parser.add_argument("--code-version", default=None)
     arguments = parser.parse_args(argv)
+    arguments.dsn = resolve_dsn(arguments.dsn)
 
     connection = psycopg.connect(arguments.dsn)
     try:

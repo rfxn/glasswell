@@ -257,6 +257,7 @@ def test_collector_no_longer_discloses_attempt_or_cadence_as_uninstrumented(
     monkeypatch.setattr(status_collector, "_edge_check", lambda *_args: check)
     monkeypatch.setattr(status_collector, "_storage_check", lambda *_args: check)
     monkeypatch.setattr(status_collector, "_job", lambda *_args: job)
+    monkeypatch.setattr(status_collector, "_registry_jobs", lambda *_args: [job])
     monkeypatch.setattr(status_collector, "_restore_drill_job", lambda *_args: job)
     monkeypatch.setattr(status_collector, "_offsite_copy_job", lambda *_args: job)
     monkeypatch.setattr(status_collector, "_recovery_drill_job", lambda *_args: job)
@@ -275,7 +276,10 @@ def test_collector_no_longer_discloses_attempt_or_cadence_as_uninstrumented(
         "remote_backup_copy": "limited",
         "replacement_host_recovery": "limited",
     }
-    assert len(snapshot.jobs) == 9
+    # Six literal _job(...) calls became one registry read, so the job count is whatever
+    # the registry holds -- one, here -- plus the three receipt readers, which have no
+    # timer to probe and stay literals.
+    assert len(snapshot.jobs) == 1 + 3
     assert len(snapshot.checks) == 7
 
 

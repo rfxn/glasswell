@@ -46,15 +46,37 @@ export interface StatusDataset {
   detail: string;
 }
 
+export type JobState = CheckState | "refused";
+
+export interface JobSchedule {
+  job_id: string;
+  effective_from: string;
+  published_at: string;
+  rule_id: string | null;
+  rationale: string;
+  external_timer_unit: string | null;
+  external_service_unit: string | null;
+}
+
 export interface StatusJob {
   id: string;
   label: string;
-  state: CheckState;
+  state: JobState;
   last_run_at: string | null;
   next_run_at: string | null;
   detail: string;
   unit: string | null;
   timer_armed: boolean | null;
+  kind: "ingest" | "mart" | "maintenance" | null;
+  jurisdiction: string | null;
+  cadence: string | null;
+  next_due_at: string | null;
+  duration_seconds: number | null;
+  last_outcome: "would_run" | "ran" | "failed" | "interrupted" | "refused" | null;
+  refusal_code: string | null;
+  refusal_class: "informational" | "waiting" | "fault" | null;
+  launch_mode: "observe" | "launch" | null;
+  schedule: JobSchedule | null;
 }
 
 export interface StatusSource {
@@ -127,16 +149,28 @@ const SNAPSHOT_LABELS: Record<SnapshotState, string> = {
   invalid: "Snapshot invalid",
 };
 
-const STATE_LABELS: Record<StatusState | CheckState | StatusSource["state"], string> = {
+const STATE_LABELS: Record<
+  StatusState | CheckState | JobState | StatusSource["state"],
+  string
+> = {
   ok: "OK",
   degraded: "Degraded",
   partial: "Partial",
   pending: "Pending",
   unavailable: "Unavailable",
   not_instrumented: "Not instrumented",
+  // A job that did not run and said why. Not a failure: the two are different facts.
+  refused: "Refused",
   current: "Current",
   stale: "Stale",
 };
+
+/**
+ * Alphabetical, with cross-jurisdiction work last. Not a curated order: a page that named the
+ * resident jurisdictions would have to be edited to add the fifth, which is the thing the
+ * registry exists to stop.
+ */
+const CROSS_JURISDICTION = "Cross-jurisdiction";
 
 const MANIFEST_COUNT_REASON =
   "Registered manifest count is provenance bookkeeping about source artifacts, not a petroleum measurement.";
@@ -193,7 +227,7 @@ const NOTES = {
   },
   jobs: {
     summary: "What a run time means",
-    text: "Run times are reported only where the platform persists them; an installed timer is not treated as proof that a job completed. An armed timer states that the schedule exists, never that the last run succeeded.",
+    text: "Run times are reported only where the platform persists them; an installed timer is not treated as proof that a job completed. An armed timer states that the schedule exists, never that the last run succeeded. A refusal states why a job did not run, which is not the same fact as a failure and is not shown as one. Observing means the plan for a scheduled job is computed and recorded while the timer named in its note is still what runs it.",
   },
   sources: {
     summary: "How freshness is decided",
@@ -605,21 +639,177 @@ function datasetNote(dataset: StatusDataset): HTMLElement {
   return note;
 }
 
-function jobs(payload: StatusPayload): HTMLElement {
-  const section = sectionWithTitle("gw-status-jobs-title", "Scheduled work", NOTES.jobs);
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds} s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} m ${seconds % 60} s`;
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} m`;
+}
+
+/** Everything a row states about itself that is not one of its six columns. */
+function jobNote(job: StatusJob): HTMLElement {
+  const note = element("details", "gw-status-note gw-status-row-note");
+  const summary = document.createElement("summary");
+  summary.textContent = "What drives this";
+  summary.setAttribute("data-no-glossary", "");
+  note.append(summary);
+  const detail = document.createElement("p");
+  detail.textContent = job.detail;
+  note.append(detail);
+  if (job.launch_mode !== null) {
+    const posture = document.createElement("p");
+    posture.textContent =
+      job.launch_mode === "observe"
+        ? "Observing: the plan is computed and recorded, and the timer below is what runs it."
+        : "The scheduler runs this job itself.";
+    note.append(posture);
+  }
+  if (job.unit !== null) {
+    const unit = document.createElement("p");
+    unit.append(textValue("Timer "), timer(job));
+    note.append(unit);
+  }
+  if (job.schedule !== null) {
+    const decision = document.createElement("p");
+    decision.append(textValue(job.schedule.rationale));
+    note.append(decision);
+  }
+  return note;
+}
+
+function jobNameCell(job: StatusJob): HTMLTableCellElement {
+  const name = document.createElement("th");
+  name.scope = "row";
+  name.append(textValue(job.label), jobNote(job));
+  return name;
+}
+
+function dataJobRow(job: StatusJob, snapshot: SnapshotState): HTMLTableRowElement {
+  const row = document.createElement("tr");
+  const state = effectiveJobState(job.state, snapshot);
+  row.append(
+    jobNameCell(job),
+    tableCell(badge(STATE_LABELS[state], state)),
+    tableCell(textValue(job.cadence ?? "Not registered")),
+    tableCell(timeOrFallback(job.last_run_at, "Not recorded")),
+    tableCell(timeOrFallback(job.next_due_at, "Not due")),
+    tableCell(
+      textValue(
+        job.duration_seconds === null ? "Not recorded" : formatDuration(job.duration_seconds),
+      ),
+    ),
+  );
+  return row;
+}
+
+function groupOf(job: StatusJob): string {
+  return job.jurisdiction ?? CROSS_JURISDICTION;
+}
+
+function orderedGroups(items: StatusJob[]): string[] {
+  const seen = [...new Set(items.map(groupOf))];
+  const rank = (name: string): number => (name === CROSS_JURISDICTION ? 1 : 0);
+  return seen.sort((left, right) => rank(left) - rank(right) || left.localeCompare(right));
+}
+
+/**
+ * A group opens by default only when something in it needs attention. Thirty-odd rows behind
+ * five collapsed groups is a page a reader can scan; thirty-odd rows open is one they scroll
+ * past, and the fault is the row they came for.
+ */
+function needsAttention(items: StatusJob[], snapshot: SnapshotState): boolean {
+  return items.some(
+    (job) =>
+      job.refusal_class === "fault" || effectiveJobState(job.state, snapshot) === "degraded",
+  );
+}
+
+function dataJobGroup(
+  name: string,
+  items: StatusJob[],
+  snapshot: SnapshotState,
+): HTMLElement {
+  const group = element("details", "gw-status-job-group");
+  group.open = needsAttention(items, snapshot);
+  const summary = document.createElement("summary");
+  summary.append(textValue(name), textValue(` · ${items.length}`));
+  group.append(summary);
+  const wrapper = element("div", "gw-status-table-wrap");
+  const table = document.createElement("table");
+  table.className = "gw-status-table";
+  const caption = document.createElement("caption");
+  caption.textContent = `${name} data jobs and the runs the platform persisted`;
+  const head = tableHead([
+    "Job",
+    "State",
+    { label: "Cadence", term: "gt_cadence" },
+    "Last run",
+    { label: "Next due", term: "gt_next_due" },
+    "Duration",
+  ]);
+  const body = document.createElement("tbody");
+  for (const job of items) body.append(dataJobRow(job, snapshot));
+  table.append(caption, head, body);
+  wrapper.append(table);
+  group.append(wrapper);
+  return group;
+}
+
+function dataJobs(payload: StatusPayload): HTMLElement {
+  const items = payload.jobs.filter((job) => job.kind === "ingest" || job.kind === "mart");
+  const block = element("div", "gw-status-job-block");
+  const heading = element("h3", "gw-status-subheading");
+  heading.textContent = "Data jobs";
+  block.append(heading);
+  if (items.length === 0) {
+    const wrapper = element("div", "gw-status-table-wrap");
+    const table = document.createElement("table");
+    table.className = "gw-status-table";
+    const body = document.createElement("tbody");
+    body.append(emptyTableRow(6, "No data job was served."));
+    table.append(tableHead(["Job", "State", "Cadence", "Last run", "Next due", "Duration"]), body);
+    wrapper.append(table);
+    block.append(wrapper);
+    return block;
+  }
+  for (const name of orderedGroups(items)) {
+    block.append(
+      dataJobGroup(
+        name,
+        items.filter((job) => groupOf(job) === name),
+        payload.snapshot_state,
+      ),
+    );
+  }
+  return block;
+}
+
+function platformJobs(payload: StatusPayload): HTMLElement {
+  const items = payload.jobs.filter((job) => job.kind !== "ingest" && job.kind !== "mart");
+  const block = element("div", "gw-status-job-block");
+  const heading = element("h3", "gw-status-subheading");
+  heading.textContent = "Platform jobs";
+  block.append(heading);
   const wrapper = element("div", "gw-status-table-wrap");
   const table = document.createElement("table");
   table.className = "gw-status-table";
   const caption = document.createElement("caption");
   caption.textContent = "Registered timers and the runs the platform persisted";
-  const head = tableHead(["Job", "State", "Timer", "Last run", "Next run", "Detail"]);
+  const head = tableHead([
+    "Job",
+    "State",
+    { label: "Timer", term: "gt_timer" },
+    "Last run",
+    "Next run",
+    "Detail",
+  ]);
   const body = document.createElement("tbody");
-  for (const job of payload.jobs) {
+  for (const job of items) {
     const row = document.createElement("tr");
     const name = document.createElement("th");
     name.scope = "row";
     name.textContent = job.label;
-    const state = effectiveState(job.state, payload.snapshot_state);
+    const state = effectiveJobState(job.state, payload.snapshot_state);
     row.append(
       name,
       tableCell(badge(STATE_LABELS[state], state)),
@@ -630,10 +820,16 @@ function jobs(payload: StatusPayload): HTMLElement {
     );
     body.append(row);
   }
-  if (payload.jobs.length === 0) body.append(emptyTableRow(6, "No job observations were served."));
+  if (items.length === 0) body.append(emptyTableRow(6, "No job observations were served."));
   table.append(caption, head, body);
   wrapper.append(table);
-  section.append(wrapper);
+  block.append(wrapper);
+  return block;
+}
+
+function jobs(payload: StatusPayload): HTMLElement {
+  const section = sectionWithTitle("gw-status-jobs-title", "Scheduled work", NOTES.jobs);
+  section.append(dataJobs(payload), platformJobs(payload));
   return section;
 }
 
@@ -788,6 +984,11 @@ function snapshotMessage(state: SnapshotState): string {
 }
 
 function effectiveState(state: CheckState, snapshot: SnapshotState): CheckState {
+  return snapshot === "current" || state !== "ok" ? state : "unavailable";
+}
+
+/** The same rule over the wider job vocabulary: a stale snapshot cannot report an OK. */
+function effectiveJobState(state: JobState, snapshot: SnapshotState): JobState {
   return snapshot === "current" || state !== "ok" ? state : "unavailable";
 }
 
@@ -1002,13 +1203,65 @@ function jobOf(item: unknown, index: number): StatusJob {
     state: member(
       job["state"],
       `${path}.state`,
-      ["ok", "degraded", "pending", "unavailable", "not_instrumented"] as const,
+      ["ok", "degraded", "pending", "unavailable", "not_instrumented", "refused"] as const,
     ),
     last_run_at: nullableTime(job["last_run_at"], `${path}.last_run_at`),
     next_run_at: nullableTime(job["next_run_at"], `${path}.next_run_at`),
     detail: string(job["detail"], `${path}.detail`),
     unit: nullableString(job["unit"] ?? null, `${path}.unit`),
     timer_armed: nullableBoolean(job["timer_armed"] ?? null, `${path}.timer_armed`),
+    kind: nullableMember(job["kind"] ?? null, `${path}.kind`, [
+      "ingest",
+      "mart",
+      "maintenance",
+    ] as const),
+    jurisdiction: nullableString(job["jurisdiction"] ?? null, `${path}.jurisdiction`),
+    cadence: nullableBoundedString(job["cadence"] ?? null, `${path}.cadence`, 80),
+    next_due_at: nullableTime(job["next_due_at"] ?? null, `${path}.next_due_at`),
+    duration_seconds: nullableCount(
+      job["duration_seconds"] ?? null,
+      `${path}.duration_seconds`,
+    ),
+    last_outcome: nullableMember(job["last_outcome"] ?? null, `${path}.last_outcome`, [
+      "would_run",
+      "ran",
+      "failed",
+      "interrupted",
+      "refused",
+    ] as const),
+    refusal_code: nullableString(job["refusal_code"] ?? null, `${path}.refusal_code`),
+    refusal_class: nullableMember(job["refusal_class"] ?? null, `${path}.refusal_class`, [
+      "informational",
+      "waiting",
+      "fault",
+    ] as const),
+    launch_mode: nullableMember(job["launch_mode"] ?? null, `${path}.launch_mode`, [
+      "observe",
+      "launch",
+    ] as const),
+    schedule: scheduleOf(job["schedule"] ?? null, `${path}.schedule`),
+  };
+}
+
+/** Defaulted rather than required throughout: a snapshot written by the previous release
+ * carries none of these fields, and a page that threw on one would go blank on an upgrade. */
+function scheduleOf(item: unknown, path: string): JobSchedule | null {
+  if (item === null || item === undefined) return null;
+  const schedule = record(item, path);
+  return {
+    job_id: string(schedule["job_id"], `${path}.job_id`),
+    effective_from: string(schedule["effective_from"], `${path}.effective_from`),
+    published_at: string(schedule["published_at"], `${path}.published_at`),
+    rule_id: nullableString(schedule["rule_id"] ?? null, `${path}.rule_id`),
+    rationale: string(schedule["rationale"], `${path}.rationale`),
+    external_timer_unit: nullableString(
+      schedule["external_timer_unit"] ?? null,
+      `${path}.external_timer_unit`,
+    ),
+    external_service_unit: nullableString(
+      schedule["external_service_unit"] ?? null,
+      `${path}.external_service_unit`,
+    ),
   };
 }
 

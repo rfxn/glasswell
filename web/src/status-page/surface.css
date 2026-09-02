@@ -818,3 +818,75 @@
     padding-top: 0;
   }
 }
+
+/*
+ * The scheduled-work section is two blocks: data jobs grouped by jurisdiction, and the
+ * platform jobs that keep their old shape. About thirty rows open at once is a page a reader
+ * scrolls past, so a group is a disclosure and only one holding a fault opens itself.
+ */
+.gw-status-subheading {
+  margin: var(--gw-space-5) 0 0;
+  font-family: var(--gw-font-display);
+  font-size: var(--gw-fs-body);
+  font-weight: var(--gw-fw-title);
+  letter-spacing: var(--gw-ls-title);
+}
+
+.gw-status-job-block + .gw-status-job-block {
+  margin-top: clamp(20px, 3vw, 32px);
+}
+
+.gw-status-job-group {
+  margin-top: var(--gw-space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--gw-radius-sm);
+  background: var(--panel);
+}
+
+.gw-status-job-group > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--gw-space-2);
+  min-height: 44px;
+  padding: 0 var(--gw-space-4);
+  font-weight: var(--gw-fw-title);
+  cursor: pointer;
+}
+
+.gw-status-job-group > summary:hover {
+  background: var(--tint-accent);
+}
+
+.gw-status-job-group > summary:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: -2px;
+}
+
+/* The group is already the card, so its table does not draw a second border inside it. */
+.gw-status-job-group .gw-status-table-wrap {
+  margin-top: 0;
+  border: 0;
+  border-top: 1px solid var(--hairline);
+  border-radius: 0;
+}
+
+/* `display: flex` on the summary drops Chrome's default marker, so the affordance is drawn. */
+.gw-status-job-group > summary::marker,
+.gw-status-job-group > summary::-webkit-details-marker {
+  display: none;
+  content: "";
+}
+
+.gw-status-job-group > summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 6px solid var(--cyan);
+  transition: transform 120ms ease;
+}
+
+.gw-status-job-group[open] > summary::before {
+  transform: rotate(90deg);
+}

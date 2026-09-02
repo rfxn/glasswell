@@ -29,6 +29,7 @@ import polars as pl
 import psycopg
 from psycopg.rows import dict_row
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import record_vintage_day, resolve_environment
 from glasswell.ingest.shapefile import ShapefileRecord, ZippedShapefile
 from glasswell.ingest.tx_mft import MftClient
@@ -1169,7 +1170,7 @@ def load_scope(
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Load TX RRC county GIS well layers into PostGIS.")
-    parser.add_argument("--dsn", required=True)
+    add_dsn_argument(parser)
     parser.add_argument(
         "--county", action="append", default=None, help="county code; repeatable, default is scope"
     )
@@ -1178,6 +1179,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--code-version", default=None)
     parser.add_argument("--restage", action="store_true")
     arguments = parser.parse_args(argv)
+    arguments.dsn = resolve_dsn(arguments.dsn)
 
     with durable_fetch_attempts(arguments.dsn), psycopg.connect(arguments.dsn) as connection:
         environment = resolve_environment(

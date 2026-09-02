@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -17,6 +17,20 @@ SCHEMA_VERSION_REASON = "Database migration identity, not a measured petroleum q
 DATABASE_BYTES_REASON = "Physical PostgreSQL storage inventory, not a petroleum figure."
 
 CheckState = Literal["ok", "degraded", "pending", "unavailable", "not_instrumented"]
+# A job may also be refused, which a check may not: a refusal is a job saying why it did
+# not run, and StatusCheck has nothing to refuse.
+JobState = Literal[
+    "ok", "degraded", "pending", "unavailable", "not_instrumented", "refused"
+]
+JobKind = Literal["ingest", "mart", "maintenance"]
+JobOutcome = Literal["would_run", "ran", "failed", "interrupted", "refused"]
+RefusalClass = Literal["informational", "waiting", "fault"]
+LaunchMode = Literal["observe", "launch"]
+# The allowlist entry's reason verbatim: SB-08 A-2 serves the exempter's own words.
+DURATION_REASON = (
+    "How long a scheduled job ran, on the status page's job rows. Operational inventory from a"
+    " timed snapshot, not a petroleum figure."
+)
 CheckTier = Literal["serving", "data", "edge", "host"]
 DatasetState = Literal["available", "unavailable"]
 Precision = Literal["exact", "estimated"]
@@ -325,17 +339,53 @@ class DatasetInventory(BaseModel):
     detail: str
 
 
+class JobSchedule(BaseModel):
+    """The decision reference, not a derivation handle: /v1/status carries no handles.
+
+    `rule_id` is null for the platform rows, whose cadence lives in their own unit's
+    OnCalendar; those carry the unit pair instead, so the row still resolves to something.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: str
+    effective_from: date
+    published_at: date
+    rule_id: str | None = None
+    rationale: str
+    external_timer_unit: str | None = None
+    external_service_unit: str | None = None
+
+
 class JobStatus(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str
     label: str
-    state: CheckState
+    state: JobState
     last_run_at: datetime | None = None
     next_run_at: datetime | None = None
     detail: str
     unit: str | None = None
     timer_armed: bool | None = None
+    # Everything below arrives with the registry. Defaulted rather than required: a snapshot
+    # written by the previous release carries none of them and still has to parse.
+    kind: JobKind | None = None
+    # The group the page files this row under. Null is not missing data: a job that spans
+    # every registered jurisdiction belongs to none of them.
+    jurisdiction: str | None = None
+    cadence: str | None = Field(default=None, max_length=80)
+    next_due_at: datetime | None = None
+    duration_seconds: int | None = Field(
+        default=None,
+        ge=0,
+        json_schema_extra={"x-glasswell-not-a-figure": DURATION_REASON},
+    )
+    last_outcome: JobOutcome | None = None
+    refusal_code: str | None = None
+    refusal_class: RefusalClass | None = None
+    launch_mode: LaunchMode | None = None
+    schedule: JobSchedule | None = None
 
 
 class PlatformStatus(BaseModel):

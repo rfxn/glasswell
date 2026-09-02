@@ -21,6 +21,7 @@ import polars as pl
 import psycopg
 from psycopg.rows import dict_row
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.identity import api10_identity
 from glasswell.ingest.base import open_ingest_run, record_vintage_day
 from glasswell.lineage import InputRef, OutputSpec, current_session, derive, fetch_raw, quarantine
@@ -926,7 +927,7 @@ def promote_resident_design(connection: psycopg.Connection) -> dict[str, Any]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Ingest FracFocus ND completion anchors.")
-    parser.add_argument("--dsn", required=True)
+    add_dsn_argument(parser)
     parser.add_argument("--raw-root")
     parser.add_argument(
         "--promote-design",
@@ -934,6 +935,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="promote completion design from resident staging without fetching the archive",
     )
     arguments = parser.parse_args(argv)
+    arguments.dsn = resolve_dsn(arguments.dsn)
     with durable_fetch_attempts(arguments.dsn), psycopg.connect(
         arguments.dsn
     ) as connection, open_ingest_run(

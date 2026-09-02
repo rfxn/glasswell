@@ -20,6 +20,7 @@ from uuid import uuid4
 import polars as pl
 import psycopg
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import resolve_environment
 from glasswell.lineage.capture import derive, lineage_session
 from glasswell.lineage.clock import Clock
@@ -1402,7 +1403,7 @@ def build_type_curve_control(
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build the pinned P3 type-curve control.")
-    parser.add_argument("--dsn", required=True)
+    add_dsn_argument(parser)
     parser.add_argument("--labels", required=True)
     parser.add_argument("--model-coverage", required=True)
     parser.add_argument("--split-root", required=True)
@@ -1410,6 +1411,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--env-id", default=None)
     parser.add_argument("--code-version", default=None)
     arguments = parser.parse_args(argv)
+    arguments.dsn = resolve_dsn(arguments.dsn)
     with psycopg.connect(arguments.dsn) as connection:
         environment = resolve_environment(
             connection, env_id=arguments.env_id, code_version=arguments.code_version

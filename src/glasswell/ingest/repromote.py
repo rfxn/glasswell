@@ -17,6 +17,7 @@ from datetime import date
 import psycopg
 from psycopg.rows import dict_row
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import IngestRun, open_ingest_run, record_vintage_day
 from glasswell.ingest.nd_mpr import SOURCE_ID, STAGING_TABLE, promote_manifest
 from glasswell.lineage.audit import emit
@@ -168,13 +169,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Re-promote staged ND production under the S-E entity key."
     )
-    parser.add_argument("--dsn", required=True)
+    add_dsn_argument(parser)
     parser.add_argument(
         "--source-key",
         action="append",
         help="Limit to one staged workbook, e.g. 2026_01.xlsx; repeatable.",
     )
     arguments = parser.parse_args(argv)
+    arguments.dsn = resolve_dsn(arguments.dsn)
 
     with psycopg.connect(arguments.dsn) as connection:
         try:

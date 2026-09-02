@@ -213,3 +213,41 @@
     code, not a measurement.
 - pointer: /series/area/*
   reason: Area bucket, in an aligned-array page.
+
+# --- the scheduled-job registry ----------------------------------------------
+# Operational bounds and run evidence. None of these is a petroleum quantity, and
+# none resolves to a derivation: /v1/schedules serves a decision reference, not a
+# figure, so a handle here would advertise a resolution that does not exist. The
+# root form precedes its /*/ twin, as everywhere above, so the substantive reason
+# is the one the document publishes.
+- pointer: /cadence/interval_seconds
+  reason: >-
+    How often a job is asked to run, in seconds. A cadence is a scheduling decision recorded as
+    a conformance rule, not a measured quantity.
+- pointer: /*/cadence/interval_seconds
+  reason: Cadence interval, in a collection item.
+- pointer: /cadence/monthly_on_day
+  reason: >-
+    The calendar day a monthly cadence fires on. A position in the month, not a measurement.
+- pointer: /*/cadence/monthly_on_day
+  reason: Calendar day of a monthly cadence, in a collection item.
+- pointer: /limits/timeout_seconds
+  reason: >-
+    The time ceiling a job's transient unit is given, bounded by the scheduler unit's own
+    budget. An operational bound, not a measured quantity.
+- pointer: /*/limits/timeout_seconds
+  reason: Job time ceiling, in a collection item.
+- pointer: /last_runs/*/duration_seconds
+  reason: >-
+    Wall time between a run's start and its close, from operational run evidence; its grain and
+    observation time are stated beside it.
+- pointer: /last_runs/*/exit_status
+  reason: A process exit status. An outcome code, not a quantity.
+- pointer: /last_runs/*/memory_peak_bytes
+  reason: >-
+    Peak resident bytes a run reached, read from systemd, and absent rather than zeroed where
+    systemd is older than 254. Operational inventory, not a petroleum figure.
+- pointer: /jobs/*/duration_seconds
+  reason: >-
+    How long a scheduled job ran, on the status page's job rows. Operational inventory from a
+    timed snapshot, not a petroleum figure.

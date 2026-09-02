@@ -23,6 +23,7 @@ from datetime import date
 
 import psycopg
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import resolve_environment
 from glasswell.lengths import LengthMethod, resolve_length_method
 from glasswell.lineage.audit import emit
@@ -595,12 +596,13 @@ def refresh_for(
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Refresh one jurisdiction's tile marts.")
-    parser.add_argument("--dsn", required=True)
+    add_dsn_argument(parser)
     parser.add_argument("--jurisdiction", required=True, help="registered code, e.g. ND")
     parser.add_argument("--as-of", default=None, help="knowledge-time cut, YYYY-MM-DD")
     parser.add_argument("--env-id", default=None, help="override the fingerprinted env id")
     parser.add_argument("--code-version", default=None)
     arguments = parser.parse_args(argv)
+    arguments.dsn = resolve_dsn(arguments.dsn)
     as_of = date.fromisoformat(arguments.as_of) if arguments.as_of else None
 
     with psycopg.connect(arguments.dsn) as connection:

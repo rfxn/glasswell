@@ -48,6 +48,8 @@ OWNER = "owner"
 SESSION = "session"
 
 TILE = EXAMPLE_TILE
+# A registered job the seed always writes, so the matrix names a row rather than a guess.
+EXAMPLE_JOB_ID = "ingest_nd_gis"
 _VINTAGE = "vin_nd_mpr_xlsx_2026-08-01"
 
 ISSUE_BODY = {"label": "matrix-probe-2026", "scope": "guest"}
@@ -136,6 +138,8 @@ MATRIX: tuple[tuple, ...] = (
     ("GET", f"/v1/modeling/publications/{EXAMPLE_PUBLICATION_ID}?explain=true", READ),
     ("GET", "/v1/conformance", READ),
     ("GET", f"/v1/conformance/{EXAMPLE_RULE_ID}", READ),
+    ("GET", "/v1/schedules", READ),
+    ("GET", f"/v1/schedules/{EXAMPLE_JOB_ID}", READ),
     ("GET", "/v1/quarantine", READ),
     ("GET", "/v1/quarantine/summary", READ),
     ("GET", f"/v1/quarantine/{EXAMPLE_QUARANTINE_ID}", READ),
@@ -415,6 +419,7 @@ def _template(path: str) -> str:
         (EXAMPLE_PUBLICATION_ID, "publication_id"),
         (EXAMPLE_QUARANTINE_ID, "quarantine_id"),
         (EXAMPLE_RULE_ID, "rule_id"),
+        (EXAMPLE_JOB_ID, "job_id"),
         (EXAMPLE_TERM_ID, "term"),
         (EXAMPLE_ERROR_CODE, "code"),
         (_VINTAGE, "vintage_id"),

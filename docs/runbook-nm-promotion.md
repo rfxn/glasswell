@@ -9,8 +9,17 @@ continuing** — the expectations come from a full run against a scratch databas
 bytes, so a divergence means the inputs are not the inputs.
 
 **Two databases, one letter apart.** `glasswell` is production. `glasswell_d1` is the
-disposable scratch database on the same host. Every command below states its `--dsn` or `-d`
-explicitly. If any command in the session omitted one, stop and re-verify what it touched.
+disposable scratch database on the same host. Every command below takes its database from
+`GLASSWELL_DSN`, or states `-d` where it is a `psql` invocation; no command carries a DSN on
+its own argument list, because an argument list is readable in `/proc` and lands in shell
+history. Export it once per session, before anything else:
+
+```bash
+export GLASSWELL_DSN='postgresql:///glasswell?host=/var/run/postgresql'
+echo "$GLASSWELL_DSN"          # read it back before you start
+```
+
+If any command in the session ran against the wrong one, stop and re-verify what it touched.
 
 ---
 
@@ -112,7 +121,11 @@ systemctl is-active glasswell-ingest.service      # must be inactive
 # The one-shot re-promotion units must be ABSENT, not merely inert. Zero, or STOP.
 systemctl list-unit-files 'glasswell-repromote*' --no-pager
 ls /etc/systemd/system/glasswell-repromote.* 2>&1        # expect: No such file or directory
-ls /etc/systemd/system/ | grep -c '^glasswell-'          # expect 14, matching the tree
+# Derived, never counted: the host must carry exactly what the tree ships, which is what
+# verify.sh's own unit loop asserts. A literal here went stale twice.
+SRC=/opt/glasswell/src
+ls /etc/systemd/system/glasswell-* | wc -l        # must equal the next line
+ls $SRC/infra/systemd/glasswell-* | wc -l
 ```
 
 - `glasswell-restore-drill.timer` is `Sun *-*-* 04:00:00` with `RandomizedDelaySec=600`:
@@ -141,7 +154,7 @@ ls /etc/systemd/system/ | grep -c '^glasswell-'          # expect 14, matching t
 - Any step exits **2** with a `refused: …` line → stop. That is the guard working. Do not
   delete rows, do not re-run the same day, do not pipe the step through `jq` — the refusal line
   is deliberately not JSON. Re-run on a later day.
-- Any command that omitted an explicit `-d` / `--dsn` → stop and re-verify.
+- Any command that ran with the wrong `GLASSWELL_DSN` or `-d` → stop and re-verify.
 
 ---
 
@@ -212,9 +225,8 @@ ssh root@192.168.2.111
 SIDECARS=$(find /data/raw/nm_ocd_* -name manifest.json | sort)
 echo "$SIDECARS" | wc -l          # must print 9
 
-sudo -u glasswell /opt/glasswell/venv/bin/python \
+sudo --preserve-env=GLASSWELL_DSN -u glasswell /opt/glasswell/venv/bin/python \
   /opt/glasswell/src/scripts/ops/nm_reregister_manifests.py \
-  --dsn 'postgresql:///glasswell?host=/var/run/postgresql' \
   --expect-database glasswell \
   --dry-run \
   $(for s in $SIDECARS; do printf ' --sidecar %s' "$s"; done)
@@ -222,8 +234,8 @@ sudo -u glasswell /opt/glasswell/venv/bin/python \
 
 **`--expect-database` is not optional here.** `glasswell` and `glasswell_d1` are one letter
 apart and only one of them is production; without the flag the tool prints the database it
-resolved and trusts you to read the line, and with it a mismatched `--dsn` exits 1 before any
-statement runs. Confirm the first line of output reads `database=glasswell` as well — the flag
+resolved and trusts you to read the line, and with it a mismatched `GLASSWELL_DSN` exits 1
+before any statement runs. Confirm the first line of output reads `database=glasswell` as well — the flag
 is the refusal, the line is the receipt.
 
 Expected: nine `… would register …` lines, nine distinct `man_…` ids, and `lineage.manifests`
@@ -244,9 +256,8 @@ Every line must read `OK`. A mismatch aborts the whole track.
 ### 1c — register
 
 ```bash
-sudo -u glasswell /opt/glasswell/venv/bin/python \
+sudo --preserve-env=GLASSWELL_DSN -u glasswell /opt/glasswell/venv/bin/python \
   /opt/glasswell/src/scripts/ops/nm_reregister_manifests.py \
-  --dsn 'postgresql:///glasswell?host=/var/run/postgresql' \
   --expect-database glasswell \
   $(for s in $SIDECARS; do printf ' --sidecar %s' "$s"; done)
 ```
@@ -325,10 +336,11 @@ pgrep -a pg_restore || echo "no restore drill running"
 
 sudo systemd-run --unit=t3-nm-stage --collect \
   --property=User=glasswell --property=Group=glasswell \
+  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
   --property=TimeoutStartSec=7200 --property=MemoryMax=6G \
   --setenv=GLASSWELL_STAGING_ROOT=/data/staging \
   /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_ocd \
-    --stage-only --dsn 'postgresql:///glasswell?host=/var/run/postgresql'
+    --stage-only
 
 journalctl -u t3-nm-stage -f
 ```
@@ -400,10 +412,11 @@ exclusive required group and the parser will reject the shorter spelling.
 ```bash
 sudo systemd-run --unit=t3-nm-promote --collect \
   --property=User=glasswell --property=Group=glasswell \
+  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
   --property=TimeoutStartSec=14400 --property=MemoryMax=6G \
   --setenv=GLASSWELL_STAGING_ROOT=/data/staging \
   /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_ocd \
-    --promote-only --dsn 'postgresql:///glasswell?host=/var/run/postgresql'
+    --promote-only
 
 journalctl -u t3-nm-promote -f
 systemctl show t3-nm-promote -p Result -p ExecMainStatus   # after it exits
@@ -493,9 +506,9 @@ is safe and idempotent for insert-only rows.
 ```bash
 sudo systemd-run --unit=t3-nm-dims --collect \
   --property=User=glasswell --property=Group=glasswell \
+  --property=Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql \
   --property=TimeoutStartSec=1800 --property=MemoryMax=4G \
-  /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_dims \
-    --dsn 'postgresql:///glasswell?host=/var/run/postgresql'
+  /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_dims
 ```
 
 Expected: observations read **426,529**; quarantined **0**; identity 426,529 = 426,529 + 0;

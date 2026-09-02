@@ -112,8 +112,9 @@
     polled weekly is current the day after an unchanged check, and a nightly source is not.
     The pair is registered per source rather than assumed.
   domain_tags: [operations, time]
-  related_terms: ["Timer", "Retrieval vintage", "Manifest"]
-  source_refs: ["blueprint-v0.6 §3.7.4", "lineage.sources"]
+  related_terms: ["Timer", "Retrieval vintage", "Manifest", "Scheduled job"]
+  source_refs:
+    ["blueprint-v0.6 §3.7.4", "lineage.source_poll_policies", "lineage.job_schedules"]
 
 - term: Canonical
   short_definition: >-
@@ -511,15 +512,19 @@
   aliases: ["Stage"]
   highlightable: false
   short_definition: >-
-    Which of parse, validate, conform or join a rule runs at, or a rejected row failed at.
+    Which of parse, validate, conform, join or schedule a rule runs at, or a rejected row
+    failed at.
   expanded_definition: >-
-    The four stages are ordered and a row only reaches one by clearing the ones before it, so
-    the stage is a measure of how far the data got: parse means the bytes would not read at
-    all, join means the row was well-formed and still could not be tied to a well. It is the
-    first thing to group a quarantine backlog by, because the repair is a different job at
-    each stage - a parse failure is usually one file, a join failure is usually one rule.
+    Parse, validate, conform and join are ordered and a row only reaches one by clearing the
+    ones before it, so for a rejected row the stage is a measure of how far the data got:
+    parse means the bytes would not read at all, join means the row was well-formed and still
+    could not be tied to a well. It is the first thing to group a quarantine backlog by,
+    because the repair is a different job at each stage - a parse failure is usually one file,
+    a join failure is usually one rule. Schedule sits outside that order and no row passes
+    through it: it is the stage a cadence decision is filed under, because deciding how often
+    to poll a source is a decision about the pipeline rather than a step inside it.
   domain_tags: [lineage, quality]
-  related_terms: ["Conformance rule", "Quarantine", "Staging"]
+  related_terms: ["Conformance rule", "Quarantine", "Staging", "Scheduled job"]
   source_refs: ["SB-07 §6.2", "migration 005_conformance.sql", "migration 007_quarantine.sql"]
 
 - term: PLSS
@@ -934,8 +939,65 @@
     two facts a reader needs are separate: whether the schedule is installed, and whether the
     platform persisted a run. Run times are reported only where they were actually recorded.
   domain_tags: [operations, governance]
-  related_terms: ["Cadence", "Status snapshot"]
+  related_terms: ["Cadence", "Status snapshot", "Scheduled job", "Observing"]
   source_refs: ["blueprint-v0.6 §3.1", "blueprint-v0.6 §3.7.7"]
+
+- term: Scheduled job
+  aliases: ["Scheduled jobs"]
+  short_definition: >-
+    One registered command, with the sources it polls, what it waits on, and the rule that
+    decided how often it runs.
+  expanded_definition: >-
+    A job is one runnable command, which is what keeps its memory ceiling, its timeout, its
+    transient unit and its run history one-to-one with a process. Registering a source is not
+    the same act as scheduling it, and the registry is where the difference shows: a source
+    with a poll interval and no job over it has a cadence nobody executes. Adding a job is
+    rows, never a unit file.
+  domain_tags: [operations, governance, data-model]
+  related_terms: ["Cadence", "Timer", "Next due", "Refusal", "Observing"]
+  source_refs: ["lineage.scheduled_jobs", "lineage.job_schedules"]
+
+- term: Next due
+  short_definition: >-
+    When a job is next asked to run, computed from the same freshness rule the health page
+    reads.
+  expanded_definition: >-
+    Due is derived, never stored: an interval job is due when the source it polls is past its
+    expected next poll, and a monthly job is due once the calendar day it names has passed
+    without a run since. A job that waits on another job has no next-due instant at all,
+    because the event it waits on has not happened yet; the page says so with the cadence note
+    rather than serving a guess.
+  domain_tags: [operations, time]
+  related_terms: ["Cadence", "Scheduled job", "Timer"]
+  source_refs: ["lineage.job_schedules", "lineage.source_poll_policies"]
+
+- term: Refusal
+  aliases: ["Refused", "Refusal code"]
+  short_definition: >-
+    A recorded reason a job did not run, in one of three severity classes.
+  expanded_definition: >-
+    Refused, failed and interrupted are three different facts and collapsing them is exactly
+    the silence the conformance rule forbids. A refusal carries a code, and the code's class is
+    a registered row rather than a list in the page: informational means a standing condition
+    an operator already knows about, waiting means it will resolve on its own, and fault means
+    something needs attention. That is why an owner-triggered job does not redden a deploy.
+  domain_tags: [operations, governance]
+  related_terms: ["Scheduled job", "Observing", "Status snapshot"]
+  source_refs: ["lineage.refusal_codes", "lineage.job_runs"]
+
+- term: Observing
+  aliases: ["Observe", "Observing mode"]
+  short_definition: >-
+    A job whose plan is computed and recorded, while the unit that has always run it still
+    does.
+  expanded_definition: >-
+    Observing is a property of each schedule row, not a posture stated in prose: the row says
+    observe, the tick records what it would have run, and nothing is launched. It is how the
+    schedule is proved right against the timers it will replace before it replaces them, and
+    turning a job over is appending one row rather than changing code.
+  domain_tags: [operations, governance]
+  related_terms: ["Scheduled job", "Timer", "Refusal"]
+  source_refs: ["lineage.job_schedules"]
 
 - term: Township
   aliases: ["Townships", "Township-range"]

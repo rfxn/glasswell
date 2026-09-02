@@ -300,9 +300,10 @@ export const glossaryBodies: Record<string, unknown> = {
       "related_terms": [
         "Conformance rule",
         "Quarantine",
-        "Staging"
+        "Staging",
+        "Scheduled job"
       ],
-      "short_definition": "Which of parse, validate, conform or join a rule runs at, or a rejected row failed at.",
+      "short_definition": "Which of parse, validate, conform, join or schedule a rule runs at, or a rejected row failed at.",
       "source_refs": [
         "SB-07 §6.2",
         "migration 005_conformance.sql",

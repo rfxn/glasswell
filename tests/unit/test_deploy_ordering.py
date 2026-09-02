@@ -113,3 +113,37 @@ def test_no_population_step_can_be_skipped_or_fail_silently(population: str) -> 
 
     assert "|| refuse" in body
     assert not re.search(r"^\s*(if|case|while)\b", body, re.MULTILINE), body
+
+
+def test_the_caddy_config_step_installs_reloads_and_refuses_on_an_inactive_caddy() -> None:
+    """install.sh places the Caddyfile only under --with-caddy, which a routine deploy never
+    passes, so a log-filter change shipped in the tree sat unapplied until someone noticed."""
+    caddy = steps()[step_holding("/etc/caddy/Caddyfile")]
+
+    assert "cmp -s" in caddy, "an unconditional install would reload caddy on every deploy"
+    assert "systemctl reload caddy" in caddy
+    assert "systemctl is-active --quiet caddy" in caddy
+    assert caddy.count("refuse") >= 3, "each failure has to be able to fail the deploy"
+
+
+def test_the_caddy_step_never_validates_outside_the_units_environment() -> None:
+    """`caddy validate` run from the deploy has no CF_API_TOKEN, so the tls block it reads
+    refuses a config that is correct. The reload validates with the unit's own environment."""
+    assert "caddy validate" not in script()
+
+
+def test_the_caddy_step_runs_after_the_config_install_and_before_the_restart() -> None:
+    caddy = order(step_holding("/etc/caddy/Caddyfile"))
+    units = order(step_holding("infra && ./install.sh"))
+    restart = order(step_holding("systemctl restart glasswell-api"))
+
+    assert units < caddy < restart
+
+
+def test_the_scheduler_step_starts_the_timer_and_never_the_service() -> None:
+    """A tick reads the whole registry and every source's poll evidence; a deploy step must
+    not wait on it, and while every row observes there is nothing to launch either way."""
+    body = steps()[step_holding("glasswell-scheduler.timer")]
+
+    assert "systemctl start glasswell-scheduler.timer" in body
+    assert "systemctl start glasswell-scheduler.service" not in script()

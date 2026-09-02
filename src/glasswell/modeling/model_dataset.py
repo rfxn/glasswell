@@ -18,6 +18,7 @@ from uuid import uuid4
 import polars as pl
 import psycopg
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import resolve_environment
 from glasswell.lineage.as_of import (
     read_model_context_snapshot,
@@ -1142,7 +1143,7 @@ def build_model_dataset(
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build the P3 model-ready artifact family.")
-    parser.add_argument("--dsn", required=True)
+    add_dsn_argument(parser)
     parser.add_argument("--feature-matrix", required=True)
     parser.add_argument("--feature-coverage", required=True)
     parser.add_argument("--eval-vintage", required=True)
@@ -1157,6 +1158,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--env-id", default=None)
     parser.add_argument("--code-version", default=None)
     arguments = parser.parse_args(argv)
+    arguments.dsn = resolve_dsn(arguments.dsn)
     origins = tuple(date.fromisoformat(value) for value in arguments.origin) or DEFAULT_ORIGINS
     with psycopg.connect(arguments.dsn) as connection:
         environment = resolve_environment(

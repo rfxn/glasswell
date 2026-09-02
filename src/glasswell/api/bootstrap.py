@@ -30,6 +30,7 @@ from glasswell.api.accounts import (
     set_password,
 )
 from glasswell.api.principal import utc_now
+from glasswell.db.dsn import DSN_ENV, FALLBACK_DSN_ENV
 
 DEFAULT_DSN = "postgresql:///glasswell?host=/var/run/postgresql"
 ACTOR = "glasswell-owner-bootstrap"
@@ -38,7 +39,12 @@ RESET_ACTOR = "glasswell-owner-reset"
 
 def _parser(description: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("--dsn", default=os.environ.get("GLASSWELL_DSN", DEFAULT_DSN))
+    parser.add_argument(
+        "--dsn",
+        default=os.environ.get(DSN_ENV) or os.environ.get(FALLBACK_DSN_ENV) or DEFAULT_DSN,
+        help=f"database DSN; defaults to ${DSN_ENV}, then ${FALLBACK_DSN_ENV}, then the"
+        " password-free socket DSN the host uses",
+    )
     parser.add_argument("--username", required=True)
     return parser
 

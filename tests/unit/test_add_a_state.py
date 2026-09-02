@@ -33,7 +33,7 @@ MIGRATIONS = SOURCE / "db" / "migrations"
 # written after it is this track's contemporary or later, and has no such excuse.
 APPLIED_HISTORY_CEILING = 71
 
-PYTHON_TREES = ("marts", "api/routers", "status", "lineage")
+PYTHON_TREES = ("marts", "api/routers", "status", "lineage", "scheduler")
 # The package root as well as the four trees: `status_resolution.py` sat outside every one of
 # them and carried `{"30": "cr_nm_wellhistory_status_vocab_2"}` for exactly that reason.
 PACKAGE_ROOT_FILES = ("identity.py", "lengths.py", "status_resolution.py", "units.py")

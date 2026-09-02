@@ -28,6 +28,7 @@ import httpx
 import polars as pl
 import psycopg
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.arcgis import arcgis_rest_paginate
 from glasswell.ingest.base import record_vintage_day, resolve_environment
 from glasswell.lineage import (
@@ -400,7 +401,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Capture the NM OCD public wells layer into staging."
     )
-    parser.add_argument("--dsn", required=True)
+    add_dsn_argument(parser)
     parser.add_argument("--service-url", default=SERVICE_URL)
     parser.add_argument("--raw-root", default=None)
     parser.add_argument("--env-id", default=None, help="override the fingerprinted env id")
@@ -411,6 +412,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="re-parse from the stored bytes after a rule or schema change",
     )
     arguments = parser.parse_args(argv)
+    arguments.dsn = resolve_dsn(arguments.dsn)
 
     with durable_fetch_attempts(arguments.dsn), psycopg.connect(arguments.dsn) as connection:
         environment = resolve_environment(

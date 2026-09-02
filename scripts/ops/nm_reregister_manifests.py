@@ -22,6 +22,7 @@ from typing import Any
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.lineage.errors import ManifestConflict
 from glasswell.lineage.ids import manifest_id
 from glasswell.lineage.manifests import owning_slot, register_manifest
@@ -133,7 +134,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Re-register sealed raw-zone artifacts from their sidecars."
     )
-    parser.add_argument("--dsn", required=True, help="target database; name it, never default it")
+    # Optional, like every other entry point: a DSN on an argument list is readable in
+    # /proc and lands in shell history. The hazard this tool was written against -- two
+    # databases one letter apart -- is what --expect-database refuses on, and it refuses
+    # on the database the connection actually resolved rather than on what was typed.
+    add_dsn_argument(parser)
     parser.add_argument(
         "--sidecar",
         required=True,
@@ -145,7 +150,8 @@ def main(argv: list[str] | None = None) -> int:
         "--expect-database",
         default=None,
         metavar="NAME",
-        help="refuse to run unless --dsn names this database; a rule the tool enforces",
+        help="refuse to run unless the resolved DSN names this database; a rule the tool"
+        " enforces, and the reason the DSN itself does not have to be typed",
     )
     parser.add_argument(
         "--dry-run",
@@ -153,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
         help="validate every sidecar and report the manifest ids, committing nothing",
     )
     args = parser.parse_args(argv)
+    args.dsn = resolve_dsn(args.dsn)
 
     paths = [Path(sidecar) for sidecar in args.sidecar]
     try:
@@ -164,13 +171,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         target = conninfo_to_dict(args.dsn)
     except psycopg.ProgrammingError as error:
-        print(f"error: --dsn is unparseable: {error}", file=sys.stderr)
+        print(f"error: the resolved DSN is unparseable: {error}", file=sys.stderr)
         return 1
     dbname = target.get("dbname")
     # glasswell and glasswell_d1 are one letter apart and only one of them is production.
     if args.expect_database is not None and dbname != args.expect_database:
         print(
-            f"error: --dsn names database {dbname!r}, not {args.expect_database!r}",
+            f"error: the resolved DSN names database {dbname!r},"
+            f" not {args.expect_database!r}",
             file=sys.stderr,
         )
         return 1
