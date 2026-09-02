@@ -373,6 +373,10 @@ CO_RULES: tuple[dict[str, object], ...] = (
             "resolved_by": "glasswell.ingest.shapefile:epsg_from_prj",
             "storage_epsg": 4326,
             "on_unresolved": "refuse",
+            # Recorded, not assumed: the parse resolves the shipped .prj and refuses when it
+            # resolves to anything but this, so a silently re-projected archive is a refusal
+            # rather than a fleet of points in the wrong place.
+            "measured_source_epsg": 26913,
             "declared_datum": "D North American 1983",
             "coordinate_columns_populated": HEADER_FEATURES,
         },

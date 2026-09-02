@@ -1,0 +1,11 @@
+DocNum,ReportMonth,ReportYear,DaysProduced,AcceptedDate,Revised,OpName,OpNumber,FacilityId,ApiCountyCode,ApiSequenceNumber,ApiSidetrack,Well,WellStatus,FormationCode,OilProduced,OilSales,OilAdjustment,OilGravity,GasProduced,GasSales,GasBtuSales,GasUsedOnLease,GasShrinkage,GasPressureTubing,GasPressureCasing,WaterProduced,WaterPressureTubing,WaterPressureCasing,FlaredVented,BomInvent,EomInvent
+3123,1,1999,0,07/06/1999 00:00:00,,PETRO-CANADA RESOURCES (USA) INC,72085,200028,001,05029,00,"Noonen, Michael 1",SI,"JSND  ",,,,,,,,,,,,,,,,,
+3220,2,1999,0,07/06/1999 00:00:00,,PETRO-CANADA RESOURCES (USA) INC,72085,200028,001,05029,00,"Noonen, Michael 1",SI,"JSND  ",,,,,,,,,,,,,,,,,
+3714,3,1999,0,07/06/1999 00:00:00,,PETRO-CANADA RESOURCES (USA) INC,72085,200028,001,05029,00,"Noonen, Michael 1",SI,"JSND  ",,,,,,,,,,,,,,,,,
+4129,4,1999,0,07/15/1999 00:00:00,,PETRO-CANADA RESOURCES (USA) INC,72085,200028,001,05029,00,"Noonen, Michael 1",SI,"JSND  ",,,,,,,,,,,,,,,,,
+4844,5,1999,0,08/04/1999 00:00:00,,PETRO-CANADA RESOURCES (USA) INC,72085,200028,001,05029,00,"Noonen, Michael 1",SI,"JSND  ",,,,,,,,,,,,,,,,,
+825390,6,1999,0,10/15/1999 00:00:00,,PETRO-CANADA RESOURCES (USA) INC,72085,200028,001,05029,00,"Noonen, Michael 1",SI,"JSND  ",,,,,,,,,,,,,,,,,
+826967,7,1999,0,10/18/1999 00:00:00,,PETRO-CANADA RESOURCES (USA) INC,72085,200028,001,05029,00,"Noonen, Michael 1",SI,"JSND  ",,,,,,,,,,,,,,,,,
+828073,8,1999,0,12/09/1999 00:00:00,,PETRO-CANADA RESOURCES (USA) INC,72085,200028,001,05029,00,"Noonen, Michael 1",SI,"JSND  ",,,,,,,,,,,,,,,,,
+828565,9,1999,0,10/16/2000 00:00:00,,PETRO-CANADA RESOURCES (USA) INC,72085,200028,001,05029,00,"Noonen, Michael 1",SI,"JSND  ",,,,,,,,,,,,,,,,,
+1032488,10,1999,0,01/12/2000 00:00:00,,PETRO-CANADA RESOURCES (USA) INC,72085,200028,001,05029,00,"Noonen, Michael 1",SI,"JSND  ",,,,,,,,,,,,,,,,,

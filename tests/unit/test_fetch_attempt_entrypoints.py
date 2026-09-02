@@ -29,6 +29,8 @@ FETCH_COMMANDS = (
     "blm_plss.py",
     "nm_c115b.py",
     "eia_boundaries.py",
+    "co_ecmc_gis.py",
+    "co_ecmc_production.py",
 )
 
 
