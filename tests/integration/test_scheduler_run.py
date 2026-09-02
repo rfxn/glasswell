@@ -19,7 +19,14 @@ import pytest
 from glasswell.lineage.schedules import load_schedules
 from glasswell.scheduler import cli
 from glasswell.scheduler.plan import hour_of, plan_tick
-from glasswell.scheduler.runner import Runner, reconcile, take_job_lock, take_session_lock
+from glasswell.scheduler.runner import (
+    Runner,
+    control_connection,
+    reconcile,
+    take_job_lock,
+    take_session_lock,
+)
+from glasswell.scheduler.units import installed_timer_owned_entry_points
 from glasswell.seed import seed_all
 
 pytestmark = pytest.mark.integration
@@ -68,6 +75,30 @@ class StubControl:
 
     def reset_failed(self, unit: str) -> None:
         self.reset.append(unit)
+
+
+# Recorded from VM 111 (systemd 255) with the same --property= list runner.py sends. An
+# unknown unit does not answer with empty values: it answers Result=success and
+# ExecMainStatus=0, so a lost run would have been closed `ran`. LoadState is the only
+# property that tells the two apart.
+SYSTEMD_UNKNOWN_UNIT = {
+    "Result": "success",
+    "ExecMainExitTimestamp": "",
+    "ExecMainStatus": "0",
+    "MemoryPeak": "[not set]",
+    "LoadState": "not-found",
+    "ActiveState": "inactive",
+    "SubState": "dead",
+}
+SYSTEMD_FINISHED_UNIT = {
+    "Result": "success",
+    "ExecMainExitTimestamp": "Wed 2026-09-02 17:15:52 UTC",
+    "ExecMainStatus": "0",
+    "MemoryPeak": "50974720",
+    "LoadState": "loaded",
+    "ActiveState": "inactive",
+    "SubState": "dead",
+}
 
 
 class Ticking:
@@ -301,7 +332,7 @@ def test_a_unit_that_no_longer_exists_closes_the_row_interrupted(seeded) -> None
         )
     seeded.commit()
 
-    reconciliation = reconcile(seeded, StubControl({}), now=NOW)
+    reconciliation = reconcile(seeded, StubControl(SYSTEMD_UNKNOWN_UNIT), now=NOW)
 
     assert reconciliation.in_flight == frozenset()
     recorded = runs(seeded, FAKE_JOB)[0]
@@ -435,3 +466,86 @@ def test_the_planner_runs_as_the_scheduler_role_without_insufficient_privilege(s
             cursor.execute("reset role")
 
     assert any(entry.job_id == FAKE_JOB for entry in plan.entries)
+
+
+def test_the_double_run_guard_reads_rows_even_while_a_tick_holds_the_session_lock(
+    seeded, dsn, monkeypatch
+) -> None:
+    """The permanent guard is a read; making it wait on the tick lock is how it passes
+    vacuously on the one deploy where a tick is running -- which is every deploy, because
+    step 7c starts the timer immediately before the gate."""
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.scheduled_jobs"
+            " (job_id, label, kind, entry_point, anchor_source_id, run_as, rationale)"
+            " values ('marts_neighbors_probe', 'Planted neighbour index', 'mart',"
+            "         'glasswell.marts.neighbors', 'fracfocus_csv', 'glasswell',"
+            "         'a planted row the guard must refuse')"
+        )
+        cursor.execute(
+            "insert into lineage.job_schedules"
+            " (job_id, effective_from, published_at, rule_id, trigger, launch_mode,"
+            "  cadence_interval, cadence_note, memory_max, timeout_seconds)"
+            " values ('marts_neighbors_probe', current_date, current_date,"
+            "         'cr_job_cadence_marts_neighbors_1', 'cadence', 'launch',"
+            "         interval '35 days', 'a planted launch row', '6G', 3600)"
+        )
+    seeded.commit()
+
+    # The tree's units and pyproject, not the host's: the resolution has its own tests and
+    # this one is about the lock.
+    monkeypatch.setattr(
+        cli,
+        "installed_timer_owned_entry_points",
+        lambda: installed_timer_owned_entry_points(
+            ROOT / "infra" / "systemd", ROOT / "pyproject.toml"
+        ),
+    )
+    holder = control_connection(os.environ["GLASSWELL_DSN"])
+    try:
+        assert take_session_lock(holder) is True
+
+        code = cli.main(["--double-run-check"], control=StubControl())
+    finally:
+        holder.close()
+
+    assert code == 1, "a held tick lock made the permanent guard report a clean registry"
+
+
+def test_the_double_run_guard_refuses_an_empty_registry_rather_than_reporting_it_clean(
+    db, monkeypatch
+) -> None:
+    """The other way to pass vacuously: no rows resolved at all is not the same as no
+    launch row resolved."""
+    monkeypatch.setenv("GLASSWELL_DSN", db.info.dsn + f" password={db.info.password}")
+
+    assert cli.main(["--double-run-check"], control=StubControl()) == 1
+
+
+def test_a_unit_that_finished_is_closed_from_its_own_evidence_and_not_lost(seeded) -> None:
+    """The other half of the same recorded pair: a loaded unit that exited 0 really did run."""
+    register_probe_job(seeded)
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.job_runs"
+            " (run_id, job_id, planned_at, started_at, launched_by, transient_unit)"
+            " values ('jrn_0000000000000000000000000E', %s, %s, %s, 'scheduler', 'gw-job-z')",
+            (FAKE_JOB, NOW - timedelta(hours=2), NOW - timedelta(hours=2)),
+        )
+    seeded.commit()
+
+    reconcile(seeded, StubControl(SYSTEMD_FINISHED_UNIT), now=NOW)
+
+    recorded = runs(seeded, FAKE_JOB)[0]
+    assert (recorded["outcome"], recorded["refusal_code"]) == ("ran", None)
+
+
+def test_systemd_answers_a_missing_unit_with_success_which_is_why_loadstate_decides(
+    seeded,
+) -> None:
+    """The premise the old code rested on -- "an unknown unit answers with empty values" --
+    is false on the host, and the value it answers with is `success`."""
+    assert SYSTEMD_UNKNOWN_UNIT["Result"] == "success"
+    assert SYSTEMD_UNKNOWN_UNIT["ExecMainStatus"] == "0"
+    assert SYSTEMD_UNKNOWN_UNIT["ActiveState"] == "inactive"
+    assert SYSTEMD_UNKNOWN_UNIT["LoadState"] != SYSTEMD_FINISHED_UNIT["LoadState"]

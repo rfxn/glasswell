@@ -12,8 +12,14 @@ bytes, so a divergence means the inputs are not the inputs.
 disposable scratch database on the same host. Every command below takes its database from
 `GLASSWELL_DSN`, or states `-d` where it is a `psql` invocation; no command carries a DSN on
 its own argument list, because an argument list is readable in `/proc` and lands in shell
-history. Export the variable once, check it with `echo "$GLASSWELL_DSN"` before you start, and
-if any command in the session ran against the wrong one, stop and re-verify what it touched.
+history. Export it once per session, before anything else:
+
+```bash
+export GLASSWELL_DSN='postgresql:///glasswell?host=/var/run/postgresql'
+echo "$GLASSWELL_DSN"          # read it back before you start
+```
+
+If any command in the session ran against the wrong one, stop and re-verify what it touched.
 
 ---
 
@@ -326,6 +332,7 @@ pgrep -a pg_restore || echo "no restore drill running"
 
 sudo systemd-run --unit=t3-nm-stage --collect \
   --property=User=glasswell --property=Group=glasswell \
+  --property=EnvironmentFile=/etc/glasswell/db.env \
   --property=TimeoutStartSec=7200 --property=MemoryMax=6G \
   --setenv=GLASSWELL_STAGING_ROOT=/data/staging \
   /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_ocd \
@@ -401,6 +408,7 @@ exclusive required group and the parser will reject the shorter spelling.
 ```bash
 sudo systemd-run --unit=t3-nm-promote --collect \
   --property=User=glasswell --property=Group=glasswell \
+  --property=EnvironmentFile=/etc/glasswell/db.env \
   --property=TimeoutStartSec=14400 --property=MemoryMax=6G \
   --setenv=GLASSWELL_STAGING_ROOT=/data/staging \
   /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_ocd \
@@ -494,9 +502,9 @@ is safe and idempotent for insert-only rows.
 ```bash
 sudo systemd-run --unit=t3-nm-dims --collect \
   --property=User=glasswell --property=Group=glasswell \
+  --property=EnvironmentFile=/etc/glasswell/db.env \
   --property=TimeoutStartSec=1800 --property=MemoryMax=4G \
-  /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_dims \
-   
+  /opt/glasswell/venv/bin/python -m glasswell.ingest.nm_dims
 ```
 
 Expected: observations read **426,529**; quarantined **0**; identity 426,529 = 426,529 + 0;

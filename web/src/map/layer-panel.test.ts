@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { censusOf, loadCensus, resetCensus } from "./census.ts";
 import { LAYER_GROUPS } from "./groups.ts";
+import { JURISDICTIONS } from "./jurisdictions.generated.ts";
 import { createLayerPanel } from "./layer-panel.ts";
 import { createPillStrip } from "./pills.ts";
 import { LAYERS, defaultLayerSet, familyMembers, groupEntries } from "./registry.ts";
@@ -77,6 +79,76 @@ describe("the layer panel", () => {
     const wells = rowFor(handle.element, "wells")!;
     expect(wells.querySelector(".gw-layer-sub")?.textContent).toContain("ND DMR GIS");
     expect(wells.querySelector(".gw-layer-badge")?.textContent?.toLowerCase()).toBe("official");
+  });
+
+  it("fills a Wells row's count from the served registry, with the handle that resolves it", async () => {
+    // v0.76 D3: the panel said Texas held 355,463 wells while /v1/jurisdictions served
+    // 359,421 in the same session, and only North Dakota's row carried a handle to ask with.
+    resetCensus(
+      censusOf([
+        {
+          jurisdiction_code: JURISDICTIONS.TX.code,
+          well_count: { value: "359421", d: "drv_tx_counts#jurisdiction=TX" },
+          measured_on: "2026-09-02",
+          well_counts_by_status: [],
+        },
+      ]),
+    );
+    const { handle } = panel();
+    await loadCensus();
+
+    const subtitle = rowFor(handle.element, "tx-wells")!.querySelector<HTMLElement>(".gw-layer-sub")!;
+    expect(subtitle.textContent).toContain("359,421 points");
+    const count = subtitle.querySelector<HTMLButtonElement>(".gw-layer-count-handle")!;
+    expect(count.dataset["handle"]).toBe("drv_tx_counts#jurisdiction=TX");
+    expect(count.hidden).toBe(false);
+    resetCensus();
+  });
+
+  it("states no number for a figure with no handle, since that is a naked number", async () => {
+    // The rule the row exists to keep: a count on this panel resolves or it is not stated. The
+    // wire cannot omit `d` today — the ledger's derivation_id is not null — so this is the
+    // guard rather than a reproduction, and it is the one clause that makes the comment true.
+    resetCensus(
+      censusOf([
+        {
+          jurisdiction_code: JURISDICTIONS.TX.code,
+          well_count: { value: "359421" },
+          measured_on: "2026-09-02",
+          well_counts_by_status: [],
+        },
+      ]),
+    );
+    const { handle } = panel();
+    await loadCensus();
+
+    const subtitle = rowFor(handle.element, "tx-wells")!.querySelector<HTMLElement>(".gw-layer-sub")!;
+    expect(subtitle.textContent).not.toContain("359,421");
+    expect(subtitle.querySelector<HTMLButtonElement>(".gw-layer-count-handle")!.hidden).toBe(true);
+    resetCensus();
+  });
+
+  it("builds a count handle only for a row that states a served count", () => {
+    const { handle } = panel();
+    const handles = handle.element.querySelectorAll(".gw-layer-count-handle");
+
+    expect(handles).toHaveLength(LAYERS.filter((layer) => layer.subtitle.includes("{count}")).length);
+    expect(handles.length).toBeGreaterThan(0);
+  });
+
+  it("states no number in a Wells subtitle until one is served, rather than a stale literal", () => {
+    resetCensus();
+    const { handle } = panel();
+
+    for (const id of ["tx-wells", "nm-wells", "mt-wells"]) {
+      const subtitle = rowFor(handle.element, id)!.querySelector<HTMLElement>(".gw-layer-sub")!;
+      expect(subtitle.textContent, id).not.toMatch(/\d[\d,]*\s+points/);
+      expect(subtitle.textContent, id).not.toContain("{count}");
+      expect(
+        subtitle.querySelector<HTMLButtonElement>(".gw-layer-count-handle")!.hidden,
+        id,
+      ).toBe(true);
+    }
   });
 
   it("names both regulators under the one row that draws both of their files", () => {
@@ -761,7 +833,7 @@ describe("the wells parent", () => {
     const labels = [...familyBody(handle.element, "wells").querySelectorAll(".gw-layer-label")].map(
       (node) => node.textContent,
     );
-    expect(labels).toEqual(["North Dakota", "Texas", "New Mexico", "Montana"]);
+    expect(labels).toEqual(["North Dakota", "Texas", "New Mexico", "Montana", "Colorado"]);
     expect(
       familyOf(handle.element, "wells").querySelector(".gw-layer-family-name .gw-layer-label")!
         .textContent,

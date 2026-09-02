@@ -12,7 +12,8 @@ from glasswell.lineage.schedules import (
     ScheduledJob,
     ScheduleRegistry,
 )
-from glasswell.scheduler.plan import hour_of, monthly_occurrence, order_jobs
+from glasswell.scheduler.cli import _exit_code
+from glasswell.scheduler.plan import PlanEntry, hour_of, monthly_occurrence, order_jobs
 
 pytestmark = pytest.mark.unit
 
@@ -162,3 +163,48 @@ def test_the_status_router_reads_the_moved_module_and_not_the_health_router() ->
     assert "source_health_data" not in status.split("from glasswell.api.routers.health import")[
         1
     ].split("\n")[0]
+
+
+def registry_with_codes(*codes: RefusalCode) -> ScheduleRegistry:
+    return ScheduleRegistry(
+        knowledge_as_of=DAY.date(),
+        valid_as_of=DAY.date(),
+        by_job={},
+        refusal_codes={code.code: code for code in codes},
+    )
+
+
+def refusal(code: str) -> PlanEntry:
+    return PlanEntry("probe", DAY, "refused", code, "fixture")
+
+
+def test_the_tick_reads_its_severity_from_the_registry_and_not_from_a_second_list() -> None:
+    """M-11: which class a code carries is a decision. A code added to lineage.refusal_codes
+    as informational must not page someone because a constant in the CLI never heard of it."""
+    registry = registry_with_codes(
+        RefusalCode("upstream_quiet", "informational", "the publisher has nothing new"),
+        RefusalCode("waiting_on_backfill", "waiting", "a backfill is still running"),
+        RefusalCode("mart_corrupt", "fault", "the mart cannot be rebuilt"),
+    )
+
+    assert _exit_code([refusal("upstream_quiet")], registry) == 0
+    assert _exit_code([refusal("waiting_on_backfill")], registry) == 0
+    assert _exit_code([refusal("mart_corrupt")], registry) == 1
+
+
+def test_a_refusal_the_registry_cannot_class_is_treated_as_a_fault() -> None:
+    """An unclassed code is a vocabulary the page cannot render either; failing closed is the
+    only reading that does not quietly stop alerting."""
+    registry = registry_with_codes(RefusalCode("known", "informational", "known"))
+
+    assert _exit_code([refusal("never_registered")], registry) == 1
+
+
+def test_a_failed_or_interrupted_run_still_exits_non_zero() -> None:
+    registry = registry_with_codes(
+        RefusalCode("scheduler_lost_unit", "fault", "the unit is gone"),
+    )
+    ran = PlanEntry("probe", DAY, "would_run")
+
+    assert _exit_code([ran], registry) == 0
+    assert _exit_code([refusal("scheduler_lost_unit")], registry) == 1

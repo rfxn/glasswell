@@ -583,9 +583,11 @@ CO_RULES: tuple[dict[str, object], ...] = (
                 "no Colorado spacing-unit source is in scope",
                 "the modelling that produces training_support is unbuilt",
             ],
-            "module_function": "glasswell.marts.producing:inventory_rule_for",
+            "module_function": "glasswell.marts.producing:no_well_series_states",
             "contract_note": "A registered refusal, not an omitted row: a consumer can tell"
-            " 'no inventory decision' from 'registry not loaded'.",
+            " 'no inventory decision' from 'registry not loaded'. The symbol is the"
+            " producing mart's own reader of which jurisdictions have no well series,"
+            " which is the shape of refusal this row is: registered, and answering.",
         },
         "rule": (
             "Colorado serves no undrilled inventory. The refusal is registered rather than"

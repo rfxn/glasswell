@@ -6,7 +6,7 @@ import type { DimensionCounts, VocabularyLink } from "./counts.ts";
 import { PRODUCING_CLASSES, PRODUCING_RULINGS, producingHref, producingNote } from "./producing.ts";
 import type { ProducingCounts } from "./producing.ts";
 import { PROVENANCE_RULE } from "./provenance.ts";
-import { loadCensus, measuredWellCount } from "./census.ts";
+import { census, loadCensus, measuredWellCount } from "./census.ts";
 import { JURISDICTION_LIST } from "./jurisdictions.generated.ts";
 import { STATUS_CLASSES, STATUS_VOCAB_RULES, UNMAPPED_STATUS, statusClass } from "./status.ts";
 import type { StatusClass } from "./status.ts";
@@ -18,6 +18,7 @@ const PRODUCING_CLASS_TERM = "gt_producing_class";
 const PENDING_MARK = "…";
 const ABSENT_MARK = "—";
 const FAULT_COPY = "Counts for this area could not be read.";
+const UNMEASURED_COPY = "No jurisdiction has measured wells in this class yet.";
 const PARTIAL_NOTE =
   "Status classes recede at low zoom and point tiles are thinned below zoom 8." +
   " The counts above are the data's, not the canvas's.";
@@ -479,6 +480,14 @@ export function createLegend(options: LegendOptions): LegendHandle {
       const handle = row.querySelector<HTMLButtonElement>(".gw-lg-handle");
       const derivation = mode === "ready" ? handles[id] : undefined;
       if (handle) setExplainHandle(handle, derivation ?? null);
+      // Owned here rather than set once by the census pass, and only on a measured zero: a
+      // class the census carries no row for is unmeasured, and a row hidden for that reason
+      // takes its own filter switch off the key with it.
+      const measured = measuredWellCount(id);
+      const unmeasured = measured === null && census().total !== null;
+      row.hidden = measured === 0;
+      if (unmeasured) row.setAttribute("data-unmeasured", "true");
+      else row.removeAttribute("data-unmeasured");
       const outOfScale = zoomNow < status.minZoom;
       const box = row.querySelector<HTMLInputElement>("input");
       if (box) box.disabled = outOfScale;
@@ -487,7 +496,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
         row.title = `Zoom to ${status.minZoom} to see ${status.label.toLowerCase()} wells`;
       } else {
         row.removeAttribute("data-out-of-scale");
-        row.title = status.note;
+        row.title = unmeasured ? `${status.note} ${UNMEASURED_COPY}` : status.note;
       }
     }
     extentCount.textContent = extentCellText();
@@ -624,8 +633,11 @@ export function createLegend(options: LegendOptions): LegendHandle {
     totalCount = total ?? null;
     zoomNow = zoom;
     const unmapped = rows.get(UNMAPPED_STATUS.id);
+    // Among the status rows, not after the producing group: it is one of the classes the
+    // canvas paints, and listed below a different vocabulary it lands outside the key's own
+    // scrollport — reachable only by scrolling past a block that answers another question.
     if (counts[UNMAPPED_STATUS.id] !== undefined && unmapped && unmapped.parentNode !== body) {
-      body.insertBefore(unmapped, partial);
+      body.insertBefore(unmapped, producing);
       syncTitle();
     }
     render();
@@ -642,16 +654,15 @@ export function createLegend(options: LegendOptions): LegendHandle {
   }
 
   setVocabulary(STATUS_VOCAB_RULES.map((rule) => ({ rule, href: null })));
-  // What the legend may list used to be four undated count maps compiled into the bundle.
-  // It is a served measurement now: a class the registry has measured at zero everywhere has
-  // never been drawn, so listing it would promise a colour the canvas cannot produce. Hidden
-  // only once the census has settled and only on an explicit zero — an unknown census hides
-  // nothing, so a slow or degraded /v1/jurisdictions never empties the legend.
-  void loadCensus().then(() => {
-    for (const [id, row] of rows) {
-      if (measuredWellCount(id) === 0) row.hidden = true;
-    }
-  });
+  // What the legend may list used to be four undated count maps compiled into the bundle. It
+  // is a served measurement now, and the writer measures every registered class rather than
+  // only the ones it finds, so a zero here is a jurisdiction that was counted and holds none —
+  // a class at zero everywhere has never been drawn, and listing it would promise a colour the
+  // canvas cannot produce. A class the census does not carry was not measured (a ledger day
+  // written before that writer, which is every day before v0.77) and keeps its row. The census
+  // only arrives here; what it means for a row is renderRows's, so no stale `hidden` survives
+  // a viewport and no row is hidden by a census that never came.
+  void loadCensus().then(render);
   syncTitle();
   render();
   return {

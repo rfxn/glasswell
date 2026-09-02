@@ -287,3 +287,86 @@ class TestAssertReceiptIsSafe:
 
     def test_an_absent_receipt_fails(self, tmp_path: Path) -> None:
         assert self._failures(tmp_path) >= 1
+
+
+GUARD_START = "    # The double-run guard's own connection."
+GUARD_END = "    # The v0.78 posture, which inverts at the flag flip"
+
+
+def test_the_double_run_guard_is_given_a_dsn_from_the_file_and_not_from_the_environment(
+    tmp_path: Path,
+) -> None:
+    """The deploy invokes verify.sh over a non-interactive ssh command, whose environment
+    carries no DSN at all: verify reaches PostgreSQL as `postgres` everywhere else. Without
+    this the permanent guard exits 1 on every deploy and reports a double-run hazard that is
+    not there."""
+    verify = VERIFY.read_text(encoding="utf-8")
+    fragment = _extract(verify, GUARD_START, GUARD_END)
+    env_file = tmp_path / "scheduler.env"
+    env_file.write_text(
+        "GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql&user=glasswell_scheduler\n"
+    )
+    stub = tmp_path / "python-stub"
+    stub.write_text(
+        '#!/bin/bash\n'
+        'if [[ " $* " == *" --timer-owned "* ]]; then\n'
+        '  printf "glasswell.marts.neighbors\\n"; exit 0\n'
+        'fi\n'
+        'printf "%s\\n" "${GLASSWELL_DSN:-UNSET}" > "$SEEN"\n'
+        '[[ -n ${GLASSWELL_DSN:-} ]] || { printf "no database DSN\\n"; exit 1; }\n'
+        'exit 0\n'
+    )
+    stub.chmod(0o755)
+    seen = tmp_path / "seen"
+    script = tmp_path / "guard.sh"
+    script.write_text(
+        _extract(verify, PRIMITIVES_START, PRIMITIVES_END)
+        + f'\nVENV_PY={stub}\nSCHEDULER_ENV={env_file}\n'
+        + fragment
+        + '\nprintf "failed=%s\\n" "$failed"\n'
+    )
+    result = subprocess.run(
+        ["/bin/bash", str(script)],
+        capture_output=True,
+        text=True,
+        env={"PATH": os.environ["PATH"], "SEEN": str(seen)},
+        check=False,
+    )
+
+    assert "failed=0" in result.stdout, result.stdout + result.stderr
+    assert seen.exists(), "the guard never ran"
+    assert seen.read_text().strip().startswith("postgresql:///glasswell"), seen.read_text()
+
+
+def test_the_guard_reports_a_missing_dsn_as_a_missing_dsn_and_not_as_a_double_run(
+    tmp_path: Path,
+) -> None:
+    """"could not connect" and "a launch row would double-run" are different facts, and the
+    second one is a claim about the registry."""
+    verify = VERIFY.read_text(encoding="utf-8")
+    env_file = tmp_path / "scheduler.env"
+    env_file.write_text("# no GLASSWELL_DSN here\n")
+    stub = tmp_path / "python-stub"
+    stub.write_text(
+        '#!/bin/bash\n'
+        'if [[ " $* " == *" --timer-owned "* ]]; then\n'
+        '  printf "glasswell.marts.neighbors\\n"; exit 0\n'
+        'fi\n'
+        'printf "no database DSN: set GLASSWELL_DSN or DATABASE_URL\\n"; exit 1\n'
+    )
+    stub.chmod(0o755)
+    script = tmp_path / "guard.sh"
+    script.write_text(
+        _extract(verify, PRIMITIVES_START, PRIMITIVES_END)
+        + f'\nVENV_PY={stub}\nSCHEDULER_ENV={env_file}\n'
+        + _extract(verify, GUARD_START, GUARD_END)
+    )
+    result = subprocess.run(
+        ["/bin/bash", str(script)], capture_output=True, text=True,
+        env={"PATH": os.environ["PATH"]}, check=False,
+    )
+
+    assert "FAIL" in result.stdout, result.stdout
+    assert "would double-run with an installed timer" not in result.stdout, (
+        "a guard that could not connect must not be reported as a registry hazard"
+    )

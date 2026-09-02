@@ -1284,7 +1284,7 @@
     key cr_co_production_entity_key_1 builds, which is what keeps two wellbores' volumes from
     being promoted as one series or quarantined as duplicates of each other.
   domain_tags: [identity, data-model]
-  related_terms: ["API-10 / API-12 / API-14", "Completion", "Conformance rule"]
+  related_terms: ["API-10 / API-12 / API-14", "Completion event", "Conformance rule"]
   source_refs: ["cr_co_production_entity_key_1", "canonical.well_completions"]
 
 - term: FormationCode
@@ -1297,7 +1297,7 @@
     step Texas needs. The code is stored as pool_reported, unmapped, so the pool rollup the
     well row discloses can always be read back to the codes it summed.
   domain_tags: [data-model, geology]
-  related_terms: ["Completion", "Pool", "ApiSidetrack"]
+  related_terms: ["Completion event", "Pool", "ApiSidetrack"]
   source_refs: ["canonical.well_completions.pool_reported", "cr_co_production_grain_1"]
 
 - term: Documented, no class

@@ -40,7 +40,6 @@ with_cloudflared=0
 enable_ingest=0
 enable_c115b=0
 enable_backup=0
-enable_scheduler=0
 for argument in "$@"; do
     case "$argument" in
         --with-postgres) with_postgres=1 ;;
@@ -50,9 +49,8 @@ for argument in "$@"; do
         --enable-ingest) enable_ingest=1 ;;
         --enable-c115b) enable_c115b=1 ;;
         --enable-backup) enable_backup=1 ;;
-        --enable-scheduler) enable_scheduler=1 ;;
         -h|--help)
-            printf 'usage: %s [--with-postgres] [--with-martin-config] [--with-caddy] [--with-cloudflared] [--enable-ingest] [--enable-c115b] [--enable-backup] [--enable-scheduler]\n' "${0##*/}"
+            printf 'usage: %s [--with-postgres] [--with-martin-config] [--with-caddy] [--with-cloudflared] [--enable-ingest] [--enable-c115b] [--enable-backup]\n' "${0##*/}"
             exit 0
             ;;
         *)
@@ -178,70 +176,79 @@ if [[ $with_postgres -eq 1 ]]; then
         printf '%s does not exist; postgres tuning not placed\n' "$PG_CONF_DIR" >&2
         exit 1
     fi
-
-    # The ident map that lets the root-run scheduler authenticate as glasswell_scheduler.
-    # Two files move, because a map is inert unless the matching pg_hba line names it, and
-    # both are read from the postmaster's in-memory copy — so an edit is inert until reload.
-    hba="$PG_ETC_DIR/pg_hba.conf"
-    ident="$PG_ETC_DIR/pg_ident.conf"
-    [[ -f $hba && -f $ident ]] || {
-        printf '%s or %s is missing; the ident map was not placed\n' "$hba" "$ident" >&2
-        exit 1
-    }
-    # Refuse BEFORE writing anything. A missing target line means the host does not
-    # authenticate the way this map assumes; two means an edit would pick one arbitrarily;
-    # one already carrying a different map means someone else owns that rule.
-    target_re='^[[:space:]]*local[[:space:]]+all[[:space:]]+all[[:space:]]+peer([[:space:]]|$)'
-    matches="$(grep -cE "$target_re" "$hba" || true)"  # grep exits 1 on zero matches
-    if [[ $matches -ne 1 ]]; then
-        printf '%s holds %s local all all peer lines; expected exactly one\n' \
-            "$hba" "$matches" >&2
-        exit 1
-    fi
-    existing_map="$(grep -E "$target_re" "$hba" | grep -oE 'map=[A-Za-z0-9_]+' || true)"
-    if [[ -n $existing_map && $existing_map != "map=$PG_IDENT_MAP" ]]; then
-        printf '%s already carries %s on the local all/all rule\n' "$hba" "$existing_map" >&2
-        exit 1
-    fi
-
-    install -d -o root -g root -m 0755 "$PG_IDENT_DROPIN_DIR"
-    install -o root -g postgres -m 0640 "$INFRA_DIR/postgres/pg_ident.d/glasswell.conf" \
-        "$PG_IDENT_DROPIN_DIR/glasswell.conf"
-    include_line="include_if_exists 'pg_ident.d/glasswell.conf'"
-    if ! grep -qxF "$include_line" "$ident"; then
-        printf '\n# glasswell: the root-to-role map the scheduler needs\n%s\n' \
-            "$include_line" >> "$ident"
-        printf 'added the pg_ident include line to %s\n' "$ident"
-    fi
-    if [[ -z $existing_map ]]; then
-        # `@` and not `|`: the pattern carries an alternation, and a pipe delimiter ends
-        # the s command inside it.
-        command sed -i -E "s@$target_re@& map=$PG_IDENT_MAP@" "$hba"
-        printf 'added map=%s to the local all/all rule in %s\n' "$PG_IDENT_MAP" "$hba"
-    fi
-
-    # The reload is what makes any of the above true. Without it the first tick fails peer
-    # authentication up to an hour after a deploy that exited 0, because the deploy starts
-    # the timer and not the service.
-    systemctl reload postgresql || {
-        printf 'postgresql did not reload; the ident map is written but not live\n' >&2
-        exit 1
-    }
-    # A malformed pg_hba.conf is tolerated on reload and fatal on restart, and the tuning
-    # drop-in above already tells the operator to restart. Read PostgreSQL's own view of what
-    # it parsed rather than trusting the bytes on disk.
-    hba_errors="$(sudo -u postgres psql -tAc \
-        "select count(*) from pg_hba_file_rules where error is not null")"
-    ident_errors="$(sudo -u postgres psql -tAc \
-        "select count(*) from pg_ident_file_mappings where error is not null")"
-    if [[ $hba_errors != 0 || $ident_errors != 0 ]]; then
-        printf 'postgres reports %s hba and %s ident parse errors after the reload\n' \
-            "$hba_errors" "$ident_errors" >&2
-        exit 1
-    fi
-    printf 'placed the %s ident map and reloaded postgresql — both files parse clean\n' \
-        "$PG_IDENT_MAP"
 fi
+
+# The ident map that lets the root-run scheduler authenticate as glasswell_scheduler, placed
+# on every run and not behind a flag: deploy.sh runs ./install.sh with no arguments, so a step
+# behind --with-postgres never reaches the host. The tuning drop-in above is one-time
+# provisioning and stays there; this is what the scheduler needs on every deploy. Two files
+# move, because a map is inert unless the matching pg_hba line names it, and both are read
+# from the postmaster's in-memory copy, so an edit is inert until the reload below.
+[[ -d $PG_ETC_DIR ]] || {
+    printf '%s does not exist: PostgreSQL is not installed here, and the scheduler cannot\n' \
+        "$PG_ETC_DIR" >&2
+    printf 'authenticate without its ident map\n' >&2
+    exit 1
+}
+hba="$PG_ETC_DIR/pg_hba.conf"
+ident="$PG_ETC_DIR/pg_ident.conf"
+[[ -f $hba && -f $ident ]] || {
+    printf '%s or %s is missing; the ident map was not placed\n' "$hba" "$ident" >&2
+    exit 1
+}
+# Refuse BEFORE writing anything. A missing target line means the host does not
+# authenticate the way this map assumes; two means an edit would pick one arbitrarily;
+# one already carrying a different map means someone else owns that rule.
+target_re='^[[:space:]]*local[[:space:]]+all[[:space:]]+all[[:space:]]+peer([[:space:]]|$)'
+matches="$(grep -cE "$target_re" "$hba" || true)"  # grep exits 1 on zero matches
+if [[ $matches -ne 1 ]]; then
+    printf '%s holds %s local all all peer lines; expected exactly one\n' \
+        "$hba" "$matches" >&2
+    exit 1
+fi
+existing_map="$(grep -E "$target_re" "$hba" | grep -oE 'map=[A-Za-z0-9_]+' || true)"
+if [[ -n $existing_map && $existing_map != "map=$PG_IDENT_MAP" ]]; then
+    printf '%s already carries %s on the local all/all rule\n' "$hba" "$existing_map" >&2
+    exit 1
+fi
+
+install -d -o root -g root -m 0755 "$PG_IDENT_DROPIN_DIR"
+install -o root -g postgres -m 0640 "$INFRA_DIR/postgres/pg_ident.d/glasswell.conf" \
+    "$PG_IDENT_DROPIN_DIR/glasswell.conf"
+include_line="include_if_exists 'pg_ident.d/glasswell.conf'"
+if ! grep -qxF "$include_line" "$ident"; then
+    printf '\n# glasswell: the root-to-role map the scheduler needs\n%s\n' \
+        "$include_line" >> "$ident"
+    printf 'added the pg_ident include line to %s\n' "$ident"
+fi
+if [[ -z $existing_map ]]; then
+    # `@` and not `|`: the pattern carries an alternation, and a pipe delimiter ends
+    # the s command inside it.
+    command sed -i -E "s@$target_re@& map=$PG_IDENT_MAP@" "$hba"
+    printf 'added map=%s to the local all/all rule in %s\n' "$PG_IDENT_MAP" "$hba"
+fi
+
+# The reload is what makes any of the above true. Without it the first tick fails peer
+# authentication up to an hour after a deploy that exited 0, because the deploy starts
+# the timer and not the service.
+systemctl reload postgresql || {
+    printf 'postgresql did not reload; the ident map is written but not live\n' >&2
+    exit 1
+}
+# A malformed pg_hba.conf is tolerated on reload and fatal on restart, and --with-postgres
+# tells the operator to restart for the tuning drop-in. Read PostgreSQL's own view of what
+# it parsed rather than trusting the bytes on disk.
+hba_errors="$(sudo -u postgres psql -tAc \
+    "select count(*) from pg_hba_file_rules where error is not null")"
+ident_errors="$(sudo -u postgres psql -tAc \
+    "select count(*) from pg_ident_file_mappings where error is not null")"
+if [[ $hba_errors != 0 || $ident_errors != 0 ]]; then
+    printf 'postgres reports %s hba and %s ident parse errors after the reload\n' \
+        "$hba_errors" "$ident_errors" >&2
+    exit 1
+fi
+printf 'placed the %s ident map and reloaded postgresql — both files parse clean\n' \
+    "$PG_IDENT_MAP"
 
 # The scheduler's own control-plane connection. One line, no secret: peer auth over the
 # socket, with the role named because a pg_ident map checks the requested database user
@@ -250,7 +257,6 @@ fi
 install -o root -g root -m 0600 /dev/null "$ETC_DIR/scheduler.env"
 printf 'GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql&user=glasswell_scheduler\n' \
     > "$ETC_DIR/scheduler.env"
-chmod 0600 "$ETC_DIR/scheduler.env"
 printf 'wrote %s/scheduler.env — password-free socket DSN, root:root 0600\n' "$ETC_DIR"
 
 if [[ $with_martin_config -eq 1 ]]; then
@@ -326,6 +332,12 @@ printf 'enabled glasswell-lineage-retention.timer — start it after migrations 
 # header advertises had never once run and verify.sh only ever measured install.sh's own mtime.
 systemctl enable glasswell-cf-ranges.timer
 printf 'enabled glasswell-cf-ranges.timer — start it to arm the weekly range refresh\n'
+# Armed on every run, like the three above. There is no --enable-scheduler flag on purpose: a
+# flag deploy.sh does not pass is how the ident map was lost, and while every seeded row is
+# launch_mode=observe the tick computes a plan and launches nothing, so arming it costs an
+# hourly read and changes nothing else.
+systemctl enable glasswell-scheduler.timer
+printf 'enabled glasswell-scheduler.timer — hourly; every row observes, so it launches nothing\n'
 
 if [[ $with_caddy -eq 1 ]]; then
     systemctl enable caddy.service
@@ -344,13 +356,6 @@ if [[ $enable_c115b -eq 1 ]]; then
     printf 'enabled glasswell-c115b.timer — it will capture NM C-115B monthly\n'
 else
     printf 'glasswell-c115b.timer installed but NOT enabled (--enable-c115b to arm it)\n'
-fi
-
-if [[ $enable_scheduler -eq 1 ]]; then
-    systemctl enable glasswell-scheduler.timer
-    printf 'enabled glasswell-scheduler.timer — it ticks hourly and, while every row observes, launches nothing\n'
-else
-    printf 'glasswell-scheduler.timer installed but NOT enabled (--enable-scheduler to arm it)\n'
 fi
 
 if [[ $enable_backup -eq 1 ]] || systemctl is-enabled --quiet glasswell-backup.timer; then

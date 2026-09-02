@@ -31,7 +31,11 @@ EVIDENCE_COMMIT = "6f2e9e6e97952000985568e6aa04d479ec84fe83"
 # registration on that instant and the partial unique indexes would refuse them.
 RESTATED_ON = date(2026, 9, 4)
 RESTATED_EVIDENCE_TAG = "UNRELEASED"
-RESTATED_EVIDENCE_COMMIT = "0" * 40
+# Spelled out rather than computed: release.py scans this file for the quoted placeholder, and
+# an expression that evaluates to it is invisible to that scan, so the tag alone would have
+# blocked and a half-repoint would have cleared the gate with a placeholder bound for an
+# append-only table.
+RESTATED_EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
 
 # Colorado's own clock, named separately so the integrator can repoint it on its own train.
 # It is registered after the presentation columns exist, so it is founded whole: there is no
@@ -41,7 +45,9 @@ RESTATED_EVIDENCE_COMMIT = "0" * 40
 # host's today resolves nowhere and Colorado's statuses read as unmapped on the map.
 CO_REGISTERED_ON = REGISTERED_ON
 CO_EVIDENCE_TAG = "UNRELEASED"
-CO_EVIDENCE_COMMIT = "0" * 40
+# Spelled out, not computed: the release gate greps for the literal, and a placeholder it
+# cannot see is a placeholder that ships.
+CO_EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
 
 # The web Wells rows as registration data. Seven facts that lived as object literals in
 # `web/src/map/registry.ts`, so a fifth jurisdiction is a row rather than a hand edit.

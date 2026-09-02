@@ -166,9 +166,10 @@ def _handle_walk(data: Any, pointer: str) -> tuple[set[str], list[str]]:
 
 # The published examples are all North Dakota, and a jurisdiction the walker never walks is a
 # jurisdiction the R6 gate does not cover. These are the same operations against the TX well the
-# fixture seeds: it is the only well with a depth figure, a null status and a production
-# endpoint whose answer is a disclosure, so without them the walker has never seen a depth
-# figure at all and MUST-KNOW-14's fixture reached no gate.
+# fixture seeds: it is the only well with a depth figure and a production endpoint whose answer
+# is a disclosure, so without them the walker has never seen a depth figure at all and
+# MUST-KNOW-14's fixture reached no gate. It carries a status, `active` -- a well with none is
+# `seed_statusless_well`, which a test seeds when it wants that absence.
 JURISDICTION_ARMS: tuple[tuple[str, dict[str, Any]], ...] = (
     ("get_well[tx]", {"url": f"/v1/wells/{TX_API10}", "params": {}}),
     ("get_well_production[tx]", {"url": f"/v1/wells/{TX_API10}/production", "params": {}}),

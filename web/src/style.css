@@ -1936,9 +1936,9 @@ a {
 /* gate-v076 D1: signed in at 1024 the Sign-out control took the brand block from 205 px to
    140 px and the wordmark ellipsised to `glass…` with the strap clipped to `NO NAKED`. The
    label goes, the button does not: it is the one control that only exists for a reader who
-   has something to sign out of, and the icon carries it at this rung. Hidden from the eye and
-   not from the accessibility tree, because the label *is* the button's accessible name --
-   `display: none` here would leave an unnamed button. */
+   has something to sign out of, and the icon carries it at this rung. Clipped rather than
+   dropped so the visible words stay on the page; the button's name is an `aria-label` in
+   index.html, so no rule here can leave it unnamed. */
 @media (min-width: 901px) and (max-width: 1100px) {
   #gw-logout-btn .gw-ctl-lbl {
     position: absolute;
@@ -2012,6 +2012,9 @@ a {
     padding-left: var(--gw-space-3);
   }
 
+  /* The names survive this. All three controls that carry a `.gw-ctl-lbl` — Sign out and Help
+     in index.html, the theme toggle from theme.ts because its label moves — carry an
+     `aria-label` saying the same words, so dropping the span costs no reader a name. */
   .gw-controls .gw-ctl-lbl {
     display: none;
   }

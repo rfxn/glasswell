@@ -27,6 +27,10 @@
 - [Change] `cr_mt_paths_length_scope_2` supersedes `_1`, dropping the sentence that described
            the North Dakota length default this release removes; `_1` stays served and
            historical
+- [Change] Every bore line is declared under every wellhead dot rather than interleaved per
+           jurisdiction, so a lateral stroke no longer bisects the dot it belongs to in the
+           Permian; the disposal ring keeps its place over the dots and moves under North
+           Dakota's plugged strike. Pinned by an order assertion, which nothing had
 - [Change] The add-a-state gate gains two narrow regex arms and a registered-code arm, and
            carries exactly eight named exemptions; `selector_registry.py`, `status.ts`,
            `style.ts` and `click-router.ts` derive from the registry rather than naming

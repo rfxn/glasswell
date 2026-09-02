@@ -140,7 +140,16 @@ add-a-state gate cost the entry **2 B**; the glossary paging loop then cost **79
 more headroom than there was. It was split rather than paid for: `loadGlossary` is a boot-only
 round trip and now lives in `glossary/load.ts`, imported when it runs rather than in every
 reader's first paint, and the store keeps only its state. Net **13,950 B — 50 B under the
-budget**, and the loop that reads a 2,000-term vocabulary is off the entry path entirely. The registry's generated module is not the
+budget**, and the loop that reads a 2,000-term vocabulary is off the entry path entirely.
+
+**Every figure here includes the build stamp.** `vite.config.ts` defines `__GW_BUILD__` from
+`git describe`, so the entry chunk carries the tag, the distance and the short SHA of whatever
+tree it was built from: a clean tag measures a few bytes under a dirty working tree, and the
+same commit measures differently once its distance from the tag grows a digit. The 13,950 B
+above was measured on this branch at `755535b`; a clean-tree measurement of the same code came
+back 13,932 B, and the 18 bytes are the stamp. Re-measure before moving the budget, and say
+which tree the number came from — this is the fourth train running where somebody has had to
+re-derive that the delta was the stamp. The registry's generated module is not the
 reason: the jurisdiction rows the client reads (names, identity prefixes, tile-layer ids)
 resolve into a lazy branch, and no state name appears in the entry chunk at all. What landed
 there is chrome and wiring, a little at a time.

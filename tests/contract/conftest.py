@@ -77,9 +77,11 @@ EARLIER_VINTAGE = date(2026, 7, 1)
 RESTATED_MONTH = date(2026, 3, 1)
 PRODUCTION_MONTHS = tuple(date(2026, month, 1) for month in range(1, 7))
 OTHER_API10S = tuple(f"330530000{index}" for index in range(1, 7))
-# One Texas well, so the walkers see the surfaces only TX reaches: a depth figure, a null
-# status, and a production endpoint whose honest answer is "pending allocation" rather than an
-# empty series. A fixture that makes those impossible is how a gate goes quietly vacuous (N-1).
+# One Texas well, so the walkers see the surfaces only TX reaches: a depth figure, and a
+# production endpoint whose honest answer is "pending allocation" rather than an empty series.
+# A fixture that makes those impossible is how a gate goes quietly vacuous (N-1) -- as this
+# comment did by claiming a null status the row has never carried, which left the absence class
+# with no representative anywhere until `seed_statusless_well` gave a test one to ask for.
 TX_API10 = "4200345818"
 ALL_API10S = (EXAMPLE_API10, *OTHER_API10S, TX_API10)
 # Three ND wells the cumulative and cohort surfaces need distinct answers for: one the

@@ -49,6 +49,7 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
     rules: {
       "absence:well_type": "cr_co_wells_well_type_1",
       crs: "cr_co_wells_datum_1",
+      cumulatives_scope: "cr_co_production_grain_1",
       deduplication: "cr_co_wells_dedup_1",
       entity_key: "cr_co_production_entity_key_1",
       geometry_provenance: "cr_co_wells_geometry_provenance_1",
@@ -103,6 +104,7 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
     legendNote: null,
     rules: {
       basin_scope: "cr_nd_basin_scope_1",
+      cumulatives_scope: "cr_nd_pool_rollup_1",
       geometry_provenance: "cr_nd_geometry_provenance_1",
       identity: "cr_nd_api_identity_1",
       inventory_jurisdiction: "cr_nd_inventory_jurisdiction_1",

@@ -134,12 +134,17 @@ describe("the theme control", () => {
     expect(button.getAttribute("aria-pressed")).toBe("false");
     expect(button.title).toContain("light");
     expect(button.querySelector(".gw-ctl-lbl")?.textContent).toBe("Light");
+    // And the announced words are the visible ones, at every width: below 901 px the compact
+    // rail drops that span from the accessibility tree, so a name that lived only in it went
+    // with it. Set with the label rather than at mount, or it would name the wrong destination.
+    expect(button.getAttribute("aria-label")).toBe("Light");
 
     button.click();
 
     expect(button.getAttribute("aria-pressed")).toBe("true");
     expect(button.title).toContain("dark");
     expect(button.querySelector(".gw-ctl-lbl")?.textContent).toBe("Dark");
+    expect(button.getAttribute("aria-label")).toBe("Dark");
   });
 
   it("writes only values it can read back", () => {

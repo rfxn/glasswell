@@ -20,13 +20,30 @@ import { BREAKPOINTS, baseUrl, chromeExecutable, instrumentedPage, keyGuard, lau
 const BASE = baseUrl();
 const REQUIRE = process.env.GLASSWELL_REQUIRE_E2E === "1";
 // The roster is read off the registry the panel renders, so a layer added later cannot leave
-// this script asserting against a list that has moved.
+// this script asserting against a list that has moved. Two sources, because the registry has
+// two kinds of row: the wells rows are generated from `lineage.jurisdictions` and are read
+// from the JSON the same generator writes, and the rest are declared in `registry.ts` and are
+// parsed out of it. This file is plain node ESM with no TypeScript loader, which is why the
+// generated half ships as JSON at all.
 const REGISTRY = fileURLToPath(new URL("../../web/src/map/registry.ts", import.meta.url));
+const ROSTER = fileURLToPath(new URL("../../web/src/map/wells-roster.json", import.meta.url));
 const BLOCKS = readFileSync(REGISTRY, "utf8").split(/\n {2}\{\n/).slice(1);
-const LAYERS = BLOCKS.map((block) => ({
+const DECLARED = BLOCKS.map((block) => ({
   id: /\bid:\s*"([^"]+)"/.exec(block)?.[1],
   defaultOn: /\bdefaultOn:\s*true/.test(block),
 })).filter((layer) => layer.id);
+const REGISTERED = JSON.parse(readFileSync(ROSTER, "utf8")).map((row) => ({
+  id: row.id,
+  defaultOn: row.defaultOn,
+}));
+if (REGISTERED.length === 0) throw new Error(`no wells rows in ${ROSTER}`);
+// Declared first, then any registered row the registry no longer spells out. Merged by id
+// rather than concatenated: while the wells rows are still literals in `registry.ts` both
+// halves name them, and a panel row counted twice is a fold measurement that is quietly wrong.
+const LAYERS = [...DECLARED];
+for (const row of REGISTERED) {
+  if (!LAYERS.some((layer) => layer.id === row.id)) LAYERS.push(row);
+}
 if (LAYERS.length === 0) throw new Error(`no layers parsed from ${REGISTRY}`);
 // Every registered row, because the registry no longer carries a row that renders disabled.
 const OPERABLE = LAYERS.map((layer) => layer.id);

@@ -155,20 +155,61 @@ names a jurisdiction, and the gate above holds it that way.
 > **Refuses if skipped:** `tests/unit/test_regen_jurisdictions.py` fails while the committed
 > file is stale.
 
-### 10. Schedule the ingest
+### 10. Register the job rows
 
-Add an `ExecStart=` line to `infra/systemd/glasswell-ingest.service`.
+**Do not add an `ExecStart=` line.** Scheduling has been rows since v0.78, and an entry point
+named in a unit file joins the set an installed timer already drives — after which the
+double-run guard correctly forbids that job from ever being seeded `launch`, which is the
+opposite of what a new jurisdiction wants. `docs/runbook-scheduler.md` is the whole scheme;
+this is the part a new state performs.
 
-> **Refuses if skipped: nothing, today.** This is the one step with no gate behind it, and the
-> gap is known — cadence-driven scheduling is the work that closes it. Until then, check the
-> service file by eye.
+Four inserts, one job per entry point:
+
+1. `src/glasswell/seed/conformance_schedules.py` — a `cr_job_cadence_<job_id>_1` decision per
+   job, `stage='schedule'`, `rule_kind='code_ref'`, with the rationale that says why this
+   cadence and not another. `source_id` is the job's anchor, which the walk resolves.
+2. Your own migration's `conformance_rule_publications` insert, under its own REPOINT
+   CHECKLIST — that table is append-only and the scheduler's own insert closed at its repoint.
+3. `src/glasswell/seed/schedules.py` — the `scheduled_jobs`, `job_sources`, `job_schedules`
+   and `job_dependencies` rows. A jurisdiction with no legacy timer **may** be seeded
+   `launch_mode='launch'` from day one, provided its cadence rule's rationale says why that is
+   safe; every jurisdiction an installed timer still drives is `observe`.
+4. An optional DSN flag in your own mains, resolved through `glasswell.db.dsn` so they read
+   `GLASSWELL_DSN` then `DATABASE_URL` like every other entry point.
+
+> **Refuses otherwise:** `tests/contract/test_schedule_parity.py` gate 1 is a two-sided set
+> equality over `lineage.job_sources`, so a source registered in step 2 with no job row
+> reddens; gate 2 refuses a jurisdiction mart with no ingest edge of its own jurisdiction;
+> gate 3 refuses a `cadence` row the due rule can produce no instant for; and gate 4 refuses a
+> rule with no publication evidence. `infra/verify.sh` refuses a `launch` row whose entry point
+> an installed timer already drives.
 
 ### 11. Run the mart, then the count writer
 
 ```bash
+export VENV=/opt/glasswell/venv
+export GLASSWELL_DSN='postgresql:///glasswell?host=/var/run/postgresql'
 sudo --preserve-env=GLASSWELL_DSN -u glasswell $VENV/bin/glasswell-tiles --jurisdiction <CODE>
 sudo --preserve-env=GLASSWELL_DSN -u glasswell $VENV/bin/python -m glasswell.marts.counts
 ```
+
+> **Run `seed_all` first, and not only for the API.** The tile refresh reads the registry now:
+> it resolves the registration, its `basin_scope` and its `length_source` before it measures
+> anything, and refuses by name if they are not there. The migration's `jurisdiction_rules`
+> insert is guarded on conformance-rule residency, so on a fresh database those rows land only
+> after the seed has run. `scripts/deploy.sh` already orders it that way (6a migrate, 6b
+> `seed_all`, then the marts); what changed is that the mart is no longer indifferent to it.
+
+The count writer measures every registration by default. `--codes ND,TX` narrows it to some of
+them, which is a partial measurement rather than a smaller claim: the jurisdictions left out
+keep whatever the ledger already holds. A code no registration carries is refused by name, so a
+typo cannot report success over a run that measured nothing.
+
+There is no `--measured-on`. The ledger's date is the day the measurement was taken, and the
+key is `(jurisdiction, measured_on, status)`: a second run on a day the ledger already holds
+inserts the rows that day lacks and keeps the rest, with the derivation each was written by. So
+the day's rows may name two runs, which is honest as long as the counted population did not
+move between them — run it on a day the ledger does not already hold if it did.
 
 > **Refuses otherwise:** `jurisdiction_well_counts.well_count` is `not null` and
 > `derivation_id` references `lineage.derivations` — there is no count without a refresh that
