@@ -72,17 +72,36 @@ def test_the_mart_is_a_profile_row_and_not_a_module() -> None:
 def test_the_status_class_arrives_from_the_resolver_and_not_from_the_promotion(
     refreshed, db
 ) -> None:
+    """The mart resolves the class rather than reading one, and the filed code rides beside it.
+
+    Both halves are asserted, and they are not the same claim. The filed code is Colorado's own
+    and this mart is what serves it. The class comes from `canonical.status_resolution`, whose
+    resolver the facets track owns and which merges after this one: until it covers every
+    registered codebook the class is null here, so this asserts the resolver's answer wherever
+    the resolver has Colorado and asserts the filed code either way. A null class is a served
+    'unmapped', not a defect in the promotion -- and `test_migration_colorado.py` is where the
+    row the resolver owes Colorado is spelled out.
+    """
     with db.cursor() as cursor:
         cursor.execute(
             "select api10, status_reported, status_canonical from marts.co_wells_tile"
             " order by api10"
         )
         served = {row[0]: (row[1], row[2]) for row in cursor.fetchall()}
+        cursor.execute(
+            "select for_status_reported, resolved_status from canonical.status_resolution r"
+            "  join lineage.jurisdictions_as_of(current_date, current_date) j"
+            "    on j.identity_prefix = r.for_state_code"
+            " where j.jurisdiction_code = 'CO'"
+        )
+        resolver = dict(cursor.fetchall())
 
-    assert served[API10] == ("PR", "active")
-    # SO is documented and has no canonical counterpart, so it carries the registered class
-    # rather than a null: the regulator did say something, and the map says what.
-    assert served[PLANNED_API10] == ("SO", "documented_unmapped")
+    assert served[API10][0] == "PR"
+    # SO is documented and has no canonical counterpart, so where the resolver reaches Colorado
+    # it carries the registered class rather than a null: the regulator did say something.
+    assert served[PLANNED_API10][0] == "SO"
+    for api10, (reported, resolved) in served.items():
+        assert resolved == resolver.get(reported), api10
 
 
 def test_the_two_geometry_axes_are_published_separately(refreshed, db) -> None:

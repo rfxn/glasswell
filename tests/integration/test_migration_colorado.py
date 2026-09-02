@@ -136,35 +136,64 @@ def test_the_status_map_is_seeded_verbatim_and_its_two_integers_are_computed(
     assert len(resident) == 13
 
 
-def test_the_resolver_answers_for_colorado_at_the_registered_prefix(
-    db: psycopg.Connection,
-) -> None:
-    """The Colorado arm on canonical.status_resolution, labelled from the registration."""
+def test_what_a_registry_driven_resolver_owes_colorado_is_exact(db: psycopg.Connection) -> None:
+    """The contract this migration deliberately does not implement.
+
+    Colorado's arm on `canonical.status_resolution` was written here and removed: the facets
+    track replaces that view with a keyed table rebuilt by its own registry-driven refresh, and
+    two writers of one view means one is silently discarded. Since that track merges last, the
+    arm written here would be the discarded one and every Colorado well would resolve unmapped
+    with nothing on any surface saying so.
+
+    What is owed is not a matter of opinion, so it is stated as a query: one row per codebook
+    entry, at the prefix the registration resolves to, carrying the class the codebook maps.
+    """
     with db.cursor() as cursor:
         cursor.execute(
-            "select r.for_state_code, count(*)"
-            "  from canonical.status_resolution r"
+            "select j.identity_prefix, m.status, m.status_canonical"
+            "  from lineage.co_facility_status_map m"
             "  join lineage.jurisdictions_as_of(current_date, current_date) j"
-            "    on j.identity_prefix = r.for_state_code"
-            " where j.jurisdiction_code = 'CO'"
-            " group by r.for_state_code"
+            "    on j.jurisdiction_code = 'CO'"
+            " order by m.status"
         )
-        rows = cursor.fetchall()
+        owed = cursor.fetchall()
 
-    assert len(rows) == 1
-    assert rows[0][1] == 13
+    assert len(owed) == 13
+    assert {prefix for prefix, _status, _class in owed} == {"05"}
+    assert dict((status, resolved) for _prefix, status, resolved in owed) == {
+        code: str(row["status_canonical"]) for code, row in CO_STATUS_MAP.items()
+    }
 
 
-def test_the_new_mexico_arm_still_answers_beside_it(db: psycopg.Connection) -> None:
-    """The view is replaced, not edited: a second arm must not delete the first."""
+def test_the_resolver_serves_colorado_wherever_the_resolved_table_exists(
+    db: psycopg.Connection,
+) -> None:
+    """The cross-track half, which runs on the train and skips before it.
+
+    A resolver that reads one regulator's codebook by name serves one jurisdiction. This is the
+    assertion that catches it: wherever `lineage.status_resolution_resolved` is present, every
+    row the query above owes has to be in it. It is not a substitute for that track's own
+    tests; it is the row Colorado needs and the only place anything asserts it.
+    """
     with db.cursor() as cursor:
+        cursor.execute("select to_regclass('lineage.status_resolution_resolved')")
+        if cursor.fetchone()[0] is None:
+            pytest.skip(
+                "the registry-driven resolver has not merged yet; on the train this asserts"
+                " that its refresh covers every registered codebook and not New Mexico's alone"
+            )
         cursor.execute(
             "select count(*) from canonical.status_resolution r"
             "  join lineage.jurisdictions_as_of(current_date, current_date) j"
             "    on j.identity_prefix = r.for_state_code"
-            " where j.jurisdiction_code = 'NM'"
+            " where j.jurisdiction_code = 'CO'"
         )
-        assert cursor.fetchone()[0] == 14
+        served = cursor.fetchone()[0]
+
+    assert served == 13, (
+        "the resolved status table carries no Colorado rows: a refresh that names one"
+        " regulator's map resolves one jurisdiction, and every Colorado well reads unmapped"
+    )
 
 
 def test_the_mart_table_and_its_view_are_installed_with_their_grants(

@@ -1,6 +1,6 @@
 -- Colorado as a registration. The fifth jurisdiction arrives as rows: one lineage.jurisdictions
--- registration, its jurisdiction_rules children, an ECMC status codebook with its own arm on
--- canonical.status_resolution, four staging tables, a tile mart and the schedule rows that make
+-- registration, its jurisdiction_rules children, the ECMC status codebook a read-time
+-- resolver reads, four staging tables, a tile mart and the schedule rows that make
 -- the first load the scheduler's rather than an operator's. Nothing in api/, marts/ or web/ is
 -- edited to add it, which is the claim this file exists to make good.
 --
@@ -24,9 +24,9 @@
 --      cut. Both appear in the registration insert and again in the jurisdiction_rules insert,
 --      and they must move together: jurisdiction_rules carries a composite foreign key on
 --      (jurisdiction_code, effective_from, published_at), so a half-repoint aborts the migrate.
---      NEVER a date the deploy host has not reached: the Colorado arm on
---      canonical.status_resolution resolves through jurisdictions_as_of(current_date,
---      current_date), so a future registration resolves nowhere and Colorado draws unmapped.
+--      NEVER a date the deploy host has not reached: the status resolver reads the
+--      registration through jurisdictions_as_of(current_date, current_date), so a future
+--      registration resolves nowhere and Colorado draws unmapped with no error to say so.
 --   5. seed/jurisdictions.py CO_REGISTERED_ON / CO_EVIDENCE_TAG / CO_EVIDENCE_COMMIT -> the
 --      same three values, in the same commit. The seed is the second writer and
 --      tests/contract/test_jurisdiction_parity.py holds the two copies to each other.
@@ -259,23 +259,21 @@ create trigger co_facility_status_map_append_only
 create index if not exists co_facility_status_map_publication_idx
     on lineage.co_facility_status_map (published_vintage, status);
 
--- The extension 073's own comment anticipates: a fifth state with read-time resolution brings
--- its own table and its own arm here. The view is replaced rather than edited, and each arm
--- takes its label from the registration rather than from a literal.
-create or replace view canonical.status_resolution as
-select j.identity_prefix  as for_state_code,
-       m.status           as for_status_reported,
-       m.status_canonical as resolved_status
-  from lineage.nm_wellhistory_status_map m
-  join lineage.jurisdictions_as_of(current_date, current_date) j
-    on j.jurisdiction_code = 'NM'
-union all
-select j.identity_prefix  as for_state_code,
-       m.status           as for_status_reported,
-       m.status_canonical as resolved_status
-  from lineage.co_facility_status_map m
-  join lineage.jurisdictions_as_of(current_date, current_date) j
-    on j.jurisdiction_code = 'CO';
+-- This file does NOT define canonical.status_resolution, and the omission is the decision.
+--
+-- 073's own comment invites a fifth state to bring its own arm here, and this migration did
+-- until the facets track's resolver landed: that track replaces the view with a keyed table,
+-- lineage.status_resolution_resolved, rebuilt by lineage.refresh_status_resolution() from the
+-- registration resolving today and the per-regulator map. Two writers of one view, merged in
+-- either order, means one of them is silently discarded -- and since that track merges last,
+-- the arm written here would be the one discarded, leaving every Colorado well resolving
+-- unmapped with no error anywhere to say so.
+--
+-- So the codebook above is registered and this file stops there. What a registry-driven
+-- resolver owes Colorado is exact and checkable: one row per (identity_prefix, status) for the
+-- thirteen rows of lineage.co_facility_status_map, at the prefix the CO registration resolves
+-- to. tests/integration/test_migration_colorado.py states it as a query and asserts it against
+-- the resolved table wherever that table exists.
 
 grant select on lineage.co_facility_status_map to glasswell_pipeline, glasswell_api;
 revoke update, delete on lineage.co_facility_status_map

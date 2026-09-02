@@ -62,11 +62,18 @@ def test_the_row_kept_is_the_one_the_regulator_wrote_first(promoted, seeded) -> 
     assert all(int(kept) < int(discarded) for kept, discarded in pairs)
 
 
-def test_the_class_is_not_written_at_promotion_and_the_resolver_supplies_it(
+def test_the_class_is_not_written_at_promotion_and_the_codebook_is_what_supplies_it(
     promoted, seeded
 ) -> None:
-    """Read-time resolution, measured: the promotion writes the filed code and no class, and
-    the registry's own view is what turns one into the other."""
+    """Read-time resolution, measured at the promotion's own end of it.
+
+    The promotion writes the filed code and no class: `canonical.wells` is append-only and ECMC
+    republishes nightly, so a class written here would invent a valid time the regulator never
+    filed. The join that turns one into the other is asserted against the registered codebook
+    rather than against `canonical.status_resolution`, because the resolver that serves that
+    view belongs to the facets track and merges after this one -- what this file can prove is
+    that every filed code has a row waiting for it.
+    """
     with seeded.cursor() as cursor:
         cursor.execute(
             "select count(*), count(status_canonical), count(status_reported)"
@@ -76,9 +83,9 @@ def test_the_class_is_not_written_at_promotion_and_the_resolver_supplies_it(
         rows, classed, reported = cursor.fetchone()
         cursor.execute(
             "select count(*) from canonical.wells w"
-            "  join canonical.status_resolution r"
-            "    on r.for_state_code = w.state_code"
-            "   and r.for_status_reported = w.status_reported"
+            "  join lineage.co_facility_status_map m on m.status = w.status_reported"
+            "  join lineage.jurisdictions_as_of(current_date, current_date) j"
+            "    on j.identity_prefix = w.state_code and j.jurisdiction_code = 'CO'"
             " where w.source_manifest_id = %s",
             (promoted.manifest_id,),
         )
@@ -87,7 +94,7 @@ def test_the_class_is_not_written_at_promotion_and_the_resolver_supplies_it(
     assert rows == 100
     assert classed == 0
     assert reported == 100
-    assert resolvable == 100
+    assert resolvable == 100, "a filed code with no codebook row would resolve to nothing"
 
 
 def test_the_surface_geometry_lands_as_the_only_class_this_release_promotes(
