@@ -35,6 +35,10 @@ const TOPS = ["10", "15", "20", "25", "50"] as const;
 // carries `explorer_default`, and its rationale is the reason — the only jurisdiction serving
 // well-grain production history end to end. Nothing here decides it.
 const DEFAULT_STATE = DEFAULT_JURISDICTION.prefix;
+
+/** The scope sentinel `/v1/wells/facets` and `/v1/wells` both read: every registered
+ *  jurisdiction, resolved server-side, so this file never carries a list of them. */
+export const ALL_JURISDICTIONS = "all";
 const DEFAULTS = { state: DEFAULT_STATE, by: "operator", sort: "count", order: "desc", top: "15" };
 
 /** Exported so the suite asserts against the shipped defaults rather than a copy of them. */
@@ -51,6 +55,15 @@ export interface FacetBucket {
   value: string;
   wells: Figure;
   links: Record<string, string>;
+}
+
+/** One jurisdiction the counts were taken over, and what it does with the dimension. */
+export interface FacetJurisdiction {
+  code: string;
+  name: string;
+  wells: Figure | null;
+  dimension: "carried" | "absent_by_rule" | "absent_unregistered";
+  rule_id: string | null;
 }
 
 export interface WellFacets {
@@ -75,6 +88,7 @@ export interface WellFacets {
   } | null;
   wells: Figure | null;
   matched_wells: Figure | null;
+  jurisdictions: FacetJurisdiction[];
   states: FacetState[];
   rules: string[];
 }
@@ -116,6 +130,9 @@ export interface WellsByOptions {
    */
   scopeNote?: string | ((data: WellFacets) => string);
 }
+
+/** What the server calls the bucket for wells with no value; `facets.py` ABSENCE_LABEL. */
+const ABSENCE_LABEL = "not reported";
 
 /** The collection's own refusal: a dimension /v1/wells accepts no filter for. */
 const COLLECTION_UNFILTERABLE =
@@ -317,27 +334,7 @@ function controls(
     ),
   );
 
-  // The map's layer panel renamed every state row to `Noun (Full state name)`; this is the same
-  // convention on the same nouns, so the two surfaces name a state identically.
-  const states = (data?.states ?? knownStates).map((entry) => ({
-    value: entry.code,
-    label: `Wells (${entry.name})${entry.loaded ? "" : " · not loaded"}`,
-    disabled: !entry.loaded,
-  }));
-  line.append(
-    pair(
-      "in",
-      select(
-        "state",
-        states.length > 0
-          ? states
-          : [{ value: panel["state"] as string, label: "…", disabled: true }],
-        panel["state"] as string,
-        (value) => options.hooks.setPanel({ state: value, q: null }, "push"),
-        options.signal,
-      ),
-    ),
-  );
+  line.append(pair("in", scope(panel, data, options)));
   bar.append(line);
 
   const tools = div("gw-wells-by-tools");
@@ -465,6 +462,62 @@ function pair(label: string, control: HTMLElement): HTMLElement {
   return wrapper;
 }
 
+/**
+ * The jurisdictions the counts are taken over. A list box rather than a dropdown because the
+ * scope is a set: a plain click still picks exactly one, which is the question most readers
+ * open with, and the same control takes several without a second one beside it.
+ *
+ * `All jurisdictions` leads it because it is the widest answer and the one a reader scanning a
+ * basin across a state line wants first. It is the sentinel, not an expansion of the codes: the
+ * registry resolves it at request time, so a jurisdiction that registers tomorrow is in it.
+ */
+function scope(
+  panel: Record<string, string>,
+  data: WellFacets | null,
+  options: WellsByOptions,
+): HTMLElement {
+  const asked = panel["state"] as string;
+  // The map's layer panel renamed every state row to `Noun (Full state name)`; this is the same
+  // convention on the same nouns, so the two surfaces name a state identically.
+  const known = (data?.states ?? knownStates).map((entry) => ({
+    value: entry.code,
+    label: `Wells (${entry.name})${entry.loaded ? "" : " · not loaded"}`,
+    disabled: !entry.loaded,
+  }));
+  const offered = [
+    { value: ALL_JURISDICTIONS, label: "All jurisdictions", disabled: false },
+    ...(known.length > 0 ? known : [{ value: asked, label: "…", disabled: true }]),
+  ];
+  const element = document.createElement("select");
+  element.className = "gw-wells-by-select gw-wells-by-state";
+  element.multiple = true;
+  element.size = Math.min(offered.length, 5);
+  element.setAttribute("aria-label", "state");
+  const picked = new Set(asked === ALL_JURISDICTIONS ? [ALL_JURISDICTIONS] : asked.split(","));
+  for (const option of offered) {
+    const node = document.createElement("option");
+    node.value = option.value;
+    node.textContent = option.label;
+    node.disabled = option.disabled;
+    node.selected = picked.has(option.value);
+    element.append(node);
+  }
+  element.addEventListener(
+    "change",
+    () => {
+      const chosen = [...element.selectedOptions].map((option) => option.value);
+      // Codes win over the sentinel: a reader who adds a code to `all` is narrowing, and a
+      // selection cleared to nothing is no narrowing at all rather than an empty scope the
+      // server would refuse.
+      const codes = chosen.filter((value) => value !== ALL_JURISDICTIONS);
+      const value = codes.length > 0 ? codes.join(",") : ALL_JURISDICTIONS;
+      options.hooks.setPanel({ state: value, q: null }, "push");
+    },
+    { signal: options.signal },
+  );
+  return element;
+}
+
 function select(
   name: string,
   options_: { value: string; label: string; disabled: boolean }[],
@@ -502,8 +555,15 @@ function list(data: WellFacets, warnings: Warning[], options: WellsByOptions): H
   box.append(caption);
 
   // Above the ranking, never under it: a population stated after the numbers is a correction.
+  // A set names itself even where the host asked for no note: a combined count with nothing
+  // saying which jurisdictions are in it is a number a reader cannot place.
   const scopeNote =
-    typeof options.scopeNote === "function" ? options.scopeNote(data) : options.scopeNote;
+    typeof options.scopeNote === "function"
+      ? options.scopeNote(data)
+      : (options.scopeNote ??
+        (data.jurisdictions.length > 1
+          ? `Counted over every current well ${population(data)}.`
+          : undefined));
   if (scopeNote) {
     const scope = document.createElement("p");
     scope.className = "gw-wells-by-scope";
@@ -568,6 +628,7 @@ function list(data: WellFacets, warnings: Warning[], options: WellsByOptions): H
 
   if (data.remainder) box.append(remainder(data.remainder));
   if (data.absence) box.append(absence(data.absence, aboutAbsence));
+  box.append(...absentByRule(data));
   box.append(total(data));
   // The same panels the well card and the neighbour list render. Under a search the absence
   // bucket is the one figure on screen outside the visible arithmetic, and
@@ -652,6 +713,52 @@ function row(
   return item;
 }
 
+/**
+ * The population, in the server's own words. `state_name` is the served list for a set, so the
+ * only thing composed here is the preposition — one jurisdiction reads exactly as it always did.
+ */
+function population(data: WellFacets): string {
+  return `${data.jurisdictions.length > 1 ? "across" : "in"} ${data.state_name}`;
+}
+
+/**
+ * A jurisdiction that reports nothing at all for this dimension, said in the panel's own words.
+ * Its wells are outside the `not reported` bucket by design — a registered absence and an
+ * unexplained one summed together are a number with two meanings — so the count has to be on
+ * screen somewhere, and the rule that took it out has to be beside it.
+ */
+function absentByRule(data: WellFacets): HTMLElement[] {
+  const noun = data.dimension.replace("_", " ");
+  return data.jurisdictions
+    .filter((entry) => entry.dimension === "absent_by_rule")
+    .map((entry) => {
+      const box = div("gw-wells-by-by-rule");
+      const head = div("gw-wells-by-by-rule-head");
+      const label = document.createElement("span");
+      label.className = "gw-wells-by-by-rule-label";
+      label.textContent = entry.name;
+      head.append(label);
+      if (entry.wells) head.append(figure(entry.wells, entry.name));
+      const detail = document.createElement("p");
+      detail.className = "gw-wells-by-by-rule-detail";
+      detail.textContent =
+        `${entry.name} reports no ${noun} for any well, so these are counted here rather` +
+        ` than in “${ABSENCE_LABEL}” beside jurisdictions that do report one.`;
+      box.append(head, detail);
+      if (entry.rule_id) {
+        const link = document.createElement("a");
+        link.className = "gw-wells-by-rule";
+        link.href = `/v1/conformance/${entry.rule_id}`;
+        link.textContent = entry.rule_id;
+        const line = document.createElement("p");
+        line.className = "gw-wells-by-rule-line";
+        line.append(document.createTextNode("Registered as "), link);
+        box.append(line);
+      }
+      return box;
+    });
+}
+
 function figure(value: Figure, label: string): HTMLElement {
   const element = document.createElement("gw-figure");
   element.className = "gw-wells-by-count";
@@ -716,7 +823,7 @@ function total(data: WellFacets): HTMLElement {
   const searched = data.q !== null && data.matched_wells !== null;
   label.textContent = searched
     ? `wells matching “${data.q}”`
-    : `every current well in ${data.state_name}`;
+    : `every current well ${population(data)}`;
   const value = searched ? data.matched_wells : data.wells;
   box.append(label);
   if (value) box.append(figure(value, label.textContent ?? "total"));

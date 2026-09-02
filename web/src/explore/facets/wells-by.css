@@ -59,6 +59,26 @@
   max-width: 100%;
 }
 
+/* The scope picker is a list box, because the scope is a set. Height is capped in rows rather
+   than pixels so it reads the same at 1600 and at 390, where it is the only control that says
+   which jurisdictions the counts below belong to; `--gw-control-h` is a single-line control's
+   height and would clip the second row. */
+select.gw-wells-by-state {
+  height: auto;
+  min-width: 14ch;
+  padding: var(--gw-space-1) 0;
+  overflow-y: auto;
+}
+
+select.gw-wells-by-state option {
+  padding: 0.1rem var(--gw-space-2);
+}
+
+select.gw-wells-by-state option:checked {
+  background: var(--tint-accent);
+  color: var(--paper);
+}
+
 .gw-wells-by-search {
   display: flex;
   align-items: center;
@@ -269,6 +289,41 @@ button.gw-wells-by-value[aria-pressed="true"] {
   font-family: var(--gw-font-mono);
 }
 
+/* A jurisdiction that reports nothing at all for this dimension. Same dashed frame as the
+   absence bucket, because it is the same class of fact: promoted wells whose source carries no
+   value. Ruled apart from it rather than coloured — BRAND.md gives amber to quarantine and
+   audit, and neither of these populations is withheld or rejected. */
+.gw-wells-by-by-rule {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gw-space-1);
+  padding: var(--gw-space-2);
+  border: 1px dashed var(--hairline-strong);
+  border-radius: var(--gw-radius-xs);
+}
+
+.gw-wells-by-by-rule-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gw-space-3);
+}
+
+.gw-wells-by-by-rule-label {
+  font-size: var(--gw-fs-micro);
+  font-weight: var(--gw-fw-eyebrow);
+  letter-spacing: var(--gw-ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--paper);
+}
+
+.gw-wells-by-by-rule-detail {
+  margin: 0;
+  max-width: 78ch;
+  font-size: var(--gw-fs-micro);
+  color: var(--muted);
+}
+
 .gw-wells-by-empty {
   display: flex;
   flex-direction: column;
@@ -360,10 +415,18 @@ button.gw-wells-by-value[aria-pressed="true"] {
 
   .gw-wells-by-remainder,
   .gw-wells-by-total,
-  .gw-wells-by-absence-head {
+  .gw-wells-by-absence-head,
+  .gw-wells-by-by-rule-head {
     flex-direction: column;
     align-items: flex-start;
     gap: var(--gw-space-1);
+  }
+
+  /* The picker keeps its own line under 520: it is the tallest control on the bar and the one
+     a reader has to see all of, and sharing a row with `Wells by` left it two rows deep beside
+     a single-line select. */
+  .gw-wells-by-line .gw-wells-by-pair:last-child {
+    flex: 1 1 100%;
   }
 }
 
