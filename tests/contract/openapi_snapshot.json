@@ -3676,7 +3676,7 @@
             "x-glasswell-not-a-figure": "API state code carried as reported; an identifier, not a quantity."
           },
           "dimension": {
-            "description": "`carried` where the jurisdiction holds at least one value of this dimension. `absent_by_rule` where it holds none and a registered rule says what that absence means -- those wells are counted here and are NOT in the `absence` bucket, because an explained absence and an unexplained one are two populations. `absent_unregistered` where it holds none and no rule states why, which is disclosed rather than answered as either of the other two (R8).",
+            "description": "`carried` where the jurisdiction holds at least one value of this dimension. `absent_by_rule` where it holds none and a registered rule says what that absence means -- those wells are counted here and are NOT in the `absence` bucket, because an explained absence and an unexplained one are two populations. `absent_unregistered` where it holds none and no rule states why, which is disclosed rather than answered as either of the other two (R8). `no_wells_in_scope` where it contributes no well at all, which under an `as_of` before its promotion is a fact about the knowledge cut and not about the jurisdiction; `rule_id` may still name a registered decision, but no absence has been exercised and none is claimed.",
             "title": "Dimension",
             "type": "string",
             "x-glasswell-glossary": "gt_conformance_rule"

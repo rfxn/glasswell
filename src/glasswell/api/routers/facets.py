@@ -92,6 +92,11 @@ StateTerm = Annotated[str, Field(pattern=STATE_SET_PATTERN)]
 CARRIED = "carried"
 ABSENT_BY_RULE = "absent_by_rule"
 ABSENT_UNREGISTERED = "absent_unregistered"
+# A jurisdiction that contributes no well to the scope has exercised no absence rule: the cause
+# is the knowledge cut the reader asked for, not a decision anybody registered. `all` resolves
+# against what the spine carries today and the counts are taken as of the asked date, so any
+# `as_of` before a jurisdiction's promotion produces this.
+NO_WELLS_IN_SCOPE = "no_wells_in_scope"
 
 # The map's layer panel renamed every state row to `Noun (Full state name)` when it grew a
 # `Wells` parent, so the name is served rather than mapped again in the client: two spellings of
@@ -302,6 +307,10 @@ class FacetJurisdiction(BaseModel):
             " bucket, because an explained absence and an unexplained one are two"
             " populations. `absent_unregistered` where it holds none and no rule states why,"
             " which is disclosed rather than answered as either of the other two (R8)."
+            " `no_wells_in_scope` where it contributes no well at all, which under an `as_of`"
+            " before its promotion is a fact about the knowledge cut and not about the"
+            " jurisdiction; `rule_id` may still name a registered decision, but no absence"
+            " has been exercised and none is claimed."
         ),
         json_schema_extra={GLOSSARY_KEY: "gt_conformance_rule"},
     )
@@ -757,7 +766,11 @@ def _jurisdictions(
         row = counted.get(code)
         rule = _absence_rule(registry, code, dimension)
         values = int(row["values"]) if row and row["values"] else 0
-        carries = CARRIED if values else ABSENT_BY_RULE if rule else ABSENT_UNREGISTERED
+        contributes = bool(row and row["wells"])
+        if not contributes:
+            carries = NO_WELLS_IN_SCOPE
+        else:
+            carries = CARRIED if values else ABSENT_BY_RULE if rule else ABSENT_UNREGISTERED
         entries.append(
             {
                 "code": code,

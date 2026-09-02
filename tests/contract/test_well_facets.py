@@ -811,3 +811,50 @@ def test_the_arm_stays_shut_where_the_registry_holds_no_decision(
     assert by_code["25"]["rule_id"] is None
     assert body["data"]["absence"]["rule_id"] is None
     assert "absence_unregistered" in {w["code"] for w in body["meta"]["warnings"]}
+
+
+def test_a_jurisdiction_with_no_wells_at_the_asked_vintage_is_not_blamed_on_a_rule(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The knowledge-time arm, which this surface had no test for at all.
+
+    `all` resolves against what the spine carries *today*; the counts are taken as of the date
+    asked for. A jurisdiction promoted after that date is therefore in the set and contributes
+    nothing — and a jurisdiction that contributes nothing has exercised no absence rule. Read as
+    `absent_by_rule` it would say a conformance decision explains an emptiness whose real cause
+    is the reader's own `as_of`, which is a claim with no row behind it.
+    """
+    _seed_tx(seeded)
+    for serial in range(1, 4):
+        seed_well(
+            seeded,
+            api10=f"25{serial:08d}",
+            state_code="25",
+            effective_from=date(2026, 9, 1),
+            operator_name_reported=None,
+            basin=None,
+        )
+    seeded.commit()
+    body = client.get(
+        "/v1/wells/facets?state=all&by=operator&top=50&as_of=2026-08-15"
+    ).json()
+    by_code = {row["code"]: row for row in body["data"]["jurisdictions"]}
+
+    assert by_code["25"]["dimension"] == "no_wells_in_scope"
+    assert by_code["25"]["rule_id"] == "cr_mt_operator_absence_1"
+    assert by_code["25"]["wells"] is None
+    assert by_code["42"]["dimension"] == "carried"
+    assert "dimension_absent_by_rule" not in {w["code"] for w in body["meta"]["warnings"]}
+
+
+def test_the_same_jurisdiction_is_absent_by_rule_once_its_wells_are_in_scope(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The other side of the same seed: at `latest` the wells are there and the rule applies."""
+    _seed_tx(seeded)
+    _seed_mt(seeded)
+    body = client.get("/v1/wells/facets?state=all&by=operator&top=50").json()
+    by_code = {row["code"]: row for row in body["data"]["jurisdictions"]}
+
+    assert by_code["25"]["dimension"] == "absent_by_rule"
+    assert "dimension_absent_by_rule" in {w["code"] for w in body["meta"]["warnings"]}

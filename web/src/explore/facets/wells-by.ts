@@ -62,7 +62,7 @@ export interface FacetJurisdiction {
   code: string;
   name: string;
   wells: Figure | null;
-  dimension: "carried" | "absent_by_rule" | "absent_unregistered";
+  dimension: "carried" | "absent_by_rule" | "absent_unregistered" | "no_wells_in_scope";
   rule_id: string | null;
 }
 

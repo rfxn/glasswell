@@ -16,6 +16,10 @@
          `wells_facet_dimensions_idx` answers index-only over a set: measured on the
          deployed 585,864 wells at 12,780 buffers and 592 ms against 279,288 and
          1,031 ms for the api10-only partition (web/PERF.md §7)
+- [Fix] a jurisdiction contributing no well to the scope is served as
+      `no_wells_in_scope` rather than `absent_by_rule`: under an `as_of` before its
+      promotion the emptiness is the knowledge cut's, and blaming a conformance rule
+      for it is a claim with no row behind it
 - [Change] `canonical.status_resolution` is registry-driven: it resolves every
          jurisdiction whose status-vocabulary rule says `resolved_at: read_time`,
          reading the mapping table and its key and value columns out of that rule's own
