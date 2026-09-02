@@ -272,8 +272,8 @@ file passes its own reading of.
 rule belongs in front of it — the `3000/tcp` LAN allow the infra pass added is inert today
 and becomes a real exposure the moment the bind address changes. Removing it from the live
 VM is a deployer step (see "Deploy runbook"). A second unit cannot bind `:3000`. martin reads
-its source catalogue at startup, so a **restart** is required after `marts.refresh_all` first
-creates the `marts.nd_*(z, x, y, query)` functions — that is a catalogue refresh, not a
+its source catalogue at startup, so a **restart** is required after the first tile refresh
+(`glasswell-tiles --jurisdiction ND`) creates the `marts.nd_*(z, x, y, query)` functions — that is a catalogue refresh, not a
 reconfiguration. `infra/martin/config.yaml` is the documented target and adopting it is runbook step 9:
 it turns auto-publish off, which is what stops the tile server publishing `staging` and
 `canonical` relations. It declares the same ten function sources auto-publish would have
@@ -303,7 +303,7 @@ sudo -u postgres /opt/glasswell/venv/bin/glasswell-migrate \
     --dsn "postgresql:///glasswell?host=/var/run/postgresql"
 ```
 
-`marts.refresh_all` issues `create or replace function` and `create or replace view` in
+`marts.refresh_for` issues `create or replace function` and `create or replace view` in
 schema `marts`, so `glasswell_pipeline` needs `create` there. Migration 009 grants only
 `usage`; the privilege was applied by hand on this host during P7 and is now held by a
 migration (DR-21), which is what makes a rebuild on a fresh database possible.

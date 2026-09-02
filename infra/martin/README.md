@@ -28,7 +28,7 @@ Every layer carries `derivation_id` as a feature property. A tile is a served fi
 
 ## One set of ids, published once — the functions, declared
 
-`refresh_all` and `install_tile_functions` create `marts.nd_laterals(z, x, y, query json)`
+`refresh_for` and `install_tile_functions` create `marts.nd_laterals(z, x, y, query json)`
 and its two siblings; each reads the `marts.tile_*` view of its layer. The MVT layer name
 inside each tile equals the id, which is what MapLibre binds `source-layer` to.
 
@@ -169,7 +169,7 @@ allowlist until this is adopted, and by the grant afterwards.
 ## Operational notes
 
 - martin reads its catalogue at startup. Layers created after it started are invisible
-  until it restarts, so after the first `refresh_all` on a fresh database check
+  until it restarts, so after the first `refresh_for` on a fresh database check
   `curl -s 127.0.0.1:3000/catalog` and restart martin only if the ids are absent — the unit
   file and its `EnvironmentFile` stay untouched either way.
 - The martin role needs `usage` on schema `marts`; `execute` on the tile functions is

@@ -568,7 +568,7 @@ drift is a deploy-side defect to route, not a thing to work around every month.
 Expected JSON: `layers` = `["nm_wells"]`, `row_counts` = `{"nm_wells_tile": 141778}` (sealed),
 one `derivation_id`.
 
-**Two side effects worth knowing before you run it.** `refresh_all` rebuilds rather than
+**Two side effects worth knowing before you run it.** `refresh_for` rebuilds rather than
 appends, so the mart holds exactly one `derivation_id` afterwards. And it calls
 `install_tile_functions`, which runs `create or replace` over **every** published layer's
 function body, not only New Mexico's — from the deployed `tiles.py`. That rewrites no row and
