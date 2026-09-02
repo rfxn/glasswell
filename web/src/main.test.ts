@@ -278,6 +278,29 @@ describe("one dispatch on view, three surfaces (SB-08 §2.1)", () => {
     expect(createMap).not.toHaveBeenCalled();
   });
 
+  // Copilot on PR #48: `showLoginPanel` cleared the name but not the role, and Status renders
+  // its owner-only Accounts section from the role. A signed-out reader kept that section, and
+  // the two owner-scoped requests behind it, until the next whoami answered.
+  it("stops calling the reader an owner once their session is gone", async () => {
+    vi.stubGlobal("fetch", servesSession);
+    await bootAt("/?view=status");
+    await vi.waitFor(() => expect(mountStatusPage).toHaveBeenCalledOnce());
+    expect(mountStatusPage.mock.calls[0]?.[1]).toMatchObject({ role: "owner" });
+
+    const hooks = mountStatusPage.mock.calls[0]?.[1] as { onForbidden(error: unknown): void };
+    const { ApiError } = await import("./api/client.ts");
+    hooks.onForbidden(
+      new ApiError({ type: "/v1/errors/unauthenticated", title: "Forbidden", status: 403 }),
+    );
+
+    navigate("/?view=explore&ds=wells");
+    await vi.waitFor(() => expect(host("gw-explore").hidden).toBe(false));
+    navigate("/?view=status");
+    await vi.waitFor(() => expect(mountStatusPage).toHaveBeenCalledTimes(2));
+
+    expect(mountStatusPage.mock.calls[1]?.[1]).toMatchObject({ role: null });
+  });
+
   // The map mounts before the session resolves, so its tiles and counts are refused and it
   // latches that. Signing in has to reach it, and the probe that already failed must not be
   // what tells the rest of the app who the reader is.

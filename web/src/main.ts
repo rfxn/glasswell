@@ -127,6 +127,10 @@ function showLoginPanel(): void {
   const reason = hadSession ? "expired" : "required";
   setSessionState(reason);
   setSignedIn(null);
+  // The role is latched from the session that just ended, and Status renders its owner-only
+  // Accounts section from it. Left standing, a signed-out reader got that section and the two
+  // owner-scoped requests behind it until the next whoami answered.
+  sessionRole = null;
   keyHost.replaceChildren(
     loginPanel({
       reason,
@@ -357,6 +361,7 @@ async function resolveSession(): Promise<boolean> {
     setSessionState("ok");
     return true;
   } catch (error) {
+    sessionRole = null;
     handleApiError(error, "Session");
     // Nothing further in boot can succeed without a principal; signing in runs it again.
     if (error instanceof ApiError && error.problem.status === 403) return false;
