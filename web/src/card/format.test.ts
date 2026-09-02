@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import "./gw-figure.ts";
 import {
   NULL_SEMANTICS_STATES,
+  roundTo,
   formatFigure,
   formatMonth,
   formatValue,
@@ -209,5 +210,31 @@ describe("the null-semantics key", () => {
     expect(new Set(marks.map((mark) => mark.className)).size).toBe(4);
     expect(marks.every((mark) => mark.label.length > 0 && mark.title.length > 0)).toBe(true);
     expect(marks.every((mark) => mark.className !== "gw-state-unknown")).toBe(true);
+  });
+});
+
+
+describe("roundTo refuses a precision that is not one", () => {
+  it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])("throws on %s", (digits) => {
+    expect(() => roundTo("21000.000", digits)).toThrow(/non-negative integer/);
+  });
+});
+
+describe("gw-figure's digits attribute", () => {
+  const mount = (digits: string | null): string => {
+    const el = document.createElement("gw-figure");
+    el.setAttribute("value", "21000.456");
+    el.setAttribute("unit", "bbl");
+    el.setAttribute("handle", "drv_test#col=x");
+    if (digits !== null) el.setAttribute("digits", digits);
+    document.body.replaceChildren(el);
+    return el.textContent ?? "";
+  };
+  it("rounds only on a non-negative integer", () => {
+    expect(mount("0")).toContain("21,000 bbl");
+    expect(mount("1")).toContain("21,000.5 bbl");
+  });
+  it.each(["", "NaN", "-1", "1.5", "two"])("treats %j as unset and renders as served", (raw) => {
+    expect(mount(raw)).toContain("21,000.456 bbl");
   });
 });

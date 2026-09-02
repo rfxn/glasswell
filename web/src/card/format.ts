@@ -50,6 +50,9 @@ export function formatValue(value: string): string {
  * §4.4) — the whole part is carried with BigInt, so a 21-digit volume rounds exactly.
  */
 export function roundTo(value: string, digits: number): string {
+  if (!Number.isInteger(digits) || digits < 0) {
+    throw new Error(`roundTo: digits must be a non-negative integer, got ${String(digits)}`);
+  }
   const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value.trim());
   if (!match) return value;
   const [, sign = "", whole = "0", fraction = ""] = match;
@@ -62,7 +65,7 @@ export function roundTo(value: string, digits: number): string {
   return sign + carried.slice(0, split) + (digits ? `.${carried.slice(split)}` : "");
 }
 
-/** `digits` renders the figure to a fixed precision; omitted, it renders as served. */
+/** `digits` rounds the figure to at most that many decimals, never zero-padded; omitted, it renders as served. */
 export function formatFigure(figure: Figure, digits?: number): string {
   if (!figure.unit) {
     throw new Error(`figure ${figure.value} has no unit; a naked number is a defect (R6)`);

@@ -2,6 +2,12 @@ import type { Figure } from "../api/envelope.ts";
 import { dispatchExplain, explainHandle } from "../chrome/handle.ts";
 import { formatFigure } from "./format.ts";
 
+/** Only a non-negative integer is a precision; anything else on the attribute means "as served". */
+function parseDigits(raw: string | null): number | undefined {
+  if (raw === null || !/^\d+$/.test(raw.trim())) return undefined;
+  return Number(raw.trim());
+}
+
 // SB-05 §3.1: dev renders a NAKED badge and logs; the test build throws. Either way the
 // defect is visible — this element is the browser-side end of the no-naked-numbers rule.
 const STRICT = import.meta.env.MODE === "test";
@@ -31,10 +37,10 @@ export class GwFigure extends HTMLElement {
       unit: this.getAttribute("unit") ?? "",
       d: this.getAttribute("handle") ?? "",
     };
-    const digits = this.getAttribute("digits");
+    const digits = parseDigits(this.getAttribute("digits"));
     let text: string;
     try {
-      text = formatFigure(figure, digits === null ? undefined : Number(digits));
+      text = formatFigure(figure, digits);
     } catch (error) {
       if (STRICT) throw error;
       console.error(error);
