@@ -579,6 +579,12 @@ def test_the_guard_reports_each_way_of_not_checking_with_its_own_exit_status(
     monkeypatch.setenv("GLASSWELL_DSN", "postgresql:///glasswell?host=/nonexistent-gw-probe")
     assert cli.main(["--double-run-check"], control=StubControl()) == cli.GUARD_UNREACHABLE
 
+    # A DSN psycopg cannot parse never reaches the database either, so it is the same fact:
+    # nothing was checked. Uncaught it raises ProgrammingError and exits 1, which is the
+    # status that means a double-run hazard.
+    monkeypatch.setenv("GLASSWELL_DSN", "this is not a dsn ===")
+    assert cli.main(["--double-run-check"], control=StubControl()) == cli.GUARD_UNREACHABLE
+
     monkeypatch.setenv("GLASSWELL_DSN", dsn)
     monkeypatch.setattr(cli, "installed_timer_owned_entry_points", frozenset)
     assert cli.main(["--double-run-check"], control=StubControl()) == cli.GUARD_NO_TIMER_SET

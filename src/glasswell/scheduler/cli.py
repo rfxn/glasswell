@@ -170,7 +170,9 @@ def double_run_check() -> int:
         return GUARD_NO_DSN
     try:
         connection = control_connection(dsn)
-    except psycopg.OperationalError as unreachable:
+    # psycopg.Error, not OperationalError: a DSN psycopg cannot parse raises ProgrammingError
+    # and would otherwise exit 1, which the deploy gate reads as a double-run hazard.
+    except psycopg.Error as unreachable:
         print(f"the database could not be reached, so nothing was checked: {unreachable}")
         return GUARD_UNREACHABLE
     with connection:
