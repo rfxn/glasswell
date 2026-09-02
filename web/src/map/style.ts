@@ -744,6 +744,22 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
         "line-opacity": selectable(1, 0.85),
       },
     },
+    // Texas, drawn from the same expressions as North Dakota. The status vocabulary is
+    // per-source (cr_tx_status_vocab_1 there, cr_nd_status_vocab_1 here) but the canonical
+    // classes are one list, so a reader compares like with like across the two basins.
+    {
+      id: "tx-laterals",
+      type: "line",
+      source: txLaterals,
+      "source-layer": txLaterals,
+      minzoom: LATERAL_MIN_ZOOM,
+      metadata: STATUS_GATED,
+      paint: {
+        "line-color": selectable(SELECTION_COLOUR, statusColourExpression()),
+        "line-width": lateralWidth(),
+        "line-opacity": selectable(1, 0.85),
+      },
+    },
     // One point layer per registration, in registered draw order. The four were byte-identical
     // but for their id and their source, and every one of the differences that mattered --
     // which status expressions, which radius, which gate -- was the same in all four.
@@ -773,22 +789,6 @@ export function dataLayers(options: DataLayerOptions = {}): LayerSpecification[]
           [15, selectable(3.8, 2.2)],
         ]),
         "circle-radius": disposalRingRadius(),
-      },
-    },
-    // Texas, drawn from the same expressions as North Dakota. The status vocabulary is
-    // per-source (cr_tx_status_vocab_1 there, cr_nd_status_vocab_1 here) but the canonical
-    // classes are one list, so a reader compares like with like across the two basins.
-    {
-      id: "tx-laterals",
-      type: "line",
-      source: txLaterals,
-      "source-layer": txLaterals,
-      minzoom: LATERAL_MIN_ZOOM,
-      metadata: STATUS_GATED,
-      paint: {
-        "line-color": selectable(SELECTION_COLOUR, statusColourExpression()),
-        "line-width": lateralWidth(),
-        "line-opacity": selectable(1, 0.85),
       },
     },
     // The struck siblings, in the same order. A strike is a symbol over a class the status

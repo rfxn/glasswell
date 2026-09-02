@@ -673,3 +673,33 @@ describe("a fifth registration's layers", () => {
     expect(specs[WELLS_SOURCE_BY_LAYER["tx-wells"]!]).toBeDefined();
   });
 });
+
+describe("the order the layers are declared in", () => {
+  // MapLibre paints in array order, so this is z-order and nothing else pins it: the file
+  // asserts membership, sources and per-layer paint, and a roster edit moved two layers past
+  // each other without a single test noticing.
+  const ids = () => dataLayers({ labels: true }).map((layer) => layer.id);
+
+  it("draws every bore line under every wellhead dot", () => {
+    // A lateral belongs to the well whose dot sits on its heel. Painted over that dot, the
+    // stroke bisects it — and selection tints one and not always the other, which is where a
+    // reader sees it.
+    const order = ids();
+    const lastLine = Math.max(
+      ...["laterals", "tx-laterals", "survey-traces", "mt-paths"].map((id) => order.indexOf(id)),
+    );
+    const firstPoint = Math.min(...WELL_POINT_LAYERS.map((id) => order.indexOf(id)));
+
+    expect(firstPoint).toBeGreaterThan(-1);
+    expect(lastLine).toBeLessThan(firstPoint);
+  });
+
+  it("keeps the disposal ring over the dots it rings and under the strike", () => {
+    const order = ids();
+
+    for (const id of WELL_POINT_LAYERS) {
+      expect(order.indexOf(id)).toBeLessThan(order.indexOf("disposal-wells"));
+    }
+    expect(order.indexOf("disposal-wells")).toBeLessThan(order.indexOf("wells-struck"));
+  });
+});
