@@ -50,6 +50,17 @@ POLICY_RULES = tuple(sorted((
     # semantics and grain uniqueness, because they are separate sources whose registries must
     # not share an assumption; the rest record what the parsers decided and what they refused.
     "cr_mt_basin_scope_1",
+    # The seam-hardening registrations: which basin governs a jurisdiction's compute CRS, which
+    # source measures its lateral, whether the neighbour mart's domain reaches it, and Montana's
+    # appended length_scope successor. Their executor is the mart engine or the router the spec
+    # names; none of them transforms a frame.
+    "cr_mt_neighbors_scope_1",
+    "cr_mt_paths_length_scope_2",
+    "cr_nd_basin_scope_1",
+    "cr_nd_length_source_1",
+    "cr_nd_neighbors_scope_1",
+    "cr_tx_basin_scope_1",
+    "cr_tx_length_source_1",
     "cr_mt_formation_rollup_1",
     "cr_mt_gis_border_outliers_1",
     "cr_mt_grain_uniqueness_1",

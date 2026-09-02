@@ -19,6 +19,37 @@ REGISTERED_ON = date(2026, 9, 2)
 EVIDENCE_TAG = "v0.76"
 EVIDENCE_COMMIT = "6f2e9e6e97952000985568e6aa04d479ec84fe83"
 
+# Knowledge time of the restatements that carry the presentation columns. Strictly later than
+# every founding published_at, and not REGISTERED_ON + 1 day: two standing gates plant a rival
+# registration on that instant and the partial unique indexes would refuse them.
+RESTATED_ON = date(2026, 9, 4)
+RESTATED_EVIDENCE_TAG = "UNRELEASED"
+RESTATED_EVIDENCE_COMMIT = "0" * 40
+
+# The web Wells rows as registration data. Seven facts that lived as object literals in
+# `web/src/map/registry.ts`, so a fifth jurisdiction is a row rather than a hand edit.
+PRESENTATION_COLUMNS = (
+    "wells_layer_id",
+    "wells_style_layer_ids",
+    "wells_draw_order",
+    "wells_default_on",
+    "wells_snapshot_key",
+    "wells_subtitle_template",
+    "legend_note",
+)
+
+# The conformance rules this train publishes. The migration writes their publication evidence
+# so the seeders can insert them: 049's trigger refuses a rule with no published vintage.
+TRACK_RULE_IDS = (
+    "cr_mt_neighbors_scope_1",
+    "cr_mt_paths_length_scope_2",
+    "cr_nd_basin_scope_1",
+    "cr_nd_length_source_1",
+    "cr_nd_neighbors_scope_1",
+    "cr_tx_basin_scope_1",
+    "cr_tx_length_source_1",
+)
+
 # The one decision no registration may be without: a jurisdiction whose status vocabulary is
 # unregistered has no rule to cite for the class every well on the map is drawn by.
 REQUIRED_DECISIONS = ("status_vocabulary",)
@@ -62,6 +93,17 @@ JURISDICTIONS: tuple[dict[str, object], ...] = (
         "land_grid_state": True,
         "land_grid_scope": True,
         "status_dataset_detail": SHARED_STATUS_DETAIL,
+        # The irregular one: the founding layer id predates the per-jurisdiction spelling and
+        # is frozen by every saved permalink, so the registry carries the irregularity.
+        "wells_layer_id": "wells",
+        "wells_style_layer_ids": ("wells", "wells-struck"),
+        "wells_draw_order": 40,
+        "wells_default_on": True,
+        "wells_snapshot_key": "nd_wells_refresh",
+        "wells_subtitle_template": (
+            "ND DMR GIS surface locations · {count} points · culled by status below zoom 9"
+        ),
+        "legend_note": None,
         "rationale": (
             "The founding jurisdiction: NDIC DMR files the monthly production report and the"
             " GIS layers the spine was built on. The two BLM PLSS layers are registered here"
@@ -88,6 +130,15 @@ JURISDICTIONS: tuple[dict[str, object], ...] = (
         "land_grid_state": False,
         "land_grid_scope": False,
         "status_dataset_detail": SHARED_STATUS_DETAIL,
+        "wells_layer_id": "tx-wells",
+        "wells_style_layer_ids": ("tx-wells", "tx-wells-struck"),
+        "wells_draw_order": 42,
+        "wells_default_on": True,
+        "wells_snapshot_key": None,
+        "wells_subtitle_template": (
+            "TX RRC GIS surface locations, 55 Permian-district counties · {count} points"
+        ),
+        "legend_note": None,
         "rationale": (
             "Served from the RRC county GIS layers and the Wellbore Query export. Texas files"
             " production at the lease, so no liquids basis and no pool-rollup decision are"
@@ -122,6 +173,17 @@ JURISDICTIONS: tuple[dict[str, object], ...] = (
         "land_grid_state": False,
         "land_grid_scope": False,
         "status_dataset_detail": SHARED_STATUS_DETAIL,
+        "wells_layer_id": "nm-wells",
+        "wells_style_layer_ids": ("nm-wells", "nm-wells-struck"),
+        "wells_draw_order": 43,
+        "wells_default_on": True,
+        "wells_snapshot_key": None,
+        "wells_subtitle_template": (
+            "NM OCD well-header surface locations · {count} points, ten of the fourteen OCD"
+            " status codes mapped and four documented without an equivalent"
+            " (cr_nm_wellhistory_status_vocab_2)"
+        ),
+        "legend_note": None,
         "rationale": (
             "Served from the OCD FTP tables, the public wells layer and the C-115B waste"
             " service. The status class is resolved at read time rather than written by the"
@@ -153,6 +215,18 @@ JURISDICTIONS: tuple[dict[str, object], ...] = (
             " not quarantine as unknown_status, so this is below the surface-point count and"
             " the difference is in the quarantine ledger, not lost."
         ),
+        "wells_layer_id": "mt-wells",
+        "wells_style_layer_ids": ("mt-wells", "mt-wells-struck"),
+        "wells_draw_order": 44,
+        "wells_default_on": True,
+        "wells_snapshot_key": None,
+        "wells_subtitle_template": (
+            "MBOGC surface locations · {count} points, 13 of the 19 filed status values mapped"
+            " and the other 6 quarantined rather than defaulted (cr_mt_gis_status_vocab_1) · no"
+            " basin tag: Bakken is 4.6% of Montana (cr_mt_basin_scope_1) · completion year,"
+            " never a spud"
+        ),
+        "legend_note": None,
         "rationale": (
             "Served from the MBOGC GIS layers and the two historical production files. The PRU"
             " file reports at lease grain, so its inventory rule is registered and not serving;"
@@ -162,7 +236,16 @@ JURISDICTIONS: tuple[dict[str, object], ...] = (
     },
 )
 
-JURISDICTION_RULES: tuple[dict[str, object], ...] = (
+# The founding rows, for the migration mirror and the parity gate. Named for what they restate
+# rather than for what they hold, which reads backwards on first grep: they are `JURISDICTIONS`
+# as v0.76 published them, before the seven presentation columns. Derived, never restated --
+# a second copy of four rationales is the drift this registry exists to remove.
+JURISDICTION_RESTATEMENTS: tuple[dict[str, object], ...] = tuple(
+    {key: value for key, value in row.items() if key not in PRESENTATION_COLUMNS}
+    for row in JURISDICTIONS
+)
+
+JURISDICTION_RULES_AS_FOUNDED: tuple[dict[str, object], ...] = (
     {"jurisdiction_code": "ND", "decision": "status_vocabulary",
      "rule_id": "cr_nd_status_vocab_1"},
     {"jurisdiction_code": "ND", "decision": "geometry_provenance",
@@ -207,6 +290,34 @@ JURISDICTION_RULES: tuple[dict[str, object], ...] = (
      "rule_id": "cr_mt_operator_absence_1"},
 )
 
+# The resolved set. Montana's length_scope repoints to the appended successor, whose spec drops
+# the sentence describing the North Dakota default this track removes; four basin_scope rows say
+# which basin governs a jurisdiction's compute CRS; two length_source rows say which source
+# computes a lateral, a fact `length_scope` cannot carry because the serving path reads that
+# decision's existence as "withheld"; two neighbors_scope rows say the neighbour mart's measured
+# domain reaches this jurisdiction.
+JURISDICTION_RULES: tuple[dict[str, object], ...] = (
+    *(
+        {**row, "rule_id": "cr_mt_paths_length_scope_2"}
+        if row["decision"] == "length_scope"
+        else row
+        for row in JURISDICTION_RULES_AS_FOUNDED
+    ),
+    {"jurisdiction_code": "ND", "decision": "basin_scope", "rule_id": "cr_nd_basin_scope_1"},
+    {"jurisdiction_code": "TX", "decision": "basin_scope", "rule_id": "cr_tx_basin_scope_1"},
+    {"jurisdiction_code": "NM", "decision": "basin_scope",
+     "rule_id": "cr_nm_wellhistory_basin_scope_1"},
+    {"jurisdiction_code": "MT", "decision": "basin_scope", "rule_id": "cr_mt_basin_scope_1"},
+    {"jurisdiction_code": "ND", "decision": "length_source",
+     "rule_id": "cr_nd_length_source_1"},
+    {"jurisdiction_code": "TX", "decision": "length_source",
+     "rule_id": "cr_tx_length_source_1"},
+    {"jurisdiction_code": "ND", "decision": "neighbors_scope",
+     "rule_id": "cr_nd_neighbors_scope_1"},
+    {"jurisdiction_code": "MT", "decision": "neighbors_scope",
+     "rule_id": "cr_mt_neighbors_scope_1"},
+)
+
 PREFIXES = frozenset(str(row["identity_prefix"]) for row in JURISDICTIONS)
 CODES = frozenset(str(row["jurisdiction_code"]) for row in JURISDICTIONS)
 NAMES = frozenset(str(row["name"]) for row in JURISDICTIONS)
@@ -229,14 +340,17 @@ insert into lineage.jurisdictions (
     name, regulator_name, regulator_url, identity_scheme, identity_is_unique,
     identity_prefix, identity_pattern, source_ids, liquids_basis, wells_tile_layer_id,
     map_colour, neighbors_available, explorer_default, land_grid_state, land_grid_scope,
-    status_dataset_detail, rationale)
+    status_dataset_detail, rationale, wells_layer_id, wells_style_layer_ids, wells_draw_order,
+    wells_default_on, wells_snapshot_key, wells_subtitle_template, legend_note)
 values (
     %(jurisdiction_code)s, %(effective_from)s, %(published_at)s, %(evidence_tag)s,
     %(evidence_commit)s, %(name)s, %(regulator_name)s, %(regulator_url)s, %(identity_scheme)s,
     %(identity_is_unique)s, %(identity_prefix)s, %(identity_pattern)s, %(source_ids)s,
     %(liquids_basis)s, %(wells_tile_layer_id)s, %(map_colour)s, %(neighbors_available)s,
     %(explorer_default)s, %(land_grid_state)s, %(land_grid_scope)s, %(status_dataset_detail)s,
-    %(rationale)s)
+    %(rationale)s, %(wells_layer_id)s, %(wells_style_layer_ids)s, %(wells_draw_order)s,
+    %(wells_default_on)s, %(wells_snapshot_key)s, %(wells_subtitle_template)s,
+    %(legend_note)s)
 on conflict do nothing
 """
 
@@ -253,14 +367,26 @@ on conflict do nothing
 """
 
 
-def registration_parameters(row: dict[str, object]) -> dict[str, object]:
+def registration_parameters(
+    row: dict[str, object],
+    *,
+    published_at: date = REGISTERED_ON,
+    evidence_tag: str = EVIDENCE_TAG,
+    evidence_commit: str = EVIDENCE_COMMIT,
+) -> dict[str, object]:
+    """The clock and its evidence arrive as arguments, never as a literal a row could shadow."""
     prefix = str(row["identity_prefix"])
+    presentation: dict[str, object] = {column: row.get(column) for column in PRESENTATION_COLUMNS}
+    style_layers = presentation["wells_style_layer_ids"]
+    if isinstance(style_layers, tuple):
+        presentation["wells_style_layer_ids"] = list(style_layers)
     return {
         **row,
+        **presentation,
         "effective_from": REGISTERED_ON,
-        "published_at": REGISTERED_ON,
-        "evidence_tag": EVIDENCE_TAG,
-        "evidence_commit": EVIDENCE_COMMIT,
+        "published_at": published_at,
+        "evidence_tag": evidence_tag,
+        "evidence_commit": evidence_commit,
         "identity_scheme": "api10",
         "identity_is_unique": True,
         "identity_pattern": identity_pattern(prefix),
@@ -268,23 +394,46 @@ def registration_parameters(row: dict[str, object]) -> dict[str, object]:
     }
 
 
-def rule_parameters(row: dict[str, object]) -> dict[str, object]:
+def restatement_parameters(row: dict[str, object]) -> dict[str, object]:
+    """A resolved registration stamped with this train's clock and its own evidence pair."""
+    return registration_parameters(
+        row,
+        published_at=RESTATED_ON,
+        evidence_tag=RESTATED_EVIDENCE_TAG,
+        evidence_commit=RESTATED_EVIDENCE_COMMIT,
+    )
+
+
+def rule_parameters(
+    row: dict[str, object], *, published_at: date = REGISTERED_ON
+) -> dict[str, object]:
     return {
         "effective_from": REGISTERED_ON,
-        "published_at": REGISTERED_ON,
         "serving": True,
         "note": None,
         **row,
+        "published_at": published_at,
     }
 
 
 def seed_jurisdictions(connection: psycopg.Connection) -> int:
-    """Idempotent by contract: seed_all runs on every deploy. Returns the registry total."""
+    """Idempotent by contract: seed_all runs on every deploy. Returns the registry total.
+
+    Two clocks, two rule sets: the founding instant keeps the decisions v0.76 knew about, and
+    the restatement carries those plus the ones this train registers. Writing the new rows at
+    the founding instant would be an edit to what was published, spelled as an append.
+    """
     with connection.cursor() as cursor:
         cursor.executemany(_INSERT_CODE, JURISDICTION_CODES)
         cursor.executemany(
-            _INSERT_JURISDICTION, [registration_parameters(row) for row in JURISDICTIONS]
+            _INSERT_JURISDICTION,
+            [registration_parameters(row) for row in JURISDICTION_RESTATEMENTS]
+            + [restatement_parameters(row) for row in JURISDICTIONS],
         )
-        cursor.executemany(_INSERT_RULE, [rule_parameters(row) for row in JURISDICTION_RULES])
+        cursor.executemany(
+            _INSERT_RULE,
+            [rule_parameters(row) for row in JURISDICTION_RULES_AS_FOUNDED]
+            + [rule_parameters(row, published_at=RESTATED_ON) for row in JURISDICTION_RULES],
+        )
         cursor.execute("select count(*) from lineage.jurisdictions")
         return int(cursor.fetchone()[0])

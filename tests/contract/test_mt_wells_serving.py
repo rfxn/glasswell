@@ -139,7 +139,7 @@ def test_the_montana_length_is_withheld_and_the_rule_is_served_in_its_place(
     assert data["lateral_length_ft"] is None
     assert data["length_method"] == "not_served"
     assert data["compute_crs"] is None
-    assert envelope["links"]["length_rule"] == "/v1/conformance/cr_mt_paths_length_scope_1"
+    assert envelope["links"]["length_rule"] == "/v1/conformance/cr_mt_paths_length_scope_2"
     withheld = [
         warning
         for warning in envelope["meta"]["warnings"]
@@ -150,16 +150,16 @@ def test_the_montana_length_is_withheld_and_the_rule_is_served_in_its_place(
             "code": "length_not_served",
             "detail": (
                 "1 geometries are held for this well and no length is served for them;"
-                " cr_mt_paths_length_scope_1 is the rule that withholds it"
+                " cr_mt_paths_length_scope_2 is the rule that withholds it"
             ),
             "pointer": "/lateral_length_ft",
-            "rule_id": "cr_mt_paths_length_scope_1",
+            "rule_id": "cr_mt_paths_length_scope_2",
         }
     ]
 
 
 def test_the_withholding_rule_is_registered_and_resolves(client: TestClient) -> None:
-    response = client.get("/v1/conformance/cr_mt_paths_length_scope_1")
+    response = client.get("/v1/conformance/cr_mt_paths_length_scope_2")
 
     assert response.status_code == 200
     rule = response.json()["data"]
@@ -215,4 +215,4 @@ def test_montana_is_registered_in_both_lookups_rather_than_falling_back(
     assert declared_rule("25", "geometry_provenance") != declared_rule(
         "33", "geometry_provenance"
     )
-    assert declared_rule("25", "length_scope") == "cr_mt_paths_length_scope_1"
+    assert declared_rule("25", "length_scope") == "cr_mt_paths_length_scope_2"

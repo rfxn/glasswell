@@ -1050,6 +1050,90 @@ ND_RULES: tuple[dict[str, object], ...] = (
         "evidence_url": MPR_INDEX_URL,
         "code_ref": "glasswell/status/collector.py",
     },
+    {
+        "rule_id": "cr_nd_basin_scope_1",
+        "source_id": "nd_gis_wells",
+        "stage": "conform",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["basin"],
+        "spec": {
+            "module_function": "glasswell.marts.wells:refresh_for",
+            "contract_note": (
+                "the North Dakota wells mart resolves its lateral length through the williston"
+                " compute-CRS rule, and this row is where that basin is named"
+            ),
+            "basin": "williston",
+        },
+        "rule": "North Dakota's served geometry is scoped to the Williston modeling basin.",
+        "rationale": (
+            "cr_nd_basin_1 assigns the basin to each well revision at promotion. This row is"
+            " the serving half of the same decision, and it exists because the mart carried the"
+            " basin as a module constant. A constant cannot be cited, cannot carry a date and"
+            " cannot be superseded, so every jurisdiction that reached the same code inherited"
+            " North Dakota's basin without anything saying so. Registered here it is a row with"
+            " a rationale, and a jurisdiction that registers none resolves no length at all"
+            " rather than resolving this one."
+        ),
+        "evidence_url": GIS_WELLS_URL,
+    },
+    {
+        "rule_id": "cr_nd_length_source_1",
+        "source_id": "nd_gis_horizontals_line",
+        "stage": "conform",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["lateral_length_ft"],
+        "spec": {
+            "module_function": "glasswell.marts.wells:refresh_for",
+            "contract_note": (
+                "the source whose compute-CRS rule measures a North Dakota lateral; the served"
+                " figure cites that rule's id, so repointing this row moves the handle with the"
+                " number it addresses"
+            ),
+            "source_id": "nd_gis_horizontals_line",
+        },
+        "rule": "A North Dakota lateral is measured under the OGD Horizontals archive's"
+        " compute-CRS rule.",
+        "rationale": (
+            "Which source governs a length and whether a length is served at all are two"
+            " questions, and length_scope answers only the second: the serving path reads that"
+            " decision's presence as `withheld` and cites the rule in place of the figure. So"
+            " the first question gets its own dimension. Before this row the answer was"
+            " lengths.LATERALS_SOURCE_ID, a module constant returned on a falsy basin, which"
+            " meant an unregistered jurisdiction was served a number computed under a rule about"
+            " North Dakota geometry. That is the naked-number failure R8 exists to prevent, and"
+            " it is why the constant now has no caller."
+        ),
+        "evidence_url": GIS_LATERALS_URL,
+    },
+    {
+        "rule_id": "cr_nd_neighbors_scope_1",
+        "source_id": "nd_gis_wells",
+        "stage": "conform",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["state_code"],
+        "spec": {
+            "module_function": "glasswell.marts.neighbors:refresh",
+            "contract_note": (
+                "the neighbour mart's measured domain covers this jurisdiction; a registration"
+                " without this row is excluded from the subject set and told why, rather than"
+                " aborting the monthly run"
+            ),
+            "supported_zone_epsgs": [32611, 32612, 32613, 32614],
+        },
+        "rule": "North Dakota is inside the neighbour mart's measured envelope and its UTM"
+        " zones.",
+        "rationale": (
+            "The envelope was two pairs of float constants and the zone set a four-element"
+            " tuple, and neither was bound to the registry the mart takes its state codes from."
+            " A fifth jurisdiction registered as neighbours-available but outside either bound"
+            " was counted as an outlier and aborted the whole run with a message beginning `ND"
+            " neighbour geometry falls outside` while reporting another state's well. The"
+            " domain is therefore a registration: present means the measurement reaches here,"
+            " absent means it does not, and absent is an exclusion with a reason rather than a"
+            " RuntimeError."
+        ),
+        "evidence_url": GIS_WELLS_URL,
+    },
 )
 
 _INSERT = """
