@@ -53,7 +53,7 @@ from glasswell.lineage.conformance import (
 )
 from glasswell.lineage.envelope import Figure, collect_handles, distinct_handles, figure
 from glasswell.lineage.explain import MAX_HANDLES
-from glasswell.lineage.jurisdictions import JurisdictionRegistry
+from glasswell.lineage.jurisdictions import NEIGHBORS_SCOPE, JurisdictionRegistry
 from glasswell.lineage.selector_registry import identity_selector_term
 from glasswell.marts.cumulatives import (
     LIQUIDS_BASIS,
@@ -117,7 +117,6 @@ LENGTH_SCOPE_UNREGISTERED = "length_scope_unregistered"
 # `neighbors_available` is the registration: this jurisdiction has laterals to offer. The
 # neighbour mart's *measured domain* is a second decision, and a registration outside it is
 # excluded from the mart -- so the card is told why rather than shown an empty frame.
-NEIGHBORS_SCOPE = "neighbors_scope"
 NEIGHBORS_NOT_COVERED = "neighbors_domain_not_covered"
 
 # The cohort key is an identifier for a group, not a measurement about it. Byte-equal to the

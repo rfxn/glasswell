@@ -20,7 +20,11 @@ from psycopg.pq import TransactionStatus
 from glasswell.ingest.base import resolve_environment
 from glasswell.lineage.audit import emit
 from glasswell.lineage.capture import current_session, derive, lineage_session
-from glasswell.lineage.jurisdictions import JurisdictionRegistry, load_jurisdictions
+from glasswell.lineage.jurisdictions import (
+    NEIGHBORS_SCOPE,
+    JurisdictionRegistry,
+    load_jurisdictions,
+)
 from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.serialization import canonical_json, hash_payload
 from glasswell.lineage.store import PostgresRecorder
@@ -41,7 +45,6 @@ STATE_CODES: tuple[str, ...] = tuple(
 # registered neighbours-available outside either bound was picked up as a subject, counted as
 # an outlier, and aborted the whole monthly run with a message beginning "ND neighbour geometry
 # falls outside" while reporting another state's well.
-NEIGHBORS_SCOPE = "neighbors_scope"
 # Registration order, so the subject list this feeds -- a derivation param -- is byte-identical
 # for the resident pair. Anything registered later sorts after it, by code.
 _REGISTRATION_ORDER = tuple(str(row["identity_prefix"]) for row in JURISDICTIONS)
