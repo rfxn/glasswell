@@ -170,6 +170,13 @@ sudo -u glasswell $VENV/bin/glasswell-tiles --dsn "$DSN" --jurisdiction <CODE>
 sudo -u glasswell $VENV/bin/python -m glasswell.marts.counts --dsn "$DSN"
 ```
 
+> **Run `seed_all` first, and not only for the API.** The tile refresh reads the registry now:
+> it resolves the registration, its `basin_scope` and its `length_source` before it measures
+> anything, and refuses by name if they are not there. The migration's `jurisdiction_rules`
+> insert is guarded on conformance-rule residency, so on a fresh database those rows land only
+> after the seed has run. `scripts/deploy.sh` already orders it that way (6a migrate, 6b
+> `seed_all`, then the marts); what changed is that the mart is no longer indifferent to it.
+
 > **Refuses otherwise:** `jurisdiction_well_counts.well_count` is `not null` and
 > `derivation_id` references `lineage.derivations` — there is no count without a refresh that
 > produced it. Until the second command runs, `/v1/jurisdictions` serves this jurisdiction with
