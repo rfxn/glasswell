@@ -17629,7 +17629,7 @@
           "group": "wells",
           "id": "cumulatives",
           "intro": "nb_dataset_cumulatives",
-          "order": 15,
+          "order": 17,
           "row_id": [
             "/api10",
             "/snapshot_vintage"

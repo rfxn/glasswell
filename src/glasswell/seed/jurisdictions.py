@@ -1,4 +1,4 @@
-"""The jurisdiction registry as rows: the same registrations migration 072 ships, mirrored.
+"""The jurisdiction registry as rows: the same registrations the migration ships, mirrored.
 
 Two writers on purpose. A registry the serving path depends on must ship with its rows, so the
 migration carries them and `glasswell-migrate` alone yields a database that serves. And

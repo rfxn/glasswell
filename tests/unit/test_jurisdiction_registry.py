@@ -2,7 +2,7 @@
 
 No database. `build_registry` is the half of the loader that decides, and the two refusals it
 owns -- a prefix that resolves to two jurisdictions (N-3) and a scheme that has no prefix at
-all (R-7) -- are the ones no constraint in migration 072 can reach.
+all (R-7) -- are the ones no constraint in the jurisdictions migration can reach.
 """
 
 from __future__ import annotations

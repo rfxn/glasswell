@@ -1,7 +1,7 @@
 """The standing gates on the jurisdiction registry: two writers, one truth, no silent drift.
 
-Three of these close residuals no constraint in migration 072 can reach (§4): a prefix that
-resolves to two jurisdictions, a registration whose rule rows were not re-appended with it, and
+Three of these close residuals no constraint in the migration can reach (§4): a prefix
+that resolves to two jurisdictions, a registration whose rule rows were not re-appended with it, and
 a `source_ids` array that has quietly stopped being complete. The fourth holds the migration's
 copy of the rows to the seed module's, evidence and knowledge time included, so a repoint that
 touches one and forgets the other reddens here rather than on the deployed host.

@@ -1,4 +1,4 @@
-"""Migration 072: the jurisdiction registry's DDL, its two clocks, and its grants.
+"""The jurisdictions migration: the registry's DDL, its two clocks, and its grants.
 
 Every refusal here has to be proved in the commit that lands the DDL, not later:
 `migrate.py:90` raises on a hash change once a migration has been applied, so a constraint that

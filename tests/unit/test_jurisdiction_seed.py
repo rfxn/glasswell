@@ -1,6 +1,6 @@
 """The registry's own data, held to the things no database constraint can see.
 
-The registrations ship on two paths -- migration 072 and `seed/jurisdictions.py` -- and the
+The registrations ship on two paths -- the migration and `seed/jurisdictions.py` -- and the
 database gate that holds the two together needs docker. These are the ones that do not: that
 the two paths agree about the repoint, that every declared tile layer and colour exists, and
 that each registration carries the decision no jurisdiction may be without.
@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from glasswell.db.migrate import discover_migrations
 from glasswell.marts.tiles import TILE_LAYERS
 from glasswell.seed.jurisdictions import (
     CODES,
@@ -32,7 +33,11 @@ from glasswell.seed.jurisdictions import (
 pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[2]
-MIGRATION = ROOT / "src/glasswell/db/migrations/072_jurisdictions.sql"
+# By name, never by number: a migration number is assigned by merge order and this one has
+# already moved twice.
+MIGRATION = next(
+    item.path for item in discover_migrations() if item.name == "jurisdictions"
+)
 BRAND = ROOT / "BRAND.md"
 STATUS_CLASSES = ROOT / "web/src/map/status.ts"
 REPOINTED_COMMIT = re.compile(r"^[0-9a-f]{40}$")

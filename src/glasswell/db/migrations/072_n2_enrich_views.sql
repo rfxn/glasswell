@@ -1,5 +1,14 @@
 -- N2: the completion-design canonical table, the two cumulative marts, their selector-output
 -- registry rows, and the glossary terms the three new figures bind to.
+--
+-- REPOINT CHECKLIST (integrator, at the merge train):
+--   1. evidence_tag UNRELEASED -> the tag that first carries the rule ids below
+--   2. evidence_commit forty zeros -> the main head this branch was written against
+--   3. published_vintage 2026-08-30 -> confirm it is the date that tag is cut, or correct it
+-- The rule ids themselves are immutable and must not change during the repoint. Both literals
+-- appear exactly once each, in the insert below and nowhere else: a quoted placeholder
+-- anywhere above it re-arms the release guard through prose, so this header names the columns
+-- rather than their values.
 
 create table canonical.well_completion_design (
     disclosure_id             text not null,
