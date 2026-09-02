@@ -130,9 +130,11 @@ def test_verify_asserts_run_evidence_beside_the_retention_result() -> None:
     ) in verify
 
 
-def test_status_collector_names_the_retention_job() -> None:
-    collector = (ROOT / "src" / "glasswell" / "status" / "collector.py").read_text()
+def test_the_job_registry_names_the_retention_job_and_both_its_units() -> None:
+    """The collector generates its job list from the registry, so the rows are where the
+    retention job is named; six literal calls in the collector became one registry read."""
+    registry = (ROOT / "src" / "glasswell" / "seed" / "schedules.py").read_text()
 
-    assert '"lineage_retention"' in collector
-    assert '"glasswell-lineage-retention.timer"' in collector
-    assert '"glasswell-lineage-retention.service"' in collector
+    assert '"platform_lineage_retention"' in registry
+    assert '"glasswell-lineage-retention.timer"' in registry
+    assert '"glasswell-lineage-retention.service"' in registry

@@ -144,6 +144,42 @@ def monthly_occurrence(now: datetime, day: int) -> datetime:
     return previous.replace(day=day, hour=0, minute=0, second=0, microsecond=0)
 
 
+def following_monthly_occurrence(now: datetime, day: int) -> datetime:
+    """The next occurrence after the current one, so a job that has run says when it runs next."""
+    current = monthly_occurrence(now, day)
+    following = (current.replace(day=1) + timedelta(days=32)).replace(day=1)
+    return following.replace(day=day, hour=0, minute=0, second=0, microsecond=0)
+
+
+def next_due_at(job: ScheduledJob, evidence: Evidence, now: datetime) -> datetime | None:
+    """When this job is next due, whether or not that instant has passed.
+
+    Null for `manual`, which is never due, and for `after_dependency`, whose next instant is a
+    property of an event that has not happened; the page says so with the cadence note rather
+    than by serving a guess.
+    """
+    if job.trigger != "cadence":
+        return None
+    if job.cadence_monthly_on_day is not None:
+        occurrence = monthly_occurrence(now, job.cadence_monthly_on_day)
+        last = evidence.ran_at.get(job.job_id)
+        if last is None or last < occurrence:
+            return occurrence
+        return following_monthly_occurrence(now, job.cadence_monthly_on_day)
+    if not job.source_ids:
+        last = evidence.ran_at.get(job.job_id)
+        if last is None:
+            return hour_of(now)
+        return last + (job.cadence_interval or timedelta(0))
+    expected = [
+        _parse(evidence.freshness.get(source_id, {}).get("next_expected_poll"))
+        for source_id in job.source_ids
+    ]
+    if any(instant is not None for instant in expected):
+        return min(instant for instant in expected if instant is not None)
+    return _interval_due(job, evidence, now)
+
+
 def _interval_due(job: ScheduledJob, evidence: Evidence, now: datetime) -> datetime | None:
     if not job.source_ids:
         # A mart with a clock of its own: due against its own last run, not a source's poll.

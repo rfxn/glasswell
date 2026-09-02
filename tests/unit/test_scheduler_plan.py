@@ -22,6 +22,7 @@ DAY = datetime(2026, 9, 2, 13, 47, 3, tzinfo=UTC)
 def job(job_id: str, *, kind: str = "mart", depends: tuple[str, ...] = ()) -> ScheduledJob:
     return ScheduledJob(
         job_id=job_id,
+        label=job_id.replace('_', ' ').capitalize(),
         kind=kind,
         entry_point=f"glasswell.marts.{job_id}",
         argv=(),

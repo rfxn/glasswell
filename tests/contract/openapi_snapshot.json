@@ -229,6 +229,48 @@
         "title": "BasinStatusCounts",
         "type": "object"
       },
+      "Cadence": {
+        "properties": {
+          "interval_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The interval a cadence job fires on, or null where it fires on a day.",
+            "title": "Interval Seconds",
+            "x-glasswell-not-a-figure": "How often a job is asked to run, in seconds. A cadence is a scheduling decision recorded as a conformance rule, not a measured quantity."
+          },
+          "monthly_on_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The calendar day a monthly cadence fires on, or null.",
+            "title": "Monthly On Day",
+            "x-glasswell-not-a-figure": "The calendar day a monthly cadence fires on. A position in the month, not a measurement."
+          },
+          "note": {
+            "description": "The cadence in one line, as the registry states it.",
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "note",
+          "interval_seconds",
+          "monthly_on_day"
+        ],
+        "title": "Cadence",
+        "type": "object"
+      },
       "Capabilities": {
         "properties": {
           "land_grid_scope": {
@@ -914,7 +956,7 @@
             "type": "object"
           },
           "stage": {
-            "description": "parse, validate, conform or join.",
+            "description": "parse, validate, conform, join or schedule.",
             "title": "Stage",
             "type": "string",
             "x-glasswell-glossary": "gt_pipeline_stage"
@@ -1080,7 +1122,7 @@
             "type": "object"
           },
           "stage": {
-            "description": "parse, validate, conform or join.",
+            "description": "parse, validate, conform, join or schedule.",
             "title": "Stage",
             "type": "string",
             "x-glasswell-glossary": "gt_pipeline_stage"
@@ -1474,6 +1516,103 @@
           "detail"
         ],
         "title": "DatasetInventory",
+        "type": "object"
+      },
+      "Decision": {
+        "description": "Why this cadence, and where the decision is recorded.\n\n`rule_id` is null on exactly the rows an external timer owns: their cadence lives in that\nunit's `OnCalendar=`, which is a tree artefact under review, so the row names the unit pair\ninstead of minting a rule that would only restate it.",
+        "properties": {
+          "effective_from": {
+            "description": "Valid time: the date this schedule takes effect from.",
+            "title": "Effective From",
+            "type": "string",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "external_service_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The service that timer triggers, where one does.",
+            "title": "External Service Unit",
+            "x-glasswell-glossary": "gt_timer"
+          },
+          "external_timer_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The systemd timer that owns this job, where one does.",
+            "title": "External Timer Unit",
+            "x-glasswell-glossary": "gt_timer"
+          },
+          "published_at": {
+            "description": "Knowledge time: the date glasswell published it.",
+            "title": "Published At",
+            "type": "string",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "rationale": {
+            "description": "Why this job is scheduled the way it is.",
+            "title": "Rationale",
+            "type": "string"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The cadence rule, resolvable at /v1/conformance/{rule_id}, or null.",
+            "title": "Rule Id",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          }
+        },
+        "required": [
+          "rule_id",
+          "rationale",
+          "effective_from",
+          "published_at",
+          "external_timer_unit",
+          "external_service_unit"
+        ],
+        "title": "Decision",
+        "type": "object"
+      },
+      "Dependency": {
+        "properties": {
+          "depends_on_job_id": {
+            "description": "The job this one reads.",
+            "title": "Depends On Job Id",
+            "type": "string"
+          },
+          "rationale": {
+            "description": "Why the edge exists.",
+            "title": "Rationale",
+            "type": "string"
+          },
+          "trigger_on": {
+            "description": "`changed` reacts to new input; `completed` is ordering only.",
+            "title": "Trigger On",
+            "type": "string"
+          }
+        },
+        "required": [
+          "depends_on_job_id",
+          "trigger_on",
+          "rationale"
+        ],
+        "title": "Dependency",
         "type": "object"
       },
       "DeploymentPosture": {
@@ -2528,6 +2667,39 @@
         "title": "EnvelopeModel[QuarantineSummary]",
         "type": "object"
       },
+      "EnvelopeModel_ScheduleDetail_": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ScheduleDetail"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[ScheduleDetail]",
+        "type": "object"
+      },
       "EnvelopeModel_ServiceIndex_": {
         "properties": {
           "_explain": {
@@ -3354,6 +3526,43 @@
           "links"
         ],
         "title": "EnvelopeModel[list[QuarantineRow]]",
+        "type": "object"
+      },
+      "EnvelopeModel_list_ScheduleRow__": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduleRow"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[list[ScheduleRow]]",
         "type": "object"
       },
       "EnvelopeModel_list_SessionRecordModel__": {
@@ -4415,20 +4624,155 @@
         "title": "IssuedKey",
         "type": "object"
       },
+      "JobSchedule": {
+        "additionalProperties": false,
+        "description": "The decision reference, not a derivation handle: /v1/status carries no handles.\n\n`rule_id` is null for the platform rows, whose cadence lives in their own unit's\nOnCalendar; those carry the unit pair instead, so the row still resolves to something.",
+        "properties": {
+          "effective_from": {
+            "format": "date",
+            "title": "Effective From",
+            "type": "string"
+          },
+          "external_service_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Service Unit"
+          },
+          "external_timer_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Timer Unit"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "published_at": {
+            "format": "date",
+            "title": "Published At",
+            "type": "string"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Id"
+          }
+        },
+        "required": [
+          "job_id",
+          "effective_from",
+          "published_at",
+          "rationale"
+        ],
+        "title": "JobSchedule",
+        "type": "object"
+      },
       "JobStatus": {
         "additionalProperties": false,
         "properties": {
+          "cadence": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cadence"
+          },
           "detail": {
             "title": "Detail",
             "type": "string"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds",
+            "x-glasswell-not-a-figure": "How long a scheduled job ran, on the status page's job rows. Operational inventory from a timed snapshot, not a petroleum figure."
           },
           "id": {
             "title": "Id",
             "type": "string"
           },
+          "jurisdiction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jurisdiction"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ingest",
+                  "mart",
+                  "maintenance"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "last_outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "would_run",
+                  "ran",
+                  "failed",
+                  "interrupted",
+                  "refused"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Outcome"
           },
           "last_run_at": {
             "anyOf": [
@@ -4442,6 +4786,33 @@
             ],
             "title": "Last Run At"
           },
+          "launch_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "observe",
+                  "launch"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Launch Mode"
+          },
+          "next_due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Due At"
+          },
           "next_run_at": {
             "anyOf": [
               {
@@ -4454,13 +4825,51 @@
             ],
             "title": "Next Run At"
           },
+          "refusal_class": {
+            "anyOf": [
+              {
+                "enum": [
+                  "informational",
+                  "waiting",
+                  "fault"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refusal Class"
+          },
+          "refusal_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refusal Code"
+          },
+          "schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobSchedule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "state": {
             "enum": [
               "ok",
               "degraded",
               "pending",
               "unavailable",
-              "not_instrumented"
+              "not_instrumented",
+              "refused"
             ],
             "title": "State",
             "type": "string"
@@ -4783,6 +5192,41 @@
           "last_used_at"
         ],
         "title": "KeyRecordModel",
+        "type": "object"
+      },
+      "Limits": {
+        "properties": {
+          "memory_max": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The memory ceiling its transient unit gets.",
+            "title": "Memory Max"
+          },
+          "timeout_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The time ceiling its transient unit gets, bounded by the tick's own.",
+            "title": "Timeout Seconds",
+            "x-glasswell-not-a-figure": "The time ceiling a job's transient unit is given, bounded by the scheduler unit's own budget. An operational bound, not a measured quantity."
+          }
+        },
+        "required": [
+          "memory_max",
+          "timeout_seconds"
+        ],
+        "title": "Limits",
         "type": "object"
       },
       "LinksModel": {
@@ -6731,6 +7175,32 @@
         "title": "QuarantineSummary",
         "type": "object"
       },
+      "RefusalCodeRow": {
+        "properties": {
+          "code": {
+            "description": "The refusal code.",
+            "title": "Code",
+            "type": "string"
+          },
+          "sentence": {
+            "description": "What the page says when a job carries this code.",
+            "title": "Sentence",
+            "type": "string"
+          },
+          "severity_class": {
+            "description": "informational, waiting or fault.",
+            "title": "Severity Class",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "severity_class",
+          "sentence"
+        ],
+        "title": "RefusalCodeRow",
+        "type": "object"
+      },
       "Regulator": {
         "properties": {
           "name": {
@@ -6749,6 +7219,445 @@
           "url"
         ],
         "title": "Regulator",
+        "type": "object"
+      },
+      "RunRow": {
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the row was closed.",
+            "title": "Completed At"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Wall time between start and close, where both are recorded.",
+            "title": "Duration Seconds",
+            "x-glasswell-not-a-figure": "Wall time between a run's start and its close, from operational run evidence; its grain and observation time are stated beside it."
+          },
+          "exit_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The process exit status, where a process ran.",
+            "title": "Exit Status",
+            "x-glasswell-not-a-figure": "A process exit status. An outcome code, not a quantity."
+          },
+          "launched_by": {
+            "description": "`scheduler` or `manual`.",
+            "title": "Launched By",
+            "type": "string"
+          },
+          "memory_peak_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Peak resident bytes, absent where systemd is older than 254.",
+            "title": "Memory Peak Bytes",
+            "x-glasswell-not-a-figure": "Peak resident bytes a run reached, read from systemd, and absent rather than zeroed where systemd is older than 254. Operational inventory, not a petroleum figure."
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "would_run, ran, failed, interrupted or refused; null while open.",
+            "title": "Outcome"
+          },
+          "planned_at": {
+            "description": "The due instant this run answers, not the tick clock.",
+            "title": "Planned At",
+            "type": "string"
+          },
+          "refusal_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "informational, waiting or fault, from the registry vocabulary.",
+            "title": "Refusal Class"
+          },
+          "refusal_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it did not run, where it did not.",
+            "title": "Refusal Code"
+          },
+          "run_id": {
+            "description": "The run's own id.",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the transient unit started, if it did.",
+            "title": "Started At"
+          }
+        },
+        "required": [
+          "run_id",
+          "planned_at",
+          "started_at",
+          "completed_at",
+          "outcome",
+          "refusal_code",
+          "refusal_class",
+          "duration_seconds",
+          "exit_status",
+          "memory_peak_bytes",
+          "launched_by"
+        ],
+        "title": "RunRow",
+        "type": "object"
+      },
+      "ScheduleDetail": {
+        "properties": {
+          "cadence": {
+            "$ref": "#/components/schemas/Cadence",
+            "description": "How often, and on what."
+          },
+          "concurrency_group": {
+            "description": "Jobs in one group serialise.",
+            "title": "Concurrency Group",
+            "type": "string"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/Decision",
+            "description": "The R8 record behind the cadence."
+          },
+          "dependencies": {
+            "description": "What it waits on, and why.",
+            "items": {
+              "$ref": "#/components/schemas/Dependency"
+            },
+            "title": "Dependencies",
+            "type": "array"
+          },
+          "enabled": {
+            "description": "Whether the resolved row is considered by a tick.",
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "entry_point": {
+            "description": "The one command this job runs.",
+            "title": "Entry Point",
+            "type": "string"
+          },
+          "job_id": {
+            "description": "The registry's own id for the job.",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "jurisdiction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The jurisdiction it serves, or null for cross-jurisdiction work.",
+            "title": "Jurisdiction",
+            "x-glasswell-glossary": "gt_jurisdiction"
+          },
+          "kind": {
+            "description": "`ingest`, `mart` or `maintenance`.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "description": "The job's name, served rather than mapped in the client.",
+            "title": "Label",
+            "type": "string"
+          },
+          "last_runs": {
+            "description": "The most recent runs, newest first.",
+            "items": {
+              "$ref": "#/components/schemas/RunRow"
+            },
+            "title": "Last Runs",
+            "type": "array"
+          },
+          "launch_mode": {
+            "description": "`observe` computes the plan and records it; `launch` runs it.",
+            "title": "Launch Mode",
+            "type": "string"
+          },
+          "legacy_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The still-armed unit that drives this job while the row observes.",
+            "title": "Legacy Unit",
+            "x-glasswell-glossary": "gt_timer"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/Limits",
+            "description": "The ceilings its transient unit is given."
+          },
+          "next_due_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it is next due. Null for manual and after_dependency jobs.",
+            "title": "Next Due At"
+          },
+          "refusal_codes": {
+            "description": "The refusal vocabulary and its three severity classes, as registered.",
+            "items": {
+              "$ref": "#/components/schemas/RefusalCodeRow"
+            },
+            "title": "Refusal Codes",
+            "type": "array"
+          },
+          "run_as": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The uid its transient unit drops to, or null where its own unit decides.",
+            "title": "Run As"
+          },
+          "source_ids": {
+            "description": "Every registered source this job polls.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Ids",
+            "type": "array",
+            "x-glasswell-glossary": "gt_source"
+          },
+          "trigger": {
+            "description": "`cadence`, `after_dependency`, `manual` or `external_timer`.",
+            "title": "Trigger",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "label",
+          "kind",
+          "entry_point",
+          "jurisdiction",
+          "run_as",
+          "trigger",
+          "launch_mode",
+          "enabled",
+          "concurrency_group",
+          "cadence",
+          "next_due_at",
+          "limits",
+          "legacy_unit",
+          "source_ids",
+          "dependencies",
+          "decision",
+          "last_runs",
+          "refusal_codes"
+        ],
+        "title": "ScheduleDetail",
+        "type": "object"
+      },
+      "ScheduleRow": {
+        "properties": {
+          "cadence": {
+            "$ref": "#/components/schemas/Cadence",
+            "description": "How often, and on what."
+          },
+          "concurrency_group": {
+            "description": "Jobs in one group serialise.",
+            "title": "Concurrency Group",
+            "type": "string"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/Decision",
+            "description": "The R8 record behind the cadence."
+          },
+          "dependencies": {
+            "description": "What it waits on, and why.",
+            "items": {
+              "$ref": "#/components/schemas/Dependency"
+            },
+            "title": "Dependencies",
+            "type": "array"
+          },
+          "enabled": {
+            "description": "Whether the resolved row is considered by a tick.",
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "entry_point": {
+            "description": "The one command this job runs.",
+            "title": "Entry Point",
+            "type": "string"
+          },
+          "job_id": {
+            "description": "The registry's own id for the job.",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "jurisdiction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The jurisdiction it serves, or null for cross-jurisdiction work.",
+            "title": "Jurisdiction",
+            "x-glasswell-glossary": "gt_jurisdiction"
+          },
+          "kind": {
+            "description": "`ingest`, `mart` or `maintenance`.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "description": "The job's name, served rather than mapped in the client.",
+            "title": "Label",
+            "type": "string"
+          },
+          "launch_mode": {
+            "description": "`observe` computes the plan and records it; `launch` runs it.",
+            "title": "Launch Mode",
+            "type": "string"
+          },
+          "legacy_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The still-armed unit that drives this job while the row observes.",
+            "title": "Legacy Unit",
+            "x-glasswell-glossary": "gt_timer"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/Limits",
+            "description": "The ceilings its transient unit is given."
+          },
+          "next_due_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it is next due. Null for manual and after_dependency jobs.",
+            "title": "Next Due At"
+          },
+          "run_as": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The uid its transient unit drops to, or null where its own unit decides.",
+            "title": "Run As"
+          },
+          "source_ids": {
+            "description": "Every registered source this job polls.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Ids",
+            "type": "array",
+            "x-glasswell-glossary": "gt_source"
+          },
+          "trigger": {
+            "description": "`cadence`, `after_dependency`, `manual` or `external_timer`.",
+            "title": "Trigger",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "label",
+          "kind",
+          "entry_point",
+          "jurisdiction",
+          "run_as",
+          "trigger",
+          "launch_mode",
+          "enabled",
+          "concurrency_group",
+          "cadence",
+          "next_due_at",
+          "limits",
+          "legacy_unit",
+          "source_ids",
+          "dependencies",
+          "decision"
+        ],
+        "title": "ScheduleRow",
         "type": "object"
       },
       "ServiceIndex": {
@@ -14075,6 +14984,449 @@
         "x-glasswell-request-example": {
           "path": {
             "quarantine_id": "qr_01contract0001"
+          },
+          "query": {}
+        }
+      }
+    },
+    "/v1/schedules": {
+      "get": {
+        "description": "Every registered job, what drives it, the conformance rule that decided its cadence, and when it is next due. Schedules are append-only under two clocks: `as_of` is the knowledge cut, so a schedule published after it is not served under it, and a restatement at the same effective date supersedes only from the day it was published. A row whose `launch_mode` is `observe` has its plan computed and recorded; the unit named in `legacy_unit` is what actually runs it.",
+        "operationId": "list_schedules",
+        "parameters": [
+          {
+            "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque cursor from meta.next_cursor. There is no offset parameter.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Page size, 100 by default, 200 at most.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "description": "Page size, 100 by default, 200 at most.",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+              "title": "As Of"
+            }
+          },
+          {
+            "description": "Filter to one job kind.",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one job kind.",
+              "title": "Kind"
+            }
+          },
+          {
+            "description": "Filter to one trigger.",
+            "in": "query",
+            "name": "trigger",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one trigger.",
+              "title": "Trigger"
+            }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_list_ScheduleRow__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "as_of_out_of_range": {
+                    "summary": "as_of precedes the captured history",
+                    "value": {
+                      "detail": "`as_of` is earlier than the earliest captured vintage for every contributing source. An empty result would be indistinguishable from nothing happening.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "as_of precedes the captured history",
+                      "type": "/v1/errors/as_of_out_of_range"
+                    }
+                  },
+                  "cursor_malformed": {
+                    "summary": "Cursor malformed",
+                    "value": {
+                      "detail": "The cursor did not decode to the four declared fields.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor malformed",
+                      "type": "/v1/errors/cursor_malformed"
+                    }
+                  },
+                  "cursor_query_mismatch": {
+                    "summary": "Cursor does not match this query",
+                    "value": {
+                      "detail": "The cursor was minted against a different filter set. Continuing would return a page from a different result set (SB-04 \u00a72.3).",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Cursor does not match this query",
+                      "type": "/v1/errors/cursor_query_mismatch"
+                    }
+                  },
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "List scheduled jobs",
+        "tags": [
+          "service"
+        ],
+        "x-glasswell-dataset": {
+          "anchors": [],
+          "collection_pointer": "",
+          "columns": {
+            "default": [
+              "/job_id",
+              "/label",
+              "/kind",
+              "/trigger",
+              "/cadence",
+              "/next_due_at",
+              "/launch_mode"
+            ],
+            "hidden": [],
+            "hidden_reason": {},
+            "sort": "/job_id"
+          },
+          "facets": [
+            "kind",
+            "trigger"
+          ],
+          "group": "service",
+          "id": "schedules",
+          "intro": "nb_dataset_schedules",
+          "order": 44,
+          "row_id": [
+            "/job_id"
+          ],
+          "title": "Scheduled jobs"
+        },
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {
+            "kind": "ingest",
+            "limit": 5
+          }
+        },
+        "x-glasswell-semantics": {
+          "as_of": {
+            "so": "Serves the schedule published at or before the cut. A cadence corrected later is not visible under an earlier cut, which is the whole reason this registry carries two clocks rather than one.",
+            "x-glasswell-glossary": "gt_knowledge_time"
+          },
+          "kind": {
+            "so": "Filters to ingest, mart or maintenance jobs."
+          },
+          "limit": {
+            "so": "Capped at 200; the default remains 100. The registry is small, and it is a page so that it stays one when a fifth jurisdiction registers its jobs."
+          },
+          "trigger": {
+            "so": "Filters to what drives the job: a cadence, another job completing, an operator, or a systemd timer this scheduler does not own."
+          }
+        }
+      }
+    },
+    "/v1/schedules/{job_id}": {
+      "get": {
+        "description": "One job's resolved schedule, the sources it polls, the jobs it waits on, the conformance rule behind its cadence, its recent runs, and the refusal vocabulary a run's code is drawn from. A refusal names why a job did not run; it is not the same fact as a failure, and the page does not collapse them.",
+        "operationId": "get_schedule",
+        "parameters": [
+          {
+            "description": "The registry id of the job to read.",
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "description": "The registry id of the job to read.",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Knowledge-time cut: serve the greatest vintage at or before this date. Defaults to the latest published vintage, never to wall-clock now.",
+              "title": "As Of"
+            }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_ScheduleDetail_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "as_of_out_of_range": {
+                    "summary": "as_of precedes the captured history",
+                    "value": {
+                      "detail": "`as_of` is earlier than the earliest captured vintage for every contributing source. An empty result would be indistinguishable from nothing happening.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "as_of precedes the captured history",
+                      "type": "/v1/errors/as_of_out_of_range"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "as_of precedes the captured history"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Read one scheduled job",
+        "tags": [
+          "service"
+        ],
+        "x-glasswell-request-example": {
+          "path": {
+            "job_id": "ingest_nd_gis"
           },
           "query": {}
         }

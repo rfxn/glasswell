@@ -28,7 +28,6 @@ from glasswell.api.security import REPORT_ONLY_ENV
 from glasswell.status.collector import DEFAULT_SNAPSHOT, SNAPSHOT_ENV
 from glasswell.status.models import (
     DATABASE_BYTES_REASON,
-    CheckState,
     DatasetInventory,
     DeploymentPosture,
     JobStatus,
@@ -145,7 +144,7 @@ def _overall_state(
     sources: list[dict],
     disclosures: list[StatusDisclosure],
 ) -> OverallState:
-    states: list[CheckState] = [item.state for item in checks] + [item.state for item in jobs]
+    states: list[str] = [item.state for item in checks] + [item.state for item in jobs]
     if (
         snapshot_state in {"stale", "invalid"}
         or "degraded" in states
@@ -154,7 +153,12 @@ def _overall_state(
         return "degraded"
     if (
         snapshot_state != "current"
-        or any(state in {"pending", "unavailable", "not_instrumented"} for state in states)
+        # `refused` is a job stating why it did not run. An informational refusal is a
+        # standing condition, so it holds the platform at partial rather than reddening it.
+        or any(
+            state in {"pending", "unavailable", "not_instrumented", "refused"}
+            for state in states
+        )
         or any(source["state"] == "pending" for source in sources)
         or disclosures
     ):

@@ -245,3 +245,66 @@ def test_gate_3_a_35_day_source_with_no_fetch_history_is_due_at_the_hour(
 
     assert entry is not None
     assert entry.planned_at == FUTURE.replace(minute=0, second=0, microsecond=0)
+
+
+def test_gate_5_the_seed_tuple_is_what_slash_v1_schedules_serves(client) -> None:
+    """The served half: the two writers agreed in the database, and the wire agrees with both."""
+    served: dict[str, dict] = {}
+    url = "/v1/schedules"
+    params: dict[str, object] = {"limit": 200}
+    while url is not None:
+        body = client.get(url, params=params).json()
+        served |= {row["job_id"]: row for row in body["data"]}
+        url = (body.get("links") or {}).get("next")
+        params = {}
+
+    assert set(served) == {str(job["job_id"]) for job in JOBS}
+    by_schedule = {str(row["job_id"]): row for row in SCHEDULES}
+    for job in JOBS:
+        job_id = str(job["job_id"])
+        row = served[job_id]
+        schedule = by_schedule[job_id]
+        assert row["label"] == job["label"]
+        assert row["kind"] == job["kind"]
+        assert row["entry_point"] == job["entry_point"]
+        assert row["run_as"] == job["run_as"]
+        assert row["trigger"] == schedule["trigger"]
+        assert row["launch_mode"] == "observe"
+        assert row["cadence"]["note"] == schedule["cadence_note"]
+        assert row["cadence"]["monthly_on_day"] == schedule.get("cadence_monthly_on_day")
+        assert row["limits"]["memory_max"] == schedule.get("memory_max")
+        assert row["limits"]["timeout_seconds"] == schedule.get("timeout_seconds")
+        assert set(row["source_ids"]) == set(JOB_SOURCES.get(job_id, ()))
+        assert row["decision"]["rationale"] == job["rationale"]
+
+
+def test_gate_5_a_platform_row_serves_its_units_where_it_serves_no_rule(client) -> None:
+    """NIT-15: four rows carry a null rule_id, and an empty rule link is not an answer."""
+    body = client.get("/v1/schedules/platform_backup").json()["data"]
+
+    assert body["decision"]["rule_id"] is None
+    assert body["decision"]["external_timer_unit"] == "glasswell-backup.timer"
+    assert body["decision"]["external_service_unit"] == "glasswell-backup.service"
+    assert body["decision"]["rationale"]
+    assert {row["code"] for row in body["refusal_codes"]} >= {
+        "manual_only",
+        "deferred",
+        "scheduler_lost_unit",
+    }
+    assert {row["severity_class"] for row in body["refusal_codes"]} == {
+        "informational",
+        "waiting",
+        "fault",
+    }
+
+
+def test_gate_5_a_cadence_row_serves_the_rule_the_conformance_surface_resolves(client) -> None:
+    served = client.get("/v1/schedules/ingest_nd_gis").json()["data"]
+    rule_id = served["decision"]["rule_id"]
+
+    assert rule_id == "cr_job_cadence_ingest_nd_gis_1"
+    rule = client.get(f"/v1/conformance/{rule_id}").json()["data"]
+    assert rule["stage"] == "schedule"
+    assert rule["rule_kind"] == "code_ref"
+    assert rule["rationale"]
+    assert rule["published_vintage"]
