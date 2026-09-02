@@ -342,3 +342,109 @@ def test_a_reset_mints_when_no_password_is_supplied(api_client) -> None:
     assert supplied.status_code == 200, supplied.text
     assert supplied.json()["data"]["password"] is None
     assert supplied.json()["meta"]["warnings"] == []
+
+
+def test_the_owner_set_is_locked_before_the_target_row(
+    db: psycopg.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """gate-v076 H-5, the invariant that removes the cycle.
+
+    `_locked` took the target row and `_refuse_emptying_the_owners` took the enabled-owner set
+    after it, so demoting A while disabling B had each transaction holding its own target and
+    waiting for the other's. Postgres breaks that by aborting one caller: a 500, and an audit
+    event that never lands. One order everywhere is what makes it impossible, and the order is
+    asserted here rather than inferred from a race that reproduces only sometimes.
+    """
+    from glasswell.api.routers import users as module
+
+    create_user(
+        db, username="owner_a", password=PASSWORD, role="owner", created_by="test", now=NOW
+    )
+    db.commit()
+    target = find_user(db, "owner_a")
+    assert target is not None
+
+    seen: list[str] = []
+    original = module.rows
+
+    def recording(connection, statement, params=None):  # type: ignore[no-untyped-def]
+        seen.append(" ".join(statement.split()))
+        return original(connection, statement, params)
+
+    monkeypatch.setattr(module, "rows", recording)
+    module._locked(db, target.user_id, now=NOW)
+
+    locks = [item for item in seen if "for update" in item]
+    assert locks, seen
+    assert "role = 'owner'" in locks[0], locks
+    assert "order by user_id" in locks[0], (
+        "the owner-set lock has no deterministic order, so two transactions can still take"
+        " those rows in different orders"
+    )
+    assert "where user_id =" in locks[1], locks
+
+
+def test_two_concurrent_owner_mutations_both_complete(
+    db: psycopg.Connection, postgres_password: str
+) -> None:
+    """The same invariant, run for real: two owner mutations at once both finish rather than
+    one dying with a deadlock. Serialised on the wide lock, which is the point of taking it
+    first — under the old order these two transactions could each hold what the other wanted.
+    """
+    import threading
+
+    from glasswell.api.deps import rows
+    from glasswell.api.routers.users import _LOCK_ENABLED_OWNERS, _locked
+
+    for name in ("owner_a", "owner_b"):
+        create_user(
+            db, username=name, password=PASSWORD, role="owner", created_by="test", now=NOW
+        )
+    db.commit()
+    first = find_user(db, "owner_a")
+    second = find_user(db, "owner_b")
+    assert first is not None
+    assert second is not None
+
+    # ConnectionInfo.dsn never carries the password, so a reconnect built from it fails to
+    # authenticate — which once made both threads die before taking a lock while this still
+    # passed. The fixture exists for exactly that.
+    reconnect = (
+        f"postgresql://{db.info.user}:{postgres_password}"
+        f"@{db.info.host}:{db.info.port}/{db.info.dbname}"
+    )
+    failures: list[BaseException] = []
+    ready = threading.Event()
+
+    def mutate(user_id: str, hold: bool) -> None:
+        try:
+            connection = psycopg.connect(reconnect)
+        except BaseException as error:  # a thread that never connected proves nothing
+            failures.append(error)
+            ready.set()
+            return
+        try:
+            _locked(connection, user_id, now=NOW)
+            if hold:
+                # Hold both locks while the other transaction is already asking for them.
+                ready.set()
+                threading.Event().wait(0.5)
+            rows(connection, _LOCK_ENABLED_OWNERS)
+            connection.commit()
+        except BaseException as error:  # reported through `failures`, not swallowed
+            failures.append(error)
+            connection.rollback()
+        finally:
+            connection.close()
+
+    holder = threading.Thread(target=mutate, args=(first.user_id, True))
+    contender = threading.Thread(target=mutate, args=(second.user_id, False))
+    holder.start()
+    ready.wait(timeout=20)
+    contender.start()
+    for thread in (holder, contender):
+        thread.join(timeout=30)
+
+    assert not holder.is_alive(), "the holding mutation never finished"
+    assert not contender.is_alive(), "the contending mutation never finished"
+    assert failures == [], failures

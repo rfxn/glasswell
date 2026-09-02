@@ -73,10 +73,12 @@ _GET = f"select {_COLUMNS}, {_LIVE_SESSIONS} from lineage.users where user_id = 
 _LOCK_TARGET = "select user_id from lineage.users where user_id = %(user_id)s for update"
 
 # Taken inside the transaction. A handler-only count races: two concurrent demotions would
-# each read "two owners exist" and both commit, leaving none.
+# each read "two owners exist" and both commit, leaving none. `order by user_id` so two
+# transactions walk the owner rows the same way and cannot each hold what the other wants.
 _LOCK_ENABLED_OWNERS = (
     "select user_id from lineage.users"
     " where role = 'owner' and disabled_at is null"
+    " order by user_id"
     " for update"
 )
 
@@ -194,7 +196,14 @@ def _existing(connection: Connection, user_id: str, *, now: datetime) -> dict[st
 
 
 def _locked(connection: Connection, user_id: str, *, now: datetime) -> dict[str, Any]:
-    """The target row, locked before a handler branches on the state it is about to rewrite."""
+    """The target row, locked before a handler branches on the state it is about to rewrite.
+
+    The owner set goes first and the target second, unconditionally, because both mutating
+    handlers reach the owner set later and two orders is a deadlock: demoting A while disabling
+    B, each holding its own target and waiting for the other's, is a cycle Postgres resolves by
+    aborting one caller with a 500 and no audit event (gate-v076 H-5).
+    """
+    rows(connection, _LOCK_ENABLED_OWNERS)
     rows(connection, _LOCK_TARGET, {"user_id": user_id})
     return _existing(connection, user_id, now=now)
 
