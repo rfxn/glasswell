@@ -455,24 +455,28 @@ def test_the_scan_sees_a_registered_code_used_as_a_key(
     assert (scan_python if tree == "python" else scan_web)([planted_file])
 
 
-def test_a_registered_prefix_is_admitted_where_an_unregistered_one_is_refused() -> None:
+def test_what_the_migration_scan_refuses_is_the_reach_into_an_api10_not_the_prefix(
+    tmp_path: Path,
+) -> None:
     """The seam, stated as a difference rather than as an absence.
 
     The scan's whole claim is that it refuses a jurisdiction being written into code, not that
     it refuses two digits. Both halves have to be exercised or the rule is indistinguishable
-    from one that bans the shape: a planted **registered** prefix in the SQL arm passes,
-    because the migration reached it through the registry, and the same line with an
-    unregistered prefix is refused.
+    from one that bans the shape. So: a registered prefix and an unregistered one, on the same
+    query against the registry, are **both** admitted -- neither reaches into an API-10 -- and
+    the same two prefixes inside a `left(api10, 2)` are both refused. The arm that fires is the
+    one that reaches, whichever prefix it names.
     """
     registered = sorted(PREFIXES)[0]
+    unregistered = "select * from lineage.jurisdictions where identity_prefix = '49'\n"
     admitted = f"select * from lineage.jurisdictions where identity_prefix = '{registered}'\n"
-    refused = "select * from lineage.jurisdictions where identity_prefix = '49'\n"
 
-    assert scan_migrations([_written("099_registered.sql", admitted)]) == []
-    assert scan_migrations([_written("099_planted.sql", refused)]) == []
-    # The arm that does fire is the one reaching into an API-10, whichever prefix it names.
-    assert scan_migrations([_written("099_reach.sql", "left(api10, 2) = '49'\n")])
-    assert scan_migrations([_written("099_reach.sql", f"left(api10, 2) = '{registered}'\n")])
+    assert scan_migrations([_written(tmp_path, "099_registered.sql", admitted)]) == []
+    assert scan_migrations([_written(tmp_path, "099_planted.sql", unregistered)]) == []
+    assert scan_migrations([_written(tmp_path, "099_reach.sql", "left(api10, 2) = '49'\n")])
+    assert scan_migrations(
+        [_written(tmp_path, "099_reach_registered.sql", f"left(api10, 2) = '{registered}'\n")]
+    )
 
 
 def test_the_planted_state_is_one_the_registry_does_not_hold() -> None:
@@ -488,15 +492,8 @@ def test_the_planted_state_is_one_the_registry_does_not_hold() -> None:
         assert not any(name in value for value in planted)
 
 
-_WRITTEN: list[Path] = []
-
-
-def _written(name: str, body: str) -> Path:
-    """A planted file on disk, outside the tree, cleaned up by the tmp dir it is written to."""
-    import tempfile
-
-    root = Path(tempfile.mkdtemp())
+def _written(root: Path, name: str, body: str) -> Path:
+    """A planted file outside the tree, in a directory pytest removes after the run."""
     path = root / name
     path.write_text(body, encoding="utf-8")
-    _WRITTEN.append(path)
     return path

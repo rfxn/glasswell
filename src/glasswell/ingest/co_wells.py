@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -112,8 +113,6 @@ def build_api10(row: dict[str, Any], spec: dict[str, Any]) -> str | None:
 
 
 def label_conforms(row: dict[str, Any], spec: dict[str, Any]) -> bool:
-    import re
-
     label = str(row.get(str(spec["label_col"])) or "").strip()
     return re.fullmatch(str(spec["label_pattern"]), label) is not None
 

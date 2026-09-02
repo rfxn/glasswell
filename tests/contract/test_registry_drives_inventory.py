@@ -93,7 +93,7 @@ def test_a_fifth_jurisdiction_yields_a_fifth_dataset_with_no_edit(
     after = inventory(seeded)
     assert after["canonical.wells_latest/wy"].label == "Current Wyoming wells"
     assert after["canonical.wells_latest/wy"].scope == "Wyoming"
-    assert "canonical.well_completions/co" in after
+    assert "canonical.well_completions/wy" in after
     assert len(after) == len(before) + 2
 
 
