@@ -686,7 +686,11 @@
   color: var(--paper);
   font-family: var(--gw-font-mono);
   font-size: var(--gw-fs-mono);
-  overflow-wrap: anywhere;
+  /* A 43-character credential does not fit 390 px, and wrapping it orphaned a single glyph
+     onto a second line. It scrolls instead of wrapping: `overflow: hidden` would have put
+     the tail of a shown-once secret out of reach, and this keeps every character selectable. */
+  white-space: nowrap;
+  overflow-x: auto;
   user-select: all;
 }
 
