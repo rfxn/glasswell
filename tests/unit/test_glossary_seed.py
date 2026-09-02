@@ -7,7 +7,8 @@ from glasswell.seed.glossary import load_glossary_seed, slug
 TERMS = load_glossary_seed()
 MINIMUM_TERMS = 30
 
-# M7: ordinary words a well card repeats. Reachable by click, never auto-scanned.
+# M7: ordinary words a well card, a legend or a status page repeats. Reachable by click,
+# never auto-scanned.
 STOPWORDS = (
     "Band",
     "Analog",
@@ -18,6 +19,8 @@ STOPWORDS = (
     "Stream",
     "Slot",
     "Spine",
+    "Producing class",
+    "Section (PLSS)",
 )
 
 # SB-07 §12 hands these back to SB-00 as undefined; they are what the drawer surfaces.
@@ -62,6 +65,15 @@ def test_every_entry_cites_where_it_came_from():
 def test_terms_are_unique_case_insensitively():
     folded = [row["term"].lower() for row in TERMS]
     assert sorted(folded) == sorted(set(folded))
+
+
+def test_no_surface_form_resolves_to_two_terms():
+    """buildIndex keys on the folded surface, so a shared alias silently loses one term."""
+    owners: dict[str, set[str]] = {}
+    for row in TERMS:
+        for surface in [row["term"], *(row.get("aliases") or ())]:
+            owners.setdefault(surface.lower(), set()).add(row["term_id"])
+    assert {surface: sorted(ids) for surface, ids in owners.items() if len(ids) > 1} == {}
 
 
 def test_the_lineage_terms_sb07_records_as_undefined_are_all_seeded():

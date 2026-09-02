@@ -181,7 +181,7 @@ export function createHoverCard(options: HoverCardOptions = {}): HoverCardHandle
     figures.textContent =
       `Liquid ${volume(properties["liquid_cum_bbl"])} bbl · ` +
       `gas ${volume(properties["gas_cum_mcf"])} mcf · ` +
-      `water ${volume(properties["water_cum_bbl"])} bbl — observed sums`;
+      `water ${volume(properties["water_cum_bbl"])} bbl · observed sums`;
     policy.hidden = false;
     policy.textContent =
       `Liquid is ${LIQUIDS_BASIS_COPY}; ${MEMBERSHIP_COPY} (${MEMBERSHIP_RULE}).`;

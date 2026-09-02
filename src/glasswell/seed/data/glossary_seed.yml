@@ -65,8 +65,20 @@
   related_terms: ["Type curve"]
   source_refs: ["blueprint-v0.6 §9"]
 
+- term: Basemap
+  short_definition: >-
+    The background reference cartography a map draws over. Never the source of a served
+    number.
+  expanded_definition: >-
+    glasswell's layers are regulator geometry; whatever sits beneath them is a basemap. The
+    switcher offers several because a dark canvas, a light one and imagery answer different
+    questions, and none of them changes what a figure says.
+  domain_tags: [geospatial, serving]
+  related_terms: ["Viewport", "Source"]
+  source_refs: ["blueprint-v0.6 §9"]
+
 - term: Basin
-  aliases: ["Petroleum basin"]
+  aliases: ["Petroleum basin", "Basins"]
   short_definition: >-
     A named geologic region registered for a source namespace.
   expanded_definition: >-
@@ -89,6 +101,19 @@
   domain_tags: [lineage, time, data-model]
   related_terms: ["Report vintage", "Valid time", "Knowledge time", "Restatement"]
   source_refs: ["blueprint-v0.6 §9", "DIR-2"]
+
+- term: Cadence
+  aliases: ["Pull cadence", "Upstream cadence"]
+  short_definition: >-
+    How often a source publishes, and how often glasswell polls it. Two rates, recorded
+    per source.
+  expanded_definition: >-
+    Freshness is judged against the pull cadence, not against a wall clock: a monthly source
+    polled weekly is current the day after an unchanged check, and a nightly source is not.
+    The pair is registered per source rather than assumed.
+  domain_tags: [operations, time]
+  related_terms: ["Timer", "Retrieval vintage", "Manifest"]
+  source_refs: ["blueprint-v0.6 §3.7.4", "lineage.sources"]
 
 - term: Canonical
   short_definition: >-
@@ -126,6 +151,7 @@
   source_refs: ["blueprint-v0.6 §9"]
 
 - term: Confidential well
+  aliases: ["Confidential"]
   short_definition: >-
     A well whose production a regulator withholds for a statutory period.
   expanded_definition: >-
@@ -137,6 +163,7 @@
   source_refs: ["blueprint-v0.6 §9", "blueprint-v0.6 §3.0.3"]
 
 - term: Conformance rule
+  aliases: ["Conformance rules"]
   short_definition: >-
     A recorded cross-source mapping decision with its rationale, evidence and effective dates.
   expanded_definition: >-
@@ -201,7 +228,19 @@
   related_terms: ["CRS / compute CRS", "Conformance rule"]
   source_refs: ["blueprint-v0.6 §9"]
 
+- term: Declared vintage
+  short_definition: >-
+    The vintage the upstream publisher states for an artifact, as opposed to when glasswell
+    retrieved it.
+  expanded_definition: >-
+    Some sources declare one and some publish undated files; where there is none, only the
+    retrieval vintage exists and the surface says so rather than dating the bytes itself.
+  domain_tags: [lineage, time]
+  related_terms: ["Retrieval vintage", "Report vintage", "Manifest"]
+  source_refs: ["blueprint-v0.6 §3.7.4", "lineage.manifests"]
+
 - term: Derivation handle
+  aliases: ["Derivation", "Derivation handles"]
   short_definition: >-
     The reference attached to every served figure that resolves to the graph of transforms
     that produced it.
@@ -223,6 +262,18 @@
   domain_tags: [lineage, governance]
   related_terms: ["Recipe", "Manifest"]
   source_refs: ["blueprint-v0.6 §9", "SB-07 §12"]
+
+- term: Disposal well
+  aliases: ["Disposal", "Injection well"]
+  short_definition: >-
+    A well the regulator types as taking fluid in rather than producing it out.
+  expanded_definition: >-
+    Membership is the regulator's own well_type code promoted through a conformance rule, not
+    an interpretation: the ring is drawn over whatever status dot the well already carries,
+    because injecting and being active are different facts about the same well.
+  domain_tags: [identity, data-model]
+  related_terms: ["Well type", "Well status", "Stream"]
+  source_refs: ["cr_nd_well_type_disposal_1", "marts.nd_wells_tile"]
 
 - term: Effective date
   short_definition: >-
@@ -281,6 +332,19 @@
   related_terms: ["Stream", "Water cut"]
   source_refs: ["blueprint-v0.6 §9"]
 
+- term: Geometry provenance
+  short_definition: >-
+    Which kind of filed geometry a feature is: a surface hole, a bore centreline, or a survey
+    trace.
+  expanded_definition: >-
+    The class travels on the feature and is served verbatim, so a line on the map is never
+    silently promoted from a cartographic centreline to a directional survey. One well can
+    carry several classes at once, which is why the classes do not sum to a well count. A
+    jurisdiction that publishes no such attribute serves none rather than a guess.
+  domain_tags: [geospatial, lineage, conformance]
+  related_terms: ["Datum", "CRS / compute CRS", "Station survey", "Conformance rule"]
+  source_refs: ["cr_nd_geometry_provenance_1", "cr_nm_wellhistory_geometry_provenance_1", "blueprint-v0.6 §3.0.1a"]
+
 - term: Granularity
   short_definition: >-
     What kind of number this is: observed, allocated, modelled or assumed.
@@ -314,6 +378,30 @@
   related_terms: ["PLSS", "Spacing / spacing unit"]
   source_refs: ["blueprint-v0.6 §9"]
 
+- term: Lateral
+  aliases: ["Laterals", "Lateral bore"]
+  short_definition: >-
+    The horizontal section of a wellbore, and the bore centreline geometry a regulator files
+    for it.
+  expanded_definition: >-
+    Lateral length normalises nearly every performance figure here, so what it is measured
+    from matters: the filed centreline is cartography, not a directional survey, and the two
+    are drawn as separate layers for that reason.
+  domain_tags: [geospatial, completion]
+  related_terms: ["Wellbore", "Station survey", "Spacing / spacing unit"]
+  source_refs: ["blueprint-v0.6 §9", "cr_tx_lateral_bounds_1", "marts.nd_laterals_tile"]
+
+- term: Lineage
+  short_definition: >-
+    The recorded chain from a served figure back to the checksummed bytes it came from.
+  expanded_definition: >-
+    Its layer holds the derivations, the recipes that regenerate them, the manifests that
+    terminate them and the append-only audit stream over the lot. Nothing serves a number
+    whose chain is missing; that is the naked-number rule stated from the other end.
+  domain_tags: [lineage, data-model]
+  related_terms: ["Derivation handle", "Manifest", "Recipe", "Audit stream"]
+  source_refs: ["blueprint-v0.6 §4C", "lineage.derivations"]
+
 - term: Liquids policy
   short_definition: >-
     The stated rule for what counts as the modelling liquid.
@@ -326,6 +414,7 @@
   source_refs: ["blueprint-v0.6 §9"]
 
 - term: Manifest
+  aliases: ["Manifests"]
   short_definition: >-
     The record of one retrieved raw artifact: source URL, retrieval timestamp, vintages, byte
     length and SHA-256.
@@ -338,6 +427,7 @@
   source_refs: ["blueprint-v0.6 §9", "SB-07 §2"]
 
 - term: Marts
+  aliases: ["Mart"]
   short_definition: >-
     The serving layer: features, forecasts, valuations, tiles and rollups, all derived from
     canonical only.
@@ -428,6 +518,19 @@
   related_terms: ["Land unit"]
   source_refs: ["blueprint-v0.6 §9"]
 
+- term: Play
+  aliases: ["Plays", "Shale play"]
+  short_definition: >-
+    A named productive interval mapped as an outline, sitting inside a basin and never
+    standing in for one.
+  expanded_definition: >-
+    A basin and a play are different objects, so they are promoted from different tiles and
+    drawn as different rows. A play outline is a published boundary, not a formation top and
+    not a claim about any particular well.
+  domain_tags: [geology, data-model]
+  related_terms: ["Basin", "Formation"]
+  source_refs: ["cr_eia_boundary_taxonomy_1", "marts.basin_boundaries_tile"]
+
 - term: Pool
   aliases: ["Well completion pool", "Reservoir pool"]
   highlightable: false
@@ -443,6 +546,19 @@
   domain_tags: [production, identity, data-model]
   related_terms: ["Granularity", "Spine", "Stream"]
   source_refs: ["canonical.well_completions", "SB-01 E5"]
+
+- term: Producing class
+  highlightable: false
+  short_definition: >-
+    Whether a well actually filed production in a stated window: producing, not producing, or
+    not known.
+  expanded_definition: >-
+    A different question from the status the regulator publishes, and deliberately worded so
+    the two never merge: a well the regulator calls inactive can still be producing. Water is
+    served but never counts. Not known is an absence of filings, which is not a filed zero.
+  domain_tags: [production, conformance]
+  related_terms: ["Well status", "Stream", "Liquids policy"]
+  source_refs: ["cr_producing_evidence_1", "cr_producing_streams_1", "cr_producing_window_1"]
 
 - term: Production month
   aliases: ["pm"]
@@ -476,6 +592,7 @@
   source_refs: ["cr_tc_quantile_convention_1"]
 
 - term: Quarantine
+  aliases: ["Quarantined"]
   short_definition: >-
     The table of rows that failed promotion, with the reason code, the rule that rejected them,
     the raw payload and a lifecycle state.
@@ -535,6 +652,17 @@
   related_terms: ["Knowledge time", "Bitemporal", "Restatement", "Vintage (well vintage)"]
   source_refs: ["blueprint-v0.6 §9", "DIR-2"]
 
+- term: Retrieval vintage
+  aliases: ["Artifact retrieved"]
+  short_definition: >-
+    When glasswell fetched an artifact, as opposed to the vintage its publisher declared.
+  expanded_definition: >-
+    Recorded on every manifest, and the only vintage available for a source that publishes
+    undated files. It dates the bytes in hand, never the facts inside them.
+  domain_tags: [lineage, time]
+  related_terms: ["Declared vintage", "Manifest", "Raw zone"]
+  source_refs: ["blueprint-v0.6 §3.7.4", "lineage.manifests"]
+
 - term: Restatement
   short_definition: >-
     A regulator revising previously published production.
@@ -560,6 +688,31 @@
   domain_tags: [lineage, data-model, governance]
   related_terms: ["Conformance rule", "Datum", "Canonical"]
   source_refs: ["SB-07 §6.2", "migration 005_conformance.sql"]
+
+- term: Schema head
+  aliases: ["Schema version"]
+  short_definition: >-
+    The migration the deployed database is currently at.
+  expanded_definition: >-
+    Reported as identity rather than as a measurement: it says which shape the data is in, so
+    a restore or a mid-deploy read can be checked against the code that expects it.
+  domain_tags: [operations, lineage]
+  related_terms: ["Status snapshot", "Recipe"]
+  source_refs: ["blueprint-v0.6 §3.7.7", "glasswell.status.models.PlatformStatus"]
+
+- term: Section (PLSS)
+  highlightable: false
+  aliases: ["Section", "Sections", "PLSS section"]
+  short_definition: >-
+    The one-square-mile subdivision of a PLSS township, and the finest land unit the grid
+    draws.
+  expanded_definition: >-
+    Sections are the cell most rollups bin on, which is why which section a well belongs to is
+    a recorded rule rather than a convenience: a lateral's midpoint and its surface hole
+    routinely fall in different ones.
+  domain_tags: [geospatial, data-model]
+  related_terms: ["PLSS", "Township", "Land unit"]
+  source_refs: ["blueprint-v0.6 §9", "cr_blm_plss_publisher_1", "marts.land_units_tile"]
 
 - term: Slot
   highlightable: false
@@ -588,7 +741,7 @@
   source_refs: ["lineage.sources", "SB-08 §7.1 O-6"]
 
 - term: Spacing / spacing unit
-  aliases: ["Spacing", "Spacing unit"]
+  aliases: ["Spacing", "Spacing unit", "Spacing units"]
   short_definition: >-
     The distance between parallel laterals, and the regulator-defined area within which wells
     producing from a pool are allocated.
@@ -651,6 +804,32 @@
   related_terms: ["Canonical", "Quarantine", "Marts"]
   source_refs: ["blueprint-v0.6 §9", "blueprint-v0.6 §3.4.2"]
 
+- term: Station survey
+  aliases: ["Survey trace", "Survey traces", "survey_trace", "Directional survey"]
+  short_definition: >-
+    A bore path reported as measured stations - depth, inclination, azimuth, true vertical
+    depth - rather than as a single header.
+  expanded_definition: >-
+    The drawn trace is those stations joined, so it is the one line on the map that is a
+    survey. A filed bore centreline is not, and confusing the two overstates how precisely a
+    wellbore's position is known.
+  domain_tags: [geospatial, identity]
+  related_terms: ["Wellbore", "Lateral", "Datum"]
+  source_refs: ["blueprint-v0.6 §9", "cr_nd_survey_min_stations_1"]
+
+- term: Status snapshot
+  aliases: ["Snapshot", "Snapshots"]
+  short_definition: >-
+    One timed reading of the platform's own state, which every figure on the status surface is
+    taken from.
+  expanded_definition: >-
+    A stale or unreadable snapshot suppresses successful-looking values rather than showing
+    them: an old green check is worse than no check. Each reading states when it was observed,
+    and a component with no probe is listed as not instrumented rather than omitted.
+  domain_tags: [operations, serving]
+  related_terms: ["Timer", "Manifest", "Derivation handle"]
+  source_refs: ["blueprint-v0.6 §3.7.7", "glasswell.status.models.StatusSnapshot"]
+
 - term: Stream
   highlightable: false
   short_definition: >-
@@ -662,6 +841,32 @@
   domain_tags: [production, data-model]
   related_terms: ["Condensate", "Mcf", "Liquids policy"]
   source_refs: ["blueprint-v0.6 §9"]
+
+- term: Timer
+  aliases: ["Timers"]
+  short_definition: >-
+    The registered schedule that starts a job. Armed means the schedule exists, never that the
+    last run succeeded.
+  expanded_definition: >-
+    Scheduling is systemd timers against a jobs table rather than a workflow engine, so the
+    two facts a reader needs are separate: whether the schedule is installed, and whether the
+    platform persisted a run. Run times are reported only where they were actually recorded.
+  domain_tags: [operations, governance]
+  related_terms: ["Cadence", "Status snapshot"]
+  source_refs: ["blueprint-v0.6 §3.1", "blueprint-v0.6 §3.7.7"]
+
+- term: Township
+  aliases: ["Townships", "Township-range"]
+  short_definition: >-
+    The six-mile-square PLSS unit that holds thirty-six sections, addressed by township and
+    range.
+  expanded_definition: >-
+    The coarser of the two grid units glasswell draws and bins on. Which publisher's version
+    of the grid is promoted is a recorded decision, because published township geometry
+    differs measurably between publishers.
+  domain_tags: [geospatial, data-model]
+  related_terms: ["PLSS", "Section (PLSS)", "Land unit"]
+  source_refs: ["blueprint-v0.6 §9", "cr_blm_plss_publisher_1", "marts.land_units_tile"]
 
 - term: Training support
   short_definition: >-
@@ -695,6 +900,19 @@
   related_terms: ["Knowledge time", "Bitemporal", "Report vintage"]
   source_refs: ["SB-07 §12", "DIR-2"]
 
+- term: Viewport
+  aliases: ["Map view"]
+  short_definition: >-
+    The map's current visible extent and zoom. It selects what is drawn, never what a figure
+    is computed from.
+  expanded_definition: >-
+    A number that changes when you pan is not reproducible, so where a count is scoped to the
+    view it says so and can be switched off. What the canvas drew and what the box holds are
+    reported as two answers, never reconciled into one.
+  domain_tags: [geospatial, serving]
+  related_terms: ["Basemap", "Naked number"]
+  source_refs: ["blueprint-v0.6 §9"]
+
 - term: Vintage (well vintage)
   aliases: ["Well vintage", "Vintage"]
   highlightable: false
@@ -703,9 +921,60 @@
   expanded_definition: >-
     Distinct from report vintage; both appear in this system and the glossary keeps them apart
     deliberately, because a chart that mixes them looks like a trend and is an artefact.
+    glasswell keys its North Dakota vintage cohorts on the spud year rather than the completion
+    year, because spud dates cover 84 percent of the ND population against the completion
+    anchor's 40 percent and reach back to 1922 rather than to 2009, which is when the disclosure
+    registry began rather than when the basin was drilled. That choice is
+    cr_nd_vintage_cohort_1, with its measured rationale; the completion anchor is still served
+    per well at /v1/wells/{api10}/completions, it is simply not the cohort key.
   domain_tags: [production, time]
-  related_terms: ["Report vintage", "First production"]
-  source_refs: ["blueprint-v0.6 §9"]
+  related_terms: ["Report vintage", "First production", "Spud date"]
+  source_refs: ["blueprint-v0.6 §9", "cr_nd_vintage_cohort_1"]
+
+- term: Fluid intensity
+  aliases: ["Base fluid intensity", "Fluid per lateral foot"]
+  highlightable: false
+  short_definition: >-
+    Base fluid pumped per foot of lateral, in US gallons per foot.
+  expanded_definition: >-
+    The disclosed total base water volume divided by the well's summed lateral length. It is a
+    completion-design figure, not a production one: a bigger number means a larger job, never a
+    better well. Both operands come from different sources measured at different times - the
+    volume from a voluntary FracFocus disclosure under cr_ff_base_water_units_1, the length
+    computed geodesically from canonical geometry - so a well missing either gets a stated
+    reason rather than a zero. cr_ff_fluid_intensity_1 declares the minimum lateral the division
+    is defensible over and the ceiling above which the result is withdrawn.
+  domain_tags: [completion, design]
+  related_terms: ["Wellbore", "Completion event", "Conformance rule"]
+  source_refs: ["canonical.well_completion_design", "cr_ff_fluid_intensity_1"]
+
+- term: Cumulative production
+  aliases: ["Cumulative", "Cum"]
+  highlightable: false
+  short_definition: >-
+    The sum of a well's filed monthly volumes for one stream, over a stated span.
+  expanded_definition: >-
+    A total is only as complete as the record under it, so the figure is served beside the
+    months that make it up: months reported, months reported as zero, months with no report, and
+    months the regulator withheld. Those four are different facts and are never collapsed into
+    one gap. The cumulative is a mart snapshot at a stated vintage, so the live monthly series
+    can already hold months it has not absorbed; when it does, the response says so rather than
+    leaving a reader to find the difference by arithmetic.
+  domain_tags: [production, time]
+  related_terms: ["Report vintage", "Withheld", "Liquids policy"]
+  source_refs: ["marts.well_cumulatives", "blueprint-v0.6 §9"]
+
+- term: Vocabulary rule
+  aliases: ["Vocabulary", "Status vocabulary"]
+  short_definition: >-
+    A lookup-kind conformance rule that maps one regulator's codes onto a canonical class set.
+  expanded_definition: >-
+    The mapping is rows the promotion engine reads, so no code path can disagree with it, and
+    every surface that shows a class names the rule that produced it. A documented code with
+    no canonical counterpart is served as its own class rather than as null.
+  domain_tags: [conformance, governance, data-model]
+  related_terms: ["Conformance rule", "Rule kind", "Well status"]
+  source_refs: ["blueprint-v0.6 §3.3 R8", "migration 005_conformance.sql", "cr_nd_status_vocab_1"]
 
 - term: Water cut
   highlightable: false
@@ -752,6 +1021,19 @@
   domain_tags: [identity, data-model]
   related_terms: ["Conformance rule", "Confidential well", "Quarantine"]
   source_refs: ["migration 010_nd_reference_seed.sql", "migration 027_tx_slice.sql"]
+
+- term: Well type
+  aliases: ["Well types", "well_type"]
+  short_definition: >-
+    The code a regulator files for what a well is for, served as filed and never decoded into
+    a class.
+  expanded_definition: >-
+    Distinct from well status, which is about the permit. A code the served box does not hold
+    reads absent rather than zero, and a well whose source filed no type is in no row at all
+    while still counting in the total.
+  domain_tags: [identity, data-model]
+  related_terms: ["Well status", "Disposal well", "Conformance rule"]
+  source_refs: ["cr_nd_well_type_disposal_1", "cr_nm_wellhistory_well_type_1", "marts.nd_wells_tile"]
 
 - term: Wellbore
   highlightable: false

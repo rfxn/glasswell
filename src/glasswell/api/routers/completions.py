@@ -5,9 +5,12 @@ from __future__ import annotations
 import base64
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Annotated, Any, Literal
 
+import psycopg
 from fastapi import APIRouter, Path, Request
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import JSONResponse
@@ -22,12 +25,38 @@ from glasswell.api.examples import (
     request_example,
     semantics,
 )
-from glasswell.api.responses import EnvelopeModel, enveloped, inline_for, iso
+from glasswell.api.provenance import register_response_figures
+from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, inline_for, iso
 from glasswell.api.routers.health import source_health_data
 from glasswell.api.routers.wells import API10_PATTERN, RANKED_WELLS
+from glasswell.lengths import resolve_length_method
+from glasswell.lineage.conformance import load_rules, rule_for_family
+from glasswell.lineage.envelope import figure
 from glasswell.lineage.ids import format_handle
+from glasswell.units import metres_to_feet
 
 router = APIRouter(tags=["wells"])
+
+FRACFOCUS_SOURCE_ID = "fracfocus_csv"
+UNITS_RULE_ID = "cr_ff_base_water_units_1"
+PROMOTE_RULE_ID = "cr_ff_design_promote_1"
+INTENSITY_FAMILY = "cr_ff_fluid_intensity"
+# A registry gap is not a fact about the source. wells.py:97-100 draws the same distinction for
+# the producing classification: answering with a source-shaped label would read as a statement
+# about the well rather than about the registry.
+INTENSITY_RULE_UNREGISTERED = "intensity_rule_unregistered"
+# The source-side absences the quotient inherits verbatim. A withheld numerator makes a
+# withheld quotient; reporting it as no_report would say the operator disclosed nothing when
+# the regulator is what held it back — the conflation cr_nd_null_semantics_1 exists to refuse.
+ABSENT_VOLUME_SEMANTICS = ("no_report", "withheld")
+
+
+@dataclass(frozen=True, slots=True)
+class IntensityPolicy:
+    min_lateral_ft: Decimal
+    max_gal_per_ft: Decimal
+    rule_id: str
+
 
 _SELECTOR_SAFE = re.compile(r"\A[A-Za-z0-9_.:+-]+\Z")
 
@@ -119,6 +148,47 @@ select min(available_on) as earliest
           join lineage.derivations d on d.derivation_id = c.derivation_id
          where c.api10 = %(api10)s
        ) observations
+"""
+
+_DESIGN = """
+with ranked as (
+    select d.*, m.fetch_vintage as manifest_vintage,
+           v.created_vintage as derivation_vintage,
+           row_number() over (
+               partition by d.disclosure_id, d.source_id
+               order by d.report_vintage desc, d.derivation_id desc) as vintage_rank
+      from canonical.well_completion_design d
+      join lineage.manifests m on m.manifest_id = d.source_manifest_id
+      join lineage.derivations v on v.derivation_id = d.derivation_id
+     where d.api10 = %(api10)s
+       and (%(as_of)s::date is null or d.report_vintage <= %(as_of)s::date)
+       and (%(as_of)s::date is null or m.fetch_vintage <= %(as_of)s::date)
+       and (%(as_of)s::date is null or v.created_vintage is null
+            or v.created_vintage <= %(as_of)s::date)
+)
+select disclosure_id, base_water_volume, base_water_unit, base_water_null_semantics,
+       source_id, report_vintage, derivation_id,
+       greatest(report_vintage, manifest_vintage,
+                coalesce(derivation_vintage, manifest_vintage)) as available_on
+  from ranked
+ where vintage_rank = 1
+ order by report_vintage desc, disclosure_id
+"""
+
+# Computed live from canonical geometry under the basin's own length rule, never read from a
+# mart: wells.py:1511-1514 states the card's length is measured here, and two paths measuring
+# one geometry differently is what glasswell.lengths exists to prevent.
+_LATERALS = """
+select s.geom_key, s.derivation_id, {length_metres} as length_m
+  from canonical.well_spatial s
+  join lineage.manifests m on m.manifest_id = s.source_manifest_id
+  join lineage.derivations d on d.derivation_id = s.derivation_id
+ where s.api10 = %(api10)s
+   and s.geom_type = 'lateral'
+   and (%(as_of)s::date is null or m.fetch_vintage <= %(as_of)s::date)
+   and (%(as_of)s::date is null or d.created_vintage is null
+        or d.created_vintage <= %(as_of)s::date)
+ order by s.geom_key
 """
 
 _SOURCE_COVERAGE = """
@@ -220,6 +290,48 @@ class CompletionPool(BaseModel):
     )
 
 
+class CompletionDesign(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    disclosure_id: str = Field(description="Source-issued disclosure the design was read from.")
+    base_water_volume: FigureModel | None = Field(
+        description="Disclosed total base water volume; null where the source filed none.",
+        json_schema_extra={GLOSSARY_KEY: "gt_fluid_intensity"},
+    )
+    base_water_null_semantics: str = Field(
+        description=(
+            "reported, reported_zero, no_report or withheld for the disclosed volume — the"
+            " same four classes canonical keeps apart, never collapsed into one absence."
+        )
+    )
+    lateral_length_ft: FigureModel | None = Field(
+        description="Summed lateral, measured live under the basin's length rule.",
+        json_schema_extra={GLOSSARY_KEY: "gt_wellbore"},
+    )
+    fluid_intensity: FigureModel | None = Field(
+        description="Base fluid per lateral foot; null with a stated reason, never a zero.",
+        json_schema_extra={GLOSSARY_KEY: "gt_fluid_intensity"},
+    )
+    intensity_null_semantics: str = Field(
+        description=(
+            "reported, or why no intensity is served. An absent numerator is reported as the"
+            " source classified it — no_report where nothing was disclosed, withheld where the"
+            " regulator held it back — and the divisor and the result have their own reasons:"
+            " lateral_length_unavailable, lateral_length_implausible, intensity_out_of_range."
+            " intensity_rule_unregistered means cr_ff_fluid_intensity is not registered: a gap"
+            " in the registry, not a fact about the source."
+        )
+    )
+    source_id: str = Field(
+        description="Source that disclosed the design.",
+        json_schema_extra={GLOSSARY_KEY: "gt_source"},
+    )
+    report_vintage: date = Field(
+        description="Knowledge vintage of the disclosure.",
+        json_schema_extra={GLOSSARY_KEY: "gt_report_vintage"},
+    )
+
+
 class WellCompletions(BaseModel):
     api10: str = Field(
         description="Ten-digit API well number.",
@@ -229,9 +341,16 @@ class WellCompletions(BaseModel):
     )
     design_availability: str = Field(
         description=(
-            "Completion-design measurements are not canonical in this release; no staging"
-            " value is served and no missing value is inferred."
+            "Whether this release promotes completion design at all. It is a statement about"
+            " the release, not about this well: per-well absence is `design: null` with"
+            " `design_null_semantics`."
         )
+    )
+    design: CompletionDesign | None = Field(
+        description="Promoted completion design for this well; null where none was disclosed."
+    )
+    design_null_semantics: str = Field(
+        description="reported where a disclosure was promoted, no_report where none exists."
     )
     events: list[CompletionEvent] = Field(
         description="Source-observed completion events, independent of pool assignments."
@@ -249,11 +368,22 @@ class WellCompletions(BaseModel):
         "Two independent source collections for one well: completion events from canonical"
         " FracFocus anchors, and regulator completion-pool entities with source-scoped formation"
         " aliases. The API does not join an event to a pool because no canonical key proves that"
-        " relationship. FracFocus design quantities remain staging-only, so this release reports"
-        " `design_availability=not_promoted` and serves no invented measurements. A missing"
-        " formation says whether the pool was absent or the alias was unavailable. `as_of`"
-        " constrains wells, events, completion rows, manifests, derivations, and knowledge-vintaged"
-        " aliases together."
+        " relationship. A missing formation says whether the pool was absent or the alias was"
+        " unavailable. `as_of` constrains wells, events, completion rows, manifests,"
+        " derivations, and knowledge-vintaged aliases together."
+        " This release promotes completion design, so `design_availability` reads `promoted`:"
+        " that is a statement about the release, not about this well. The disclosed base water"
+        " volume is served in US gallons under cr_ff_base_water_units_1, and fluid intensity is"
+        " computed at request time as that volume over the well's summed lateral, measured live"
+        " in the basin's own compute CRS. cr_ff_fluid_intensity_1 declares the minimum divisor"
+        " the division is defensible over and the ceiling above which the result is withdrawn:"
+        " no ND well has a summed lateral of exactly zero, so a divide-by-zero guard would fire"
+        " on nothing while a 0.24 ft divisor would serve tens of millions of gallons per foot as"
+        " a handled figure. Where either bound is crossed, or the geometry or the disclosure is"
+        " missing, the intensity is null with the reason named in"
+        " `design.intensity_null_semantics` - never a zero and never an infinity. FracFocus"
+        " disclosure is voluntary, so a well with none gets `design: null` and"
+        " `design_null_semantics` no_report, with the measured registry coverage in a warning."
     ),
     response_model=EnvelopeModel[WellCompletions],
     openapi_extra={
@@ -263,7 +393,7 @@ class WellCompletions(BaseModel):
             title="Completion pools (per well)",
             group="wells",
             collection_pointer="/pools",
-            anchors=["/api10", "/design_availability"],
+            anchors=["/api10", "/design_availability", "/design_null_semantics"],
             row_id=["/completion_key", "/source_id", "/well_completion_pool"],
             facets=["as_of"],
             columns={
@@ -346,11 +476,37 @@ def get_well_completions(
     )
     source_ids = [row["source_id"] for row in coverage]
     warnings = _coverage_warnings(coverage, as_of=effective_as_of)
+
+    design_rows = rows(connection, _DESIGN, params)
+    policy, policy_warnings = _intensity_policy(connection)
+    warnings.extend(policy_warnings)
+    method = resolve_length_method(
+        connection, basin=well["basin"], valid_at=as_of, knowledge_at=as_of
+    )
+    laterals = rows(
+        connection, _LATERALS.format(length_metres=method.metres_sql("s.geom")), params
+    )
+    design, design_warnings, design_rules = _design(
+        connection,
+        request,
+        api10=api10,
+        found=design_rows,
+        laterals=laterals,
+        policy=policy,
+        method=method,
+        as_of=effective_as_of,
+    )
+    warnings.extend(design_warnings)
+    if design_rows:
+        vintages.extend(row["available_on"] for row in design_rows)
+        source_ids = sorted({*source_ids, *(row["source_id"] for row in design_rows)})
     return enveloped(
         request,
         {
             "api10": api10,
-            "design_availability": "not_promoted",
+            "design_availability": "promoted",
+            "design": design,
+            "design_null_semantics": "reported" if design else "no_report",
             "events": anchors,
             "pools": pools,
         },
@@ -363,9 +519,200 @@ def get_well_completions(
             "well": f"/v1/wells/{api10}",
             "production": f"/v1/wells/{api10}/production",
             "formations": "/v1/formations",
+            **{rule: f"/v1/conformance/{rule}" for rule in design_rules},
         },
         explain=inline_for(connection, explain),
     )
+
+
+def _intensity_or_reason(
+    volume_gal: Decimal | None,
+    lateral_ft: Decimal | None,
+    policy: IntensityPolicy | None,
+    volume_semantics: str,
+) -> tuple[Decimal | None, str]:
+    """With no registered rule there are no bounds to apply, and saying so is the only honest
+    answer: no_report here would report a registry gap as a source that disclosed nothing."""
+    if policy is None:
+        return None, INTENSITY_RULE_UNREGISTERED
+    return _fluid_intensity(volume_gal, lateral_ft, policy, volume_semantics)
+
+
+def _fluid_intensity(
+    volume_gal: Decimal | None,
+    lateral_ft: Decimal | None,
+    policy: IntensityPolicy,
+    volume_semantics: str,
+) -> tuple[Decimal | None, str]:
+    """cr_ff_fluid_intensity_1's executor: a value, or a reason — never a number with neither.
+
+    An absent numerator is classified by the semantics the promotion recorded, not by the
+    nullness of the value: a withheld volume and an undisclosed one are two different facts,
+    and the quotient inherits the distinction rather than collapsing it back into one.
+
+    `volume_semantics` is required rather than defaulted: a default of "no_report" is the
+    collapse this signature exists to prevent, held one omitted argument away, and the failure
+    would be a declared member returned for the wrong reason — which the vocabulary guard in
+    tests/unit/test_fluid_intensity.py cannot see.
+    """
+    if volume_gal is None:
+        absent = volume_semantics in ABSENT_VOLUME_SEMANTICS
+        return None, (volume_semantics if absent else "no_report")
+    if lateral_ft is None:
+        return None, "lateral_length_unavailable"
+    if lateral_ft < policy.min_lateral_ft:
+        return None, "lateral_length_implausible"
+    intensity = volume_gal / lateral_ft
+    if intensity > policy.max_gal_per_ft:
+        return None, "intensity_out_of_range"
+    return intensity, "reported"
+
+
+def _intensity_policy(
+    connection: psycopg.Connection,
+) -> tuple[IntensityPolicy | None, list[dict[str, Any]]]:
+    """R8: the bounds are a row, so an unregistered rule withdraws the figure with a warning
+    rather than letting a default decide what a plausible completion is."""
+    try:
+        rule = rule_for_family(
+            load_rules(connection, source_id=FRACFOCUS_SOURCE_ID, stage="conform"),
+            INTENSITY_FAMILY,
+        )
+    except LookupError:
+        return None, [
+            {
+                "code": "intensity_rule_unregistered",
+                "detail": (
+                    f"No rule in family {INTENSITY_FAMILY} is registered, so the divisor floor"
+                    " and the result ceiling are undefined and no fluid intensity is served."
+                    " The disclosed volume is unaffected; this is a registry gap, not a fact"
+                    " about the well."
+                ),
+                "pointer": "/design/fluid_intensity",
+            }
+        ]
+    return (
+        IntensityPolicy(
+            min_lateral_ft=Decimal(str(rule.spec["min_lateral_ft"])),
+            max_gal_per_ft=Decimal(str(rule.spec["max_gal_per_ft"])),
+            rule_id=rule.rule_id,
+        ),
+        [],
+    )
+
+
+def _design(
+    connection: psycopg.Connection,
+    request: Request,
+    *,
+    api10: str,
+    found: list[dict[str, Any]],
+    laterals: list[dict[str, Any]],
+    policy: IntensityPolicy | None,
+    method: Any,
+    as_of: date,
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[str]]:
+    warnings: list[dict[str, Any]] = [_design_coverage_warning()]
+    if not found:
+        return None, warnings, [UNITS_RULE_ID]
+    row = found[0]
+    if len(found) > 1:
+        warnings.append(
+            {
+                "code": "multiple_design_disclosures",
+                "detail": (
+                    f"{len(found)} FracFocus disclosures cover this API-10 and they are not"
+                    f" summed: the newest, {row['disclosure_id']}, is served and the rest stay"
+                    " inspectable in canonical. A pad-level filing added to a well-level one"
+                    " would inflate the intensity of both."
+                ),
+                "pointer": "/design",
+            }
+        )
+    metres = sum(
+        (Decimal(str(item["length_m"])) for item in laterals), start=Decimal(0)
+    )
+    lateral_ft = metres_to_feet(metres) if laterals else None
+    volume = row["base_water_volume"]
+    intensity, semantics = _intensity_or_reason(
+        volume, lateral_ft, policy, row["base_water_null_semantics"]
+    )
+    computed: dict[str, Any] = {
+        "lateral_length_ft": (
+            figure(
+                str(lateral_ft.quantize(Decimal("0.01"))),
+                unit="ft",
+                derivation=sorted({item["derivation_id"] for item in laterals})[-1],
+                selector=f"api10={api10}&col=lateral_length_ft",
+            )
+            if lateral_ft is not None
+            else None
+        ),
+        "fluid_intensity": (
+            figure(
+                str(intensity.quantize(Decimal("0.01"))),
+                unit="gal/ft",
+                derivation=row["derivation_id"],
+                selector=f"api10={api10}&col=fluid_intensity",
+            )
+            if intensity is not None
+            else None
+        ),
+    }
+    rule_ids = [UNITS_RULE_ID, PROMOTE_RULE_ID, method.rule_id]
+    if policy:
+        rule_ids.append(policy.rule_id)
+    if any(computed.values()):
+        computed = register_response_figures(
+            connection,
+            computed,
+            dataset="api.well_completions",
+            operation_id="get_well_completions",
+            locator=request.url.path,
+            partition={"api10": api10, "as_of": as_of.isoformat()},
+            input_derivations=sorted(
+                {row["derivation_id"], *(item["derivation_id"] for item in laterals)}
+            ),
+            correlation_id=request.state.request_id,
+            rule_ids=rule_ids,
+        )
+    design = {
+        "disclosure_id": row["disclosure_id"],
+        "base_water_volume": (
+            figure(
+                str(volume),
+                unit=row["base_water_unit"],
+                derivation=row["derivation_id"],
+                selector=(
+                    f"{_selector_term('disclosure_id', row['disclosure_id'])}"
+                    "&col=base_water_volume"
+                ),
+            )
+            if volume is not None
+            else None
+        ),
+        "base_water_null_semantics": row["base_water_null_semantics"],
+        "intensity_null_semantics": semantics,
+        "source_id": row["source_id"],
+        "report_vintage": iso(row["report_vintage"]),
+        **computed,
+    }
+    return design, warnings, sorted({*rule_ids} - {method.rule_id})
+
+
+def _design_coverage_warning() -> dict[str, Any]:
+    """FracFocus disclosure is voluntary, so absence is a fact about the registry."""
+    return {
+        "code": "design_coverage_partial",
+        "detail": (
+            "FracFocus disclosure is voluntary and its coverage is partial. Measured on the"
+            " deployed instance 2026-08-30, 15,684 of the 22,263 ND wells with a lateral"
+            " geometry (70.5 percent) carry a disclosed base water volume; the remaining 29.5"
+            " percent have no disclosure at all, so a null design here is a fact about the"
+            " registry rather than about the well."
+        ),
+        "pointer": "/design",
+    }
 
 
 def _event(row: dict[str, Any]) -> dict[str, Any]:
@@ -546,7 +893,14 @@ def _coverage_warnings(
 
 
 def _labels(events: Iterable[dict[str, Any]], pools: Iterable[dict[str, Any]]) -> dict[str, str]:
-    labels = {"/api10": "gt_api_10_api_12_api_14"}
+    labels = {
+        "/api10": "gt_api_10_api_12_api_14",
+        "/design/base_water_volume": "gt_fluid_intensity",
+        "/design/fluid_intensity": "gt_fluid_intensity",
+        "/design/lateral_length_ft": "gt_wellbore",
+        "/design/report_vintage": "gt_report_vintage",
+        "/design/source_id": "gt_source",
+    }
     for index, _ in enumerate(events):
         labels[f"/events/{index}/event_kind"] = "gt_completion_event"
         labels[f"/events/{index}/completion_date"] = "gt_completion_event"

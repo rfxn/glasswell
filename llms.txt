@@ -63,14 +63,16 @@ Two framings matter and they are different:
 
 ```
 GET /v1/wells                         GET /v1/wells/{api10}             GET /v1/wells/{api10}/production
-GET /v1/wells/{api10}/completions     GET /v1/wells/{api10}/neighbors GET /v1/formations
+GET /v1/wells/{api10}/completions     GET /v1/wells/{api10}/neighbors   GET /v1/wells/{api10}/cumulatives
+GET /v1/wells/facets                  GET /v1/wells/vintage-cohorts     GET /v1/formations
 GET /v1/status                        GET /v1/explain?h={handle}
-GET /v1/manifests/{manifest_id}       GET /v1/conformance              GET /v1/quarantine
+GET /v1/manifests/{manifest_id}       GET /v1/conformance               GET /v1/quarantine
 GET /v1/glossary                      GET /v1/tiles/{layer}/{z}/{x}/{y}.pbf
 ```
 
-The frozen OpenAPI snapshot contains 34 operations, 33 under `/v1`, across those families plus health,
-vintages, derivations, key administration and error documentation. Forecast, valuation,
+The frozen OpenAPI snapshot contains 51 operations across 46 paths, 50 under `/v1`, across those
+families plus health, vintages, derivations, sessions, accounts, key administration and error
+documentation. Forecast, valuation,
 scenario, agent and inventory routes are not live. There is no private endpoint behind
 the UI.
 

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import "./gw-figure.ts";
 import {
   NULL_SEMANTICS_STATES,
+  roundTo,
   formatFigure,
   formatMonth,
   formatValue,
@@ -147,6 +148,32 @@ describe("formatMonth", () => {
   });
 });
 
+describe("formatFigure digits", () => {
+  it("renders to a fixed precision when asked and as served when not", () => {
+    const figure = { value: "21000.000", unit: "bbl", d: "drv_x" };
+    expect(formatFigure(figure, 0)).toBe("21,000 bbl");
+    expect(formatFigure(figure)).toBe("21,000.000 bbl");
+  });
+
+  it("rounds half up and carries into the whole part", () => {
+    expect(formatFigure({ value: "9.5", unit: "bbl", d: "drv_x" }, 0)).toBe("10 bbl");
+    expect(formatFigure({ value: "9.49", unit: "bbl", d: "drv_x" }, 0)).toBe("9 bbl");
+    expect(formatFigure({ value: "1.056", unit: "bbl", d: "drv_x" }, 2)).toBe("1.06 bbl");
+    expect(formatFigure({ value: "0.04", unit: "bbl", d: "drv_x" }, 1)).toBe("0.0 bbl");
+    expect(formatFigure({ value: "0.05", unit: "bbl", d: "drv_x" }, 1)).toBe("0.1 bbl");
+  });
+
+  it("keeps a value already shorter than the precision asked for", () => {
+    expect(formatFigure({ value: "3000", unit: "ft", d: "drv_x" }, 2)).toBe("3,000 ft");
+  });
+
+  it("never routes a large value through a float", () => {
+    expect(
+      formatFigure({ value: "123456789012345678901.5", unit: "bbl", d: "drv_x" }, 0),
+    ).toBe("123,456,789,012,345,678,902 bbl");
+  });
+});
+
 describe("formatVolume", () => {
   it("rounds a monthly volume to whole units — three decimals on a month is noise", () => {
     expect(formatVolume("70965.000")).toBe("70,965");
@@ -183,5 +210,31 @@ describe("the null-semantics key", () => {
     expect(new Set(marks.map((mark) => mark.className)).size).toBe(4);
     expect(marks.every((mark) => mark.label.length > 0 && mark.title.length > 0)).toBe(true);
     expect(marks.every((mark) => mark.className !== "gw-state-unknown")).toBe(true);
+  });
+});
+
+
+describe("roundTo refuses a precision that is not one", () => {
+  it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])("throws on %s", (digits) => {
+    expect(() => roundTo("21000.000", digits)).toThrow(/non-negative integer/);
+  });
+});
+
+describe("gw-figure's digits attribute", () => {
+  const mount = (digits: string | null): string => {
+    const el = document.createElement("gw-figure");
+    el.setAttribute("value", "21000.456");
+    el.setAttribute("unit", "bbl");
+    el.setAttribute("handle", "drv_test#col=x");
+    if (digits !== null) el.setAttribute("digits", digits);
+    document.body.replaceChildren(el);
+    return el.textContent ?? "";
+  };
+  it("rounds only on a non-negative integer", () => {
+    expect(mount("0")).toContain("21,000 bbl");
+    expect(mount("1")).toContain("21,000.5 bbl");
+  });
+  it.each(["", "NaN", "-1", "1.5", "two"])("treats %j as unset and renders as served", (raw) => {
+    expect(mount(raw)).toContain("21,000.456 bbl");
   });
 });

@@ -13,7 +13,7 @@ import { crossingLink, openThisSeries, rowsForThisWell } from "../explore/bridge
 import { labelElement } from "../glossary/gw-term.ts";
 import { highlight } from "../glossary/index.ts";
 import { termIndex } from "../glossary/store.ts";
-import { absentValue, formatVintage } from "./format.ts";
+import { absentValue, formatMonth, formatVintage, nullSemantics } from "./format.ts";
 
 export interface WellDetail {
   api10: string;
@@ -65,11 +65,46 @@ export interface CompletionPool {
   _lineage: Record<string, string>;
 }
 
+export interface CompletionDesign {
+  disclosure_id: string;
+  base_water_volume: Figure | null;
+  base_water_null_semantics: string;
+  lateral_length_ft: Figure | null;
+  fluid_intensity: Figure | null;
+  intensity_null_semantics: string;
+  source_id: string;
+  report_vintage: string;
+}
+
 export interface CompletionContext {
   api10: string;
-  design_availability: "not_promoted";
+  /** A statement about the release, not about this well; per-well absence is `design`. */
+  design_availability: string;
+  design: CompletionDesign | null;
+  design_null_semantics: string;
   events: CompletionEvent[];
   pools: CompletionPool[];
+}
+
+export interface StreamCoverage {
+  months_reported: number;
+  months_reported_zero: number;
+  months_no_report: number;
+  months_withheld: number;
+  span_months: number;
+  first_month: string | null;
+  last_month: string | null;
+  coverage_complete: boolean;
+}
+
+export interface WellCumulatives {
+  api10: string;
+  granularity: string;
+  snapshot_vintage: string;
+  coverage_outcome: string;
+  cumulative: { oil_bbl: Figure | null; gas_mcf: Figure | null; water_bbl: Figure | null } | null;
+  coverage: Record<string, StreamCoverage> & { _lineage: Record<string, string> };
+  months_withheld: Figure;
 }
 
 export interface CardCallbacks {
@@ -313,6 +348,7 @@ export async function renderWellCard(
   // production is what a reader opened the card for, and it used to sit at 49% of a 1,600px
   // scroll behind two sections that are empty for most wells. Slots are placed first and
   // filled by their own requests, so the order cannot drift with which response lands first.
+  const cumulativeSlot = document.createElement("div");
   const factsSlot = document.createElement("div");
   factsSlot.className = "gw-card-facts";
   const contextSlot = document.createElement("div");
@@ -336,7 +372,9 @@ export async function renderWellCard(
   chartNotes.className = "gw-chart-notes gw-notes";
   chartFrame.append(chartTitle, chartHost, chartNotes);
 
-  body.append(chartFrame, factsSlot, contextSlot, neighborSlot, notesSlot);
+  // Directly under the chart: the total belongs beside the series it is a total of, and a
+  // reader who came for production should not have to scroll past the fact bands to find it.
+  body.append(chartFrame, cumulativeSlot, factsSlot, contextSlot, neighborSlot, notesSlot);
 
   // A band whose every field was absent is a heading over nothing: dropped, not left standing.
   for (const { title } of FACT_GROUPS) {
@@ -378,6 +416,28 @@ export async function renderWellCard(
     asOfQuery,
   );
 
+  // Absent outside the mart's states: the API declines to offer a link it would 404, and a
+  // section headed "no cumulative" would say the well produced nothing rather than that this
+  // jurisdiction is not summed here.
+  let cumulativeRequest: Promise<void> = Promise.resolve();
+  const cumulativePath = well.links?.["cumulatives"];
+  if (cumulativePath) {
+    const cumulativeFrame = document.createElement("section");
+    cumulativeFrame.className = "gw-card-chart gw-well-cumulatives";
+    const cumulativeTitle = document.createElement("h3");
+    cumulativeTitle.className = "gw-frame-title";
+    cumulativeTitle.textContent = "Cumulative";
+    const cumulativeHost = document.createElement("div");
+    cumulativeHost.className = "gw-frame-body";
+    cumulativeHost.dataset["state"] = "loading";
+    cumulativeHost.setAttribute("aria-busy", "true");
+    cumulativeHost.setAttribute("aria-live", "polite");
+    cumulativeHost.appendChild(placeholder("Loading cumulative…"));
+    cumulativeFrame.append(cumulativeTitle, cumulativeHost);
+    cumulativeSlot.appendChild(cumulativeFrame);
+    cumulativeRequest = loadWellCumulatives(cumulativeHost, cumulativePath, api10, asOfQuery);
+  }
+
   let neighborRequest: Promise<void> = Promise.resolve();
   const neighborPath = well.links?.["neighbors"];
   if (neighborPath) {
@@ -410,7 +470,7 @@ export async function renderWellCard(
     container.replaceChildren(card);
     highlight(card, termIndex());
     focusPanel(container);
-    await Promise.all([statusRequest, contextRequest, neighborRequest]);
+    await Promise.all([statusRequest, contextRequest, cumulativeRequest, neighborRequest]);
     return;
   }
 
@@ -455,7 +515,134 @@ export async function renderWellCard(
     }
   })();
 
-  await Promise.all([statusRequest, contextRequest, neighborRequest, productionRequest]);
+  await Promise.all([
+    statusRequest,
+    contextRequest,
+    cumulativeRequest,
+    neighborRequest,
+    productionRequest,
+  ]);
+}
+
+const CUMULATIVE_STREAMS: [keyof NonNullable<WellCumulatives["cumulative"]>, string, string][] = [
+  ["oil_bbl", "Oil", "/cumulative/oil_bbl"],
+  ["gas_mcf", "Gas", "/cumulative/gas_mcf"],
+  ["water_bbl", "Water", "/cumulative/water_bbl"],
+];
+
+async function loadWellCumulatives(
+  host: HTMLElement,
+  path: string,
+  expectedApi10: string,
+  query: Record<string, string>,
+): Promise<void> {
+  try {
+    const envelope = await getEnvelope<WellCumulatives>(path, query);
+    const data = unwrap(envelope);
+    if (data.api10 !== expectedApi10 || data.cumulative === undefined || !data.coverage) {
+      throw new TypeError("Cumulatives did not match the required well");
+    }
+    host.replaceChildren(cumulativesBody(data, envelope));
+    for (const note of warningNotes(envelope.meta.warnings)) host.appendChild(note);
+    host.dataset["state"] = data.cumulative === null ? "empty" : "populated";
+    highlight(host, termIndex());
+  } catch (error) {
+    // An ND well the snapshot has not absorbed yet. Distinct from "produced nothing", which
+    // is the null cumulative above, and from a read failure, which is the line below.
+    if (error instanceof ApiError && error.code === "not_found") {
+      host.replaceChildren(emptyState("No cumulative: not in the snapshot."));
+      host.dataset["state"] = "empty";
+      return;
+    }
+    host.replaceChildren(emptyState("Unavailable: the response could not be read."));
+    host.dataset["state"] = "unavailable";
+  } finally {
+    host.setAttribute("aria-busy", "false");
+  }
+}
+
+function cumulativesBody(
+  data: WellCumulatives,
+  envelope: Envelope<WellCumulatives>,
+): DocumentFragment {
+  const fragment = document.createDocumentFragment();
+  if (data.cumulative === null) {
+    fragment.appendChild(emptyState("No cumulative: nothing ever filed."));
+    fragment.appendChild(scopeLine([`snapshot ${formatVintage(data.snapshot_vintage)}`]));
+    return fragment;
+  }
+
+  const row = document.createElement("dl");
+  row.className = "gw-cumulative-row";
+  for (const [key, label, pointer] of CUMULATIVE_STREAMS) {
+    const cell = document.createElement("div");
+    cell.className = "gw-cumulative-cell";
+    const term_ = document.createElement("dt");
+    term_.appendChild(labelElement(label, labelFor(envelope, pointer)));
+    const value = document.createElement("dd");
+    const figure = data.cumulative[key];
+    if (figure) {
+      // Whole units: a cumulative is no more measured to a thousandth of a barrel than a
+      // monthly volume is, and the three-decimal tail crowded the row at 390.
+      value.appendChild(figureElement(figure, label, figure.d ?? null, 0));
+    } else {
+      value.appendChild(absentValue(absentStreamReason(data.coverage[key])));
+    }
+    const record = coverageTitle(data.coverage[key]);
+    if (record) cell.title = record;
+    cell.append(term_, value);
+    row.appendChild(cell);
+  }
+  fragment.appendChild(row);
+  fragment.appendChild(scopeLine(cumulativeScope(data)));
+  return fragment;
+}
+
+/**
+ * A null total means no month was admitted, so the reason is which class the months fell in.
+ * Withheld outranks no-report when both are present: the regulator holding a month back is a
+ * stronger statement than a missing filing, and `title` carries the full count either way.
+ */
+function absentStreamReason(coverage: StreamCoverage | undefined): string {
+  if (!coverage || coverage.span_months === 0) return "nothing filed";
+  if (coverage.months_withheld > 0) return nullSemantics("withheld").label;
+  if (coverage.months_no_report > 0) return nullSemantics("no_report").label;
+  return "nothing filed";
+}
+
+/** The four counts behind one total, never collapsed: they are four different facts. */
+function coverageTitle(coverage: StreamCoverage | undefined): string {
+  if (!coverage) return "";
+  return (
+    `${coverage.months_reported} reported · ${coverage.months_reported_zero} reported zero` +
+    ` · ${coverage.months_no_report} no report · ${coverage.months_withheld} withheld` +
+    ` of ${coverage.span_months} months`
+  );
+}
+
+function cumulativeScope(data: WellCumulatives): (string | false)[] {
+  const blocks = CUMULATIVE_STREAMS.map(([key]) => data.coverage[key]).filter(
+    (block): block is StreamCoverage => Boolean(block),
+  );
+  const first = blocks.map((block) => block.first_month).filter((month) => month !== null);
+  const last = blocks.map((block) => block.last_month).filter((month) => month !== null);
+  const window =
+    first.length && last.length
+      ? `${formatMonth(first.reduce((a, b) => (a < b ? a : b)))} – ` +
+        `${formatMonth(last.reduce((a, b) => (a > b ? a : b)))}`
+      : "";
+  // Admitted counts can differ per stream — one stream's month can be withheld while
+  // another's is filed — so a single number would be wrong for two of the three.
+  const admitted = blocks.map((block) => block.months_reported + block.months_reported_zero);
+  const span = Math.max(...blocks.map((block) => block.span_months), 0);
+  const low = Math.min(...admitted);
+  const high = Math.max(...admitted);
+  const count = low === high ? `${low}` : `${low}–${high}`;
+  return [
+    window,
+    span > 0 && `${count} of ${span} months admitted`,
+    `snapshot ${formatVintage(data.snapshot_vintage)}`,
+  ];
 }
 
 async function loadCompletionContext(
@@ -469,7 +656,8 @@ async function loadCompletionContext(
     const context = unwrap(envelope);
     if (
       context.api10 !== expectedApi10 ||
-      context.design_availability !== "not_promoted" ||
+      typeof context.design_availability !== "string" ||
+      context.design === undefined ||
       !Array.isArray(context.events) ||
       !Array.isArray(context.pools)
     ) {
@@ -478,12 +666,12 @@ async function loadCompletionContext(
     host.replaceChildren(completionContextBody(context, envelope));
     for (const note of warningNotes(envelope.meta.warnings)) host.appendChild(note);
     host.dataset["state"] =
-      context.events.length === 0 && context.pools.length === 0
+      context.events.length === 0 && context.pools.length === 0 && context.design === null
         ? "empty"
         : "populated";
     highlight(host, termIndex());
   } catch {
-    host.replaceChildren(emptyState("Unavailable — the response could not be read."));
+    host.replaceChildren(emptyState("Unavailable: the response could not be read."));
     host.dataset["state"] = "unavailable";
   } finally {
     host.setAttribute("aria-busy", "false");
@@ -495,8 +683,8 @@ function completionContextBody(
   envelope: Envelope<CompletionContext>,
 ): DocumentFragment {
   const fragment = document.createDocumentFragment();
-  if (context.events.length === 0 && context.pools.length === 0) {
-    fragment.appendChild(emptyState("No events or pools reported."));
+  if (context.events.length === 0 && context.pools.length === 0 && context.design === null) {
+    fragment.appendChild(emptyState("No events, pools or design reported."));
   } else {
     fragment.append(
       contextGroup(
@@ -511,13 +699,86 @@ function completionContextBody(
         context.pools.map(completionPoolItem),
         "None reported",
       ),
+      contextGroup(
+        "Completion design",
+        labelFor(envelope, "/design/fluid_intensity"),
+        completionDesignItems(context),
+        "None disclosed",
+      ),
     );
   }
 
   // The absence is a served fact, not a load failure, so it stays on the card — as a scope
   // line under the section it scopes rather than as the sentence it used to be.
-  fragment.appendChild(scopeLine(["Design and formation tops not served"]));
+  fragment.appendChild(
+    scopeLine([
+      context.design === null
+        ? "No design disclosed: FracFocus is voluntary"
+        : "Design as disclosed, measured against computed geometry",
+      "Formation tops not served",
+    ]),
+  );
   return fragment;
+}
+
+/** cr_ff_design_promote_1's vocabulary, for the disclosed volume. */
+const VOLUME_REASONS: Record<string, string> = {
+  no_report: "unavailable \u2014 no disclosed volume",
+  withheld: "unavailable \u2014 withheld by the regulator",
+};
+
+/** cr_ff_fluid_intensity_1's vocabulary, for the quotient. A different set of facts. */
+const INTENSITY_REASONS: Record<string, string> = {
+  no_report: "unavailable \u2014 no disclosed volume",
+  withheld: "unavailable \u2014 withheld by the regulator",
+  lateral_length_unavailable: "unavailable \u2014 no lateral geometry",
+  lateral_length_implausible: "unavailable \u2014 lateral too short to divide by",
+  intensity_out_of_range: "unavailable \u2014 result outside the rule's range",
+  intensity_rule_unregistered: "unavailable \u2014 the intensity rule is not registered",
+};
+
+function completionDesignItems(context: CompletionContext): HTMLElement[] {
+  const design = context.design;
+  if (design === null) return [];
+  const item = document.createElement("li");
+  const facts = document.createElement("dl");
+  facts.className = "gw-context-facts";
+  appendContextFact(facts, "Disclosure", design.disclosure_id, true);
+  appendFigureFact(
+    facts,
+    "Base fluid",
+    design.base_water_volume,
+    VOLUME_REASONS[design.base_water_null_semantics] ?? "unavailable",
+  );
+  appendFigureFact(facts, "Lateral", design.lateral_length_ft, "unavailable \u2014 no geometry");
+  appendFigureFact(
+    facts,
+    "Fluid intensity",
+    design.fluid_intensity,
+    INTENSITY_REASONS[design.intensity_null_semantics] ?? "unavailable",
+  );
+  appendContextFact(
+    facts,
+    "Source",
+    sourceLabel(design.source_id, design.report_vintage),
+    true,
+  );
+  item.appendChild(facts);
+  return [item];
+}
+
+/** A figure renders as a chip with its handle; an absence renders as its stated reason. */
+function appendFigureFact(
+  facts: HTMLDListElement,
+  label: string,
+  value: Figure | null,
+  reason: string,
+): void {
+  if (value === null) {
+    appendContextFact(facts, label, reason);
+    return;
+  }
+  appendContextFact(facts, label, figureElement(value, label, value.d ?? null));
 }
 
 export function contextGroup(
@@ -677,7 +938,12 @@ function lineageButton(handle: string, label: string): HTMLButtonElement {
 }
 
 /** The <dt> beside it is the label, so the chip carries it for assistive tech only. */
-export function figureElement(figure: Figure, label: string, handle: string | null): HTMLElement {
+export function figureElement(
+  figure: Figure,
+  label: string,
+  handle: string | null,
+  digits?: number,
+): HTMLElement {
   const element = document.createElement("gw-figure");
   element.setAttribute("value", figure.value);
   element.setAttribute("unit", figure.unit);
@@ -685,6 +951,7 @@ export function figureElement(figure: Figure, label: string, handle: string | nu
   element.setAttribute("label", label);
   element.setAttribute("label-hidden", "");
   if (figure.granularity) element.setAttribute("granularity", figure.granularity);
+  if (digits !== undefined) element.setAttribute("digits", String(digits));
   return element;
 }
 

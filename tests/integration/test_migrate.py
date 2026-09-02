@@ -75,12 +75,17 @@ def test_the_serving_migration_registers_the_modeling_selector_profiles(db) -> N
             ("api.modeling_publication", "response_output"),
             ("api.type_curve", "response_output"),
             ("api.type_curve_index", "response_output"),
+            # 072: the N2 figures are request-computed too — fluid intensity on the
+            # completions record, the per-well cumulative and the cohort aggregates.
+            ("api.well_completions", "response_output"),
+            ("api.well_cumulatives", "response_output"),
             ("api.well_detail", "response_output"),
             # 070: every "wells by" bucket count, remainder and absence figure is
             # request-computed, so the profile is what keeps /v1/explain from answering 422 on
             # a handle the response carries.
             ("api.well_facets", "response_output"),
             ("api.well_status_summary", "response_output"),
+            ("api.well_vintage_cohorts", "response_output"),
         ]
 
 

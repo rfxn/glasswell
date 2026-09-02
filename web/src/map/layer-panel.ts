@@ -5,6 +5,7 @@ import { explainHandle, setExplainHandle } from "../chrome/handle.ts";
 import { registerOverlay } from "../chrome/overlays.ts";
 import { applyCrossing, cross, whatsBehindThisLayer } from "../explore/bridge.ts";
 import type { Bbox, Crossing } from "../explore/bridge.ts";
+import { teach } from "../glossary/teach.ts";
 import { BASEMAPS } from "./basemap.ts";
 import type { LayerFamily } from "./groups.ts";
 import { LAYERS, defaultLayerSet, familyState, groupEntries } from "./registry.ts";
@@ -54,6 +55,7 @@ export function createLayerPanel(options: LayerPanelOptions): LayerPanelHandle {
 
   const head = document.createElement("header");
   head.className = "gw-layers-head";
+  head.setAttribute("data-no-glossary", "");
   const heading = document.createElement("h2");
   heading.textContent = "Layers";
   head.appendChild(heading);
@@ -80,6 +82,7 @@ export function createLayerPanel(options: LayerPanelOptions): LayerPanelHandle {
   search.className = "gw-layer-search";
   search.placeholder = "Filter layers";
   search.setAttribute("aria-label", "Filter layers");
+  search.setAttribute("data-no-glossary", "");
   element.appendChild(search);
 
   const bodyElement = document.createElement("div");
@@ -96,6 +99,7 @@ export function createLayerPanel(options: LayerPanelOptions): LayerPanelHandle {
   segmented.className = "gw-base-switcher";
   segmented.setAttribute("role", "group");
   segmented.setAttribute("aria-label", "Basemap");
+  segmented.setAttribute("data-no-glossary", "");
   const baseButtons = new Map<string, HTMLButtonElement>();
   for (const base of BASEMAPS) {
     const button = document.createElement("button");
@@ -198,6 +202,8 @@ export function createLayerPanel(options: LayerPanelOptions): LayerPanelHandle {
 
   handle.setOn(options.on);
   handle.setBasemap(options.basemap);
+  // Rows are built once and patched, so one pass plus the ready subscription covers the panel.
+  teach(element);
   return handle;
 }
 
@@ -249,6 +255,7 @@ function buildGroup(
   const head = document.createElement("button");
   head.type = "button";
   head.className = "gw-layer-group-head";
+  head.setAttribute("data-no-glossary", "");
   const heading = document.createElement("span");
   heading.className = "gw-layer-group-label";
   heading.textContent = label;
@@ -343,6 +350,7 @@ function buildFamily(
   // and tests/e2e/chrome-fold.mjs measures this element against the fold like any other row.
   const head = document.createElement("div");
   head.className = "gw-layer-row gw-layer-family-head";
+  head.setAttribute("data-no-glossary", "");
 
   // No swatch of its own. Four regulators draw four colours, and one mark here would predict a
   // canvas three of them contradict — the spacer keeps the parent's label on the siblings' rule.
@@ -487,6 +495,8 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFam
   const name = document.createElement("button");
   name.type = "button";
   name.className = "gw-layer-name";
+  // The name is the disclosure control; the subtitle inside it is where the words are taught.
+  name.setAttribute("data-no-glossary", "");
   const named = splitScope(rowLabel);
   const label = document.createElement("span");
   label.className = "gw-layer-label";
@@ -558,6 +568,8 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFam
     for (const source of layer.provenance) {
       const line = document.createElement("p");
       line.className = "gw-layer-source";
+      // A file name and a row count, on notes.ts's precedent: machine detail, not vocabulary.
+      line.setAttribute("data-no-glossary", "");
       line.textContent = source.label ? `${source.label} · ${source.source}` : source.source;
       text.appendChild(line);
     }
@@ -569,6 +581,7 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFam
     className: "gw-layer-derivation",
     label: `the ${layer.label.toLowerCase()} geometry`,
   });
+  derivation.setAttribute("data-no-glossary", "");
   text.appendChild(derivation);
 
   // §2.6's fourth row. `ⓘ` is in none of the three faces this product ships, so the affordance
@@ -607,6 +620,7 @@ function buildRow(layer: LayerDef, options: LayerPanelOptions, family?: LayerFam
   toggle.type = "button";
   toggle.className = "gw-layer-toggle";
   toggle.setAttribute("aria-label", `Show ${layer.label}`);
+  toggle.setAttribute("data-no-glossary", "");
   toggle.addEventListener("click", () => {
     options.onToggle(layer.id, toggle.getAttribute("aria-pressed") !== "true");
   });

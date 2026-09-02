@@ -386,6 +386,47 @@ assert_true "ND neighbour subjects populated ($neighbor_subjects)" "mart is empt
     test "${neighbor_subjects:-0}" -gt 0
 assert_true "ND neighbour edges populated ($neighbor_edges)" "mart is empty" \
     test "${neighbor_edges:-0}" -gt 0
+cumulatives="$("${PSQL[@]}" "select count(*) from marts.well_cumulatives")"
+withholding="$("${PSQL[@]}" "select count(*) from marts.well_withholding")"
+assert_true "per-well cumulatives populated ($cumulatives)" "mart is empty" \
+    test "${cumulatives:-0}" -gt 0
+# Three states, one query, same discipline as the design check below: the mart is written by
+# the cumulatives refresh, so before that has ever run an empty table says nothing about the
+# system, and after it has run an empty table is only a fault if there were open withheld rows
+# to hold. Refusing unconditionally asserted that NDIC still withholds something.
+withholding_state="$("${PSQL[@]}" "select case
+    when (select count(*) from lineage.derivations
+           where operation = 'mart.refresh'
+             and output_dataset = 'marts.well_cumulatives') = 0 then 'pending'
+    when (select count(*) from marts.well_withholding) > 0 then 'ok'
+    when (select count(*) from lineage.quarantine_rows
+           where reason_code = 'confidential_withheld' and state = 'open') = 0 then 'none_open'
+    else 'bad' end")"
+case "$withholding_state" in
+    pending)
+        ok "well withholding not yet refreshed — no mart.refresh has run on this host" ;;
+    none_open)
+        ok "well withholding empty — no open confidential_withheld row to hold" ;;
+    *)
+        assert_true "well withholding populated ($withholding)" \
+            "the refresh has run and open confidential_withheld rows exist, but the mart is empty" \
+            test "$withholding_state" = "ok" ;;
+esac
+# Conditional, and this is the one honest exception: a host that has never fetched the 440 MB
+# voluntary-disclosure archive has no design rows to hold, and refusing its deploy would be
+# asserting a fact about the source rather than about the system. The condition is one query,
+# so the check cannot drift from its premise.
+design_state="$("${PSQL[@]}" "select case
+    when (select count(*) from staging.fracfocus_disclosures
+           where state_name = 'North Dakota' or api_number like '33%') = 0 then 'pending'
+    when (select count(*) from canonical.well_completion_design) > 0 then 'ok'
+    else 'bad' end")"
+if [ "$design_state" = "pending" ]; then
+    printf '  .. completion design pending — no ND FracFocus disclosure is staged on this host\n'
+else
+    assert_true "completion design promoted" "ND disclosures are staged but none promoted" \
+        test "$design_state" = "ok"
+fi
 assert "GET /healthz" 200 "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/healthz")"
 assert "GET /v1 without a key is refused" 403 \
     "$(api_curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API/v1/wells?limit=1")"

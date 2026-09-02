@@ -19,6 +19,7 @@ const {
   LENGTH_HANDLE,
   OIL_HANDLE,
   completionContextEnvelope,
+  cumulativesEnvelope,
   neighborEnvelope,
   productionEnvelope,
   stubFetch,
@@ -40,6 +41,7 @@ beforeEach(() => {
     vi.fn(
       stubFetch({
         [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+        [`/v1/wells/${API10}/cumulatives`]: cumulativesEnvelope,
         [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
         [`/v1/wells/${API10}/production`]: productionEnvelope,
         [`/v1/wells/${API10}`]: wellEnvelope,
@@ -137,10 +139,11 @@ describe("a well whose regulator reports at the lease", () => {
 });
 
 describe("well card", () => {
-  it("pins the well, completion, and production requests to the route as_of", async () => {
+  it("pins the well, completion, cumulative and production requests to the route as_of", async () => {
     const requested = vi.fn(
       stubFetch({
         [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+        [`/v1/wells/${API10}/cumulatives`]: cumulativesEnvelope,
         [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
         [`/v1/wells/${API10}/production`]: productionEnvelope,
         [`/v1/wells/${API10}`]: wellEnvelope,
@@ -155,6 +158,7 @@ describe("well card", () => {
       [
         `/v1/wells/${API10}?as_of=2026-07-01`,
         `/v1/wells/${API10}/completions?as_of=2026-07-01`,
+        `/v1/wells/${API10}/cumulatives?as_of=2026-07-01`,
         `/v1/wells/${API10}/neighbors?as_of=2026-07-01&limit=5`,
         `/v1/wells/${API10}/production?as_of=2026-07-01`,
       ].sort(),
@@ -171,7 +175,7 @@ describe("well card", () => {
 
   it("renders lateral length through gw-figure, with its unit and its handle", async () => {
     await renderWellCard(host, API10, callbacks);
-    const figure = host.querySelector("gw-figure");
+    const figure = host.querySelector(`gw-figure[handle="${LENGTH_HANDLE}"]`);
     expect(figure?.getAttribute("unit")).toBe("ft");
     expect(figure?.getAttribute("handle")).toBe(LENGTH_HANDLE);
     expect(figure?.textContent).toContain("15,065.44 ft");
@@ -254,9 +258,194 @@ describe("well card", () => {
 
   it("opens the drawer from the figure's handle affordance", async () => {
     await renderWellCard(host, API10, callbacks);
-    const button = host.querySelector<HTMLButtonElement>("gw-figure button");
+    const button = host.querySelector<HTMLButtonElement>(
+      `gw-figure[handle="${LENGTH_HANDLE}"] button`,
+    );
     button?.click();
     expect(callbacks.onExplain).toHaveBeenCalledWith(LENGTH_HANDLE);
+  });
+
+  it("renders the cumulative row as three figures, each with its own handle", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    const frame = host.querySelector<HTMLElement>(".gw-well-cumulatives");
+    expect(frame?.querySelector(".gw-frame-body")?.getAttribute("data-state")).toBe("populated");
+
+    const cells = [...(frame?.querySelectorAll(".gw-cumulative-cell") ?? [])];
+    expect(cells.map((cell) => cell.querySelector("dt")?.textContent)).toEqual([
+      "Oil",
+      "Gas",
+      "Water",
+    ]);
+    expect(cells.map((cell) => cell.querySelector(".gw-figure-value")?.textContent)).toEqual([
+      "21,000 bbl",
+      "50,400 mcf",
+      "12,000 bbl",
+    ]);
+    expect(
+      cells.map((cell) => cell.querySelector("gw-figure")?.getAttribute("handle")),
+    ).toEqual([
+      "drv_ljbmyy7avces77lwdnfa#api10=3305310451&col=oil_bbl",
+      "drv_ljbmyy7avces77lwdnfa#api10=3305310451&col=gas_mcf",
+      "drv_ljbmyy7avces77lwdnfa#api10=3305310451&col=water_bbl",
+    ]);
+  });
+
+  it("rounds a cumulative to whole units while the lateral length keeps its decimals", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    const cumulative = [
+      ...host.querySelectorAll(".gw-well-cumulatives .gw-figure-value"),
+    ].map((value) => value.textContent ?? "");
+    expect(cumulative).toHaveLength(3);
+    // The precision is per call, not global: no cumulative cell carries a fractional part.
+    for (const text of cumulative) expect(text).not.toMatch(/\d\.\d/);
+    expect(cumulative).toEqual(["21,000 bbl", "50,400 mcf", "12,000 bbl"]);
+
+    // Same card, same element, untouched: two decimals are meaningful for a measured length.
+    const lateral = host.querySelector(
+      `gw-figure[handle="${LENGTH_HANDLE}"] .gw-figure-value`,
+    )?.textContent;
+    expect(lateral).toMatch(/\d\.\d/);
+    expect(lateral).toBe("15,065.44 ft");
+  });
+
+  it("resolves a cumulative figure's handle through the explain affordance", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    callbacks.onExplain.mockClear();
+    host
+      .querySelector<HTMLButtonElement>(
+        ".gw-well-cumulatives gw-figure[handle*='col=gas_mcf'] button",
+      )
+      ?.click();
+
+    expect(callbacks.onExplain).toHaveBeenCalledWith(
+      "drv_ljbmyy7avces77lwdnfa#api10=3305310451&col=gas_mcf",
+    );
+  });
+
+  it("states the window, the months admitted and the snapshot beside the totals", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    const scope = host.querySelector<HTMLElement>(".gw-well-cumulatives .gw-scope");
+    // 5-6 of 7, because the water stream carries one more withheld month than oil and gas:
+    // a single admitted count would be wrong for two of the three streams.
+    expect(scope?.textContent).toBe(
+      "Dec 2025 – Jun 2026 · 5–6 of 7 months admitted · snapshot 2026-08-01",
+    );
+  });
+
+  it("renders a withheld stream as withheld and a no-report stream as no report, never as 0", async () => {
+    const classes = {
+      ...cumulativesEnvelope,
+      data: {
+        ...cumulativesEnvelope.data,
+        cumulative: {
+          ...cumulativesEnvelope.data.cumulative,
+          gas_mcf: null,
+          water_bbl: null,
+        },
+        coverage: {
+          ...cumulativesEnvelope.data.coverage,
+          gas_mcf: {
+            ...cumulativesEnvelope.data.coverage.gas_mcf,
+            months_reported: 0,
+            months_no_report: 0,
+            months_withheld: 7,
+          },
+          water_bbl: {
+            ...cumulativesEnvelope.data.coverage.water_bbl,
+            months_reported: 0,
+            months_no_report: 7,
+            months_withheld: 0,
+          },
+        },
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+          [`/v1/wells/${API10}/cumulatives`]: classes,
+          [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const cells = [...host.querySelectorAll(".gw-well-cumulatives .gw-cumulative-cell")];
+    expect(
+      cells.map((cell) => cell.querySelector(".gw-figure-value, .gw-absent")?.textContent),
+    ).toEqual(["21,000 bbl", "unavailable: withheld", "unavailable: no report"]);
+    // The whole point: an absent month is never summed as a zero.
+    expect(cells[1]?.textContent).not.toMatch(/\b0\b/);
+    expect(cells[2]?.textContent).not.toMatch(/\b0\b/);
+    // Nothing is collapsed away — the four counts stay reachable on the cell.
+    expect(cells[1]?.getAttribute("title")).toBe(
+      "0 reported · 0 reported zero · 0 no report · 7 withheld of 7 months",
+    );
+  });
+
+  it("says nothing was ever filed rather than showing a zero cumulative", async () => {
+    const never = {
+      ...cumulativesEnvelope,
+      data: {
+        ...cumulativesEnvelope.data,
+        coverage_outcome: "never_reported",
+        cumulative: null,
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+          [`/v1/wells/${API10}/cumulatives`]: never,
+          [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const frame = host.querySelector<HTMLElement>(".gw-well-cumulatives");
+    expect(frame?.querySelector(".gw-frame-body")?.getAttribute("data-state")).toBe("empty");
+    expect(frame?.textContent).toContain("No cumulative: nothing ever filed.");
+    expect(frame?.querySelector("gw-figure")).toBeNull();
+    expect(frame?.textContent).not.toMatch(/\b0 bbl\b/);
+  });
+
+  it("omits the section entirely for a well the mart does not cover", async () => {
+    const unlinked = {
+      ...wellEnvelope,
+      links: Object.fromEntries(
+        Object.entries(wellEnvelope.links).filter(([key]) => key !== "cumulatives"),
+      ),
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+          [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: unlinked,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    // Not an empty section: "no cumulative" would say the well produced nothing, when the
+    // fact is that this jurisdiction is not summed here at all.
+    expect(host.querySelector(".gw-well-cumulatives")).toBeNull();
   });
 
   it("links labels the API named in meta.labels straight to their term (DIR-8)", async () => {
@@ -460,10 +649,18 @@ describe("completion and formation context", () => {
       "Last observed month": "2026-03-01",
       "Source": "nd_mpr_xlsx · report 2026-08-20",
     });
+    const designFacts = factsOf(groups[2] as HTMLElement);
+    expect(designFacts).toEqual({
+      "Disclosure": "ff-3305310451-20250424",
+      "Base fluid": "5,917,362.00 gal",
+      "Lateral": "9,862.27 ft",
+      "Fluid intensity": "600.00 gal/ft",
+      "Source": "fracfocus_csv · report 2026-08-20",
+    });
     expect(frame.textContent).toContain(
-      "Design and formation tops not served",
+      "Design as disclosed, measured against computed geometry · Formation tops not served",
     );
-    expect(frame.textContent).not.toMatch(/proppant|fluid volume|formation depth/i);
+    expect(frame.textContent).not.toMatch(/proppant|formation depth/i);
 
     callbacks.onExplain.mockClear();
     frame.querySelector<HTMLButtonElement>("button[data-handle*='col=completion_date']")?.click();
@@ -578,11 +775,151 @@ describe("completion and formation context", () => {
     expect(frame.textContent).not.toContain("Hydraulic frac job end");
   });
 
+  it("renders a null intensity as its stated reason rather than as a zero", async () => {
+    const withdrawn = {
+      ...completionContextEnvelope,
+      data: {
+        ...completionContextEnvelope.data,
+        design: {
+          ...completionContextEnvelope.data.design,
+          fluid_intensity: null,
+          intensity_null_semantics: "lateral_length_implausible",
+        },
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: withdrawn,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const frame = host.querySelector(".gw-completion-context") as HTMLElement;
+    const groups = frame.querySelectorAll<HTMLElement>(".gw-context-group");
+    const designFacts = factsOf(groups[2] as HTMLElement);
+    expect(designFacts["Fluid intensity"]).toBe(
+      "unavailable \u2014 lateral too short to divide by",
+    );
+    expect(designFacts["Fluid intensity"]).not.toMatch(/\b0\b/);
+  });
+
+  it("keeps a withheld volume distinct from an undisclosed one on both design rows", async () => {
+    const withheld = {
+      ...completionContextEnvelope,
+      data: {
+        ...completionContextEnvelope.data,
+        design: {
+          ...completionContextEnvelope.data.design,
+          base_water_volume: null,
+          base_water_null_semantics: "withheld",
+          fluid_intensity: null,
+          intensity_null_semantics: "withheld",
+        },
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: withheld,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const frame = host.querySelector(".gw-completion-context") as HTMLElement;
+    const designFacts = factsOf(frame.querySelectorAll<HTMLElement>(".gw-context-group")[2] as HTMLElement);
+    expect(designFacts["Base fluid"]).toBe("unavailable \u2014 withheld by the regulator");
+    expect(designFacts["Fluid intensity"]).toBe("unavailable \u2014 withheld by the regulator");
+    expect(designFacts["Fluid intensity"]).not.toContain("no disclosed volume");
+  });
+
+  it("words an absent class identically on both design rows", async () => {
+    const undisclosed = {
+      ...completionContextEnvelope,
+      data: {
+        ...completionContextEnvelope.data,
+        design: {
+          ...completionContextEnvelope.data.design,
+          base_water_volume: null,
+          base_water_null_semantics: "no_report",
+          fluid_intensity: null,
+          intensity_null_semantics: "no_report",
+        },
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: undisclosed,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const frame = host.querySelector(".gw-completion-context") as HTMLElement;
+    const designFacts = factsOf(
+      frame.querySelectorAll<HTMLElement>(".gw-context-group")[2] as HTMLElement,
+    );
+    // One class, one string. Two wordings for one fact is drift waiting to become confusion,
+    // and the volume is named so the sentence reads on the row that is it and the row that is
+    // divided by it.
+    expect(designFacts["Base fluid"]).toBe("unavailable \u2014 no disclosed volume");
+    expect(designFacts["Fluid intensity"]).toBe(designFacts["Base fluid"]);
+  });
+
+  it("says a well carries no disclosure rather than showing an empty design row", async () => {
+    const none = {
+      ...completionContextEnvelope,
+      data: {
+        ...completionContextEnvelope.data,
+        design: null,
+        design_null_semantics: "no_report",
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: none,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+
+    await renderWellCard(host, API10, callbacks);
+
+    const frame = host.querySelector(".gw-completion-context") as HTMLElement;
+    expect(frame.textContent).toContain("None disclosed");
+    expect(frame.textContent).toContain(
+      "No design disclosed: FracFocus is voluntary · Formation tops not served",
+    );
+    expect(frame.querySelector<HTMLElement>(".gw-frame-body")?.dataset["state"]).toBe(
+      "populated",
+    );
+  });
+
   it("distinguishes an observed empty response from a failed request", async () => {
     const empty = {
       ...completionContextEnvelope,
       data: {
         ...completionContextEnvelope.data,
+        design: null,
+        design_null_semantics: "no_report",
         events: [],
         pools: [],
       },
@@ -602,9 +939,7 @@ describe("completion and formation context", () => {
 
     const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("empty");
-    expect(body?.textContent).toContain(
-      "No events or pools reported",
-    );
+    expect(body?.textContent).toContain("No events, pools or design reported");
     expect(body?.textContent).not.toContain("could not be read");
   });
 

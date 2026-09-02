@@ -36,6 +36,10 @@ POLICY_RULES = tuple(sorted((
     "cr_eia_geometry_repair_1",
     "cr_eia_well_membership_1",
     "cr_ff_completion_anchor_1",
+    # The FracFocus design promotion and the serve-time intensity it feeds: two decisions with
+    # measured bounds, kept apart because one runs at promote time and one at request time.
+    "cr_ff_design_promote_1",
+    "cr_ff_fluid_intensity_1",
     # M2-3's membership decision: which section a well belongs to, chosen with measured
     # evidence and executed by the metrics mart the spec names.
     "cr_land_agg_membership_1",
@@ -75,6 +79,9 @@ POLICY_RULES = tuple(sorted((
     "cr_nd_neighbor_distance_1",
     "cr_nd_null_semantics_1",
     "cr_nd_pool_rollup_1",
+    # The vintage-cohort key: spud year or completion-anchor year is a different chart, so
+    # the choice is a row with its measured rationale rather than a query's decision.
+    "cr_nd_vintage_cohort_1",
     "cr_nd_well_type_disposal_1",
     # New Mexico's header authority: one source until the GIS parity is measured, then a
     # superseding row. The executor is the promoter the spec names.

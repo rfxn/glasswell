@@ -37,6 +37,7 @@ from glasswell.api.principal import Principal as ResolvedPrincipal
 from glasswell.api.routers import (
     completions,
     conformance,
+    cumulatives,
     facets,
     formations,
     glossary,
@@ -236,6 +237,7 @@ def create_app() -> FastAPI:
         type_curves.router,
         neighbors.router,
         completions.router,
+        cumulatives.router,
         production.router,
         formations.router,
         tiles.router,

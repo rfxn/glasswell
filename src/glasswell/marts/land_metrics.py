@@ -26,6 +26,7 @@ from glasswell.lineage import (
 )
 from glasswell.lineage.audit import emit
 from glasswell.lineage.serialization import hash_payload
+from glasswell.marts.cumulatives import per_well_cumulative_cte
 from glasswell.marts.tiles import METRIC_LAYERS, install_tile_functions
 
 MEMBERSHIP_RULE = "cr_land_agg_membership_2"
@@ -38,6 +39,15 @@ LIQUIDS_BASIS = "oil+condensate"
 # keeps one divide-by-tiny artefact from collapsing the ramp.
 BIN_QUANTILES = (0.02, 0.20, 0.40, 0.60, 0.80, 0.98)
 UNPAINTED_BIN = -1
+
+# Cut for a PLSS section, which holds a handful of wells. A rollup over a population two
+# orders of magnitude larger states its own scale rather than saturating this one.
+SECTION_BANDS: tuple[tuple[int, int | None, str], ...] = (
+    (0, 0, "0"),
+    (1, 2, "1-2"),
+    (3, 7, "3-7"),
+    (8, None, "8+"),
+)
 
 # One anchor per well, one section per well. The universe is every well with a surface
 # point (a lateral-only row is invisible — gate-m23 F-E, all TX today). The lateral pick,
@@ -85,20 +95,7 @@ member as (
       from by_surface
      where not exists (select 1 from by_midpoint
                         where by_midpoint.api10 = by_surface.api10)),
-prod as (
-    -- Restricted to the wells membership actually joins. `left join prod using (api10)` reads
-    -- and discards every other row, and after the New Mexico promotion the view spans 24.8M of
-    -- them. The output is identical by construction and a test asserts it on a three-state
-    -- fixture; what changes is that the mart stops scanning a view it cannot use.
-    select api10,
-           sum(volume) filter (where stream in ('oil', 'condensate')) as liquid_bbl,
-           sum(volume) filter (where stream = 'gas') as gas_mcf,
-           sum(volume) filter (where stream = 'water') as water_bbl
-      from canonical.production_monthly_latest
-     where entity_type = 'well' and api10 is not null
-       and api10 in (select api10 from member)
-     group by api10)
-"""
+""" + per_well_cumulative_cte("member")
 
 _SECTION_CELLS = _MEMBERSHIP + """
 select member.land_unit_id,
@@ -213,18 +210,17 @@ def liquid_bin(value: float, edges: Sequence[float]) -> int:
     return min(bisect_right(list(edges[1:-1]), value), 6)
 
 
-def _support_distribution(cells: Sequence[dict[str, object]]) -> dict[str, int]:
-    classes = {"0": 0, "1-2": 0, "3-7": 0, "8+": 0}
-    for cell in cells:
-        support = int(cell["prod_well_count"])  # type: ignore[arg-type]
-        if support == 0:
-            classes["0"] += 1
-        elif support <= 2:
-            classes["1-2"] += 1
-        elif support <= 7:
-            classes["3-7"] += 1
-        else:
-            classes["8+"] += 1
+def support_distribution(
+    supports: Sequence[int], bands: Sequence[tuple[int, int | None, str]] = SECTION_BANDS
+) -> dict[str, int]:
+    """Protocol 4D's support statement. The bands are a parameter because a PLSS section
+    holds a handful of wells and a vintage cohort holds hundreds; one scale saturates."""
+    classes = {label: 0 for _, _, label in bands}
+    for support in supports:
+        for low, high, label in bands:
+            if low <= support and (high is None or support <= high):
+                classes[label] += 1
+                break
     return classes
 
 
@@ -249,7 +245,9 @@ def _frame(cells: Sequence[dict[str, object]]) -> dict[str, object]:
         "edges": edges,
         "population": len(liquid),
         "quantiles": ["min", *[f"p{int(q * 100)}" for q in BIN_QUANTILES], "max"],
-        "support_distribution": _support_distribution(cells),
+        "support_distribution": support_distribution(
+            [int(cell["prod_well_count"]) for cell in cells]  # type: ignore[arg-type]
+        ),
     }
 
 

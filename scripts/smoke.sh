@@ -124,6 +124,54 @@ sys.exit(0 if card.get("unit") and card.get("d", "").startswith("drv_") else 1)
 assert "a well that does not exist is 404, not an empty card" 404 \
     "$(keyed_status "$base/v1/wells/9999999999")"
 
+printf 'cumulatives, cohorts and completion design\n'
+assert "GET /v1/wells/$api10/cumulatives" 200 "$(keyed_status "$base/v1/wells/$api10/cumulatives")"
+body "/v1/wells/$api10/cumulatives"
+assert_true "every cumulative states the months behind it" \
+    "a total whose coverage does not add up to its span is a total nobody can check" \
+    python3 -c '
+import json, sys
+data = json.load(open(sys.argv[1]))["data"]
+coverage = data["coverage"]
+sys.exit(0 if all(
+    block["span_months"] == block["months_reported"] + block["months_reported_zero"]
+    + block["months_no_report"] + block["months_withheld"]
+    for column, block in coverage.items() if not column.startswith("_")
+) else 1)
+' "$work_dir/body.json"
+assert "GET /v1/wells/vintage-cohorts" 200 "$(keyed_status "$base/v1/wells/vintage-cohorts")"
+body "/v1/wells/vintage-cohorts"
+assert_true "the cohort key is a served rule and the no-key cohort is its own" \
+    "a cohort chart that hides its key or drops the unkeyed wells is not defensible" \
+    python3 -c '
+import json, sys
+data = json.load(open(sys.argv[1]))["data"]
+unkeyed = [item for item in data["cohorts"] if item["cohort_year"] is None]
+sys.exit(0 if data["cohort_key_rule"] == "cr_nd_vintage_cohort_1" and len(unkeyed) == 1 else 1)
+' "$work_dir/body.json"
+body "/v1/wells/$api10/completions"
+# Not design_availability: completions.py sets that literal unconditionally, so asserting it
+# compares a constant to a constant and passes against a host with no promoted rows at all.
+# verify.sh holds the population; this holds the shape of what a promoted row serves.
+assert_true "a promoted design carries a handled volume and a reasoned intensity" \
+    "a design block that serves a bare number, or a null with no reason, is not defensible" \
+    python3 -c '
+import json, sys
+data = json.load(open(sys.argv[1]))["data"]
+design = data["design"]
+if design is None:
+    sys.exit(0 if data["design_null_semantics"] == "no_report" else 1)
+volume, intensity = design["base_water_volume"], design["fluid_intensity"]
+ok = design["base_water_null_semantics"] in ("reported", "reported_zero", "no_report")
+ok = ok and (volume is None or (volume["unit"] == "gal" and volume["d"].startswith("drv_")))
+ok = ok and (
+    (intensity is None and design["intensity_null_semantics"] != "reported")
+    or (intensity is not None and design["intensity_null_semantics"] == "reported"
+        and intensity["unit"] == "gal/ft" and intensity["d"].startswith("drv_"))
+)
+sys.exit(0 if ok else 1)
+' "$work_dir/body.json"
+
 printf 'production and lineage\n'
 body "/v1/wells/$api10/production"
 assert_true "every production point carries its own lineage handle" \
@@ -236,7 +284,7 @@ sys.exit(0 if card["state_code"] == "30" and card["geometry_provenance"] else 1)
 import json, sys
 basins = json.load(open(sys.argv[1]))["data"]["basins"]
 rules = {row["state_code"]: row["status_vocabulary_rule"] for row in basins}
-sys.exit(0 if rules.get("30") == "cr_nm_wellhistory_status_vocab_1" else 1)
+sys.exit(0 if rules.get("30") == "cr_nm_wellhistory_status_vocab_2" else 1)
 ' "$work_dir/body.json"
 else
     printf '  skip    New Mexico spine: /v1/status reports 0 NM headers, so the gate is not open here\n'

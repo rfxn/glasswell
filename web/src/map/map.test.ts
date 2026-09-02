@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import { tileUrl } from "../api/client.ts";
@@ -184,5 +186,36 @@ describe("the data layers over a basemap", () => {
       vectorStyle(basemapDef("dark")!, { labels: false }).layers.map((layer) => layer.id),
     );
     for (const layer of dataLayers({ labels: true })) expect(basemapLayers.has(layer.id)).toBe(false);
+  });
+});
+
+/**
+ * R3, handed back by the map-truth track. `createMap` needs a WebGL context, so the wiring is
+ * pinned here and the resolution itself is tested in counts.test.ts, where it is a pure
+ * function over rendered features.
+ */
+describe("the ⌾ a drawn layer row resolves", () => {
+  const SOURCE = readFileSync("src/map/map.ts", "utf8");
+  const body = (name: string): string =>
+    new RegExp(`function ${name}\\(\\)[\\s\\S]*?\\n  }\\n`).exec(SOURCE)?.[0] ?? "";
+
+  it("is fed from the coverage pass, which sees every drawn row and not only the wells", () => {
+    const coverage = body("refreshCoverage");
+
+    expect(coverage).toContain("rowDerivations(drawable, features)");
+    expect(coverage).toContain("panel.setProvenance(id, handle)");
+  });
+
+  it("queries once and reads both answers off it, so coverage and provenance cannot disagree", () => {
+    const coverage = body("refreshCoverage");
+
+    expect(coverage.match(/queryRenderedFeatures/g)).toHaveLength(1);
+  });
+
+  it("gives each wells row its own tile's handle instead of the canvas-wide first one", () => {
+    const drawn = body("refreshDrawn");
+
+    expect(drawn).toContain("rowDerivations(");
+    expect(drawn).not.toContain("census.derivation");
   });
 });

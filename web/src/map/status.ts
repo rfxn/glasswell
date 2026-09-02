@@ -139,7 +139,7 @@ export const STATUS_CLASSES: readonly StatusClass[] = [
     label: "Confidential",
     colour: "#E4A33C",
     glyph: "solid",
-    note: "Withheld by the operator's tight-hole election — a status, not missing data.",
+    note: "Withheld by the operator's tight-hole election: a status, not missing data.",
     minZoom: 6,
     rule: STATUS_VOCAB_RULE,
   },

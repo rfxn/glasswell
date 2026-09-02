@@ -48,6 +48,7 @@ from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.serialization import hash_payload
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.lineage.vintages import open_vintage
+from glasswell.marts.cumulatives import refresh_well_cumulatives
 from glasswell.marts.neighbors import refresh_neighbors, resident_content_identity
 from glasswell.modeling import served
 from glasswell.modeling.model_dataset import MODEL_ROOT_ENV
@@ -80,6 +81,20 @@ OTHER_API10S = tuple(f"330530000{index}" for index in range(1, 7))
 # empty series. A fixture that makes those impossible is how a gate goes quietly vacuous (N-1).
 TX_API10 = "4200345818"
 ALL_API10S = (EXAMPLE_API10, *OTHER_API10S, TX_API10)
+# Three ND wells the cumulative and cohort surfaces need distinct answers for: one the
+# regulator has no spud date for, one whose only filings carry a stored no_report and a
+# stored withheld, and one that has never filed anything at all.
+NO_SPUD_DATE_API10 = OTHER_API10S[2]
+STORED_CLASSES_API10 = OTHER_API10S[3]
+NEVER_REPORTED_API10 = OTHER_API10S[5]
+# Outside the filed span on purpose: a withheld month the ledger holds extends the axis
+# rather than colliding with a month canonical already carries.
+WITHHELD_LEDGER_MONTH = date(2025, 12, 1)
+# The fixture lateral is 9862.27353475175 ft geodesic, so this volume makes the served
+# intensity exactly 600.00 gal/ft — a literal a reader can check by hand rather than a ratio
+# re-derived from the response's own operands.
+BASE_WATER_GAL = Decimal("5917362")
+FLUID_INTENSITY_GAL_PER_FT = "600.00"
 STREAM_UNITS = {"oil": "bbl", "gas": "mcf", "water": "bbl"}
 TILE_BODY = b"\x1a\x2fcontract-fixture-tile"
 
@@ -306,6 +321,23 @@ def _seed_production(connection: psycopg.Connection, manifest_id: str, derivatio
         derivation_id=derivation_id,
         null_semantics="reported_zero",
     )
+    # Stored no_report and stored withheld: both are column values, not only absences
+    # (009_nd_canonical_and_marts.sql:211-212), and a coverage record that counts them as gaps
+    # loses them. Months early enough to leave the producing window's answer alone.
+    for month, semantics in (
+        (PRODUCTION_MONTHS[0], "no_report"),
+        (PRODUCTION_MONTHS[1], "withheld"),
+    ):
+        _insert_production(
+            connection,
+            api10=STORED_CLASSES_API10,
+            production_month=month,
+            stream="oil",
+            volume=Decimal("0"),
+            manifest_id=manifest_id,
+            derivation_id=derivation_id,
+            null_semantics=semantics,
+        )
 
 
 def _seed_completion_context(
@@ -342,6 +374,55 @@ def _seed_completion_context(
                 COMPLETION_REPORT_VINTAGE,
                 fracfocus_manifest_id,
                 completion_derivation_id,
+            ),
+        )
+
+
+def _seed_design(
+    connection: psycopg.Connection,
+    *,
+    manifest_id: str,
+    parse_derivation_id: str,
+) -> None:
+    """One promoted design row for the documented example, under a real promote derivation."""
+    recorder = PostgresRecorder(connection)
+    with lineage_session(
+        recorder=recorder,
+        environment=FIXTURE_ENV,
+        clock=FixedClock(datetime(2026, 8, 26, 5, 30, 0, tzinfo=UTC)),
+        correlation_id="run_contract_design",
+    ), derive(
+        "canonical.promote",
+        output=OutputSpec(
+            store="postgres",
+            dataset="canonical.well_completion_design",
+            partition={"manifest_id": manifest_id},
+        ),
+        params={"source_field": "TotalBaseWaterVolume", "unit": "gal"},
+        inputs=[
+            InputRef(
+                kind="manifest",
+                ref_id=manifest_id,
+                role="primary",
+                as_of_vintage=COMPLETION_REPORT_VINTAGE,
+            )
+        ],
+        rules=["cr_ff_base_water_units_1", "cr_ff_design_promote_1"],
+    ) as context:
+        context.set_output_hash("d4" * 32)
+        context.set_rows(1)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "insert into canonical.well_completion_design (disclosure_id, api10,"
+            " base_water_volume, base_water_unit, base_water_null_semantics, source_id,"
+            " report_vintage, source_manifest_id, derivation_id)"
+            " values ('ff-contract-0001', %s, %s, 'gal', 'reported', 'fracfocus_csv', %s, %s, %s)",
+            (
+                EXAMPLE_API10,
+                BASE_WATER_GAL,
+                COMPLETION_REPORT_VINTAGE,
+                manifest_id,
+                context.derivation_id,
             ),
         )
 
@@ -503,6 +584,27 @@ def _seed_quarantine(connection: psycopg.Connection, manifest_id: str) -> None:
             "manifest_id": manifest_id,
             "occurrences": 2,
             "state": "released",
+        },
+        # A withheld month never reaches canonical, so the ledger is the only place the
+        # coverage record can learn it exists at all (D2).
+        {
+            "quarantine_id": "qr_01contract0004",
+            "fingerprint": "fp_contract_0004",
+            "source_id": "nd_mpr_xlsx",
+            "staging_table": "staging.nd_mpr_oil",
+            "stage": "conform",
+            "reason_code": "confidential_withheld",
+            "rule_id": "cr_nd_confidential_1",
+            "payload": Jsonb(
+                {
+                    "api10": EXAMPLE_API10,
+                    "production_month": WITHHELD_LEDGER_MONTH.isoformat(),
+                }
+            ),
+            "seen_at": seen_at,
+            "manifest_id": manifest_id,
+            "occurrences": 1,
+            "state": "open",
         },
     ]
     with connection.cursor() as cursor:
@@ -709,6 +811,9 @@ def _seed_contract_fixture(db: psycopg.Connection, pinned_control: ControlArtifa
             well_name=f"CONTRACT {index + 1}H",
             status_canonical="plugged" if index % 2 else "active",
             operator_name_reported="CONTINENTAL RESOURCES, INC" if index % 2 else "HESS",
+            # cr_nd_vintage_cohort_1 serves these as their own cohort rather than folding
+            # them into a year; without one in the fixture that arm is never exercised.
+            **({"spud_date": None} if api10 == NO_SPUD_DATE_API10 else {}),
         )
     seed_well(
         db,
@@ -758,6 +863,7 @@ def _seed_contract_fixture(db: psycopg.Connection, pinned_control: ControlArtifa
         fracfocus_manifest_id=fracfocus_manifest,
         completion_derivation_id=completion,
     )
+    _seed_design(db, manifest_id=fracfocus_manifest, parse_derivation_id=completion)
     db.commit()
     with lineage_session(
         recorder=PostgresRecorder(db),
@@ -768,6 +874,15 @@ def _seed_contract_fixture(db: psycopg.Connection, pinned_control: ControlArtifa
         refresh_neighbors(db)
     _seed_neighbor_mart(db)
     _seed_quarantine(db, mpr_manifest)
+    # After the ledger, never before: the withheld months the coverage record counts are
+    # quarantine rows, so a refresh that ran first would report a span short of one month.
+    with lineage_session(
+        recorder=PostgresRecorder(db),
+        environment=FIXTURE_ENV,
+        clock=FixedClock(datetime(2026, 8, 27, 6, 10, 0, tzinfo=UTC)),
+        correlation_id="run_contract_cumulatives",
+    ):
+        refresh_well_cumulatives(db)
     _seed_example_key(db)
     publication = register_pinned_control(db, pinned_control, manifest_id=mpr_manifest)
     assert publication == EXAMPLE_PUBLICATION_ID, (

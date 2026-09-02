@@ -14,8 +14,8 @@ export interface LayerGroup {
 
 /**
  * Listed in the order the panel renders. The two framework groups sit under the spine because
- * that is the reading order, and geology is last because its rows are the ones a build may
- * ship with no source behind them.
+ * that is the reading order, and geology is last because its rows draw underneath everything
+ * else on the canvas and are the ones a reader reaches for least.
  */
 export const LAYER_GROUPS: readonly LayerGroup[] = [
   { id: "spine", label: "Well spine" },

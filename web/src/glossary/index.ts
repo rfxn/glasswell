@@ -24,6 +24,8 @@ export type Segment = { text: string; termId?: string };
 const SKIP_ELEMENTS = new Set(["A", "CODE", "PRE", "SCRIPT", "STYLE", "GW-TERM", "GW-FIGURE"]);
 // A match touching one of these is inside a path, a handle or an id, not prose.
 const IDENTIFIER_NEIGHBOUR = /[\w/#]/;
+// A dot only makes an identifier when a word follows it: `marts.wells` is one, "…condensate." is not.
+const WORD = /\w/;
 
 export function buildIndex(payload: GlossaryIndexPayload): TermIndex {
   const stopwords = new Set(payload.stopwords.map((word) => word.toLowerCase()));
@@ -76,9 +78,12 @@ export function scan(text: string, index: TermIndex): Segment[] {
 }
 
 function isInsideIdentifier(text: string, start: number, length: number): boolean {
+  const end = start + length;
   const before = text.slice(Math.max(0, start - 1), start);
-  const after = text.slice(start + length, start + length + 1);
-  return IDENTIFIER_NEIGHBOUR.test(before) || IDENTIFIER_NEIGHBOUR.test(after);
+  const after = text.slice(end, end + 1);
+  if (IDENTIFIER_NEIGHBOUR.test(before) || IDENTIFIER_NEIGHBOUR.test(after)) return true;
+  if (before === "." && WORD.test(text.slice(Math.max(0, start - 2), start - 1))) return true;
+  return after === "." && WORD.test(text.slice(end + 1, end + 2));
 }
 
 /** Rewrites text nodes under `root` into `<gw-term>` wrappers; safe to run repeatedly. */
