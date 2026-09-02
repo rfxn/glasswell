@@ -1,0 +1,42 @@
+[
+  {
+    "code": "ND",
+    "id": "wells",
+    "styleLayers": [
+      "wells",
+      "wells-struck"
+    ],
+    "drawOrder": 40,
+    "defaultOn": true
+  },
+  {
+    "code": "TX",
+    "id": "tx-wells",
+    "styleLayers": [
+      "tx-wells",
+      "tx-wells-struck"
+    ],
+    "drawOrder": 42,
+    "defaultOn": true
+  },
+  {
+    "code": "NM",
+    "id": "nm-wells",
+    "styleLayers": [
+      "nm-wells",
+      "nm-wells-struck"
+    ],
+    "drawOrder": 43,
+    "defaultOn": true
+  },
+  {
+    "code": "MT",
+    "id": "mt-wells",
+    "styleLayers": [
+      "mt-wells",
+      "mt-wells-struck"
+    ],
+    "drawOrder": 44,
+    "defaultOn": true
+  }
+]
