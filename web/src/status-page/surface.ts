@@ -165,8 +165,11 @@ const STATE_LABELS: Record<
   stale: "Stale",
 };
 
-/** ND first because it is the founding registration, then the order they registered in. */
-const JURISDICTION_ORDER = ["ND", "TX", "NM", "MT"];
+/**
+ * Alphabetical, with cross-jurisdiction work last. Not a curated order: a page that named the
+ * resident jurisdictions would have to be edited to add the fifth, which is the thing the
+ * registry exists to stop.
+ */
 const CROSS_JURISDICTION = "Cross-jurisdiction";
 
 const MANIFEST_COUNT_REASON =
@@ -705,11 +708,7 @@ function groupOf(job: StatusJob): string {
 
 function orderedGroups(items: StatusJob[]): string[] {
   const seen = [...new Set(items.map(groupOf))];
-  const rank = (name: string): number => {
-    const index = JURISDICTION_ORDER.indexOf(name);
-    if (index >= 0) return index;
-    return name === CROSS_JURISDICTION ? JURISDICTION_ORDER.length + 1 : JURISDICTION_ORDER.length;
-  };
+  const rank = (name: string): number => (name === CROSS_JURISDICTION ? 1 : 0);
   return seen.sort((left, right) => rank(left) - rank(right) || left.localeCompare(right));
 }
 
