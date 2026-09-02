@@ -12,6 +12,7 @@ from glasswell.lengths import resolve_length_method
 from glasswell.lineage.conformance import RULE_KINDS, apply_registry_rules, apply_rules, load_rules
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_nd import ND_RULES
+from glasswell.seed.conformance_schedules import SCHEDULE_RULES
 from glasswell.seed.formations_nd import FORMATION_ALIASES
 from glasswell.seed.reference import NM_TABLES
 
@@ -108,6 +109,11 @@ POLICY_RULES = tuple(sorted((
     "cr_tx_identity_collapse_1",
     "cr_tx_lateral_bounds_1",
     "cr_tx_multi_wellbore_1",
+    # One cadence declaration per scheduled job, taken from the seed tuple rather than retyped.
+    # Each id is already pinned twice -- the migration's publication insert names every one by
+    # hand, and no rule can be seeded without a publication row -- so a third hand-kept copy
+    # here would drift without guarding anything the other two do not.
+    *(str(rule["rule_id"]) for rule in SCHEDULE_RULES),
 )))
 
 SUPERSEDED_RULE_IDS = {rule["supersedes_rule_id"] for rule in ND_RULES if rule.get(
@@ -274,7 +280,7 @@ def test_every_seeded_rule_states_why_it_exists_and_cites_its_evidence(db, seede
 
 def test_every_seeded_rule_declares_a_stage_and_a_kind_the_spine_knows(db, seeded):
     for row in registry_rows(db):
-        assert row["stage"] in ("parse", "validate", "conform", "join")
+        assert row["stage"] in ("parse", "validate", "conform", "join", "schedule")
         assert row["rule_kind"] in RULE_KINDS
 
 

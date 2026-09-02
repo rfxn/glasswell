@@ -9,13 +9,18 @@ no number rather than a zero, because "not measured yet" and "no wells" are diff
 
 from __future__ import annotations
 
-from collections.abc import Collection
+import argparse
+import json
+import os
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from datetime import date
 
 import psycopg
 from psycopg.rows import dict_row
 
+from glasswell.ingest.base import resolve_environment
+from glasswell.lineage import PostgresRecorder, lineage_session
 from glasswell.lineage.capture import derive
 from glasswell.lineage.clock import utc_today
 from glasswell.lineage.jurisdictions import load_jurisdictions
@@ -182,3 +187,51 @@ def refresh_jurisdiction_counts(
             ],
         )
     return CountRefresh(derivation_id=derivation_id, measured_on=measured, rows=len(appended))
+
+
+DSN_ENV = "GLASSWELL_DSN"
+FALLBACK_DSN_ENV = "DATABASE_URL"
+
+
+def resolved_dsn(explicit: str | None) -> str:
+    """A DSN on argv is visible in /proc and lands in shell history, so the flag is optional."""
+    dsn = explicit or os.environ.get(DSN_ENV) or os.environ.get(FALLBACK_DSN_ENV)
+    if not dsn:
+        raise SystemExit(
+            f"no database DSN: pass --dsn, or set {DSN_ENV} or {FALLBACK_DSN_ENV}"
+        )
+    return dsn
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Measure the jurisdiction well-count ledger and append today's counts."
+    )
+    parser.add_argument("--dsn", default=None)
+    parser.add_argument(
+        "--codes",
+        default=None,
+        help="comma-separated jurisdiction codes; the default measures every registered one",
+    )
+    parser.add_argument("--env-id", default=None, help="override the fingerprinted env id")
+    parser.add_argument("--code-version", default=None)
+    arguments = parser.parse_args(argv)
+    codes = (
+        tuple(code.strip() for code in arguments.codes.split(",") if code.strip())
+        if arguments.codes
+        else None
+    )
+
+    with psycopg.connect(resolved_dsn(arguments.dsn)) as connection:
+        environment = resolve_environment(
+            connection, env_id=arguments.env_id, code_version=arguments.code_version
+        )
+        with lineage_session(recorder=PostgresRecorder(connection), environment=environment):
+            refresh = refresh_jurisdiction_counts(connection, codes=codes)
+        connection.commit()
+        print(json.dumps(refresh.as_dict(), sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

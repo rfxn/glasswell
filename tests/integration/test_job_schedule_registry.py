@@ -1,0 +1,327 @@
+"""The schedule registry's own guarantees: two clocks, append-once evidence, narrow grants.
+
+The migration ships DDL and the role; the rows arrive from `seed_all`. What is asserted here is
+what no seeder can prove -- that a restatement resolves over the row it corrects, that a closed
+run is immutable, that the plan key keeps a refusal and a plan apart, and that the scheduler's
+login identity can read exactly the relations its own SQL names and nothing further.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import UTC, date, datetime, timedelta
+
+import psycopg
+import pytest
+
+from glasswell.api.routers import health
+from glasswell.lineage import schedules as schedule_sql
+from glasswell.lineage.schedules import ScheduleRegistryError, load_schedules
+from glasswell.seed import seed_all
+
+pytestmark = pytest.mark.integration
+
+NOW = datetime(2026, 9, 2, 12, tzinfo=UTC)
+JOB = "ingest_nd_gis"
+SIX_TABLES = (
+    "lineage.refusal_codes",
+    "lineage.scheduled_jobs",
+    "lineage.job_sources",
+    "lineage.job_schedules",
+    "lineage.job_dependencies",
+    "lineage.job_runs",
+)
+
+
+@contextmanager
+def acting_as(connection: psycopg.Connection, role: str) -> Iterator[psycopg.Cursor]:
+    with connection.cursor() as cursor:
+        cursor.execute(f"set local role {role}")
+        try:
+            yield cursor
+        finally:
+            connection.rollback()
+
+
+@pytest.fixture
+def seeded(db: psycopg.Connection) -> psycopg.Connection:
+    seed_all(db)
+    db.commit()
+    return db
+
+
+def insert_run(
+    connection: psycopg.Connection,
+    *,
+    run: str,
+    planned_at: datetime,
+    outcome: str | None,
+    started_at: datetime | None = None,
+    completed_at: datetime | None = None,
+    refusal_code: str | None = None,
+    failure_detail: str | None = None,
+    launched_by: str = "scheduler",
+) -> None:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.job_runs"
+            " (run_id, job_id, planned_at, started_at, completed_at, launched_by, outcome,"
+            "  refusal_code, failure_detail)"
+            " values (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                run,
+                JOB,
+                planned_at,
+                started_at,
+                completed_at,
+                launched_by,
+                outcome,
+                refusal_code,
+                failure_detail,
+            ),
+        )
+
+
+def test_the_resolver_returns_every_seeded_job_with_its_edges(seeded) -> None:
+    registry = load_schedules(seeded)
+
+    with seeded.cursor() as cursor:
+        cursor.execute("select count(*) from lineage.scheduled_jobs")
+        jobs = cursor.fetchone()[0]
+
+    assert len(registry) == jobs
+    assert registry.get(JOB) is not None
+    assert registry.get(JOB).source_ids  # type: ignore[union-attr]
+    assert any(job.dependencies for job in registry)
+    assert registry.severity_of("deferred") == "waiting"
+    assert registry.severity_of("scheduler_lost_unit") == "fault"
+
+
+def test_a_restatement_at_one_effective_from_resolves_at_the_later_knowledge_time(
+    seeded,
+) -> None:
+    later = date(2026, 9, 9)
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.job_schedules"
+            " (job_id, effective_from, published_at, rule_id, trigger, cadence_interval,"
+            "  cadence_note, memory_max, timeout_seconds)"
+            " select job_id, effective_from, %s, rule_id, trigger, interval '7 days',"
+            "        'Restated to 7 days', memory_max, timeout_seconds"
+            "   from lineage.job_schedules where job_id = %s",
+            (later, JOB),
+        )
+    seeded.commit()
+
+    before = load_schedules(seeded, date(2026, 9, 2))
+    after = load_schedules(seeded, later)
+
+    assert before.by_job[JOB].cadence_interval == timedelta(days=35)
+    assert after.by_job[JOB].cadence_interval == timedelta(days=7)
+    assert after.by_job[JOB].published_at == later
+
+
+def test_a_schedule_row_is_appended_and_never_edited(seeded) -> None:
+    with pytest.raises(psycopg.errors.RestrictViolation, match="append_only_violation"):
+        seeded.execute(
+            "update lineage.job_schedules set enabled = false where job_id = %s", (JOB,)
+        )
+    seeded.rollback()
+    with pytest.raises(psycopg.errors.RestrictViolation, match="append_only_violation"):
+        seeded.execute("delete from lineage.job_schedules where job_id = %s", (JOB,))
+
+
+def test_a_closed_run_refuses_an_update_and_an_open_one_accepts_exactly_one(seeded) -> None:
+    open_run = "jrn_00000000000000000000000001"
+    insert_run(seeded, run=open_run, planned_at=NOW, outcome=None, started_at=NOW)
+    seeded.commit()
+
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "update lineage.job_runs set outcome = 'ran', completed_at = %s where run_id = %s",
+            (NOW + timedelta(minutes=4), open_run),
+        )
+    seeded.commit()
+
+    with pytest.raises(psycopg.errors.RaiseException, match="is immutable"):
+        seeded.execute(
+            "update lineage.job_runs set exit_status = 1 where run_id = %s", (open_run,)
+        )
+    seeded.rollback()
+    with pytest.raises(psycopg.errors.RestrictViolation, match="append_only_violation"):
+        seeded.execute("delete from lineage.job_runs where run_id = %s", (open_run,))
+
+
+def test_an_interrupted_run_carries_a_refusal_code_and_is_accepted(seeded) -> None:
+    insert_run(
+        seeded,
+        run="jrn_0000000000000000000000000I",
+        planned_at=NOW,
+        outcome="interrupted",
+        started_at=NOW,
+        completed_at=NOW + timedelta(minutes=1),
+        refusal_code="scheduler_lost_unit",
+    )
+    seeded.commit()
+
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select outcome, refusal_code from lineage.job_runs where outcome = 'interrupted'"
+        )
+        assert cursor.fetchall() == [("interrupted", "scheduler_lost_unit")]
+
+
+def test_a_plan_and_a_refusal_coexist_at_one_instant_and_a_second_of_either_collapses(
+    seeded,
+) -> None:
+    insert_run(
+        seeded,
+        run="jrn_0000000000000000000000000W",
+        planned_at=NOW,
+        outcome="would_run",
+        completed_at=NOW,
+    )
+    insert_run(
+        seeded,
+        run="jrn_0000000000000000000000000R",
+        planned_at=NOW,
+        outcome="refused",
+        completed_at=NOW,
+        refusal_code="dependency_never_ran",
+    )
+    seeded.commit()
+
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        insert_run(
+            seeded,
+            run="jrn_0000000000000000000000000X",
+            planned_at=NOW,
+            outcome="would_run",
+            completed_at=NOW,
+        )
+    seeded.rollback()
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        insert_run(
+            seeded,
+            run="jrn_0000000000000000000000000Y",
+            planned_at=NOW,
+            outcome="refused",
+            completed_at=NOW,
+            refusal_code="dependency_failed",
+        )
+    seeded.rollback()
+
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select outcome from lineage.job_runs where planned_at = %s order by outcome",
+            (NOW,),
+        )
+        assert [row[0] for row in cursor.fetchall()] == ["refused", "would_run"]
+
+
+def test_an_empty_registry_is_a_refusal_and_not_an_empty_map(db) -> None:
+    with pytest.raises(ScheduleRegistryError, match="nothing has been published"):
+        load_schedules(db)
+
+
+def test_no_role_named_root_is_created(db) -> None:
+    with db.cursor() as cursor:
+        cursor.execute("select 1 from pg_roles where rolname = 'root'")
+        assert cursor.fetchone() is None
+
+
+def test_the_scheduler_role_can_log_in_and_holds_no_pipeline_membership(db) -> None:
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select rolcanlogin, rolsuper from pg_roles where rolname = 'glasswell_scheduler'"
+        )
+        row = cursor.fetchone()
+        assert row == (True, False)
+        cursor.execute(
+            "select pg_has_role('glasswell_scheduler', 'glasswell_pipeline', 'MEMBER')"
+        )
+        assert cursor.fetchone()[0] is False
+
+
+def planner_relations() -> set[str]:
+    """The relations the planner's own SQL names, extracted rather than kept beside it.
+
+    P3 moves the source-health query into `glasswell.status.source_health`; until then it is
+    read from where it lives, and P3 updates this import with the move.
+    """
+    sql = "\n".join(
+        [
+            schedule_sql._RESOLVED,
+            schedule_sql._REFUSAL_CODES,
+            schedule_sql._LATEST_PUBLISHED,
+            health._SOURCES,
+        ]
+    )
+    return set(re.findall(r"\blineage\.[a-z_]+\b", sql)) - {
+        "lineage.job_schedules_as_of"
+    }
+
+
+def test_the_scheduler_grants_are_derived_from_the_queries_the_planner_runs(db) -> None:
+    relations = planner_relations()
+
+    assert len(relations) >= 8, f"the extraction found too little to be a real check: {relations}"
+    with db.cursor() as cursor:
+        for relation in sorted(relations):
+            cursor.execute(
+                "select has_table_privilege('glasswell_scheduler', %s, 'SELECT')", (relation,)
+            )
+            assert cursor.fetchone()[0], f"glasswell_scheduler cannot read {relation}"
+
+
+def test_the_scheduler_may_write_the_ledger_and_nothing_else(db) -> None:
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select has_table_privilege('glasswell_scheduler', 'lineage.job_runs', 'INSERT'),"
+            "       has_table_privilege('glasswell_scheduler', 'lineage.job_runs', 'UPDATE'),"
+            "       has_table_privilege('glasswell_scheduler', 'lineage.job_schedules',"
+            "                           'INSERT'),"
+            "       has_schema_privilege('glasswell_scheduler', 'canonical', 'USAGE'),"
+            "       has_schema_privilege('glasswell_scheduler', 'staging', 'USAGE'),"
+            "       has_schema_privilege('glasswell_scheduler', 'marts', 'USAGE')"
+        )
+        assert cursor.fetchone() == (True, True, False, False, False, False)
+
+
+def test_the_api_role_reads_all_six_registry_objects(seeded) -> None:
+    with acting_as(seeded, "glasswell_api") as cursor:
+        for relation in SIX_TABLES:
+            cursor.execute(f"select count(*) from {relation}")
+            assert cursor.fetchone()[0] >= 0
+        cursor.execute(
+            "select count(*) from lineage.job_schedules_as_of(current_date, current_date)"
+        )
+        assert cursor.fetchone()[0] > 0
+
+
+def test_a_maintenance_row_may_name_a_script_and_hold_no_uid_but_a_data_job_may_not(
+    seeded,
+) -> None:
+    with pytest.raises(psycopg.errors.CheckViolation):
+        seeded.execute(
+            "insert into lineage.scheduled_jobs"
+            " (job_id, kind, entry_point, anchor_source_id, run_as, rationale)"
+            " values ('ingest_probe', 'ingest', '/usr/local/sbin/probe.sh', 'nd_mpr_xlsx',"
+            "         'glasswell', 'a data job may not name a script')"
+        )
+    seeded.rollback()
+    with pytest.raises(psycopg.errors.CheckViolation):
+        seeded.execute(
+            "insert into lineage.scheduled_jobs"
+            " (job_id, kind, entry_point, anchor_source_id, rationale)"
+            " values ('ingest_probe', 'ingest', 'glasswell.ingest.probe', 'nd_mpr_xlsx',"
+            "         'a data job must say which uid it drops to')"
+        )
+    seeded.rollback()
+    seeded.execute(
+        "insert into lineage.scheduled_jobs (job_id, kind, entry_point, rationale)"
+        " values ('platform_probe', 'maintenance', '/usr/local/sbin/probe.sh',"
+        "         'its own unit decides the uid')"
+    )

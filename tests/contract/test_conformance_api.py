@@ -18,6 +18,7 @@ from glasswell.seed.conformance_nd import ND_RULES
 from glasswell.seed.conformance_nm import NM_RULES
 from glasswell.seed.conformance_nm_wells import NM_WELLS_GIS_RULES, NM_WELLS_RULES
 from glasswell.seed.conformance_producing import PRODUCING_RULES
+from glasswell.seed.conformance_schedules import SCHEDULE_RULES
 from glasswell.seed.conformance_tx import TX_RULES
 from glasswell.seed.conformance_typecurve import TYPECURVE_RULES
 from glasswell.seed.conformance_vintage import VINTAGE_RULES
@@ -107,6 +108,7 @@ def _seeded_policy_rule_ids() -> set[str]:
             NM_WELLS_GIS_RULES,
             NM_WELLS_RULES,
             PRODUCING_RULES,
+            SCHEDULE_RULES,
             TX_RULES,
             TYPECURVE_RULES,
             VINTAGE_RULES,
