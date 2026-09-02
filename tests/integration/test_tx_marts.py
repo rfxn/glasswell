@@ -9,7 +9,7 @@ import pytest
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts import TX_LAYERS
-from glasswell.marts.tx_wells import refresh_all
+from glasswell.marts.wells import refresh_for
 from tests.integration.test_marts_nd import covering_tile, extent_of, rows, scalar
 from tests.integration.test_tile_wire_types import (
     NUMERIC_WIRE_KINDS,
@@ -31,7 +31,7 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 @pytest.fixture
 def refreshed(county_loaded, seeded, lineage_env):  # noqa: F811
     with lineage_session(recorder=PostgresRecorder(seeded), environment=lineage_env):
-        report = refresh_all(seeded)
+        report = refresh_for(seeded, "TX")
     seeded.commit()
     return report
 

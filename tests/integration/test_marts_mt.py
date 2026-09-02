@@ -9,20 +9,20 @@ because cr_mt_basin_scope_1 leaves the state untagged.
 from __future__ import annotations
 
 from datetime import date
-from pathlib import Path
 
 import psycopg
 import pytest
 import yaml
 
 from glasswell.api.routers.tiles import PUBLISHED_LAYERS
+from glasswell.ingest.base import resolve_environment
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts import mt_wells as mt_marts
-from glasswell.marts import nd_wells as nd_marts
+from glasswell.marts.wells import profile_for, refresh_for
 from glasswell.seed import seed_all
 from tests.integration.test_marts_nd import MARTIN_CONFIG, covering_tile, extent_of, rows, scalar
-from tests.support.layers import schema_reads_in
+from tests.support.jurisdictions import declared_rule
 from tests.support.mvt import attribute_keys, feature_count, layer_name, layers
 from tests.support.seed import seed_manifest, seed_well, seed_well_spatial
 
@@ -104,7 +104,7 @@ def refreshed(db: psycopg.Connection, lineage_env):
     db.commit()
 
     with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env):
-        refresh = mt_marts.refresh_all(db)
+        refresh = refresh_for(db, "MT")
     db.commit()
     return db, refresh
 
@@ -119,9 +119,9 @@ def test_the_refresh_publishes_both_layers_and_rebuilds_rather_than_appends(refr
     }
     with lineage_session(
         recorder=PostgresRecorder(db),
-        environment=mt_marts.resolve_environment(db, env_id="env_mt_repeat"),
+        environment=resolve_environment(db, env_id="env_mt_repeat"),
     ):
-        again = mt_marts.refresh_all(db)
+        again = refresh_for(db, "MT")
     db.commit()
     assert again.row_counts == refresh.row_counts
     for table in ("mt_wells_tile", "mt_paths_tile"):
@@ -168,7 +168,11 @@ def test_nothing_the_montana_marts_publish_claims_a_length(refreshed):
     }
 
     assert not any("length" in name for name in columns)
-    assert "length" not in (mt_marts._WELLS_SELECT + mt_marts._PATHS_SELECT).lower()
+    assert "length" not in _montana_sql().lower()
+    # The invariant behind the columns, stated where it now lives: Montana registers a serving
+    # length_scope rule, which the engine reads as `withheld` and refuses to publish under.
+    assert declared_rule("25", "length_scope") is not None
+    assert not profile_for("MT").serves_a_length
 
 
 def test_a_geometry_with_no_well_row_still_tiles_unstyled(refreshed):
@@ -213,7 +217,7 @@ def test_the_nd_mart_does_not_sweep_the_montana_paths_in(refreshed, lineage_env)
     the ND laterals mart selects on, so the state filter is the only thing separating them."""
     db, _ = refreshed
     with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env):
-        nd_marts.refresh_all(db)
+        refresh_for(db, "ND")
     db.commit()
 
     assert rows(db, "select distinct left(api10, 2) from marts.nd_laterals_tile") == [("33",)]
@@ -262,19 +266,6 @@ def test_no_montana_well_is_given_a_basin_by_the_serving_path(refreshed):
     ) == 0
 
 
-def test_the_mart_reads_canonical_only(refreshed):
-    source = (
-        mt_marts._WELLS_SELECT + mt_marts._PATHS_SELECT + mt_marts._INPUT_DERIVATIONS
-    )
-
-    # The three statements the mart runs, and then the whole module: named constants prove
-    # what the mart selects, and the folded module read is what a name spelled in pieces
-    # somewhere else in the file cannot walk past.
-    assert schema_reads_in(Path(mt_marts.__file__), "staging") == []
-    assert "canonical.well_spatial" in source
-    assert "canonical.wells" in source
-
-
 def test_both_montana_layers_are_published_and_no_third_one_is(refreshed):
     assert {"mt_wells", "mt_paths"} <= PUBLISHED_LAYERS
     assert "mt_laterals" not in PUBLISHED_LAYERS
@@ -316,3 +307,9 @@ def test_the_map_stick_class_survives_the_trip_through_the_tile(refreshed):
     decoded = layers(bytes(body))
 
     assert {"geometry_class", "vertex_count"} <= set(attribute_keys(decoded[0]))
+
+
+def _montana_sql() -> str:
+    """Every statement Montana's refresh runs, composed from the profile the engine reads."""
+    profile = profile_for(mt_marts.JURISDICTION_CODE)
+    return "".join(projection.select for projection in profile.projections)

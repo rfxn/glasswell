@@ -54,17 +54,11 @@ class Exemption:
         self.matches = matches
 
 
+# The mart-module STATE_CODE exemption is gone rather than unmatched: the four modules that
+# declared a prefix are shims now and the engine takes its prefix from the registration it
+# loads, so there is no literal left for the exemption to cover and an exemption nothing
+# matches is a hole waiting for something to fall through it.
 PYTHON_EXEMPTIONS = (
-    Exemption(
-        "a mart module's own STATE_CODE",
-        "One literal per module is the honest declaration of which regulator's data it parses"
-        " or promotes; §5.2 step 6 requires it to equal a registered identity_prefix.",
-        lambda path, line, value: (
-            path.parent.name == "marts"
-            and value in PREFIXES
-            and re.fullmatch(rf'STATE_CODE(: str)? = "{value}"', line.strip()) is not None
-        ),
-    ),
     Exemption(
         "type_curves.py's quantile levels",
         "P10/P50/P90 are quantile levels, not state codes. The one exemption a keyword-free"
