@@ -13,7 +13,11 @@ import os
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from glasswell.lineage.schedules import ScheduleRegistryError, load_schedules
+from glasswell.lineage.schedules import (
+    ScheduleRegistry,
+    ScheduleRegistryError,
+    load_schedules,
+)
 from glasswell.scheduler.plan import (
     PlanEntry,
     double_run_rows,
@@ -34,9 +38,6 @@ from glasswell.scheduler.units import installed_timer_owned_entry_points
 
 DSN_ENV = "GLASSWELL_DSN"
 FALLBACK_DSN_ENV = "DATABASE_URL"
-# informational refusals: no worse than partial, so they never redden the deploy gate
-INFORMATIONAL = frozenset({"manual_only", "disabled", "externally_timed", "requires_superuser"})
-WAITING = frozenset({"run_in_flight", "dependency_never_ran", "deferred"})
 
 
 def resolved_dsn() -> str:
@@ -63,10 +64,19 @@ def _report(entries: Sequence[PlanEntry]) -> str:
     )
 
 
-def _exit_code(entries: Sequence[PlanEntry]) -> int:
-    """Zero for observed, ran, or a refusal no one has to act on tonight."""
+def _exit_code(entries: Sequence[PlanEntry], registry: ScheduleRegistry) -> int:
+    """Zero for observed, ran, or a refusal no one has to act on tonight.
+
+    The class comes from `lineage.refusal_codes`, the same row the Status page reads. A
+    second list here would be a second authority over the one output that pages someone:
+    add a code as informational and the page would render it correctly while the tick
+    alerted. An unclassed code fails closed, because a vocabulary neither side can render
+    is not a reason to stop alerting.
+    """
     for entry in entries:
-        if entry.action == "refused" and entry.refusal_code not in INFORMATIONAL | WAITING:
+        if entry.action != "refused":
+            continue
+        if registry.severity_of(entry.refusal_code) not in ("informational", "waiting"):
             return 1
     return 0
 
@@ -224,7 +234,7 @@ def main(argv: Sequence[str] | None = None, control: SystemdControl | None = Non
         )
         recorded = runner.act(plan, now=now, dry_run=arguments.dry_run)
         print(_report(recorded))
-        return _exit_code(recorded)
+        return _exit_code(recorded, registry)
 
 
 if __name__ == "__main__":
