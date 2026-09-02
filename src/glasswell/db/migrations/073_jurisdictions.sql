@@ -8,7 +8,9 @@
 --
 -- REPOINT CHECKLIST (integrator, at the merge train):
 --   1. evidence_tag UNRELEASED -> the tag that first carries these registrations
---   2. evidence_commit forty zeros -> the main head this branch was written against
+--   2. evidence_commit forty zeros -> the first commit on main that contains these rows,
+--      which is the merge commit and not the head this branch was written against:
+--      v0.76 must contain what evidence_commit names (scripts/release.py says the same)
 --   3. effective_from / published_at 2026-09-01 -> confirm it is the date the tag is cut, or
 --      correct it
 -- The jurisdiction codes and the rule ids are immutable and must not change during the

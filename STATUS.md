@@ -1,11 +1,10 @@
 # Current status
 
 Reconciled on **2026-09-01** against the v0.75 release line, the checked-in OpenAPI
-snapshot, current `main` history and a read-only census of the deployed database. Every
-figure below is dated and names its source; three are carried forward from the previous
-revision and say so on the line. [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria;
-[`blueprint.md`](blueprint.md) is the committed v0.5 contract and
-[`blueprint-v0.6-draft.md`](blueprint-v0.6-draft.md) the rc5 amendment set.
+snapshot, current `main` history and a read-only census of the deployed database. Every figure
+below is dated and names its source; three are carried forward and say so on the line.
+[`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria; [`blueprint.md`](blueprint.md) is
+the committed v0.5 contract and [`blueprint-v0.6-draft.md`](blueprint-v0.6-draft.md) the rc5 set.
 
 ## Deployed
 
@@ -26,8 +25,8 @@ Measured on the deployed database (VM 111) and host, read-only, 2026-09-01.
 
 ## Shipped baseline per state
 
-All four states are resident. Rows and distinct API-10 differ where a state carries
-bitemporal vintages; geometry is distinct API-10 per `geom_type`.
+All four states are resident. Rows and distinct API-10 differ where a state carries bitemporal
+vintages; geometry is distinct API-10 per `geom_type`.
 
 | State | Wells (rows / API-10) | Production rows | Geometry | `status_canonical` | Withheld, and the rule |
 |---|---|---|---|---|---|
@@ -40,28 +39,30 @@ Montana is a Williston extension rather than a phase; ROADMAP's N3 owns its exit
 
 ## Serving surface
 
-**51 operations across 46 paths, 50 under `/v1`**, counted from `tests/contract/openapi_snapshot.json`
-on 2026-09-01. Covered: health, operational status, wells and their facets, ND production, per-well
-cumulatives, vintage cohorts, completion context and promoted completion design, ND physical neighbours,
-formations, lineage, manifests, derivations, vintages, conformance, quarantine, glossary, error codes,
-keys, sessions, accounts, tiles, and the pinned `tcv1.0` control.
+**54 operations across 49 paths, 53 under `/v1`**, counted from `tests/contract/openapi_snapshot.json`
+on 2026-09-01 — the three added on `release/v0.76` are `GET /v1/jurisdictions` and `GET`/`DELETE` on
+the session list. Covered: health, operational status, wells and their facets, ND production, per-well
+cumulatives, vintage cohorts, completion context and promoted completion design, ND physical
+neighbours, formations, the jurisdiction registry, lineage, manifests, derivations, vintages,
+conformance, quarantine, glossary, error codes, keys, sessions, accounts, tiles, and `tcv1.0`.
 
-Not served: forecast, valuation, scenario, agent and inventory operations; `/v1/spacingunits`
-(land and spacing units serve as tiles only); training, calibration, the model registry, the
-analog index and benchmark scoring, all built and unserved.
+Not served: forecast, valuation, scenario, agent and inventory operations; `/v1/spacingunits` (land
+and spacing units serve as tiles only); training, calibration, the model registry, the analog index
+and benchmark scoring, all built and unserved.
 
 ## Frontend
 
-URL-backed Map, Explore and Status surfaces ship: a right-hand well flyout capped at 540 px
-leading with production, a 60-month-default production chart on one plot-rect hit surface,
-lineage drawer, glossary tooltip, satellite and hybrid basemaps, a searchable 15-row layer
-panel in four groups with the four state well layers nested under one tri-state `Wells`
-parent, a server-side status-summary legend census, and the "Wells by …" facet panel on both
-Explore and the map. Basins and Plays are real Geology-group layer rows over the served
+URL-backed Map, Explore and Status surfaces ship: a right-hand well flyout capped at 540 px leading
+with production, a 60-month-default production chart on one plot-rect hit surface, lineage drawer,
+glossary tooltip, satellite and hybrid basemaps, a searchable 15-row layer panel in four groups with
+the four state well layers nested under one tri-state `Wells` parent, a server-side status-summary
+legend census, and the "Wells by …" facet panel on both Explore and the map. Basins and Plays are real Geology-group layer rows over the served
 boundary tiles as of v0.74, off by default; nothing in the panel is a placeholder any more.
 As of v0.75 the flyout carries a cumulative oil/gas/water row keeping `no_report`,
 `reported_zero` and `withheld` distinct, and the glossary reaches the legend, layers panel and
-Status page.
+Status page. On `release/v0.76`, not yet deployed: an owner-only Accounts section on the Status
+page over `/v1/users` and the session list, and a `?well=` deep link that flies to the well when
+the link named no viewport of its own.
 
 ## Phase ledger
 
@@ -80,43 +81,37 @@ Status page.
 ## Public access
 
 Live at **`https://glasswell.rpx.sh`** through Cloudflare Tunnel `3b2d209f-7671-4497-ae4f-740dcbc34788`, closed by default: `/healthz`, the SPA shell and assets, `/basemap/*` and the two login routes answer anonymously; every other operation refuses before any database work.
-Authorization is the application's own session login — two roles (`owner`, `viewer`) over `lineage.users`, `__Host-` cookie, CSRF. **Cloudflare Access is not enabled and is not used.**
-The static owner key is refused at the tunnel edge, so it is a LAN and deploy-gate credential only; `/v1/keys*` and the `agent` scope are `deprecated: true` in the served document.
-Rollback is three levels: delete the proxied CNAME, `systemctl stop cloudflared`, or revert and redeploy.
-`verify.sh`'s four edge probes carry a publicly-resolved address, because lab DNS NXDOMAINs the public hostname from VM 111.
-The off-LAN credential exercise has never been run: every probe so far originated on this network.
+Authorization is the application's own session login — two roles (`owner`, `viewer`) over `lineage.users`, `__Host-` cookie, CSRF. **Cloudflare Access is not enabled and is not used.** The static owner key is refused at the tunnel edge, so it is a LAN and deploy-gate credential only; `/v1/keys*` and the `agent` scope are `deprecated: true` in the served document.
+Rollback is three levels: delete the proxied CNAME, `systemctl stop cloudflared`, or revert and redeploy. `verify.sh`'s four edge probes carry a publicly-resolved address, because lab DNS NXDOMAINs the public hostname from VM 111; every probe so far originated on this network, so the off-LAN credential exercise remains unrun.
 
 ## Verification state
 
 - **Hosted CI runs on every push** — six jobs: `python`, `web`, `e2e-guards`, `shell`,
   `collateral`, `map-chrome`. The last run is **green at `39bd7f0`** (`gh run list`, today).
-- **`infra/verify.sh` and `scripts/smoke.sh`** last read **194/194** and **26/26** at the
-  **v0.72** deploy, per the previous revision of this file. They have **not been re-run for
-  v0.73**.
+- **`infra/verify.sh` and `scripts/smoke.sh`** last read **194/194** and **26/26** at the **v0.72**
+  deploy, per the previous revision of this file, and have **not been re-run for v0.73**.
 - **Deployed code version, schema head and the served operation count** were measured today.
-- **No local suite count is stated here.** None was measured on 2026-09-01, and a test count
-  that is not re-measured is not evidence.
+- **No local suite count is stated here.** None was measured on 2026-09-01, and a count that is
+  not re-measured is not evidence.
 
 ## Open items
 
-Each item names the release that carries it in [`ROADMAP.md`](ROADMAP.md) "Horizon"; the
-per-release tables are working files outside git.
+Each item names the release that carries it in [`ROADMAP.md`](ROADMAP.md) "Horizon"; the per-release tables are working files outside git.
 
-**Landed in v0.74:** NM read-time status resolution; the Map→Explore crossing, now writing
-`f.api10`; Basins and Plays as real Geology-group layer rows, off by default.
-**Landed in v0.75:** the N2 re-land — per-well cumulatives, vintage cohorts and promoted
-completion design — and glossary coverage on the legend, layers panel and Status page.
+**Landed in v0.74:** NM read-time status resolution; the Map→Explore crossing, now writing `f.api10`;
+Basins and Plays as real Geology-group layer rows, off by default. **Landed in v0.75:** the N2
+re-land — per-well cumulatives, vintage cohorts and promoted completion design — and glossary
+coverage on the legend, layers panel and Status page. **Merged on `release/v0.76`, neither tagged nor
+deployed as of 2026-09-01:** the jurisdiction registry (migration 073, `/v1/jurisdictions`, the
+per-state dicts now rows) and the Accounts surface with the session list (migration 074); the two
+items this list carried for v0.76 close when that train ships, not now.
 
-1. **Jurisdiction registry** — 465 hardcoded state references across 59 files, four per-state
-   dicts in `routers/wells.py` alone (`code-audit.md`, not re-measured here). v0.76.
-2. **User administration UI** — `/v1/users` CRUD is complete server-side and `web/src` never
-   calls it; no session-list endpoint exists. v0.76.
-3. **Cadence-driven ingest scheduling** — the policy is a table; the unit is ten hand-written
+1. **Cadence-driven ingest scheduling** — the policy is a table; the unit is ten hand-written
    `ExecStart` lines and NM and MT are not scheduled at all. H2 (v0.77).
-4. **Texas production** — the largest resident state has no production number. H2 (v0.78).
-5. **P6 residuals** — a restore proof at the current schema, replacement-host recovery
+2. **Texas production** — the largest resident state has no production number. H2 (v0.78).
+3. **P6 residuals** — a restore proof at the current schema, replacement-host recovery
    execution, and an off-LAN credential exercise. H3.
-6. **P3–P5 modeling and economics**, sequenced after the registry lands. H3. The owner-gated
+4. **P3–P5 modeling and economics**, sequenced after the registry lands. H3. The owner-gated
    v0.6 §11 capability-matrix / IP review stays out of scope.
 
 ---
