@@ -183,10 +183,16 @@ Four inserts, one job per entry point:
    cadence and not another. `source_id` is the job's anchor, which the walk resolves.
 2. Your own migration's `conformance_rule_publications` insert, under its own REPOINT
    CHECKLIST — that table is append-only and the scheduler's own insert closed at its repoint.
-3. `src/glasswell/seed/schedules.py` — the `scheduled_jobs`, `job_sources`, `job_schedules`
-   and `job_dependencies` rows. A jurisdiction with no legacy timer **may** be seeded
-   `launch_mode='launch'` from day one, provided its cadence rule's rationale says why that is
-   safe; every jurisdiction an installed timer still drives is `observe`.
+3. **Both writers, the same four inserts.** `scheduled_jobs`, `job_sources`, `job_schedules`
+   and `job_dependencies` go in **your own migration** and in
+   `src/glasswell/seed/schedules.py`. The migration is the one that matters: a deploy that
+   seeds nothing still has to schedule, and `seed_all` is not on the migrate path. The seed
+   module is the mirror the parity gate reads. Colorado is the worked example, at
+   `077_colorado.sql:424-522` and `schedules.py`'s `CO_JOBS`.
+
+   A jurisdiction with no legacy timer **may** be seeded `launch_mode='launch'` from day one,
+   provided its cadence rule's rationale says why that is safe; every jurisdiction an installed
+   timer still drives is `observe`.
 4. An optional DSN flag in your own mains, resolved through `glasswell.db.dsn` so they read
    `GLASSWELL_DSN` then `DATABASE_URL` like every other entry point.
 
@@ -194,8 +200,10 @@ Four inserts, one job per entry point:
 > equality over `lineage.job_sources`, so a source registered in step 2 with no job row
 > reddens; gate 2 refuses a jurisdiction mart with no ingest edge of its own jurisdiction;
 > gate 3 refuses a `cadence` row the due rule can produce no instant for; and gate 4 refuses a
-> rule with no publication evidence. `infra/verify.sh` refuses a `launch` row whose entry point
-> an installed timer already drives.
+> rule with no publication evidence. Gate 5 holds the two writers to one truth — it resolves
+> the registry the migration wrote and compares every field against the seed module's tuple —
+> so writing one of them and not the other reddens rather than shipping half a schedule.
+> `infra/verify.sh` refuses a `launch` row whose entry point an installed timer already drives.
 
 ### 11. Run the mart, then the count writer
 
