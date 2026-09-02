@@ -121,7 +121,11 @@ systemctl is-active glasswell-ingest.service      # must be inactive
 # The one-shot re-promotion units must be ABSENT, not merely inert. Zero, or STOP.
 systemctl list-unit-files 'glasswell-repromote*' --no-pager
 ls /etc/systemd/system/glasswell-repromote.* 2>&1        # expect: No such file or directory
-ls /etc/systemd/system/ | grep -c '^glasswell-'          # expect 14, matching the tree
+# Derived, never counted: the host must carry exactly what the tree ships, which is what
+# verify.sh's own unit loop asserts. A literal here went stale twice.
+SRC=/opt/glasswell/src
+ls /etc/systemd/system/glasswell-* | wc -l        # must equal the next line
+ls $SRC/infra/systemd/glasswell-* | wc -l
 ```
 
 - `glasswell-restore-drill.timer` is `Sun *-*-* 04:00:00` with `RandomizedDelaySec=600`:

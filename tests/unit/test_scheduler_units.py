@@ -454,3 +454,28 @@ def test_the_two_runbooks_agree_about_where_a_schedule_lives() -> None:
     scheduler = (ROOT / "docs" / "runbook-scheduler.md").read_text()
 
     assert "it has not been a unit-file edit since v0.78" in scheduler
+
+
+UNIT_COUNT_PRECONDITION = re.compile(r"grep -c '\^glasswell-'.*expect \d+")
+
+
+def test_no_runbook_precondition_pins_the_unit_count_as_a_literal() -> None:
+    """It read "expect 14" against a tree of 18 — already stale by two before this track and
+    by four after it, in two files this track rewrote. An operator running a precondition whose
+    whole preamble is about stopping when something disagrees would have stopped."""
+    literal = [
+        f"{path.name}:{number}"
+        for path in sorted((ROOT / "docs").glob("*.md"))
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if UNIT_COUNT_PRECONDITION.search(line)
+    ]
+
+    assert literal == []
+
+
+def test_the_two_runbooks_compare_the_host_against_the_tree_instead() -> None:
+    """Derived, the way verify.sh's own unit loop is: it cannot go stale."""
+    for name in ("runbook-nm-promotion.md", "runbook-nm-tier2.md"):
+        text = (ROOT / "docs" / name).read_text(encoding="utf-8")
+        assert "ls /etc/systemd/system/glasswell-* | wc -l" in text, name
+        assert "ls $SRC/infra/systemd/glasswell-* | wc -l" in text, name
