@@ -16389,7 +16389,7 @@
           "group": "wells",
           "id": "vintage_cohorts",
           "intro": "nb_dataset_vintage_cohorts",
-          "order": 16,
+          "order": 17,
           "row_id": [
             "/cohort_year"
           ],
@@ -17010,7 +17010,7 @@
           "group": "wells",
           "id": "cumulatives",
           "intro": "nb_dataset_cumulatives",
-          "order": 15,
+          "order": 16,
           "row_id": [
             "/api10",
             "/snapshot_vintage"

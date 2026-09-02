@@ -222,7 +222,7 @@ class WellCumulatives(BaseModel):
                 "sort": "/api10",
             },
             intro="nb_dataset_cumulatives",
-            order=15,
+            order=16,
         ),
         **semantics(
             as_of={

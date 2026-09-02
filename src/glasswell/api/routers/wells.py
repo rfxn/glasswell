@@ -1798,7 +1798,7 @@ class WellVintageCohorts(BaseModel):
                 "sort": "/cohort_year",
             },
             intro="nb_dataset_vintage_cohorts",
-            order=16,
+            order=17,
         ),
         **semantics(
             explain={
