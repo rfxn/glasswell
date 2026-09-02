@@ -10,8 +10,9 @@
       may name an entry point an installed timer already drives
 - [New] `/v1/schedules` and `/v1/schedules/{job_id}`, `as_of`-aware over both clocks, serving
       each job's sources, dependencies, cadence rule, recent runs and refusal vocabulary
-- [New] `marts.counts` gets a `main` and a daily cadence job, so the jurisdiction well-count
-      ledger has a writer for the first time
+- [New] `marts.counts` gets a `main` and a registered daily cadence, so the jurisdiction
+      well-count ledger has a writer to turn on; like every row this release seeds it observes,
+      so the ledger still advances only when someone runs it
 - [Change] `/v1/status` generates its job rows from the registry instead of six literal
            blocks, and carries each job's kind, jurisdiction, cadence, next due, duration,
            last outcome and refusal class with its severity
