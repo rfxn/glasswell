@@ -106,6 +106,10 @@ values
     ('api.respond', 'api.well_completions', 'response_output',
      'The request derivation records the serve-time fluid intensity it returned.');
 
+-- REPOINT CHECKLIST (integrator, at the merge train):
+--   1. evidence_tag UNRELEASED -> the tag that first carries these four rules
+--   2. evidence_commit forty zeros -> the merge commit on main that carries them
+--   3. published_vintage -> the date that tag is actually cut; the table is append-only
 -- First-publication evidence for the rule ids this track registers. The tag and commit are
 -- placeholders the release gate refuses to ship; the integrator repoints them at the tag that
 -- actually carries these rules, alongside the migration renumber.
