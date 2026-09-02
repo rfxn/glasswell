@@ -5,6 +5,8 @@ from __future__ import annotations
 import pytest
 
 from glasswell.marts.vintage_cohorts import (
+    _KEY_COLUMNS,
+    _KEY_EXPRESSIONS,
     COHORT_BANDS,
     COHORT_KEYS,
     CohortPolicyError,
@@ -84,3 +86,18 @@ def test_a_support_band_set_covers_every_count_exactly_once() -> None:
         hits = [label for low, high, label in COHORT_BANDS
                 if low <= value and (high is None or value <= high)]
         assert hits == [hits[0]], value
+
+
+def test_a_rule_naming_a_column_the_executor_does_not_read_is_refused() -> None:
+    """gate-v075 MINOR-3: cohort_key_field was required and then never read, so the rule could
+    publish `completion_date` while the served cohorts stayed keyed on the spud year — a
+    published statement the executor does not honour. The load refuses instead."""
+    repointed = {**SPEC, "cohort_key_field": "canonical.wells_latest.completion_date"}
+
+    with pytest.raises(CohortPolicyError, match="disagrees with the column"):
+        policy_from_spec(repointed)
+
+
+def test_every_admitted_cohort_key_has_both_a_reader_and_a_column() -> None:
+    """The two maps are the agreement; a key in one and not the other breaks it silently."""
+    assert set(_KEY_EXPRESSIONS) == set(_KEY_COLUMNS) == set(COHORT_KEYS)

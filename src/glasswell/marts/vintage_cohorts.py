@@ -101,6 +101,16 @@ def policy_from_spec(spec: dict[str, Any]) -> CohortPolicy:
     )
     field = str(spec.get("cohort_key_field", "") or "")
     _require(field, "cohort_key_field must name the column the key is read from")
+    # Asserted rather than read. The executor cannot take its column from the rule row without
+    # putting a rule-supplied identifier into SQL, which is the thing _KEY_EXPRESSIONS exists
+    # to prevent, and the expression is a transformation over the column, not the column. So
+    # the two are held to agree instead: repoint the rule's field and the load refuses, rather
+    # than serving a figure the published rule no longer describes.
+    _require(
+        field == _KEY_COLUMNS[key],
+        f"cohort_key_field {field!r} disagrees with the column {key!r} is read from"
+        f" ({_KEY_COLUMNS[key]!r}); the published rule and the executor must agree",
+    )
     return CohortPolicy(
         cohort_key=key,
         cohort_key_field=field,
@@ -132,6 +142,14 @@ def load_cohort_policy(connection: psycopg.Connection) -> CohortPolicy:
 _KEY_EXPRESSIONS = {
     "spud_year": "extract(year from w.spud_date)::int",
     "completion_anchor_year": "extract(year from w.completion_date)::int",
+}
+
+# The column each expression above reads, as the rule row spells it. Keyed the same way on
+# purpose: policy_from_spec holds the rule's cohort_key_field to this, so the rule cannot
+# publish one column while the executor reads another.
+_KEY_COLUMNS = {
+    "spud_year": "canonical.wells_latest.spud_date",
+    "completion_anchor_year": "canonical.wells_latest.completion_date",
 }
 
 _ROLLUP = """

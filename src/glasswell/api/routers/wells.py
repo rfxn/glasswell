@@ -1806,6 +1806,20 @@ def get_well_vintage_cohorts(
     policy = load_cohort_policy(connection)
     cohorts, population = cohort_rollup(connection, policy)
     snapshot = population["snapshot_vintage"]
+    if snapshot is None:
+        # An empty cumulative mart is a state of this system, not a fact about North Dakota.
+        # Serving the rollup anyway would put `snapshot_vintage: null` against a schema that
+        # declares it a required date, and an empty `cohorts` would read as "ND has none".
+        # The per-well sibling refuses by name in the same state, for the same reason.
+        raise ProblemError(
+            "service_degraded",
+            detail=(
+                "marts.well_cumulatives holds no rows, so there is no snapshot vintage to"
+                " state these cohorts at and no population to roll up. Run the cumulatives"
+                " refresh (python -m glasswell.marts.cumulatives); deploy.sh does this at"
+                " step 6d. This is not a statement that no cohort exists."
+            ),
+        )
     data: dict[str, Any] = {
         "cohort_basis": policy.cohort_key,
         "cohort_key_rule": COHORT_RULE,
