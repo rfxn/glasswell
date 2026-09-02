@@ -588,6 +588,16 @@ function cumulativesBody(
     } else {
       value.appendChild(absentValue(absentStreamReason(data.coverage[key])));
     }
+    // R8 / CLAUDE.md: state the policy wherever the number appears. The chart frame states its
+    // basis beside each series and this row did not, so the oil total was the one liquids
+    // number on the card shown without saying that oil means oil plus condensate. It goes
+    // beside the value rather than in the dt, which stays the stream's name and nothing else.
+    if (figure?.basis) {
+      const basis = document.createElement("span");
+      basis.className = "gw-chip gw-cumulative-basis";
+      basis.textContent = figure.basis;
+      value.appendChild(basis);
+    }
     const record = coverageTitle(data.coverage[key]);
     if (record) cell.title = record;
     cell.append(term_, value);

@@ -336,6 +336,24 @@ describe("well card", () => {
     );
   });
 
+  // gate-v075 defect 4: the payload carries basis "oil+condensate" on the oil total and the
+  // card stated it only in the chart frame, so the CUMULATIVE row showed a liquids number
+  // without its policy. CLAUDE.md: state the policy wherever the number appears.
+  it("states each cumulative's basis beside the figure, so oil says oil+condensate", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    const cells = [...host.querySelectorAll(".gw-well-cumulatives .gw-cumulative-cell")];
+    const basisOf = (label: string): string | null => {
+      const cell = cells.find((node) => node.querySelector("dt")?.textContent?.startsWith(label));
+      return cell?.querySelector(".gw-cumulative-basis")?.textContent ?? null;
+    };
+
+    expect(basisOf("Oil")).toBe("oil+condensate");
+    expect(basisOf("Water")).toBe("water");
+    // Gas carries no basis in the payload, and an empty chip would be a naked qualifier.
+    expect(basisOf("Gas")).toBeNull();
+  });
+
   // gate-v075 defect 2: at 1024 and 390 the line wrapped at the vintage's own hyphen and read
   // "snapshot 2026-" / "08-23", which scans as a truncated year at the end of a line.
   it("keeps the snapshot vintage on one line without changing what the line says", async () => {
