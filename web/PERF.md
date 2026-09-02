@@ -134,6 +134,11 @@ after each of its three fix rounds. The Accounts surface took it to 13,680 B, th
 registry to 13,842 B, the sentinel round to 13,871 B, the visual round to 13,931 B, and the
 chrome round that followed it to **13,928 B** — **72 B under the budget**, where v0.73 had 518.
 
+The registry's generated module is not the reason that train's entry grew: the jurisdiction
+rows the client reads (names, identity prefixes, tile-layer ids) resolve into a lazy branch,
+and no state name appears in the entry chunk at all. What landed there is chrome and wiring,
+a little at a time.
+
 Re-measured across the v0.78 seam-hardening train, which is where the budget did the work it
 exists for. The mart engine, the served length and neighbour refusals and the narrowed
 add-a-state gate cost the entry **2 B**; the glossary paging loop then cost **79**, which is
@@ -149,10 +154,7 @@ same commit measures differently once its distance from the tag grows a digit. T
 above was measured on this branch at `755535b`; a clean-tree measurement of the same code came
 back 13,932 B, and the 18 bytes are the stamp. Re-measure before moving the budget, and say
 which tree the number came from — this is the fourth train running where somebody has had to
-re-derive that the delta was the stamp. The registry's generated module is not the
-reason: the jurisdiction rows the client reads (names, identity prefixes, tile-layer ids)
-resolve into a lazy branch, and no state name appears in the entry chunk at all. What landed
-there is chrome and wiring, a little at a time.
+re-derive that the delta was the stamp.
 
 The budget is not raised. 72 B is the instrument doing exactly what the paragraph above says it
 should, and it is now tight enough that the next addition to the entry path fires it — which
