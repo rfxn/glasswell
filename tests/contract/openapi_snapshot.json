@@ -17130,7 +17130,7 @@
             "x-glasswell-glossary": "gt_well_name"
           },
           "state": {
-            "so": "Matches the API state codes exactly \u2014 the first two digits of every API-10 in the answer. A set, not one code: repeat it, comma-separate the codes, or send `all` for every registered jurisdiction, read from the registry at request time. It is what scopes a `/v1/wells/facets` bucket link to the jurisdictions the bucket was counted in; without it a county or status filter returns every jurisdiction that happens to share the code, and with only one it answers a combined bucket with one state's rows.",
+            "so": "Matches the API state codes exactly \u2014 the first two digits of every API-10 in the answer. A set, not one code: repeat it, comma-separate the codes, or send `all`, which is evaluated per request \u2014 it is every jurisdiction the registry holds at the moment you ask, so a link carrying it returns a wider population once a further jurisdiction registers. A traversal does not widen under way: the cursor is fingerprinted over the codes `all` resolved to, so a registration between two pages is refused rather than folded in. It is what scopes a `/v1/wells/facets` bucket link to the jurisdictions the bucket was counted in; without it a county or status filter returns every jurisdiction that happens to share the code, and with only one it answers a combined bucket with one state's rows.",
             "x-glasswell-glossary": "gt_api_10_api_12_api_14"
           },
           "status": {

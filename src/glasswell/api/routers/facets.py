@@ -1000,9 +1000,13 @@ def get_well_facets(
     registry = jurisdictions(connection)
     requested = state_set(state)
     loaded, codes = _require_states(connection, requested, registry)
-    # The request echo, and the one string every selector, caption and bucket link carries:
-    # `all` stays `all` so a link means the same set the count was taken over, whatever the
-    # registry gains between the two calls.
+    # The request echo, and the one string every selector, caption and bucket link carries.
+    # `all` stays `all` rather than being enumerated: the collection reads the same grammar and
+    # resolves it against the same registry, so the link is exact today. It is a live term, not
+    # a snapshot -- a jurisdiction registering after the count widens what the link returns, and
+    # `jurisdictions` beside the number is what names the set it was actually taken over. A
+    # traversal of that link does not widen under way; /v1/wells fingerprints its cursor over
+    # the resolved codes.
     scope = ALL_JURISDICTIONS if requested is None else ",".join(codes)
     scope_name = _scope_name(registry, codes)
     scope_phrase = _scope_phrase(registry, codes)

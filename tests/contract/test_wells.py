@@ -274,8 +274,8 @@ def test_the_collection_scopes_to_a_set_of_states_however_it_is_spelled(
 def test_the_collection_takes_all_for_every_registered_jurisdiction(
     client: TestClient, seeded: psycopg.Connection
 ) -> None:
-    """`all` is the registry's answer rather than the caller's list, so a bucket link minted
-    against it still names the same population after a fifth jurisdiction registers."""
+    """`all` is the registry's answer rather than the caller's list, evaluated per request: it
+    is every jurisdiction registered at the moment the collection is asked."""
     every = client.get("/v1/wells?state=all&limit=200").json()["data"]
     unscoped = client.get("/v1/wells", params={"limit": 200}).json()["data"]
 
@@ -306,5 +306,26 @@ def test_a_set_scoped_page_carries_the_set_into_its_own_next_link(
 
     assert following
     assert following.count("state=") == 2
+    followed = client.get(following)
+    assert followed.status_code == 200, followed.text
+
+
+def test_a_page_of_all_is_pinned_to_the_jurisdictions_it_started_over(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """`all` is evaluated per request, so a traversal has to be pinned or it widens under way.
+
+    A jurisdiction registering between two pages would otherwise hand the reader a second page
+    from a larger population than the first, with a cursor the collection accepts because its
+    fingerprint says `all` either way. The continuation names the codes instead, so a
+    registration invalidates the cursor — which is the refusal `cursor_query_mismatch` exists
+    to make — rather than silently widening the page.
+    """
+    body = client.get("/v1/wells?state=all&limit=2").json()
+    following = body["links"]["next"]
+
+    assert following
+    assert "state=all" not in following
+    assert following.count("state=") >= 2
     followed = client.get(following)
     assert followed.status_code == 200, followed.text

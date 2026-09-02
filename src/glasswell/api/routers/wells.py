@@ -41,7 +41,7 @@ from glasswell.api.pagination import (
 from glasswell.api.provenance import register_response_figures
 from glasswell.api.rate_limit import consume_rate_limit
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, inline_for, iso
-from glasswell.api.routers.facets import ALL_JURISDICTIONS, StateTerm, state_set
+from glasswell.api.routers.facets import StateTerm, state_set
 from glasswell.lengths import STORAGE_EPSG, resolve_length_method
 from glasswell.lineage.conformance import (
     LeaseReportingRule,
@@ -783,8 +783,13 @@ def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
                 "so": (
                     "Matches the API state codes exactly — the first two digits of every"
                     " API-10 in the answer. A set, not one code: repeat it, comma-separate the"
-                    " codes, or send `all` for every registered jurisdiction, read from the"
-                    " registry at request time. It is what scopes a `/v1/wells/facets` bucket"
+                    " codes, or send `all`, which is evaluated per request — it is every"
+                    " jurisdiction the registry holds at the moment you ask, so a link"
+                    " carrying it returns a wider population once a further jurisdiction"
+                    " registers. A traversal does not widen under way: the cursor is"
+                    " fingerprinted over the codes `all` resolved to, so a registration"
+                    " between two pages is refused rather than folded in. It is what scopes a"
+                    " `/v1/wells/facets` bucket"
                     " link to the jurisdictions the bucket was counted in; without it a county"
                     " or status filter returns every jurisdiction that happens to share the"
                     " code, and with only one it answers a combined bucket with one state's"
@@ -915,12 +920,20 @@ def list_wells(
     q: Annotated[str | None, Query(description="Case-insensitive substring of well name.")] = None,
 ) -> JSONResponse:
     # Normalised before the fingerprint, so `?state=33,42` and `?state=42&state=33` are one
-    # query rather than three cursors that refuse each other's pages.
+    # query rather than three cursors that refuse each other's pages. `all` is resolved here
+    # too, and against the registry rather than left as the word: it is evaluated per request,
+    # so a jurisdiction registering mid-traversal would otherwise hand the reader a second page
+    # from a larger population than the first, under a cursor whose fingerprint said `all`
+    # either way. Resolved, the registration invalidates the cursor instead, which is the
+    # refusal cursor_query_mismatch exists to make.
+    registry = jurisdictions(connection)
     requested = state_set(state) if state is not None else ()
     if state is None:
         scoped_states = None
+    elif requested is None:
+        scoped_states = sorted(registry.by_prefix)
     else:
-        scoped_states = [ALL_JURISDICTIONS] if requested is None else list(requested)
+        scoped_states = list(requested)
     filters = {
         "as_of": as_of,
         "api10": api10,
@@ -952,7 +965,6 @@ def list_wells(
         )
     fingerprint = query_fingerprint(filters)
     envelope = _bbox(bbox)
-    registry = jurisdictions(connection)
     policy, producing_bindings = _producing(connection)
     if producing is not None and policy is None:
         raise ProblemError(
@@ -979,11 +991,7 @@ def list_wells(
         params["county"] = county
     if state is not None:
         clauses.append("and state_code = any(%(state)s)")
-        # `all` is the registry's answer, resolved here rather than by the caller, so a bucket
-        # link minted against a four-state facet still names four states after a fifth loads.
-        params["state"] = (
-            sorted(registry.by_prefix) if requested is None else list(requested)
-        )
+        params["state"] = scoped_states
     if well_type is not None:
         clauses.append("and well_type_reported = %(well_type)s")
         params["well_type"] = well_type
