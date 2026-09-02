@@ -24,6 +24,7 @@ import json
 import sys
 from pathlib import Path
 
+from glasswell.marts.tiles import TILE_LAYERS
 from glasswell.seed.jurisdictions import JURISDICTION_RULES, JURISDICTIONS, rule_parameters
 
 MAP = Path(__file__).resolve().parents[1] / "web" / "src" / "map"
@@ -167,6 +168,24 @@ def _string_array(values: object) -> str:
     return "[" + ", ".join(f'"{value}"' for value in values) + "]"  # type: ignore[union-attr]
 
 
+def _tile_properties(layer_id: str) -> list[str]:
+    """The columns that tile function publishes, from the mart that decides them.
+
+    The browser cannot read `marts/tiles.py`, so the list has to be baked into the bundle; the
+    question is only whether it is baked by hand per jurisdiction or generated. It was by hand,
+    which put a `TILE_FACET_PROPERTIES["co-wells"]` in `web/src` -- a jurisdiction named in a
+    tree the runbook promises names none, and a shape the two-digit gate cannot see.
+    """
+    published = {layer.name: layer for layer in TILE_LAYERS}
+    layer = published.get(layer_id)
+    if layer is None:
+        raise SystemExit(
+            f"{layer_id} is registered as a wells tile layer and marts/tiles.py publishes no"
+            " such layer; the roster would carry a source the tile server cannot serve"
+        )
+    return [column for column, _type in layer.properties]
+
+
 def roster() -> str:
     """The wells rows as data. `tests/e2e/chrome-fold.mjs` is plain node ESM and cannot import
     a TypeScript module, and its refusal on zero rows is what the map-chrome gate rests on."""
@@ -178,6 +197,7 @@ def roster() -> str:
             "styleLayers": list(row["wells_style_layer_ids"]),  # type: ignore[arg-type]
             "drawOrder": row["wells_draw_order"],
             "defaultOn": bool(row["wells_default_on"]),
+            "tileProperties": _tile_properties(_required(row, "wells_tile_layer_id")),
         }
         for row in sorted(
             (_checked(row) for row in JURISDICTIONS),

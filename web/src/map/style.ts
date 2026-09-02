@@ -51,6 +51,8 @@ export interface WellsRosterRow {
   readonly tileLayerId: string;
   readonly drawOrder: number;
   readonly defaultOn: boolean;
+  /** Every column that tile function publishes, in `marts/tiles.py`'s own order. */
+  readonly tileProperties: readonly string[];
 }
 
 /**
@@ -317,27 +319,27 @@ export const FACET_FILTERED_LAYERS: readonly FacetLayer[] = [
   { id: "disposal-wells", source: DEFAULT_WELLS_SOURCE, gated: false },
 ];
 
+const FACET_COLUMNS: ReadonlySet<string> = new Set(Object.values(FACET_TILE_PROPERTY));
+
 /**
  * The facet-bearing columns each tile layer publishes. `marts/tiles.py` is the source of truth
  * — its `TileLayer.properties` tuple is the publication boundary — and this is the browser's
  * copy of it, held equal by facet-filter.test.ts, which parses the Python rather than restating
- * it. Operator and status are on all twelve; well type is on the four point layers only; county
- * is Texas and New Mexico.
+ * it. The wells rows are generated into the roster from those same tuples, so a jurisdiction
+ * whose tile publishes a different column set arrives without an edit here; the four bore and
+ * path layers are not in the roster and are declared. Operator and status are on all twelve;
+ * well type is on the point layers only, and county on whichever tiles publish it.
  */
 export const TILE_FACET_PROPERTIES: Readonly<Record<string, readonly string[]>> = {
-  [WELLS_SOURCE_BY_LAYER["wells"]!]: ["operator_name", "status_canonical", "well_type_reported"],
+  ...Object.fromEntries(
+    WELLS_ROSTER.map((row) => [
+      row.tileLayerId,
+      row.tileProperties.filter((column) => FACET_COLUMNS.has(column)),
+    ]),
+  ),
   [LATERALS_SOURCE]: ["operator_name", "status_canonical"],
   [TRACES_SOURCE]: ["operator_name", "status_canonical"],
-  [WELLS_SOURCE_BY_LAYER["tx-wells"]!]: ["operator_name", "status_canonical", "well_type_reported", "county_code"],
   [TX_LATERALS_SOURCE]: ["operator_name", "status_canonical", "county_code"],
-  [WELLS_SOURCE_BY_LAYER["nm-wells"]!]: ["operator_name", "status_canonical", "well_type_reported", "county_code"],
-  [WELLS_SOURCE_BY_LAYER["mt-wells"]!]: ["operator_name", "status_canonical", "well_type_reported"],
-  [WELLS_SOURCE_BY_LAYER["co-wells"]!]: [
-    "operator_name",
-    "status_canonical",
-    "well_type_reported",
-    "county_code",
-  ],
   [MT_PATHS_SOURCE]: ["operator_name", "status_canonical"],
 };
 

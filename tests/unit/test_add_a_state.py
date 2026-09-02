@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 import glasswell
-from glasswell.seed.jurisdictions import CODES, NAMES, PREFIXES
+from glasswell.seed.jurisdictions import CODES, JURISDICTIONS, NAMES, PREFIXES
 
 pytestmark = pytest.mark.unit
 
@@ -222,6 +222,19 @@ def _named(path: Path) -> str:
         return path.name
 
 
+# A layer id that spells a jurisdiction code is a jurisdiction literal, and the two-digit rule
+# cannot see it: `co-wells` carries no prefix, no name and no alternation group. North Dakota's
+# `wells` is deliberately not in this set -- it predates the per-jurisdiction spelling, spells no
+# code, and every saved permalink froze it.
+JURISDICTION_LAYER_IDS = frozenset(
+    str(value)
+    for row in JURISDICTIONS
+    for column in ("wells_layer_id", "wells_tile_layer_id")
+    if (value := row.get(column)) is not None
+    and str(row["jurisdiction_code"]).lower() in str(value).lower()
+)
+
+
 def _exempt(exemptions, path: Path, line: str, value: str) -> Exemption | None:
     return next((item for item in exemptions if item.matches(path, line, value)), None)
 
@@ -263,6 +276,11 @@ def scan_web(files: list[Path]) -> list[str]:
             for name in NAMES:
                 if name in line and _exempt(WEB_EXEMPTIONS, path, line, name) is None:
                     found.append(f"{_named(path)}:{number}: {name!r}")
+            for layer_id in JURISDICTION_LAYER_IDS:
+                if f'"{layer_id}"' in line and _exempt(
+                    WEB_EXEMPTIONS, path, line, layer_id
+                ) is None:
+                    found.append(f"{_named(path)}:{number}: {layer_id!r}")
     return found
 
 
@@ -289,6 +307,18 @@ def test_no_python_serving_module_names_a_jurisdiction() -> None:
 
 def test_no_web_module_names_a_jurisdiction() -> None:
     assert scan_web(web_files()) == []
+
+
+def test_the_layer_id_rule_covers_every_registration_but_the_irregular_one() -> None:
+    """The set the web scan reads, checked so it cannot quietly go empty.
+
+    A jurisdiction-scoped layer id is the shape a two-digit scan is blind to, and it is the one
+    the wells family multiplies: two ids per registration, in a roster that grows by a row per
+    state. North Dakota's `wells` is the exception and stays out by spelling no code.
+    """
+    assert len(JURISDICTION_LAYER_IDS) >= 2 * (len(CODES) - 1)
+    assert "wells" not in JURISDICTION_LAYER_IDS
+    assert {"co-wells", "co_wells"} <= JURISDICTION_LAYER_IDS
 
 
 def test_no_migration_written_after_the_registry_hardcodes_a_prefix() -> None:
