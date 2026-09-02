@@ -7,6 +7,238 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.76"></a>
+## v0.76 — 2026-09-02
+
+- [New] `GET /v1/sessions` lists every session the deployment holds a row for, owner-only and
+      newest first, with the account, the role, the state against both windows, a coarse client
+      label and an `address_class` of `lan`, `remote` or `unknown`. The address itself is not
+      served: no ruling permits a client address in a body, so the row carries the class the
+      screen actually reads and nothing more
+- [New] `DELETE /v1/sessions/{session_id}` ends a session server-side. The owner may revoke any
+      session; anyone else may revoke the one they are calling with, decided before any read so
+      the route is not an existence oracle. Revoking twice answers the same record and writes
+      one `session.ended`, because the event follows the rowcount rather than the request
+- [New] `PATCH /v1/users/{user_id}` gains `state`, whose only accepted value is `active`.
+      Disabling stays on `DELETE /v1/users/{user_id}`, which carries the owner floor and revokes
+      the account's sessions; re-enabling an account that is already active is refused with
+      `not_disabled` rather than answered silently, because the list that said otherwise is
+      stale. The enable clears `disabled_at` and `disabled_by` together
+- [New] `POST /v1/users` and `POST /v1/users/{user_id}/password` mint a password when the caller
+      supplies none and return it once, on a `CreatedUser` model those two operations alone
+      serve, with a `password_shown_once` warning. `UserModel` declares no password and a
+      contract test keeps it that way — `/v1` is frozen additive, so a field published on the
+      list schema is published for good
+- [New] Migration `074_session_user_agent_family.sql` adds `lineage.sessions.user_agent_family`,
+      written at login from the user-agent header, and a `(created_at desc, session_id desc)`
+      index the newest-first list orders on. The stored fingerprint is one-way, so the label
+      cannot be recovered at read time; rows created before the column are served as `unknown`
+- [New] The users list carries `sessions_live`, counted against the injected clock rather than
+      SQL `now()`, with its exemption reason stated in `non_figure_allowlist.yml` and beside the
+      property in the served document
+- [New] `session`, `role`, `owner` and `viewer` are seeded as glossary terms, all four
+      `highlightable: false`: the highlighter compiles one app-wide regex over every served
+      term, and four common words would gain underlines on every screen from a seed edit
+- [Change] `new_password` joins the refused query parameters and is deleted by both Caddy log
+           blocks, and the access-log filter now matches a credential-shaped parameter *inside*
+           an identifier — `\b` before a bare `password` never fired on `new_password=`, because
+           `_` is a word character. `monkey=` is redacted as collateral, which is the safe
+           direction: a redacted log value is recoverable from the request, a leaked credential
+           is not
+- [Change] The two owner routes that hash a password charge a distinct `admin_write` rate bucket
+           as their first statement, before the Argon2id call, rather than riding the 120/min
+           interactive bucket a session already holds
+- [Fix] The last-owner refusal names the field the caller sent: the pointer is a parameter of
+      the guard, so the `DELETE` path — which has no body — no longer points at `/role`, a field
+      that request never carried
+- [New] Accounts is a section of the Status surface for an owner and for nobody else, at
+      `?view=status#accounts`: the users list with role, creation, last sign-in and live
+      sessions; add a user; reset a password; disable and re-enable; and the session list with
+      a revoke. It is a section rather than a fourth header mode because the mode switch spends
+      373 of the 390 px a phone has and a fourth button needs 46 more than exist
+- [New] A minted password is rendered once, from the response that minted it, beside the
+      server's own `password_shown_once` warning and behind a `data-gw-secret` hook a
+      screenshot harness substitutes before it captures. It is never put in a URL, never sent
+      back, and leaves the document entirely when the panel is dismissed
+- [New] Disabling, resetting and revoking each open an inline `role="alertdialog"` naming what
+      ends, and send nothing until the reader confirms; re-enabling asks nothing, because
+      nothing ends. Every refusal renders the server's own `detail`, with the fields it named
+      only when it named some
+- [Change] `client.ts` gains `listUsers`, `createUser`, `updateUser`, `enableUser`,
+           `disableUser`, `resetPassword`, `listSessions` and `revokeSession` over a private
+           `mutateEnvelope`, which returns the whole envelope so a write can carry a warning;
+           `mutate` is now that function unwrapped, so the one-shot CSRF re-challenge stays in
+           one place. `main.ts` passes the role it already resolved into the Status surface
+           rather than letting a second probe answer the same question
+- [New] `tests/e2e/accounts.mjs` runs the DIR-11 ladder at 1600, 1024 and 390 against a
+      branch-local instance and, in the same pass, the round trip the section exists for: an
+      owner creates a viewer, that viewer signs in, and the surface tells them nothing about
+      anyone else. No shot is taken while the panel holds a live value — the minted password is
+      registered as a secret before it is read and substituted before capture — and the gate
+      disables every account it created and replaces the seeded owner's password with one the
+      server minted and nobody read
+- [New] `registerSecret()` in the e2e library: a credential a gate reads out of the page is
+      redacted from the journal and refused in a target url and in argv, exactly as the owner
+      key is. `tests/support/serve_seed_accounts.py` is the throwaway owner the gate signs in as
+- [Fix] `serve_branch.py` mints a `GLASSWELL_CSRF_KEY` per run. Without one every CSRF mint
+      raised and the login screen answered 500, so a branch instance could serve every
+      key-authenticated surface and none of the session ones
+- [Change] The Accounts tables keep one line per row and their action buttons on one line, so a
+           timestamp no longer doubles every row's height at 1024 and the two controls no longer
+           stack; both tables scroll horizontally below their width, as the tables beside them
+           on this page already do
+- [Change] STATUS.md's Deployed table is re-measured read-only against VM 111 and the
+      tree on 2026-09-02 · code version `v0.75+2189262`, schema head `072`, `main` at
+      `2189262` level with `origin/main` and 56 version tags, agreeing at last with the
+      release line above it; CI is green at `2189262` (PR #47) and `infra/verify.sh` and
+      `scripts/smoke.sh` read 197 passed / 0 failed and 31 passed / 0 failed at the v0.75
+      deploy rather than 194/194 and 26/26 at v0.72; the P3 entry gate carries the date
+      its neighbours carry
+- [New] STATUS.md gains a seventh open item: cumulative production is North Dakota only,
+      `marts/cumulatives.py:64` pinning `STATE_API_PREFIXES = ("33",)` so 43,817 of
+      585,864 wells carry a cumulative, routed to H2 (v0.77)
+- [Fix] llms.txt records New Mexico as resident with its header, API-10 and production
+      counts and Montana as resident on both production grains with tiles and well paths,
+      and its deployment paragraph is re-derived against v0.75 at `2189262`, schema head
+      072, 197 host checks and 31 smoke checks, in place of a v0.60 paragraph pinning
+      schema 52 that named Montana nowhere
+- [Change] ROADMAP.md stops contradicting itself on Colorado: the state-expansion section
+         records that Colorado and Wyoming open the Rockies rather than extending the
+         Williston, the deferral covers additional basins beyond the Rockies sequence
+         named under Horizon H2, and H2 is re-themed so v0.77 is state #5 as a
+         registration, v0.79 is status truth for N states and v0.80 carries an em-dash
+         lint, a media arm below 520 px and DOM-count budgets; H3 sequences the
+         `/v1/wells` spine rewrite ahead of P3 modeling; open question 14 is closed by
+         `cr_nd_vintage_cohort_1`
+- [New] blueprint.md carries four states and the registry: the `[as-built]` four-state
+      paragraph and §3.0.1a are promoted verbatim from `blueprint-v0.6-draft.md` into the
+      committed contract, the status line reads four states deployed and serving, and
+      §2.3's deferral brings the Rockies sequence · Colorado, Utah and Wyoming · into
+      scope under the registry with each state's reachability evidence and named risk
+- [Change] blueprint-v0.6-draft.md is cut to v0.6-rc6 with the §0 row for the four-state,
+         registry and session-login wave; §3.4.1 gains `lineage.jurisdiction_codes`,
+         `jurisdictions`, `jurisdiction_rules` and `jurisdiction_well_counts` from
+         migration `073_jurisdictions.sql` under their two clocks; §3.6.12 gains
+         `GET /v1/jurisdictions`, the `/v1/users` administration set and `GET` and
+         `DELETE /v1/sessions`; and C26 is amended to the four-table scheduler v0.77
+         builds, retiring the single `jobs` table that exists in no migration
+- [New] blueprints/SB-04-api-agent-gateway.md §3.6 lists the six registry and account
+      routes with their auth class, keyed for jurisdictions and owner-only for every user
+      and session operation
+- [Fix] ARCHITECTURE.md's wellbore-policy citation resolves to `blueprint.md` §3.0.5 and
+      §3.0.1a rather than to the draft, with the per-basin revisit trigger attributed to
+      `blueprint-v0.6-draft.md` as a `[D]` item pending the §11 review
+- [Fix] .gitattributes names SB-01..08, since SB-08 exists and specs against the draft
+- [New] `lineage.jurisdictions`, `lineage.jurisdiction_rules` and
+      `lineage.jurisdiction_well_counts` (migration `072_jurisdictions.sql`) record which
+      regulators glasswell serves, on whose authority and under which conformance rules — R8's
+      "a mapping that exists only in code fails review" applied to the four API-10 prefixes the
+      serving path has been keyed on since migration 009. Registrations are append-only under
+      two clocks, so superseding a decision is a later `effective_from` and correcting what was
+      published about it is a later `published_at` at the same one;
+      `lineage.jurisdictions_as_of(knowledge_as_of, valid_as_of)` resolves the pair. There is no
+      current-state view: `as_of` is a knowledge-time cut, which a static view cannot honour
+- [New] North Dakota, Texas, New Mexico and Montana register with their regulator, identity
+      prefix and pattern, complete source list, liquids basis, wells tile layer, map colour and
+      capability flags, and with one row per mapping decision — Montana carrying both its
+      well-grain and its PRU lease-grain inventory rules, exactly one of them serving. The rows
+      ship in the migration and in `glasswell.seed.jurisdictions`, which `seed_all` runs on
+      every deploy, and `tests/contract/test_jurisdiction_parity.py` holds the two copies to
+      each other and refuses a prefix that resolves to two jurisdictions, a registration missing
+      the rule rows it declares, or a `source_ids` array that has stopped being complete
+- [New] `load_jurisdictions` reads the registry at a knowledge and a valid instant and refuses
+      an empty one with `JurisdictionRegistryError` instead of returning an empty map — R8's
+      rule that a missing row is a refusal, never an assumed default
+- [Change] `scripts/release.py` scans `src/glasswell/seed/jurisdictions.py` beside the
+           migrations for placeholder publication evidence, in both quote styles, so a repoint
+           that edits the migration and forgets its mirror is refused at `make release-check`
+           rather than landing a permanent false claim about when the rows were published
+- [Change] `/v1/wells`, `/v1/wells/{api10}`, `/v1/wells/status-summary`, `/v1/wells/facets`
+           and both production routes read the jurisdiction registry instead of the nine
+           per-state maps they carried between them. `STATUS_VOCABULARY_RULES`,
+           `PROVENANCE_RULES`, `DEFAULT_PROVENANCE_RULE`, `LENGTH_SCOPE_RULES` and
+           `NEIGHBOR_STATE_CODES` in `wells.py`, `LIQUIDS_RULES`, `LIQUIDS_BASIS` and
+           `ROLLUP_RULES` in `production.py`, and `STATE_NAMES` and `ABSENCE_RULES` in
+           `facets.py` are deleted; the three modules now carry no two-digit state literal at
+           all except the one `/v1/wells/facets` needs in its own request example. A fifth
+           jurisdiction is a row in `lineage.jurisdictions`, not an edit to three routers
+- [Change] Texas no longer cites `cr_nd_geometry_provenance_1`. It inherited a rule about
+           *North Dakota* geometry through a module-level default; it registers no
+           geometry-provenance decision, so the surface serves none and says so. Authoring a
+           real Texas rule is separate R8 work
+- [New] `absence:operator` is a registered decision at (jurisdiction, dimension) grain, so the
+      second dimension whose absence gets a rule is a row rather than another key in a
+      tuple-keyed map; an unregistered dimension still counts its bucket and claims nothing
+      further about it
+- [New] `GET /v1/jurisdictions` serves the registry: for each jurisdiction the regulator and
+      the address it publishes at, the identity scheme and prefix its wells are keyed by, every
+      conformance rule registered for it with which one serves, the liquids basis, the tile
+      layer and colour it is drawn with, what is built for it, and the wells last measured in
+      it. `as_of` is the registry's own knowledge cut, so a correction published after it is
+      not served under it and a cut before the first registration is refused rather than
+      answered with an empty page. Not `/v1/states`: `state` is already a lifecycle value and
+      a frozen query parameter meaning the API prefix, and a province is not a state
+- [New] Every well count on that route is a figure with a handle that resolves through
+      `?explain=true` to the government file the wells were promoted from, and a jurisdiction
+      with no measurement yet serves no count at all rather than a zero — "not measured" and
+      "no wells" are different facts. `Jurisdiction`, `Regulator` and `Identity scheme` are
+      glossary terms, and the identity prefix is the one number on the route exempted from
+      carrying a handle, because it is an identifier's prefix and says so in both places
+- [Change] The Status page's jurisdiction arms are generated from the registry. Sixteen
+           literals decided the wells arms and ten more the completions arms, and the
+           completions query still carried the `left(api10, 2) = '<literal>'` filtered
+           aggregate migration 069 took out of the production arm; all of it is one grouped
+           read and one comprehension now. A fifth registration yields a fifth wells dataset
+           and a fifth completions dataset with no edit, and an arm whose table holds nothing
+           reports `unavailable` rather than a zero — "not loaded" and "none" are different
+           facts, which is the guarantee the omitted Montana completions arm used to make by
+           being absent
+- [New] `marts/counts.py` appends the jurisdiction well-count ledger `/v1/jurisdictions`
+      serves: one measurement per registered jurisdiction, by canonical status and in total,
+      under the derivation that produced it. The total is the sum of the classes it is served
+      beside rather than a second `count(*)`, and the class is read from the same resolver the
+      map draws with, so the ledger cannot disagree with the canvas about a well
+- [Change] `land_metrics.py`'s two grid-prefix tuples and `neighbors.py`'s `STATE_CODES` read
+           the registry at import. The two land-grid names stay separately named and separately
+           sourced — each reads its own column — because collapsing them would silence the
+           anomaly alarm one of them exists to raise
+- [Change] map: the `Wells` family, its four jurisdiction rows and the status vocabulary rules
+           the legend prints take their names, swatch colours, tile layers and rule ids from
+           `jurisdictions.generated.ts`, rendered from the registry seed by
+           `make jurisdictions`. The rows stay literal — `tests/e2e/chrome-fold.mjs` parses the
+           file as text — and only the values inside them are imported
+- [Remove] map: `MEASURED_WELL_COUNTS`, `MEASURED_TX_WELL_COUNTS`, `MEASURED_NM_WELL_COUNTS`,
+           `MEASURED_MT_WELL_COUNTS` and `measuredWellCount`. Four count tables read by hand
+           against the deployed database and compiled into the bundle with no date on them; a
+           legend built from those claimed whatever somebody last measured. The census comes
+           from `/v1/jurisdictions` now, fetched off the entry path, and a class is hidden only
+           on an explicit measured zero — an unknown or degraded census hides nothing
+- [New] `tests/unit/test_add_a_state.py` refuses a two-digit API prefix or a jurisdiction's
+      name anywhere the serving path reads: `marts/`, `api/routers/`, `status/`, `lineage/`,
+      every migration written after the registry, and `web/src` with comments stripped. The
+      rule is positive and keyword-free, which is the point — an earlier form gated on a
+      trigger word and seventeen of the nineteen literals it existed to catch sat in dict
+      bodies with no such word on the line. Six exemptions, each with its reason in the file
+      and each proved load-bearing by a test that removes it and expects the scan to speak
+- [New] `docs/runbook-add-a-state.md`: eleven steps from registering the source to running the
+      count writer, each naming the refusal that stops it being done out of order — and naming
+      the one step, the ingest timer, that still has no gate behind it
+- [New] `lineage.jurisdictions.explorer_default` decides which jurisdiction the Explorer opens
+      on. It was a code choice — first a literal `"33"`, then whichever registration sorted
+      first, which is Montana and an accident of alphabetisation. Exactly one registration
+      carries the flag and its rationale says why: the only jurisdiction serving well-grain
+      production history end to end. A partial unique index holds it to one per registration
+      instant and a standing gate holds it to exactly one across the resolved set, because two
+      registrations a day apart both resolve and no index can see that
+- [Change] Which jurisdictions resolve their well status at read time, and under which rule,
+           is read off `lineage.jurisdiction_rules` rather than pinned in a dict. New Mexico
+           was `{"30": "cr_nm_wellhistory_status_vocab_2"}` in `status_resolution.py`, a module
+           at the package root that no scan looked at; the add-a-state gate now scans there
+           too. `canonical.status_resolution` stays one canonical-layer view the tile mart and
+           every serving path read, and takes its API prefix from the registration instead of a
+           literal — a fifth state with read-time resolution still brings its own codebook, but
+           whether it resolves that way is a row
+
 <a id="v0.75"></a>
 ## v0.75 — 2026-09-01
 

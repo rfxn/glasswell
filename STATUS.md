@@ -1,6 +1,6 @@
 # Current status
 
-Reconciled on **2026-09-02** against the v0.75 release line, the checked-in OpenAPI
+Reconciled on **2026-09-02** against the v0.76 release line, the checked-in OpenAPI
 snapshot, current `main` history and a read-only census of the deployed database. Dates are
 UTC, the serving clock `lineage/clock.py` defines; v0.75 was cut 2026-09-01 20:33 -0500, which
 is 2026-09-02. Every figure below is dated and names its source; one is carried forward from the previous revision and says
@@ -10,7 +10,7 @@ so on the line. [`ROADMAP.md`](ROADMAP.md) owns phase scope and exit criteria;
 
 ## Deployed
 
-- **Release line:** 56 tagged releases, v0.20 through v0.75, cut 2026-08-21 through
+- **Release line:** 57 tagged releases, v0.20 through v0.76, cut 2026-08-21 through
   2026-09-02.
 
 Measured on the deployed database (VM 111) and host, read-only, 2026-09-02.
