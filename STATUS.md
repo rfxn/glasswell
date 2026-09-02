@@ -40,11 +40,11 @@ Montana is a Williston extension rather than a phase; ROADMAP's N3 owns its exit
 
 ## Serving surface
 
-**49 operations across 44 paths, 48 under `/v1`** — counted from
-`tests/contract/openapi_snapshot.json` on 2026-09-01. Covered: health, operational status,
-wells and their facets, ND production, completion context, ND physical neighbours, formations,
-lineage, manifests, derivations, vintages, conformance, quarantine, glossary, error codes,
-keys, sessions, accounts, tiles, and the pinned `tcv1.0` type-curve control.
+**51 operations across 46 paths, 50 under `/v1`**, counted from `tests/contract/openapi_snapshot.json`
+on 2026-09-01. Covered: health, operational status, wells and their facets, ND production, per-well
+cumulatives, vintage cohorts, completion context and promoted completion design, ND physical neighbours,
+formations, lineage, manifests, derivations, vintages, conformance, quarantine, glossary, error codes,
+keys, sessions, accounts, tiles, and the pinned `tcv1.0` control.
 
 Not served: forecast, valuation, scenario, agent and inventory operations; `/v1/spacingunits`
 (land and spacing units serve as tiles only); training, calibration, the model registry, the
@@ -59,6 +59,9 @@ panel in four groups with the four state well layers nested under one tri-state 
 parent, a server-side status-summary legend census, and the "Wells by …" facet panel on both
 Explore and the map. Basins and Plays are real Geology-group layer rows over the served
 boundary tiles as of v0.74, off by default; nothing in the panel is a placeholder any more.
+As of v0.75 the flyout carries a cumulative oil/gas/water row keeping `no_report`,
+`reported_zero` and `withheld` distinct, and the glossary reaches the legend, layers panel and
+Status page.
 
 ## Phase ledger
 
@@ -66,7 +69,7 @@ boundary tiles as of v0.74, off by default; nothing in the panel is a placeholde
 |---|---|---|
 | **P0** Scaffold and contracts | Met | `/v1/audit` is not served, and is not a P0 exit |
 | **P1** ND spine | Met with named deferrals | PDF era 2003-01 → 2015-04 and FracFocus chemistry remain absent by design |
-| **P2** Serving and map | Substantially met | 49 operations, tiles with the allowlist asserted in CI, map/card/drawer/glossary/explorer/Status all shipped. `/v1/spacingunits` unserved; permits, GOR and water-cut remain |
+| **P2** Serving and map | Substantially met | 51 operations, tiles with the allowlist asserted in CI, map/card/drawer/glossary/explorer/Status all shipped. `/v1/spacingunits` unserved; permits, GOR and water-cut remain |
 | **P3** Forecasting and benchmark | Entry gate met; control served; modeling remains | Publication `p3pub_8b434525d8c621762e31b06ca660bfcd` accepted and its control served. Quantile-model writer, split-conformal calibration, model-registry writer, persisted analog index and benchmark runner remain. `fv2.0` is a one-feature set |
 | **P4** Dollars and scenarios | Not started | Entire phase |
 | **P5** Intelligence, agents and alerts | Not started | Entire phase |
@@ -97,24 +100,23 @@ The off-LAN credential exercise has never been run: every probe so far originate
 ## Open items
 
 Each item names the release that carries it in [`ROADMAP.md`](ROADMAP.md) "Horizon"; the
-per-release track tables are working files outside git.
+per-release tables are working files outside git.
 
 **Landed in v0.74:** NM read-time status resolution; the Map→Explore crossing, now writing
 `f.api10`; Basins and Plays as real Geology-group layer rows, off by default.
+**Landed in v0.75:** the N2 re-land — per-well cumulatives, vintage cohorts and promoted
+completion design — and glossary coverage on the legend, layers panel and Status page.
 
-1. **N2 re-land** — 17 gated commits on `feat/n2-enrich-views` never merged. v0.75.
-2. **Glossary coverage** is absent from the status legend, the layers panel and the Status
-   page — the three densest jargon surfaces. v0.75.
-3. **Jurisdiction registry** — 465 hardcoded state references across 59 files, four per-state
+1. **Jurisdiction registry** — 465 hardcoded state references across 59 files, four per-state
    dicts in `routers/wells.py` alone (`code-audit.md`, not re-measured here). v0.76.
-4. **User administration UI** — `/v1/users` CRUD is complete server-side and `web/src` never
+2. **User administration UI** — `/v1/users` CRUD is complete server-side and `web/src` never
    calls it; no session-list endpoint exists. v0.76.
-5. **Cadence-driven ingest scheduling** — the policy is a table; the unit is ten hand-written
+3. **Cadence-driven ingest scheduling** — the policy is a table; the unit is ten hand-written
    `ExecStart` lines and NM and MT are not scheduled at all. H2 (v0.77).
-6. **Texas production** — the largest resident state has no production number. H2 (v0.78).
-7. **P6 residuals** — a restore proof at the current schema, replacement-host recovery
+4. **Texas production** — the largest resident state has no production number. H2 (v0.78).
+5. **P6 residuals** — a restore proof at the current schema, replacement-host recovery
    execution, and an off-LAN credential exercise. H3.
-8. **P3–P5 modeling and economics**, sequenced after the registry lands. H3. The owner-gated
+6. **P3–P5 modeling and economics**, sequenced after the registry lands. H3. The owner-gated
    v0.6 §11 capability-matrix / IP review stays out of scope.
 
 ---
