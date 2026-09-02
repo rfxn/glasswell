@@ -279,14 +279,17 @@
   box-shadow: 0 0 0 1px var(--hairline);
 }
 
+/* 2px, not 0: a gw-term's dotted rule is a border on an *inline* box, so it paints below the
+   line box and, with no room here, under the dd's opaque fill. The dd gives the 2px back so the
+   gap between term and value is the same 4px it always was. */
 .gw-status-facts dt {
-  padding-bottom: 0;
+  padding-bottom: 2px;
   color: var(--muted);
   font-size: var(--gw-fs-micro);
 }
 
 .gw-status-facts dd {
-  padding-top: var(--gw-space-1);
+  padding-top: 2px;
   color: var(--paper);
   font-family: var(--gw-font-mono);
   overflow-wrap: anywhere;
@@ -741,8 +744,10 @@
     grid-template-columns: 1fr;
   }
 
+  /* Still 2px, for the reason the base rule states: this is the width with no hover, so the
+     dotted rule is the only thing saying a definition is behind the term. */
   .gw-status-facts dt {
-    padding-bottom: 0;
+    padding-bottom: 2px;
   }
 
   .gw-status-facts dd {

@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "../api/client.ts";
@@ -612,6 +614,34 @@ describe("the Status surface", () => {
     );
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(document.activeElement).toBe(host.querySelector(".gw-status-refresh"));
+  });
+});
+
+describe("the deployment grid leaves its glossary rules somewhere to paint", () => {
+  /**
+   * gate-v075 defect 1, a major: `Schema head` and `Local basemap` are real gw-terms whose
+   * dotted rule never painted at any width. A gw-term's `border-bottom` is a border on an
+   * *inline* box, so it draws below the line box; with `padding-bottom: 0` on the dt it landed
+   * outside the dt and under the opaque `background: var(--ink)` of the dd that follows it in
+   * the flex column. Forcing a 3px solid red border did not paint either, which is what proved
+   * over-paint rather than mis-specification.
+   *
+   * vitest loads no stylesheet, so this reads the shipped sheet — the idiom
+   * map/layer-panel.test.ts uses. Both the base rule and the <=520px override are covered:
+   * the narrow one is where it matters most, because there is no hover at 390.
+   */
+  it("never zeroes the dt padding a term's dotted rule needs", () => {
+    const css = readFileSync("src/status-page/surface.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const owning = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .map((match) => ({ selector: (match[1] ?? "").trim(), body: match[2] ?? "" }))
+      .filter((rule) => /(^|,)\s*\.gw-status-facts dt\s*$/m.test(rule.selector.replace(/\s+/g, " ")));
+
+    expect(owning.length).toBeGreaterThan(0);
+    for (const rule of owning) {
+      const declared = /padding-bottom\s*:\s*([^;]+)/.exec(rule.body);
+      if (!declared) continue;
+      expect(declared[1]?.trim(), `${rule.selector} { padding-bottom }`).not.toMatch(/^0(px)?$/);
+    }
   });
 });
 
