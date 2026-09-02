@@ -19,7 +19,14 @@ import pytest
 from glasswell.lineage.schedules import load_schedules
 from glasswell.scheduler import cli
 from glasswell.scheduler.plan import hour_of, plan_tick
-from glasswell.scheduler.runner import Runner, reconcile, take_job_lock, take_session_lock
+from glasswell.scheduler.runner import (
+    Runner,
+    control_connection,
+    reconcile,
+    take_job_lock,
+    take_session_lock,
+)
+from glasswell.scheduler.units import installed_timer_owned_entry_points
 from glasswell.seed import seed_all
 
 pytestmark = pytest.mark.integration
@@ -435,3 +442,57 @@ def test_the_planner_runs_as_the_scheduler_role_without_insufficient_privilege(s
             cursor.execute("reset role")
 
     assert any(entry.job_id == FAKE_JOB for entry in plan.entries)
+
+
+def test_the_double_run_guard_reads_rows_even_while_a_tick_holds_the_session_lock(
+    seeded, dsn, monkeypatch
+) -> None:
+    """The permanent guard is a read; making it wait on the tick lock is how it passes
+    vacuously on the one deploy where a tick is running -- which is every deploy, because
+    step 7c starts the timer immediately before the gate."""
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.scheduled_jobs"
+            " (job_id, label, kind, entry_point, anchor_source_id, run_as, rationale)"
+            " values ('marts_neighbors_probe', 'Planted neighbour index', 'mart',"
+            "         'glasswell.marts.neighbors', 'fracfocus_csv', 'glasswell',"
+            "         'a planted row the guard must refuse')"
+        )
+        cursor.execute(
+            "insert into lineage.job_schedules"
+            " (job_id, effective_from, published_at, rule_id, trigger, launch_mode,"
+            "  cadence_interval, cadence_note, memory_max, timeout_seconds)"
+            " values ('marts_neighbors_probe', current_date, current_date,"
+            "         'cr_job_cadence_marts_neighbors_1', 'cadence', 'launch',"
+            "         interval '35 days', 'a planted launch row', '6G', 3600)"
+        )
+    seeded.commit()
+
+    # The tree's units and pyproject, not the host's: the resolution has its own tests and
+    # this one is about the lock.
+    monkeypatch.setattr(
+        cli,
+        "installed_timer_owned_entry_points",
+        lambda: installed_timer_owned_entry_points(
+            ROOT / "infra" / "systemd", ROOT / "pyproject.toml"
+        ),
+    )
+    holder = control_connection(os.environ["GLASSWELL_DSN"])
+    try:
+        assert take_session_lock(holder) is True
+
+        code = cli.main(["--double-run-check"], control=StubControl())
+    finally:
+        holder.close()
+
+    assert code == 1, "a held tick lock made the permanent guard report a clean registry"
+
+
+def test_the_double_run_guard_refuses_an_empty_registry_rather_than_reporting_it_clean(
+    db, monkeypatch
+) -> None:
+    """The other way to pass vacuously: no rows resolved at all is not the same as no
+    launch row resolved."""
+    monkeypatch.setenv("GLASSWELL_DSN", db.info.dsn + f" password={db.info.password}")
+
+    assert cli.main(["--double-run-check"], control=StubControl()) == 1

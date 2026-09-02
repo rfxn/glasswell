@@ -171,6 +171,26 @@ def main(argv: Sequence[str] | None = None, control: SystemdControl | None = Non
     now = datetime.now(UTC)
 
     with control_connection(resolved_dsn()) as connection:
+        # Ahead of the lock, deliberately. The guard is a read and needs no mutual exclusion,
+        # and behind the lock it returned 0 without examining a row whenever a tick was
+        # running -- which is every deploy, because step 7c starts the timer immediately
+        # before the gate reads this. A guard that reports a clean registry it never read is
+        # worse than no guard.
+        if arguments.double_run_check:
+            try:
+                registry = load_schedules(connection)
+            except ScheduleRegistryError as refusal:
+                print(f"the registry could not be read, so nothing was checked: {refusal}")
+                return 1
+            timer_owned = installed_timer_owned_entry_points()
+            if not timer_owned:
+                print("no installed timer drives any entry point, so this guard checked nothing")
+                return 1
+            offending = double_run_rows(connection, timer_owned)
+            for job_id in offending:
+                print(job_id)
+            return 1 if offending else 0
+
         if not take_session_lock(connection):
             # A previous tick is still working. The follower exits silently rather than
             # appending an hourly refusal about a job that is visibly running.
@@ -180,12 +200,6 @@ def main(argv: Sequence[str] | None = None, control: SystemdControl | None = Non
         except ScheduleRegistryError as refusal:
             print(str(refusal))
             return 1
-
-        if arguments.double_run_check:
-            offending = double_run_rows(connection, installed_timer_owned_entry_points())
-            for job_id in offending:
-                print(job_id)
-            return 1 if offending else 0
 
         if arguments.run is not None:
             entries, code = run_one(
