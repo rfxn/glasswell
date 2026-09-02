@@ -120,21 +120,37 @@ def test_the_roster_is_the_same_rows_as_data_for_the_reader_that_cannot_import_a
     assert all(row["id"] in row["styleLayers"] for row in roster)
 
 
-def test_a_registration_with_no_tile_layer_is_refused_by_name(monkeypatch) -> None:
-    """The column is nullable and an f-string rendered an explicit None as the string "None",
-    which became `marts.None_tile` in a provenance line and a style layer that 404s every
-    tile. An absent key raises, which is loud and fine; a rendered "None" is neither."""
+# Every presentation column an f-string interpolates bare and the DDL leaves nullable. The
+# other two fail loudly on their own -- `_string_array(None)` and `int(None)` both raise -- so
+# these are the three that could reach a rendered artifact as the four characters `None`.
+INTERPOLATED_NULLABLE = ("wells_tile_layer_id", "wells_layer_id", "wells_subtitle_template")
+
+
+def _generator():
     import importlib.util
 
     spec = importlib.util.spec_from_file_location("regen_jurisdictions", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("column", INTERPOLATED_NULLABLE)
+def test_a_registration_with_a_null_presentation_column_is_refused_by_name(
+    monkeypatch, column: str
+) -> None:
+    """Each is nullable and each is interpolated into an f-string, which renders an explicit
+    None as the four characters `None`: a tile source reading `marts.None_tile`, a style layer
+    id and click-router key of `"None"`, or `None` as the sentence under a Wells row. All three
+    are silent and all three are valid TypeScript. An absent key raises, which is loud and
+    fine; a rendered "None" is neither."""
+    module = _generator()
     monkeypatch.setattr(
         module,
         "JURISDICTIONS",
         tuple(
-            {**row, "wells_tile_layer_id": None} if row["jurisdiction_code"] == "MT" else row
+            {**row, column: None} if row["jurisdiction_code"] == "MT" else row
             for row in JURISDICTIONS
         ),
     )
@@ -143,4 +159,23 @@ def test_a_registration_with_no_tile_layer_is_refused_by_name(monkeypatch) -> No
         module.rendered()
 
     assert "MT" in str(refused.value)
+    assert column in str(refused.value)
     assert "None" not in str(refused.value)
+
+
+@pytest.mark.parametrize("column", INTERPOLATED_NULLABLE)
+def test_the_roster_refuses_the_same_three(monkeypatch, column: str) -> None:
+    """Two artifacts, one refusal: a null that only the module guarded would still reach the
+    JSON `chrome-fold.mjs` and `style.ts` read."""
+    module = _generator()
+    monkeypatch.setattr(
+        module,
+        "JURISDICTIONS",
+        tuple(
+            {**row, column: None} if row["jurisdiction_code"] == "MT" else row
+            for row in JURISDICTIONS
+        ),
+    )
+
+    with pytest.raises(SystemExit):
+        module.roster()
