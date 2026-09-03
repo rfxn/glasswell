@@ -492,16 +492,19 @@ select e.job_id, e.source_id
    and exists (select 1 from lineage.sources s where s.source_id = e.source_id)
 on conflict do nothing;
 
--- launch, not observe, and conditioned rather than assumed: this track adds no unit file, so
--- no installed timer drives any of these three entry points. The ingest takes the registry's
--- six-hour ceiling; its source's own attempt timeout is twelve hours and answers a different
--- question -- how long one fetch may take, against how long the whole job may. Six hours at
--- 3.65 GB is about 170 KB/s, below which the fetch is broken rather than slow.
+-- observe, on the owner's ruling of 2026-09-03: the plan is computed and recorded on every
+-- tick and nothing is started. No installed timer drives these three entry points, which is
+-- what a launching row would have argued from, and it is not the whole decision -- plan.py:363
+-- rewrites a due would_run entry to run and runner.py:306 starts it, so a launching row here
+-- is a 3.65 GB unresumable fetch on the first tick after a deploy. The ingest takes the
+-- registry's six-hour ceiling; its source's own attempt timeout is twelve hours and answers a
+-- different question -- how long one fetch may take, against how long the whole job may. Six
+-- hours at 3.65 GB is about 170 KB/s, below which the fetch is broken rather than slow.
 insert into lineage.job_schedules
     (job_id, effective_from, published_at, rule_id, trigger, launch_mode, cadence_interval,
      cadence_note, memory_max, timeout_seconds)
 select s.job_id, date '2026-09-02', date '2026-09-02',
-       'cr_job_cadence_' || s.job_id || '_1', s.trigger, 'launch', s.cadence_interval,
+       'cr_job_cadence_' || s.job_id || '_1', s.trigger, 'observe', s.cadence_interval,
        s.cadence_note, s.memory_max, s.timeout_seconds
   from (values
     ('ingest_tx_pdq', 'cadence', interval '35 days',

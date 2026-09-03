@@ -229,13 +229,17 @@ TX_JOBS: tuple[dict[str, object], ...] = (
     },
 )
 
+# Every row observes, on the owner's ruling of 2026-09-03. plan.py:363 rewrites a due
+# would_run entry to run for a launching row and runner.py:306 starts it, so a launching row
+# registered here is one unattended run on the first tick after a deploy -- and the ingest's
+# is a 3.65 GB unresumable fetch. launch is the launch-flip track's own act.
 TX_SCHEDULES: tuple[dict[str, object], ...] = (
     {
         "job_id": "ingest_tx_pdq",
         "trigger": "cadence",
         "cadence_interval": timedelta(days=35),
         "cadence_note": "Every 35 days; the RRC republishes on the last Saturday of the month",
-        "launch_mode": "launch",
+        "launch_mode": "observe",
         "memory_max": "6G",
         # The registry caps a job at six hours (076:88) and the source's own attempt timeout is
         # twelve (050:41). They answer different questions: the attempt timeout is how long one
@@ -247,7 +251,7 @@ TX_SCHEDULES: tuple[dict[str, object], ...] = (
         "job_id": "marts_tx_allocation",
         "trigger": "after_dependency",
         "cadence_note": "After the ingest that promotes the lease rows it splits",
-        "launch_mode": "launch",
+        "launch_mode": "observe",
         "memory_max": "6G",
         "timeout_seconds": 7200,
     },
@@ -255,7 +259,7 @@ TX_SCHEDULES: tuple[dict[str, object], ...] = (
         "job_id": "marts_allocation_backtest",
         "trigger": "after_dependency",
         "cadence_note": "After the Montana ingest whose two grains it scores against",
-        "launch_mode": "launch",
+        "launch_mode": "observe",
         "memory_max": "6G",
         "timeout_seconds": 3600,
     },
