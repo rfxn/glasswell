@@ -66,6 +66,10 @@ STATUS_CLASS_RULES: tuple[dict[str, object], ...] = (
             "absence_class_rule": ABSENCE_BASIS_RULE_ID,
             "symbology_source": DOMAIN_TABLE,
             "module_function": "glasswell.lineage.status_classes:load_status_classes",
+            "contract_note": (
+                "a declaration the serving path reads, not a frame transformation: the domain"
+                " is rows and the foreign keys are what enforce it"
+            ),
             "superseded_by_action": "a new rule and a single-transaction repoint of every map"
             " that names a withdrawn class",
         },
@@ -101,6 +105,10 @@ STATUS_CLASS_RULES: tuple[dict[str, object], ...] = (
             "filed_code_present_means": "the registered vocabulary has no row for this code",
             "filed_code_absent_means": "the source filed no status",
             "module_function": "glasswell.status_resolution:resolved_status",
+            "contract_note": (
+                "read at query-assembly time by the one helper every serving path calls, so"
+                " the tile, the facet, the filter, the count and the card change together"
+            ),
         },
         "code_ref": "glasswell.status_resolution:resolved_status",
         "rule": "No serving path emits a null status class. Where neither the promotion nor the"
@@ -120,16 +128,20 @@ STATUS_CLASS_RULES: tuple[dict[str, object], ...] = (
     {
         "rule_id": ABSENCE_SHARE_RULE_ID,
         "source_id": SOURCE_ID,
-        "stage": "validate",
-        "rule_kind": "validity_filter",
+        "stage": "conform",
+        "rule_kind": "code_ref",
         "applies_to_fields": ["status_canonical"],
         "spec": {
             "scope": "per_jurisdiction",
             "max_share": MAX_ABSENCE_SHARE,
             "measured_on": "canonical.wells_latest",
-            "module_function": "infra/verify.sh:V-3",
+            "module_function": "glasswell.lineage.status_classes:absence_share_ceiling",
+            "contract_note": (
+                "an operational ceiling read by infra/verify.sh V-3 through that symbol, and"
+                " by nothing on the wire: it is a property of a deployment, not of a class"
+            ),
         },
-        "code_ref": "infra/verify.sh",
+        "code_ref": "glasswell.lineage.status_classes:absence_share_ceiling",
         "rule": "No jurisdiction may serve the absence class for more than the registered share"
         " of its resident wells.",
         "rationale": (

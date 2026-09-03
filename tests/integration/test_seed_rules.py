@@ -47,6 +47,13 @@ POLICY_RULES = tuple(sorted((
     "cr_eia_geometry_repair_1",
     "cr_eia_well_membership_1",
     "cr_ff_completion_anchor_1",
+    # The status class domain's three: the set every regulator's map targets, what the absence
+    # class means and how a consumer tells its two cases apart, and the share of a spine that
+    # may legitimately resolve to it. All three are declarations the serving path and the host
+    # check read, with no frame for an executor to transform.
+    "cr_status_class_domain_1",
+    "cr_status_absence_basis_1",
+    "cr_status_absence_share_1",
     # The FracFocus design promotion and the serve-time intensity it feeds: two decisions with
     # measured bounds, kept apart because one runs at promote time and one at request time.
     "cr_ff_design_promote_1",

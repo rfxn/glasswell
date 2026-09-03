@@ -70,6 +70,8 @@ select 'cr_status_class_domain_1', 'cr_status_class_domain', null, 'nd_mpr_xlsx'
            'absence_class_rule', 'cr_status_absence_basis_1',
            'symbology_source', 'lineage.status_classes',
            'module_function', 'glasswell.lineage.status_classes:load_status_classes',
+           'contract_note', 'a declaration the serving path reads, not a frame transformation:'
+                            ' the domain is rows and the foreign keys are what enforce it',
            'superseded_by_action', 'a new rule and a single-transaction repoint of every map'
                                    ' that names a withdrawn class'),
        'The eleven mapped canonical well-status classes, their legend order and their symbology'
@@ -101,7 +103,10 @@ select 'cr_status_absence_basis_1', 'cr_status_absence_basis', null, 'nd_mpr_xls
            'distinguished_by', 'status_reported',
            'filed_code_present_means', 'the registered vocabulary has no row for this code',
            'filed_code_absent_means', 'the source filed no status',
-           'module_function', 'glasswell.status_resolution:resolved_status'),
+           'module_function', 'glasswell.status_resolution:resolved_status',
+           'contract_note', 'read at query-assembly time by the one helper every serving path'
+                            ' calls, so the tile, the facet, the filter, the count and the card'
+                            ' change together'),
        'No serving path emits a null status class. Where neither the promotion nor the registry'
        ' resolves one, the absence class is served and the filed code beside it is what says'
        ' which of the two cases holds.',
@@ -124,13 +129,16 @@ on conflict (rule_id) do nothing;
 insert into lineage.conformance_rules
     (rule_id, rule_family, supersedes_rule_id, source_id, stage, applies_to_fields, rule_kind,
      spec, rule, rationale, evidence_url, code_ref, effective_from)
-select 'cr_status_absence_share_1', 'cr_status_absence_share', null, 'nd_mpr_xlsx', 'validate',
-       array['status_canonical']::text[], 'validity_filter',
+select 'cr_status_absence_share_1', 'cr_status_absence_share', null, 'nd_mpr_xlsx', 'conform',
+       array['status_canonical']::text[], 'code_ref',
        jsonb_build_object(
            'scope', 'per_jurisdiction',
            'max_share', 0.30,
            'measured_on', 'canonical.wells_latest',
-           'module_function', 'infra/verify.sh:V-3'),
+           'module_function', 'glasswell.lineage.status_classes:absence_share_ceiling',
+           'contract_note', 'an operational ceiling read by infra/verify.sh V-3 through that'
+                            ' symbol, and by nothing on the wire: it is a property of a'
+                            ' deployment, not of a class'),
        'No jurisdiction may serve the absence class for more than the registered share of its'
        ' resident wells.',
        'Serving a class for every well removes the null that used to make a failed resolver'
@@ -140,7 +148,8 @@ select 'cr_status_absence_share_1', 'cr_status_absence_share', null, 'nd_mpr_xls
        ' 2026-09-03, every one of which filed no status code at all. The ceiling sits above that'
        ' with room for a load rather than at it, because a threshold set at the measurement'
        ' reddens on the next county rather than on the fault it exists to catch.',
-       'https://glasswell.rpx.sh/conformance', 'infra/verify.sh', date '2026-09-03'
+       'https://glasswell.rpx.sh/conformance',
+       'glasswell.lineage.status_classes:absence_share_ceiling', date '2026-09-03'
  where exists (select 1 from lineage.sources where source_id = 'nd_mpr_xlsx')
 on conflict (rule_id) do nothing;
 

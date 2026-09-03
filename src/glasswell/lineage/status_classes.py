@@ -80,3 +80,28 @@ def mapped_status_classes(connection: psycopg.Connection) -> tuple[str, ...]:
     return tuple(
         row.status_canonical for row in load_status_classes(connection) if not row.is_absence
     )
+
+
+ABSENCE_SHARE_RULE_ID = "cr_status_absence_share_1"
+
+
+def absence_share_ceiling(connection: psycopg.Connection) -> float:
+    """The registered share of a jurisdiction's spine that may resolve to the absence class.
+
+    A published decision rather than a literal in a shell script, because serving a class for
+    every well removes the null that used to make a failed resolver visible. `infra/verify.sh`
+    V-3 reads it through this symbol.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select (spec->>'max_share')::float from lineage.conformance_rules"
+            " where rule_id = %s",
+            (ABSENCE_SHARE_RULE_ID,),
+        )
+        row = cursor.fetchone()
+    if row is None or row[0] is None:
+        raise StatusClassDomainError(
+            f"{ABSENCE_SHARE_RULE_ID} registers no max_share: the absence-share check has no"
+            " published threshold to compare a jurisdiction against"
+        )
+    return float(row[0])
