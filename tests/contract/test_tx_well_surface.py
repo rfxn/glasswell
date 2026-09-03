@@ -231,3 +231,47 @@ def test_the_card_said_pending_until_the_day_the_allocation_was_published(
     assert before["links"]["reporting_rule"] == f"/v1/conformance/{SUPERSEDED_DISCLOSURE}"
     assert PENDING not in {warning["code"] for warning in after["meta"]["warnings"]}
     assert "reporting_rule" not in after["links"]
+
+
+def a_point_handle(client: TestClient, column: str, month: str) -> str:
+    """The handle the chart's own button mints: the column's, addressed at one month."""
+    lineage = envelope(client, f"/v1/wells/{TX_API10}/production")["data"]["_lineage"]
+    derivation, _, selector = lineage[f"series.{column}"].partition("#")
+    return f"{derivation}#{selector}&pm={month}"
+
+
+def test_the_point_handle_the_chart_mints_resolves_to_the_lease_row(
+    client: TestClient,
+) -> None:
+    """B1. The summed per-well point is a figure, so it is addressable as one.
+
+    R6 and the masthead: every served figure carries a derivation handle and `?explain=true`
+    resolves it. A chart whose every point handle answers `selector_ambiguous` serves numbers
+    nobody can walk back, which is the one defect this system exists against.
+    """
+    handle = a_point_handle(client, "oil_bbl", "2024-01")
+
+    chain = envelope(client, "/v1/explain", h=handle, depth="4")["data"]["chains"][0]
+
+    assert chain["handle"] == handle
+    rules = {
+        rule["rule_id"] for node in chain["nodes"] for rule in node.get("conformance_rules", [])
+    }
+    assert ALLOCATION_RULE in rules
+    datasets = [node.get("output", {}).get("dataset") for node in chain["nodes"]]
+    assert "marts.tx_allocated_production" in datasets
+    assert "canonical.production_monthly" in datasets, "the point does not reach the lease row"
+    assert chain["terminals"], "the point resolves to no checksummed file"
+
+
+def test_every_month_of_every_served_column_is_addressable(client: TestClient) -> None:
+    """A handle that resolves for January and 422s for February is the same defect, found
+    one month later. Each served point is recorded, including the months with no volume."""
+    body = envelope(client, f"/v1/wells/{TX_API10}/production")
+    months = body["data"]["series"]["pm"]
+
+    for column in ("oil_bbl", "gas_mcf"):
+        for month in months:
+            handle = a_point_handle(client, column, month)
+            response = client.get("/v1/explain", params={"h": handle, "depth": "4"})
+            assert response.status_code == 200, f"{column} {month}: {response.text}"

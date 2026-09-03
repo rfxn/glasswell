@@ -745,6 +745,10 @@ def _allocated_response(
     columns: list[str] = []
     granularities: list[str] = []
     incomplete: list[str] = []
+    # One evidence row per point the chart can address, because the chart addresses every one:
+    # its handle button appends the month to the column selector, and a selector nobody
+    # recorded resolves to an error panel rather than to the lease row (B1).
+    point_outputs: dict[str, dict[str, Any]] = {}
 
     for mart_stream, column in ALLOCATED_STREAM_COLUMNS.items():
         by_month = {row["production_month"]: row for row in points if row["stream"] == mart_stream}
@@ -756,9 +760,17 @@ def _allocated_response(
             [value for row in by_month.values() for value in row["granularities"]]
         )
         granularities.append(column_granularity)
+        values = [
+            _decimal(by_month[month]["volume"]) if month in by_month else None
+            for month in months
+        ]
+        for month, value in zip(months, values, strict=True):
+            point_outputs[f"api10={api10}&col={column}&pm={month_label(month)}"] = {
+                "value": value,
+                "unit": first["unit"],
+            }
         payload[column] = series(
-            [_decimal(by_month[month]["volume"]) if month in by_month else None
-             for month in months],
+            values,
             unit=first["unit"],
             derivation=first["derivation_id"],
             selector=f"api10={api10}&col={column}",
@@ -859,6 +871,7 @@ def _allocated_response(
         input_derivations=sorted({row["derivation_id"] for row in points}),
         correlation_id=request.state.request_id,
         rule_ids=[rule["rule_id"], *([error_rule] if error_rule else [])],
+        point_outputs=point_outputs,
     )
     links = {
         "well": f"/v1/wells/{api10}",
