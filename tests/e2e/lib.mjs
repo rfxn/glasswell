@@ -305,6 +305,33 @@ export async function contrastAudit(page, targets, fallbackBackground = "rgb(11,
         }
         return fallback;
       };
+      const channels = (colour) => colour.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number);
+      // The alpha the element is really painted at: its own colour's, times every `opacity`
+      // on it and on its ancestors. `opacity` composites the whole subtree onto what is behind
+      // it, so reading `color` alone reports the declared paint and not the painted one --
+      // which is how a legend row shipping at opacity 0.72 measured 7.87:1 where the pixels
+      // are 4.70:1 (gate-wellcard N5).
+      const alphaOf = (element) => {
+        // The fourth component of an rgba(), where there is one: `color` alone is three
+        // numbers and reading the last of those as alpha would take 188 for an opacity.
+        const parts = (getComputedStyle(element).color.match(/[\d.]+/g) || []).map(Number);
+        let alpha = parts.length > 3 && Number.isFinite(parts[3]) ? parts[3] : 1;
+        let node = element;
+        while (node) {
+          const opacity = Number(getComputedStyle(node).opacity);
+          if (Number.isFinite(opacity)) alpha *= opacity;
+          node = node.parentElement;
+        }
+        return Math.min(1, Math.max(0, alpha));
+      };
+      const painted = (colour, background, alpha) => {
+        if (alpha >= 1) return colour;
+        const front = channels(colour);
+        const back = channels(background);
+        return `rgb(${front
+          .map((channel, index) => Math.round(back[index] + alpha * (channel - back[index])))
+          .join(", ")})`;
+      };
       return pairs.map(([name, selectors]) => {
         const matched = selectors.find(
           (selector) => document.querySelectorAll(selector).length > 0,
@@ -313,11 +340,15 @@ export async function contrastAudit(page, targets, fallbackBackground = "rgb(11,
         const samples = [...document.querySelectorAll(matched)].map((element) => {
           const style = getComputedStyle(element);
           const background = backgroundOf(element);
+          const alpha = alphaOf(element);
+          const foreground = painted(style.color, background, alpha);
           return {
-            fg: style.color,
+            fg: foreground,
+            declared: style.color,
+            alpha: +alpha.toFixed(3),
             bg: background,
             size: style.fontSize,
-            ratio: ratio(style.color, background),
+            ratio: ratio(foreground, background),
             text: (element.textContent || "").trim().slice(0, 40),
           };
         });

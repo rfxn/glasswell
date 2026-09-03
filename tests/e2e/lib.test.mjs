@@ -292,6 +292,7 @@ function pageOver(nodes) {
     color: node.colour,
     backgroundColor: node.background ?? "rgba(0, 0, 0, 0)",
     fontSize: "12px",
+    opacity: String(node.opacity ?? 1),
   });
   return {
     async evaluate(fn, args) {
@@ -327,6 +328,44 @@ test("contrastAudit reports the worst match rather than the first", async () => 
     audited.samples.map((sample) => sample.ratio),
     [7.95, 2.6],
   );
+});
+
+// gate-wellcard N5: the row that recedes ships as the full-brightness paint under one
+// `opacity`, and the audit read `color` alone -- so it reported the declared 7.87:1 where the
+// panel is really painted 4.70:1. The two numbers below are the well-card sentinel's, measured
+// on the shipped stylesheet: --slate #9FB0BC on the panel #111920 at opacity 0.72.
+const RECEDED_PANEL = "rgb(18, 26, 33)";
+const RECEDED = [
+  { selector: ".gw-lg-count", colour: "rgb(159, 176, 188)", background: RECEDED_PANEL },
+  {
+    selector: ".gw-lg-count",
+    colour: "rgb(159, 176, 188)",
+    background: RECEDED_PANEL,
+    opacity: 0.72,
+  },
+];
+
+test("contrastAudit composites the opacity a row is painted under", async () => {
+  const [audited] = await contrastAudit(pageOver(RECEDED), [
+    ["legend count", [".gw-lg-count"]],
+  ]);
+
+  assert.ok(
+    Math.abs(audited.ratio - 4.7) <= 0.05,
+    `the receded row paints 4.70:1; the audit reported ${audited.ratio}`,
+  );
+  assert.equal(audited.best, 7.87, "the full-brightness row is unchanged");
+  assert.equal(audited.samples[1].declared, "rgb(159, 176, 188)");
+  assert.equal(audited.samples[1].alpha, 0.72);
+});
+
+test("contrastAudit leaves a fully opaque element exactly as it measured it", async () => {
+  const [audited] = await contrastAudit(pageOver(LEGEND_ROWS), [
+    ["legend count", [".gw-lg-count"]],
+  ]);
+
+  assert.equal(audited.samples[0].alpha, 1);
+  assert.equal(audited.samples[0].fg, audited.samples[0].declared);
 });
 
 test("contrastAudit still reports a target nothing in the page matches", async () => {
