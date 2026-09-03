@@ -148,14 +148,17 @@ reader's first paint, and the store keeps only its state. Net **13,950 B — 50 
 budget**, and the loop that reads the vocabulary to its end is off the entry path entirely.
 
 Re-measured again on the assembled v0.78 train — the seam, the cadence scheduler, Colorado and
-wells-by across every jurisdiction — at **13,951 B, 49 B under the budget**. The number worth
-recording is the one beside it: the entry chunk is **40,254 B raw on the seam-plus-scheduler
-tree and 40,254 B on the full train**, so Colorado and the facet work added nothing to it at
-all. A fifth jurisdiction that arrives as registry rows costs the reader's first paint nothing,
-which is the property the seam track was built for and this is the measurement of it. The 4 B
-of gzip drift between the two is `__GW_BUILD__`, whose distance from the tag grew a digit.
+wells-by across every jurisdiction — at **13,949 B, 51 B under the budget**, on `2081795`.
 
-49 B is under a page of source. The next track on the entry path splits rather than widens; the
+The number worth recording is the one beside it, because it carries no stamp: the entry chunk is
+**40,254 B raw on the seam-plus-scheduler tree and 40,254 B on the full train**. Colorado and the
+facet work added *nothing* to it. A fifth jurisdiction that arrives as registry rows costs the
+reader's first paint zero bytes, which is the property the seam track was built to produce, and
+this is the measurement of it. The gzip figures across this train differ by a few bytes only
+because `__GW_BUILD__`'s distance from the tag grows with each commit — compare the raw counts
+when you want to know whether code moved.
+
+51 B is under a page of source. The next track on the entry path splits rather than widens; the
 budget does not move.
 
 **Every figure here includes the build stamp.** `vite.config.ts` defines `__GW_BUILD__` from
