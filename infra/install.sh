@@ -215,7 +215,15 @@ fi
 install -d -o root -g root -m 0755 "$PG_IDENT_DROPIN_DIR"
 install -o root -g postgres -m 0640 "$INFRA_DIR/postgres/pg_ident.d/glasswell.conf" \
     "$PG_IDENT_DROPIN_DIR/glasswell.conf"
-include_line="include_if_exists 'pg_ident.d/glasswell.conf'"
+# Unquoted on purpose: an HBA or ident include takes a bare filename, and PostgreSQL reads the
+# quotes of the postgresql.conf form as part of the name (v0.78 shipped the quoted form and every
+# peer login but postgres was refused until it was corrected on the host).
+include_line="include_if_exists pg_ident.d/glasswell.conf"
+legacy_include="include_if_exists 'pg_ident.d/glasswell.conf'"
+if grep -qxF "$legacy_include" "$ident"; then
+    sed -i "s|^${legacy_include}\$|${include_line}|" "$ident"
+    printf 'corrected the quoted pg_ident include line in %s\n' "$ident"
+fi
 if ! grep -qxF "$include_line" "$ident"; then
     printf '\n# glasswell: the root-to-role map the scheduler needs\n%s\n' \
         "$include_line" >> "$ident"

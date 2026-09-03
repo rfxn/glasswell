@@ -169,8 +169,8 @@ CO_JOBS: tuple[dict[str, object], ...] = (
         "argv": [],
         "jurisdiction": None,
         "run_as": "glasswell",
-        "rationale": "marts.counts has no natural source of its own -- it measures whatever the"
-        " registry holds -- so it anchors on the source its dependency anchors on, and this row"
+        "rationale": "marts.counts has no natural source of its own: it measures whatever the"
+        " registry holds, so it anchors on the source its dependency anchors on, and this row"
         " exists because /v1/jurisdictions serves a new registration with no well_count and no"
         " measured_on until something has measured it.",
     },

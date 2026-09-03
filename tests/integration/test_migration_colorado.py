@@ -41,13 +41,22 @@ def migration_sql(name: str) -> str:
     return next(item.sql for item in discover_migrations() if item.name == name)
 
 
-def test_one_placeholder_evidence_pair_in_the_whole_file() -> None:
+def test_one_evidence_pair_in_the_whole_file() -> None:
     """M-1: the release gate asserts at most one of each repo-wide, so the registration reads
-    its evidence back from the publications insert rather than restating it."""
+    its evidence back from the publications insert rather than restating it.
+
+    Counted by shape, not by the placeholder's value: the pair is `UNRELEASED` plus forty zeros
+    before the repoint and the tag plus its merge commit after, and the invariant this guards --
+    that the file states its evidence once and reads it back everywhere else -- is the same on
+    both sides of that edit. Asserting the placeholder itself made the guard true only until the
+    release it was written for shipped."""
     body = migration_sql(MIGRATION)
 
-    assert body.count(f"'{PLACEHOLDER_TAG}'") == 1
-    assert body.count(PLACEHOLDER_COMMIT) == 1
+    tags = re.findall(r"'(?:UNRELEASED|v\d+\.\d+)'", body)
+    commits = re.findall(r"'[0-9a-f]{40}'", body)
+
+    assert len(tags) == 1, f"the file states its evidence tag {len(tags)} times: {tags}"
+    assert len(commits) == 1, f"the file states its evidence commit {len(commits)} times"
 
 
 def test_no_two_digit_prefix_literal_reaches_the_migration() -> None:

@@ -31,12 +31,12 @@ EVIDENCE_COMMIT = "6f2e9e6e97952000985568e6aa04d479ec84fe83"
 # every founding published_at, and not REGISTERED_ON + 1 day: two standing gates plant a rival
 # registration on that instant and the partial unique indexes would refuse them.
 RESTATED_ON = date(2026, 9, 4)
-RESTATED_EVIDENCE_TAG = "UNRELEASED"
+RESTATED_EVIDENCE_TAG = "v0.78"
 # Spelled out rather than computed: release.py scans this file for the quoted placeholder, and
 # an expression that evaluates to it is invisible to that scan, so the tag alone would have
 # blocked and a half-repoint would have cleared the gate with a placeholder bound for an
 # append-only table.
-RESTATED_EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
+RESTATED_EVIDENCE_COMMIT = "5b37bf0363095b3e0cda2d6c3fb5d57e235de28f"
 
 # Colorado's own clock, named separately so the integrator can repoint it on its own train.
 # It is registered after the presentation columns exist, so it is founded whole: there is no
@@ -45,10 +45,10 @@ RESTATED_EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
 # jurisdictions_as_of(current_date, current_date), so a registration dated ahead of the deploy
 # host's today resolves nowhere and Colorado's statuses read as unmapped on the map.
 CO_REGISTERED_ON = REGISTERED_ON
-CO_EVIDENCE_TAG = "UNRELEASED"
+CO_EVIDENCE_TAG = "v0.78"
 # Spelled out, not computed: the release gate greps for the literal, and a placeholder it
 # cannot see is a placeholder that ships.
-CO_EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
+CO_EVIDENCE_COMMIT = "5b37bf0363095b3e0cda2d6c3fb5d57e235de28f"
 
 # The web Wells rows as registration data. Seven facts that lived as object literals in
 # `web/src/map/registry.ts`, so a fifth jurisdiction is a row rather than a hand edit.
@@ -384,10 +384,14 @@ JURISDICTION_RULES_AS_FOUNDED: tuple[dict[str, object], ...] = (
 )
 
 
-# Colorado's decisions, at Colorado's own instant. Fourteen rows: every §3 rule that decides
+# Colorado's decisions, at Colorado's own instant. Thirteen rows: every §3 rule that decides
 # something the serving path resolves through the registry. The two parse rules that ride with
 # the production grain are conformance rows without being registry decisions, and the six
-# cadence rules are registered in the scheduler's tables rather than here.
+# cadence rules are registered in the scheduler's tables rather than here. So is
+# cr_co_wells_well_type_1: the registry has no well-type decision, here or for any other
+# jurisdiction -- ND's cr_nd_well_type_disposal_1 and NM's cr_nm_wellhistory_well_type_1 are
+# published conformance rules under no decision either, and a well_type_vocabulary key is the
+# v0.80 registry-vocabulary question rather than one this train answers.
 COLORADO_DECISIONS: tuple[dict[str, object], ...] = tuple(
     {
         "jurisdiction_code": "CO",
@@ -405,7 +409,6 @@ COLORADO_DECISIONS: tuple[dict[str, object], ...] = tuple(
         ("geometry_provenance", "cr_co_wells_geometry_provenance_1"),
         ("location_qualifier", "cr_co_wells_location_qualifier_1"),
         ("geometry_scope", "cr_co_wells_geometry_scope_1"),
-        ("absence:well_type", "cr_co_wells_well_type_1"),
         ("inventory_jurisdiction", "cr_co_inventory_not_served_1"),
         ("liquids", "cr_co_production_liquids_1"),
         ("entity_key", "cr_co_production_entity_key_1"),

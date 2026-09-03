@@ -20,7 +20,10 @@ set -euo pipefail
 
 BRANCH_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASELINE_REF="${GW_BASELINE_REF:-v0.76}"
-OUT="${GW_BASELINE_OUT:-/root/admin/work/proj/glasswell/work-output/seam-mart-baseline.json}"
+# The committed fixture, so the script that writes the capture and the test that reads it
+# name one file. The default was absolute to one workstation and pointed into the
+# git-excluded work-output/, which is how the reader came to run on one machine only.
+OUT="${GW_BASELINE_OUT:-$BRANCH_ROOT/tests/fixtures/marts/seam-mart-baseline.json}"
 IMAGE="postgis/postgis:16-3.4"
 LABEL="glasswell.test=1"
 PY="${GW_PYTHON:-$BRANCH_ROOT/.venv/bin/python}"

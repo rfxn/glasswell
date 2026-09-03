@@ -120,8 +120,8 @@ create unique index if not exists jurisdictions_wells_draw_order_key
 -- is not registered, so this lands before the seeders that carry the rules themselves.
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-select rule_id, date '2026-09-02', 'UNRELEASED',
-       '0000000000000000000000000000000000000000'
+select rule_id, date '2026-09-03', 'v0.78',
+       '5b37bf0363095b3e0cda2d6c3fb5d57e235de28f'
   from unnest(array[
        'cr_nd_basin_scope_1', 'cr_tx_basin_scope_1',
        'cr_nd_length_source_1', 'cr_tx_length_source_1',

@@ -302,8 +302,8 @@ on conflict (source_id) do nothing;
 
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-select rule_id, date '2026-09-02', 'UNRELEASED',
-       '0000000000000000000000000000000000000000'
+select rule_id, date '2026-09-03', 'v0.78',
+       '5b37bf0363095b3e0cda2d6c3fb5d57e235de28f'
   from unnest(array[
        'cr_job_cadence_ingest_nd_gis_1',
        'cr_job_cadence_ingest_nd_mpr_1',
