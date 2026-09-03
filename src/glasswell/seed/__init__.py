@@ -27,6 +27,10 @@ from glasswell.seed.conformance_schedules import (
     SCHEDULE_RULES,
     seed_conformance_schedules,
 )
+from glasswell.seed.conformance_status_classes import (
+    STATUS_CLASS_RULES,
+    seed_conformance_status_classes,
+)
 from glasswell.seed.conformance_tx import TX_RULES, seed_conformance_tx
 from glasswell.seed.conformance_typecurve import TYPECURVE_RULES, seed_conformance_typecurve
 from glasswell.seed.conformance_vintage import VINTAGE_RULES, seed_conformance_vintage
@@ -54,6 +58,7 @@ from glasswell.seed.schedules import (
     SCHEDULES,
     seed_schedules,
 )
+from glasswell.seed.status_classes import STATUS_CLASSES, seed_status_classes
 
 __all__ = [
     "BASIN_RULES",
@@ -82,6 +87,8 @@ __all__ = [
     "SCHEDULES",
     "SCHEDULE_RULES",
     "SOURCES",
+    "STATUS_CLASSES",
+    "STATUS_CLASS_RULES",
     "TX_RULES",
     "TYPECURVE_RULES",
     "VINTAGE_RULES",
@@ -98,6 +105,7 @@ __all__ = [
     "seed_conformance_nm_wells_gis",
     "seed_conformance_producing",
     "seed_conformance_schedules",
+    "seed_conformance_status_classes",
     "seed_conformance_tx",
     "seed_conformance_typecurve",
     "seed_conformance_vintage",
@@ -110,6 +118,7 @@ __all__ = [
     "seed_nm_waste_types",
     "seed_schedules",
     "seed_sources",
+    "seed_status_classes",
     "slug",
 ]
 
@@ -147,6 +156,11 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
         # Before the ND seeder for the same reason TX is before everything: these rows carry an
         # nd_ source_id, and the count the ND seeder returns is a registry total over that
         # prefix. Seeded after it, the first run's number would differ from the second's.
+        # Before the ND seeder for the reason the three blocks below give: the domain's own
+        # rules carry the founding nd_ source id, and the count the ND seeder returns is a
+        # registry total over that prefix. It also has to precede every seeder whose rows the
+        # domain constrains, which is why it is not simply last.
+        "status_classes": seed_status_classes(connection),
         "conformance_rules_producing": seed_conformance_producing(connection),
         # Before the ND seeder for the reason the producing block gives: these rows carry an
         # nd_ source_id and the ND count is a registry total over that prefix.

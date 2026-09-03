@@ -1,0 +1,522 @@
+-- The canonical status class domain becomes rows, and the read-time resolver stops needing a
+-- migration per jurisdiction.
+--
+-- Three facts were true of the deployed instance when this was written and each is a defect.
+-- The class domain existed nowhere: it was a union over five per-regulator maps computed at
+-- query time, a prose enumeration in the glossary and a closed twelve-entry array in the
+-- client, agreeing by coincidence with nothing checking them against each other. A class the
+-- client did not hold was painted as the absence class by negation, so it had no legend row, no
+-- count and no filter, and vanished when a reader unticked one box. And 078 left the per-map
+-- refresh trigger written by hand: Colorado registered read-time resolution in the same train
+-- and shipped with no trigger on its map, so an append to it does not rebuild the resolver.
+--
+-- REPOINT CHECKLIST (integrator, at the merge train):
+--   1. evidence_tag UNRELEASED -> the tag that first carries these rows. It appears ONCE, at
+--      the conformance_rule_publications insert; every other insert in this file reads it back
+--      from that row, so a half-repoint is not expressible here.
+--   2. evidence_commit forty zeros -> the first commit on main that contains them, which is the
+--      merge commit and not the head this branch was written against.
+--   3. published_vintage 2026-09-03 -> the date the tag is cut. It is read against the host's
+--      today, so it must never be a date the deploy host has not reached: a rule published in
+--      the future resolves nowhere and /v1/conformance/<id> serves 404 for it. The twelve
+--      lineage.status_classes rows carry the same date as their effective_from and their
+--      published_at.
+--   4. seed/status_classes.py DOMAIN_EFFECTIVE_FROM / DOMAIN_EVIDENCE_TAG /
+--      DOMAIN_EVIDENCE_COMMIT and seed/conformance_status_classes.py EFFECTIVE_FROM -> the same
+--      values, in the same commit. The seed is the second writer and
+--      tests/contract/test_status_class_parity.py compares all three.
+--   5. This file's version integer lives in its filename and nowhere else, so a renumber is a
+--      rename. No identifier, event id or payload below carries it.
+
+-- (1) The evidence pair, written once. 049's trigger refuses a conformance rule whose
+-- publication is not registered, so this lands before the rules themselves.
+insert into lineage.conformance_rule_publications
+    (rule_id, published_vintage, evidence_tag, evidence_commit)
+select rule_id, date '2026-09-03', 'UNRELEASED',
+       '0000000000000000000000000000000000000000'
+  from unnest(array[
+       'cr_status_class_domain_1', 'cr_status_absence_basis_1', 'cr_status_absence_share_1',
+       'cr_mt_bogc_pool_rollup_1', 'cr_nm_wcproduction_pool_rollup_2'
+  ]::text[]) rule_id
+on conflict (rule_id) do nothing;
+
+-- (2) The domain's own three rules, in the two-writer shape 071 uses for the New Mexico
+-- vocabulary rule: on a fresh database lineage.sources is empty at migrate time, so these are
+-- no-ops and seed/conformance_status_classes.py supplies them; on a database that is already
+-- seeded -- the deployed one -- this is what lands them. Everything below that depends on them
+-- is guarded the same way, and lineage.attach_status_class_constraints() is what closes the
+-- gap on the path where the seed is the writer.
+insert into lineage.conformance_rules
+    (rule_id, rule_family, supersedes_rule_id, source_id, stage, applies_to_fields, rule_kind,
+     spec, rule, rationale, evidence_url, code_ref, effective_from)
+select 'cr_status_class_domain_1', 'cr_status_class_domain', null, 'nd_mpr_xlsx', 'conform',
+       array['status_canonical']::text[], 'code_ref',
+       jsonb_build_object(
+           'classes', jsonb_build_array('active', 'drilling', 'confidential', 'permitted',
+                                        'inactive', 'temporarily_abandoned', 'service',
+                                        'plugged', 'dry', 'documented_unmapped', 'expired'),
+           'absence_class_rule', 'cr_status_absence_basis_1',
+           'symbology_source', 'lineage.status_classes',
+           'module_function', 'glasswell.lineage.status_classes:load_status_classes',
+           'superseded_by_action', 'a new rule and a single-transaction repoint of every map'
+                                   ' that names a withdrawn class'),
+       'The eleven mapped canonical well-status classes, their legend order and their symbology'
+       ' are the rows of lineage.status_classes; every registered status map targets that set'
+       ' through a foreign key.',
+       'The domain existed in three places that agreed only by coincidence: a union over five'
+       ' per-regulator maps computed at query time, a prose enumeration in the glossary, and a'
+       ' closed array of object literals in the client. None was checked against another, so the'
+       ' day a regulator''s map gained a class the client had never heard of, that class would'
+       ' have been painted, counted and filtered as the absence class and would have vanished'
+       ' the moment a reader unticked one box. Making the domain rows makes it a decision with a'
+       ' rationale and an effective date, which is what R8 requires of the mapping that targets'
+       ' it, and makes the foreign key the single writer rather than a second list. Presentation'
+       ' travels with the class because presentation is what a client needs served: an enum'
+       ' carries a name and nothing else, and a colour with no row behind it is a symbology'
+       ' decision no gate can read.',
+       'https://glasswell.rpx.sh/conformance',
+       'glasswell.lineage.status_classes:load_status_classes', date '2026-09-03'
+ where exists (select 1 from lineage.sources where source_id = 'nd_mpr_xlsx')
+on conflict (rule_id) do nothing;
+
+insert into lineage.conformance_rules
+    (rule_id, rule_family, supersedes_rule_id, source_id, stage, applies_to_fields, rule_kind,
+     spec, rule, rationale, evidence_url, code_ref, effective_from)
+select 'cr_status_absence_basis_1', 'cr_status_absence_basis', null, 'nd_mpr_xlsx', 'conform',
+       array['status_canonical', 'status_reported']::text[], 'code_ref',
+       jsonb_build_object(
+           'served_class', 'unmapped',
+           'distinguished_by', 'status_reported',
+           'filed_code_present_means', 'the registered vocabulary has no row for this code',
+           'filed_code_absent_means', 'the source filed no status',
+           'module_function', 'glasswell.status_resolution:resolved_status'),
+       'No serving path emits a null status class. Where neither the promotion nor the registry'
+       ' resolves one, the absence class is served and the filed code beside it is what says'
+       ' which of the two cases holds.',
+       'Null is indistinguishable from not-yet-loaded to every consumer, which is why the'
+       ' blueprint forbids serving it, and it has been served anyway for every well whose source'
+       ' filed no status code at all. The absence class is a class: it draws, it counts, it'
+       ' filters and it carries a note. What it is not is a claim about why, and that is the'
+       ' reason the two cases are distinguished by the reported code rather than by two classes.'
+       ' A second class for a filed-but-unmapped code would mint a vocabulary entry for a fact'
+       ' the registered mapping rule already answers.',
+       'https://glasswell.rpx.sh/conformance',
+       'glasswell.status_resolution:resolved_status', date '2026-09-03'
+ where exists (select 1 from lineage.sources where source_id = 'nd_mpr_xlsx')
+on conflict (rule_id) do nothing;
+
+-- Cited by infra/verify.sh V-3 and by nothing on the wire, which is correct: it is an
+-- operational threshold rather than a property of a served class. It is a rule and not a shell
+-- literal because §3.4 removes the null that used to make a failed resolver visible, and the
+-- signal that replaces it is a published decision or it is a number nobody agreed to.
+insert into lineage.conformance_rules
+    (rule_id, rule_family, supersedes_rule_id, source_id, stage, applies_to_fields, rule_kind,
+     spec, rule, rationale, evidence_url, code_ref, effective_from)
+select 'cr_status_absence_share_1', 'cr_status_absence_share', null, 'nd_mpr_xlsx', 'validate',
+       array['status_canonical']::text[], 'validity_filter',
+       jsonb_build_object(
+           'scope', 'per_jurisdiction',
+           'max_share', 0.30,
+           'measured_on', 'canonical.wells_latest',
+           'module_function', 'infra/verify.sh:V-3'),
+       'No jurisdiction may serve the absence class for more than the registered share of its'
+       ' resident wells.',
+       'Serving a class for every well removes the null that used to make a failed resolver'
+       ' visible, so the threshold is the replacement signal and it has to be a published'
+       ' decision rather than a literal in a shell script. The highest legitimate share measured'
+       ' on the deployed spine is 19.0 per cent, 68,186 of 359,421 Texas wells_latest rows on'
+       ' 2026-09-03, every one of which filed no status code at all. The ceiling sits above that'
+       ' with room for a load rather than at it, because a threshold set at the measurement'
+       ' reddens on the next county rather than on the fault it exists to catch.',
+       'https://glasswell.rpx.sh/conformance', 'infra/verify.sh', date '2026-09-03'
+ where exists (select 1 from lineage.sources where source_id = 'nd_mpr_xlsx')
+on conflict (rule_id) do nothing;
+
+-- (3) The domain. Its own table rather than an enum or a column on lineage.jurisdictions: a
+-- class carries presentation and presentation is what the client needs served, the domain is a
+-- decision with a rationale and an effective date, and eleven of the twelve are shared across
+-- five vocabularies so a per-registration column would make the shared set five copies again.
+create table if not exists lineage.status_classes (
+    status_canonical text primary key check (status_canonical ~ '^[a-z][a-z0-9_]*$'),
+    label            text not null check (btrim(label) <> ''),
+    colour           text not null check (colour ~ '^#[0-9A-F]{6}$'),
+    glyph            text not null check (glyph in ('solid', 'hollow', 'bar', 'dashed',
+                                                    'struck', 'struck-hollow')),
+    min_zoom         integer not null check (min_zoom between 0 and 22),
+    sort_order       integer not null,
+    note             text not null check (btrim(note) <> ''),
+    -- Produced by no mapping, and the only row a map may not target. A column rather than the
+    -- comment served_status_vocabulary() carried, so the count writer, the resolver and the
+    -- client cannot spell the absence class differently.
+    is_absence       boolean not null default false,
+    rule_id          text not null references lineage.conformance_rules (rule_id),
+    effective_from   date not null,
+    published_at     date not null,
+    rationale        text not null
+);
+
+comment on table lineage.status_classes is
+    'The canonical well-status class domain: one row per class, carrying the label, colour,'
+    ' glyph, zoom floor, legend order and jurisdiction-neutral note the client is served, and'
+    ' the rule that declared it. Every registered status map has a foreign key to it, so it is'
+    ' a domain rather than a sixth copy of a list.';
+
+comment on column lineage.status_classes.note is
+    'Jurisdiction-neutral by construction: which regulator codes reach a class is the'
+    ' per-jurisdiction mapping rule''s fact and resolves at /conformance/{rule_id}. A standing'
+    ' gate refuses a note naming a registered jurisdiction, code or identity prefix.';
+
+comment on column lineage.status_classes.is_absence is
+    'The one class no mapping produces. A null status_canonical means quarantined in a map;'
+    ' this row is what a serving path emits where nothing resolved.';
+
+create unique index if not exists status_classes_sort_key
+    on lineage.status_classes (sort_order);
+create unique index if not exists status_classes_absence_key
+    on lineage.status_classes (is_absence) where is_absence;
+-- Two classes with the same swatch are indistinguishable on the canvas and in the legend. The
+-- pair and not the colour alone: plugged and dry share #7C8B96 and differ in glyph, as do
+-- inactive and temporarily_abandoned on #D9534F.
+create unique index if not exists status_classes_colour_glyph_key
+    on lineage.status_classes (colour, glyph);
+
+drop trigger if exists reject_status_classes_mutation on lineage.status_classes;
+create trigger reject_status_classes_mutation
+    before update or delete on lineage.status_classes
+    for each row execute function lineage.reject_mutation();
+
+grant select on lineage.status_classes to glasswell_api, glasswell_pipeline;
+
+-- The twelve rows. label, colour, glyph and min_zoom are carried across verbatim from what the
+-- canvas already draws, so the map does not change appearance in the train that changes where
+-- its colours come from. The notes are the one deliberate content change: not one regulator
+-- code appears in them, which is what stops expired's note arguing from two regulators' letters
+-- while a third's codes sit in the same class.
+--
+-- Guarded on rule residency in the shape 075:233 uses. Here the guard reads this file's own
+-- rule insert above rather than the seed's, because the foreign keys below are added in this
+-- transaction and an empty domain would fail them against resident map rows.
+insert into lineage.status_classes
+    (status_canonical, label, colour, glyph, min_zoom, sort_order, note, is_absence, rule_id,
+     effective_from, published_at, rationale)
+select d.status_canonical, d.label, d.colour, d.glyph, d.min_zoom, d.sort_order, d.note,
+       d.is_absence, d.rule_id, date '2026-09-03', date '2026-09-03',
+       'The class domain is a decision with a rationale and an effective date, not the union of'
+       ' five per-regulator maps computed at runtime. Every mapping targets this set through a'
+       ' foreign key, so a class outside it is a mapping with no published decision behind it.'
+  from (values
+    ('active', 'Active', '#3FA55E', 'solid', 4, 10,
+     'Producing, or filed as capable of production.', false, 'cr_status_class_domain_1'),
+    ('drilling', 'Drilling', '#3D8BD4', 'bar', 4, 20,
+     'Spudded and not yet filed as completed.', false, 'cr_status_class_domain_1'),
+    ('confidential', 'Confidential', '#E4A33C', 'solid', 6, 30,
+     'Withheld under an operator''s tight-hole election: a status, not missing data.',
+     false, 'cr_status_class_domain_1'),
+    ('permitted', 'Permitted', '#9FB0BC', 'hollow', 6, 40,
+     'An approved location with no wellbore filed yet.', false, 'cr_status_class_domain_1'),
+    ('inactive', 'Inactive', '#D9534F', 'bar', 8, 50,
+     'Shut in, or carrying an inactive-well waiver.', false, 'cr_status_class_domain_1'),
+    ('temporarily_abandoned', 'Temporarily abandoned', '#D9534F', 'dashed', 8, 60,
+     'Suspended and not plugged.', false, 'cr_status_class_domain_1'),
+    ('service', 'Service', '#7A6FD0', 'hollow', 8, 70,
+     'Injection, disposal, storage, observation or water supply, not a producer.',
+     false, 'cr_status_class_domain_1'),
+    ('plugged', 'Plugged & abandoned', '#7C8B96', 'struck', 9, 80,
+     'The wellbore is permanently plugged.', false, 'cr_status_class_domain_1'),
+    ('dry', 'Dry hole', '#7C8B96', 'struck-hollow', 9, 90,
+     'Drilled with no commercial completion filed.', false, 'cr_status_class_domain_1'),
+    ('documented_unmapped', 'Documented, no class', '#8E6E9E', 'hollow', 9, 100,
+     'The regulator publishes this code and glasswell has no equivalent class, so the filed'
+     ' code is served instead of a guess.', false, 'cr_status_class_domain_1'),
+    ('expired', 'Expired permit', '#55666F', 'dashed', 9, 110,
+     'A permit lapsed, was cancelled or was vacated before spud, so no wellbore exists.',
+     false, 'cr_status_class_domain_1'),
+    -- min_zoom 0: absence must not be the thing that hides. The note states both cases rather
+    -- than minting a twelfth class for the second, because which codes a vocabulary declined is
+    -- the mapping rule's fact and the filed code beside the class is what says which case holds.
+    ('unmapped', 'Unmapped status', '#46525C', 'hollow', 0, 120,
+     'No class resolved. Either the source filed no status, or it filed a code its registered'
+     ' vocabulary has no row for; the well card and the hover say which, because they carry the'
+     ' filed code.', true, 'cr_status_absence_basis_1')
+  ) as d(status_canonical, label, colour, glyph, min_zoom, sort_order, note, is_absence,
+         rule_id)
+ where exists (select 1 from lineage.conformance_rules c where c.rule_id = d.rule_id)
+on conflict (status_canonical) do nothing;
+
+-- (4) The foreign keys, which are what make this a domain rather than a second list. A check
+-- constraint would restate the twelve in five DDL bodies; the key makes lineage.status_classes
+-- the single writer. Nullable on purpose: a null class is a quarantined code, which is what
+-- Montana's six unpromoted rows are.
+--
+-- A function rather than six ALTER statements, for the reason the trigger attach below is one:
+-- a constraint cannot point at a domain that is not resident yet, and on a fresh database the
+-- domain arrives with the seed rather than with this file. Called from here, where the deployed
+-- host lands it, and from seed_status_classes, where a fresh one does. Idempotent both ways.
+--
+-- lineage.nm_status_map deliberately gets none. It holds zero rows and no serving rule names
+-- it, so a constraint on it would be a claim about a table nothing writes; the parity gate
+-- lists it by name instead.
+create or replace function lineage.attach_status_class_constraints() returns integer
+language plpgsql as $$
+declare
+    target record;
+    attached integer := 0;
+begin
+    if not exists (select 1 from lineage.status_classes) then
+        return 0;
+    end if;
+    for target in
+        select * from (values
+            ('nd_status_map',              'status_canonical', 'nd_status_map_class_fk'),
+            ('tx_status_map',              'status_canonical', 'tx_status_map_class_fk'),
+            ('mt_status_map',              'status_canonical', 'mt_status_map_class_fk'),
+            ('nm_wellhistory_status_map',  'status_canonical', 'nm_wh_status_map_class_fk'),
+            ('co_facility_status_map',     'status_canonical', 'co_status_map_class_fk'),
+            ('status_resolution_resolved', 'resolved_status',  'resolved_status_class_fk')
+        ) as t(relation, key_col, constraint_name)
+    loop
+        if not exists (select 1 from pg_constraint where conname = target.constraint_name) then
+            execute format(
+                'alter table lineage.%I add constraint %I foreign key (%I)'
+                ' references lineage.status_classes',
+                target.relation, target.constraint_name, target.key_col);
+            attached := attached + 1;
+        end if;
+    end loop;
+    return attached;
+end;
+$$;
+
+comment on function lineage.attach_status_class_constraints() is
+    'Points every registered status map, and the resolved resolver table, at the class domain.'
+    ' Idempotent, and a no-op while the domain is unloaded: on a fresh database the migration'
+    ' runs before the seed that supplies the twelve rows, so seed_status_classes calls it too.';
+
+grant execute on function lineage.attach_status_class_constraints() to glasswell_pipeline;
+
+select lineage.attach_status_class_constraints();
+
+-- (5) The per-map refresh trigger stops being written by hand. 078:297-301 named one map
+-- literally and 078:265-274 told the next jurisdiction to write another; Colorado registered
+-- read-time resolution in that same train and shipped with no trigger at all, so an append to
+-- lineage.co_facility_status_map does not rebuild the resolver on the deployed host today.
+--
+-- A statement trigger is attached to a relation and the relations are per regulator, so this
+-- cannot be one trigger for all maps. What it can be is created by the registry rather than by
+-- hand, which is what removes the migration from a fifth read-time state.
+--
+-- Owner-defined and deliberately not security definer: create trigger requires ownership of the
+-- relation, the migration and the seed both run as the owner, and neither glasswell_api nor
+-- glasswell_pipeline may append a jurisdiction_rules row. That is the grant argument 078:174-180
+-- already makes for the sibling format(%I) loop, reused rather than restated.
+create or replace function lineage.attach_status_map_refresh() returns integer
+language plpgsql as $$
+declare
+    registered record;
+    attached integer := 0;
+begin
+    for registered in
+        select distinct c.spec->>'mapping_table' as mapping_table
+          from lineage.jurisdictions_as_of(
+                   (select max(published_at) from lineage.jurisdictions), current_date) j
+          join lineage.jurisdiction_rules r
+            on r.jurisdiction_code = j.jurisdiction_code
+           and r.effective_from = j.effective_from
+           and r.published_at = j.published_at
+           and r.decision = 'status_vocabulary'
+           and r.serving
+          join lineage.conformance_rules c on c.rule_id = r.rule_id
+         where c.spec->>'resolved_at' = 'read_time'
+           and c.spec->>'mapping_table' is not null
+    loop
+        -- Skipped with a notice for the reason 078:141-147 gives: a registration can land in a
+        -- merge before the migration that creates its map, and a raise here would take the
+        -- deploy's seed down with it.
+        if to_regclass('lineage.' || quote_ident(registered.mapping_table)) is null then
+            raise notice 'status resolver: lineage.% is registered for read-time resolution and does not exist; no refresh trigger is attached to it',
+                registered.mapping_table;
+            continue;
+        end if;
+        -- Idempotent across the deploy's repeated seed runs, which is the contract seed_all is
+        -- bound to.
+        execute format(
+            'drop trigger if exists status_map_refresh_status_resolution on lineage.%I',
+            registered.mapping_table);
+        execute format(
+            'create trigger status_map_refresh_status_resolution after insert on lineage.%I'
+            ' for each statement execute function lineage.status_resolution_refresh()',
+            registered.mapping_table);
+        attached := attached + 1;
+    end loop;
+    return attached;
+end;
+$$;
+
+comment on function lineage.attach_status_map_refresh() is
+    'Attaches the resolver''s refresh trigger to every registered read-time status map, one per'
+    ' relation because a statement trigger is attached to a relation. Called from this'
+    ' migration, from the registry''s own append triggers and from seed_jurisdictions, so a'
+    ' fifth read-time state is three rows and no trigger.';
+
+grant execute on function lineage.attach_status_map_refresh() to glasswell_pipeline;
+
+-- (6) One clock, and the row that records it. 078 resolved the registry at the host's calendar
+-- while load_jurisdictions resolved it at max(published_at); the two already resolve different
+-- rule-row sets for all four v0.76 jurisdictions and agree on status_vocabulary only by
+-- accident. A superseding vocabulary rule published one day ahead of the host clock would be
+-- served by /v1/wells as the rule that decided a well's class while the resolver still held the
+-- classes its predecessor produced: the number on screen and the rule cited beside it would
+-- come from different decisions, and no gate can see it because both halves are consistent.
+--
+-- max(published_at) is the later of the two, so no served jurisdiction loses a rule row at the
+-- cut-over: every row the API resolves today the resolver resolves after this.
+alter table lineage.status_resolution_resolved add column if not exists knowledge_for date;
+
+comment on column lineage.status_resolution_resolved.built_for is
+    'The valid date the registry was resolved at. Unchanged in meaning since 078: a registration'
+    ' whose effective_from is later than this has not reached the resolver, because the refresh'
+    ' is driven by appends and by every deploy rather than by the calendar.';
+
+comment on column lineage.status_resolution_resolved.knowledge_for is
+    'The knowledge cut the registry was resolved at: max(published_at) over lineage.jurisdictions,'
+    ' which is what load_jurisdictions reads. Null on rows written before this migration, because'
+    ' a backfilled value would be a claim about a run nobody observed.'
+    ' infra/verify.sh V-4 compares it against that maximum.';
+
+create or replace function lineage.refresh_status_resolution() returns integer
+language plpgsql as $$
+declare
+    registered record;
+    resolved integer := 0;
+    added integer;
+    repeated boolean;
+    knowledge_cut date;
+begin
+    select max(published_at) into knowledge_cut from lineage.jurisdictions;
+    delete from lineage.status_resolution_resolved;
+    for registered in
+        select j.identity_prefix, j.jurisdiction_code,
+               c.spec->>'mapping_table' as mapping_table,
+               c.spec->>'key_col'       as key_col,
+               c.spec->>'value_col'     as value_col
+          from lineage.jurisdictions_as_of(knowledge_cut, current_date) j
+          join lineage.jurisdiction_rules r
+            on r.jurisdiction_code = j.jurisdiction_code
+           and r.effective_from = j.effective_from
+           and r.published_at = j.published_at
+           and r.decision = 'status_vocabulary'
+           and r.serving
+          join lineage.conformance_rules c on c.rule_id = r.rule_id
+         where j.identity_prefix is not null
+           and c.spec->>'resolved_at' = 'read_time'
+           and c.spec->>'mapping_table' is not null
+           and c.spec->>'key_col' is not null
+           and c.spec->>'value_col' is not null
+         order by j.identity_prefix
+    loop
+        -- Skipped, and said, for 078's reasons: aborting would take the migration or the
+        -- deploy's seed down with it, and the transient case self-heals within one deploy.
+        if to_regclass('lineage.' || quote_ident(registered.mapping_table)) is null then
+            raise notice 'status resolver: % (%) registers lineage.% which does not exist; its wells resolve unmapped until it lands',
+                registered.jurisdiction_code, registered.identity_prefix,
+                registered.mapping_table;
+            continue;
+        end if;
+        execute format(
+            'select count(*) <> count(distinct m.%I) from lineage.%I m where m.%I is not null',
+            registered.key_col, registered.mapping_table, registered.key_col)
+          into repeated;
+        if repeated then
+            raise notice 'status resolver: lineage.% registered for % has a repeated %; its wells resolve unmapped until the map is keyed',
+                registered.mapping_table, registered.jurisdiction_code, registered.key_col;
+            continue;
+        end if;
+        -- WHAT MAKES THE %I INTERPOLATION SAFE IS A GRANT, NOT THE QUOTING: selecting the table
+        -- takes a lineage.jurisdiction_rules row, and neither glasswell_api nor
+        -- glasswell_pipeline may append one. 078:167-180 carries the whole argument.
+        execute format(
+            'insert into lineage.status_resolution_resolved (for_state_code,'
+            ' for_status_reported, resolved_status, jurisdiction_code, built_for, knowledge_for)'
+            ' select %L, m.%I::text, m.%I::text, %L, current_date, %L'
+            '   from lineage.%I m'
+            '  where m.%I is not null and m.%I is not null',
+            registered.identity_prefix, registered.key_col, registered.value_col,
+            registered.jurisdiction_code, knowledge_cut, registered.mapping_table,
+            registered.key_col, registered.value_col);
+        get diagnostics added = row_count;
+        resolved := resolved + added;
+    end loop;
+    return resolved;
+end;
+$$;
+
+comment on function lineage.refresh_status_resolution() is
+    'Rebuilds lineage.status_resolution_resolved from every registration resolving at the'
+    ' registry''s own knowledge cut, max(published_at), whose status-vocabulary rule says'
+    ' resolved_at = read_time, reading the mapping table and its key and value columns out of'
+    ' that rule spec. Idempotent, and cheap: the product is tens of rows. A registered mapping'
+    ' table that has not been created yet is skipped with a notice; /v1/status''s status_resolver'
+    ' check and infra/verify.sh are what catch a skip that lasts.';
+
+-- Gated on the calling relation, and the gate is a cost decision rather than a correctness one.
+-- 078:259-263 measured the current design at about 26 refreshes per seed_all, because the
+-- triggers are per statement and psycopg's executemany sends one statement per row. Attaching
+-- from every one of those firings would add a drop-and-create pair per read-time map to each,
+-- every drop taking ACCESS EXCLUSIVE on a map relation. A map's own trigger is also the one
+-- firing that cannot change the registered set, so it is the one that never needs to re-attach.
+create or replace function lineage.status_resolution_refresh() returns trigger
+language plpgsql as $$
+begin
+    if TG_TABLE_NAME in ('jurisdictions', 'jurisdiction_rules') then
+        perform lineage.attach_status_map_refresh();
+    end if;
+    perform lineage.refresh_status_resolution();
+    return null;
+end;
+$$;
+
+-- Colorado's missing trigger, attached as this migration's first act on the deployed host.
+select lineage.attach_status_map_refresh();
+
+-- (7) The mart New Mexico's per-well series is read from. Not the client, which would be a
+-- served-looking per-well number with no derivation; not canonical, which is append-only and
+-- holds no filing glasswell invented; not a view, because a sum over rows carrying different
+-- derivation ids has no single handle. A mart reads canonical and writes marts, which is the
+-- only layer this can sit in.
+--
+-- Registry-driven: the refresh builds for every jurisdiction whose production_grain rule spec
+-- carries served_rollup, so a sixth pool-grain state is a spec key rather than a module.
+create table if not exists marts.well_pool_rollup (
+    api10            text not null,
+    state_code       text not null,
+    production_month date not null,
+    stream           text not null check (stream in ('liquid', 'gas', 'water')),
+    volume           numeric(20, 3) not null,
+    unit             text not null,
+    days_produced    smallint,
+    pools_summed     integer not null check (pools_summed > 0),
+    aggregation      text not null check (aggregation = 'sum_over_pools'),
+    derivation_id    text not null references lineage.derivations (derivation_id),
+    primary key (api10, production_month, stream)
+);
+
+comment on table marts.well_pool_rollup is
+    'The per-well monthly series for a jurisdiction that files at completion-pool grain and'
+    ' registers a served rollup: the exact sum of the pool filings, days_produced as the maximum'
+    ' over them and never the sum, and the count of pools summed. Disclosed as an aggregation,'
+    ' never as a filing: the regulator filed no per-well number and canonical still holds none.';
+
+comment on column marts.well_pool_rollup.derivation_id is
+    'One refresh, one handle, which is coarser than a per-month one and is stated as such where'
+    ' the series is served. The refresh references every input derivation rather than an opaque'
+    ' scope, so a reader can still reach the filings behind a series.';
+
+create index if not exists well_pool_rollup_state_idx
+    on marts.well_pool_rollup (state_code, production_month);
+
+grant select on marts.well_pool_rollup to glasswell_api;
+grant select, insert, delete, truncate on marts.well_pool_rollup to glasswell_pipeline;
+
+-- (8) Last, as 078:319 does: the resolver is rebuilt at the knowledge cut this file introduced,
+-- with the trigger set this file attached.
+select lineage.refresh_status_resolution();

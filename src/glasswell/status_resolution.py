@@ -21,13 +21,23 @@ from psycopg import sql
 from psycopg.rows import dict_row
 
 from glasswell.lineage.jurisdictions import load_jurisdictions
+from glasswell.lineage.status_classes import mapped_status_classes
 
 RESOLVER_VIEW = "canonical.status_resolution"
 
-# The class where neither the promotion nor the registry resolves one: the source filed no
-# status. Not documented_unmapped, which is a code the regulator did publish and glasswell has
-# no word for. The canvas already coalesces a null status to this name, so the ledger uses it.
+# The class where neither the promotion nor the registry resolves one. Spelled once, and only
+# where a caller has no connection to read the domain with: `lineage.status_classes` is the
+# single writer, `ABSENCE_CLASS_SQL` is how every serving path reads it, and the seed carries
+# this name into the row marked `is_absence` rather than repeating the word.
 UNMAPPED_CLASS = "unmapped"
+
+# How every serving path reads that name: a one-row uncorrelated scalar subselect on the domain.
+# `resolved_status()` is a pure string builder called at query-assembly time from eight sites, so
+# a connection parameter would change all eight signatures; a module constant would be the
+# literal the domain exists to replace; a process cache would be the unbounded one the v0.76
+# sentinel filed. The subselect keeps the signature, keeps lineage.status_classes as the single
+# writer, and turns an empty domain into a null class that infra/verify.sh V-3 catches.
+ABSENCE_CLASS_SQL = "(select status_canonical from lineage.status_classes where is_absence)"
 
 # A jurisdiction resolves at read time when its registered status-vocabulary rule says so in
 # its own spec, which is where 071 put the fact. Read off the registry rather than pinned here:
@@ -52,12 +62,10 @@ select j.identity_prefix, r.rule_id
 """
 
 
-# Every registered vocabulary names the table its classes live in and the column they live
-# under, in the rule's own spec (`vocab_map`). The canonical class list is therefore registry
-# data rather than a roster: a fifth jurisdiction's classes join the vocabulary through its
-# rule row, and a class renamed in one map is renamed here without an edit. This is the same
-# list the client's closed eleven come from -- each of `web/src/map/status.ts`'s classes cites
-# one of these rules -- so the two cannot drift apart silently.
+# The per-map scan, kept as the parity gate's input rather than as the definition. Every
+# registered vocabulary names the table its classes live in and the column they live under, in
+# the rule's own spec, so this is what a standing gate compares the domain against: a map
+# producing a class the domain does not hold, or a domain row no map produces.
 _VOCABULARY_SOURCES = """
 select distinct c.spec->>'mapping_table' as mapping_table,
                 c.spec->>'value_col'     as value_col
@@ -78,10 +86,28 @@ select distinct c.spec->>'mapping_table' as mapping_table,
 def served_status_vocabulary(
     connection: psycopg.Connection, as_of: date | None = None
 ) -> list[str]:
-    """Every canonical class the registered status vocabularies name, in one sorted list.
+    """Every canonical class a registered mapping may target, in one sorted list.
 
-    The absence class is not in it: no mapping produces `unmapped`, which is what makes it the
-    absence class. A caller measuring classes wants both and adds it.
+    Read from `lineage.status_classes`, which is the domain every map has a foreign key to,
+    rather than unioned over the maps: a class is a decision with a rule and an effective date,
+    and a list computed from whatever the maps happen to say cannot be one. The absence class is
+    not in it, because no mapping produces it. A caller measuring classes wants both and adds it.
+
+    `as_of` is unread and kept: the domain carries one clock by construction (a class that stops
+    existing has to be repointed in every map that names it inside one transaction), and eight
+    callers pass the registry's own cut.
+    """
+    return sorted(mapped_status_classes(connection))
+
+
+def status_map_classes(
+    connection: psycopg.Connection, as_of: date | None = None
+) -> list[str]:
+    """Every distinct class the registered mapping tables actually produce, sorted.
+
+    The parity gate's input, and the reason `served_status_vocabulary` can stop being a union:
+    a class here and not in the domain is a map with no published decision behind it, and a
+    mapped domain row absent here is a class registered for a state that never landed.
     """
     registry = load_jurisdictions(connection, as_of)
     with connection.cursor() as cursor:

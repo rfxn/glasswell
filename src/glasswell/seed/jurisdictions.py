@@ -582,6 +582,10 @@ def seed_jurisdictions(connection: psycopg.Connection) -> int:
             [rule_parameters(row) for row in JURISDICTION_RULES_AS_FOUNDED]
             + [rule_parameters(row, published_at=RESTATED_ON) for row in JURISDICTION_RULES],
         )
+        # The refresh trigger for every registered read-time map, attached from the registry
+        # rather than written by hand. The registry's own append triggers already call this, so
+        # the explicit call is for the database restored from a dump where nothing appends.
+        cursor.execute("select lineage.attach_status_map_refresh()")
         # The read-time status resolver is derived from the rows above, and a database restored
         # from a dump lands them without an append for the trigger to see. Every deploy runs
         # this, between migrate and the API restart.
