@@ -28,6 +28,7 @@ from glasswell.seed.conformance_schedules import (
     seed_conformance_schedules,
 )
 from glasswell.seed.conformance_tx import (
+    ALLOCATION_RULES,
     TX_RULES,
     seed_conformance_allocation,
     seed_conformance_tx,
@@ -60,6 +61,7 @@ from glasswell.seed.schedules import (
 )
 
 __all__ = [
+    "ALLOCATION_RULES",
     "BASIN_RULES",
     "C115B_RULES",
     "CO_RULES",

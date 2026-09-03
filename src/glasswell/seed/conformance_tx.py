@@ -1089,6 +1089,9 @@ TX_RULES: tuple[dict[str, object], ...] = (
             "unallocated_share_degraded_at": 0.005,
             "cumulatives_grain": "well",
             "cumulatives_basis": "allocated",
+            "contract_note": "the mart calls this function per lease-month and publishes what"
+            " it returns; the API reads cumulatives_basis to decide whether the well-grain"
+            " cumulative row it admits is an observation or a share",
         },
         "rule": (
             "A lease-month's volume is split equally among the wells eligible that month. The"
@@ -1131,6 +1134,11 @@ TX_RULES: tuple[dict[str, object], ...] = (
             "wire_column": "oil_bbl",
             "source_cols": ["LEASE_OIL_PROD_VOL", "LEASE_COND_PROD_VOL"],
             "disjoint_on": "OIL_GAS_CODE",
+            "module_function": "glasswell.ingest.tx_pdq:STREAM_COLUMNS",
+            "contract_note": "the promotion reads this table to decide which source column"
+            " becomes which canonical stream and under which OIL_GAS_CODE; the two liquid"
+            " columns are read on disjoint populations, which is why their union"
+            " double-counts nothing",
         },
         "rule": (
             "The Texas liquid stream is oil plus condensate: LEASE_OIL_PROD_VOL on oil leases"
@@ -1164,6 +1172,10 @@ TX_RULES: tuple[dict[str, object], ...] = (
             "source_cols": ["LEASE_GAS_PROD_VOL", "LEASE_CSGD_PROD_VOL"],
             "never_summed": ["LEASE_GAS_LIFT_INJ_VOL", "LEASE_CSGD_GAS_LIFT"],
             "disjoint_on": "OIL_GAS_CODE",
+            "module_function": "glasswell.ingest.tx_pdq:STREAM_COLUMNS",
+            "contract_note": "the same table carries the gas half: gas-well gas on gas leases"
+            " and casinghead gas on oil leases, and neither gas-lift injection column appears"
+            " in it at all, so no promotion can read one as production",
         },
         "rule": (
             "The Texas gas stream is gas-well gas plus casinghead gas, both MCF and disjoint on"
@@ -1197,6 +1209,10 @@ TX_RULES: tuple[dict[str, object], ...] = (
             "canonical_column": "geometry_provenance",
             "served_from": "canonical.well_spatial.geom_type",
             "mirrors_rule_id": "cr_nd_geometry_provenance_1",
+            "module_function": "glasswell.marts.wells:MART_PROFILES",
+            "contract_note": "the Texas entry projects geom_type onto the tile layers"
+            " verbatim, the way cr_nd_geometry_provenance_1 names nd_wells' own projections;"
+            " no per-class decode happens anywhere else",
         },
         "rule": (
             "Texas geometry provenance is served verbatim: surface and bottomhole are"
@@ -1323,6 +1339,9 @@ ALLOCATION_RULES: tuple[dict[str, object], ...] = (
             "module_function": "glasswell.allocation.v0:symmetric_error",
             "transfer_outcome": "not_measured",
             "precondition_rule": "cr_mt_pru_reconciliation_1",
+            "contract_note": "the back-test calls this function per scored lease-month and the"
+            " mart stores its bounds; every Texas figure reads transfer_outcome and states"
+            " not_measured until the study is shown to transfer",
         },
         "rule": (
             "The equal-share method's error is measured against Montana, which files both"
