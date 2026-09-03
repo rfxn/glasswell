@@ -925,8 +925,10 @@ main[data-rail="open"][data-drawer="open"] {
 
   /* The drawer has its own column here, so stepping aside by the card's width alone lands the
      coach on top of it: measured 266 x 36 px over the Lineage heading and the map's zoom
-     control (gate M4). Above the card's arm in weight and after it in order. */
-  body:has(main[data-rail="open"][data-drawer="open"]) .gw-hint {
+     control (gate M4). The id inside :has() is what carries the weight, exactly as the
+     collapsed-rail arm above says: :has() takes its most specific argument, so the card's own
+     arm scores (1,2,1) through #gw-drawer and an attribute-only selector here would lose. */
+  body:has(#gw-main[data-rail="open"][data-drawer="open"]) .gw-hint {
     right: calc(var(--gw-card-w) + var(--gw-drawer-w) + var(--gw-space-4));
   }
 }
