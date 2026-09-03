@@ -11,7 +11,7 @@
 -- whole clock pair, so the correction is a new registration carrying every rule row and every
 -- presentation column of the one it supersedes, plus the four decisions this track registers.
 --
--- The facets trigger on lineage.jurisdictions (078_facet_status_resolution.sql:277-280) fires
+-- The facets trigger on lineage.jurisdictions (078_facet_status_resolution.sql:284) fires
 -- lineage.refresh_status_resolution() on that append. It skips Texas, whose status vocabulary
 -- rule carries no resolved_at and therefore resolves at promote time; the skip notice in the
 -- migrate log is expected.

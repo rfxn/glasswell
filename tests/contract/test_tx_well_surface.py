@@ -205,6 +205,21 @@ def test_an_nd_well_carries_no_such_disclosure(client: TestClient) -> None:
     assert "reporting_rule" not in body["links"]
 
 
+def test_the_response_links_the_rule_that_admits_and_the_rule_that_computes(
+    client: TestClient,
+) -> None:
+    """H-19. `allocation_rule` is the R8 decision that admits a well-level figure at all, and
+    the mart rows and the cumulative coverage block cite a different one -- the rule that
+    computed the share. A reader following the only link there was landed on the grain
+    decision and had to know to look one hop further."""
+    body = envelope(client, f"/v1/wells/{TX_API10}/production")
+
+    assert body["links"]["allocation_rule"] == "/v1/conformance/cr_tx_production_grain_1"
+    assert body["links"]["allocation_model_rule"] == f"/v1/conformance/{ALLOCATION_RULE}"
+    for path in (body["links"]["allocation_rule"], body["links"]["allocation_model_rule"]):
+        assert client.get(path).status_code == 200, path
+
+
 def test_the_rule_behind_the_allocation_is_readable(client: TestClient) -> None:
     body = envelope(client, f"/v1/conformance/{ALLOCATION_RULE}")
 

@@ -173,8 +173,10 @@ allocated mart.
 ## Step 5 — check what it says about itself
 
 ```bash
-curl -s "$GLASSWELL_URL/v1/validators/allocation?jurisdiction=TX" | jq '.data.blocks[] | {name, outcome}'
-curl -s "$GLASSWELL_URL/v1/wells/<api10>/production?explain=true&explain_depth=4" | jq '.data.allocation'
+# The one name every tier reads: this file, scripts/smoke.sh and tests/e2e.
+export GLASSWELL_BASE_URL=https://glasswell.lab.rpx.sh
+curl -s "$GLASSWELL_BASE_URL/v1/validators/allocation?jurisdiction=TX" | jq '.data.blocks[] | {name, outcome}'
+curl -s "$GLASSWELL_BASE_URL/v1/wells/<api10>/production?explain=true&explain_depth=4" | jq '.data.allocation'
 ```
 
 Three blocks, always. `conservation` is `measured` and its `share_unallocated` is below the

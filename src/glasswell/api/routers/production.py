@@ -59,6 +59,9 @@ STREAM_COLUMNS = {"oil": "oil_bbl", "gas": "gas_mcf", "water": "water_bbl"}
 ALLOCATED_STREAM_COLUMNS = {"liquid": "oil_bbl", "gas": "gas_mcf"}
 ALLOCATED_STREAM_OF = {"oil": "liquid", "gas": "gas"}
 ALLOCATION_MART = "marts.tx_allocated_production"
+# The rule that computes the share, as against the grain decision that admits one. Read from
+# the mart's own rows where there are rows; named here for the arm that has none to read.
+ALLOCATION_MODEL_RULE = "cr_tx_allocation_v0_1"
 
 
 def stream_basis(stream: str, state_code: str | None, *, registry: JurisdictionRegistry):
@@ -905,10 +908,17 @@ def _allocated_response(
         rule_ids=[rule["rule_id"], *([error_rule] if error_rule else [])],
         point_outputs=point_outputs,
     )
+    # Two rules, two links, because they answer two questions: `allocation_rule` is the R8
+    # decision that admits a well-level figure here at all, and the model rule is the one that
+    # computed the share. The mart rows cite the second and the cumulative coverage block cites
+    # the second, so a reader following only the first landed on the grain decision (H-19).
+    model_rule = next((row["allocation_rule_id"] for row in points), None)
     links = {
         "well": f"/v1/wells/{api10}",
         "allocation_rule": f"/v1/conformance/{rule['rule_id']}",
     }
+    if model_rule:
+        links["allocation_model_rule"] = f"/v1/conformance/{model_rule}"
     if error_rule:
         links["error_bounds_rule"] = f"/v1/conformance/{error_rule}"
     return enveloped(
@@ -976,6 +986,7 @@ def _allocation_not_built(
         links={
             "well": f"/v1/wells/{api10}",
             "allocation_rule": f"/v1/conformance/{rule['rule_id']}",
+            "allocation_model_rule": f"/v1/conformance/{ALLOCATION_MODEL_RULE}",
         },
         explain=inline_for(connection, explain),
     )
