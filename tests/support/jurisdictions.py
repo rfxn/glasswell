@@ -78,7 +78,7 @@ def declared_rule_ids(decision: str) -> set[str]:
 def prefixes_registering(decision: str) -> set[str]:
     return {
         _PREFIX_OF[str(row["jurisdiction_code"])]
-        for row in (rule_parameters(rule) for rule in JURISDICTION_RULES)
+        for row in serving_rules()
         if row["decision"] == decision and row["serving"]
     }
 
