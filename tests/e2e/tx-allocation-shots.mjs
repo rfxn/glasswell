@@ -15,7 +15,7 @@ import { mkdirSync } from "node:fs";
 import { BREAKPOINTS, baseUrl, instrumentedPage, launch, shooter } from "./lib.mjs";
 
 const BASE = baseUrl();
-const OUT = process.env.GW_SHOTS ?? "work-output/po-review/shots-v079";
+const OUT = process.env.GW_SHOTS ?? "work-output/po-review/shots-v080";
 const TX_API10 = "4200345818";
 // The three widths the visual gate judges. 390 is where the readout has to become two lines
 // and where the second band has to still be legible under the first.
