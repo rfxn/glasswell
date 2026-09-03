@@ -13,11 +13,13 @@ while another's codes sit in the same class.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
+from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from glasswell.lineage.jurisdictions import load_jurisdictions
@@ -285,3 +287,63 @@ def test_the_counts_still_resolve_to_a_manifest(client: TestClient) -> None:
     assert measured
     for row in measured:
         assert body["_explain"][row["well_count"]["d"]]
+
+
+ROUTERS = Path(__file__).resolve().parents[2] / "src" / "glasswell" / "api" / "routers"
+
+
+def reported_codes(connection: psycopg.Connection) -> set[str]:
+    """Every code a registered map keys on: what a router arm would have to name to be one."""
+    codes: set[str] = set()
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select c.spec->>'mapping_table', c.spec->>'key_col'"
+            "  from lineage.conformance_rules c"
+            " where c.spec->>'mapping_table' is not null and c.spec->>'key_col' is not null"
+        )
+        for table, column in cursor.fetchall():
+            cursor.execute(
+                sql.SQL("select distinct {column}::text from lineage.{table}").format(
+                    column=sql.Identifier(column), table=sql.Identifier(table)
+                )
+            )
+            codes.update(str(value) for (value,) in cursor.fetchall() if value)
+    return codes
+
+
+def translations_in(text: str, codes: set[str]) -> list[str]:
+    """A `case`/`when` arm or a dict key naming a code a registered map already decides."""
+    found = []
+    for code in codes:
+        for shape in (f"when '{code}'", f'when "{code}"', f'"{code}":', f"'{code}':"):
+            if shape in text:
+                found.append(shape)
+    return sorted(found)
+
+
+def test_gate_e_no_router_translates_a_reported_status_into_a_class(
+    seeded: psycopg.Connection,
+) -> None:
+    """One resolver, and nowhere else. A mart-only resolver leaves the API serving null; an
+    API-only one leaves the tiles serving null; a second arm in a router leaves the tile a
+    reader clicks and the card they land on able to answer differently on one screen."""
+    codes = reported_codes(seeded)
+    assert codes, "an empty code set would pass this on nothing"
+
+    offenders = {
+        path.name: translations_in(path.read_text(encoding="utf-8"), codes)
+        for path in sorted(ROUTERS.glob("*.py"))
+        if translations_in(path.read_text(encoding="utf-8"), codes)
+    }
+
+    assert offenders == {}
+
+
+def test_gate_e_reddens_against_a_planted_arm(seeded: psycopg.Connection) -> None:
+    """A negative fixture drawn from a shape the rule does not name: the arm is planted in a
+    scratch copy of the router text rather than in the tree, so the gate is shown reading."""
+    codes = reported_codes(seeded)
+    planted = "    status = case when 'PLUGGED' then 'plugged' end\n"
+
+    assert "PLUGGED" in codes
+    assert translations_in(planted, codes) == ["when 'PLUGGED'"]

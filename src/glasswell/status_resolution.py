@@ -248,5 +248,13 @@ def resolver_join(spine: str, *, resolver: str = "sr") -> str:
 
 
 def resolved_status(spine: str, *, resolver: str = "sr") -> str:
-    """The served class: what the promotion wrote, else what the registry resolves."""
-    return f"coalesce({spine}.status_canonical, {resolver}.resolved_status)"
+    """The served class: what the promotion wrote, else what the registry resolves, else absent.
+
+    Never null. Null is indistinguishable from not-yet-loaded to every consumer, which is what
+    blueprint §3.0.1a forbids and what every Texas well that filed no status code has been
+    served since Texas landed. The third arm is one line in the one helper the tile mart, the
+    facet, the filter, the count and the card all call, so they change together or not at all.
+    """
+    return (
+        f"coalesce({spine}.status_canonical, {resolver}.resolved_status, {ABSENCE_CLASS_SQL})"
+    )

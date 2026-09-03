@@ -909,3 +909,35 @@ def test_the_absence_sentence_uses_the_same_preposition_under_a_search(
     ).json()["data"]
 
     assert "across North Dakota and Texas" in data["absence"]["detail"]
+
+
+def test_the_status_facet_carries_the_absence_class_as_a_bucket(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The class a well with no resolvable status carries is a class, so it ranks like one.
+
+    Before the resolver's third arm the column was null for these wells, `nullif` never
+    suppressed a null, and they fell out of the facet's ranking into its absence bucket, where
+    "the source filed no status" and "this dimension has no value here" read as one fact.
+    """
+    _seed_tx(seeded)
+    seed_well(
+        seeded,
+        api10="4200999001",
+        state_code="42",
+        county_code_at_permit="003",
+        basin="permian",
+        status_canonical=None,
+        status_reported=None,
+        well_type_reported="PRODUCING",
+    )
+    seeded.commit()
+
+    body = _facets(client, by="status")["data"]
+    ranked = {row["value"]: int(row["wells"]["value"]) for row in body["buckets"]}
+
+    assert ranked["unmapped"] == 1
+    # And it did not fall into the dimension's absence bucket, where "the source filed no
+    # status" would read as "this dimension has no value here". Absent rather than zero, which
+    # is the rule this surface already keeps: a bucket nothing is in has no count.
+    assert body["absence"] is None

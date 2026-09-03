@@ -54,7 +54,17 @@ def population(db: psycopg.Connection) -> psycopg.Connection:
     seed_all(db)
     manifest = seed_manifest(db, sha256="c" * 64, source_id="nd_gis_wells", source_key="wells.zip")
     for api10, status, longitude in (*ND_POPULATION, OUTSIDE):
-        seed_well(db, api10=api10, manifest_id=manifest, status_canonical=status)
+        # A well with no class filed no code either, which is what all 68,186 of the deployed
+        # absence population measure: the two facts are distinguished by status_reported, and a
+        # fixture that left a code on a classless well would be asserting a state the spine
+        # does not hold.
+        seed_well(
+            db,
+            api10=api10,
+            manifest_id=manifest,
+            status_canonical=status,
+            status_reported="A" if status is not None else None,
+        )
         seed_well_spatial(
             db,
             api10=api10,
@@ -102,20 +112,29 @@ def test_every_class_in_the_box_is_counted_once(
     data = summary(api_client)["data"]
 
     assert counts(data) == {"active": 3, "plugged": 2, "dry": 1, "unmapped": 2}
+    assert {row["status"] for row in data["statuses"]} >= {"unmapped"}
     assert data["wells"]["value"] == "8"
 
 
-def test_the_absence_class_is_its_own_bucket_and_never_folded_into_one(
+def test_the_absence_class_is_a_class_and_the_filed_code_is_what_says_why(
     population: psycopg.Connection, api_client: TestClient
 ) -> None:
-    """65,685 Texas wells carry no status because the RRC reported none. Adding them to any
-    class would overstate it, and dropping them would make the parts stop summing to the whole.
+    """A well the source filed no status for is drawn, counted and filtered like any other, and
+    `unmapped_wells` is what says the silence was the regulator's rather than a code no rule
+    could map. On this fixture the two sets are identical, which is also true of the deployed
+    spine today; they are separate figures because the day they diverge the surface must say so.
     """
     data = summary(api_client)["data"]
 
-    assert {row["status"] for row in data["statuses"]} == {"active", "plugged", "dry"}
+    assert {row["status"] for row in data["statuses"]} == {
+        "active",
+        "plugged",
+        "dry",
+        "unmapped",
+    }
     assert data["unmapped_wells"]["value"] == "2"
-    assert sum(int(row["wells"]["value"]) for row in data["statuses"]) + 2 == int(
+    # Every class now sums to the whole, absence included: the bucket is no longer outside it.
+    assert sum(int(row["wells"]["value"]) for row in data["statuses"]) == int(
         data["wells"]["value"]
     )
 
@@ -152,6 +171,7 @@ def test_the_texas_wells_are_counted_under_their_own_vocabulary(
     assert [row["status"] for row in basins["42"]["statuses"]] == ["service"]
     assert basins["33"]["unmapped_wells"]["value"] == "2"
     assert basins["42"]["unmapped_wells"] is None
+    assert "unmapped" in {row["status"] for row in basins["33"]["statuses"]}
 
 
 def test_the_basin_rows_sum_to_the_total(
@@ -358,3 +378,36 @@ def test_the_box_predicate_can_be_answered_from_the_geometry_index(
         cursor.execute("set enable_seqscan = on")
 
     assert "well_spatial_geom_idx" in plan
+
+
+def test_the_absence_class_is_filterable_and_returns_the_wells_the_legend_counts(
+    population: psycopg.Connection, api_client: TestClient
+) -> None:
+    """`?status=` compares against the same expression the tile, the count and the card read.
+
+    Measured on the deployed instance on 2026-09-03, `GET /v1/wells?state=42&status=unmapped`
+    is HTTP 200 with zero rows while the registry's own count measures 68,186 Texas wells in
+    that class: the filter compared against a column the serving path had already coalesced
+    past, so the one class a reader is most likely to click was the one that returned nothing.
+    """
+    response = api_client.get("/v1/wells", params={"status": "unmapped", "limit": 50})
+    assert response.status_code == 200, response.text
+    served = response.json()["data"]
+
+    assert {row["api10"] for row in served} == {
+        api10 for api10, status, _ in ND_POPULATION if status is None
+    }
+    assert served
+    for row in served:
+        assert row["status_canonical"] == "unmapped"
+
+
+def test_no_well_anywhere_is_served_a_null_class(
+    population: psycopg.Connection, api_client: TestClient
+) -> None:
+    """blueprint §3.0.1a in one assertion. Null is indistinguishable from not-yet-loaded, and
+    the absence class beside the filed code is what says which of the two cases holds."""
+    served = api_client.get("/v1/wells", params={"limit": 50}).json()["data"]
+
+    assert served
+    assert all(row["status_canonical"] is not None for row in served)
