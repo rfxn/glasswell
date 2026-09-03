@@ -20,7 +20,6 @@ import { setSessionState, setStatus, setVintage, toast } from "./chrome/status.t
 import { highlight } from "./glossary/index.ts";
 import { termIndex } from "./glossary/store.ts";
 import "./glossary/gw-term.ts";
-import { renderLineageDrawer } from "./lineage/drawer.ts";
 // Type-only, so it emits no import edge and the map stays out of the entry chunk.
 import type { MapHandle } from "./map/map.ts";
 import { createSearch } from "./search/search.ts";
@@ -116,7 +115,22 @@ function openExplain(handle: string | null, mode: "push" | "replace" = "push"): 
     drawerHost.replaceChildren();
     return;
   }
-  void renderLineageDrawer(drawerHost, handle, { onClose: () => openExplain(null) });
+  // Loaded on the first handle a reader opens, not by every reader who loads the app: the
+  // drawer renders only after a click most readers never make, and the entry chunk is what
+  // every first paint pays for. The guard is showWell's, for the same reason — the chunk can
+  // land after the reader has closed the drawer or opened another handle, and `state.explain`
+  // is the selection of record.
+  void import("./lineage/drawer.ts")
+    .then(({ renderLineageDrawer }) => {
+      if (state.explain !== handle) return undefined;
+      return renderLineageDrawer(drawerHost, handle, { onClose: () => openExplain(null) });
+    })
+    .catch((error: unknown) => {
+      // The drawer reports its own request failures; a chunk that will not load is the one
+      // failure it cannot, and silence here is a handle that opened nothing.
+      if (state.explain === handle) openExplain(null, "replace");
+      toast(`Lineage ${handle} could not be opened: ${String(error)}`);
+    });
 }
 
 /**

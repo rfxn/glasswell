@@ -106,13 +106,59 @@ owed card mounts landed, and that is what it measures: `bridge.ts` is now reache
 explorer's shell chunk and into the entry. Verified rather than inferred — `gw-crossing`
 (`explore/bridge.ts:306`) appears in `index-*.js` and not in `shell-*.js`.
 
+**That paragraph stopped being true when the card was split and is corrected here.** `bridge.ts`
+is reached from `card/card.ts` and from nowhere the entry chunk carries, so it left the entry
+with the card. Re-measured on `7ff303c`: `gw-crossing` occurs **0** times in the chunk
+`dist/index.html` names and lives in `bridge-*.js`. Counted with `grep -o ... | wc -l` over the
+resolved chunk, because `grep -c` counts matching *lines* and a minified chunk is two of them.
+The conclusion the paragraph drew survives for a different reason — the card reaches `bridge.ts`
+through its own chunk — but the entry-path claim itself is stale and no budget decision should
+rest on it.
+
 ### The budgets
 
 | budget | B gzipped | headroom over measured |
 |---|---:|---|
-| entry chunk | 14,000 | +0.4% over 13,950 (v0.78; was +0.5% over 13,928 in v0.76) |
-| explorer route, map excluded | 75,000 | +4.9% over 71,511 |
+| entry chunk | 14,000 | +7.5% over 13,026 (v0.80 P0, drawer split; was +0.4% over 13,950 at v0.78 and +0.5% over 13,928 at v0.76) |
+| **entry stylesheet** | **7,420** | the 6,507 measured on `7ff303c` plus the 900 B ceiling the rail is allowed to spend; ratcheted to measured + 5% at the last v0.80 phase |
+| explorer route, map excluded | 75,000 | +1.5% over 73,925 (v0.80 P0; the 71,511 recorded here through v0.79 was two trains stale and the true headroom on `7ff303c` was 162 B, not 3,489) |
 | map chunk | 330,000 | +5.2% over 313,823 |
+
+**The fourth budget, and why it is the only one carrying deliberate slack.** The other three
+were set at about 5% over a measurement and ratchet downwards. `entryCssGzip` is set at
+**7,420 B**: the **6,507 B** measured on `7ff303c` plus the **900 B** the well card's rail is
+allowed to spend on the grid, the collapse strip, three sheet snap points, ten section headers
+and the touch rules the card's own controls need. That ceiling is spent on purpose in this
+release and recovered at the end of it — the last v0.80 phase ratchets the budget down to the
+measured value plus 5%, which is the discipline the other three already carry. **A budget
+carrying unspent slack has stopped being a ratchet, so the slack has an expiry.** The gap it
+closes is real: `bundle-budget.test.ts` resolves `assets/([\w.-]+\.js)` out of `dist/index.html`
+and matched no stylesheet at all, so a 30 kB CSS addition passed every budget in the file.
+
+The v0.77 tree measured 6,520 B and this one measures 6,507; the stylesheet did not change
+between them and the 13 bytes are the jitter the paragraph above describes. The budget is the
+ruled 7,420 either way.
+
+**The explorer route's recorded number was two trains stale, and that mattered.** This table
+carried 71,511 B from the "Wells by ..." panel onward. Re-walked on `7ff303c` the same route
+measures **74,838 B**, so the headroom was **162 B** rather than 3,489. The v0.78 seam and the
+all-jurisdictions facet panel each spent some of it and neither re-recorded the total. It is
+re-measured here because a budget nobody re-walks is a number, not an instrument, and because
+P0's own change is the size that would have silently broken it.
+
+**Why the lineage drawer is cut from that route, and why cutting it is not a way of passing.**
+The number this budget protects is what a reader who lands on `?view=explore` downloads. Every
+chunk left on the route is fetched on landing; the five cuts are branches a reader reaches only
+by acting. The drawer became the sixth when it moved behind a dynamic import: `openExplain`
+runs at boot only behind `state.view === "map"` and `followHistory` takes its else-branch on
+every other view, so no Explore reader fetches it by landing, and one who clicks a handle
+fetches 1,376 B on the click rather than carrying 938 B of it in the entry chunk from the
+start. **Left uncut the walked total reads 75,284 B and the budget fails** — not because the
+reader downloads more, but because a 4 kB module gzips worse alone than inside a 40 kB chunk.
+That artifact is exactly what the card's own cut was added for in v0.73: a split always raises
+the walked total and always lowers what lands. Cut, the route measures **73,925 B**, which is
+**913 B less than the same walk on the base tree**, and it is the number a reader would
+recognise.
 
 The entry was re-measured again when the well card moved to a dynamic import. `card/card.ts`
 and everything only it reaches — `gw-figure`, `card/format.ts`, the completion and neighbour
@@ -286,6 +332,7 @@ single green check. Append; do not overwrite.
 
 | date | commit | entry gzip B | explorer route gzip B | map chunk gzip B | note |
 |---|---|---:|---:|---:|---|
+| 2026-09-02 | v0.80 P0 (`7ff303c` + the split) | **13,026** | **73,925** | 318,073 | The lineage drawer moved behind a dynamic import, which is what funds the well card's second generation. Measured on the same tree before and after: entry **13,947 → 13,026 gzip**, **921 B returned** (raw 40,254 → 36,539), against 53 B of headroom before it and 974 B after. `gw-chain` occurs **3** times in the entry chunk before and **0** after, counted with `grep -o` piped to `wc -l` over the chunk `dist/index.html` names, because `grep -c` counts lines and a minified chunk is two of them. The drawer is now `drawer-*.js`, 4,060 B raw / **1,376 B gzip**, fetched on the first handle a reader opens and by no reader who opens none. The explorer route is re-walked in the same act: **74,838 B** on the base tree against the 71,511 this file recorded, and **73,925 B** here with the drawer cut on the rule the paragraph above states. The entry stylesheet is unchanged at 6,507 B and gains the fourth budget in the same commit, at the ruled 7,420 B |
 | 2026-08-21 | `ff9a0ae` | 341,517 | — | — | one chunk; no split, no explorer |
 | 2026-08-21 | C0 | 38,498 | — | 302,369 | map moved behind a dynamic import |
 | 2026-08-21 | C11 | 44,192 | 62,817 | 313,823 | first measurement of the explorer route |
