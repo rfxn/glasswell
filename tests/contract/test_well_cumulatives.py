@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 import psycopg
+import pytest
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_API10
@@ -18,6 +19,44 @@ from tests.contract.conftest import (
 from tests.contract.conftest import (
     NM_API10 as OUT_OF_SCOPE_API10,
 )
+from tests.support.seed import seed_well
+
+
+@pytest.fixture
+def with_out_of_scope_well(seeded: psycopg.Connection, client: TestClient) -> TestClient:
+    """One well in a jurisdiction that registers no `cumulatives_scope` decision.
+
+    Local to this file rather than in the shared fixture: four standing gates prove New
+    Mexico holds no rows and that the surface says so by name, and a well seeded for every
+    test retires all four (gate-tx H-3).
+    """
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "select source_manifest_id, derivation_id from canonical.production_monthly limit 1"
+        )
+        manifest_id, derivation_id = cursor.fetchone()
+    seed_well(
+        seeded,
+        api10=OUT_OF_SCOPE_API10,
+        manifest_id=manifest_id,
+        derivation_id=derivation_id,
+        state_code="30",
+        county_code_at_permit="015",
+        ndic_file_no=None,
+        basin=None,
+        land_unit_label=None,
+        well_name="STATE COM 1H",
+        operator_name_reported="MEWBOURNE OIL COMPANY",
+        operator_id="14744",
+        status_canonical="active",
+        status_reported="A",
+        well_type_reported="O",
+        spud_date=None,
+        total_depth_ft=None,
+        completion_date=None,
+    )
+    seeded.commit()
+    return client
 
 PATH = f"/v1/wells/{EXAMPLE_API10}/cumulatives"
 SNAPSHOT = "2026-08-01"
@@ -136,14 +175,14 @@ def test_the_withheld_warning_names_the_count_and_the_ledger(client: TestClient)
     assert "/v1/quarantine" in withheld[0]["detail"]
 
 
-def test_a_well_outside_the_mart_is_refused_by_name(client: TestClient) -> None:
+def test_a_well_outside_the_mart_is_refused_by_name(with_out_of_scope_well: TestClient) -> None:
     """An empty 200 would read as `produced nothing`; a well outside the mart's scope is
     simply not in it, and the refusal names the scope so a reader can tell the two apart.
 
     Texas entered the scope by registering a cumulatives_scope rule, so the out-of-scope
     example is a jurisdiction that has registered no such decision.
     """
-    response = client.get(f"/v1/wells/{OUT_OF_SCOPE_API10}/cumulatives")
+    response = with_out_of_scope_well.get(f"/v1/wells/{OUT_OF_SCOPE_API10}/cumulatives")
 
     assert response.status_code == 404
     detail = response.json()["detail"]
@@ -151,10 +190,13 @@ def test_a_well_outside_the_mart_is_refused_by_name(client: TestClient) -> None:
     assert "42" in detail
 
 
-def test_the_well_offers_the_link_only_where_the_mart_holds_a_total(client: TestClient) -> None:
+def test_the_well_offers_the_link_only_where_the_mart_holds_a_total(
+    with_out_of_scope_well: TestClient,
+) -> None:
     """The card reads the link rather than the API prefix: a jurisdiction test in the client
     is a mapping decision living in code (R8), and it would turn this 404 into `no production`.
     """
+    client = with_out_of_scope_well
     in_scope = client.get(f"/v1/wells/{EXAMPLE_API10}").json()["links"]
     allocated = client.get(f"/v1/wells/{TX_API10}").json()["links"]
     out_of_scope = client.get(f"/v1/wells/{OUT_OF_SCOPE_API10}").json()["links"]

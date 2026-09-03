@@ -89,11 +89,16 @@ OTHER_API10S = tuple(f"330530000{index}" for index in range(1, 7))
 # comment did by claiming a null status the row has never carried, which left the absence class
 # with no representative anywhere until `seed_statusless_well` gave a test one to ask for.
 TX_API10 = "4200345818"
+# The digest this fixture's PDQ archive claims. A distinct constant rather than a repeated
+# placeholder, because a sha256 is the one thing two fixtures may not share.
+PDQ_FIXTURE_SHA256 = "7c" + "d4" * 30 + "1f"
 # A jurisdiction that registers no cumulatives_scope decision, so the mart holds nothing for
-# it. Without one, every well in the fixture is in scope and the gate that proves the link is
-# absent where there is no total has nothing to be absent on.
+# it. It is NOT seeded here: four standing gates prove New Mexico holds no rows and that the
+# surface says so, and a well in the shared fixture retires all four (gate-tx H-3). The one
+# test that needs an out-of-scope well seeds it itself, the way `test_nm_wells_serving.py`
+# does.
 NM_API10 = "3001500001"
-ALL_API10S = (EXAMPLE_API10, *OTHER_API10S, TX_API10, NM_API10)
+ALL_API10S = (EXAMPLE_API10, *OTHER_API10S, TX_API10)
 # Three ND wells the cumulative and cohort surfaces need distinct answers for: one the
 # regulator has no spud date for, one whose only filings carry a stored no_report and a
 # stored withheld, and one that has never filed anything at all.
@@ -848,26 +853,6 @@ def _seed_contract_fixture(db: psycopg.Connection, pinned_control: ControlArtifa
         total_depth_ft=Decimal("11450.0"),
         completion_date=date(2019, 4, 12),
     )
-    seed_well(
-        db,
-        api10=NM_API10,
-        manifest_id=gis_manifest,
-        derivation_id=tx_wells,
-        state_code="30",
-        county_code_at_permit="015",
-        ndic_file_no=None,
-        basin=None,
-        land_unit_label=None,
-        well_name="STATE COM 1H",
-        operator_name_reported="MEWBOURNE OIL COMPANY",
-        operator_id="14744",
-        status_canonical="active",
-        status_reported="A",
-        well_type_reported="O",
-        spud_date=None,
-        total_depth_ft=None,
-        completion_date=None,
-    )
     seed_well_spatial(
         db,
         api10=TX_API10,
@@ -966,8 +951,11 @@ def _seed_tx_allocation(db: psycopg.Connection) -> None:
     # The chain proof 1 walks: a share explains through the allocation to the lease row to the
     # manifest that names PDQ_DSV.zip. A promote derivation with no manifest behind it would
     # let every figure here resolve to nothing and the gate would still be green.
+    # Its own digest, not the "a" * 64 placeholder: `lineage/manifests.py` refuses two
+    # manifests claiming one sha256, and `test_health.py` plants that placeholder for New
+    # Mexico's poll (gate-tx H-3).
     pdq_manifest = seed_manifest(
-        db, sha256="a" * 64, source_id="tx_pdq_dsv", source_key="PDQ_DSV.zip"
+        db, sha256=PDQ_FIXTURE_SHA256, source_id="tx_pdq_dsv", source_key="PDQ_DSV.zip"
     )
     with lineage_session(
         recorder=PostgresRecorder(db),
