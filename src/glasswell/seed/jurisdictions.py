@@ -37,6 +37,19 @@ RESTATED_EVIDENCE_TAG = "v0.78"
 # append-only table.
 RESTATED_EVIDENCE_COMMIT = "5b37bf0363095b3e0cda2d6c3fb5d57e235de28f"
 
+# The grain restatement's clock. Montana registers a production_grain decision for the first
+# time and New Mexico's repoints to the successor that carries a served rollup, and a rule row
+# joins its registration on the whole clock pair -- so both are a restatement rather than an
+# append at an instant that was already published. Strictly later than every published_at
+# already on the table, and not a founding date plus one day, for the reasons the migration's
+# REPOINT CHECKLIST gives.
+GRAIN_RESTATED_ON = date(2026, 9, 5)
+GRAIN_RESTATED_CODES = ("MT", "NM")
+GRAIN_EVIDENCE_TAG = "UNRELEASED"
+# Spelled out, not computed: the release gate greps for the literal, and a placeholder it
+# cannot see is a placeholder that ships.
+GRAIN_EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
+
 # Colorado's own clock, named separately so the integrator can repoint it on its own train.
 # It is registered after the presentation columns exist, so it is founded whole: there is no
 # instant at which it was published without them and nothing to restate. It is NOT later than
@@ -451,6 +464,22 @@ JURISDICTION_RULES: tuple[dict[str, object], ...] = (
     *COLORADO_DECISIONS,
 )
 
+# The two registrations the grain restatement carries, resolved from what the presentation
+# restatement published rather than respelled: a restatement that drifted from what it restates
+# would be an edit wearing an append's clothes.
+GRAIN_RESTATEMENTS: tuple[dict[str, object], ...] = tuple(
+    row for row in FOUNDING_JURISDICTIONS
+    if str(row["jurisdiction_code"]) in GRAIN_RESTATED_CODES
+)
+
+# Every rule row those two registrations declare at their new instant. A restatement states what
+# was known when it was published, so its rule rows travel with it or the registration claims
+# fewer decisions than it has.
+GRAIN_JURISDICTION_RULES: tuple[dict[str, object], ...] = tuple(
+    row for row in JURISDICTION_RULES
+    if str(row["jurisdiction_code"]) in GRAIN_RESTATED_CODES
+)
+
 PREFIXES = frozenset(str(row["identity_prefix"]) for row in JURISDICTIONS)
 CODES = frozenset(str(row["jurisdiction_code"]) for row in JURISDICTIONS)
 NAMES = frozenset(str(row["name"]) for row in JURISDICTIONS)
@@ -549,6 +578,16 @@ def restatement_parameters(row: dict[str, object]) -> dict[str, object]:
     )
 
 
+def grain_restatement_parameters(row: dict[str, object]) -> dict[str, object]:
+    """The same registration again, at the instant its production-grain decision was decided."""
+    return registration_parameters(
+        row,
+        published_at=GRAIN_RESTATED_ON,
+        evidence_tag=GRAIN_EVIDENCE_TAG,
+        evidence_commit=GRAIN_EVIDENCE_COMMIT,
+    )
+
+
 def rule_parameters(
     row: dict[str, object], *, published_at: date = REGISTERED_ON
 ) -> dict[str, object]:
@@ -565,9 +604,11 @@ def rule_parameters(
 def seed_jurisdictions(connection: psycopg.Connection) -> int:
     """Idempotent by contract: seed_all runs on every deploy. Returns the registry total.
 
-    Two clocks, two rule sets: the founding instant keeps the decisions v0.76 knew about, and
-    the restatement carries those plus the ones this train registers. Writing the new rows at
-    the founding instant would be an edit to what was published, spelled as an append.
+    Three clocks, three rule sets: the founding instant keeps the decisions v0.76 knew about,
+    the presentation restatement carries those plus the ones that train registered, and the
+    grain restatement carries Montana's and New Mexico's again with their production-grain
+    decision. Writing a new row at an instant that was already published would be an edit to
+    what was published, spelled as an append.
     """
     with connection.cursor() as cursor:
         cursor.executemany(_INSERT_CODE, JURISDICTION_CODES)
@@ -575,12 +616,17 @@ def seed_jurisdictions(connection: psycopg.Connection) -> int:
             _INSERT_JURISDICTION,
             [registration_parameters(row) for row in JURISDICTION_RESTATEMENTS]
             + [restatement_parameters(row) for row in FOUNDING_JURISDICTIONS]
-            + [colorado_parameters()],
+            + [colorado_parameters()]
+            + [grain_restatement_parameters(row) for row in GRAIN_RESTATEMENTS],
         )
         cursor.executemany(
             _INSERT_RULE,
             [rule_parameters(row) for row in JURISDICTION_RULES_AS_FOUNDED]
-            + [rule_parameters(row, published_at=RESTATED_ON) for row in JURISDICTION_RULES],
+            + [rule_parameters(row, published_at=RESTATED_ON) for row in JURISDICTION_RULES]
+            + [
+                rule_parameters(row, published_at=GRAIN_RESTATED_ON)
+                for row in GRAIN_JURISDICTION_RULES
+            ],
         )
         # The refresh trigger for every registered read-time map, attached from the registry
         # rather than written by hand. The registry's own append triggers already call this, so

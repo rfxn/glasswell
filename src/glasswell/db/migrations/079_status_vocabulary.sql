@@ -21,11 +21,23 @@
 --      the future resolves nowhere and /v1/conformance/<id> serves 404 for it. The twelve
 --      lineage.status_classes rows carry the same date as their effective_from and their
 --      published_at.
---   4. seed/status_classes.py DOMAIN_EFFECTIVE_FROM / DOMAIN_EVIDENCE_TAG /
+--   4. The New Mexico rollup rule's effective_from -> strictly later than
+--      cr_nm_wcproduction_pool_rollup_1's. A conformance rule is superseded by a later valid
+--      time; this item is about lineage.conformance_rules and nothing else.
+--   5. The restatement's published_at 2026-09-05 -> the same date as item 3, and it MUST be
+--      strictly later than every published_at already on lineage.jurisdictions; if two trains
+--      are cut on one day, the restatement carries the following day. It must also not be a
+--      founding date plus one day: two standing gates plant a rival registration on that
+--      instant and the partial unique indexes would refuse them. This is the highest
+--      consequence line on this list, because this file makes max(published_at) the knowledge
+--      cut lineage.refresh_status_resolution() reads.
+--   6. seed/status_classes.py DOMAIN_EFFECTIVE_FROM / DOMAIN_EVIDENCE_TAG /
 --      DOMAIN_EVIDENCE_COMMIT and seed/conformance_status_classes.py EFFECTIVE_FROM -> the same
 --      values, in the same commit. The seed is the second writer and
 --      tests/contract/test_status_class_parity.py compares all three.
---   5. This file's version integer lives in its filename and nowhere else, so a renumber is a
+--   7. seed/jurisdictions.py GRAIN_RESTATED_ON / GRAIN_EVIDENCE_TAG / GRAIN_EVIDENCE_COMMIT ->
+--      item 5's date and item 1's pair.
+--   8. This file's version integer lives in its filename and nowhere else, so a renumber is a
 --      rename. No identifier, event id or payload below carries it.
 
 -- (1) The evidence pair, written once. 049's trigger refuses a conformance rule whose
@@ -517,6 +529,114 @@ create index if not exists well_pool_rollup_state_idx
 grant select on marts.well_pool_rollup to glasswell_api;
 grant select, insert, delete, truncate on marts.well_pool_rollup to glasswell_pipeline;
 
--- (8) Last, as 078:319 does: the resolver is rebuilt at the knowledge cut this file introduced,
+-- (8) Montana's and New Mexico's grain decisions, appended as a restatement pair in the
+-- 075:143-190 shape so the registration and its rule rows move together. A rule row joins its
+-- registration on the whole clock pair, so a decision appended at an instant that was already
+-- published would be an edit spelled as an append; New Mexico's production_grain row also has
+-- to repoint from _1 to its successor, which is not something an existing instant can express.
+--
+-- Every value but the clock is carried over from the row being restated rather than restated by
+-- hand, and the evidence pair is read back from the publication insert above: one literal in
+-- this file, and a repoint that moves the registration without the rules is not expressible.
+-- On a fresh database lineage.jurisdictions is empty at migrate time and this lands nothing;
+-- seed/jurisdictions.py is the writer there, which is the two-writer contract 073 set.
+insert into lineage.jurisdictions (
+    jurisdiction_code, effective_from, published_at, evidence_tag, evidence_commit,
+    name, regulator_name, regulator_url, identity_scheme, identity_is_unique,
+    identity_prefix, identity_pattern, source_ids, liquids_basis, wells_tile_layer_id,
+    map_colour, neighbors_available, explorer_default, land_grid_state, land_grid_scope,
+    status_dataset_detail, rationale, wells_layer_id, wells_style_layer_ids, wells_draw_order,
+    wells_default_on, wells_snapshot_key, wells_subtitle_template, legend_note)
+select prior.jurisdiction_code, prior.effective_from, date '2026-09-05',
+       evidence.evidence_tag, evidence.evidence_commit,
+       prior.name, prior.regulator_name, prior.regulator_url,
+       prior.identity_scheme, prior.identity_is_unique, prior.identity_prefix,
+       prior.identity_pattern, prior.source_ids, prior.liquids_basis,
+       prior.wells_tile_layer_id, prior.map_colour, prior.neighbors_available,
+       prior.explorer_default, prior.land_grid_state, prior.land_grid_scope,
+       prior.status_dataset_detail, prior.rationale, prior.wells_layer_id,
+       prior.wells_style_layer_ids, prior.wells_draw_order, prior.wells_default_on,
+       prior.wells_snapshot_key, prior.wells_subtitle_template, prior.legend_note
+  from lineage.jurisdictions_as_of(
+           (select max(published_at) from lineage.jurisdictions), current_date) prior
+ cross join (select evidence_tag, evidence_commit
+               from lineage.conformance_rule_publications
+              where rule_id = 'cr_status_class_domain_1') evidence
+ where prior.jurisdiction_code in ('MT', 'NM');
+
+-- The rules the restatement carries: every row the restated instant declared, read back rather
+-- than respelled. The two production_grain decisions are appended below rather than copied,
+-- because Montana has none to copy and New Mexico's has to repoint to the successor.
+insert into lineage.jurisdiction_rules
+    (jurisdiction_code, effective_from, published_at, decision, rule_id, serving, note)
+select prior.jurisdiction_code, prior.effective_from, date '2026-09-05', prior.decision,
+       prior.rule_id, prior.serving, prior.note
+  from lineage.jurisdiction_rules prior
+  join lineage.jurisdictions restated
+    on restated.jurisdiction_code = prior.jurisdiction_code
+   and restated.effective_from = prior.effective_from
+   and restated.published_at = date '2026-09-05'
+ where prior.jurisdiction_code in ('MT', 'NM')
+   and prior.decision <> 'production_grain'
+   and prior.published_at = (select max(p.published_at) from lineage.jurisdiction_rules p
+                              where p.jurisdiction_code = prior.jurisdiction_code
+                                and p.published_at < date '2026-09-05')
+on conflict do nothing;
+
+-- Montana's, which closes a live R8 violation with no code change: 389 API-10s carry a summed
+-- figure on their well rows today with no rule named beside it, no breakdown link and no
+-- aggregation warning, because production.py gates all three on a registered grain rule and
+-- Montana registers none. Guarded on rule residency in the 075:233 shape, because the rule
+-- itself is seeded in Python.
+insert into lineage.jurisdiction_rules
+    (jurisdiction_code, effective_from, published_at, decision, rule_id, serving, note)
+select restated.jurisdiction_code, restated.effective_from, restated.published_at,
+       'production_grain', 'cr_mt_bogc_pool_rollup_1', true, null
+  from lineage.jurisdictions restated
+ where restated.jurisdiction_code = 'MT'
+   and restated.published_at = date '2026-09-05'
+   and exists (select 1 from lineage.conformance_rules c
+                where c.rule_id = 'cr_mt_bogc_pool_rollup_1')
+on conflict do nothing;
+
+-- New Mexico's, repointed to the successor where the successor is resident and left on the
+-- founding rule where it is not: the two are seeded in different trains, and a registration
+-- that lost its production_grain row between them would be a registration claiming fewer
+-- decisions than it has. _2 supersedes nothing it contradicts: rolls_up_to_the_well stays
+-- false, because that is a fact about the OCD's filings and about canonical, and neither moved.
+insert into lineage.jurisdiction_rules
+    (jurisdiction_code, effective_from, published_at, decision, rule_id, serving, note)
+select restated.jurisdiction_code, restated.effective_from, restated.published_at,
+       'production_grain', successor.rule_id, true, null
+  from lineage.jurisdictions restated
+ cross join lateral (
+      select case when exists (select 1 from lineage.conformance_rules c
+                                where c.rule_id = 'cr_nm_wcproduction_pool_rollup_2')
+                  then 'cr_nm_wcproduction_pool_rollup_2'
+                  else 'cr_nm_wcproduction_pool_rollup_1' end as rule_id) successor
+ where restated.jurisdiction_code = 'NM'
+   and restated.published_at = date '2026-09-05'
+   and exists (select 1 from lineage.conformance_rules c
+                where c.rule_id = successor.rule_id)
+on conflict do nothing;
+
+-- The supersession, recorded on the audit trail the way 071 and 075 record one: the rule is
+-- appended, never edited, and what changed between the two is readable without the rationale.
+insert into lineage.audit_events (event_id, occurred_at, actor, event_type, subject_type,
+                                  subject_id, payload)
+select 'evt_migration_cr_nm_wcproduction_pool_rollup_2', now(), 'system:migration',
+       'conformance.rule_superseded', 'rule', 'cr_nm_wcproduction_pool_rollup_2',
+       jsonb_build_object('supersedes', 'cr_nm_wcproduction_pool_rollup_1',
+                          'from_spec', 'no served rollup; the regulator files at completion-pool'
+                                       ' grain and glasswell performs none',
+                          'to_spec', 'served_rollup: sum_over_pools, served_from:'
+                                     ' marts.well_pool_rollup, promotes_to_canonical: false',
+                          'migration', 'status_vocabulary')
+ where exists (select 1 from lineage.conformance_rules
+                where rule_id = 'cr_nm_wcproduction_pool_rollup_2')
+   and not exists (select 1 from lineage.audit_events
+                    where event_id = 'evt_migration_cr_nm_wcproduction_pool_rollup_2');
+
+-- (9) Last, as 078:319 does: the resolver is rebuilt at the knowledge cut this file introduced,
 -- with the trigger set this file attached.
 select lineage.refresh_status_resolution();

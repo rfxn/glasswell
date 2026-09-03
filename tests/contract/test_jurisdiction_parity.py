@@ -28,12 +28,14 @@ from glasswell.seed.conformance_tx import TX_SOURCES
 from glasswell.seed.jurisdictions import (
     EXPLORER_DEFAULT_CODE,
     FOUNDING_JURISDICTIONS,
+    GRAIN_RESTATEMENTS,
     JURISDICTION_RESTATEMENTS,
     JURISDICTION_RULES,
     REGISTERED_ON,
     REQUIRED_DECISIONS,
     RESTATED_ON,
     colorado_parameters,
+    grain_restatement_parameters,
     registration_parameters,
     restatement_parameters,
     rule_parameters,
@@ -262,6 +264,9 @@ def test_the_migration_and_the_seed_module_write_the_same_registrations(
             # Founded whole at its own instant: a registration that arrives after the
             # presentation columns exist has nothing to restate, so it is one row and not two.
             colorado_parameters(),
+            # The two whose production-grain decision was registered at its own later instant,
+            # because a rule row joins its registration on the whole clock pair.
+            *(grain_restatement_parameters(row) for row in GRAIN_RESTATEMENTS),
         ),
         key=lambda row: (str(row["jurisdiction_code"]), row["published_at"]),
     )

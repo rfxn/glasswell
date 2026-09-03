@@ -20,7 +20,12 @@ from glasswell.lineage.status_classes import (
     load_status_classes,
 )
 from glasswell.seed import seed_all, seed_sources
-from glasswell.seed.jurisdictions import RESTATED_ON
+from glasswell.seed.jurisdictions import (
+    GRAIN_JURISDICTION_RULES,
+    GRAIN_RESTATED_CODES,
+    GRAIN_RESTATED_ON,
+    RESTATED_ON,
+)
 from glasswell.seed.status_classes import DOMAIN_EFFECTIVE_FROM, STATUS_CLASSES
 from glasswell.status_resolution import UNMAPPED_CLASS
 
@@ -218,6 +223,37 @@ def test_the_resolver_reads_the_registrys_own_knowledge_cut_and_records_it(
         assert row["built_for"] < cut, "the two cuts are different dates and both are recorded"
 
 
+def test_the_grain_restatement_carries_its_registrations_rule_rows(
+    db: psycopg.Connection,
+) -> None:
+    """A rule row joins its registration on the whole clock pair, so a decision appended at an
+    instant that was already published would be an edit spelled as an append."""
+    seed_all(db)
+    with db.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(
+            "select jurisdiction_code, decision, rule_id from lineage.jurisdiction_rules"
+            " where published_at = %s order by jurisdiction_code, decision, rule_id",
+            (GRAIN_RESTATED_ON,),
+        )
+        landed = [
+            (row["jurisdiction_code"], row["decision"], row["rule_id"])
+            for row in cursor.fetchall()
+        ]
+        cursor.execute(
+            "select jurisdiction_code from lineage.jurisdictions where published_at = %s"
+            " order by jurisdiction_code",
+            (GRAIN_RESTATED_ON,),
+        )
+        restated = [row["jurisdiction_code"] for row in cursor.fetchall()]
+
+    assert restated == sorted(GRAIN_RESTATED_CODES)
+    declared = sorted(
+        (str(row["jurisdiction_code"]), str(row["decision"]), str(row["rule_id"]))
+        for row in GRAIN_JURISDICTION_RULES
+    )
+    assert landed == declared
+
+
 def test_the_rollup_mart_exists_and_only_the_pipeline_may_write_it(
     db: psycopg.Connection,
 ) -> None:
@@ -285,3 +321,19 @@ def test_the_migration_is_the_writer_where_the_source_registry_is_already_reside
             "select count(*) from pg_constraint where conname = 'co_status_map_class_fk'"
         )
         assert cursor.fetchone()[0] == 1
+        cursor.execute(
+            "select jurisdiction_code from lineage.jurisdictions where published_at = %s"
+            " order by 1",
+            (GRAIN_RESTATED_ON,),
+        )
+        assert [row[0] for row in cursor.fetchall()] == sorted(GRAIN_RESTATED_CODES)
+
+
+def test_a_second_apply_on_the_same_day_raises_instead_of_being_absorbed(
+    seeded: psycopg.Connection,
+) -> None:
+    """There is deliberately no on-conflict clause on the restatement insert: an unrepointed
+    clock would otherwise collide with the instant it restates, be absorbed in silence, and
+    leave the production-grain decision unregistered while the migration reported success."""
+    with seeded.cursor() as cursor, pytest.raises(psycopg.errors.UniqueViolation):
+        cursor.execute(migration(MIGRATION).sql)

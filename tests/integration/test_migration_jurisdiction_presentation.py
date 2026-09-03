@@ -17,6 +17,7 @@ from glasswell.db.migrate import discover_migrations
 from glasswell.seed import seed_all
 from glasswell.seed.jurisdictions import (
     FOUNDING_JURISDICTIONS,
+    GRAIN_RESTATEMENTS,
     JURISDICTION_RESTATEMENTS,
     JURISDICTION_RULES,
     JURISDICTION_RULES_AS_FOUNDED,
@@ -94,9 +95,14 @@ def test_the_founding_registration_still_answers_under_its_own_knowledge_cut(
 def test_the_restatement_is_published_strictly_later_than_every_founding_row(
     db: psycopg.Connection,
 ) -> None:
+    # Bounded at this track's own instant, because a later track restates again: what is pinned
+    # is that this restatement is strictly later than every founding row, not that nothing has
+    # been published since.
     with db.cursor() as cursor:
         cursor.execute(
             "select min(published_at), max(published_at) from lineage.jurisdictions"
+            " where published_at <= %s",
+            (RESTATED_ON,),
         )
         earliest, latest = cursor.fetchone()
 
@@ -232,7 +238,9 @@ def test_the_migration_and_the_seed_write_the_same_restatements(
         from_seed = cursor.fetchall()
 
     assert from_migration == from_seed
-    assert len(from_seed) == len(JURISDICTIONS) + len(JURISDICTION_RESTATEMENTS)
+    assert len(from_seed) == (
+        len(JURISDICTIONS) + len(JURISDICTION_RESTATEMENTS) + len(GRAIN_RESTATEMENTS)
+    )
 
 
 def test_two_registrations_cannot_claim_one_draw_order_at_one_instant(
