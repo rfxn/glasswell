@@ -30,12 +30,12 @@ EVIDENCE_COMMIT = "6f2e9e6e97952000985568e6aa04d479ec84fe83"
 # every founding published_at, and not REGISTERED_ON + 1 day: two standing gates plant a rival
 # registration on that instant and the partial unique indexes would refuse them.
 RESTATED_ON = date(2026, 9, 4)
-RESTATED_EVIDENCE_TAG = "UNRELEASED"
+RESTATED_EVIDENCE_TAG = "v0.78"
 # Spelled out rather than computed: release.py scans this file for the quoted placeholder, and
 # an expression that evaluates to it is invisible to that scan, so the tag alone would have
 # blocked and a half-repoint would have cleared the gate with a placeholder bound for an
 # append-only table.
-RESTATED_EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
+RESTATED_EVIDENCE_COMMIT = "5b37bf0363095b3e0cda2d6c3fb5d57e235de28f"
 
 # Colorado's own clock, named separately so the integrator can repoint it on its own train.
 # It is registered after the presentation columns exist, so it is founded whole: there is no
@@ -44,10 +44,10 @@ RESTATED_EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
 # jurisdictions_as_of(current_date, current_date), so a registration dated ahead of the deploy
 # host's today resolves nowhere and Colorado's statuses read as unmapped on the map.
 CO_REGISTERED_ON = REGISTERED_ON
-CO_EVIDENCE_TAG = "UNRELEASED"
+CO_EVIDENCE_TAG = "v0.78"
 # Spelled out, not computed: the release gate greps for the literal, and a placeholder it
 # cannot see is a placeholder that ships.
-CO_EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
+CO_EVIDENCE_COMMIT = "5b37bf0363095b3e0cda2d6c3fb5d57e235de28f"
 
 # The web Wells rows as registration data. Seven facts that lived as object literals in
 # `web/src/map/registry.ts`, so a fifth jurisdiction is a row rather than a hand edit.
