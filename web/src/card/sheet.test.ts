@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -62,6 +62,23 @@ describe("the card is a column of the shell's grid, not a panel over it", () => 
 
   it("keeps the card at the width the flyout had", () => {
     expect(STYLE).toContain("--gw-card-w: min(38vw, 540px)");
+  });
+
+  it("names only tokens something declares", () => {
+    // An undeclared custom property makes the whole declaration invalid and the rule silently
+    // does nothing: `var(--text)` is not a token anywhere in this app and the rail's hover
+    // state was dead on arrival. Tokens a module sets from script count as declared, which is
+    // how the chart's band geometry reaches the sheet.
+    const declared = new Set([...STYLE.matchAll(/(--[a-z0-9-]+)\s*:/g)].map((match) => match[1]));
+    for (const file of readdirSync("src", { recursive: true, encoding: "utf8" })) {
+      if (!file.endsWith(".ts") && !file.endsWith(".css")) continue;
+      const source = readFileSync(`src/${file}`, "utf8");
+      for (const match of source.matchAll(/["'`](--[a-z0-9-]+)["'`]|(--[a-z0-9-]+)\s*:/g)) {
+        declared.add(match[1] ?? match[2]);
+      }
+    }
+    const used = new Set([...STYLE.matchAll(/var\((--[a-z0-9-]+)/g)].map((match) => match[1]));
+    expect([...used].filter((token) => !declared.has(token))).toEqual([]);
   });
 
   it("columns the drawer only where three columns still leave the map 500 px", () => {

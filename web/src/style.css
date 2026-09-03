@@ -936,7 +936,7 @@ main[data-rail="open"][data-drawer="open"] {
 }
 
 #gw-rail-chrome button:hover {
-  color: var(--text);
+  color: var(--paper);
   border-color: var(--hairline);
 }
 
