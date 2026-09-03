@@ -2251,21 +2251,29 @@ a {
 }
 
 /* Observed and allocated are the distinction the band exists to draw, so they are the two
-   ends of the encoding: solid where the regulator's number is this well's, hatched where a
-   share was computed. Nothing here is a severity colour. */
-.gw-alloc-observed-gas-well,
+   ends of the encoding: observed is solid and in the paper/slate pair, allocated is textured
+   and in the muted/amber pair. Nothing here is a severity colour. --ink is the surface token
+   and inverts with the theme, so a mark drawn in it is the strip: 1.09:1 dark, 1.12:1 light,
+   against the 3:1 floor a non-text mark has to clear (B2). */
 .gw-alloc-observed-single-well {
-  background: var(--ink);
-  border-color: var(--ink);
+  background: var(--slate);
+  border-color: var(--slate);
+}
+
+/* Two observed facts, so two encodings: one gas well on the lease, or one eligible well that
+   month. A shared swatch is one class to a reader who is reading the band rather than the key. */
+.gw-alloc-observed-gas-well {
+  background: linear-gradient(to bottom, var(--paper) 0 50%, var(--slate) 50% 100%);
+  border-color: var(--slate);
 }
 
 .gw-alloc-equal-share {
   background: repeating-linear-gradient(
     135deg,
-    var(--ink) 0 2px,
+    var(--muted) 0 2px,
     var(--paper) 2px 4px
   );
-  border-color: var(--ink);
+  border-color: var(--muted);
 }
 
 /* A well the regulator calls plugged with no date, still drawing a share. It is the one

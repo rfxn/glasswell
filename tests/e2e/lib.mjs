@@ -200,6 +200,68 @@ export function shooter(directory) {
   };
 }
 
+// The same 3:1 non-text floor, applied to a mark that carries no text: an encoding cell is
+// judged on its fill, and a fill may be a background colour, a gradient, or both. Every paint
+// the rule contributes is measured against the strip the mark sits on, so a class whose only
+// paint is the surface token is caught wherever it is drawn. `host` is a selector for the
+// element the probes are appended to, so they are measured in the context that paints them.
+export async function markContrast(page, { host, classNames, base }) {
+  return page.evaluate(
+    ([hostSelector, classes, baseClass]) => {
+      const lum = (colour) => {
+        const [r, g, b] = colour
+          .match(/\d+(\.\d+)?/g)
+          .slice(0, 3)
+          .map(Number)
+          .map((v) => {
+            v /= 255;
+            return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+          });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
+      const ratio = (a, b) => {
+        const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+        return +((hi + 0.05) / (lo + 0.05)).toFixed(2);
+      };
+      const opaque = (colour) => Boolean(colour) && colour !== "transparent" && !/,\s*0\)$/.test(colour);
+      const backgroundOf = (element) => {
+        let node = element;
+        while (node) {
+          const colour = getComputedStyle(node).backgroundColor;
+          if (opaque(colour)) return colour;
+          node = node.parentElement;
+        }
+        return "rgb(11, 16, 20)";
+      };
+      const container = document.querySelector(hostSelector);
+      if (!container) return { missing: hostSelector, theme: document.documentElement.dataset.theme ?? "dark" };
+      const background = backgroundOf(container);
+      const marks = classes.map((className) => {
+        const probe = document.createElement("span");
+        probe.className = `${baseClass} ${className}`;
+        container.appendChild(probe);
+        const style = getComputedStyle(probe);
+        const fill = style.backgroundColor;
+        const image = style.backgroundImage;
+        probe.remove();
+        const paints = [
+          ...(opaque(fill) ? [fill] : []),
+          ...(image === "none" ? [] : image.match(/rgba?\([^)]*\)/g) ?? []).filter(opaque),
+        ];
+        const ratios = [...new Set(paints)].map((colour) => ({ colour, ratio: ratio(colour, background) }));
+        return {
+          className,
+          paints: ratios,
+          best: ratios.length ? Math.max(...ratios.map((entry) => entry.ratio)) : 1,
+          signature: `${fill}|${image}`,
+        };
+      });
+      return { theme: document.documentElement.dataset.theme ?? "dark", background, marks };
+    },
+    [host, classNames, base],
+  );
+}
+
 export async function shotElement(page, selector, path) {
   const element = page.locator(selector).first();
   if (!(await element.count())) return false;
