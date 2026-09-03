@@ -1,0 +1,105 @@
+[
+  {
+    "code": "ND",
+    "id": "wells",
+    "tileLayerId": "nd_wells",
+    "styleLayers": [
+      "wells",
+      "wells-struck"
+    ],
+    "drawOrder": 40,
+    "defaultOn": true,
+    "tileProperties": [
+      "api10",
+      "operator_name",
+      "status_canonical",
+      "spud_year",
+      "well_type_reported",
+      "geometry_provenance",
+      "derivation_id"
+    ]
+  },
+  {
+    "code": "TX",
+    "id": "tx-wells",
+    "tileLayerId": "tx_wells",
+    "styleLayers": [
+      "tx-wells",
+      "tx-wells-struck"
+    ],
+    "drawOrder": 42,
+    "defaultOn": true,
+    "tileProperties": [
+      "api10",
+      "operator_name",
+      "status_canonical",
+      "well_type_reported",
+      "county_code",
+      "derivation_id"
+    ]
+  },
+  {
+    "code": "NM",
+    "id": "nm-wells",
+    "tileLayerId": "nm_wells",
+    "styleLayers": [
+      "nm-wells",
+      "nm-wells-struck"
+    ],
+    "drawOrder": 43,
+    "defaultOn": true,
+    "tileProperties": [
+      "api10",
+      "operator_name",
+      "status_canonical",
+      "status_reported",
+      "well_type_reported",
+      "county_code",
+      "spud_year",
+      "derivation_id"
+    ]
+  },
+  {
+    "code": "MT",
+    "id": "mt-wells",
+    "tileLayerId": "mt_wells",
+    "styleLayers": [
+      "mt-wells",
+      "mt-wells-struck"
+    ],
+    "drawOrder": 44,
+    "defaultOn": true,
+    "tileProperties": [
+      "api10",
+      "operator_name",
+      "status_canonical",
+      "status_reported",
+      "well_type_reported",
+      "completion_year",
+      "derivation_id"
+    ]
+  },
+  {
+    "code": "CO",
+    "id": "co-wells",
+    "tileLayerId": "co_wells",
+    "styleLayers": [
+      "co-wells",
+      "co-wells-struck"
+    ],
+    "drawOrder": 45,
+    "defaultOn": true,
+    "tileProperties": [
+      "api10",
+      "operator_name",
+      "status_canonical",
+      "status_reported",
+      "well_type_reported",
+      "county_code",
+      "spud_year",
+      "loc_qual_class",
+      "geometry_provenance",
+      "derivation_id"
+    ]
+  }
+]

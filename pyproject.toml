@@ -37,6 +37,7 @@ dev = [
 
 [project.scripts]
 glasswell-migrate = "glasswell.db.migrate:main"
+glasswell-scheduler = "glasswell.scheduler.cli:main"
 glasswell-owner-bootstrap = "glasswell.api.bootstrap:bootstrap_main"
 glasswell-owner-reset = "glasswell.api.bootstrap:reset_main"
 glasswell-features = "glasswell.modeling.feature_matrix:main"
@@ -44,6 +45,9 @@ glasswell-model-dataset = "glasswell.modeling.model_dataset:main"
 glasswell-typecurve-control = "glasswell.modeling.type_curve:main"
 glasswell-p3-context-publish = "glasswell.modeling.p3_publication:main"
 glasswell-neighbors = "glasswell.marts.neighbors:main"
+# One engine, one entry point: --jurisdiction is what picks the profile. The per-state
+# modules stay as shims because two applied migrations and a deployed unit name them.
+glasswell-tiles = "glasswell.marts.wells:main"
 glasswell-fracfocus = "glasswell.ingest.fracfocus:main"
 glasswell-eia-boundaries = "glasswell.ingest.eia_boundaries:main"
 glasswell-basin-boundaries = "glasswell.marts.basin_boundaries:main"
@@ -52,6 +56,10 @@ glasswell-mt-gis = "glasswell.ingest.mt_gis:main"
 # Tier 2 of the New Mexico track only. `glasswell.ingest.nm_ocd` and `.nm_dims` deliberately
 # keep their `python -m` spelling: docs/runbook-nm-tier2.md states why.
 glasswell-nm-wells = "glasswell.ingest.nm_wells:main"
+# The two Colorado promotions an operator hand-runs. The two network ingests keep their
+# `python -m` spelling, as the New Mexico FTP pair does: they are the scheduler's to run.
+glasswell-co-wells = "glasswell.ingest.co_wells:main"
+glasswell-co-production = "glasswell.ingest.co_production:main"
 glasswell-nm-tiles = "glasswell.marts.nm_wells:main"
 
 [tool.setuptools.packages.find]

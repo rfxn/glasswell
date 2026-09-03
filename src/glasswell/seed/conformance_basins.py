@@ -11,6 +11,9 @@ from datetime import date
 import psycopg
 from psycopg.types.json import Jsonb
 
+from glasswell.seed.jurisdictions import RESTATED_ON
+from glasswell.seed.supersession import CORRECTED_REFERENCE, correcting_module_function
+
 EFFECTIVE_FROM = date(2026, 8, 30)
 
 BASINS_URL = "https://www.eia.gov/maps/map_data/SedimentaryBasins_US_EIA.zip"
@@ -406,6 +409,31 @@ BASIN_RULES: tuple[dict[str, object], ...] = (
         "evidence_url": BASINS_URL,
     },
 )
+
+
+PROMOTE_MODULE = "glasswell.ingest.eia_boundaries"
+
+
+def _by_id(rule_id: str) -> dict[str, object]:
+    return next(rule for rule in BASIN_RULES if rule["rule_id"] == rule_id)
+
+
+# The two corrections this train appends. `_promote_plays` has never been the name of anything
+# in that module; the function is `_promote`. Derived from the rows they supersede, so the
+# claim that only the reference moved is one a reader can check by construction.
+BASIN_RULES = (
+    *BASIN_RULES,
+    *(
+        correcting_module_function(
+            _by_id(rule_id),
+            module_function=f"{PROMOTE_MODULE}:_promote",
+            effective_from=RESTATED_ON,
+            rationale=CORRECTED_REFERENCE.format(symbol="_promote_plays", module=PROMOTE_MODULE),
+        )
+        for rule_id in ("cr_eia_basin_link_1", "cr_eia_geometry_repair_1")
+    ),
+)
+
 
 _INSERT_SOURCE = """
 insert into lineage.sources (source_id, name, jurisdiction, license_note, redistributable)

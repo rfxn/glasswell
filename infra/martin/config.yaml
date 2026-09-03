@@ -53,6 +53,9 @@ postgres:
     mt_paths:
       schema: marts
       function: mt_paths
+    co_wells:
+      schema: marts
+      function: co_wells
     basins:
       schema: marts
       function: basins

@@ -1,5 +1,10 @@
 import { coalesce, get, lower, match } from "./expr.ts";
-import { jurisdictionRule, rulesFor } from "./jurisdictions.generated.ts";
+import {
+  DEFAULT_JURISDICTION,
+  JURISDICTION_LIST,
+  jurisdictionRule,
+  rulesFor,
+} from "./jurisdictions.generated.ts";
 import type { Expr } from "./expr.ts";
 
 /**
@@ -19,12 +24,32 @@ function statusVocabularyRule(code: string): string {
   return rule;
 }
 
-export const STATUS_VOCAB_RULE = statusVocabularyRule("ND");
+/**
+ * Every registration's vocabulary rule, resolved at import. Four named constants stood here
+ * and three of them were read by nothing: they were import-time assertions that each of four
+ * hard-coded jurisdictions registered a vocabulary, which is a claim the registry can make for
+ * however many it holds.
+ */
+export const STATUS_VOCAB_RULE_BY_CODE: Readonly<Record<string, string>> = Object.fromEntries(
+  JURISDICTION_LIST.map((row) => [row.code, statusVocabularyRule(row.code)]),
+);
+
+/** The class list's own rule: the jurisdiction the explorer opens on, which is a registration. */
+export const STATUS_VOCAB_RULE = STATUS_VOCAB_RULE_BY_CODE[DEFAULT_JURISDICTION.code]!;
 /** One canonical class list, one vocabulary rule per source. Both are named where counts are. */
 export const STATUS_VOCAB_RULES: readonly string[] = rulesFor(STATUS_VOCABULARY);
-export const TX_STATUS_VOCAB_RULE = statusVocabularyRule("TX");
-export const NM_STATUS_VOCAB_RULE = statusVocabularyRule("NM");
-export const MT_STATUS_VOCAB_RULE = statusVocabularyRule("MT");
+
+/**
+ * The registered vocabulary rule a per-jurisdiction class cites, found by the rule's family
+ * rather than by a jurisdiction code. A family, because a supersession changes the id and must
+ * not be missed -- New Mexico's is already `_2` -- and because a code here would be this file
+ * deciding which regulator a class belongs to, which is the registry's answer to give.
+ */
+function vocabularyRuleInFamily(family: string): string {
+  const found = STATUS_VOCAB_RULES.find((rule) => rule.startsWith(`${family}_`));
+  if (found === undefined) throw new Error(`no registered status vocabulary in ${family}`);
+  return found;
+}
 
 /** Reserved for selection. No layer and no status may paint with it (UX P1-5). */
 export const SELECTION_COLOUR = "#5FD3E8";
@@ -106,7 +131,7 @@ export const STATUS_CLASSES: readonly StatusClass[] = [
       "Injection, disposal, storage, observation or water supply, not a producer" +
       " (cr_tx_status_vocab_1).",
     minZoom: 8,
-    rule: TX_STATUS_VOCAB_RULE,
+    rule: vocabularyRuleInFamily("cr_tx_status_vocab"),
   },
   {
     id: "plugged",
@@ -140,7 +165,7 @@ export const STATUS_CLASSES: readonly StatusClass[] = [
       "The regulator documents the code and glasswell has no equivalent class: zone-plugged"
       + " (OCD Q, Z) and reclamation-fund (OCD I, J).",
     minZoom: 9,
-    rule: NM_STATUS_VOCAB_RULE,
+    rule: vocabularyRuleInFamily("cr_nm_wellhistory_status_vocab"),
   },
   {
     id: "expired",

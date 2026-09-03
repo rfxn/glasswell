@@ -9,8 +9,10 @@ import pytest
 
 from glasswell.ingest import tx_gis
 from glasswell.lineage.fetch_attempts import failure_code
+from glasswell.seed.conformance_basins import BASIN_SOURCES
 from glasswell.seed.conformance_c115b import C115B_SOURCES
 from glasswell.seed.conformance_land import LAND_SOURCES
+from glasswell.seed.conformance_nm_wells import NM_WELLS_GIS_SOURCES
 from glasswell.seed.conformance_tx import TX_SOURCES
 from glasswell.seed.reference import SOURCES
 
@@ -27,6 +29,8 @@ FETCH_COMMANDS = (
     "blm_plss.py",
     "nm_c115b.py",
     "eia_boundaries.py",
+    "co_ecmc_gis.py",
+    "co_ecmc_production.py",
 )
 
 
@@ -72,14 +76,23 @@ def declared_poll_policy_ids() -> list[str]:
             migration.read_text(),
             re.IGNORECASE | re.DOTALL | re.MULTILINE,
         ):
-            ids.extend(re.findall(r"^\s*\('([^']+)',", block, re.MULTILINE))
+            # Unanchored: a one-row insert spells the tuple on the `values` line itself, which
+            # a line-anchored pattern cannot see (061's nm_ocd_wells_gis was invisible).
+            ids.extend(re.findall(r"\('([^']+)',", block))
     return ids
 
 
 def test_every_registered_fetchable_source_has_one_cadence_policy() -> None:
     expected = {
         str(source["source_id"])
-        for registry in (SOURCES, C115B_SOURCES, LAND_SOURCES, TX_SOURCES)
+        for registry in (
+            SOURCES,
+            C115B_SOURCES,
+            LAND_SOURCES,
+            TX_SOURCES,
+            BASIN_SOURCES,
+            NM_WELLS_GIS_SOURCES,
+        )
         for source in registry
     }
     policy_ids = declared_poll_policy_ids()

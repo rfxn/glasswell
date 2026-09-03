@@ -198,6 +198,9 @@ def seed_well_spatial(
     wkt: str | None = None,
     source_datum: str = "EPSG:4269",
     transform_rule_id: str = "cr_nd_datum_1",
+    # Null unless the jurisdiction registers a location_qualifier decision, which is a
+    # different fact from a coordinate whose quality the regulator did not state.
+    location_qualifier: str | None = None,
     manifest_id: str | None = None,
     derivation_id: str | None = None,
 ) -> str:
@@ -205,8 +208,8 @@ def seed_well_spatial(
     with connection.cursor() as cursor:
         cursor.execute(
             "insert into canonical.well_spatial (api10, geom_type, geom_key, geom, source_datum,"
-            " transform_rule_id, source_manifest_id, derivation_id)"
-            " values (%s, %s, %s, st_geomfromtext(%s, 4326), %s, %s, %s, %s)",
+            " transform_rule_id, location_qualifier, source_manifest_id, derivation_id)"
+            " values (%s, %s, %s, st_geomfromtext(%s, 4326), %s, %s, %s, %s, %s)",
             (
                 api10,
                 geom_type,
@@ -214,6 +217,7 @@ def seed_well_spatial(
                 wkt or (SURFACE_WKT if geom_type == "surface" else LATERAL_WKT),
                 source_datum,
                 transform_rule_id,
+                location_qualifier,
                 manifest_id or seed_placeholder_manifest(connection),
                 derivation_id or seed_derivation(connection),
             ),

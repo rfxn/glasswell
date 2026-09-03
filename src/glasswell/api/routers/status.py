@@ -23,12 +23,11 @@ from glasswell.api.deps import (
 from glasswell.api.errors import problem_responses
 from glasswell.api.examples import request_example
 from glasswell.api.responses import EnvelopeModel, enveloped
-from glasswell.api.routers.health import SourceHealth, source_health_data
+from glasswell.api.routers.health import SourceHealth
 from glasswell.api.security import REPORT_ONLY_ENV
 from glasswell.status.collector import DEFAULT_SNAPSHOT, SNAPSHOT_ENV
 from glasswell.status.models import (
     DATABASE_BYTES_REASON,
-    CheckState,
     DatasetInventory,
     DeploymentPosture,
     JobStatus,
@@ -37,6 +36,8 @@ from glasswell.status.models import (
     StatusDisclosure,
     StatusSnapshot,
 )
+from glasswell.status.source_health import source_health_data
+from glasswell.status_resolution import unresolved_read_time_jurisdictions
 
 router = APIRouter(tags=["service"])
 
@@ -73,6 +74,45 @@ class Status(BaseModel):
     )
     disclosures: list[StatusDisclosure] = Field(
         description="Known limits that prevent a broader health claim."
+    )
+
+
+def _resolver_check(connection: Connection, now: datetime) -> StatusCheck:
+    """Whether every jurisdiction registered for read-time status resolution has resolver rows.
+
+    `refresh_status_resolution()` skips a registration whose mapping table has not landed rather
+    than aborting, which is the right call and self-heals inside a deploy. What it cannot do is
+    say so afterwards, and the consequence of a `mapping_table` misspelt in a rule spec, or a
+    map renamed by a later migration, is that jurisdiction's whole spine drawing in the
+    `unmapped` class. This is where that becomes visible, on the surface that reports faults.
+    """
+    unresolved = unresolved_read_time_jurisdictions(connection)
+    if not unresolved:
+        return StatusCheck(
+            id="status_resolver",
+            label="Read-time status resolution",
+            state="ok",
+            observed_at=now,
+            detail="Every jurisdiction registered for read-time status resolution has rows.",
+            tier="data",
+            probe="this request",
+        )
+    named = "; ".join(
+        f"{row['name']} ({row['identity_prefix']}) wants lineage.{row['mapping_table']}"
+        f"{', which does not exist' if row['map_absent'] else ', which resolved nothing'}"
+        for row in unresolved
+    )
+    return StatusCheck(
+        id="status_resolver",
+        label="Read-time status resolution",
+        state="degraded",
+        observed_at=now,
+        detail=(
+            f"{len(unresolved)} registered read-time jurisdiction(s) resolve no status at all,"
+            f" so their wells are served unmapped: {named}."
+        ),
+        tier="data",
+        probe="this request",
     )
 
 
@@ -144,7 +184,7 @@ def _overall_state(
     sources: list[dict],
     disclosures: list[StatusDisclosure],
 ) -> OverallState:
-    states: list[CheckState] = [item.state for item in checks] + [item.state for item in jobs]
+    states: list[str] = [item.state for item in checks] + [item.state for item in jobs]
     if (
         snapshot_state in {"stale", "invalid"}
         or "degraded" in states
@@ -153,7 +193,12 @@ def _overall_state(
         return "degraded"
     if (
         snapshot_state != "current"
-        or any(state in {"pending", "unavailable", "not_instrumented"} for state in states)
+        # `refused` is a job stating why it did not run. An informational refusal is a
+        # standing condition, so it holds the platform at partial rather than reddening it.
+        or any(
+            state in {"pending", "unavailable", "not_instrumented", "refused"}
+            for state in states
+        )
         or any(source["state"] == "pending" for source in sources)
         or disclosures
     ):
@@ -200,6 +245,7 @@ def get_status(request: Request, connection: Connection) -> JSONResponse:
             tier="data",
             probe="this request",
         ),
+        _resolver_check(connection, now),
         StatusCheck(
             id="status_snapshot",
             label="Status telemetry",

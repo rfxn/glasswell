@@ -27,11 +27,15 @@ from glasswell.seed.conformance_nm_wells import NM_WELLS_GIS_SOURCES
 from glasswell.seed.conformance_tx import TX_SOURCES
 from glasswell.seed.jurisdictions import (
     EXPLORER_DEFAULT_CODE,
+    FOUNDING_JURISDICTIONS,
+    JURISDICTION_RESTATEMENTS,
     JURISDICTION_RULES,
-    JURISDICTIONS,
     REGISTERED_ON,
     REQUIRED_DECISIONS,
+    RESTATED_ON,
+    colorado_parameters,
     registration_parameters,
+    restatement_parameters,
     rule_parameters,
 )
 from glasswell.seed.reference import SOURCES
@@ -81,12 +85,12 @@ def test_every_resolved_prefix_belongs_to_exactly_one_jurisdiction(
 
     collision = REGISTERED_ON + timedelta(days=1)
     with db.cursor() as cursor:
-        cursor.execute("insert into lineage.jurisdiction_codes values ('CO', 'state')")
+        cursor.execute("insert into lineage.jurisdiction_codes values ('WY', 'state')")
         cursor.execute(
             "insert into lineage.jurisdictions (jurisdiction_code, effective_from,"
             " published_at, evidence_tag, evidence_commit, name, regulator_name, regulator_url,"
             " identity_scheme, identity_prefix, identity_pattern, source_ids, rationale)"
-            " values ('CO', %s, %s, 'v0.76', %s, 'Colorado', 'COGCC', 'https://ecmc.state.co.us',"
+            " values ('WY', %s, %s, 'v0.76', %s, 'Wyoming', 'WOGCC', 'https://wogcc.wyo.gov',"
             " 'api10', '33', '^33[0-9]{8}$', array['nd_mpr_xlsx'], 'planted')",
             (collision, collision, "a" * 40),
         )
@@ -117,6 +121,42 @@ def test_every_resolved_registration_carries_the_rule_rows_it_declares(
             assert row.rule(decision) is not None
 
 
+def test_no_absence_decision_claims_a_dimension_the_spine_carries_values_for(
+    db: psycopg.Connection,
+) -> None:
+    """R8 runs both ways: a registered decision has to be true of the data it decides about.
+
+    An `absence:<dimension>` row says a jurisdiction reports no value of that dimension at all,
+    which is what takes its wells out of the shared `not reported` bucket. The register is
+    append-only, so a row asserting it of a jurisdiction that does report the dimension can only
+    be superseded, never corrected — and on the deployed spine Texas carries 228,169 completion
+    dates over 107 distinct years, which is what this gate was written after.
+
+    The two rows that exist are both `absence:operator`, and both say what a *blank* operator
+    means rather than that the jurisdiction files none; the facet only reads them as
+    `absent_by_rule` where the jurisdiction contributes no value at all, which neither does.
+    """
+    registry = load_jurisdictions(db)
+    claimed = {
+        (row.jurisdiction_code, rule.decision.split(":", 1)[1], rule.rule_id)
+        for row in registry
+        for rule in row.rules
+        if rule.serving and rule.decision.startswith("absence:")
+    }
+
+    # The rule id is in the tuple, not only the pair it decides about. Swapping the rule behind
+    # an existing pair changes what /v1/conformance/<id> says about 70,039 wells while the set
+    # of pairs stands still, and this gate exists because the register cannot be corrected.
+    assert claimed == {
+        ("TX", "operator", "cr_tx_operator_absence_1"),
+        ("MT", "operator", "cr_mt_operator_absence_1"),
+    }, (
+        "an absence decision was registered, removed, or repointed at a different rule; it must"
+        " be measured against the deployed spine before it lands, because the register cannot"
+        " be corrected"
+    )
+
+
 def test_exactly_one_resolved_registration_is_the_explorer_default(
     db: psycopg.Connection,
 ) -> None:
@@ -134,15 +174,15 @@ def test_a_second_explorer_default_at_one_instant_is_refused_by_the_index(
     db: psycopg.Connection,
 ) -> None:
     with db.cursor() as cursor:
-        cursor.execute("insert into lineage.jurisdiction_codes values ('CO', 'state')")
+        cursor.execute("insert into lineage.jurisdiction_codes values ('WY', 'state')")
         with pytest.raises(psycopg.errors.UniqueViolation):
             cursor.execute(
                 "insert into lineage.jurisdictions (jurisdiction_code, effective_from,"
                 " published_at, evidence_tag, evidence_commit, name, regulator_name,"
                 " regulator_url, identity_scheme, identity_prefix, identity_pattern,"
                 " source_ids, rationale, explorer_default)"
-                " values ('CO', %s, %s, 'v0.76', %s, 'Colorado', 'COGCC',"
-                " 'https://ecmc.state.co.us', 'api10', '05', '^05[0-9]{8}$',"
+                " values ('WY', %s, %s, 'v0.76', %s, 'Wyoming', 'WOGCC',"
+                " 'https://wogcc.wyo.gov', 'api10', '49', '^49[0-9]{8}$',"
                 " array['nd_mpr_xlsx'], 'planted', true)",
                 (REGISTERED_ON, REGISTERED_ON, "a" * 40),
             )
@@ -154,14 +194,14 @@ def test_a_second_explorer_default_a_day_later_is_caught_by_the_gate_the_index_c
     """The N-3 shape again, on a different column: accepted by the index, refused by the set."""
     later = REGISTERED_ON + timedelta(days=1)
     with db.cursor() as cursor:
-        cursor.execute("insert into lineage.jurisdiction_codes values ('CO', 'state')")
+        cursor.execute("insert into lineage.jurisdiction_codes values ('WY', 'state')")
         cursor.execute(
             "insert into lineage.jurisdictions (jurisdiction_code, effective_from,"
             " published_at, evidence_tag, evidence_commit, name, regulator_name, regulator_url,"
             " identity_scheme, identity_prefix, identity_pattern, source_ids, rationale,"
             " explorer_default)"
-            " values ('CO', %s, %s, 'v0.76', %s, 'Colorado', 'COGCC',"
-            " 'https://ecmc.state.co.us', 'api10', '05', '^05[0-9]{8}$',"
+            " values ('WY', %s, %s, 'v0.76', %s, 'Wyoming', 'WOGCC',"
+            " 'https://wogcc.wyo.gov', 'api10', '49', '^49[0-9]{8}$',"
             " array['nd_mpr_xlsx'], 'planted', true)",
             (later, later, "a" * 40),
         )
@@ -212,9 +252,18 @@ def test_the_migration_and_the_seed_module_write_the_same_registrations(
         )
         resident = cursor.fetchall()
 
+    # An explicit key, not declaration order plus a stable sort: the database emits founding
+    # before restated per code, and a concatenation that happened to emit them the other way
+    # round paired every row with its own restatement and failed on evidence_tag with no hint.
     expected = sorted(
-        (registration_parameters(row) for row in JURISDICTIONS),
-        key=lambda row: str(row["jurisdiction_code"]),
+        (
+            *(registration_parameters(row) for row in JURISDICTION_RESTATEMENTS),
+            *(restatement_parameters(row) for row in FOUNDING_JURISDICTIONS),
+            # Founded whole at its own instant: a registration that arrives after the
+            # presentation columns exist has nothing to restate, so it is one row and not two.
+            colorado_parameters(),
+        ),
+        key=lambda row: (str(row["jurisdiction_code"]), row["published_at"]),
     )
     assert len(resident) == len(expected)
     for landed, declared in zip(resident, expected, strict=True):
@@ -239,7 +288,9 @@ def test_a_registration_published_after_the_cut_is_not_served_under_it(
             " select jurisdiction_code, effective_from, %s, evidence_tag, evidence_commit,"
             " name, regulator_name, %s, identity_scheme, identity_prefix, identity_pattern,"
             " source_ids, 'regulator_url typo corrected' from lineage.jurisdictions"
-            " where jurisdiction_code = 'ND'",
+            " where jurisdiction_code = 'ND' and published_at ="
+            "   (select max(published_at) from lineage.jurisdictions"
+            "     where jurisdiction_code = 'ND')",
             (later, corrected),
         )
 
@@ -248,6 +299,7 @@ def test_a_registration_published_after_the_cut_is_not_served_under_it(
     after = load_jurisdictions(db, later)
 
     assert before.by_code["ND"].regulator_url.endswith("mprindex.asp")
+    assert before.by_code["ND"].published_at == RESTATED_ON
     assert after.by_code["ND"].regulator_url == corrected
     assert after.by_code["ND"].published_at == later
 

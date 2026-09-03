@@ -28,7 +28,7 @@ rows and is the long pole — budget an hour, and see [Disk](#disk-check-before-
 Two shell variables used throughout, set them once per session:
 
 ```bash
-export DSN='postgresql:///glasswell?host=/var/run/postgresql'
+export GLASSWELL_DSN='postgresql:///glasswell?host=/var/run/postgresql'
 export VENV=/opt/glasswell/venv
 ```
 
@@ -70,9 +70,9 @@ Expected: head **at or above the migration that adds `marts.mt_wells_tile`** (th
 migration — the integrator renumbers it at the merge train, so check the table exists rather
 than a number); **47** Montana conformance rules; four zeros.
 
-If the head is short, apply migrations first — as `postgres`, `$VENV/bin/glasswell-migrate
---dsn "$DSN"` — and re-run this step. If the rule count is 46 rather than 47, the release
-predates `cr_mt_paths_length_scope_1`; run `seed_all` (deploy step 6b) before continuing.
+If the head is short, apply migrations first — as `postgres`, with `$VENV/bin/glasswell-migrate`
+reading `GLASSWELL_DSN` from the environment — and re-run this step. If the rule count is 46
+rather than 47, the release predates `cr_mt_paths_length_scope_1`; run `seed_all` (deploy step 6b) before continuing.
 
 If any staging count is **not** zero, Montana has been loaded before. Stop and read
 [Re-running](#re-running-and-how-to-undo).
@@ -84,7 +84,7 @@ If any staging count is **not** zero, Montana has been loaded before. Stop and r
 Both layers, one command. This is what puts Montana on the map; the production step does not.
 
 ```bash
-sudo -u glasswell $VENV/bin/glasswell-mt-gis --dsn "$DSN" --raw-root /data/raw
+sudo --preserve-env=GLASSWELL_DSN -u glasswell $VENV/bin/glasswell-mt-gis --raw-root /data/raw
 ```
 
 It prints one line per archive. Expected, from the 2026-08-18 artifacts:
@@ -144,7 +144,7 @@ The long one. Run it under `screen`, `tmux` or `systemd-run --scope`; an SSH dro
 aborts the transaction and you start over.
 
 ```bash
-sudo -u glasswell $VENV/bin/glasswell-mt-bogc --dsn "$DSN" --raw-root /data/raw
+sudo --preserve-env=GLASSWELL_DSN -u glasswell $VENV/bin/glasswell-mt-bogc --raw-root /data/raw
 ```
 
 Expected, from the 2026-08-17 artifact:
@@ -169,7 +169,7 @@ Staging is unconditional and full either way. Use it to smoke the path before co
 hour:
 
 ```bash
-sudo -u glasswell $VENV/bin/glasswell-mt-bogc --dsn "$DSN" --raw-root /data/raw \
+sudo --preserve-env=GLASSWELL_DSN -u glasswell $VENV/bin/glasswell-mt-bogc --raw-root /data/raw \
   --month 2026-06 --month 2026-07
 ```
 
@@ -183,7 +183,7 @@ the two separately without saying so.
 ## Step 3 — the marts, which is what reaches the map
 
 ```bash
-sudo -u glasswell $VENV/bin/python -m glasswell.marts.mt_wells --dsn "$DSN"
+sudo --preserve-env=GLASSWELL_DSN -u glasswell $VENV/bin/python -m glasswell.marts.mt_wells
 ```
 
 One JSON line:
@@ -200,7 +200,7 @@ The neighbour mart is separate and already multi-state; refresh it so Montana ge
 the cross-border edges the v0.69 repair opened:
 
 ```bash
-sudo -u glasswell $VENV/bin/glasswell-neighbors --dsn "$DSN"
+sudo --preserve-env=GLASSWELL_DSN -u glasswell $VENV/bin/glasswell-neighbors
 ```
 
 This is the step with the standing risk: the supported longitude domain now covers all of

@@ -105,6 +105,17 @@ those two literals, and the checklist at the head of each such migration is the 
 - Never write a date the deploy host has not reached. A future `effective_from` resolves no
   registration, so every registry-backed route serves `service_degraded` and the map draws the
   affected jurisdiction unmapped. `infra/verify.sh` catches it, but only after the API restart.
+  A jurisdiction whose statuses resolve at read time fails sooner and quieter: its arm on
+  `canonical.status_resolution` joins `jurisdictions_as_of(current_date, current_date)`, so a
+  future registration leaves that arm empty and every one of its wells reads unmapped with no
+  error anywhere.
+- **An applied migration's checklist is read, never corrected.** `migrate.py` records a sha256
+  over the whole file and refuses one that changed after it was applied, so editing a comment
+  in 071, 072 or 073 to improve its wording would stop `glasswell-migrate` on the deployed
+  host. `071` says "the main head this branch was written against" where this section says
+  merge commit; 072 and 073 already say merge commit, and 073 states the contrast. This
+  section is the authority and 071 is frozen history. A later
+  migration's checklist is where the corrected wording goes.
 
 ## 4. `MAJOR=1` — the exception, not a level
 
@@ -154,6 +165,16 @@ restart the new config is inert and `verify.sh`'s catalogue check fails the depl
 later. Migrations are opt-in (`--with-migrations`, or `MIGRATIONS=1` through the Make targets);
 the tile-function reinstall stays a hand step because it is conditional on
 `src/glasswell/marts/tiles.py` having moved.
+
+**Before `MIGRATIONS=1`, read the migrations the train carries.** Migrations run at step 6
+against a live API — the restart is later — so a migration that rebuilds an index on a served
+table holds an exclusive lock on it until the transaction commits, and every new read queues
+behind the waiting request. Any such migration should carry `set local lock_timeout` so a busy
+spine refuses the deploy instead of stalling it; check that it does, and **do not deploy inside
+the 02:00 backup window**, where the in-VM `pg_dump` holds a read lock on every table for its
+whole run. A refused migrate is a retry. The alternative — run that file alone, out of band,
+with `create index concurrently` outside a transaction, then record the version by hand — is
+written at the head of the migration that needs it.
 
 ## 7. Cadence
 

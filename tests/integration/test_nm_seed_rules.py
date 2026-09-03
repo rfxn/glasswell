@@ -122,6 +122,10 @@ def nm_rows(connection: psycopg.Connection) -> list[tuple]:
         cursor.execute(
             "select rule_id, source_id, stage, rule_kind, rationale, evidence_url"
             " from lineage.conformance_rules where source_id like 'nm\\_ocd\\_%%'"
+            # A cadence rule is filed under the source its job polls, so it carries an
+            # nm_ocd_ id without being one of New Mexico's conformance decisions. It is the
+            # scheduler registry's row and its own gates hold it.
+            "   and stage <> 'schedule'"
             " order by rule_id"
         )
         return cursor.fetchall()

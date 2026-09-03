@@ -330,9 +330,12 @@ describe("well card", () => {
 
     const scope = host.querySelector<HTMLElement>(".gw-well-cumulatives .gw-scope");
     // 5-6 of 7, because the water stream carries one more withheld month than oil and gas:
-    // a single admitted count would be wrong for two of the three streams.
+    // a single admitted count would be wrong for two of the three streams. The clause after
+    // it is what stops a rolling window being read as a life: where a regulator publishes
+    // only recent months, the total is over those months and the card has to say so.
     expect(scope?.textContent).toBe(
-      "Dec 2025 – Jun 2026 · 5–6 of 7 months admitted · snapshot 2026-08-01",
+      "Dec 2025 – Jun 2026 · 5–6 of 7 months admitted ·" +
+        " over the months filed, not the well's life · snapshot 2026-08-01",
     );
   });
 

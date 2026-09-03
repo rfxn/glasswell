@@ -22,6 +22,7 @@ import httpx
 import polars as pl
 import psycopg
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.identity import api10_identity
 from glasswell.ingest.base import IngestRun, open_ingest_run, record_vintage_day
 from glasswell.ingest.shapefile import ZippedShapefile
@@ -479,7 +480,7 @@ def _already_staged(connection: psycopg.Connection, table: str, manifest_id: str
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Ingest the MBOGC GIS layers.")
-    parser.add_argument("--dsn", required=True)
+    add_dsn_argument(parser)
     parser.add_argument("--raw-root")
     parser.add_argument(
         "--layer",
@@ -488,6 +489,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="ingest only this archive; repeatable",
     )
     arguments = parser.parse_args(argv)
+    arguments.dsn = resolve_dsn(arguments.dsn)
     selected = [
         layer for layer in LAYERS if not arguments.layer or layer.source_key in arguments.layer
     ]

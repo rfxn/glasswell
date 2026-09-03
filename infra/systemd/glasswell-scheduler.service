@@ -1,0 +1,44 @@
+[Unit]
+Description=glasswell cadence-driven scheduler (observing: computes the plan, launches nothing)
+Documentation=file:/opt/glasswell/src/docs/runbook-scheduler.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+OnFailure=glasswell-alert@%n.service
+
+[Service]
+Type=oneshot
+# Root, and not a preference: systemd-run without --user calls StartTransientUnit on the
+# system manager, which polkit gates at auth_admin_keep. A Type=oneshot service has no
+# session and no polkit agent, so an unprivileged caller can never obtain it. Each job the
+# scheduler launches drops to the uid its registry row names.
+User=root
+# Its own control-plane connection only. One line, no secret: a password-free socket DSN
+# naming the glasswell_scheduler role, which pg_ident maps OS root onto.
+EnvironmentFile=/etc/glasswell/scheduler.env
+ExecStart=/opt/glasswell/venv/bin/glasswell-scheduler
+TimeoutStartSec=6h
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+
+[Install]
+WantedBy=multi-user.target

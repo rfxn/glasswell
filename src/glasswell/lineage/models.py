@@ -38,7 +38,7 @@ DerivationStatus = Literal["ok", "failed"]
 AcquisitionMethod = Literal[
     "https_get", "ftp_anon", "mft_guid_resolve", "click_wall_accept", "arcgis_rest_paginate"
 ]
-RuleStage = Literal["parse", "validate", "conform", "join"]
+RuleStage = Literal["parse", "validate", "conform", "join", "schedule"]
 QuarantineState = Literal["open", "released", "accepted_loss", "superseded"]
 
 PROMOTION_OPERATIONS: frozenset[str] = frozenset({"canonical.promote", "alloc.apply"})

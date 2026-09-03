@@ -67,14 +67,14 @@ def test_one_prefix_resolving_to_two_jurisdictions_is_a_refusal_not_a_last_write
     """N-3: the partial unique index only sees a collision at one (effective_from,
     published_at). An executed probe inserted CO with prefix 33 one day after ND's and both
     resolved, so the standing gate is here rather than in the DDL."""
-    rows = [registration("ND", "33"), registration("CO", "33")]
+    rows = [registration("ND", "33"), registration("WY", "33")]
 
     with pytest.raises(JurisdictionRegistryError) as refusal:
         build_registry(rows, KNOWLEDGE, VALID)
 
     assert "33" in str(refusal.value)
     assert "ND" in str(refusal.value)
-    assert "CO" in str(refusal.value)
+    assert "WY" in str(refusal.value)
 
 
 def test_a_uwi_registration_carries_no_prefix_and_is_not_reachable_by_one() -> None:

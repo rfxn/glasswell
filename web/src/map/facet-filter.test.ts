@@ -67,20 +67,33 @@ describe("the tile columns a facet press can filter on", () => {
     }
   });
 
-  it("puts well type on the four point layers and on no line layer", () => {
+  it("puts well type on every point layer and on no line layer", () => {
     const filterable = FACET_FILTERED_LAYERS.filter(
       (layer) => facetTileProperty(layer.id, "well_type") !== null,
     ).map((layer) => layer.source);
 
-    expect([...new Set(filterable)].sort()).toEqual(["mt_wells", "nd_wells", "nm_wells", "tx_wells"]);
+    expect([...new Set(filterable)].sort()).toEqual([
+      "co_wells",
+      "mt_wells",
+      "nd_wells",
+      "nm_wells",
+      "tx_wells",
+    ]);
   });
 
-  it("puts county on Texas and New Mexico alone", () => {
+  it("puts county on the three jurisdictions whose tiles carry it", () => {
     const filterable = FACET_FILTERED_LAYERS.filter(
       (layer) => facetTileProperty(layer.id, "county") !== null,
     ).map((layer) => layer.source);
 
-    expect([...new Set(filterable)].sort()).toEqual(["nm_wells", "tx_laterals", "tx_wells"]);
+    // Colorado joins Texas and New Mexico: ECMC files the county segment of the API in its
+    // own column, so the tile can carry it and a press can narrow on it.
+    expect([...new Set(filterable)].sort()).toEqual([
+      "co_wells",
+      "nm_wells",
+      "tx_laterals",
+      "tx_wells",
+    ]);
   });
 
   it("filters on no dimension the tiles publish no column for", () => {
@@ -103,11 +116,13 @@ describe("the layers a facet press has to reach", () => {
   });
 
   it("holds the layers outside the status gate that would keep drawing filtered-out wells", () => {
-    // The defect this list exists to prevent: these six carry their own predicate, so a press
-    // that only rewrote the status gate would leave struck plugs, disposal rings and survey
-    // traces painted for every operator the reader just filtered away.
+    // The defect this list exists to prevent: each of these carries its own predicate, so a
+    // press that only rewrote the status gate would leave struck plugs, disposal rings and
+    // survey traces painted for every operator the reader just filtered away. One struck
+    // overlay per registered jurisdiction, so a fifth adds one here and no line elsewhere.
     const ungated = FACET_FILTERED_LAYERS.filter((layer) => !layer.gated).map((layer) => layer.id);
     expect(ungated.sort()).toEqual([
+      "co-wells-struck",
       "disposal-wells",
       "mt-wells-struck",
       "nm-wells-struck",
@@ -140,15 +155,18 @@ describe("the layers a facet press has to reach", () => {
       "mt-paths",
       "tx-laterals",
     ]);
+    // The wells rows in registered draw order, then the disposal ring: the ring reads the
+    // founding row's source and is declared after the rows it overlays rather than inside
+    // them, which is where a per-jurisdiction list used to put it.
     expect(facetUnfilteredLayers("county")).toEqual([
       "laterals",
       "survey-traces",
       "mt-paths",
       "wells",
       "wells-struck",
-      "disposal-wells",
       "mt-wells",
       "mt-wells-struck",
+      "disposal-wells",
     ]);
   });
 });

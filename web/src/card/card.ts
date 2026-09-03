@@ -38,6 +38,9 @@ export interface WellDetail {
   ndic_file_no: string | null;
   well_type_reported: string | null;
   length_method: string | null;
+  /** Why no neighbour context is offered, where the jurisdiction registers laterals but the
+   *  neighbour mart's measured domain does not reach it. Null where neighbours are served. */
+  neighbors_reason: string | null;
 }
 
 export interface CompletionEvent {
@@ -414,6 +417,18 @@ export async function renderWellCard(
     well.links?.["completions"] ?? `/v1/wells/${api10}/completions`,
     api10,
     asOfQuery,
+    // Said once per card, and only for the two codes that say it twice. The header and the
+    // completion design are two surfaces and both rightly disclose a withheld length, but on
+    // one screen the reader gets the sentence under two headings and reads the second as a
+    // second problem. Narrow on purpose: keyed on `code` alone this swallowed any warning the
+    // two envelopes happened to share, whatever it said. The intensity consequence is not
+    // lost with it — the design panel prints it beside the null figure, from
+    // `intensity_null_semantics`, which is a better place for it than a note.
+    new Set(
+      well.meta.warnings
+        .map((warning) => warning.code)
+        .filter((code) => SAID_ONCE_PER_CARD.has(code)),
+    ),
   );
 
   // Absent outside the mart's states: the API declines to offer a link it would 404, and a
@@ -440,6 +455,24 @@ export async function renderWellCard(
 
   let neighborRequest: Promise<void> = Promise.resolve();
   const neighborPath = well.links?.["neighbors"];
+  // A third case beside served and absent: the jurisdiction registers laterals and the mart's
+  // measured domain does not reach it. Rendering nothing at all reads as "this well has no
+  // neighbours", which is a different claim from "nobody measured here".
+  if (!neighborPath && detail.neighbors_reason) {
+    const refusalFrame = document.createElement("section");
+    refusalFrame.className = "gw-card-chart gw-neighbor-context";
+    const refusalTitle = document.createElement("h3");
+    refusalTitle.className = "gw-frame-title";
+    refusalTitle.textContent = "Physical neighbours";
+    const refusalHost = document.createElement("div");
+    refusalHost.className = "gw-frame-body";
+    refusalHost.dataset["state"] = "not_covered";
+    refusalFrame.append(refusalTitle, refusalHost);
+    neighborSlot.appendChild(refusalFrame);
+    neighborRequest = import("./neighbors.ts").then(({ renderNeighborRefusal }) => {
+      refusalHost.replaceChildren(renderNeighborRefusal(detail.neighbors_reason as string));
+    });
+  }
   if (neighborPath) {
     const neighborFrame = document.createElement("section");
     neighborFrame.className = "gw-card-chart gw-neighbor-context";
@@ -651,15 +684,26 @@ function cumulativeScope(data: WellCumulatives): (string | Node | false)[] {
   return [
     window,
     span > 0 && `${count} of ${span} months admitted`,
+    // The span is the months this source has filed for this well, not the well's life, and
+    // the two are far apart where a regulator publishes a rolling window rather than a
+    // history. Said generically because it is true of every jurisdiction: a total over what
+    // was filed is the only total there is, and a reader who takes it for a life-of-well
+    // figure has been told something false by omission.
+    span > 0 && "over the months filed, not the well's life",
     unbreakable(`snapshot ${formatVintage(data.snapshot_vintage)}`),
   ];
 }
+
+/** The disclosures both the header and the completion design carry, worded for their own
+ *  panel. Everything else a shared code might mean is left alone. */
+const SAID_ONCE_PER_CARD = new Set(["length_not_served", "length_scope_unregistered"]);
 
 async function loadCompletionContext(
   host: HTMLElement,
   path: string,
   expectedApi10: string,
   query: Record<string, string>,
+  alreadySaid: ReadonlySet<string> = new Set(),
 ): Promise<void> {
   try {
     const envelope = await getEnvelope<CompletionContext>(path, query);
@@ -674,7 +718,8 @@ async function loadCompletionContext(
       throw new TypeError("Completion context did not match the required well and collections");
     }
     host.replaceChildren(completionContextBody(context, envelope));
-    for (const note of warningNotes(envelope.meta.warnings)) host.appendChild(note);
+    const unsaid = envelope.meta.warnings.filter((warning) => !alreadySaid.has(warning.code));
+    for (const note of warningNotes(unsaid)) host.appendChild(note);
     host.dataset["state"] =
       context.events.length === 0 && context.pools.length === 0 && context.design === null
         ? "empty"
@@ -741,7 +786,10 @@ const VOLUME_REASONS: Record<string, string> = {
 const INTENSITY_REASONS: Record<string, string> = {
   no_report: "unavailable \u2014 no disclosed volume",
   withheld: "unavailable \u2014 withheld by the regulator",
-  lateral_length_unavailable: "unavailable \u2014 no lateral geometry",
+  // Not "no lateral geometry": a Montana well has geometry and a withheld length, and an
+  // unregistered basin has geometry and no rule to measure it under. What is missing in all
+  // three cases is the divisor, so that is what the row says.
+  lateral_length_unavailable: "unavailable \u2014 no lateral length to divide by",
   lateral_length_implausible: "unavailable \u2014 lateral too short to divide by",
   intensity_out_of_range: "unavailable \u2014 result outside the rule's range",
   intensity_rule_unregistered: "unavailable \u2014 the intensity rule is not registered",

@@ -41,7 +41,12 @@ from glasswell.api.pagination import (
 from glasswell.api.provenance import register_response_figures
 from glasswell.api.rate_limit import consume_rate_limit
 from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, inline_for, iso
-from glasswell.lengths import STORAGE_EPSG, resolve_length_method
+from glasswell.api.routers.facets import StateTerm, state_set
+from glasswell.lengths import (
+    STORAGE_EPSG,
+    LengthRuleUnregistered,
+    resolve_length_method,
+)
 from glasswell.lineage.conformance import (
     LeaseReportingRule,
     lease_reporting_rule,
@@ -49,7 +54,7 @@ from glasswell.lineage.conformance import (
 )
 from glasswell.lineage.envelope import Figure, collect_handles, distinct_handles, figure
 from glasswell.lineage.explain import MAX_HANDLES
-from glasswell.lineage.jurisdictions import JurisdictionRegistry
+from glasswell.lineage.jurisdictions import NEIGHBORS_SCOPE, JurisdictionRegistry
 from glasswell.lineage.selector_registry import identity_selector_term
 from glasswell.marts.cumulatives import (
     LIQUIDS_BASIS,
@@ -89,7 +94,6 @@ API10_PATTERN = r"^\d{10}$"
 # API-14 literal a reader is as likely to be holding.
 API_IDENTITY_PATTERN = r"^\d{10}(?:\d{4})?$"
 BBOX_PARTS = 4
-STATE_CODE_PATTERN = r"^\d{2}$"
 LON_LIMIT = 180.0
 LAT_LIMIT = 90.0
 COUNT_UNIT = "wells"
@@ -106,6 +110,14 @@ LENGTH_SCOPE = "length_scope"
 # resolver answers nd_gis_horizontals_line for a well with no basin, so serving a length there
 # would put a rule about North Dakota geometry on a Montana map stick.
 LENGTH_NOT_SERVED = "not_served"
+# A registry gap, not a decision: no rule withholds this length, none computes it either. The
+# distinction matters on the wire because a withheld figure names the rule that withheld it and
+# this one has none to name.
+LENGTH_SCOPE_UNREGISTERED = "length_scope_unregistered"
+# `neighbors_available` is the registration: this jurisdiction has laterals to offer. The
+# neighbour mart's *measured domain* is a second decision, and a registration outside it is
+# excluded from the mart -- so the card is told why rather than shown an empty frame.
+NEIGHBORS_NOT_COVERED = "neighbors_domain_not_covered"
 
 # The cohort key is an identifier for a group, not a measurement about it. Byte-equal to the
 # non_figure_allowlist.yml entry that covers /cohorts/*/cohort_year (test_not_a_figure.py).
@@ -497,13 +509,29 @@ class WellDetail(WellSummary):
     )
     geometry: list[Geometry] = Field(description="Geometry rows held for this well.")
     surface_point: SurfacePoint | None = Field(description="Surface hole location, if recorded.")
+    neighbors_reason: str | None = Field(
+        description="Why no neighbour context is offered, where the jurisdiction registers"
+        " laterals but the neighbour mart's measured domain does not reach it. Null where"
+        " neighbours are served and where none were ever registered."
+    )
 
 
-def _neighbours_available(registry: JurisdictionRegistry, state_code: str | None) -> bool:
-    """Whether the neighbour mart holds subjects for this jurisdiction: a registry column,
-    so a fifth state that registers it gets the link without an edit here."""
+def _neighbours(
+    registry: JurisdictionRegistry, state_code: str | None
+) -> tuple[bool, str | None, str | None]:
+    """Whether the neighbour mart holds subjects here, and the rule or the reason.
+
+    Two registrations, not one. `neighbors_available` says the jurisdiction has laterals to
+    offer; a serving `neighbors_scope` rule says the mart's measured envelope and zone set
+    reach it. The second missing is a reason the reader gets, not a blank frame.
+    """
     row = registry.at_prefix(state_code)
-    return row is not None and row.neighbors_available
+    if row is None or not row.neighbors_available:
+        return False, None, None
+    rule = row.rule(NEIGHBORS_SCOPE)
+    if rule is None:
+        return False, None, NEIGHBORS_NOT_COVERED
+    return True, rule, None
 
 
 def _summary(row: dict[str, Any], registry: JurisdictionRegistry) -> dict[str, Any]:
@@ -781,10 +809,19 @@ def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
             state={
                 "glossary": "gt_api_10_api_12_api_14",
                 "so": (
-                    "Matches the API state code exactly — the first two digits of every API-10"
-                    " in the answer. It is what scopes a `/v1/wells/facets` bucket link to the"
-                    " state the bucket was counted in; without it a county or status filter"
-                    " returns every jurisdiction that happens to share the code."
+                    "Matches the API state codes exactly — the first two digits of every"
+                    " API-10 in the answer. A set, not one code: repeat it, comma-separate the"
+                    " codes, or send `all`, which is evaluated per request — it is every"
+                    " jurisdiction the registry holds at the moment you ask, so a link"
+                    " carrying it returns a wider population once a further jurisdiction"
+                    " registers. A traversal does not widen under way: the cursor is"
+                    " fingerprinted over the codes `all` resolved to, so a registration"
+                    " between two pages is refused rather than folded in. It is what scopes a"
+                    " `/v1/wells/facets` bucket"
+                    " link to the jurisdictions the bucket was counted in; without it a county"
+                    " or status filter returns every jurisdiction that happens to share the"
+                    " code, and with only one it answers a combined bucket with one state's"
+                    " rows."
                 ),
             },
             well_type={
@@ -874,14 +911,18 @@ def list_wells(
     county: Annotated[
         str | None, Query(description="County code as recorded at permit.")
     ] = None,
-    # Added for `/v1/wells/facets`: a facet bucket is counted within one state, so the link it
-    # publishes has to narrow to that state or it answers with a different population. Without
-    # it `?county=003` returns Texas county 003 and North Dakota county 003 together.
+    # Added for `/v1/wells/facets`: a facet bucket is counted within a set of jurisdictions, so
+    # the link it publishes has to narrow to that set or it answers with a different
+    # population. Without it `?county=003` returns Texas county 003 and North Dakota county 003
+    # together; with only one code it answers a two-state bucket with one state's rows.
     state: Annotated[
-        str | None,
+        list[StateTerm] | None,
         Query(
-            description="API state code, e.g. 33 for North Dakota. Matched exactly.",
-            pattern=STATE_CODE_PATTERN,
+            description=(
+                "API state codes, e.g. 33 for North Dakota. Repeat the parameter"
+                " (`?state=33&state=42`), comma-separate the codes (`?state=33,42`), or send"
+                " `all` for every registered jurisdiction. Matched exactly."
+            ),
         ),
     ] = None,
     well_type: Annotated[
@@ -906,13 +947,28 @@ def list_wells(
     ] = None,
     q: Annotated[str | None, Query(description="Case-insensitive substring of well name.")] = None,
 ) -> JSONResponse:
+    # Normalised before the fingerprint, so `?state=33,42` and `?state=42&state=33` are one
+    # query rather than three cursors that refuse each other's pages. `all` is resolved here
+    # too, and against the registry rather than left as the word: it is evaluated per request,
+    # so a jurisdiction registering mid-traversal would otherwise hand the reader a second page
+    # from a larger population than the first, under a cursor whose fingerprint said `all`
+    # either way. Resolved, the registration invalidates the cursor instead, which is the
+    # refusal cursor_query_mismatch exists to make.
+    registry = jurisdictions(connection)
+    requested = state_set(state) if state is not None else ()
+    if state is None:
+        scoped_states = None
+    elif requested is None:
+        scoped_states = sorted(registry.by_prefix)
+    else:
+        scoped_states = list(requested)
     filters = {
         "as_of": as_of,
         "api10": api10,
         "status": status,
         "operator": operator,
         "county": county,
-        "state": state,
+        "state": scoped_states,
         "well_type": well_type,
         "geometry_provenance": geometry_provenance,
         "producing": producing,
@@ -937,7 +993,6 @@ def list_wells(
         )
     fingerprint = query_fingerprint(filters)
     envelope = _bbox(bbox)
-    registry = jurisdictions(connection)
     policy, producing_bindings = _producing(connection)
     if producing is not None and policy is None:
         raise ProblemError(
@@ -963,8 +1018,8 @@ def list_wells(
         clauses.append("and county_code_at_permit = %(county)s")
         params["county"] = county
     if state is not None:
-        clauses.append("and state_code = %(state)s")
-        params["state"] = state
+        clauses.append("and state_code = any(%(state)s)")
+        params["state"] = scoped_states
     if well_type is not None:
         clauses.append("and well_type_reported = %(well_type)s")
         params["well_type"] = well_type
@@ -2026,27 +2081,28 @@ def get_well(
         raise ProblemError("not_found", detail=f"no well {api10} at this vintage")
     row = found[0]
 
-    crs = rows(
-        connection,
-        _STORAGE_CRS,
-        {"basin": row["basin"] or "williston", "as_of": as_of},
-    )
+    crs = rows(connection, _STORAGE_CRS, {"basin": row["basin"], "as_of": as_of})
     storage_epsg = crs[0]["storage_epsg"] if crs else STORAGE_EPSG
     status_vocabulary_rule = registry.rule_for(row["state_code"], STATUS_VOCABULARY)
     length_scope_rule = registry.rule_for(row["state_code"], LENGTH_SCOPE)
+    neighbours_served, neighbours_rule, neighbours_reason = _neighbours(
+        registry, row["state_code"]
+    )
     # The basin's own rule, so a TX length's handle resolves to a rule about TX geometry. Not
     # resolved at all where a rule withholds the length: the resolver's no-basin default is
     # North Dakota's, and reading it would put that rule id on the response either way.
-    method = (
-        None
-        if length_scope_rule
-        else resolve_length_method(
-            connection,
-            basin=row["basin"],
-            valid_at=as_of,
-            knowledge_at=as_of,
-        )
-    )
+    length_unregistered = False
+    method = None
+    if not length_scope_rule:
+        try:
+            method = resolve_length_method(
+                connection,
+                basin=row["basin"],
+                valid_at=as_of,
+                knowledge_at=as_of,
+            )
+        except LengthRuleUnregistered:
+            length_unregistered = True
     warnings: list[dict[str, Any]] = []
     if policy is None:
         warnings.append(_producing_unregistered("/producing"))
@@ -2096,13 +2152,25 @@ def get_well(
                 "detail": (
                     f"{len(untiled)} lateral geometries are below the resolution of the"
                     f" deepest published zoom (z{TILE_MAX_ZOOM}) and render on no tile"
-                    + ("" if length_scope_rule else "; their length is still served here")
+                    + ("; their length is still served here" if method else "")
                 ),
                 "pointer": "/geometry",
             }
         )
     length_figure = None
-    if laterals and length_scope_rule:
+    if laterals and length_unregistered:
+        warnings.append(
+            {
+                "code": LENGTH_SCOPE_UNREGISTERED,
+                "detail": (
+                    f"{len(laterals)} geometries are held for this well and no length rule is"
+                    " registered for its basin, so no length is served; this is a registry gap"
+                    " rather than a fact about the well"
+                ),
+                "pointer": "/lateral_length_ft",
+            }
+        )
+    elif laterals and length_scope_rule:
         warnings.append(
             {
                 "code": "length_not_served",
@@ -2183,6 +2251,7 @@ def get_well(
             for item in geometry
         ],
         "surface_point": {"lon": point["lon"], "lat": point["lat"]} if point else None,
+        "neighbors_reason": neighbours_reason,
     }
     return enveloped(
         request,
@@ -2203,7 +2272,14 @@ def get_well(
             "formations": "/v1/formations",
             **(
                 {"neighbors": f"/v1/wells/{api10}/neighbors"}
-                if _neighbours_available(registry, row["state_code"]) and laterals
+                if neighbours_served and laterals
+                else {}
+            ),
+            # The decision behind the section, reachable from the response rather than only
+            # implied by the link's absence.
+            **(
+                {"neighbors_rule": f"/v1/conformance/{neighbours_rule}"}
+                if neighbours_rule
                 else {}
             ),
             "production": f"/v1/wells/{api10}/production",

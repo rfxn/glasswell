@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import psycopg
 
 from glasswell.api.routers.health import source_health_data
+from glasswell.lineage.schedules import load_schedules
+from glasswell.seed import seed_all
 from tests.support.seed import seed_manifest
 
 NOW = datetime(2026, 8, 28, 12, tzinfo=UTC)
+# expected_poll_interval states the publisher's rhythm and drives the freshness verdict; the
+# job's trigger states who runs it. Montana's production archive is republished on the same
+# 35-day rhythm as the ND and BLM feeds, and the load is measured at 74 MB down, 7.4 million
+# rows, about an hour and two extra gigabytes, so the owner runs it rather than a tick. Both
+# facts are true, and the interval stays so /v1/health still calls the source stale when
+# Montana has moved on and glasswell has not.
+PUBLISHER_PACED_OWNER_RUN = frozenset({"mt_bogc_pru_production", "mt_bogc_well_production"})
 
 
 def add_attempt(
@@ -183,53 +191,90 @@ def test_status_api_serves_bounded_attempt_fields(api_client, db) -> None:
     assert 0 < len(source["freshness_reason"]) <= 512
 
 
-def test_poll_policy_matches_the_recurring_units(db) -> None:
-    policies = {
-        row[0]: (row[1], row[2])
+def test_every_poll_interval_is_bound_to_a_scheduled_job(db) -> None:
+    """The invariant the unit-file greps used to carry, read from the registry instead.
+
+    A source with an interval is really scheduled, and one without carries none. Until v0.77
+    that was asserted by naming the ten ExecStart lines and two OnCalendar values here, which
+    made the test a copy of the unit files rather than a statement about the schedule; the
+    registry is now where the decision lives, so this reads it.
+    """
+    seed_all(db)
+    registry = load_schedules(db)
+    interval_by_source = {
+        row[0]: row[1]
         for row in db.execute(
-            "select source_id, cadence, expected_poll_interval"
-            " from lineage.source_poll_policies"
+            "select source_id, expected_poll_interval from lineage.source_poll_policies"
         ).fetchall()
     }
+    triggers: dict[str, set[str]] = {}
+    for job in registry:
+        for source_id in job.source_ids:
+            triggers.setdefault(source_id, set()).add(job.trigger)
+
     scheduled = {
-        "blm_plss_sections",
-        "blm_plss_townships",
-        "nd_gis_directionals",
-        "nd_gis_horizontals_line",
-        "nd_gis_spacing_units",
-        "nd_gis_wells",
-        "nd_mpr_xlsx",
-        "nm_c115b_upstream",
-        # Montana publishes on the same cadence as the ND and BLM feeds. nm_ocd_wells_gis is
-        # deliberately absent: 061 registers it owner-triggered, like its nine FTP siblings.
-        "mt_bogc_well_production",
-        "mt_bogc_pru_production",
-        "mt_gis_wells",
-        "mt_gis_well_paths",
+        source_id
+        for source_id, interval in interval_by_source.items()
+        if interval is not None
+    } - PUBLISHER_PACED_OWNER_RUN
+    unbacked = {
+        source_id
+        for source_id in scheduled
+        if "cadence" not in triggers.get(source_id, set())
+    }
+    assert unbacked == set(), (
+        f"{sorted(unbacked)} carry a poll interval and no job resolves a cadence over them:"
+        " register a job, or register them owner-triggered with a null interval"
+    )
+
+    assert set(interval_by_source) >= PUBLISHER_PACED_OWNER_RUN, (
+        "an exemption that names a source with no policy row cannot fail, so it is not one"
+    )
+    assert all(
+        triggers[source_id] == {"manual"} for source_id in PUBLISHER_PACED_OWNER_RUN
+    ), "an exempted source whose job went on a clock no longer needs the exemption"
+
+    clock_without_an_interval = {
+        source_id
+        for source_id, kinds in triggers.items()
+        if "cadence" in kinds and interval_by_source.get(source_id) is None
+    }
+    assert clock_without_an_interval == set(), (
+        f"{sorted(clock_without_an_interval)} are driven by a cadence job and carry no"
+        " interval, so the due rule can compute no instant for them"
+    )
+
+    owner_triggered = {
+        source_id
+        for source_id, interval in interval_by_source.items()
+        if interval is None and source_id in triggers
+    }
+    assert all(triggers[source_id] == {"manual"} for source_id in owner_triggered), {
+        source_id: sorted(triggers[source_id])
+        for source_id in owner_triggered
+        if triggers[source_id] != {"manual"}
     }
 
-    assert all(policies[source] == ("Every 35 days", timedelta(days=35)) for source in scheduled)
-    unscheduled_with_an_interval = {
-        source
-        for source, (_cadence, interval) in policies.items()
-        if source not in scheduled and interval is not None
+
+def test_a_cadence_job_takes_the_shortest_interval_its_sources_carry(db) -> None:
+    """The derivation each cr_job_cadence rule states, asserted rather than restated."""
+    seed_all(db)
+    registry = load_schedules(db)
+    interval_by_source = {
+        row[0]: row[1]
+        for row in db.execute(
+            "select source_id, expected_poll_interval from lineage.source_poll_policies"
+        ).fetchall()
     }
-    assert not unscheduled_with_an_interval, (
-        f"{sorted(unscheduled_with_an_interval)} carry a poll interval but are not listed as"
-        " scheduled — add them here, or register them owner-triggered with a null interval"
-    )
-    root = Path(__file__).resolve().parents[2]
-    ingest_service = (root / "infra/systemd/glasswell-ingest.service").read_text()
-    ingest_timer = (root / "infra/systemd/glasswell-ingest.timer").read_text()
-    c115b_service = (root / "infra/systemd/glasswell-c115b.service").read_text()
-    c115b_timer = (root / "infra/systemd/glasswell-c115b.timer").read_text()
-    assert "glasswell.ingest.nd_gis --layer all" in ingest_service
-    assert "glasswell.ingest.nd_mpr --month" in ingest_service
-    assert "glasswell.ingest.blm_plss --layer all" in ingest_service
-    assert "OnCalendar=*-*-05" in ingest_timer
-    assert "glasswell.ingest.nm_c115b" in c115b_service
-    assert "OnCalendar=*-*-12" in c115b_timer
-    assert "fracfocus" not in ingest_service.lower()
+
+    checked = 0
+    for job in registry:
+        if job.trigger != "cadence" or job.cadence_interval is None or not job.source_ids:
+            continue
+        expected = min(interval_by_source[source_id] for source_id in job.source_ids)
+        assert job.cadence_interval == expected, job.job_id
+        checked += 1
+    assert checked >= 6, "no multi-source cadence job was checked; this test cannot fail"
 
 
 def test_later_success_for_another_key_does_not_mask_failed_key(db) -> None:

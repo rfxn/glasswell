@@ -18,6 +18,7 @@ from datetime import date
 import psycopg
 from psycopg.rows import dict_row
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import resolve_environment
 from glasswell.lineage.capture import derive, lineage_session
 from glasswell.lineage.clock import utc_today
@@ -224,7 +225,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Append today's jurisdiction well-count measurement to the ledger."
     )
-    parser.add_argument("--dsn", required=True)
+    add_dsn_argument(parser)
     parser.add_argument(
         "--codes",
         default=None,
@@ -233,6 +234,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--env-id", default=None, help="override the fingerprinted env id")
     parser.add_argument("--code-version", default=None)
     arguments = parser.parse_args(argv)
+    arguments.dsn = resolve_dsn(arguments.dsn)
     # No --measured-on. The ledger's date is the day the measurement was taken, and a flag that
     # moved it is the one edit an append-only ledger cannot survive.
     codes = (

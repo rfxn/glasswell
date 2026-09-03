@@ -20,7 +20,7 @@ import glasswell.marts.counts as writer
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts.counts import refresh_jurisdiction_counts
-from glasswell.seed.jurisdictions import JURISDICTIONS, REGISTERED_ON
+from glasswell.seed.jurisdictions import JURISDICTIONS, REGISTERED_ON, RESTATED_ON
 from glasswell.status_resolution import UNMAPPED_CLASS, served_status_vocabulary
 from tests.contract.conftest import JURISDICTION_MEASURED_ON, ND_MEASURED, TX_API10
 from tests.support.fakes import FixedClock
@@ -97,7 +97,7 @@ def test_it_serves_every_registration_as_a_bare_array_in_code_order(client: Test
     data = envelope["data"]
 
     assert isinstance(data, list)
-    assert [row["jurisdiction_code"] for row in data] == ["MT", "ND", "NM", "TX"]
+    assert [row["jurisdiction_code"] for row in data] == ["CO", "MT", "ND", "NM", "TX"]
     assert len(data) == len(JURISDICTIONS)
     assert envelope["links"]["self"] == PATH
 
@@ -125,7 +125,7 @@ def test_a_row_carries_the_regulator_the_identity_and_the_capabilities(
     assert row["map"] == {"wells_tile_layer_id": "nd_wells", "colour": "#3FA55E"}
     assert row["liquids_basis"] == "oil+condensate"
     assert row["effective_from"] == REGISTERED_ON.isoformat()
-    assert row["published_at"] == REGISTERED_ON.isoformat()
+    assert row["published_at"] == RESTATED_ON.isoformat()
 
 
 def test_montanas_two_inventory_rules_are_both_visible_and_one_serves(
@@ -364,11 +364,14 @@ def test_the_level_filter_narrows_to_the_registrations_at_that_level(
 def test_the_page_is_a_page_and_its_cursor_walks_the_rest(client: TestClient) -> None:
     first = body(client, limit=2)
 
-    assert [row["jurisdiction_code"] for row in first["data"]] == ["MT", "ND"]
+    assert [row["jurisdiction_code"] for row in first["data"]] == ["CO", "MT"]
     assert first["meta"]["next_cursor"]
     second = body(client, limit=2, cursor=first["meta"]["next_cursor"])
-    assert [row["jurisdiction_code"] for row in second["data"]] == ["NM", "TX"]
-    assert second["meta"]["next_cursor"] is None
+    assert [row["jurisdiction_code"] for row in second["data"]] == ["ND", "NM"]
+    assert second["meta"]["next_cursor"]
+    third = body(client, limit=2, cursor=second["meta"]["next_cursor"])
+    assert [row["jurisdiction_code"] for row in third["data"]] == ["TX"]
+    assert third["meta"]["next_cursor"] is None
 
 
 def test_a_registration_published_after_the_cut_is_not_served_under_it(
@@ -378,9 +381,9 @@ def test_a_registration_published_after_the_cut_is_not_served_under_it(
     current-state view could not have honoured."""
     corrected = "https://www.dmr.nd.gov/oilgas/"
     restate(seeded, "ND", regulator_url=corrected)
-    later = REGISTERED_ON + timedelta(days=1)
+    later = RESTATED_ON + timedelta(days=1)
 
-    before = body(client, as_of=REGISTERED_ON.isoformat())
+    before = body(client, as_of=RESTATED_ON.isoformat())
     after = body(client, as_of=later.isoformat())
 
     assert next(r for r in before["data"] if r["jurisdiction_code"] == "ND")["regulator"][

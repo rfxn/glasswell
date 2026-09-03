@@ -64,8 +64,20 @@ Two files, and they must agree:
 - `src/glasswell/seed/jurisdictions.py` — the same rows in `JURISDICTION_CODES`,
   `JURISDICTIONS` and `JURISDICTION_RULES`.
 
+`JURISDICTIONS` is the **resolved** set — one row per code, carrying the latest published
+values. The founding rows a restatement supersedes live in `JURISDICTION_RESTATEMENTS`, and
+both writers emit both. Two runtime consumers build tuples straight out of `JURISDICTIONS` and
+feed them into derivation params, so a second row for a code moves two mart addresses.
+
 `source_ids` is **complete, not curated**: every source registered to this jurisdiction, or the
 parity gate reddens. `identity_pattern` is derived from the prefix — do not spell it out.
+
+**A `status_vocabulary` rule that resolves at read time owes three spec keys, not one.**
+`lineage.refresh_status_resolution()` is driven by rows, and it selects on `mapping_table`,
+`key_col` **and** `value_col` together. `spec->>` on an absent key is SQL NULL, so a rule
+carrying only `mapping_table` is filtered out of the loop one step before the
+missing-table notice can fire: the jurisdiction is skipped in silence and every one of its
+wells resolves unmapped. Name the table and both of its columns.
 
 > **Refuses if skipped or wrong:** `jurisdiction_rules.rule_id` references
 > `lineage.conformance_rules`, so step 3 cannot be skipped; the composite foreign key refuses a
@@ -84,13 +96,31 @@ parity gate reddens. `identity_pattern` is derived from the prefix — do not sp
 > **Refuses otherwise:** the pipeline role's grants, and `tests/support/layers.py`
 > `schema_reads_in`.
 
-### 6. Write the mart, with `STATE_CODE = "<PREFIX>"` at the module head
+### 6. Add the mart profile row
 
-One literal per mart module is the honest declaration of which regulator's data it promotes,
-and it is the only two-digit literal `marts/` is allowed.
+There is no mart module to write. `src/glasswell/marts/wells.py` refreshes every jurisdiction's
+tile marts from one engine, and what differs between them is a `MartProfile` row beside
+`TILE_LAYERS`: the dataset, the layers, the projections with their ordered published columns
+and their select SQL, the spine columns the CTE selects, the params keys this jurisdiction adds,
+the rules its refresh cites, and the audit payload it emits.
 
-> **Refuses if the prefix is unregistered:** `tests/unit/test_add_a_state.py` — the exemption
-> matches `STATE_CODE = "<p>"` only for a `<p>` the registry carries.
+Everything the registry can answer, the engine asks it rather than the profile. The API prefix
+comes from the registration. Which basin governs the compute CRS is a `basin_scope` rule; which
+source measures a lateral is a `length_source` rule; whether a lateral is served at all is
+`length_scope`, whose *presence* means withheld. A jurisdiction that publishes no length column
+registers neither of the last two and the engine makes no call.
+
+Optionally add a shim module — `JURISDICTION_CODE` and a four-line `main` that delegates — if
+something outside the tree needs to type `python -m glasswell.marts.<code>_wells`. The four
+resident ones exist because two applied migrations name them and the deployed timer executes a
+third; a new jurisdiction needs one only if an operator command is going to name it, and
+`glasswell-tiles --jurisdiction <CODE>` covers the ordinary case.
+
+> **Refuses if the profile and the registration disagree:** `tests/unit/test_mart_profiles.py`
+> holds each profile's `rule_ids` and params key set to what its address already carried, and
+> the engine refuses at load time if a profile publishes a length column under a registration
+> whose `length_scope` rule withholds one — a refusal rather than a `KeyError` inside a refresh.
+> A profile for an unregistered code raises `MartProfileError` naming the registered ones.
 
 ### 7. Add the tile layer, then name it
 
@@ -111,30 +141,85 @@ Add the layer to `infra/martin/config.yaml`.
 ### 9. Regenerate the client
 
 ```bash
-make jurisdictions        # rewrites web/src/map/jurisdictions.generated.ts
+make jurisdictions        # rewrites jurisdictions.generated.ts and wells-roster.json
 ```
 
-The map's `Wells` family row, its swatch colour, the layer panel's abbreviation tag and the
-status vocabulary rules the legend prints all come from that file. Nothing in `web/src` names a
-jurisdiction, and the gate above holds it that way.
+Two artifacts, because two readers need different things. The generated module is what the
+bundle imports; `web/src/map/wells-roster.json` is the same wells rows as data, for
+`tests/e2e/chrome-fold.mjs`, which is plain node ESM and cannot import a TypeScript module.
+
+The map's `Wells` family row, its swatch colour, its style layers, its draw order, its
+first-paint default, its subtitle template, the layer panel's abbreviation tag and the status
+vocabulary rules the legend prints all come from those two files. So do the point layer and the
+struck sibling `style.ts` draws, the rank `click-router.ts` gives them, and the facet columns
+`TILE_FACET_PROPERTIES` can press on — the roster carries the tile function's published columns,
+read out of `marts/tiles.py` by the generator, so a jurisdiction whose tile publishes a
+different column set needs no edit in `web/src`.
+
+Nothing in `web/src` names a jurisdiction, and the gate above holds it that way — including
+jurisdiction-scoped layer ids such as `co-wells`, which carry no prefix and no state name and
+which the two-digit rule alone could not see.
+
+> **The subtitle carries `{count}`, never a number.** The count is fetched from
+> `/v1/jurisdictions` at render time with the date it was measured on beside it. A registration
+> with a null `wells_tile_layer_id` is refused by name rather than rendered as the string
+> `"None"`.
 
 > **Refuses if skipped:** `tests/unit/test_regen_jurisdictions.py` fails while the committed
 > file is stale.
 
-### 10. Schedule the ingest
+### 10. Register the job rows
 
-Add an `ExecStart=` line to `infra/systemd/glasswell-ingest.service`.
+**Do not add an `ExecStart=` line.** Scheduling has been rows since v0.78, and an entry point
+named in a unit file joins the set an installed timer already drives — after which the
+double-run guard correctly forbids that job from ever being seeded `launch`, which is the
+opposite of what a new jurisdiction wants. `docs/runbook-scheduler.md` is the whole scheme;
+this is the part a new state performs.
 
-> **Refuses if skipped: nothing, today.** This is the one step with no gate behind it, and the
-> gap is known — cadence-driven scheduling is the work that closes it. Until then, check the
-> service file by eye.
+Four inserts, one job per entry point:
+
+1. `src/glasswell/seed/conformance_schedules.py` — a `cr_job_cadence_<job_id>_1` decision per
+   job, `stage='schedule'`, `rule_kind='code_ref'`, with the rationale that says why this
+   cadence and not another. `source_id` is the job's anchor, which the walk resolves.
+2. Your own migration's `conformance_rule_publications` insert, under its own REPOINT
+   CHECKLIST — that table is append-only and the scheduler's own insert closed at its repoint.
+3. **Both writers, the same four inserts.** `scheduled_jobs`, `job_sources`, `job_schedules`
+   and `job_dependencies` go in **your own migration** and in
+   `src/glasswell/seed/schedules.py`. The migration is the one that matters: a deploy that
+   seeds nothing still has to schedule, and `seed_all` is not on the migrate path. The seed
+   module is the mirror the parity gate reads. Colorado is the worked example, at
+   `077_colorado.sql:424-522` and `schedules.py`'s `CO_JOBS`.
+
+   A jurisdiction with no legacy timer **may** be seeded `launch_mode='launch'` from day one,
+   provided its cadence rule's rationale says why that is safe; every jurisdiction an installed
+   timer still drives is `observe`.
+4. An optional DSN flag in your own mains, resolved through `glasswell.db.dsn` so they read
+   `GLASSWELL_DSN` then `DATABASE_URL` like every other entry point.
+
+> **Refuses otherwise:** `tests/contract/test_schedule_parity.py` gate 1 is a two-sided set
+> equality over `lineage.job_sources`, so a source registered in step 2 with no job row
+> reddens; gate 2 refuses a jurisdiction mart with no ingest edge of its own jurisdiction;
+> gate 3 refuses a `cadence` row the due rule can produce no instant for; and gate 4 refuses a
+> rule with no publication evidence. Gate 5 holds the two writers to one truth — it resolves
+> the registry the migration wrote and compares every field against the seed module's tuple —
+> so writing one of them and not the other reddens rather than shipping half a schedule.
+> `infra/verify.sh` refuses a `launch` row whose entry point an installed timer already drives.
 
 ### 11. Run the mart, then the count writer
 
 ```bash
-sudo -u glasswell $VENV/bin/python -m glasswell.marts.<code>_wells --dsn "$DSN"
-sudo -u glasswell $VENV/bin/python -m glasswell.marts.counts --dsn "$DSN"
+export VENV=/opt/glasswell/venv
+export GLASSWELL_DSN='postgresql:///glasswell?host=/var/run/postgresql'
+sudo --preserve-env=GLASSWELL_DSN -u glasswell $VENV/bin/glasswell-tiles --jurisdiction <CODE>
+sudo --preserve-env=GLASSWELL_DSN -u glasswell $VENV/bin/python -m glasswell.marts.counts
 ```
+
+> **Run `seed_all` first, and not only for the API.** The tile refresh reads the registry now:
+> it resolves the registration, its `basin_scope` and its `length_source` before it measures
+> anything, and refuses by name if they are not there. The migration's `jurisdiction_rules`
+> insert is guarded on conformance-rule residency, so on a fresh database those rows land only
+> after the seed has run. `scripts/deploy.sh` already orders it that way (6a migrate, 6b
+> `seed_all`, then the marts); what changed is that the mart is no longer indifferent to it.
 
 The count writer measures every registration by default. `--codes ND,TX` narrows it to some of
 them, which is a partial measurement rather than a smaller claim: the jurisdictions left out
@@ -160,6 +245,7 @@ move between them — run it on a day the ledger does not already hold if it did
 ```bash
 make lint
 pytest tests/unit/test_add_a_state.py tests/unit/test_regen_jurisdictions.py -q
+pytest tests/unit/test_mart_profiles.py -q
 pytest tests/contract/test_jurisdiction_parity.py -q
 npm --prefix web run typecheck && npm --prefix web run test
 node tests/e2e/chrome-fold.mjs

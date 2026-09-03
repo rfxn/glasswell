@@ -18,6 +18,7 @@ from datetime import date
 
 import psycopg
 from psycopg import sql
+from psycopg.rows import dict_row
 
 from glasswell.lineage.jurisdictions import load_jurisdictions
 
@@ -120,6 +121,53 @@ def resolver_rules(
             },
         )
         return dict(cursor.fetchall())
+
+
+# A registration whose status vocabulary resolves at read time, and no resolved row for it.
+# `refresh_status_resolution()` skips a registration whose mapping table has not landed rather
+# than aborting -- a refresh that raised would take the migration, or the deploy's seed that
+# calls it, down with it -- and the transient case self-heals inside one deploy. The
+# non-transient one does not: a `mapping_table` misspelt in a rule spec, or a map renamed by a
+# later migration, draws that jurisdiction's whole spine in the unmapped class with no signal.
+# This is the signal; `/v1/status` serves it and `infra/verify.sh` asserts on it.
+_UNRESOLVED_READ_TIME = """
+select j.jurisdiction_code, j.identity_prefix, j.name,
+       c.spec->>'mapping_table' as mapping_table,
+       to_regclass('lineage.' || quote_ident(c.spec->>'mapping_table')) is null as map_absent
+  from lineage.jurisdictions_as_of(%(knowledge_as_of)s, %(valid_as_of)s) j
+  join lineage.jurisdiction_rules r
+    on r.jurisdiction_code = j.jurisdiction_code
+   and r.effective_from = j.effective_from
+   and r.published_at = j.published_at
+   and r.decision = 'status_vocabulary'
+   and r.serving
+  join lineage.conformance_rules c on c.rule_id = r.rule_id
+ where j.identity_prefix is not null
+   and c.spec->>'resolved_at' = %(read_time)s
+   and not exists (select 1 from lineage.status_resolution_resolved s
+                    where s.for_state_code = j.identity_prefix)
+ order by j.identity_prefix
+"""
+
+
+def unresolved_read_time_jurisdictions(
+    connection: psycopg.Connection, as_of: date | None = None
+) -> list[dict[str, object]]:
+    """Every jurisdiction the registry says resolves at read time and the resolver has no row for.
+
+    Empty is the healthy answer. A non-empty one is a served class nobody is computing.
+    """
+    registry = load_jurisdictions(connection, as_of)
+    with connection.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(
+            _UNRESOLVED_READ_TIME,
+            {
+                "knowledge_as_of": registry.knowledge_as_of,
+                "valid_as_of": registry.valid_as_of,
+                "read_time": READ_TIME,
+            },
+        )
+        return cursor.fetchall()
 
 
 def resolver_join(spine: str, *, resolver: str = "sr") -> str:

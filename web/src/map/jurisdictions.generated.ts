@@ -13,11 +13,55 @@ export interface GeneratedJurisdiction {
   readonly wellsTileLayerId: string;
   /** Whether the explorer opens on this jurisdiction. Exactly one registration carries it. */
   readonly explorerDefault: boolean;
+  /** The client layer id of this jurisdiction's wells row. North Dakota's is the irregular
+   *  "wells": it predates the per-jurisdiction spelling and every saved permalink froze it. */
+  readonly wellsLayerId: string;
+  /** The style layers that row toggles, in draw order. */
+  readonly wellsStyleLayerIds: readonly string[];
+  /** A real per-row integer, not a rank: disposal-wells sits at 41, between ND and TX. */
+  readonly wellsDrawOrder: number;
+  readonly wellsDefaultOn: boolean;
+  /** Which measured coverage snapshot the row cites, by key. Null where none is published. */
+  readonly wellsSnapshotKey: string | null;
+  /** The subtitle with `{count}` where the measured well count goes, filled at render time. */
+  readonly wellsSubtitleTemplate: string;
+  /** A line the legend renders for this jurisdiction, so no name enters legend.ts. */
+  readonly legendNote: string | null;
   /** Serving rule id per decision, as registered. */
   readonly rules: Readonly<Record<string, string>>;
 }
 
 export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
+  {
+    code: "CO",
+    name: "Colorado",
+    prefix: "05",
+    colour: "#7C8B96",
+    wellsTileLayerId: "co_wells",
+    explorerDefault: false,
+    wellsLayerId: "co-wells",
+    wellsStyleLayerIds: ["co-wells", "co-wells-struck"],
+    wellsDrawOrder: 45,
+    wellsDefaultOn: true,
+    wellsSnapshotKey: null,
+    wellsSubtitleTemplate: "ECMC well headers · {count} points, eleven of thirteen published status codes classed and two documented without an equivalent (cr_co_wells_status_vocab_1) · 44.67% of points are permit locations, not surveyed (cr_co_wells_location_qualifier_1) · surface points only",
+    legendNote: "Colorado's AL code is a vacated permit, not an abandoned well: those points have no wellbore and are drawn as expired permits (cr_co_wells_status_vocab_1).",
+    rules: {
+      crs: "cr_co_wells_datum_1",
+      cumulatives_scope: "cr_co_production_grain_1",
+      deduplication: "cr_co_wells_dedup_1",
+      entity_key: "cr_co_production_entity_key_1",
+      geometry_provenance: "cr_co_wells_geometry_provenance_1",
+      geometry_scope: "cr_co_wells_geometry_scope_1",
+      identity: "cr_co_wells_api10_1",
+      inventory_jurisdiction: "cr_co_inventory_not_served_1",
+      liquids: "cr_co_production_liquids_1",
+      location_qualifier: "cr_co_wells_location_qualifier_1",
+      production_grain: "cr_co_production_grain_1",
+      source_selection: "cr_co_wells_source_selection_1",
+      status_vocabulary: "cr_co_wells_status_vocab_1",
+    },
+  },
   {
     code: "MT",
     name: "Montana",
@@ -25,12 +69,21 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
     colour: "#7C8B96",
     wellsTileLayerId: "mt_wells",
     explorerDefault: false,
+    wellsLayerId: "mt-wells",
+    wellsStyleLayerIds: ["mt-wells", "mt-wells-struck"],
+    wellsDrawOrder: 44,
+    wellsDefaultOn: true,
+    wellsSnapshotKey: null,
+    wellsSubtitleTemplate: "MBOGC surface locations · {count} points, 13 of the 19 filed status values mapped and the other 6 quarantined rather than defaulted (cr_mt_gis_status_vocab_1) · no basin tag: Bakken is 4.6% of Montana (cr_mt_basin_scope_1) · completion year, never a spud",
+    legendNote: null,
     rules: {
       "absence:operator": "cr_mt_operator_absence_1",
+      basin_scope: "cr_mt_basin_scope_1",
       geometry_provenance: "cr_mt_paths_geometry_class_1",
       inventory_jurisdiction: "cr_mt_inventory_jurisdiction_1",
-      length_scope: "cr_mt_paths_length_scope_1",
+      length_scope: "cr_mt_paths_length_scope_2",
       liquids: "cr_mt_liquids_policy_1",
+      neighbors_scope: "cr_mt_neighbors_scope_1",
       status_vocabulary: "cr_mt_gis_status_vocab_1",
     },
   },
@@ -41,11 +94,22 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
     colour: "#3FA55E",
     wellsTileLayerId: "nd_wells",
     explorerDefault: true,
+    wellsLayerId: "wells",
+    wellsStyleLayerIds: ["wells", "wells-struck"],
+    wellsDrawOrder: 40,
+    wellsDefaultOn: true,
+    wellsSnapshotKey: "nd_wells_refresh",
+    wellsSubtitleTemplate: "ND DMR GIS surface locations · {count} points · culled by status below zoom 9",
+    legendNote: null,
     rules: {
+      basin_scope: "cr_nd_basin_scope_1",
+      cumulatives_scope: "cr_nd_pool_rollup_1",
       geometry_provenance: "cr_nd_geometry_provenance_1",
       identity: "cr_nd_api_identity_1",
       inventory_jurisdiction: "cr_nd_inventory_jurisdiction_1",
+      length_source: "cr_nd_length_source_1",
       liquids: "cr_nd_liquids_policy_1",
+      neighbors_scope: "cr_nd_neighbors_scope_1",
       production_grain: "cr_nd_pool_rollup_1",
       status_vocabulary: "cr_nd_status_vocab_1",
     },
@@ -57,7 +121,15 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
     colour: "#3FA55E",
     wellsTileLayerId: "nm_wells",
     explorerDefault: false,
+    wellsLayerId: "nm-wells",
+    wellsStyleLayerIds: ["nm-wells", "nm-wells-struck"],
+    wellsDrawOrder: 43,
+    wellsDefaultOn: true,
+    wellsSnapshotKey: null,
+    wellsSubtitleTemplate: "NM OCD well-header surface locations · {count} points, ten of the fourteen OCD status codes mapped and four documented without an equivalent (cr_nm_wellhistory_status_vocab_2)",
+    legendNote: null,
     rules: {
+      basin_scope: "cr_nm_wellhistory_basin_scope_1",
       geometry_provenance: "cr_nm_wellhistory_geometry_provenance_1",
       identity: "cr_nm_wchistory_api10_1",
       inventory_jurisdiction: "cr_nm_wcproduction_inventory_jurisdiction_1",
@@ -73,9 +145,18 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
     colour: "#7C8B96",
     wellsTileLayerId: "tx_wells",
     explorerDefault: false,
+    wellsLayerId: "tx-wells",
+    wellsStyleLayerIds: ["tx-wells", "tx-wells-struck"],
+    wellsDrawOrder: 42,
+    wellsDefaultOn: true,
+    wellsSnapshotKey: null,
+    wellsSubtitleTemplate: "TX RRC GIS surface locations, 55 Permian-district counties · {count} points",
+    legendNote: null,
     rules: {
       "absence:operator": "cr_tx_operator_absence_1",
+      basin_scope: "cr_tx_basin_scope_1",
       identity: "cr_tx_api10_build_1",
+      length_source: "cr_tx_length_source_1",
       status_vocabulary: "cr_tx_status_vocab_1",
     },
   },
@@ -83,10 +164,11 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
 
 /** Registered code → registration. Keys are literal so a typo is a type error. */
 export const JURISDICTIONS = {
-  MT: JURISDICTION_LIST[0]!,
-  ND: JURISDICTION_LIST[1]!,
-  NM: JURISDICTION_LIST[2]!,
-  TX: JURISDICTION_LIST[3]!,
+  CO: JURISDICTION_LIST[0]!,
+  MT: JURISDICTION_LIST[1]!,
+  ND: JURISDICTION_LIST[2]!,
+  NM: JURISDICTION_LIST[3]!,
+  TX: JURISDICTION_LIST[4]!,
 } as const satisfies Readonly<Record<string, GeneratedJurisdiction>>;
 
 /** Registered API prefix → registration. The wire carries the prefix, not the code. */

@@ -312,7 +312,7 @@ curl -sS -K "$CFG" "$B/v1/wells/$SUBJECT/type-curve?explain=true&explain_depth=8
    all. The published sources are the tile *functions*, which read those same views.
 4. **~~One `marts` grant is hand-applied~~ — closed.** `create on schema marts` is held
    by a migration now (DR-21), so a database built from migrations alone survives its
-   first `refresh_all`. The deployed host already had the privilege; the migration is what
+   first `refresh_for`. The deployed host already had the privilege; the migration is what
    makes the next one reproducible.
 5. **Six months of production only** (2025-10 → 2026-03), one knowledge vintage per
    source. The full back-load is a loop of real fetches against a public regulator.

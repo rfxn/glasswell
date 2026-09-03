@@ -123,25 +123,31 @@ def test_the_serving_migration_registers_publication_evidence_before_any_rule(db
     )
 
 
+# 063's own eight. Named rather than matched on the prefix: a later train appending a
+# corrected successor under the same prefix publishes it on that train's evidence, and a
+# prefix scan would read the two pairs as 063 having been half-repointed.
+BOUNDARY_RULES = (
+    "cr_eia_area_provenance_1",
+    "cr_eia_basin_link_1",
+    "cr_eia_boundary_datum_1",
+    "cr_eia_boundary_overlap_1",
+    "cr_eia_boundary_publisher_1",
+    "cr_eia_boundary_taxonomy_1",
+    "cr_eia_geometry_repair_1",
+    "cr_eia_well_membership_1",
+)
+
+
 def test_the_boundary_migration_registers_publication_evidence_before_any_rule(db) -> None:
     """The same register-then-seed order for the eight cr_eia_* boundary decisions."""
     with db.cursor() as cursor:
         cursor.execute(
             "select rule_id, published_vintage, evidence_tag, evidence_commit from"
-            " lineage.conformance_rule_publications where rule_id like 'cr\\_eia\\_%'"
-            " order by rule_id"
+            " lineage.conformance_rule_publications where rule_id = any(%s) order by rule_id",
+            (list(BOUNDARY_RULES),),
         )
         rows = cursor.fetchall()
-    assert [row[0] for row in rows] == [
-        "cr_eia_area_provenance_1",
-        "cr_eia_basin_link_1",
-        "cr_eia_boundary_datum_1",
-        "cr_eia_boundary_overlap_1",
-        "cr_eia_boundary_publisher_1",
-        "cr_eia_boundary_taxonomy_1",
-        "cr_eia_geometry_repair_1",
-        "cr_eia_well_membership_1",
-    ]
+    assert [row[0] for row in rows] == list(BOUNDARY_RULES)
     # Repoint-stable, for the reason the cr_tc_ block above states: pinning the placeholder
     # literal would turn the merge train's correct action red.
     assert len({row[1] for row in rows}) == 1, "the eight rules disagree about their vintage"
@@ -151,6 +157,22 @@ def test_the_boundary_migration_registers_publication_evidence_before_any_rule(d
     assert (tag == "UNRELEASED") == (commit == "0" * 40), (
         f"evidence_tag and evidence_commit disagree about being repointed: {tag} / {commit}"
     )
+
+
+def test_a_corrected_successor_is_published_on_its_own_trains_evidence(db) -> None:
+    """The scoping above is honest only if the successors are actually there and actually
+    carry a pair of their own: a rule id nobody publishes cannot be seeded at all (049)."""
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select rule_id from lineage.conformance_rule_publications"
+            " where rule_id like 'cr\\_eia\\_%' and rule_id not like '%\\_1'"
+            " order by rule_id"
+        )
+        successors = [row[0] for row in cursor.fetchall()]
+
+    assert successors == ["cr_eia_basin_link_2", "cr_eia_geometry_repair_2"]
+
+
 
 
 def test_the_boundary_migration_alone_seeds_no_conformance_rule(db) -> None:

@@ -117,6 +117,15 @@ const FACETS = {
     absence: null,
     wells: figure("87634", "drv_test#wells"),
     matched_wells: null,
+    jurisdictions: [
+      {
+        code: "33",
+        name: "North Dakota",
+        wells: figure("43817", "drv_test#jurisdiction"),
+        dimension: "carried",
+        rule_id: null,
+      },
+    ],
     states: [{ code: "33", name: "North Dakota", loaded: true }],
     rules: [],
   },
@@ -200,14 +209,18 @@ describe("a Wells-By press written onto the canvas", () => {
     }
   });
 
-  it("reaches the six layers outside the status gate too", async () => {
+  it("reaches every layer outside the status gate too", async () => {
     // The reported defect: struck plugs, disposal rings and survey traces carry their own
     // predicate, so a press that only rewrote the status gate left them drawing every operator.
     await mount("?wb.pick=HESS%20CORP");
     const { FACET_FILTERED_LAYERS } = await import("./style.ts");
 
+    // Counted from the roster rather than pinned: one struck overlay per registered
+    // jurisdiction plus the disposal ring and the survey traces, so a fifth registration does
+    // not turn this into a number somebody has to remember to change.
+    const { WELLS_ROSTER } = await import("./style.ts");
     const ungated = FACET_FILTERED_LAYERS.filter((entry) => !entry.gated);
-    expect(ungated).toHaveLength(6);
+    expect(ungated).toHaveLength(WELLS_ROSTER.length + 2);
     for (const layer of ungated) {
       expect(carries(built(layer.id), "operator_name", "HESS CORP"), layer.id).toBe(true);
     }

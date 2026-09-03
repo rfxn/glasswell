@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_JURISDICTION, JURISDICTION_LIST } from "../../map/jurisdictions.generated.ts";
 import {
+  ABSENCE_LABEL,
   DEFAULTS_FOR_TEST,
   DIMENSIONS,
   WELLS_BY_PREFIX,
@@ -64,6 +65,9 @@ const RESPONSE: WellFacets = {
   },
   wells: figure("359421"),
   matched_wells: null,
+  jurisdictions: [
+    { code: "42", name: "Texas", wells: figure("359421"), dimension: "carried", rule_id: "cr_tx_operator_absence_1" },
+  ],
   states: [
     { code: "25", name: "Montana", loaded: true },
     { code: "30", name: "New Mexico", loaded: false },
@@ -976,5 +980,181 @@ describe("the dimensions the panel offers", () => {
     for (const dimension of DIMENSIONS) {
       expect(declared.get(dimension.id), dimension.id).toBe(dimension.filter);
     }
+  });
+});
+
+describe("the scope is a set of jurisdictions, not one", () => {
+  const SET: Partial<WellFacets> = {
+    state: "33,42",
+    state_name: "North Dakota and Texas",
+    caption: "The 15 operator values with the most wells, of 9,400 operator values in North Dakota and Texas.",
+    buckets: [
+      {
+        value: "PIONEER NATURAL RESOURCES USA INC",
+        wells: figure("4312"),
+        links: { wells: "/v1/wells?operator=PIONEER+NATURAL+RESOURCES+USA+INC&state=33%2C42" },
+      },
+    ],
+    jurisdictions: [
+      { code: "33", name: "North Dakota", wells: figure("43817"), dimension: "carried", rule_id: null },
+      {
+        code: "42",
+        name: "Texas",
+        wells: figure("359421"),
+        dimension: "carried",
+        rule_id: "cr_tx_operator_absence_1",
+      },
+    ],
+  };
+
+  it("offers every jurisdiction at once as the first option of the picker", async () => {
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
+    const picker = host.querySelector(".gw-wells-by-state") as HTMLSelectElement;
+
+    expect(picker.multiple).toBe(true);
+    expect(picker.options[0]?.value).toBe("all");
+    expect(picker.options[0]?.textContent).toBe("All jurisdictions");
+  });
+
+  it("commits `all` when every jurisdiction is picked", async () => {
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
+    const picker = host.querySelector(".gw-wells-by-state") as HTMLSelectElement;
+    for (const option of picker.options) option.selected = option.value === "all";
+    picker.dispatchEvent(new Event("change"));
+
+    expect(panelCommits).toEqual([{ state: "all", q: null }]);
+    expect(panelModes).toEqual(["push"]);
+  });
+
+  it("commits a comma list when several jurisdictions are picked", async () => {
+    // Selection is only ever added to here: happy-dom does not honour `option.selected = false`
+    // on a list box, and this file's header is already the record that the environment is not
+    // the browser tier. The narrowing direction is the test below.
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
+    const picker = host.querySelector(".gw-wells-by-state") as HTMLSelectElement;
+    for (const option of picker.options) option.selected ||= ["33", "42"].includes(option.value);
+    picker.dispatchEvent(new Event("change"));
+
+    expect(panelCommits).toEqual([{ state: "33,42", q: null }]);
+  });
+
+  it("lets a code win over the sentinel, so adding one to `all` narrows rather than deadlocks", async () => {
+    await mount({
+      state: state({ "wb.state": ["all"] }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+    const picker = host.querySelector(".gw-wells-by-state") as HTMLSelectElement;
+    for (const option of picker.options) option.selected ||= option.value === "33";
+    picker.dispatchEvent(new Event("change"));
+
+    expect(panelCommits).toEqual([{ state: "33", q: null }]);
+  });
+
+  it("shows the set the URL names as the selection, so the control cannot lie about the list", async () => {
+    respondWith(SET);
+    await mount({
+      state: state({ "wb.state": ["33,42"] }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+    const picker = host.querySelector(".gw-wells-by-state") as HTMLSelectElement;
+
+    expect(requested[0]).toContain("state=33%2C42");
+    expect([...picker.selectedOptions].map((option) => option.value)).toEqual(["33", "42"]);
+  });
+
+  it("names the set above the ranking in the server's own words", async () => {
+    respondWith(SET);
+    await mount({
+      state: state({ "wb.state": ["33,42"] }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+
+    const scope = host.querySelector(".gw-wells-by-scope")?.textContent ?? "";
+    expect(scope).toContain("across North Dakota and Texas");
+    expect(host.querySelector(".gw-wells-by-total-label")?.textContent).toBe(
+      "every current well across North Dakota and Texas",
+    );
+  });
+
+  it("leaves a one-jurisdiction panel with no scope line of its own", async () => {
+    await mount({ state: state(), hooks: hooks(), signal: new AbortController().signal });
+
+    expect(host.querySelector(".gw-wells-by-scope")).toBeNull();
+    expect(host.querySelector(".gw-wells-by-total-label")?.textContent).toBe(
+      "every current well in Texas",
+    );
+  });
+
+  it("says which jurisdiction reports nothing at all, and cites the rule that says so", async () => {
+    respondWith({
+      ...SET,
+      jurisdictions: [
+        ...SET.jurisdictions!,
+        {
+          code: "25",
+          name: "Montana",
+          wells: figure("40626", "drv_test#col=jurisdiction_wells"),
+          dimension: "absent_by_rule",
+          rule_id: "cr_mt_operator_absence_1",
+        },
+      ],
+    });
+    await mount({
+      state: state({ "wb.state": ["all"] }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+
+    const line = host.querySelector(".gw-wells-by-by-rule") as HTMLElement;
+    expect(line.textContent).toContain("Montana");
+    expect(line.textContent).toContain("operator");
+    expect(line.querySelector("gw-figure")?.getAttribute("handle")).toBe(
+      "drv_test#col=jurisdiction_wells",
+    );
+    expect(line.querySelector("a.gw-wells-by-rule")?.getAttribute("href")).toBe(
+      "/v1/conformance/cr_mt_operator_absence_1",
+    );
+  });
+
+  it("renders no absent-by-rule line where every jurisdiction carries the dimension", async () => {
+    respondWith(SET);
+    await mount({
+      state: state({ "wb.state": ["33,42"] }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+
+    expect(host.querySelector(".gw-wells-by-by-rule")).toBeNull();
+  });
+
+  it("carries the whole set into the filter a bucket press applies", async () => {
+    respondWith(SET);
+    await mount({
+      state: state({ "wb.state": ["33,42"] }),
+      hooks: hooks(),
+      signal: new AbortController().signal,
+    });
+
+    (host.querySelector("button.gw-wells-by-value") as HTMLButtonElement).click();
+
+    expect(filterCommits).toEqual([
+      { operator: ["PIONEER NATURAL RESOURCES USA INC"], state: ["33,42"] },
+    ]);
+  });
+});
+
+describe("what the panel copies from the server", () => {
+  it("calls the absence bucket what facets.py calls it", async () => {
+    // The by-rule block says its wells are counted "rather than in <label>", so the two have to
+    // be the same string. Parsed for the reason DIMENSIONS is parsed: a second copy would agree
+    // with itself while the API disagreed.
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync("../src/glasswell/api/routers/facets.py", "utf8");
+    const declared = /^ABSENCE_LABEL = "([^"]+)"$/m.exec(source);
+
+    expect(declared?.[1]).toBe(ABSENCE_LABEL);
   });
 });

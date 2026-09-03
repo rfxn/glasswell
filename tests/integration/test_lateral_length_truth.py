@@ -16,10 +16,14 @@ import pytest
 from pyproj import Geod
 
 from glasswell.ingest.nd_gis import load_laterals, load_wells
-from glasswell.lengths import resolve_length_method
+from glasswell.lengths import (
+    LATERALS_SOURCE_ID,
+    LengthRuleUnregistered,
+    resolve_length_method,
+)
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.store import PostgresRecorder
-from glasswell.marts import refresh_all
+from glasswell.marts import refresh_for
 from glasswell.seed import seed_all
 from glasswell.units import METRES_PER_FOOT
 from tests.integration.test_marts_nd import ARCHIVES, client_for, rows, scalar
@@ -44,7 +48,7 @@ def laterals_loaded(db: psycopg.Connection, raw_root: Path, lineage_env) -> psyc
             loader(db, raw_root=raw_root, client=client)
         db.commit()
     with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env):
-        refresh_all(db)
+        refresh_for(db, "ND")
     db.commit()
     return db
 
@@ -60,7 +64,13 @@ def geodesic_feet(geojson: str) -> float:
 
 
 def test_the_active_rule_is_what_the_mart_measured_with(laterals_loaded):
-    assert resolve_length_method(laterals_loaded).method == "geodesic"
+    """The source is named rather than defaulted to: a basin-less call is a refusal now, and
+    North Dakota's laterals are the source cr_nd_length_source_1 registers."""
+    method = resolve_length_method(laterals_loaded, source_id=LATERALS_SOURCE_ID)
+
+    assert method.method == "geodesic"
+    with pytest.raises(LengthRuleUnregistered):
+        resolve_length_method(laterals_loaded)
 
 
 def test_the_mart_length_is_the_geodesic_length_not_a_projected_one(laterals_loaded):

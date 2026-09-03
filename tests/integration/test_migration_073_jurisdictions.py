@@ -22,9 +22,12 @@ from psycopg.rows import dict_row
 from glasswell.db.migrate import discover_migrations
 from glasswell.seed import seed_all
 from glasswell.seed.jurisdictions import (
-    JURISDICTION_RULES,
+    FOUNDING_JURISDICTIONS,
+    JURISDICTION_RESTATEMENTS,
+    JURISDICTION_RULES_AS_FOUNDED,
     JURISDICTIONS,
     REGISTERED_ON,
+    RESTATED_ON,
     seed_jurisdictions,
 )
 from tests.support.seed import seed_derivation
@@ -51,6 +54,7 @@ values (%(code)s, %(effective_from)s, %(published_at)s, 'v0.76', %(commit)s, %(c
 def migration_sql(name: str) -> str:
     """By name: a migration number is assigned by merge order and this one will be renumbered."""
     return next(item.sql for item in discover_migrations() if item.name == name)
+
 
 
 def register(connection: psycopg.Connection, code: str, **overrides) -> None:
@@ -95,6 +99,7 @@ def seeded_without_the_registry_rules(db: psycopg.Connection) -> psycopg.Connect
     """
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr("glasswell.seed.jurisdictions.JURISDICTION_RULES", ())
+        patch.setattr("glasswell.seed.jurisdictions.JURISDICTION_RULES_AS_FOUNDED", ())
         seed_all(db)
     db.commit()
     with db.cursor() as cursor:
@@ -122,7 +127,12 @@ def test_the_registry_ships_with_its_registrations_and_the_resolver_answers_for_
 ) -> None:
     """`glasswell-migrate` alone must yield a database that serves: the registrations are in
     the migration, not only in the seed."""
-    rows = resolved(db, REGISTERED_ON, REGISTERED_ON)
+    # The four this migration founded. A jurisdiction registered later resolves at this cut
+    # too -- its own instant is not earlier than this one -- so the claim is scoped to what
+    # this file writes rather than to how many registrations the registry happens to hold.
+    founded = {str(row["jurisdiction_code"]) for row in FOUNDING_JURISDICTIONS}
+    rows = [row for row in resolved(db, REGISTERED_ON, REGISTERED_ON)
+            if row["jurisdiction_code"] in founded]
 
     assert [row["jurisdiction_code"] for row in rows] == ["MT", "ND", "NM", "TX"]
     assert sorted(row["identity_prefix"] for row in rows) == ["25", "30", "33", "42"]
@@ -138,7 +148,7 @@ def test_the_rule_rows_wait_for_the_conformance_registry_and_then_land(
     with db.cursor() as cursor:
         cursor.execute(migration_sql(MIGRATION))
         cursor.execute("select count(*) from lineage.jurisdiction_rules")
-        assert cursor.fetchone()[0] == len(JURISDICTION_RULES)
+        assert cursor.fetchone()[0] == len(JURISDICTION_RULES_AS_FOUNDED)
         cursor.execute(
             "select rule_id from lineage.jurisdiction_rules"
             " where jurisdiction_code = 'MT' and decision = 'inventory_jurisdiction'"
@@ -153,19 +163,29 @@ def test_the_migration_and_the_seed_write_the_same_rule_rows(
     """Two copies of a registry is one drift away from a lie; this is the guard on that."""
     db = seeded_without_the_registry_rules
     columns = "jurisdiction_code, effective_from, published_at, decision, rule_id, serving, note"
+    # Scoped to the codes this migration writes: the seed also lands a later registration's
+    # rows at this instant, and comparing the two writers over rows only one of them owns
+    # would fail on a difference that is not a drift.
+    founded = ", ".join(
+        f"'{row['jurisdiction_code']}'" for row in FOUNDING_JURISDICTIONS
+    )
+    founding = (
+        f"select {columns} from lineage.jurisdiction_rules where published_at = %s"
+        f"   and jurisdiction_code in ({founded})"
+    )
     with db.cursor() as cursor:
         cursor.execute(migration_sql(MIGRATION))
-        cursor.execute(f"select {columns} from lineage.jurisdiction_rules order by 1, 4, 5")
+        cursor.execute(f"{founding} order by 1, 4, 5", (REGISTERED_ON,))
         from_migration = cursor.fetchall()
     db.rollback()
 
     seed_jurisdictions(db)
     with db.cursor() as cursor:
-        cursor.execute(f"select {columns} from lineage.jurisdiction_rules order by 1, 4, 5")
+        cursor.execute(f"{founding} order by 1, 4, 5", (REGISTERED_ON,))
         from_seed = cursor.fetchall()
 
     assert from_migration == from_seed
-    assert len(from_seed) == len(JURISDICTION_RULES)
+    assert len(from_seed) == len(JURISDICTION_RULES_AS_FOUNDED)
 
 
 def test_running_the_migration_twice_changes_nothing(
@@ -176,9 +196,9 @@ def test_running_the_migration_twice_changes_nothing(
         cursor.execute(migration_sql(MIGRATION))
         cursor.execute(migration_sql(MIGRATION))
         cursor.execute("select count(*) from lineage.jurisdictions")
-        assert cursor.fetchone()[0] == len(JURISDICTIONS)
+        assert cursor.fetchone()[0] == len(JURISDICTIONS) + len(JURISDICTION_RESTATEMENTS)
         cursor.execute("select count(*) from lineage.jurisdiction_rules")
-        assert cursor.fetchone()[0] == len(JURISDICTION_RULES)
+        assert cursor.fetchone()[0] == len(JURISDICTION_RULES_AS_FOUNDED)
 
 
 def test_an_api10_registration_with_no_prefix_is_rejected(db: psycopg.Connection) -> None:
@@ -220,7 +240,7 @@ def test_a_restatement_is_accepted_and_resolves_at_the_later_knowledge_time(
     restated = resolved(db, AFTER_THE_RESTATEMENT, AFTER_THE_RESTATEMENT)
 
     assert next(r for r in founding if r["jurisdiction_code"] == "ND")["published_at"] == (
-        REGISTERED_ON
+        RESTATED_ON
     )
     later = next(r for r in restated if r["jurisdiction_code"] == "ND")
     assert later["published_at"] == LATER_KNOWLEDGE
@@ -229,9 +249,9 @@ def test_a_restatement_is_accepted_and_resolves_at_the_later_knowledge_time(
 
 def test_two_registrations_cannot_share_a_prefix_at_one_instant(db: psycopg.Connection) -> None:
     with db.cursor() as cursor:
-        cursor.execute("insert into lineage.jurisdiction_codes values ('CO', 'state')")
+        cursor.execute("insert into lineage.jurisdiction_codes values ('WY', 'state')")
     with pytest.raises(psycopg.errors.UniqueViolation):
-        register(db, "CO", prefix="33", pattern="^33[0-9]{8}$")
+        register(db, "WY", prefix="33", pattern="^33[0-9]{8}$")
 
 
 def test_a_land_grid_state_that_is_not_in_scope_is_rejected(db: psycopg.Connection) -> None:
@@ -251,14 +271,32 @@ def test_a_land_grid_state_that_is_not_in_scope_is_rejected(db: psycopg.Connecti
 def test_a_rule_row_needs_a_registration_at_its_own_triple(
     seeded_without_the_registry_rules: psycopg.Connection,
 ) -> None:
-    """The composite FK is what makes the runbook's order the only order that works."""
+    """The composite FK is what makes the runbook's order the only order that works.
+
+    The triple is one day past the registered one, and is derived rather than written down: a
+    literal equal to `REGISTERED_ON` names a triple the fixture has just registered, so the row
+    is valid, nothing is violated and the guard passes only by accident of ordering. It went
+    vacuous the day a repoint moved REGISTERED_ON onto the date this test had hard-coded.
+    """
     db = seeded_without_the_registry_rules
+    unregistered = REGISTERED_ON + timedelta(days=1)
+    # The premise, asserted rather than assumed. Deriving the date is not enough on its own:
+    # arithmetic on a repointable constant can land on a triple something else registered, and
+    # both sibling branches plant a restatement one clock away from this one. A guard that
+    # cannot see its own precondition is a guard that goes quiet without saying so.
+    with db.cursor() as cursor:
+        cursor.execute(
+            "select count(*) from lineage.jurisdictions"
+            " where jurisdiction_code = 'ND' and effective_from = %s and published_at = %s",
+            (unregistered, unregistered),
+        )
+        assert cursor.fetchone()[0] == 0, "the triple this plants at is registered after all"
     with db.cursor() as cursor, pytest.raises(psycopg.errors.ForeignKeyViolation):
         cursor.execute(
             "insert into lineage.jurisdiction_rules (jurisdiction_code, effective_from,"
             " published_at, decision, rule_id)"
-            " values ('ND', date '2027-01-01', date '2027-01-01', 'liquids',"
-            " 'cr_nd_liquids_policy_1')"
+            " values ('ND', %s, %s, 'liquids', 'cr_nd_liquids_policy_1')",
+            (unregistered, unregistered),
         )
 
 
@@ -354,6 +392,8 @@ def test_the_api_role_reads_every_object_and_the_resolver(db: psycopg.Connection
             (REGISTERED_ON, REGISTERED_ON),
         )
         assert cursor.fetchone()[0] == len(JURISDICTIONS)
+        cursor.execute("select count(*) from lineage.jurisdictions")
+        assert cursor.fetchone()[0] == len(JURISDICTIONS) + len(JURISDICTION_RESTATEMENTS)
 
 
 def test_only_the_pipeline_role_appends_a_measurement(db: psycopg.Connection) -> None:
@@ -399,7 +439,10 @@ def test_a_thousand_distinct_as_of_values_leave_one_cache_entry(
         registry = load_jurisdictions(db, REGISTERED_ON + timedelta(days=offset))
         assert sorted(row.jurisdiction_code for row in registry) == codes
 
-    assert len(_CACHE) == 1, sorted(_CACHE)
+    # One entry per publication instant the registry actually has, which is now two: the
+    # founding day and the restatement. The property is that the key space is the registry's
+    # own history, not that the history has one entry in it.
+    assert len(_CACHE) == 2, sorted(_CACHE)
     clear_jurisdiction_cache()
 
 

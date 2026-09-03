@@ -37,6 +37,7 @@ import polars as pl
 import psycopg
 from psycopg.rows import dict_row
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import (
     IngestRun,
     open_ingest_run,
@@ -1540,7 +1541,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Fetch the NM OCD tables, stage them from the raw zone, and promote the spine."
     )
-    parser.add_argument("--dsn", required=True)
+    add_dsn_argument(parser)
     half = parser.add_mutually_exclusive_group(required=True)
     half.add_argument("--fetch-only", action="store_true", help="pull the artifacts; stage nothing")
     half.add_argument(
@@ -1577,6 +1578,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="compare every staged row against the head instead of skipping unchanged mod_dte",
     )
     arguments = parser.parse_args(argv)
+    arguments.dsn = resolve_dsn(arguments.dsn)
 
     tables = [table.strip() for table in arguments.tables.split(",") if table.strip()]
     unknown = [table for table in tables if table not in TABLES]

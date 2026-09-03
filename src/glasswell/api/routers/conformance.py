@@ -67,7 +67,7 @@ class ConformanceRule(BaseModel):
         json_schema_extra={GLOSSARY_KEY: "gt_source"},
     )
     stage: str = Field(
-        description="parse, validate, conform or join.",
+        description="parse, validate, conform, join or schedule.",
         json_schema_extra={GLOSSARY_KEY: "gt_pipeline_stage"},
     )
     applies_to_fields: list[str] = Field(description="Fields the rule governs.")

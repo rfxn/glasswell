@@ -17,23 +17,23 @@ EnvironmentFile=-/etc/glasswell/code-version.env
 Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql
 # NDIC publishes a production month roughly two months in arrears; three is the safe lag.
 Environment=GLASSWELL_MPR_LAG_MONTHS=3
-ExecStart=/opt/glasswell/venv/bin/python -m glasswell.ingest.nd_gis --layer all --dsn ${GLASSWELL_DSN}
-ExecStart=/bin/bash -c '/opt/glasswell/venv/bin/python -m glasswell.ingest.nd_mpr --month "$(date -u -d "-$GLASSWELL_MPR_LAG_MONTHS months" +%%Y-%%m)" --dsn "$GLASSWELL_DSN"'
-ExecStart=/opt/glasswell/venv/bin/python -m glasswell.ingest.blm_plss --layer all --dsn ${GLASSWELL_DSN}
-ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.nd_wells --dsn ${GLASSWELL_DSN}
+ExecStart=/opt/glasswell/venv/bin/python -m glasswell.ingest.nd_gis --layer all
+ExecStart=/bin/bash -c '/opt/glasswell/venv/bin/python -m glasswell.ingest.nd_mpr --month "$(date -u -d "-$GLASSWELL_MPR_LAG_MONTHS months" +%%Y-%%m)"'
+ExecStart=/opt/glasswell/venv/bin/python -m glasswell.ingest.blm_plss --layer all
+ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.nd_wells
 # The mart refresh only. No ExecStart re-promotes New Mexico: all nine nm_ocd_ sources are
 # registered owner-triggered and the FTP pull is a once-ever event by contract.
-ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.nm_wells --dsn ${GLASSWELL_DSN}
+ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.nm_wells
 # The mart refresh only, for the reason above: all four mt_ sources poll on a 35-day cadence
 # and the archives are large, so the ingest is run from docs/runbook-mt-load.md rather than
 # ridden along with a timer that fires far more often than the data changes.
-ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.mt_wells --dsn ${GLASSWELL_DSN}
-ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.land_units --dsn ${GLASSWELL_DSN}
-ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.land_metrics --dsn ${GLASSWELL_DSN}
+ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.mt_wells
+ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.land_units
+ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.land_metrics
 # After nd_mpr, which is its canonical input. deploy.sh populates it once at release; this is
 # what keeps it current every month afterwards.
-ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.cumulatives --dsn ${GLASSWELL_DSN}
-ExecStart=/opt/glasswell/venv/bin/glasswell-neighbors --dsn ${GLASSWELL_DSN}
+ExecStart=/opt/glasswell/venv/bin/python -m glasswell.marts.cumulatives
+ExecStart=/opt/glasswell/venv/bin/glasswell-neighbors
 TimeoutStartSec=3600
 MemoryMax=6G
 

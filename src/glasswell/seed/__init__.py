@@ -10,6 +10,7 @@ from glasswell.seed.conformance_c115b import (
     seed_conformance_c115b,
     seed_nm_waste_types,
 )
+from glasswell.seed.conformance_co import CO_RULES, seed_conformance_co
 from glasswell.seed.conformance_fracfocus import FRACFOCUS_RULES, seed_conformance_fracfocus
 from glasswell.seed.conformance_land import LAND_RULES, seed_conformance_land
 from glasswell.seed.conformance_mt import MT_RULES, seed_conformance_mt
@@ -22,6 +23,10 @@ from glasswell.seed.conformance_nm_wells import (
     seed_conformance_nm_wells_gis,
 )
 from glasswell.seed.conformance_producing import PRODUCING_RULES, seed_conformance_producing
+from glasswell.seed.conformance_schedules import (
+    SCHEDULE_RULES,
+    seed_conformance_schedules,
+)
 from glasswell.seed.conformance_tx import TX_RULES, seed_conformance_tx
 from glasswell.seed.conformance_typecurve import TYPECURVE_RULES, seed_conformance_typecurve
 from glasswell.seed.conformance_vintage import VINTAGE_RULES, seed_conformance_vintage
@@ -42,16 +47,26 @@ from glasswell.seed.reference import (
     seed_nm_streams,
     seed_sources,
 )
+from glasswell.seed.schedules import (
+    JOB_SOURCES,
+    JOBS,
+    REFUSAL_CODES,
+    SCHEDULES,
+    seed_schedules,
+)
 
 __all__ = [
     "BASIN_RULES",
     "C115B_RULES",
+    "CO_RULES",
     "CRS_ROWS",
     "FEATURE_SPECS",
     "FEATURE_VERSION",
     "FORMATION_ALIASES",
     "FRACFOCUS_RULES",
     "GLOSSARY_SEED_PATH",
+    "JOBS",
+    "JOB_SOURCES",
     "JURISDICTIONS",
     "JURISDICTION_CODES",
     "JURISDICTION_RULES",
@@ -63,6 +78,9 @@ __all__ = [
     "NM_WELLS_GIS_RULES",
     "NM_WELLS_RULES",
     "PRODUCING_RULES",
+    "REFUSAL_CODES",
+    "SCHEDULES",
+    "SCHEDULE_RULES",
     "SOURCES",
     "TX_RULES",
     "TYPECURVE_RULES",
@@ -79,6 +97,7 @@ __all__ = [
     "seed_conformance_nm_wells",
     "seed_conformance_nm_wells_gis",
     "seed_conformance_producing",
+    "seed_conformance_schedules",
     "seed_conformance_tx",
     "seed_conformance_typecurve",
     "seed_conformance_vintage",
@@ -89,6 +108,7 @@ __all__ = [
     "seed_nd_formation_aliases",
     "seed_nm_streams",
     "seed_nm_waste_types",
+    "seed_schedules",
     "seed_sources",
     "slug",
 ]
@@ -113,6 +133,15 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
         # and the number seed_sources returns is a registry total.
         "conformance_rules_basins": seed_conformance_basins(connection),
         "sources": seed_sources(connection),
+        # Straight after seed_sources, which is the first point at which every source a cadence
+        # rule can be filed under exists. It goes here rather than last because the four
+        # seeders below count by source-id prefix and a cadence rule carries one of those
+        # prefixes: seeded after them, the first run's totals would differ from the second's.
+        "conformance_rules_schedules": seed_conformance_schedules(connection),
+        # After seed_sources, which registers the five ECMC sources these rules are filed
+        # under, and before seed_jurisdictions, whose Colorado rule rows FK to them. Its
+        # count is over its own ids, so no sibling seeder's total moves when it grows.
+        "conformance_rules_co": seed_conformance_co(connection),
         "crs_registry": seed_crs(connection),
         "conformance_rules_fracfocus": seed_conformance_fracfocus(connection),
         # Before the ND seeder for the same reason TX is before everything: these rows carry an
@@ -140,4 +169,7 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
         # Last: its rule rows FK to lineage.conformance_rules, so every conformance seeder
         # has to have run, and the count it returns is a registry total.
         "jurisdictions": seed_jurisdictions(connection),
+        # Last: it FKs to lineage.conformance_rules through every schedule row's rule_id, so
+        # the cadence seeder above has to have run, and its count is over its own table.
+        "scheduled_jobs": seed_schedules(connection),
     }

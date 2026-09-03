@@ -3,8 +3,8 @@
  * and the persisted capability set all read this table — adding a layer is one entry, and
  * nothing downstream keeps a second list to drift against it.
  */
-import { LAND_SNAPSHOT, ND_SNAPSHOT, landCellCount, ndCoverage, ndWellCount } from "./coverage.ts";
-import { JURISDICTIONS } from "./jurisdictions.generated.ts";
+import { LAND_SNAPSHOT, ND_SNAPSHOT, landCellCount, ndCoverage } from "./coverage.ts";
+import { JURISDICTION_LIST } from "./jurisdictions.generated.ts";
 import { DISPOSAL_COLOUR } from "./disposal.ts";
 import { LAYER_FAMILIES, LAYER_GROUPS } from "./groups.ts";
 import type { LayerFamily, LayerFamilyId, LayerGroup, LayerGroupId } from "./groups.ts";
@@ -98,6 +98,57 @@ const STATUS_KEYED_LINE: readonly [string, ...string[]] = [
   statusColour("active"),
   statusColour("plugged"),
 ];
+
+/**
+ * The measured coverage snapshots a registration may cite, by the key its row carries. A key
+ * rather than a value: the number and the refresh it was read from live in one place, and a
+ * registration names which one it means rather than restating it.
+ */
+const WELLS_SNAPSHOTS: Readonly<Record<string, string>> = {
+  nd_wells_refresh: ND_SNAPSHOT.refresh,
+};
+
+/**
+ * One `Wells` row per registration, built from it. Four object literals stood here carrying
+ * seven facts each — the layer id, the style layers it toggles, the draw order, the first-paint
+ * default, the snapshot, the subtitle and the colour — none of them readable by any gate, and a
+ * fifth jurisdiction was four hand edits with nothing to catch a missed one.
+ *
+ * Everything that differs is a registration; everything that is the same is here. The swatch is
+ * a dot in the registration's own colour, and the colour is a prediction about the canvas rather
+ * than a brand choice: North Dakota and New Mexico draw active green because the plurality of
+ * their wells is active, Texas and Montana draw plugged grey because 29% and 63% of theirs are
+ * plugged. `minZoom: 4` is the wells tile's own floor. The count is never compiled in — the row
+ * carries `COUNT_SLOT` and names the jurisdiction whose served measurement fills it, so a
+ * reader can put the number beside the date it was measured on.
+ */
+/** The disposal ring's slot, named because the wells rows are split around it. */
+const DISPOSAL_DRAW_ORDER = 41;
+
+function wellsRows(): LayerDef[] {
+  return [...JURISDICTION_LIST]
+    .sort((a, b) => a.wellsDrawOrder - b.wellsDrawOrder)
+    .map((row) => ({
+      id: row.wellsLayerId,
+      group: "spine" as const,
+      family: "wells" as const,
+      familyLabel: row.name,
+      label: `Wells (${row.name})`,
+      jurisdiction: row.code,
+      subtitle: row.wellsSubtitleTemplate,
+      swatch: { kind: "dot" as const, colours: [row.colour] },
+      defaultOn: row.wellsDefaultOn,
+      minZoom: 4,
+      zoomHint: "Visible at zoom 4 and above",
+      opacity: 1,
+      ...(row.wellsSnapshotKey ? { snapshot: WELLS_SNAPSHOTS[row.wellsSnapshotKey] } : {}),
+      provenance: [{ kind: "official" as const, source: `marts.${row.wellsTileLayerId}_tile` }],
+      styleLayers: [...row.wellsStyleLayerIds],
+      drawOrder: row.wellsDrawOrder,
+      // One spine, four tile marts: /v1/wells is state-agnostic, so every row lands on it.
+      collection: { dataset: "wells", bbox: "bbox" },
+    }));
+}
 
 export const LAYERS: readonly LayerDef[] = [
   {
@@ -326,24 +377,11 @@ export const LAYERS: readonly LayerDef[] = [
     // Drawn from tiles only. /v1/wells counts a well's geometry classes, it does not list lines.
     collection: null,
   },
-  {
-    id: "wells",
-    group: "spine",
-    family: "wells",
-    familyLabel: JURISDICTIONS.ND.name,
-    label: `Wells (${JURISDICTIONS.ND.name})`,
-    subtitle: `ND DMR GIS surface locations · ${ndWellCount()} points · culled by status below zoom 9`,
-    swatch: { kind: "dot", colours: [JURISDICTIONS.ND.colour] },
-    defaultOn: true,
-    minZoom: 4,
-    zoomHint: "Visible at zoom 4 and above",
-    opacity: 1,
-    snapshot: ND_SNAPSHOT.refresh,
-    provenance: [{ kind: "official", source: "marts.nd_wells_tile" }],
-    styleLayers: ["wells", "wells-struck"],
-    drawOrder: 40,
-    collection: { dataset: "wells", bbox: "bbox" },
-  },
+  // Split around the ring rather than spread whole: `drawOrder` is the panel's row order and
+  // the ring sits at 41, between the founding registration at 40 and the next at 42, because a
+  // reader meets it beside the row it rings. Declaration order stays the draw order, which is
+  // an assertion in this file rather than something a sort quietly satisfies.
+  ...wellsRows().filter((row) => row.drawOrder < DISPOSAL_DRAW_ORDER),
   {
     // A well_type fact from the regulator, not an interpretation: the ring marks the wells
     // NDIC itself types as injection class, over the status dot the wells row still draws.
@@ -365,86 +403,13 @@ export const LAYERS: readonly LayerDef[] = [
     snapshot: ND_SNAPSHOT.refresh,
     provenance: [{ kind: "official", source: "marts.nd_wells_tile" }],
     styleLayers: ["disposal-wells"],
-    drawOrder: 41,
+    drawOrder: DISPOSAL_DRAW_ORDER,
     // The same spine the wells rows land on. /v1/wells takes no well-type predicate yet, so
     // the crossing narrows by the box alone, exactly as it does for the status filter — the
     // missing predicate is a recorded seam (work-output/m17-status.md), not a silent claim.
     collection: { dataset: "wells", bbox: "bbox" },
   },
-  {
-    id: "tx-wells",
-    group: "spine",
-    family: "wells",
-    familyLabel: JURISDICTIONS.TX.name,
-    label: `Wells (${JURISDICTIONS.TX.name})`,
-    jurisdiction: JURISDICTIONS.TX.code,
-    subtitle:
-      `TX RRC GIS surface locations, 55 Permian-district counties · ${COUNT_SLOT} points`,
-    // Not ND's green. Both basins share one status vocabulary and one set of status colours,
-    // but a swatch is a prediction about what the canvas will look like, and Texas draws
-    // mostly plugged grey: 29% of its wells are plugged and 18% carry no status at all, so a
-    // green dot promises a green map and delivers a grey one.
-    swatch: { kind: "dot", colours: [JURISDICTIONS.TX.colour] },
-    defaultOn: true,
-    minZoom: 4,
-    zoomHint: "Visible at zoom 4 and above",
-    opacity: 1,
-    provenance: [{ kind: "official", source: "marts.tx_wells_tile" }],
-    styleLayers: ["tx-wells", "tx-wells-struck"],
-    drawOrder: 42,
-    // One spine, two tile marts: /v1/wells is state-agnostic, so both rows land on it.
-    collection: { dataset: "wells", bbox: "bbox" },
-  },
-  {
-    id: "nm-wells",
-    group: "spine",
-    family: "wells",
-    familyLabel: JURISDICTIONS.NM.name,
-    label: `Wells (${JURISDICTIONS.NM.name})`,
-    jurisdiction: JURISDICTIONS.NM.code,
-    subtitle:
-      `NM OCD well-header surface locations · ${COUNT_SLOT} points, ten of the fourteen OCD ` +
-      "status codes mapped and four documented without an equivalent " +
-      "(cr_nm_wellhistory_status_vocab_2)",
-    // Active green, narrowly: the mart measures 54,325 active against 50,935 plugged, so the
-    // plurality is the only single ink the canvas supports. A dot carries one.
-    swatch: { kind: "dot", colours: [JURISDICTIONS.NM.colour] },
-    defaultOn: true,
-    minZoom: 4,
-    zoomHint: "Visible at zoom 4 and above",
-    opacity: 1,
-    provenance: [{ kind: "official", source: "marts.nm_wells_tile" }],
-    styleLayers: ["nm-wells", "nm-wells-struck"],
-    drawOrder: 43,
-    // One spine, three tile marts: /v1/wells is state-agnostic, so every row lands on it.
-    collection: { dataset: "wells", bbox: "bbox" },
-  },
-  {
-    id: "mt-wells",
-    group: "spine",
-    family: "wells",
-    familyLabel: JURISDICTIONS.MT.name,
-    label: `Wells (${JURISDICTIONS.MT.name})`,
-    jurisdiction: JURISDICTIONS.MT.code,
-    subtitle:
-      `MBOGC surface locations · ${COUNT_SLOT} points, 13 of the 19 filed status values` +
-      " mapped and the other 6 quarantined rather than defaulted (cr_mt_gis_status_vocab_1)" +
-      " · no basin tag: Bakken is 4.6% of Montana (cr_mt_basin_scope_1) · completion year," +
-      " never a spud",
-    // Plugged grey, for Texas's reason rather than by imitation: 63% of Montana's mapped
-    // wells are plugged and 3% carry no class, so a green dot would promise a canvas that
-    // does not arrive.
-    swatch: { kind: "dot", colours: [JURISDICTIONS.MT.colour] },
-    defaultOn: true,
-    minZoom: 4,
-    zoomHint: "Visible at zoom 4 and above",
-    opacity: 1,
-    provenance: [{ kind: "official", source: "marts.mt_wells_tile" }],
-    styleLayers: ["mt-wells", "mt-wells-struck"],
-    drawOrder: 44,
-    // One spine, four tile marts: /v1/wells is state-agnostic, so every row lands on it.
-    collection: { dataset: "wells", bbox: "bbox" },
-  },
+  ...wellsRows().filter((row) => row.drawOrder > DISPOSAL_DRAW_ORDER),
 ];
 
 const BY_ID = new Map(LAYERS.map((layer) => [layer.id, layer]));

@@ -34,9 +34,9 @@ derivation handle back to a checksummed regulator file, or it does not ship.
 
 > [!IMPORTANT]
 > **Early build, public source, proprietary, and not a product.** The repository holds the
-> blueprint, the collateral built from it, and a deployed four-state slice — North Dakota
+> blueprint, the collateral built from it, and a five-state slice — North Dakota
 > end to end, Texas and Montana on the map, New Mexico's headers, surface geometry and
-> production resident.
+> production resident, and Colorado registered through the registry rather than built.
 > glasswell is a personal single-operator build on public regulator data. It is not
 > commercial, not multi-tenant, not investment advice, and not a source of verified reserves
 > or ownership. The deployed instance is reachable but credential-gated; repository
@@ -241,6 +241,7 @@ and recorded in a manifest before anything reads it.
 | **Texas** (Midland, TX Delaware) | RRC county GIS wells and well arcs, wellbore query export *(landed)*; PDQ lease production, W-2 / G-1 completions, W-1 permits, wellbore master *(designed, not ingested)* |
 | **New Mexico** (Delaware) | OCD well headers and surface geometry *(landed)*; OCD production at the well-completion-pool grain — a third spine, and the allocation validator *(landed)*. Status resolves at read time from the OCD codebook, `cr_nm_wellhistory_status_vocab_2` |
 | **Montana** (Elm Coulee and the rest of the state) | MBOGC monthly production at both the well and lease grains, GIS surface points and well paths. No basin tag: Bakken is 4.6% of the state (`cr_mt_basin_scope_1`) |
+| **Colorado** (DJ / Piceance / Powder River) | ECMC GIS well headers and the rolling monthly production file *(landed)*. Status resolves at read time from the live ECMC reference list, `cr_co_wells_status_vocab_1`; production is per completion with a well row beside it; nearly half the served points are permit locations rather than surveys, and `cr_co_wells_location_qualifier_1` is what says so on the card |
 | **Cross-cutting** | FracFocus disclosure headers, PLSS and spacing units, operator registries |
 
 Texas reports at the lease level while North Dakota and New Mexico report at the
@@ -250,7 +251,7 @@ bounds get measured against two independent validators and published.
 
 ## API surface
 
-API-first: 54 operations across 49 paths in the frozen snapshot, 53 of them under `/v1`.
+API-first: 56 operations across 51 paths in the frozen snapshot, 55 of them under `/v1`.
 The read surface covers health and operational status, wells and their facets, production,
 per-well cumulative volumes with the month classes behind them, vintage cohorts, completion
 context and promoted completion design, physical neighbours, formations, lineage,
@@ -374,13 +375,17 @@ glasswell-mt-bogc            ingest MBOGC production, both grains
 glasswell-mt-gis             ingest the MBOGC GIS surface points and well paths
 glasswell-nm-wells           ingest the OCD well headers and surface geometry
 glasswell-nm-tiles           build the New Mexico tile mart
+glasswell-co-wells           promote the ECMC well headers and surface geometry
+glasswell-co-production      promote the ECMC rolling production file
 glasswell-basin-boundaries   load basin boundaries; glasswell-eia-boundaries fetches them
 ```
 
 Each multi-step load has a runbook that states its commands, the user that runs each,
 expected counts and the undo: [Montana](docs/runbook-mt-load.md),
-[basins](docs/runbook-basin-load.md), and New Mexico in
-[two](docs/runbook-nm-tier2.md) [tiers](docs/runbook-nm-promotion.md).
+[basins](docs/runbook-basin-load.md), [Colorado](docs/runbook-co-tier2.md), and New Mexico in
+[two](docs/runbook-nm-tier2.md) [tiers](docs/runbook-nm-promotion.md). Colorado's is the one
+you may never need: its six jobs are registered to launch, so the scheduler runs the first load
+itself and the runbook is for watching it, bisecting it, or loading a host without it.
 
 The integration tier starts one `postgis/postgis:16-3.4` container per session and clones a
 migrated template database per test. It honours an inherited `DOCKER_HOST`, then the local
@@ -419,6 +424,8 @@ records each file's checksum and refuses a changed migration.
 | [docs/runbook-mt-load.md](docs/runbook-mt-load.md) | Loading Montana on the deployed host: commands, expected counts, success versus partial, and how to undo |
 | [docs/runbook-nm-tier2.md](docs/runbook-nm-tier2.md) | Tier 2 — opening the New Mexico gate: well headers, surface geometry and the tile mart, with the preconditions, gates and the one decision that cannot be taken afterwards |
 | [docs/runbook-nm-promotion.md](docs/runbook-nm-promotion.md) | Tier 1 — the New Mexico production-history load: nine manifests, the staged spine and its ~24.8M appended rows |
+| [docs/runbook-co-tier2.md](docs/runbook-co-tier2.md) | Colorado's first data load: three GIS archives, the rolling production file, both promotions and the mart, with a merge-blocking gate over all five states |
+| [docs/runbook-scheduler.md](docs/runbook-scheduler.md) | The cadence-driven scheduler: reading the plan, running one job by hand, every refusal code and its severity, registering a job, and what observing means |
 | [BRAND.md](BRAND.md) | Visual system, palette, and asset regeneration |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How changes are made, and what review rejects |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting |

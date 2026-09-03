@@ -1,0 +1,16 @@
+[Unit]
+Description=Hourly glasswell scheduler tick
+Documentation=file:/opt/glasswell/src/docs/runbook-scheduler.md
+
+[Timer]
+Unit=glasswell-scheduler.service
+OnCalendar=hourly
+# The tick reads the whole registry and every source's poll evidence. Spreading it stops an
+# hourly herd landing on the same second as every other timer on the box.
+RandomizedDelaySec=300
+# A tick missed while the host was down is still a tick worth taking: the plan is computed
+# from evidence, so a late one records what was true rather than what would have been.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

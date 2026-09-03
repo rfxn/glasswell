@@ -1,0 +1,63 @@
+{
+  "MT": {
+    "derivation_id": "drv_av3qzsvnlxbmnnyge4wa",
+    "layers": [
+      "mt_wells",
+      "mt_paths"
+    ],
+    "row_counts": {
+      "mt_paths_tile": 1,
+      "mt_wells_tile": 1
+    },
+    "tile_digests": {
+      "mt_paths_tile": "710aee4e5611f10cc267cc3c250eec76",
+      "mt_wells_tile": "140954a82d77132352b72f30b9d22288"
+    }
+  },
+  "ND": {
+    "derivation_id": "drv_4v4mcetkcbp42r5apisq",
+    "layers": [
+      "nd_laterals",
+      "nd_wells",
+      "nd_spacing_units",
+      "nd_survey_traces"
+    ],
+    "row_counts": {
+      "nd_laterals_tile": 1,
+      "nd_survey_traces_tile": 1,
+      "nd_wells_tile": 1
+    },
+    "tile_digests": {
+      "nd_laterals_tile": "b1241414f4d8b17924f7f2c2d54fc378",
+      "nd_survey_traces_tile": "ea60517ae5da431b7d44d6acf6255a82",
+      "nd_wells_tile": "0410f1c8975ab78dd9d4a82a29e13068"
+    }
+  },
+  "NM": {
+    "derivation_id": "drv_7djfsf45knje54viceta",
+    "layers": [
+      "nm_wells"
+    ],
+    "row_counts": {
+      "nm_wells_tile": 1
+    },
+    "tile_digests": {
+      "nm_wells_tile": "3c41b46d5c24bedba3c1829018ac1f27"
+    }
+  },
+  "TX": {
+    "derivation_id": "drv_quqglj2dds2px5pbpgia",
+    "layers": [
+      "tx_laterals",
+      "tx_wells"
+    ],
+    "row_counts": {
+      "tx_laterals_tile": 1,
+      "tx_wells_tile": 1
+    },
+    "tile_digests": {
+      "tx_laterals_tile": "92044bb9e8bd343d31feaecf86a8ef7e",
+      "tx_wells_tile": "d14c7ee7d2e5f86e789bec3a3b27cd48"
+    }
+  }
+}

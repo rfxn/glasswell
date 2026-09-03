@@ -111,8 +111,11 @@ export function createWellsBySheet(options: WellsBySheetOptions): WellsBySheetHa
         facetFilterable(dimension) ? { press: true } : { press: false, title: TILE_UNFILTERABLE },
       scopeNote: (data: WellFacets) => {
         rendered = data.buckets;
+        // The preposition is the only word composed here: `state_name` is the served list, so a
+        // set names itself and the sheet cannot spell one differently from the panel.
+        const where = data.jurisdictions.length > 1 ? "across" : "in";
         return (
-          `Counted over every current well in ${data.state_name}.` +
+          `Counted over every current well ${where} ${data.state_name}.` +
           " This does not move when you pan."
         );
       },

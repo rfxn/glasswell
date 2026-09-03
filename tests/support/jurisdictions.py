@@ -62,7 +62,9 @@ _COLUMNS = (
     "name", "regulator_name", "regulator_url", "identity_scheme", "identity_is_unique",
     "identity_prefix", "identity_pattern", "source_ids", "liquids_basis",
     "wells_tile_layer_id", "map_colour", "neighbors_available", "land_grid_state",
-    "land_grid_scope", "status_dataset_detail", "rationale",
+    "land_grid_scope", "status_dataset_detail", "rationale", "wells_layer_id",
+    "wells_style_layer_ids", "wells_draw_order", "wells_default_on", "wells_snapshot_key",
+    "wells_subtitle_template", "legend_note",
 )
 
 
@@ -83,9 +85,14 @@ def restate(
     """
     today = utc_today()
     with connection.cursor(row_factory=dict_row) as cursor:
+        # The knowledge cut `load_jurisdictions` uses, not the host clock: a restatement
+        # published ahead of today is what the serving path resolves, so restating the row
+        # today's date resolves to would append underneath it and change nothing.
+        cursor.execute("select max(published_at) as knowledge from lineage.jurisdictions")
+        knowledge = cursor.fetchone()["knowledge"]
         cursor.execute(
             "select * from lineage.jurisdictions_as_of(%s, %s) where jurisdiction_code = %s",
-            (today, today, code),
+            (knowledge, today, code),
         )
         current = cursor.fetchone()
         assert current is not None, f"{code} resolves to no registration"

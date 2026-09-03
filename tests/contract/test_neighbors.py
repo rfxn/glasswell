@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import psycopg
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import EXAMPLE_API10
 from glasswell.api.routers.neighbors import _warnings
+from glasswell.lineage.jurisdictions import clear_jurisdiction_cache
 from glasswell.lineage.serialization import hash_payload
 from glasswell.marts.neighbors import resident_content_identity
+from glasswell.seed.jurisdictions import REGISTERED_ON, RESTATED_ON
+from tests.support.seed import seed_well, seed_well_spatial
 
 PATH = f"/v1/wells/{EXAMPLE_API10}/neighbors"
 
@@ -174,3 +178,57 @@ def test_neighbor_handles_validate_exact_persisted_rows(client: TestClient) -> N
     assert wrong_column.json()["type"] == "/v1/errors/selector_ambiguous"
     assert coverage.status_code == 200, coverage.text
     assert wrong_metric.status_code == 422
+
+
+def test_a_jurisdiction_outside_the_measured_domain_is_told_why_rather_than_shown_nothing(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """`neighbors_available` and `neighbors_scope` are two registrations. A jurisdiction with
+    the first and not the second used to get no link and no explanation, which renders as an
+    absent section rather than as a decision."""
+    api10 = "4912300001"
+    with seeded.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.jurisdiction_codes values ('WY', 'state')"
+            " on conflict do nothing"
+        )
+        cursor.execute(
+            "insert into lineage.jurisdictions (jurisdiction_code, effective_from,"
+            " published_at, evidence_tag, evidence_commit, name, regulator_name,"
+            " regulator_url, identity_scheme, identity_prefix, identity_pattern, source_ids,"
+            " rationale, neighbors_available)"
+            " values ('WY', %s, %s, 'v0.77', %s, 'Wyoming', 'WOGCC',"
+            " 'https://wogcc.wyo.gov', 'api10', '49', '^49[0-9]{8}$',"
+            " array['nd_mpr_xlsx'], 'planted', true)",
+            (REGISTERED_ON, RESTATED_ON, "a" * 40),
+        )
+    seed_well(seeded, api10=api10, state_code="49", basin=None, spud_date=None)
+    seed_well_spatial(seeded, api10=api10, geom_type="surface")
+    seed_well_spatial(seeded, api10=api10, geom_type="lateral")
+    seeded.commit()
+    clear_jurisdiction_cache()
+
+    envelope = client.get(f"/v1/wells/{api10}").json()
+
+    assert envelope["data"]["neighbors_reason"] == "neighbors_domain_not_covered"
+    assert "neighbors" not in envelope["links"]
+    assert "neighbors_rule" not in envelope["links"]
+
+    rows_served = client.get("/v1/jurisdictions").json()["data"]
+    wyoming = next(row for row in rows_served if row["jurisdiction_code"] == "WY")
+    assert wyoming["capabilities"]["neighbors"] is False
+
+
+def test_a_covered_jurisdiction_cites_the_rule_that_says_the_domain_reaches_it(
+    client: TestClient,
+) -> None:
+    """N-16: the card and /v1/jurisdictions read the same two registrations, so the two
+    surfaces cannot disagree about whether a jurisdiction has neighbours."""
+    envelope = client.get(f"/v1/wells/{EXAMPLE_API10}").json()
+
+    assert envelope["data"]["neighbors_reason"] is None
+    assert envelope["links"]["neighbors_rule"] == "/v1/conformance/cr_nd_neighbors_scope_1"
+
+    rows_served = client.get("/v1/jurisdictions").json()["data"]
+    north_dakota = next(row for row in rows_served if row["jurisdiction_code"] == "ND")
+    assert north_dakota["capabilities"]["neighbors"] is True

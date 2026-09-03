@@ -25,6 +25,13 @@ from psycopg.rows import dict_row
 from pydantic import BaseModel, ValidationError
 
 from glasswell.lineage.jurisdictions import load_jurisdictions
+from glasswell.lineage.schedules import (
+    ScheduledJob,
+    ScheduleRegistry,
+    ScheduleRegistryError,
+    load_schedules,
+)
+from glasswell.scheduler.plan import collect_evidence, next_due_at
 from glasswell.status.models import (
     DATABASE_BYTES_REASON,
     INVENTORY_REASON,
@@ -33,6 +40,7 @@ from glasswell.status.models import (
     CheckTier,
     DatasetInventory,
     InventoryMetric,
+    JobSchedule,
     JobStatus,
     OffsiteCopyReceipt,
     PlatformStatus,
@@ -190,6 +198,155 @@ def _job(
         unit=timer_unit,
         timer_armed=None if not timer else timer.get("ActiveState") == "active",
     )
+
+
+
+_LAST_JOB_RUNS = """
+select distinct on (job_id) job_id, outcome, started_at, completed_at, planned_at,
+       refusal_code, failure_detail
+  from lineage.job_runs
+ order by job_id, planned_at desc, run_id desc
+"""
+
+# A systemd timer and the service it triggers differ only in suffix. That is a convention of
+# systemd's own naming, not a mapping this project gets to decide, so deriving one from the
+# other is not a decision hidden in code.
+def _timer_for(service_unit: str) -> str:
+    return service_unit.removesuffix(".service") + ".timer"
+
+
+def _schedule_of(job: ScheduledJob) -> JobSchedule:
+    return JobSchedule(
+        job_id=job.job_id,
+        effective_from=job.effective_from,
+        published_at=job.published_at,
+        rule_id=job.rule_id,
+        rationale=job.rationale,
+        external_timer_unit=job.external_timer_unit,
+        external_service_unit=job.external_service_unit,
+    )
+
+
+def _state_of_run(
+    registry: ScheduleRegistry, outcome: str | None, refusal_code: str | None
+) -> tuple[str, str | None]:
+    """The job's state and the refusal's severity class, read from the registry vocabulary.
+
+    The class is a row, not a list in this function: a standing informational condition must
+    not redden the deploy gate, and which conditions are standing is a decision that changes
+    without a release.
+    """
+    severity = registry.severity_of(refusal_code)
+    if outcome == "ran":
+        return "ok", None
+    if outcome in ("failed", "interrupted"):
+        return "degraded", severity
+    if outcome == "refused":
+        return {"informational": "refused", "waiting": "pending"}.get(
+            severity or "", "degraded"
+        ), severity
+    return "pending", None
+
+
+def _detail_with_refusal(
+    registry: ScheduleRegistry, detail: str, last: dict | None
+) -> str:
+    """The unit's sentence, and the plan's own reason where the plan had one."""
+    code = registry.refusal_codes.get((last or {}).get("refusal_code") or "")
+    return detail if code is None else f"{detail} {code.sentence}"
+
+
+def _registry_jobs(
+    connection: psycopg.Connection, observed_at: datetime, runner: Runner = _run
+) -> list[JobStatus]:
+    """One row per registered job, generated rather than typed out six times over."""
+    try:
+        registry = load_schedules(connection)
+    except ScheduleRegistryError as refusal:
+        return [
+            JobStatus(
+                id="job_registry",
+                label="Scheduled job registry",
+                state="unavailable",
+                detail=str(refusal),
+            )
+        ]
+    evidence = collect_evidence(
+        connection,
+        now=observed_at,
+        source_ids=[source for job in registry for source in job.source_ids],
+    )
+    with connection.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(_LAST_JOB_RUNS)
+        last_runs = {row["job_id"]: row for row in cursor.fetchall()}
+
+    jobs: list[JobStatus] = []
+    for job in registry:
+        last = last_runs.get(job.job_id)
+        duration = (
+            int((last["completed_at"] - last["started_at"]).total_seconds())
+            if last and last["started_at"] and last["completed_at"]
+            else None
+        )
+        due = next_due_at(job, evidence, observed_at)
+        service_unit = job.external_service_unit or job.legacy_unit
+        # The unit column reports whether a *timer* is armed, so it names the timer; the
+        # service it triggers is what the run evidence is read from.
+        unit = None if service_unit is None else _timer_for(service_unit)
+        # The plan's own refusal survives whichever branch the state comes from. A job an
+        # installed timer drives takes its state from that unit, but the reason its plan could
+        # not run is still the row a reader came for, so the class travels with it.
+        refusal_class = registry.severity_of(last["refusal_code"] if last else None)
+        if service_unit is not None:
+            # A row an installed timer still drives shows that unit's evidence beside the plan,
+            # so the page never claims the scheduler ran something it did not.
+            probed = _job(job.job_id, job.label, unit, service_unit, runner)
+            # A fault the plan recorded outranks the unit's own state: the timer may be
+            # perfectly armed and the reason this job cannot run is still the row a reader
+            # came for, and a group that opened for it must show why on its face.
+            state = "degraded" if refusal_class == "fault" else probed.state
+            last_run_at, next_run_at = probed.last_run_at, probed.next_run_at
+            detail = _detail_with_refusal(registry, probed.detail, last)
+            timer_armed = probed.timer_armed
+        else:
+            state, refusal_class = _state_of_run(
+                registry,
+                last["outcome"] if last else None,
+                last["refusal_code"] if last else None,
+            )
+            last_run_at = last["completed_at"] if last else None
+            next_run_at = None
+            # A failed run's own reason outranks the cadence, which answers a different
+            # question; 076 CHECKs that a failed outcome carries one.
+            detail = (
+                registry.refusal_codes[last["refusal_code"]].sentence
+                if last and last["refusal_code"] in registry.refusal_codes
+                else (last or {}).get("failure_detail") or job.cadence_note
+            )
+            timer_armed = None
+        jobs.append(
+            JobStatus(
+                id=job.job_id,
+                label=job.label,
+                state=state,
+                last_run_at=last_run_at,
+                next_run_at=next_run_at,
+                detail=detail,
+                unit=unit,
+                timer_armed=timer_armed,
+                kind=job.kind,
+                jurisdiction=job.jurisdiction,
+                cadence=job.cadence_note,
+                next_due_at=due,
+                duration_seconds=duration,
+                last_outcome=last["outcome"] if last else None,
+                refusal_code=last["refusal_code"] if last else None,
+                refusal_class=refusal_class,
+                launch_mode=job.launch_mode,
+                schedule=_schedule_of(job),
+            )
+        )
+    return jobs
 
 
 def _load_receipt[Receipt: BaseModel](
@@ -680,6 +837,23 @@ _PRODUCTION_PRESENTATION: dict[str, _ProductionPresentation] = {
             "Counted at the completion-pool grain the source files, not rolled up to the well"
             " (cr_nm_wcproduction_inventory_jurisdiction_1), so this is not a well count. "
             + _VINTAGE_NOTE
+        ),
+    ),
+    "co_ecmc_monthly_prod": _ProductionPresentation(
+        dataset_id="canonical.production_monthly/co",
+        label="Colorado production observations",
+        grain="one append-only source revision per completion, month and stream, plus the"
+        " well row that sums them",
+        entity_metric_id="entities",
+        entity_label="Distinct completion and well entities",
+        entity_unit="entities",
+        detail=(
+            "Two grains in one count, and they are not added to each other by anything served:"
+            " ECMC files per completion, and cr_co_production_grain_1 writes a well row beside"
+            " those carrying their exact sum, disclosed as sum_over_pools. Oil is oil plus"
+            " condensate because ECMC files one liquid stream and no condensate column exists"
+            " (cr_co_production_liquids_1). The rolling file is the source, so this covers the"
+            " months it carries rather than a well's life. " + _VINTAGE_NOTE
         ),
     ),
     "mt_bogc_well_production": _ProductionPresentation(
@@ -1183,38 +1357,12 @@ def collect(connection: psycopg.Connection, *, now: datetime | None = None) -> S
         _storage_check("root_storage", "System storage", Path("/"), observed_at),
         _storage_check("data_storage", "Data storage", Path("/data"), observed_at),
     ]
+    # Generated from the registry, so registering a job adds a row here and not a code edit.
+    # The three receipt readers stay literals: none of them has a timer to probe -- the
+    # recovery drill's own docstring says it is operator-run and has never been run -- so
+    # there is no external unit pair for a registry row to name.
     jobs = [
-        _job(
-            "nd_ingest",
-            "North Dakota ingest",
-            "glasswell-ingest.timer",
-            "glasswell-ingest.service",
-        ),
-        _job(
-            "nm_capture",
-            "New Mexico capture",
-            "glasswell-c115b.timer",
-            "glasswell-c115b.service",
-        ),
-        _job(
-            "status_snapshot",
-            "Status snapshot",
-            "glasswell-status.timer",
-            "glasswell-status.service",
-        ),
-        _job(
-            "cf_ranges",
-            "Cloudflare range refresh",
-            "glasswell-cf-ranges.timer",
-            "glasswell-cf-ranges.service",
-        ),
-        _job(
-            "lineage_retention",
-            "Lineage retention",
-            "glasswell-lineage-retention.timer",
-            "glasswell-lineage-retention.service",
-        ),
-        _job("backup", "Nightly backup", "glasswell-backup.timer", "glasswell-backup.service"),
+        *_registry_jobs(connection, observed_at),
         _restore_drill_job(observed_at),
         _offsite_copy_job(observed_at),
         _recovery_drill_job(observed_at),

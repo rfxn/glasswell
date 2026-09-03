@@ -29,7 +29,7 @@ from tests.support.seed import FIXTURE_ENV, seed_statusless_well
 pytestmark = pytest.mark.contract
 
 OBSERVED = datetime(2026, 8, 26, 18, tzinfo=UTC)
-COLORADO_PREFIX = "05"
+WYOMING_PREFIX = "49"
 
 
 def counted(
@@ -65,18 +65,18 @@ def inventory(connection: psycopg.Connection) -> dict[str, object]:
     return {item.dataset_id: item for item in datasets}
 
 
-def register_colorado(connection: psycopg.Connection) -> None:
+def register_wyoming(connection: psycopg.Connection) -> None:
     with connection.cursor() as cursor:
-        cursor.execute("insert into lineage.jurisdiction_codes values ('CO', 'state')")
+        cursor.execute("insert into lineage.jurisdiction_codes values ('WY', 'state')")
         cursor.execute(
             "insert into lineage.jurisdictions (jurisdiction_code, effective_from,"
             " published_at, evidence_tag, evidence_commit, name, regulator_name, regulator_url,"
             " identity_scheme, identity_prefix, identity_pattern, source_ids, rationale)"
             " select %s, effective_from, published_at, evidence_tag, evidence_commit,"
-            " 'Colorado', 'COGCC', 'https://ecmc.state.co.us', 'api10', %s, %s,"
+            " 'Wyoming', 'WOGCC', 'https://wogcc.wyo.gov', 'api10', %s, %s,"
             " array['nd_mpr_xlsx'], 'a fifth jurisdiction, registered and not yet loaded'"
             " from lineage.jurisdictions where jurisdiction_code = 'ND'",
-            ("CO", COLORADO_PREFIX, f"^{COLORADO_PREFIX}[0-9]{{8}}$"),
+            ("WY", WYOMING_PREFIX, f"^{WYOMING_PREFIX}[0-9]{{8}}$"),
         )
     clear_jurisdiction_cache()
 
@@ -86,26 +86,26 @@ def test_a_fifth_jurisdiction_yields_a_fifth_dataset_with_no_edit(
 ) -> None:
     """The exit criterion, stated as the thing that used to require a commit."""
     before = inventory(seeded)
-    assert "canonical.wells_latest/co" not in before
+    assert "canonical.wells_latest/wy" not in before
 
-    register_colorado(seeded)
+    register_wyoming(seeded)
 
     after = inventory(seeded)
-    assert after["canonical.wells_latest/co"].label == "Current Colorado wells"
-    assert after["canonical.wells_latest/co"].scope == "Colorado"
-    assert "canonical.well_completions/co" in after
+    assert after["canonical.wells_latest/wy"].label == "Current Wyoming wells"
+    assert after["canonical.wells_latest/wy"].scope == "Wyoming"
+    assert "canonical.well_completions/wy" in after
     assert len(after) == len(before) + 2
 
 
 def test_an_arm_the_tables_hold_nothing_for_is_unavailable_and_not_a_zero(
     seeded: psycopg.Connection,
 ) -> None:
-    """"Not loaded" and "none" are different facts. A zero here would say Colorado has no
+    """"Not loaded" and "none" are different facts. A zero here would say Wyoming has no
     wells, which is a claim nothing measured — the same ruling as an absent `well_count`."""
-    register_colorado(seeded)
+    register_wyoming(seeded)
     resident = inventory(seeded)
 
-    empty = resident["canonical.wells_latest/co"]
+    empty = resident["canonical.wells_latest/wy"]
     assert empty.state == EMPTY_ARM
     assert empty.metrics[0].value == 0
     assert empty.latest_knowledge_at is None

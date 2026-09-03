@@ -10,7 +10,18 @@ equal to; this table covers the layers whose refresh is an operator command:
 | `nd_laterals` | `marts.nd_laterals_tile` | LINESTRING | `python -m glasswell.marts.nd_wells` |
 | `nd_wells` | `marts.nd_wells_tile` | POINT | same |
 | `nd_spacing_units` | `marts.nd_spacing_units_tile` (view over `canonical.spacing_units`) | MULTIPOLYGON | always current |
-| `nm_wells` | `marts.nm_wells_tile` | POINT | `glasswell-nm-tiles --dsn …` |
+| `nm_wells` | `marts.nm_wells_tile` | POINT | `glasswell-nm-tiles` |
+| `co_wells` | `marts.co_wells_tile` | POINT | `glasswell-tiles --jurisdiction CO` |
+
+Colorado publishes a point layer and no lateral either, and for its own measured reason:
+`cr_co_wells_geometry_scope_1` records that the two directional archives cover 37,482 of
+124,392 wells, so promoting them would leave seven wells in ten with no path and no statement
+of why. Its features carry two axes that are not the same axis. `geometry_provenance` says
+which feature the point is, `surface` on every one; `loc_qual_class` says how good the
+coordinate is, and 44.67% of them are `planned` -- a permit location on a well that may since
+have been drilled somewhere else. `cr_co_wells_location_qualifier_1` is the row that classes
+it, and a client that drew the two as one axis would be telling a reader a permit application
+is a survey.
 
 New Mexico publishes a point layer and no lateral: `cr_nm_wellhistory_geometry_scope_1` records
 that neither in-scope source ships one. Every `nm_wells` feature carries its reported OCD letter
@@ -28,7 +39,7 @@ Every layer carries `derivation_id` as a feature property. A tile is a served fi
 
 ## One set of ids, published once — the functions, declared
 
-`refresh_all` and `install_tile_functions` create `marts.nd_laterals(z, x, y, query json)`
+`refresh_for` and `install_tile_functions` create `marts.nd_laterals(z, x, y, query json)`
 and its two siblings; each reads the `marts.tile_*` view of its layer. The MVT layer name
 inside each tile equals the id, which is what MapLibre binds `source-layer` to.
 
@@ -169,7 +180,7 @@ allowlist until this is adopted, and by the grant afterwards.
 ## Operational notes
 
 - martin reads its catalogue at startup. Layers created after it started are invisible
-  until it restarts, so after the first `refresh_all` on a fresh database check
+  until it restarts, so after the first `refresh_for` on a fresh database check
   `curl -s 127.0.0.1:3000/catalog` and restart martin only if the ids are absent — the unit
   file and its `EnvironmentFile` stay untouched either way.
 - The martin role needs `usage` on schema `marts`; `execute` on the tile functions is

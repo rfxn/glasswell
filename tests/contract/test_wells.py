@@ -11,6 +11,7 @@ import glasswell.api.routers.wells as wells_router
 from glasswell.api.examples import EXAMPLE_API10
 from glasswell.lineage.ids import parse_handle
 from tests.contract.conftest import ALL_API10S, TX_API10
+from tests.support.seed import seed_well, seed_well_spatial
 
 
 def test_the_collection_lists_every_seeded_well(client: TestClient) -> None:
@@ -253,3 +254,133 @@ def test_labels_bind_fields_to_glossary_terms(client: TestClient) -> None:
 
     assert labels["/api10"] == "gt_api_10_api_12_api_14"
     assert labels["/land_unit_label"] == "gt_land_unit"
+
+
+def _length_warning(envelope: dict, code: str) -> list[dict]:
+    return [item for item in envelope["meta"]["warnings"] if item["code"] == code]
+
+
+def test_a_jurisdiction_with_no_registered_length_rule_is_a_reason_and_not_north_dakotas(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The inheritance this track removes. `lengths.length_rule_source` returned North
+    Dakota's source on a falsy basin, so a New Mexico well -- which registers no basin by
+    cr_nm_wellhistory_basin_scope_1 and no length_scope rule either -- was served a
+    length_method and a compute CRS computed under a rule about North Dakota geometry."""
+    api10 = "3001577001"
+    seed_well(seeded, api10=api10, state_code="30", basin=None, spud_date=None)
+    seed_well_spatial(seeded, api10=api10, geom_type="surface")
+    # A lateral, so the figure is one the card would otherwise have served: with no geometry
+    # the null is an absent measurement rather than an unmeasurable one.
+    seed_well_spatial(seeded, api10=api10, geom_type="lateral")
+    seeded.commit()
+
+    response = client.get(f"/v1/wells/{api10}")
+
+    assert response.status_code == 200
+    envelope = response.json()
+    data = envelope["data"]
+    assert data["lateral_length_ft"] is None
+    assert data["length_method"] == "not_served"
+    assert data["compute_crs"] is None
+    refusals = _length_warning(envelope, "length_scope_unregistered")
+    assert len(refusals) == 1
+    assert "no length rule is registered" in refusals[0]["detail"]
+    assert refusals[0]["pointer"] == "/lateral_length_ft"
+    # A refusal, not a citation: there is no rule to name, which is the whole difference
+    # between this and Montana's withheld length.
+    assert "rule_id" not in refusals[0]
+    assert "length_rule" not in envelope["links"]
+
+
+def test_a_basin_less_well_resolves_an_as_of_rather_than_inheriting_a_crs_vintage(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """N-11. `row["basin"] or "williston"` fed North Dakota's crs_registry effective_from into
+    resolved_vintages for every well with no basin, so the served as_of was another
+    jurisdiction's clock."""
+    api10 = "3001577002"
+    seed_well(seeded, api10=api10, state_code="30", basin=None, spud_date=None)
+    seed_well_spatial(seeded, api10=api10, geom_type="surface")
+    seeded.commit()
+
+    envelope = client.get(f"/v1/wells/{api10}").json()
+
+    assert envelope["meta"]["as_of"]
+    assert envelope["data"]["storage_crs"] == "EPSG:4326"
+
+
+def test_the_collection_scopes_to_a_set_of_states_however_it_is_spelled(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """A facet bucket counted over two jurisdictions publishes a link with both in it, so the
+    collection has to read the set the same way the facet wrote it — repeated or comma-listed,
+    it is one question."""
+    repeated = client.get("/v1/wells?state=33&state=42&limit=200").json()["data"]
+    listed = client.get("/v1/wells?state=42,33&limit=200").json()["data"]
+    one = client.get("/v1/wells?state=42&limit=200").json()["data"]
+
+    assert [row["api10"] for row in repeated] == [row["api10"] for row in listed]
+    assert {row["api10"][:2] for row in repeated} == {"33", "42"}
+    assert {row["api10"][:2] for row in one} == {"42"}
+    assert len(repeated) > len(one)
+
+
+def test_the_collection_takes_all_for_every_registered_jurisdiction(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """`all` is the registry's answer rather than the caller's list, evaluated per request: it
+    is every jurisdiction registered at the moment the collection is asked."""
+    every = client.get("/v1/wells?state=all&limit=200").json()["data"]
+    unscoped = client.get("/v1/wells", params={"limit": 200}).json()["data"]
+
+    assert [row["api10"] for row in every] == [row["api10"] for row in unscoped]
+
+
+def test_a_cursor_minted_on_one_spelling_of_a_set_is_valid_on_the_other(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """The fingerprint is over the normalised set, not over the query string: two spellings of
+    one filter are one traversal, and a page refused mid-scroll would be a defect the reader
+    could only escape by starting again."""
+    first = client.get("/v1/wells?state=33&state=42&limit=2").json()
+    cursor = first["meta"]["next_cursor"]
+
+    assert cursor
+    resumed = client.get(f"/v1/wells?state=42,33&limit=2&cursor={cursor}")
+    assert resumed.status_code == 200, resumed.text
+    assert resumed.json()["data"]
+
+
+def test_a_set_scoped_page_carries_the_set_into_its_own_next_link(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """A `next` that drops half the scope pages through a different population."""
+    body = client.get("/v1/wells?state=33&state=42&limit=2").json()
+    following = body["links"]["next"]
+
+    assert following
+    assert following.count("state=") == 2
+    followed = client.get(following)
+    assert followed.status_code == 200, followed.text
+
+
+def test_a_page_of_all_is_pinned_to_the_jurisdictions_it_started_over(
+    client: TestClient, seeded: psycopg.Connection
+) -> None:
+    """`all` is evaluated per request, so a traversal has to be pinned or it widens under way.
+
+    A jurisdiction registering between two pages would otherwise hand the reader a second page
+    from a larger population than the first, with a cursor the collection accepts because its
+    fingerprint says `all` either way. The continuation names the codes instead, so a
+    registration invalidates the cursor — which is the refusal `cursor_query_mismatch` exists
+    to make — rather than silently widening the page.
+    """
+    body = client.get("/v1/wells?state=all&limit=2").json()
+    following = body["links"]["next"]
+
+    assert following
+    assert "state=all" not in following
+    assert following.count("state=") >= 2
+    followed = client.get(following)
+    assert followed.status_code == 200, followed.text

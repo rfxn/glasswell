@@ -20,10 +20,12 @@ from psycopg.rows import dict_row
 from glasswell import status_resolution
 from glasswell.api.routers.tiles import PUBLISHED_LAYERS
 from glasswell.api.routers.wells import RANKED_WELLS
+from glasswell.ingest.base import resolve_environment
 from glasswell.lineage.capture import lineage_session
 from glasswell.lineage.store import PostgresRecorder
-from glasswell.marts import nd_wells as nd_marts
 from glasswell.marts import nm_wells as nm_marts
+from glasswell.marts import wells
+from glasswell.marts.wells import profile_for, refresh_for
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_nm_wells import (
     DOCUMENTED_UNMAPPED_CLASS,
@@ -76,7 +78,7 @@ def refreshed(db: psycopg.Connection, lineage_env):
     db.commit()
 
     with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env):
-        refresh = nm_marts.refresh_all(db)
+        refresh = refresh_for(db, "NM")
     db.commit()
     return db, refresh
 
@@ -88,9 +90,9 @@ def test_the_refresh_publishes_one_point_layer_and_rebuilds_rather_than_appends(
     assert refresh.row_counts == {"nm_wells_tile": len(NM_API10S) + 1}
     with lineage_session(
         recorder=PostgresRecorder(db),
-        environment=nm_marts.resolve_environment(db, env_id="env_nm_repeat"),
+        environment=resolve_environment(db, env_id="env_nm_repeat"),
     ):
-        again = nm_marts.refresh_all(db)
+        again = refresh_for(db, "NM")
     db.commit()
     assert again.row_counts == refresh.row_counts
     assert scalar(db, "select count(distinct derivation_id) from marts.nm_wells_tile") == 1
@@ -122,7 +124,7 @@ def test_the_nd_mart_does_not_sweep_the_new_mexico_points_in(refreshed, lineage_
     """The sibling half of the same property, run with both states resident."""
     db, _ = refreshed
     with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env):
-        nd_marts.refresh_all(db)
+        refresh_for(db, "ND")
     db.commit()
 
     assert rows(db, "select distinct left(api10, 2) from marts.nd_wells_tile") == [("33",)]
@@ -170,14 +172,14 @@ def test_the_derivation_records_the_state_and_the_rules_it_cited(refreshed):
 
 def test_the_mart_reads_canonical_only(refreshed):
     """Layer boundary: marts read canonical, never staging."""
-    source = (
-        nm_marts._WELLS_SELECT + nm_marts._INPUT_DERIVATIONS + nm_marts._WELLS_AS_OF
-    )
+    profile = profile_for(nm_marts.JURISDICTION_CODE)
+    source = "".join(p.select for p in profile.projections) + wells._INPUT_DERIVATIONS
 
-    # Folded over the whole module rather than grepped over the three constants: a staging name
-    # spelled in pieces elsewhere in the file greps clean and still reads staging. The resolver
-    # module is folded with it because half of this mart's SQL is composed there.
-    assert schema_reads_in(Path(nm_marts.__file__), "staging") == []
+    # Folded over the whole module rather than grepped over its SQL: a staging name spelled in
+    # pieces elsewhere in the file greps clean and still reads staging. The resolver module is
+    # folded with it because half of this mart's SQL is composed there, and the engine because
+    # that is where the rest of it moved.
+    assert schema_reads_in(Path(wells.__file__), "staging") == []
     assert schema_reads_in(Path(status_resolution.__file__), "staging") == []
     assert "canonical.well_spatial" in source
     assert "canonical.wells" in source
@@ -240,7 +242,7 @@ def resolved(db: psycopg.Connection, lineage_env):
         )
     db.commit()
     with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env):
-        nm_marts.refresh_all(db)
+        refresh_for(db, "NM")
     db.commit()
     return db
 
@@ -299,7 +301,7 @@ def test_a_letter_the_registry_does_not_map_passes_through_unclassed(db, lineage
     )
     db.commit()
     with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env):
-        nm_marts.refresh_all(db)
+        refresh_for(db, "NM")
     db.commit()
 
     assert rows(
@@ -342,7 +344,7 @@ def test_no_other_states_letters_are_resolved_through_the_new_mexico_map(db, lin
     )
     db.commit()
     with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env):
-        nd_marts.refresh_all(db)
+        refresh_for(db, "ND")
     db.commit()
 
     with db.cursor(row_factory=dict_row) as cursor:
@@ -358,7 +360,16 @@ def test_no_other_states_letters_are_resolved_through_the_new_mexico_map(db, lin
         db, "select status_canonical from marts.nd_wells_tile where api10 = %s",
         ("3305399101",),
     ) == [("inactive",)]
+    # The view has a second arm now -- Colorado is the other read-time jurisdiction -- so the
+    # claim is that New Mexico's codebook reaches only New Mexico's prefix, not that the view
+    # answers for one state. Each arm joins its own mapping table to its own registration.
     assert scalar(
         db,
-        "select count(*) from canonical.status_resolution where for_state_code <> '30'",
+        "select count(*) from canonical.status_resolution r"
+        "  join lineage.nm_wellhistory_status_map m on m.status = r.for_status_reported"
+        "   and m.status_canonical = r.resolved_status"
+        " where r.for_state_code <> '30'"
+        "   and not exists (select 1 from lineage.co_facility_status_map c"
+        "                    where c.status = r.for_status_reported"
+        "                      and c.status_canonical = r.resolved_status)",
     ) == 0

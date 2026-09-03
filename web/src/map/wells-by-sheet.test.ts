@@ -46,6 +46,9 @@ const ND: WellFacets = {
   absence: null,
   wells: figure("87634"),
   matched_wells: null,
+  jurisdictions: [
+    { code: "33", name: "North Dakota", wells: figure("43817"), dimension: "carried", rule_id: null },
+  ],
   states: [
     { code: "33", name: "North Dakota", loaded: true },
     { code: "42", name: "Texas", loaded: true },

@@ -110,6 +110,24 @@ const PAYLOAD: StatusPayload = {
       detail: "Next-run time is not persisted.",
       unit: "glasswell-ingest.timer",
       timer_armed: true,
+      kind: "ingest",
+      jurisdiction: "ND",
+      cadence: "Every 35 days, the shortest interval its four sources carry",
+      next_due_at: "2026-09-30T03:00:00Z",
+      duration_seconds: 214,
+      last_outcome: "would_run",
+      refusal_code: null,
+      refusal_class: null,
+      launch_mode: "observe",
+      schedule: {
+        job_id: "source-refresh",
+        effective_from: "2026-09-02",
+        published_at: "2026-09-02",
+        rule_id: "cr_job_cadence_ingest_nd_gis_1",
+        rationale: "The four NDIC layers are pulled in one pass.",
+        external_timer_unit: null,
+        external_service_unit: null,
+      },
     },
     {
       id: "recovery_drill",
@@ -120,6 +138,16 @@ const PAYLOAD: StatusPayload = {
       detail: "No recovery has been proven.",
       unit: null,
       timer_armed: null,
+      kind: "maintenance",
+      jurisdiction: null,
+      cadence: null,
+      next_due_at: null,
+      duration_seconds: null,
+      last_outcome: null,
+      refusal_code: null,
+      refusal_class: null,
+      launch_mode: null,
+      schedule: null,
     },
   ],
   sources: [
@@ -252,7 +280,8 @@ describe("the Status surface", () => {
       "Observability boundaries",
     ]);
     expect(host.querySelectorAll("dl").length).toBeGreaterThan(0);
-    expect(host.querySelectorAll("table")).toHaveLength(3);
+    // Four: checks, datasets, one grouped data-job table, and the platform-job table.
+    expect(host.querySelectorAll("table")).toHaveLength(4);
     expect(host.querySelectorAll("time").length).toBeGreaterThan(4);
     expect(host.textContent).toContain("Unchanged");
     expect(host.textContent).toContain("Every 8 days");

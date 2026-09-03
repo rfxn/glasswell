@@ -142,8 +142,9 @@ ssh root@192.168.2.111 'set -a; . /etc/glasswell/code-version.env; set +a; \
     --setenv=GLASSWELL_RAW_ROOT=/data/raw \
     --setenv=GLASSWELL_CODE_VERSION="$GLASSWELL_CODE_VERSION" \
     --setenv=GLASSWELL_LOCKFILE_SHA256="$GLASSWELL_LOCKFILE_SHA256" \
+    --setenv=GLASSWELL_DSN='postgresql:///glasswell?host=/var/run/postgresql' \
     /opt/glasswell/venv/bin/glasswell-eia-boundaries \
-      --layer all --dsn "postgresql:///glasswell?host=/var/run/postgresql"'
+      --layer all'
 ```
 
 Without the two code-identity variables the run still succeeds, but every derivation it writes
@@ -153,7 +154,7 @@ rows permanently — derivations are never rewritten.
 Module form, if the console script is not yet deployed:
 
 ```
-/opt/glasswell/venv/bin/python -m glasswell.ingest.eia_boundaries --layer all --dsn '…'
+/opt/glasswell/venv/bin/python -m glasswell.ingest.eia_boundaries --layer all
 ```
 
 It prints one JSON line per layer. **Expected, measured, exact:**
@@ -195,11 +196,11 @@ ssh root@192.168.2.111 'set -a; . /etc/glasswell/code-version.env; set +a; \
   systemd-run --uid=postgres --pipe --wait \
     --setenv=GLASSWELL_CODE_VERSION="$GLASSWELL_CODE_VERSION" \
     --setenv=GLASSWELL_LOCKFILE_SHA256="$GLASSWELL_LOCKFILE_SHA256" \
-    /opt/glasswell/venv/bin/glasswell-basin-boundaries \
-      --dsn "postgresql:///glasswell?host=/var/run/postgresql"'
+    --setenv=GLASSWELL_DSN='postgresql:///glasswell?host=/var/run/postgresql' \
+    /opt/glasswell/venv/bin/glasswell-basin-boundaries'
 ```
 
-Module form: `/opt/glasswell/venv/bin/python -m glasswell.marts.basin_boundaries --dsn '…'`
+Module form: `/opt/glasswell/venv/bin/python -m glasswell.marts.basin_boundaries`
 
 One JSON line. **Expected:**
 

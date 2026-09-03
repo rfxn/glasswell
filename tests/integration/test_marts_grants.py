@@ -2,7 +2,7 @@
 
 The deployed database carried `create on schema marts` for the pipeline role because someone
 typed it during P7. A privilege that exists only on one host is drift by definition — the next
-database a migration builds would fail on its first `refresh_all`.
+database a migration builds would fail on its first `refresh_for`.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ def acting_as(connection: psycopg.Connection, role: str) -> Iterator[psycopg.Cur
 
 
 def test_the_pipeline_role_may_create_in_marts(db: psycopg.Connection):
-    """`refresh_all` issues create-or-replace for the view and all three tile functions."""
+    """`refresh_for` issues create-or-replace for the view and all three tile functions."""
     with acting_as(db, "glasswell_pipeline") as cursor:
         cursor.execute("create or replace view marts.gw_grant_probe as select 1 as probe")
         cursor.execute("create or replace function marts.gw_grant_probe_fn() returns int"

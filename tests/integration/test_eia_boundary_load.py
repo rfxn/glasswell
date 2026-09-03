@@ -366,16 +366,23 @@ def test_the_refresh_cites_every_rule_that_shaped_the_boundaries(
         )
     }
     registered = {
-        rule_id
-        for (rule_id,) in rows(
+        rule_family
+        for (rule_family,) in rows(
             seeded,
-            "select rule_id from lineage.conformance_rules where rule_id like %s",
+            "select distinct rule_family from lineage.conformance_rules where rule_id like %s",
             ("cr\\_eia\\_%",),
         )
     }
 
     assert registered
-    assert cited == registered
+    # By family, because a decision is a family and a version of it is a row: two of these
+    # carry a corrected successor whose only difference from the row it supersedes is the
+    # symbol its module_function names, and the refresh cites the row that shaped it rather
+    # than every row the registry holds about the same decision.
+    assert {rule_id.rsplit("_", 1)[0] for rule_id in cited} == registered
+    for family in registered:
+        versions = [rule_id for rule_id in cited if rule_id.rsplit("_", 1)[0] == family]
+        assert len(versions) == 1, f"{family} is cited at {len(versions)} versions"
 
 
 def test_the_mart_serves_both_kinds_as_decodable_tiles(seeded, raw_root, lineage_env):

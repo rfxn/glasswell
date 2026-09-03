@@ -60,10 +60,12 @@ in PostgreSQL:
 set -a
 . /etc/glasswell/code-version.env
 set +a
+# code-version.env carries the code identity and no DSN; this is the other half.
+export GLASSWELL_DSN='postgresql:///glasswell?host=/var/run/postgresql'
 cd /opt/glasswell/src
-sudo --preserve-env=GLASSWELL_CODE_VERSION,GLASSWELL_LOCKFILE_SHA256 -u glasswell \
+sudo --preserve-env=GLASSWELL_CODE_VERSION,GLASSWELL_LOCKFILE_SHA256,GLASSWELL_DSN \
+  -u glasswell \
   /opt/glasswell/venv/bin/glasswell-p3-context-publish \
-  --dsn 'postgresql:///glasswell?host=/var/run/postgresql' \
   --eval-vintage YYYY-MM-DD \
   --feature-root /var/lib/glasswell/features \
   --model-root /var/lib/glasswell/models

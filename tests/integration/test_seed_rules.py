@@ -8,10 +8,11 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-from glasswell.lengths import resolve_length_method
+from glasswell.lengths import LATERALS_SOURCE_ID, resolve_length_method
 from glasswell.lineage.conformance import RULE_KINDS, apply_registry_rules, apply_rules, load_rules
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_nd import ND_RULES
+from glasswell.seed.conformance_schedules import SCHEDULE_RULES
 from glasswell.seed.formations_nd import FORMATION_ALIASES
 from glasswell.seed.reference import NM_TABLES
 
@@ -24,12 +25,22 @@ POLICY_RULES = tuple(sorted((
     # The land-grid publisher choice: the executor is the ingest module the spec names, and
     # the measured cross-publisher divergence rides in spec.divergence_measured (M1-4).
     "cr_blm_plss_publisher_1",
+    # Colorado's two: which of two disagreeing header sources governs, and that inventory is
+    # refused. Both are decisions a module carries out rather than a frame transformation, so
+    # both are code_ref and neither has an executor stage to run at.
+    "cr_co_inventory_not_served_1",
+    "cr_co_wells_source_selection_1",
     # The boundary-layer decisions: whose interpretation is drawn, that a basin and a play are
     # different objects, how a play links to its basin, that overlap is served rather than
     # arbitrated, how an invalid published ring is repaired, whose area is served, and how a
     # well is judged inside a boundary. Each executor is the module its spec names.
     "cr_eia_area_provenance_1",
     "cr_eia_basin_link_1",
+    # The three reference corrections this train appends. A successor to a code_ref rule is a
+    # code_ref rule: the decision did not move, the symbol it names did.
+    "cr_eia_basin_link_2",
+    "cr_eia_geometry_repair_2",
+    "cr_nm_wellhistory_header_precedence_2",
     "cr_eia_boundary_overlap_1",
     "cr_eia_boundary_publisher_1",
     "cr_eia_boundary_taxonomy_1",
@@ -50,6 +61,17 @@ POLICY_RULES = tuple(sorted((
     # semantics and grain uniqueness, because they are separate sources whose registries must
     # not share an assumption; the rest record what the parsers decided and what they refused.
     "cr_mt_basin_scope_1",
+    # The seam-hardening registrations: which basin governs a jurisdiction's compute CRS, which
+    # source measures its lateral, whether the neighbour mart's domain reaches it, and Montana's
+    # appended length_scope successor. Their executor is the mart engine or the router the spec
+    # names; none of them transforms a frame.
+    "cr_mt_neighbors_scope_1",
+    "cr_mt_paths_length_scope_2",
+    "cr_nd_basin_scope_1",
+    "cr_nd_length_source_1",
+    "cr_nd_neighbors_scope_1",
+    "cr_tx_basin_scope_1",
+    "cr_tx_length_source_1",
     "cr_mt_formation_rollup_1",
     "cr_mt_gis_border_outliers_1",
     "cr_mt_grain_uniqueness_1",
@@ -108,6 +130,11 @@ POLICY_RULES = tuple(sorted((
     "cr_tx_identity_collapse_1",
     "cr_tx_lateral_bounds_1",
     "cr_tx_multi_wellbore_1",
+    # One cadence declaration per scheduled job, taken from the seed tuple rather than retyped.
+    # Each id is already pinned twice -- the migration's publication insert names every one by
+    # hand, and no rule can be seeded without a publication row -- so a third hand-kept copy
+    # here would drift without guarding anything the other two do not.
+    *(str(rule["rule_id"]) for rule in SCHEDULE_RULES),
 )))
 
 SUPERSEDED_RULE_IDS = {rule["supersedes_rule_id"] for rule in ND_RULES if rule.get(
@@ -274,7 +301,7 @@ def test_every_seeded_rule_states_why_it_exists_and_cites_its_evidence(db, seede
 
 def test_every_seeded_rule_declares_a_stage_and_a_kind_the_spine_knows(db, seeded):
     for row in registry_rows(db):
-        assert row["stage"] in ("parse", "validate", "conform", "join")
+        assert row["stage"] in ("parse", "validate", "conform", "join", "schedule")
         assert row["rule_kind"] in RULE_KINDS
 
 
@@ -522,7 +549,9 @@ def test_only_the_superseding_identity_rule_is_loaded_for_every_source_on_the_sp
 
 
 def test_the_active_length_method_is_zone_free(db, seeded):
-    method = resolve_length_method(db)
+    """Explicit source, because a basin-less resolve is a refusal now rather than an
+    inheritance of North Dakota's: which source governs is a registration."""
+    method = resolve_length_method(db, source_id=LATERALS_SOURCE_ID)
 
     assert (method.rule_id, method.method, method.compute_epsg) == (
         "cr_nd_compute_crs_2",

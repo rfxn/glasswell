@@ -12,8 +12,11 @@ import {
   writeCapabilitySet,
 } from "./persist.ts";
 import { censusOf, loadCensus, measuredWellCount, resetCensus } from "./census.ts";
+import { JURISDICTION_LIST } from "./jurisdictions.generated.ts";
 import { STATUS_CLASSES, filterableStatusIds, statusIds } from "./status.ts";
 
+const noteText = (root: HTMLElement): string =>
+  root.querySelector<HTMLElement>(".gw-lg-note")?.textContent ?? "";
 const rows = (root: HTMLElement): HTMLElement[] => [...root.querySelectorAll<HTMLElement>(".gw-lg-row")];
 const rowFor = (root: HTMLElement, id: string): HTMLElement | undefined =>
   rows(root).find((row) => row.dataset["status"] === id);
@@ -978,6 +981,33 @@ describe("the vocabulary the counts were classed by", () => {
     legend.setVocabulary([{ rule: "cr_tx_status_vocab_1", href: null }]);
     expect(legend.element.textContent).toContain("cr_tx_status_vocab_1");
     expect(legend.element.querySelectorAll(".gw-lg-rule")).toHaveLength(0);
+  });
+
+  it("keeps a jurisdiction's registered sentence out of a view it is not drawn in", () => {
+    // visual N1: the per-registration loop appended every note unconditionally, so Colorado's
+    // decoding rule was stated over Midland, where no point it describes is on the canvas.
+    const registered = JURISDICTION_LIST.filter((entry) => entry.legendNote !== null);
+    expect(registered.length).toBeGreaterThan(0);
+
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setVocabulary([{ rule: "cr_tx_status_vocab_1", href: null }]);
+    const note = noteText(legend.element);
+
+    for (const entry of registered) {
+      expect(note, `${entry.code} is not in this view`).not.toContain(entry.legendNote);
+    }
+  });
+
+  it("states an in-view jurisdiction's sentence ahead of the general symbology clauses", () => {
+    const co = JURISDICTION_LIST.find((entry) => entry.code === "CO")!;
+    const legend = createLegend({ onFilter: () => {} });
+    legend.setVocabulary([{ rule: co.rules["status_vocabulary"]!, href: null }]);
+    const note = noteText(legend.element);
+
+    const sentence = note.indexOf(co.legendNote!);
+    const symbology = note.indexOf("Laterals are ND DMR and TX RRC GIS bore geometry");
+    expect(sentence).toBeGreaterThan(-1);
+    expect(symbology).toBeGreaterThan(sentence);
   });
 });
 

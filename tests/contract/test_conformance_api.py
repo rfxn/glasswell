@@ -11,6 +11,7 @@ from glasswell.api.deps import today
 from glasswell.api.examples import EXAMPLE_DERIVATION_ID, EXAMPLE_RULE_ID
 from glasswell.api.pagination import decode_cursor, query_fingerprint
 from glasswell.seed.conformance_basins import BASIN_RULES
+from glasswell.seed.conformance_co import CO_RULES
 from glasswell.seed.conformance_fracfocus import FRACFOCUS_RULES
 from glasswell.seed.conformance_land import LAND_RULES
 from glasswell.seed.conformance_mt import MT_RULES
@@ -18,6 +19,7 @@ from glasswell.seed.conformance_nd import ND_RULES
 from glasswell.seed.conformance_nm import NM_RULES
 from glasswell.seed.conformance_nm_wells import NM_WELLS_GIS_RULES, NM_WELLS_RULES
 from glasswell.seed.conformance_producing import PRODUCING_RULES
+from glasswell.seed.conformance_schedules import SCHEDULE_RULES
 from glasswell.seed.conformance_tx import TX_RULES
 from glasswell.seed.conformance_typecurve import TYPECURVE_RULES
 from glasswell.seed.conformance_vintage import VINTAGE_RULES
@@ -99,6 +101,7 @@ def _seeded_policy_rule_ids() -> set[str]:
         str(rule["rule_id"])
         for registry in (
             BASIN_RULES,
+            CO_RULES,
             FRACFOCUS_RULES,
             LAND_RULES,
             MT_RULES,
@@ -107,6 +110,7 @@ def _seeded_policy_rule_ids() -> set[str]:
             NM_WELLS_GIS_RULES,
             NM_WELLS_RULES,
             PRODUCING_RULES,
+            SCHEDULE_RULES,
             TX_RULES,
             TYPECURVE_RULES,
             VINTAGE_RULES,
@@ -121,7 +125,11 @@ def test_the_policy_declarations_are_visible_as_such(client: TestClient) -> None
     expectation derives from the seed registries, so a new policy declaration changes seeding
     and serving as one act (gate-m17 R-4); the one deliberate membership pin is POLICY_RULES
     in tests/integration/test_seed_rules.py. The floor keeps the derivation non-vacuous."""
-    data = client.get("/v1/conformance", params={"kind": "code_ref"}).json()["data"]
+    # Explicitly past the default page: the policy set is a whole-registry claim, and the
+    # fifth jurisdiction's rules pushed the tail of it onto a second page.
+    data = client.get(
+        "/v1/conformance", params={"kind": "code_ref", "limit": 200}
+    ).json()["data"]
 
     expected = _seeded_policy_rule_ids()
     assert {

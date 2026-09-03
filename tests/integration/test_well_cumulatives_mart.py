@@ -20,6 +20,7 @@ from glasswell.marts.cumulatives import (
     MART_STREAMS,
     NEVER_REPORTED,
     OBSERVED,
+    STATE_API_PREFIXES,
     WITHHOLDING_BY_PREFIX,
     refresh_well_cumulatives,
 )
@@ -33,6 +34,11 @@ STORED_CLASSES = "3305388004"
 WITHHELD_LEDGER = "3305388005"
 SILENT = "3305388006"
 ND_WELLS = (FILED, ZERO_FILER, GAPPED, STORED_CLASSES, WITHHELD_LEDGER, SILENT)
+# The second jurisdiction in scope. Its rows arrive as the dual write puts them there: the
+# well row is what the mart reads, and the completion rows beneath it must not be summed twice.
+CO_FILED = "0512388001"
+# Every well the mart's population reaches, which is what its row count is over.
+SCOPED_WELLS = (*ND_WELLS, CO_FILED)
 
 VINTAGE = date(2026, 8, 1)
 JAN, FEB, MAR = date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)
@@ -72,6 +78,10 @@ def refreshed(db: psycopg.Connection, lineage_env):
     derivation_id = seed_derivation(db)
     for api10 in ND_WELLS:
         seed_well(db, api10=api10, manifest_id=manifest_id, derivation_id=derivation_id)
+    seed_well(
+        db, api10=CO_FILED, state_code="05", basin=None,
+        manifest_id=manifest_id, derivation_id=derivation_id,
+    )
 
     def filing(api10, month, stream, volume, semantics="reported"):
         seed_production(
@@ -104,6 +114,28 @@ def refreshed(db: psycopg.Connection, lineage_env):
     filing(STORED_CLASSES, JAN, "oil", Decimal("400"))
     filing(STORED_CLASSES, FEB, "oil", Decimal("77777"), semantics="no_report")
     filing(STORED_CLASSES, MAR, "oil", Decimal("88888"), semantics="withheld")
+
+    # Colorado, as the dual write lands it: two completion rows and the well row that carries
+    # their exact sum. Only the well row is in the mart's population, so a mart that read the
+    # pool rows as well would double every Colorado total.
+    for month, first, second in ((JAN, "60", "40"), (FEB, "30", "20")):
+        for index, volume in enumerate((first, second)):
+            seed_production(
+                db, api10=CO_FILED, production_month=month, report_vintage=VINTAGE,
+                volume=Decimal(volume), stream="oil", source_id="co_ecmc_monthly_prod",
+                manifest_id=manifest_id, derivation_id=derivation_id,
+                entity_type="well_completion_pool",
+                entity_key=f"{CO_FILED}:00:POOL{index}:200221",
+                reporting_level="well_completion_pool",
+                well_completion_pool=f"00:POOL{index}:200221",
+            )
+        seed_production(
+            db, api10=CO_FILED, production_month=month, report_vintage=VINTAGE,
+            volume=Decimal(first) + Decimal(second), stream="oil",
+            source_id="co_ecmc_monthly_prod", manifest_id=manifest_id,
+            derivation_id=derivation_id, entity_type="well", entity_key=CO_FILED,
+            reporting_level="well_completion_pool", aggregation="sum_over_pools",
+        )
 
     filing(WITHHELD_LEDGER, JAN, "oil", Decimal("600"))
     filing(WITHHELD_LEDGER, MAR, "oil", Decimal("700"))
@@ -172,7 +204,7 @@ def test_every_row_reconciles_its_month_classes_to_its_span(refreshed):
     """An identity that holds only where someone remembered to check is not an identity."""
     db, _ = refreshed
     # Its own floor: an anti-join over an empty mart returns no offenders and proves nothing.
-    assert rows(db, "select count(*) from marts.well_cumulatives")[0][0] == len(ND_WELLS) * len(
+    assert rows(db, "select count(*) from marts.well_cumulatives")[0][0] == len(SCOPED_WELLS) * len(
         MART_STREAMS
     )
     offenders = rows(
@@ -226,9 +258,16 @@ def test_a_well_that_filed_one_stream_is_observed_with_the_others_absent(refresh
 
 
 def test_the_mart_carries_one_row_per_stream_for_every_well_in_scope(refreshed):
+    """In scope, not in one jurisdiction: the population is the registry's cumulatives_scope
+    dimension, so the count is over every prefix it resolves rather than over a literal."""
     db, refresh = refreshed
-    wells = rows(db, "select count(*) from canonical.wells_latest where state_code = '33'")[0][0]
+    prefixes = ", ".join(f"'{prefix}'" for prefix in sorted(STATE_API_PREFIXES))
+    wells = rows(
+        db,
+        f"select count(*) from canonical.wells_latest where state_code in ({prefixes})",
+    )[0][0]
 
+    assert wells == len(SCOPED_WELLS)
     assert refresh.row_counts["well_cumulatives"] == wells * len(MART_STREAMS)
     assert rows(db, "select count(*) from marts.well_cumulatives") == [
         (wells * len(MART_STREAMS),)
@@ -273,5 +312,89 @@ def test_the_partition_names_states_rather_than_a_hardcoded_jurisdiction(refresh
         (refresh.derivation_id,),
     )[0][0]
 
-    assert partition == {"states": "33"}
-    assert rows(db, "select distinct state_code from marts.well_cumulatives") == [("33",)]
+    # Two states in scope, so the partition names two. The address moving when the population
+    # widened is the property being asserted, not an accident: a figure built over a different
+    # population is a different figure and must not share an identity with the old one.
+    assert partition == {"states": "05,33"}
+    assert sorted(
+        row[0] for row in rows(db, "select distinct state_code from marts.well_cumulatives")
+    ) == ["05", "33"]
+
+
+def test_a_colorado_well_carries_a_real_total_over_the_months_it_filed(refreshed):
+    """N-29's positive assertion, replacing rev 4's refusal design. The dual write is what
+    makes this reachable: the mart reads `entity_type = 'well'`, so pool rows alone would have
+    entered every Colorado well from the spine, matched no month and published never_reported
+    over production sitting in canonical."""
+    db, _refresh = refreshed
+    (
+        volume, unit, basis, reported, _zero, _no_report, _withheld, _absent, span,
+        first_month, last_month, outcome, _snapshot,
+    ) = mart_row(db, CO_FILED, "liquid")
+
+    assert volume == Decimal("150.000")
+    assert unit == "bbl"
+    assert basis == "oil+condensate"
+    assert (reported, span) == (2, 2)
+    assert outcome == OBSERVED
+    assert (first_month, last_month) == (JAN, FEB)
+
+
+def test_a_colorado_total_sums_the_well_row_and_not_its_completions_twice(refreshed):
+    """The failure a mart that read both grains would produce: 300 rather than 150."""
+    db, _refresh = refreshed
+    filed = rows(
+        db,
+        "select sum(volume) from canonical.production_monthly"
+        " where api10 = %s and stream = 'oil'",
+        (CO_FILED,),
+    )[0][0]
+    (volume, *_rest) = mart_row(db, CO_FILED, "liquid")
+
+    assert filed == Decimal("300.000"), "the fixture must carry both grains for this to bite"
+    assert volume == Decimal("150.000")
+
+
+def test_a_colorado_wells_month_classes_are_degenerate_by_construction(refreshed):
+    """N-33. The window is bounded by the well's own filings, so `months_absent` and
+    `months_no_report_stored` are zero by construction rather than by luck -- which is what
+    makes a future non-zero a signal rather than noise. The class itself is honest per well and
+    is not comparable across jurisdictions: a Colorado `observed` covers the months ECMC's
+    rolling file carries and a North Dakota one can cover decades, and the row states the span
+    beside the class so a reader can tell which they are looking at."""
+    db, _refresh = refreshed
+    (
+        _volume, _unit, _basis, reported, _zero, no_report, _withheld, absent, span,
+        first_month, last_month, outcome, _snapshot,
+    ) = mart_row(db, CO_FILED, "liquid")
+
+    assert absent == 0
+    assert no_report == 0
+    assert reported == span
+    assert outcome == OBSERVED
+    # The parts a reader needs to tell one observed well from another are all served.
+    assert first_month is not None
+    assert last_month is not None
+
+
+def test_no_colorado_well_is_published_never_reported_unless_it_filed_nothing(refreshed):
+    db, _refresh = refreshed
+    published = rows(
+        db,
+        "select api10, coverage_outcome, months_reported from marts.well_cumulatives"
+        " where state_code = %s",
+        ("05",),
+    )
+
+    assert published
+    for api10, outcome, reported in published:
+        filed = rows(
+            db,
+            "select count(*) from canonical.production_monthly"
+            " where api10 = %s and entity_type = 'well'",
+            (api10,),
+        )[0][0]
+        assert (outcome == NEVER_REPORTED) == (filed == 0), api10
+        # Per stream: the fixture files oil and nothing else, so gas and water are honestly
+        # zero-reported on a well that did file, which is a different fact from never_reported.
+        assert reported <= filed, api10

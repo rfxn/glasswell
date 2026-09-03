@@ -15,7 +15,7 @@ EnvironmentFile=/etc/glasswell/app.env
 EnvironmentFile=-/etc/glasswell/code-version.env
 # Peer auth over the socket: no password reaches the process table.
 Environment=GLASSWELL_DSN=postgresql:///glasswell?host=/var/run/postgresql
-ExecStart=/opt/glasswell/venv/bin/python -m glasswell.ingest.nm_c115b --dsn ${GLASSWELL_DSN}
+ExecStart=/opt/glasswell/venv/bin/python -m glasswell.ingest.nm_c115b
 TimeoutStartSec=3600
 MemoryMax=6G
 

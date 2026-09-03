@@ -20,6 +20,7 @@ import polars as pl
 import psycopg
 from psycopg.rows import dict_row
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.identity import api10_identity
 from glasswell.ingest.base import record_vintage_day, resolve_environment
 from glasswell.ingest.shapefile import ShapefileRecord, ZippedShapefile
@@ -1555,7 +1556,7 @@ def _open_vintage(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Load an ND DMR GIS layer into PostGIS.")
     parser.add_argument("--layer", choices=[*LAYERS, "all"], required=True)
-    parser.add_argument("--dsn", required=True)
+    add_dsn_argument(parser)
     parser.add_argument("--url", default=None, help="override the upstream URL (testing only)")
     parser.add_argument("--raw-root", default=None)
     parser.add_argument("--env-id", default=None, help="override the fingerprinted env id")
@@ -1566,6 +1567,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="re-parse and re-promote from the stored bytes after a rule or schema change",
     )
     arguments = parser.parse_args(argv)
+    arguments.dsn = resolve_dsn(arguments.dsn)
 
     # Wells first: a lateral or a survey trace whose api10 has no well row is an orphan_fk.
     layers = list(LAYERS) if arguments.layer == "all" else [arguments.layer]

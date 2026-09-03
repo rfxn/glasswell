@@ -257,6 +257,7 @@ def test_collector_no_longer_discloses_attempt_or_cadence_as_uninstrumented(
     monkeypatch.setattr(status_collector, "_edge_check", lambda *_args: check)
     monkeypatch.setattr(status_collector, "_storage_check", lambda *_args: check)
     monkeypatch.setattr(status_collector, "_job", lambda *_args: job)
+    monkeypatch.setattr(status_collector, "_registry_jobs", lambda *_args: [job])
     monkeypatch.setattr(status_collector, "_restore_drill_job", lambda *_args: job)
     monkeypatch.setattr(status_collector, "_offsite_copy_job", lambda *_args: job)
     monkeypatch.setattr(status_collector, "_recovery_drill_job", lambda *_args: job)
@@ -275,7 +276,10 @@ def test_collector_no_longer_discloses_attempt_or_cadence_as_uninstrumented(
         "remote_backup_copy": "limited",
         "replacement_host_recovery": "limited",
     }
-    assert len(snapshot.jobs) == 9
+    # Six literal _job(...) calls became one registry read, so the job count is whatever
+    # the registry holds -- one, here -- plus the three receipt readers, which have no
+    # timer to probe and stay literals.
+    assert len(snapshot.jobs) == 1 + 3
     assert len(snapshot.checks) == 7
 
 
@@ -852,6 +856,11 @@ def test_the_inventory_rules_declare_the_one_place_the_jurisdiction_is_read_from
     `jurisdiction` key in the same spec is a second copy of that fact which the collector's
     coalesce would prefer, leaving the declared discriminator unread and the rationale false.
     """
+    # Four, and a fifth jurisdiction does not move it: these rules are per production-bearing
+    # SOURCE, not per state. Colorado registers an inventory decision -- a served refusal, since
+    # Protocol 4D admits no slot without a spacing assumption and a support score -- and
+    # registers no production-inventory rule, so the count stays where it is and would move
+    # only if a source started counting itself in a way the collector had to be told about.
     assert len(INVENTORY_JURISDICTION_RULES) == 4, "one rule per production-bearing source"
     for rule in INVENTORY_JURISDICTION_RULES:
         spec = rule["spec"]

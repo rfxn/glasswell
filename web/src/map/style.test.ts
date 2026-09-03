@@ -5,14 +5,13 @@ import type { LayerSpecification } from "maplibre-gl";
 import type { BasemapVariant } from "./basemap.ts";
 import { DISPOSAL_COLOUR, disposalFilter } from "./disposal.ts";
 import { LAYERS } from "./registry.ts";
+import { DEFAULT_JURISDICTION } from "./jurisdictions.generated.ts";
 import { METRICS_SECTIONS_SOURCE, METRICS_TOWNSHIPS_SOURCE } from "./thematics.ts";
 import { variantStyle } from "./variant-style.ts";
 import {
   BASINS_SOURCE,
   LATERALS_SOURCE,
   MT_PATHS_SOURCE,
-  MT_WELLS_SOURCE,
-  NM_WELLS_SOURCE,
   OPACITY_OVERRIDE,
   PLAYS_SOURCE,
   SECTIONS_SOURCE,
@@ -21,9 +20,11 @@ import {
   TOWNSHIPS_SOURCE,
   TRACES_SOURCE,
   TRACE_COLOUR,
+  WELL_POINT_LAYERS,
   TX_LATERALS_SOURCE,
-  TX_WELLS_SOURCE,
-  WELLS_SOURCE,
+  WELLS_ROSTER,
+  WELLS_SOURCE_BY_CODE,
+  WELLS_SOURCE_BY_LAYER,
   dataLayers,
   publishedSource,
   sourceSpecs,
@@ -67,7 +68,7 @@ describe("the data layers", () => {
       const spec = specs[id];
       return spec && "promoteId" in spec ? spec.promoteId : undefined;
     };
-    expect(promoteId(WELLS_SOURCE)).toEqual({ nd_wells: "api10" });
+    expect(promoteId(WELLS_SOURCE_BY_LAYER["wells"]!)).toEqual({ nd_wells: "api10" });
     expect(promoteId(LATERALS_SOURCE)).toEqual({ nd_laterals: "api10" });
   });
 
@@ -177,7 +178,7 @@ describe("the data layers", () => {
   it("rings the disposal class from the wells source, filtered on the regulator's codes", () => {
     const ring = dataLayers().find((layer) => layer.id === "disposal-wells");
     expect(ring?.type).toBe("circle");
-    expect(ring && "source" in ring ? ring.source : "").toBe(WELLS_SOURCE);
+    expect(ring && "source" in ring ? ring.source : "").toBe(WELLS_SOURCE_BY_LAYER["wells"]!);
     expect(ring?.minzoom).toBe(8);
     const inClass = (code: string | null): boolean =>
       featureFilter((ring && "filter" in ring ? ring.filter : ["==", 1, 2]) as never).filter(
@@ -287,7 +288,7 @@ describe("the data layers", () => {
       return spec && "minzoom" in spec ? spec.minzoom : undefined;
     };
     expect(floor(SPACING_SOURCE)).toBe(8);
-    expect(floor(WELLS_SOURCE)).toBe(4);
+    expect(floor(WELLS_SOURCE_BY_LAYER["wells"]!)).toBe(4);
     // The z7 laterals tile is 2,037,023 B (api/routers/tiles.py), and z0-z7 is where the tile
     // tier thins the layer to a sample. The gate takes both basins' lateral tiles off the wire
     // below z8 rather than paying for geometry the canvas cannot resolve.
@@ -409,7 +410,7 @@ describe("the land grid (M1-4)", () => {
 
 describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
   const named = (search: string, parameter = "wells"): string =>
-    publishedSource(parameter, WELLS_SOURCE, search);
+    publishedSource(parameter, WELLS_SOURCE_BY_LAYER["wells"]!, search);
 
   it("takes a martin source id that matches the published shape", () => {
     expect(named("?wells=nd_wells_v2")).toBe("nd_wells_v2");
@@ -432,8 +433,8 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
       "nd_wells#frag",
     ]) {
       const search = `?wells=${encodeURIComponent(hostile)}`;
-      expect(named(search), `${hostile} reached the source id`).toBe(WELLS_SOURCE);
-      expect(sourceSpecs("https://gw.example", search)[WELLS_SOURCE]).toBeDefined();
+      expect(named(search), `${hostile} reached the source id`).toBe(WELLS_SOURCE_BY_LAYER["wells"]!);
+      expect(sourceSpecs("https://gw.example", search)[WELLS_SOURCE_BY_LAYER["wells"]!]).toBeDefined();
     }
   });
 
@@ -457,7 +458,7 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
       "ndـwells",
     ]) {
       expect(named(`?wells=${encodeURIComponent(hostile)}`), `${hostile} accepted`).toBe(
-        WELLS_SOURCE,
+        WELLS_SOURCE_BY_LAYER["wells"]!,
       );
     }
   });
@@ -472,7 +473,7 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
     expect(ids.filter((id) => id.startsWith("nm-"))).toEqual(["nm-wells", "nm-wells-struck"]);
     const nmWells = dataLayers().find((layer) => layer.id === "nm-wells");
     expect(nmWells?.type).toBe("circle");
-    expect("source" in nmWells! ? nmWells.source : "").toBe(NM_WELLS_SOURCE);
+    expect("source" in nmWells! ? nmWells.source : "").toBe(WELLS_SOURCE_BY_LAYER["nm-wells"]!);
   });
 
   it("draws Montana as a point layer with a struck sibling of its own", () => {
@@ -483,7 +484,7 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
     expect(ids).toContain("mt-wells-struck");
     const mtWells = dataLayers().find((layer) => layer.id === "mt-wells");
     expect(mtWells?.type).toBe("circle");
-    expect("source" in mtWells! ? mtWells.source : "").toBe(MT_WELLS_SOURCE);
+    expect("source" in mtWells! ? mtWells.source : "").toBe(WELLS_SOURCE_BY_LAYER["mt-wells"]!);
     expect(statusStyledLayerIds()).toContain("mt-wells");
   });
 
@@ -529,13 +530,10 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
     const specs = sourceSpecs("https://gw.example", search);
     expect(Object.keys(specs).sort()).toEqual(
       [
-        WELLS_SOURCE,
+        ...WELLS_ROSTER.map((row) => row.tileLayerId),
         LATERALS_SOURCE,
         SPACING_SOURCE,
-        TX_WELLS_SOURCE,
         TX_LATERALS_SOURCE,
-        NM_WELLS_SOURCE,
-        MT_WELLS_SOURCE,
         MT_PATHS_SOURCE,
         TRACES_SOURCE,
         TOWNSHIPS_SOURCE,
@@ -558,7 +556,7 @@ describe("the ?wells= / ?laterals= / ?spacing= source override (N-5)", () => {
   });
 
   it("falls back rather than throwing when there is no window to read", () => {
-    expect(publishedSource("wells", WELLS_SOURCE)).toBe(WELLS_SOURCE);
+    expect(publishedSource("wells", WELLS_SOURCE_BY_LAYER["wells"]!)).toBe(WELLS_SOURCE_BY_LAYER["wells"]!);
   });
 });
 
@@ -642,5 +640,93 @@ describe("a Wells-By press on the canvas", () => {
 
     expect(filter).toEqual(statusFilter(12, everyStatus));
     expect(shows(filter, { status_canonical: "active" })).toBe(true);
+  });
+});
+
+describe("a fifth registration's layers", () => {
+  it("draws a point layer and a struck sibling for every registered wells row", () => {
+    const ids = new Set(dataLayers({ labels: true }).map((layer) => layer.id));
+
+    expect(WELLS_ROSTER.length).toBeGreaterThan(0);
+    for (const row of WELLS_ROSTER) {
+      for (const layer of row.styleLayers) expect(ids.has(layer), layer).toBe(true);
+    }
+  });
+
+  it("paints every registration's dots from the same expressions", () => {
+    const points = dataLayers().filter((layer) => WELL_POINT_LAYERS.includes(layer.id));
+
+    expect(points).toHaveLength(WELLS_ROSTER.length);
+    const shapes = new Set(
+      points.map((layer) => JSON.stringify({ ...layer, id: null, source: null,
+        "source-layer": null })),
+    );
+    // One shape, not four near-identical ones: the differences that used to sit between them
+    // were an id and a source, and both are registrations.
+    expect(shapes.size).toBe(1);
+  });
+
+  it("keeps the source override parameter following the layer id, not the source", () => {
+    // `nd-wells` never existed: the founding row's layer id is the bare `wells`, and a saved
+    // permalink carrying `?wells=` has to keep working.
+    const specs = sourceSpecs("https://gw.example", "?wells=nd_wells_v2");
+
+    expect(specs["nd_wells_v2"]).toBeDefined();
+    expect(specs[WELLS_SOURCE_BY_LAYER["tx-wells"]!]).toBeDefined();
+  });
+});
+
+describe("the order the layers are declared in", () => {
+  // MapLibre paints in array order, so this is z-order and nothing else pins it: the file
+  // asserts membership, sources and per-layer paint, and a roster edit moved two layers past
+  // each other without a single test noticing.
+  const ids = () => dataLayers({ labels: true }).map((layer) => layer.id);
+
+  it("draws every bore line under every wellhead dot", () => {
+    // A lateral belongs to the well whose dot sits on its heel. Painted over that dot, the
+    // stroke bisects it — and selection tints one and not always the other, which is where a
+    // reader sees it.
+    const order = ids();
+    const lastLine = Math.max(
+      ...["laterals", "tx-laterals", "survey-traces", "mt-paths"].map((id) => order.indexOf(id)),
+    );
+    const firstPoint = Math.min(...WELL_POINT_LAYERS.map((id) => order.indexOf(id)));
+
+    expect(firstPoint).toBeGreaterThan(-1);
+    expect(lastLine).toBeLessThan(firstPoint);
+  });
+
+  it("keeps the disposal ring over the dots it rings and under the strike", () => {
+    const order = ids();
+
+    for (const id of WELL_POINT_LAYERS) {
+      expect(order.indexOf(id)).toBeLessThan(order.indexOf("disposal-wells"));
+    }
+    expect(order.indexOf("disposal-wells")).toBeLessThan(order.indexOf("wells-struck"));
+  });
+});
+
+describe("the disposal ring's source", () => {
+  it("is the registration that carries the well-type fact, found by code and not by position", () => {
+    // `disposalFilter()` matches NDIC's own well_type codes, so the ring belongs to the
+    // registration those codes were filed under. Reading `WELLS_ROSTER[0]` made that true only
+    // while nothing registered a lower draw order — a column any migration may write — and a
+    // fifth jurisdiction at 39 would have silently repointed an NDIC filter at its tiles.
+    const ring = dataLayers().find((layer) => layer.id === "disposal-wells");
+    const founding = WELLS_ROSTER.find((row) => row.code === DEFAULT_JURISDICTION.code)!;
+
+    expect("source" in ring! ? ring.source : "").toBe(founding.tileLayerId);
+    expect(WELLS_SOURCE_BY_CODE[DEFAULT_JURISDICTION.code]).toBe(founding.tileLayerId);
+  });
+
+  it("survives a registration taking a lower draw order than the founding one", () => {
+    const reordered = [...WELLS_ROSTER].sort((a, b) => a.drawOrder - b.drawOrder);
+    const lowest = reordered[0]!;
+    const byCode = WELLS_SOURCE_BY_CODE[DEFAULT_JURISDICTION.code];
+
+    // Today they agree, which is exactly why a positional read looked correct. The assertion
+    // is that the ring follows the code even when they stop agreeing.
+    expect(lowest.code).toBe(DEFAULT_JURISDICTION.code);
+    expect(byCode).toBe(WELLS_ROSTER.find((row) => row.code === DEFAULT_JURISDICTION.code)!.tileLayerId);
   });
 });

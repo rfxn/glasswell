@@ -19,6 +19,7 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 
+from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import resolve_environment
 from glasswell.lineage import (
     InputRef,
@@ -30,7 +31,7 @@ from glasswell.lineage import (
 )
 from glasswell.lineage.audit import emit
 from glasswell.lineage.serialization import hash_payload
-from glasswell.seed.jurisdictions import JURISDICTIONS
+from glasswell.seed.jurisdictions import JURISDICTION_RULES, JURISDICTIONS
 
 NULL_SEMANTICS_RULE = "cr_nd_null_semantics_1"
 LIQUIDS_RULE = "cr_nd_liquids_policy_1"
@@ -69,9 +70,20 @@ WITHHOLDING_BY_PREFIX: dict[str, tuple[tuple[str, str], ...]] = {
 # The jurisdictions the cumulative mart covers, and the population every figure built from it
 # is stated over. Kept separate from WITHHOLDING_SOURCES on purpose: a state can be in scope
 # with nothing withheld, and registering a withholding source is not a decision to widen
-# coverage (land_metrics.py:128-131 draws the same line for the PLSS grid). Declared as codes
-# and resolved through the registry, so no API prefix is spelled in this module.
-CUMULATIVE_JURISDICTIONS: tuple[str, ...] = ("ND",)
+# coverage (land_metrics.py:128-131 draws the same line for the PLSS grid).
+#
+# A registry dimension rather than a tuple, so widening the mart is a row with a rationale and
+# an effective date like every other cross-source decision. The rule each registration names is
+# the one that decides whether it writes a well-grain row: the mart's own reads are all
+# `entity_type = 'well'`, so a jurisdiction in scope without one would be entered from the well
+# spine, match no month, and be published never_reported with its production sitting in
+# canonical -- a positive false claim rather than a gap.
+CUMULATIVES_SCOPE = "cumulatives_scope"
+CUMULATIVE_JURISDICTIONS: tuple[str, ...] = tuple(
+    str(row["jurisdiction_code"])
+    for row in JURISDICTION_RULES
+    if row["decision"] == CUMULATIVES_SCOPE and row.get("serving", True)
+)
 STATE_API_PREFIXES: tuple[str, ...] = tuple(
     _PREFIX_OF[code] for code in CUMULATIVE_JURISDICTIONS
 )
@@ -519,10 +531,11 @@ def refresh_well_cumulatives(connection: psycopg.Connection) -> CumulativesRefre
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Refresh the per-well cumulative marts.")
-    parser.add_argument("--dsn", required=True)
+    add_dsn_argument(parser)
     parser.add_argument("--env-id", default=None, help="override the fingerprinted env id")
     parser.add_argument("--code-version", default=None)
     arguments = parser.parse_args(argv)
+    arguments.dsn = resolve_dsn(arguments.dsn)
 
     with psycopg.connect(arguments.dsn) as connection:
         environment = resolve_environment(
