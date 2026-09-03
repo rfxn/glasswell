@@ -312,3 +312,30 @@ def test_a_summed_point_states_the_count_of_shares_and_no_divisor(
     assert series["gas_mcf_shares_by_month"] == [2, 2, 2]
     assert series["oil_bbl_eligible_wells_by_month"] == [3, 3, 3]
     assert series["oil_bbl_shares_by_month"] == [1, 1, 1]
+
+
+def test_an_instance_whose_mart_is_empty_says_so_instead_of_serving_an_empty_series(
+    client: TestClient, seeded,
+) -> None:
+    """H-10. `scripts/deploy.sh` refreshes the marts before the manual load, which the runbook
+    says takes two to six hours, so every deploy has a window where the allocated mart is
+    empty. The arm served 200 with an empty series, `granularity: lease_allocated`, a null
+    model id and a null `measured_by_rule` -- an envelope that reads as "nothing was produced"
+    and an absence that names no rule, which 4F.5 as amended forbids.
+    """
+    with seeded.cursor() as cursor:
+        cursor.execute("delete from marts.tx_allocated_production")
+    seeded.commit()
+
+    body = envelope(client, f"/v1/wells/{TX_API10}/production")
+
+    assert body["data"]["series"] == {"pm": []}
+    assert body["data"]["streams"] == []
+    assert body["data"]["allocation"] is None
+    assert body["data"]["granularity"] == "lease_reported"
+    warning = next(
+        item for item in body["meta"]["warnings"] if item["code"] == PENDING
+    )
+    assert ALLOCATION_RULE in warning["detail"]
+    assert "cr_tx_production_grain_1" in warning["detail"]
+    assert body["links"]["allocation_rule"] == "/v1/conformance/cr_tx_production_grain_1"

@@ -372,6 +372,31 @@ if [[ -n $tx_api10 ]]; then
     assert "GET /v1/wells/$tx_api10/production" 200 \
         "$(keyed_status "$base/v1/wells/$tx_api10/production")"
     body "/v1/wells/$tx_api10/production"
+fi
+# The deploy refreshes the marts before the manual load, and the load takes hours, so every
+# deploy has a window where the allocated mart is empty and the surface says so with the
+# pending-allocation disclosure. Asserting the allocation there would fail the deploy for
+# telling the truth; what is asserted instead is that the disclosure is what came back.
+tx_pending=1
+if [[ -n $tx_api10 ]]; then
+    python3 -c '
+import json, sys
+codes = {item["code"] for item in json.load(open(sys.argv[1]))["meta"]["warnings"]}
+sys.exit(0 if "production_pending_allocation" in codes else 1)
+' "$work_dir/body.json" && tx_pending=0
+fi
+if [[ -n $tx_api10 && $tx_pending -eq 0 ]]; then
+    printf '  SKIPPED the Texas allocation: the allocated mart is empty on this instance and the surface serves the pending-allocation disclosure; it turns from skipped to asserted at runbook Step 5\n'
+    assert_true "the empty-mart disclosure names the rule that will close it" \
+        "4F.5 as amended admits a stated absence naming its rule, never an empty series" \
+        python3 -c '
+import json, sys
+data = json.load(open(sys.argv[1]))
+detail = next(item["detail"] for item in data["meta"]["warnings"]
+              if item["code"] == "production_pending_allocation")
+sys.exit(0 if "cr_tx_allocation_v0_1" in detail and data["data"]["allocation"] is None else 1)
+' "$work_dir/body.json"
+elif [[ -n $tx_api10 ]]; then
     assert_true "every allocated point says it is one" \
         "an allocation estimate that reads as an observation is the defect this track exists against" \
         python3 -c '

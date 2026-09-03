@@ -19,6 +19,12 @@ or exports it. **No step passes the DSN on a command line**: an argument is visi
 to every user on the box and lands in shell history, which is the whole reason
 `glasswell/db/dsn.py` makes the flag optional. `db.env` is not used anywhere.
 
+**The window between the deploy and Step 4.** From `make deploy` until Step 4 completes, the
+allocation mart is empty: the deploy's own smoke reports the Texas block as skipped, the
+cumulative refresh publishes no Texas row, and a Texas well's production surface serves the
+pending-allocation disclosure naming the rule that closes it. The deploy exits 0 on that basis;
+the Texas block turns from skipped to asserted at Step 5.
+
 **What runs before any of this.** The deploy's own sequence, not this file's: DR-B6 step 5,
 one synchronous `systemctl start glasswell-scheduler.service`, whose plan is computed and
 recorded and which launches nothing because every seeded row registers `launch_mode: observe`;

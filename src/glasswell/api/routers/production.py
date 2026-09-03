@@ -762,6 +762,10 @@ def _allocated_response(
     is authoritative.
     """
     points = allocated_rows(connection, api10, requested, window)
+    if not points:
+        return _allocation_not_built(
+            request, connection, api10=api10, rule=rule, explain=explain
+        )
     months = sorted({row["production_month"] for row in points})
     payload: dict[str, Any] = {"pm": [month_label(month) for month in months]}
     warnings: list[dict[str, Any]] = []
@@ -916,6 +920,63 @@ def _allocated_response(
         source_freshness=_freshness(connection, ["tx_pdq_dsv"]),
         warnings=warnings,
         links=links,
+        explain=inline_for(connection, explain),
+    )
+
+
+def _allocation_not_built(
+    request: Request,
+    connection: psycopg.Connection,
+    *,
+    api10: str,
+    rule: Mapping[str, Any],
+    explain: Any,
+) -> JSONResponse:
+    """The disclosure an instance owes while its allocated mart is empty.
+
+    Between `make deploy` and the end of the manual load the mart holds nothing, and the
+    allocated arm served 200 with an empty series, `granularity: lease_allocated`, a null
+    model id and a null `measured_by_rule` -- an envelope that reads as "nothing was
+    produced", which is the exact outcome the disclosure below exists to prevent, and an
+    absence served without naming the rule that closes it, which 4F.5 as amended forbids
+    (gate-tx H-10).
+    """
+    data: dict[str, Any] = {
+        "api10": api10,
+        "source_id": None,
+        # The grain the regulator files at, which is what is true when nothing is computed
+        # yet. Claiming `lease_allocated` would describe a share that does not exist.
+        "granularity": "lease_reported",
+        "reporting_level": "lease",
+        "streams": [],
+        "series": {"pm": []},
+        "allocation": None,
+    }
+    return enveloped(
+        request,
+        data,
+        as_of=None,
+        as_of_requested="latest",
+        labels=_labels([]),
+        source_freshness=_freshness(connection, ["tx_pdq_dsv"]),
+        warnings=[
+            {
+                "code": "production_pending_allocation",
+                "detail": (
+                    "This well's regulator reports production at the lease"
+                    f" ({rule['rule_id']}), and the allocated mart holds no rows on this"
+                    " instance, so no well-level figure is served rather than an empty series"
+                    " that would read as nothing produced. cr_tx_allocation_v0_1 is the rule"
+                    " that computes it; the lease volumes it splits are promoted at their"
+                    " native grain and are served as the lease's own."
+                ),
+                "pointer": "/production",
+            }
+        ],
+        links={
+            "well": f"/v1/wells/{api10}",
+            "allocation_rule": f"/v1/conformance/{rule['rule_id']}",
+        },
         explain=inline_for(connection, explain),
     )
 

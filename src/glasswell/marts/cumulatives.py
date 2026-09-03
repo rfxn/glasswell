@@ -263,6 +263,9 @@ class CumulativesRefresh:
     snapshot_vintage: date | None
     states: tuple[str, ...]
     coverage_outcomes: Mapping[str, int]
+    # Allocated jurisdictions whose mart is empty on this instance: entered, they would have
+    # published never_reported over their whole spine.
+    skipped: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -273,6 +276,7 @@ class CumulativesRefresh:
             else None,
             "states": list(self.states),
             "coverage_outcomes": dict(self.coverage_outcomes),
+            "skipped": list(self.skipped),
         }
 
 
@@ -320,6 +324,18 @@ select distinct api10, left(api10, 2) as state_code
   from marts.tx_allocated_production
  where left(api10, 2) = any(%(allocated)s)
  order by api10
+"""
+
+# Which allocated jurisdictions have anything to be cumulated. Between `make deploy` and the
+# manual load the allocated mart is empty, and an allocated jurisdiction entered from the well
+# spine matches no month and publishes `never_reported` over its whole spine -- 359,421 Texas
+# wells, three rows each -- which is the positive false claim the invariant above names by
+# name. An empty mart is a jurisdiction that is not ready, not a jurisdiction that filed
+# nothing (gate-tx H-10).
+_ALLOCATED_PRESENT = """
+select distinct left(api10, 2) as state_code
+  from marts.tx_allocated_production
+ where left(api10, 2) = any(%(allocated)s)
 """
 
 # One label per (well, mart stream, month): where two sources filed the same month, the
@@ -442,7 +458,13 @@ def _month_groups(
 def _collect(connection: psycopg.Connection) -> dict[str, Any]:
     """Everything bounded by the well population. The month labels are not, so they stream."""
     allocated = list(allocated_prefixes(connection))
-    states = {"states": list(STATE_API_PREFIXES)}
+    present = {
+        row["state_code"]
+        for row in _rows(connection, _ALLOCATED_PRESENT, {"allocated": allocated})
+    }
+    skipped = [prefix for prefix in allocated if prefix not in present]
+    allocated = [prefix for prefix in allocated if prefix in present]
+    states = {"states": [item for item in STATE_API_PREFIXES if item not in skipped]}
     scoped = {**states, "allocated": allocated}
     sources, reasons = _withholding_pairs()
     totals: dict[tuple[str, str], Decimal | None] = {}
@@ -475,6 +497,7 @@ def _collect(connection: psycopg.Connection) -> dict[str, Any]:
         "snapshot_vintage": snapshot_vintage,
         "states": states,
         "allocated": allocated,
+        "skipped": skipped,
     }
 
 
@@ -622,7 +645,10 @@ def refresh_well_cumulatives(connection: psycopg.Connection) -> CumulativesRefre
                 state: [list(pair) for pair in WITHHOLDING_BY_PREFIX.get(state, ())]
                 for state in STATE_API_PREFIXES
             },
-            "state_api_prefixes": list(STATE_API_PREFIXES),
+            "state_api_prefixes": list(collected["states"]["states"]),
+            # Named in the params rather than dropped silently: a refresh that skipped a
+            # jurisdiction has to say which, and the derivation is where that is durable.
+            "skipped_prefixes": list(collected["skipped"]),
             "streams": list(MART_STREAMS),
             "coverage_outcomes": outcomes,
         },
@@ -664,8 +690,9 @@ def refresh_well_cumulatives(connection: psycopg.Connection) -> CumulativesRefre
         derivation_id=context.derivation_id,
         row_counts=row_counts,
         snapshot_vintage=snapshot_vintage,
-        states=STATE_API_PREFIXES,
+        states=tuple(collected["states"]["states"]),
         coverage_outcomes=outcomes,
+        skipped=tuple(collected["skipped"]),
     )
 
 
