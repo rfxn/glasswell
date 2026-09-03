@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "glasswell"
-version = "0.77"
+version = "0.78"
 description = "Glass-box upstream analytics on public data"
 readme = "README.md"
 requires-python = ">=3.12"

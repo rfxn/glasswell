@@ -7,7 +7,7 @@
 > checksummed source file. Proprietary — copyright Ryan MacDonald, all rights
 > reserved.
 
-**Status: in build, release line v0.77.** North Dakota ingest, canonical production,
+**Status: in build, release line v0.78.** North Dakota ingest, canonical production,
 lineage, API, tiles and the map are deployed. Texas Permian-district wells and bore
 geometry are on the map, but Texas production and allocation are not built. New Mexico is
 resident: 321,510 header rows over 142,000 API-10 and 17,597,960 production rows at

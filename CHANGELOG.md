@@ -7,6 +7,171 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.78"></a>
+## v0.78 — 2026-09-03
+
+- [New] The schedule is data: `lineage.{refusal_codes, scheduled_jobs, job_sources,
+      job_schedules, job_dependencies, job_runs}`, append-only and on two clocks, with a
+      `cr_job_cadence_*` conformance rule and published evidence behind every cadence
+- [New] `glasswell-scheduler` on an hourly timer, running as root and dropping per transient
+      unit to a CHECK-constrained uid; it resolves the registry, computes what is due from the
+      freshness rule `/v1/health` reads, orders by dependency, reconciles on `ActiveState`,
+      holds a per-job advisory lock and defers what will not fit the tick budget
+- [New] v0.78 ships observing: every seeded row records what it would have run and launches
+      nothing, while the guard that survives the flip is the narrower one that no `launch` row
+      may name an entry point an installed timer already drives
+- [New] `/v1/schedules` and `/v1/schedules/{job_id}`, `as_of`-aware over both clocks, serving
+      each job's sources, dependencies, cadence rule, recent runs and refusal vocabulary
+- [New] `marts.counts` gets a `main` and a registered daily cadence, so the jurisdiction
+      well-count ledger has a writer to turn on; like every row this release seeds it observes,
+      so the ledger still advances only when someone runs it
+- [Change] `/v1/status` generates its job rows from the registry instead of six literal
+           blocks, and carries each job's kind, jurisdiction, cadence, next due, duration,
+           last outcome, the reason a failed run recorded, and refusal class with its
+           severity
+- [Change] The Status page splits scheduled work into data jobs grouped by jurisdiction behind
+           a disclosure and platform jobs below them, opening any group that holds a fault
+- [Change] `--dsn` is optional on `glasswell.marts.counts` with the `GLASSWELL_DSN` /
+           `DATABASE_URL` fallback the API and collector already use
+- [Change] `deploy.sh` installs the tree's Caddyfile and reloads caddy when it differs, which
+           `install.sh` only ever did under `--with-caddy`
+- [Fix] The two EIA boundary sources had no poll policy at all, so freshness served them
+      `cadence: null` and `pending` forever; the guard that should have caught it was blind
+      twice over, missing two seed registries and unable to see a one-row insert
+- [Fix] Three sources carried a null poll interval that made their jobs permanently not due
+- [Fix] The jurisdiction repoint guard asserted its literals were present only while the tag
+      was still UNRELEASED, so the correct repoint turned it red
+- [New] Colorado is resident, and it arrived as a registration rather than as a project: one
+      `lineage.jurisdictions` row with prefix `05`, thirteen `jurisdiction_rules` decisions
+      and twenty-two conformance rules with published ECMC evidence, and no edit to
+      `api/routers/wells.py`, `facets.py`, the legend census constants or the status collector
+- [New] `cr_co_wells_status_vocab_1` maps the thirteen published ECMC Well Status codes:
+      eleven to a canonical class and `SO` and `UN` to `documented_unmapped`, resolved at read
+      time from `lineage.co_facility_status_map` through the registry-driven resolver, which
+      the rule's own spec hands the table and the two columns to read. The shapefile's in-band
+      legend is the stale one, and the rule says which of the three published legends governs
+- [New] `cr_co_wells_location_qualifier_1` and `canonical.well_spatial.location_qualifier`:
+      how good a coordinate is, on the row that holds the coordinate and on a separate axis
+      from `geometry_provenance`. 44.67% of Colorado's served points are permit locations
+      rather than surveys, 27,976 of them on wells that carry a spud date
+- [New] Colorado production at completion grain with North Dakota's dual write beside it: one
+      row per completion plus one `sum_over_pools` well row per month and stream, so
+      `/v1/wells/{api10}/production` renders and a reader can tell a two-completion month from
+      a one-completion one. Liquid means oil plus condensate, because ECMC files one liquid
+      stream and no condensate column exists
+- [New] `marts.co_wells_tile` and the `co_wells` layer, from a `MartProfile` row in the
+      parameterised engine. There is no `marts/co_wells.py`: Colorado is the first state added
+      without a module of its own
+- [New] Colorado's six jobs are `scheduled_jobs` rows seeded `launch_mode = 'launch'`, so the
+      scheduler runs the first load in dependency order. It installs no systemd unit, which is
+      what makes launching admissible: nothing an installed timer drives shares an entry point
+- [Change] The cumulative mart's population is a `cumulatives_scope` registry dimension rather
+           than a tuple in `marts/cumulatives.py`; North Dakota and Colorado each carry a row
+           naming the rule that decides whether they write a well-grain row at all. The mart's
+           derivation address moves from `states 33` to `states 05,33`, because a total over a
+           different population is a different figure; North Dakota's own totals are unchanged
+- [Change] The scheduler's launch gate asserts the invariant it was standing in for rather
+           than the posture: no launching row carries a legacy unit or shares an entry point
+           with an installed timer, and something must launch for the gate to pass at all
+- [Change] The legend note's per-registration sentences are scoped to the jurisdictions the
+           view was classed by, and sit above the symbology clauses rather than after them, so
+           a basin's decoding rule is neither stated over a viewport that draws none of it nor
+           left below the note's own fold
+- [Fix] `test_no_other_states_letters_are_resolved_through_the_new_mexico_map` asserted the
+      read-time resolver answered for one jurisdiction, which a second read-time jurisdiction
+      would have reddened without any defect; it now asserts each codebook reaches only its own
+      registered prefix
+- [New] `/v1/wells/facets` counts across a set of jurisdictions: repeat `state`,
+      comma-separate the codes, or send `all` for every registered jurisdiction the
+      spine carries wells for, resolved from the registry at request time
+- [New] `/v1/wells/facets` serves `jurisdictions`: the set the counts were taken
+      over, each one's wells, and whether it carries the dimension, reports none of
+      it under a registered rule, or reports none with nothing registered (R8)
+- [New] the Wells-by panel offers `All jurisdictions` and takes several at once on
+      Explore and on the map sheet; `wb.state` carries `all` or a comma list, and a
+      jurisdiction that reports nothing at all is named under the ranking with its
+      wells and the rule that took them out of the "not reported" bucket
+- [Change] `/v1/wells` accepts the same `state` set grammar, so a facet bucket link
+         narrows the collection to exactly the jurisdictions the bucket was counted
+         over; a single code behaves as it did, and the page cursor is fingerprinted
+         over the normalised set so two spellings of one scope are one traversal
+- [Change] the facet scope is deduped per (state_code, api10), the order
+         `wells_facet_dimensions_idx` answers index-only over a set: measured on the
+         deployed 585,864 wells at 12,780 buffers and 592 ms against 279,288 and
+         1,031 ms for the api10-only partition (web/PERF.md §7)
+- [Fix] a jurisdiction contributing no well to the scope is served as
+      `no_wells_in_scope` rather than `absent_by_rule`: under an `as_of` before its
+      promotion the emptiness is the knowledge cut's, and blaming a conformance rule
+      for it is a claim with no row behind it
+- [Fix] a status map whose reported-code column repeats is refused at the registration
+      that introduces it, naming the rule and the table; left to the refresh it aborted
+      every later append to the registry from inside a statement trigger, naming a
+      primary key instead of its cause
+- [New] `/v1/status` carries a `status_resolver` check and `infra/verify.sh` asserts
+      that every jurisdiction registered for read-time status resolution has resolver
+      rows; a registered mapping table that has not landed is skipped with a notice
+      instead of silently drawing that jurisdiction's spine unmapped
+- [Change] `canonical.status_resolution` is registry-driven: it resolves every
+         jurisdiction whose status-vocabulary rule says `resolved_at: read_time`,
+         reading the mapping table and its key and value columns out of that rule's own
+         spec, so a later jurisdiction registers rows rather than redefining the view
+- [Change] `wells_facet_dimensions_idx` carries `status_reported`, and
+         `canonical.status_resolution` is backed by a relation keyed on (state, reported
+         code) rather than a view; the status facet over a set of states goes from an index
+         scan with a heap visit per row to an index-only scan with a keyed resolver lookup,
+         measured at 809,191 rows as 32,598 buffers and 1,285 ms against 12,484 and 818 ms.
+         The index is rebuilt in place, so deploying this train holds a brief exclusive lock
+         on the well spine at migrate time; the migration bounds it at five seconds and
+         RELEASING.md says not to deploy inside the backup window
+- [New] One tile-mart engine: `marts/wells.py` refreshes any registered jurisdiction from a
+      `MartProfile` row and its registration, and `glasswell-tiles --jurisdiction <CODE>` is
+      its entry point; the four per-state modules stay as shims because two applied
+      migrations name them by module path and the deployed timer executes a third. Every ND,
+      TX, NM and MT derivation id and tile digest is byte-identical before and after, proved
+      by `scripts/mart-address-diff.sh` running both checkouts against one database
+- [New] Seven presentation columns on `lineage.jurisdictions` and a `wells-roster.json` the
+      generator emits beside the client module, so the map's Wells rows, their style layers,
+      their draw order and their subtitles are registrations rather than object literals
+- [New] `basin_scope`, `length_source` and `neighbors_scope` as `jurisdiction_rules`
+      decisions, with `cr_nd_basin_scope_1`, `cr_tx_basin_scope_1`, `cr_nd_length_source_1`,
+      `cr_tx_length_source_1`, `cr_nd_neighbors_scope_1` and `cr_mt_neighbors_scope_1`
+- [Fix] `/v1/wells/{api10}/completions` served a `lateral_length_ft` for Montana wells with a
+      FracFocus disclosure, computed under `cr_nd_compute_crs` because the endpoint called the
+      length resolver unconditionally and the Montana mart stores its paths as laterals; the
+      figure is now null with `cr_mt_paths_length_scope_2` cited, which is what that rule's
+      contract note has always claimed. Any served intensity for such a well changes with it
+- [Fix] A jurisdiction with no registered basin was served a length method and a compute CRS
+      resolved from North Dakota's rule on both `/v1/wells/{api10}` and `/completions`; an
+      unregistered length rule is a 200 with a null and a `length_scope_unregistered` reason
+- [Fix] The glossary client read one page of 200 terms and declared itself loaded, so a
+      vocabulary past that cap would have rendered "Definition loading…" for the life of the
+      page; it pages to the end of what the server serves, treating an absent `next_cursor` as
+      the last page, and refuses a cursor that offers another page and returns nothing new,
+      naming the count it had read
+- [Fix] A jurisdiction registered as carrying laterals outside the neighbour mart's measured
+      domain aborted the whole monthly refresh naming another state's well; it is excluded
+      with a reason the well card and `/v1/jurisdictions` both report
+- [Change] `cr_mt_paths_length_scope_2` supersedes `_1`, dropping the sentence that described
+           the North Dakota length default this release removes; `_1` stays served and
+           historical
+- [Change] Every bore line is declared under every wellhead dot rather than interleaved per
+           jurisdiction, so a lateral stroke no longer bisects the dot it belongs to in the
+           Permian; the disposal ring keeps its place over the dots and moves under North
+           Dakota's plugged strike. Pinned by an order assertion, which nothing had
+- [Change] The add-a-state gate gains two narrow regex arms and a registered-code arm, and
+           carries exactly eight named exemptions; `selector_registry.py`, `status.ts`,
+           `style.ts` and `click-router.ts` derive from the registry rather than naming
+           jurisdictions
+- [Fix] The scheduler's double-run guard reported a DSN psycopg could not parse as a
+      double-run hazard rather than as a check that never ran, because it caught
+      `psycopg.OperationalError` where a malformed connection string raises
+      `psycopg.ProgrammingError`
+- [Fix] A Colorado production row the promotion quarantined recorded every staged SQL null in
+      `lineage.quarantine_rows.row_payload` as the four characters `None`, so a blank the
+      regulator filed could not be told from a column filed with that text
+- [Change] The `cursor_query_mismatch` refusal says what to do when the filter a reader did not
+           change is `?state=all` and a jurisdiction registered mid-traversal
+
 <a id="v0.77"></a>
 ## v0.77 — 2026-09-02
 
