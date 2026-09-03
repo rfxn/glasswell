@@ -19,10 +19,10 @@ or exports it. **No step passes the DSN on a command line**: an argument is visi
 to every user on the box and lands in shell history, which is the whole reason
 `glasswell/db/dsn.py` makes the flag optional. `db.env` is not used anywhere.
 
-**What runs before any of this.** The deploy's own sequence, not this file's: DR-B6 step 5 —
+**What runs before any of this.** The deploy's own sequence, not this file's: DR-B6 step 5,
 one synchronous `systemctl start glasswell-scheduler.service`, whose plan is computed and
-recorded and which launches nothing, because every seeded row registers `launch_mode: observe`
-— and then `infra/verify.sh` green. The load below starts after both. The Texas job rows this
+recorded and which launches nothing because every seeded row registers `launch_mode: observe`;
+and then `infra/verify.sh` green. The load below starts after both. The Texas job rows this
 train registers are on that same posture, so nothing here is started by a tick: every step is
 run by hand, in this order.
 

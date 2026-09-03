@@ -1236,7 +1236,7 @@ describe("a cumulative total that some months were allocated into", () => {
 
   it("counts the allocated months rather than reporting none admitted", async () => {
     // `months_reported` counts well-grain canonical months and there are none, so the scope
-    // line said nothing was admitted directly under two non-null totals — a number the
+    // line said nothing was admitted directly under two non-null totals, a number the
     // surface contradicts in the next sentence, which is worse than a naked one.
     await render();
     const scope = host.querySelector<HTMLElement>(".gw-scope-allocated");

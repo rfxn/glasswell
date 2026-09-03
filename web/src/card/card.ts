@@ -795,7 +795,7 @@ function range(counts: number[]): string {
  * The scope line for a total built from shares, or null where the total is observed.
  *
  * `months_reported` counts well-grain canonical months and a lease-grain jurisdiction has
- * none of them, so "0 of 24 months admitted" printed under a 7,200 bbl total — the card
+ * none of them, so "0 of 24 months admitted" printed under a 7,200 bbl total: the card
  * contradicting its own number one line down (M3). Both counts are stated instead, and the
  * allocated one is the served figure rather than a recount of it.
  */
