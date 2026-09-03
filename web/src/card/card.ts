@@ -16,6 +16,8 @@ import { highlight } from "../glossary/index.ts";
 import { termIndex } from "../glossary/store.ts";
 import { absentValue, formatMonth, formatVintage, nullSemantics } from "./format.ts";
 import { cardQuery } from "./requests.ts";
+import { renderBasin } from "./basin.ts";
+import type { WellBasin } from "./basin.ts";
 import { renderIdentity } from "./identity.ts";
 import type { WellIdentity } from "./identity.ts";
 import { applySection, mountSections, sectionLink, sectionsSettled } from "./sections.ts";
@@ -493,14 +495,10 @@ export async function renderWellCard(
     landBody.appendChild(value);
   }
 
-  const basinBody = document.createElement("dl");
-  basinBody.className = "gw-facts";
-  if (detail.basin) {
-    basinBody.appendChild(term("Basin", labelFor(well, "/basin")));
-    const value = document.createElement("dd");
-    value.textContent = detail.basin;
-    basinBody.appendChild(value);
-  }
+  // The served polygon answer, its plays, the ingest label beside it and their agreement.
+  // Rendered on expansion rather than at mount because the section is collapsed by default and
+  // its content is the reason a reader opens this particular well.
+  const basinBody = document.createElement("div");
 
   const lineageBody = document.createElement("div");
   const identityHost = document.createElement("div");
@@ -552,7 +550,16 @@ export async function renderWellCard(
       ...(well.links?.["neighbors_rule"] ? { absentRule: well.links["neighbors_rule"] } : {}),
     },
     { id: "land", title: "Land and lease", expanded: false, body: landBody },
-    { id: "basin", title: "Basin and geology", expanded: false, body: basinBody },
+    {
+      id: "basin",
+      title: "Basin and geology",
+      expanded: false,
+      body: basinBody,
+      load: () => {
+        renderBasin(basinBody, well as unknown as Envelope<WellBasin>);
+        return Promise.resolve();
+      },
+    },
     {
       id: "pools",
       title: "Production by pool",

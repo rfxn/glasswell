@@ -130,3 +130,25 @@
   font-family: var(--gw-font-mono);
   white-space: nowrap;
 }
+
+/* Basin and geology. The agreement mark carries the word as well as the colour, because a
+   small non-text signal is not a signal for every reader. */
+.gw-basin-play {
+  display: inline-block;
+  padding: 0 var(--gw-space-2);
+  margin-right: var(--gw-space-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--gw-radius-pill);
+}
+
+.gw-basin-agrees {
+  color: var(--slate);
+}
+
+.gw-basin-disagrees {
+  color: var(--amber-text);
+}
+
+.gw-basin-note {
+  margin-top: var(--gw-space-2);
+}

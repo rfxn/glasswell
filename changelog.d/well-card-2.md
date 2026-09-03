@@ -62,3 +62,7 @@
       mapping decision with its measurement: ND 43,424 of 43,817 inside a published basin, NM
       137,505 of 142,000, TX 344,611 of 359,421 with 10,896 of them in a basin that is not the
       filed `permian`, and MT 13,062 of 40,626 with 27,564 outside every published boundary
+- [Change] the card's Basin and geology section reads the served block instead of printing
+         `canonical.wells.basin` as bare text: the polygon with its rule, the plays as chips,
+         the filed label marked as the ingest slice it is, the boundary vintage, and the
+         geometry that answered
