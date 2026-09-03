@@ -13,7 +13,14 @@ import { crossingLink, openThisSeries, rowsForThisWell } from "../explore/bridge
 import { labelElement } from "../glossary/gw-term.ts";
 import { highlight } from "../glossary/index.ts";
 import { termIndex } from "../glossary/store.ts";
-import { absentValue, formatMonth, formatVintage, nullSemantics, roundTo } from "./format.ts";
+import {
+  absentValue,
+  formatMonth,
+  formatValue,
+  formatVintage,
+  nullSemantics,
+  roundTo,
+} from "./format.ts";
 
 export interface WellDetail {
   api10: string;
@@ -696,12 +703,34 @@ function allocationChip(data: WellCumulatives): HTMLElement | null {
   chip.className = "gw-chip gw-alloc-coverage";
   chip.dataset["basis"] = data.allocation.basis;
   const model = data.allocation.model_id ?? "";
-  chip.textContent = `Some months are allocated${model ? ` · ${model}` : ""}`;
+  chip.append(`${coverageSentence(data.allocation)}${model ? ` · ${model}` : ""}`);
+  // The share count is served with a handle and had nowhere on screen to be: the brief asks
+  // this row to state the basis, the model and how many shares are behind it.
+  const counted = data.allocation.shares_counted;
+  if (counted) {
+    const shares = document.createElement("span");
+    shares.className = "gw-alloc-shares";
+    shares.textContent = ` · ${formatValue(counted.value)} ${counted.unit}`;
+    if (counted.d) shares.dataset["handle"] = counted.d;
+    chip.appendChild(shares);
+  }
   chip.title =
     "Part of this total is an estimate: the jurisdiction files production by lease and the" +
     ` per-well share is computed under ${data.allocation.rule_id}. The share of each total` +
     " it accounts for is stated beside that total.";
   return chip;
+}
+
+/**
+ * How much of the total is a share, in words. "Some" on a well where every month is one is a
+ * hedge the data does not support, and it sits beside a chip reading `100% allocated`.
+ */
+function coverageSentence(allocation: CumulativeAllocation): string {
+  const shares = Object.values(allocation.share).map((figure) => Number(figure.value));
+  if (shares.length > 0 && shares.every((share) => share >= 1)) return "All months are allocated";
+  const months = Object.values(allocation.months).map((figure) => Number(figure.value));
+  if (months.length > 0) return `${range(months)} months are allocated`;
+  return "Some months are allocated";
 }
 
 /**

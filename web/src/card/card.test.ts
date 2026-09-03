@@ -1118,7 +1118,7 @@ describe("a cumulative total that some months were allocated into", () => {
     span_months: 24,
   };
 
-  function allocatedCumulatives() {
+  function allocatedCumulatives(share = "0.6700") {
     const base = cumulativesEnvelope as unknown as {
       data: Record<string, unknown>;
       [key: string]: unknown;
@@ -1147,7 +1147,7 @@ describe("a cumulative total that some months were allocated into", () => {
             gas: { value: "24", unit: "months", d: "drv_a#api10=x&stream=gas" },
           },
           share: {
-            liquid: { value: "0.6700", unit: "share", d: "drv_a#api10=x&stream=liquid" },
+            liquid: { value: share, unit: "share", d: "drv_a#api10=x&stream=liquid" },
           },
           shares_counted: { value: "9", unit: "shares", d: "drv_a#api10=x&col=shares_counted" },
         },
@@ -1155,13 +1155,13 @@ describe("a cumulative total that some months were allocated into", () => {
     };
   }
 
-  async function render(): Promise<void> {
+  async function render(share?: string): Promise<void> {
     vi.stubGlobal(
       "fetch",
       vi.fn(
         stubFetch({
           [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
-          [`/v1/wells/${API10}/cumulatives`]: allocatedCumulatives(),
+          [`/v1/wells/${API10}/cumulatives`]: allocatedCumulatives(share),
           [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
           [`/v1/wells/${API10}/production`]: productionEnvelope,
           [`/v1/wells/${API10}`]: wellEnvelope,
@@ -1187,6 +1187,32 @@ describe("a cumulative total that some months were allocated into", () => {
     expect(chip?.dataset["basis"]).toBe("allocated");
     expect(chip?.textContent).toContain("alloc_v0_2026_09");
     expect(chip?.getAttribute("title")).toContain("cr_tx_allocation_v0_1");
+  });
+
+  it("reads the share rather than hedging on a well where every month is one", async () => {
+    // "Some months are allocated" beside a chip reading `100% allocated` is the chip
+    // contradicting its neighbour.
+    await render("1.0000");
+    const chip = host.querySelector<HTMLElement>(".gw-alloc-coverage");
+
+    expect(chip?.textContent).toContain("All months are allocated");
+    expect(chip?.textContent).not.toContain("Some months");
+  });
+
+  it("states the count where the total is only partly a share", async () => {
+    await render();
+    const chip = host.querySelector<HTMLElement>(".gw-alloc-coverage");
+
+    expect(chip?.textContent).toContain("24 months are allocated");
+    expect(chip?.textContent).not.toContain("Some months");
+  });
+
+  it("states how many shares are behind the totals, and where the count came from", async () => {
+    await render();
+    const shares = host.querySelector<HTMLElement>(".gw-alloc-shares");
+
+    expect(shares?.textContent).toContain("9 shares");
+    expect(shares?.dataset["handle"]).toBe("drv_a#api10=x&col=shares_counted");
   });
 
   it("shows no chip on a stream nothing was allocated into", async () => {
