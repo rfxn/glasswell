@@ -38,6 +38,25 @@ than a phase; ROADMAP's N3 owns its exit criteria.
 | **NM** 30 | 321,510 / 142,000 | 17,597,960 · `nm_ocd_wcproduction`, completion-pool grain | surface 141,778 | **0 of 321,510 promoted, by design** — the column stays null and `cr_nm_wellhistory_status_vocab_2` resolves the class at read time: ten of fourteen OCD codes to canonical classes, `I`/`J`/`Q`/`Z` to a distinct `documented_unmapped` class, `unmapped_action = passthrough`. Tile-grain classes active 54,325 · plugged 50,935 · permitted 18,161 · expired 17,056 (`work-output/nm-status-status.md`, 2026-09-01) | lateral geometry `data-unreachable` · `cr_nm_wellhistory_geometry_scope_1`. No well-level rollup · `cr_nm_wcproduction_pool_rollup_1` |
 | **MT** 25 | 40,626 / 40,626 | 17,547,951 well grain + 4,808,814 PRU lease grain · `mt_bogc_*` | surface 42,026 · lateral 2,835 | 40,626 of 40,626 · `cr_mt_gis_status_vocab_1` | lateral length · `cr_mt_paths_length_scope_1`. No basin tag · `cr_mt_basin_scope_1` |
 
+### Basin context, measured before it ships
+
+`marts.well_basin_context` is built by this release line and is not on the deployed host yet;
+these are its answers, taken read-only on the spine 2026-09-03 with the mart's own query — one
+containing basin polygon per well, driven off `canonical.wells_latest` and left-joined to the
+surface point in `canonical.well_spatial`.
+
+| State | Inside a published basin | `outside_published_boundaries` | No geometry | Rule |
+|---|---|---|---|---|
+| **ND** 33 | 43,424 of 43,817 (99.1 %) | 393 (0.9 %) | 0 | `cr_nd_basin_context_1` |
+| **TX** 42 | 344,611 of 359,421 (96.9 % of the 355,463 with a surface point) | 10,852 (3.0 %) | 3,958 | `cr_tx_basin_context_1` |
+| **NM** 30 | 137,505 of 142,000 (97.0 % of the 141,778 with a surface point) | 4,273 (3.0 %) | 222 | `cr_nm_basin_context_1` |
+| **MT** 25 | 13,062 of 40,626 (32.2 %) | **27,564 (67.8 %)** | 0 | `cr_mt_basin_context_1` |
+
+Two thirds of Montana is `outside_published_boundaries`: a served answer about the EIA boundary
+set, not a gap in the record. Texas files `permian` on all 359,421 rows as an ingest scope label,
+and 10,896 of the 344,611 inside a polygon (3.2 %) are in a different one — 10,030 Fort Worth,
+456 Palo Duro, 410 Marfa — which the card serves beside the label rather than overwriting.
+
 ## Serving surface
 
 **57 operations across 52 paths, 56 under `/v1`**, counted from `tests/contract/openapi_snapshot.json`

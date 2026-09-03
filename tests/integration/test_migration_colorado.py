@@ -19,7 +19,12 @@ from psycopg.rows import dict_row
 from glasswell.db.migrate import discover_migrations
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_co import CO_RULE_IDS, CO_STATUS_MAP, DOCUMENTED_UNMAPPED_CLASS
-from glasswell.seed.jurisdictions import CO_REGISTERED_ON, COLORADO, COLORADO_DECISIONS
+from glasswell.seed.jurisdictions import (
+    CO_REGISTERED_ON,
+    COLORADO,
+    COLORADO_DECISIONS,
+    JURISDICTION_RULES,
+)
 from glasswell.seed.schedules import CO_JOBS, DEPENDENCIES, JOB_SOURCES, JOBS, SCHEDULES
 
 pytestmark = pytest.mark.integration
@@ -102,14 +107,28 @@ def test_the_registration_resolves_with_its_identity_derived(db: psycopg.Connect
 def test_the_registered_decisions_are_exactly_the_ones_the_registration_declares(
     db: psycopg.Connection,
 ) -> None:
-    """M-19's set equality: a rule added to the seed and forgotten in the migration reddens."""
+    """M-19's set equality: a rule added to the seed and forgotten in the migration reddens.
+
+    Against the seed's one writer, `JURISDICTION_RULES`, rather than against
+    `COLORADO_DECISIONS` alone: the thirteen the registration was founded with are what
+    migration 077 writes and what that tuple mirrors, and a later track registering a decision
+    for Colorado at the same clock appends it beside them. Both halves are asserted, so a
+    founding decision dropped from either copy still reddens here.
+    """
     with db.cursor() as cursor:
         cursor.execute(
             "select decision from lineage.jurisdiction_rules where jurisdiction_code = 'CO'"
         )
         resident = {row[0] for row in cursor.fetchall()}
 
-    assert resident == {str(row["decision"]) for row in COLORADO_DECISIONS}
+    founding = {str(row["decision"]) for row in COLORADO_DECISIONS}
+    seeded = {
+        str(row["decision"])
+        for row in JURISDICTION_RULES
+        if str(row["jurisdiction_code"]) == "CO"
+    }
+    assert founding <= seeded
+    assert resident == seeded
 
 
 def test_every_colorado_rule_carries_its_publication_evidence(db: psycopg.Connection) -> None:

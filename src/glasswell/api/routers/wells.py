@@ -145,6 +145,10 @@ COHORT_STREAM_BASIS = {"liquid": LIQUIDS_BASIS, "gas": None, "water": "water"}
 WELL_LABELS = {
     "/api10": "gt_api_10_api_12_api_14",
     "/status_vocabulary_rule": "gt_conformance_rule",
+    "/basin_context/basin_name": "gt_basin",
+    "/basin_context/play_name": "gt_play",
+    "/basin_context/basin_label_filed": "gt_basin",
+    "/basin_context/rule_id": "gt_conformance_rule",
     "/land_unit_label": "gt_land_unit",
     "/confidential_flag": "gt_confidential_well",
     "/lateral_length_ft": "gt_wellbore",
@@ -212,6 +216,16 @@ RANKED_WELLS = _SPINE.format(columns=_COLUMNS, resolver=resolver_join("ranked"))
 RANKED_WELLS_PRODUCING = _SPINE.format(
     columns=f"{_COLUMNS}, {_PRODUCING_COLUMN} as producing", resolver=resolver_join("ranked")
 )
+
+# The basin block, read from the mart the rules decided rather than recomputed here. One row
+# per well by construction, so a well with no row is a pipeline state -- the mart has not been
+# refreshed since the well landed -- and never a silent null basin.
+_BASIN_CONTEXT = """
+select basin_name, basin_class, basin_overlap, play_name, play_class, basin_label_filed,
+       label_class, label_agrees, boundary_vintage, geometry_basis, rule_id
+  from marts.well_basin_context
+ where api10 = %(api10)s
+"""
 
 # Every effective-dated header the well carries, newest first, with the class resolved through
 # the one shared resolver rather than through a second mapping written here. No view and no
@@ -552,6 +566,11 @@ class WellDetail(WellSummary):
         " laterals but the neighbour mart's measured domain does not reach it. Null where"
         " neighbours are served and where none were ever registered."
     )
+    basin_context: BasinContext | None = Field(
+        description="The published boundary answer for this well. Null only where the mart has"
+        " not been refreshed since the well landed, which is a pipeline state and not a fact"
+        " about the well."
+    )
     jurisdiction_name: str | None = Field(
         description="The registered name of the jurisdiction this well is filed with."
     )
@@ -567,6 +586,53 @@ class WellDetail(WellSummary):
         description="The rule that says what this jurisdiction's geometry means. Null where"
         " the jurisdiction registers no geometry_provenance decision, which is a registry gap"
         " to be stated rather than another jurisdiction's rule to be inherited."
+    )
+
+
+class BasinContext(BaseModel):
+    """The published boundary a well's geometry falls in, beside the label the ingest wrote."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    basin_name: str | None = Field(
+        description="The published basin polygon the answering geometry falls in."
+    )
+    basin_class: str = Field(
+        description="in_published_boundary, outside_published_boundaries, or no_geometry."
+        " Outside is an answer about the boundary set, not a gap: it says the publisher draws"
+        " no basin here."
+    )
+    basin_overlap: int = Field(
+        description="How many published basin polygons contain the answering geometry.",
+        json_schema_extra=not_a_figure(
+            "How many published basin polygons contain this well's answering geometry. A count"
+            " of boundary rows, served so a reader can see where the publisher's own polygons"
+            " overlap; not a measured petroleum quantity."
+        ),
+    )
+    play_name: list[str] = Field(
+        description="Every play polygon the geometry falls in. Plural because plays stack."
+    )
+    play_class: str = Field(description="plays, or no_play_at_this_location.")
+    basin_label_filed: str | None = Field(
+        description="The `basin` string on the well row, kept and labelled as what it is: a"
+        " scope label from the ingest, not a geological finding."
+    )
+    label_class: str = Field(
+        description="agrees, disagrees, not_labelled, or no_label_to_compare."
+    )
+    label_agrees: bool | None = Field(
+        description="Whether the filed label and the polygon answer agree. Null where there is"
+        " nothing to compare."
+    )
+    boundary_vintage: str | None = Field(description="The boundary row's published vintage.")
+    geometry_basis: str = Field(
+        description="Which geometry answered: surface, lateral_midpoint, bottomhole, or"
+        " no_geometry. Stated because a long lateral can cross a boundary and saying which end"
+        " was asked is the difference between a fact and an accident."
+    )
+    rule_id: str | None = Field(
+        description="The basin_context rule that decided this row, where one is registered."
     )
 
 
@@ -2513,6 +2579,9 @@ def get_well(
             rule_ids=[method.rule_id],
         )
 
+    context = rows(connection, _BASIN_CONTEXT, {"api10": api10})
+    basin_context = dict(context[0]) if context else None
+
     point = next((item for item in geometry if item["lon"] is not None), None)
     data = _summary(row, registry) | {
         "api14": row["api14"],
@@ -2550,6 +2619,9 @@ def get_well(
         ],
         "surface_point": {"lon": point["lon"], "lat": point["lat"]} if point else None,
         "neighbors_reason": neighbours_reason,
+        # The polygon answer beside the ingest scope label, with their agreement marked. Null
+        # only where the mart has not been refreshed since the well landed.
+        "basin_context": basin_context,
         # Whose well it is, read off the registry rather than written in the client: a Montana
         # disposal well's hover said "as ND filed it" for exactly as long as the client held
         # the answer. The portal is a portal, and the field says so in its own description.

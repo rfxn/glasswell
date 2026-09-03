@@ -96,6 +96,11 @@
     measured petroleum quantity.
 - pointer: /cap/withheld
   reason: Status-history rows the cap held back. Never rows nobody has.
+- pointer: /basin_context/basin_overlap
+  reason: >-
+    How many published basin polygons contain this well's answering geometry. A count of
+    boundary rows, served so a reader can see where the publisher's own polygons overlap;
+    not a measured petroleum quantity.
 - pointer: /occurrence_count
   reason: How many fetches re-presented this rejected row (SB-07 §8.1).
 - pointer: /*/occurrence_count

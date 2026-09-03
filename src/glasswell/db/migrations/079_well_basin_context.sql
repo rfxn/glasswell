@@ -19,6 +19,73 @@ insert into lineage.conformance_rule_publications
 select rule_id, date '2026-09-03', 'UNRELEASED',
        '0000000000000000000000000000000000000000'
   from unnest(array[
-       'cr_status_history_basis_1'
+       'cr_status_history_basis_1',
+       'cr_nd_basin_context_1',
+       'cr_tx_basin_context_1',
+       'cr_mt_basin_context_1',
+       'cr_nm_basin_context_1',
+       'cr_co_basin_context_1'
   ]) as rule_id
 on conflict do nothing;
+
+-- The basin a well is in, as a served answer with a provenance class rather than as the bare
+-- ingest scope label `canonical.wells.basin` has always been. Two different columns and two
+-- different decisions: the label says which slice the ingest took, and this says which
+-- published polygon the well's answering geometry falls in. Both are served, side by side,
+-- with an agreement mark -- because for part of Texas they disagree, and a disagreement with
+-- a handle is worth more than a silent overwrite.
+--
+-- Driven off canonical.wells_latest and left-joined to geometry, never the other way round:
+-- canonical.well_spatial holds surface points for 1,486 api10s that have no row in
+-- wells_latest, 1,400 of them Montana, and a mart driven off geometry would serve those as
+-- rows with no well behind them.
+create table if not exists marts.well_basin_context (
+    api10             text primary key,
+    state_code        text not null,
+    -- The polygon answer. Null carries a class rather than a silence: outside every published
+    -- boundary is an answer about the boundary set, and no geometry is an answer about the
+    -- well, and neither is "we do not know".
+    basin_name        text,
+    basin_class       text not null check (basin_class in (
+                          'in_published_boundary',
+                          'outside_published_boundaries',
+                          'no_geometry')),
+    -- How many published basin polygons contain the answering geometry. Overlap is served
+    -- rather than arbitrated (cr_eia_boundary_overlap_1); basin_name takes the smallest by
+    -- published area so the answer is the most specific containing basin and is deterministic.
+    basin_overlap     integer not null default 0 check (basin_overlap >= 0),
+    -- Plural because plays stack: a location can sit in several at once and picking one would
+    -- be a claim nobody published.
+    play_name         text[] not null default '{}',
+    play_class        text not null check (play_class in ('plays', 'no_play_at_this_location')),
+    basin_label_filed text,
+    label_class       text not null check (label_class in (
+                          'agrees', 'disagrees', 'not_labelled', 'no_label_to_compare')),
+    label_agrees      boolean,
+    boundary_vintage  text,
+    -- Which end of the well was asked. A Texas well has a surface point and a bottom hole and
+    -- a long lateral can cross a boundary, so saying which geometry answered is the difference
+    -- between a fact and an accident. v0.80 asks the surface point everywhere and says so.
+    geometry_basis    text not null check (geometry_basis in (
+                          'surface', 'lateral_midpoint', 'bottomhole', 'no_geometry')),
+    boundary_id       text references canonical.basin_boundaries (boundary_id),
+    rule_id           text references lineage.conformance_rules (rule_id),
+    derivation_id     text not null references lineage.derivations (derivation_id),
+    refreshed_at      timestamptz not null default now(),
+    check ((basin_name is null) = (basin_class <> 'in_published_boundary')),
+    check ((label_agrees is null) = (label_class in ('not_labelled', 'no_label_to_compare')))
+);
+
+comment on table marts.well_basin_context is
+    'One row per well in canonical.wells_latest: the published basin polygon its answering'
+    ' geometry falls in, the plays that stack there, the ingest scope label kept beside them,'
+    ' whether the two agree, and which geometry answered. Rebuilt, never appended.';
+
+create index if not exists well_basin_context_state_idx
+    on marts.well_basin_context (state_code, basin_class);
+create index if not exists well_basin_context_basin_idx
+    on marts.well_basin_context (basin_name)
+    where basin_name is not null;
+
+grant select on marts.well_basin_context to glasswell_api, glasswell_pipeline;
+grant insert, delete on marts.well_basin_context to glasswell_pipeline;

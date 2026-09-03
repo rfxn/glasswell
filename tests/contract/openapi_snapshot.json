@@ -154,6 +154,121 @@
         "title": "AvailableOrigin",
         "type": "object"
       },
+      "BasinContext": {
+        "additionalProperties": false,
+        "description": "The published boundary a well's geometry falls in, beside the label the ingest wrote.",
+        "properties": {
+          "basin_class": {
+            "description": "in_published_boundary, outside_published_boundaries, or no_geometry. Outside is an answer about the boundary set, not a gap: it says the publisher draws no basin here.",
+            "title": "Basin Class",
+            "type": "string"
+          },
+          "basin_label_filed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The `basin` string on the well row, kept and labelled as what it is: a scope label from the ingest, not a geological finding.",
+            "title": "Basin Label Filed"
+          },
+          "basin_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The published basin polygon the answering geometry falls in.",
+            "title": "Basin Name"
+          },
+          "basin_overlap": {
+            "description": "How many published basin polygons contain the answering geometry.",
+            "title": "Basin Overlap",
+            "type": "integer",
+            "x-glasswell-not-a-figure": "How many published basin polygons contain this well's answering geometry. A count of boundary rows, served so a reader can see where the publisher's own polygons overlap; not a measured petroleum quantity."
+          },
+          "boundary_vintage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The boundary row's published vintage.",
+            "title": "Boundary Vintage"
+          },
+          "geometry_basis": {
+            "description": "Which geometry answered: surface, lateral_midpoint, bottomhole, or no_geometry. Stated because a long lateral can cross a boundary and saying which end was asked is the difference between a fact and an accident.",
+            "title": "Geometry Basis",
+            "type": "string"
+          },
+          "label_agrees": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether the filed label and the polygon answer agree. Null where there is nothing to compare.",
+            "title": "Label Agrees"
+          },
+          "label_class": {
+            "description": "agrees, disagrees, not_labelled, or no_label_to_compare.",
+            "title": "Label Class",
+            "type": "string"
+          },
+          "play_class": {
+            "description": "plays, or no_play_at_this_location.",
+            "title": "Play Class",
+            "type": "string"
+          },
+          "play_name": {
+            "description": "Every play polygon the geometry falls in. Plural because plays stack.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Play Name",
+            "type": "array"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The basin_context rule that decided this row, where one is registered.",
+            "title": "Rule Id"
+          }
+        },
+        "required": [
+          "basin_name",
+          "basin_class",
+          "basin_overlap",
+          "play_name",
+          "play_class",
+          "basin_label_filed",
+          "label_class",
+          "label_agrees",
+          "boundary_vintage",
+          "geometry_basis",
+          "rule_id"
+        ],
+        "title": "BasinContext",
+        "type": "object"
+      },
       "BasinStatusCounts": {
         "properties": {
           "basin": {
@@ -9557,6 +9672,17 @@
             "description": "Basin the well is assigned to.",
             "title": "Basin"
           },
+          "basin_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BasinContext"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The published boundary answer for this well. Null only where the mart has not been refreshed since the well landed, which is a pipeline state and not a fact about the well."
+          },
           "completion_date": {
             "anyOf": [
               {
@@ -9918,6 +10044,7 @@
           "geometry",
           "surface_point",
           "neighbors_reason",
+          "basin_context",
           "jurisdiction_name",
           "regulator_name",
           "regulator_url",

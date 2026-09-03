@@ -47,6 +47,7 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
     wellsSubtitleTemplate: "ECMC well headers · {count} points, eleven of thirteen published status codes classed and two documented without an equivalent (cr_co_wells_status_vocab_1) · 44.67% of points are permit locations, not surveyed (cr_co_wells_location_qualifier_1) · surface points only",
     legendNote: "Colorado's AL code is a vacated permit, not an abandoned well: those points have no wellbore and are drawn as expired permits (cr_co_wells_status_vocab_1).",
     rules: {
+      basin_context: "cr_co_basin_context_1",
       crs: "cr_co_wells_datum_1",
       cumulatives_scope: "cr_co_production_grain_1",
       deduplication: "cr_co_wells_dedup_1",
@@ -79,6 +80,7 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
     legendNote: null,
     rules: {
       "absence:operator": "cr_mt_operator_absence_1",
+      basin_context: "cr_mt_basin_context_1",
       basin_scope: "cr_mt_basin_scope_1",
       geometry_provenance: "cr_mt_paths_geometry_class_1",
       inventory_jurisdiction: "cr_mt_inventory_jurisdiction_1",
@@ -103,6 +105,7 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
     wellsSubtitleTemplate: "ND DMR GIS surface locations · {count} points · culled by status below zoom 9",
     legendNote: null,
     rules: {
+      basin_context: "cr_nd_basin_context_1",
       basin_scope: "cr_nd_basin_scope_1",
       cumulatives_scope: "cr_nd_pool_rollup_1",
       geometry_provenance: "cr_nd_geometry_provenance_1",
@@ -130,6 +133,7 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
     wellsSubtitleTemplate: "NM OCD well-header surface locations · {count} points, ten of the fourteen OCD status codes mapped and four documented without an equivalent (cr_nm_wellhistory_status_vocab_2)",
     legendNote: null,
     rules: {
+      basin_context: "cr_nm_basin_context_1",
       basin_scope: "cr_nm_wellhistory_basin_scope_1",
       geometry_provenance: "cr_nm_wellhistory_geometry_provenance_1",
       identity: "cr_nm_wchistory_api10_1",
@@ -156,6 +160,7 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
     legendNote: null,
     rules: {
       "absence:operator": "cr_tx_operator_absence_1",
+      basin_context: "cr_tx_basin_context_1",
       basin_scope: "cr_tx_basin_scope_1",
       identity: "cr_tx_api10_build_1",
       length_source: "cr_tx_length_source_1",

@@ -53,3 +53,12 @@
 - [Fix] a well whose class resolves nowhere shows the code its regulator filed and
       the regulator's name instead of no status at all; 68,186 Texas wells on the
       deployed instance serve a null class today and rendered a blank
+- [New] `marts.well_basin_context`: which published basin polygon a well's surface point falls
+      in, the plays that stack there, the ingest scope label kept beside them with their
+      agreement marked, the boundary vintage and which geometry answered — one row per well in
+      `canonical.wells_latest`, so a well with no geometry is `no_geometry` and a well inside no
+      polygon is `outside_published_boundaries` rather than a null
+- [New] five `basin_context` rules, one per jurisdiction, registering the polygon answer as a
+      mapping decision with its measurement: ND 43,424 of 43,817 inside a published basin, NM
+      137,505 of 142,000, TX 344,611 of 359,421 with 10,896 of them in a basin that is not the
+      filed `permian`, and MT 13,062 of 40,626 with 27,564 outside every published boundary

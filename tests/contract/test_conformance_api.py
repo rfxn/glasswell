@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from glasswell.api.deps import today
 from glasswell.api.examples import EXAMPLE_DERIVATION_ID, EXAMPLE_RULE_ID
 from glasswell.api.pagination import decode_cursor, query_fingerprint
+from glasswell.seed.conformance_basin_context import BASIN_CONTEXT_RULES
 from glasswell.seed.conformance_basins import BASIN_RULES
 from glasswell.seed.conformance_co import CO_RULES
 from glasswell.seed.conformance_fracfocus import FRACFOCUS_RULES
@@ -103,6 +104,7 @@ def _seeded_policy_rule_ids() -> set[str]:
     return {
         str(rule["rule_id"])
         for registry in (
+            BASIN_CONTEXT_RULES,
             BASIN_RULES,
             CO_RULES,
             FRACFOCUS_RULES,

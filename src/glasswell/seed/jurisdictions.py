@@ -13,6 +13,7 @@ from datetime import date
 
 import psycopg
 
+from glasswell.seed.conformance_basin_context import BASIN_CONTEXT
 from glasswell.seed.conformance_co import (
     CLASSED_COUNT,
     CO_STATUS_MAP,
@@ -443,6 +444,15 @@ JURISDICTION_RULES: tuple[dict[str, object], ...] = (
     # the whole of what emits links.history. Registered at each one's own clock: Colorado's
     # registration was founded at its own instant and jurisdiction_rules carries a composite
     # foreign key onto it, so a row at the restatement's clock would point at no registration.
+    # The polygon answer, one rule per jurisdiction. A new decision rather than a repoint of
+    # basin_scope: that rule decides whether the ingest writes canonical.wells.basin at all and
+    # is still true, and these decide what the published boundaries say about the same well.
+    {"jurisdiction_code": "ND", "decision": BASIN_CONTEXT, "rule_id": "cr_nd_basin_context_1"},
+    {"jurisdiction_code": "TX", "decision": BASIN_CONTEXT, "rule_id": "cr_tx_basin_context_1"},
+    {"jurisdiction_code": "MT", "decision": BASIN_CONTEXT, "rule_id": "cr_mt_basin_context_1"},
+    {"jurisdiction_code": "NM", "decision": BASIN_CONTEXT, "rule_id": "cr_nm_basin_context_1"},
+    {"jurisdiction_code": "CO", "decision": BASIN_CONTEXT, "rule_id": "cr_co_basin_context_1",
+     "effective_from": CO_REGISTERED_ON, "published_at": CO_REGISTERED_ON},
     {"jurisdiction_code": "NM", "decision": STATUS_HISTORY, "rule_id": HISTORY_RULE_ID},
     {"jurisdiction_code": "CO", "decision": STATUS_HISTORY, "rule_id": HISTORY_RULE_ID,
      "effective_from": CO_REGISTERED_ON, "published_at": CO_REGISTERED_ON},

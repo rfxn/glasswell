@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import psycopg
 
+from glasswell.seed.conformance_basin_context import (
+    BASIN_CONTEXT_RULES,
+    seed_conformance_basin_context,
+)
 from glasswell.seed.conformance_basins import BASIN_RULES, seed_conformance_basins
 from glasswell.seed.conformance_c115b import (
     C115B_RULES,
@@ -61,6 +65,7 @@ from glasswell.seed.schedules import (
 )
 
 __all__ = [
+    "BASIN_CONTEXT_RULES",
     "BASIN_RULES",
     "C115B_RULES",
     "CO_RULES",
@@ -94,6 +99,7 @@ __all__ = [
     "VINTAGE_RULES",
     "load_glossary_seed",
     "seed_all",
+    "seed_conformance_basin_context",
     "seed_conformance_basins",
     "seed_conformance_c115b",
     "seed_conformance_fracfocus",
@@ -129,6 +135,11 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
     # numbers differ from the second's, which is the only thing the idempotence check has to
     # go on.
     return {
+        # First of all, and for the reason the block above gives twice over: one of its five
+        # rule ids carries the `cr_tx_` prefix seed_conformance_tx counts on, so seeded after
+        # it the first run's number would differ from the second's. It registers the boundary
+        # source it is filed under, exactly as the seeder below it does.
+        "conformance_rules_basin_context": seed_conformance_basin_context(connection),
         "conformance_rules_tx": seed_conformance_tx(connection),
         "conformance_rules_land": seed_conformance_land(connection),
         "conformance_rules_c115b": seed_conformance_c115b(connection),
