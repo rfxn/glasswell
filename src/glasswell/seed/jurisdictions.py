@@ -383,10 +383,14 @@ JURISDICTION_RULES_AS_FOUNDED: tuple[dict[str, object], ...] = (
 )
 
 
-# Colorado's decisions, at Colorado's own instant. Fourteen rows: every §3 rule that decides
+# Colorado's decisions, at Colorado's own instant. Thirteen rows: every §3 rule that decides
 # something the serving path resolves through the registry. The two parse rules that ride with
 # the production grain are conformance rows without being registry decisions, and the six
-# cadence rules are registered in the scheduler's tables rather than here.
+# cadence rules are registered in the scheduler's tables rather than here. So is
+# cr_co_wells_well_type_1: the registry has no well-type decision, here or for any other
+# jurisdiction -- ND's cr_nd_well_type_disposal_1 and NM's cr_nm_wellhistory_well_type_1 are
+# published conformance rules under no decision either, and a well_type_vocabulary key is the
+# v0.80 registry-vocabulary question rather than one this train answers.
 COLORADO_DECISIONS: tuple[dict[str, object], ...] = tuple(
     {
         "jurisdiction_code": "CO",
@@ -404,7 +408,6 @@ COLORADO_DECISIONS: tuple[dict[str, object], ...] = tuple(
         ("geometry_provenance", "cr_co_wells_geometry_provenance_1"),
         ("location_qualifier", "cr_co_wells_location_qualifier_1"),
         ("geometry_scope", "cr_co_wells_geometry_scope_1"),
-        ("absence:well_type", "cr_co_wells_well_type_1"),
         ("inventory_jurisdiction", "cr_co_inventory_not_served_1"),
         ("liquids", "cr_co_production_liquids_1"),
         ("entity_key", "cr_co_production_entity_key_1"),

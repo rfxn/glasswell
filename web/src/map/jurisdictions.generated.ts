@@ -47,7 +47,6 @@ export const JURISDICTION_LIST: readonly GeneratedJurisdiction[] = [
     wellsSubtitleTemplate: "ECMC well headers · {count} points, eleven of thirteen published status codes classed and two documented without an equivalent (cr_co_wells_status_vocab_1) · 44.67% of points are permit locations, not surveyed (cr_co_wells_location_qualifier_1) · surface points only",
     legendNote: "Colorado's AL code is a vacated permit, not an abandoned well: those points have no wellbore and are drawn as expired permits (cr_co_wells_status_vocab_1).",
     rules: {
-      "absence:well_type": "cr_co_wells_well_type_1",
       crs: "cr_co_wells_datum_1",
       cumulatives_scope: "cr_co_production_grain_1",
       deduplication: "cr_co_wells_dedup_1",
