@@ -27,6 +27,21 @@ DOWNLOADS_PAGE = (
 
 EFFECTIVE_FROM = date(2026, 8, 20)
 
+# The allocation train's own valid time. Later than the slice's, because cr_tx_production_grain_1
+# supersedes a rule the slice published and a successor at the same instant would not resolve.
+PDQ_EFFECTIVE_FROM = date(2026, 9, 2)
+
+PDQ_LINK = "https://mft.rrc.texas.gov/link/1f5ddb8d-329a-4459-b7f8-177b4f5ee60d"
+PDQ_MANUAL = "https://www.rrc.texas.gov/media/50ypu2cg/pdq-dump-user-manual.pdf"
+PDQ_FAQ = (
+    "https://www.rrc.texas.gov/about-us/faqs/oil-gas-faq/"
+    "production-data-query-system-faqs/"
+)
+
+# The versioned artifact that computes a share, distinct from the R8 decision that admits it.
+# Imported by the Texas mart and the Montana back-test so bed and consumer run identical code.
+ALLOCATION_MODEL_ID = "alloc_v0_2026_09"
+
 TX_LICENSE_NOTE = (
     "Free public download, no registration and no click-wall. The RRC disclaimer disclaims"
     " warranties and states the data have no legal force or effect; no redistribution"
@@ -64,6 +79,13 @@ TX_SOURCES: tuple[dict[str, object], ...] = (
     {
         "source_id": "tx_wellbore_ewa_csv",
         "name": "TX RRC Wellbore Query export (OG_WELLBORE_EWA_Report.csv)",
+        "jurisdiction": "TX",
+        "license_note": TX_LICENSE_NOTE,
+        "redistributable": False,
+    },
+    {
+        "source_id": "tx_pdq_dsv",
+        "name": "TX RRC Production Data Query dump (PDQ_DSV.zip)",
         "jurisdiction": "TX",
         "license_note": TX_LICENSE_NOTE,
         "redistributable": False,
@@ -836,6 +858,395 @@ TX_RULES: tuple[dict[str, object], ...] = (
         ),
         "evidence_url": DOWNLOADS_PAGE,
     },
+    {
+        "rule_id": "cr_tx_pdq_format_1",
+        "source_id": "tx_pdq_dsv",
+        "stage": "parse",
+        "rule_kind": "parse_directive",
+        "applies_to_fields": ["all"],
+        "spec": {
+            "delimiter": "}",
+            "header_row": 1,
+            "enclosure": None,
+            "archive_format": "zip64_deflate",
+            "member_selection": "by_name",
+            "members_read": [
+                "GP_COUNTY_DATA_TABLE.dsv",
+                "GP_DATE_RANGE_CYCLE_DATA_TABLE.dsv",
+                "GP_DISTRICT_DATA_TABLE.dsv",
+                "OG_LEASE_CYCLE_DATA_TABLE.dsv",
+                "OG_WELL_COMPLETION_DATA_TABLE.dsv",
+                "OG_REGULATORY_LEASE_DW_DATA_TABLE.dsv",
+            ],
+            "members_excluded": [
+                "OG_COUNTY_CYCLE_DATA_TABLE.dsv",
+                "OG_COUNTY_LEASE_CYCLE_DATA_TABLE.dsv",
+            ],
+            "on_header_change": "refuse",
+            "passes": 2,
+        },
+        "rule": (
+            "The dump is a `}`-delimited text archive with one header row and no enclosure."
+            " The six members read are selected by name; a member whose header gains or loses"
+            " a column refuses the parse rather than quarantining a row."
+        ),
+        "rationale": (
+            "Selecting members by ordinal would silently re-map every column the month the RRC"
+            " adds a table, and the two county members are excluded because the manual"
+            " describes them as estimates - `OG_COUNTY_CYCLE` and `OG_COUNTY_LEASE_CYCLE` read"
+            " 'This is an estimate only based on allowables and potentials' and every CNTY_"
+            " dictionary entry ends 'This is an estimated value.' The largest of them is 12.7"
+            " GB uncompressed and is one we do not want. A header change invalidates the row"
+            " mapping rather than one row, so quarantining is the wrong shape: nothing failed"
+            " to parse, the file stopped being the file the rule describes. The FAQ's stale"
+            " sentence that the Production Database can be purchased is contradicted by the"
+            " free downloads page, the live listing and the measured stream, and is recorded"
+            " here so it is not rediscovered as a licence bar."
+        ),
+        "evidence_url": PDQ_MANUAL,
+        "effective_from": PDQ_EFFECTIVE_FROM,
+    },
+    {
+        "rule_id": "cr_tx_pdq_scope_1",
+        "source_id": "tx_pdq_dsv",
+        "stage": "parse",
+        "rule_kind": "parse_directive",
+        "applies_to_fields": ["district_no", "lease_no", "api10"],
+        "spec": {
+            "scope_applied_at": "promotion",
+            "scope_source": "OG_WELL_COMPLETION",
+            "county_codes": list(PERMIAN_COUNTY_CODES),
+            "excluded_rows_recorded_as": "audit event staging.scope_excluded, with a count",
+            "quarantine": False,
+        },
+        "rule": (
+            "The county scope is applied at promotion, not at parse: OG_LEASE_CYCLE carries no"
+            " county, so the in-scope lease set is derived from OG_WELL_COMPLETION and"
+            " out-of-scope rows are counted rather than quarantined."
+        ),
+        "rationale": (
+            "Filtering at parse would need a county the lease member does not carry, so the"
+            " parse would have to hold the whole crosswalk in memory before it could stage a"
+            " row. Pass one reads the small members and the crosswalk and builds the allowlist;"
+            " pass two stages the lease member column-projected and unfiltered; promotion"
+            " applies the allowlist. Both passes read one on-disk artifact under one manifest"
+            " and one sha256. A row outside the scope did not fail: it is a row about a well"
+            " this deployment does not hold, which is the audit-event shape cr_tx_ewa_scope_1"
+            " already set for the sibling artifact."
+        ),
+        "evidence_url": PDQ_MANUAL,
+        "effective_from": PDQ_EFFECTIVE_FROM,
+    },
+    {
+        "rule_id": "cr_tx_production_grain_1",
+        "supersedes_rule_id": "cr_tx_allocation_scope_1",
+        "source_id": "tx_pdq_dsv",
+        "stage": "validate",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["production"],
+        "spec": {
+            "jurisdiction": "TX",
+            "state_code": "42",
+            "reporting_level": "lease",
+            "allocation_required": True,
+            "well_level_production_served": True,
+            "no_water_stream": True,
+            "completeness_lag_months": 6,
+            "grains": {
+                "O": "lease over one or more wells",
+                "G": "one gas well per lease",
+            },
+            "module_function": "glasswell.lineage.conformance:lease_reporting_rule",
+            "contract_note": (
+                "The API reads this rule to decide whether a well's jurisdiction reports at the"
+                " lease and whether a well-level figure is nonetheless served. Texas now serves"
+                " one, as an allocation that says so on every point."
+            ),
+        },
+        "rule": (
+            "TX production is filed at the lease and a well-level TX volume is now served as an"
+            " allocation, labelled as one. OIL_GAS_CODE 'G' rows are already per well; 'O' rows"
+            " are lease-grain over one or more wells. No water column exists, so Texas serves"
+            " two streams, and the last six months of every chart are systematically"
+            " under-filed."
+        ),
+        "rationale": (
+            "The successor to cr_tx_allocation_scope_1, which said no well-level TX volume"
+            " would be served until allocation shipped with its error bounds. Allocation has"
+            " shipped: the bound is a served statement that no transferable bound exists yet,"
+            " naming the study rule that will close it, which is what R-06's 'ship them wide"
+            " and say so' means when the width is unmeasured. The third spec key is what lets"
+            " one predicate have two consumers: the card stops showing a pending-allocation"
+            " panel while the producing class keeps resolving Texas to unknown, because a"
+            " producing class over allocated shares is a separate decision this rule does not"
+            " make. The completeness lag is the Commission's own sentence: 'Historically,"
+            " production records are substantially complete after about six months.'"
+        ),
+        "evidence_url": PDQ_FAQ,
+        "effective_from": PDQ_EFFECTIVE_FROM,
+    },
+    {
+        "rule_id": "cr_tx_pdq_crosswalk_1",
+        "source_id": "tx_pdq_dsv",
+        "stage": "join",
+        "rule_kind": "key_composite",
+        "applies_to_fields": ["lease_key", "api10", "district_no"],
+        "spec": {
+            "crosswalk_member": "OG_WELL_COMPLETION",
+            "link_role": "canonical_crosswalk",
+            "lease_key_rule": "cr_tx_lease_key_1",
+            "api10_rule": "cr_tx_api10_build_1",
+            "source_cols": ["oil_gas_code", "district_no", "lease_no"],
+            "separator": "-",
+            "pad": {"lease_no": 6},
+            "district_key": "DISTRICT_NO",
+            "district_label": "DISTRICT_NAME",
+            "district_map": {
+                "07": "6E", "08": "7B", "09": "7C", "10": "08", "11": "8A",
+                "13": "09", "14": "10", "20": "State Wide",
+            },
+            "membership_grain": "snapshot_at_export_vintage",
+            "resolution": "greatest effective_from <= resolution clock",
+            "retro_delete": False,
+        },
+        "rule": (
+            "OG_WELL_COMPLETION is the canonical crosswalk: it carries the lease key and the"
+            " API-10 parts in one row, so lease-to-well is exact and in-dump. Membership is a"
+            " snapshot at an export vintage, resolved as the greatest effective_from at or"
+            " before the resolution clock, and no later vintage retro-deletes a month already"
+            " resolved at an earlier one."
+        ),
+        "rationale": (
+            "District numbering is two vocabularies in one file - GP_DISTRICT measured 07 as"
+            " 6E, 08 as 7B, 09 as 7C, 10 as 08, 11 as 8A, 13 as 09, 14 as 10 and 20 as State"
+            " Wide - so a join on the name silently crosses districts and the key is always"
+            " DISTRICT_NO. LEASE_NO is VARCHAR2(6) in PDQ, PIC 9(5) in the W-10 file and padded"
+            " to 6 in the EWA export, so it is padded before any comparison. canonical"
+            " .well_lease_links has no effective_to, no month grain and no on-lease date, so"
+            " membership cannot be a per-month fact and pretending otherwise would be a claim"
+            " the data does not carry."
+        ),
+        "evidence_url": PDQ_MANUAL,
+        "effective_from": PDQ_EFFECTIVE_FROM,
+    },
+    {
+        "rule_id": "cr_tx_allocation_v0_1",
+        "source_id": "tx_pdq_dsv",
+        "stage": "conform",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["volume", "granularity", "allocation_class"],
+        "spec": {
+            "allocation_model_id": ALLOCATION_MODEL_ID,
+            "module_function": "glasswell.allocation.v0:allocate_lease_month",
+            "method": "equal_share_sign_aware",
+            "remainder_to": "lowest_api10",
+            "allocation_classes": [
+                "observed_gas_well",
+                "observed_single_well_lease",
+                "allocated_equal_share",
+                "allocated_after_status_change",
+                "excluded_after_plug",
+                "unallocated",
+            ],
+            "eligibility": (
+                "resolved membership assigns the well to the lease, completion_date is null or"
+                " on or before the production month, and plug_date is null or the production"
+                " month is on or before it"
+            ),
+            "eligibility_source": "canonical.wells_latest",
+            "undated_plugged": "eligible, labelled allocated_after_status_change",
+            "redistribute_excluded": True,
+            "membership_back_projection": True,
+            "error_source": "cr_alloc_v0_error_bounds_1",
+            "error_bounds_outcome_v0": "not_measured",
+            "as_of_supported": False,
+            "as_of_reason": (
+                "the allocation mart holds one snapshot per key, so an older as_of would return"
+                " the current allocation labelled with the caller's date"
+            ),
+            "unallocated_causes": [
+                "no_crosswalk_row",
+                "no_eligible_well",
+                "all_wells_after_month",
+                "negative_correction",
+            ],
+            "unallocated_share_degraded_at": 0.005,
+            "cumulatives_grain": "well",
+            "cumulatives_basis": "allocated",
+        },
+        "rule": (
+            "A lease-month's volume is split equally among the wells eligible that month. The"
+            " split is computed on abs(V): each well takes floor(abs(V)/n), the remainder goes"
+            " to the eligible well with the lowest API-10, and sign(V) is applied to every"
+            " share. A gas lease and a single-well oil lease pass the lease volume through as"
+            " well_observed; every other share is lease_allocated and carries the model id."
+            " Texas writes a well-grain cumulative row from this mart, on an allocated basis."
+        ),
+        "rationale": (
+            "The lease volume is a fact - LEASE_OIL_PROD_VOL is the amount produced by lease as"
+            " reported by the operator, with none of the estimated-value language the county"
+            " tables carry - and the per-well share is an estimate, so the fact stays in"
+            " canonical at its native grain and the estimate lives in a mart. Splitting on the"
+            " signed value would hand the lowest-API-10 well a positive bbl in a correction"
+            " month: floor(-7/2) is -4 twice, and the remainder needed to conserve is +1."
+            " Conservation would not catch it, because it conserves. The dominant assumption is"
+            " the back-projection: v0 holds one crosswalk vintage, so a lease's current well set"
+            " is applied to its whole history, crediting wells drilled late with early months"
+            " and dropping wells that left. That is the largest v0 error term and it has no"
+            " number, which is why the study rule is cited rather than a band invented. The"
+            " degraded threshold is half a percent because a half-percent of Texas volume with"
+            " no well to carry it is a data question, and below that it is the long tail of"
+            " leases whose only well predates the crosswalk."
+        ),
+        "evidence_url": PDQ_MANUAL,
+        "effective_from": PDQ_EFFECTIVE_FROM,
+    },
+    {
+        "rule_id": "cr_tx_liquids_basis_1",
+        "source_id": "tx_pdq_dsv",
+        "stage": "conform",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["volume", "stream"],
+        "spec": {
+            "basis": "oil+condensate",
+            "applied_by": "glasswell",
+            "canonical_streams": ["oil", "condensate"],
+            "mart_stream": "liquid",
+            "wire_column": "oil_bbl",
+            "source_cols": ["LEASE_OIL_PROD_VOL", "LEASE_COND_PROD_VOL"],
+            "disjoint_on": "OIL_GAS_CODE",
+        },
+        "rule": (
+            "The Texas liquid stream is oil plus condensate: LEASE_OIL_PROD_VOL on oil leases"
+            " and LEASE_COND_PROD_VOL on gas leases, disjoint populations keyed by"
+            " OIL_GAS_CODE, so their union double-counts nothing."
+        ),
+        "rationale": (
+            "The Commission publishes them apart and says so: 'The Railroad Commission of"
+            " Texas crude oil production data reflects only crude oil produced from oil leases"
+            " as reported by operators. The Commission data does not include condensate, which"
+            " are liquid hydrocarbons produced from a gas well.' A reader comparing glasswell's"
+            " Texas liquid figure to the RRC's published crude figure will find glasswell"
+            " higher, and this rule is why - which is what the blueprint means by stating the"
+            " liquids policy wherever the number appears rather than leaving the reader to"
+            " discover a discrepancy they cannot explain."
+        ),
+        "evidence_url": PDQ_MANUAL,
+        "effective_from": PDQ_EFFECTIVE_FROM,
+    },
+    {
+        "rule_id": "cr_tx_gas_basis_1",
+        "source_id": "tx_pdq_dsv",
+        "stage": "conform",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["volume", "stream"],
+        "spec": {
+            "basis": "gas_well_gas+casinghead",
+            "canonical_stream": "gas",
+            "mart_stream": "gas",
+            "wire_column": "gas_mcf",
+            "source_cols": ["LEASE_GAS_PROD_VOL", "LEASE_CSGD_PROD_VOL"],
+            "never_summed": ["LEASE_GAS_LIFT_INJ_VOL", "LEASE_CSGD_GAS_LIFT"],
+            "disjoint_on": "OIL_GAS_CODE",
+        },
+        "rule": (
+            "The Texas gas stream is gas-well gas plus casinghead gas, both MCF and disjoint on"
+            " OIL_GAS_CODE. The two gas-lift injection columns are injection and are never"
+            " summed in."
+        ),
+        "rationale": (
+            "Casinghead gas is produced with oil and is the whole gas story on an oil lease;"
+            " omitting it would under-report the Permian's associated gas, which is most of it."
+            " The lift columns describe gas put back down the hole, so summing them would count"
+            " the same molecules twice and call re-injection production."
+        ),
+        "evidence_url": PDQ_MANUAL,
+        "effective_from": PDQ_EFFECTIVE_FROM,
+    },
+    {
+        "rule_id": "cr_tx_geometry_provenance_1",
+        "source_id": "tx_gis_wells_county",
+        "stage": "conform",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["geom_type", "geometry_provenance"],
+        "spec": {
+            "jurisdiction": "TX",
+            "served_verbatim": True,
+            "geom_types": {
+                "surface": "RRC-filed point, transformed under cr_tx_nad27_1",
+                "bottomhole": "RRC-filed point, transformed under cr_tx_nad27_1",
+                "lateral": "county GIS well-arc line, a filed cartographic line",
+            },
+            "survey_derived": False,
+            "canonical_column": "geometry_provenance",
+            "served_from": "canonical.well_spatial.geom_type",
+            "mirrors_rule_id": "cr_nd_geometry_provenance_1",
+        },
+        "rule": (
+            "Texas geometry provenance is served verbatim: surface and bottomhole are"
+            " RRC-filed points transformed under cr_tx_nad27_1, and a lateral is the county GIS"
+            " well-arc line - a filed cartographic line, not a survey-derived path."
+        ),
+        "rationale": (
+            "Texas had no registered geometry-provenance decision at all, so the card fell back"
+            " to a default and a Texas lateral could read as though it had been derived from a"
+            " directional survey. There is no free parseable Texas directional survey station"
+            " data: the arc is what the Commission publishes and the card should say that is"
+            " what it is drawing. The decision is a registry row rather than a dictionary in"
+            " the router, so a sixth jurisdiction is a registration."
+        ),
+        "evidence_url": GIS_FAQ,
+        "effective_from": PDQ_EFFECTIVE_FROM,
+    },
+)
+
+# Jurisdiction-neutral by id and Montana by source, the shape cr_mt_pru_reconciliation_1
+# already has: a rule row cannot be sourceless (005_conformance.sql:7) and the study's evidence
+# is Montana's files. Seeded separately because its source is registered by seed_sources, which
+# runs after this module's seeder.
+ALLOCATION_RULES: tuple[dict[str, object], ...] = (
+    {
+        "rule_id": "cr_alloc_v0_error_bounds_1",
+        "source_id": "mt_bogc_pru_production",
+        "stage": "validate",
+        "rule_kind": "code_ref",
+        "applies_to_fields": ["volume", "error_bounds"],
+        "spec": {
+            "model_id": ALLOCATION_MODEL_ID,
+            "bed_jurisdiction": "MT",
+            "bed_entity_predicate": "entity_type='well'",
+            "statistic": "(allocated - truth) / (allocated + truth)",
+            "statistic_range": [-1, 1],
+            "excluded": "lease-months where both sides are zero, with the share served",
+            "module_function": "glasswell.allocation.v0:symmetric_error",
+            "transfer_outcome": "not_measured",
+            "precondition_rule": "cr_mt_pru_reconciliation_1",
+        },
+        "rule": (
+            "The equal-share method's error is measured against Montana, which files both"
+            " well-level and lease-level volumes, over entity_type='well' rows regardless of"
+            " reporting_level. The statistic is symmetric and bounded on [-1, 1]; lease-months"
+            " where both sides are zero are excluded and the excluded share is served. Until"
+            " the study is measured over a horizon shown to overlap Texas's, no band reaches a"
+            " Texas figure and every allocated point carries outcome not_measured naming this"
+            " rule."
+        ),
+        "rationale": (
+            "A relative error is unbounded above and undefined where a well produced nothing in"
+            " a month it was eligible for, which is the commonest case rather than an edge, so"
+            " the symmetric measure is used instead. Montana writes three shapes for one"
+            " well-month - per-pool rows, a well row aggregating them, and a well row where the"
+            " filings are not decomposable - and summing the pool rows and the aggregate would"
+            " double-count every decomposable well, so the bed is the well family and that is a"
+            " mapping decision rather than a query. cr_mt_pru_reconciliation_1 measures that"
+            " summing up agrees; it does not measure the error of splitting down, so it is"
+            " cited as the precondition and never as the measurement. A band measured on"
+            " another regulator's leases over a horizon that has not been shown to match is a"
+            " naked number with a decoration."
+        ),
+        "evidence_url": PDQ_MANUAL,
+        "effective_from": PDQ_EFFECTIVE_FROM,
+    },
 )
 
 _INSERT_SOURCE = """
@@ -867,9 +1278,8 @@ def seed_sources_tx(connection: psycopg.Connection) -> int:
     return len(TX_SOURCES)
 
 
-def seed_conformance_tx(connection: psycopg.Connection) -> int:
-    seed_sources_tx(connection)
-    payload = [
+def _rule_payload(rules: tuple[dict[str, object], ...]) -> list[dict[str, object]]:
+    return [
         {
             "rule_id": rule["rule_id"],
             "rule_family": _family(str(rule["rule_id"])),
@@ -884,11 +1294,26 @@ def seed_conformance_tx(connection: psycopg.Connection) -> int:
             "evidence_url": rule.get("evidence_url"),
             "effective_from": rule.get("effective_from", EFFECTIVE_FROM),
         }
-        for rule in TX_RULES
+        for rule in rules
     ]
+
+
+def seed_conformance_tx(connection: psycopg.Connection) -> int:
+    seed_sources_tx(connection)
     with connection.cursor() as cursor:
-        cursor.executemany(_INSERT_RULE, payload)
+        cursor.executemany(_INSERT_RULE, _rule_payload(TX_RULES))
         cursor.execute(
             "select count(*) from lineage.conformance_rules where rule_id like 'cr_tx_%'"
+        )
+        return int(cursor.fetchone()[0])
+
+
+def seed_conformance_allocation(connection: psycopg.Connection) -> int:
+    """The method-study rule, whose source is Montana's and whose id belongs to no state."""
+    with connection.cursor() as cursor:
+        cursor.executemany(_INSERT_RULE, _rule_payload(ALLOCATION_RULES))
+        cursor.execute(
+            "select count(*) from lineage.conformance_rules where rule_id = any(%s)",
+            ([str(rule["rule_id"]) for rule in ALLOCATION_RULES],),
         )
         return int(cursor.fetchone()[0])

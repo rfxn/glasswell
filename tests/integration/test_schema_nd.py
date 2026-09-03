@@ -97,7 +97,12 @@ def test_wells_latest_resolves_to_the_greatest_effective_from(db):
 
 
 def test_wells_latest_exposes_later_well_schema_columns(db):
-    assert {"total_depth_ft", "completion_date"} <= columns(db, "canonical", "wells_latest")
+    """The one test written for exactly this event: a column added to canonical.wells after
+    009 is not inherited by the view's explicit projection, so every track that grows the
+    table refreshes the view and says so here."""
+    assert {"total_depth_ft", "completion_date", "plug_date"} <= columns(
+        db, "canonical", "wells_latest"
+    )
 
 
 def test_a_wells_row_cannot_be_edited_in_place(db):
