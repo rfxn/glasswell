@@ -65,7 +65,17 @@ LIQUIDS_BASIS = "oil+condensate"
 # of every Texas chart are systematically under-filed and the rows say so.
 COMPLETENESS_LAG_MONTHS = 6
 
-CAUSES = ("no_crosswalk_row", "no_eligible_well", "all_wells_after_month", "negative_correction")
+# Reached only where nothing was eligible, so every code here describes that: no crosswalk row
+# at all, every well completed after the month, every well plugged before it, or a mix of the
+# two. `negative_correction` was in this list and nothing could write it -- a negative volume
+# with an eligible well allocates -- and `all_wells_after_month` was returned for a lease whose
+# wells were all plugged in 2015, which is the opposite fact (gate-tx H-14).
+CAUSES = (
+    "no_crosswalk_row",
+    "all_wells_after_month",
+    "all_wells_plugged_before_month",
+    "no_eligible_well",
+)
 
 # The gas-lease discriminator, read off the lease key's own first field rather than written as
 # a code: cr_tx_lease_key_1 puts OIL_GAS_CODE there because one wellbore can be completed on an
@@ -271,12 +281,25 @@ def _lease_month_rows(connection: psycopg.Connection) -> Iterator[dict[str, obje
         yield from cursor
 
 
-def _cause(candidates: Sequence[Eligible], volume: Decimal) -> str:
+def _cause(
+    candidates: Sequence[Eligible], wells: Sequence[Mapping[str, object]], month: date
+) -> str:
+    """Why this lease-month reached no well, read off the rows rather than off a default."""
     if not candidates:
         return "no_crosswalk_row"
-    if not any(candidate.eligible for candidate in candidates):
+    after = sum(
+        1
+        for well in wells
+        if well["completion_date"] is not None and well["completion_date"] > month
+    )
+    plugged = sum(
+        1 for well in wells if well["plug_date"] is not None and month > well["plug_date"]
+    )
+    if after == len(wells):
         return "all_wells_after_month"
-    return "no_eligible_well" if volume == 0 else "negative_correction"
+    if plugged == len(wells):
+        return "all_wells_plugged_before_month"
+    return "no_eligible_well"
 
 
 def build(
@@ -306,10 +329,11 @@ def build(
         lease_months += 1
         gas_lease = lease_key.startswith(GAS_LEASE_PREFIX)
 
-        candidates = [eligibility(well, month) for well in membership.get(lease_key, ())]
+        wells = list(membership.get(lease_key, ()))
+        candidates = [eligibility(well, month) for well in wells]
         allocated_shares = allocate_lease_month(volume, candidates, gas_lease=gas_lease)
         if not allocated_shares:
-            cause = _cause(candidates, volume)
+            cause = _cause(candidates, wells, month)
             causes[cause] += 1
             unallocated[stream] += volume
             ledger.append(

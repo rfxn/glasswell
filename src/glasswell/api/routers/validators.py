@@ -42,7 +42,12 @@ SHARE_UNIT = "share"
 
 # Every cause the ledger admits, listed so a block that served only the causes it happened to
 # hit would read as a clean run rather than as a partial one.
-CAUSES = ("no_crosswalk_row", "no_eligible_well", "all_wells_after_month", "negative_correction")
+CAUSES = (
+    "no_crosswalk_row",
+    "all_wells_after_month",
+    "all_wells_plugged_before_month",
+    "no_eligible_well",
+)
 
 EXAMPLE_JURISDICTION = next(
     str(row["jurisdiction_code"])

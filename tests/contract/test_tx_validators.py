@@ -56,7 +56,7 @@ def test_conservation_serves_its_coverage_and_decomposes_it_by_cause(
         "no_crosswalk_row",
         "no_eligible_well",
         "all_wells_after_month",
-        "negative_correction",
+        "all_wells_plugged_before_month",
     }
     assert int(block["lease_months_total"]["value"]) > 0
 

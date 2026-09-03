@@ -1082,9 +1082,9 @@ TX_RULES: tuple[dict[str, object], ...] = (
             ),
             "unallocated_causes": [
                 "no_crosswalk_row",
-                "no_eligible_well",
                 "all_wells_after_month",
-                "negative_correction",
+                "all_wells_plugged_before_month",
+                "no_eligible_well",
             ],
             "unallocated_share_degraded_at": 0.005,
             "cumulatives_grain": "well",

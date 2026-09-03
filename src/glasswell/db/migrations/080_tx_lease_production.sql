@@ -267,8 +267,8 @@ create table marts.tx_allocation_ledger (
     stream           text not null check (stream in ('liquid', 'gas')),
     lease_volume     numeric(18, 3) not null,
     cause            text not null check (cause in
-                         ('no_crosswalk_row', 'no_eligible_well', 'all_wells_after_month',
-                          'negative_correction')),
+                         ('no_crosswalk_row', 'all_wells_after_month',
+                          'all_wells_plugged_before_month', 'no_eligible_well')),
     snapshot_vintage date not null,
     derivation_id    text not null references lineage.derivations (derivation_id),
     primary key (lease_key, production_month, stream)
