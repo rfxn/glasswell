@@ -102,8 +102,8 @@ const PAYLOAD: StatusPayload = {
   ],
   jobs: [
     {
-      id: "source-refresh",
-      label: "Source refresh",
+      id: "ingest_nd_gis",
+      label: "North Dakota GIS ingest",
       state: "pending",
       last_run_at: "2026-08-26T04:30:00Z",
       next_run_at: null,
@@ -120,7 +120,7 @@ const PAYLOAD: StatusPayload = {
       refusal_class: null,
       launch_mode: "observe",
       schedule: {
-        job_id: "source-refresh",
+        job_id: "ingest_nd_gis",
         effective_from: "2026-09-02",
         published_at: "2026-09-02",
         rule_id: "cr_job_cadence_ingest_nd_gis_1",
@@ -245,6 +245,20 @@ afterEach(() => {
   unmountStatusPage();
   vi.unstubAllGlobals();
   clearSession();
+});
+
+describe("the job fixtures carry a shape the collector could emit", () => {
+  // The collector builds `id`, `schedule.job_id` and `schedule.rule_id` from one registry row,
+  // so a fixture where they disagree pins a payload no producer can send. A green suite over
+  // one of those is the class of fixture that once kept CI green across a real break.
+  it("names one job in the id, the schedule and the rule it cites", () => {
+    for (const job of PAYLOAD.jobs) {
+      if (job.schedule === null) continue;
+      expect(job.schedule.job_id).toBe(job.id);
+      if (job.schedule.rule_id === null) continue;
+      expect(job.schedule.rule_id).toMatch(new RegExp(`^cr_job_cadence_${job.id}_\\d+$`));
+    }
+  });
 });
 
 describe("the Status surface", () => {
