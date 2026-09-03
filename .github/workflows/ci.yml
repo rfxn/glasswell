@@ -32,10 +32,14 @@ jobs:
       # DR-05: the tile allowlist the proxy enforces and the function list martin is configured
       # to publish must be the same set. Property types come from each function's select list,
       # so there is no second declaration to compare. This fails fast without a database.
+      # Node ids are pinned here so this gate keeps a step of its own and cannot be lost in a
+      # tier's total. The seam track moved both fixtureless martin gates out of the integration
+      # tier -- that was the point of the move -- and this id did not follow, so the step exited
+      # 4 on "not found" rather than running anything.
       - name: martin config equals the tile allowlist
         run: >
           python -m pytest -q
-          tests/integration/test_tile_wire_types.py::test_the_martin_config_publishes_the_functions_the_allowlist_names
+          tests/unit/test_martin_config.py
 
       # The integration and contract tiers start their own PostGIS container through the
       # docker CLI, so no `services:` block applies here. The runner's daemon is local, so the
