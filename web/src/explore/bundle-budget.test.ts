@@ -155,6 +155,9 @@ describe("what the explorer's shell costs the reader", () => {
     // chunk gzips worse alone than inside a 40 kB one, while the bytes the reader downloads on
     // landing fall. That is the trap the card's own cut was added for in v0.73.
     const drawer = named("drawer");
+    // The bottom sheet's gesture is cut on the map-only ruling, not the drawer's: the card
+    // never renders over Explore, so the branch that sizes it never runs here.
+    const sheet = named("sheet");
     const route = reach(
       [...entryChunks(), named("shell")],
       (name) =>
@@ -163,7 +166,8 @@ describe("what the explorer's shell costs the reader", () => {
         name === neighbors ||
         name === statusChip ||
         name === card ||
-        name === drawer,
+        name === drawer ||
+        name === sheet,
     );
     const measured = route.reduce((sum, name) => sum + gzip(name), 0);
 
@@ -177,6 +181,7 @@ describe("what the explorer's shell costs the reader", () => {
       statusChip,
     );
     expect(route, "the lineage drawer is not on the explorer route").not.toContain(drawer);
+    expect(route, "the well card's bottom sheet is not on the explorer route").not.toContain(sheet);
     expect(measured, `explorer route ${measured} B gzipped over ${route.join(", ")}`).toBeLessThanOrEqual(
       BUDGET_BYTES.explorerRouteGzip,
     );

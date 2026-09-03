@@ -26,6 +26,11 @@ import { createSearch } from "./search/search.ts";
 
 const mapHost = required("gw-map");
 const cardHost = required("gw-card");
+const railChrome = required("gw-rail-chrome");
+const railToggle = required("gw-rail-toggle");
+const railStripName = required("gw-rail-strip-name");
+const railLocate = required("gw-rail-locate");
+const railGrab = required("gw-rail-grab");
 const drawerHost = required("gw-drawer");
 const keyHost = required("gw-key-host");
 const exploreHost = required("gw-explore");
@@ -50,12 +55,57 @@ let renderGeneration = 0;
 let unmountExplorer: (() => void) | undefined;
 let unmountStatusPage: (() => void) | undefined;
 let hadSession = false;
+// Collapse is a reader's affordance and never a state the app chooses, so it is per session
+// and never in the URL: a shared link opens the rail, because the link's purpose is the well.
+let railCollapsed = false;
+let railWell = "";
+let railPoint: { lon: number; lat: number } | null = null;
+let sheetWired = false;
+const sheetWidth = window.matchMedia("(max-width: 900px)");
 
 function required(id: string): HTMLElement {
   const element = document.getElementById(id);
   if (!element) throw new Error(`missing #${id} in index.html`);
   return element;
 }
+
+/**
+ * The rail's posture, in one place. `data-rail` drives the grid template, so a hidden rail
+ * reserves no column from Explore or from a map with no well open. Collapsed yields to an
+ * open drawer, which needs the rail's column to stack in.
+ */
+function applyRail(): void {
+  const open = !cardHost.hidden;
+  const collapsed = open && railCollapsed && shell.getAttribute("data-drawer") !== "open";
+  shell.setAttribute("data-rail", open ? (collapsed ? "collapsed" : "open") : "closed");
+  railChrome.hidden = !open;
+  const named = railWell || "the well card";
+  railToggle.setAttribute("aria-expanded", String(!collapsed));
+  railToggle.setAttribute("aria-label", collapsed ? `Expand ${named}` : `Collapse ${named}`);
+  railStripName.textContent = railWell;
+  railLocate.hidden = railPoint === null;
+  railLocate.setAttribute("aria-label", `Centre the map on ${named}`);
+  railGrab.hidden = !sheetWidth.matches;
+  if (!open || !sheetWidth.matches || sheetWired) return;
+  sheetWired = true;
+  // The gesture and the slider are the phone posture's alone, so a desktop reader who never
+  // sees a grab bar never downloads the module that drives it.
+  void import("./card/sheet.ts").then(({ wireSheet }) => wireSheet(shell, railGrab));
+}
+
+railToggle.addEventListener("click", () => {
+  railCollapsed = !railCollapsed;
+  applyRail();
+});
+
+// Unconditionally, unlike the opening fly-to: this is the reader's own control for putting a
+// well back in view, which matters in a rail because the map can be panned away from a card
+// that is still open.
+railLocate.addEventListener("click", () => {
+  if (railPoint) flyTo({ ...railPoint, zoom: 12 });
+});
+
+sheetWidth.addEventListener("change", () => applyRail());
 
 function commit(next: Partial<AppState>, mode: "push" | "replace" = "push"): void {
   state = { ...state, ...next };
@@ -68,8 +118,15 @@ function showWell(api10: string | null, mode: "push" | "replace" = "push"): void
   if (!api10) {
     cardHost.hidden = true;
     cardHost.replaceChildren();
+    railWell = "";
+    railPoint = null;
+    applyRail();
     return;
   }
+  // The api10 until the card's own heading lands: the rail's controls are named from the
+  // start rather than reading "the well card" for the length of a fetch.
+  railWell = api10;
+  railPoint = null;
   const source = pendingSource;
   // Loaded on the first well opened, not by every reader who loads the app: the card is the
   // largest module on the entry path and a reader who never clicks a dot never needs it. The
@@ -91,9 +148,16 @@ function showWell(api10: string | null, mode: "push" | "replace" = "push"): void
         onLocated: (point) => {
           const opening = source === "url" && deepLinkNeedsCamera;
           if (opening) deepLinkNeedsCamera = false;
+          railPoint = point;
+          applyRail();
           if (source === "search" || opening) flyTo({ ...point, zoom: 12 });
         },
       });
+    })
+    .then(() => {
+      if (state.well !== api10) return;
+      railWell = cardHost.querySelector("h2")?.textContent ?? api10;
+      applyRail();
     })
     .catch((error: unknown) => {
       // A chunk that will not load is the one failure the card cannot report itself. Silence
@@ -110,6 +174,7 @@ function showWell(api10: string | null, mode: "push" | "replace" = "push"): void
 function openExplain(handle: string | null, mode: "push" | "replace" = "push"): void {
   commit({ explain: handle }, mode);
   shell.setAttribute("data-drawer", handle ? "open" : "closed");
+  applyRail();
   if (!handle) {
     drawerHost.hidden = true;
     drawerHost.replaceChildren();
@@ -270,6 +335,9 @@ function hideMapOverlays(): void {
   drawerHost.hidden = true;
   drawerHost.replaceChildren();
   shell.setAttribute("data-drawer", "closed");
+  railWell = "";
+  railPoint = null;
+  applyRail();
 }
 
 async function renderView(): Promise<void> {
@@ -426,6 +494,7 @@ async function start(): Promise<void> {
   });
 
   shell.setAttribute("data-drawer", "closed");
+  applyRail();
 
   // The map writes its own share parameters; mirror them so a later viewport commit,
   // which serialises the snapshot taken at boot, does not drop them.
