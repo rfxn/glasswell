@@ -37,8 +37,8 @@
 -- publication is not registered, so this lands before any seeder that carries them.
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
-select rule_id, date '2026-09-01', 'UNRELEASED',
-       '0000000000000000000000000000000000000000'
+select rule_id, date '2026-09-01', 'v0.78',
+       '5b37bf0363095b3e0cda2d6c3fb5d57e235de28f'
   from unnest(array[
        'cr_co_wells_api10_1',
        'cr_co_wells_status_vocab_1',
@@ -406,7 +406,6 @@ select r.jurisdiction_code, date '2026-09-02', date '2026-09-02',
     ('CO', 'geometry_provenance', 'cr_co_wells_geometry_provenance_1'),
     ('CO', 'location_qualifier', 'cr_co_wells_location_qualifier_1'),
     ('CO', 'geometry_scope', 'cr_co_wells_geometry_scope_1'),
-    ('CO', 'absence:well_type', 'cr_co_wells_well_type_1'),
     ('CO', 'inventory_jurisdiction', 'cr_co_inventory_not_served_1'),
     ('CO', 'liquids', 'cr_co_production_liquids_1'),
     ('CO', 'entity_key', 'cr_co_production_entity_key_1'),
@@ -450,8 +449,8 @@ select j.job_id, j.label, j.kind, j.entry_point, j.argv, j.anchor_source_id, j.j
      ' row, so a fifth mart is this row and no module.'::text),
     ('co_counts', 'Registry well counts after Colorado', 'mart', 'glasswell.marts.counts',
      array[]::text[], 'co_ecmc_monthly_prod', null::text,
-     'marts.counts has no natural source of its own -- it measures whatever the registry holds'
-     ' -- so it anchors on the source its dependency anchors on, and this row exists because'
+     'marts.counts has no natural source of its own: it measures whatever the registry holds,'
+     ' so it anchors on the source its dependency anchors on, and this row exists because'
      ' /v1/jurisdictions serves a new registration with no well_count and no measured_on until'
      ' something has measured it.'::text)
   ) as j(job_id, label, kind, entry_point, argv, anchor_source_id, jurisdiction, rationale)

@@ -384,8 +384,8 @@ async function boot(): Promise<void> {
   }
 
   try {
-    // Imported here rather than at module scope: the fetch runs once per boot and the
-    // entry chunk is measured against a budget with 50 bytes in it.
+    // Imported here rather than at module scope: the fetch runs once per boot and would cost
+    // the entry chunk more headroom than the budget has. web/PERF.md records the measurement.
     const { loadGlossary } = await import("./glossary/load.ts");
     await loadGlossary();
     highlight(document.querySelector("#gw-help-panel") ?? document.body, termIndex());

@@ -102,8 +102,8 @@ const PAYLOAD: StatusPayload = {
   ],
   jobs: [
     {
-      id: "source-refresh",
-      label: "Source refresh",
+      id: "ingest_nd_gis",
+      label: "North Dakota GIS ingest",
       state: "pending",
       last_run_at: "2026-08-26T04:30:00Z",
       next_run_at: null,
@@ -120,11 +120,42 @@ const PAYLOAD: StatusPayload = {
       refusal_class: null,
       launch_mode: "observe",
       schedule: {
-        job_id: "source-refresh",
+        job_id: "ingest_nd_gis",
         effective_from: "2026-09-02",
         published_at: "2026-09-02",
         rule_id: "cr_job_cadence_ingest_nd_gis_1",
         rationale: "The four NDIC layers are pulled in one pass.",
+        external_timer_unit: null,
+        external_service_unit: null,
+      },
+    },
+    {
+      id: "ingest_fracfocus",
+      label: "FracFocus archive ingest",
+      state: "ok",
+      last_run_at: "2026-07-01T02:00:00Z",
+      next_run_at: null,
+      // The row the v0.78 visual gate measured N2, N3 and N6 on: `detail` falls back to the
+      // cadence note when a job records no refusal, the note carries a command-line flag, and
+      // its next-due instant is a month behind the observation.
+      detail: "Owner-triggered; the release takes the archive with --promote-design",
+      unit: null,
+      timer_armed: null,
+      kind: "ingest",
+      jurisdiction: null,
+      cadence: "Owner-triggered; the release takes the archive with --promote-design",
+      next_due_at: "2026-08-05T03:00:00Z",
+      duration_seconds: null,
+      last_outcome: "refused",
+      refusal_code: null,
+      refusal_class: null,
+      launch_mode: "observe",
+      schedule: {
+        job_id: "ingest_fracfocus",
+        effective_from: "2026-09-02",
+        published_at: "2026-09-02",
+        rule_id: "cr_job_cadence_ingest_fracfocus_1",
+        rationale: "The archive is republished without notice, so the release decides when.",
         external_timer_unit: null,
         external_service_unit: null,
       },
@@ -247,6 +278,69 @@ afterEach(() => {
   clearSession();
 });
 
+describe("the job tables answer with what a reader does not already have", () => {
+  // gate-v078 N2/N3/N6, on the register. Rendered from PAYLOAD directly rather than through a
+  // mounted page, so each case names one cell rather than the whole surface.
+  const rowFor = (label: string): HTMLElement => {
+    const rows = [...host.querySelectorAll("tbody tr")] as HTMLElement[];
+    const row = rows.find((item) => item.querySelector("th")?.textContent?.startsWith(label));
+    expect(row, `no job row for ${label}`).toBeTruthy();
+    return row as HTMLElement;
+  };
+
+  beforeEach(async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(envelope(PAYLOAD)));
+    await mountStatusPage(host, { onForbidden });
+  });
+
+  it("N2: does not open the disclosure on the sentence already in the Cadence cell", () => {
+    const repeated = rowFor("FracFocus archive ingest");
+    const cadence = repeated.querySelectorAll("td")[1]?.textContent?.trim();
+    const paragraphs = [...repeated.querySelectorAll("details p")].map((node) =>
+      node.textContent?.trim(),
+    );
+
+    expect(cadence).toContain("Owner-triggered");
+    expect(paragraphs).not.toContain(cadence);
+    expect(paragraphs.length).toBeGreaterThan(0);
+    // The row whose detail says something the Cadence cell does not still says it.
+    const distinct = rowFor("North Dakota GIS ingest");
+    expect([...distinct.querySelectorAll("details p")].map((node) => node.textContent)).toContain(
+      PAYLOAD.jobs[0]?.detail,
+    );
+  });
+
+  it("N3: holds a command-line flag on one line, still spelled with ASCII hyphens", () => {
+    const row = rowFor("FracFocus archive ingest");
+    const held = row.querySelector(".gw-nowrap");
+
+    expect(held?.textContent).toBe("--promote-design");
+    expect(row.querySelectorAll("td")[1]?.textContent).toContain("--promote-design");
+  });
+
+  it("N6: says a next-due instant that has already passed was due, not is due", () => {
+    const overdue = rowFor("FracFocus archive ingest").querySelector(".gw-status-overdue");
+    const ahead = rowFor("North Dakota GIS ingest").querySelector(".gw-status-overdue");
+
+    expect(overdue?.textContent).toContain("Was due");
+    expect(ahead).toBeNull();
+  });
+});
+
+describe("the job fixtures carry a shape the collector could emit", () => {
+  // The collector builds `id`, `schedule.job_id` and `schedule.rule_id` from one registry row,
+  // so a fixture where they disagree pins a payload no producer can send. A green suite over
+  // one of those is the class of fixture that once kept CI green across a real break.
+  it("names one job in the id, the schedule and the rule it cites", () => {
+    for (const job of PAYLOAD.jobs) {
+      if (job.schedule === null) continue;
+      expect(job.schedule.job_id).toBe(job.id);
+      if (job.schedule.rule_id === null) continue;
+      expect(job.schedule.rule_id).toMatch(new RegExp(`^cr_job_cadence_${job.id}_\\d+$`));
+    }
+  });
+});
+
 describe("the Status surface", () => {
   it("shows an announced loading state before the request resolves", async () => {
     let resolveResponse: ((response: Response) => void) | undefined;
@@ -280,8 +374,9 @@ describe("the Status surface", () => {
       "Observability boundaries",
     ]);
     expect(host.querySelectorAll("dl").length).toBeGreaterThan(0);
-    // Four: checks, datasets, one grouped data-job table, and the platform-job table.
-    expect(host.querySelectorAll("table")).toHaveLength(4);
+    // Five: checks, datasets, two grouped data-job tables — one jurisdiction, one
+    // cross-jurisdiction — and the platform-job table.
+    expect(host.querySelectorAll("table")).toHaveLength(5);
     expect(host.querySelectorAll("time").length).toBeGreaterThan(4);
     expect(host.textContent).toContain("Unchanged");
     expect(host.textContent).toContain("Every 8 days");

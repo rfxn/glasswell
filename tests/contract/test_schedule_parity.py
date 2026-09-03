@@ -25,6 +25,7 @@ from glasswell.seed.schedules import (
     UNJOBBED_SOURCES,
     anchors,
     cadence_rule_id,
+    resolved_schedules,
 )
 
 pytestmark = pytest.mark.contract
@@ -108,13 +109,19 @@ def test_gate_4_every_cadence_rule_is_published_and_the_null_set_is_exactly_the_
 
 
 def test_gate_4_the_seeded_rules_are_exactly_the_rules_the_schedules_name() -> None:
+    """Read off each row's own rule id rather than derived from its job id: a job carries one
+    decision per posture it has held, so deriving the ordinal would name only the founding one
+    and a supersession would seed a rule no row cites."""
     named = {
-        cadence_rule_id(str(row["job_id"]))
+        str(row.get("rule_id") or cadence_rule_id(str(row["job_id"])))
         for row in SCHEDULES
         if row["trigger"] != "external_timer"
     }
 
     assert {str(rule["rule_id"]) for rule in SCHEDULE_RULES} == named
+    assert any(rule_id.endswith("_2") for rule_id in named), (
+        "no row cites a successor rule, so this reading is indistinguishable from the derived one"
+    )
 
 
 def test_gate_5_the_seed_tuple_is_what_the_registry_resolves(db: psycopg.Connection) -> None:
@@ -125,7 +132,7 @@ def test_gate_5_the_seed_tuple_is_what_the_registry_resolves(db: psycopg.Connect
     assert set(registry.by_job) == {str(job["job_id"]) for job in JOBS}
     assert set(registry.refusal_codes) == {code for code, _class, _sentence in REFUSAL_CODES}
 
-    by_schedule = {str(row["job_id"]): row for row in SCHEDULES}
+    by_schedule = resolved_schedules()
     for job in registry:
         declared = next(row for row in JOBS if row["job_id"] == job.job_id)
         schedule = by_schedule[job.job_id]
@@ -150,21 +157,23 @@ def test_gate_5_the_seed_tuple_is_what_the_registry_resolves(db: psycopg.Connect
         }
 
 
-def test_gate_5_no_launching_row_shares_an_entry_point_with_an_installed_timer(
+def test_gate_5_every_resolved_row_observes_and_publishes_the_posture_it_carries(
     db: psycopg.Connection,
 ) -> None:
-    """The invariant, in the form that survived the first jurisdiction to launch.
+    """The posture the owner ruled on 2026-09-03, read where the scheduler reads it.
 
-    The hazard was never `launch` itself: it is two runners over one command. The four legacy
-    jurisdictions stay armed through `glasswell-ingest.service`, so their rows observe and this
-    gate says so by naming the unit rather than the posture; a jurisdiction that installs no
-    unit has no second runner and may launch when its own cadence rule argues for it.
+    `launch` is the launch-flip track's own act, never a per-jurisdiction registration choice:
+    `plan.py:363` rewrites a due `would_run` entry to `run` for a launching row and
+    `runner.py:306` starts it, so one launching row is one unattended run on the next tick.
+    The narrower double-run invariant it used to state -- no launching row over an entry point
+    an installed timer already drives -- is `plan.double_run_rows`, and its red is planted in
+    `tests/integration/test_job_schedule_registry.py`; kept here as the conditional it is, so
+    the two survive independently.
     """
     registry = load_schedules(db)
 
     launching = [job for job in registry if job.launch_mode != "observe"]
-    assert launching, "no row launches; this gate would be vacuous"
-    assert [job.job_id for job in launching if job.legacy_unit is not None] == []
+    assert [job.job_id for job in launching] == []
     timer_driven = {
         job.entry_point for job in registry if job.trigger == "external_timer"
     }
@@ -173,20 +182,27 @@ def test_gate_5_no_launching_row_shares_an_entry_point_with_an_installed_timer(
     assert {job.job_id for job in registry if job.legacy_unit is not None} <= observing
 
     # The published half. A cadence rule states its job's posture in a spec a consumer parses,
-    # and the row is what actually runs; a rule that says observe over a row that launches is
-    # a served conformance rule contradicting the decision it was written to carry.
+    # and the row is what actually runs; a rule that says launch over a row that observes is
+    # a served conformance rule contradicting the decision it was written to carry. Each row is
+    # held to the rule it actually cites, not to the one its job id would derive: a superseded
+    # row goes on publishing what it decided, and reading the founding rule here would compare
+    # today's posture against a decision that no longer resolves.
     # A timer-driven job has no cadence rule to disagree with, which is the one exemption.
     governed = [job for job in registry if job.trigger != "external_timer"]
+    assert governed, "no row carries a cadence rule; the published half would be vacuous"
+    assert any(job.rule_id != cadence_rule_id(job.job_id) for job in governed), (
+        "no resolved row cites a successor, so this reading matches the derived one"
+    )
     with db.cursor() as cursor:
         cursor.execute(
             "select rule_id, spec->>'launch_mode' from lineage.conformance_rules"
             " where rule_id = any(%s)",
-            ([cadence_rule_id(job.job_id) for job in governed],),
+            ([job.rule_id for job in governed],),
         )
         published = dict(cursor.fetchall())
 
     assert published == {
-        cadence_rule_id(job.job_id): job.launch_mode for job in governed
+        job.rule_id: job.launch_mode for job in governed
     }, "a cadence rule publishes a launch_mode its own schedule row contradicts"
 
 
@@ -291,7 +307,7 @@ def test_gate_5_the_seed_tuple_is_what_slash_v1_schedules_serves(client) -> None
         params = {}
 
     assert set(served) == {str(job["job_id"]) for job in JOBS}
-    by_schedule = {str(row["job_id"]): row for row in SCHEDULES}
+    by_schedule = resolved_schedules()
     for job in JOBS:
         job_id = str(job["job_id"])
         row = served[job_id]

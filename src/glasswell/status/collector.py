@@ -204,7 +204,7 @@ def _job(
 
 _LAST_JOB_RUNS = """
 select distinct on (job_id) job_id, outcome, started_at, completed_at, planned_at,
-       refusal_code
+       refusal_code, failure_detail
   from lineage.job_runs
  order by job_id, planned_at desc, run_id desc
 """
@@ -317,10 +317,12 @@ def _registry_jobs(
             )
             last_run_at = last["completed_at"] if last else None
             next_run_at = None
+            # A failed run's own reason outranks the cadence, which answers a different
+            # question; 076 CHECKs that a failed outcome carries one.
             detail = (
                 registry.refusal_codes[last["refusal_code"]].sentence
                 if last and last["refusal_code"] in registry.refusal_codes
-                else job.cadence_note
+                else (last or {}).get("failure_detail") or job.cadence_note
             )
             timer_armed = None
         jobs.append(

@@ -76,8 +76,11 @@ def test_the_walk_finds_the_rules_it_is_meant_to_guard() -> None:
     assert len(SPECS) >= 38
     named = {rule_id for _, rule_id, _ in SPECS}
     assert {"cr_nd_neighbors_scope_1", "cr_mt_neighbors_scope_1"} <= named
-    # The skip is narrow: a supersession takes one row out, not a tier of them.
-    assert len(LIVE) >= len(SPECS) - 10
+    # The slack is a census of what is actually superseded, never headroom: it was 10 when the
+    # register carried ten supersessions and is 16 now that the launch-posture ruling has
+    # appended a successor to each of Colorado's six cadence rules. Anything that moves it
+    # without a supersession to point at is the tier-sized skip this line exists to catch.
+    assert len(LIVE) >= len(SPECS) - 16
 
 
 @pytest.mark.parametrize(

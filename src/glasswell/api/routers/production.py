@@ -31,7 +31,6 @@ from glasswell.api.responses import (
     iso,
     month_label,
 )
-from glasswell.api.routers.health import source_health_data
 from glasswell.api.routers.wells import API10_PATTERN, RANKED_WELLS, pending_allocation
 from glasswell.lineage.conformance import allocated_series_rule, lease_reporting_rule
 from glasswell.lineage.envelope import series
@@ -39,6 +38,7 @@ from glasswell.lineage.ids import format_handle
 from glasswell.lineage.jurisdictions import JurisdictionRegistry
 from glasswell.lineage.selector_registry import identity_selector_term
 from glasswell.lineage.vintages import select_production
+from glasswell.status.source_health import source_health_data
 
 router = APIRouter(tags=["wells"])
 

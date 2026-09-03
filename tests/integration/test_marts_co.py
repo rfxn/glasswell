@@ -22,7 +22,10 @@ from tests.support.seed import seed_manifest, seed_well, seed_well_spatial
 
 pytestmark = pytest.mark.integration
 
-BASELINE = Path("/root/admin/work/proj/glasswell/work-output/seam-mart-baseline.json")
+# Committed, not read out of work-output/: that directory is git-excluded and this path was
+# absolute to one workstation, so the comparison ran on exactly one machine and raised
+# PermissionError everywhere else -- including before its own absence refusal could fire.
+BASELINE = Path(__file__).resolve().parents[1] / "fixtures" / "marts" / "seam-mart-baseline.json"
 API10 = "0512324638"
 PLANNED_API10 = "0512399002"
 

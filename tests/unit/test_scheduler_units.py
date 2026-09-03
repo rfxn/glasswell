@@ -390,8 +390,20 @@ def test_the_map_is_placed_once_and_a_second_run_changes_nothing(tmp_path) -> No
     assert "local   all             postgres                                peer\n" in hba
     assert "local   replication     all                                     peer\n" in hba
     ident = (etc / "pg_ident.conf").read_text()
-    assert ident.count("include_if_exists 'pg_ident.d/glasswell.conf'") == 1, ident
-    assert (etc / "pg_ident.d" / "glasswell.conf").exists()
+    # Unquoted: an ident include takes a bare filename. The quoted postgresql.conf form is read
+    # as a name with quotes in it, which is how v0.78 reached a host with an empty usermap and
+    # refused every peer login but postgres.
+    assert ident.count("include_if_exists pg_ident.d/glasswell.conf") == 1, ident
+    assert "include_if_exists 'pg_ident.d/glasswell.conf'" not in ident, ident
+    # The line is only worth anything if the name it carries resolves from the config directory,
+    # which is the assertion that would have caught the quoting.
+    included = [
+        line.split(None, 1)[1].strip()
+        for line in ident.splitlines()
+        if line.startswith("include_if_exists ")
+    ]
+    assert included == ["pg_ident.d/glasswell.conf"], included
+    assert (etc / included[0]).exists(), f"{included[0]} does not resolve under {etc}"
     assert "reload postgresql" in (tmp_path / "systemctl.log").read_text()
 
 

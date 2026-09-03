@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-in_build-3FA55E?style=flat-square" alt="Status: in build">
-  <img src="https://img.shields.io/badge/release-v0.77-2A9BB5?style=flat-square" alt="Release: v0.77">
+  <img src="https://img.shields.io/badge/release-v0.79-2A9BB5?style=flat-square" alt="Release: v0.79">
   <img src="https://img.shields.io/badge/blueprint-v0.5-2A9BB5?style=flat-square" alt="Blueprint v0.5">
   <img src="https://img.shields.io/badge/license-proprietary-7C8B96?style=flat-square" alt="License: proprietary">
   <img src="https://img.shields.io/badge/data-public_only-3FA55E?style=flat-square" alt="Public data only">
@@ -383,9 +383,9 @@ glasswell-basin-boundaries   load basin boundaries; glasswell-eia-boundaries fet
 Each multi-step load has a runbook that states its commands, the user that runs each,
 expected counts and the undo: [Montana](docs/runbook-mt-load.md),
 [basins](docs/runbook-basin-load.md), [Colorado](docs/runbook-co-tier2.md), and New Mexico in
-[two](docs/runbook-nm-tier2.md) [tiers](docs/runbook-nm-promotion.md). Colorado's is the one
-you may never need: its six jobs are registered to launch, so the scheduler runs the first load
-itself and the runbook is for watching it, bisecting it, or loading a host without it.
+[two](docs/runbook-nm-tier2.md) [tiers](docs/runbook-nm-promotion.md). Colorado's six jobs are
+registered and observed rather than launched, so its runbook is the first load, not a way of
+watching one happen.
 
 The integration tier starts one `postgis/postgis:16-3.4` container per session and clones a
 migrated template database per test. It honours an inherited `DOCKER_HOST`, then the local

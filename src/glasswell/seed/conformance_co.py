@@ -182,6 +182,9 @@ PRODUCTION_FIRST_MONTH = "2004-01"
 PRODUCTION_LAST_MONTH = "2026-06"
 PRODUCTION_DENSE_FIRST_MONTH = "2025-11"
 PRODUCTION_DENSE_LAST_MONTH = "2026-05"
+# Sidetrack ordinals and their row counts, not state codes: these are API-10 positions 11-12,
+# where "05" is a sixth sidetrack and not Colorado. A two-digit scan over src/glasswell reads
+# them as jurisdiction literals, so name them here rather than at whichever grep finds them.
 PRODUCTION_SIDETRACKS = {"00": 381094, "01": 6205, "02": 449, "04": 39, "03": 20, "05": 6}
 
 # The sentence every Colorado cumulative is served beside. A total over a rolling window is
@@ -882,8 +885,8 @@ CO_CADENCE_DECISIONS: dict[str, dict[str, str]] = {
     },
     "co_counts": {
         "rule": "Re-measure the registry's served well counts after the Colorado mart refresh.",
-        "rationale": "marts.counts has no natural source of its own -- it measures whatever the"
-        " registry holds -- so it anchors on the source its dependency anchors on rather than"
+        "rationale": "marts.counts has no natural source of its own: it measures whatever the"
+        " registry holds, so it anchors on the source its dependency anchors on rather than"
         " on a source it reads, and the rationale says so rather than leaving a reader to"
         " wonder. It launches because no installed timer drives glasswell.marts.counts and"
         " /v1/jurisdictions serves Colorado with no well_count and no measured_on until it has"

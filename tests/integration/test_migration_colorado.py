@@ -41,13 +41,22 @@ def migration_sql(name: str) -> str:
     return next(item.sql for item in discover_migrations() if item.name == name)
 
 
-def test_one_placeholder_evidence_pair_in_the_whole_file() -> None:
+def test_one_evidence_pair_in_the_whole_file() -> None:
     """M-1: the release gate asserts at most one of each repo-wide, so the registration reads
-    its evidence back from the publications insert rather than restating it."""
+    its evidence back from the publications insert rather than restating it.
+
+    Counted by shape, not by the placeholder's value: the pair is `UNRELEASED` plus forty zeros
+    before the repoint and the tag plus its merge commit after, and the invariant this guards --
+    that the file states its evidence once and reads it back everywhere else -- is the same on
+    both sides of that edit. Asserting the placeholder itself made the guard true only until the
+    release it was written for shipped."""
     body = migration_sql(MIGRATION)
 
-    assert body.count(f"'{PLACEHOLDER_TAG}'") == 1
-    assert body.count(PLACEHOLDER_COMMIT) == 1
+    tags = re.findall(r"'(?:UNRELEASED|v\d+\.\d+)'", body)
+    commits = re.findall(r"'[0-9a-f]{40}'", body)
+
+    assert len(tags) == 1, f"the file states its evidence tag {len(tags)} times: {tags}"
+    assert len(commits) == 1, f"the file states its evidence commit {len(commits)} times"
 
 
 def test_no_two_digit_prefix_literal_reaches_the_migration() -> None:
@@ -302,7 +311,12 @@ def test_the_mart_table_and_its_view_are_installed_with_their_grants(
 
 
 def test_all_four_schedule_tables_carry_colorado(db: psycopg.Connection) -> None:
-    """N-32: the rows are written by both writers, so a deploy that seeds nothing schedules."""
+    """N-32: the rows are written by both writers, so a deploy that seeds nothing schedules.
+
+    Scoped to this migration's own effective date. `079_scheduler_observe.sql` supersedes all
+    six with observing rows at a later one, and an unscoped read would silently start counting
+    that correction as though it were part of this registration.
+    """
     job_ids = [str(job["job_id"]) for job in CO_JOBS]
     with db.cursor() as cursor:
         cursor.execute(
@@ -317,8 +331,8 @@ def test_all_four_schedule_tables_carry_colorado(db: psycopg.Connection) -> None
         sources = cursor.fetchone()[0]
         cursor.execute(
             "select job_id, rule_id, trigger, launch_mode from lineage.job_schedules"
-            " where job_id = any(%s)",
-            (job_ids,),
+            " where job_id = any(%s) and effective_from = %s",
+            (job_ids, CO_REGISTERED_ON),
         )
         schedules = cursor.fetchall()
         cursor.execute(
@@ -332,6 +346,9 @@ def test_all_four_schedule_tables_carry_colorado(db: psycopg.Connection) -> None
     assert sources == sum(len(JOB_SOURCES[job_id]) for job_id in job_ids if job_id in JOB_SOURCES)
     assert len(schedules) == 6
     assert all(rule_id is not None for _job, rule_id, _trigger, _mode in schedules)
+    # This migration's own rows, read at its own effective date: 079 appends a supersession
+    # that resolves observe over every one of them, and job_schedules is append-only, so what
+    # 077 registered has to still be here to be superseded.
     assert {mode for *_rest, mode in schedules} == {"launch"}
     assert edges == len([edge for edge in DEPENDENCIES if edge[0] in set(job_ids)])
     assert edges == 5

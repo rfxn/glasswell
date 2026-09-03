@@ -1,8 +1,9 @@
 """Acting on a plan: the ledger, the locks, the reconciler and the transient unit.
 
-Nothing here launches on a tick in v0.77 -- every seeded row observes -- but the launch path is
-built and exercised through `--run`, so turning it on is a row rather than a code change. What
-the tick does do is reconcile: a run whose unit vanished has to close with a reason, because a
+Nothing here launches on a tick until the launch flip lands: every row the registry resolves
+observes, and `tests/unit/test_schedule_posture.py` is what holds it. The launch path is built
+and exercised through `--run`, so turning it on is a row rather than a code change. What the
+tick does do is reconcile: a run whose unit vanished has to close with a reason, because a
 dropped session that leaves an open row and no evidence is how an operator loses a night.
 """
 

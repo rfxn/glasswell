@@ -30,7 +30,6 @@ from glasswell.api.responses import (
     iso,
     month_label,
 )
-from glasswell.api.routers.health import source_health_data
 from glasswell.api.routers.wells import API10_PATTERN
 from glasswell.lineage.envelope import collect_handles, distinct_handles, figure
 from glasswell.lineage.explain import MAX_HANDLES
@@ -42,6 +41,7 @@ from glasswell.marts.cumulatives import (
     ROLLUP_RULE,
     STATE_API_PREFIXES,
 )
+from glasswell.status.source_health import source_health_data
 
 router = APIRouter(tags=["wells"])
 

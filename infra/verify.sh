@@ -884,7 +884,10 @@ fi
 printf 'scheduler identity\n'
 assert "no role named root exists" 0 \
     "$("${PSQL[@]}" "select count(*) from pg_roles where rolname = 'root'")"
-assert "glasswell_scheduler can log in and is not a superuser" 'f|t' \
+# false|true, not f|t: psql renders a bare boolean column through boolout as t/f, but a
+# concatenation goes through the text cast, which spells the same value true/false. The old
+# expectation could not match any role, so this line had never once passed.
+assert "glasswell_scheduler can log in and is not a superuser" 'false|true' \
     "$("${PSQL[@]}" "select rolsuper || '|' || rolcanlogin from pg_roles where rolname = 'glasswell_scheduler'")"
 assert "glasswell_scheduler holds no pipeline membership" f \
     "$("${PSQL[@]}" "select pg_has_role('glasswell_scheduler', 'glasswell_pipeline', 'MEMBER')")"

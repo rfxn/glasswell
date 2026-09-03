@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -12,8 +13,17 @@ from glasswell.lineage.schedules import (
     ScheduledJob,
     ScheduleRegistry,
 )
+from glasswell.scheduler import plan as planner
 from glasswell.scheduler.cli import _exit_code
-from glasswell.scheduler.plan import PlanEntry, hour_of, monthly_occurrence, order_jobs
+from glasswell.scheduler.plan import (
+    Evidence,
+    PlanEntry,
+    hour_of,
+    monthly_occurrence,
+    order_jobs,
+    plan_tick,
+)
+from glasswell.seed.schedules import JOB_SOURCES, resolved_schedules
 
 pytestmark = pytest.mark.unit
 
@@ -50,6 +60,39 @@ def job(job_id: str, *, kind: str = "mart", depends: tuple[str, ...] = ()) -> Sc
             JobDependency(depends_on_job_id=name, trigger_on="changed", rationale="fixture")
             for name in depends
         ),
+    )
+
+
+def seeded_job(job_id: str) -> ScheduledJob:
+    """A registry job built from the seed's own resolved row, so the posture is not the
+    fixture's opinion: the seed says what `job_schedules_as_of` would resolve for this job."""
+    row = resolved_schedules()[job_id]
+    return ScheduledJob(
+        job_id=job_id,
+        label=job_id,
+        kind="ingest",
+        entry_point=f"glasswell.ingest.{job_id}",
+        argv=(),
+        anchor_source_id=min(JOB_SOURCES[job_id]),
+        jurisdiction="CO",
+        run_as="glasswell",
+        rationale="the seed's row, read as the registry resolves it",
+        effective_from=DAY.date(),
+        published_at=DAY.date(),
+        rule_id=str(row.get("rule_id") or f"cr_job_cadence_{job_id}_1"),
+        trigger=str(row["trigger"]),
+        launch_mode=str(row.get("launch_mode", "observe")),
+        cadence_interval=row.get("cadence_interval"),  # type: ignore[arg-type]
+        cadence_monthly_on_day=None,
+        cadence_note=str(row["cadence_note"]),
+        memory_max="6G",
+        timeout_seconds=3600,
+        concurrency_group="default",
+        enabled=True,
+        legacy_unit=None,
+        external_timer_unit=None,
+        external_service_unit=None,
+        source_ids=tuple(JOB_SOURCES[job_id]),
     )
 
 
@@ -208,3 +251,53 @@ def test_a_failed_or_interrupted_run_still_exits_non_zero() -> None:
 
     assert _exit_code([ran], registry) == 0
     assert _exit_code([refusal("scheduler_lost_unit")], registry) == 1
+
+
+def _first_observation(job: ScheduledJob) -> Evidence:
+    """Nothing has polled this job's sources and each carries an interval, which is the state
+    the due rule returns `hour_of(now)` for."""
+    return Evidence(
+        freshness={},
+        source_interval={source_id: timedelta(days=1) for source_id in job.source_ids},
+        ran_at={},
+        derived_at={},
+        last_outcome={},
+        fetched_new_at={},
+    )
+
+
+def test_a_due_colorado_job_stays_would_run_because_the_seed_resolves_observe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The ruling of 2026-09-03, tested where it takes effect rather than where it is written.
+
+    `plan_tick` rewrites a due `would_run` entry to `run` for any job whose resolved row says
+    `launch`, and the runner then starts it, so Colorado's six jobs are only disarmed if what
+    the seed resolves for them observes. Reading the posture out of the seed is what makes this
+    redden on a row that re-registers `launch` rather than on an edit to this file.
+    """
+    job = seeded_job("co_ecmc_gis")
+    monkeypatch.setattr(planner, "collect_evidence", lambda *_a, **_k: _first_observation(job))
+
+    plan = plan_tick(None, registry=registry_of(job), now=DAY)  # type: ignore[arg-type]
+
+    assert [(entry.job_id, entry.action) for entry in plan.entries] == [
+        ("co_ecmc_gis", "would_run")
+    ]
+
+
+def test_the_same_row_at_launch_would_have_run_on_that_tick(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The negative half, so the test above is not a tautology about an unreachable branch:
+    one field is the difference between a recorded plan and an unattended ECMC pull."""
+    observing = seeded_job("co_ecmc_gis")
+    launching = replace(observing, launch_mode="launch")
+    monkeypatch.setattr(
+        planner, "collect_evidence", lambda *_a, **_k: _first_observation(launching)
+    )
+
+    plan = plan_tick(None, registry=registry_of(launching), now=DAY)  # type: ignore[arg-type]
+
+    assert [entry.action for entry in plan.entries] == ["run"]
+    assert observing.launch_mode == "observe"

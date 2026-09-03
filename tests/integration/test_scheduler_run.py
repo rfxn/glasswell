@@ -265,8 +265,20 @@ def test_a_dry_run_writes_no_row(seeded) -> None:
     assert runs(seeded, FAKE_JOB) == []
 
 
-def test_a_tick_with_less_budget_left_than_the_next_job_defers_it(seeded) -> None:
-    """N-8: concurrency is 1, so a herd of due jobs is the sum of its timeouts."""
+def test_a_tick_with_less_budget_left_than_the_next_job_defers_it(seeded, monkeypatch) -> None:
+    """N-8: concurrency is 1, so a herd of due jobs is the sum of its timeouts.
+
+    `_guard` refuses on the uid before it looks at the budget, and dropping to `glasswell` needs
+    root, so on a non-root host this job is refused `requires_superuser` and never reaches the
+    deferral this test is about. The uid cannot be sidestepped by registering the current user
+    instead: `scheduled_jobs.run_as` is CHECKed against ('glasswell', 'postgres'), correctly --
+    the scheduler runs as root and drops, and a job naming the invoker would defeat that.
+
+    So the uid guard is stubbed rather than satisfied, and named here as another test's subject:
+    test_status_jobs.py parametrises `requires_superuser` and `runner.py` is where it is decided.
+    Before this, the test passed only where the suite ran as root.
+    """
+    monkeypatch.setattr("glasswell.scheduler.runner.uid_reachable", lambda _run_as: True)
     register_probe_job(seeded, source_id="tx_gis_wells_county")
     with seeded.cursor() as cursor:
         cursor.execute(

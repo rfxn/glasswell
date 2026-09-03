@@ -164,3 +164,40 @@ describe("the wordmark accent is text, so it clears AA as text", () => {
     expect(light).not.toMatch(/--cyan-text:\s*var\(--cyan\)/);
   });
 });
+
+/**
+ * gate-v078 N9. The DIR-11 ladder is 1600 full · 1366 full · 1024 hidden · 820 · 390 hidden,
+ * and at 820 signed out the strapline read `— NO NAKED NUM` with no ellipsis to say so. v0.76
+ * N1 keyed the compact-rail rules on the session on the reading that signed out already held;
+ * it did not, and every surface this project shoots is signed out.
+ */
+describe("the compact rail does not cut the positioning line at either posture", () => {
+  const band =
+    /@media \(min-width: 621px\) and \(max-width: 900px\) \{([\s\S]*?)\n\}/.exec(CSS)?.[1] ?? "";
+  const rules = [...band.matchAll(/([^{}]+)\{([^}]*)\}/g)].map((rule) => ({
+    selector: (rule[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, "").trim(),
+    body: rule[2] ?? "",
+  }));
+  const ruleFor = (selector: string) => rules.filter((rule) => rule.selector === selector);
+
+  it("stops the brand paying for the rail whether or not a session is open", () => {
+    expect(band, "the 621-900 band is gone").not.toBe("");
+    expect(ruleFor(".gw-brand").map((rule) => rule.body.trim())).toEqual(["flex: none;"]);
+    expect(ruleFor(".gw-search-input")[0]?.body).toMatch(/width:\s*min\(/);
+  });
+
+  it("lets the strap take a second line rather than be cut where it is still shown", () => {
+    const strap = ruleFor(".gw-strap")[0]?.body ?? "";
+
+    expect(strap).toMatch(/white-space:\s*normal/);
+    expect(strap).toMatch(/overflow:\s*visible/);
+  });
+
+  it("hides it only where a Sign-out control is competing for the same row", () => {
+    const hidden = rules.filter((rule) => /display:\s*none/.test(rule.body));
+
+    expect(hidden).toHaveLength(1);
+    expect(hidden[0]?.selector).toContain("gw-logout-btn");
+    expect(hidden[0]?.selector).toContain(".gw-strap");
+  });
+});
