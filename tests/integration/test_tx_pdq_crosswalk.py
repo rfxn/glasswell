@@ -139,10 +139,20 @@ def test_the_crosswalk_and_the_lease_dimension_stage_unfiltered(loaded, seeded) 
     )
 
 
-def test_the_lease_member_is_left_for_the_promotion_phase(loaded, seeded) -> None:
-    """Pass one reads the small members and the crosswalk. The lease member is pass two's, and
-    both passes read one on-disk artifact under one manifest and one sha256."""
-    assert scalar(seeded, "select count(*) from staging.tx_pdq_lease_cycle") == 0
+def test_both_passes_read_one_artifact_under_one_manifest(loaded, seeded) -> None:
+    """Pass one reads the small members and the crosswalk, pass two the lease member, and
+    neither re-fetches: the raw bytes are retained sealed 0o444 and their hash is the
+    manifest's, so widening the scope later is a re-parse rather than a second 3.65 GB fetch."""
+    staged = scalar(seeded, "select count(*) from staging.tx_pdq_lease_cycle")
+
+    assert staged == loaded.lease_rows_staged > 0
+    assert scalar(
+        seeded,
+        "select count(distinct manifest_id) from ("
+        "  select manifest_id from staging.tx_pdq_lease_cycle"
+        "  union select manifest_id from staging.tx_pdq_well_completion) all_staged",
+    ) == 1
+    assert loaded.lease_parse_derivation_id != loaded.parse_derivation_id
 
 
 def test_membership_lands_as_the_canonical_crosswalk(loaded, seeded) -> None:
@@ -186,8 +196,19 @@ def test_the_exclusion_is_an_audit_event_and_never_a_quarantine(loaded, seeded) 
         "select count(*) from lineage.audit_events"
         " where event_type = 'staging.scope_excluded' and subject_id = %s",
         (loaded.manifest_id,),
-    ) == 1
-    assert scalar(seeded, "select count(*) from lineage.quarantine_rows") == 0
+    ) >= 1
+    assert scalar(
+        seeded,
+        "select coalesce(sum((payload ->> 'rows_excluded')::int), 0)"
+        "  from lineage.audit_events"
+        " where event_type = 'staging.scope_excluded' and subject_id = %s",
+        (loaded.manifest_id,),
+    ) > 0
+    # The only rows quarantined are the ones that failed to be volumes. Nothing is quarantined
+    # for being out of scope, because nothing about an out-of-scope row failed.
+    with seeded.cursor() as cursor:
+        cursor.execute("select distinct reason_code from lineage.quarantine_rows")
+        assert {row[0] for row in cursor.fetchall()} <= {"impossible_volume"}
 
 
 def test_every_measurement_this_load_took_lands_dated_in_the_census(loaded, seeded) -> None:

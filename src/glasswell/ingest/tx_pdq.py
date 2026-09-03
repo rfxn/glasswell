@@ -22,11 +22,14 @@ import zipfile
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
 import httpx
+import polars as pl
 import psycopg
+from psycopg.rows import dict_row
 
 from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import resolve_environment
@@ -41,6 +44,7 @@ from glasswell.lineage import (
     fetch_raw,
     lineage_session,
     load_rules,
+    quarantine,
 )
 from glasswell.lineage.audit import emit
 from glasswell.lineage.fetch import resolve_raw_root
@@ -58,6 +62,9 @@ FORMAT_RULE = "cr_tx_pdq_format_1"
 ARCHIVE_RULE = "cr_tx_well_status_archive_1"
 SCOPE_RULE = "cr_tx_pdq_scope_1"
 CROSSWALK_RULE = "cr_tx_pdq_crosswalk_1"
+LIQUIDS_RULE = "cr_tx_liquids_basis_1"
+GAS_RULE = "cr_tx_gas_basis_1"
+GRAIN_RULE = "cr_tx_production_grain_1"
 API10_RULE = "cr_tx_api10_build_1"
 
 COUNTY_MEMBER = "GP_COUNTY_DATA_TABLE.dsv"
@@ -70,6 +77,27 @@ REGULATORY_LEASE_MEMBER = "OG_REGULATORY_LEASE_DW_DATA_TABLE.dsv"
 DELIMITER = "}"
 BATCH_ROWS = 20_000
 
+# canonical.production_monthly's volume is numeric(18,3), so fifteen integral digits is the
+# ceiling. A PDQ volume is NUMBER(9), which fits; anything wider is not a volume this schema
+# can hold and is quarantined rather than truncated into a number that looks filed.
+VOLUME_CEILING = Decimal(10) ** 15
+
+# The lease-month's four volume columns, and which canonical stream each becomes. The two
+# liquid columns are disjoint populations keyed by OIL_GAS_CODE, so their union double-counts
+# nothing; the two gas-lift columns are injection and are never read.
+STREAM_COLUMNS: tuple[tuple[str, str, str, str], ...] = (
+    ("lease_oil_prod_vol", "oil", "bbl", "O"),
+    ("lease_cond_prod_vol", "condensate", "bbl", "G"),
+    ("lease_gas_prod_vol", "gas", "mcf", "G"),
+    ("lease_csgd_prod_vol", "gas", "mcf", "O"),
+)
+
+LEASE_CYCLE_COLUMNS = (
+    "oil_gas_code", "district_no", "lease_no", "cycle_year_month", "operator_no", "field_no",
+    "field_type", "gas_well_no", "prod_report_filed_flag", "lease_oil_prod_vol",
+    "lease_gas_prod_vol", "lease_cond_prod_vol", "lease_csgd_prod_vol", "lease_name",
+    "operator_name", "field_name",
+)
 COMPLETION_COLUMNS = (
     "oil_gas_code", "district_no", "lease_no", "well_no", "api_county_code", "api_unique_no",
     "onshore_assc_cnty", "well_root_no", "wellbore_shutin_dt", "well_shutin_dt",
@@ -124,6 +152,9 @@ class CrosswalkLoad:
     api10s_with_two_lease_keys: int
     lease_keys: int
     in_scope_lease_keys: int
+    lease_parse_derivation_id: str = ""
+    lease_rows_staged: int = 0
+    lease_promotion: Mapping[str, int] = field(default_factory=dict)
     members: tuple[MemberInventory, ...] = field(default_factory=tuple)
     window: tuple[str, str] | None = None
     precheck: Mapping[str, Any] = field(default_factory=dict)
@@ -136,6 +167,8 @@ class CrosswalkLoad:
             "staged_completions": self.staged_completions,
             "staged_regulatory_leases": self.staged_regulatory_leases,
             "membership_rows": self.membership_rows,
+            "lease_rows_staged": self.lease_rows_staged,
+            "lease_promotion": dict(self.lease_promotion),
             "api10s": self.api10s,
             "api10s_with_two_lease_keys": self.api10s_with_two_lease_keys,
             "lease_keys": self.lease_keys,
@@ -551,6 +584,8 @@ def load(
     restage: bool = False,
     pgdata: Path | str | None = None,
     expect_bytes: int = ARCHIVE_BYTES_MEASURED,
+    promote_years: Sequence[int] | None = None,
+    stage_only: bool = False,
 ) -> CrosswalkLoad:
     """Fetch the archive once and read pass one from the stored bytes.
 
@@ -561,6 +596,9 @@ def load(
     format_rule = rule(connection, FORMAT_RULE)
     scope_rule = rule(connection, SCOPE_RULE)
     crosswalk_rule = rule(connection, CROSSWALK_RULE)
+    liquids_rule = rule(connection, LIQUIDS_RULE)
+    gas_rule = rule(connection, GAS_RULE)
+    grain_rule = rule(connection, GRAIN_RULE)
     api10_rule = rule(connection, API10_RULE, source_id="tx_gis_wells_county")
 
     precheck = precheck_filesystems(
@@ -584,7 +622,9 @@ def load(
     members = member_inventory(fetched.payload_path)
     if restage:
         with connection.cursor() as cursor:
-            for table in ("tx_pdq_well_completion", "tx_pdq_regulatory_lease"):
+            for table in (
+                "tx_pdq_well_completion", "tx_pdq_regulatory_lease", "tx_pdq_lease_cycle"
+            ):
                 cursor.execute(
                     f"delete from staging.{table} where manifest_id = %s", (manifest.manifest_id,)
                 )
@@ -593,6 +633,9 @@ def load(
         window = production_window(archive)
         districts = district_labels(archive)
         parse_id, completions, regulatory = _stage_members(
+            connection, archive, manifest.manifest_id, format_rule=format_rule
+        )
+        lease_parse_id, lease_rows = stage_lease_cycle(
             connection, archive, manifest.manifest_id, format_rule=format_rule
         )
 
@@ -608,6 +651,32 @@ def load(
     allowlist = scope_allowlist(
         connection, manifest.manifest_id, scope_rule.spec["county_codes"]
     )
+    promotion: dict[str, int] = {}
+    if not stage_only:
+        years = promote_years if promote_years is not None else _staged_years(
+            connection, manifest.manifest_id
+        )
+        for year in years:
+            # Per calendar year, with the headroom asserted before each append rather than
+            # discovered inside one: canonical is append-only and a half-promoted vintage is a
+            # state somebody has to reason about.
+            if pgdata is not None:
+                precheck_filesystems(raw_root, needed=0, pgdata=pgdata)
+            _, measured = promote_lease_cycle(
+                connection,
+                manifest.manifest_id,
+                parse_derivation_id=lease_parse_id,
+                vintage=vintage,
+                allowlist=allowlist,
+                scope_rule=scope_rule,
+                liquids_rule=liquids_rule,
+                gas_rule=gas_rule,
+                grain_rule=grain_rule,
+                years=[year],
+            )
+            for measure, value in measured.items():
+                promotion[measure] = promotion.get(measure, 0) + value
+            promotion["high_water_year"] = year
 
     session = current_session()
     emit(
@@ -637,6 +706,8 @@ def load(
             "crosswalk_lease_keys": measurements["lease_keys"],
             "crosswalk_lease_keys_in_scope": len(allowlist),
             "districts_published": len(districts),
+            "lease_months_staged": lease_rows,
+            "lease_rows_promoted": promotion.get("rows_appended", 0),
         },
         measured_on=vintage,
         derivation_id=membership_id,
@@ -648,6 +719,9 @@ def load(
         staged_completions=completions,
         staged_regulatory_leases=regulatory,
         membership_rows=membership_rows,
+        lease_parse_derivation_id=lease_parse_id,
+        lease_rows_staged=lease_rows,
+        lease_promotion=promotion,
         api10s=measurements["api10s"],
         api10s_with_two_lease_keys=measurements["api10s_with_two_lease_keys"],
         lease_keys=measurements["lease_keys"],
@@ -657,6 +731,345 @@ def load(
         precheck=precheck,
         unchanged=bool(fetched.unchanged) and not restage,
     )
+
+
+_INSERT_LEASE_CYCLE = (
+    "insert into staging.tx_pdq_lease_cycle (manifest_id, source_row_ordinal, "
+    + ", ".join(LEASE_CYCLE_COLUMNS)
+    + ") values (%(manifest_id)s, %(source_row_ordinal)s, "
+    + ", ".join(f"%({column})s" for column in LEASE_CYCLE_COLUMNS)
+    + ") on conflict (manifest_id, source_row_ordinal) do nothing"
+)
+
+_INSERT_CANONICAL = """
+insert into canonical.production_monthly (
+    entity_type, entity_key, reporting_level, api10, production_month, stream, source_id,
+    report_vintage, volume, unit, granularity, null_semantics, value_hash, source_manifest_id,
+    derivation_id)
+values ('lease', %(entity_key)s, 'lease', null, %(production_month)s, %(stream)s, %(source_id)s,
+        %(report_vintage)s, %(volume)s, %(unit)s, 'lease_reported', %(null_semantics)s,
+        %(value_hash)s, %(manifest_id)s, %(derivation_id)s)
+on conflict do nothing
+"""
+
+_STAGED_LEASE_ROWS = (
+    "select source_row_ordinal, " + ", ".join(LEASE_CYCLE_COLUMNS)
+    + " from staging.tx_pdq_lease_cycle where manifest_id = %(manifest_id)s"
+    + " and (%(years)s::text[] is null or left(cycle_year_month, 4) = any(%(years)s))"
+    + " order by source_row_ordinal"
+)
+
+
+def stage_lease_cycle(
+    connection: psycopg.Connection,
+    archive: zipfile.ZipFile,
+    manifest_id: str,
+    *,
+    format_rule: ConformanceRule,
+) -> tuple[str, int]:
+    """Pass two: the lease member, column-projected and unfiltered.
+
+    Unfiltered because the county lives in the crosswalk and not here, and column-projected
+    because the member carries allowables, balances and dispositions this track promotes
+    nothing from. Both passes read the same on-disk artifact under one manifest and one sha256.
+    """
+    staged = 0
+    with connection.cursor() as cursor:
+        batch: list[dict[str, Any]] = []
+        for ordinal, row in enumerate(
+            _member_rows(archive, LEASE_CYCLE_MEMBER, None)
+        ):
+            batch.append(
+                {
+                    "manifest_id": manifest_id,
+                    "source_row_ordinal": ordinal,
+                    **{column: row[column.upper()].strip() or None
+                       for column in LEASE_CYCLE_COLUMNS},
+                }
+            )
+            staged += 1
+            if len(batch) >= BATCH_ROWS:
+                cursor.executemany(_INSERT_LEASE_CYCLE, batch)
+                batch.clear()
+        if batch:
+            cursor.executemany(_INSERT_LEASE_CYCLE, batch)
+
+    with derive(
+        "stage.parse",
+        output=OutputSpec(
+            store="postgres",
+            dataset="staging.tx_pdq_lease_cycle",
+            partition={"manifest_id": manifest_id},
+        ),
+        params={"format_rule": format_rule.rule_id, "member": LEASE_CYCLE_MEMBER, "pass": 2},
+        inputs=[InputRef(kind="manifest", ref_id=manifest_id)],
+        rules=[format_rule.rule_id],
+    ) as context:
+        context.set_rows(staged)
+        context.set_output_hash(hash_payload({"rows": staged, "manifest_id": manifest_id}))
+    return context.derivation_id, staged
+
+
+def production_month(cycle_year_month: str | None) -> date | None:
+    """`YYYYMM` as the month's first day, which is how canonical keys a production month."""
+    text = (cycle_year_month or "").strip()
+    if len(text) != 6 or not text.isdigit():
+        return None
+    year, month = int(text[:4]), int(text[4:])
+    if not 1 <= month <= 12:
+        return None
+    return date(year, month, 1)
+
+
+def _volume(raw: str | None) -> tuple[Decimal | None, str | None]:
+    """The filed volume, or the reason it is not one.
+
+    A negative value is a correction the operator filed and is promoted as one: the RRC says
+    production information may change as revised, corrected or delinquent reports arrive, and
+    a correction dropped here would leave the lease's history overstated for ever.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return None, None
+    try:
+        value = Decimal(text)
+    except InvalidOperation:
+        return None, "impossible_volume"
+    if abs(value) >= VOLUME_CEILING:
+        return None, "impossible_volume"
+    return value, None
+
+
+def _null_semantics(filed_flag: str | None, volume: Decimal | None) -> str:
+    """A filed zero and an unfiled month are two different facts and are never collapsed.
+
+    PROD_REPORT_FILED_FLAG is the operator's own statement that a report exists for the month,
+    so a zero under it is a reported zero and a blank without it is a month nobody filed.
+    """
+    filed = (filed_flag or "").strip().upper() == "Y"
+    if not filed:
+        return "no_report"
+    if volume is None:
+        return "no_report"
+    return "reported_zero" if volume == 0 else "reported"
+
+
+def _lease_records(
+    row: Mapping[str, Any], *, allowlist: set[str]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str | None]:
+    """One canonical row per filed stream, or the reason the lease-month produced none."""
+    code = (row["oil_gas_code"] or "").strip()
+    district = (row["district_no"] or "").strip()
+    lease_no = (row["lease_no"] or "").strip()
+    month = production_month(row["cycle_year_month"])
+    if not (code and district and lease_no):
+        return [], [], "key_incomplete"
+    if month is None:
+        return [], [], "out_of_range_date"
+    key = lease_key(code, district, lease_no)
+    if key not in allowlist:
+        return [], [], "out_of_scope"
+
+    records: list[dict[str, Any]] = []
+    rejects: list[dict[str, Any]] = []
+    for column, stream, unit, owning_code in STREAM_COLUMNS:
+        if code != owning_code:
+            continue
+        volume, reason = _volume(row[column])
+        if reason is not None:
+            rejects.append(
+                {
+                    "source_row_ordinal": row["source_row_ordinal"],
+                    "entity_key": key,
+                    "production_month": month.isoformat(),
+                    "stream": stream,
+                    "column": column,
+                    "value": row[column],
+                    "reason_code": reason,
+                }
+            )
+            continue
+        semantics = _null_semantics(row["prod_report_filed_flag"], volume)
+        records.append(
+            {
+                "entity_key": key,
+                "production_month": month,
+                "stream": stream,
+                # canonical.volume is NOT NULL, so an unfiled month is carried as zero and the
+                # null_semantics label is the whole of what keeps it from reading as a filed
+                # zero -- the same contract nd_mpr.py states at its own promotion.
+                "volume": volume if volume is not None else Decimal(0),
+                "filed_volume": volume,
+                "unit": unit,
+                "null_semantics": semantics,
+            }
+        )
+    return records, rejects, None
+
+
+def promote_lease_cycle(
+    connection: psycopg.Connection,
+    manifest_id: str,
+    *,
+    parse_derivation_id: str,
+    vintage: date,
+    allowlist: set[str],
+    scope_rule: ConformanceRule,
+    liquids_rule: ConformanceRule,
+    gas_rule: ConformanceRule,
+    grain_rule: ConformanceRule,
+    years: Sequence[int] | None = None,
+) -> tuple[str, dict[str, int]]:
+    """The filed lease volume at its native grain, promoted a calendar year at a time.
+
+    Per year because canonical is append-only and a half-promoted vintage is a state somebody
+    has to reason about: a stop lands on a year boundary with a recorded high-water month
+    rather than in the middle of one.
+    """
+    with connection.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(
+            _STAGED_LEASE_ROWS,
+            {
+                "manifest_id": manifest_id,
+                "years": None if years is None else [str(year) for year in years],
+            },
+        )
+        staged = cursor.fetchall()
+
+    records: list[dict[str, Any]] = []
+    rejects: list[dict[str, Any]] = []
+    excluded = 0
+    keyless = 0
+    for row in staged:
+        made, bad, reason = _lease_records(row, allowlist=allowlist)
+        if reason == "out_of_scope":
+            excluded += 1
+            continue
+        if reason is not None:
+            keyless += 1
+            rejects.append({**row, "reason_code": reason})
+            continue
+        records.extend(made)
+        rejects.extend(bad)
+
+    with derive(
+        "canonical.promote",
+        output=OutputSpec(
+            store="postgres",
+            dataset="canonical.production_monthly",
+            partition={"manifest_id": manifest_id, "entity_type": "lease", "state": "TX"},
+        ),
+        params={
+            "reporting_level": "lease",
+            "granularity": "lease_reported",
+            "rows_excluded_out_of_scope": excluded,
+            "years": sorted(years) if years is not None else None,
+        },
+        inputs=[
+            InputRef(kind="derivation", ref_id=parse_derivation_id),
+            InputRef(kind="manifest", ref_id=manifest_id, as_of_vintage=vintage),
+        ],
+        rules=[
+            scope_rule.rule_id, liquids_rule.rule_id, gas_rule.rule_id, grain_rule.rule_id
+        ],
+    ) as context:
+        context.set_rows(len(records))
+        context.set_output_hash(
+            hash_payload(
+                {
+                    "rows": sorted(
+                        f"{row['entity_key']}/{row['production_month'].isoformat()}"
+                        f"/{row['stream']}"
+                        for row in records
+                    )
+                }
+            )
+        )
+
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            _INSERT_CANONICAL,
+            [
+                {
+                    **{key: value for key, value in row.items() if key != "filed_volume"},
+                    "source_id": SOURCE_ID,
+                    "report_vintage": vintage,
+                    "manifest_id": manifest_id,
+                    "derivation_id": context.derivation_id,
+                    "value_hash": hash_payload(
+                        {
+                            "volume": str(row["filed_volume"])
+                            if row["filed_volume"] is not None
+                            else None,
+                            "unit": row["unit"],
+                            "granularity": "lease_reported",
+                            "null_semantics": row["null_semantics"],
+                        }
+                    ),
+                }
+                for row in records
+            ],
+        )
+        appended = max(cursor.rowcount, 0)
+
+    quarantined = 0
+    for reason_code in sorted({str(reject["reason_code"]) for reject in rejects}):
+        quarantined += _quarantine_lease(
+            connection,
+            [reject for reject in rejects if reject["reason_code"] == reason_code],
+            manifest_id=manifest_id,
+            reason_code=reason_code,
+        )
+
+    session = current_session()
+    emit(
+        connection,
+        "staging.scope_excluded",
+        subject_type="manifest",
+        subject_id=manifest_id,
+        payload={
+            "rows_excluded": excluded,
+            "rows_staged": len(staged),
+            "scope_rule": scope_rule.rule_id,
+            "lease_keys_in_scope": len(allowlist),
+            "note": "the county scope is applied here because OG_LEASE_CYCLE carries no county",
+        },
+        correlation_id=session.correlation_id,
+        occurred_at=session.clock.now(),
+    )
+    return context.derivation_id, {
+        "rows_read": len(staged),
+        "rows_built": len(records),
+        "rows_appended": appended,
+        "rows_excluded_out_of_scope": excluded,
+        "rows_keyless": keyless,
+        "rows_quarantined": quarantined,
+    }
+
+
+def _quarantine_lease(
+    connection: psycopg.Connection,
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    manifest_id: str,
+    reason_code: str,
+) -> int:
+    if not rows:
+        return 0
+    session = current_session()
+    quarantine(
+        connection,
+        pl.DataFrame([dict(row) for row in rows], infer_schema_length=None),
+        reason_code=reason_code,
+        manifest_id=manifest_id,
+        source_id=SOURCE_ID,
+        staging_table="staging.tx_pdq_lease_cycle",
+        stage="validate",
+        seen_at=session.clock.now(),
+        rule_id=None,
+        correlation_id=session.correlation_id,
+    )
+    return len(rows)
 
 
 def archive_well_status(
@@ -708,6 +1121,17 @@ def archive_well_status(
     return archived
 
 
+def _staged_years(connection: psycopg.Connection, manifest_id: str) -> list[int]:
+    """The calendar years the staged member covers, read rather than assumed."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select distinct left(cycle_year_month, 4) from staging.tx_pdq_lease_cycle"
+            " where manifest_id = %s and cycle_year_month ~ '^[0-9]{6}$' order by 1",
+            (manifest_id,),
+        )
+        return [int(row[0]) for row in cursor.fetchall()]
+
+
 def _newest_sibling(mft: MftClient, names: Sequence[str]) -> Any:
     """The listed sibling the portal modified last, refusing rather than guessing on a tie."""
     candidates = [entry for entry in mft.listing.entries if entry.name in set(names)]
@@ -740,6 +1164,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--restage", action="store_true", help="re-parse from the stored bytes after a rule change"
     )
     parser.add_argument(
+        "--stage-only",
+        action="store_true",
+        help="stage every member and promote no lease rows",
+    )
+    parser.add_argument(
+        "--year",
+        action="append",
+        type=int,
+        default=None,
+        help="promote only this calendar year; repeatable",
+    )
+    parser.add_argument(
         "--archive-well-status",
         action="store_true",
         help="archive the 26-month W-10 and G-10 files and parse neither",
@@ -769,6 +1205,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     raw_root=arguments.raw_root,
                     restage=arguments.restage,
                     pgdata=arguments.pgdata,
+                    promote_years=arguments.year,
+                    stage_only=arguments.stage_only,
                 )
             else:
                 with MftClient(PDQ_LINK) as mft:
@@ -779,6 +1217,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                         raw_root=arguments.raw_root,
                         restage=arguments.restage,
                         pgdata=arguments.pgdata,
+                        promote_years=arguments.year,
+                        stage_only=arguments.stage_only,
                     )
         connection.commit()
     print(json.dumps(result.to_dict(), sort_keys=True))
