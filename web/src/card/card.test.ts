@@ -1107,6 +1107,17 @@ function problem(status: number, code: string): Response {
 }
 
 describe("a cumulative total that some months were allocated into", () => {
+  const EMPTY_COVERAGE = {
+    coverage_complete: false,
+    first_month: "2024-01",
+    last_month: "2025-12",
+    months_no_report: 0,
+    months_reported: 0,
+    months_reported_zero: 0,
+    months_withheld: 0,
+    span_months: 24,
+  };
+
   function allocatedCumulatives() {
     const base = cumulativesEnvelope as unknown as {
       data: Record<string, unknown>;
@@ -1118,12 +1129,22 @@ describe("a cumulative total that some months were allocated into", () => {
         ...base.data,
         granularity: "lease_allocated",
         coverage_outcome: "observed_with_allocated",
+        // The coverage block counts well-grain canonical months, and a lease-grain
+        // jurisdiction has none: this is the shape the Texas arm actually serves, and the
+        // one that put "0 of 24 months admitted" under a 7,200 bbl total.
+        coverage: {
+          ...(base.data["coverage"] as Record<string, unknown>),
+          oil_bbl: EMPTY_COVERAGE,
+          gas_mcf: EMPTY_COVERAGE,
+          water_bbl: EMPTY_COVERAGE,
+        },
         allocation: {
           basis: "allocated",
           model_id: "alloc_v0_2026_09",
           rule_id: "cr_tx_allocation_v0_1",
           months: {
-            liquid: { value: "4", unit: "months", d: "drv_a#api10=x&stream=liquid" },
+            liquid: { value: "24", unit: "months", d: "drv_a#api10=x&stream=liquid" },
+            gas: { value: "24", unit: "months", d: "drv_a#api10=x&stream=gas" },
           },
           share: {
             liquid: { value: "0.6700", unit: "share", d: "drv_a#api10=x&stream=liquid" },
@@ -1183,5 +1204,26 @@ describe("a cumulative total that some months were allocated into", () => {
 
     expect(host.querySelector(".gw-alloc-coverage")).toBeNull();
     expect(host.querySelector(".gw-alloc-share")).toBeNull();
+    expect(host.querySelector(".gw-scope-allocated")).toBeNull();
+    expect(host.textContent).toContain("months admitted");
+  });
+
+  it("counts the allocated months rather than reporting none admitted", async () => {
+    // `months_reported` counts well-grain canonical months and there are none, so the scope
+    // line said nothing was admitted directly under two non-null totals — a number the
+    // surface contradicts in the next sentence, which is worse than a naked one.
+    await render();
+    const scope = host.querySelector<HTMLElement>(".gw-scope-allocated");
+
+    expect(scope?.textContent).toBe("24 of 24 months allocated · 0 observed");
+    expect(host.textContent).not.toContain("months admitted");
+  });
+
+  it("takes that count from the served figure, so it resolves like any other", async () => {
+    await render();
+    const scope = host.querySelector<HTMLElement>(".gw-scope-allocated");
+
+    expect(scope?.dataset["handle"]).toBe("drv_a#api10=x&stream=liquid");
+    expect(scope?.getAttribute("title")).toContain("cr_tx_allocation_v0_1");
   });
 });
