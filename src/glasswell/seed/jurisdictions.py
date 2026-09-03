@@ -41,6 +41,11 @@ RESTATED_EVIDENCE_COMMIT = "5b37bf0363095b3e0cda2d6c3fb5d57e235de28f"
 # every published_at Texas already carries, or it does not resolve and Texas goes on serving the
 # registration that says it has no production. Neither founding + 1 nor RESTATED_ON + 1: a
 # standing gate plants a rival registration on each of those instants.
+#
+# Independent of the conformance rules' published_vintage, and free to sit ahead of the host's
+# today: load_jurisdictions reads max(published_at) as its knowledge cut rather than the host
+# clock, which is why the v0.78 restatement shipped a day ahead of the host and resolved. The
+# vintage is the clock that must never lead the host; this one is not (gate-tx H-9).
 TX_SUPERSEDED_ON = date(2026, 9, 6)
 TX_SUPERSEDED_EVIDENCE_TAG = "UNRELEASED"
 # Spelled out rather than computed, for the reason the restatement's is: release.py scans this

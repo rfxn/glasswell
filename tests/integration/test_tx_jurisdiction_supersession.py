@@ -10,11 +10,15 @@ knowledge cut.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import psycopg
 import pytest
 from psycopg.rows import dict_row
 
 from glasswell.db.migrate import discover_migrations
+from glasswell.lineage.clock import utc_today
+from glasswell.lineage.jurisdictions import clear_jurisdiction_cache, load_jurisdictions
 from glasswell.seed import seed_all
 from glasswell.seed.jurisdictions import (
     PRESENTATION_COLUMNS,
@@ -212,3 +216,43 @@ def test_the_superseded_disclosure_is_still_served(db: psycopg.Connection) -> No
             " where rule_id = 'cr_tx_allocation_scope_1'"
         )
         assert cursor.fetchone()[0] == 1
+
+
+def test_a_supersession_published_ahead_of_the_host_still_resolves(
+    db: psycopg.Connection,
+) -> None:
+    """H-9's ruling, as a test: the two clocks are independent.
+
+    `load_jurisdictions` reads `max(published_at)` as its knowledge cut, not the host clock, so
+    a registration published after the host's today is the one that serves -- which is how the
+    v0.78 restatement shipped a day ahead of VM 111 and resolved. The clock that must never
+    lead the host is the conformance rules' `published_vintage`, which
+    `lineage/conformance.py` reads against `utc_today()`; a tree that read the host clock here
+    too would leave Texas serving the registration that says it has no production while the
+    cumulative row cites the allocation rule.
+    """
+    seed_all(db)
+    ahead = utc_today() + timedelta(days=45)
+    with db.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.jurisdictions"
+            " (jurisdiction_code, effective_from, published_at, evidence_tag,"
+            "  evidence_commit, name, regulator_name, regulator_url, identity_scheme,"
+            "  identity_is_unique, identity_prefix, identity_pattern, source_ids,"
+            "  liquids_basis, rationale)"
+            " select jurisdiction_code, effective_from, %s, 'v0.99', %s, name,"
+            "        regulator_name, regulator_url, identity_scheme, identity_is_unique,"
+            "        identity_prefix, identity_pattern, source_ids, 'oil-only', rationale"
+            "   from lineage.jurisdictions"
+            "  where jurisdiction_code = 'TX' and published_at = %s",
+            (ahead, "f" * 40, TX_SUPERSEDED_ON),
+        )
+    db.commit()
+    clear_jurisdiction_cache()
+
+    registry = load_jurisdictions(db)
+
+    assert registry.knowledge_as_of == ahead, "the knowledge cut is not the host's today"
+    assert registry.by_code["TX"].published_at == ahead
+    assert registry.by_code["TX"].liquids_basis == "oil-only"
+    clear_jurisdiction_cache()

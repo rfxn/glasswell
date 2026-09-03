@@ -29,14 +29,22 @@
 --      the merge commit and not the head this branch was written against.
 --   3. published_vintage 2026-09-02 -> the date the tag is cut. It is the conformance rules'
 --      own clock and is read against the host's today, so it must never be a date the deploy
---      host has not reached: a rule published in the future resolves nowhere and
---      /v1/conformance/<id> serves 404 for it.
---   4. The supersession's published_at 2026-09-06 -> the same date, and it MUST be strictly
---      later than every published_at Texas already carries (2026-09-02 founding, 2026-09-04
---      restatement), or the supersession does not resolve and Texas keeps serving the row
---      that says it has no production. It must also be neither the founding date plus one day
---      nor the restatement date plus one day: standing gates plant a rival registration on
---      each of those instants and the partial unique indexes would refuse them.
+--      host has not reached: lineage/conformance.py:891 takes max(today, min(vintage)) as its
+--      knowledge cut, so a rule published in the future leaves allocated_series_rule None and
+--      the card falls back to the pending-allocation disclosure, while
+--      api/routers/conformance.py:404 serves 404 for the rule id the cumulative row is still
+--      citing -- a split brain in which the total says "allocated, see this rule" and the rule
+--      does not exist.
+--   4. The supersession's published_at 2026-09-06 or later. It is INDEPENDENT of item 3: it
+--      need not equal that vintage, and unlike it, it MAY sit ahead of the host's today --
+--      load_jurisdictions reads max(published_at) as its knowledge cut, not the host clock
+--      (lineage/jurisdictions.py:207-209), which is why the v0.78 restatement shipped a day
+--      ahead of the host and resolved. What it MUST be is strictly later than every
+--      published_at Texas already carries (2026-09-02 founding, 2026-09-04 restatement), or
+--      the supersession does not resolve and Texas keeps serving the row that says it has no
+--      production; and neither the founding date plus one day nor the restatement date plus
+--      one day, because standing gates plant a rival registration on each of those instants
+--      and the partial unique indexes would refuse them.
 --   5. seed/jurisdictions.py TX_SUPERSEDED_ON / TX_SUPERSEDED_EVIDENCE_TAG /
 --      TX_SUPERSEDED_EVIDENCE_COMMIT -> the same three values, in the same commit. The seed is
 --      the second writer.
