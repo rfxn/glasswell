@@ -261,6 +261,9 @@ def test_collector_no_longer_discloses_attempt_or_cadence_as_uninstrumented(
     monkeypatch.setattr(status_collector, "_restore_drill_job", lambda *_args: job)
     monkeypatch.setattr(status_collector, "_offsite_copy_job", lambda *_args: job)
     monkeypatch.setattr(status_collector, "_recovery_drill_job", lambda *_args: job)
+    # The three allocation residuals read the marts and the rule that thresholds them, which
+    # this fake connection has no rows for. What the disclosure list is about is unaffected.
+    monkeypatch.setattr(status_collector, "_allocation_checks", lambda *_args: [])
 
     snapshot = status_collector.collect(cast(Connection, connection))
 

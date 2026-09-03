@@ -88,8 +88,6 @@ export function renderChart(
 
     const band = stateBand(view.chart);
     container.appendChild(band);
-    const allocation = allocationBand(view.chart);
-    if (allocation) container.appendChild(allocation);
 
     const axis = document.createElement("p");
     axis.className = "gw-chart-axis";
@@ -369,6 +367,11 @@ function stateBand(chart: ChartSeries): HTMLElement {
     row.append(name, cells);
     wrapper.appendChild(row);
   }
+  // The allocation rows go inside this wrapper, not beside it. `align` sets --gw-band-left and
+  // --gw-band-right on the element it is handed, and a sibling strip inherits neither -- which
+  // is a band drawn to a different width from the plot it sits under, and which was exactly
+  // what the first shot showed.
+  for (const row of allocationRows(chart)) wrapper.appendChild(row);
   return wrapper;
 }
 
@@ -388,14 +391,13 @@ function mark(column: SeriesColumn, index: number, month: string): HTMLElement {
  * prefix. Drawn only where a class reached the wire, so an observed jurisdiction's chart is
  * unchanged and a Texas well never shows a share without saying it is one.
  */
-function allocationBand(chart: ChartSeries): HTMLElement | null {
-  if (!chart.allocated) return null;
-  const wrapper = document.createElement("div");
-  wrapper.className = "gw-alloc-strip";
+function allocationRows(chart: ChartSeries): HTMLElement[] {
+  if (!chart.allocated) return [];
+  const rows: HTMLElement[] = [];
   for (const column of chart.columns) {
     if (column.allocationClasses.every((state) => state === "")) continue;
     const row = document.createElement("div");
-    row.className = "gw-alloc-row";
+    row.className = "gw-state-row gw-alloc-row";
     const name = document.createElement("span");
     name.className = "gw-state-name";
     name.textContent = `${column.label} · how`;
@@ -411,9 +413,9 @@ function allocationBand(chart: ChartSeries): HTMLElement | null {
       cells.appendChild(allocationMark(column, index, month));
     }
     row.append(name, cells);
-    wrapper.appendChild(row);
+    rows.push(row);
   }
-  return wrapper.childElementCount === 0 ? null : wrapper;
+  return rows;
 }
 
 function allocationMark(column: SeriesColumn, index: number, month: string): HTMLElement {
@@ -531,11 +533,28 @@ function readoutRow(row: ReadoutRow, callbacks: ChartCallbacks): HTMLElement {
   stateMark.className = `gw-state-mark ${row.mark.className}`;
   state.append(stateMark, document.createTextNode(` ${row.mark.label}`));
 
+  // How the number was arrived at, in the one place a reader reads one number. The band says
+  // it across the whole series and the readout is where a share would otherwise sit beside the
+  // word "reported" with nothing to say it is an estimate.
+  const how = document.createElement("span");
+  if (row.allocation) {
+    how.className = "gw-readout-alloc";
+    how.title = row.allocation.title;
+    const allocMark = document.createElement("span");
+    allocMark.className = `gw-alloc-mark ${row.allocation.className}`;
+    const over =
+      row.eligibleWells !== null && row.eligibleWells > 1
+        ? ` over ${String(row.eligibleWells)} wells`
+        : "";
+    how.append(allocMark, document.createTextNode(` ${row.allocation.label}${over}`));
+  }
+
   // The facts wrap among themselves; the handle does not leave the row it explains, which at
   // 390 is the difference between a button beside a number and a button under the next one.
   const facts = document.createElement("div");
   facts.className = "gw-readout-facts";
   facts.append(swatch, name, value, state);
+  if (row.allocation) facts.appendChild(how);
 
   element.appendChild(facts);
   if (row.handle) {

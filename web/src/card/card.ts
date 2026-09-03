@@ -646,7 +646,9 @@ function cumulativesBody(
     // months without saying so is the naked number this whole surface exists against, and the
     // share is the one number that says how much of it is an estimate.
     const share = data.allocation?.share[streamOf(key)];
-    if (figure && share) {
+    // A stream with no allocated month is not partly allocated, and "0% allocated" beside a
+    // total is noise that trains a reader to stop reading the chip.
+    if (figure && share && Number(share.value) > 0) {
       const chip = document.createElement("span");
       chip.className = "gw-chip gw-alloc-share";
       chip.textContent = `${percent(share.value)} allocated`;

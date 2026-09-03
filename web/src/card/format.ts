@@ -54,13 +54,13 @@ export interface AllocationMark {
  */
 const ALLOCATION_MARKS: Record<string, AllocationMark> = {
   observed_gas_well: {
-    label: "observed",
+    label: "observed · gas lease",
     className: "gw-alloc-observed-gas-well",
     title: "One gas well on the lease, so the lease volume is this well's. Not allocated.",
     allocated: false,
   },
   observed_single_well_lease: {
-    label: "observed",
+    label: "observed · one well",
     className: "gw-alloc-observed-single-well",
     title: "One eligible well on the lease that month, so the lease volume is this well's.",
     allocated: false,

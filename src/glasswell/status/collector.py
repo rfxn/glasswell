@@ -1345,10 +1345,16 @@ select coalesce(sum(abs(a.volume)), 0) as allocated,
   from marts.tx_allocated_production a
 """
 
+# The threshold is the rule's own; the jurisdiction is the registration that names the rule,
+# because that is where a jurisdiction is declared and the rule itself is jurisdiction-neutral
+# in everything but its id. Reading the code out of the rule's spec would have served a row
+# labelled ": 0.0000" the first time a rule was written without one.
 _DEGRADED_AT = """
-select (spec ->> 'unallocated_share_degraded_at')::numeric as degraded_at,
-       spec ->> 'jurisdiction' as jurisdiction
-  from lineage.conformance_rules where rule_id = %s
+select (c.spec ->> 'unallocated_share_degraded_at')::numeric as degraded_at,
+       (select r.jurisdiction_code from lineage.jurisdiction_rules r
+         where r.rule_id = c.rule_id and r.serving
+         order by r.published_at desc limit 1) as jurisdiction
+  from lineage.conformance_rules c where c.rule_id = %s
 """
 
 _CROSSWALK_RESIDUAL = "select count(*) as districts from marts.tx_crosswalk_residual"
@@ -1375,6 +1381,10 @@ def _allocation_checks(
         if rule is None:
             return []
         jurisdiction = str(rule["jurisdiction"] or "")
+        if not jurisdiction:
+            # No registration names this rule, so nothing is serving an allocation under it and
+            # three rows about one would be three claims with no jurisdiction behind them.
+            return []
         cursor.execute(_ALLOCATION_COVERAGE)
         coverage = cursor.fetchone() or {}
         cursor.execute(_CROSSWALK_RESIDUAL)

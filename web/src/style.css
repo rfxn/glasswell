@@ -2222,17 +2222,10 @@ a {
    same is true of one CSS namespace — `withheld` is already a null-semantics class and is a
    plausible allocation class in a later jurisdiction. Two bands that cannot be told apart in
    the DOM is the failure this prefix exists against. */
-.gw-alloc-strip {
-  margin-top: 2px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
+/* The allocation rows sit inside the state strip, so they inherit the gutters align() writes
+   on it and are drawn to the plot's own width. A sibling strip inherited neither. */
 .gw-alloc-row {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
+  margin-top: 2px;
 }
 
 .gw-alloc-cells {
@@ -2322,13 +2315,24 @@ a {
   box-shadow: inset 0 -2px 0 0 var(--amber);
 }
 
+/* The border says "read me"; the colour is the chip's own. --ink is the near-black in this
+   palette, not the text colour: setting it here painted the share invisible on the panel, which
+   is what the 390 px shot showed and no unit test could have. */
 .gw-alloc-share,
 .gw-alloc-coverage {
   border-color: var(--amber);
-  color: var(--ink);
 }
 
 .gw-alloc-coverage {
   margin: 0.35rem 0 0;
   display: inline-block;
+}
+
+/* How the number was arrived at, beside the state and never after it. The band says it across
+   the series; this is the one place a reader is reading a single number. */
+.gw-readout-alloc {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--muted);
 }

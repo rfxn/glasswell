@@ -1168,6 +1168,16 @@ describe("a cumulative total that some months were allocated into", () => {
     expect(chip?.getAttribute("title")).toContain("cr_tx_allocation_v0_1");
   });
 
+  it("shows no chip on a stream nothing was allocated into", async () => {
+    // A stream with no allocated month is not partly allocated, and a 0% chip trains a reader
+    // to stop reading the chip on the stream that does carry one.
+    await render();
+    const cells = [...host.querySelectorAll(".gw-cumulative-cell")];
+    const gas = cells.find((cell) => cell.textContent?.startsWith("Gas"));
+
+    expect(gas?.querySelector(".gw-alloc-share")).toBeNull();
+  });
+
   it("leaves an observed total alone", async () => {
     await renderWellCard(host, API10, callbacks);
 

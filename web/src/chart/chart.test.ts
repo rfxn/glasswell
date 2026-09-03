@@ -310,18 +310,21 @@ describe("the allocation band", () => {
   it("draws no second band on a jurisdiction that reports at the well", () => {
     renderChart(host, dense, callbacks);
 
-    expect(host.querySelector(".gw-alloc-strip")).toBeNull();
+    expect(host.querySelector(".gw-alloc-row")).toBeNull();
     expect(host.querySelector(".gw-alloc-key")).toBeNull();
   });
 
   it("draws a second band in its own vocabulary where a class reached the wire", () => {
     renderChart(host, chart, callbacks);
-    const strip = host.querySelector(".gw-alloc-strip");
+    // Inside the state strip, not beside it: `align` writes the plot's gutters onto that
+    // element as custom properties, and a sibling inherits neither — which is a band drawn to
+    // a different width from the plot it sits under.
+    const strip = host.querySelector(".gw-state-strip");
+    const rows = strip?.querySelectorAll(".gw-alloc-row") ?? [];
 
-    expect(strip).not.toBeNull();
+    expect(rows.length).toBe(2);
     // A second record, a second lookup and a second prefix: one string-keyed record for two
     // vocabularies collides on the first shared token.
-    expect(strip?.querySelectorAll(".gw-state-mark").length ?? 0).toBe(0);
     expect(strip?.querySelectorAll(".gw-alloc-mark").length).toBe(12);
   });
 
@@ -369,5 +372,23 @@ describe("the allocation band", () => {
     const marks = [...host.querySelectorAll(".gw-alloc-row .gw-alloc-mark")];
 
     expect(marks[1]?.getAttribute("title")).toContain("allocated, status changed");
+  });
+
+  it("says it in the readout too, which is where a reader reads one number", () => {
+    // The band says it across the whole series. The readout is where a share would otherwise
+    // sit beside the word "reported" with nothing to say it is an estimate, and that is the
+    // one place a reader is looking hardest.
+    renderChart(host, chart, callbacks);
+    const rows = [...host.querySelectorAll(".gw-readout-row")];
+    const oil = rows.find((row) => (row as HTMLElement).dataset["stream"] === "oil");
+
+    expect(oil?.querySelector(".gw-readout-alloc")?.textContent).toContain("allocated");
+    expect(oil?.querySelector(".gw-readout-alloc")?.textContent).toContain("over 3 wells");
+  });
+
+  it("leaves the readout alone on a jurisdiction that reports at the well", () => {
+    renderChart(host, dense, callbacks);
+
+    expect(host.querySelector(".gw-readout-alloc")).toBeNull();
   });
 });
