@@ -23,6 +23,7 @@ from typing import Any
 import httpx
 import polars as pl
 import psycopg
+from psycopg.rows import dict_row
 
 from glasswell.db.dsn import add_dsn_argument, resolve_dsn
 from glasswell.ingest.base import record_vintage_day, resolve_environment
@@ -383,10 +384,11 @@ _INSERT_WELL = """
 insert into canonical.wells (
     api10, state_code, county_code_at_permit, operator_name_reported, operator_id, well_name,
     status_canonical, status_reported, well_type_reported, total_depth_ft, completion_date,
-    basin, effective_from, source_manifest_id, derivation_id)
+    plug_date, basin, effective_from, source_manifest_id, derivation_id)
 values (%(api10)s, %(state_code)s, %(county_code)s, %(operator_name)s, %(operator_no)s,
         %(well_name)s, %(status_canonical)s, %(status_reported)s, %(well_type)s, %(depth)s,
-        %(completion_date)s, %(basin)s, %(effective_from)s, %(manifest_id)s, %(derivation_id)s)
+        %(completion_date)s, %(plug_date)s, %(basin)s, %(effective_from)s, %(manifest_id)s,
+        %(derivation_id)s)
 on conflict (api10, effective_from) do nothing
 """
 
@@ -457,6 +459,77 @@ def _identity_rows(
     return list(chosen.values()), extra
 
 
+def _promoted_rows(
+    connection: psycopg.Connection,
+    manifest_id: str,
+    counts: dict[str, int],
+    *,
+    layout_rule: ConformanceRule,
+    api10_rule: ConformanceRule,
+    precedence: ConformanceRule,
+    collapse_rule: ConformanceRule,
+    status_rules: Sequence[ConformanceRule],
+) -> tuple[list[dict[str, Any]], pl.DataFrame, list[str]]:
+    """The staged records as one identity row per API-10, with the losers quarantined.
+
+    Extracted so a re-promotion that fills a newly persisted column reads the same staged
+    bytes through the same rules rather than a second implementation of them: the whole
+    claim of a re-promotion is that nothing but the schema moved.
+    """
+    layout = _layout(layout_rule.spec)
+    frame = _frame(connection, manifest_id, layout, str(api10_rule.spec["state_code"]))
+    # The API-10 rule runs over everything; the lease key runs only on the link path. A well
+    # whose permit carries no lease number yet is still a well, and quarantining its identity
+    # for a key it does not need loses whole counties: 68,806 of the 2026-08 export's in-scope
+    # records have no lease number, including every record Bailey and El Paso counties have.
+    keyed = apply_rules(frame, [api10_rule])
+    for batch in keyed.quarantined:
+        counts[batch.reason_code] = counts.get(batch.reason_code, 0) + _quarantine(
+            connection,
+            batch.frame,
+            manifest_id=manifest_id,
+            reason_code=batch.reason_code,
+            stage="join",
+            rule_id=batch.rule_id,
+        )
+
+    identity, extra = _identity_rows(
+        _status_input(keyed.frame, precedence), _preference_order(collapse_rule)
+    )
+    counts["multi_completion"] += _quarantine(
+        connection,
+        _quarantine_frame(extra),
+        manifest_id=manifest_id,
+        reason_code="multi_completion",
+        stage="validate",
+        rule_id=collapse_rule.rule_id,
+    )
+
+    # A blank type is not an unknown one: the source reported nothing, so the row keeps a null
+    # status rather than being quarantined for a vocabulary it never used.
+    reported = pl.DataFrame(
+        [row for row in identity if row["status_input"]],
+        schema={**dict.fromkeys(layout, pl.String), "source_row_ordinal": pl.Int32,
+                "state_code": pl.String, "api10": pl.String, "status_input": pl.String},
+    )
+    silent = [row for row in identity if not row["status_input"]]
+    mapped = apply_rules(reported, status_rules)
+    for batch in mapped.quarantined:
+        counts[batch.reason_code] = counts.get(batch.reason_code, 0) + _quarantine(
+            connection,
+            batch.frame,
+            manifest_id=manifest_id,
+            reason_code=batch.reason_code,
+            stage="conform",
+            rule_id=batch.rule_id,
+        )
+    promoted = [
+        *mapped.frame.to_dicts(),
+        *[{**row, "status_canonical": None} for row in silent],
+    ]
+    return promoted, keyed.frame, [*keyed.applied_rule_ids, *mapped.applied_rule_ids]
+
+
 def load(
     connection: psycopg.Connection,
     *,
@@ -521,57 +594,17 @@ def load(
     )
     counts = {**dict.fromkeys(REASON_CODES, 0), **counts}
 
-    layout = _layout(layout_rule.spec)
-    frame = _frame(connection, manifest.manifest_id, layout, str(api10_rule.spec["state_code"]))
-    # The API-10 rule runs over everything; the lease key runs only on the link path. A well
-    # whose permit carries no lease number yet is still a well, and quarantining its identity
-    # for a key it does not need loses whole counties: 68,806 of the 2026-08 export's in-scope
-    # records have no lease number, including every record Bailey and El Paso counties have.
-    keyed = apply_rules(frame, [api10_rule])
-    for batch in keyed.quarantined:
-        counts[batch.reason_code] = counts.get(batch.reason_code, 0) + _quarantine(
-            connection,
-            batch.frame,
-            manifest_id=manifest.manifest_id,
-            reason_code=batch.reason_code,
-            stage="join",
-            rule_id=batch.rule_id,
-        )
-
-    identity, extra = _identity_rows(
-        _status_input(keyed.frame, precedence), _preference_order(collapse_rule)
-    )
-    counts["multi_completion"] += _quarantine(
+    counts = dict(counts)
+    promoted, keyed_frame, applied = _promoted_rows(
         connection,
-        _quarantine_frame(extra),
-        manifest_id=manifest.manifest_id,
-        reason_code="multi_completion",
-        stage="validate",
-        rule_id=collapse_rule.rule_id,
+        manifest.manifest_id,
+        counts,
+        layout_rule=layout_rule,
+        api10_rule=api10_rule,
+        precedence=precedence,
+        collapse_rule=collapse_rule,
+        status_rules=status_rules,
     )
-
-    # A blank type is not an unknown one: the source reported nothing, so the row keeps a null
-    # status rather than being quarantined for a vocabulary it never used.
-    reported = pl.DataFrame(
-        [row for row in identity if row["status_input"]],
-        schema={**dict.fromkeys(layout, pl.String), "source_row_ordinal": pl.Int32,
-                "state_code": pl.String, "api10": pl.String, "status_input": pl.String},
-    )
-    silent = [row for row in identity if not row["status_input"]]
-    mapped = apply_rules(reported, status_rules)
-    for batch in mapped.quarantined:
-        counts[batch.reason_code] = counts.get(batch.reason_code, 0) + _quarantine(
-            connection,
-            batch.frame,
-            manifest_id=manifest.manifest_id,
-            reason_code=batch.reason_code,
-            stage="conform",
-            rule_id=batch.rule_id,
-        )
-    promoted = [
-        *mapped.frame.to_dicts(),
-        *[{**row, "status_canonical": None} for row in silent],
-    ]
 
     identity_id, wells_added, withheld = _promote_identity(
         connection,
@@ -579,12 +612,7 @@ def load(
         manifest_id=manifest.manifest_id,
         vintage=manifest.fetch_vintage,
         parse_derivation_id=parse_id,
-        rules=[
-            *keyed.applied_rule_ids,
-            *mapped.applied_rule_ids,
-            precedence.rule_id,
-            measures.rule_id,
-        ],
+        rules=[*applied, precedence.rule_id, measures.rule_id],
         state_code=str(api10_rule.spec["state_code"]),
         measures=measures,
     )
@@ -599,7 +627,7 @@ def load(
             reason_code="key_collision",
             stage="join",
         )
-    leased = apply_rules(keyed.frame, [lease_rule])
+    leased = apply_rules(keyed_frame, [lease_rule])
     for batch in leased.quarantined:
         counts[batch.reason_code] = counts.get(batch.reason_code, 0) + _quarantine(
             connection,
@@ -698,6 +726,11 @@ def _promote_identity(
             "well_type": row["well_type_name"] or None,
             "depth": parsed["total_depth_ft"],
             "completion_date": parsed["completion_date"],
+            # Parsed since the slice and used as the collapse rule's first tie-break, and never
+            # persisted until the allocation needed it as a right bound: a well the RRC plugged
+            # in 2015 would otherwise take an equal share every month to the present while the
+            # same card served status_canonical = plugged.
+            "plug_date": _date(row["plug_date"]),
             "basin": BASIN,
             "effective_from": vintage,
             "manifest_id": manifest_id,
@@ -803,6 +836,173 @@ def _promote_lease_links(
     return context.derivation_id, inserted
 
 
+@dataclass(frozen=True, slots=True)
+class PlugDateRepromotion:
+    report_vintage: date
+    manifest_ids: list[str] = field(default_factory=list)
+    wells_examined: int = 0
+    wells_appended: int = 0
+    plug_dates_filled: int = 0
+    status_moved: int = 0
+    completion_dates_present: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "source_id": SOURCE_ID,
+            "report_vintage": self.report_vintage.isoformat(),
+            "manifest_ids": list(self.manifest_ids),
+            "wells_examined": self.wells_examined,
+            "wells_appended": self.wells_appended,
+            "plug_dates_filled": self.plug_dates_filled,
+            "status_moved": self.status_moved,
+            "completion_dates_present": self.completion_dates_present,
+        }
+
+
+_STAGED_MANIFESTS = f"""
+select m.manifest_id, m.fetch_vintage
+  from lineage.manifests m
+ where m.source_id = %(source_id)s
+   and exists (select 1 from {STAGING_TABLE} s where s.manifest_id = m.manifest_id)
+ order by m.fetch_vintage, m.manifest_id
+"""
+
+_CURRENT_WELLS = """
+select api10, status_canonical, operator_name_reported, total_depth_ft, completion_date,
+       plug_date
+  from canonical.wells_latest
+ where state_code = %(state_code)s
+"""
+
+
+def repromote_plug_dates(
+    connection: psycopg.Connection, *, report_vintage: date | None = None
+) -> PlugDateRepromotion:
+    """Fill `plug_date` from the bytes the parse already staged, never from a second fetch.
+
+    `_INSERT_WELL` ends `on conflict (api10, effective_from) do nothing`, so filling a new
+    column takes a new effective_from -- which is right and DIR-2-safe: it appends a vintage
+    and rewrites none. A well whose promoted values are unchanged appends nothing, so the row
+    growth is the wells that actually moved rather than the whole spine.
+
+    Because the re-derivation reads every attribute from the same staged bytes, a well whose
+    export record changed since the slice can move its status, operator or depth as well. That
+    count is reported: a status moving under a track about production is a thing a reader
+    should be told about rather than discover.
+    """
+    layout_rule = rule(connection, LAYOUT_RULE)
+    api10_rule = rule(connection, API10_RULE, source_id="tx_gis_wells_county")
+    precedence = rule(connection, PLUGGED_RULE)
+    measures = rule(connection, MEASURES_RULE)
+    collapse_rule = rule(connection, COLLAPSE_RULE)
+    status_rules = [
+        candidate
+        for candidate in load_rules(connection, source_id=SOURCE_ID, stage="conform")
+        if candidate.rule_family == STATUS_FAMILY
+    ]
+    state_code = str(api10_rule.spec["state_code"])
+    vintage = report_vintage or current_session().clock.now().date()
+
+    with connection.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(_STAGED_MANIFESTS, {"source_id": SOURCE_ID})
+        manifests = cursor.fetchall()
+        cursor.execute(_CURRENT_WELLS, {"state_code": state_code})
+        held = {row["api10"]: row for row in cursor.fetchall()}
+
+    appended = 0
+    filled = 0
+    moved = 0
+    examined = 0
+    completions = 0
+    manifest_ids: list[str] = []
+    for manifest in manifests:
+        manifest_id = manifest["manifest_id"]
+        manifest_ids.append(manifest_id)
+        counts: dict[str, int] = dict.fromkeys(REASON_CODES, 0)
+        promoted, _, applied = _promoted_rows(
+            connection,
+            manifest_id,
+            counts,
+            layout_rule=layout_rule,
+            api10_rule=api10_rule,
+            precedence=precedence,
+            collapse_rule=collapse_rule,
+            status_rules=status_rules,
+        )
+        changed = []
+        for row in promoted:
+            examined += 1
+            plug = _date(row["plug_date"])
+            current = held.get(row["api10"])
+            if plug is not None:
+                filled += 1
+            if row.get("completion_date"):
+                completions += 1
+            if current is None:
+                changed.append(row)
+                continue
+            status_changed = current["status_canonical"] != row.get("status_canonical")
+            if status_changed:
+                moved += 1
+            if plug != current["plug_date"] or status_changed:
+                changed.append(row)
+        if not changed:
+            continue
+        _, added, _withheld = _promote_identity(
+            connection,
+            changed,
+            manifest_id=manifest_id,
+            vintage=vintage,
+            parse_derivation_id=_parse_derivation_for(connection, manifest_id),
+            rules=[*applied, precedence.rule_id, measures.rule_id],
+            state_code=state_code,
+            measures=measures,
+        )
+        appended += added
+
+    emit(
+        connection,
+        "canonical.repromotion_required",
+        subject_type="vintage",
+        subject_id=f"vin_{SOURCE_ID}_{vintage.isoformat()}",
+        payload={
+            "reason": "plug_date persisted for the first time",
+            "wells_examined": examined,
+            "wells_appended": appended,
+            "plug_dates_filled": filled,
+            "status_moved": moved,
+            "report_vintage": vintage.isoformat(),
+        },
+        correlation_id=current_session().correlation_id,
+        occurred_at=current_session().clock.now(),
+    )
+    return PlugDateRepromotion(
+        report_vintage=vintage,
+        manifest_ids=manifest_ids,
+        wells_examined=examined,
+        wells_appended=appended,
+        plug_dates_filled=filled,
+        status_moved=moved,
+        completion_dates_present=completions,
+    )
+
+
+def _parse_derivation_for(connection: psycopg.Connection, manifest_id: str) -> str:
+    """The parse this re-promotion reads, so the chain names the bytes rather than the run."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "select derivation_id from lineage.derivations"
+            " where operation = 'stage.parse' and output_dataset = %s"
+            "   and output_partition ->> 'manifest_id' = %s"
+            " order by created_at desc limit 1",
+            (STAGING_TABLE, manifest_id),
+        )
+        found = cursor.fetchone()
+    if found is None:
+        raise LookupError(f"{manifest_id}: no stage.parse derivation to re-promote from")
+    return found[0]
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Load the TX RRC wellbore query export into staging and canonical."
@@ -815,6 +1015,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--restage", action="store_true", help="re-parse from the stored bytes after a rule change"
     )
+    parser.add_argument(
+        "--repromote-plug-dates",
+        action="store_true",
+        help="fill canonical.wells.plug_date from the staged bytes, without a fetch",
+    )
     arguments = parser.parse_args(argv)
     arguments.dsn = resolve_dsn(arguments.dsn)
 
@@ -823,6 +1028,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             connection, env_id=arguments.env_id, code_version=arguments.code_version
         )
         with lineage_session(recorder=PostgresRecorder(connection), environment=environment):
+            if arguments.repromote_plug_dates:
+                connection.commit()
+                repromotion = repromote_plug_dates(connection)
+                connection.commit()
+                print(json.dumps(repromotion.to_dict(), sort_keys=True))
+                return 0
             if arguments.url:
                 result = load(
                     connection,
