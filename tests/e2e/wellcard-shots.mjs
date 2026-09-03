@@ -12,6 +12,19 @@ import { mkdirSync } from "node:fs";
 
 import { BREAKPOINTS, baseUrl, chromeExecutable, instrumentedPage, launch, mapReady, shooter } from "./lib.mjs";
 
+const EXPECTED_ORDER = [
+  "production",
+  "cumulative",
+  "identity",
+  "completions",
+  "neighbours",
+  "land",
+  "basin",
+  "pools",
+  "peer",
+  "lineage",
+];
+
 const BASE = baseUrl();
 const OUT = process.env.GW_SHOTS ?? "work-output/wellcard-shots/p1";
 const WELL = process.env.GW_WELL ?? "3305310451";
@@ -43,6 +56,12 @@ const geometry = (page) =>
         return button && !button.hidden ? button.getAttribute("aria-label") : null;
       })(),
       toggle: getComputedStyle(document.getElementById("gw-rail-toggle")).display,
+      sections: [...document.querySelectorAll("#gw-card .gw-section")].map((node) => ({
+        id: node.dataset.section,
+        expanded: node.querySelector(".gw-section-toggle")?.getAttribute("aria-expanded"),
+      })),
+      absent: document.querySelector(".gw-section-absent-note")?.textContent ?? null,
+      focused: document.activeElement?.closest?.(".gw-section")?.dataset?.section ?? null,
       rail: document.getElementById("gw-main")?.getAttribute("data-rail") ?? null,
       snap: document.getElementById("gw-main")?.getAttribute("data-sheet-snap") ?? null,
       hint: !document.querySelector(".gw-hint")?.hidden,
@@ -82,7 +101,19 @@ for (const bp of BREAKPOINTS) {
     await page.waitForTimeout(2500);
     const open = await geometry(page);
     console.log(`  map ${JSON.stringify(open.map)} card ${JSON.stringify(open.card)} rail ${open.rail}`);
+    console.log(`  sections ${open.sections.map((each) => `${each.id}:${each.expanded}`).join(" ")}`);
     await shoot(page, `${tag}-card-open`);
+
+    const order = open.sections.map((each) => each.id);
+    check(
+      order.join(",") === EXPECTED_ORDER.filter((id) => order.includes(id)).join(","),
+      `the sections render in the one fixed order (${order.join(", ")})`,
+    );
+    check(
+      open.sections.filter((each) => each.expanded === "true").map((each) => each.id).join(",") ===
+        "production,cumulative,identity",
+      "three expanded by default and the rest collapsed",
+    );
 
     if (bp.width > 900) {
       check(open.rail === "open", "the rail is a column, not a closed shell");
@@ -159,6 +190,86 @@ for (const bp of BREAKPOINTS) {
   } finally {
     await context.close();
   }
+}
+
+// The deep link, the guard, and what an unknown id renders. One width: this is behaviour, and
+// the ladder above has already photographed the geometry it happens in.
+{
+  console.log("\nsections at 1600x1000");
+  const { page, journal } = await instrumentedPage(browser, { viewport: BREAKPOINTS[0] });
+  await page.goto(`${BASE}/?well=${WELL}&section=neighbours`, { waitUntil: "networkidle" });
+  await mapReady(page).catch(() => {});
+  await page.waitForTimeout(2500);
+  const linked = await geometry(page);
+  console.log(`  focused ${linked.focused} · ${linked.sections.map((e) => `${e.id}:${e.expanded}`).join(" ")}`);
+  await shoot(page, "1600x1000-section-deeplink");
+  check(
+    linked.sections.find((each) => each.id === "neighbours")?.expanded === "true",
+    "?section= opens the section it names",
+  );
+  check(linked.focused === "neighbours", `and lands focus inside it (${linked.focused})`);
+  check(
+    linked.sections.find((each) => each.id === "production")?.expanded === "true",
+    "and collapses nothing else on the way",
+  );
+
+  // An in-card link pushes, so back returns to the section before it with the card still
+  // mounted, its disclosures intact and nothing re-requested.
+  // The Lineage section is where the card's own cross-links live, and it builds them when a
+  // reader opens it -- it lists what the card is carrying now, not what it carried at mount.
+  await page.evaluate(() => {
+    document.querySelector("#gw-section-lineage .gw-section-toggle")?.click();
+  });
+  await page.waitForTimeout(600);
+  const before = journal.api.length;
+  const wasAt = await page.evaluate(() => window.location.search);
+  const mounted = await page.evaluate(() => {
+    const card = document.querySelector("#gw-card .gw-card");
+    if (card) card.dataset.probe = "mounted";
+    const link = document.querySelector("#gw-section-lineage .gw-section-link");
+    if (!link) return null;
+    link.click();
+    return link.getAttribute("href");
+  });
+  await page.waitForTimeout(800);
+  await page.goBack({ waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(1200);
+  const back = await page.evaluate(() => ({
+    probe: document.querySelector("#gw-card .gw-card")?.dataset.probe ?? null,
+    search: window.location.search,
+  }));
+  await shoot(page, "1600x1000-section-back");
+  check(mounted !== null, `an in-card section link exists to test the pushed case (${mounted})`);
+  check(back.probe === "mounted", "back leaves the very same card node mounted");
+  check(
+    journal.api.length === before,
+    `and re-requests nothing (${journal.api.length - before} new API responses)`,
+  );
+  // Back to the entry the link pushed from, which the disclosure above had replaced rather
+  // than pushed: ten disclosures must not make ten history entries, so what back returns to is
+  // the section that was current when the link was pressed.
+  check(back.search === wasAt, `and returns to the section it was pushed from (${back.search})`);
+  await page.context().close();
+}
+
+{
+  console.log("\nan id no card has");
+  const { page } = await instrumentedPage(browser, { viewport: BREAKPOINTS[0] });
+  await page.goto(`${BASE}/?well=${WELL}&section=nonsense`, { waitUntil: "networkidle" });
+  await mapReady(page).catch(() => {});
+  await page.waitForTimeout(2500);
+  const bogus = await geometry(page);
+  await shoot(page, "1600x1000-section-unknown");
+  console.log(`  absent note: ${bogus.absent}`);
+  check(
+    bogus.sections.filter((each) => each.expanded === "true").map((each) => each.id).join(",") ===
+      "production,cumulative,identity",
+    "an unknown id renders the default set",
+  );
+  check(bogus.absent !== null, "and says so once, rather than showing an empty surface");
+  const dropped = await page.evaluate(() => window.location.search);
+  check(!dropped.includes("section="), `and drops the id from the URL (${dropped})`);
+  await page.context().close();
 }
 
 await browser.close();

@@ -26,11 +26,21 @@ const {
   wellEnvelope,
 } = await import("../test/fixtures.ts");
 
+const { resetSections, sectionsSettled } = await import("./sections.ts");
+
 const callbacks = { onExplain: vi.fn(), onClose: vi.fn() };
 let host: HTMLElement;
 
+/** A collapsed lazy section makes no request until a reader opens it, so a test that
+ *  asserts its body has to open it first, which is the contract rather than a detour. */
+async function expand(id: string): Promise<void> {
+  host.querySelector<HTMLButtonElement>(`#gw-section-${id} .gw-section-toggle`)?.click();
+  await sectionsSettled();
+}
+
 beforeEach(() => {
   window.history.replaceState(null, "", "/");
+  resetSections();
   document.body.innerHTML = "";
   host = document.createElement("aside");
   document.body.appendChild(host);
@@ -154,6 +164,21 @@ describe("well card", () => {
 
     await renderWellCard(host, API10, callbacks);
 
+    // A collapsed lazy section makes no request until it is first expanded, so what a mount
+    // asks for is the header, the expanded sections and the series. Completions and
+    // neighbours are collapsed and have asked for nothing.
+    expect(requested.mock.calls.map(([input]) => String(input)).sort()).toEqual(
+      [
+        `/v1/wells/${API10}?as_of=2026-07-01`,
+        `/v1/wells/${API10}/cumulatives?as_of=2026-07-01`,
+        `/v1/wells/${API10}/production?as_of=2026-07-01`,
+      ].sort(),
+    );
+
+    await expand("completions");
+    await expand("neighbours");
+
+    // And when they do ask, they ask through the same seam, so the pin reaches them too.
     expect(requested.mock.calls.map(([input]) => String(input)).sort()).toEqual(
       [
         `/v1/wells/${API10}?as_of=2026-07-01`,
@@ -163,6 +188,12 @@ describe("well card", () => {
         `/v1/wells/${API10}/production?as_of=2026-07-01`,
       ].sort(),
     );
+
+    // Expanded a second time it asks again for nothing: a loaded section is never re-fetched.
+    const asked = requested.mock.calls.length;
+    await expand("completions");
+    await expand("completions");
+    expect(requested.mock.calls.length).toBe(asked);
   });
 
   it("renders the header the operator would recognise", async () => {
@@ -183,6 +214,7 @@ describe("well card", () => {
 
   it("renders physical neighbours as current-only proximity, not model analogs", async () => {
     await renderWellCard(host, API10, callbacks);
+    await expand("neighbours");
 
     const frame = host.querySelector<HTMLElement>(".gw-neighbor-context");
     const links = frame?.querySelectorAll<HTMLAnchorElement>(".gw-neighbor-link");
@@ -224,6 +256,7 @@ describe("well card", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("neighbours");
 
     const body = host.querySelector<HTMLElement>(".gw-neighbor-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("empty");
@@ -248,6 +281,7 @@ describe("well card", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("neighbours");
 
     const body = host.querySelector<HTMLElement>(".gw-neighbor-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("unavailable");
@@ -512,11 +546,12 @@ describe("well card", () => {
     await renderWellCard(host, API10, callbacks);
 
     const frame = host.querySelector(".gw-production-chart") as HTMLElement;
-    const title = frame.querySelector(".gw-frame-title") as HTMLElement;
-    // §2.6's crossing sits in this header too, so the label is the title's own text and not
-    // everything the header carries.
-    expect(title.firstElementChild?.textContent).toBe("Monthly production");
-    expect(title.querySelector('[data-crossing="open-this-series"]')).not.toBeNull();
+    // The label is the section's own head now: the frame had a title of its own and the
+    // section names it, and two headings over one plot is one heading too many.
+    const head = host.querySelector("#gw-section-production .gw-section-head") as HTMLElement;
+    const title = head.querySelector(".gw-section-title") as HTMLElement;
+    expect(title.firstElementChild?.textContent).toBe("Production");
+    expect(head.querySelector('[data-crossing="open-this-series"]')).not.toBeNull();
     expect(renderChart.mock.calls[0]?.[0]).toBe(frame.querySelector(".gw-frame-body"));
   });
 
@@ -599,6 +634,7 @@ describe("well card", () => {
 
   it("marks an absent value so a skimmed column separates it from a measured one", async () => {
     await renderWellCard(host, API10, callbacks);
+    await expand("neighbours");
 
     // The neighbour rows used to print the raw enum token, so "alias unavailable" stood in the
     // Formation cell looking exactly like a formation name beside "bakken".
@@ -657,10 +693,13 @@ describe("well card", () => {
 describe("completion and formation context", () => {
   it("renders source events and reported pool mappings without design or top claims", async () => {
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     const body = frame.querySelector<HTMLElement>(".gw-frame-body");
-    expect(frame.querySelector(".gw-frame-title")?.textContent).toBe("Completions & formations");
+    expect(
+      host.querySelector("#gw-section-completions .gw-section-title")?.textContent,
+    ).toBe("Completions and fluids");
     expect(body?.dataset["state"]).toBe("populated");
     expect(body?.getAttribute("aria-busy")).toBe("false");
     const groups = frame.querySelectorAll<HTMLElement>(".gw-context-group");
@@ -737,6 +776,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const event = host.querySelector(".gw-context-group") as HTMLElement;
     expect(factsOf(event)["Job start"]).toBe("unavailable");
@@ -784,6 +824,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     expect(frame.textContent).toContain("None reported");
@@ -833,6 +874,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     const groups = frame.querySelectorAll<HTMLElement>(".gw-context-group");
@@ -869,6 +911,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     const designFacts = factsOf(frame.querySelectorAll<HTMLElement>(".gw-context-group")[2] as HTMLElement);
@@ -903,6 +946,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     const designFacts = factsOf(
@@ -936,6 +980,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const frame = host.querySelector(".gw-completion-context") as HTMLElement;
     expect(frame.textContent).toContain("None disclosed");
@@ -970,6 +1015,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("empty");
@@ -1003,6 +1049,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     // Summary reads on its own; the served detail and the code that raised it stay reachable
     // under it rather than being printed as a line of internal vocabulary.
@@ -1031,6 +1078,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("unavailable");
@@ -1056,6 +1104,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("unavailable");
@@ -1080,6 +1129,7 @@ describe("completion and formation context", () => {
     );
 
     await renderWellCard(host, API10, callbacks);
+    await expand("completions");
 
     const body = host.querySelector<HTMLElement>(".gw-completion-context .gw-frame-body");
     expect(body?.dataset["state"]).toBe("unavailable");

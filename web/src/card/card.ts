@@ -1,3 +1,4 @@
+import "./card.css";
 import "./gw-figure.ts";
 
 import { ApiError, getEnvelope } from "../api/client.ts";
@@ -14,6 +15,9 @@ import { labelElement } from "../glossary/gw-term.ts";
 import { highlight } from "../glossary/index.ts";
 import { termIndex } from "../glossary/store.ts";
 import { absentValue, formatMonth, formatVintage, nullSemantics } from "./format.ts";
+import { cardQuery } from "./requests.ts";
+import { applySection, mountSections, sectionLink, sectionsSettled } from "./sections.ts";
+import type { SectionSpec } from "./sections.ts";
 
 export interface WellDetail {
   api10: string;
@@ -127,9 +131,7 @@ const FACT_GROUPS: { title: string; fields: [keyof WellDetail, string, string][]
   {
     title: "Location",
     fields: [
-      ["basin", "Basin", "/basin"],
       ["county_code_at_permit", "County", "/county_code_at_permit"],
-      ["land_unit_label", "Land unit", "/land_unit_label"],
     ],
   },
   {
@@ -150,12 +152,14 @@ export async function renderWellCard(
   container.replaceChildren(placeholder(`Loading well ${api10}…`));
   container.hidden = false;
   const state = readState();
-  const pinnedAsOf = state.extra["as_of"]?.[0];
-  const asOfQuery: Record<string, string> = pinnedAsOf ? { as_of: pinnedAsOf } : {};
+  // Every request this card makes carries the same bag, built in one place. It used to pick
+  // `as_of` out by name and forward nothing else, so a brushed window and a normalisation
+  // basis had no route from the URL into the request that would have to answer for them.
+  const query = cardQuery(state);
 
   let well: Envelope<WellDetail>;
   try {
-    well = await getEnvelope<WellDetail>(`/v1/wells/${api10}`, asOfQuery);
+    well = await getEnvelope<WellDetail>(`/v1/wells/${api10}`, query);
   } catch (error) {
     container.replaceChildren(errorPanel(error, callbacks));
     return;
@@ -347,10 +351,11 @@ export async function renderWellCard(
     record.appendChild(definition);
   }
 
-  // The reading order the card is built in, and the change that matters most about it:
-  // production is what a reader opened the card for, and it used to sit at 49% of a 1,600px
-  // scroll behind two sections that are empty for most wells. Slots are placed first and
-  // filled by their own requests, so the order cannot drift with which response lands first.
+  // Ten named sections in one order, three of them expanded. The order is the order an
+  // engineer reads a well; the split is that a section is expanded when its content is why a
+  // reader opens a well, and collapsed when it is why they open this particular one. The
+  // frames are built first and handed to their sections, so the order cannot drift with which
+  // response lands first.
   const cumulativeSlot = document.createElement("div");
   const factsSlot = document.createElement("div");
   factsSlot.className = "gw-card-facts";
@@ -359,13 +364,8 @@ export async function renderWellCard(
   const notesSlot = document.createElement("div");
   notesSlot.className = "gw-notes gw-card-notes";
 
-  // Title outside the swappable body: the placeholder, the plot and an error all land in
-  // .gw-frame-body, so none of them can take the frame's label down with them.
   const chartFrame = document.createElement("section");
   chartFrame.className = "gw-card-chart gw-production-chart";
-  const chartTitle = document.createElement("h3");
-  chartTitle.className = "gw-frame-title";
-  chartTitle.textContent = "Monthly production";
   const chartHost = document.createElement("div");
   chartHost.className = "gw-frame-body";
   chartHost.appendChild(placeholder("Loading production…"));
@@ -373,11 +373,7 @@ export async function renderWellCard(
   // the series' warnings — R8's disclosure of the derivations behind a column — sit beside it.
   const chartNotes = document.createElement("div");
   chartNotes.className = "gw-chart-notes gw-notes";
-  chartFrame.append(chartTitle, chartHost, chartNotes);
-
-  // Directly under the chart: the total belongs beside the series it is a total of, and a
-  // reader who came for production should not have to scroll past the fact bands to find it.
-  body.append(chartFrame, cumulativeSlot, factsSlot, contextSlot, neighborSlot, notesSlot);
+  chartFrame.append(chartHost, chartNotes);
 
   // A band whose every field was absent is a heading over nothing: dropped, not left standing.
   for (const { title } of FACT_GROUPS) {
@@ -400,23 +396,20 @@ export async function renderWellCard(
 
   const contextFrame = document.createElement("section");
   contextFrame.className = "gw-card-chart gw-completion-context";
-  const contextTitle = document.createElement("h3");
-  contextTitle.className = "gw-frame-title";
-  contextTitle.textContent = "Completions & formations";
   const contextHost = document.createElement("div");
   contextHost.className = "gw-frame-body";
   contextHost.dataset["state"] = "loading";
   contextHost.setAttribute("aria-busy", "true");
   contextHost.setAttribute("aria-live", "polite");
   contextHost.appendChild(placeholder("Loading completions…"));
-  contextFrame.append(contextTitle, contextHost);
+  contextFrame.append(contextHost);
   contextSlot.appendChild(contextFrame);
 
-  const contextRequest = loadCompletionContext(
+  const loadContext = (): Promise<void> => loadCompletionContext(
     contextHost,
     well.links?.["completions"] ?? `/v1/wells/${api10}/completions`,
     api10,
-    asOfQuery,
+    query,
     // Said once per card, and only for the two codes that say it twice. The header and the
     // completion design are two surfaces and both rightly disclose a withheld length, but on
     // one screen the reader gets the sentence under two headings and reads the second as a
@@ -434,26 +427,24 @@ export async function renderWellCard(
   // Absent outside the mart's states: the API declines to offer a link it would 404, and a
   // section headed "no cumulative" would say the well produced nothing rather than that this
   // jurisdiction is not summed here.
-  let cumulativeRequest: Promise<void> = Promise.resolve();
+  let loadCumulative: (() => Promise<void>) | undefined;
   const cumulativePath = well.links?.["cumulatives"];
   if (cumulativePath) {
     const cumulativeFrame = document.createElement("section");
     cumulativeFrame.className = "gw-card-chart gw-well-cumulatives";
-    const cumulativeTitle = document.createElement("h3");
-    cumulativeTitle.className = "gw-frame-title";
-    cumulativeTitle.textContent = "Cumulative";
     const cumulativeHost = document.createElement("div");
     cumulativeHost.className = "gw-frame-body";
     cumulativeHost.dataset["state"] = "loading";
     cumulativeHost.setAttribute("aria-busy", "true");
     cumulativeHost.setAttribute("aria-live", "polite");
     cumulativeHost.appendChild(placeholder("Loading cumulative…"));
-    cumulativeFrame.append(cumulativeTitle, cumulativeHost);
+    cumulativeFrame.append(cumulativeHost);
     cumulativeSlot.appendChild(cumulativeFrame);
-    cumulativeRequest = loadWellCumulatives(cumulativeHost, cumulativePath, api10, asOfQuery);
+    loadCumulative = (): Promise<void> =>
+      loadWellCumulatives(cumulativeHost, cumulativePath, api10, query);
   }
 
-  let neighborRequest: Promise<void> = Promise.resolve();
+  let loadNeighbours: (() => Promise<void>) | undefined;
   const neighborPath = well.links?.["neighbors"];
   // A third case beside served and absent: the jurisdiction registers laterals and the mart's
   // measured domain does not reach it. Rendering nothing at all reads as "this well has no
@@ -461,35 +452,132 @@ export async function renderWellCard(
   if (!neighborPath && detail.neighbors_reason) {
     const refusalFrame = document.createElement("section");
     refusalFrame.className = "gw-card-chart gw-neighbor-context";
-    const refusalTitle = document.createElement("h3");
-    refusalTitle.className = "gw-frame-title";
-    refusalTitle.textContent = "Physical neighbours";
     const refusalHost = document.createElement("div");
     refusalHost.className = "gw-frame-body";
     refusalHost.dataset["state"] = "not_covered";
-    refusalFrame.append(refusalTitle, refusalHost);
+    refusalFrame.append(refusalHost);
     neighborSlot.appendChild(refusalFrame);
-    neighborRequest = import("./neighbors.ts").then(({ renderNeighborRefusal }) => {
-      refusalHost.replaceChildren(renderNeighborRefusal(detail.neighbors_reason as string));
-    });
+    loadNeighbours = (): Promise<void> =>
+      import("./neighbors.ts").then(({ renderNeighborRefusal }) => {
+        refusalHost.replaceChildren(renderNeighborRefusal(detail.neighbors_reason as string));
+      });
   }
   if (neighborPath) {
     const neighborFrame = document.createElement("section");
     neighborFrame.className = "gw-card-chart gw-neighbor-context";
-    const neighborTitle = document.createElement("h3");
-    neighborTitle.className = "gw-frame-title";
-    neighborTitle.textContent = "Physical neighbours";
     const neighborHost = document.createElement("div");
     neighborHost.className = "gw-frame-body";
     neighborHost.dataset["state"] = "loading";
     neighborHost.setAttribute("aria-busy", "true");
     neighborHost.setAttribute("aria-live", "polite");
     neighborHost.appendChild(placeholder("Loading neighbours…"));
-    neighborFrame.append(neighborTitle, neighborHost);
+    neighborFrame.append(neighborHost);
     neighborSlot.appendChild(neighborFrame);
-    neighborRequest = import("./neighbors.ts").then(({ loadNeighborContext }) =>
-      loadNeighborContext(neighborHost, neighborPath, api10, { ...asOfQuery, limit: "5" }),
-    );
+    loadNeighbours = (): Promise<void> =>
+      import("./neighbors.ts").then(({ loadNeighborContext }) =>
+        loadNeighborContext(neighborHost, neighborPath, api10, { ...query, limit: "5" }),
+      );
+  }
+
+  // Land and basin leave the Location band for sections of their own: the land unit becomes a
+  // link in v0.81 and basin becomes a served polygon answer with a handle at P4, and neither
+  // is a fact row once it has a rule behind it.
+  const landBody = document.createElement("dl");
+  landBody.className = "gw-facts";
+  if (detail.land_unit_label) {
+    landBody.appendChild(term("Land unit", labelFor(well, "/land_unit_label")));
+    const value = document.createElement("dd");
+    value.textContent = detail.land_unit_label;
+    landBody.appendChild(value);
+  }
+
+  const basinBody = document.createElement("dl");
+  basinBody.className = "gw-facts";
+  if (detail.basin) {
+    basinBody.appendChild(term("Basin", labelFor(well, "/basin")));
+    const value = document.createElement("dd");
+    value.textContent = detail.basin;
+    basinBody.appendChild(value);
+  }
+
+  const lineageBody = document.createElement("div");
+
+  // Ten ids in one fixed order. A section absent for this well is not rendered at all, but it
+  // stays in the list so a link that named it is answered with its own name and rule rather
+  // than with silence. Only three are expanded, and the rule behind that split is that a
+  // section is expanded when its content is why a reader opens a well, and collapsed when it
+  // is why they open this particular one.
+  const specs: SectionSpec[] = [
+    { id: "production", title: "Production", expanded: true },
+    {
+      id: "cumulative",
+      title: "Cumulative",
+      expanded: true,
+      present: loadCumulative !== undefined,
+      ...(loadCumulative ? { load: loadCumulative } : {}),
+    },
+    { id: "identity", title: "Identity and status", expanded: true },
+    { id: "completions", title: "Completions and fluids", expanded: false, load: loadContext },
+    {
+      id: "neighbours",
+      title: "Neighbours and spacing",
+      expanded: false,
+      present: loadNeighbours !== undefined,
+      ...(loadNeighbours ? { load: loadNeighbours } : {}),
+      ...(well.links?.["neighbors_rule"] ? { absentRule: well.links["neighbors_rule"] } : {}),
+    },
+    { id: "land", title: "Land and lease", expanded: false },
+    { id: "basin", title: "Basin and geology", expanded: false },
+    {
+      id: "pools",
+      title: "Production by pool",
+      expanded: false,
+      present: well.links?.["pools"] !== undefined,
+    },
+    {
+      id: "peer",
+      title: "Peer control",
+      expanded: false,
+      present: well.links?.["type_curve"] !== undefined,
+    },
+    { id: "lineage", title: "Lineage", expanded: false, load: () => fillLineage() },
+  ];
+
+  const sections = mountSections(body, api10, specs);
+  sections.get("production")?.body.appendChild(chartFrame);
+  sections.get("cumulative")?.body.appendChild(cumulativeSlot);
+  sections.get("identity")?.body.appendChild(factsSlot);
+  sections.get("completions")?.body.appendChild(contextSlot);
+  sections.get("neighbours")?.body.appendChild(neighborSlot);
+  sections.get("land")?.body.appendChild(landBody);
+  sections.get("basin")?.body.appendChild(basinBody);
+  sections.get("lineage")?.body.appendChild(lineageBody);
+  body.appendChild(notesSlot);
+
+  // "What can I check here", and it costs a request of zero. The counts are read off what is
+  // rendered at the moment the reader looks, so they are not served figures and carry no
+  // handle of their own; the sentence says so, in the shape the running total will use.
+  async function fillLineage(): Promise<void> {
+    const list = document.createElement("dl");
+    list.className = "gw-facts gw-lineage-index";
+    for (const spec of specs) {
+      const host = sections.get(spec.id);
+      if (!host || spec.id === "lineage") continue;
+      const count = host.body.querySelectorAll("gw-figure[handle], .gw-handle").length;
+      if (count === 0) continue;
+      const name = document.createElement("dt");
+      name.appendChild(sectionLink(spec.id, spec.title));
+      const value = document.createElement("dd");
+      value.setAttribute("data-no-glossary", "");
+      value.textContent = `${count} handle${count === 1 ? "" : "s"}`;
+      list.append(name, value);
+    }
+    const note = document.createElement("p");
+    note.className = "gw-note";
+    note.textContent = list.childElementCount
+      ? "Counted on this page from what is rendered now, so these counts are not served figures and carry no handle of their own. Each handle's own is beside it."
+      : "This card is carrying no derivation handles yet.";
+    lineageBody.replaceChildren(list, note);
   }
 
   // A lease-reporting jurisdiction has no observed well-level series, so the card says that
@@ -500,39 +588,34 @@ export async function renderWellCard(
     chartFrame.replaceWith(
       pendingProductionPanel(pending, well.links?.["reporting_rule"] ?? undefined),
     );
-    container.replaceChildren(card);
-    highlight(card, termIndex());
-    focusPanel(container);
-    await Promise.all([statusRequest, contextRequest, cumulativeRequest, neighborRequest]);
+    land(container, card, state.section);
+    await Promise.all([statusRequest, sectionsSettled()]);
     return;
   }
 
-  container.replaceChildren(card);
-  highlight(card, termIndex());
-  focusPanel(container);
+  land(container, card, state.section);
 
   const productionRequest = (async () => {
     try {
       const production = await getEnvelope<ProductionData>(
         `/v1/wells/${api10}/production`,
-        asOfQuery,
+        query,
       );
       const data = unwrap(production);
       if (data.streams.length === 0) {
         chartHost.replaceChildren(emptyState("No production reported."));
         return;
       }
-      chartTitle.replaceChildren(
-        labelElement("Monthly production", labelFor(production, "/series")),
-      );
-      // SB-08 §2.6 row 2, in the chart's own header and after that replaceChildren rather
+      const head = sections.get("production");
+      head?.title.replaceChildren(labelElement("Production", labelFor(production, "/series")));
+      // SB-08 §2.6 row 2, in the section's own head and after that replaceChildren rather
       // than before it: the title is rebuilt when the series lands, so an earlier append
       // goes with the placeholder. The vintage pinned is the series' own, not the card's.
       const series = openThisSeries(detail.api10, {
         state,
         resolved: production.meta.as_of.resolved,
       });
-      if (series) chartTitle.appendChild(crossingLink(series));
+      if (series) head?.aside.appendChild(crossingLink(series));
       // Loaded here rather than at module scope: the plot is drawn only once a series has
       // arrived, and the entry chunk carries every reader who never opens a card. The budget
       // test in explore/bundle-budget.test.ts is what holds this to it.
@@ -548,13 +631,19 @@ export async function renderWellCard(
     }
   })();
 
-  await Promise.all([
-    statusRequest,
-    contextRequest,
-    cumulativeRequest,
-    neighborRequest,
-    productionRequest,
-  ]);
+  await Promise.all([statusRequest, productionRequest, sectionsSettled()]);
+}
+
+/**
+ * Mount, highlight, and land focus. With `?section=` present the landing target is that
+ * section's disclosure rather than the card heading, so a deep-linked reader lands on the
+ * thing the link named; `applySection` carries the same quiet-focus rule `focusPanel` does.
+ */
+function land(container: HTMLElement, card: HTMLElement, section: string | null): void {
+  container.replaceChildren(card);
+  highlight(card, termIndex());
+  if (section) applySection(section);
+  else focusPanel(container);
 }
 
 const CUMULATIVE_STREAMS: [keyof NonNullable<WellCumulatives["cumulative"]>, string, string][] = [

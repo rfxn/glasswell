@@ -60,6 +60,9 @@ let hadSession = false;
 let railCollapsed = false;
 let railWell = "";
 let railPoint: { lon: number; lat: number } | null = null;
+// The well the card host is currently showing, which is not the same question as which well
+// the URL names once a popstate has replayed the state.
+let mountedWell: string | null = null;
 let sheetWired = false;
 const sheetWidth = window.matchMedia("(max-width: 900px)");
 
@@ -107,19 +110,49 @@ railLocate.addEventListener("click", () => {
 
 sheetWidth.addEventListener("change", () => applyRail());
 
+// The card is the only module that knows what a section is; this one is the only writer of
+// app state. SECTION_SET_EVENT, as a literal for the same reason the dispatch above is.
+document.addEventListener("gw-section-set", (event) => {
+  const { id, mode } = (event as CustomEvent<{ id: string | null; mode: "push" | "replace" }>)
+    .detail;
+  commit({ section: id }, mode);
+});
+
 function commit(next: Partial<AppState>, mode: "push" | "replace" = "push"): void {
   state = { ...state, ...next };
   writeState(state, mode);
 }
 
 function showWell(api10: string | null, mode: "push" | "replace" = "push"): void {
-  commit({ well: api10 }, mode);
+  // A section-only popstate must not tear the card down. followHistory replays the well on
+  // every entry, renderWellCard begins by replacing every child of the host, and the reader
+  // would lose every lazily loaded section, every disclosure they opened and their place in
+  // the scroll -- and every section would be requested again. Same well, already mounted: the
+  // state is committed and the card is told which section the URL now names.
+  // Against the well that is mounted, not against state.well: followHistory assigns the new
+  // state before it replays, so on a popstate state.well is already the well being asked for
+  // and would answer "unchanged" every time.
+  const previous = mountedWell;
+  const same =
+    previous === api10 && api10 !== null && !cardHost.hidden && cardHost.childElementCount > 0;
+  // A different well is a different card, so a section named for the last one does not
+  // survive it. A first mount is not a change and keeps the one a deep link asked for.
+  const carried = previous !== null && previous !== api10 ? { section: null } : {};
+  commit({ well: api10, ...carried }, mode);
+  if (same) {
+    // card/sections.ts's SECTION_EVENT, kept as a literal so this module carries no import
+    // edge into the card chunk it is deliberately split from. sections.test.ts holds the two
+    // spellings together.
+    document.dispatchEvent(new CustomEvent("gw-section", { detail: { id: state.section } }));
+    return;
+  }
   wellSelected(api10);
   if (!api10) {
     cardHost.hidden = true;
     cardHost.replaceChildren();
     railWell = "";
     railPoint = null;
+    mountedWell = null;
     applyRail();
     return;
   }
@@ -127,6 +160,7 @@ function showWell(api10: string | null, mode: "push" | "replace" = "push"): void
   // start rather than reading "the well card" for the length of a fetch.
   railWell = api10;
   railPoint = null;
+  mountedWell = api10;
   const source = pendingSource;
   // Loaded on the first well opened, not by every reader who loads the app: the card is the
   // largest module on the entry path and a reader who never clicks a dot never needs it. The
@@ -337,6 +371,7 @@ function hideMapOverlays(): void {
   shell.setAttribute("data-drawer", "closed");
   railWell = "";
   railPoint = null;
+  mountedWell = null;
   applyRail();
 }
 

@@ -1,0 +1,80 @@
+/* The card's own section chrome. Its own sheet rather than style.css because it is loaded
+   with the card chunk, so a reader who never opens a well never downloads it and the entry
+   stylesheet's budget carries none of it. The precedent is map.css and explore/layout.css.
+   The 44 px touch rule for .gw-section-toggle stays in style.css's phone arm, where the other
+   touch rules live. */
+
+.gw-section {
+  margin-top: var(--gw-space-4);
+  padding-top: var(--gw-space-3);
+  border-top: 1px solid var(--hairline);
+}
+
+.gw-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gw-space-2);
+  margin: 0;
+}
+
+/* Unstyled on purpose: the disclosure is a heading a reader can press, not a form control.
+   `aria-expanded` and not <details>, because ten sections need one keyboard contract and the
+   accordion pattern's arrow keys are it. */
+.gw-section-toggle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: baseline;
+  gap: var(--gw-space-2);
+  padding: var(--gw-space-1) 0;
+  color: var(--slate);
+  font: inherit;
+  font-size: var(--gw-fs-eyebrow);
+  font-weight: var(--gw-fw-eyebrow);
+  letter-spacing: var(--gw-ls-eyebrow);
+  text-align: left;
+  text-transform: uppercase;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.gw-section-toggle:hover {
+  color: var(--text);
+}
+
+/* The marker turns rather than swapping glyphs, so the control does not reflow on toggle. */
+.gw-section-toggle::before {
+  content: "";
+  flex: none;
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid currentcolor;
+  transform-origin: 25% 50%;
+  transition: transform 120ms ease;
+}
+
+.gw-section-toggle[aria-expanded="true"]::before {
+  transform: rotate(90deg);
+}
+
+.gw-section-aside {
+  flex: none;
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-section-body {
+  padding-top: var(--gw-space-2);
+}
+
+/* Said once, and where the reader is looking: a link that named a section this well does not
+   have is a fact about the jurisdiction, not about the link. */
+.gw-section-absent-note {
+  padding: var(--gw-space-2) 0;
+  color: var(--amber);
+}
+
+.gw-section-link {
+  color: var(--cyan);
+}

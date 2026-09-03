@@ -145,6 +145,73 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("back and forward across sections do not tear the card down", () => {
+  // followHistory replays the well on every popstate and renderWellCard begins by replacing
+  // every child of its host, so a section-only entry unloaded every lazily loaded section,
+  // re-issued every request and re-landed focus on the first focusable element.
+  it("re-renders nothing and re-requests nothing when only the section changed", async () => {
+    await bootAt("/?well=3305310451&section=production");
+    const card = host("gw-card");
+    // What renderWellCard does for itself and the mock does not: a populated, visible host is
+    // the condition the guard reads, because an empty one has nothing to preserve.
+    card.hidden = false;
+    card.replaceChildren(document.createElement("p"));
+    const mounted = card.firstElementChild;
+    const applied: (string | null)[] = [];
+    document.addEventListener("gw-section", (event) => {
+      applied.push((event as CustomEvent<{ id: string | null }>).detail.id);
+    });
+
+    navigate("/?well=3305310451&section=neighbours");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(renderWellCard.mock.calls.length).toBe(1);
+    expect(card.firstElementChild).toBe(mounted);
+    expect(applied).toEqual(["neighbours"]);
+  });
+
+  it("still renders when the well itself changed, and drops the old well's section", async () => {
+    await bootAt("/?well=3305310451&section=neighbours");
+    host("gw-card").hidden = false;
+    host("gw-card").replaceChildren(document.createElement("p"));
+
+    navigate("/?well=3305302532&section=neighbours");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(renderWellCard.mock.calls.length).toBe(2);
+    expect(renderWellCard.mock.calls[1]?.[1]).toBe("3305302532");
+  });
+
+  it("keeps the section a deep link asked for through the first mount", async () => {
+    await bootAt("/?well=3305310451&section=neighbours");
+    expect(window.location.search).toContain("section=neighbours");
+  });
+
+  it("writes the section the card asks for, and only main writes app state", async () => {
+    await bootAt("/?well=3305310451");
+    const pushed = vi.spyOn(window.history, "pushState");
+    const replaced = vi.spyOn(window.history, "replaceState");
+
+    document.dispatchEvent(
+      new CustomEvent("gw-section-set", { detail: { id: "land", mode: "replace" } }),
+    );
+    expect(window.location.search).toContain("section=land");
+    expect(replaced).toHaveBeenCalledTimes(1);
+    expect(pushed).not.toHaveBeenCalled();
+
+    document.dispatchEvent(
+      new CustomEvent("gw-section-set", { detail: { id: "basin", mode: "push" } }),
+    );
+    expect(window.location.search).toContain("section=basin");
+    expect(pushed).toHaveBeenCalledTimes(1);
+
+    document.dispatchEvent(
+      new CustomEvent("gw-section-set", { detail: { id: null, mode: "replace" } }),
+    );
+    expect(window.location.search).not.toContain("section=");
+  });
+});
+
 describe("one dispatch on view, three surfaces (SB-08 §2.1)", () => {
   // B1: createMap is not idempotent and its callee's disposer is discarded, so a second mount
   // is a second canvas and a second bus handler — one click would then select twice.
