@@ -45,12 +45,25 @@ these are its answers, taken read-only on the spine 2026-09-03 with the mart's o
 containing basin polygon per well, driven off `canonical.wells_latest` and left-joined to the
 surface point in `canonical.well_spatial`.
 
-| State | Inside a published basin | `outside_published_boundaries` | No geometry | Rule |
-|---|---|---|---|---|
-| **ND** 33 | 43,424 of 43,817 (99.1 %) | 393 (0.9 %) | 0 | `cr_nd_basin_context_1` |
-| **TX** 42 | 344,611 of 359,421 (96.9 % of the 355,463 with a surface point) | 10,852 (3.0 %) | 3,958 | `cr_tx_basin_context_1` |
-| **NM** 30 | 137,505 of 142,000 (97.0 % of the 141,778 with a surface point) | 4,273 (3.0 %) | 222 | `cr_nm_basin_context_1` |
-| **MT** 25 | 13,062 of 40,626 (32.2 %) | **27,564 (67.8 %)** | 0 | `cr_mt_basin_context_1` |
+**One denominator, and it is the well count.** Every share below is over the jurisdiction's own
+wells in `canonical.wells_latest`, which is the population the mart is driven off and therefore
+the figure the card serves with a handle. Wells with no surface point are counted in that
+denominator and answered `no_geometry`.
+
+| State | Wells | Inside a published basin | `outside_published_boundaries` | No geometry | Rule |
+|---|---:|---|---|---:|---|
+| **ND** 33 | 43,817 | 43,424 (99.1 %) | 393 (0.9 %) | 0 | `cr_nd_basin_context_1` |
+| **TX** 42 | 359,421 | 344,611 (95.9 %) | 10,852 (3.0 %) | 3,958 | `cr_tx_basin_context_1` |
+| **NM** 30 | 142,000 | 137,505 (96.8 %) | 4,273 (3.0 %) | 222 | `cr_nm_basin_context_1` |
+| **MT** 25 | 40,626 | 13,062 (32.2 %) | **27,564 (67.8 %)** | 0 | `cr_mt_basin_context_1` |
+
+Asked of the geometry table instead — distinct surface api10s in `canonical.well_spatial`, which
+is the base the spec's §6.2 quotes — the four shares read ND 43,424/43,817 (99.1 %), TX
+344,611/355,463 (96.9 %), NM 137,505/141,778 (97.0 %) and MT 13,623/42,026 (32.4 %). Only
+Montana moves materially, and by exactly the 1,400 surface points that have no well behind them,
+561 of which are inside a basin. **The served figure is the well-base one**, because that is what
+the mart writes and what the card resolves; the geometry-base figures are recorded here so a
+reader comparing this page against the spec finds the difference stated rather than implied.
 
 Two thirds of Montana is `outside_published_boundaries`: a served answer about the EIA boundary
 set, not a gap in the record. Texas files `permian` on all 359,421 rows as an ingest scope label,

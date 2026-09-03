@@ -158,6 +158,14 @@
         "additionalProperties": false,
         "description": "The published boundary a well's geometry falls in, beside the label the ingest wrote.",
         "properties": {
+          "_lineage": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Field path to the derivation handle of the mart run that answered it.",
+            "title": "Lineage",
+            "type": "object"
+          },
           "basin_class": {
             "description": "in_published_boundary, outside_published_boundaries, or no_geometry. Outside is an answer about the boundary set, not a gap: it says the publisher draws no basin here.",
             "title": "Basin Class",
@@ -264,7 +272,8 @@
           "label_agrees",
           "boundary_vintage",
           "geometry_basis",
-          "rule_id"
+          "rule_id",
+          "_lineage"
         ],
         "title": "BasinContext",
         "type": "object"
@@ -8562,7 +8571,7 @@
             "description": "The cap this response was cut at.",
             "title": "Limit",
             "type": "integer",
-            "x-glasswell-not-a-figure": "The cut a status history was taken at. A property of the response, not of the well: a New Mexico well carries up to 15,590 effective-dated headers and ten of them is a readable answer."
+            "x-glasswell-not-a-figure": "The cut a status history was taken at. A property of the response, not of the well: New Mexico holds 15,590 distinct filed effective dates across its population and its fullest single well carries 15 of them, 248 wells carry more than ten, and ten is a readable answer with the remainder counted beside it."
           },
           "returned": {
             "description": "Rows this response carries.",
@@ -8571,7 +8580,7 @@
             "x-glasswell-not-a-figure": "How many status-history rows this response carries."
           },
           "total": {
-            "description": "Effective-dated headers the well carries at this vintage.",
+            "description": "Effective-dated headers the well carries at this vintage, whether or not a history is served for its jurisdiction.",
             "title": "Total",
             "type": "integer",
             "x-glasswell-not-a-figure": "How many effective-dated headers the well carries at this vintage. Served so a short list is never read as a short life; a count of rows in this response's own population, not a measured petroleum quantity."
@@ -20132,7 +20141,7 @@
     },
     "/v1/wells/{api10}/history": {
       "get": {
-        "description": "Every effective-dated header this well carries, newest first, over the status code the regulator filed. Not over the canonical class: a canonical class is glasswell's own mapping decision and can be superseded by a rule, so a history over it would show a rule edit as if the regulator had changed its mind, and it would be empty everywhere \u2014 zero wells in the spine carry more than one distinct canonical class, while 31,707 carry a changed filed code. Whether there is a history at all is a property of the jurisdiction's clock, not of the well: where effective_from is the regulator's own valid time a new header means the regulator restamped the status, and where it is the vintage of the extract glasswell pulled it means only that glasswell looked again. cr_status_history_basis_1 records which is which per jurisdiction and is the only thing that emits links.history on the well record. A 200 with an empty history and basis.served false is therefore the honest answer for a load-stamp jurisdiction: it says no history was captured, which an empty list on its own cannot tell apart from a well that never changed. The class column is labelled rather than claimed. It is resolved through the one shared read-time resolver \u2014 the same join the tile mart, the facets and the well record use, so no two surfaces can answer differently \u2014 and it is today's mapping applied to a historical code, which is what its label says.",
+        "description": "Every effective-dated header this well carries, newest first, over the status code the regulator filed. Not over the canonical class: a canonical class is glasswell's own mapping decision and can be superseded by a rule, so a history over it would show a rule edit as if the regulator had changed its mind, and it would be empty everywhere \u2014 zero wells in the spine carry more than one distinct canonical class, while 31,707 carry a changed filed code. Whether there is a history at all is a property of the jurisdiction's clock, not of the well: where effective_from is the regulator's own valid time a new header means the regulator restamped the status, and where it is the vintage of the extract glasswell pulled it means only that glasswell looked again. Each jurisdiction's own status_history rule records which of the two its headers are on, and that registration is the only thing that emits links.history on the well record. A 200 with an empty history and basis.served false is therefore the honest answer for a load-stamp jurisdiction: it says no history was captured, which an empty list on its own cannot tell apart from a well that never changed. The class column is labelled rather than claimed. It is resolved through the one shared read-time resolver \u2014 the same join the tile mart, the facets and the well record use, so no two surfaces can answer differently \u2014 and it is today's mapping applied to a historical code, which is what its label says.",
         "operationId": "get_well_status_history",
         "parameters": [
           {

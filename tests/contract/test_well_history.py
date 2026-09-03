@@ -15,7 +15,12 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
-from glasswell.seed.conformance_status_history import HISTORY_RULE_ID, LOAD_STAMP, SOURCE_VALID_TIME
+from glasswell.seed.conformance_status_history import (
+    CO_HISTORY_RULE_ID,
+    LOAD_STAMP,
+    NM_HISTORY_RULE_ID,
+    SOURCE_VALID_TIME,
+)
 from tests.contract.conftest import OTHER_API10S
 from tests.support.seed import seed_well
 
@@ -102,7 +107,15 @@ def test_it_answers_a_load_stamp_jurisdiction_rather_than_refusing_it(
     assert basis["rule_id"] is None
     assert basis["status_vocabulary_rule"]
     assert "pulled" in basis["detail"]
-    assert body["data"]["cap"]["total"] == 0
+    # §2.3: the sentence names the jurisdiction, from the registry rather than from a literal,
+    # so a North Dakota well says North Dakota files a snapshot and a Montana well says
+    # Montana. The name is registered data; nothing here knows a state by heart.
+    assert basis["detail"].startswith("North Dakota files a snapshot")
+    # The well carries its headers whether or not a history is served over them: `total` is
+    # scoped to the well, `basis.served` carries the refusal, and `withheld` is 0 because the
+    # cap held nothing back (gate H-16).
+    assert body["data"]["cap"]["total"] == 2
+    assert body["data"]["cap"]["withheld"] == 0
 
 
 def test_dr_a7_the_filed_code_and_its_class_are_both_served(
@@ -172,7 +185,7 @@ def test_the_history_is_over_the_filed_code_and_not_over_the_canonical_class(
     ]
     assert body["basis"]["clock"] == SOURCE_VALID_TIME
     assert body["basis"]["served"] is True
-    assert body["basis"]["rule_id"] == HISTORY_RULE_ID
+    assert body["basis"]["rule_id"] == CO_HISTORY_RULE_ID
 
 
 def test_the_class_column_says_it_is_todays_mapping_and_names_the_rule_per_row(
@@ -199,7 +212,7 @@ def test_the_well_record_offers_the_history_only_where_there_is_one(
     body = client.get(f"/v1/wells/{CO_CONTROL}").json()
 
     assert body["links"]["history"] == f"/v1/wells/{CO_CONTROL}/history"
-    assert body["links"]["history_rule"] == f"/v1/conformance/{HISTORY_RULE_ID}"
+    assert body["links"]["history_rule"] == f"/v1/conformance/{CO_HISTORY_RULE_ID}"
     # DR-A7 for a jurisdiction whose promotion writes no class at all: the code is served and
     # the class resolves at read time, so the chip has both.
     assert body["data"]["status_reported"] == CO_LATER[0]
@@ -235,9 +248,17 @@ def test_the_cap_says_what_it_held_back(
 def test_the_rule_is_resolvable_at_the_conformance_surface(
     client: TestClient, controls: psycopg.Connection
 ) -> None:
-    rule = client.get(f"/v1/conformance/{HISTORY_RULE_ID}").json()["data"]
+    rule = client.get(f"/v1/conformance/{CO_HISTORY_RULE_ID}").json()["data"]
+    # Colorado's card links Colorado's evidence: one rule per jurisdiction, filed under that
+    # jurisdiction's own source, because a reader following the handle for a decision about
+    # Colorado's clock was being shown New Mexico's OCD archive (gate H-1).
+    assert rule["source_id"] == "co_ecmc_wells_shp"
+    assert "ecmc.state.co.us" in rule["evidence_url"]
+    other = client.get(f"/v1/conformance/{NM_HISTORY_RULE_ID}").json()["data"]
+    assert other["source_id"] == "nm_ocd_wellhistory"
+    assert "emnrd.nm.gov" in other["evidence_url"]
 
-    assert rule["rule_id"] == HISTORY_RULE_ID
+    assert rule["rule_id"] == CO_HISTORY_RULE_ID
     assert "31,707" in rule["rationale"]
     assert rule["spec"]["axis"] == "status_reported"
     assert rule["spec"]["registers_for"] == ["NM", "CO"]

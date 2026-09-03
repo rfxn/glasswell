@@ -1,4 +1,4 @@
-"""cr_status_history_basis_1: which clock a header's effective_from is, per jurisdiction.
+"""The status-history rules: which clock a header's effective_from is, per jurisdiction.
 
 The rule is what makes an empty status history readable. Without it a consumer cannot tell
 "this well never changed" from "no history was ever captured here", and the two are different
@@ -16,28 +16,53 @@ import glasswell
 from glasswell.api.routers import wells
 from glasswell.seed.conformance_status_history import (
     CLOCKS,
-    HISTORY_RULE_ID,
+    CO_HISTORY_RULE_ID,
+    HISTORY_RULE_IDS,
     HISTORY_RULES,
     LOAD_STAMP,
+    NM_HISTORY_RULE_ID,
     REGISTERS,
     SOURCE_VALID_TIME,
     STATUS_HISTORY,
 )
-from glasswell.seed.jurisdictions import JURISDICTIONS
+from glasswell.seed.jurisdictions import JURISDICTION_RULES, JURISDICTIONS
 
 pytestmark = pytest.mark.unit
 
-RULE = HISTORY_RULES[0]
+REGISTERS_TO_RULE = {"NM": NM_HISTORY_RULE_ID, "CO": CO_HISTORY_RULE_ID}
+
+BY_ID = {str(rule["rule_id"]): rule for rule in HISTORY_RULES}
+RULE = BY_ID[NM_HISTORY_RULE_ID]
 SPEC = RULE["spec"]
 ROUTER_SOURCE = (Path(glasswell.__file__).parent / "api" / "routers" / "wells.py").read_text()
 
 
-def test_the_rule_is_one_row_and_names_the_operation_that_reads_it() -> None:
-    assert len(HISTORY_RULES) == 1
-    assert RULE["rule_id"] == HISTORY_RULE_ID
-    assert RULE["code_ref"] == "glasswell.api.routers.wells:get_well_status_history"
-    assert RULE["evidence_url"]
-    assert RULE["rationale"]
+def test_it_is_one_row_per_registering_jurisdiction_under_that_jurisdiction_s_own_source() -> (
+    None
+):
+    """One shared row served New Mexico's OCD archive as the evidence for a decision about
+    Colorado's clock, which is the failure R8 exists to prevent (gate H-1)."""
+    assert set(BY_ID) == set(HISTORY_RULE_IDS) == set(REGISTERS_TO_RULE.values())
+    assert BY_ID[NM_HISTORY_RULE_ID]["source_id"] == "nm_ocd_wellhistory"
+    assert BY_ID[CO_HISTORY_RULE_ID]["source_id"] == "co_ecmc_wells_shp"
+    assert "emnrd.nm.gov" in str(BY_ID[NM_HISTORY_RULE_ID]["evidence_url"])
+    assert "ecmc.state.co.us" in str(BY_ID[CO_HISTORY_RULE_ID]["evidence_url"])
+    for rule in HISTORY_RULES:
+        # P3.0's convention, which one global id broke: the id names the table its source holds.
+        assert str(rule["rule_id"]).startswith("cr_nm_") or str(rule["rule_id"]).startswith(
+            "cr_co_"
+        )
+        assert rule["code_ref"] == "glasswell.api.routers.wells:get_well_status_history"
+        assert rule["rationale"]
+
+
+def test_the_registry_points_each_jurisdiction_at_its_own_rule() -> None:
+    declared = {
+        str(row["jurisdiction_code"]): str(row["rule_id"])
+        for row in JURISDICTION_RULES
+        if row["decision"] == STATUS_HISTORY
+    }
+    assert declared == REGISTERS_TO_RULE
 
 
 def test_every_registered_jurisdiction_carries_a_clock_and_its_own_effective_rule() -> None:
@@ -64,7 +89,7 @@ def test_it_registers_for_the_valid_time_jurisdictions_and_for_nobody_else() -> 
 
 def test_the_measurement_behind_it_is_in_the_row_rather_than_in_a_commit_message() -> None:
     measured = SPEC["measured"]
-    # Measured on the deployed spine 2026-09-02. Zero canonical changes is why the axis is the
+    # Measured on the deployed spine 2026-09-03. Zero canonical changes is why the axis is the
     # filed code; 31,707 changed filed codes is why there is anything to serve at all.
     assert measured["wells_whose_status_canonical_ever_changes"] == 0
     assert measured["wells_whose_status_reported_ever_changes"] == 31707
@@ -106,10 +131,10 @@ def test_the_history_reads_the_base_tables_and_needs_no_ddl() -> None:
     # The rule id appears in exactly one migration and only to publish it: publication evidence
     # is what brings a rule id into existence at all (049's trigger refuses the insert without
     # it), and it is DML in an append-only table rather than DDL.
-    naming = [path for path in migrations if HISTORY_RULE_ID in path.read_text()]
-    assert len(naming) == 1, [path.name for path in naming]
-    text = naming[0].read_text()
-    assert "conformance_rule_publications" in text
+    for rule_id in HISTORY_RULE_IDS:
+        naming = [path for path in migrations if rule_id in path.read_text()]
+        assert len(naming) == 1, [path.name for path in naming]
+        assert "conformance_rule_publications" in naming[0].read_text()
     # Nothing anywhere creates a relation for this operation to read: it joins the base tables
     # a jurisdiction's headers already live in, which is why v0.80 spends one migration.
     ddl = re.compile(

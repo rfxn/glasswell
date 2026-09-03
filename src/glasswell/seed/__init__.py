@@ -32,7 +32,7 @@ from glasswell.seed.conformance_schedules import (
     seed_conformance_schedules,
 )
 from glasswell.seed.conformance_status_history import (
-    HISTORY_RULE_ID,
+    HISTORY_RULE_IDS,
     STATUS_HISTORY,
     seed_conformance_status_history,
 )
@@ -75,7 +75,7 @@ __all__ = [
     "FORMATION_ALIASES",
     "FRACFOCUS_RULES",
     "GLOSSARY_SEED_PATH",
-    "HISTORY_RULE_ID",
+    "HISTORY_RULE_IDS",
     "JOBS",
     "JOB_SOURCES",
     "JURISDICTIONS",

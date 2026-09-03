@@ -515,6 +515,18 @@ JOBS: tuple[dict[str, object], ...] = (
         " month is the only event that changes them.",
     },
     {
+        "job_id": "marts_basin_context",
+        "label": "Basin context mart",
+        "kind": "mart",
+        "entry_point": "glasswell.marts.well_basin_context",
+        "argv": [],
+        "jurisdiction": None,
+        "run_as": "glasswell",
+        "rationale": "One row per well in every jurisdiction, so it carries none of its own:"
+        " it is rebuilt when a jurisdiction's wells move or when the published boundary set"
+        " does, and a well that arrives with nothing re-running it serves no basin at all.",
+    },
+    {
         "job_id": "marts_neighbors",
         "label": "Neighbour index",
         "kind": "mart",
@@ -742,6 +754,42 @@ DEPENDENCIES: tuple[tuple[str, str, str, str], ...] = (
         "Cumulatives stream the monthly production report and change only when it does.",
     ),
     (
+        "marts_basin_context",
+        "ingest_eia_boundaries",
+        "changed",
+        "The polygon half of the answer is the EIA set, so a new download is a reason to ask"
+        " every well again.",
+    ),
+    (
+        "marts_basin_context",
+        "marts_nd_wells",
+        "completed",
+        "One edge per jurisdiction mart, as the jurisdiction counts take them: the basin"
+        " context is over the well list, so it is ordered after each state's mart rather than"
+        " racing it.",
+    ),
+    (
+        "marts_basin_context",
+        "marts_nm_wells",
+        "completed",
+        "New Mexico is where this mart earns its keep: 137,505 of its wells get a basin they"
+        " never had, so its rebuild is the one that changes most rows.",
+    ),
+    (
+        "marts_basin_context",
+        "marts_mt_wells",
+        "completed",
+        "Montana's answer is mostly `outside_published_boundaries`, which is still an answer"
+        " that has to be recomputed when its wells move.",
+    ),
+    (
+        "marts_basin_context",
+        "marts_tx_wells",
+        "completed",
+        "Texas is the fourth resident jurisdiction; a fifth adds an edge here rather than a"
+        " code change.",
+    ),
+    (
         "marts_neighbors",
         "ingest_fracfocus",
         "changed",
@@ -963,6 +1011,13 @@ SCHEDULES: tuple[dict[str, object], ...] = (
         "memory_max": "2G",
         "timeout_seconds": 3600,
         "legacy_unit": INGEST_UNIT,
+    },
+    {
+        "job_id": "marts_basin_context",
+        "trigger": "after_dependency",
+        "cadence_note": "Rebuilds after a wells mart, or when the boundary set changes",
+        "memory_max": "4G",
+        "timeout_seconds": 3600,
     },
     {
         "job_id": "marts_neighbors",

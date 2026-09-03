@@ -54,6 +54,7 @@ from glasswell.lineage.conformance import (
 )
 from glasswell.lineage.envelope import Figure, collect_handles, distinct_handles, figure
 from glasswell.lineage.explain import MAX_HANDLES
+from glasswell.lineage.ids import format_handle
 from glasswell.lineage.jurisdictions import NEIGHBORS_SCOPE, JurisdictionRegistry
 from glasswell.lineage.selector_registry import identity_selector_term
 from glasswell.marts.cumulatives import (
@@ -145,9 +146,20 @@ COHORT_STREAM_BASIS = {"liquid": LIQUIDS_BASIS, "gas": None, "water": "water"}
 WELL_LABELS = {
     "/api10": "gt_api_10_api_12_api_14",
     "/status_vocabulary_rule": "gt_conformance_rule",
+    # The Identity section's own rows. `identity.ts` sources every term id from these
+    # pointers, so a field with no pointer here can never highlight, whatever the glossary
+    # seeds (gate M3).
+    "/status_reported": "gt_well_status",
+    "/status_canonical": "gt_well_status",
+    "/well_type_reported": "gt_well_type",
+    "/jurisdiction_name": "gt_jurisdiction",
+    "/regulator_name": "gt_regulator",
+    "/geometry_provenance_rule": "gt_geometry_provenance",
     "/basin_context/basin_name": "gt_basin",
     "/basin_context/play_name": "gt_play",
-    "/basin_context/basin_label_filed": "gt_basin",
+    # The scope label is not the basin: pointing both at gt_basin taught the confusion §6.1
+    # exists to name (gate N2).
+    "/basin_context/basin_label_filed": "gt_scope_label",
     "/basin_context/rule_id": "gt_conformance_rule",
     "/land_unit_label": "gt_land_unit",
     "/confidential_flag": "gt_confidential_well",
@@ -222,17 +234,33 @@ RANKED_WELLS_PRODUCING = _SPINE.format(
 # refreshed since the well landed -- and never a silent null basin.
 _BASIN_CONTEXT = """
 select basin_name, basin_class, basin_overlap, play_name, play_class, basin_label_filed,
-       label_class, label_agrees, boundary_vintage, geometry_basis, rule_id
+       label_class, label_agrees, boundary_vintage, geometry_basis, rule_id, derivation_id
   from marts.well_basin_context
  where api10 = %(api10)s
 """
+
+# Every line the Basin section draws, and the mart column each one reads. R6: a served answer a
+# reader cannot resolve to the run that produced it is untraceable, and untraceable equals
+# wrong -- the rule does not stop at numbers, and `outside_published_boundaries` is an answer.
+_BASIN_LINEAGE_COLUMNS = (
+    "basin_name",
+    "basin_class",
+    "play_name",
+    "play_class",
+    "basin_label_filed",
+    "label_class",
+    "label_agrees",
+    "boundary_vintage",
+    "geometry_basis",
+    "basin_overlap",
+)
 
 # Every effective-dated header the well carries, newest first, with the class resolved through
 # the one shared resolver rather than through a second mapping written here. No view and no
 # DDL: `canonical.wells` is already indexed on (api10, effective_from) and this is a scalar
 # join onto it. The axis is `status_reported` -- what the regulator filed -- because
 # `status_canonical` is glasswell's own mapping and a history over it would show a rule edit
-# as if the regulator had changed its mind (cr_status_history_basis_1).
+# as if the regulator had changed its mind (the jurisdiction's status_history rule).
 _STATUS_HISTORY = """
 select w.effective_from, w.status_reported,
        {resolved} as status_canonical,
@@ -634,6 +662,10 @@ class BasinContext(BaseModel):
     rule_id: str | None = Field(
         description="The basin_context rule that decided this row, where one is registered."
     )
+    lineage: dict[str, str] = Field(
+        alias="_lineage",
+        description="Field path to the derivation handle of the mart run that answered it.",
+    )
 
 
 class StatusHistoryRow(BaseModel):
@@ -692,8 +724,9 @@ class StatusHistoryCap(BaseModel):
         description="The cap this response was cut at.",
         json_schema_extra=not_a_figure(
             "The cut a status history was taken at. A property of the response, not of the"
-            " well: a New Mexico well carries up to 15,590 effective-dated headers and ten of"
-            " them is a readable answer."
+            " well: New Mexico holds 15,590 distinct filed effective dates across its"
+            " population and its fullest single well carries 15 of them, 248 wells carry more"
+            " than ten, and ten is a readable answer with the remainder counted beside it."
         ),
     )
     returned: int = Field(
@@ -701,7 +734,8 @@ class StatusHistoryCap(BaseModel):
         json_schema_extra=not_a_figure("How many status-history rows this response carries."),
     )
     total: int = Field(
-        description="Effective-dated headers the well carries at this vintage.",
+        description="Effective-dated headers the well carries at this vintage, whether or not"
+        " a history is served for its jurisdiction.",
         json_schema_extra=not_a_figure(
             "How many effective-dated headers the well carries at this vintage. Served so a"
             " short list is never read as a short life; a count of rows in this response's own"
@@ -883,6 +917,26 @@ def _producing_unregistered(pointer: str) -> dict[str, Any]:
         ),
         "pointer": pointer,
     }
+
+
+def _basin_block(context: list[dict], api10: str) -> dict[str, Any] | None:
+    """The mart's row for this well, with a handle on every line it serves.
+
+    The mart writes a content-addressed derivation on every refresh and the row carries it, so
+    each line resolves to the run that produced it, the boundary file it read and the rule it
+    was decided under. Absent where the mart has not been refreshed since the well landed,
+    which is a pipeline state and not a fact about the well.
+    """
+    if not context:
+        return None
+    block = dict(context[0])
+    derivation = str(block.pop("derivation_id"))
+    selector = identity_selector_term("api10", api10)
+    block["_lineage"] = {
+        column: format_handle(derivation, f"{selector}&col={column}")
+        for column in _BASIN_LINEAGE_COLUMNS
+    }
+    return block
 
 
 def _bbox(raw: str | None) -> tuple[float, float, float, float] | None:
@@ -2263,12 +2317,17 @@ SERVED_DETAIL = (
     " class so the reader can see which."
 )
 
-ABSENT_DETAIL = (
-    "This jurisdiction's effective_from is the vintage of the extract glasswell pulled, not a"
-    " date the regulator stamped, so there is no status history to serve here and an empty"
-    " list would read as a well that never changed rather than as a history nobody captured."
-    " The current status and the rule that maps it are on the well record."
-)
+# Named rather than "this jurisdiction": §2.3 asks a North Dakota well to say North Dakota
+# files a snapshot, and the name is a registered field one row above it on the same record.
+def absent_detail(jurisdiction_name: str | None) -> str:
+    subject = jurisdiction_name or "This jurisdiction"
+    return (
+        f"{subject} files a snapshot: the effective_from beside a filed code is the vintage of"
+        " the extract glasswell pulled, not a date the regulator stamped, so there is no"
+        " status history to serve here and an empty list would read as a well that never"
+        " changed rather than as a history nobody captured. The current status and the rule"
+        " that maps it are on the well record."
+    )
 
 STATUS_HISTORY_LABELS = {
     "/api10": "gt_api_10_api_12_api_14",
@@ -2295,9 +2354,9 @@ STATUS_HISTORY_LABELS = {
         " Whether there is a history at all is a property of the jurisdiction's clock, not of"
         " the well: where effective_from is the regulator's own valid time a new header means"
         " the regulator restamped the status, and where it is the vintage of the extract"
-        " glasswell pulled it means only that glasswell looked again. cr_status_history_basis_1"
-        " records which is which per jurisdiction and is the only thing that emits"
-        " links.history on the well record."
+        " glasswell pulled it means only that glasswell looked again. Each jurisdiction's own"
+        " status_history rule records which of the two its headers are on, and that"
+        " registration is the only thing that emits links.history on the well record."
         " A 200 with an empty history and basis.served false is therefore the honest answer for"
         " a load-stamp jurisdiction: it says no history was captured, which an empty list on"
         " its own cannot tell apart from a well that never changed."
@@ -2348,7 +2407,9 @@ def get_well_status_history(
             "status_vocabulary_rule": vocabulary_rule,
             "class_column_label": CLASS_COLUMN_LABEL,
             "class_column_is_historical": False,
-            "detail": SERVED_DETAIL if served else ABSENT_DETAIL,
+            "detail": (
+                SERVED_DETAIL if served else absent_detail(registry.name_for(state_code))
+            ),
         },
         "history": [
             {
@@ -2364,7 +2425,11 @@ def get_well_status_history(
         "cap": {
             "limit": STATUS_HISTORY_CAP,
             "returned": len(kept),
-            "total": len(found) if served else 0,
+            # Counted honestly whether or not a history is served: the field is scoped to the
+            # well, and answering 0 for a well that carries two headers was the one false
+            # number in the block. `basis.served` carries the refusal, and `withheld` stays 0
+            # because the cap held nothing back -- the rule did.
+            "total": len(found),
             "withheld": max(0, len(found) - len(kept)) if served else 0,
         },
     }
@@ -2446,7 +2511,7 @@ def get_well(
     jurisdiction = registry.at_prefix(row["state_code"])
     # Registered only where the header's effective_from is the regulator's own valid time, so
     # the link's presence is the answer to "is there a history here" and the card can know it
-    # without asking. cr_status_history_basis_1 is the only thing that emits it.
+    # without asking. The jurisdiction's status_history rule is the only thing that emits it.
     history_rule = registry.rule_for(row["state_code"], STATUS_HISTORY)
     length_scope_rule = registry.rule_for(row["state_code"], LENGTH_SCOPE)
     neighbours_served, neighbours_rule, neighbours_reason = _neighbours(
@@ -2579,8 +2644,7 @@ def get_well(
             rule_ids=[method.rule_id],
         )
 
-    context = rows(connection, _BASIN_CONTEXT, {"api10": api10})
-    basin_context = dict(context[0]) if context else None
+    basin_context = _basin_block(rows(connection, _BASIN_CONTEXT, {"api10": api10}), api10)
 
     point = next((item for item in geometry if item["lon"] is not None), None)
     data = _summary(row, registry) | {

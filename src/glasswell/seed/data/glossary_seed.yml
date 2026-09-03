@@ -775,6 +775,21 @@
   related_terms: ["Status snapshot", "Recipe"]
   source_refs: ["blueprint-v0.6 §3.7.7", "glasswell.status.models.PlatformStatus"]
 
+- term: Scope label
+  aliases: ["Ingest scope", "Scope tag"]
+  short_definition: >-
+    The basin string on a well row: which slice the ingest took, not a finding about where the
+    well is.
+  expanded_definition: >-
+    `canonical.wells.basin` exists because the compute-CRS registry needs a basin to pick a
+    projection, so every well in a scoped extract carries the scope's name - `permian` on all
+    359,421 Texas rows, `williston` on all 43,817 North Dakota ones - whether or not a
+    published boundary agrees. The card keeps it beside the polygon answer and marks whether
+    the two agree, rather than overwriting it, because the disagreement is itself a finding.
+  domain_tags: [geospatial, data-model]
+  related_terms: ["Basin", "Conformance rule"]
+  source_refs: ["cr_tx_basin_context_1", "cr_mt_basin_scope_1", "marts.well_basin_context"]
+
 - term: Section (PLSS)
   highlightable: false
   aliases: ["Section", "Sections", "PLSS section"]

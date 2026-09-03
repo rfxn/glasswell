@@ -84,9 +84,10 @@
     figures that each carry their own handle, not a measured quantity of its own.
 - pointer: /cap/limit
   reason: >-
-    The cut a status history was taken at. A property of the response, not of the well: a New
-    Mexico well carries up to 15,590 effective-dated headers and ten of them is a readable
-    answer.
+    The cut a status history was taken at. A property of the response, not of the well: New
+    Mexico holds 15,590 distinct filed effective dates across its population and its fullest
+    single well carries 15 of them, 248 wells carry more than ten, and ten is a readable
+    answer with the remainder counted beside it.
 - pointer: /cap/returned
   reason: How many status-history rows this response carries.
 - pointer: /cap/total

@@ -425,6 +425,15 @@ unresolved_read_time="$("${PSQL[@]}" "select coalesce(string_agg(
    and not exists (select 1 from lineage.status_resolution_resolved s
                     where s.for_state_code = j.identity_prefix)")"
 assert "every read-time status vocabulary has resolver rows" "" "$unresolved_read_time"
+# The basin mart is one row per well by construction, so "fewer rows than wells" is the only
+# shape a forgotten refresh takes: an empty table after a deploy that added wells leaves every
+# card saying no basin context has been built, which reads as a product gap rather than a
+# missed step.
+basin_context="$("${PSQL[@]}" "select count(*) from marts.well_basin_context")"
+wells_latest="$("${PSQL[@]}" "select count(*) from canonical.wells_latest")"
+assert_true "basin context populated ($basin_context of $wells_latest wells)" \
+    "mart is empty or stale against the spine" \
+    test "${basin_context:-0}" -ge "${wells_latest:-0}"
 cumulatives="$("${PSQL[@]}" "select count(*) from marts.well_cumulatives")"
 withholding="$("${PSQL[@]}" "select count(*) from marts.well_withholding")"
 assert_true "per-well cumulatives populated ($cumulatives)" "mart is empty" \

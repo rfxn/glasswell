@@ -44,7 +44,8 @@ POLICY_RULES = tuple(sorted((
     # Which clock a jurisdiction's header effective_from is, and therefore whether there is a
     # status history to serve at all. The executor is the operation its spec names; there is no
     # stage for it to run at, because it decides what a serving path may offer.
-    "cr_status_history_basis_1",
+    "cr_nm_wellhistory_status_history_1",
+    "cr_co_wells_status_history_1",
     # The five basin-context rules: which published boundary answers for a well, per
     # jurisdiction. The executor is the mart refresh their specs name, and there is no stage
     # for it to run at because it decides what a mart writes rather than how a frame parses.

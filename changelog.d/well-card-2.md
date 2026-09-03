@@ -66,3 +66,16 @@
          `canonical.wells.basin` as bare text: the polygon with its rule, the plays as chips,
          the filed label marked as the ingest slice it is, the boundary vintage, and the
          geometry that answered
+- [Fix] every line the Basin section serves carries the derivation handle of the mart run that
+      wrote it, and `/v1/explain` resolves it: the mart already recorded the run and the well
+      record dropped it, so the section showed a rule link and no chain
+- [Fix] the status-history clock is a rule per jurisdiction rather than one shared row: a
+      Colorado card's `links.history_rule` served New Mexico's source and OCD evidence for a
+      decision about Colorado's clock
+- [Fix] the cap's served reason said a New Mexico well carries up to 15,590 effective-dated
+      headers; 15,590 is the population's distinct filed dates and the fullest single well
+      carries 15, with 248 wells over the cap of ten
+- [Fix] `cap.total` counts the headers the well carries whether or not a history is served for
+      its jurisdiction, where it answered 0 for a well with two
+- [New] the deploy refreshes `marts.well_basin_context`, verify asserts it holds a row per
+      well, and the scheduler registry carries the job with its dependency edges

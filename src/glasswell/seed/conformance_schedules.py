@@ -211,6 +211,16 @@ _DECISIONS: dict[str, dict[str, str]] = {
         " only when it does, so the report month is the event. The release path already"
         " populates them once at deploy; this row is what keeps them current afterwards.",
     },
+    "marts_basin_context": {
+        "rule": "Rebuild the basin context after any jurisdiction's wells mart, or when the"
+        " published boundary set changes.",
+        "rationale": "The mart is one row per well in canonical.wells_latest, so it goes stale"
+        " the moment a jurisdiction's wells move and the card then serves 'no basin context"
+        " has been built for this well yet' -- an honest sentence about the pipeline that a"
+        " reader takes as a fact about the well. Ordered after each state's wells mart rather"
+        " than raced against it, and re-run when the EIA boundary download changes, which is"
+        " the other half of every answer it writes.",
+    },
     "marts_neighbors": {
         "rule": "Rebuild the neighbour index after the wells mart, or on a design change.",
         "rationale": "The index builds a GiST index plus a primary key and a btree on temporary"

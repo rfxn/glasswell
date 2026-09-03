@@ -8,18 +8,34 @@
 -- rules have theirs in 072 and 076.
 --
 -- REPOINT CHECKLIST (integrator, at the merge train):
---   1. evidence_tag UNRELEASED -> the tag that first carries these rules
---   2. evidence_commit forty zeros -> the merge commit on main that carries them
---   3. published_vintage -> the date that tag is actually cut; the table is append-only
--- The rule ids are immutable and must not change during the repoint. Both literals appear
--- exactly once each, in the evidence insert below and nowhere else.
+--   1. evidence_tag UNRELEASED -> the tag that first carries these rules. It appears ONCE, at
+--      the conformance_rule_publications insert below, so a half-repoint is not expressible.
+--   2. evidence_commit forty zeros -> the FIRST COMMIT ON MAIN THAT CONTAINS THESE RULE IDS,
+--      which is the MERGE COMMIT of this track's PR and not the head this branch was written
+--      against. tests/unit/test_release_tooling.py runs `git grep -q <rule_id> <commit>` to
+--      prove it.
+--   3. published_vintage 2026-09-03 -> the date that tag is actually cut, and the table is
+--      append-only so it cannot be corrected afterwards. It is read against the host's today,
+--      so it must NEVER be a date the deploy host has not reached: a rule published in the
+--      future resolves nowhere, /v1/conformance/<id> serves 404 for it, and every basin line
+--      and status-history line on every card links to a 404.
+--   4. This file's version integer lives in its filename and nowhere else, so a renumber is a
+--      rename. It is certain here: feat/tx-lease-production already carries 079 and 080
+--      on-branch, so this becomes 081 at the train. `grep -rn "079"` over src/ and tests/
+--      returns only a latitude and a Texas county code, so nothing else moves with it.
+--   5. The rule ids are immutable and must not change during the repoint: seven ids seeded by
+--      seed/conformance_basin_context.py, seed/conformance_status_history.py and
+--      seed/conformance_schedules.py read them back from the publication rows this file
+--      writes, and 049's trigger refuses any rule whose id has no row here.
 
 insert into lineage.conformance_rule_publications
     (rule_id, published_vintage, evidence_tag, evidence_commit)
 select rule_id, date '2026-09-03', 'UNRELEASED',
        '0000000000000000000000000000000000000000'
   from unnest(array[
-       'cr_status_history_basis_1',
+       'cr_nm_wellhistory_status_history_1',
+       'cr_co_wells_status_history_1',
+       'cr_job_cadence_marts_basin_context_1',
        'cr_nd_basin_context_1',
        'cr_tx_basin_context_1',
        'cr_mt_basin_context_1',
@@ -89,3 +105,14 @@ create index if not exists well_basin_context_basin_idx
 
 grant select on marts.well_basin_context to glasswell_api, glasswell_pipeline;
 grant insert, delete on marts.well_basin_context to glasswell_pipeline;
+
+-- Without a registered profile every basin handle serves and /v1/explain answers 422, which is
+-- a naked number wearing a ring (070's own comment, for the facet counts).
+insert into lineage.selector_output_registry
+    (operation, output_dataset, selector_profile, rationale)
+values
+    ('mart.refresh', 'marts.well_basin_context', 'basin_context',
+     'The basin-context refresh persists the addressed well row: the polygon answer, its'
+     ' plays, the filed label kept beside them, their agreement, the boundary vintage and the'
+     ' geometry that answered.')
+on conflict do nothing;

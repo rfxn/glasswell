@@ -20,7 +20,11 @@ from glasswell.seed.conformance_co import (
     DOCUMENTED_COUNT,
     PLANNED_SHARE,
 )
-from glasswell.seed.conformance_status_history import HISTORY_RULE_ID, STATUS_HISTORY
+from glasswell.seed.conformance_status_history import (
+    CO_HISTORY_RULE_ID,
+    NM_HISTORY_RULE_ID,
+    STATUS_HISTORY,
+)
 
 # Valid time and knowledge time of the founding registrations. The integrator repoints this
 # beside the evidence pair, per the REPOINT CHECKLIST at the head of the migration.
@@ -440,10 +444,6 @@ JURISDICTION_RULES: tuple[dict[str, object], ...] = (
      "rule_id": "cr_nd_length_source_1"},
     {"jurisdiction_code": "TX", "decision": "length_source",
      "rule_id": "cr_tx_length_source_1"},
-    # The two jurisdictions whose header effective_from is the regulator's own valid time, and
-    # the whole of what emits links.history. Registered at each one's own clock: Colorado's
-    # registration was founded at its own instant and jurisdiction_rules carries a composite
-    # foreign key onto it, so a row at the restatement's clock would point at no registration.
     # The polygon answer, one rule per jurisdiction. A new decision rather than a repoint of
     # basin_scope: that rule decides whether the ingest writes canonical.wells.basin at all and
     # is still true, and these decide what the published boundaries say about the same well.
@@ -453,8 +453,13 @@ JURISDICTION_RULES: tuple[dict[str, object], ...] = (
     {"jurisdiction_code": "NM", "decision": BASIN_CONTEXT, "rule_id": "cr_nm_basin_context_1"},
     {"jurisdiction_code": "CO", "decision": BASIN_CONTEXT, "rule_id": "cr_co_basin_context_1",
      "effective_from": CO_REGISTERED_ON, "published_at": CO_REGISTERED_ON},
-    {"jurisdiction_code": "NM", "decision": STATUS_HISTORY, "rule_id": HISTORY_RULE_ID},
-    {"jurisdiction_code": "CO", "decision": STATUS_HISTORY, "rule_id": HISTORY_RULE_ID,
+    # The two jurisdictions whose header effective_from is the regulator's own valid time, and
+    # the whole of what emits links.history. One rule each, under each one's own source, and
+    # registered at each one's own clock: Colorado's registration was founded at its own
+    # instant and jurisdiction_rules carries a composite foreign key onto it, so a row at the
+    # restatement's clock would point at no registration.
+    {"jurisdiction_code": "NM", "decision": STATUS_HISTORY, "rule_id": NM_HISTORY_RULE_ID},
+    {"jurisdiction_code": "CO", "decision": STATUS_HISTORY, "rule_id": CO_HISTORY_RULE_ID,
      "effective_from": CO_REGISTERED_ON, "published_at": CO_REGISTERED_ON},
     {"jurisdiction_code": "ND", "decision": "neighbors_scope",
      "rule_id": "cr_nd_neighbors_scope_1"},

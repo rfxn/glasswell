@@ -255,6 +255,13 @@ step "6d. per-well cumulative marts"
 remote "sudo -u glasswell env $code_env $VENV/bin/python -m glasswell.marts.cumulatives --dsn '$SOCKET_DSN'" \
     || refuse "cumulatives refresh failed"
 
+# Same shape and the same idempotence: one row per well in canonical.wells_latest, rebuilt
+# whole. Without it the card serves "no basin context has been built for this well yet" on
+# every well, which is honest and reads as a product gap; verify asserts on its output below.
+step "6d2. basin-context mart"
+remote "sudo -u glasswell env $code_env $VENV/bin/python -m glasswell.marts.well_basin_context --dsn '$SOCKET_DSN'" \
+    || refuse "basin context refresh failed"
+
 # Exits 0 with a stated outcome on a host that has never fetched the 440 MB archive: nothing
 # to promote is a plan, not a failure.
 step "6e. FracFocus completion-design backfill"
