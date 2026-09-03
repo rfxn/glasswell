@@ -19,12 +19,40 @@ const ND: BasinContext = {
   rule_id: "cr_nd_basin_context_1",
 };
 
-const envelope = (context: Partial<BasinContext> | null): Envelope<WellBasin> =>
+const HANDLE = "drv_vu2rp3ljle336eoysxxa";
+const lineage = Object.fromEntries(
+  [
+    "basin_name",
+    "basin_class",
+    "play_name",
+    "play_class",
+    "basin_label_filed",
+    "label_class",
+    "label_agrees",
+    "boundary_vintage",
+    "geometry_basis",
+    "basin_overlap",
+  ].map((column) => [column, `${HANDLE}#api10=3305310451&col=${column}`]),
+);
+
+const envelope = (
+  context: Partial<BasinContext> | null,
+  handles: Record<string, string> | null = lineage,
+): Envelope<WellBasin> =>
   ({
-    data: { basin_context: context === null ? null : { ...ND, ...context } },
+    data: {
+      basin_context:
+        context === null ? null : { ...ND, ...context, ...(handles ? { _lineage: handles } : {}) },
+    },
     meta: { as_of: { requested: "latest", resolved: "2026-08-20" }, warnings: [], labels: {} },
     links: {},
   }) as unknown as Envelope<WellBasin>;
+
+const handles = (): { name: string; handle: string }[] =>
+  [...host.querySelectorAll<HTMLButtonElement>(".gw-handle:not([hidden])")].map((node) => ({
+    name: node.getAttribute("aria-label") ?? "",
+    handle: node.dataset["handle"] ?? "",
+  }));
 
 let host: HTMLElement;
 const text = (): string => host.textContent ?? "";
@@ -43,7 +71,8 @@ describe("the basin is an answer, not a string", () => {
       "BAKKEN",
     ]);
     expect(text()).toContain("EIA 2024");
-    expect(host.querySelector(".gw-basin-geometry")?.textContent).toBe("surface");
+    // The ⌾ is the first child of the value, so the line reads "⌾surface" in textContent.
+    expect(host.querySelector(".gw-basin-geometry")?.textContent).toContain("surface");
   });
 
   it("names the rule that decided it, because a basin is a mapping decision", () => {
@@ -78,6 +107,53 @@ describe("the basin is an answer, not a string", () => {
     expect(mark?.textContent).toContain("disagrees with the polygon");
     expect(text()).toContain("FORT WORTH");
     expect(text()).toContain("permian");
+  });
+});
+
+describe("every line resolves to the run that produced it", () => {
+  it("puts a handle beside the basin, the plays, the label, the mark and the vintage", () => {
+    renderBasin(host, envelope({}));
+    expect(handles().map((each) => each.name)).toEqual([
+      "Lineage for Basin",
+      "Lineage for Plays",
+      "Lineage for Filed label",
+      "Lineage for label agreement",
+      "Lineage for Boundary vintage",
+      "Lineage for Answered by",
+    ]);
+    expect(handles().every((each) => each.handle.startsWith(`${HANDLE}#api10=`))).toBe(true);
+  });
+
+  it("addresses the column each line actually reads", () => {
+    renderBasin(host, envelope({}));
+    const columns = handles().map((each) => each.handle.split("col=")[1]);
+    expect(columns).toEqual([
+      "basin_name",
+      "play_name",
+      "basin_label_filed",
+      "label_agrees",
+      "boundary_vintage",
+      "geometry_basis",
+    ]);
+  });
+
+  it("addresses the class where the class is the answer", () => {
+    // Outside every boundary: the line reads `basin_class`, so its handle resolves that column
+    // and not a `basin_name` the row does not carry.
+    renderBasin(
+      host,
+      envelope({ basin_name: null, basin_class: "outside_published_boundaries", play_name: [], play_class: "no_play_at_this_location" }),
+    );
+    const columns = handles().map((each) => each.handle.split("col=")[1]);
+    expect(columns).toContain("basin_class");
+    expect(columns).toContain("play_class");
+    expect(columns).not.toContain("basin_name");
+  });
+
+  it("shows no dead ring where the mart served no sidecar", () => {
+    // A ⌾ that explains nothing is a dead end, so it is hidden rather than drawn empty.
+    renderBasin(host, envelope({}, null));
+    expect(handles()).toEqual([]);
   });
 });
 

@@ -183,7 +183,7 @@ function geometryBlock(
   }
 }
 
-function historyTable(history: StatusHistory): HTMLElement {
+function historyTable(envelope: Envelope<StatusHistory>, history: StatusHistory): HTMLElement {
   const frame = document.createElement("div");
   frame.className = "gw-status-history";
   const table = document.createElement("table");
@@ -191,10 +191,17 @@ function historyTable(history: StatusHistory): HTMLElement {
   caption.textContent = "Status history, newest first";
   const head = document.createElement("thead");
   const headRow = document.createElement("tr");
-  for (const label of ["Effective from", "Filed code", history.basis.class_column_label]) {
+  // The router serves a term pointer for each of these columns; reading them is what makes the
+  // header hoverable, and not reading them left four served labels with no consumer (gate M3).
+  const columns: [string, string][] = [
+    ["Effective from", "/history/effective_from"],
+    ["Filed code", "/history/status_reported"],
+    [history.basis.class_column_label, "/history/status_canonical"],
+  ];
+  for (const [label, pointer] of columns) {
     const cell = document.createElement("th");
     cell.scope = "col";
-    cell.textContent = label;
+    cell.appendChild(labelElement(label, labelFor(envelope, pointer)));
     headRow.appendChild(cell);
   }
   head.appendChild(headRow);
@@ -267,11 +274,14 @@ export async function renderIdentity(
 
   const path = well.links?.["history"];
   if (!path) {
-    // Not "this well never changed": no history was captured here, and the card says which.
+    // Not "this well never changed": no history was captured here, and the card says which
+    // jurisdiction that is, by name, off the served field the row above already prints.
     const rule = well.links?.["status_rule"];
+    const subject = unwrap(well).jurisdiction_name ?? "This jurisdiction";
     const line = note(
-      "No status history is served for this jurisdiction: the date beside a filed code here" +
-        " is the vintage of the extract glasswell pulled, not a date the regulator stamped.",
+      `${subject} files a snapshot, so this record has no status history: the date beside a` +
+        " filed code here is the vintage of the extract glasswell pulled, not a date the" +
+        " regulator stamped.",
     );
     if (rule) line.append(" ", ruleLink(rule, "The rule that decides that"));
     host.appendChild(line);
@@ -285,7 +295,7 @@ export async function renderIdentity(
       host.appendChild(note(history.basis.detail));
       return;
     }
-    host.appendChild(historyTable(history));
+    host.appendChild(historyTable(envelope, history));
   } catch (error) {
     host.appendChild(note(`The status history could not be read: ${String(error)}`));
   }

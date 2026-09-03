@@ -86,6 +86,8 @@ function applyRail(): void {
   railToggle.setAttribute("aria-expanded", String(!collapsed));
   railToggle.setAttribute("aria-label", collapsed ? `Expand ${named}` : `Collapse ${named}`);
   railStripName.textContent = railWell;
+  // §9: a reader arriving by landmark hears which well, not that there is a card somewhere.
+  cardHost.setAttribute("aria-label", railWell ? `Well card: ${railWell}` : "Well card");
   railLocate.hidden = railPoint === null;
   railLocate.setAttribute("aria-label", `Centre the map on ${named}`);
   railGrab.hidden = !sheetWidth.matches;
@@ -123,7 +125,16 @@ function commit(next: Partial<AppState>, mode: "push" | "replace" = "push"): voi
   writeState(state, mode);
 }
 
-function showWell(api10: string | null, mode: "push" | "replace" = "push"): void {
+/**
+ * `chosen` is a reader picking a well: from the map, from search, from a link. A replay is
+ * not a choice, and the difference is the whole of §2.2a -- the section belongs to the entry
+ * the reader is returning to, so back to another well restores the section it recorded.
+ */
+function showWell(
+  api10: string | null,
+  mode: "push" | "replace" = "push",
+  chosen = true,
+): void {
   // A section-only popstate must not tear the card down. followHistory replays the well on
   // every entry, renderWellCard begins by replacing every child of the host, and the reader
   // would lose every lazily loaded section, every disclosure they opened and their place in
@@ -135,9 +146,10 @@ function showWell(api10: string | null, mode: "push" | "replace" = "push"): void
   const previous = mountedWell;
   const same =
     previous === api10 && api10 !== null && !cardHost.hidden && cardHost.childElementCount > 0;
-  // A different well is a different card, so a section named for the last one does not
-  // survive it. A first mount is not a change and keeps the one a deep link asked for.
-  const carried = previous !== null && previous !== api10 ? { section: null } : {};
+  // Choosing a different well is choosing a different card, so a section named for the last
+  // one does not survive it. A first mount is not a change and keeps the one a deep link
+  // asked for, and a replay keeps what its own history entry recorded.
+  const carried = chosen && previous !== null && previous !== api10 ? { section: null } : {};
   commit({ well: api10, ...carried }, mode);
   if (same) {
     // card/sections.ts's SECTION_EVENT, kept as a literal so this module carries no import
@@ -222,7 +234,10 @@ function openExplain(handle: string | null, mode: "push" | "replace" = "push"): 
   void import("./lineage/drawer.ts")
     .then(({ renderLineageDrawer }) => {
       if (state.explain !== handle) return undefined;
-      return renderLineageDrawer(drawerHost, handle, { onClose: () => openExplain(null) });
+      return renderLineageDrawer(drawerHost, handle, {
+        onClose: () => openExplain(null),
+        returnTo: railWell || null,
+      });
     })
     .catch((error: unknown) => {
       // The drawer reports its own request failures; a chunk that will not load is the one
@@ -356,7 +371,7 @@ async function followHistory(): Promise<void> {
   if (next.view !== previousView) await renderView();
   if (generation !== historyGeneration) return;
   if (next.view === "map") {
-    showWell(next.well, "replace");
+    showWell(next.well, "replace", false);
     openExplain(next.explain, "replace");
   } else {
     hideMapOverlays();
@@ -545,7 +560,7 @@ async function start(): Promise<void> {
   // before that would fire into a bus the map has not joined.
   await renderView();
 
-  if (state.view === "map" && state.well) showWell(state.well, "replace");
+  if (state.view === "map" && state.well) showWell(state.well, "replace", false);
   if (state.view === "map" && state.explain) openExplain(state.explain, "replace");
   if (window.location.search === "") {
     window.history.replaceState(state, "", serializeState({ ...DEFAULT_STATE, ...state }));

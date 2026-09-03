@@ -133,11 +133,13 @@
 
 /* Basin and geology. The agreement mark carries the word as well as the colour, because a
    small non-text signal is not a signal for every reader. */
+/* The stronger hairline, not the panel one: chips sit inside a panel that is already drawn
+   with --hairline, so at 1.20:1 several plays read as one run of words (gate N3). */
 .gw-basin-play {
   display: inline-block;
   padding: 0 var(--gw-space-2);
   margin-right: var(--gw-space-1);
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--hairline-strong);
   border-radius: var(--gw-radius-pill);
 }
 

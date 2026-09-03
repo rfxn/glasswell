@@ -170,16 +170,32 @@ describe("back and forward across sections do not tear the card down", () => {
     expect(applied).toEqual(["neighbours"]);
   });
 
-  it("still renders when the well itself changed, and drops the old well's section", async () => {
+  it("still renders when the well itself changed, and keeps what the entry recorded", async () => {
+    // A replay is not a choice: the section belongs to the history entry the reader is
+    // returning to, and nulling it here rewrote the address bar without it (gate H-4).
     await bootAt("/?well=3305310451&section=neighbours");
     host("gw-card").hidden = false;
     host("gw-card").replaceChildren(document.createElement("p"));
 
-    navigate("/?well=3305302532&section=neighbours");
+    navigate("/?well=3305302532&section=basin");
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(renderWellCard.mock.calls.length).toBe(2);
     expect(renderWellCard.mock.calls[1]?.[1]).toBe("3305302532");
+    expect(window.location.search).toContain("section=basin");
+  });
+
+  it("drops the section when a reader chooses another well rather than replaying one", async () => {
+    // The other half of the same rule: a section named for the last card does not survive a
+    // choice, because the new card may not have it at all.
+    const bus = await bootAt("/?well=3305310451&section=neighbours");
+    host("gw-card").hidden = false;
+    host("gw-card").replaceChildren(document.createElement("p"));
+
+    bus.selectWell("3305302532", "map");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(window.location.search).not.toContain("section=");
   });
 
   it("keeps the section a deep link asked for through the first mount", async () => {

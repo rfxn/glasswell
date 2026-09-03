@@ -79,3 +79,17 @@
       its jurisdiction, where it answered 0 for a well with two
 - [New] the deploy refreshes `marts.well_basin_context`, verify asserts it holds a row per
       well, and the scheduler registry carries the job with its dependency edges
+- [Fix] the card prints the well type once, as its own regulator filed it, where the Drilling
+      band still carried the bare code five rows below its replacement
+- [Fix] back and forward to another well keep the section that history entry recorded; the
+      section is dropped when a reader chooses a well, which is a different act
+- [Fix] the section queue holds its bound when a second well mounts while the first is still
+      loading, where a settling load took the counter negative and admitted a third request
+- [Fix] an in-card section link's href carries the well, so a middle click or a copied link
+      lands on the section rather than on the map with no card open
+- [Fix] the coach mark steps aside by the drawer's own column at 1600 and rides above the
+      sheet below 900, where it sat on the drawer's heading and on the phone's chart
+- [Fix] the bottom sheet settles on a cancelled pointer as well as a lifted one, where a
+      system gesture left it at an arbitrary height with its snap transition off
+- [New] the rail names the well it carries, the lineage drawer offers the way back to it, and
+      the Lineage index counts again when another section draws

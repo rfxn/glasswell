@@ -36,7 +36,7 @@ const HISTORY: StatusHistory = {
   basis: {
     clock: "source_valid_time",
     served: true,
-    rule_id: "cr_status_history_basis_1",
+    rule_id: "cr_co_wells_status_history_1",
     status_vocabulary_rule: "cr_co_wells_status_vocab_1",
     class_column_label: "class as glasswell maps this code today",
     class_column_is_historical: false,
@@ -178,6 +178,9 @@ describe("the status history", () => {
     await render({});
     expect(fetched).not.toHaveBeenCalled();
     expect(text()).toContain("not a date the regulator stamped");
+    // §2.3: a North Dakota well says North Dakota files a snapshot, off the served field the
+    // row above already prints, never a literal this file knows.
+    expect(text()).toContain("North Dakota files a snapshot");
     expect(host.querySelector(".gw-identity-rule")?.getAttribute("href")).toContain(
       "/v1/conformance/",
     );
@@ -188,7 +191,7 @@ describe("the status history", () => {
       "fetch",
       vi.fn(() =>
         Promise.resolve(
-          new Response(JSON.stringify({ data: HISTORY, meta: { as_of: {}, warnings: [] }, links: {} }), {
+          new Response(JSON.stringify({ data: HISTORY, meta: { as_of: {}, warnings: [], labels: {} }, links: {} }), {
             status: 200,
             headers: { "content-type": "application/json" },
           }),
@@ -217,6 +220,48 @@ describe("the status history", () => {
     expect(text()).toContain("today's mapping applied to a historical code");
   });
 
+  it("names an unnamed jurisdiction as one rather than inventing a name", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    await render({ jurisdiction_name: null });
+    expect(text()).toContain("This jurisdiction files a snapshot");
+  });
+
+  it("hovers the history's own columns from the labels the router serves for them", async () => {
+    // M3: the pointers exist on the wire and had no consumer, so the header could never
+    // highlight whatever the glossary seeded.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: HISTORY,
+              meta: {
+                as_of: {},
+                warnings: [],
+                labels: {
+                  "/history/effective_from": "gt_effective_date",
+                  "/history/status_reported": "gt_well_status",
+                  "/history/status_canonical": "gt_well_status",
+                },
+              },
+              links: {},
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        ),
+      ),
+    );
+
+    await render({ state_code: "05" }, { history: "/v1/wells/0512324638/history" });
+
+    expect([...host.querySelectorAll("th .gw-label")].map((node) => node.getAttribute("term-id"))).toEqual([
+      "gt_effective_date",
+      "gt_well_status",
+      "gt_well_status",
+    ]);
+  });
+
   it("says what the cap held back rather than letting a short list read as a short life", async () => {
     const capped = {
       ...HISTORY,
@@ -226,7 +271,7 @@ describe("the status history", () => {
       "fetch",
       vi.fn(() =>
         Promise.resolve(
-          new Response(JSON.stringify({ data: capped, meta: { as_of: {}, warnings: [] }, links: {} }), {
+          new Response(JSON.stringify({ data: capped, meta: { as_of: {}, warnings: [], labels: {} }, links: {} }), {
             status: 200,
             headers: { "content-type": "application/json" },
           }),

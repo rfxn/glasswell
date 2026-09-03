@@ -20,7 +20,13 @@ import { renderBasin } from "./basin.ts";
 import type { WellBasin } from "./basin.ts";
 import { renderIdentity } from "./identity.ts";
 import type { WellIdentity } from "./identity.ts";
-import { applySection, mountSections, sectionLink, sectionsSettled } from "./sections.ts";
+import {
+  SECTION_OPEN_EVENT,
+  applySection,
+  mountSections,
+  sectionLink,
+  sectionsSettled,
+} from "./sections.ts";
 import type { SectionSpec } from "./sections.ts";
 
 export interface WellDetail {
@@ -139,14 +145,17 @@ const FACT_GROUPS: { title: string; fields: [keyof WellDetail, string, string][]
     ],
   },
   {
+    // No `well_type_reported` here: the Identity section renders it as `<code> · as <regulator>
+    // filed it`, and §2.3 replaces the bare code rather than printing both five rows apart.
     title: "Drilling",
-    fields: [
-      ["spud_date", "Spud", "/spud_date"],
-      ["well_type_reported", "Well type", "/well_type_reported"],
-    ],
+    fields: [["spud_date", "Spud", "/spud_date"]],
   },
   { title: "Record", fields: [] },
 ];
+
+// The newest card's own re-count, and the one listener that calls it.
+let recountLineage: (() => void) | null = null;
+let recounting = false;
 
 export async function renderWellCard(
   container: HTMLElement,
@@ -583,6 +592,21 @@ export async function renderWellCard(
 
   const sections = mountSections(body, api10, specs);
   body.appendChild(notesSlot);
+
+  // The index is a count of what is rendered, so it has to be taken again when more renders:
+  // opened by deep link before Production had drawn, it listed Identity alone and read as a
+  // card carrying two handles (gate N7). One document listener, re-pointed at the newest card.
+  recountLineage = () => {
+    const host = sections.get("lineage");
+    if (!host || host.toggle.getAttribute("aria-expanded") !== "true") return;
+    // After the queue drains, not at the moment of expansion: a section's handles are drawn
+    // by its own load, so counting on the click counts the body it has not rendered yet.
+    void sectionsSettled().then(() => fillLineage());
+  };
+  if (!recounting) {
+    recounting = true;
+    document.addEventListener(SECTION_OPEN_EVENT, () => recountLineage?.());
+  }
 
   // "What can I check here", and it costs a request of zero. The counts are read off what is
   // rendered at the moment the reader looks, so they are not served figures and carry no

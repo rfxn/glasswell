@@ -62,11 +62,17 @@ export function wireSheet(main: HTMLElement, grab: HTMLElement): void {
     if (!dragging) return;
     main.style.setProperty("--gw-sheet-h", `${window.innerHeight - event.clientY}px`);
   });
-  grab.addEventListener("pointerup", (event) => {
+  // `pointercancel` and not only `pointerup`: a system gesture, a notification or a browser
+  // scroll takeover ends the drag with a cancel, and only an up cleared the inline height and
+  // the drag attribute. The sheet was left at an arbitrary height with its snap transition off
+  // and `dragging` stuck true, recoverable only by another complete drag.
+  const settle = (event: PointerEvent): void => {
     if (!dragging) return;
     dragging = false;
     main.removeAttribute("data-sheet-drag");
     main.style.removeProperty("--gw-sheet-h");
     apply(nearestStop(window.innerHeight - event.clientY));
-  });
+  };
+  grab.addEventListener("pointerup", settle);
+  grab.addEventListener("pointercancel", settle);
 }

@@ -619,6 +619,41 @@ describe("well card", () => {
     );
   });
 
+  it("counts the lineage index again when another section draws after it", async () => {
+    // Opened by deep link before Production had drawn, the index listed one section and read
+    // as a card carrying two handles. The count is of what is rendered, so it is taken again
+    // whenever more is (gate N7).
+    await renderWellCard(host, API10, callbacks);
+    const open = (id: string): void =>
+      (host.querySelector(`#gw-section-${id} .gw-section-toggle`) as HTMLElement).click();
+
+    open("lineage");
+    await sectionsSettled();
+    const index = (): string =>
+      host.querySelector("#gw-section-lineage .gw-lineage-index")?.textContent ?? "";
+    const first = index();
+
+    open("neighbours");
+    await sectionsSettled();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(first).not.toContain("Neighbours and spacing");
+    expect(index()).toContain("Neighbours and spacing");
+  });
+
+  it("prints the well type once, qualified, and never as the bare code beside it", async () => {
+    // §2.3 replaces the bare `well_type_reported` with `<code> · as <regulator> filed it`.
+    // Rendered in both places a reader has to choose which of two rows to believe (gate M1).
+    await renderWellCard(host, API10, callbacks);
+
+    const labels = [...host.querySelectorAll("dt")].map((dt) => dt.textContent?.trim());
+    expect(labels.filter((label) => label === "Well type")).toHaveLength(1);
+    const drilling = [...host.querySelectorAll<HTMLElement>(".gw-facts-band")][1];
+    expect([...(drilling?.querySelectorAll("dt") ?? [])].map((dt) => dt.textContent)).not.toContain(
+      "Well type",
+    );
+  });
+
   it("drops a band whose every field is absent instead of heading an empty list", async () => {
     const bare = structuredClone(wellEnvelope);
     for (const field of ["basin", "county_code_at_permit", "land_unit_label", "surface_point"]) {

@@ -192,6 +192,28 @@ describe("wireSheet", () => {
     wireSheet(main, grab);
     expect(grab.getAttribute("aria-valuetext")).toBe("peek");
   });
+
+  it("settles the sheet when the pointer is cancelled, not only when it is lifted", () => {
+    // A system gesture or a notification ends a drag with `pointercancel`. Handled only on
+    // `pointerup`, the sheet stayed at an inline height with its snap transition off and no
+    // way back but another complete drag (gate H-9).
+    wireSheet(main, grab);
+    grab.setPointerCapture = (): void => undefined;
+    grab.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 1, bubbles: true }));
+    grab.dispatchEvent(
+      new PointerEvent("pointermove", { pointerId: 1, clientY: 200, bubbles: true }),
+    );
+    expect(main.hasAttribute("data-sheet-drag")).toBe(true);
+    expect(main.style.getPropertyValue("--gw-sheet-h")).not.toBe("");
+
+    grab.dispatchEvent(
+      new PointerEvent("pointercancel", { pointerId: 1, clientY: 200, bubbles: true }),
+    );
+
+    expect(main.hasAttribute("data-sheet-drag")).toBe(false);
+    expect(main.style.getPropertyValue("--gw-sheet-h")).toBe("");
+    expect(main.getAttribute("data-sheet-snap")).not.toBeNull();
+  });
 });
 
 describe("the map resizes itself, and reserves nothing for a card that no longer overlaps", () => {

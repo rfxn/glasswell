@@ -572,6 +572,25 @@ body {
   display: none;
 }
 
+/* Below 1600 the drawer fills the rail's column and the card is behind it, so the way back is
+   a control and not a memory. It reads as a return rather than as a dismissal, which is what
+   the × beside it does not say. */
+.gw-drawer-back {
+  order: -1;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--cyan);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+.gw-drawer-back:hover {
+  text-decoration: underline;
+}
+
 /* The coach hangs out of the header into the canvas, and the card opens under exactly that
    corner: at 1600 it covered the well name outright. With a panel open it steps left of it
    and drops the tick, which would otherwise point at nothing. */
@@ -902,6 +921,13 @@ main[data-rail="open"][data-drawer="open"] {
 
   main[data-rail="open"][data-drawer="open"] #gw-drawer {
     grid-column: 2;
+  }
+
+  /* The drawer has its own column here, so stepping aside by the card's width alone lands the
+     coach on top of it: measured 266 x 36 px over the Lineage heading and the map's zoom
+     control (gate M4). Above the card's arm in weight and after it in order. */
+  body:has(main[data-rail="open"][data-drawer="open"]) .gw-hint {
+    right: calc(var(--gw-card-w) + var(--gw-drawer-w) + var(--gw-space-4));
   }
 }
 
@@ -2141,19 +2167,22 @@ a {
      block, which does not grow with the viewport; the other two are viewport-relative
      because they are sized by how much of the record a reader wants. The top stop is
      exactly the single stop that shipped before this, so only two of the three are new. */
-  main {
+  /* Declared on the body rather than on main, so the coach mark can read it too: it is in the
+     header, outside main, and a custom property only inherits down its own subtree. One
+     source of truth for the three stops, and main inherits it unchanged. */
+  body {
     --gw-sheet-h: 78dvh;
   }
 
-  main[data-sheet-snap="peek"] {
+  body:has(#gw-main[data-sheet-snap="peek"]) {
     --gw-sheet-h: 160px;
   }
 
-  main[data-sheet-snap="half"] {
+  body:has(#gw-main[data-sheet-snap="half"]) {
     --gw-sheet-h: 46dvh;
   }
 
-  main[data-sheet-snap="full"] {
+  body:has(#gw-main[data-sheet-snap="full"]) {
     --gw-sheet-h: 78dvh;
   }
 
@@ -2462,5 +2491,13 @@ a {
   /* The tick pointed at the help button in the rail, which is nowhere near it now. */
   .gw-hint::before {
     display: none;
+  }
+
+  /* With a well open the bottom is the sheet's, not the canvas's: docked where it was, the
+     coach covered the chart's x-axis at the full stop and the operator line at peek, which is
+     one of the four things peek exists to show (gate N5). It rides above the sheet's current
+     height and moves with the stop, because the stop is a variable and not a number. */
+  body:has(#gw-main[data-rail="open"]) .gw-hint {
+    bottom: calc(var(--gw-sheet-h) + var(--gw-space-3) + 44px);
   }
 }

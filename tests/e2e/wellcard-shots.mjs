@@ -333,6 +333,87 @@ for (const [label, well] of [
   await page.context().close();
 }
 
+// Basin and geology: the four answers the section has to be able to give, each on the well
+// that carries the shape. Tracked here rather than in a worktree script, because a track's
+// browser evidence that lives outside the tree does not survive the worktree (gate H-11).
+// The wells come from the environment so a fixture that plants different ids can name them;
+// a subject the instance does not carry is skipped with its reason rather than failed.
+const BASIN_SUBJECTS = [
+  {
+    label: "agrees",
+    well: process.env.GW_BASIN_AGREES ?? WELL,
+    says: ["agrees with the polygon"],
+  },
+  {
+    label: "disagrees",
+    well: process.env.GW_BASIN_DISAGREES ?? "4200345818",
+    says: ["disagrees with the polygon"],
+  },
+  {
+    label: "not-labelled",
+    well: process.env.GW_BASIN_UNLABELLED ?? "2508321104",
+    says: ["not_labelled"],
+  },
+  {
+    label: "outside",
+    well: process.env.GW_BASIN_OUTSIDE ?? "2503521199",
+    says: [
+      "outside every basin the published boundary set draws",
+      "The set asked was",
+      "not a gap in the record",
+    ],
+  },
+];
+
+for (const subject of BASIN_SUBJECTS) {
+  console.log(`\nbasin · ${subject.label} ${subject.well}`);
+  const { page } = await instrumentedPage(browser, { viewport: BREAKPOINTS[0] });
+  await page.goto(`${BASE}/?well=${subject.well}&section=basin`, { waitUntil: "networkidle" });
+  await mapReady(page).catch(() => {});
+  await page.waitForTimeout(2500);
+  const seen = await page.evaluate(() => {
+    const section = document.querySelector("#gw-section-basin");
+    const body = section?.querySelector(".gw-section-body");
+    return {
+      present: section !== null,
+      expanded: section?.querySelector(".gw-section-toggle")?.getAttribute("aria-expanded"),
+      text: (body?.textContent ?? "").replace(/\s+/g, " ").trim(),
+      rows: [...(body?.querySelectorAll("dt") ?? [])].map((cell) => cell.textContent),
+      rule: body?.querySelector(".gw-identity-rule")?.textContent ?? null,
+      handles: [...(body?.querySelectorAll(".gw-handle:not([hidden])") ?? [])].map((node) => ({
+        name: node.getAttribute("aria-label"),
+        handle: node.dataset.handle,
+      })),
+    };
+  });
+  if (!seen.present || seen.text === "") {
+    console.log(`  skipped: this instance serves no basin section for ${subject.well}`);
+    await page.context().close();
+    continue;
+  }
+  console.log(`  ${seen.text.slice(0, 160)}`);
+  console.log(`  handles ${seen.handles.length}`);
+  await shoot(page, `1600x1000-basin-${subject.label}`);
+
+  check(seen.expanded === "true", `?section=basin opens the section (${subject.label})`);
+  for (const phrase of subject.says) {
+    check(seen.text.includes(phrase), `${subject.label}: says "${phrase}"`);
+  }
+  check((seen.rows ?? []).includes("Answered by"), `${subject.label}: names the geometry asked`);
+  check(seen.rule !== null, `${subject.label}: links the rule that decided it (${seen.rule})`);
+  // R6: every line the section serves resolves to the run that produced it. The rule link is
+  // not a substitute -- it says which decision, not which run over which boundary file.
+  check(
+    seen.handles.length >= 4,
+    `${subject.label}: every basin line carries a handle (${seen.handles.length})`,
+  );
+  check(
+    seen.handles.every((each) => (each.handle ?? "").includes("#api10=")),
+    `${subject.label}: each handle addresses this well's own row`,
+  );
+  await page.context().close();
+}
+
 await browser.close();
 console.log(`\n${failures === 0 ? "all checks passed" : `${failures} check(s) failed`}`);
 process.exit(failures === 0 ? 0 : 1);

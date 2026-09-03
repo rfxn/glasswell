@@ -143,6 +143,43 @@ describe("what a collapsed section costs", () => {
 
     loads[0]?.release();
   });
+
+  it("keeps the bound when a second well mounts while the first is still loading", async () => {
+    // R-19's own case: a reader opens another well before the first well's sections settle.
+    // The old load's `finally` used to decrement this well's counter to -1 and admit a third.
+    const first = [held(), held()];
+    mountSections(
+      host,
+      "3305310451",
+      first.map((each, index) => ({
+        id: `s${index}`,
+        title: `S${index}`,
+        expanded: true,
+        load: each.load,
+      })),
+    );
+    expect(sectionsInFlight()).toBe(2);
+
+    const second = [held(), held(), held()];
+    mountSections(
+      host,
+      "3305302532",
+      second.map((each, index) => ({
+        id: `s${index}`,
+        title: `S${index}`,
+        expanded: true,
+        load: each.load,
+      })),
+    );
+    // The first well's loads settle after the second well has mounted.
+    for (const each of first) each.release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(sectionsInFlight()).toBe(2);
+    expect(second.map((each) => each.calls())).toEqual([1, 1, 0]);
+
+    second[0]?.release();
+  });
 });
 
 describe("?section=", () => {
@@ -219,6 +256,18 @@ describe("push and replace, per transition", () => {
     link.click();
     expect(committed).toEqual([{ id: "neighbours", mode: "push" }]);
     expect(toggle("neighbours").getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("writes an href a middle click can follow, well and all", () => {
+    // The click handler preventDefaults, so the href is exercised by "open in new tab" and by
+    // "copy link address" alone: `?section=basin` on its own lands on the map with no card.
+    window.history.replaceState(null, "", "/?well=3305310451&section=production");
+    mountSections(host, "3305310451", THREE);
+
+    const link = sectionLink("neighbours", "Neighbours and spacing");
+
+    expect(link.getAttribute("href")).toContain("well=3305310451");
+    expect(link.getAttribute("href")).toContain("section=neighbours");
   });
 });
 

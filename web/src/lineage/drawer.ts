@@ -36,6 +36,10 @@ export interface Chain {
 
 export interface DrawerCallbacks {
   onClose(): void;
+  /** The well the reader came from, where there is one: below 1600 the drawer fills the
+   *  rail's column and hides the card completely, so an × is the only way back and it reads
+   *  as "leave" rather than as "return to the well I was reading". */
+  returnTo?: string | null;
 }
 
 /** S9: one /v1/explain call renders the whole chain, checksums included, at depth full. */
@@ -82,6 +86,7 @@ function header(handle: string, callbacks: DrawerCallbacks): HTMLElement {
   const heading = document.createElement("h2");
   heading.tabIndex = -1;
   heading.textContent = "Lineage";
+  const back = callbacks.returnTo ? backControl(callbacks) : null;
   const code = document.createElement("code");
   code.className = "gw-handle-text";
   code.textContent = handle;
@@ -91,8 +96,19 @@ function header(handle: string, callbacks: DrawerCallbacks): HTMLElement {
   close.setAttribute("aria-label", "Close the lineage drawer");
   close.textContent = "×";
   close.addEventListener("click", callbacks.onClose);
+  if (back) element.append(back);
   element.append(heading, code, close);
   return element;
+}
+
+function backControl(callbacks: DrawerCallbacks): HTMLButtonElement {
+  const back = document.createElement("button");
+  back.type = "button";
+  back.className = "gw-drawer-back";
+  back.textContent = `< Back to ${callbacks.returnTo}`;
+  back.setAttribute("aria-label", `Back to ${callbacks.returnTo}`);
+  back.addEventListener("click", callbacks.onClose);
+  return back;
 }
 
 function summary(chain: Chain): HTMLElement {

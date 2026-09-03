@@ -81,6 +81,27 @@ describe("lineage drawer", () => {
     expect(host.querySelector("h2")?.getAttribute("tabindex")).toBe("-1");
   });
 
+  it("offers a way back to the well the reader came from, not only a way out", async () => {
+    // Below 1600 the drawer fills the rail's column and hides the card completely; the only
+    // control was an x, which says "leave" and not "return to the well I was reading".
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ "/v1/explain": explainEnvelope })));
+    const onClose = vi.fn();
+    await renderLineageDrawer(host, OIL_HANDLE, { onClose, returnTo: "BRENNA 11-14H" });
+
+    const back = host.querySelector<HTMLButtonElement>(".gw-drawer-back");
+    expect(back?.textContent).toBe("< Back to BRENNA 11-14H");
+    expect(back?.getAttribute("aria-label")).toBe("Back to BRENNA 11-14H");
+    back?.click();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("offers no way back where no well is open, rather than a control naming nothing", async () => {
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ "/v1/explain": explainEnvelope })));
+    await renderLineageDrawer(host, OIL_HANDLE, noop);
+
+    expect(host.querySelector(".gw-drawer-back")).toBeNull();
+  });
+
   it("renders a broken chain as a broken chain, naming the stop reason", async () => {
     vi.stubGlobal("fetch", vi.fn(stubFetch({ "/v1/explain": problemBody })));
     await renderLineageDrawer(host, "drv_missing", noop);

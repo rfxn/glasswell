@@ -5,8 +5,9 @@
  * Every line reads a served field. Which basin a well is in is a cross-source mapping decision
  * and it is a row now, so the section names the rule that decided it and never a jurisdiction.
  */
-import { labelFor, unwrap } from "../api/envelope.ts";
+import { derivationFor, labelFor, unwrap } from "../api/envelope.ts";
 import type { Envelope } from "../api/envelope.ts";
+import { explainHandle } from "../chrome/handle.ts";
 import { labelElement } from "../glossary/gw-term.ts";
 
 export interface BasinContext {
@@ -56,10 +57,22 @@ function absence(context: BasinContext): string | null {
   return null;
 }
 
-function row(list: HTMLDListElement, label: string, termId: string | null): HTMLElement {
+/**
+ * One line of the section: its label, its value, and the ⌾ that resolves the mart run behind
+ * it. Every line takes a handle, because a basin nobody can trace to a run of a mart over a
+ * checksummed boundary file is exactly the naked answer R6 refuses -- and the rule link beside
+ * it answers a different question, which decision was taken, not which run produced this row.
+ */
+function row(
+  list: HTMLDListElement,
+  label: string,
+  termId: string | null,
+  handle: string | null = null,
+): HTMLElement {
   const name = document.createElement("dt");
   name.appendChild(labelElement(label, termId));
   const value = document.createElement("dd");
+  if (handle) value.appendChild(explainHandle({ label, handle }));
   list.append(name, value);
   return value;
 }
@@ -81,7 +94,10 @@ function ruleLink(rule: string): HTMLAnchorElement {
 }
 
 export function renderBasin(host: HTMLElement, well: Envelope<WellBasin>): void {
-  const context = unwrap(well).basin_context;
+  const data = unwrap(well);
+  const context = data.basin_context;
+  const handleFor = (column: string): string | null =>
+    derivationFor(data, `/basin_context/${column}`);
   if (!context) {
     host.replaceChildren(
       note(
@@ -95,16 +111,26 @@ export function renderBasin(host: HTMLElement, well: Envelope<WellBasin>): void 
   const list = document.createElement("dl");
   list.className = "gw-facts gw-basin";
 
-  const basin = row(list, "Basin", labelFor(well, "/basin_context/basin_name"));
+  const basin = row(
+    list,
+    "Basin",
+    labelFor(well, "/basin_context/basin_name"),
+    handleFor(context.basin_class === IN_BOUNDARY ? "basin_name" : "basin_class"),
+  );
   if (context.basin_class === IN_BOUNDARY && context.basin_name) {
-    basin.textContent = context.basin_name;
+    basin.append(context.basin_name);
   } else {
-    basin.textContent = context.basin_class;
+    basin.append(context.basin_class);
     basin.classList.add("gw-absent");
   }
 
   if (context.play_name.length > 0) {
-    const plays = row(list, "Plays", labelFor(well, "/basin_context/play_name"));
+    const plays = row(
+      list,
+      "Plays",
+      labelFor(well, "/basin_context/play_name"),
+      handleFor("play_name"),
+    );
     plays.className = "gw-basin-plays";
     for (const name of context.play_name) {
       const chip = document.createElement("span");
@@ -113,16 +139,26 @@ export function renderBasin(host: HTMLElement, well: Envelope<WellBasin>): void 
       plays.append(chip, " ");
     }
   } else {
-    const plays = row(list, "Plays", labelFor(well, "/basin_context/play_name"));
-    plays.textContent = context.play_class;
+    const plays = row(
+      list,
+      "Plays",
+      labelFor(well, "/basin_context/play_name"),
+      handleFor("play_class"),
+    );
+    plays.append(context.play_class);
     plays.classList.add("gw-absent");
   }
 
   // The label is kept beside the polygon and marked, never overwritten: a reader who has been
   // reading `permian` for a year needs to see it move, and the disagreement is the finding.
-  const filed = row(list, "Filed label", labelFor(well, "/basin_context/basin_label_filed"));
+  const filed = row(
+    list,
+    "Filed label",
+    labelFor(well, "/basin_context/basin_label_filed"),
+    handleFor(context.basin_label_filed ? "basin_label_filed" : "label_class"),
+  );
   filed.className = "gw-basin-label";
-  filed.textContent = context.basin_label_filed ?? context.label_class;
+  filed.append(context.basin_label_filed ?? context.label_class);
   if (!context.basin_label_filed) filed.classList.add("gw-absent");
   if (context.label_agrees !== null) {
     const mark = document.createElement("span");
@@ -131,19 +167,20 @@ export function renderBasin(host: HTMLElement, well: Envelope<WellBasin>): void 
     mark.textContent = context.label_agrees
       ? "· agrees with the polygon"
       : "· disagrees with the polygon";
-    filed.append(" ", mark);
+    // The agreement is its own served column and its own claim, so it carries its own ⌾.
+    filed.append(" ", mark, explainHandle({ label: "label agreement", handle: handleFor("label_agrees") }));
   }
 
   if (context.boundary_vintage) {
-    const vintage = row(list, "Boundary vintage", null);
+    const vintage = row(list, "Boundary vintage", null, handleFor("boundary_vintage"));
     vintage.setAttribute("data-no-glossary", "");
-    vintage.textContent = context.boundary_vintage;
+    vintage.append(context.boundary_vintage);
   }
 
-  const geometry = row(list, "Answered by", null);
+  const geometry = row(list, "Answered by", null, handleFor("geometry_basis"));
   geometry.className = "gw-basin-geometry";
   geometry.setAttribute("data-no-glossary", "");
-  geometry.textContent = context.geometry_basis;
+  geometry.append(context.geometry_basis);
 
   host.replaceChildren(list);
 

@@ -7,12 +7,15 @@
  * The list is knowable here and nowhere else: which sections a well has depends on the links
  * its own response carried.
  */
+import { readState, serializeState } from "../app/state.ts";
 import { focusPanel } from "../chrome/overlays.ts";
 
 /** main.ts -> here, on popstate. Kept as a literal at both ends so no import edge is made. */
 export const SECTION_EVENT = "gw-section";
 /** here -> main.ts, which is the single writer of app state. */
 export const SECTION_SET_EVENT = "gw-section-set";
+/** here -> any section that summarises the others, so a count taken early is taken again. */
+export const SECTION_OPEN_EVENT = "gw-section-open";
 
 export interface SectionSpec {
   id: string;
@@ -51,6 +54,9 @@ const IN_FLIGHT_CAP = 2;
 const expandedByWell = new Map<string, Set<string>>();
 
 let currentWell = "";
+// Bumped on every mount. A load started for the last well is not cancellable, so its `finally`
+// is made harmless instead: it decrements the counter it incremented, and never this one.
+let generation = 0;
 let mounted: Map<string, SectionHandles> = new Map();
 let specs: SectionSpec[] = [];
 const loaded = new Set<string>();
@@ -103,7 +109,9 @@ function pump(): void {
     if (!spec?.load || loaded.has(id)) continue;
     loaded.add(id);
     inFlight += 1;
+    const started = generation;
     const job = spec.load().finally(() => {
+      if (started !== generation) return;
       inFlight -= 1;
       pump();
     });
@@ -126,7 +134,10 @@ function setExpanded(id: string, open: boolean): void {
   const set = expandedSet(currentWell);
   if (open) set.add(id);
   else set.delete(id);
-  if (open) request(id);
+  if (open) {
+    request(id);
+    document.dispatchEvent(new CustomEvent(SECTION_OPEN_EVENT, { detail: { id } }));
+  }
 }
 
 function commitSection(id: string | null, mode: "push" | "replace"): void {
@@ -188,11 +199,16 @@ function absentNote(id: string): void {
   host.hidden = false;
 }
 
-/** An in-card link to another section: a navigation the reader asked for by name, so it pushes. */
+/**
+ * An in-card link to another section: a navigation the reader asked for by name, so it pushes.
+ * The href is the whole address and not the section alone, because the click handler is not
+ * the only consumer: a middle click, an "open in new tab" and a copied link all take the href
+ * as written, and `?section=basin` on its own lands a reader on the map with no card open.
+ */
 export function sectionLink(id: string, text: string): HTMLAnchorElement {
   const link = document.createElement("a");
   link.className = "gw-section-link";
-  link.href = `?section=${encodeURIComponent(id)}`;
+  link.href = serializeState({ ...readState(), section: id });
   link.textContent = text;
   link.addEventListener("click", (event) => {
     event.preventDefault();
@@ -215,6 +231,7 @@ export function mountSections(
   queue.length = 0;
   running.length = 0;
   inFlight = 0;
+  generation += 1;
   currentWell = api10;
   specs = list;
   mounted = new Map();
