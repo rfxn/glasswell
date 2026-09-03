@@ -7,6 +7,16 @@ its own version in its header, and its history is summarised in §3.1.
 
 ## Unreleased
 
+<a id="v0.79"></a>
+## v0.79 — 2026-09-03
+
+- [Fix] install.sh writes the pg_ident include as a bare filename; an HBA or ident include
+      takes no quotes, and PostgreSQL read the quoted postgresql.conf form as a name with
+      quotes in it, so the usermap loaded empty and every peer login but postgres was
+      refused on a host that had taken the map; a re-run now corrects a host that received
+      the quoted line, and the unit test asserts the name resolves rather than pinning the
+      string install.sh happens to write
+
 <a id="v0.78"></a>
 ## v0.78 — 2026-09-03
 
