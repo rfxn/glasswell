@@ -436,7 +436,7 @@ function allocationRows(chart: ChartSeries): HTMLElement[] {
     cells.setAttribute("role", "img");
     cells.setAttribute(
       "aria-label",
-      `${column.label}: how each of ${chart.months.length} months was arrived at —` +
+      `${column.label}: how each of ${chart.months.length} months was arrived at:` +
         " observed where the lease had one eligible well, allocated where it had more.",
     );
     for (const [index, month] of chart.months.entries()) {
@@ -461,7 +461,11 @@ function allocationMark(column: SeriesColumn, index: number, month: string): HTM
   return cell;
 }
 
-/** The allocation band's own key, in its own vocabulary: six classes, not four states. */
+/**
+ * The allocation band's own key, in its own vocabulary and only for what this well's band
+ * drew. Six entries under a band showing one class made the band read as a component that
+ * had failed to draw the other five.
+ */
 function allocationKey(chart: ChartSeries, callbacks: ChartCallbacks): HTMLElement | null {
   if (!chart.allocated) return null;
   const wrapper = document.createElement("p");
@@ -470,7 +474,7 @@ function allocationKey(chart: ChartSeries, callbacks: ChartCallbacks): HTMLEleme
     entry.allocationClasses.some((state) => state !== ""),
   );
   const pointer = first ? `/series/${first.key}_allocation_class_by_month` : "";
-  for (const state of ALLOCATION_CLASSES) {
+  for (const state of servedClasses(chart)) {
     const described = allocationClass(state);
     const item = document.createElement("span");
     item.className = "gw-state-key-item";
@@ -482,6 +486,19 @@ function allocationKey(chart: ChartSeries, callbacks: ChartCallbacks): HTMLEleme
     wrapper.appendChild(item);
   }
   return wrapper;
+}
+
+/**
+ * The classes this series actually carries, in the order the vocabulary lists them, plus any
+ * the vocabulary does not know: a mark on the band with no entry in the key is a texture the
+ * reader has to guess at, which is the opposite failure to keying five classes nothing drew.
+ */
+function servedClasses(chart: ChartSeries): string[] {
+  const served = new Set(
+    chart.columns.flatMap((column) => column.allocationClasses).filter((state) => state !== ""),
+  );
+  const known: string[] = ALLOCATION_CLASSES.filter((state) => served.has(state));
+  return [...known, ...[...served].filter((state) => !known.includes(state))];
 }
 
 /**

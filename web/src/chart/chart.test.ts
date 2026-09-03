@@ -355,13 +355,39 @@ describe("the allocation band", () => {
     expect(marks[0]?.getAttribute("title")).not.toContain("over");
   });
 
-  it("keys the band with all six classes, including the ones this well never hit", () => {
+  it("keys the classes this well's band drew, and not the ones it never hit", () => {
+    // Six entries under a band showing one class made the band read as a component that had
+    // failed to draw the other five.
     renderChart(host, allocatedChart, callbacks);
     const key = host.querySelector(".gw-alloc-key");
 
-    expect(key?.querySelectorAll(".gw-alloc-mark").length).toBe(6);
+    // Four on the oil row and one on the gas row; `unallocated` is the sixth and no month
+    // of this well is one.
+    expect(key?.querySelectorAll(".gw-alloc-mark").length).toBe(5);
     expect(key?.textContent).toContain("excluded after plug");
-    expect(key?.textContent).toContain("unallocated");
+    expect(key?.textContent).not.toContain("unallocated");
+  });
+
+  it("keys one class where the series carries one, not the whole vocabulary", () => {
+    const gasLease = toChartSeries(observedGasLease(months("2024-01", 6)));
+    renderChart(host, gasLease, callbacks);
+    const key = host.querySelector(".gw-alloc-key");
+
+    expect(key?.querySelectorAll(".gw-alloc-mark").length).toBe(1);
+    expect(key?.textContent).toContain("observed · gas lease");
+  });
+
+  it("writes no em-dash into a label a reader is served", () => {
+    renderChart(host, allocatedChart, callbacks);
+    const labelled = [...host.querySelectorAll("[title], [aria-label]")].flatMap((node) => [
+      node.getAttribute("title") ?? "",
+      node.getAttribute("aria-label") ?? "",
+    ]);
+
+    expect(labelled.filter((text) => text.includes("\u2014"))).toEqual([]);
+    expect(host.querySelector(".gw-alloc-cells")?.getAttribute("aria-label")).toContain(
+      "arrived at:",
+    );
   });
 
   it("shades the months inside the completeness lag in both bands", () => {
@@ -399,6 +425,21 @@ describe("the allocation band", () => {
     expect(host.querySelector(".gw-readout-alloc")).toBeNull();
   });
 });
+
+/** A gas lease with one well on it: every month observed, one class in the whole series. */
+function observedGasLease(pm: string[]): ProductionData {
+  const base = allocated(pm);
+  return {
+    ...base,
+    series: {
+      ...base.series,
+      oil_bbl_granularity_by_month: pm.map(() => "well_observed"),
+      oil_bbl_allocation_class_by_month: pm.map(() => "observed_gas_well"),
+      oil_bbl_eligible_wells_by_month: pm.map(() => "1"),
+      gas_mcf_allocation_class_by_month: pm.map(() => "observed_gas_well"),
+    },
+  };
+}
 
 /** The 21.9 percent of Texas API-10s that carry more than one lease record. */
 function dualLease(pm: string[]): ProductionData {
