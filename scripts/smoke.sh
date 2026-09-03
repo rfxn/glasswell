@@ -360,5 +360,70 @@ else
     printf '  skip session login — set GLASSWELL_SMOKE_USER and GLASSWELL_SMOKE_PASSWORD\n'
 fi
 
+printf 'the Texas allocation, and what it says about itself\n'
+# A Texas well is the only one whose production series is an estimate, so it is the only one
+# where a green endpoint proves nothing on its own: what has to be true is that every point
+# says it is a share and that the residuals are served rather than assumed.
+tx_api10="$(keyed "$base/v1/wells?state=42&limit=1" \
+    | python3 -c 'import json,sys
+data = json.load(sys.stdin)["data"]
+print(data[0]["api10"] if data else "")')"
+if [[ -n $tx_api10 ]]; then
+    assert "GET /v1/wells/$tx_api10/production" 200 \
+        "$(keyed_status "$base/v1/wells/$tx_api10/production")"
+    body "/v1/wells/$tx_api10/production"
+    assert_true "every allocated point says it is one" \
+        "an allocation estimate that reads as an observation is the defect this track exists against" \
+        python3 -c '
+import json, sys
+data = json.load(open(sys.argv[1]))["data"]
+allocation = data.get("allocation")
+if allocation is None:
+    sys.exit(1)
+series = data["series"]
+classes = [
+    value
+    for column in ("oil_bbl", "gas_mcf")
+    for value in series.get(f"{column}_allocation_class_by_month", [])
+    if value is not None
+]
+sys.exit(0 if allocation["model_id"] and allocation["rule_id"] and classes else 1)
+' "$work_dir/body.json"
+    assert_true "the absent error bound is served rather than omitted" \
+        "4F.5 admits a stated absence naming the rule that will close it, never a missing field" \
+        python3 -c '
+import json, sys
+bounds = json.load(open(sys.argv[1]))["data"]["allocation"]["error_bounds"]
+sys.exit(0 if bounds["outcome"] in {"not_measured", "measured"} and bounds.get("measured_by_rule") else 1)
+' "$work_dir/body.json"
+    assert "as_of on the allocated series is refused, not answered from one snapshot" 422 \
+        "$(keyed_status "$base/v1/wells/$tx_api10/production?as_of=2020-01-01")"
+else
+    printf '  skip Texas production — no Texas well is served on this instance\n'
+fi
+
+assert "GET /v1/validators/allocation?jurisdiction=TX" 200 \
+    "$(keyed_status "$base/v1/validators/allocation?jurisdiction=TX")"
+body "/v1/validators/allocation?jurisdiction=TX"
+assert_true "three residual blocks, and the third says there is no truth to check against" \
+    "folding the invariant into the measurements would hide the invariant" \
+    python3 -c '
+import json, sys
+blocks = {block["name"]: block for block in json.load(open(sys.argv[1]))["data"]["blocks"]}
+truth = blocks.get("independent_truth", {})
+sys.exit(0 if set(blocks) == {"conservation", "crosswalk", "independent_truth"}
+         and truth.get("outcome") == "no_independent_truth" and truth.get("reasons") else 1)
+' "$work_dir/body.json"
+assert_true "conservation is inside the threshold its own rule records" \
+    "V-1 gates the deploy at tolerance zero; the coverage share is what is allowed to move" \
+    python3 -c '
+import json, sys
+blocks = {block["name"]: block for block in json.load(open(sys.argv[1]))["data"]["blocks"]}
+block = blocks["conservation"]
+if block["outcome"] != "measured":
+    sys.exit(0)
+sys.exit(1 if block.get("degraded") else 0)
+' "$work_dir/body.json"
+
 printf '\n%d passed, %d failed\n' "$passed" "$failed"
 [[ $failed -eq 0 ]]

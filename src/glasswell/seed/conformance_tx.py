@@ -1255,6 +1255,52 @@ TX_RULES: tuple[dict[str, object], ...] = (
     },
 )
 
+# The cadence decisions the scheduler registry reads, declared beside the rules they schedule
+# rather than in the scheduler's own module: a cadence is a decision about a publisher, and the
+# publisher is what this file is about. conformance_schedules.py merges them so one builder
+# writes every cr_job_cadence_<job>_1 row and the grammar cannot fork.
+TX_CADENCE_DECISIONS: dict[str, dict[str, str]] = {
+    "ingest_tx_pdq": {
+        "rule": "Pull the PDQ dump every 35 days, and archive the two 26-month well-status"
+        " files in the same pass.",
+        "rationale": "The RRC publishes the dump on the last Saturday of each month and the"
+        " listing's own modified stamp agrees, so the cadence is the publisher's rather than"
+        " glasswell's. Thirty-five days rather than thirty because a calendar month is not a"
+        " fixed interval and a poll window shorter than the gap between two last Saturdays"
+        " reports a miss that never happened. The archive is 3.65 GB and the server ignores"
+        " Range, so a missed window costs a whole re-download rather than a resume, which is"
+        " why /v1/health has to be able to see one. The job's own ceiling is the registry's six"
+        " hours rather than the source's twelve-hour attempt timeout: the two answer different"
+        " questions, and six hours at 3.65 GB is about 170 KB/s, below which the fetch is"
+        " broken rather than slow. The two well-status files ride this job"
+        " because they are pulled from the same portal in the same pass and parsed by nothing:"
+        " they hold a rolling 26-month window that no regulator can give back once missed.",
+    },
+    "marts_tx_allocation": {
+        "rule": "Rebuild the allocated mart after the ingest that promotes the lease rows it"
+        " splits, never on a clock of its own.",
+        "rationale": "The split is a function of the lease volumes and the crosswalk vintage,"
+        " so a run over unchanged inputs recomputes the same shares and republishes the same"
+        " derivation. It is safe to launch rather than observe because it refuses rather than"
+        " publishing when conservation fails: a defect stops the mart instead of shipping a"
+        " share that does not sum back to what the operator filed.",
+    },
+    "marts_allocation_backtest": {
+        "rule": "Re-score the method study after the Montana ingest whose two grains it is"
+        " measured on.",
+        "rationale": "The study reads Montana's well-grain and lease-grain families and"
+        " nothing of Texas's, so it moves when Montana's filings move. It is a Montana job by"
+        " jurisdiction whatever it is a control for, which is also what lets the scheduler's"
+        " own gate check that a mart waits on an ingest of its own jurisdiction.",
+    },
+}
+
+TX_CADENCE_EVIDENCE: dict[str, str] = {
+    "tx_pdq_dsv": PDQ_LINK,
+    "tx_w10_wlf607": W10_LINK,
+    "tx_g10_gse10": G10_LINK,
+}
+
 # Jurisdiction-neutral by id and Montana by source, the shape cr_mt_pru_reconciliation_1
 # already has: a rule row cannot be sourceless (005_conformance.sql:7) and the study's evidence
 # is Montana's files. Seeded separately because its source is registered by seed_sources, which

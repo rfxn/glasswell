@@ -251,7 +251,7 @@ bounds get measured against two independent validators and published.
 
 ## API surface
 
-API-first: 56 operations across 51 paths in the frozen snapshot, 55 of them under `/v1`.
+API-first: 57 operations across 52 paths in the frozen snapshot, 56 of them under `/v1`.
 The read surface covers health and operational status, wells and their facets, production,
 per-well cumulative volumes with the month classes behind them, vintage cohorts, completion
 context and promoted completion design, physical neighbours, formations, lineage,

@@ -442,3 +442,94 @@ select r.jurisdiction_code, date '2026-09-02', date '2026-09-06',
                 where j.jurisdiction_code = 'TX' and j.effective_from = date '2026-09-02'
                   and j.published_at = date '2026-09-06')
 on conflict do nothing;
+
+-- The job rows, written by both writers. seed/schedules.py carries them too and the parity
+-- gate holds the two copies equal; this insert is what makes a deploy that seeds nothing still
+-- schedule, because seed_all is not on the migrate path.
+--
+-- No ExecStart line and no unit file. An entry point named in a unit joins the set an
+-- installed timer already drives, after which the double-run guard forbids that job from ever
+-- being seeded `launch` -- the opposite of what a new jurisdiction wants.
+insert into lineage.scheduled_jobs
+    (job_id, label, kind, entry_point, argv, anchor_source_id, jurisdiction, run_as, rationale)
+select j.job_id, j.label, j.kind, j.entry_point, j.argv, j.anchor_source_id, j.jurisdiction,
+       'glasswell', j.rationale
+  from (values
+    ('ingest_tx_pdq', 'Texas PDQ dump ingest', 'ingest', 'glasswell.ingest.tx_pdq',
+     array[]::text[], 'tx_g10_gse10', 'TX'::text,
+     'One fetch a month to the raw zone, then a two-pass parse from the stored artifact. The'
+     ' archive is republished on the last Saturday of each month and the server ignores Range,'
+     ' so a missed window is a whole month re-downloaded rather than resumed. The two 26-month'
+     ' well-status files are archived by the same job, because they are pulled in one pass and'
+     ' parsed by nothing.'::text),
+    ('marts_tx_allocation', 'Texas allocated production mart', 'mart',
+     'glasswell.marts.tx_allocation', array[]::text[], 'tx_g10_gse10', 'TX'::text,
+     'The split reads the lease rows the ingest promoted and the membership it staged, so it'
+     ' reacts to that ingest rather than to a clock of its own. It refuses rather than'
+     ' publishing when conservation fails, which is what makes it safe to launch.'::text),
+    ('marts_allocation_backtest', 'Allocation method study', 'mart',
+     'glasswell.marts.allocation_backtest', array[]::text[], 'mt_bogc_pru_production',
+     'MT'::text,
+     'The study is measured on Montana''s two grains, so it is a Montana job by jurisdiction'
+     ' whatever it is a control for: the standing gate asks a mart to wait on an ingest of its'
+     ' own jurisdiction, and Montana''s is the one whose filings it reads.'::text)
+  ) as j(job_id, label, kind, entry_point, argv, anchor_source_id, jurisdiction, rationale)
+ where exists (select 1 from lineage.sources s where s.source_id = j.anchor_source_id)
+on conflict do nothing;
+
+-- One job, three sources. The dump and the two well-status files are pulled from the same
+-- portal in one pass, and `tx_pdq_dsv` leaves UNJOBBED_SOURCES in this same commit: the
+-- parity gate is a two-sided equality and an exempted source with a job row reddens it from
+-- both directions.
+insert into lineage.job_sources (job_id, source_id)
+select e.job_id, e.source_id
+  from (values
+    ('ingest_tx_pdq', 'tx_pdq_dsv'),
+    ('ingest_tx_pdq', 'tx_w10_wlf607'),
+    ('ingest_tx_pdq', 'tx_g10_gse10')
+  ) as e(job_id, source_id)
+ where exists (select 1 from lineage.scheduled_jobs j where j.job_id = e.job_id)
+   and exists (select 1 from lineage.sources s where s.source_id = e.source_id)
+on conflict do nothing;
+
+-- launch, not observe, and conditioned rather than assumed: this track adds no unit file, so
+-- no installed timer drives any of these three entry points. The ingest takes the registry's
+-- six-hour ceiling; its source's own attempt timeout is twelve hours and answers a different
+-- question -- how long one fetch may take, against how long the whole job may. Six hours at
+-- 3.65 GB is about 170 KB/s, below which the fetch is broken rather than slow.
+insert into lineage.job_schedules
+    (job_id, effective_from, published_at, rule_id, trigger, launch_mode, cadence_interval,
+     cadence_note, memory_max, timeout_seconds)
+select s.job_id, date '2026-09-02', date '2026-09-02',
+       'cr_job_cadence_' || s.job_id || '_1', s.trigger, 'launch', s.cadence_interval,
+       s.cadence_note, s.memory_max, s.timeout_seconds
+  from (values
+    ('ingest_tx_pdq', 'cadence', interval '35 days',
+     'Every 35 days; the RRC republishes on the last Saturday of the month'::text,
+     '6G'::text, 21600),
+    ('marts_tx_allocation', 'after_dependency', null::interval,
+     'After the ingest that promotes the lease rows it splits'::text, '6G'::text, 7200),
+    ('marts_allocation_backtest', 'after_dependency', null::interval,
+     'After the Montana ingest whose two grains it scores against'::text, '6G'::text, 3600)
+  ) as s(job_id, trigger, cadence_interval, cadence_note, memory_max, timeout_seconds)
+ where exists (select 1 from lineage.scheduled_jobs j where j.job_id = s.job_id)
+   and exists (select 1 from lineage.conformance_rules c
+                where c.rule_id = 'cr_job_cadence_' || s.job_id || '_1')
+on conflict do nothing;
+
+insert into lineage.job_dependencies (job_id, depends_on_job_id, trigger_on, rationale)
+select d.job_id, d.depends_on_job_id, 'changed', d.rationale
+  from (values
+    ('marts_tx_allocation', 'ingest_tx_pdq',
+     'The split reads the lease rows and the membership that ingest promoted, so a pull that'
+     ' changed nothing leaves it with nothing to re-split.'::text),
+    ('marts_allocation_backtest', 'ingest_mt_bogc',
+     'The study is measured on Montana''s well and lease grains, so it waits on the ingest'
+     ' that promotes them rather than on the jurisdiction it is a control for.'::text),
+    ('marts_cumulatives', 'marts_tx_allocation',
+     'Texas writes its well-grain cumulative row from the allocated mart, so the cumulative'
+     ' refresh reads a mart that has to have been rebuilt first.'::text)
+  ) as d(job_id, depends_on_job_id, rationale)
+ where exists (select 1 from lineage.scheduled_jobs j where j.job_id = d.job_id)
+   and exists (select 1 from lineage.scheduled_jobs p where p.job_id = d.depends_on_job_id)
+on conflict do nothing;

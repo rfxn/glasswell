@@ -176,6 +176,107 @@ CO_JOBS: tuple[dict[str, object], ...] = (
     },
 )
 
+# Texas, three entry points. Like Colorado's, none of them is driven by an installed timer, so
+# they are seeded `launch` from day one and there is nothing for a launched run to collide
+# with. Unlike Colorado's, the ingest is a 3.65 GB unresumable fetch: it runs monthly, on the
+# cadence the RRC publishes on, and its timeout is the fetch's twelve hours rather than an hour.
+TX_JOBS: tuple[dict[str, object], ...] = (
+    {
+        "job_id": "ingest_tx_pdq",
+        "label": "Texas PDQ dump ingest",
+        "kind": "ingest",
+        "entry_point": "glasswell.ingest.tx_pdq",
+        "argv": [],
+        "jurisdiction": "TX",
+        "run_as": "glasswell",
+        "rationale": "One fetch a month to the raw zone, then a two-pass parse from the stored"
+        " artifact. The archive is republished on the last Saturday of each month and the"
+        " server ignores Range, so a missed window is a whole month re-downloaded rather than"
+        " resumed. The two 26-month well-status files are archived by the same job, because"
+        " they are pulled in one pass and parsed by nothing.",
+    },
+    {
+        "job_id": "marts_tx_allocation",
+        "label": "Texas allocated production mart",
+        "kind": "mart",
+        "entry_point": "glasswell.marts.tx_allocation",
+        "argv": [],
+        "jurisdiction": "TX",
+        "run_as": "glasswell",
+        "rationale": "The split reads the lease rows the ingest promoted and the membership it"
+        " staged, so it reacts to that ingest rather than to a clock of its own. It refuses"
+        " rather than publishing when conservation fails, which is what makes it safe to launch.",
+    },
+    {
+        "job_id": "marts_allocation_backtest",
+        "label": "Allocation method study",
+        "kind": "mart",
+        "entry_point": "glasswell.marts.allocation_backtest",
+        "argv": [],
+        "jurisdiction": "MT",
+        "run_as": "glasswell",
+        "rationale": "The study is measured on Montana's two grains, so it is a Montana job by"
+        " jurisdiction whatever it is a control for: gate 2 asks a mart to wait on an ingest of"
+        " its own jurisdiction, and Montana's is the one whose filings it reads.",
+    },
+)
+
+TX_SCHEDULES: tuple[dict[str, object], ...] = (
+    {
+        "job_id": "ingest_tx_pdq",
+        "trigger": "cadence",
+        "cadence_interval": timedelta(days=35),
+        "cadence_note": "Every 35 days; the RRC republishes on the last Saturday of the month",
+        "launch_mode": "launch",
+        "memory_max": "6G",
+        # The registry caps a job at six hours (076:88) and the source's own attempt timeout is
+        # twelve (050:41). They answer different questions: the attempt timeout is how long one
+        # fetch may take, and this is how long the whole job may. Six hours at 3.65 GB is about
+        # 170 KB/s, below which the fetch is broken rather than slow.
+        "timeout_seconds": 21600,
+    },
+    {
+        "job_id": "marts_tx_allocation",
+        "trigger": "after_dependency",
+        "cadence_note": "After the ingest that promotes the lease rows it splits",
+        "launch_mode": "launch",
+        "memory_max": "6G",
+        "timeout_seconds": 7200,
+    },
+    {
+        "job_id": "marts_allocation_backtest",
+        "trigger": "after_dependency",
+        "cadence_note": "After the Montana ingest whose two grains it scores against",
+        "launch_mode": "launch",
+        "memory_max": "6G",
+        "timeout_seconds": 3600,
+    },
+)
+
+TX_DEPENDENCIES: tuple[tuple[str, str, str, str], ...] = (
+    (
+        "marts_tx_allocation",
+        "ingest_tx_pdq",
+        "changed",
+        "The split reads the lease rows and the membership that ingest promoted, so a pull that"
+        " changed nothing leaves it with nothing to re-split.",
+    ),
+    (
+        "marts_allocation_backtest",
+        "ingest_mt_bogc",
+        "changed",
+        "The study is measured on Montana's well and lease grains, so it waits on the ingest"
+        " that promotes them rather than on the jurisdiction it is a control for.",
+    ),
+    (
+        "marts_cumulatives",
+        "marts_tx_allocation",
+        "changed",
+        "Texas writes its well-grain cumulative row from the allocated mart, so the cumulative"
+        " refresh reads a mart that has to have been rebuilt first.",
+    ),
+)
+
 CO_SCHEDULES: tuple[dict[str, object], ...] = (
     {
         "job_id": "co_ecmc_gis",
@@ -594,6 +695,7 @@ JOBS: tuple[dict[str, object], ...] = (
         " visibility and the scheduler holds no opinion about when or as whom it runs.",
     },
     *CO_JOBS,
+    *TX_JOBS,
 )
 
 NM_OCD_SOURCES = (
@@ -620,6 +722,9 @@ JOB_SOURCES: dict[str, tuple[str, ...]] = {
     "ingest_nm_c115b": ("nm_c115b_upstream",),
     "ingest_fracfocus": ("fracfocus_csv",),
     "ingest_mt_bogc": ("mt_bogc_pru_production", "mt_bogc_well_production"),
+    # One job, three sources: the dump and the two 26-month well-status files are pulled in
+    # one pass, and the latter two are archived and parsed by nothing.
+    "ingest_tx_pdq": ("tx_g10_gse10", "tx_pdq_dsv", "tx_w10_wlf607"),
     "ingest_mt_gis": ("mt_gis_well_paths", "mt_gis_wells"),
     "ingest_eia_boundaries": ("eia_sedimentary_basins", "eia_shale_plays"),
     "ingest_nm_ocd_stage": NM_OCD_SOURCES,
@@ -647,17 +752,7 @@ JOB_SOURCES: dict[str, tuple[str, ...]] = {
 # co_ecmc_prod_reports is the third: the 2.49 GB annual archives are a later dispatch and no
 # job polls them in this release, so the source is registered with a null interval and named
 # here rather than given a schedule that would claim a poll nothing performs.
-UNJOBBED_SOURCES = frozenset(
-    {
-        "proj_grid_nad27",
-        "tx_pdq_dsv",
-        "co_ecmc_prod_reports",
-        # Archived by the PDQ job and parsed by nothing; they leave this
-        # set in the commit that registers that job.
-        "tx_w10_wlf607",
-        "tx_g10_gse10",
-    }
-)
+UNJOBBED_SOURCES = frozenset({"proj_grid_nad27", "co_ecmc_prod_reports"})
 
 DEPENDENCIES: tuple[tuple[str, str, str, str], ...] = (
     (
@@ -797,6 +892,7 @@ DEPENDENCIES: tuple[tuple[str, str, str, str], ...] = (
         " code change.",
     ),
     *CO_DEPENDENCIES,
+    *TX_DEPENDENCIES,
 )
 
 # job_id -> (trigger, interval, monthly_day, note, memory_max, timeout_seconds, legacy_unit)
@@ -1026,6 +1122,7 @@ SCHEDULES: tuple[dict[str, object], ...] = (
         "external_service_unit": "glasswell-backup.service",
     },
     *CO_SCHEDULES,
+    *TX_SCHEDULES,
 )
 
 

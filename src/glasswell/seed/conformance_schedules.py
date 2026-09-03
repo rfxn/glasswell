@@ -28,7 +28,12 @@ from glasswell.seed.conformance_nd import GIS_WELLS_URL as ND_GIS_URL
 from glasswell.seed.conformance_nd import MPR_INDEX_URL
 from glasswell.seed.conformance_nm import OCD_FTP_PAGE_URL
 from glasswell.seed.conformance_nm_wells import GIS_LAYER_URL as NM_GIS_LAYER_URL
-from glasswell.seed.conformance_tx import EWA_LINK, GIS_LINK
+from glasswell.seed.conformance_tx import (
+    EWA_LINK,
+    GIS_LINK,
+    TX_CADENCE_DECISIONS,
+    TX_CADENCE_EVIDENCE,
+)
 from glasswell.seed.schedules import JOB_SOURCES, SCHEDULES, anchors, cadence_rule_id
 
 EFFECTIVE_FROM = date(2026, 9, 2)
@@ -244,8 +249,12 @@ SCHEDULE_RULES: tuple[dict[str, object], ...] = ()
 # A later jurisdiction track declares its own cadence decisions beside its other rules and
 # they are merged here, so one builder writes every cr_job_cadence_<job>_1 row and the grammar
 # cannot fork.
-EVIDENCE: dict[str, str] = {**_EVIDENCE, **CO_CADENCE_EVIDENCE}
-DECISIONS: dict[str, dict[str, str]] = {**_DECISIONS, **CO_CADENCE_DECISIONS}
+EVIDENCE: dict[str, str] = {**_EVIDENCE, **CO_CADENCE_EVIDENCE, **TX_CADENCE_EVIDENCE}
+DECISIONS: dict[str, dict[str, str]] = {
+    **_DECISIONS,
+    **CO_CADENCE_DECISIONS,
+    **TX_CADENCE_DECISIONS,
+}
 
 def _spec(job_id: str, schedule: dict[str, object], anchor: str) -> dict[str, object]:
     interval = schedule.get("cadence_interval")
