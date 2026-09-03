@@ -45,6 +45,15 @@ describe("what the allocation band is painted with", () => {
   });
 });
 
+describe("what the cumulative chips are painted with", () => {
+  it("keeps the share chip in one box, whatever its content does", () => {
+    // A border is painted once per line box. `display: inline` and a chip that wraps
+    // mid-content paints two of them, one containing `100%` and nothing else -- a bordered
+    // naked number on the surface built to prevent them (M4).
+    expect(paintOf(".gw-alloc-share")).toMatch(/display:\s*inline-block/);
+  });
+});
+
 describe("what the state band is painted with", () => {
   it("draws the lease's filing as its own mark, not as this well's report", () => {
     // Two rows in one key with one swatch and two subjects is the same defect as two classes

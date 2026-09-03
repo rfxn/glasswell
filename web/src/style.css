@@ -2333,14 +2333,17 @@ a {
 /* The border says "read me"; the colour is the chip's own. --ink is the near-black in this
    palette, not the text colour: setting it here painted the share invisible on the panel, which
    is what the 390 px shot showed and no unit test could have. */
+/* inline-block on both: a border is painted once per line box, so an inline chip that wraps
+   mid-content reads as two chips -- one of them a bordered "100%" with nothing to say what
+   of, which is a naked number on the surface built against them (M4). */
 .gw-alloc-share,
 .gw-alloc-coverage {
   border-color: var(--amber);
+  display: inline-block;
 }
 
 .gw-alloc-coverage {
   margin: 0.35rem 0 0;
-  display: inline-block;
 }
 
 /* How the number was arrived at, beside the state and never after it. The band says it across
