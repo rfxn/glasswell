@@ -4,10 +4,10 @@ Cadence used to be ten `ExecStart=` lines and a runbook sentence, so a registere
 not a scheduled source and no query could tell which was which. These rows are the answer, and
 every schedule row cites the `cr_job_cadence_*` conformance rule that decided it.
 
-A row launches only where nothing else already drives its entry point. The four legacy
-jurisdictions stay armed through the two pipeline units, so their rows observe and the tick
-records `would_run`; Colorado installs no unit, so its six rows launch and each one's
-`cr_job_cadence_<job>_1` rationale says why.
+Every row here observes: the tick computes its plan, records `would_run`, and launches
+nothing. `launch` is the launch-flip track's own act rather than a per-jurisdiction choice,
+because `plan.py:363` turns a due `would_run` into `run` for a launching row and
+`runner.py:306` starts it, so a launching row is an unattended run on the next tick.
 """
 
 from __future__ import annotations
@@ -19,6 +19,9 @@ import psycopg
 from glasswell.lineage.errors import LineageError
 
 REGISTERED_ON = date(2026, 9, 2)
+# The owner's launch-posture ruling, and the day the host's scheduler timer was disarmed.
+# 079_scheduler_observe.sql writes the same literal; the two writers must move together.
+OBSERVED_FROM = date(2026, 9, 3)
 INGEST_UNIT = "glasswell-ingest.service"
 C115B_UNIT = "glasswell-c115b.service"
 
@@ -30,6 +33,11 @@ class ScheduleSeedError(LineageError):
 def cadence_rule_id(job_id: str) -> str:
     """One immutable rule id per job. Gate 4 pins the shape in both directions."""
     return f"cr_job_cadence_{job_id}_1"
+
+
+def observe_rule_id(job_id: str) -> str:
+    """The successor the launch-posture ruling appends. A posture change is a row, not an edit."""
+    return f"cr_job_cadence_{job_id}_2"
 
 
 REFUSAL_CODES: tuple[tuple[str, str, str], ...] = (
@@ -97,9 +105,9 @@ REFUSAL_CODES: tuple[tuple[str, str, str], ...] = (
 )
 
 # Colorado's six, one entry point each, appended under the invitation this module's own
-# comment extends to a later jurisdiction track. They are the first rows in the registry that
-# launch rather than observe: Colorado adds no unit file, so no installed timer drives any of
-# these entry points and there is nothing for a launched run to collide with.
+# comment extends to a later jurisdiction track. Their founding schedule rows below carry
+# launch_mode='launch' and are superseded by CO_OBSERVE_SCHEDULES: the rows are append-only and
+# what they registered is what they registered, so the correction is a later row.
 CO_JOBS: tuple[dict[str, object], ...] = (
     {
         "job_id": "co_ecmc_gis",
@@ -227,6 +235,19 @@ CO_SCHEDULES: tuple[dict[str, object], ...] = (
         "memory_max": "2G",
         "timeout_seconds": 1800,
     },
+)
+
+# The launch-posture ruling as rows. Every field is the founding row's; only the posture and the
+# rule it cites move, so the supersession states one decision and restates nothing else.
+CO_OBSERVE_SCHEDULES: tuple[dict[str, object], ...] = tuple(
+    {
+        **row,
+        "launch_mode": "observe",
+        "effective_from": OBSERVED_FROM,
+        "published_at": OBSERVED_FROM,
+        "rule_id": observe_rule_id(str(row["job_id"])),
+    }
+    for row in CO_SCHEDULES
 )
 
 CO_DEPENDENCIES: tuple[tuple[str, str, str, str], ...] = (
@@ -1016,6 +1037,7 @@ SCHEDULES: tuple[dict[str, object], ...] = (
         "external_service_unit": "glasswell-backup.service",
     },
     *CO_SCHEDULES,
+    *CO_OBSERVE_SCHEDULES,
 )
 
 
@@ -1101,18 +1123,39 @@ def _job_row(job: dict[str, object], anchor: dict[str, str]) -> dict[str, object
     return {**job, "anchor_source_id": anchor.get(job_id)}
 
 
+def schedule_clocks(schedule: dict[str, object]) -> tuple[date, date]:
+    """A row's two clocks: founding rows carry the registration date, restatements their own."""
+    return (
+        schedule.get("effective_from", REGISTERED_ON),  # type: ignore[return-value]
+        schedule.get("published_at", REGISTERED_ON),  # type: ignore[return-value]
+    )
+
+
+def resolved_schedules() -> dict[str, dict[str, object]]:
+    """The row `lineage.job_schedules_as_of` resolves per job, from this module's own tuples.
+
+    Ranked the way the resolver ranks, so a reader of the seed sees the posture the database
+    serves rather than a founding row a later restatement has superseded.
+    """
+    resolved: dict[str, dict[str, object]] = {}
+    for row in sorted(SCHEDULES, key=schedule_clocks):
+        resolved[str(row["job_id"])] = row
+    return resolved
+
+
 def _schedule_row(schedule: dict[str, object]) -> dict[str, object]:
     job_id = str(schedule["job_id"])
     external = schedule["trigger"] == "external_timer"
+    effective_from, published_at = schedule_clocks(schedule)
     return {
         "job_id": job_id,
-        "effective_from": REGISTERED_ON,
-        "published_at": REGISTERED_ON,
-        "rule_id": None if external else cadence_rule_id(job_id),
+        "effective_from": effective_from,
+        "published_at": published_at,
+        "rule_id": None if external else str(schedule.get("rule_id") or cadence_rule_id(job_id)),
         "trigger": schedule["trigger"],
-        # Observing unless the row says otherwise: the four legacy jurisdictions stay armed
-        # through their own units, and a row may launch only where no timer drives its entry
-        # point, which is what the job's own cadence rule has to argue.
+        # Observing unless the row says otherwise: a launching row is started by the next tick,
+        # so the posture is the launch flip's to change and a founding row that claimed it is
+        # superseded rather than trusted.
         "launch_mode": schedule.get("launch_mode", "observe"),
         "cadence_interval": schedule.get("cadence_interval"),
         "cadence_monthly_on_day": schedule.get("cadence_monthly_on_day"),
