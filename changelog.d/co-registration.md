@@ -30,6 +30,10 @@
 - [Change] The scheduler's launch gate asserts the invariant it was standing in for rather
            than the posture: no launching row carries a legacy unit or shares an entry point
            with an installed timer, and something must launch for the gate to pass at all
+- [Change] The legend note's per-registration sentences are scoped to the jurisdictions the
+           view was classed by, and sit above the symbology clauses rather than after them, so
+           a basin's decoding rule is neither stated over a viewport that draws none of it nor
+           left below the note's own fold
 - [Fix] `test_no_other_states_letters_are_resolved_through_the_new_mexico_map` asserted the
       read-time resolver answered for one jurisdiction, which a second read-time jurisdiction
       would have reddened without any defect; it now asserts each codebook reaches only its own

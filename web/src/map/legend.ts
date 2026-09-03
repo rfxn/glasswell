@@ -603,21 +603,24 @@ export function createLegend(options: LegendOptions): LegendHandle {
       if (index > 0) note.appendChild(document.createTextNode(", "));
       note.appendChild(ruleNode(entry));
     }
+    note.appendChild(document.createTextNode("."));
+    // Registration data, so no state is named here; scoped to the rules this view was classed
+    // by and placed above the symbology clauses, because an unscoped tail states one basin's
+    // decoding rule over another and does it below the note's own fold.
+    const inView = new Set(vocabulary.map((entry) => entry.rule));
+    for (const entry of JURISDICTION_LIST) {
+      if (!entry.legendNote) continue;
+      if (!inView.has(entry.rules["status_vocabulary"] ?? "")) continue;
+      note.appendChild(document.createTextNode(` ${entry.legendNote}`));
+    }
     note.appendChild(
       document.createTextNode(
-        ". Laterals are ND DMR and TX RRC GIS bore geometry, not a directional survey trace." +
+        " Laterals are ND DMR and TX RRC GIS bore geometry, not a directional survey trace." +
           " The orchid line is that trace: the bore path ND filed as survey stations." +
           " The teal ring is NDIC's own well_type: disposal and injection wells of any" +
           " injected stream, classed by cr_nd_well_type_disposal_1, the code drawn as filed.",
       ),
     );
-    // Per-jurisdiction sentences arrive as registration data, and last: a note written here
-    // would name a state here, which is exactly what a fifth one must not cost. Appended after
-    // the closing sentence rather than into the middle of it, so the paragraph reads as one.
-    for (const entry of JURISDICTION_LIST) {
-      if (!entry.legendNote) continue;
-      note.appendChild(document.createTextNode(` ${entry.legendNote}`));
-    }
     teaching.retouch();
   }
 
