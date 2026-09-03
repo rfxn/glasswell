@@ -108,7 +108,8 @@ select district_no, disagreement_kind, well_count, share, derivation_id
 
 _STUDY = """
 select bed_jurisdiction, model_id, error_lo, error_hi, p50, wells_scored, lease_months_scored,
-       months_measured, mean_wells_per_lease, excluded_zero_zero_share, derivation_id
+       months_measured, mean_wells_per_lease, excluded_zero_zero_share,
+       excluded_out_of_domain_share, derivation_id
   from marts.allocation_method_error
 """
 
@@ -421,6 +422,13 @@ def _independent_truth(connection: Connection) -> dict[str, Any]:
                 derivation=row["derivation_id"],
                 selector=f"bed={row['bed_jurisdiction']}&model_id={row['model_id']}"
                 f"&col=excluded_zero_zero_share",
+            ),
+            "excluded_out_of_domain_share": figure(
+                str(_decimal(row["excluded_out_of_domain_share"])),
+                unit=SHARE_UNIT,
+                derivation=row["derivation_id"],
+                selector=f"bed={row['bed_jurisdiction']}&model_id={row['model_id']}"
+                f"&col=excluded_out_of_domain_share",
             ),
         }
     return block

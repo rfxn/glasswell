@@ -83,6 +83,7 @@ class BacktestRefresh:
     months_measured: tuple[str, ...] = ()
     mean_wells_per_lease: str | None = None
     excluded_zero_zero_share: str | None = None
+    excluded_out_of_domain_share: str | None = None
     error_lo: str | None = None
     error_hi: str | None = None
     p50: str | None = None
@@ -99,6 +100,7 @@ class BacktestRefresh:
             "months_measured": list(self.months_measured),
             "mean_wells_per_lease": self.mean_wells_per_lease,
             "excluded_zero_zero_share": self.excluded_zero_zero_share,
+            "excluded_out_of_domain_share": self.excluded_out_of_domain_share,
             "error_lo": self.error_lo,
             "error_hi": self.error_hi,
             "p50": self.p50,
@@ -141,11 +143,13 @@ select distinct derivation_id from canonical.production_monthly
 _INSERT = """
 insert into marts.allocation_method_error (
     bed_jurisdiction, model_id, error_lo, error_hi, p50, wells_scored, lease_months_scored,
-    months_measured, mean_wells_per_lease, excluded_zero_zero_share, snapshot_vintage,
+    months_measured, mean_wells_per_lease, excluded_zero_zero_share,
+    excluded_out_of_domain_share, snapshot_vintage,
     derivation_id)
 values (%(bed_jurisdiction)s, %(model_id)s, %(error_lo)s, %(error_hi)s, %(p50)s,
         %(wells_scored)s, %(lease_months_scored)s, %(months_measured)s,
-        %(mean_wells_per_lease)s, %(excluded_zero_zero_share)s, %(snapshot_vintage)s,
+        %(mean_wells_per_lease)s, %(excluded_zero_zero_share)s,
+        %(excluded_out_of_domain_share)s, %(snapshot_vintage)s,
         %(derivation_id)s)
 """
 
@@ -183,6 +187,7 @@ def score(
     months: set[str] = set()
     lease_months = 0
     excluded_zero_zero = 0
+    excluded_out_of_domain = 0
     well_counts: dict[int, int] = {}
     for row in _rows(connection, _LEASE_TOTALS, {"source_id": PRU_SOURCE_ID}):
         lease_key = str(row["lease_key"])
@@ -204,15 +209,21 @@ def score(
                 observed = Decimal(0)
             statistic = symmetric_error(share.volume, observed)
             if statistic is None:
-                # Both sides zero: the commonest case rather than an edge, and the share of
-                # them is served as its own figure rather than folded into a statistic that
-                # cannot express it.
-                excluded_zero_zero += 1
+                if share.volume < 0 or observed < 0:
+                    # Outside the statistic's domain: the expression is bounded only over a
+                    # non-negative pair, so a correction scored against a positive truth is
+                    # counted rather than served as an out-of-range number.
+                    excluded_out_of_domain += 1
+                else:
+                    # Both sides zero: the commonest case rather than an edge, and the share
+                    # of them is served as its own figure rather than folded into a statistic
+                    # that cannot express it.
+                    excluded_zero_zero += 1
                 continue
             errors.append(statistic)
             scored_wells.add(share.api10)
 
-    considered = len(errors) + excluded_zero_zero
+    considered = len(errors) + excluded_zero_zero + excluded_out_of_domain
     mean_wells = (
         Decimal(sum(count * pairs for count, pairs in well_counts.items()))
         / Decimal(sum(well_counts.values()))
@@ -225,6 +236,11 @@ def score(
         "months_measured": tuple(sorted(months)),
         "excluded_zero_zero_share": (
             (Decimal(excluded_zero_zero) / Decimal(considered)).quantize(Decimal("0.0001"))
+            if considered
+            else None
+        ),
+        "excluded_out_of_domain_share": (
+            (Decimal(excluded_out_of_domain) / Decimal(considered)).quantize(Decimal("0.0001"))
             if considered
             else None
         ),
@@ -310,6 +326,7 @@ def refresh_allocation_backtest(connection: psycopg.Connection) -> BacktestRefre
                 "months_measured": list(measured["months_measured"]),
                 "mean_wells_per_lease": measured["mean_wells_per_lease"],
                 "excluded_zero_zero_share": measured["excluded_zero_zero_share"],
+                "excluded_out_of_domain_share": measured["excluded_out_of_domain_share"],
                 "snapshot_vintage": snapshot_vintage
                 or current_session().clock.now().date(),
                 "derivation_id": context.derivation_id,
@@ -337,6 +354,9 @@ def refresh_allocation_backtest(connection: psycopg.Connection) -> BacktestRefre
         else None,
         excluded_zero_zero_share=str(measured["excluded_zero_zero_share"])
         if measured["excluded_zero_zero_share"] is not None
+        else None,
+        excluded_out_of_domain_share=str(measured["excluded_out_of_domain_share"])
+        if measured["excluded_out_of_domain_share"] is not None
         else None,
         error_lo=str(error_lo) if error_lo is not None else None,
         error_hi=str(error_hi) if error_hi is not None else None,

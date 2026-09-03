@@ -110,13 +110,21 @@ def allocate_lease_month(
 
 
 def symmetric_error(allocated: Decimal, truth: Decimal) -> Decimal | None:
-    """`(allocated - truth) / (allocated + truth)`, bounded on [-1, 1].
+    """`(allocated - truth) / (allocated + truth)` over a non-negative pair, bounded on [-1, 1].
 
     None where both sides are zero, which is the commonest case rather than an edge: a well
     produced nothing in a month it was eligible for. A relative error would be unbounded above
     and undefined there, so the excluded share is served as its own figure instead of being
     folded into a statistic that cannot express it.
+
+    None again where either side is negative, which is outside the statistic's domain: the
+    expression is bounded only when both sides carry the same sign, and `symmetric_error(3,
+    -1)` is 2 while the rule this feeds publishes a range of [-1, 1] (gate-tx H-15). A
+    correction scored against a positive truth is not a method error the study can express, so
+    it is excluded and counted rather than served as an out-of-range statistic.
     """
+    if allocated < 0 or truth < 0:
+        return None
     total = allocated + truth
     if total == 0:
         return None

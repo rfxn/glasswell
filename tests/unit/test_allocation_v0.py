@@ -180,3 +180,20 @@ def test_the_error_statistic_is_bounded_and_says_nothing_where_nothing_happened(
     assert symmetric_error(Decimal(0), Decimal(5)) == Decimal(-1)
     assert symmetric_error(Decimal(5), Decimal(0)) == Decimal(1)
     assert symmetric_error(Decimal(0), Decimal(0)) is None
+
+
+def test_the_statistic_refuses_a_pair_it_cannot_bound() -> None:
+    """H-15. `(a - t) / (a + t)` is bounded on [-1, 1] only where both sides carry the same
+    sign: `symmetric_error(3, -1)` is 2 and `symmetric_error(-5, 1)` is 1.5, and the rule this
+    feeds publishes a range of [-1, 1] into a numeric(5, 4) column that would store either.
+    """
+    assert symmetric_error(Decimal(3), Decimal(-1)) is None
+    assert symmetric_error(Decimal(-5), Decimal(1)) is None
+    assert symmetric_error(Decimal(-3), Decimal(-1)) is None
+
+
+def test_the_statistic_is_unchanged_inside_its_domain() -> None:
+    assert symmetric_error(Decimal(0), Decimal(0)) is None
+    assert symmetric_error(Decimal(300), Decimal(300)) == Decimal(0)
+    assert symmetric_error(Decimal(600), Decimal(200)) == Decimal("0.5")
+    assert symmetric_error(Decimal(0), Decimal(400)) == Decimal(-1)

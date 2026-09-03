@@ -1335,7 +1335,9 @@ ALLOCATION_RULES: tuple[dict[str, object], ...] = (
             "bed_entity_predicate": "entity_type='well'",
             "statistic": "(allocated - truth) / (allocated + truth)",
             "statistic_range": [-1, 1],
-            "excluded": "lease-months where both sides are zero, with the share served",
+            "statistic_domain": "allocated >= 0 and truth >= 0",
+            "excluded": "lease-months where both sides are zero, and pairs outside the"
+            " statistic's domain, each with its own share served",
             "module_function": "glasswell.allocation.v0:symmetric_error",
             "transfer_outcome": "not_measured",
             "precondition_rule": "cr_mt_pru_reconciliation_1",
@@ -1346,8 +1348,10 @@ ALLOCATION_RULES: tuple[dict[str, object], ...] = (
         "rule": (
             "The equal-share method's error is measured against Montana, which files both"
             " well-level and lease-level volumes, over entity_type='well' rows regardless of"
-            " reporting_level. The statistic is symmetric and bounded on [-1, 1]; lease-months"
-            " where both sides are zero are excluded and the excluded share is served. Until"
+            " reporting_level. The statistic is symmetric and bounded on [-1, 1] over a"
+            " non-negative pair, which is its domain; lease-months where both sides are zero,"
+            " and pairs where either side is negative, are excluded and each excluded share is"
+            " served. Until"
             " the study is measured over a horizon shown to overlap Texas's, no band reaches a"
             " Texas figure and every allocated point carries outcome not_measured naming this"
             " rule."

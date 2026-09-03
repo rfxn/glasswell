@@ -293,14 +293,20 @@ create table marts.allocation_method_error (
     bed_jurisdiction         text not null
                                  references lineage.jurisdiction_codes (jurisdiction_code),
     model_id                 text not null,
-    error_lo                 numeric(5, 4),
-    error_hi                 numeric(5, 4),
-    p50                      numeric(5, 4),
+    -- The statistic is bounded on [-1, 1] over its own domain, and the rule publishes that
+    -- range, so a value outside it is a defect rather than a wide bound: numeric(5,4) would
+    -- store 2.0000 happily and the figure and its rule would disagree (gate-tx H-15).
+    error_lo                 numeric(5, 4) check (error_lo between -1 and 1),
+    error_hi                 numeric(5, 4) check (error_hi between -1 and 1),
+    p50                      numeric(5, 4) check (p50 between -1 and 1),
     wells_scored             integer not null,
     lease_months_scored      integer not null,
     months_measured          text[] not null,
     mean_wells_per_lease     numeric(6, 3),
     excluded_zero_zero_share numeric(5, 4),
+    -- Pairs the statistic cannot express because one side is negative. Counted apart from the
+    -- zero-zero exclusion: they are two different facts about the bed.
+    excluded_out_of_domain_share numeric(5, 4),
     snapshot_vintage         date not null,
     derivation_id            text not null references lineage.derivations (derivation_id),
     primary key (bed_jurisdiction, model_id)
