@@ -1,6 +1,7 @@
 import "./surface.css";
 
 import { accountsSection, loadAccounts } from "../accounts/section.ts";
+import { unbreakable } from "../chrome/notes.ts";
 import { displayTime, element } from "./dom.ts";
 import { ApiError, getEnvelope } from "../api/client.ts";
 import "../components/gw-count.ts";
@@ -653,9 +654,14 @@ function jobNote(job: StatusJob): HTMLElement {
   summary.textContent = "What drives this";
   summary.setAttribute("data-no-glossary", "");
   note.append(summary);
-  const detail = document.createElement("p");
-  detail.textContent = job.detail;
-  note.append(detail);
+  // N2: `detail` falls back to the cadence note for a row with nothing else to say, so on
+  // every job that is not refused the disclosure opened on the sentence already in the Cadence
+  // cell beside it. What drives the job is the posture, the timer and the decision below.
+  if (job.detail !== job.cadence) {
+    const detail = document.createElement("p");
+    detail.textContent = job.detail;
+    note.append(detail);
+  }
   if (job.launch_mode !== null) {
     const posture = document.createElement("p");
     posture.textContent =
@@ -674,6 +680,13 @@ function jobNote(job: StatusJob): HTMLElement {
     decision.append(textValue(job.schedule.rationale));
     note.append(decision);
   }
+  // A row with a posture, a timer and a decision has plenty to say; one with none of them has
+  // only its detail, and a disclosure that opens on nothing is worse than one that repeats.
+  if (note.querySelector("p") === null) {
+    const only = document.createElement("p");
+    only.textContent = job.detail;
+    note.append(only);
+  }
   return note;
 }
 
@@ -684,15 +697,19 @@ function jobNameCell(job: StatusJob): HTMLTableCellElement {
   return name;
 }
 
-function dataJobRow(job: StatusJob, snapshot: SnapshotState): HTMLTableRowElement {
+function dataJobRow(
+  job: StatusJob,
+  snapshot: SnapshotState,
+  observedAt: string | null,
+): HTMLTableRowElement {
   const row = document.createElement("tr");
   const state = effectiveJobState(job.state, snapshot);
   row.append(
     jobNameCell(job),
     tableCell(badge(STATE_LABELS[state], state)),
-    tableCell(textValue(job.cadence ?? "Not registered")),
+    tableCell(job.cadence === null ? textValue("Not registered") : cadenceValue(job.cadence)),
     tableCell(timeOrFallback(job.last_run_at, "Not recorded")),
-    tableCell(timeOrFallback(job.next_due_at, "Not due")),
+    tableCell(dueOrFallback(job.next_due_at, observedAt)),
     tableCell(
       textValue(
         job.duration_seconds === null ? "Not recorded" : formatDuration(job.duration_seconds),
@@ -728,6 +745,7 @@ function dataJobGroup(
   name: string,
   items: StatusJob[],
   snapshot: SnapshotState,
+  observedAt: string | null,
 ): HTMLElement {
   const group = element("details", "gw-status-job-group");
   group.open = needsAttention(items, snapshot);
@@ -748,7 +766,7 @@ function dataJobGroup(
     "Duration",
   ]);
   const body = document.createElement("tbody");
-  for (const job of items) body.append(dataJobRow(job, snapshot));
+  for (const job of items) body.append(dataJobRow(job, snapshot, observedAt));
   table.append(caption, head, body);
   wrapper.append(table);
   group.append(wrapper);
@@ -778,6 +796,7 @@ function dataJobs(payload: StatusPayload): HTMLElement {
         name,
         items.filter((job) => groupOf(job) === name),
         payload.snapshot_state,
+        payload.observed_at,
       ),
     );
   }
@@ -1031,6 +1050,38 @@ function textValue(value: string, code = false): HTMLElement {
   const output = document.createElement(code ? "code" : "span");
   output.textContent = value;
   return output;
+}
+
+/**
+ * A cadence note with any command-line flag in it held on one line. CSS permits a break after
+ * a hyphen, and a narrow Cadence cell took it: `--promote-design` rendered as `-` / `-promote-
+ * design`, which is a flag a reader who copies the page does not have. The flag stays ASCII, so
+ * what they copy is the flag; only its box refuses to break.
+ */
+const FLAG = /^--?[A-Za-z0-9][\w-]*$/;
+
+function cadenceValue(text: string): HTMLElement {
+  const wrapper = document.createElement("span");
+  for (const [index, token] of text.split(" ").entries()) {
+    if (index > 0) wrapper.append(document.createTextNode(" "));
+    wrapper.append(FLAG.test(token) ? unbreakable(token) : document.createTextNode(token));
+  }
+  return wrapper;
+}
+
+/**
+ * `next_due_at` may name an instant that has already passed — `plan.py` says so at the function
+ * that computes it — so the column has to read as a fact about the past when it is one. Judged
+ * against the payload's own observation instant rather than the reader's clock, which is the
+ * only instant the page can honestly compare against.
+ */
+function dueOrFallback(value: string | null, observedAt: string | null): HTMLElement {
+  if (value === null) return textValue("Not due");
+  const rendered = timeOrFallback(value, "Not due");
+  if (observedAt === null || Date.parse(value) >= Date.parse(observedAt)) return rendered;
+  const wrapper = element("span", "gw-status-overdue");
+  wrapper.append(textValue("Was due "), rendered);
+  return wrapper;
 }
 
 function timeOrFallback(value: string | null, fallback: string): HTMLElement {

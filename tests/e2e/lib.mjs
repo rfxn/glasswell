@@ -209,6 +209,13 @@ export async function shotElement(page, selector, path) {
 
 // WCAG 2.x relative-luminance contrast for [label, [selector, ...]] targets, measured in the
 // page against the nearest painted ancestor background. SB-05 §7: >=4.5:1 text, >=3:1 chrome.
+//
+// Every match, not the first. gate-v078 N8: this reported `legend label 14.87` while the
+// receded rows beside it rendered at 2.60:1, because it measured `document.querySelector` --
+// the brightest row in the panel -- and never sampled the ones the finding was about. An audit
+// that stops at the first node reports the best case of whatever it is auditing. `ratio` is
+// now the worst of the matches, which is the number an audit is for; `best` and `samples` are
+// beside it so a caller can still say which node carried which.
 export async function contrastAudit(page, targets, fallbackBackground = "rgb(11, 16, 20)") {
   return page.evaluate(
     ([pairs, fallback]) => {
@@ -237,18 +244,33 @@ export async function contrastAudit(page, targets, fallbackBackground = "rgb(11,
         return fallback;
       };
       return pairs.map(([name, selectors]) => {
-        const matched = selectors.find((selector) => document.querySelector(selector));
+        const matched = selectors.find(
+          (selector) => document.querySelectorAll(selector).length > 0,
+        );
         if (!matched) return { name, missing: true, tried: selectors };
-        const element = document.querySelector(matched);
-        const style = getComputedStyle(element);
-        const background = backgroundOf(element);
+        const samples = [...document.querySelectorAll(matched)].map((element) => {
+          const style = getComputedStyle(element);
+          const background = backgroundOf(element);
+          return {
+            fg: style.color,
+            bg: background,
+            size: style.fontSize,
+            ratio: ratio(style.color, background),
+            text: (element.textContent || "").trim().slice(0, 40),
+          };
+        });
+        const worst = samples.reduce((low, one) => (one.ratio < low.ratio ? one : low));
+        const best = samples.reduce((high, one) => (one.ratio > high.ratio ? one : high));
         return {
           name,
           matched,
-          fg: style.color,
-          bg: background,
-          size: style.fontSize,
-          ratio: ratio(style.color, background),
+          count: samples.length,
+          fg: worst.fg,
+          bg: worst.bg,
+          size: worst.size,
+          ratio: worst.ratio,
+          best: best.ratio,
+          samples,
         };
       });
     },

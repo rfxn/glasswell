@@ -2074,22 +2074,32 @@ a {
    the brand went back to `flex: 0 1 auto` and the strapline came back and clipped -- so a
    signed-in owner at 820, a rung on the project's own ladder, read `glas…` / `— NO NAK`, worse
    than the string that was just fixed one rung above.
-   Scoped to a session rather than to the width, which is the real condition: signed out the
-   rail has no Sign-out control and 820 already held. Above 620, because below it the wordmark
-   shrinks and then the brand text goes entirely, which is that posture's own answer. */
+   gate-v078 N9: that round keyed the pair on the session, and "signed out 820 already held"
+   was wrong -- it read `— NO NAKED NUM`, with no ellipsis to say so, on every surface this
+   project shoots. The rules that stop the brand paying for the rail are the answer at both
+   postures and are unscoped here; only hiding the strap stays scoped, because signed out there
+   is no Sign-out control to make room for and the line fits. Above 620, because below it the
+   wordmark shrinks and then the brand text goes entirely, which is that posture's own answer. */
 @media (min-width: 621px) and (max-width: 900px) {
   #gw-header:has(#gw-logout-btn:not([hidden])) .gw-strap {
     display: none;
   }
 
-  #gw-header:has(#gw-logout-btn:not([hidden])) .gw-brand {
+  .gw-brand {
     flex: none;
   }
 
   /* The search shrinks rather than disappears: it is the only elastic thing on the rail, and a
      field a reader can still see and type in is worth more than the 40 px a collapse would buy. */
-  #gw-header:has(#gw-logout-btn:not([hidden])) .gw-search-input {
+  .gw-search-input {
     width: min(9rem, 17vw);
+  }
+
+  /* And the line completes: with the brand no longer the item that shrinks it fits on one row,
+     and where it does not it takes a second rather than being cut mid-word. */
+  .gw-strap {
+    white-space: normal;
+    overflow: visible;
   }
 }
 
