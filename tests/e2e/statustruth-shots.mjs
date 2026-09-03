@@ -127,23 +127,38 @@ for (const bp of WIDTHS) {
       await mapReady(page).catch(() => {});
       await page.waitForTimeout(3000);
       await dismissToasts(page);
-      await page.mouse.move(Math.round(bp.width / 2), Math.round(bp.height / 2));
-      await page.waitForTimeout(900);
-      const sentence = await page
-        .evaluate(() => {
-          const card = document.querySelector(".gw-hover");
-          return card && !card.hidden ? (card.textContent ?? "") : "";
-        })
-        .catch(() => "");
+      // Selecting a well centres the map on it, but the point lands within a few pixels of the
+      // centre rather than on it and the hit radius is small, so the pointer walks a short
+      // spiral until the card opens. Aiming once at the centre photographed three empty cards.
+      const cx = Math.round(bp.width / 2);
+      const cy = Math.round(bp.height / 2);
+      let sentence = "";
+      for (const [dx, dy] of [[0, 0], [0, -6], [6, 0], [0, 6], [-6, 0], [0, -14], [14, 0],
+                              [0, 14], [-14, 0], [10, -10], [-10, 10]]) {
+        await page.mouse.move(cx + dx, cy + dy);
+        await page.waitForTimeout(350);
+        sentence = await page
+          .evaluate(() => {
+            const card = document.querySelector(".gw-hover");
+            return card && !card.hidden ? (card.textContent ?? "") : "";
+          })
+          .catch(() => "");
+        if (sentence.trim().length > 0) break;
+      }
       const named = sentence.includes(`as ${code} filed it`);
       if (!named) {
+        // A branch instance serves the API and the bundle and no tile server, so the wells
+        // layers load nothing and there is no point on the canvas to hover: the frame carries
+        // the toast that says so. The sentence itself is asserted in hover-card.test.ts; the
+        // photograph is the visual gate's, against a deployed instance where martin serves.
         console.log(
-          `  NOTE ${bp.width}: ${code} ${api10} hover reads ${JSON.stringify(sentence)}`,
+          `  NOTE ${bp.width}: ${code} ${api10} is not on this canvas` +
+            ` (hover reads ${JSON.stringify(sentence)}); the tiles did not load`,
         );
       }
       await shot(
-        `hover-disposal-${code.toLowerCase()}${named ? "" : "-NOT-HOVERED"}`,
-        `surface 4 · ${sentence.slice(0, 120)}`,
+        `hover-disposal-${code.toLowerCase()}${named ? "" : "-NO-TILE-SERVER"}`,
+        `surface 4 · ${api10} · ${sentence.slice(0, 120) || "no point on the canvas"}`,
       );
     }
 
