@@ -54,6 +54,7 @@ select rule_id, date '2026-09-02', 'UNRELEASED',
        'cr_tx_pdq_format_1', 'cr_tx_pdq_scope_1', 'cr_tx_production_grain_1',
        'cr_tx_pdq_crosswalk_1', 'cr_tx_allocation_v0_1', 'cr_alloc_v0_error_bounds_1',
        'cr_tx_liquids_basis_1', 'cr_tx_gas_basis_1', 'cr_tx_geometry_provenance_1',
+       'cr_tx_well_status_archive_1',
        'cr_job_cadence_ingest_tx_pdq_1', 'cr_job_cadence_marts_tx_allocation_1',
        'cr_job_cadence_marts_allocation_backtest_1'
   ]::text[]) rule_id
@@ -314,7 +315,7 @@ grant select on marts.tx_allocated_production, marts.tx_allocation_ledger,
 grant select, insert, delete, truncate on marts.tx_allocated_production,
                 marts.tx_allocation_ledger, marts.tx_crosswalk_residual,
                 marts.allocation_method_error to glasswell_pipeline;
-grant select, insert on marts.tx_allocation_census to glasswell_pipeline;
+grant select, insert, delete on marts.tx_allocation_census to glasswell_pipeline;
 
 -- A total that sums allocated months without saying so is the naked number the no-naked-numbers
 -- rule exists to prevent, so the coverage class gains a third value and the share is a column
@@ -366,6 +367,16 @@ values
 update lineage.source_poll_policies
    set cadence = 'Last Saturday each month', expected_poll_interval = interval '35 days'
  where source_id = 'tx_pdq_dsv';
+
+-- The two well-status archives, registered with the same cadence they are pulled on. They hold
+-- a rolling 26-month window against 402 months of PDQ history, so a missed window is a window
+-- no regulator can give back -- which is exactly what R-03 wants /v1/health to say.
+insert into lineage.source_poll_policies
+    (source_id, cadence, expected_poll_interval, attempt_timeout)
+values
+    ('tx_w10_wlf607', 'Every 35 days', interval '35 days', interval '1 hour'),
+    ('tx_g10_gse10', 'Every 35 days', interval '35 days', interval '1 hour')
+on conflict (source_id) do nothing;
 -- The supersession. Every value but the ones this track changes is carried over from the row
 -- being superseded rather than restated by hand, so the supersession cannot drift from what it
 -- supersedes -- including the seven presentation columns, whose loss would blank the Texas
@@ -383,7 +394,8 @@ select serving.jurisdiction_code, serving.effective_from, date '2026-09-06',
        serving.identity_scheme, serving.identity_is_unique, serving.identity_prefix,
        serving.identity_pattern,
        (select array_agg(distinct s order by s)
-          from unnest(serving.source_ids || array['tx_pdq_dsv']) s),
+          from unnest(serving.source_ids
+                      || array['tx_pdq_dsv', 'tx_w10_wlf607', 'tx_g10_gse10']) s),
        'oil+condensate',
        serving.wells_tile_layer_id, serving.map_colour, serving.neighbors_available,
        serving.explorer_default, serving.land_grid_state, serving.land_grid_scope,
