@@ -9,6 +9,7 @@ these figures.
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -153,6 +154,42 @@ def test_an_unregistered_jurisdiction_is_refused_rather_than_answered_empty(
     response = client.get("/v1/validators/allocation", params={"jurisdiction": "WY"})
 
     assert response.status_code == 404
+
+
+@pytest.mark.parametrize("jurisdiction", ["ND", "NM", "CO"])
+def test_a_jurisdiction_that_observes_is_never_answered_with_an_allocation(
+    client: TestClient, jurisdiction: str
+) -> None:
+    """H-2. `production_grain` is registered by every jurisdiction that has a grain decision,
+    not only by one that allocates, so admitting on the decision's presence served North
+    Dakota Texas's totals, Texas's model id and Texas's rule -- and persisted the attribution
+    under a handle that resolves. What is asked now is the rule's own spec.
+    """
+    response = client.get(
+        "/v1/validators/allocation", params={"jurisdiction": jurisdiction}
+    )
+
+    assert response.status_code == 404, response.text
+    assert jurisdiction in response.json()["detail"]
+
+
+def test_the_served_totals_are_the_asked_jurisdictions_and_no_one_elses(
+    client: TestClient,
+) -> None:
+    """The scoping half: every count in the conservation block is read under the
+    registration's own identity prefix, so a second lease-grain jurisdiction cannot be
+    answered with these rows."""
+    body = client.get(
+        "/v1/validators/allocation", params={"jurisdiction": "TX"}
+    ).json()["data"]
+    conservation = next(block for block in body["blocks"] if block["name"] == "conservation")
+
+    assert body["jurisdiction_code"] == "TX"
+    assert int(conservation["lease_months_total"]["value"]) > 0
+    assert all(
+        handle.startswith("drv_") and "jurisdiction=TX" in handle
+        for handle in (conservation["lease_months_total"]["d"],)
+    )
 
 
 def test_the_response_links_to_both_rules_a_reader_would_want_next(

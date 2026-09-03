@@ -25,6 +25,7 @@ from glasswell.api.examples import GLOSSARY_KEY, request_example
 from glasswell.api.provenance import register_response_figures
 from glasswell.api.responses import EnvelopeModel, enveloped, inline_for
 from glasswell.lineage.envelope import Figure, figure
+from glasswell.marts.cumulatives import ALLOCATED_BASIS, CUMULATIVES_SCOPE
 from glasswell.seed.jurisdictions import SERVING_JURISDICTION_RULES
 
 router = APIRouter(tags=["validators"])
@@ -33,6 +34,7 @@ ALLOCATION_RULE = "cr_tx_allocation_v0_1"
 CROSSWALK_ROLE_RULE = "cr_tx_ewa_role_1"
 ERROR_RULE = "cr_alloc_v0_error_bounds_1"
 DEGRADED_AT = "unallocated_share_degraded_at"
+GRAIN_DECISION = "production_grain"
 
 COUNT_UNIT = "lease_months"
 WELL_UNIT = "wells"
@@ -48,6 +50,9 @@ EXAMPLE_JURISDICTION = next(
     if row["rule_id"] == ALLOCATION_RULE
 )
 
+# Scoped by the registration's own identity prefix, on every query that has an api10 to scope
+# by. Unscoped, this route answered for North Dakota with Texas's totals, Texas's model id and
+# Texas's rule, under handles that resolve (gate-tx H-2).
 _ALLOCATED_TOTALS = """
 select stream, sum(abs(volume)) as volume, count(*) as shares,
        count(*) filter (where allocation_class = 'allocated_after_status_change') as retired,
@@ -55,6 +60,7 @@ select stream, sum(abs(volume)) as volume, count(*) as shares,
            as retired_volume,
        min(derivation_id) as derivation_id
   from marts.tx_allocated_production
+ where left(api10, 2) = %(prefix)s
  group by stream
 """
 
@@ -62,6 +68,24 @@ _LEASE_MONTHS = """
 select count(*) as lease_months,
        count(distinct (lease_key, production_month)) as lease_month_pairs
   from marts.tx_allocated_production
+ where left(api10, 2) = %(prefix)s
+"""
+
+# The ledger, the crosswalk and the study carry no api10 -- the ledger's grain is a lease-month
+# no well carried, which is exactly the row an api10 predicate would drop. So they are served
+# only where the allocated mart holds nothing outside this registration's prefix: a second
+# lease-grain jurisdiction reading these tables gets a stated absence, never Texas's residuals.
+_FOREIGN_SHARES = """
+select count(*) as shares from marts.tx_allocated_production
+ where left(api10, 2) <> %(prefix)s
+"""
+
+# The same read `marts/cumulatives.py::allocated_prefixes` does: the named rule's own spec says
+# whether the well-grain row it admits is observed or allocated. A rule-id shape test would be
+# a mapping decision living in code, which R8 refuses.
+_SCOPE_BASIS = """
+select rule_id, spec ->> 'cumulatives_basis' as basis
+  from lineage.conformance_rules where rule_id = any(%(rule_ids)s)
 """
 
 _LEDGER = """
@@ -147,8 +171,35 @@ def _derivations(node: Any) -> set[str]:
     return set()
 
 
+def _allocated_rule(connection: Connection, row: Any) -> str | None:
+    """The jurisdiction's own scope decision, where its rule says the row it admits is a share.
+
+    `production_grain` is registered by every jurisdiction that has a grain decision, not only
+    by one that allocates, so admitting on the decision's presence answered for North Dakota,
+    New Mexico and Colorado. What is asked instead is the rule's own spec.
+    """
+    ids = sorted(
+        {
+            rule
+            for rule in (row.rule(CUMULATIVES_SCOPE), row.rule(GRAIN_DECISION))
+            if rule is not None
+        }
+    )
+    if not ids:
+        return None
+    declared = {
+        item["rule_id"]: item["basis"]
+        for item in rows(connection, _SCOPE_BASIS, {"rule_ids": ids})
+    }
+    return next((rule for rule in ids if declared.get(rule) == ALLOCATED_BASIS), None)
+
+
 def _conservation(
-    connection: Connection, degraded_at: Decimal | None, *, prefix: str
+    connection: Connection,
+    degraded_at: Decimal | None,
+    *,
+    prefix: str,
+    identity_prefix: str,
 ) -> dict[str, Any]:
     """V-1. The split is exact by construction, so the residual is a coverage measure.
 
@@ -156,9 +207,9 @@ def _conservation(
     than publishing, which is why nothing here reports one: what is served is how much volume
     had no eligible well to carry it, decomposed by cause.
     """
-    totals = rows(connection, _ALLOCATED_TOTALS, {})
+    totals = rows(connection, _ALLOCATED_TOTALS, {"prefix": identity_prefix})
     ledger = rows(connection, _LEDGER, {})
-    counts = rows(connection, _LEASE_MONTHS, {})[0]
+    counts = rows(connection, _LEASE_MONTHS, {"prefix": identity_prefix})[0]
     if not totals and not ledger:
         return {
             "name": "conservation",
@@ -234,9 +285,19 @@ def _conservation(
     return block
 
 
-def _crosswalk(connection: Connection) -> dict[str, Any]:
+def _crosswalk(connection: Connection, *, foreign: int, jurisdiction: str) -> dict[str, Any]:
     """V-2a. Two regulator-published crosswalks that agree prove nothing once averaged."""
-    residuals = rows(connection, _CROSSWALK, {})
+    residuals = [] if foreign else rows(connection, _CROSSWALK, {})
+    if foreign:
+        return {
+            "name": "crosswalk",
+            "outcome": "not_available",
+            "rule_id": CROSSWALK_ROLE_RULE,
+            "reasons": [
+                f"the crosswalk residual mart holds another jurisdiction's rows, so no"
+                f" residual here is {jurisdiction}'s"
+            ],
+        }
     if not residuals:
         return {
             "name": "crosswalk",
@@ -408,7 +469,8 @@ def allocation_validators(
     )
     if row is None:
         raise ProblemError("not_found", detail=f"no registered jurisdiction {jurisdiction}")
-    if row.rule("cumulatives_scope") is None and row.rule("production_grain") is None:
+    admitting = _allocated_rule(connection, row)
+    if admitting is None:
         raise ProblemError(
             "not_found",
             detail=(
@@ -416,6 +478,8 @@ def allocation_validators(
                 " allocation residuals"
             ),
         )
+    prefix = row.identity_prefix or ""
+    foreign = int(rows(connection, _FOREIGN_SHARES, {"prefix": prefix})[0]["shares"])
 
     # The threshold the Status check reads is the rule's, so no engineer invents one: half a
     # percent of Texas volume with no well to carry it is a data question, and below that it is
@@ -427,16 +491,19 @@ def allocation_validators(
         else None
     )
 
-    prefix = f"jurisdiction={jurisdiction}"
+    selector_prefix = f"jurisdiction={jurisdiction}"
     blocks = [
-        _conservation(connection, degraded_at, prefix=prefix),
-        _crosswalk(connection),
+        _conservation(
+            connection, degraded_at, prefix=selector_prefix, identity_prefix=prefix
+        ),
+        _crosswalk(connection, foreign=foreign, jurisdiction=jurisdiction),
         _independent_truth(connection),
     ]
     model_id = rows(
         connection,
-        "select distinct allocation_model_id from marts.tx_allocated_production limit 1",
-        {},
+        "select distinct allocation_model_id from marts.tx_allocated_production"
+        " where left(api10, 2) = %(prefix)s limit 1",
+        {"prefix": prefix},
     )
     data: dict[str, Any] = {
         "jurisdiction_code": jurisdiction,
