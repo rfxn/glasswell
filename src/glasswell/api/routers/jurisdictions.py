@@ -31,6 +31,8 @@ from glasswell.api.responses import EnvelopeModel, FigureModel, enveloped, inlin
 from glasswell.api.routers.wells import NEIGHBORS_SCOPE
 from glasswell.lineage.envelope import figure
 from glasswell.lineage.jurisdictions import Jurisdiction
+from glasswell.lineage.status_classes import StatusClass, load_status_classes
+from glasswell.status_resolution import JurisdictionVocabulary, served_vocabularies
 
 router = APIRouter(tags=["vocabulary"])
 
@@ -129,6 +131,64 @@ class MapPresentation(BaseModel):
         description="The published tile layer the `Wells` family draws for this jurisdiction."
     )
     colour: str | None = Field(description="The swatch colour that layer is drawn with.")
+    wells_layer_id: str | None = Field(
+        description="The client layer id this jurisdiction's `Wells` row toggles."
+    )
+    wells_style_layer_ids: list[str] | None = Field(
+        description="The style layers that row toggles, in draw order."
+    )
+    wells_draw_order: int | None = Field(
+        description=(
+            "Where the row sits in the layer panel. A real per-row integer rather than a rank"
+            " over the family: disposal wells sit between two jurisdictions."
+        ),
+        json_schema_extra=not_a_figure(
+            "Where a jurisdiction's Wells row sits in the layer panel. A real per-row integer"
+            " that ranks layers, not a measurement of anything: disposal wells sit between two"
+            " of them."
+        ),
+    )
+    wells_default_on: bool | None = Field(
+        description="Whether this jurisdiction's wells draw at first paint."
+    )
+    wells_snapshot_key: str | None = Field(
+        description="Which measured coverage snapshot the row cites, by key. Null where none."
+    )
+    wells_subtitle_template: str | None = Field(
+        description="The subtitle with `{count}` where the measured well count goes."
+    )
+
+
+class StatusVocabulary(BaseModel):
+    rule_id: str = Field(
+        description="The registered status-vocabulary rule, resolvable at /v1/conformance.",
+        json_schema_extra={GLOSSARY_KEY: "gt_conformance_rule"},
+    )
+    resolved_at: str | None = Field(
+        description=(
+            "`read_time` where the class is a join against the registry at serve time, absent"
+            " where the promotion writes it. A property of the registration, not of a request."
+        )
+    )
+    unmapped_action: str | None = Field(
+        description=(
+            "What this regulator's vocabulary does with a filed code it has no row for:"
+            " `passthrough` serves the absence class, `quarantine` holds the record back."
+        )
+    )
+    classes: list[str] = Field(
+        description=(
+            "The canonical classes this jurisdiction's own registered map can produce, read"
+            " from that map. A subset of the domain in `meta.status_classes`."
+        ),
+        json_schema_extra={GLOSSARY_KEY: "gt_status_class_domain"},
+    )
+    legend_note: str | None = Field(
+        description=(
+            "A line the legend renders while this jurisdiction's rule is in view, so no"
+            " jurisdiction name enters the client. Null where none is registered."
+        )
+    )
 
 
 class Capabilities(BaseModel):
@@ -140,6 +200,12 @@ class Capabilities(BaseModel):
     land_grid_scope: bool = Field(
         description="Whether land metrics are scoped to it. A state in the grid is always"
         " in scope; the reverse does not hold."
+    )
+    explorer_default: bool = Field(
+        description=(
+            "Whether the explorer opens on this jurisdiction. A registration rather than a"
+            " client preference: it is the one whose production history can be walked."
+        )
     )
 
 
@@ -195,6 +261,17 @@ class JurisdictionRow(BaseModel):
     well_counts_by_status: list[JurisdictionStatusCount] = Field(
         description="The same measurement broken out by canonical status."
     )
+    vocabulary: StatusVocabulary | None = Field(
+        description=(
+            "The status vocabulary this jurisdiction is served under: its rule, when the class"
+            " is resolved, what an unmapped filed code does, the classes its own map produces"
+            " and its legend note. Null where no vocabulary rule is registered, which is a"
+            " defect the status surface reports rather than a state this collection invents."
+        )
+    )
+    rationale: str = Field(
+        description="Why this jurisdiction is registered as it is, in the registration's words."
+    )
     measured_on: str | None = Field(
         description="The date the counts were measured. Absent when they are."
     )
@@ -227,7 +304,39 @@ def _count_figure(row: dict[str, Any], code: str) -> Any:
     )
 
 
-def _row(registration: Jurisdiction, measured: list[dict[str, Any]]) -> dict[str, Any]:
+def _vocabulary(
+    registration: Jurisdiction, vocabulary: JurisdictionVocabulary | None
+) -> dict[str, Any] | None:
+    if vocabulary is None:
+        return None
+    return {
+        "rule_id": vocabulary.rule_id,
+        "resolved_at": vocabulary.resolved_at,
+        "unmapped_action": vocabulary.unmapped_action,
+        "classes": list(vocabulary.classes),
+        "legend_note": registration.legend_note,
+    }
+
+
+def _class_row(status: StatusClass) -> dict[str, Any]:
+    return {
+        "status_canonical": status.status_canonical,
+        "label": status.label,
+        "colour": status.colour,
+        "glyph": status.glyph,
+        "min_zoom": status.min_zoom,
+        "sort_order": status.sort_order,
+        "is_absence": status.is_absence,
+        "note": status.note,
+        "rule_id": status.rule_id,
+    }
+
+
+def _row(
+    registration: Jurisdiction,
+    measured: list[dict[str, Any]],
+    vocabulary: JurisdictionVocabulary | None,
+) -> dict[str, Any]:
     code = registration.jurisdiction_code
     total = next((row for row in measured if row["status_key"] == TOTAL_STATUS_KEY), None)
     classed = [row for row in measured if row["status_key"] != TOTAL_STATUS_KEY]
@@ -259,6 +368,16 @@ def _row(registration: Jurisdiction, measured: list[dict[str, Any]]) -> dict[str
         "map": {
             "wells_tile_layer_id": registration.wells_tile_layer_id,
             "colour": registration.map_colour,
+            "wells_layer_id": registration.wells_layer_id,
+            "wells_style_layer_ids": (
+                list(registration.wells_style_layer_ids)
+                if registration.wells_style_layer_ids is not None
+                else None
+            ),
+            "wells_draw_order": registration.wells_draw_order,
+            "wells_default_on": registration.wells_default_on,
+            "wells_snapshot_key": registration.wells_snapshot_key,
+            "wells_subtitle_template": registration.wells_subtitle_template,
         },
         "capabilities": {
             # The same two registrations the well card reads, so the card and this surface
@@ -269,6 +388,7 @@ def _row(registration: Jurisdiction, measured: list[dict[str, Any]]) -> dict[str
             ),
             "land_grid_state": registration.land_grid_state,
             "land_grid_scope": registration.land_grid_scope,
+            "explorer_default": registration.explorer_default,
         },
         "well_count": _count_figure(total, code) if total else None,
         "well_counts_by_status": [
@@ -278,6 +398,8 @@ def _row(registration: Jurisdiction, measured: list[dict[str, Any]]) -> dict[str
             }
             for row in classed
         ],
+        "vocabulary": _vocabulary(registration, vocabulary),
+        "rationale": registration.rationale,
         "measured_on": iso(measured[0]["measured_on"]) if measured else None,
         "effective_from": iso(registration.effective_from),
         "published_at": iso(registration.published_at),
@@ -398,11 +520,25 @@ def list_jurisdictions(
 
     registry = jurisdictions(connection, as_of)
     measured = _counts(connection, as_of)
+    # Refuses rather than defaulting, the way an unloaded registry does: the client builds its
+    # legend, its symbology and its zoom gate from this, and a default would be a class every
+    # well on the map is drawn by with no decision behind it.
+    domain = load_status_classes(connection)
+    vocabularies = {
+        item.jurisdiction_code: item for item in served_vocabularies(connection, as_of)
+    }
     resolved = [row for row in registry if level is None or row.level == level]
     if decoded is not None:
         resolved = [row for row in resolved if row.jurisdiction_code > decoded.key]
     items, has_more = page(
-        [_row(row, measured.get(row.jurisdiction_code, [])) for row in resolved[: limit + 1]],
+        [
+            _row(
+                row,
+                measured.get(row.jurisdiction_code, []),
+                vocabularies.get(row.jurisdiction_code),
+            )
+            for row in resolved[: limit + 1]
+        ],
         limit,
     )
     items = register_response_figures(
@@ -445,6 +581,7 @@ def list_jurisdictions(
             f"/{index}/rules": "gt_conformance_rule",
             f"/{index}/liquids_basis": "gt_liquids_policy",
             f"/{index}/well_count": "gt_well_status",
+            f"/{index}/vocabulary": "gt_status_class_domain",
         }.items()
     }
     return enveloped(
@@ -460,4 +597,5 @@ def list_jurisdictions(
             else None
         },
         explain=inline_for(connection, explain),
+        status_classes=[_class_row(status) for status in domain],
     )

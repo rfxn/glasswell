@@ -14,6 +14,7 @@ the tiles serving null. Neither is what shipped.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 
 import psycopg
@@ -67,8 +68,12 @@ select j.identity_prefix, r.rule_id
 # the rule's own spec, so this is what a standing gate compares the domain against: a map
 # producing a class the domain does not hold, or a domain row no map produces.
 _VOCABULARY_SOURCES = """
-select distinct c.spec->>'mapping_table' as mapping_table,
-                c.spec->>'value_col'     as value_col
+select j.jurisdiction_code,
+       r.rule_id,
+       c.spec->>'resolved_at'     as resolved_at,
+       c.spec->>'unmapped_action' as unmapped_action,
+       c.spec->>'mapping_table'   as mapping_table,
+       c.spec->>'value_col'       as value_col
   from lineage.jurisdictions_as_of(%(knowledge_as_of)s, %(valid_as_of)s) j
   join lineage.jurisdiction_rules r
     on r.jurisdiction_code = j.jurisdiction_code
@@ -79,8 +84,19 @@ select distinct c.spec->>'mapping_table' as mapping_table,
   join lineage.conformance_rules c on c.rule_id = r.rule_id
  where c.spec->>'mapping_table' is not null
    and c.spec->>'value_col' is not null
- order by 1, 2
+ order by j.jurisdiction_code
 """
+
+
+@dataclass(frozen=True, slots=True)
+class JurisdictionVocabulary:
+    """One registration's status vocabulary as the wire serves it."""
+
+    jurisdiction_code: str
+    rule_id: str
+    resolved_at: str | None
+    unmapped_action: str | None
+    classes: tuple[str, ...]
 
 
 def served_status_vocabulary(
@@ -100,14 +116,14 @@ def served_status_vocabulary(
     return sorted(mapped_status_classes(connection))
 
 
-def status_map_classes(
+def served_vocabularies(
     connection: psycopg.Connection, as_of: date | None = None
-) -> list[str]:
-    """Every distinct class the registered mapping tables actually produce, sorted.
+) -> tuple[JurisdictionVocabulary, ...]:
+    """Each registration's vocabulary: its rule, its two spec keys, and what its map produces.
 
-    The parity gate's input, and the reason `served_status_vocabulary` can stop being a union:
-    a class here and not in the domain is a map with no published decision behind it, and a
-    mapped domain row absent here is a class registered for a state that never landed.
+    The classes are read from the registered mapping table rather than from the domain, because
+    what this answers is which of the domain's classes *this* regulator can file. North Dakota
+    is the only one that produces `confidential`, and that is a fact about its codebook.
     """
     registry = load_jurisdictions(connection, as_of)
     with connection.cursor() as cursor:
@@ -119,17 +135,43 @@ def status_map_classes(
             },
         )
         sources = cursor.fetchall()
-    classes: set[str] = set()
+    served: list[JurisdictionVocabulary] = []
     with connection.cursor() as cursor:
-        for table, column in sources:
+        for code, rule_id, resolved_at, unmapped_action, table, column in sources:
             # Identifiers, so a registered table name cannot be a parameter and cannot be
             # concatenated: the rule spec is data, and data does not compose SQL here.
             cursor.execute(
                 sql.SQL("select distinct {column} from {table} where {column} is not null")
                 .format(column=sql.Identifier(column), table=sql.Identifier("lineage", table))
             )
-            classes.update(str(value) for (value,) in cursor.fetchall())
-    return sorted(classes)
+            served.append(
+                JurisdictionVocabulary(
+                    jurisdiction_code=code,
+                    rule_id=rule_id,
+                    resolved_at=resolved_at,
+                    unmapped_action=unmapped_action,
+                    classes=tuple(sorted(str(value) for (value,) in cursor.fetchall())),
+                )
+            )
+    return tuple(served)
+
+
+def status_map_classes(
+    connection: psycopg.Connection, as_of: date | None = None
+) -> list[str]:
+    """Every distinct class the registered mapping tables actually produce, sorted.
+
+    The parity gate's input, and the reason `served_status_vocabulary` can stop being a union:
+    a class here and not in the domain is a map with no published decision behind it, and a
+    mapped domain row absent here is a class registered for a state that never landed.
+    """
+    return sorted(
+        {
+            status
+            for vocabulary in served_vocabularies(connection, as_of)
+            for status in vocabulary.classes
+        }
+    )
 
 
 def resolver_rules(

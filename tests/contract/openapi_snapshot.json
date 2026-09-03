@@ -273,6 +273,11 @@
       },
       "Capabilities": {
         "properties": {
+          "explorer_default": {
+            "description": "Whether the explorer opens on this jurisdiction. A registration rather than a client preference: it is the one whose production history can be walked.",
+            "title": "Explorer Default",
+            "type": "boolean"
+          },
           "land_grid_scope": {
             "description": "Whether land metrics are scoped to it. A state in the grid is always in scope; the reverse does not hold.",
             "title": "Land Grid Scope",
@@ -292,7 +297,8 @@
         "required": [
           "neighbors",
           "land_grid_state",
-          "land_grid_scope"
+          "land_grid_scope",
+          "explorer_default"
         ],
         "title": "Capabilities",
         "type": "object"
@@ -5030,6 +5036,11 @@
             "type": "string",
             "x-glasswell-glossary": "gt_knowledge_time"
           },
+          "rationale": {
+            "description": "Why this jurisdiction is registered as it is, in the registration's words.",
+            "title": "Rationale",
+            "type": "string"
+          },
           "regulator": {
             "$ref": "#/components/schemas/Regulator",
             "description": "Whose filings this jurisdiction is served from.",
@@ -5052,6 +5063,17 @@
             "title": "Source Ids",
             "type": "array",
             "x-glasswell-glossary": "gt_source"
+          },
+          "vocabulary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusVocabulary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The status vocabulary this jurisdiction is served under: its rule, when the class is resolved, what an unmapped filed code does, the classes its own map produces and its legend note. Null where no vocabulary rule is registered, which is a defect the status surface reports rather than a state this collection invents."
           },
           "well_count": {
             "anyOf": [
@@ -5086,6 +5108,8 @@
           "capabilities",
           "well_count",
           "well_counts_by_status",
+          "vocabulary",
+          "rationale",
           "measured_on",
           "effective_from",
           "published_at"
@@ -5542,6 +5566,82 @@
             "description": "The swatch colour that layer is drawn with.",
             "title": "Colour"
           },
+          "wells_default_on": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether this jurisdiction's wells draw at first paint.",
+            "title": "Wells Default On"
+          },
+          "wells_draw_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the row sits in the layer panel. A real per-row integer rather than a rank over the family: disposal wells sit between two jurisdictions.",
+            "title": "Wells Draw Order",
+            "x-glasswell-not-a-figure": "Where a jurisdiction's Wells row sits in the layer panel. A real per-row integer that ranks layers, not a measurement of anything: disposal wells sit between two of them."
+          },
+          "wells_layer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The client layer id this jurisdiction's `Wells` row toggles.",
+            "title": "Wells Layer Id"
+          },
+          "wells_snapshot_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Which measured coverage snapshot the row cites, by key. Null where none.",
+            "title": "Wells Snapshot Key"
+          },
+          "wells_style_layer_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The style layers that row toggles, in draw order.",
+            "title": "Wells Style Layer Ids"
+          },
+          "wells_subtitle_template": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The subtitle with `{count}` where the measured well count goes.",
+            "title": "Wells Subtitle Template"
+          },
           "wells_tile_layer_id": {
             "anyOf": [
               {
@@ -5557,7 +5657,13 @@
         },
         "required": [
           "wells_tile_layer_id",
-          "colour"
+          "colour",
+          "wells_layer_id",
+          "wells_style_layer_ids",
+          "wells_draw_order",
+          "wells_default_on",
+          "wells_snapshot_key",
+          "wells_subtitle_template"
         ],
         "title": "MapPresentation",
         "type": "object"
@@ -5608,6 +5714,22 @@
             "description": "Per-source retrieval vintage and state.",
             "title": "Source Freshness",
             "type": "object"
+          },
+          "status_classes": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The canonical well-status class domain, served once by /v1/jurisdictions and omitted everywhere else. Each row carries the class, its label, colour, glyph, zoom floor, legend order, whether it is the absence class, its jurisdiction-neutral note and the rule that declared it. It sits in `meta` because the domain is not a jurisdiction and `data` is a bare array of jurisdictions.",
+            "title": "Status Classes"
           },
           "warnings": {
             "description": "Structured warnings: code, detail, optional pointer.",
@@ -8338,6 +8460,70 @@
           "detail"
         ],
         "title": "StatusDisclosure",
+        "type": "object"
+      },
+      "StatusVocabulary": {
+        "properties": {
+          "classes": {
+            "description": "The canonical classes this jurisdiction's own registered map can produce, read from that map. A subset of the domain in `meta.status_classes`.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Classes",
+            "type": "array",
+            "x-glasswell-glossary": "gt_status_class_domain"
+          },
+          "legend_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A line the legend renders while this jurisdiction's rule is in view, so no jurisdiction name enters the client. Null where none is registered.",
+            "title": "Legend Note"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`read_time` where the class is a join against the registry at serve time, absent where the promotion writes it. A property of the registration, not of a request.",
+            "title": "Resolved At"
+          },
+          "rule_id": {
+            "description": "The registered status-vocabulary rule, resolvable at /v1/conformance.",
+            "title": "Rule Id",
+            "type": "string",
+            "x-glasswell-glossary": "gt_conformance_rule"
+          },
+          "unmapped_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What this regulator's vocabulary does with a filed code it has no row for: `passthrough` serves the absence class, `quarantine` holds the record back.",
+            "title": "Unmapped Action"
+          }
+        },
+        "required": [
+          "rule_id",
+          "resolved_at",
+          "unmapped_action",
+          "classes",
+          "legend_note"
+        ],
+        "title": "StatusVocabulary",
         "type": "object"
       },
       "StreamCoverage": {

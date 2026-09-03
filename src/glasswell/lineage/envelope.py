@@ -155,6 +155,10 @@ class EnvelopeMeta(Frozen):
     next_cursor: str | None = None
     warnings: Sequence[Mapping[str, Any]] = ()
     deprecations: Sequence[Mapping[str, Any]] = ()
+    # The canonical status class domain, served once by the registry collection rather than
+    # repeated inside every jurisdiction row. It is not a jurisdiction, so it cannot be an
+    # element of `data`; every other operation omits the key entirely.
+    status_classes: Sequence[Mapping[str, Any]] | None = None
 
 
 class Envelope(Frozen):
@@ -165,9 +169,12 @@ class Envelope(Frozen):
     explain: Mapping[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        body = json_ready(
-            {"data": self.data, "meta": self.meta.model_dump(), "links": dict(self.links)}
-        )
+        meta = self.meta.model_dump()
+        # Omitted rather than served as null on every other operation: a key that is always
+        # there and always empty is one the contract snapshot carries for ever.
+        if meta.get("status_classes") is None:
+            meta.pop("status_classes", None)
+        body = json_ready({"data": self.data, "meta": meta, "links": dict(self.links)})
         if self.explain is not None:
             body[EXPLAIN_BLOCK] = json_ready(dict(self.explain))
         return body
@@ -321,6 +328,7 @@ def attach_lineage(
     deprecations: Sequence[Mapping[str, Any]] = (),
     explain: ExplainInliner | None = None,
     extra_handles: Sequence[str] = (),
+    status_classes: Sequence[Mapping[str, Any]] | None = None,
 ) -> Envelope:
     """Serialize every figure and series in `data` and wrap it in the SB-04 §2.2 envelope.
 
@@ -362,6 +370,7 @@ def attach_lineage(
             next_cursor=next_cursor,
             warnings=collected,
             deprecations=list(deprecations),
+            status_classes=status_classes,
         ),
         links=resolved_links,
         handles=handles,

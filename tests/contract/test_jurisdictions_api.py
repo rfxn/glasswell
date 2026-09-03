@@ -121,8 +121,23 @@ def test_a_row_carries_the_regulator_the_identity_and_the_capabilities(
         "neighbors": True,
         "land_grid_state": True,
         "land_grid_scope": True,
+        # The v0.76 sentinel's P4-R5: the explorer opens on the registration whose production
+        # history it can walk, which is a fact about the data and not a client preference.
+        "explorer_default": True,
     }
-    assert row["map"] == {"wells_tile_layer_id": "nd_wells", "colour": "#3FA55E"}
+    assert row["map"] == {
+        "wells_tile_layer_id": "nd_wells",
+        "colour": "#3FA55E",
+        # 075's presentation columns, on the wire rather than only in the generated module, so
+        # a subtitle or a note can change without a rebuild.
+        "wells_layer_id": "wells",
+        "wells_style_layer_ids": ["wells", "wells-struck"],
+        "wells_draw_order": 40,
+        "wells_default_on": True,
+        "wells_snapshot_key": "nd_wells_refresh",
+        "wells_subtitle_template": row["map"]["wells_subtitle_template"],
+    }
+    assert "{count}" in row["map"]["wells_subtitle_template"]
     assert row["liquids_basis"] == "oil+condensate"
     assert row["effective_from"] == REGISTERED_ON.isoformat()
     assert row["published_at"] == RESTATED_ON.isoformat()

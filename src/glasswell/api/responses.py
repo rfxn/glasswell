@@ -70,6 +70,16 @@ class MetaModel(BaseModel):
     deprecations: list[dict[str, Any]] = Field(
         default_factory=list, description="Deprecations in force for this operation."
     )
+    status_classes: list[dict[str, Any]] | None = Field(
+        default=None,
+        description=(
+            "The canonical well-status class domain, served once by /v1/jurisdictions and"
+            " omitted everywhere else. Each row carries the class, its label, colour, glyph,"
+            " zoom floor, legend order, whether it is the absence class, its jurisdiction-"
+            "neutral note and the rule that declared it. It sits in `meta` because the domain"
+            " is not a jurisdiction and `data` is a bare array of jurisdictions."
+        ),
+    )
 
 
 class LinksModel(BaseModel):
@@ -148,6 +158,7 @@ def enveloped(
     status_code: int = 200,
     explain: ExplainInliner | None = None,
     extra_handles: Sequence[str] = (),
+    status_classes: Sequence[Mapping[str, Any]] | None = None,
 ) -> JSONResponse:
     resolved_links = {"self": request.url.path, **dict(links or {})}
     envelope = attach_lineage(
@@ -162,6 +173,7 @@ def enveloped(
         warnings=warnings,
         explain=explain,
         extra_handles=extra_handles,
+        status_classes=status_classes,
     )
     return JSONResponse(envelope.to_dict(), status_code=status_code)
 
