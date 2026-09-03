@@ -47,7 +47,11 @@ class Share:
 def _class_for(candidate: Eligible, eligible_wells: int, gas_lease: bool) -> tuple[str, str]:
     if not candidate.eligible:
         return EXCLUDED_AFTER_PLUG, LEASE_ALLOCATED
-    if gas_lease:
+    # The gas-lease pass-through rests on 4F.3's premise -- one gas well per lease -- and the
+    # crosswalk is not asserted to honour it. Where the premise fails the month allocates like
+    # any other multi-well lease: passing the lease volume through to each of two wells
+    # returned twice the volume, labelled observed (gate-tx H-13).
+    if gas_lease and eligible_wells == 1:
         return OBSERVED_GAS_WELL, WELL_OBSERVED
     if eligible_wells == 1:
         return OBSERVED_SINGLE_WELL_LEASE, WELL_OBSERVED
@@ -67,6 +71,10 @@ def allocate_lease_month(
     catch, because it conserves. An ineligible candidate takes zero and its share is
     redistributed among the rest, so a well is excluded from months after its own filed
     plugging without the lease's volume going missing.
+
+    A gas lease passes its volume through only where one well is eligible. Two eligible wells
+    on a `G-` lease is a premise failure, not a special case: the month is split like any
+    other and every share says it was.
     """
     eligible = [candidate for candidate in candidates if candidate.eligible]
     if not eligible:
@@ -84,7 +92,7 @@ def allocate_lease_month(
         allocation_class, granularity = _class_for(candidate, count, gas_lease)
         if not candidate.eligible:
             share = Decimal(0)
-        elif count == 1 or gas_lease:
+        elif count == 1:
             share = volume
         else:
             share = base + (remainder if candidate.api10 == remainder_holder else Decimal(0))

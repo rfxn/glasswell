@@ -91,6 +91,37 @@ def test_a_gas_lease_passes_the_lease_volume_through() -> None:
     assert shares[0].granularity == WELL_OBSERVED
 
 
+def test_a_gas_lease_with_two_eligible_wells_allocates_rather_than_multiplying() -> None:
+    """H-13. The pass-through rests on 4F.3's premise -- one gas well per lease -- and the
+    crosswalk is not asserted to honour it. Passing the volume through to each of two wells
+    returned 24,000 mcf for a 12,000 mcf lease-month, labelled observed on both.
+    """
+    shares = allocate_lease_month(
+        Decimal(12000), wells("4200300001", "4200300002"), gas_lease=True
+    )
+
+    assert sum(share.volume for share in shares) == Decimal(12000)
+    assert {share.allocation_class for share in shares} == {ALLOCATED_EQUAL_SHARE}
+    assert {share.granularity for share in shares} == {LEASE_ALLOCATED}
+    assert {share.eligible_wells for share in shares} == {2}
+    assert [share.volume for share in shares] == [Decimal(6000), Decimal(6000)]
+
+
+def test_a_gas_lease_whose_second_well_is_ineligible_still_passes_through() -> None:
+    """The premise holds again once the second well is out of the month: one eligible well is
+    one eligible well, whatever the lease's other wellbores are doing."""
+    candidates = [
+        Eligible(api10="4200300001", eligible=True),
+        Eligible(api10="4200300002", eligible=False),
+    ]
+
+    shares = allocate_lease_month(Decimal(12000), candidates, gas_lease=True)
+
+    passed = next(share for share in shares if share.api10 == "4200300001")
+    assert passed.allocation_class == OBSERVED_GAS_WELL
+    assert passed.volume == Decimal(12000)
+
+
 def test_a_multi_well_share_is_labelled_allocated_and_counts_its_divisor() -> None:
     shares = allocate_lease_month(Decimal(900), wells("4200300001", "4200300002"))
 
