@@ -1,5 +1,6 @@
 import { explainHandle, setExplainHandle } from "../chrome/handle.ts";
-import { disposalType } from "./disposal.ts";
+import { disposalCodebook, disposalType } from "./disposal.ts";
+import { BY_PREFIX } from "./jurisdictions.generated.ts";
 import { geometryProvenance, provenanceLine } from "./provenance.ts";
 import { statusClass } from "./status.ts";
 import { statusSwatch } from "./swatch.ts";
@@ -231,13 +232,21 @@ export function createHoverCard(options: HoverCardOptions = {}): HoverCardHandle
       // The verbatim code, never an English decode: which words SWD abbreviates is the
       // regulator's PDF footnote to own, and cr_nd_well_type_disposal_1 asserts none.
       const wellType = disposalType(properties);
+      const codebook = disposalCodebook(api10);
+      const filer = BY_PREFIX[api10.slice(0, 2)]?.code ?? null;
       disposal.hidden = wellType === null;
-      disposal.textContent = disposal.hidden ? "" : `Disposal / injection · well_type ${wellType} as ND filed it`;
+      // The regulator named is the feature's own. This line said "as ND filed it" for a well of
+      // any jurisdiction, on a code list that is North Dakota's, which is two claims about a
+      // Texas well that nobody made.
+      disposal.textContent =
+        disposal.hidden || codebook === null
+          ? ""
+          : `Disposal / injection · well_type ${wellType} as ${filer ?? "the regulator"} filed it · ${codebook.rule}`;
       // M1-3: provenance-of-record at hover, the class verbatim. The trace line above
       // already states its own; a TX feature carries no property and the line stays hidden
       // (the TX half is licence-gated on RF-1 — the legend states it where the reader looks).
       const provenanceClass = geometryProvenance(properties);
-      const sentence = provenanceClass === null ? null : provenanceLine(provenanceClass);
+      const sentence = provenanceClass === null ? null : provenanceLine(provenanceClass, api10);
       provenance.hidden = sentence === null;
       provenance.textContent = sentence ?? "";
       place(point);

@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CountsState } from "./counts.ts";
+import { SEEDED_STATUS_CLASSES } from "./status-classes.generated.ts";
 
 vi.mock("../chrome/status.ts", () => ({ toast: vi.fn() }));
 
@@ -99,6 +100,12 @@ async function mount(rows: { on: string[]; drew: Record<string, string[]> }): Pr
   const container = document.createElement("div");
   document.body.appendChild(container);
   createMap(container, { zoom: 7, lat: 40, lon: -104 }, { onViewport: vi.fn() });
+  // The status rows are built from the served vocabulary, so the mount is not finished until
+  // that one response has settled and every surface awaiting it has run.
+  const { loadCensus } = await import("./census.ts");
+  await loadCensus();
+  await Promise.resolve();
+  await Promise.resolve();
 
   const partial = container.querySelector<HTMLElement>(".gw-lg-partial");
   if (!partial) throw new Error("the map mounted without its legend");
@@ -128,7 +135,23 @@ beforeEach(async () => {
   document.body.innerHTML = "";
   window.localStorage.clear();
   vi.resetModules();
-  vi.stubGlobal("fetch", () => Promise.resolve(new Response(null, { status: 404 })));
+  // The registry answers, because the vocabulary rides on that one response and a map with no
+  // vocabulary draws no status row at all. Every other call still 404s: what this file is about
+  // is the census of the canvas, not the network.
+  vi.stubGlobal("fetch", (input: RequestInfo | URL) =>
+    Promise.resolve(
+      String(input).includes("/v1/jurisdictions")
+        ? new Response(
+            JSON.stringify({
+              data: [],
+              meta: { status_classes: SEEDED_STATUS_CLASSES },
+              links: {},
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          )
+        : new Response(null, { status: 404 }),
+    ),
+  );
   const bus = await import("../bus.ts");
   bus.resetBus();
 });

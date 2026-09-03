@@ -1,17 +1,20 @@
 import { coalesce, get, lower, match } from "./expr.ts";
-import {
-  DEFAULT_JURISDICTION,
-  JURISDICTION_LIST,
-  jurisdictionRule,
-  rulesFor,
-} from "./jurisdictions.generated.ts";
+import { DEFAULT_JURISDICTION, JURISDICTION_LIST, jurisdictionRule, rulesFor } from "./jurisdictions.generated.ts";
 import type { Expr } from "./expr.ts";
 
 /**
- * Well status symbology, derived from the canonical vocabulary rather than invented here.
- * The vocabulary, the reported codes behind it and the row counts all come from
- * `cr_nd_status_vocab_1`; the glyph grammar follows the ND DMR `STATUS-TYPE` legend, where
- * plugging is a modifier struck through the fluid glyph rather than a colour of its own.
+ * Well status symbology, served rather than declared here.
+ *
+ * The eleven classes and the twelfth absence constant stood in this file as object literals,
+ * with their labels, colours, glyphs, zoom floors and notes. They agreed with the five
+ * per-regulator maps by coincidence: nothing checked them, no gate could read them, and a class
+ * a regulator added that this file had never heard of was painted as the absence class by
+ * negation, counted as nothing and gone the moment a reader unticked one box.
+ *
+ * `lineage.status_classes` is the domain now, and `/v1/jurisdictions` serves it once in `meta`.
+ * This module is the store the same `loadCensus()` fetch seeds, so `statusClass()` stays
+ * synchronous for the eight surfaces that read it at draw time. Before it is seeded there is no
+ * vocabulary and the right behaviour is to draw nothing, which is what the empty store does.
  */
 /** The registry decision that names a jurisdiction's status vocabulary. */
 const STATUS_VOCABULARY = "status_vocabulary";
@@ -19,7 +22,7 @@ const STATUS_VOCABULARY = "status_vocabulary";
 function statusVocabularyRule(code: string): string {
   const rule = jurisdictionRule(code, STATUS_VOCABULARY);
   // A registry that names no status vocabulary for a jurisdiction it registers is a defect,
-  // not a fallback: the class every well is drawn with would have no rule to cite.
+  // not a fallback: the class every well on the map is drawn with would have no rule to cite.
   if (rule === null) throw new Error(`no status vocabulary registered for ${code}`);
   return rule;
 }
@@ -39,18 +42,6 @@ export const STATUS_VOCAB_RULE = STATUS_VOCAB_RULE_BY_CODE[DEFAULT_JURISDICTION.
 /** One canonical class list, one vocabulary rule per source. Both are named where counts are. */
 export const STATUS_VOCAB_RULES: readonly string[] = rulesFor(STATUS_VOCABULARY);
 
-/**
- * The registered vocabulary rule a per-jurisdiction class cites, found by the rule's family
- * rather than by a jurisdiction code. A family, because a supersession changes the id and must
- * not be missed -- New Mexico's is already `_2` -- and because a code here would be this file
- * deciding which regulator a class belongs to, which is the registry's answer to give.
- */
-function vocabularyRuleInFamily(family: string): string {
-  const found = STATUS_VOCAB_RULES.find((rule) => rule.startsWith(`${family}_`));
-  if (found === undefined) throw new Error(`no registered status vocabulary in ${family}`);
-  return found;
-}
-
 /** Reserved for selection. No layer and no status may paint with it (UX P1-5). */
 export const SELECTION_COLOUR = "#5FD3E8";
 
@@ -64,164 +55,104 @@ export interface StatusClass {
   note: string;
   /** Zoom at or above which this class renders. Low-information classes recede (market §2.8.3). */
   minZoom: number;
+  /** The legend's row order, which is a decision the domain publishes rather than array order. */
+  sortOrder: number;
+  /** The one class no mapping produces: what a well with no resolvable status is served as. */
+  isAbsence: boolean;
+  /** The rule that declared the class, resolvable at /v1/conformance/{rule_id}. */
   rule: string;
 }
 
-export const STATUS_CLASSES: readonly StatusClass[] = [
-  {
-    id: "active",
-    label: "Active",
-    colour: "#3FA55E",
-    glyph: "solid",
-    note: "Producing or capable of production (NDIC A, OCD A).",
-    minZoom: 4,
-    rule: STATUS_VOCAB_RULE,
-  },
-  {
-    id: "drilling",
-    label: "Drilling",
-    colour: "#3D8BD4",
-    glyph: "bar",
-    note: "Spudded, not yet completed (DRL).",
-    minZoom: 4,
-    rule: STATUS_VOCAB_RULE,
-  },
-  {
-    id: "confidential",
-    label: "Confidential",
-    colour: "#E4A33C",
-    glyph: "solid",
-    note: "Withheld by the operator's tight-hole election: a status, not missing data.",
-    minZoom: 6,
-    rule: STATUS_VOCAB_RULE,
-  },
-  {
-    id: "permitted",
-    label: "Permitted",
-    colour: "#9FB0BC",
-    glyph: "hollow",
-    note: "Approved location, not yet drilled (NDIC LOC, OCD N).",
-    minZoom: 6,
-    rule: STATUS_VOCAB_RULE,
-  },
-  {
-    id: "inactive",
-    label: "Inactive",
-    colour: "#D9534F",
-    glyph: "bar",
-    note: "Shut in or on inactive-well waiver (IA).",
-    minZoom: 8,
-    rule: STATUS_VOCAB_RULE,
-  },
-  {
-    id: "temporarily_abandoned",
-    label: "Temporarily abandoned",
-    colour: "#D9534F",
-    glyph: "dashed",
-    note: "Suspended, not plugged (TA, TAO, TASC, TATD; OCD T, E).",
-    minZoom: 8,
-    rule: STATUS_VOCAB_RULE,
-  },
-  {
-    id: "service",
-    label: "Service",
-    colour: "#7A6FD0",
-    glyph: "hollow",
-    note:
-      "Injection, disposal, storage, observation or water supply, not a producer" +
-      " (cr_tx_status_vocab_1).",
-    minZoom: 8,
-    rule: vocabularyRuleInFamily("cr_tx_status_vocab"),
-  },
-  {
-    id: "plugged",
-    label: "Plugged & abandoned",
-    colour: "#7C8B96",
-    glyph: "struck",
-    note: "Wellbore permanently plugged (PA, AB, PANF; OCD P, H).",
-    minZoom: 9,
-    rule: STATUS_VOCAB_RULE,
-  },
-  {
-    id: "dry",
-    label: "Dry hole",
-    colour: "#7C8B96",
-    glyph: "struck-hollow",
-    note: "Drilled, no commercial completion (DRY, OCD D).",
-    minZoom: 9,
-    rule: STATUS_VOCAB_RULE,
-  },
-  {
-    // Not the absence class and not a status: the regulator published a code, and glasswell
-    // has no equivalent for what it says. Collapsing it into `unmapped` would erase the
-    // difference between "nobody said" and "we have no word for what was said", and forcing
-    // it into `plugged` would strike 507 New Mexico wells through on a claim the OCD never
-    // made (cr_nm_wellhistory_status_vocab_2).
-    id: "documented_unmapped",
-    label: "Documented, no class",
-    colour: "#8E6E9E",
-    glyph: "hollow",
-    note:
-      "The regulator documents the code and glasswell has no equivalent class: zone-plugged"
-      + " (OCD Q, Z) and reclamation-fund (OCD I, J).",
-    minZoom: 9,
-    rule: vocabularyRuleInFamily("cr_nm_wellhistory_status_vocab"),
-  },
-  {
-    id: "expired",
-    label: "Expired permit",
-    colour: "#55666F",
-    glyph: "dashed",
-    note:
-      "Permit lapsed or cancelled before spud: no wellbore exists (PNC, PNS, EXP;"
-      + " OCD C, X).",
-    minZoom: 9,
-    rule: STATUS_VOCAB_RULE,
-  },
-];
-
-/**
- * A low-salience neutral, and deliberately not BRAND.md's deep amber `#B57A18`.
- *
- * That amber is the quarantine colour, and it was the right read while ND was the only slice:
- * `cr_nd_status_vocab_1` quarantines an unmapped status, so an amber dot meant "a row failed a
- * rule". Texas broke both halves of that. Its 65,685 statusless wells are not quarantined —
- * the RRC reported no well type and filed no plugging date, which is an absence, not a defect —
- * and at z12 amber painted 19.7% of the canvas against active's 8.9%, so absence was the
- * loudest thing on the map. Worse, `#B57A18` is hue 37.5 and ND's `confidential` `#E4A33C` is
- * hue 36.8: the colour meaning "we do not know" was the colour meaning "the operator elected
- * to withhold", one lightness step apart. A reader who learned the palette on ND would misread
- * Texas.
- *
- * Still drawn at every zoom: absence must not be the thing that hides. It just should not
- * shout.
- */
-export const UNMAPPED_STATUS: StatusClass = {
-  id: "unmapped",
-  label: "Unmapped status",
-  colour: "#46525C",
-  glyph: "hollow",
-  note:
-    `No status under ${STATUS_VOCAB_RULES.join(", ")}: the source reported none, or its `
-    + "vocabulary has no published codebook to map. A code the regulator does publish and "
-    + "glasswell has no class for is the class above, not this one.",
-  minZoom: 0,
-  rule: STATUS_VOCAB_RULE,
-};
-
-const BY_ID = new Map(STATUS_CLASSES.map((status) => [status.id, status]));
-
-export function statusIds(): string[] {
-  return STATUS_CLASSES.map((status) => status.id);
+/** One row of `meta.status_classes`, spelled as the wire spells it. */
+export interface StatusClassRow {
+  status_canonical: string;
+  label: string;
+  colour: string;
+  glyph: string;
+  min_zoom: number;
+  sort_order: number;
+  is_absence: boolean;
+  note: string;
+  rule_id: string;
 }
 
-/** The canonical vocabulary plus the absence class, which the legend filters like any other. */
+/**
+ * What a class reads as before the domain has been served. Not a placeholder the reader ever
+ * sees: it paints `transparent`, carries no label and matches no served id, so a surface that
+ * reads the store early draws nothing rather than a guess.
+ */
+const UNRESOLVED: StatusClass = {
+  id: "",
+  label: "",
+  colour: "transparent",
+  glyph: "hollow",
+  note: "",
+  minZoom: 0,
+  sortOrder: 0,
+  isAbsence: false,
+  rule: "",
+};
+
+let resident: readonly StatusClass[] = [];
+let byId: ReadonlyMap<string, StatusClass> = new Map();
+let absence: StatusClass | null = null;
+
+function toClass(row: StatusClassRow): StatusClass {
+  return {
+    id: row.status_canonical,
+    label: row.label,
+    colour: row.colour,
+    glyph: row.glyph as StatusGlyph,
+    note: row.note,
+    minZoom: row.min_zoom,
+    sortOrder: row.sort_order,
+    isAbsence: row.is_absence,
+    rule: row.rule_id,
+  };
+}
+
+/** Seed the store from what `/v1/jurisdictions` served. Ordered by the domain's own order. */
+export function setStatusVocabulary(rows: readonly StatusClassRow[]): void {
+  const built = rows.map(toClass).sort((a, b) => a.sortOrder - b.sortOrder);
+  resident = built;
+  byId = new Map(built.map((status) => [status.id, status]));
+  absence = built.find((status) => status.isAbsence) ?? null;
+}
+
+/** Test seam, and the state every surface starts in: no vocabulary, so nothing is drawn. */
+export function resetStatusVocabulary(): void {
+  resident = [];
+  byId = new Map();
+  absence = null;
+}
+
+/** The served domain in legend order, absence class included. Empty until it is served. */
+export function statusVocabulary(): readonly StatusClass[] {
+  return resident;
+}
+
+/** Whether the domain has been served at all. Empty is unknown, never "no classes exist". */
+export function statusVocabularyResolved(): boolean {
+  return resident.length > 0;
+}
+
+/** The one class no mapping produces, or null while the domain is unknown. */
+export function absenceStatus(): StatusClass | null {
+  return absence;
+}
+
+/** The classes a regulator's map can produce: the domain less the absence class. */
+export function statusIds(): string[] {
+  return resident.filter((status) => !status.isAbsence).map((status) => status.id);
+}
+
+/** Every class the legend filters, which is every class the domain holds. */
 export function filterableStatusIds(): string[] {
-  return [...statusIds(), UNMAPPED_STATUS.id];
+  return resident.map((status) => status.id);
 }
 
 export function statusClass(id: string | null | undefined): StatusClass {
-  return BY_ID.get(String(id ?? "").toLowerCase()) ?? UNMAPPED_STATUS;
+  return byId.get(String(id ?? "").toLowerCase()) ?? absence ?? UNRESOLVED;
 }
 
 export function statusColour(id: string | null | undefined): string {
@@ -233,16 +164,16 @@ export function statusMinZoom(id: string | null | undefined): number {
 }
 
 export function statusProperty(): Expr {
-  // The constant, not the word again: the ledger writes this class name too now, and a third
-  // spelling in the file that declares it is one the parity gate cannot see move.
-  return lower(coalesce(get("status_canonical"), UNMAPPED_STATUS.id));
+  // The served class is never null since the resolver gained its absence arm, so this coalesce
+  // is a guard on an unresolved store rather than on the wire.
+  return lower(coalesce(get("status_canonical"), absence?.id ?? ""));
 }
 
 export function statusColourExpression(): Expr {
   return match(
     statusProperty(),
-    STATUS_CLASSES.map((status) => [status.id, status.colour] as [string, string]),
-    UNMAPPED_STATUS.colour,
+    resident.map((status) => [status.id, status.colour] as [string, string]),
+    absence?.colour ?? UNRESOLVED.colour,
   );
 }
 
@@ -250,18 +181,20 @@ export function statusColourExpression(): Expr {
 export function statusFillExpression(inkColour: string): Expr {
   return match(
     statusProperty(),
-    STATUS_CLASSES.map(
+    resident.map(
       (status) =>
-        [status.id, status.glyph === "hollow" || status.glyph === "struck-hollow" ? inkColour : status.colour] as [
-          string,
-          string,
-        ],
+        [
+          status.id,
+          status.glyph === "hollow" || status.glyph === "struck-hollow"
+            ? inkColour
+            : status.colour,
+        ] as [string, string],
     ),
-    UNMAPPED_STATUS.colour,
+    absence?.colour ?? UNRESOLVED.colour,
   );
 }
 
 /** Terminal classes carry the struck-through modifier, drawn from z11 where a well is legible. */
-export const STRUCK_STATUSES: readonly string[] = STATUS_CLASSES.filter((status) =>
-  status.glyph.startsWith("struck"),
-).map((status) => status.id);
+export function struckStatuses(): readonly string[] {
+  return resident.filter((status) => status.glyph.startsWith("struck")).map((status) => status.id);
+}

@@ -9,10 +9,13 @@ touches one and forgets the other reddens here rather than on the deployed host.
 
 from __future__ import annotations
 
+import json
 from datetime import date, timedelta
+from pathlib import Path
 
 import psycopg
 import pytest
+from fastapi.testclient import TestClient
 from psycopg.rows import dict_row
 
 from glasswell.lineage.jurisdictions import (
@@ -31,6 +34,7 @@ from glasswell.seed.jurisdictions import (
     GRAIN_RESTATEMENTS,
     JURISDICTION_RESTATEMENTS,
     JURISDICTION_RULES,
+    JURISDICTIONS,
     REGISTERED_ON,
     REQUIRED_DECISIONS,
     RESTATED_ON,
@@ -44,6 +48,12 @@ from glasswell.seed.reference import SOURCES
 from tests.conftest import FIXTURE_SOURCES
 
 pytestmark = pytest.mark.contract
+
+# The generated wells roster, which is the same rows as data: a Python tier has no TypeScript
+# loader, and `test_regen_jurisdictions.py` holds the roster and the module to one seed.
+GENERATED_ROSTER = (
+    Path(__file__).resolve().parents[2] / "web" / "src" / "map" / "wells-roster.json"
+)
 
 # Every source any seeder registers. The harness inserts fixture rows of its own before
 # seed_sources runs, and a source no seeder declares is not one an array can be incomplete
@@ -318,3 +328,42 @@ def test_a_registry_that_answers_nothing_is_a_refusal_and_not_an_empty_map(
         load_jurisdictions(db, date(2026, 1, 1))
 
     assert "resolves no registration" in str(refused.value)
+
+
+def test_the_generated_client_module_and_the_wire_agree(
+    client: TestClient, db: psycopg.Connection
+) -> None:
+    """R-4, keep both and gate them.
+
+    The presentation facts ship twice on purpose: the layer panel builds its rows before the
+    first fetch settles, and a map with no layers is worse than a map whose subtitle count
+    arrives late. What that buys costs a gate, because two writers with nothing between them is
+    the drift the registry exists to remove. The class domain is deliberately not in this pair:
+    it carries a rule id and an effective date and a constant can carry neither, so the client
+    is served it and nothing generates it.
+    """
+    generated = {
+        row["code"]: row
+        for row in json.loads(GENERATED_ROSTER.read_text(encoding="utf-8"))
+    }
+    served = {
+        row["jurisdiction_code"]: row
+        for row in client.get("/v1/jurisdictions", params={"limit": 100}).json()["data"]
+    }
+    declared = {str(row["jurisdiction_code"]): row for row in JURISDICTIONS}
+
+    assert sorted(served) == sorted(generated)
+    for code, row in generated.items():
+        wire = served[code]["map"]
+        assert wire["wells_layer_id"] == row["id"], code
+        assert wire["wells_style_layer_ids"] == row["styleLayers"], code
+        assert wire["wells_draw_order"] == row["drawOrder"], code
+        assert wire["wells_default_on"] == row["defaultOn"], code
+        assert wire["wells_tile_layer_id"] == row["tileLayerId"], code
+        # The three the roster does not carry, against the seed the module is rendered from.
+        assert wire["wells_snapshot_key"] == declared[code].get("wells_snapshot_key"), code
+        assert wire["wells_subtitle_template"] == declared[code]["wells_subtitle_template"], code
+        assert served[code]["vocabulary"]["legend_note"] == declared[code].get("legend_note"), code
+        assert served[code]["capabilities"]["explorer_default"] == bool(
+            declared[code].get("explorer_default")
+        ), code

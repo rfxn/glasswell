@@ -12,6 +12,7 @@
  * behind `loadCensus()` rather than run at module scope.
  */
 import { getEnvelope } from "../api/client.ts";
+import { setStatusVocabulary } from "./status.ts";
 
 /** One jurisdiction's measurement: the count, the handle that resolves it, and its date. */
 export interface JurisdictionFigure {
@@ -106,6 +107,10 @@ export function censusOf(rows: readonly CensusRow[]): JurisdictionCensus {
 export function loadCensus(): Promise<JurisdictionCensus> {
   pending ??= getEnvelope<readonly CensusRow[]>("/v1/jurisdictions")
     .then((envelope) => {
+      // The same one fetch seeds the status vocabulary. It rides in `meta` because the domain
+      // is not a jurisdiction, and it is seeded before the census is returned so that every
+      // surface awaiting this promise finds a resolved store rather than a race.
+      setStatusVocabulary(envelope.meta?.status_classes ?? []);
       resident = censusOf(envelope.data ?? []);
       return resident;
     })

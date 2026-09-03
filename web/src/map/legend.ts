@@ -5,10 +5,11 @@ import { teach } from "../glossary/teach.ts";
 import type { DimensionCounts, VocabularyLink } from "./counts.ts";
 import { PRODUCING_CLASSES, PRODUCING_RULINGS, producingHref, producingNote } from "./producing.ts";
 import type { ProducingCounts } from "./producing.ts";
-import { PROVENANCE_RULE } from "./provenance.ts";
+import { provenanceRules, provenanceUnregistered } from "./provenance.ts";
+import { disposalRegistrations, disposalRules } from "./disposal.ts";
 import { census, loadCensus, measuredWellCount } from "./census.ts";
 import { JURISDICTION_LIST } from "./jurisdictions.generated.ts";
-import { STATUS_CLASSES, STATUS_VOCAB_RULES, UNMAPPED_STATUS, statusClass } from "./status.ts";
+import { STATUS_VOCAB_RULES, statusClass, statusVocabulary } from "./status.ts";
 import type { StatusClass } from "./status.ts";
 import { statusSwatch } from "./swatch.ts";
 
@@ -58,7 +59,8 @@ const DIMENSIONS: readonly DimensionSpec[] = [
     title: "Geometry provenance",
     aria: "Wells by the provenance of their recorded geometry",
     note:
-      `Classed by ${PROVENANCE_RULE}, the class served verbatim. These classes overlap: one` +
+      `Classed by ${provenanceRules().join(", ")}, the class served verbatim. These classes` +
+      " overlap: one" +
       " well can hold a surface hole, a lateral and a survey trace at once, so they do not sum" +
       " to the well count above and no share can be read off them. A registered class the box" +
       " does not hold reads zero rather than absent, which is the producing rows' rule: the" +
@@ -70,8 +72,12 @@ const DIMENSIONS: readonly DimensionSpec[] = [
 type CountMode = "ready" | "pending" | "unavailable";
 
 export interface LegendOptions {
-  /** The classes to open with; absent means every one of them. */
-  on?: ReadonlySet<string>;
+  /**
+   * The classes to open with; absent means every one of them. A thunk where the caller's answer
+   * depends on the served vocabulary: the rows are built when that arrives, and a set resolved
+   * against an empty store would open the map with every class switched off.
+   */
+  on?: ReadonlySet<string> | (() => ReadonlySet<string>);
   onFilter(on: Set<string>): void;
   /** Whether the map-extent node opens on. Absent means on: counts cover the viewport. */
   extentOn?: boolean;
@@ -161,7 +167,10 @@ export function createLegend(options: LegendOptions): LegendHandle {
   body.className = "gw-lg-body";
   element.appendChild(body);
 
-  const wanted = (id: string): boolean => options.on?.has(id) ?? true;
+  const wanted = (id: string): boolean => {
+    const asked = typeof options.on === "function" ? options.on() : options.on;
+    return asked?.has(id) ?? true;
+  };
 
   // M1-2: the viewport as a named node in the filter list, above the classes it conjoins
   // with. Ahead of them because it is the outer predicate — the population the class counts
@@ -214,13 +223,20 @@ export function createLegend(options: LegendOptions): LegendHandle {
   join.title = "A counted well is inside the map view (while it is on) and carries any status left ticked.";
   body.appendChild(join);
 
+  // Built from the served domain, so the rows, their order, their swatches and their zoom
+  // gates are all data. Empty until `/v1/jurisdictions` answers, which is what the key's own
+  // pending mode is for: a class that is not known yet is not a class the canvas draws.
   const rows = new Map<string, HTMLElement>();
-  for (const status of STATUS_CLASSES) {
-    rows.set(status.id, appendRow(body, status, wanted(status.id)));
+  function buildStatusRows(): void {
+    for (const row of rows.values()) row.remove();
+    rows.clear();
+    for (const status of statusVocabulary()) {
+      // The absence class is a row like any other and it sits in the domain's own order, not
+      // after the producing group: it is one of the classes the canvas paints, and listed below
+      // a different vocabulary it lands outside the key's own scrollport.
+      rows.set(status.id, appendRow(body, status, wanted(status.id), producing));
+    }
   }
-  // Built now, listed when the map first draws one. The switch has to exist before the class
-  // does — a row conjured out of a count could not be the row that switches the count off.
-  rows.set(UNMAPPED_STATUS.id, buildRow(UNMAPPED_STATUS, wanted(UNMAPPED_STATUS.id)));
 
   // Producing is asked of the filings, status of the permit, so the classes get their own
   // group rather than more rows in the status list — a well the regulator calls inactive can
@@ -590,12 +606,20 @@ export function createLegend(options: LegendOptions): LegendHandle {
   function setVocabulary(vocabulary: VocabularyLink[]): void {
     // The licence pair opens the note, ahead even of the colours preamble (visual-m24 O2):
     // what each basin's wire carries must sit above the note's own fold on open at 390.
+    // Every sentence about a jurisdiction is read from its registration: which rules class its
+    // geometry, and which registrations publish none. A single rule id here stated one
+    // regulator's decision over every feature on the canvas.
+    const registered = provenanceRules();
+    const unregistered = provenanceUnregistered();
     note.replaceChildren(
       document.createTextNode(
-        "Every ND feature carries its geometry provenance on the wire: surface, lateral" +
-          ` or survey_trace, classed by ${PROVENANCE_RULE}, the class served verbatim.` +
-          " TX geometry carries no provenance field: the RRC's coordinate-source attribute" +
-          " is licence-gated (RF-1) and is not served until that is answered." +
+        "A registered feature carries its geometry provenance on the wire: surface, lateral" +
+          ` or survey_trace, classed by ${registered.join(", ")}, the class served verbatim.` +
+          (unregistered.length === 0
+            ? ""
+            : ` ${unregistered.join(", ")} geometry carries no provenance field: the` +
+              " regulator's coordinate-source attribute is licence-gated (RF-1) and is not" +
+              " served until that is answered.") +
           " Status colours are data colours, not severity colours. Vocabulary: ",
       ),
     );
@@ -613,12 +637,14 @@ export function createLegend(options: LegendOptions): LegendHandle {
       if (!inView.has(entry.rules["status_vocabulary"] ?? "")) continue;
       note.appendChild(document.createTextNode(` ${entry.legendNote}`));
     }
+    const ringed = disposalRegistrations();
     note.appendChild(
       document.createTextNode(
-        " Laterals are ND DMR and TX RRC GIS bore geometry, not a directional survey trace." +
-          " The orchid line is that trace: the bore path ND filed as survey stations." +
-          " The teal ring is NDIC's own well_type: disposal and injection wells of any" +
-          " injected stream, classed by cr_nd_well_type_disposal_1, the code drawn as filed.",
+        " Laterals are GIS bore geometry as each regulator filed it, not a directional survey" +
+          " trace. The orchid line is that trace: a bore path filed as survey stations." +
+          ` The teal ring is ${ringed.join(", ")}'s own well_type: disposal and injection wells` +
+          ` of any injected stream, classed by ${disposalRules().join(", ")}, the code drawn as` +
+          " filed. A jurisdiction that publishes no injection codebook draws no ring.",
       ),
     );
     teaching.retouch();
@@ -635,14 +661,6 @@ export function createLegend(options: LegendOptions): LegendHandle {
     handles = derivations ?? {};
     totalCount = total ?? null;
     zoomNow = zoom;
-    const unmapped = rows.get(UNMAPPED_STATUS.id);
-    // Among the status rows, not after the producing group: it is one of the classes the
-    // canvas paints, and listed below a different vocabulary it lands outside the key's own
-    // scrollport — reachable only by scrolling past a block that answers another question.
-    if (counts[UNMAPPED_STATUS.id] !== undefined && unmapped && unmapped.parentNode !== body) {
-      body.insertBefore(unmapped, producing);
-      syncTitle();
-    }
     render();
   }
 
@@ -657,6 +675,7 @@ export function createLegend(options: LegendOptions): LegendHandle {
   }
 
   setVocabulary(STATUS_VOCAB_RULES.map((rule) => ({ rule, href: null })));
+
   // What the legend may list used to be four undated count maps compiled into the bundle. It
   // is a served measurement now, and the writer measures every registered class rather than
   // only the ones it finds, so a zero here is a jurisdiction that was counted and holds none —
@@ -665,7 +684,14 @@ export function createLegend(options: LegendOptions): LegendHandle {
   // written before that writer, which is every day before v0.77) and keeps its row. The census
   // only arrives here; what it means for a row is renderRows's, so no stale `hidden` survives
   // a viewport and no row is hidden by a census that never came.
-  void loadCensus().then(render);
+  // One await for both: the same response carries the domain the rows are built from and the
+  // measurement that decides which of them are drawn.
+  void loadCensus().then(() => {
+    buildStatusRows();
+    report();
+    render();
+  });
+  buildStatusRows();
   syncTitle();
   render();
   return {
@@ -806,9 +832,14 @@ function bulkButton(which: string, label: string, description: string): HTMLButt
   return button;
 }
 
-function appendRow(body: HTMLElement, status: StatusClass, on: boolean): HTMLElement {
+function appendRow(
+  body: HTMLElement,
+  status: StatusClass,
+  on: boolean,
+  before: HTMLElement,
+): HTMLElement {
   const row = buildRow(status, on);
-  body.appendChild(row);
+  body.insertBefore(row, before);
   return row;
 }
 

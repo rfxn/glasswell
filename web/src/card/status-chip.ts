@@ -1,4 +1,5 @@
 import { labelElement } from "../glossary/gw-term.ts";
+import { loadCensus } from "../map/census.ts";
 import { statusClass } from "../map/status.ts";
 import { statusSwatch } from "../map/swatch.ts";
 import type { WellDetail } from "./card.ts";
@@ -8,7 +9,14 @@ import type { WellDetail } from "./card.ts";
  * under `src/map/`, and a static edge would put both on every reader's entry chunk and on the
  * explorer route, where no well card is ever rendered.
  */
-export function fillStatusChip(chip: HTMLElement, detail: WellDetail, termId: string | null): void {
+export async function fillStatusChip(
+  chip: HTMLElement,
+  detail: WellDetail,
+  termId: string | null,
+): Promise<void> {
+  // The vocabulary is served, so the chip awaits the one fetch that carries it. `card.ts`
+  // already awaits the promise this module's dynamic import returns, so nothing there moves.
+  await loadCensus();
   const status = statusClass(detail.status_canonical);
   chip.dataset["status"] = status.id;
   chip.title = status.note;

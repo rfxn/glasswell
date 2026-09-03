@@ -5,13 +5,11 @@ import type { BasemapVariant } from "./basemap.ts";
 import { DISPOSAL_COLOUR, disposalFilter } from "./disposal.ts";
 import {
   all,
-  any,
   coalesce,
   featureState,
   get,
   inSet,
   interpolate,
-  not,
   step,
   toNumber,
   when,
@@ -20,13 +18,11 @@ import {
 import type { Expr } from "./expr.ts";
 import {
   SELECTION_COLOUR,
-  STATUS_CLASSES,
-  STRUCK_STATUSES,
-  UNMAPPED_STATUS,
   statusColourExpression,
   statusFillExpression,
-  statusIds,
   statusProperty,
+  statusVocabulary,
+  struckStatuses,
 } from "./status.ts";
 import {
   METRICS_HANDOFF_ZOOM,
@@ -252,22 +248,27 @@ export function statusStyledLayerIds(
 }
 
 export function visibleStatusesAt(atZoom: number): string[] {
-  return STATUS_CLASSES.filter((status) => atZoom >= status.minZoom).map((status) => status.id);
+  // Every class the domain holds, absence included: its zoom floor is a row that says 0,
+  // because absence must not be the thing that hides.
+  return statusVocabulary()
+    .filter((status) => atZoom >= status.minZoom)
+    .map((status) => status.id);
 }
 
 /**
- * The rendered set is the zoom gate intersected with the legend's own filter. The unmapped
- * class is never withdrawn by the *zoom* — a defect that disappears at low zoom is worse than
- * one that shows — but the reader can switch it off, because on some slices it is the largest
- * class on the canvas and unfilterable ink is ink nobody can account for.
+ * The rendered set is the zoom gate intersected with the legend's own filter, and nothing else.
+ *
+ * It used to carry a second arm: `not(inSet(statusProperty(), statusIds()))`, which painted
+ * anything the client's closed list could not name as the absence class. That matched two
+ * different things at once — a well whose source filed no status, and a well whose class this
+ * build had never heard of — and the second vanished from the canvas the moment a reader
+ * unticked one box. The failure it was written for, a well with a present but unknown status
+ * falling out of the map, the count and the legend together, is now impossible for a different
+ * reason: the domain is served, so the set of ids is complete and there is nothing left for a
+ * negation to catch.
  */
 export function statusFilter(atZoom: number, on: ReadonlySet<string>): Expr {
-  const named = inSet(statusProperty(), visibleStatusesAt(atZoom).filter((id) => on.has(id)));
-  if (!on.has(UNMAPPED_STATUS.id)) return named;
-  // The absence class is anything the vocabulary cannot name — the rule `statusClass()` applies
-  // when counting. Matching the literal id instead let a well with an unknown *present* status
-  // fall out of the map, the count and the legend at once, with nothing saying so.
-  return any(named, not(inSet(statusProperty(), statusIds())));
+  return inSet(statusProperty(), visibleStatusesAt(atZoom).filter((id) => on.has(id)));
 }
 
 /** One bucket of the Wells-By panel, applied to the canvas. One value: `wb.pick` is one press. */
@@ -543,7 +544,7 @@ function wellStruckLayer(row: WellsRosterRow, source: string): LayerSpecificatio
     source,
     "source-layer": source,
     minzoom: 11,
-    filter: inSet(statusProperty(), [...STRUCK_STATUSES]),
+    filter: inSet(statusProperty(), [...struckStatuses()]),
     layout: {
       "icon-image": "gw-strike",
       "icon-allow-overlap": true,

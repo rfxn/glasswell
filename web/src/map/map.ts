@@ -40,6 +40,7 @@ import type { FacetBucket } from "../explore/facets/wells-by.ts";
 import { EXTENT_PARAM, countedBbox, extentFilterOn } from "./extent.ts";
 import { createFacetPill } from "./facet-pill.ts";
 import { PICK_PARAM, facetFromSearch, wellsByTerms } from "./facet-pick.ts";
+import { loadCensus } from "./census.ts";
 import { createHoverCard } from "./hover-card.ts";
 import { createLayerPanel } from "./layer-panel.ts";
 import { createLegend, legendEnabled } from "./legend.ts";
@@ -291,13 +292,12 @@ export function createMap(
   let basemap = chooseBasemap();
   let variant = applyBasemapVariant(basemap, container);
   let on = restoreCapabilitySet(readCapabilitySet(LAYER_STORAGE_KEY), layerIds(), defaultLayerSet());
-  // Every class on by default; the same {on,known} shape, so a class added to the vocabulary
-  // later arrives visible rather than hidden by a stored set that predates it.
-  let statuses = restoreCapabilitySet(
-    readCapabilitySet(STATUS_STORAGE_KEY),
-    filterableStatusIds(),
-    filterableStatusIds(),
-  );
+  // Restored after the vocabulary is served, below. Against an unresolved store
+  // `filterableStatusIds()` is empty, so restoring here would open the map with nothing drawn
+  // and the first legend toggle would persist an empty *known* set -- which is exactly what
+  // destroys the invariant the shape exists for: a class added to the vocabulary later has to
+  // arrive visible rather than hidden by a stored set that predates it.
+  let statuses: ReadonlySet<string> = new Set<string>();
   const opacities = new Map(LAYERS.map((layer) => [layer.id, layer.opacity]));
   // The URL is the extent predicate's only home (M1-2): a shared link reconstructs the
   // population, and no session state can disagree with what the link says.
@@ -306,8 +306,22 @@ export function createMap(
   // reproduce the canvas, and no session state may disagree with what the link says.
   let facet = facetFromSearch(window.location.search);
 
+  // The vocabulary and the census arrive on one response, and the legend builds its rows on it,
+  // so the stored set is resolved there rather than here: against an empty store the known set
+  // is empty, every class reads as switched off, and the first toggle persists that.
+  const restoreStatuses = (): ReadonlySet<string> =>
+    restoreCapabilitySet(
+      readCapabilitySet(STATUS_STORAGE_KEY),
+      filterableStatusIds(),
+      filterableStatusIds(),
+    );
+  void loadCensus().then(() => {
+    statuses = legend.activeStatuses();
+    applyWellFilter();
+  });
+
   const legend = createLegend({
-    on: statuses,
+    on: restoreStatuses,
     // The counts do not move: a class the reader stopped drawing is still in the area. What
     // moves is the canvas, and the census of it has to wait for the repaint.
     onFilter: (next) => {

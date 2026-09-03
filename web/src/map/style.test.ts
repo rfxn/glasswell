@@ -35,8 +35,8 @@ import {
 } from "./style.ts";
 import {
   SELECTION_COLOUR,
-  STATUS_CLASSES,
-  UNMAPPED_STATUS,
+  statusVocabulary,
+  absenceStatus,
   filterableStatusIds,
   statusIds,
 } from "./status.ts";
@@ -77,7 +77,7 @@ describe("the data layers", () => {
     const paint = JSON.stringify(wells && "paint" in wells ? wells.paint : {});
     expect(paint).toContain("feature-state");
     expect(paint).toContain(SELECTION_COLOUR);
-    for (const status of STATUS_CLASSES) {
+    for (const status of statusVocabulary().filter((s) => !s.isAbsence)) {
       expect(status.colour).not.toBe(SELECTION_COLOUR);
     }
   });
@@ -92,11 +92,12 @@ describe("the data layers", () => {
     expect(visibleStatusesAt(4)).toContain("drilling");
     expect(visibleStatusesAt(4)).not.toContain("plugged");
     expect(visibleStatusesAt(4)).not.toContain("expired");
-    expect(visibleStatusesAt(9).sort()).toEqual(STATUS_CLASSES.map((s) => s.id).sort());
+    // The absence class is in scale at every zoom, so the full domain is what z9 shows.
+    expect(visibleStatusesAt(9).sort()).toEqual([...filterableStatusIds()].sort());
   });
 
   it("keeps an unmapped status in scale at every zoom, so a data defect cannot hide", () => {
-    const on = new Set([...visibleStatusesAt(4), UNMAPPED_STATUS.id]);
+    const on = new Set([...visibleStatusesAt(4), absenceStatus()!.id]);
     expect(draws(statusFilter(4, on), null, 4)).toBe(true);
     expect(draws(statusFilter(4, on), "plugged", 4)).toBe(false);
   });
@@ -108,15 +109,16 @@ describe("the data layers", () => {
     expect(draws(statusFilter(12, new Set(filterableStatusIds())), null)).toBe(true);
   });
 
-  it("draws a status it cannot name as the absence class, rather than not at all", () => {
-    // The count path routes any unrecognised code to `unmapped` (statusClass), so a filter that
-    // matched only the literal id disagreed with it: a well whose status was present but not in
-    // `cr_nd_status_vocab_1` was dropped from the canvas, the count and the key at once.
+  it("names every class the domain holds, so nothing is left for a negation to catch", () => {
+    // The filter used to carry `not(inSet(..., statusIds()))`, which painted anything the
+    // client's closed list could not name as the absence class -- and took a class this build
+    // had never heard of off the canvas the moment a reader unticked one box. The domain is
+    // served now, so the id set is complete: a class the wire carries is a class the filter
+    // names, and one it does not carry is not a class at all.
     const all = statusFilter(12, new Set(filterableStatusIds()));
-    expect(draws(all, "wildcat_unknown")).toBe(true);
-    expect(draws(all, "")).toBe(true);
     expect(draws(all, "ACTIVE")).toBe(true);
-    expect(draws(statusFilter(12, new Set(statusIds())), "wildcat_unknown")).toBe(false);
+    expect(draws(all, null)).toBe(true);
+    expect(draws(all, "wildcat_unknown")).toBe(false);
   });
 
   it("gates every layer the status vocabulary paints, and only where the filter slot is free", () => {

@@ -51,10 +51,10 @@ COLORADO_MIGRATION = next(
     item.path for item in discover_migrations() if item.name == "colorado"
 )
 BRAND = ROOT / "BRAND.md"
-STATUS_CLASSES = ROOT / "web/src/map/status.ts"
+STATUS_CLASSES = ROOT / "web/src/map/status-classes.generated.ts"
 REPOINTED_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 ABSENCE_CLASS = re.compile(
-    r"export const UNMAPPED_STATUS: StatusClass = \{\s*id: \"([a-z_]+)\",", re.S
+    r"status_canonical: \"([a-z_]+)\",(?:(?!status_canonical).)*?is_absence: true,", re.S
 )
 
 
@@ -264,11 +264,15 @@ def test_the_ledgers_absence_class_is_the_word_the_canvas_draws() -> None:
     `lineage.jurisdiction_well_counts` and the client keys its census on it, so a rename on
     either side would leave every suite green and the absence class back to a muted row with no
     measurement -- the exact state this train exists to leave.
+
+    Read from the generated fixture rather than from `web/src/map/status.ts`, which declares no
+    class at all any more: the client is served the domain and builds its legend from it, and
+    the fixture is what the vitest compares that against.
     """
     source = STATUS_CLASSES.read_text(encoding="utf-8")
     declared = ABSENCE_CLASS.search(source)
 
-    assert declared is not None, "web/src/map/status.ts declares no UNMAPPED_STATUS id"
+    assert declared is not None, f"{STATUS_CLASSES.name} declares no absence class"
     assert declared.group(1) == UNMAPPED_CLASS
     # Once, in the declaration: a bare copy elsewhere in the file is a third spelling that this
     # comparison would not see move.

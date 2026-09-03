@@ -8,7 +8,7 @@ import { JURISDICTION_LIST } from "./jurisdictions.generated.ts";
 import { DISPOSAL_COLOUR } from "./disposal.ts";
 import { LAYER_FAMILIES, LAYER_GROUPS } from "./groups.ts";
 import type { LayerFamily, LayerFamilyId, LayerGroup, LayerGroupId } from "./groups.ts";
-import { statusColour } from "./status.ts";
+import { statusVocabulary } from "./status.ts";
 import { BOUNDARY_MIN_ZOOM, GEOLOGY_FRAME_COLOUR, LAND_GRID_COLOUR, TRACE_COLOUR } from "./style.ts";
 import { LIQUID_RAMP } from "./thematics.ts";
 
@@ -93,11 +93,23 @@ export interface LayerDef {
  * against Texas's grey. What this build measures is the *well* status mix, not the lateral
  * one, so a single colour would be a frequency claim nothing here supports. Two is the claim
  * that holds: the row is keyed to status, and the key beside it names every class.
+ *
+ * Built when the row is drawn rather than at import. Against a store that resolves after
+ * `loadCensus()`, two module-scope reads would both fall through to the absence colour and the
+ * panel's status-keyed row would paint one colour twice.
  */
-const STATUS_KEYED_LINE: readonly [string, ...string[]] = [
-  statusColour("active"),
-  statusColour("plugged"),
-];
+function statusKeyedLine(): readonly [string, ...string[]] {
+  // The first and the last mapped class in the domain's own order, which is a published
+  // decision about which classes lead and which recede. Two class ids used to stand here as
+  // literals; they were the last two ids in the scoped set, and a swatch that names a class is
+  // the same restatement as a legend that does.
+  const mapped = statusVocabulary().filter((status) => !status.isAbsence);
+  const first = mapped[0];
+  const last = mapped[mapped.length - 1];
+  // An unresolved domain paints nothing, which is what every other surface does before it is
+  // served, and a one-class domain has no pair to make a claim with.
+  return first && last && first !== last ? [first.colour, last.colour] : ["transparent"];
+}
 
 /**
  * The measured coverage snapshots a registration may cite, by the key its row carries. A key
@@ -304,7 +316,12 @@ export const LAYERS: readonly LayerDef[] = [
     group: "spine",
     label: "Laterals",
     subtitle: "Horizontal bore geometry as each regulator filed it · not a directional survey trace",
-    swatch: { kind: "line", colours: STATUS_KEYED_LINE },
+    swatch: {
+      kind: "line",
+      get colours() {
+        return statusKeyedLine();
+      },
+    },
     // 93,125 lines is the largest thing the map can draw and the reader never asked for it.
     defaultOn: false,
     // marts/tiles.py holds THIN_MAX_ZOOM at 7: at and below it a lateral tile keeps one feature
@@ -363,7 +380,12 @@ export const LAYERS: readonly LayerDef[] = [
       " 2,836 carry one, of the 20,021 Montana wells that ever produced" +
       " (cr_mt_paths_coverage_1) · no length is served for a Montana bore" +
       " (cr_mt_paths_length_scope_1)",
-    swatch: { kind: "line", colours: STATUS_KEYED_LINE },
+    swatch: {
+      kind: "line",
+      get colours() {
+        return statusKeyedLine();
+      },
+    },
     // 4,173 lines over a state whose wells are mostly plugged is not a first-paint question.
     defaultOn: false,
     // The laterals' own gate, so the two bore-line layers a reader compares are never on the

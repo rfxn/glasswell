@@ -17,6 +17,26 @@ export interface Meta {
   next_cursor: string | null;
   warnings: Warning[];
   deprecations: unknown[];
+  /**
+   * The canonical status class domain, served once by /v1/jurisdictions and omitted by every
+   * other operation. Optional because every operation shares this type and only one carries it;
+   * `Meta` is a closed interface, so reading it without this is a type error rather than a
+   * silently-undefined field.
+   */
+  status_classes?: readonly StatusClassMeta[];
+}
+
+/** One class of the served domain. The client builds its legend and its symbology from these. */
+export interface StatusClassMeta {
+  status_canonical: string;
+  label: string;
+  colour: string;
+  glyph: string;
+  min_zoom: number;
+  sort_order: number;
+  is_absence: boolean;
+  note: string;
+  rule_id: string;
 }
 
 export interface Links {

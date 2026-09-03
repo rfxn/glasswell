@@ -91,6 +91,10 @@ export default defineConfig({
   test: {
     include: ["src/**/*.test.ts"],
     environment: "node",
+    // The status vocabulary is served, so every suite starts with it resolved: in the browser
+    // no surface under test runs before loadCensus() has settled, and a suite that wants the
+    // unresolved store asks for it.
+    setupFiles: ["./src/test/vocabulary-setup.ts"],
     coverage: { provider: "v8", reporter: ["text-summary"], include: ["src/**/*.ts"] },
   },
 });

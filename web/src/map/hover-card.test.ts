@@ -81,7 +81,7 @@ describe("the hover card", () => {
       { api10: "3305305527", status_canonical: "active", geometry_provenance: "surface" },
       { x: 0, y: 0 },
     );
-    expect(card.element.textContent).toContain("Surface location as ND DMR filed it");
+    expect(card.element.textContent).toContain("Surface location as ND filed it");
     expect(card.element.textContent).toContain("geometry_provenance surface");
     expect(card.element.textContent?.toLowerCase()).not.toContain("surveyed");
   });
@@ -197,9 +197,9 @@ describe("the hover card", () => {
 
   it("drops the disposal line the moment the cursor moves onto an OG well", () => {
     const card = createHoverCard();
-    card.show({ api10: "a", well_type_reported: "WI" }, { x: 0, y: 0 });
+    card.show({ api10: "3305300001", well_type_reported: "WI" }, { x: 0, y: 0 });
     expect(card.element.textContent).toContain("well_type WI");
-    card.show({ api10: "b", well_type_reported: "OG" }, { x: 0, y: 0 });
+    card.show({ api10: "3305300002", well_type_reported: "OG" }, { x: 0, y: 0 });
     expect(card.element.textContent).not.toContain("well_type WI");
   });
 
