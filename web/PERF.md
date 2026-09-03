@@ -147,19 +147,28 @@ round trip and now lives in `glossary/load.ts`, imported when it runs rather tha
 reader's first paint, and the store keeps only its state. Net **13,950 B — 50 B under the
 budget**, and the loop that reads the vocabulary to its end is off the entry path entirely.
 
-Re-measured again on the assembled v0.78 train — the seam, the cadence scheduler, Colorado and
-wells-by across every jurisdiction — at **13,949 B, 51 B under the budget**, on `2081795`.
+Re-measured across the assembled v0.78 train — the seam, the cadence scheduler, Colorado and
+wells-by across every jurisdiction — at four points, because the gzip figure moves under you:
 
-The number worth recording is the one beside it, because it carries no stamp: the entry chunk is
-**40,254 B raw on the seam-plus-scheduler tree and 40,254 B on the full train**. Colorado and the
-facet work added *nothing* to it. A fifth jurisdiction that arrives as registry rows costs the
-reader's first paint zero bytes, which is the property the seam track was built to produce, and
-this is the measurement of it. The gzip figures across this train differ by a few bytes only
-because `__GW_BUILD__`'s distance from the tag grows with each commit — compare the raw counts
-when you want to know whether code moved.
+| Tree | raw | gzipped | headroom |
+|---|---:|---:|---:|
+| seam + scheduler | 40,254 | 13,947 | 53 |
+| `2081795` (four tracks merged) | 40,254 | 13,949 | 51 |
+| `40bfd4f` (measured by the whole-train gate) | 40,254 | 13,946 | 54 |
+| `a74a5d3` (the sentinel fix round) | 40,254 | 13,950 | 50 |
 
-51 B is under a page of source. The next track on the entry path splits rather than widens; the
-budget does not move.
+**The raw column is the claim; the gzip column is weather.** `__GW_BUILD__` carries `git describe`,
+so the distance from the tag rewrites a few bytes inside the chunk on every commit, and four
+measurements of unchanged code differ by 4 B. The raw count does not move: **40,254 B before
+Colorado and the facet work and 40,254 B after**. A fifth jurisdiction that arrives as registry rows
+costs the reader's first paint zero bytes, which is the property the seam track was built to
+produce, and this is the measurement of it.
+
+Compare raw when you want to know whether code moved. Compare gzip against the budget only with
+the tree named beside it, which is why every row above carries one.
+
+Headroom is about 50 B — under a page of source. The next track on the entry path splits rather
+than widens; the budget does not move.
 
 **Every figure here includes the build stamp.** `vite.config.ts` defines `__GW_BUILD__` from
 `git describe`, so the entry chunk carries the tag, the distance and the short SHA of whatever
