@@ -65,8 +65,11 @@ def test_the_supersession_applies_gapless_on_the_migration_before_it(empty_db) -
     names = {item.version: item.name for item in applied}
 
     assert versions == list(range(1, len(versions) + 1))
-    assert names[max(versions)] == MIGRATION
-    assert names[max(versions) - 1] == "facet_status_resolution"
+    # Its own version, not the last one: the Texas track's migration merged in behind this
+    # file and took the next digit, so "last applied" stopped being a property of the
+    # supersession and adjacency to the migration it was written against is what is held.
+    ordinal = next(version for version, name in names.items() if name == MIGRATION)
+    assert names[ordinal - 1] == "facet_status_resolution"
 
 
 def test_one_evidence_pair_in_the_whole_file() -> None:
