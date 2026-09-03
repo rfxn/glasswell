@@ -449,8 +449,8 @@ select j.job_id, j.label, j.kind, j.entry_point, j.argv, j.anchor_source_id, j.j
      ' row, so a fifth mart is this row and no module.'::text),
     ('co_counts', 'Registry well counts after Colorado', 'mart', 'glasswell.marts.counts',
      array[]::text[], 'co_ecmc_monthly_prod', null::text,
-     'marts.counts has no natural source of its own -- it measures whatever the registry holds'
-     ' -- so it anchors on the source its dependency anchors on, and this row exists because'
+     'marts.counts has no natural source of its own: it measures whatever the registry holds,'
+     ' so it anchors on the source its dependency anchors on, and this row exists because'
      ' /v1/jurisdictions serves a new registration with no well_count and no measured_on until'
      ' something has measured it.'::text)
   ) as j(job_id, label, kind, entry_point, argv, anchor_source_id, jurisdiction, rationale)

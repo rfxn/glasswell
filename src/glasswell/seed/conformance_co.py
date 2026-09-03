@@ -885,8 +885,8 @@ CO_CADENCE_DECISIONS: dict[str, dict[str, str]] = {
     },
     "co_counts": {
         "rule": "Re-measure the registry's served well counts after the Colorado mart refresh.",
-        "rationale": "marts.counts has no natural source of its own -- it measures whatever the"
-        " registry holds -- so it anchors on the source its dependency anchors on rather than"
+        "rationale": "marts.counts has no natural source of its own: it measures whatever the"
+        " registry holds, so it anchors on the source its dependency anchors on rather than"
         " on a source it reads, and the rationale says so rather than leaving a reader to"
         " wonder. It launches because no installed timer drives glasswell.marts.counts and"
         " /v1/jurisdictions serves Colorado with no well_count and no measured_on until it has"
