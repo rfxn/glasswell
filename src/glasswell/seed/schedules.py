@@ -213,7 +213,8 @@ TX_JOBS: tuple[dict[str, object], ...] = (
         "run_as": "glasswell",
         "rationale": "The split reads the lease rows the ingest promoted and the membership it"
         " staged, so it reacts to that ingest rather than to a clock of its own. It refuses"
-        " rather than publishing when conservation fails, which is what makes it safe to launch.",
+        " rather than publishing when conservation fails, so a defect stops the mart instead of"
+        " shipping a share that does not sum back to what the operator filed.",
     },
     {
         "job_id": "marts_allocation_backtest",

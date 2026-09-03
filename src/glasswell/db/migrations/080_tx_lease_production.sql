@@ -466,7 +466,8 @@ select j.job_id, j.label, j.kind, j.entry_point, j.argv, j.anchor_source_id, j.j
      'glasswell.marts.tx_allocation', array[]::text[], 'tx_g10_gse10', 'TX'::text,
      'The split reads the lease rows the ingest promoted and the membership it staged, so it'
      ' reacts to that ingest rather than to a clock of its own. It refuses rather than'
-     ' publishing when conservation fails, which is what makes it safe to launch.'::text),
+     ' publishing when conservation fails, so a defect stops the mart instead of shipping a'
+     ' share that does not sum back to what the operator filed.'::text),
     ('marts_allocation_backtest', 'Allocation method study', 'mart',
      'glasswell.marts.allocation_backtest', array[]::text[], 'mt_bogc_pru_production',
      'MT'::text,

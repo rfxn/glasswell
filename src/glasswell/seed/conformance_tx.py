@@ -1281,9 +1281,10 @@ TX_CADENCE_DECISIONS: dict[str, dict[str, str]] = {
         " splits, never on a clock of its own.",
         "rationale": "The split is a function of the lease volumes and the crosswalk vintage,"
         " so a run over unchanged inputs recomputes the same shares and republishes the same"
-        " derivation. It is safe to launch rather than observe because it refuses rather than"
-        " publishing when conservation fails: a defect stops the mart instead of shipping a"
-        " share that does not sum back to what the operator filed.",
+        " derivation. It refuses rather than publishing when conservation fails: a defect stops"
+        " the mart instead of shipping a share that does not sum back to what the operator"
+        " filed. That is what will make it safe to launch when the launch flip lands; until"
+        " then this row observes, like every other row the seed resolves.",
     },
     "marts_allocation_backtest": {
         "rule": "Re-score the method study after the Montana ingest whose two grains it is"
