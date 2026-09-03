@@ -27,6 +27,15 @@ const MARKS: Record<string, NullSemanticsMark> = {
     className: "gw-state-withheld",
     title: "The regulator withheld this month, usually a confidential well.",
   },
+  // The subject is the lease-month, not this well's month. A series of shares labelled
+  // `reported` says the opposite of the mark three words to its right (M1).
+  lease_reported: {
+    label: "lease reported",
+    className: "gw-state-lease-reported",
+    title:
+      "The operator filed this month for the lease. This well's number is its share of that" +
+      " filing, not a report about this well.",
+  },
 };
 
 /** The four states the API distinguishes; they are never collapsed into one another. */

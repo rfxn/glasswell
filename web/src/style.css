@@ -1449,6 +1449,13 @@ gw-figure {
   border-color: var(--paper);
 }
 
+/* Filed, but by the lease: the reported green, qualified by the paper half so the key cannot
+   show two rows with one swatch and two different subjects (M1). */
+.gw-state-lease-reported {
+  background: linear-gradient(to bottom, var(--oil) 0 50%, var(--paper) 50% 100%);
+  border-color: var(--oil);
+}
+
 .gw-state-no-report {
   background: repeating-linear-gradient(45deg, var(--muted), var(--muted) 2px, transparent 2px, transparent 4px);
   border-color: var(--muted);

@@ -51,6 +51,18 @@
             "$ref": "#/components/schemas/ErrorBounds",
             "description": "Whether the method's error is measured."
           },
+          "incomplete_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The first month inside the regulator's completeness lag. Months from here on are systematically under-filed, and a reader sees a decline rather than an incompleteness unless the chart says so.",
+            "title": "Incomplete From"
+          },
           "leases": {
             "description": "Every lease this wellbore carries. The served series is the sum of its shares; each share is separately addressable at alloc.apply with the lease key.",
             "items": {
@@ -7008,7 +7020,7 @@
                 "type": "null"
               }
             ],
-            "description": "reported, reported_zero, no_report or withheld per point, plus multi_pool_pending where two filings share one pool label and no single row is the well's production.",
+            "description": "reported, reported_zero, no_report or withheld per point, plus multi_pool_pending where two filings share one pool label and no single row is the well's production, and lease_reported where the filing is the lease's and the point is a share of it rather than a report about this well.",
             "title": "Oil Bbl Null Semantics"
           },
           "oil_bbl_report_vintage": {

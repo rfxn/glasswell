@@ -275,3 +275,19 @@ def test_every_month_of_every_served_column_is_addressable(client: TestClient) -
             handle = a_point_handle(client, column, month)
             response = client.get("/v1/explain", params={"h": handle, "depth": "4"})
             assert response.status_code == 200, f"{column} {month}: {response.text}"
+
+
+def test_the_wire_says_the_lease_filed_it_never_that_this_well_reported_it(
+    client: TestClient,
+) -> None:
+    """M1. 300 bbl was not reported: the lease filed 901 and 300 is a computed third of it.
+
+    The glossary term the card itself renders is the contract -- an allocated figure is always
+    labelled allocated and never observed -- and the bare word `reported` on a series in which
+    no well-month was reported is that label, in the one vocabulary the band paints from.
+    """
+    series = envelope(client, f"/v1/wells/{TX_API10}/production")["data"]["series"]
+
+    assert series["oil_bbl_null_semantics"] == ["lease_reported"] * 3
+    assert series["gas_mcf_null_semantics"] == ["lease_reported"] * 3
+    assert "reported" not in set(series["oil_bbl_null_semantics"])

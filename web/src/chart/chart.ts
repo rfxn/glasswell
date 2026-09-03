@@ -322,11 +322,25 @@ function distinctVintages(column: SeriesColumn): string[] {
 }
 
 /** Without a key the band is a strip of colour, and the gap it explains stays ambiguous. */
+/**
+ * The four the API distinguishes, drawn whether or not this well hit them -- they are the
+ * vocabulary, and a reader learns it from the key -- plus any state a served series actually
+ * carries beyond them. A mark on the band with nothing in the key to read it by is a colour
+ * the reader has to guess at.
+ */
+function keyStates(chart: ChartSeries): string[] {
+  const states = new Set<string>(NULL_SEMANTICS_STATES);
+  for (const column of chart.columns) {
+    for (const state of column.nullSemantics) if (state) states.add(state);
+  }
+  return [...states];
+}
+
 function stateKey(chart: ChartSeries, callbacks: ChartCallbacks): HTMLElement {
   const wrapper = document.createElement("p");
   wrapper.className = "gw-state-key";
   const pointer = chart.columns[0] ? `/series/${chart.columns[0].key}_null_semantics` : "";
-  for (const state of NULL_SEMANTICS_STATES) {
+  for (const state of keyStates(chart)) {
     const described = nullSemantics(state);
     const item = document.createElement("span");
     item.className = "gw-state-key-item";
@@ -352,13 +366,15 @@ function stateBand(chart: ChartSeries): HTMLElement {
     row.className = "gw-state-row";
     const name = document.createElement("span");
     name.className = "gw-state-name";
-    name.textContent = column.label;
+    name.textContent = bandSubject(column);
     const cells = document.createElement("div");
     cells.className = "gw-state-cells";
     cells.setAttribute("role", "img");
     cells.setAttribute(
       "aria-label",
-      `${column.label}: what was reported in each of ${chart.months.length} months.` +
+      (leaseGrain(column)
+        ? `${column.label}: what the lease filed in each of ${chart.months.length} months.`
+        : `${column.label}: what was reported in each of ${chart.months.length} months.`) +
         " Use the month stepper below to read any one of them.",
     );
     for (const [index, month] of chart.months.entries()) {
@@ -373,6 +389,19 @@ function stateBand(chart: ChartSeries): HTMLElement {
   // what the first shot showed.
   for (const row of allocationRows(chart)) wrapper.appendChild(row);
   return wrapper;
+}
+
+/** Whether the series was filed at the lease and this well's points are its shares. */
+function leaseGrain(column: SeriesColumn): boolean {
+  return column.allocationClasses.some((state) => state !== "");
+}
+
+/**
+ * The first band's subject, in words, on screen. Two bands under one chart that both read
+ * `Oil` are one claim to a reader; the filing and the share are two.
+ */
+function bandSubject(column: SeriesColumn): string {
+  return leaseGrain(column) ? `${column.label} · lease filing` : column.label;
 }
 
 function mark(column: SeriesColumn, index: number, month: string): HTMLElement {

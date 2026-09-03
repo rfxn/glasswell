@@ -240,7 +240,8 @@ class ProductionSeries(BaseModel):
         description=(
             "reported, reported_zero, no_report or withheld per point, plus"
             " multi_pool_pending where two filings share one pool label and no single row is"
-            " the well's production."
+            " the well's production, and lease_reported where the filing is the lease's and"
+            " the point is a share of it rather than a report about this well."
         ),
     )
     oil_bbl_aggregation: list[str | None] | None = Field(
@@ -782,8 +783,11 @@ def _allocated_response(
             iso(by_month[month]["snapshot_vintage"]) if month in by_month else None
             for month in months
         ]
+        # The subject here is the lease-month, and saying so is the difference between a
+        # filing and an observation of this well: `reported` beside a share says the well's
+        # month was reported, three words from the mark that says it was computed (M1).
         payload[f"{column}_null_semantics"] = [
-            "reported" if month in by_month else None for month in months
+            "lease_reported" if month in by_month else None for month in months
         ]
         payload[f"{column}_aggregation"] = [None for _ in months]
         payload[f"{column}_granularity_by_month"] = [

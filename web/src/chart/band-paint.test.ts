@@ -44,3 +44,14 @@ describe("what the allocation band is painted with", () => {
     expect(new Set(paints).size).toBe(CLASSES.length);
   });
 });
+
+describe("what the state band is painted with", () => {
+  it("draws the lease's filing as its own mark, not as this well's report", () => {
+    // Two rows in one key with one swatch and two subjects is the same defect as two classes
+    // with one encoding: the reader has the words and the picture disagreeing.
+    const lease = paintOf(".gw-state-lease-reported");
+
+    expect(lease).toMatch(/background/);
+    expect(lease).not.toBe(paintOf(".gw-state-reported"));
+  });
+});

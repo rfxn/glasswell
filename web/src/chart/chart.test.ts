@@ -272,40 +272,45 @@ describe("report vintage, one layer down", () => {
   });
 });
 
-describe("the allocation band", () => {
-  function allocated(pm: string[]): ProductionData {
-    const base = production(pm);
-    return {
-      ...base,
-      granularity: "lease_allocated",
-      series: {
-        ...base.series,
-        oil_bbl_granularity_by_month: pm.map((_, index) =>
-          index === 0 ? "well_observed" : "lease_allocated",
-        ),
-        oil_bbl_allocation_class_by_month: pm.map((_, index) => {
-          if (index === 0) return "observed_single_well_lease";
-          if (index === 1) return "allocated_after_status_change";
-          if (index === 2) return "excluded_after_plug";
-          return "allocated_equal_share";
-        }),
-        oil_bbl_eligible_wells_by_month: pm.map((_, index) => (index === 0 ? "1" : "3")),
-        gas_mcf_granularity_by_month: pm.map(() => "well_observed"),
-        gas_mcf_allocation_class_by_month: pm.map(() => "observed_gas_well"),
-        gas_mcf_eligible_wells_by_month: pm.map(() => "1"),
-      },
-      allocation: {
-        model_id: "alloc_v0_2026_09",
-        rule_id: "cr_tx_production_grain_1",
-        leases: ["G-08-000303", "O-08-000101"],
-        membership_vintage: "2026-08-27",
-        incomplete_from: pm[pm.length - 1] ?? null,
-        error_bounds: { outcome: "not_measured", measured_by_rule: "cr_alloc_v0_error_bounds_1" },
-      },
-    };
-  }
+function allocated(pm: string[]): ProductionData {
+  const base = production(pm);
+  return {
+    ...base,
+    granularity: "lease_allocated",
+    series: {
+      ...base.series,
+      // What the allocated arm serves: the subject of the state band is the lease-month,
+      // and the well's own month was never reported at all.
+      oil_bbl_null_semantics: pm.map(() => "lease_reported"),
+      gas_mcf_null_semantics: pm.map(() => "lease_reported"),
+      oil_bbl_granularity_by_month: pm.map((_, index) =>
+        index === 0 ? "well_observed" : "lease_allocated",
+      ),
+      oil_bbl_allocation_class_by_month: pm.map((_, index) => {
+        if (index === 0) return "observed_single_well_lease";
+        if (index === 1) return "allocated_after_status_change";
+        if (index === 2) return "excluded_after_plug";
+        return "allocated_equal_share";
+      }),
+      oil_bbl_eligible_wells_by_month: pm.map((_, index) => (index === 0 ? "1" : "3")),
+      gas_mcf_granularity_by_month: pm.map(() => "well_observed"),
+      gas_mcf_allocation_class_by_month: pm.map(() => "observed_gas_well"),
+      gas_mcf_eligible_wells_by_month: pm.map(() => "1"),
+    },
+    allocation: {
+      model_id: "alloc_v0_2026_09",
+      rule_id: "cr_tx_production_grain_1",
+      leases: ["G-08-000303", "O-08-000101"],
+      membership_vintage: "2026-08-27",
+      incomplete_from: pm[pm.length - 1] ?? null,
+      error_bounds: { outcome: "not_measured", measured_by_rule: "cr_alloc_v0_error_bounds_1" },
+    },
+  };
+}
 
-  const chart = toChartSeries(allocated(months("2024-01", 6)));
+const allocatedChart = toChartSeries(allocated(months("2024-01", 6)));
+
+describe("the allocation band", () => {
 
   it("draws no second band on a jurisdiction that reports at the well", () => {
     renderChart(host, dense, callbacks);
@@ -315,7 +320,7 @@ describe("the allocation band", () => {
   });
 
   it("draws a second band in its own vocabulary where a class reached the wire", () => {
-    renderChart(host, chart, callbacks);
+    renderChart(host, allocatedChart, callbacks);
     // Inside the state strip, not beside it: `align` writes the plot's gutters onto that
     // element as custom properties, and a sibling inherits neither — which is a band drawn to
     // a different width from the plot it sits under.
@@ -329,7 +334,7 @@ describe("the allocation band", () => {
   });
 
   it("gives each month the class it was actually arrived at under", () => {
-    renderChart(host, chart, callbacks);
+    renderChart(host, allocatedChart, callbacks);
     const row = host.querySelectorAll(".gw-alloc-row")[0];
     const marks = [...(row?.querySelectorAll(".gw-alloc-mark") ?? [])];
 
@@ -340,7 +345,7 @@ describe("the allocation band", () => {
   });
 
   it("names the divisor on a mark, so a share is never a bare number", () => {
-    renderChart(host, chart, callbacks);
+    renderChart(host, allocatedChart, callbacks);
     const marks = [...host.querySelectorAll(".gw-alloc-row .gw-alloc-mark")];
 
     expect(marks[3]?.getAttribute("title")).toContain("over 3 wells");
@@ -349,7 +354,7 @@ describe("the allocation band", () => {
   });
 
   it("keys the band with all six classes, including the ones this well never hit", () => {
-    renderChart(host, chart, callbacks);
+    renderChart(host, allocatedChart, callbacks);
     const key = host.querySelector(".gw-alloc-key");
 
     expect(key?.querySelectorAll(".gw-alloc-mark").length).toBe(6);
@@ -358,7 +363,7 @@ describe("the allocation band", () => {
   });
 
   it("shades the months inside the completeness lag in both bands", () => {
-    renderChart(host, chart, callbacks);
+    renderChart(host, allocatedChart, callbacks);
     const shaded = host.querySelectorAll(".gw-month-incomplete");
 
     // The last month of each of the four rows: two streams, each with a state band and an
@@ -368,7 +373,7 @@ describe("the allocation band", () => {
   });
 
   it("says a plugged well's month is a share rather than letting it read as reported", () => {
-    renderChart(host, chart, callbacks);
+    renderChart(host, allocatedChart, callbacks);
     const marks = [...host.querySelectorAll(".gw-alloc-row .gw-alloc-mark")];
 
     expect(marks[1]?.getAttribute("title")).toContain("allocated, status changed");
@@ -378,7 +383,7 @@ describe("the allocation band", () => {
     // The band says it across the whole series. The readout is where a share would otherwise
     // sit beside the word "reported" with nothing to say it is an estimate, and that is the
     // one place a reader is looking hardest.
-    renderChart(host, chart, callbacks);
+    renderChart(host, allocatedChart, callbacks);
     const rows = [...host.querySelectorAll(".gw-readout-row")];
     const oil = rows.find((row) => (row as HTMLElement).dataset["stream"] === "oil");
 
@@ -390,5 +395,49 @@ describe("the allocation band", () => {
     renderChart(host, dense, callbacks);
 
     expect(host.querySelector(".gw-readout-alloc")).toBeNull();
+  });
+});
+
+describe("the two bands name two subjects", () => {
+  it("says the first band is the lease's filing, not this well's month", () => {
+    renderChart(host, allocatedChart, callbacks);
+    const names = [...host.querySelectorAll(".gw-state-row .gw-state-name")].map(
+      (node) => node.textContent,
+    );
+
+    // Two rows per stream: what the lease filed, and how this well's share was arrived at.
+    expect(names).toEqual([
+      "Oil · lease filing",
+      "Gas · lease filing",
+      "Oil · how",
+      "Gas · how",
+    ]);
+  });
+
+  it("never stands the bare word reported beside a share in the readout", () => {
+    renderChart(host, allocatedChart, callbacks);
+    const rows = [...host.querySelectorAll(".gw-readout-row")];
+    const oil = rows.find((row) => (row as HTMLElement).dataset["stream"] === "oil");
+
+    expect(oil?.querySelector(".gw-readout-state")?.textContent?.trim()).toBe("lease reported");
+    expect(oil?.querySelector(".gw-readout-alloc")?.textContent).toContain("allocated");
+  });
+
+  it("keys the state it drew, so no mark on the band is a colour to guess at", () => {
+    renderChart(host, allocatedChart, callbacks);
+    const key = host.querySelector(".gw-state-key");
+
+    expect(key?.textContent).toContain("lease reported");
+    expect(key?.querySelectorAll(".gw-state-mark").length).toBe(5);
+  });
+
+  it("leaves the four-state key and the plain row name on an observed jurisdiction", () => {
+    renderChart(host, dense, callbacks);
+    const names = [...host.querySelectorAll(".gw-state-row .gw-state-name")].map(
+      (node) => node.textContent,
+    );
+
+    expect(names).toEqual(["Oil", "Gas"]);
+    expect(host.querySelectorAll(".gw-state-key .gw-state-mark").length).toBe(4);
   });
 });
