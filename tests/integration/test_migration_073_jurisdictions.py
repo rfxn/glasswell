@@ -31,6 +31,7 @@ from glasswell.seed.jurisdictions import (
     JURISDICTIONS,
     REGISTERED_ON,
     RESTATED_ON,
+    SUPERSESSIONS,
     seed_jurisdictions,
 )
 from tests.support.seed import seed_derivation
@@ -123,6 +124,13 @@ def rule_row_sources() -> tuple[str, ...]:
 
 
 RULE_ROW_SOURCES = rule_row_sources()
+
+# Three families write a registration row, not two: the founding set, the restatement, and a
+# supersession that carries one jurisdiction's registration forward at a new clock pair. An
+# equality that knows two of them fails the day a track appends the third (gate-tx H-4).
+REGISTRATION_ROWS = (
+    len(JURISDICTIONS) + len(JURISDICTION_RESTATEMENTS) + len(SUPERSESSIONS)
+)
 
 
 @pytest.fixture
@@ -239,7 +247,7 @@ def test_running_the_migration_twice_changes_nothing(
         cursor.execute(migration_sql(MIGRATION))
         cursor.execute(migration_sql(MIGRATION))
         cursor.execute("select count(*) from lineage.jurisdictions")
-        assert cursor.fetchone()[0] == len(JURISDICTIONS) + len(JURISDICTION_RESTATEMENTS)
+        assert cursor.fetchone()[0] == REGISTRATION_ROWS
         cursor.execute("select count(*) from lineage.jurisdiction_rules")
         assert cursor.fetchone()[0] == len(JURISDICTION_RULES_AS_FOUNDED)
 
@@ -436,7 +444,7 @@ def test_the_api_role_reads_every_object_and_the_resolver(db: psycopg.Connection
         )
         assert cursor.fetchone()[0] == len(JURISDICTIONS)
         cursor.execute("select count(*) from lineage.jurisdictions")
-        assert cursor.fetchone()[0] == len(JURISDICTIONS) + len(JURISDICTION_RESTATEMENTS)
+        assert cursor.fetchone()[0] == REGISTRATION_ROWS
 
 
 def test_only_the_pipeline_role_appends_a_measurement(db: psycopg.Connection) -> None:
@@ -482,10 +490,15 @@ def test_a_thousand_distinct_as_of_values_leave_one_cache_entry(
         registry = load_jurisdictions(db, REGISTERED_ON + timedelta(days=offset))
         assert sorted(row.jurisdiction_code for row in registry) == codes
 
-    # One entry per publication instant the registry actually has, which is now two: the
-    # founding day and the restatement. The property is that the key space is the registry's
-    # own history, not that the history has one entry in it.
-    assert len(_CACHE) == 2, sorted(_CACHE)
+    # One entry per publication instant the registry actually has. Read from the registry
+    # rather than counted here: the property is that the key space is the registry's own
+    # history, and a literal makes every appended supersession look like a cache leak.
+    with db.cursor() as cursor:
+        cursor.execute("select count(distinct published_at) from lineage.jurisdictions")
+        instants = int(cursor.fetchone()[0])
+
+    assert instants >= 3, "the registry has too little history for this to prove anything"
+    assert len(_CACHE) == instants, sorted(_CACHE)
     clear_jurisdiction_cache()
 
 
