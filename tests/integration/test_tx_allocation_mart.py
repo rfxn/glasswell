@@ -20,12 +20,13 @@ import pytest
 from glasswell.allocation.v0 import MODEL_ID
 from glasswell.ingest import tx_pdq
 from glasswell.ingest.tx_pdq import WELL_COMPLETION_MEMBER, _member_rows, api10_from
-from glasswell.lineage.capture import lineage_session
+from glasswell.lineage.capture import derive, lineage_session
+from glasswell.lineage.models import OutputSpec
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.marts import tx_allocation
 from glasswell.marts.tx_allocation import ConservationError
 from glasswell.seed import seed_all
-from tests.support.seed import seed_derivation, seed_manifest, seed_well
+from tests.support.seed import FIXTURE_ENV, seed_derivation, seed_manifest, seed_well
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 SAMPLE = FIXTURES / "tx_pdq" / "PDQ_DSV_sample.zip"
@@ -357,3 +358,124 @@ def test_a_second_refresh_rebuilds_rather_than_appending(allocated, loaded, line
 
     assert scalar(loaded, "select count(*) from marts.tx_allocated_production") == before
     assert again.derivation_id == allocated.derivation_id
+
+
+# V-2a's own inputs: the PDQ crosswalk the dump promotes, and the EWA export's links kept
+# beside it and never merged (cr_tx_ewa_role_1). The fixture loads the first and not the
+# second, which is the state of an instance that has never run the wellbore ingest.
+VALIDATOR_SOURCE = "tx_w10_wlf607"
+
+
+@pytest.fixture
+def with_the_validator_crosswalk(loaded: psycopg.Connection):
+    """One EWA link per PDQ well, with one wellbore deliberately mapped to another lease."""
+    manifest = seed_manifest(
+        loaded, sha256="d" * 64, source_id=VALIDATOR_SOURCE, source_key="wlf607.zip"
+    )
+    with lineage_session(recorder=PostgresRecorder(loaded), environment=FIXTURE_ENV), derive(
+        "canonical.promote",
+        output=OutputSpec(
+            store="postgres",
+            dataset="canonical.well_lease_links",
+            partition={"source_id": VALIDATOR_SOURCE},
+        ),
+        params={"link_role": "validator_a"},
+    ) as context:
+        context.set_output_hash("d" * 64)
+    derivation = context.derivation_id
+    with loaded.cursor() as cursor:
+        cursor.execute(
+            "select api10, lease_key from canonical.lease_membership"
+            " where link_role = 'canonical_crosswalk' order by api10, lease_key"
+        )
+        membership = cursor.fetchall()
+        disagreeing = membership[0][0]
+        cursor.executemany(
+            "insert into canonical.well_lease_links (api10, lease_key, oil_gas_code,"
+            " district_no, lease_no, link_role, source_id, effective_from,"
+            " source_manifest_id, derivation_id)"
+            " values (%(api10)s, %(lease_key)s, %(code)s, %(district)s, %(lease_no)s,"
+            " 'validator_a', %(source)s, %(vintage)s, %(manifest)s, %(derivation)s)"
+            " on conflict do nothing",
+            [
+                {
+                    "api10": api10,
+                    # The disagreement the block exists to measure: the same wellbore under a
+                    # different lease key in the other regulator-published crosswalk.
+                    "lease_key": f"{lease_key}-B" if api10 == disagreeing else lease_key,
+                    "code": lease_key.split("-")[0],
+                    "district": lease_key.split("-")[1],
+                    "lease_no": lease_key.split("-")[2],
+                    "source": VALIDATOR_SOURCE,
+                    "vintage": SPINE_VINTAGE,
+                    "manifest": manifest,
+                    "derivation": derivation,
+                }
+                for api10, lease_key in membership
+            ],
+        )
+    loaded.commit()
+    return loaded
+
+
+def test_no_residual_is_published_where_only_one_crosswalk_is_loaded(
+    allocated, loaded
+) -> None:
+    """The fixture loads the PDQ crosswalk and not the EWA export, which is the state of an
+    instance that has never run the wellbore ingest. Every well would be "in one crosswalk and
+    not the other" -- a measured 100 percent disagreement over an input nobody loaded."""
+    assert allocated.crosswalk_rows == 0
+    assert scalar(loaded, "select count(*) from marts.tx_crosswalk_residual") == 0
+
+
+def test_the_residual_is_measured_per_district_where_both_crosswalks_are_loaded(
+    with_the_validator_crosswalk, lineage_env
+) -> None:
+    """V-2a: wells assigned to different lease keys, as counts, shares and a district
+    breakdown. It reports and does not gate, so a disagreement is a row and not a refusal."""
+    db = with_the_validator_crosswalk
+    with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env):
+        report = tx_allocation.refresh_tx_allocation(db)
+    db.commit()
+
+    residual = rows(
+        db,
+        "select district_no, disagreement_kind, well_count, share"
+        "  from marts.tx_crosswalk_residual order by district_no, disagreement_kind",
+    )
+
+    assert report.crosswalk_rows == len(residual) > 0
+    assert {row[1] for row in residual} <= {
+        "only_in_pdq",
+        "only_in_validator",
+        "different_lease_key",
+    }
+    assert "different_lease_key" in {row[1] for row in residual}
+    for _district, _kind, count, share in residual:
+        assert count > 0
+        assert Decimal(0) < Decimal(share) <= Decimal(1)
+
+
+def test_the_residual_cites_both_crosswalks_it_measured(
+    with_the_validator_crosswalk, lineage_env
+) -> None:
+    """A residual whose chain names only one of the two crosswalks is a measurement a reader
+    cannot check: the disagreement is between them."""
+    db = with_the_validator_crosswalk
+    with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env):
+        report = tx_allocation.refresh_tx_allocation(db)
+    db.commit()
+
+    sources = {
+        row[0]
+        for row in rows(
+            db,
+            "select distinct d.output_dataset from lineage.derivation_inputs i"
+            "  join lineage.derivations d on d.derivation_id = i.ref_id"
+            " where i.derivation_id = %s",
+            (report.derivation_id,),
+        )
+    }
+
+    assert "canonical.lease_membership" in sources
+    assert "canonical.well_lease_links" in sources

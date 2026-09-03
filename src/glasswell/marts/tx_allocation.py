@@ -122,6 +122,7 @@ class AllocationRefresh:
     membership_vintage: date | None
     shares: int = 0
     ledger_rows: int = 0
+    crosswalk_rows: int = 0
     lease_months: int = 0
     classes: Mapping[str, int] = field(default_factory=dict)
     causes: Mapping[str, int] = field(default_factory=dict)
@@ -141,6 +142,7 @@ class AllocationRefresh:
             else None,
             "shares": self.shares,
             "ledger_rows": self.ledger_rows,
+            "crosswalk_rows": self.crosswalk_rows,
             "lease_months": self.lease_months,
             "classes": dict(self.classes),
             "causes": dict(self.causes),
@@ -200,6 +202,81 @@ select max(report_vintage) from canonical.production_monthly
 _LEASE_DERIVATIONS = """
 select distinct derivation_id from canonical.production_monthly
  where entity_type = 'lease' and source_id = %(source_id)s
+"""
+
+# V-2a as the spec puts it: "wells in one crosswalk and not the other, and wells assigned to
+# different lease keys, as counts, shares and a district breakdown". The two crosswalks are
+# retained unmerged (cr_tx_ewa_role_1) and this is the only measurement of identity-mapping
+# error the system has. It reports; it does not gate.
+#
+# Written in this pass rather than by a job of its own: it is a measurement over the same
+# membership the split reads, at the same vintage, and a second job would be a second clock
+# over one input.
+_CROSSWALK_DERIVATIONS = """
+select distinct derivation_id from canonical.lease_membership
+ where jurisdiction_code = %(jurisdiction)s and link_role = 'canonical_crosswalk'
+   and effective_from = (select max(effective_from) from canonical.lease_membership
+                          where jurisdiction_code = %(jurisdiction)s
+                            and link_role = 'canonical_crosswalk')
+union
+select distinct derivation_id from canonical.well_lease_links
+ where link_role = 'validator_a'
+   and effective_from = (select max(effective_from) from canonical.well_lease_links
+                          where link_role = 'validator_a')
+"""
+
+# Both sides, counted before anything is written: with one crosswalk loaded and the other not,
+# every well is "in one and not the other" and the block would publish 100 percent
+# disagreement -- a measured residual over an input nobody loaded. An absent side is an absent
+# measurement, and the validators block already says so with its own reason.
+_CROSSWALK_SIDES = """
+select
+    (select count(*) from canonical.lease_membership
+      where jurisdiction_code = %(jurisdiction)s and link_role = 'canonical_crosswalk') as pdq,
+    (select count(*) from canonical.well_lease_links
+      where link_role = 'validator_a') as validator
+"""
+
+_INSERT_CROSSWALK = """
+with pdq as (
+    select api10, array_agg(distinct lease_key order by lease_key) as keys,
+           min(split_part(lease_key, '-', 2)) as district_no
+      from canonical.lease_membership
+     where jurisdiction_code = %(jurisdiction)s and link_role = 'canonical_crosswalk'
+       and effective_from = (select max(effective_from) from canonical.lease_membership
+                              where jurisdiction_code = %(jurisdiction)s
+                                and link_role = 'canonical_crosswalk')
+     group by api10
+),
+validator as (
+    select api10, array_agg(distinct lease_key order by lease_key) as keys,
+           min(district_no) as district_no
+      from canonical.well_lease_links
+     where link_role = 'validator_a'
+       and effective_from = (select max(effective_from) from canonical.well_lease_links
+                              where link_role = 'validator_a')
+     group by api10
+),
+joined as (
+    select coalesce(v.district_no, p.district_no) as district_no,
+           case
+               when v.keys is null then 'only_in_pdq'
+               when p.keys is null then 'only_in_validator'
+               when p.keys <> v.keys then 'different_lease_key'
+               else 'agree'
+           end as disagreement_kind
+      from pdq p full outer join validator v on v.api10 = p.api10
+),
+totals as (
+    select district_no, count(*)::numeric as wells from joined group by district_no
+)
+insert into marts.tx_crosswalk_residual
+    (district_no, disagreement_kind, well_count, share, snapshot_vintage, derivation_id)
+select j.district_no, j.disagreement_kind, count(*),
+       round(count(*)::numeric / t.wells, 4), %(snapshot_vintage)s, %(derivation_id)s
+  from joined j join totals t on t.district_no = j.district_no
+ where j.disagreement_kind <> 'agree' and j.district_no is not null
+ group by j.district_no, j.disagreement_kind, t.wells
 """
 
 _INSERT_SHARE = """
@@ -415,6 +492,9 @@ def refresh_tx_allocation(connection: psycopg.Connection) -> AllocationRefresh:
         )
         found = cursor.fetchone()
         latest_month = found[0] if found else None
+    with connection.cursor() as cursor:
+        cursor.execute(_CROSSWALK_DERIVATIONS, {"jurisdiction": jurisdiction})
+        crosswalk_derivations = sorted(row[0] for row in cursor.fetchall())
     if not lease_derivations:
         raise ConservationError(
             "no Texas lease production is promoted, so there is nothing to allocate"
@@ -461,7 +541,7 @@ def refresh_tx_allocation(connection: psycopg.Connection) -> AllocationRefresh:
         },
         inputs=[
             InputRef(kind="derivation", ref_id=derivation_id)
-            for derivation_id in lease_derivations
+            for derivation_id in (*lease_derivations, *crosswalk_derivations)
         ],
         rules=[ALLOCATION_RULE, LIQUIDS_RULE, GAS_RULE, GRAIN_RULE, ERROR_RULE],
     ) as context:
@@ -471,6 +551,7 @@ def refresh_tx_allocation(connection: psycopg.Connection) -> AllocationRefresh:
     with connection.cursor() as cursor:
         cursor.execute("delete from marts.tx_allocated_production")
         cursor.execute("delete from marts.tx_allocation_ledger")
+        cursor.execute("delete from marts.tx_crosswalk_residual")
         cursor.executemany(
             _INSERT_SHARE,
             [{**row, "derivation_id": context.derivation_id} for row in shares],
@@ -479,6 +560,19 @@ def refresh_tx_allocation(connection: psycopg.Connection) -> AllocationRefresh:
             _INSERT_LEDGER,
             [{**row, "derivation_id": context.derivation_id} for row in ledger],
         )
+        cursor.execute(_CROSSWALK_SIDES, {"jurisdiction": jurisdiction})
+        pdq_rows, validator_rows = cursor.fetchone()
+        crosswalk_rows = 0
+        if pdq_rows and validator_rows:
+            cursor.execute(
+                _INSERT_CROSSWALK,
+                {
+                    "jurisdiction": jurisdiction,
+                    "snapshot_vintage": snapshot_vintage,
+                    "derivation_id": context.derivation_id,
+                },
+            )
+            crosswalk_rows = cursor.rowcount
 
     session = current_session()
     emit(
@@ -486,7 +580,12 @@ def refresh_tx_allocation(connection: psycopg.Connection) -> AllocationRefresh:
         "mart.refreshed",
         subject_type="derivation",
         subject_id=context.derivation_id,
-        payload={"shares": len(shares), "ledger_rows": len(ledger), **measured},
+        payload={
+            "shares": len(shares),
+            "ledger_rows": len(ledger),
+            "crosswalk_rows": crosswalk_rows,
+            **measured,
+        },
         correlation_id=session.correlation_id,
         occurred_at=session.clock.now(),
     )
@@ -496,6 +595,7 @@ def refresh_tx_allocation(connection: psycopg.Connection) -> AllocationRefresh:
         membership_vintage=membership_vintage,
         shares=len(shares),
         ledger_rows=len(ledger),
+        crosswalk_rows=crosswalk_rows,
         lease_months=int(measured["lease_months"]),
         classes=measured["classes"],
         causes=measured["causes"],
