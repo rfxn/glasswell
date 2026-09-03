@@ -44,6 +44,116 @@
         "title": "AcceptanceGate",
         "type": "object"
       },
+      "AllocationBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "error_bounds": {
+            "$ref": "#/components/schemas/ErrorBounds",
+            "description": "Whether the method's error is measured."
+          },
+          "leases": {
+            "description": "Every lease this wellbore carries. The served series is the sum of its shares; each share is separately addressable at alloc.apply with the lease key.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Leases",
+            "type": "array"
+          },
+          "membership_vintage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The crosswalk snapshot the shares were resolved against.",
+            "title": "Membership Vintage"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The versioned artifact that computed every share in this series.",
+            "title": "Model Id"
+          },
+          "rule_id": {
+            "description": "The R8 decision that admits a well-level figure here.",
+            "title": "Rule Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_id",
+          "rule_id",
+          "leases",
+          "membership_vintage",
+          "error_bounds"
+        ],
+        "title": "AllocationBlock",
+        "type": "object"
+      },
+      "AllocationValidators": {
+        "additionalProperties": false,
+        "properties": {
+          "_lineage": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Dotted path to derivation handle (SB-07 \u00a79.1b).",
+            "title": "Lineage",
+            "type": "object"
+          },
+          "_units": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Dotted path to unit.",
+            "title": "Units",
+            "type": "object"
+          },
+          "blocks": {
+            "description": "conservation, crosswalk and independent_truth, always all three.",
+            "items": {
+              "$ref": "#/components/schemas/ValidatorBlock"
+            },
+            "title": "Blocks",
+            "type": "array"
+          },
+          "jurisdiction_code": {
+            "description": "The jurisdiction these residuals were measured over.",
+            "title": "Jurisdiction Code",
+            "type": "string"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The allocation model the residuals were measured against.",
+            "title": "Model Id",
+            "x-glasswell-glossary": "gt_allocation_allocation_v0"
+          }
+        },
+        "required": [
+          "jurisdiction_code",
+          "blocks",
+          "_lineage",
+          "_units"
+        ],
+        "title": "AllocationValidators",
+        "type": "object"
+      },
       "AppliedBy": {
         "properties": {
           "applied_rows": {
@@ -1351,6 +1461,70 @@
         "title": "CreatedUser",
         "type": "object"
       },
+      "CumulativeAllocation": {
+        "additionalProperties": false,
+        "description": "What the allocated months contribute, stated beside the total and never after it.",
+        "properties": {
+          "basis": {
+            "description": "The months behind this total are shares, not observations.",
+            "title": "Basis",
+            "type": "string"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The model that computed every share in them.",
+            "title": "Model Id"
+          },
+          "months": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FigureModel"
+            },
+            "description": "Allocated months per stream, each a figure with a handle.",
+            "title": "Months",
+            "type": "object"
+          },
+          "rule_id": {
+            "description": "The registered decision that admits a well-grain row.",
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "share": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FigureModel"
+            },
+            "description": "The share of each stream's total the allocated months carry.",
+            "title": "Share",
+            "type": "object"
+          },
+          "shares_counted": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FigureModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How many stored per-lease shares the well's totals were summed over."
+          }
+        },
+        "required": [
+          "basis",
+          "model_id",
+          "rule_id",
+          "months",
+          "share"
+        ],
+        "title": "CumulativeAllocation",
+        "type": "object"
+      },
       "CumulativeBand": {
         "properties": {
           "p10": {
@@ -2104,6 +2278,39 @@
           "model_id"
         ],
         "title": "DerivationSummary",
+        "type": "object"
+      },
+      "EnvelopeModel_AllocationValidators_": {
+        "properties": {
+          "_explain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only when `?explain=true` was sent: one SB-07 \u00a79.3 chain per derivation handle in this response, keyed by the handle itself. It sits beside `data` rather than inside it because it is keyed by handle, not by pointer, and because the flag must add nothing to the payload it explains (SB-07 \u00a79.2).",
+            "title": "Explain"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AllocationValidators"
+          },
+          "links": {
+            "$ref": "#/components/schemas/LinksModel"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MetaModel"
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "links"
+        ],
+        "title": "EnvelopeModel[AllocationValidators]",
         "type": "object"
       },
       "EnvelopeModel_Chains_": {
@@ -3711,6 +3918,74 @@
           "links"
         ],
         "title": "EnvelopeModel[list[WellSummary]]",
+        "type": "object"
+      },
+      "ErrorBounds": {
+        "additionalProperties": false,
+        "description": "4F.5 as amended: a bound, or a served statement that no transferable one exists.\n\n`not_measured` names the study that will close it rather than omitting the field, which\nmakes the absence a resolvable fact instead of a gap a reader has to notice. A band\nmeasured on another regulator's leases over a horizon nobody has shown to match would be\na naked number with a decoration on it.",
+        "properties": {
+          "bed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The jurisdiction it was measured on.",
+            "title": "Bed"
+          },
+          "error_hi": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Upper bound, once measured.",
+            "title": "Error Hi"
+          },
+          "error_lo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lower bound, once measured.",
+            "title": "Error Lo"
+          },
+          "measured_by_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The rule that measures it, whether or not it has yet.",
+            "title": "Measured By Rule"
+          },
+          "outcome": {
+            "description": "Whether a transferable bound has been measured for this model.",
+            "enum": [
+              "not_measured",
+              "measured"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "title": "ErrorBounds",
         "type": "object"
       },
       "ErrorCode": {
@@ -6320,6 +6595,17 @@
             "title": "Units",
             "type": "object"
           },
+          "allocation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AllocationBlock"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only where the series is an allocation. It names the model that computed it, the rule that admits it, the leases the shares came from, the crosswalk vintage they were resolved against, and whether a transferable error bound has been measured."
+          },
           "api10": {
             "description": "Ten-digit API well number.",
             "title": "Api10",
@@ -6490,6 +6776,75 @@
             "description": "Aggregation per gas point; same vocabulary as oil.",
             "title": "Gas Mcf Aggregation"
           },
+          "gas_mcf_allocation_class_by_month": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Allocation class per gas point; same vocabulary as oil.",
+            "title": "Gas Mcf Allocation Class By Month",
+            "x-glasswell-glossary": "gt_allocation_allocation_v0"
+          },
+          "gas_mcf_eligible_wells_by_month": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Divisor per gas point; same meaning as oil.",
+            "title": "Gas Mcf Eligible Wells By Month",
+            "x-glasswell-not-a-figure": "Divisor. The count of wells a share was computed over is part of the method, not a measured quantity of anything."
+          },
+          "gas_mcf_granularity_by_month": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Granularity per gas point; same vocabulary as oil.",
+            "title": "Gas Mcf Granularity By Month",
+            "x-glasswell-glossary": "gt_granularity"
+          },
           "gas_mcf_null_semantics": {
             "anyOf": [
               {
@@ -6571,6 +6926,75 @@
             ],
             "description": "sum_over_pools where the point is the exact sum of the well's pool rows under cr_nd_pool_rollup_1; null where the month is a single filing.",
             "title": "Oil Bbl Aggregation"
+          },
+          "oil_bbl_allocation_class_by_month": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "observed_gas_well, observed_single_well_lease, allocated_equal_share, allocated_after_status_change or excluded_after_plug per oil point.",
+            "title": "Oil Bbl Allocation Class By Month",
+            "x-glasswell-glossary": "gt_allocation_allocation_v0"
+          },
+          "oil_bbl_eligible_wells_by_month": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How many wells the lease volume was divided among, per oil point.",
+            "title": "Oil Bbl Eligible Wells By Month",
+            "x-glasswell-not-a-figure": "Divisor. The count of wells a share was computed over is part of the method, not a measured quantity of anything."
+          },
+          "oil_bbl_granularity_by_month": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "well_observed or lease_allocated per oil point. Authoritative: the scalar `granularity` reports the series' dominant class.",
+            "title": "Oil Bbl Granularity By Month",
+            "x-glasswell-glossary": "gt_granularity"
           },
           "oil_bbl_null_semantics": {
             "anyOf": [
@@ -9054,6 +9478,47 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "ValidatorBlock": {
+        "additionalProperties": true,
+        "properties": {
+          "name": {
+            "description": "Which residual this block measures.",
+            "title": "Name",
+            "type": "string"
+          },
+          "outcome": {
+            "description": "measured where the block carries figures, no_independent_truth where no control exists to compare against, or not_available where the mart has not been built.",
+            "title": "Outcome",
+            "type": "string"
+          },
+          "reasons": {
+            "description": "Why an outcome that is not `measured` is the honest answer.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The decision this block reports on.",
+            "title": "Rule Id"
+          }
+        },
+        "required": [
+          "name",
+          "outcome"
+        ],
+        "title": "ValidatorBlock",
+        "type": "object"
+      },
       "Vintage": {
         "properties": {
           "_lineage": {
@@ -9274,6 +9739,17 @@
       },
       "WellCumulatives": {
         "properties": {
+          "allocation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CumulativeAllocation"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only where allocated months contribute. A total that sums them without saying so is the naked number this block exists to prevent."
+          },
           "api10": {
             "description": "Ten-digit API well number.",
             "title": "Api10",
@@ -9285,7 +9761,7 @@
             "description": "The month classes each total is taken over."
           },
           "coverage_outcome": {
-            "description": "observed, or never_reported where the well has filed nothing at all.",
+            "description": "observed, never_reported where the well has filed nothing at all, or observed_with_allocated where some of the months behind the total are shares.",
             "title": "Coverage Outcome",
             "type": "string"
           },
@@ -9301,7 +9777,7 @@
             "description": "The three totals; null where the well has never filed anything."
           },
           "granularity": {
-            "description": "well_observed; these are regulator filings summed, never allocated.",
+            "description": "well_observed where every month behind the total is a regulator filing; lease_allocated where the jurisdiction files at the lease and the well-grain months are shares. Never silently one when it is the other.",
             "title": "Granularity",
             "type": "string",
             "x-glasswell-glossary": "gt_granularity"
@@ -17740,6 +18216,156 @@
         }
       }
     },
+    "/v1/validators/allocation": {
+      "get": {
+        "description": "Three residual ledgers for one jurisdiction's allocation. `conservation` is the invariant: the split is exact by construction, so what is served is how much volume had no eligible well to carry it, decomposed by a closed cause vocabulary, plus the share carried by wells whose status changed without a filed date. `crosswalk` is the disagreement between the two regulator-published crosswalks, which is the only measurement of identity-mapping error this system has; it reports and does not gate. `independent_truth` returns `no_independent_truth` with its reasons enumerated, because the regulator publishes no per-well volume to compare against. Where a method study exists it rides in that block as a control on the model, which is a different claim from a control on these figures. Every count and share is a figure with a handle.",
+        "operationId": "get_allocation_validators",
+        "parameters": [
+          {
+            "description": "Jurisdiction code, e.g. the registration whose allocation to report.",
+            "in": "query",
+            "name": "jurisdiction",
+            "required": true,
+            "schema": {
+              "description": "Jurisdiction code, e.g. the registration whose allocation to report.",
+              "maxLength": 2,
+              "minLength": 2,
+              "pattern": "^[A-Z]{2}$",
+              "title": "Jurisdiction",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+            "in": "query",
+            "name": "explain",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Resolve every derivation handle this response carries and inline the chains under `_explain`, keyed by handle. Values are unchanged: the flag adds a block and moves nothing else, so a cached or replayed comparison is unaffected by it (SB-07 \u00a79.2).",
+              "title": "Explain",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+            "in": "query",
+            "name": "explain_depth",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many levels back an inlined chain walks: 3 by default, 8 at most. Over the cap is refused, never clamped. A chain that stops short says so in its own `truncated` field.",
+              "maximum": 8,
+              "minimum": 1,
+              "title": "Explain Depth",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeModel_AllocationValidators_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "not_found": {
+                    "summary": "Not found",
+                    "value": {
+                      "detail": "The resource does not exist, or exists but is not visible to this principal. Both answer the same way so probing reveals nothing.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 404,
+                      "title": "Not found",
+                      "type": "/v1/errors/not_found"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "validation_failed": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "detail": "A parameter failed validation, including declared caps. `errors[]` names each offending pointer. Caps are refused, never silently clamped.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "Request validation failed",
+                      "type": "/v1/errors/validation_failed"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "examples": {
+                  "service_degraded": {
+                    "summary": "Service degraded",
+                    "value": {
+                      "detail": "A required store is unavailable.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 503,
+                      "title": "Service degraded",
+                      "type": "/v1/errors/service_degraded"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Service degraded"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Residuals an allocation publishes about itself",
+        "tags": [
+          "validators"
+        ],
+        "x-glasswell-request-example": {
+          "path": {},
+          "query": {
+            "jurisdiction": "TX"
+          }
+        }
+      }
+    },
     "/v1/vintages": {
       "get": {
         "description": "One row per (source, knowledge time) promotion: what it read, how many rows it examined and appended, which months it touched, and what it restated. This is the index behind `as_of` \u2014 every vintage here is a value `as_of` can select.",
@@ -20221,6 +20847,17 @@
               },
               "application/problem+json": {
                 "examples": {
+                  "as_of_not_supported": {
+                    "summary": "as_of is not supported on this series",
+                    "value": {
+                      "detail": "The series is read from a mart holding one snapshot per key, so answering an older `as_of` would return today's figure labelled with the caller's date. Refusing is a served class; answering would be a silent wrong number. The lease series the allocation is computed from is bitemporal and does answer `as_of`.",
+                      "instance": "/v1",
+                      "request_id": "01JBQ7M0Z8K2V4N6X8R0T2Y4W6",
+                      "status": 422,
+                      "title": "as_of is not supported on this series",
+                      "type": "/v1/errors/as_of_not_supported"
+                    }
+                  },
                   "as_of_out_of_range": {
                     "summary": "as_of precedes the captured history",
                     "value": {

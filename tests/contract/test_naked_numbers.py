@@ -348,8 +348,9 @@ def test_every_handle_resolves_to_a_terminal_manifest(client: TestClient) -> Non
 
     assert found, "no response carried a handle, so the walker proves nothing"
     for handle in sorted(found):
-        chain = client.get("/v1/explain", params={"h": handle, "depth": "full"}).json()
-        resolved = chain["data"]["chains"][0]
+        response = client.get("/v1/explain", params={"h": handle, "depth": "full"})
+        assert response.status_code == 200, f"{handle} does not resolve: {response.text}"
+        resolved = response.json()["data"]["chains"][0]
         node_types = {node["id"]: node["type"] for node in resolved["nodes"]}
         assert resolved["truncated"] is False
         assert resolved["terminals"], f"{handle} resolves to no terminal"

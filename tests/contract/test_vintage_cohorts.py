@@ -143,7 +143,10 @@ def test_a_well_with_no_spud_date_is_its_own_cohort(client: TestClient) -> None:
     unkeyed = [item for item in cohorts if item["cohort_year"] is None]
     assert len(unkeyed) == 1
     assert unkeyed[0]["cohort_key_semantics"] == "no_spud_date"
-    assert int(unkeyed[0]["wells"]["value"]) == 1
+    # Two: the North Dakota well the fixture strips the spud date from, and the Texas well --
+    # the RRC publishes no spud date in this slice at all, so every Texas well lands here. It
+    # is one cohort with two wells rather than a year invented for either of them.
+    assert int(unkeyed[0]["wells"]["value"]) == 2
     assert unkeyed[0]["wells"]["unit"] == "wells"
     assert unkeyed[0]["wells_with_a_filed_month"]["unit"] == "wells"
 

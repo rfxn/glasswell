@@ -54,7 +54,7 @@ _CUMULATIVES = """
 select c.api10, c.state_code, c.stream, c.cum_volume, c.unit, c.basis, c.months_reported,
        c.months_reported_zero, c.months_no_report_stored, c.months_withheld_stored,
        c.months_absent, c.span_months, c.first_month, c.last_month, c.coverage_outcome,
-       c.snapshot_vintage, c.derivation_id,
+       c.allocated_months, c.allocated_share, c.snapshot_vintage, c.derivation_id,
        coalesce(w.months_withheld, 0) as months_withheld_quarantined,
        coalesce(w.rule_ids, '{}'::text[]) as withholding_rule_ids
   from marts.well_cumulatives c
@@ -152,7 +152,11 @@ class WellCumulatives(BaseModel):
         ),
     )
     granularity: str = Field(
-        description="well_observed; these are regulator filings summed, never allocated.",
+        description=(
+            "well_observed where every month behind the total is a regulator filing;"
+            " lease_allocated where the jurisdiction files at the lease and the well-grain"
+            " months are shares. Never silently one when it is the other."
+        ),
         json_schema_extra={GLOSSARY_KEY: "gt_granularity"},
     )
     snapshot_vintage: date = Field(
@@ -160,7 +164,17 @@ class WellCumulatives(BaseModel):
         json_schema_extra={GLOSSARY_KEY: "gt_report_vintage"},
     )
     coverage_outcome: str = Field(
-        description="observed, or never_reported where the well has filed nothing at all."
+        description=(
+            "observed, never_reported where the well has filed nothing at all, or"
+            " observed_with_allocated where some of the months behind the total are shares."
+        )
+    )
+    allocation: CumulativeAllocation | None = Field(
+        default=None,
+        description=(
+            "Present only where allocated months contribute. A total that sums them without"
+            " saying so is the naked number this block exists to prevent."
+        ),
     )
     cumulative: CumulativeStreams | None = Field(
         description="The three totals; null where the well has never filed anything."
@@ -169,6 +183,28 @@ class WellCumulatives(BaseModel):
     months_withheld: FigureModel = Field(
         description="Months the regulator withheld for this well, from the quarantine ledger.",
         json_schema_extra={GLOSSARY_KEY: "gt_withheld"},
+    )
+
+
+class CumulativeAllocation(BaseModel):
+    """What the allocated months contribute, stated beside the total and never after it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    basis: str = Field(
+        description="The months behind this total are shares, not observations."
+    )
+    model_id: str | None = Field(description="The model that computed every share in them.")
+    rule_id: str = Field(description="The registered decision that admits a well-grain row.")
+    months: dict[str, FigureModel] = Field(
+        description="Allocated months per stream, each a figure with a handle."
+    )
+    share: dict[str, FigureModel] = Field(
+        description="The share of each stream's total the allocated months carry."
+    )
+    shares_counted: FigureModel | None = Field(
+        default=None,
+        description="How many stored per-lease shares the well's totals were summed over.",
     )
 
 
@@ -286,14 +322,16 @@ def get_well_cumulatives(
         )
 
     outcome = anchor["coverage_outcome"]
+    allocated = _allocation(connection, by_stream, api10=api10, outcome=outcome)
     warnings: list[dict[str, Any]] = []
     data: dict[str, Any] = {
         "api10": api10,
-        "granularity": "well_observed",
+        "granularity": "lease_allocated" if allocated else "well_observed",
         "snapshot_vintage": snapshot,
         "coverage_outcome": outcome,
         "cumulative": _cumulative(by_stream, api10=api10, snapshot=snapshot),
         "coverage": _coverage(by_stream, api10=api10),
+        "allocation": allocated,
         "months_withheld": figure(
             str(anchor["months_withheld_quarantined"]),
             unit=COUNT_UNIT,
@@ -374,6 +412,65 @@ def _cumulative(
             )
         )
     return totals
+
+
+ALLOCATED_COVERAGE = "observed_with_allocated"
+ALLOCATION_RULE = "cr_tx_allocation_v0_1"
+
+_SHARES = """
+select count(*) as shares, min(allocation_model_id) as model_id,
+       min(allocation_rule_id) as rule_id
+  from marts.tx_allocated_production where api10 = %(api10)s
+"""
+
+
+def _allocation(
+    connection: psycopg.Connection,
+    by_stream: dict[str, dict[str, Any]],
+    *,
+    api10: str,
+    outcome: str,
+) -> dict[str, Any] | None:
+    """The allocated contribution, or None where every month behind the total is observed."""
+    if outcome != ALLOCATED_COVERAGE:
+        return None
+    counted = rows(connection, _SHARES, {"api10": api10})
+    detail = counted[0] if counted else {}
+    return {
+        "basis": "allocated",
+        "model_id": detail.get("model_id"),
+        "rule_id": detail.get("rule_id") or ALLOCATION_RULE,
+        "months": {
+            stream: figure(
+                int(row["allocated_months"] or 0),
+                unit="months",
+                derivation=row["derivation_id"],
+                selector=f"api10={api10}&stream={stream}&col=allocated_months",
+            )
+            for stream, row in by_stream.items()
+            if row is not None and row["allocated_months"]
+        },
+        "share": {
+            stream: figure(
+                str(row["allocated_share"]),
+                unit="share",
+                derivation=row["derivation_id"],
+                selector=f"api10={api10}&stream={stream}&col=allocated_share",
+            )
+            for stream, row in by_stream.items()
+            if row is not None and row["allocated_share"] is not None
+        },
+        "shares_counted": figure(
+            int(detail.get("shares") or 0),
+            unit="shares",
+            derivation=next(
+                (row["derivation_id"] for row in by_stream.values() if row is not None), ""
+            ),
+            selector=f"api10={api10}&col=shares_counted",
+        )
+        if detail.get("shares")
+        else None,
+    }
 
 
 def _coverage(by_stream: dict[str, dict[str, Any]], *, api10: str) -> dict[str, Any]:

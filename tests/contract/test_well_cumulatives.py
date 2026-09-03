@@ -15,6 +15,9 @@ from tests.contract.conftest import (
     TX_API10,
     WITHHELD_LEDGER_MONTH,
 )
+from tests.contract.conftest import (
+    NM_API10 as OUT_OF_SCOPE_API10,
+)
 
 PATH = f"/v1/wells/{EXAMPLE_API10}/cumulatives"
 SNAPSHOT = "2026-08-01"
@@ -134,11 +137,18 @@ def test_the_withheld_warning_names_the_count_and_the_ledger(client: TestClient)
 
 
 def test_a_well_outside_the_mart_is_refused_by_name(client: TestClient) -> None:
-    """An empty 200 would read as `produced nothing`; this well is simply not in scope."""
-    response = client.get(f"/v1/wells/{TX_API10}/cumulatives")
+    """An empty 200 would read as `produced nothing`; a well outside the mart's scope is
+    simply not in it, and the refusal names the scope so a reader can tell the two apart.
+
+    Texas entered the scope by registering a cumulatives_scope rule, so the out-of-scope
+    example is a jurisdiction that has registered no such decision.
+    """
+    response = client.get(f"/v1/wells/{OUT_OF_SCOPE_API10}/cumulatives")
 
     assert response.status_code == 404
-    assert "33" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert "33" in detail
+    assert "42" in detail
 
 
 def test_the_well_offers_the_link_only_where_the_mart_holds_a_total(client: TestClient) -> None:
@@ -146,9 +156,13 @@ def test_the_well_offers_the_link_only_where_the_mart_holds_a_total(client: Test
     is a mapping decision living in code (R8), and it would turn this 404 into `no production`.
     """
     in_scope = client.get(f"/v1/wells/{EXAMPLE_API10}").json()["links"]
-    out_of_scope = client.get(f"/v1/wells/{TX_API10}").json()["links"]
+    allocated = client.get(f"/v1/wells/{TX_API10}").json()["links"]
+    out_of_scope = client.get(f"/v1/wells/{OUT_OF_SCOPE_API10}").json()["links"]
 
     assert in_scope["cumulatives"] == PATH
+    # Texas is in scope on an allocated basis, which is a fact the block states rather than a
+    # reason to withhold the link: a card offered no link would read the absence as "no total".
+    assert allocated["cumulatives"] == f"/v1/wells/{TX_API10}/cumulatives"
     assert "cumulatives" not in out_of_scope
 
 

@@ -312,10 +312,11 @@ def test_the_partition_names_states_rather_than_a_hardcoded_jurisdiction(refresh
         (refresh.derivation_id,),
     )[0][0]
 
-    # Two states in scope, so the partition names two. The address moving when the population
-    # widened is the property being asserted, not an accident: a figure built over a different
-    # population is a different figure and must not share an identity with the old one.
-    assert partition == {"states": "05,33"}
+    # Three states in scope, so the partition names three. The address moving when the
+    # population widens is the property being asserted, not an accident: a figure built over a
+    # different population is a different figure and must not share an identity with the old
+    # one. It moved from 33 to 05,33 when Colorado registered, and again when Texas did.
+    assert partition == {"states": "05,33,42"}
     assert sorted(
         row[0] for row in rows(db, "select distinct state_code from marts.well_cumulatives")
     ) == ["05", "33"]

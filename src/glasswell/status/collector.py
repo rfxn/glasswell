@@ -13,6 +13,7 @@ import tempfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
@@ -1332,6 +1333,145 @@ def _configure_inventory_connection(connection: psycopg.Connection) -> None:
     connection.read_only = True
 
 
+_ALLOCATION_RULE = "cr_tx_allocation_v0_1"
+_ERROR_RULE = "cr_alloc_v0_error_bounds_1"
+_CROSSWALK_RULE = "cr_tx_ewa_role_1"
+
+_ALLOCATION_COVERAGE = """
+select coalesce(sum(abs(a.volume)), 0) as allocated,
+       coalesce((select sum(abs(lease_volume)) from marts.tx_allocation_ledger), 0)
+           as unallocated,
+       count(*) as shares
+  from marts.tx_allocated_production a
+"""
+
+_DEGRADED_AT = """
+select (spec ->> 'unallocated_share_degraded_at')::numeric as degraded_at,
+       spec ->> 'jurisdiction' as jurisdiction
+  from lineage.conformance_rules where rule_id = %s
+"""
+
+_CROSSWALK_RESIDUAL = "select count(*) as districts from marts.tx_crosswalk_residual"
+
+_METHOD_ERROR = """
+select bed_jurisdiction, lease_months_scored, error_lo, error_hi
+  from marts.allocation_method_error
+"""
+
+
+def _allocation_checks(
+    connection: psycopg.Connection, observed_at: datetime
+) -> list[StatusCheck]:
+    """The three residuals an allocation publishes about itself, as data-tier rows.
+
+    A failing check is degraded and drawn amber rather than absent: a row that vanishes reads
+    as a surface nobody built, and these exist precisely so a reader can see that an estimate
+    is being served and how far it can be out. The jurisdiction is named in every detail,
+    because a second lease-grain state will register the same three.
+    """
+    with connection.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(_DEGRADED_AT, (_ALLOCATION_RULE,))
+        rule = cursor.fetchone()
+        if rule is None:
+            return []
+        jurisdiction = str(rule["jurisdiction"] or "")
+        cursor.execute(_ALLOCATION_COVERAGE)
+        coverage = cursor.fetchone() or {}
+        cursor.execute(_CROSSWALK_RESIDUAL)
+        crosswalk = cursor.fetchone() or {}
+        cursor.execute(_METHOD_ERROR)
+        study = cursor.fetchall()
+
+    shares = int(coverage.get("shares") or 0)
+    allocated = Decimal(coverage.get("allocated") or 0)
+    unallocated = Decimal(coverage.get("unallocated") or 0)
+    total = allocated + unallocated
+    share = (unallocated / total) if total else Decimal(0)
+    threshold = Decimal(rule["degraded_at"]) if rule["degraded_at"] is not None else None
+
+    if shares == 0:
+        conservation = StatusCheck(
+            id="allocation_conservation",
+            label="Allocation conservation",
+            state="unavailable",
+            observed_at=observed_at,
+            detail=f"{jurisdiction}: the allocated mart holds no rows on this instance.",
+            tier="data",
+            probe=_ALLOCATION_RULE,
+        )
+    else:
+        over = threshold is not None and share > threshold
+        conservation = StatusCheck(
+            id="allocation_conservation",
+            label="Allocation conservation",
+            state="degraded" if over else "ok",
+            observed_at=observed_at,
+            detail=(
+                f"{jurisdiction}: {share:.4f} of lease volume has no eligible well to carry it"
+                + (f", above the {threshold} {_ALLOCATION_RULE} records." if over else ".")
+            ),
+            tier="data",
+            probe=_ALLOCATION_RULE,
+        )
+
+    if crosswalk.get("districts"):
+        crosswalk_check = StatusCheck(
+            id="crosswalk_agreement",
+            label="Crosswalk agreement",
+            state="ok",
+            observed_at=observed_at,
+            detail=(
+                f"{jurisdiction}: the two published crosswalks are compared across"
+                f" {int(crosswalk['districts'])} districts and the disagreement is served."
+            ),
+            tier="data",
+            probe=_CROSSWALK_RULE,
+        )
+    else:
+        crosswalk_check = StatusCheck(
+            id="crosswalk_agreement",
+            label="Crosswalk agreement",
+            state="unavailable",
+            observed_at=observed_at,
+            detail=(
+                f"{jurisdiction}: the crosswalk residual has not been measured on this"
+                " instance. The two crosswalks are retained unmerged."
+            ),
+            tier="data",
+            probe=_CROSSWALK_RULE,
+        )
+
+    if study:
+        bed = study[0]
+        bounds = StatusCheck(
+            id="allocation_error_bounds",
+            label="Allocation error bounds",
+            state="ok",
+            observed_at=observed_at,
+            detail=(
+                f"Measured on {bed['bed_jurisdiction']} over"
+                f" {int(bed['lease_months_scored'])} lease-months; not yet transferable to"
+                f" {jurisdiction}, so every allocated figure states not_measured."
+            ),
+            tier="data",
+            probe=_ERROR_RULE,
+        )
+    else:
+        bounds = StatusCheck(
+            id="allocation_error_bounds",
+            label="Allocation error bounds",
+            state="degraded",
+            observed_at=observed_at,
+            detail=(
+                "The method study has not been run, so no bed has been measured at all and"
+                f" every {jurisdiction} figure states not_measured with nothing behind it."
+            ),
+            tier="data",
+            probe=_ERROR_RULE,
+        )
+    return [conservation, crosswalk_check, bounds]
+
+
 def collect(connection: psycopg.Connection, *, now: datetime | None = None) -> StatusSnapshot:
     _configure_inventory_connection(connection)
     observed_at = (now or datetime.now(UTC)).astimezone(UTC)
@@ -1354,6 +1494,7 @@ def collect(connection: psycopg.Connection, *, now: datetime | None = None) -> S
         ),
         _storage_check("root_storage", "System storage", Path("/"), observed_at),
         _storage_check("data_storage", "Data storage", Path("/data"), observed_at),
+        *_allocation_checks(connection, observed_at),
     ]
     # Generated from the registry, so registering a job adds a row here and not a code edit.
     # The three receipt readers stay literals: none of them has a timer to probe -- the

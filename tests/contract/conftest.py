@@ -23,6 +23,7 @@ import pytest
 from fastapi.testclient import TestClient
 from psycopg.types.json import Jsonb
 
+from glasswell.allocation.v0 import MODEL_ID as ALLOCATION_MODEL_ID
 from glasswell.api.accounts import (
     ConnectionSessionStore,
     create_session,
@@ -56,7 +57,12 @@ from glasswell.modeling.model_dataset import MODEL_ROOT_ENV
 from glasswell.seed import seed_all
 from tests.conftest import TEMPLATE_DATABASE, create_database, drop_database
 from tests.support.fakes import FixedClock
-from tests.support.seed import FIXTURE_ENV, seed_manifest, seed_well, seed_well_spatial
+from tests.support.seed import (
+    FIXTURE_ENV,
+    seed_manifest,
+    seed_well,
+    seed_well_spatial,
+)
 from tests.support.typecurve_fixture import (
     ControlArtifact,
     ControlSubject,
@@ -83,7 +89,11 @@ OTHER_API10S = tuple(f"330530000{index}" for index in range(1, 7))
 # comment did by claiming a null status the row has never carried, which left the absence class
 # with no representative anywhere until `seed_statusless_well` gave a test one to ask for.
 TX_API10 = "4200345818"
-ALL_API10S = (EXAMPLE_API10, *OTHER_API10S, TX_API10)
+# A jurisdiction that registers no cumulatives_scope decision, so the mart holds nothing for
+# it. Without one, every well in the fixture is in scope and the gate that proves the link is
+# absent where there is no total has nothing to be absent on.
+NM_API10 = "3001500001"
+ALL_API10S = (EXAMPLE_API10, *OTHER_API10S, TX_API10, NM_API10)
 # Three ND wells the cumulative and cohort surfaces need distinct answers for: one the
 # regulator has no spud date for, one whose only filings carry a stored no_report and a
 # stored withheld, and one that has never filed anything at all.
@@ -838,6 +848,26 @@ def _seed_contract_fixture(db: psycopg.Connection, pinned_control: ControlArtifa
         total_depth_ft=Decimal("11450.0"),
         completion_date=date(2019, 4, 12),
     )
+    seed_well(
+        db,
+        api10=NM_API10,
+        manifest_id=gis_manifest,
+        derivation_id=tx_wells,
+        state_code="30",
+        county_code_at_permit="015",
+        ndic_file_no=None,
+        basin=None,
+        land_unit_label=None,
+        well_name="STATE COM 1H",
+        operator_name_reported="MEWBOURNE OIL COMPANY",
+        operator_id="14744",
+        status_canonical="active",
+        status_reported="A",
+        well_type_reported="O",
+        spud_date=None,
+        total_depth_ft=None,
+        completion_date=None,
+    )
     seed_well_spatial(
         db,
         api10=TX_API10,
@@ -876,6 +906,7 @@ def _seed_contract_fixture(db: psycopg.Connection, pinned_control: ControlArtifa
     ):
         refresh_neighbors(db)
     _seed_neighbor_mart(db)
+    _seed_tx_allocation(db)
     _seed_jurisdiction_counts(db)
     _seed_quarantine(db, mpr_manifest)
     # After the ledger, never before: the withheld months the coverage record counts are
@@ -918,6 +949,122 @@ def _seed_contract_fixture(db: psycopg.Connection, pinned_control: ControlArtifa
 # no test reads is a claim about the fixture that nothing checks.
 JURISDICTION_MEASURED_ON = date(2026, 8, 27)
 ND_MEASURED = {None: 7, "active": 4, "plugged": 3}
+
+
+def _seed_tx_allocation(db: psycopg.Connection) -> None:
+    """Three months of allocated Texas shares, so the contract tier sees the surface it serves.
+
+    A gate that only ever sees North Dakota data is green on data it does not represent, and
+    the allocated arm is a different response shape from the observed one: a different source
+    of truth, a granularity that is not `well_observed`, three parallel arrays that do not
+    exist on the ND arm, and an `error_bounds` object that states an absence.
+
+    The wellbore carries two leases on purpose. 21.9 percent of Texas API-10s do, and the
+    served series is the sum of their shares -- which is the one figure in this response that
+    is stored nowhere.
+    """
+    # The chain proof 1 walks: a share explains through the allocation to the lease row to the
+    # manifest that names PDQ_DSV.zip. A promote derivation with no manifest behind it would
+    # let every figure here resolve to nothing and the gate would still be green.
+    pdq_manifest = seed_manifest(
+        db, sha256="a" * 64, source_id="tx_pdq_dsv", source_key="PDQ_DSV.zip"
+    )
+    with lineage_session(
+        recorder=PostgresRecorder(db),
+        environment=FIXTURE_ENV,
+        clock=FixedClock(datetime(2026, 8, 27, 6, 11, 0, tzinfo=UTC)),
+        correlation_id="run_contract_tx_lease",
+    ), derive(
+        "canonical.promote",
+        output=OutputSpec(
+            store="postgres",
+            dataset="canonical.production_monthly",
+            partition={"manifest_id": pdq_manifest, "entity_type": "lease", "state": "TX"},
+        ),
+        params={"reporting_level": "lease", "granularity": "lease_reported"},
+        inputs=[InputRef(kind="manifest", ref_id=pdq_manifest)],
+        rules=["cr_tx_pdq_format_1", "cr_tx_liquids_basis_1"],
+    ) as lease_context:
+        lease_context.set_rows(6)
+        lease_context.set_output_hash("e" * 64)
+    lease_derivation = lease_context.derivation_id
+    with lineage_session(
+        recorder=PostgresRecorder(db),
+        environment=FIXTURE_ENV,
+        clock=FixedClock(datetime(2026, 8, 27, 6, 12, 0, tzinfo=UTC)),
+        correlation_id="run_contract_tx_allocation",
+    ), derive(
+        "alloc.apply",
+        output=OutputSpec(
+            store="postgres",
+            dataset="marts.tx_allocated_production",
+            partition={"jurisdiction": "TX"},
+            schema_version="1",
+        ),
+        params={"allocation_model_id": ALLOCATION_MODEL_ID},
+        inputs=[InputRef(kind="derivation", ref_id=lease_derivation)],
+        rules=["cr_tx_allocation_v0_1", "cr_alloc_v0_error_bounds_1"],
+    ) as context:
+        context.set_rows(8)
+        context.set_output_hash("f" * 64)
+
+    months = (date(2024, 1, 1), date(2024, 2, 1), date(2024, 3, 1))
+    rows_to_insert = []
+    for index, month in enumerate(months):
+        rows_to_insert.append(
+            {
+                "lease_key": "O-08-000101",
+                "month": month,
+                "stream": "liquid",
+                "volume": Decimal("300.000") + index,
+                "unit": "bbl",
+                "basis": "oil+condensate",
+                "allocation_class": "allocated_equal_share",
+                "granularity": "lease_allocated",
+                "eligible_wells": 3,
+                "incomplete": index == len(months) - 1,
+            }
+        )
+        rows_to_insert.append(
+            {
+                "lease_key": "G-08-000303",
+                "month": month,
+                "stream": "gas",
+                "volume": Decimal("1200.000") + index,
+                "unit": "mcf",
+                "basis": None,
+                "allocation_class": "observed_gas_well",
+                "granularity": "well_observed",
+                "eligible_wells": 1,
+                "incomplete": index == len(months) - 1,
+            }
+        )
+    with db.cursor() as cursor:
+        cursor.executemany(
+            "insert into marts.tx_allocated_production (api10, lease_key, production_month,"
+            " stream, volume, unit, basis, allocation_class, granularity, allocation_model_id,"
+            " allocation_rule_id, eligible_wells, membership_vintage, incomplete_window,"
+            " error_bounds_outcome, error_rule_id, lease_derivation_id, snapshot_vintage,"
+            " derivation_id)"
+            " values (%(api10)s, %(lease_key)s, %(month)s, %(stream)s, %(volume)s, %(unit)s,"
+            " %(basis)s, %(allocation_class)s, %(granularity)s, %(model_id)s, %(rule_id)s,"
+            " %(eligible_wells)s, %(membership)s, %(incomplete)s, 'not_measured',"
+            " %(error_rule)s, %(lease_derivation)s, %(snapshot)s, %(derivation)s)",
+            [
+                {
+                    **row,
+                    "api10": TX_API10,
+                    "model_id": ALLOCATION_MODEL_ID,
+                    "rule_id": "cr_tx_allocation_v0_1",
+                    "error_rule": "cr_alloc_v0_error_bounds_1",
+                    "membership": date(2026, 8, 27),
+                    "snapshot": date(2026, 8, 27),
+                    "lease_derivation": lease_derivation,
+                    "derivation": context.derivation_id,
+                }
+                for row in rows_to_insert
+            ],
+        )
 
 
 def _seed_jurisdiction_counts(connection: psycopg.Connection) -> None:
