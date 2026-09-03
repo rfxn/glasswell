@@ -38,3 +38,18 @@
 - [Change] every request the card makes is built in one place and forwards the whole
          known bag (`as_of`, `from`, `to`, `normalization`, grain) where the card
          forwarded `as_of` alone; `section` is app state and reaches no request
+- [New] `cr_status_history_basis_1` records, per jurisdiction, whether a well header's
+      `effective_from` is the regulator's own valid time or the vintage of the extract
+      glasswell pulled; it registers as the `status_history` decision for New Mexico
+      and Colorado and is the only thing that emits `links.history`
+- [New] `GET /v1/wells/{api10}/history` serves every effective-dated header a well
+      carries, newest first and capped at ten with the remainder counted, over the
+      filed code and never over the canonical class; the class column is headed
+      "class as glasswell maps this code today", carries the mapping rule per row and
+      says it is not historical
+- [New] the well record carries the jurisdiction, the regulator and the regulator's
+      portal, plus the jurisdiction's `geometry_provenance` rule, which is null for
+      Texas and stated as a registry gap rather than filled with North Dakota's
+- [Fix] a well whose class resolves nowhere shows the code its regulator filed and
+      the regulator's name instead of no status at all; 68,186 Texas wells on the
+      deployed instance serve a null class today and rendered a blank

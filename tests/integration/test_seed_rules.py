@@ -41,6 +41,10 @@ POLICY_RULES = tuple(sorted((
     "cr_eia_basin_link_2",
     "cr_eia_geometry_repair_2",
     "cr_nm_wellhistory_header_precedence_2",
+    # Which clock a jurisdiction's header effective_from is, and therefore whether there is a
+    # status history to serve at all. The executor is the operation its spec names; there is no
+    # stage for it to run at, because it decides what a serving path may offer.
+    "cr_status_history_basis_1",
     "cr_eia_boundary_overlap_1",
     "cr_eia_boundary_publisher_1",
     "cr_eia_boundary_taxonomy_1",

@@ -19,6 +19,10 @@ export interface SectionSpec {
   title: string;
   /** Expanded because its content is why a reader opens a well, not why they open this one. */
   expanded: boolean;
+  /** The section's content, appended into its body at mount. Passed rather than fetched back
+   *  from the returned handles: a `load` that had to reach into them could not run during the
+   *  mount that creates them. */
+  body?: HTMLElement;
   /** Absent for an eager body. Called at most once, through the queue below. */
   load?: () => Promise<void>;
   /** False where this well has no such section. It stays in the list so a link that named it
@@ -250,6 +254,7 @@ export function mountSections(
     const body = document.createElement("div");
     body.className = "gw-section-body";
     body.id = bodyId;
+    if (spec.body) body.appendChild(spec.body);
 
     section.append(heading, body);
     host.appendChild(section);

@@ -16,6 +16,8 @@ import { highlight } from "../glossary/index.ts";
 import { termIndex } from "../glossary/store.ts";
 import { absentValue, formatMonth, formatVintage, nullSemantics } from "./format.ts";
 import { cardQuery } from "./requests.ts";
+import { renderIdentity } from "./identity.ts";
+import type { WellIdentity } from "./identity.ts";
 import { applySection, mountSections, sectionLink, sectionsSettled } from "./sections.ts";
 import type { SectionSpec } from "./sections.ts";
 
@@ -501,6 +503,7 @@ export async function renderWellCard(
   }
 
   const lineageBody = document.createElement("div");
+  const identityHost = document.createElement("div");
 
   // Ten ids in one fixed order. A section absent for this well is not rendered at all, but it
   // stays in the list so a link that named it is answered with its own name and rule rather
@@ -508,26 +511,48 @@ export async function renderWellCard(
   // section is expanded when its content is why a reader opens a well, and collapsed when it
   // is why they open this particular one.
   const specs: SectionSpec[] = [
-    { id: "production", title: "Production", expanded: true },
+    { id: "production", title: "Production", expanded: true, body: chartFrame },
     {
       id: "cumulative",
       title: "Cumulative",
       expanded: true,
+      body: cumulativeSlot,
       present: loadCumulative !== undefined,
       ...(loadCumulative ? { load: loadCumulative } : {}),
     },
-    { id: "identity", title: "Identity and status", expanded: true },
-    { id: "completions", title: "Completions and fluids", expanded: false, load: loadContext },
+    {
+      id: "identity",
+      title: "Identity and status",
+      expanded: true,
+      body: identityHost,
+      // Whose well it is, plus the status history where the jurisdiction's clock has one.
+      // The request rides the section rather than the card, so it is inside the same bound.
+      load: () =>
+        renderIdentity(
+          identityHost,
+          well as unknown as Envelope<WellIdentity>,
+          factsSlot,
+          query,
+        ),
+    },
+    {
+      id: "completions",
+      title: "Completions and fluids",
+      expanded: false,
+      body: contextSlot,
+      load: loadContext,
+    },
     {
       id: "neighbours",
       title: "Neighbours and spacing",
       expanded: false,
+      body: neighborSlot,
       present: loadNeighbours !== undefined,
       ...(loadNeighbours ? { load: loadNeighbours } : {}),
       ...(well.links?.["neighbors_rule"] ? { absentRule: well.links["neighbors_rule"] } : {}),
     },
-    { id: "land", title: "Land and lease", expanded: false },
-    { id: "basin", title: "Basin and geology", expanded: false },
+    { id: "land", title: "Land and lease", expanded: false, body: landBody },
+    { id: "basin", title: "Basin and geology", expanded: false, body: basinBody },
     {
       id: "pools",
       title: "Production by pool",
@@ -540,18 +565,16 @@ export async function renderWellCard(
       expanded: false,
       present: well.links?.["type_curve"] !== undefined,
     },
-    { id: "lineage", title: "Lineage", expanded: false, load: () => fillLineage() },
+    {
+      id: "lineage",
+      title: "Lineage",
+      expanded: false,
+      body: lineageBody,
+      load: () => fillLineage(),
+    },
   ];
 
   const sections = mountSections(body, api10, specs);
-  sections.get("production")?.body.appendChild(chartFrame);
-  sections.get("cumulative")?.body.appendChild(cumulativeSlot);
-  sections.get("identity")?.body.appendChild(factsSlot);
-  sections.get("completions")?.body.appendChild(contextSlot);
-  sections.get("neighbours")?.body.appendChild(neighborSlot);
-  sections.get("land")?.body.appendChild(landBody);
-  sections.get("basin")?.body.appendChild(basinBody);
-  sections.get("lineage")?.body.appendChild(lineageBody);
   body.appendChild(notesSlot);
 
   // "What can I check here", and it costs a request of zero. The counts are read off what is

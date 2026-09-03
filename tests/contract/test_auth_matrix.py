@@ -103,6 +103,7 @@ MATRIX: tuple[tuple, ...] = (
     ("GET", f"/v1/wells/{EXAMPLE_API10}", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/completions", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/cumulatives", READ),
+    ("GET", f"/v1/wells/{EXAMPLE_API10}/history", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/neighbors", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production", READ),
     ("GET", f"/v1/wells/{EXAMPLE_API10}/production/pools", READ),

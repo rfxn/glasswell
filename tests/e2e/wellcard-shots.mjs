@@ -272,6 +272,67 @@ for (const bp of BREAKPOINTS) {
   await page.context().close();
 }
 
+// Whose well it is, at the two clocks: a Colorado header carries the regulator's own dates and
+// draws a history; a North Dakota one carries the vintage of the workbook and says so.
+for (const [label, well] of [
+  ["colorado", process.env.GW_CO_WELL ?? "0512324638"],
+  ["north-dakota", WELL],
+]) {
+  console.log(`\nidentity · ${label} ${well}`);
+  const { page } = await instrumentedPage(browser, { viewport: BREAKPOINTS[0] });
+  await page.goto(`${BASE}/?well=${well}&section=identity`, { waitUntil: "networkidle" });
+  await mapReady(page).catch(() => {});
+  await page.waitForTimeout(2500);
+  const seen = await page.evaluate(() => {
+    const section = document.querySelector("#gw-section-identity");
+    return {
+      filed: section?.querySelector(".gw-identity-filed")?.textContent ?? null,
+      klass: section?.querySelector(".gw-identity-class")?.textContent ?? null,
+      regulator: section?.querySelector(".gw-identity-regulator")?.textContent ?? null,
+      wellType: section?.querySelector(".gw-identity-well-type")?.textContent ?? null,
+      headers: [...(section?.querySelectorAll("th") ?? [])].map((cell) => cell.textContent),
+      rows: [...(section?.querySelectorAll("tbody tr") ?? [])].map((line) =>
+        [...line.children].map((cell) => cell.textContent),
+      ),
+      text: section?.textContent ?? "",
+    };
+  });
+  console.log(`  filed ${JSON.stringify(seen.filed)}`);
+  console.log(`  class ${JSON.stringify(seen.klass)}`);
+  console.log(`  rows  ${JSON.stringify(seen.rows)}`);
+  await shoot(page, `1600x1000-identity-${label}`);
+
+  check(seen.filed !== null, `the filed code renders (${seen.filed})`);
+  check(seen.klass !== null, `the class renders or says why (${seen.klass})`);
+  check(seen.regulator !== null, `the regulator is named and linked (${seen.regulator})`);
+  check(
+    (seen.wellType ?? "").includes("as ") && (seen.wellType ?? "").includes("filed it"),
+    `the well type reads as its own regulator filed it (${seen.wellType})`,
+  );
+  check(
+    seen.text.includes("portal, not this well's own record"),
+    "the card says the regulator link is a portal",
+  );
+  if (label === "colorado") {
+    check(
+      seen.headers.includes("class as glasswell maps this code today"),
+      `the class column is labelled for what it is (${JSON.stringify(seen.headers)})`,
+    );
+    check(seen.rows.length === 2, `both filed codes are drawn, newest first (${seen.rows.length})`);
+    check(
+      seen.text.includes("today's mapping applied to a historical code"),
+      "and the card says the column is not historical",
+    );
+  } else {
+    check(
+      seen.text.includes("not a date the regulator stamped"),
+      "a load-stamp jurisdiction states the absence rather than drawing an empty table",
+    );
+    check(seen.rows.length === 0, "and draws no table at all");
+  }
+  await page.context().close();
+}
+
 await browser.close();
 console.log(`\n${failures === 0 ? "all checks passed" : `${failures} check(s) failed`}`);
 process.exit(failures === 0 ? 0 : 1);

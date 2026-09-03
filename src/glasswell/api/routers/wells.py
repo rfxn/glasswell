@@ -82,6 +82,14 @@ from glasswell.marts.vintage_cohorts import (
     cohort_rollup,
     load_cohort_policy,
 )
+
+# The decision name and the two clock classes are the rule's own, spelled once in the
+# module that defines the rule: a second spelling here is how a decision name drifts.
+from glasswell.seed.conformance_status_history import (
+    LOAD_STAMP,
+    SOURCE_VALID_TIME,
+    STATUS_HISTORY,
+)
 from glasswell.status_resolution import resolved_status, resolver_join
 from glasswell.units import metres_to_feet
 
@@ -204,6 +212,36 @@ RANKED_WELLS = _SPINE.format(columns=_COLUMNS, resolver=resolver_join("ranked"))
 RANKED_WELLS_PRODUCING = _SPINE.format(
     columns=f"{_COLUMNS}, {_PRODUCING_COLUMN} as producing", resolver=resolver_join("ranked")
 )
+
+# Every effective-dated header the well carries, newest first, with the class resolved through
+# the one shared resolver rather than through a second mapping written here. No view and no
+# DDL: `canonical.wells` is already indexed on (api10, effective_from) and this is a scalar
+# join onto it. The axis is `status_reported` -- what the regulator filed -- because
+# `status_canonical` is glasswell's own mapping and a history over it would show a rule edit
+# as if the regulator had changed its mind (cr_status_history_basis_1).
+_STATUS_HISTORY = """
+select w.effective_from, w.status_reported,
+       {resolved} as status_canonical,
+       greatest(m.fetch_vintage, coalesce(d.created_vintage, m.fetch_vintage)) as available_on
+  from canonical.wells w
+  join lineage.manifests m on m.manifest_id = w.source_manifest_id
+  join lineage.derivations d on d.derivation_id = w.derivation_id
+{resolver}
+ where w.api10 = %(api10)s
+   and (%(as_of)s::date is null or w.effective_from <= %(as_of)s::date)
+   and (%(as_of)s::date is null or m.fetch_vintage <= %(as_of)s::date)
+   and (%(as_of)s::date is null or d.created_vintage is null
+        or d.created_vintage <= %(as_of)s::date)
+ order by w.effective_from desc, w.created_at desc
+"""
+
+STATUS_HISTORY_SQL = _STATUS_HISTORY.format(
+    resolved=resolved_status("w"), resolver=resolver_join("w")
+)
+
+# Ten rows and a count of the rest. A well with 15,590 effective dates is a scroll nobody
+# reads and a payload nobody wants, and the count says what the cap held back.
+STATUS_HISTORY_CAP = 10
 
 # `tiled` asks the tile pipeline's own question of the deepest published zoom: a geometry that
 # ST_AsMVTGeom drops there is on no tile at any zoom, while the card still serves its length.
@@ -514,6 +552,127 @@ class WellDetail(WellSummary):
         " laterals but the neighbour mart's measured domain does not reach it. Null where"
         " neighbours are served and where none were ever registered."
     )
+    jurisdiction_name: str | None = Field(
+        description="The registered name of the jurisdiction this well is filed with."
+    )
+    regulator_name: str | None = Field(
+        description="The regulator that holds the record, as the registry names it."
+    )
+    regulator_url: str | None = Field(
+        description="The regulator's portal, which is a portal root and not this well's own"
+        " record: no per-well URL template is registered for any jurisdiction yet, so a link"
+        " labelled as the record for this well would be a lie the size of one click."
+    )
+    geometry_provenance_rule: str | None = Field(
+        description="The rule that says what this jurisdiction's geometry means. Null where"
+        " the jurisdiction registers no geometry_provenance decision, which is a registry gap"
+        " to be stated rather than another jurisdiction's rule to be inherited."
+    )
+
+
+class StatusHistoryRow(BaseModel):
+    """One effective-dated header, as the regulator filed it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    effective_from: str = Field(
+        description="The date this header took effect, on whichever clock basis.clock names."
+    )
+    status_reported: str | None = Field(description="The status code exactly as filed.")
+    status_canonical: str | None = Field(
+        description="The class as glasswell maps this code today. Not historical: it is a"
+        " read-time join against today's registry, so a superseded vocabulary rule changes"
+        " every row at once. Null where no registered vocabulary maps the code."
+    )
+    status_rule_id: str | None = Field(
+        description="The mapping rule that produced the class on this row."
+    )
+
+
+class StatusHistoryBasis(BaseModel):
+    """Which clock the dates beside these codes are on, and what follows from that."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    clock: str = Field(
+        description="source_valid_time where effective_from is the regulator's own stamp;"
+        " load_stamp where it is the vintage of the extract glasswell pulled."
+    )
+    served: bool = Field(
+        description="False on a load stamp: the rows would be a log of when glasswell looked."
+    )
+    rule_id: str | None = Field(
+        description="The rule that decided the clock, where the jurisdiction registers one."
+    )
+    status_vocabulary_rule: str | None = Field(
+        description="The jurisdiction's own status vocabulary rule, which is what an absence"
+        " is stated by."
+    )
+    class_column_label: str = Field(
+        description="What the class column is, said in the words it must be headed with."
+    )
+    class_column_is_historical: bool = Field(
+        description="Always false in this release; resolution under the rule clock is next."
+    )
+    detail: str = Field(description="The decision in one served sentence.")
+
+
+class StatusHistoryCap(BaseModel):
+    """What the cap kept and what it held back, so a short list is never read as a short life."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    limit: int = Field(
+        description="The cap this response was cut at.",
+        json_schema_extra=not_a_figure(
+            "The cut a status history was taken at. A property of the response, not of the"
+            " well: a New Mexico well carries up to 15,590 effective-dated headers and ten of"
+            " them is a readable answer."
+        ),
+    )
+    returned: int = Field(
+        description="Rows this response carries.",
+        json_schema_extra=not_a_figure("How many status-history rows this response carries."),
+    )
+    total: int = Field(
+        description="Effective-dated headers the well carries at this vintage.",
+        json_schema_extra=not_a_figure(
+            "How many effective-dated headers the well carries at this vintage. Served so a"
+            " short list is never read as a short life; a count of rows in this response's own"
+            " population, not a measured petroleum quantity."
+        ),
+    )
+    withheld: int = Field(
+        description="Rows the cap held back. Never rows nobody has.",
+        json_schema_extra=not_a_figure(
+            "Status-history rows the cap held back. Never rows nobody has."
+        ),
+    )
+
+
+class WellStatusHistory(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    api10: str = Field(
+        description="Ten-digit API well number.",
+        json_schema_extra={
+            GLOSSARY_KEY: "gt_api_10_api_12_api_14",
+            **not_a_figure(
+                "Identifier. A 10-digit API number is an identity string, not a measurement."
+            ),
+        },
+    )
+    state_code: str | None = Field(
+        description="API state prefix; an identifier, not a count.",
+        json_schema_extra=not_a_figure(
+            "FIPS-style state code carried as reported; an identifier, not a quantity."
+        ),
+    )
+    basis: StatusHistoryBasis = Field(description="Which clock these dates are on.")
+    history: list[StatusHistoryRow] = Field(
+        description="Newest first, capped; `cap` says how many rows the cap held back."
+    )
+    cap: StatusHistoryCap = Field(description="What the cap kept and what it held back.")
 
 
 def _neighbours(
@@ -2028,6 +2187,140 @@ def _cohort_warnings(data: Any, cohorts: list[dict[str, Any]]) -> list[dict[str,
     return warnings
 
 
+CLASS_COLUMN_LABEL = "class as glasswell maps this code today"
+
+SERVED_DETAIL = (
+    "The dates beside these codes are the regulator's own: a new header appears when the"
+    " regulator restamped the status, not when glasswell pulled. The class column is a"
+    " read-time join against today's registry and is not historical, so a superseded"
+    " vocabulary rule changes every row at once; each row names the rule that produced its"
+    " class so the reader can see which."
+)
+
+ABSENT_DETAIL = (
+    "This jurisdiction's effective_from is the vintage of the extract glasswell pulled, not a"
+    " date the regulator stamped, so there is no status history to serve here and an empty"
+    " list would read as a well that never changed rather than as a history nobody captured."
+    " The current status and the rule that maps it are on the well record."
+)
+
+STATUS_HISTORY_LABELS = {
+    "/api10": "gt_api_10_api_12_api_14",
+    "/basis/rule_id": "gt_conformance_rule",
+    "/basis/status_vocabulary_rule": "gt_conformance_rule",
+    "/history/status_reported": "gt_well_status",
+    "/history/status_canonical": "gt_well_status",
+    "/history/status_rule_id": "gt_conformance_rule",
+    "/history/effective_from": "gt_effective_date",
+}
+
+
+@router.get(
+    "/wells/{api10}/history",
+    operation_id="get_well_status_history",
+    summary="Status history for one well",
+    description=(
+        "Every effective-dated header this well carries, newest first, over the status code"
+        " the regulator filed. Not over the canonical class: a canonical class is glasswell's"
+        " own mapping decision and can be superseded by a rule, so a history over it would"
+        " show a rule edit as if the regulator had changed its mind, and it would be empty"
+        " everywhere — zero wells in the spine carry more than one distinct canonical class,"
+        " while 31,707 carry a changed filed code."
+        " Whether there is a history at all is a property of the jurisdiction's clock, not of"
+        " the well: where effective_from is the regulator's own valid time a new header means"
+        " the regulator restamped the status, and where it is the vintage of the extract"
+        " glasswell pulled it means only that glasswell looked again. cr_status_history_basis_1"
+        " records which is which per jurisdiction and is the only thing that emits"
+        " links.history on the well record."
+        " A 200 with an empty history and basis.served false is therefore the honest answer for"
+        " a load-stamp jurisdiction: it says no history was captured, which an empty list on"
+        " its own cannot tell apart from a well that never changed."
+        " The class column is labelled rather than claimed. It is resolved through the one"
+        " shared read-time resolver — the same join the tile mart, the facets and the well"
+        " record use, so no two surfaces can answer differently — and it is today's mapping"
+        " applied to a historical code, which is what its label says."
+    ),
+    response_model=EnvelopeModel[WellStatusHistory],
+    openapi_extra={
+        **request_example(path={"api10": EXAMPLE_API10}),
+        **semantics(
+            as_of={
+                "glossary": "gt_report_vintage",
+                "so": (
+                    "Walks the knowledge axis: a header promoted after the date asked for is"
+                    " not in the answer, so a reader can see the history as it stood."
+                ),
+            },
+        ),
+    },
+    responses=problem_responses("not_found", "validation_failed", "service_degraded"),
+)
+def get_well_status_history(
+    request: Request,
+    connection: Connection,
+    api10: Annotated[str, Path(description="Ten-digit API well number.", pattern=API10_PATTERN)],
+    as_of: AsOf = None,
+) -> JSONResponse:
+    registry = jurisdictions(connection)
+    found = rows(connection, STATUS_HISTORY_SQL, {"api10": api10, "as_of": as_of})
+    if not found:
+        raise ProblemError("not_found", detail=f"no well {api10} at this vintage")
+
+    state_code = api10[:2]
+    history_rule = registry.rule_for(state_code, STATUS_HISTORY)
+    vocabulary_rule = registry.rule_for(state_code, STATUS_VOCABULARY)
+    served = history_rule is not None
+    kept = found[: STATUS_HISTORY_CAP] if served else []
+    resolved_as_of = max(row["available_on"] for row in found)
+    data = {
+        "api10": api10,
+        "state_code": state_code,
+        "basis": {
+            "clock": SOURCE_VALID_TIME if served else LOAD_STAMP,
+            "served": served,
+            "rule_id": history_rule,
+            "status_vocabulary_rule": vocabulary_rule,
+            "class_column_label": CLASS_COLUMN_LABEL,
+            "class_column_is_historical": False,
+            "detail": SERVED_DETAIL if served else ABSENT_DETAIL,
+        },
+        "history": [
+            {
+                "effective_from": iso(row["effective_from"]),
+                "status_reported": row["status_reported"],
+                "status_canonical": row["status_canonical"],
+                # The same rule on every row of one well, and on the row rather than only in
+                # the basis: a reader who copies one row keeps what produced its class.
+                "status_rule_id": vocabulary_rule if row["status_canonical"] else None,
+            }
+            for row in kept
+        ],
+        "cap": {
+            "limit": STATUS_HISTORY_CAP,
+            "returned": len(kept),
+            "total": len(found) if served else 0,
+            "withheld": max(0, len(found) - len(kept)) if served else 0,
+        },
+    }
+    return enveloped(
+        request,
+        data,
+        as_of=resolved_as_of,
+        as_of_requested=iso(as_of) or "latest",
+        labels=STATUS_HISTORY_LABELS,
+        links={
+            "self": f"/v1/wells/{api10}/history",
+            "well": f"/v1/wells/{api10}",
+            **({"history_rule": f"/v1/conformance/{history_rule}"} if history_rule else {}),
+            **(
+                {"status_rule": f"/v1/conformance/{vocabulary_rule}"}
+                if vocabulary_rule
+                else {}
+            ),
+        },
+    )
+
+
 @router.get(
     "/wells/{api10}",
     operation_id="get_well",
@@ -2084,6 +2377,11 @@ def get_well(
     crs = rows(connection, _STORAGE_CRS, {"basin": row["basin"], "as_of": as_of})
     storage_epsg = crs[0]["storage_epsg"] if crs else STORAGE_EPSG
     status_vocabulary_rule = registry.rule_for(row["state_code"], STATUS_VOCABULARY)
+    jurisdiction = registry.at_prefix(row["state_code"])
+    # Registered only where the header's effective_from is the regulator's own valid time, so
+    # the link's presence is the answer to "is there a history here" and the card can know it
+    # without asking. cr_status_history_basis_1 is the only thing that emits it.
+    history_rule = registry.rule_for(row["state_code"], STATUS_HISTORY)
     length_scope_rule = registry.rule_for(row["state_code"], LENGTH_SCOPE)
     neighbours_served, neighbours_rule, neighbours_reason = _neighbours(
         registry, row["state_code"]
@@ -2252,6 +2550,15 @@ def get_well(
         ],
         "surface_point": {"lon": point["lon"], "lat": point["lat"]} if point else None,
         "neighbors_reason": neighbours_reason,
+        # Whose well it is, read off the registry rather than written in the client: a Montana
+        # disposal well's hover said "as ND filed it" for exactly as long as the client held
+        # the answer. The portal is a portal, and the field says so in its own description.
+        "jurisdiction_name": jurisdiction.name if jurisdiction else None,
+        "regulator_name": jurisdiction.regulator_name if jurisdiction else None,
+        "regulator_url": jurisdiction.regulator_url if jurisdiction else None,
+        # Null for Texas today, which is a registry gap the card states rather than a reason to
+        # inherit North Dakota's rule.
+        "geometry_provenance_rule": registry.rule_for(row["state_code"], GEOMETRY_PROVENANCE),
     }
     return enveloped(
         request,
@@ -2294,6 +2601,10 @@ def get_well(
                 {"length_rule": f"/v1/conformance/{length_scope_rule}"}
                 if length_scope_rule
                 else {}
+            ),
+            **({"history": f"/v1/wells/{api10}/history"} if history_rule else {}),
+            **(
+                {"history_rule": f"/v1/conformance/{history_rule}"} if history_rule else {}
             ),
             **(
                 {"status_rule": f"/v1/conformance/{status_vocabulary_rule}"}

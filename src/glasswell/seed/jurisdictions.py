@@ -19,6 +19,7 @@ from glasswell.seed.conformance_co import (
     DOCUMENTED_COUNT,
     PLANNED_SHARE,
 )
+from glasswell.seed.conformance_status_history import HISTORY_RULE_ID, STATUS_HISTORY
 
 # Valid time and knowledge time of the founding registrations. The integrator repoints this
 # beside the evidence pair, per the REPOINT CHECKLIST at the head of the migration.
@@ -435,6 +436,13 @@ JURISDICTION_RULES: tuple[dict[str, object], ...] = (
      "rule_id": "cr_nd_length_source_1"},
     {"jurisdiction_code": "TX", "decision": "length_source",
      "rule_id": "cr_tx_length_source_1"},
+    # The two jurisdictions whose header effective_from is the regulator's own valid time, and
+    # the whole of what emits links.history. Registered at each one's own clock: Colorado's
+    # registration was founded at its own instant and jurisdiction_rules carries a composite
+    # foreign key onto it, so a row at the restatement's clock would point at no registration.
+    {"jurisdiction_code": "NM", "decision": STATUS_HISTORY, "rule_id": HISTORY_RULE_ID},
+    {"jurisdiction_code": "CO", "decision": STATUS_HISTORY, "rule_id": HISTORY_RULE_ID,
+     "effective_from": CO_REGISTERED_ON, "published_at": CO_REGISTERED_ON},
     {"jurisdiction_code": "ND", "decision": "neighbors_scope",
      "rule_id": "cr_nd_neighbors_scope_1"},
     {"jurisdiction_code": "MT", "decision": "neighbors_scope",

@@ -27,6 +27,11 @@ from glasswell.seed.conformance_schedules import (
     SCHEDULE_RULES,
     seed_conformance_schedules,
 )
+from glasswell.seed.conformance_status_history import (
+    HISTORY_RULE_ID,
+    STATUS_HISTORY,
+    seed_conformance_status_history,
+)
 from glasswell.seed.conformance_tx import TX_RULES, seed_conformance_tx
 from glasswell.seed.conformance_typecurve import TYPECURVE_RULES, seed_conformance_typecurve
 from glasswell.seed.conformance_vintage import VINTAGE_RULES, seed_conformance_vintage
@@ -65,6 +70,7 @@ __all__ = [
     "FORMATION_ALIASES",
     "FRACFOCUS_RULES",
     "GLOSSARY_SEED_PATH",
+    "HISTORY_RULE_ID",
     "JOBS",
     "JOB_SOURCES",
     "JURISDICTIONS",
@@ -82,6 +88,7 @@ __all__ = [
     "SCHEDULES",
     "SCHEDULE_RULES",
     "SOURCES",
+    "STATUS_HISTORY",
     "TX_RULES",
     "TYPECURVE_RULES",
     "VINTAGE_RULES",
@@ -98,6 +105,7 @@ __all__ = [
     "seed_conformance_nm_wells_gis",
     "seed_conformance_producing",
     "seed_conformance_schedules",
+    "seed_conformance_status_history",
     "seed_conformance_tx",
     "seed_conformance_typecurve",
     "seed_conformance_vintage",
@@ -160,6 +168,9 @@ def seed_all(connection: psycopg.Connection) -> dict[str, int]:
         # nm_ocd_ source ids and the count seed_conformance_nm returns is a registry total over
         # that prefix. Seeded after it, the first run's number would differ from the second's.
         "conformance_rules_nm_wells": seed_conformance_nm_wells(connection),
+        # Same place, same reason: one nm_ocd_wellhistory row. It must also land before
+        # seed_jurisdictions, whose rule insert is guarded on the conformance row existing.
+        "conformance_rules_status_history": seed_conformance_status_history(connection),
         "conformance_rules_nm": seed_conformance_nm(connection),
         "conformance_rules_mt": seed_conformance_mt(connection),
         "nm_stream_map": seed_nm_streams(connection),

@@ -78,3 +78,55 @@
 .gw-section-link {
   color: var(--cyan);
 }
+
+/* The status history. A table because it is one: three columns, one row per filed header, and
+   a caption rather than a heading so the section's own disclosure stays the only heading. */
+.gw-status-history {
+  margin-top: var(--gw-space-3);
+}
+
+.gw-status-history table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--gw-fs-micro);
+}
+
+.gw-status-history caption {
+  padding-bottom: var(--gw-space-1);
+  color: var(--slate);
+  font-size: var(--gw-fs-eyebrow);
+  font-weight: var(--gw-fw-eyebrow);
+  letter-spacing: var(--gw-ls-eyebrow);
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.gw-status-history th {
+  padding: var(--gw-space-1) var(--gw-space-2) var(--gw-space-1) 0;
+  color: var(--slate);
+  font-weight: 500;
+  text-align: left;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.gw-status-history td {
+  padding: var(--gw-space-1) var(--gw-space-2) var(--gw-space-1) 0;
+  vertical-align: top;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.gw-status-history td:first-child {
+  font-family: var(--gw-font-mono);
+  white-space: nowrap;
+}
+
+.gw-identity-note {
+  margin-top: var(--gw-space-2);
+}
+
+/* A rule id is an identifier a reader copies, so it reads as one and never wraps mid-token. */
+.gw-identity-rule {
+  color: var(--cyan-text);
+  font-family: var(--gw-font-mono);
+  white-space: nowrap;
+}
