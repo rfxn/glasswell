@@ -37,6 +37,16 @@ RESTATED_EVIDENCE_TAG = "UNRELEASED"
 # append-only table.
 RESTATED_EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
 
+# Knowledge time of the Texas supersession that registers the allocation. Strictly later than
+# every published_at Texas already carries, or it does not resolve and Texas goes on serving the
+# registration that says it has no production. Neither founding + 1 nor RESTATED_ON + 1: a
+# standing gate plants a rival registration on each of those instants.
+TX_SUPERSEDED_ON = date(2026, 9, 6)
+TX_SUPERSEDED_EVIDENCE_TAG = "UNRELEASED"
+# Spelled out rather than computed, for the reason the restatement's is: release.py scans this
+# file for the quoted placeholder and cannot see an expression that evaluates to it.
+TX_SUPERSEDED_EVIDENCE_COMMIT = "0000000000000000000000000000000000000000"
+
 # Colorado's own clock, named separately so the integrator can repoint it on its own train.
 # It is registered after the presentation columns exist, so it is founded whole: there is no
 # instant at which it was published without them and nothing to restate. It is NOT later than
@@ -328,6 +338,26 @@ COLORADO: dict[str, object] = {
 
 JURISDICTIONS: tuple[dict[str, object], ...] = (*FOUNDING_JURISDICTIONS, COLORADO)
 
+# Texas, corrected. Derived from the row it supersedes rather than restated beside it: the whole
+# claim is that only the three named facts moved, and a hand copy of twenty-eight columns is a
+# claim a reader cannot check. source_ids is complete rather than curated -- the parity gate
+# holds it to every lineage.sources row carrying the jurisdiction -- so the PDQ dump joins it.
+TEXAS_SUPERSESSION: dict[str, object] = {
+    **next(row for row in FOUNDING_JURISDICTIONS if row["jurisdiction_code"] == "TX"),
+    "source_ids": ("tx_gis_wells_county", "tx_pdq_dsv", "tx_wellbore_ewa_csv"),
+    "liquids_basis": "oil+condensate",
+    "rationale": (
+        "Served from the RRC county GIS layers, the Wellbore Query export and the PDQ dump."
+        " Texas files production at the lease, so the well-level series is an allocation: the"
+        " lease volume is promoted at its native grain and the per-well share is a mart figure"
+        " carrying its class, its model id and its error-bounds outcome. The liquids basis is"
+        " oil plus condensate because the two columns are disjoint populations keyed by"
+        " OIL_GAS_CODE, which is why a reader comparing to the RRC's published crude figure"
+        " will find glasswell higher."
+    ),
+}
+
+
 # The founding rows, for the migration mirror and the parity gate. Named for what they restate
 # rather than for what they hold, which reads backwards on first grep: they are `JURISDICTIONS`
 # as v0.76 published them, before the seven presentation columns. Derived, never restated --
@@ -448,6 +478,48 @@ JURISDICTION_RULES: tuple[dict[str, object], ...] = (
     *COLORADO_DECISIONS,
 )
 
+# The nine decisions the Texas registration carries after the supersession. Five are carried
+# forward: dropping length_source or basin_scope would silently remove Texas's lateral-length
+# measurement and its basin CRS from the tile mart, which no test would catch because the mart
+# would go on running with a default.
+TX_SUPERSEDED_RULES: tuple[dict[str, object], ...] = (
+    {"jurisdiction_code": "TX", "decision": "status_vocabulary",
+     "rule_id": "cr_tx_status_vocab_1"},
+    {"jurisdiction_code": "TX", "decision": "identity", "rule_id": "cr_tx_api10_build_1"},
+    {"jurisdiction_code": "TX", "decision": "absence:operator",
+     "rule_id": "cr_tx_operator_absence_1"},
+    {"jurisdiction_code": "TX", "decision": "basin_scope", "rule_id": "cr_tx_basin_scope_1"},
+    {"jurisdiction_code": "TX", "decision": "length_source",
+     "rule_id": "cr_tx_length_source_1"},
+    {"jurisdiction_code": "TX", "decision": "production_grain",
+     "rule_id": "cr_tx_production_grain_1"},
+    {"jurisdiction_code": "TX", "decision": "liquids", "rule_id": "cr_tx_liquids_basis_1"},
+    {"jurisdiction_code": "TX", "decision": "geometry_provenance",
+     "rule_id": "cr_tx_geometry_provenance_1"},
+    # The allocation is what decides Texas writes a well-grain row, so it is the rule the
+    # cumulative scope names. The basis is allocated and every figure built from it says so.
+    {"jurisdiction_code": "TX", "decision": "cumulatives_scope",
+     "rule_id": "cr_tx_allocation_v0_1"},
+)
+
+# The registrations appended after the restatement, each at its own clock. A registration that
+# supersedes another carries the whole of what it supersedes, so it is one row and not two.
+SUPERSESSIONS: tuple[dict[str, object], ...] = (TEXAS_SUPERSESSION,)
+
+# Which rule rows are serving after this train. JURISDICTION_RULES is what the restatement
+# declared; a jurisdiction superseded since then declares its own set, and a reader with no
+# database resolves the pair here rather than the answer being spelled in two places.
+SUPERSEDED_RULE_SETS: dict[str, tuple[dict[str, object], ...]] = {"TX": TX_SUPERSEDED_RULES}
+
+SERVING_JURISDICTION_RULES: tuple[dict[str, object], ...] = (
+    *(
+        row
+        for row in JURISDICTION_RULES
+        if str(row["jurisdiction_code"]) not in SUPERSEDED_RULE_SETS
+    ),
+    *(rule for rules in SUPERSEDED_RULE_SETS.values() for rule in rules),
+)
+
 PREFIXES = frozenset(str(row["identity_prefix"]) for row in JURISDICTIONS)
 CODES = frozenset(str(row["jurisdiction_code"]) for row in JURISDICTIONS)
 NAMES = frozenset(str(row["name"]) for row in JURISDICTIONS)
@@ -546,6 +618,16 @@ def restatement_parameters(row: dict[str, object]) -> dict[str, object]:
     )
 
 
+def texas_supersession_parameters() -> dict[str, object]:
+    """Texas at the clock that registers the allocation, on its own evidence pair."""
+    return registration_parameters(
+        TEXAS_SUPERSESSION,
+        published_at=TX_SUPERSEDED_ON,
+        evidence_tag=TX_SUPERSEDED_EVIDENCE_TAG,
+        evidence_commit=TX_SUPERSEDED_EVIDENCE_COMMIT,
+    )
+
+
 def rule_parameters(
     row: dict[str, object], *, published_at: date = REGISTERED_ON
 ) -> dict[str, object]:
@@ -572,12 +654,17 @@ def seed_jurisdictions(connection: psycopg.Connection) -> int:
             _INSERT_JURISDICTION,
             [registration_parameters(row) for row in JURISDICTION_RESTATEMENTS]
             + [restatement_parameters(row) for row in FOUNDING_JURISDICTIONS]
-            + [colorado_parameters()],
+            + [colorado_parameters()]
+            + [texas_supersession_parameters()],
         )
         cursor.executemany(
             _INSERT_RULE,
             [rule_parameters(row) for row in JURISDICTION_RULES_AS_FOUNDED]
-            + [rule_parameters(row, published_at=RESTATED_ON) for row in JURISDICTION_RULES],
+            + [rule_parameters(row, published_at=RESTATED_ON) for row in JURISDICTION_RULES]
+            + [
+                rule_parameters(row, published_at=TX_SUPERSEDED_ON)
+                for row in TX_SUPERSEDED_RULES
+            ],
         )
         # The read-time status resolver is derived from the rows above, and a database restored
         # from a dump lands them without an append for the trigger to see. Every deploy runs

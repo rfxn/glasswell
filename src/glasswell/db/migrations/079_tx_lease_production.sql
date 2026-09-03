@@ -366,3 +366,67 @@ values
 update lineage.source_poll_policies
    set cadence = 'Last Saturday each month', expected_poll_interval = interval '35 days'
  where source_id = 'tx_pdq_dsv';
+-- The supersession. Every value but the ones this track changes is carried over from the row
+-- being superseded rather than restated by hand, so the supersession cannot drift from what it
+-- supersedes -- including the seven presentation columns, whose loss would blank the Texas
+-- Wells row in the web legend. The evidence pair is read back from the publication row above.
+insert into lineage.jurisdictions (
+    jurisdiction_code, effective_from, published_at, evidence_tag, evidence_commit,
+    name, regulator_name, regulator_url, identity_scheme, identity_is_unique,
+    identity_prefix, identity_pattern, source_ids, liquids_basis, wells_tile_layer_id,
+    map_colour, neighbors_available, explorer_default, land_grid_state, land_grid_scope,
+    status_dataset_detail, rationale, wells_layer_id, wells_style_layer_ids, wells_draw_order,
+    wells_default_on, wells_snapshot_key, wells_subtitle_template, legend_note)
+select serving.jurisdiction_code, serving.effective_from, date '2026-09-06',
+       evidence.evidence_tag, evidence.evidence_commit,
+       serving.name, serving.regulator_name, serving.regulator_url,
+       serving.identity_scheme, serving.identity_is_unique, serving.identity_prefix,
+       serving.identity_pattern,
+       (select array_agg(distinct s order by s)
+          from unnest(serving.source_ids || array['tx_pdq_dsv']) s),
+       'oil+condensate',
+       serving.wells_tile_layer_id, serving.map_colour, serving.neighbors_available,
+       serving.explorer_default, serving.land_grid_state, serving.land_grid_scope,
+       serving.status_dataset_detail,
+       'Served from the RRC county GIS layers, the Wellbore Query export and the PDQ dump.'
+       ' Texas files production at the lease, so the well-level series is an allocation: the'
+       ' lease volume is promoted at its native grain and the per-well share is a mart figure'
+       ' carrying its class, its model id and its error-bounds outcome. The liquids basis is'
+       ' oil plus condensate because the two columns are disjoint populations keyed by'
+       ' OIL_GAS_CODE, which is why a reader comparing to the RRC''s published crude figure'
+       ' will find glasswell higher.',
+       serving.wells_layer_id, serving.wells_style_layer_ids, serving.wells_draw_order,
+       serving.wells_default_on, serving.wells_snapshot_key, serving.wells_subtitle_template,
+       serving.legend_note
+  from lineage.jurisdictions_as_of(date '2026-09-04', date '2026-09-02') serving
+ cross join (select evidence_tag, evidence_commit
+               from lineage.conformance_rule_publications
+              where rule_id = 'cr_tx_allocation_v0_1') evidence
+ where serving.jurisdiction_code = 'TX';
+
+-- Guarded on residency exactly as 073's, 075's and 077's inserts are: migrations run before
+-- the seed, so on a fresh database lineage.conformance_rules is empty and seed/jurisdictions.py
+-- supplies these. On a database that is already seeded -- the deployed one -- this is what
+-- lands them. Five rows are carried forward from the registration being superseded; dropping
+-- length_source or basin_scope would silently remove Texas's lateral-length measurement and
+-- basin CRS from the tile mart.
+insert into lineage.jurisdiction_rules
+    (jurisdiction_code, effective_from, published_at, decision, rule_id, serving, note)
+select r.jurisdiction_code, date '2026-09-02', date '2026-09-06',
+       r.decision, r.rule_id, true, null::text
+  from (values
+    ('TX', 'status_vocabulary', 'cr_tx_status_vocab_1'),
+    ('TX', 'identity', 'cr_tx_api10_build_1'),
+    ('TX', 'absence:operator', 'cr_tx_operator_absence_1'),
+    ('TX', 'basin_scope', 'cr_tx_basin_scope_1'),
+    ('TX', 'length_source', 'cr_tx_length_source_1'),
+    ('TX', 'production_grain', 'cr_tx_production_grain_1'),
+    ('TX', 'liquids', 'cr_tx_liquids_basis_1'),
+    ('TX', 'geometry_provenance', 'cr_tx_geometry_provenance_1'),
+    ('TX', 'cumulatives_scope', 'cr_tx_allocation_v0_1')
+  ) as r(jurisdiction_code, decision, rule_id)
+ where exists (select 1 from lineage.conformance_rules c where c.rule_id = r.rule_id)
+   and exists (select 1 from lineage.jurisdictions j
+                where j.jurisdiction_code = 'TX' and j.effective_from = date '2026-09-02'
+                  and j.published_at = date '2026-09-06')
+on conflict do nothing;
