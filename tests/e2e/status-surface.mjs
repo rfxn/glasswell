@@ -405,11 +405,22 @@ try {
     }
     assert(seen.statusOverflow <= 0, `${at} Status owns no page-level horizontal overflow`, `${seen.statusOverflow}px`);
     assert(seen.mapHidden && seen.mapCanvases === 0, `${at} direct Status arrival never constructs Map`, JSON.stringify(seen));
+    // Each table named by what it is, rather than a total. `=== 3` was the count before the
+    // cadence registry split scheduled work into a table per jurisdiction group plus one for
+    // platform jobs, and a total cannot tell a table that arrived from one that vanished --
+    // which is the whole of what this assertion is for.
+    const footprints = seen.semantic.tables.filter((name) => name.includes("gw-status-footprint"));
+    const sources = seen.semantic.tables.filter((name) => name.includes("gw-status-source-table"));
+    const jobs = seen.semantic.tables.filter(
+      (name) => !name.includes("gw-status-footprint") && !name.includes("gw-status-source-table"),
+    );
     assert(
       seen.semantic.sections >= 6 &&
         seen.semantic.lists >= 1 &&
-        seen.semantic.tables.filter((name) => name.includes("gw-status-footprint")).length === 1 &&
-        seen.semantic.tables.length === 3 &&
+        footprints.length === 1 &&
+        sources.length === 1 &&
+        jobs.length >= 1 &&
+        seen.semantic.tables.every((name) => name.includes("gw-status-table")) &&
         seen.semantic.times >= 4,
       `${at} semantic sections, lists, tables, and times survive layout`,
       JSON.stringify(seen.semantic),
