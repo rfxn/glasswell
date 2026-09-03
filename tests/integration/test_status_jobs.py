@@ -76,6 +76,19 @@ def close_refusal(connection: psycopg.Connection, code: str, *, job_id: str = PR
     connection.commit()
 
 
+def close_failure(connection: psycopg.Connection, detail: str, *, job_id: str = PROBE) -> None:
+    """076's own CHECK: a failed run carries a failure_detail and never a refusal code."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.job_runs"
+            " (run_id, job_id, planned_at, started_at, completed_at, launched_by, outcome,"
+            "  failure_detail)"
+            " values ('jrn_0000000000000000000000000E', %s, %s, %s, %s, 'scheduler', 'failed', %s)",
+            (job_id, NOW, NOW, NOW, detail),
+        )
+    connection.commit()
+
+
 def job_of(jobs, job_id: str):
     return next(item for item in jobs if item.id == job_id)
 
@@ -180,6 +193,26 @@ def test_a_run_row_carries_its_duration_and_a_platform_row_carries_its_units(see
     assert platform.schedule.external_timer_unit == "glasswell-backup.timer"
     # The unit column reports whether a timer is armed, so it names the timer.
     assert platform.unit == "glasswell-backup.timer"
+
+
+def test_a_failed_run_serves_its_own_reason_rather_than_the_jobs_cadence(seeded) -> None:
+    """M1: the cadence answers how often, never why it broke — and 076 CHECKs the reason exists."""
+    register(seeded, cadence_note="Every 35 days, which is not why anything failed")
+    close_failure(seeded, "The OCD endpoint answered 503 on every attempt.")
+
+    row = job_of(_registry_jobs(seeded, NOW, silent_runner), PROBE)
+
+    assert row.state == "degraded"
+    assert row.detail == "The OCD endpoint answered 503 on every attempt."
+
+
+def test_a_run_that_did_not_fail_still_reads_its_cadence(seeded) -> None:
+    """The failure branch may not swallow the cadence a never-run job is entitled to."""
+    register(seeded, trigger="manual", cadence_note="Owner-triggered; nothing has run it")
+
+    row = job_of(_registry_jobs(seeded, NOW, silent_runner), PROBE)
+
+    assert row.detail == "Owner-triggered; nothing has run it"
 
 
 def test_an_unresolvable_registry_says_so_rather_than_serving_no_jobs(db) -> None:

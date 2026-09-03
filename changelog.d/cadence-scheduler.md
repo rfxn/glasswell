@@ -15,7 +15,8 @@
       so the ledger still advances only when someone runs it
 - [Change] `/v1/status` generates its job rows from the registry instead of six literal
            blocks, and carries each job's kind, jurisdiction, cadence, next due, duration,
-           last outcome and refusal class with its severity
+           last outcome, the reason a failed run recorded, and refusal class with its
+           severity
 - [Change] The Status page splits scheduled work into data jobs grouped by jurisdiction behind
            a disclosure and platform jobs below them, opening any group that holds a fault
 - [Change] `--dsn` is optional on `glasswell.marts.counts` with the `GLASSWELL_DSN` /
