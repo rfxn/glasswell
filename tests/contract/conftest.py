@@ -1039,6 +1039,24 @@ def _seed_tx_allocation(db: psycopg.Connection) -> None:
                 "incomplete": index == len(months) - 1,
             }
         )
+        # The gas stream carries two shares a month, and that is the shape the divisor has to
+        # survive: casinghead gas allocated off the oil lease, plus the whole of a gas lease
+        # that has one well. 3 wells and 1 well summed to "over 4 wells", a division nothing
+        # performed. Per the census this reaches 21.9 percent of Texas API-10s.
+        rows_to_insert.append(
+            {
+                "lease_key": "O-08-000101",
+                "month": month,
+                "stream": "gas",
+                "volume": Decimal("400.000") + index,
+                "unit": "mcf",
+                "basis": None,
+                "allocation_class": "allocated_equal_share",
+                "granularity": "lease_allocated",
+                "eligible_wells": 3,
+                "incomplete": index == len(months) - 1,
+            }
+        )
     with db.cursor() as cursor:
         cursor.executemany(
             "insert into marts.tx_allocated_production (api10, lease_key, production_month,"

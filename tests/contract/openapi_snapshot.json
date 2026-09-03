@@ -6894,6 +6894,29 @@
             "description": "Report vintage used for each gas point.",
             "title": "Gas Mcf Report Vintage"
           },
+          "gas_mcf_shares_by_month": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lease shares per gas point; same vocabulary as oil.",
+            "title": "Gas Mcf Shares By Month",
+            "x-glasswell-not-a-figure": "Cardinality. The count of lease records a point was summed over is part of the method, not a measured quantity of anything; each share carries its own handle."
+          },
           "oil_bbl": {
             "anyOf": [
               {
@@ -6981,7 +7004,7 @@
                 "type": "null"
               }
             ],
-            "description": "How many wells the lease volume was divided among, per oil point.",
+            "description": "How many wells the lease volume was divided among, per oil point; null where the point sums shares from more than one lease and no single division produced it.",
             "title": "Oil Bbl Eligible Wells By Month",
             "x-glasswell-not-a-figure": "Divisor. The count of wells a share was computed over is part of the method, not a measured quantity of anything."
           },
@@ -7044,6 +7067,29 @@
             ],
             "description": "Report vintage used for each oil point.",
             "title": "Oil Bbl Report Vintage"
+          },
+          "oil_bbl_shares_by_month": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How many lease shares this oil point is the sum of. One for all but the wellbores that carry more than one lease record; each share is addressable with its lease key at alloc.apply.",
+            "title": "Oil Bbl Shares By Month",
+            "x-glasswell-not-a-figure": "Cardinality. The count of lease records a point was summed over is part of the method, not a measured quantity of anything; each share carries its own handle."
           },
           "pm": {
             "description": "Production months, YYYY-MM, ascending.",

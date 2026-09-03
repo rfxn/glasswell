@@ -266,6 +266,14 @@
   reason: >-
     Divisor. The count of wells a share was computed over is part of the method, not a
     measured quantity of anything.
+- pointer: /series/oil_bbl_shares_by_month/*
+  reason: >-
+    Cardinality. The count of lease records a point was summed over is part of the method,
+    not a measured quantity of anything; each share carries its own handle.
+- pointer: /series/gas_mcf_shares_by_month/*
+  reason: >-
+    Cardinality. The count of lease records a point was summed over is part of the method,
+    not a measured quantity of anything; each share carries its own handle.
 - pointer: /blocks/*/degraded_at
   reason: >-
     The threshold the Status check compares the unallocated share against, read from

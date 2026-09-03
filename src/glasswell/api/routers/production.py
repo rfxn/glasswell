@@ -287,10 +287,25 @@ class ProductionSeries(BaseModel):
     )
     oil_bbl_eligible_wells_by_month: list[int | None] | None = Field(
         default=None,
-        description="How many wells the lease volume was divided among, per oil point.",
+        description=(
+            "How many wells the lease volume was divided among, per oil point; null where the"
+            " point sums shares from more than one lease and no single division produced it."
+        ),
         json_schema_extra=not_a_figure(
             "Divisor. The count of wells a share was computed over is part of the method, not"
             " a measured quantity of anything."
+        ),
+    )
+    oil_bbl_shares_by_month: list[int | None] | None = Field(
+        default=None,
+        description=(
+            "How many lease shares this oil point is the sum of. One for all but the wellbores"
+            " that carry more than one lease record; each share is addressable with its lease"
+            " key at alloc.apply."
+        ),
+        json_schema_extra=not_a_figure(
+            "Cardinality. The count of lease records a point was summed over is part of the"
+            " method, not a measured quantity of anything; each share carries its own handle."
         ),
     )
     gas_mcf_granularity_by_month: list[str | None] | None = Field(
@@ -300,6 +315,13 @@ class ProductionSeries(BaseModel):
     gas_mcf_allocation_class_by_month: list[str | None] | None = Field(
         default=None, description="Allocation class per gas point; same vocabulary as oil.",
         json_schema_extra={GLOSSARY_KEY: "gt_allocation_allocation_v0"},
+    )
+    gas_mcf_shares_by_month: list[int | None] | None = Field(
+        default=None, description="Lease shares per gas point; same vocabulary as oil.",
+        json_schema_extra=not_a_figure(
+            "Cardinality. The count of lease records a point was summed over is part of the"
+            " method, not a measured quantity of anything; each share carries its own handle."
+        ),
     )
     gas_mcf_eligible_wells_by_month: list[int | None] | None = Field(
         default=None,
@@ -798,9 +820,11 @@ def _allocated_response(
             _dominant(by_month[month]["classes"]) if month in by_month else None
             for month in months
         ]
+        payload[f"{column}_shares_by_month"] = [
+            int(by_month[month]["shares"]) if month in by_month else None for month in months
+        ]
         payload[f"{column}_eligible_wells_by_month"] = [
-            int(by_month[month]["eligible_wells"]) if month in by_month else None
-            for month in months
+            _divisor(by_month[month]) if month in by_month else None for month in months
         ]
         if any(row["incomplete_window"] for row in by_month.values()):
             incomplete.append(column)
@@ -899,6 +923,16 @@ def _allocated_response(
 def _decimal(value: Any) -> str | None:
     """Decimal strings, as the observed arm serves them: a float would round a barrel away."""
     return None if value is None else str(Decimal(value))
+
+
+def _divisor(row: Mapping[str, Any]) -> int | None:
+    """The wells this month's volume was divided among, or None where no one division made it.
+
+    A wellbore on two leases sums two shares, and summing their divisors states a division
+    that never happened -- 3 wells and 1 well reported as "over 4 wells" (M2). The per-lease
+    divisor is on each share's own `lk` handle, which is where a divided figure is addressed.
+    """
+    return int(row["eligible_wells"]) if int(row["shares"]) == 1 else None
 
 
 class PoolProduction(BaseModel):

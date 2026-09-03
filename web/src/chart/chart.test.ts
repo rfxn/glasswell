@@ -293,9 +293,11 @@ function allocated(pm: string[]): ProductionData {
         return "allocated_equal_share";
       }),
       oil_bbl_eligible_wells_by_month: pm.map((_, index) => (index === 0 ? "1" : "3")),
+      oil_bbl_shares_by_month: pm.map(() => "1"),
       gas_mcf_granularity_by_month: pm.map(() => "well_observed"),
       gas_mcf_allocation_class_by_month: pm.map(() => "observed_gas_well"),
       gas_mcf_eligible_wells_by_month: pm.map(() => "1"),
+      gas_mcf_shares_by_month: pm.map(() => "1"),
     },
     allocation: {
       model_id: "alloc_v0_2026_09",
@@ -395,6 +397,54 @@ describe("the allocation band", () => {
     renderChart(host, dense, callbacks);
 
     expect(host.querySelector(".gw-readout-alloc")).toBeNull();
+  });
+});
+
+/** The 21.9 percent of Texas API-10s that carry more than one lease record. */
+function dualLease(pm: string[]): ProductionData {
+  const base = allocated(pm);
+  return {
+    ...base,
+    series: {
+      ...base.series,
+      // What the wire serves for a summed point: the class collapses to the safe one, and
+      // there is no divisor, because no one division produced the number.
+      gas_mcf_granularity_by_month: pm.map(() => "lease_allocated"),
+      gas_mcf_allocation_class_by_month: pm.map(() => "allocated_equal_share"),
+      gas_mcf_eligible_wells_by_month: pm.map(() => null),
+      gas_mcf_shares_by_month: pm.map(() => "2"),
+    },
+  };
+}
+
+describe("a wellbore whose month is the sum of two leases", () => {
+  const dual = toChartSeries(dualLease(months("2024-01", 6)));
+
+  it("counts the shares instead of stating a divisor that divided nothing", () => {
+    renderChart(host, dual, callbacks);
+    const rows = [...host.querySelectorAll(".gw-readout-row")];
+    const gas = rows.find((row) => (row as HTMLElement).dataset["stream"] === "gas");
+    const how = gas?.querySelector(".gw-readout-alloc")?.textContent ?? "";
+
+    expect(how).toContain("2 shares summed");
+    expect(how).not.toContain("over");
+  });
+
+  it("says the same thing in the band's tooltip, which is where a month is read", () => {
+    renderChart(host, dual, callbacks);
+    const rows = [...host.querySelectorAll(".gw-alloc-row")];
+    const marks = [...(rows[1]?.querySelectorAll(".gw-alloc-mark") ?? [])];
+
+    expect(marks[0]?.getAttribute("title")).toContain("2 shares summed");
+    expect(marks[0]?.getAttribute("title")).not.toContain("wells");
+  });
+
+  it("keeps the divisor where one lease really was divided", () => {
+    renderChart(host, dual, callbacks);
+    const rows = [...host.querySelectorAll(".gw-readout-row")];
+    const oil = rows.find((row) => (row as HTMLElement).dataset["stream"] === "oil");
+
+    expect(oil?.querySelector(".gw-readout-alloc")?.textContent).toContain("over 3 wells");
   });
 });
 

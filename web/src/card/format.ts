@@ -134,6 +134,19 @@ export function allocationClass(state: string): AllocationMark {
 }
 
 /**
+ * What follows the class: the divisor where one division produced the number, the count of
+ * shares where more than one did, and nothing where neither applies.
+ *
+ * A wellbore on two leases sums two shares, and summing their divisors states a division that
+ * never happened. The per-lease divisor is on each share's own `lk` handle.
+ */
+export function shareDetail(eligibleWells: number | null, shares: number | null): string {
+  if (shares !== null && shares > 1) return ` · ${String(shares)} shares summed`;
+  if (eligibleWells !== null && eligibleWells > 1) return ` over ${String(eligibleWells)} wells`;
+  return "";
+}
+
+/**
  * How a figure was arrived at, in one word, wherever a granularity reaches the DOM.
  *
  * An allocation estimate that reads as an observation is the defect the whole track exists

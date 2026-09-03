@@ -21,6 +21,8 @@ export interface ReadoutRow {
   allocation: AllocationMark | null;
   /** How many wells the lease volume was divided among, where it was divided at all. */
   eligibleWells: number | null;
+  /** How many lease shares this point is the sum of; more than one and no divisor applies. */
+  shares: number | null;
   handle: string | null;
 }
 
@@ -73,6 +75,7 @@ export function readoutAt(chart: ChartSeries, index: number): Readout | null {
           ? allocationClass(column.allocationClasses[index] ?? "")
           : null,
         eligibleWells: column.eligibleWells[index] ?? null,
+        shares: column.shares[index] ?? null,
         handle: handleAt(column, index, month),
       };
     }),

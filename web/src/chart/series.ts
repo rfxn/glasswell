@@ -55,6 +55,11 @@ export interface SeriesColumn {
   allocationClasses: string[];
   granularities: (string | null)[];
   eligibleWells: (number | null)[];
+  /**
+   * How many lease shares a point is the sum of. A wellbore on two leases sums two, and there
+   * is then no one divisor to state: the per-lease one is on each share's own `lk` handle.
+   */
+  shares: (number | null)[];
   /** Months inside the regulator's own completeness lag, shaded rather than read as decline. */
   incomplete: boolean[];
   vintage: string | null;
@@ -109,6 +114,7 @@ export function toChartSeries(
     const classes = column(production.series, `${key}_allocation_class_by_month`) ?? [];
     const grains = column(production.series, `${key}_granularity_by_month`) ?? [];
     const divisors = column(production.series, `${key}_eligible_wells_by_month`) ?? [];
+    const shares = column(production.series, `${key}_shares_by_month`) ?? [];
     columns.push({
       key,
       stream,
@@ -123,10 +129,8 @@ export function toChartSeries(
       nullSemantics: states,
       allocationClasses: months.map((_, index) => classes[index] ?? ""),
       granularities: months.map((_, index) => grains[index] ?? null),
-      eligibleWells: months.map((_, index) => {
-        const value = divisors[index];
-        return value === null || value === undefined || value === "" ? null : Number(value);
-      }),
+      eligibleWells: months.map((_, index) => count(divisors[index])),
+      shares: months.map((_, index) => count(shares[index])),
       incomplete: months.map((_, index) => incompleteFrom !== null && index >= incompleteFrom),
       vintage: distinct.size === 1 ? (present[0] ?? null) : null,
       mixedVintages: distinct.size > 1,
@@ -144,6 +148,11 @@ export function toChartSeries(
     allocation: production.allocation ?? null,
     allocated: columns.some((entry) => entry.allocationClasses.some((state) => state !== "")),
   };
+}
+
+/** A served count, or null where the wire carried none -- never 0 for an absent number. */
+function count(value: string | null | undefined): number | null {
+  return value === null || value === undefined || value === "" ? null : Number(value);
 }
 
 /** The index the completeness lag starts at, or null where the wire named no month. */

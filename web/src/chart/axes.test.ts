@@ -19,6 +19,7 @@ function column(label: string, unit: string): SeriesColumn {
     allocationClasses: [],
     granularities: [],
     eligibleWells: [],
+    shares: [],
     incomplete: [],
     vintage: null,
     mixedVintages: false,

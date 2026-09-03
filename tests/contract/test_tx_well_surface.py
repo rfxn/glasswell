@@ -115,8 +115,10 @@ def test_every_allocated_point_carries_its_class_its_divisor_and_its_granularity
     assert series["oil_bbl_granularity_by_month"] == ["lease_allocated"] * 3
     assert series["oil_bbl_allocation_class_by_month"] == ["allocated_equal_share"] * 3
     assert series["oil_bbl_eligible_wells_by_month"] == [3, 3, 3]
-    assert series["gas_mcf_granularity_by_month"] == ["well_observed"] * 3
-    assert series["gas_mcf_allocation_class_by_month"] == ["observed_gas_well"] * 3
+    # The gas stream sums two leases every month, so the dominant class is the safe one:
+    # a month that is partly a share reads as a share, never as an observation.
+    assert series["gas_mcf_granularity_by_month"] == ["lease_allocated"] * 3
+    assert series["gas_mcf_allocation_class_by_month"] == ["allocated_equal_share"] * 3
 
 
 def test_an_allocated_series_carries_the_model_that_produced_it(client: TestClient) -> None:
@@ -291,3 +293,22 @@ def test_the_wire_says_the_lease_filed_it_never_that_this_well_reported_it(
     assert series["oil_bbl_null_semantics"] == ["lease_reported"] * 3
     assert series["gas_mcf_null_semantics"] == ["lease_reported"] * 3
     assert "reported" not in set(series["oil_bbl_null_semantics"])
+
+
+def test_a_summed_point_states_the_count_of_shares_and_no_divisor(
+    client: TestClient,
+) -> None:
+    """M2. 3 eligible wells plus 1 eligible well is not a four-well division.
+
+    The oil stream is one lease split three ways and says so. The gas stream is two lease
+    records summed, and there is no single divisor to state -- the per-lease one lives on each
+    share's own `lk` handle, which resolves independently at alloc.apply.
+    """
+    series = envelope(client, f"/v1/wells/{TX_API10}/production")["data"]["series"]
+
+    assert series["gas_mcf_eligible_wells_by_month"] == [None, None, None], (
+        "a summed point states a divisor that divided nothing"
+    )
+    assert series["gas_mcf_shares_by_month"] == [2, 2, 2]
+    assert series["oil_bbl_eligible_wells_by_month"] == [3, 3, 3]
+    assert series["oil_bbl_shares_by_month"] == [1, 1, 1]

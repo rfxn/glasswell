@@ -7,6 +7,7 @@ import {
   allocationClass,
   formatMonth,
   nullSemantics,
+  shareDetail,
 } from "../card/format.ts";
 import { explainHandle } from "../chrome/handle.ts";
 import { THEME_EVENT } from "../chrome/theme.ts";
@@ -455,9 +456,8 @@ function allocationMark(column: SeriesColumn, index: number, month: string): HTM
   if (column.incomplete[index]) cell.classList.add("gw-month-incomplete");
   cell.setAttribute("data-index", String(index));
   cell.setAttribute("data-no-glossary", "");
-  const divisor = column.eligibleWells[index] ?? null;
-  const over = divisor === null || divisor <= 1 ? "" : ` · over ${String(divisor)} wells`;
-  cell.title = `${formatMonth(month)} · ${column.label} · ${described.label}${over}`;
+  const detail = shareDetail(column.eligibleWells[index] ?? null, column.shares[index] ?? null);
+  cell.title = `${formatMonth(month)} · ${column.label} · ${described.label}${detail}`;
   return cell;
 }
 
@@ -571,11 +571,8 @@ function readoutRow(row: ReadoutRow, callbacks: ChartCallbacks): HTMLElement {
     how.title = row.allocation.title;
     const allocMark = document.createElement("span");
     allocMark.className = `gw-alloc-mark ${row.allocation.className}`;
-    const over =
-      row.eligibleWells !== null && row.eligibleWells > 1
-        ? ` over ${String(row.eligibleWells)} wells`
-        : "";
-    how.append(allocMark, document.createTextNode(` ${row.allocation.label}${over}`));
+    const detail = shareDetail(row.eligibleWells, row.shares);
+    how.append(allocMark, document.createTextNode(` ${row.allocation.label}${detail}`));
   }
 
   // The facts wrap among themselves; the handle does not leave the row it explains, which at
