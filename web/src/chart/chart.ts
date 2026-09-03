@@ -368,6 +368,11 @@ function stateBand(chart: ChartSeries): HTMLElement {
     const name = document.createElement("span");
     name.className = "gw-state-name";
     name.textContent = bandSubject(column);
+    if (leaseGrain(column)) {
+      name.title =
+        `What the lease filed for ${column.label.toLowerCase()} each month. This well's` +
+        " number is its share of that filing, and the row below says how the share was made.";
+    }
     const cells = document.createElement("div");
     cells.className = "gw-state-cells";
     cells.setAttribute("role", "img");
@@ -399,10 +404,12 @@ function leaseGrain(column: SeriesColumn): boolean {
 
 /**
  * The first band's subject, in words, on screen. Two bands under one chart that both read
- * `Oil` are one claim to a reader; the filing and the share are two.
+ * `Oil` are one claim to a reader; the filing and the share are two. Two words, because the
+ * name sits in the plot's own left gutter: `lease filing` measured 77 px against 58 px of
+ * column and truncated to `Oil · leas...`, and a subject a reader cannot read is not one.
  */
 function bandSubject(column: SeriesColumn): string {
-  return leaseGrain(column) ? `${column.label} · lease filing` : column.label;
+  return leaseGrain(column) ? `${column.label} · lease` : column.label;
 }
 
 function mark(column: SeriesColumn, index: number, month: string): HTMLElement {

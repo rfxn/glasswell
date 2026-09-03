@@ -497,12 +497,11 @@ describe("the two bands name two subjects", () => {
     );
 
     // Two rows per stream: what the lease filed, and how this well's share was arrived at.
-    expect(names).toEqual([
-      "Oil · lease filing",
-      "Gas · lease filing",
-      "Oil · how",
-      "Gas · how",
-    ]);
+    expect(names).toEqual(["Oil · lease", "Gas · lease", "Oil · how", "Gas · how"]);
+    // The gutter is 58 px wide and clips with an ellipsis, so the subject is two words and
+    // the sentence rides in the title.
+    const subject = host.querySelector(".gw-state-row .gw-state-name");
+    expect(subject?.getAttribute("title")).toContain("share of that filing");
   });
 
   it("never stands the bare word reported beside a share in the readout", () => {
