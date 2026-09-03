@@ -22,6 +22,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // because the card and its tail — figures, formatting, the completion and neighbour panels —
 // had been riding it for every reader, including one who never opens a well. Re-tightened for
 // the same reason the chart's move was: leaving 9 kB of slack in place would stop it ratcheting.
+// Re-measured at the v0.80 fix round: the route is 76,412 B on this head, and the 71,511 B
+// this comment cited as the before-figure was stale -- the well-card track's P0 measured the
+// same walk at 74,838 B at its own base. The budget is unchanged at 79,700, which is this
+// head's measurement plus 4.3%; web/PERF.md carries the three figures and the arithmetic.
 // Re-measured for the allocation band: the explorer route rose 71,511 → 75,958 B, because the
 // chart chunk gained a second band with its own six-class vocabulary, its own key, and the
 // per-month class, divisor and completeness arrays behind them. It is on the route rather than
