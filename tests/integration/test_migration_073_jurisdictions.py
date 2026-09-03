@@ -11,6 +11,9 @@ the deployed one -- this migration is what lands them. Both paths are exercised 
 
 from __future__ import annotations
 
+import ast
+import inspect
+import textwrap
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import date, timedelta
@@ -20,7 +23,7 @@ import pytest
 from psycopg.rows import dict_row
 
 from glasswell.db.migrate import discover_migrations
-from glasswell.seed import seed_all
+from glasswell.seed import jurisdictions, seed_all
 from glasswell.seed.jurisdictions import (
     FOUNDING_JURISDICTIONS,
     JURISDICTION_RESTATEMENTS,
@@ -91,6 +94,37 @@ def resolved(connection: psycopg.Connection, knowledge: date, valid: date) -> li
         return cursor.fetchall()
 
 
+def rule_row_sources() -> tuple[str, ...]:
+    """Every module-level tuple `seed_jurisdictions` feeds to the rule insert, read out of the
+    seeder itself.
+
+    Listing the names here is what broke: the fixture patched two of them, the Texas track
+    added `TX_SUPERSEDED_RULES` as a third writer, and eight tests stopped running rather than
+    failing (gate-tx H-5). Derived, a fourth writer is patched without an edit, and one this
+    cannot resolve fails the assertion below rather than leaving the fixture half-applied.
+    """
+    tree = ast.parse(textwrap.dedent(inspect.getsource(seed_jurisdictions)))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if getattr(node.func, "attr", "") != "executemany" or len(node.args) != 2:
+            continue
+        first = node.args[0]
+        if not isinstance(first, ast.Name) or first.id != "_INSERT_RULE":
+            continue
+        names.update(
+            child.id
+            for child in ast.walk(node.args[1])
+            if isinstance(child, ast.Name)
+            and isinstance(getattr(jurisdictions, child.id, None), tuple)
+        )
+    return tuple(sorted(names))
+
+
+RULE_ROW_SOURCES = rule_row_sources()
+
+
 @pytest.fixture
 def seeded_without_the_registry_rules(db: psycopg.Connection) -> psycopg.Connection:
     """The deployed database's state: every conformance rule resident, no jurisdiction rule.
@@ -98,14 +132,23 @@ def seeded_without_the_registry_rules(db: psycopg.Connection) -> psycopg.Connect
     The patch is scoped to the seeding, not to the test: what follows it calls the real seeder.
     """
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr("glasswell.seed.jurisdictions.JURISDICTION_RULES", ())
-        patch.setattr("glasswell.seed.jurisdictions.JURISDICTION_RULES_AS_FOUNDED", ())
+        for name in RULE_ROW_SOURCES:
+            patch.setattr(f"glasswell.seed.jurisdictions.{name}", ())
         seed_all(db)
     db.commit()
     with db.cursor() as cursor:
         cursor.execute("select count(*) from lineage.jurisdiction_rules")
         assert cursor.fetchone()[0] == 0
     return db
+
+
+def test_the_fixture_finds_every_writer_the_seeder_feeds_the_rule_insert() -> None:
+    """The discovery, asserted rather than assumed: a walk that found nothing would leave the
+    fixture patching nothing and every test using it silently seeding the whole registry."""
+    assert len(RULE_ROW_SOURCES) >= 3, RULE_ROW_SOURCES
+    assert "TX_SUPERSEDED_RULES" in RULE_ROW_SOURCES
+    for name in RULE_ROW_SOURCES:
+        assert isinstance(getattr(jurisdictions, name), tuple)
 
 
 @pytest.fixture
