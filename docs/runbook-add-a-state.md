@@ -192,7 +192,9 @@ Four inserts, one job per entry point:
 
    **Every row you seed is `launch_mode='observe'`.** A launching row is started by the next
    tick (`plan.py:363`, `runner.py:306`), so the posture is the launch-flip track's own act and
-   never a registration choice. Your state's first load is its runbook's, not the scheduler's.
+   never a registration choice; `tests/unit/test_schedule_posture.py` reddens on a row that
+   resolves `launch` anywhere in the seed. Your state's first load is its runbook's, not the
+   scheduler's.
 4. An optional DSN flag in your own mains, resolved through `glasswell.db.dsn` so they read
    `GLASSWELL_DSN` then `DATABASE_URL` like every other entry point.
 

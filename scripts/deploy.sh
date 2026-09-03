@@ -300,7 +300,7 @@ if remote "systemctl is-enabled --quiet glasswell-restore-drill.timer"; then
 fi
 # The timer only, never the service, for the reason cf-ranges gives above: a tick reads the
 # whole registry and every source's poll evidence, and a deploy step must not wait on it.
-# While every seeded row observes there is nothing for it to launch either way.
+# While every row the registry resolves observes there is nothing for it to launch either way.
 remote "systemctl start glasswell-scheduler.timer" \
     || refuse "glasswell-scheduler timer did not start"
 remote "systemctl start glasswell-status.service" \

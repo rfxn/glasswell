@@ -341,9 +341,9 @@ printf 'enabled glasswell-lineage-retention.timer — start it after migrations 
 systemctl enable glasswell-cf-ranges.timer
 printf 'enabled glasswell-cf-ranges.timer — start it to arm the weekly range refresh\n'
 # Armed on every run, like the three above. There is no --enable-scheduler flag on purpose: a
-# flag deploy.sh does not pass is how the ident map was lost, and while every seeded row is
-# launch_mode=observe the tick computes a plan and launches nothing, so arming it costs an
-# hourly read and changes nothing else.
+# flag deploy.sh does not pass is how the ident map was lost, and while every row the registry
+# resolves is launch_mode=observe the tick computes a plan and launches nothing, so arming it
+# costs an hourly read and changes nothing else.
 systemctl enable glasswell-scheduler.timer
 printf 'enabled glasswell-scheduler.timer — hourly; every row observes, so it launches nothing\n'
 

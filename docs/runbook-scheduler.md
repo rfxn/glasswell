@@ -23,7 +23,9 @@ scheduler ran something it did not.
 Turning a job over is one appended row with `launch_mode='launch'`, and that row belongs to
 the launch-flip track alone: no jurisdiction registers it for itself, because a launching row is
 an unattended run on the next tick and the deploy re-arms the timer every time.
-The guard that survives the flip is narrower than the posture: **no
+`tests/unit/test_schedule_posture.py` reddens on any row that resolves `launch`, and the flip
+is the change that retires it. The guard that survives the flip is narrower than the posture:
+**no
 `launch` row may name an entry point an installed timer already drives.**
 
 ## Reading the plan
