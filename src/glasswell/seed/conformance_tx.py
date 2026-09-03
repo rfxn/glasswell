@@ -32,6 +32,8 @@ EFFECTIVE_FROM = date(2026, 8, 20)
 PDQ_EFFECTIVE_FROM = date(2026, 9, 2)
 
 PDQ_LINK = "https://mft.rrc.texas.gov/link/1f5ddb8d-329a-4459-b7f8-177b4f5ee60d"
+W10_LINK = "https://mft.rrc.texas.gov/link/af355cae-e78b-4337-aba8-7ce57073dba3"
+G10_LINK = "https://mft.rrc.texas.gov/link/1363c373-fe71-4044-aa23-3c90cd162ff9"
 PDQ_MANUAL = "https://www.rrc.texas.gov/media/50ypu2cg/pdq-dump-user-manual.pdf"
 PDQ_FAQ = (
     "https://www.rrc.texas.gov/about-us/faqs/oil-gas-faq/"
@@ -86,6 +88,20 @@ TX_SOURCES: tuple[dict[str, object], ...] = (
     {
         "source_id": "tx_pdq_dsv",
         "name": "TX RRC Production Data Query dump (PDQ_DSV.zip)",
+        "jurisdiction": "TX",
+        "license_note": TX_LICENSE_NOTE,
+        "redistributable": False,
+    },
+    {
+        "source_id": "tx_w10_wlf607",
+        "name": "TX RRC Oil Well Status, 26 Month W-10 (wlf607.ebc[.gz])",
+        "jurisdiction": "TX",
+        "license_note": TX_LICENSE_NOTE,
+        "redistributable": False,
+    },
+    {
+        "source_id": "tx_g10_gse10",
+        "name": "TX RRC Gas Well Status, 26 Month G-10 (gse10.ebc[.gz])",
         "jurisdiction": "TX",
         "license_note": TX_LICENSE_NOTE,
         "redistributable": False,
@@ -1196,6 +1212,45 @@ TX_RULES: tuple[dict[str, object], ...] = (
             " the router, so a sixth jurisdiction is a registration."
         ),
         "evidence_url": GIS_FAQ,
+        "effective_from": PDQ_EFFECTIVE_FROM,
+    },
+    {
+        "rule_id": "cr_tx_well_status_archive_1",
+        "source_id": "tx_w10_wlf607",
+        # The stage cr_tx_mft_resolve_1 already files an acquisition decision under: the
+        # vocabulary admits no raw stage, and the choice of artifact is what the parse reads.
+        "stage": "parse",
+        "rule_kind": "parse_directive",
+        "applies_to_fields": ["all"],
+        "spec": {
+            "archives": {
+                "tx_w10_wlf607": {"link": W10_LINK, "names": ["wlf607.ebc", "wlf607.ebc.gz"]},
+                "tx_g10_gse10": {"link": G10_LINK, "names": ["gse10.ebc", "gse10.ebc.gz"]},
+            },
+            "sibling_preference": "newest_modified",
+            "parse": False,
+            "module_function": "glasswell.ingest.tx_pdq:archive_well_status",
+        },
+        "rule": (
+            "The two well-status files are archived monthly and parsed by nothing. Where a"
+            " listing offers a compressed and an uncompressed twin, the vintage is the sibling"
+            " the portal modified most recently, and which one was taken is recorded on the"
+            " manifest."
+        ),
+        "rationale": (
+            "The files hold the most recent 26-month reporting period against 402 months of"
+            " PDQ history, so a window not archived monthly cannot be reconstructed from any"
+            " regulator and allocation v1's test-rate weighting becomes impossible. They are"
+            " archived and not parsed because v0 weights nothing by them."
+            " The sibling preference is measured, not assumed, and it runs both ways: on"
+            " 2026-09-03 the W-10 listing offered wlf607.ebc modified 2021-09-24 beside"
+            " wlf607.ebc.gz modified 2026-08-25, while the G-10 listing offered gse10.ebc"
+            " modified 2026-08-25 beside gse10.ebc.gz modified 2021-12-09. A fetcher that"
+            " preferred either extension would take a five-year-old vintage for one of the two"
+            " and never say so, so the rule is the modification date and the chosen name is"
+            " recorded."
+        ),
+        "evidence_url": DOWNLOADS_PAGE,
         "effective_from": PDQ_EFFECTIVE_FROM,
     },
 )

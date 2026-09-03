@@ -647,7 +647,17 @@ JOB_SOURCES: dict[str, tuple[str, ...]] = {
 # co_ecmc_prod_reports is the third: the 2.49 GB annual archives are a later dispatch and no
 # job polls them in this release, so the source is registered with a null interval and named
 # here rather than given a schedule that would claim a poll nothing performs.
-UNJOBBED_SOURCES = frozenset({"proj_grid_nad27", "tx_pdq_dsv", "co_ecmc_prod_reports"})
+UNJOBBED_SOURCES = frozenset(
+    {
+        "proj_grid_nad27",
+        "tx_pdq_dsv",
+        "co_ecmc_prod_reports",
+        # Archived by the PDQ job and parsed by nothing; they leave this
+        # set in the commit that registers that job.
+        "tx_w10_wlf607",
+        "tx_g10_gse10",
+    }
+)
 
 DEPENDENCIES: tuple[tuple[str, str, str, str], ...] = (
     (

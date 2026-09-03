@@ -344,7 +344,13 @@ JURISDICTIONS: tuple[dict[str, object], ...] = (*FOUNDING_JURISDICTIONS, COLORAD
 # holds it to every lineage.sources row carrying the jurisdiction -- so the PDQ dump joins it.
 TEXAS_SUPERSESSION: dict[str, object] = {
     **next(row for row in FOUNDING_JURISDICTIONS if row["jurisdiction_code"] == "TX"),
-    "source_ids": ("tx_gis_wells_county", "tx_pdq_dsv", "tx_wellbore_ewa_csv"),
+    "source_ids": (
+        "tx_g10_gse10",
+        "tx_gis_wells_county",
+        "tx_pdq_dsv",
+        "tx_w10_wlf607",
+        "tx_wellbore_ewa_csv",
+    ),
     "liquids_basis": "oil+condensate",
     "rationale": (
         "Served from the RRC county GIS layers, the Wellbore Query export and the PDQ dump."
