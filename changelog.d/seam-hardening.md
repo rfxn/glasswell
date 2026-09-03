@@ -20,7 +20,9 @@
       unregistered length rule is a 200 with a null and a `length_scope_unregistered` reason
 - [Fix] The glossary client read one page of 200 terms and declared itself loaded, so a
       vocabulary past that cap would have rendered "Definition loading…" for the life of the
-      page; it follows `meta.next_cursor` to a ten-page cap without throwing
+      page; it pages to the end of what the server serves, treating an absent `next_cursor` as
+      the last page, and refuses a cursor that offers another page and returns nothing new,
+      naming the count it had read
 - [Fix] A jurisdiction registered as carrying laterals outside the neighbour mart's measured
       domain aborted the whole monthly refresh naming another state's well; it is excluded
       with a reason the well card and `/v1/jurisdictions` both report
