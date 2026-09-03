@@ -5,12 +5,31 @@ export interface ProductionSeries {
   [column: string]: (string | null)[] | string[];
 }
 
+export interface ErrorBounds {
+  outcome: string;
+  measured_by_rule?: string | null;
+  bed?: string | null;
+  error_lo?: string | null;
+  error_hi?: string | null;
+}
+
+export interface AllocationBlock {
+  model_id: string | null;
+  rule_id: string;
+  leases: string[];
+  membership_vintage: string | null;
+  incomplete_from?: string | null;
+  error_bounds: ErrorBounds;
+}
+
 export interface ProductionData {
   api10: string;
   source_id: string | null;
   granularity: string;
   streams: string[];
   series: ProductionSeries;
+  /** Present only where the series is an allocation; absent on every observed jurisdiction. */
+  allocation?: AllocationBlock | null;
   _lineage: Record<string, string>;
   _units: Record<string, string>;
   _basis: Record<string, string>;
@@ -28,6 +47,16 @@ export interface SeriesColumn {
   raw: (string | null)[];
   vintages: (string | null)[];
   nullSemantics: NullSemanticsState[];
+  /**
+   * Per month, because the scalar cannot describe a series that is partly observed and partly
+   * allocated: a lease that crossed one to two eligible wells produces exactly that. Empty on
+   * an observed jurisdiction, which is what keeps the second band off North Dakota's chart.
+   */
+  allocationClasses: string[];
+  granularities: (string | null)[];
+  eligibleWells: (number | null)[];
+  /** Months inside the regulator's own completeness lag, shaded rather than read as decline. */
+  incomplete: boolean[];
   vintage: string | null;
   mixedVintages: boolean;
 }
@@ -40,6 +69,10 @@ export interface ChartSeries {
   data: (number | null)[][];
   columns: SeriesColumn[];
   scales: string[];
+  /** The allocation this series is, where it is one. Null on every observed jurisdiction. */
+  allocation: AllocationBlock | null;
+  /** Whether any column carries an allocation class, which is what draws the second band. */
+  allocated: boolean;
 }
 
 const STREAM_COLUMNS: Record<string, string> = {
@@ -50,10 +83,17 @@ const STREAM_COLUMNS: Record<string, string> = {
 
 const STREAM_LABELS: Record<string, string> = { oil: "Oil", gas: "Gas", water: "Water" };
 
-export function toChartSeries(production: ProductionData): ChartSeries {
+export function toChartSeries(
+  production: ProductionData,
+  options: { incompleteFromMonth?: string | null } = {},
+): ChartSeries {
   const months = production.series.pm;
   const x = months.map(monthToEpoch);
   const columns: SeriesColumn[] = [];
+  const incompleteFrom = firstIncomplete(
+    months,
+    options.incompleteFromMonth ?? production.allocation?.incomplete_from ?? null,
+  );
 
   for (const stream of production.streams) {
     const key = STREAM_COLUMNS[stream];
@@ -66,6 +106,9 @@ export function toChartSeries(production: ProductionData): ChartSeries {
     const distinct = new Set(present);
     const states = semantics.map((state) => state ?? "");
     const handles = pointHandles(production._lineage, key, months.length);
+    const classes = column(production.series, `${key}_allocation_class_by_month`) ?? [];
+    const grains = column(production.series, `${key}_granularity_by_month`) ?? [];
+    const divisors = column(production.series, `${key}_eligible_wells_by_month`) ?? [];
     columns.push({
       key,
       stream,
@@ -78,6 +121,13 @@ export function toChartSeries(production: ProductionData): ChartSeries {
       raw,
       vintages,
       nullSemantics: states,
+      allocationClasses: months.map((_, index) => classes[index] ?? ""),
+      granularities: months.map((_, index) => grains[index] ?? null),
+      eligibleWells: months.map((_, index) => {
+        const value = divisors[index];
+        return value === null || value === undefined || value === "" ? null : Number(value);
+      }),
+      incomplete: months.map((_, index) => incompleteFrom !== null && index >= incompleteFrom),
       vintage: distinct.size === 1 ? (present[0] ?? null) : null,
       mixedVintages: distinct.size > 1,
     });
@@ -91,7 +141,16 @@ export function toChartSeries(production: ProductionData): ChartSeries {
     data: [x, ...columns.map((entry) => entry.values)],
     columns,
     scales: [...new Set(columns.map((entry) => entry.unit))],
+    allocation: production.allocation ?? null,
+    allocated: columns.some((entry) => entry.allocationClasses.some((state) => state !== "")),
   };
+}
+
+/** The index the completeness lag starts at, or null where the wire named no month. */
+function firstIncomplete(months: string[], from: string | null): number | null {
+  if (from === null) return null;
+  const at = months.indexOf(from);
+  return at === -1 ? null : at;
 }
 
 /**

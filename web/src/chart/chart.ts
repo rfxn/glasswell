@@ -1,7 +1,13 @@
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
-import { NULL_SEMANTICS_STATES, formatMonth, nullSemantics } from "../card/format.ts";
+import {
+  ALLOCATION_CLASSES,
+  NULL_SEMANTICS_STATES,
+  allocationClass,
+  formatMonth,
+  nullSemantics,
+} from "../card/format.ts";
 import { explainHandle } from "../chrome/handle.ts";
 import { THEME_EVENT } from "../chrome/theme.ts";
 import { labelElement } from "../glossary/gw-term.ts";
@@ -82,6 +88,8 @@ export function renderChart(
 
     const band = stateBand(view.chart);
     container.appendChild(band);
+    const allocation = allocationBand(view.chart);
+    if (allocation) container.appendChild(allocation);
 
     const axis = document.createElement("p");
     axis.className = "gw-chart-axis";
@@ -94,6 +102,8 @@ export function renderChart(
     readout.className = "gw-series-readout";
     readout.setAttribute("aria-live", "polite");
     container.append(readout, stateKey(view.chart, callbacks));
+    const key = allocationKey(view.chart, callbacks);
+    if (key) container.appendChild(key);
     const vintages = vintageDisclosure(view.chart);
     if (vintages) container.appendChild(vintages);
 
@@ -366,10 +376,81 @@ function mark(column: SeriesColumn, index: number, month: string): HTMLElement {
   const described = nullSemantics(column.nullSemantics[index] ?? "");
   const cell = document.createElement("span");
   cell.className = `gw-state-mark ${described.className}`;
+  if (column.incomplete[index]) cell.classList.add("gw-month-incomplete");
   cell.setAttribute("data-index", String(index));
   cell.setAttribute("data-no-glossary", "");
   cell.title = `${formatMonth(month)} · ${column.label} · ${described.label}`;
   return cell;
+}
+
+/**
+ * The allocation band: a second strip under the first, in its own vocabulary and its own CSS
+ * prefix. Drawn only where a class reached the wire, so an observed jurisdiction's chart is
+ * unchanged and a Texas well never shows a share without saying it is one.
+ */
+function allocationBand(chart: ChartSeries): HTMLElement | null {
+  if (!chart.allocated) return null;
+  const wrapper = document.createElement("div");
+  wrapper.className = "gw-alloc-strip";
+  for (const column of chart.columns) {
+    if (column.allocationClasses.every((state) => state === "")) continue;
+    const row = document.createElement("div");
+    row.className = "gw-alloc-row";
+    const name = document.createElement("span");
+    name.className = "gw-state-name";
+    name.textContent = `${column.label} · how`;
+    const cells = document.createElement("div");
+    cells.className = "gw-state-cells gw-alloc-cells";
+    cells.setAttribute("role", "img");
+    cells.setAttribute(
+      "aria-label",
+      `${column.label}: how each of ${chart.months.length} months was arrived at —` +
+        " observed where the lease had one eligible well, allocated where it had more.",
+    );
+    for (const [index, month] of chart.months.entries()) {
+      cells.appendChild(allocationMark(column, index, month));
+    }
+    row.append(name, cells);
+    wrapper.appendChild(row);
+  }
+  return wrapper.childElementCount === 0 ? null : wrapper;
+}
+
+function allocationMark(column: SeriesColumn, index: number, month: string): HTMLElement {
+  const state = column.allocationClasses[index] ?? "";
+  const described = allocationClass(state);
+  const cell = document.createElement("span");
+  cell.className = `gw-alloc-mark ${described.className}`;
+  if (column.incomplete[index]) cell.classList.add("gw-month-incomplete");
+  cell.setAttribute("data-index", String(index));
+  cell.setAttribute("data-no-glossary", "");
+  const divisor = column.eligibleWells[index] ?? null;
+  const over = divisor === null || divisor <= 1 ? "" : ` · over ${String(divisor)} wells`;
+  cell.title = `${formatMonth(month)} · ${column.label} · ${described.label}${over}`;
+  return cell;
+}
+
+/** The allocation band's own key, in its own vocabulary: six classes, not four states. */
+function allocationKey(chart: ChartSeries, callbacks: ChartCallbacks): HTMLElement | null {
+  if (!chart.allocated) return null;
+  const wrapper = document.createElement("p");
+  wrapper.className = "gw-alloc-key";
+  const first = chart.columns.find((entry) =>
+    entry.allocationClasses.some((state) => state !== ""),
+  );
+  const pointer = first ? `/series/${first.key}_allocation_class_by_month` : "";
+  for (const state of ALLOCATION_CLASSES) {
+    const described = allocationClass(state);
+    const item = document.createElement("span");
+    item.className = "gw-state-key-item";
+    const swatch = document.createElement("span");
+    swatch.className = `gw-alloc-mark ${described.className}`;
+    swatch.title = described.title;
+    item.appendChild(swatch);
+    item.appendChild(labelElement(described.label, callbacks.labelTermFor(pointer)));
+    wrapper.appendChild(item);
+  }
+  return wrapper;
 }
 
 /**

@@ -111,7 +111,7 @@ explorer's shell chunk and into the entry. Verified rather than inferred — `gw
 | budget | B gzipped | headroom over measured |
 |---|---:|---|
 | entry chunk | 14,000 | +0.4% over 13,950 (v0.78; was +0.5% over 13,928 in v0.76) |
-| explorer route, map excluded | 75,000 | +4.9% over 71,511 |
+| explorer route, map excluded | 79,700 | +4.9% over 75,958 (v0.79; was +4.9% over 71,511) |
 | map chunk | 330,000 | +5.2% over 313,823 |
 
 The entry was re-measured again when the well card moved to a dynamic import. `card/card.ts`
@@ -121,6 +121,14 @@ panel that renders only after a well is clicked, and a reader who opens the expl
 clicks one. The card became its own 4.5 kB chunk and the entry fell 21,340 → 12,750 B. The
 explorer route is measured with the card cut, on the same ruling its neighbour and status-chip
 branches were already cut under: it only ever renders over the map.
+
+The explorer route was re-measured in v0.79 for the allocation band: 71,511 → 75,958 B. The
+chart chunk gained a second state band with its own six-class vocabulary, its own key, and the
+per-month class, divisor and completeness arrays behind them, and it sits on the route rather
+than behind a second dynamic import on purpose — it renders inside the plot, so a chart that
+had to fetch another chunk before it could say whether a point was observed or allocated would
+draw the number first and the label after it. That ordering is the one thing the band exists to
+prevent. The budget is ratcheted to measured + 4.9%, the same headroom the previous two carried.
 
 The budget was set from 12,750 B, measured before the review round that followed it. The
 stale-selection guard, the rejection handler and the per-detail warning grouping put the

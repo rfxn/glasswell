@@ -271,3 +271,103 @@ describe("report vintage, one layer down", () => {
     expect(host.querySelector("details.gw-vintages")).toBeNull();
   });
 });
+
+describe("the allocation band", () => {
+  function allocated(pm: string[]): ProductionData {
+    const base = production(pm);
+    return {
+      ...base,
+      granularity: "lease_allocated",
+      series: {
+        ...base.series,
+        oil_bbl_granularity_by_month: pm.map((_, index) =>
+          index === 0 ? "well_observed" : "lease_allocated",
+        ),
+        oil_bbl_allocation_class_by_month: pm.map((_, index) => {
+          if (index === 0) return "observed_single_well_lease";
+          if (index === 1) return "allocated_after_status_change";
+          if (index === 2) return "excluded_after_plug";
+          return "allocated_equal_share";
+        }),
+        oil_bbl_eligible_wells_by_month: pm.map((_, index) => (index === 0 ? "1" : "3")),
+        gas_mcf_granularity_by_month: pm.map(() => "well_observed"),
+        gas_mcf_allocation_class_by_month: pm.map(() => "observed_gas_well"),
+        gas_mcf_eligible_wells_by_month: pm.map(() => "1"),
+      },
+      allocation: {
+        model_id: "alloc_v0_2026_09",
+        rule_id: "cr_tx_production_grain_1",
+        leases: ["G-08-000303", "O-08-000101"],
+        membership_vintage: "2026-08-27",
+        incomplete_from: pm[pm.length - 1] ?? null,
+        error_bounds: { outcome: "not_measured", measured_by_rule: "cr_alloc_v0_error_bounds_1" },
+      },
+    };
+  }
+
+  const chart = toChartSeries(allocated(months("2024-01", 6)));
+
+  it("draws no second band on a jurisdiction that reports at the well", () => {
+    renderChart(host, dense, callbacks);
+
+    expect(host.querySelector(".gw-alloc-strip")).toBeNull();
+    expect(host.querySelector(".gw-alloc-key")).toBeNull();
+  });
+
+  it("draws a second band in its own vocabulary where a class reached the wire", () => {
+    renderChart(host, chart, callbacks);
+    const strip = host.querySelector(".gw-alloc-strip");
+
+    expect(strip).not.toBeNull();
+    // A second record, a second lookup and a second prefix: one string-keyed record for two
+    // vocabularies collides on the first shared token.
+    expect(strip?.querySelectorAll(".gw-state-mark").length ?? 0).toBe(0);
+    expect(strip?.querySelectorAll(".gw-alloc-mark").length).toBe(12);
+  });
+
+  it("gives each month the class it was actually arrived at under", () => {
+    renderChart(host, chart, callbacks);
+    const row = host.querySelectorAll(".gw-alloc-row")[0];
+    const marks = [...(row?.querySelectorAll(".gw-alloc-mark") ?? [])];
+
+    expect(marks[0]?.className).toContain("gw-alloc-observed-single-well");
+    expect(marks[1]?.className).toContain("gw-alloc-after-status-change");
+    expect(marks[2]?.className).toContain("gw-alloc-excluded-after-plug");
+    expect(marks[3]?.className).toContain("gw-alloc-equal-share");
+  });
+
+  it("names the divisor on a mark, so a share is never a bare number", () => {
+    renderChart(host, chart, callbacks);
+    const marks = [...host.querySelectorAll(".gw-alloc-row .gw-alloc-mark")];
+
+    expect(marks[3]?.getAttribute("title")).toContain("over 3 wells");
+    // One eligible well is not a division, so nothing is claimed about one.
+    expect(marks[0]?.getAttribute("title")).not.toContain("over");
+  });
+
+  it("keys the band with all six classes, including the ones this well never hit", () => {
+    renderChart(host, chart, callbacks);
+    const key = host.querySelector(".gw-alloc-key");
+
+    expect(key?.querySelectorAll(".gw-alloc-mark").length).toBe(6);
+    expect(key?.textContent).toContain("excluded after plug");
+    expect(key?.textContent).toContain("unallocated");
+  });
+
+  it("shades the months inside the completeness lag in both bands", () => {
+    renderChart(host, chart, callbacks);
+    const shaded = host.querySelectorAll(".gw-month-incomplete");
+
+    // The last month of each of the four rows: two streams, each with a state band and an
+    // allocation band. The gas column is observed and still carries a class, because
+    // "observed" is one of the six things the band has to be able to say.
+    expect(shaded.length).toBe(4);
+  });
+
+  it("says a plugged well's month is a share rather than letting it read as reported", () => {
+    renderChart(host, chart, callbacks);
+    const marks = [...host.querySelectorAll(".gw-alloc-row .gw-alloc-mark")];
+
+    expect(marks[1]?.getAttribute("title")).toContain("allocated, status changed");
+  });
+});

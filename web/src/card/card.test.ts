@@ -55,23 +55,28 @@ afterEach(() => {
 });
 
 describe("a well whose regulator reports at the lease", () => {
-  it("says production is pending allocation instead of drawing an empty chart", async () => {
-    const pending = {
+  const RULE = "/v1/conformance/cr_tx_allocation_scope_1";
+
+  function pendingWell(warnings: { code: string; detail: string; pointer: string }[]) {
+    return {
       ...wellEnvelope,
-      links: { ...wellEnvelope.links, reporting_rule: "/v1/conformance/cr_tx_allocation_scope_1" },
-      meta: {
-        ...wellEnvelope.meta,
-        warnings: [
-          {
-            code: "production_pending_allocation",
-            detail:
-              "This well's regulator reports production at the lease" +
-              " (cr_tx_allocation_scope_1), so no well-level series has been observed.",
-            pointer: "/production",
-          },
-        ],
-      },
+      links: { ...wellEnvelope.links, reporting_rule: RULE },
+      meta: { ...wellEnvelope.meta, warnings },
     };
+  }
+
+  it("says production is pending only while no allocation is served", async () => {
+    // The disclosure is a served fact with two clocks behind it, and it is true until the
+    // allocation is published. What must not happen is a card showing both.
+    const pending = pendingWell([
+      {
+        code: "production_pending_allocation",
+        detail:
+          "This well's regulator reports production at the lease" +
+          " (cr_tx_allocation_scope_1), so no well-level series has been observed.",
+        pointer: "/production",
+      },
+    ]);
     // Only the well route is stubbed: a production request would 404 through stubFetch and
     // surface as an error panel, which is a failure the spy could not have shown — it matched
     // the well route first and was never reached.
@@ -84,29 +89,29 @@ describe("a well whose regulator reports at the lease", () => {
       "Production pending allocation",
     );
     expect(panel?.textContent).toContain("cr_tx_allocation_scope_1");
-    expect(panel?.querySelector(".gw-pending-rule")?.getAttribute("href")).toBe(
-      "/v1/conformance/cr_tx_allocation_scope_1",
-    );
+    expect(panel?.querySelector(".gw-pending-rule")?.getAttribute("href")).toBe(RULE);
     expect(host.textContent).not.toContain("No production has been reported");
-    expect(host.querySelector(".gw-completion-context")).not.toBeNull();
     expect(renderChart).not.toHaveBeenCalled();
   });
 
+  it("draws the chart instead the moment the warning stops arriving", async () => {
+    // The successor rule carries the third spec key, so the API stops emitting the warning.
+    // Nothing in the card decides this: a jurisdiction test in the client would be a mapping
+    // decision living in code, which is what R8 refuses.
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector("[data-state='production_pending_allocation']")).toBeNull();
+    expect(renderChart).toHaveBeenCalled();
+  });
+
   it("says it once: no raw warning line above the panel that renders the same sentence", async () => {
-    const pending = {
-      ...wellEnvelope,
-      links: { ...wellEnvelope.links, reporting_rule: "/v1/conformance/cr_tx_allocation_scope_1" },
-      meta: {
-        ...wellEnvelope.meta,
-        warnings: [
-          {
-            code: "production_pending_allocation",
-            detail: "reports production at the lease (cr_tx_allocation_scope_1)",
-            pointer: "/production",
-          },
-        ],
+    const pending = pendingWell([
+      {
+        code: "production_pending_allocation",
+        detail: "reports production at the lease (cr_tx_allocation_scope_1)",
+        pointer: "/production",
       },
-    };
+    ]);
     vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: pending })));
 
     await renderWellCard(host, API10, callbacks);
@@ -118,17 +123,10 @@ describe("a well whose regulator reports at the lease", () => {
   });
 
   it("still renders warnings that have no panel of their own", async () => {
-    const both = {
-      ...wellEnvelope,
-      links: { ...wellEnvelope.links, reporting_rule: "/v1/conformance/cr_tx_allocation_scope_1" },
-      meta: {
-        ...wellEnvelope.meta,
-        warnings: [
-          { code: "production_pending_allocation", detail: "pending", pointer: "/production" },
-          { code: "geometry_not_promoted", detail: "one segment held back", pointer: "/geometry" },
-        ],
-      },
-    };
+    const both = pendingWell([
+      { code: "production_pending_allocation", detail: "pending", pointer: "/production" },
+      { code: "geometry_not_promoted", detail: "one segment held back", pointer: "/geometry" },
+    ]);
     vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: both })));
 
     await renderWellCard(host, API10, callbacks);
@@ -1107,3 +1105,73 @@ function problem(status: number, code: string): Response {
     { status, headers: { "content-type": "application/problem+json" } },
   );
 }
+
+describe("a cumulative total that some months were allocated into", () => {
+  function allocatedCumulatives() {
+    const base = cumulativesEnvelope as unknown as {
+      data: Record<string, unknown>;
+      [key: string]: unknown;
+    };
+    return {
+      ...base,
+      data: {
+        ...base.data,
+        granularity: "lease_allocated",
+        coverage_outcome: "observed_with_allocated",
+        allocation: {
+          basis: "allocated",
+          model_id: "alloc_v0_2026_09",
+          rule_id: "cr_tx_allocation_v0_1",
+          months: {
+            liquid: { value: "4", unit: "months", d: "drv_a#api10=x&stream=liquid" },
+          },
+          share: {
+            liquid: { value: "0.6700", unit: "share", d: "drv_a#api10=x&stream=liquid" },
+          },
+          shares_counted: { value: "9", unit: "shares", d: "drv_a#api10=x&col=shares_counted" },
+        },
+      },
+    };
+  }
+
+  async function render(): Promise<void> {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/completions`]: completionContextEnvelope,
+          [`/v1/wells/${API10}/cumulatives`]: allocatedCumulatives(),
+          [`/v1/wells/${API10}/neighbors`]: neighborEnvelope,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+    await renderWellCard(host, API10, callbacks);
+  }
+
+  it("states the allocated share beside the total rather than after it", async () => {
+    await render();
+    const cells = [...host.querySelectorAll(".gw-cumulative-cell")];
+    const oil = cells.find((cell) => cell.textContent?.startsWith("Oil"));
+
+    expect(oil?.querySelector(".gw-alloc-share")?.textContent).toBe("67% allocated");
+  });
+
+  it("labels the coverage class as a chip, never as a footnote", async () => {
+    await render();
+    const chip = host.querySelector<HTMLElement>(".gw-alloc-coverage");
+
+    expect(chip).not.toBeNull();
+    expect(chip?.dataset["basis"]).toBe("allocated");
+    expect(chip?.textContent).toContain("alloc_v0_2026_09");
+    expect(chip?.getAttribute("title")).toContain("cr_tx_allocation_v0_1");
+  });
+
+  it("leaves an observed total alone", async () => {
+    await renderWellCard(host, API10, callbacks);
+
+    expect(host.querySelector(".gw-alloc-coverage")).toBeNull();
+    expect(host.querySelector(".gw-alloc-share")).toBeNull();
+  });
+});

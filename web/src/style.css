@@ -2216,3 +2216,119 @@ a {
     display: none;
   }
 }
+
+/* The allocation band: a second strip, in its own vocabulary and its own prefix.
+   One string-keyed record for two vocabularies collides on the first shared token, and the
+   same is true of one CSS namespace — `withheld` is already a null-semantics class and is a
+   plausible allocation class in a later jurisdiction. Two bands that cannot be told apart in
+   the DOM is the failure this prefix exists against. */
+.gw-alloc-strip {
+  margin-top: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gw-alloc-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.gw-alloc-cells {
+  height: 0.6rem;
+}
+
+.gw-alloc-mark {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 2px;
+  border: 1px solid var(--hairline);
+  background: var(--hairline);
+  padding: 0;
+}
+
+.gw-alloc-cells .gw-alloc-mark {
+  flex: 1 1 0;
+  width: auto;
+  height: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 1px;
+}
+
+/* Observed and allocated are the distinction the band exists to draw, so they are the two
+   ends of the encoding: solid where the regulator's number is this well's, hatched where a
+   share was computed. Nothing here is a severity colour. */
+.gw-alloc-observed-gas-well,
+.gw-alloc-observed-single-well {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.gw-alloc-equal-share {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--ink) 0 2px,
+    var(--paper) 2px 4px
+  );
+  border-color: var(--ink);
+}
+
+/* A well the regulator calls plugged with no date, still drawing a share. It is the one
+   eligibility term with no date behind it, so it is the one mark that carries the warning
+   colour the rest of the band does not use. */
+.gw-alloc-after-status-change {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--amber) 0 2px,
+    var(--paper) 2px 4px
+  );
+  border-color: var(--amber);
+}
+
+.gw-alloc-excluded-after-plug {
+  background: linear-gradient(to top, var(--muted) 0 2px, transparent 2px 100%);
+  border-color: var(--muted);
+}
+
+.gw-alloc-unallocated,
+.gw-alloc-unknown {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--muted),
+    var(--muted) 2px,
+    transparent 2px,
+    transparent 4px
+  );
+  border-color: var(--muted);
+}
+
+.gw-alloc-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* Months inside the regulator's own completeness lag. The Commission states production
+   records are substantially complete after about six months, so the tail of every Texas chart
+   is systematically under-filed — and a reader sees a decline, not an incompleteness, unless
+   the months say which they are. */
+.gw-month-incomplete {
+  opacity: 0.55;
+  box-shadow: inset 0 -2px 0 0 var(--amber);
+}
+
+.gw-alloc-share,
+.gw-alloc-coverage {
+  border-color: var(--amber);
+  color: var(--ink);
+}
+
+.gw-alloc-coverage {
+  margin: 0.35rem 0 0;
+  display: inline-block;
+}

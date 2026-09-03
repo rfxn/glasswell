@@ -729,3 +729,79 @@ describe("Accounts is a section of this page, for an owner and for nobody else",
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("the three residuals an allocation publishes about itself", () => {
+  function withAllocationChecks(state: "ok" | "degraded" | "unavailable"): StatusPayload {
+    return {
+      ...PAYLOAD,
+      checks: [
+        ...PAYLOAD.checks,
+        {
+          id: "allocation_conservation",
+          label: "Allocation conservation",
+          state,
+          observed_at: PAYLOAD.observed_at,
+          detail: "TX: 0.0012 of lease volume has no eligible well to carry it.",
+          tier: "data",
+          probe: "cr_tx_allocation_v0_1",
+        },
+        {
+          id: "crosswalk_agreement",
+          label: "Crosswalk agreement",
+          state: "ok",
+          observed_at: PAYLOAD.observed_at,
+          detail: "TX: the two published crosswalks are compared across 14 districts.",
+          tier: "data",
+          probe: "cr_tx_ewa_role_1",
+        },
+        {
+          id: "allocation_error_bounds",
+          label: "Allocation error bounds",
+          state: "ok",
+          observed_at: PAYLOAD.observed_at,
+          detail: "Measured on MT over 132 lease-months; not yet transferable to TX.",
+          tier: "data",
+          probe: "cr_alloc_v0_error_bounds_1",
+        },
+      ],
+    };
+  }
+
+  it("renders all three in the data tier", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(envelope(withAllocationChecks("ok"))));
+    await mountStatusPage(host, { onForbidden });
+
+    const labels = [...host.querySelectorAll(".gw-status-check h4")].map(
+      (node) => node.textContent,
+    );
+    expect(labels).toContain("Allocation conservation");
+    expect(labels).toContain("Crosswalk agreement");
+    expect(labels).toContain("Allocation error bounds");
+  });
+
+  it("names the jurisdiction and the rule on every row", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(envelope(withAllocationChecks("ok"))));
+    await mountStatusPage(host, { onForbidden });
+
+    const rows = [...host.querySelectorAll(".gw-status-check")].filter((node) =>
+      node.textContent?.includes("cr_tx_allocation_v0_1"),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.textContent).toContain("TX:");
+  });
+
+  it("draws a failing check amber rather than dropping the row", async () => {
+    // A row that vanishes reads as a surface nobody built. These exist so a reader can see
+    // that an estimate is being served and how far it can be out.
+    vi.stubGlobal("fetch", () => Promise.resolve(envelope(withAllocationChecks("degraded"))));
+    await mountStatusPage(host, { onForbidden });
+
+    const row = [...host.querySelectorAll(".gw-status-check")].find((node) =>
+      node.textContent?.includes("Allocation conservation"),
+    );
+    expect(row).not.toBeUndefined();
+    expect(row?.querySelector(".gw-status-badge")?.getAttribute("data-state")).toBe(
+      "degraded",
+    );
+  });
+});

@@ -37,6 +37,111 @@ export const NULL_SEMANTICS_STATES = [
   "no_report",
 ] as const;
 
+export interface AllocationMark {
+  label: string;
+  className: string;
+  title: string;
+  allocated: boolean;
+}
+
+/**
+ * A second record, a second lookup and a second CSS prefix, deliberately.
+ *
+ * One string-keyed record for two vocabularies collides on the first shared token, and
+ * `withheld` is already in the null-semantics one and is a plausible allocation-class name in
+ * a later jurisdiction. Two vocabularies that can never be told apart in the DOM is the defect
+ * this shape exists against.
+ */
+const ALLOCATION_MARKS: Record<string, AllocationMark> = {
+  observed_gas_well: {
+    label: "observed",
+    className: "gw-alloc-observed-gas-well",
+    title: "One gas well on the lease, so the lease volume is this well's. Not allocated.",
+    allocated: false,
+  },
+  observed_single_well_lease: {
+    label: "observed",
+    className: "gw-alloc-observed-single-well",
+    title: "One eligible well on the lease that month, so the lease volume is this well's.",
+    allocated: false,
+  },
+  allocated_equal_share: {
+    label: "allocated",
+    className: "gw-alloc-equal-share",
+    title:
+      "An equal share of the lease volume among the wells eligible that month. An estimate," +
+      " not a reported figure (cr_tx_allocation_v0_1).",
+    allocated: true,
+  },
+  allocated_after_status_change: {
+    label: "allocated, status changed",
+    className: "gw-alloc-after-status-change",
+    title:
+      "The regulator records this well as plugged but filed no plugging date, so it still" +
+      " takes a share and the month says so rather than disappearing (cr_tx_allocation_v0_1).",
+    allocated: true,
+  },
+  excluded_after_plug: {
+    label: "excluded after plug",
+    className: "gw-alloc-excluded-after-plug",
+    title:
+      "The month is after this well's filed plugging date, so it takes no share and the" +
+      " share was redistributed among the wells still eligible (cr_tx_allocation_v0_1).",
+    allocated: true,
+  },
+  unallocated: {
+    label: "unallocated",
+    className: "gw-alloc-unallocated",
+    title:
+      "Lease volume with no eligible well to carry it. It is in the conservation ledger with" +
+      " its cause, and is served as no well's production.",
+    allocated: true,
+  },
+};
+
+/** The six classes the allocation serves, in the order the legend lists them. */
+export const ALLOCATION_CLASSES = [
+  "observed_gas_well",
+  "observed_single_well_lease",
+  "allocated_equal_share",
+  "allocated_after_status_change",
+  "excluded_after_plug",
+  "unallocated",
+] as const;
+
+/**
+ * The mark for one allocation class. A class this record does not know is labelled with its own
+ * name rather than silently dropped: an unlabelled band reads as an observation.
+ */
+export function allocationClass(state: string): AllocationMark {
+  return (
+    ALLOCATION_MARKS[state] ?? {
+      label: state,
+      className: "gw-alloc-unknown",
+      title: state,
+      allocated: true,
+    }
+  );
+}
+
+/**
+ * How a figure was arrived at, in one word, wherever a granularity reaches the DOM.
+ *
+ * An allocation estimate that reads as an observation is the defect the whole track exists
+ * against, so this is a primitive rather than a sentence written at each call site.
+ */
+export function granularityLabel(granularity: string | null): string {
+  if (granularity === "lease_allocated") return "allocated";
+  if (granularity === "well_observed") return "observed";
+  if (granularity === "lease_reported") return "reported at the lease";
+  return granularity ?? "";
+}
+
+/** Whether a served granularity means the figure is an estimate rather than an observation. */
+export function isAllocated(granularity: string | null): boolean {
+  return granularity === "lease_allocated";
+}
+
 /** Thousands separators without ever parsing the decimal as a float (SB-07 §4.4). */
 export function formatValue(value: string): string {
   const match = /^(-?)(\d+)(\.\d+)?$/.exec(value);

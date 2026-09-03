@@ -22,9 +22,15 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // because the card and its tail — figures, formatting, the completion and neighbour panels —
 // had been riding it for every reader, including one who never opens a well. Re-tightened for
 // the same reason the chart's move was: leaving 9 kB of slack in place would stop it ratcheting.
+// Re-measured for the allocation band: the explorer route rose 71,511 → 75,958 B, because the
+// chart chunk gained a second band with its own six-class vocabulary, its own key, and the
+// per-month class, divisor and completeness arrays behind them. It is on the route rather than
+// split because it renders inside the plot itself — a chart that had to fetch a second chunk
+// before it could say whether a point was observed or allocated would draw the number first
+// and the label after it, which is the one ordering this band exists to prevent.
 const BUDGET_BYTES = {
   entryGzip: 14_000,
-  explorerRouteGzip: 75_000,
+  explorerRouteGzip: 79_700,
   mapChunkGzip: 330_000,
 };
 

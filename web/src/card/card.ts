@@ -13,7 +13,7 @@ import { crossingLink, openThisSeries, rowsForThisWell } from "../explore/bridge
 import { labelElement } from "../glossary/gw-term.ts";
 import { highlight } from "../glossary/index.ts";
 import { termIndex } from "../glossary/store.ts";
-import { absentValue, formatMonth, formatVintage, nullSemantics } from "./format.ts";
+import { absentValue, formatMonth, formatVintage, nullSemantics, roundTo } from "./format.ts";
 
 export interface WellDetail {
   api10: string;
@@ -100,6 +100,15 @@ export interface StreamCoverage {
   coverage_complete: boolean;
 }
 
+export interface CumulativeAllocation {
+  basis: string;
+  model_id: string | null;
+  rule_id: string;
+  months: Record<string, Figure>;
+  share: Record<string, Figure>;
+  shares_counted: Figure | null;
+}
+
 export interface WellCumulatives {
   api10: string;
   granularity: string;
@@ -108,6 +117,8 @@ export interface WellCumulatives {
   cumulative: { oil_bbl: Figure | null; gas_mcf: Figure | null; water_bbl: Figure | null } | null;
   coverage: Record<string, StreamCoverage> & { _lineage: Record<string, string> };
   months_withheld: Figure;
+  /** Present only where allocated months contribute to the totals beside it. */
+  allocation?: CumulativeAllocation | null;
 }
 
 export interface CardCallbacks {
@@ -631,14 +642,64 @@ function cumulativesBody(
       basis.textContent = figure.basis;
       value.appendChild(basis);
     }
+    // The allocated share, beside the total and never after it. A total that sums allocated
+    // months without saying so is the naked number this whole surface exists against, and the
+    // share is the one number that says how much of it is an estimate.
+    const share = data.allocation?.share[streamOf(key)];
+    if (figure && share) {
+      const chip = document.createElement("span");
+      chip.className = "gw-chip gw-alloc-share";
+      chip.textContent = `${percent(share.value)} allocated`;
+      chip.title =
+        `${percent(share.value)} of this total is an allocated estimate rather than a` +
+        ` reported figure (${data.allocation?.rule_id ?? ""}).`;
+      value.appendChild(chip);
+    }
     const record = coverageTitle(data.coverage[key]);
     if (record) cell.title = record;
     cell.append(term_, value);
     row.appendChild(cell);
   }
   fragment.appendChild(row);
+  const chip = allocationChip(data);
+  if (chip) fragment.appendChild(chip);
   fragment.appendChild(scopeLine(cumulativeScope(data)));
   return fragment;
+}
+
+const MART_STREAM_OF: Record<string, string> = {
+  oil_bbl: "liquid",
+  gas_mcf: "gas",
+  water_bbl: "water",
+};
+
+function streamOf(key: string): string {
+  return MART_STREAM_OF[key] ?? key;
+}
+
+/** A decimal share as a whole-number percent, without ever parsing it as a float. */
+function percent(value: string): string {
+  return `${roundTo(String(Number(value) * 100), 0)}%`;
+}
+
+/**
+ * `observed_with_allocated` as a labelled chip rather than a footnote.
+ *
+ * A reader who does not notice a footnote has read the total as an observation, which is the
+ * one reading this coverage class exists to prevent.
+ */
+function allocationChip(data: WellCumulatives): HTMLElement | null {
+  if (data.coverage_outcome !== "observed_with_allocated" || !data.allocation) return null;
+  const chip = document.createElement("p");
+  chip.className = "gw-chip gw-alloc-coverage";
+  chip.dataset["basis"] = data.allocation.basis;
+  const model = data.allocation.model_id ?? "";
+  chip.textContent = `Some months are allocated${model ? ` · ${model}` : ""}`;
+  chip.title =
+    "Part of this total is an estimate: the jurisdiction files production by lease and the" +
+    ` per-well share is computed under ${data.allocation.rule_id}. The share of each total` +
+    " it accounts for is stated beside that total.";
+  return chip;
 }
 
 /**
