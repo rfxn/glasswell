@@ -184,10 +184,12 @@ CO_JOBS: tuple[dict[str, object], ...] = (
     },
 )
 
-# Texas, three entry points. Like Colorado's, none of them is driven by an installed timer, so
-# they are seeded `launch` from day one and there is nothing for a launched run to collide
-# with. Unlike Colorado's, the ingest is a 3.65 GB unresumable fetch: it runs monthly, on the
-# cadence the RRC publishes on, and its timeout is the fetch's twelve hours rather than an hour.
+# Texas, three entry points. None is driven by an installed timer, and all three observe: a
+# launching row is the launch flip's own act rather than a registration's, on the owner's
+# ruling of 2026-09-03 (079_scheduler_observe.sql:1-18 carries the reasoning). The ingest is a
+# 3.65 GB unresumable fetch on the cadence the RRC publishes on, and it takes the registry's
+# own six-hour ceiling (076_job_schedule_registry.sql:88); the source's twelve-hour attempt
+# timeout answers a different question, which is how long one fetch may take.
 TX_JOBS: tuple[dict[str, object], ...] = (
     {
         "job_id": "ingest_tx_pdq",

@@ -456,8 +456,9 @@ on conflict do nothing;
 -- schedule, because seed_all is not on the migrate path.
 --
 -- No ExecStart line and no unit file. An entry point named in a unit joins the set an
--- installed timer already drives, after which the double-run guard forbids that job from ever
--- being seeded `launch` -- the opposite of what a new jurisdiction wants.
+-- installed timer already drives, and the double-run guard then forbids that job a launching
+-- row -- which is a narrower rule than the posture below, where every row observes whatever
+-- drives it.
 insert into lineage.scheduled_jobs
     (job_id, label, kind, entry_point, argv, anchor_source_id, jurisdiction, run_as, rationale)
 select j.job_id, j.label, j.kind, j.entry_point, j.argv, j.anchor_source_id, j.jurisdiction,
