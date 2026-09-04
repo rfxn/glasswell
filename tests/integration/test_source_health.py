@@ -444,3 +444,30 @@ def test_a_refusal_answers_the_same_whether_the_fetch_was_kept_or_rolled_back(db
     served = by_id(db)
 
     assert served["tx_pdq_dsv"]["state"] == served["co_ecmc_directional_bh"]["state"] == "stale"
+
+
+def test_the_re_run_of_a_refused_stage_clears_its_own_refusal(db, lineage_env) -> None:
+    """A re-run reaches the same bytes and therefore the same manifest, so the refusal recorded
+    against it is still there when the parse finally succeeds. A stamped manifest is loaded and
+    that is the end of it, or the source would be stale for ever after one bad vintage."""
+    manifest_id = seed_manifest(db, sha256="e" * 64, fetched_at=NOW - timedelta(minutes=3))
+    add_attempt(
+        db,
+        attempt_id="fat_00000000000000000000000025",
+        source_id="nd_mpr_xlsx",
+        attempted_at=NOW - timedelta(minutes=3),
+        outcome="new",
+        manifest_id=manifest_id,
+    )
+    db.execute(
+        "insert into lineage.audit_events (event_id, occurred_at, actor, event_type,"
+        " subject_type, subject_id, payload)"
+        " values ('evt_refused_then_reparsed', %s, 'system:pipeline', 'staging.load_failed',"
+        " 'manifest', %s, %s)",
+        (NOW, manifest_id, Jsonb({"source_id": "nd_mpr_xlsx", "reason_code": "format_refused"})),
+    )
+    assert by_id(db)["nd_mpr_xlsx"]["state"] == "stale"
+
+    load_ref(db, lineage_env, manifest_id)
+
+    assert by_id(db)["nd_mpr_xlsx"]["state"] == "current"
