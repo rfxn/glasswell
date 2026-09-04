@@ -190,10 +190,23 @@
   white-space: nowrap;
 }
 
+/* The month stays readable while the streams scroll past it: a row whose identity has left
+   the viewport is a row of numbers about nothing, which at 390 is every row. */
+.gw-series-table tbody th,
+.gw-series-table thead th:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--panel);
+  padding-right: 0.6rem;
+}
+
+
+
 .gw-table-value {
   font-family: var(--gw-font-mono);
 }
 
 .gw-table-state {
   color: var(--slate);
+  white-space: normal;
 }
