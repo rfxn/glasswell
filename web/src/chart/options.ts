@@ -50,7 +50,7 @@ function xScale(chart: ChartSeries): uPlot.Scale {
   return { time: true, range: [only - MONTH_SECONDS, only + MONTH_SECONDS] };
 }
 
-export function chartOptions(chart: ChartSeries, width: number): uPlot.Options {
+export function chartOptions(chart: ChartSeries, width: number, log = false): uPlot.Options {
   const axisStroke = token("--slate", "#9FB0BC");
   const grid = { stroke: token("--hairline", "#1d2a33") };
   return {
@@ -59,7 +59,12 @@ export function chartOptions(chart: ChartSeries, width: number): uPlot.Options {
     padding: [8, 8, 0, 0],
     legend: { show: false },
     cursor: { drag: { x: false, y: false } },
-    scales: { x: xScale(chart) },
+    scales: {
+      x: xScale(chart),
+      // uPlot's log distribution, one per unit scale. A zero is already out of the drawn data
+      // by then (chart.ts's `withoutZeros`), because a log scale has no place to put one.
+      ...Object.fromEntries(chart.scales.map((unit) => [unit, log ? { distr: 3 } : {}])),
+    },
     axes: [
       {
         stroke: axisStroke,

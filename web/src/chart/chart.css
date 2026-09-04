@@ -1,0 +1,62 @@
+/*
+ * The chart's own controls. On this stylesheet rather than the entry one because the chart is
+ * imported when a series arrives and never by a reader who opens no well: the entry stylesheet
+ * is budgeted for what every first paint pays for, and these rules are not that.
+ */
+/* The legend is the stream control, so it carries a button's affordances and a 44 px target
+   at the widths the sheet takes over. Pressed is the drawn state; unpressed dims the swatch
+   rather than removing the row, because the way back has to stay visible. */
+.gw-stream-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.3rem;
+  border: 1px solid transparent;
+  border-radius: var(--gw-radius-xs);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.gw-stream-toggle:hover:not(:disabled) {
+  border-color: var(--hairline-strong);
+}
+
+.gw-stream-toggle[aria-pressed="false"] {
+  color: var(--slate);
+}
+
+.gw-stream-toggle[aria-pressed="false"] .gw-swatch {
+  opacity: 0.3;
+}
+
+.gw-stream-toggle:disabled {
+  cursor: default;
+}
+
+.gw-scale-toggle {
+  flex: none;
+  padding: 0 var(--gw-space-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-pill);
+  background: none;
+  color: var(--slate);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+.gw-scale-toggle[aria-pressed="true"] {
+  color: var(--paper);
+  border-color: var(--cyan);
+}
+
+.gw-scale-toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.gw-log-zeros {
+  margin: 0 0 0.4rem;
+}

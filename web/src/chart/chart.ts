@@ -1,3 +1,5 @@
+import "./chart.css";
+
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
@@ -39,6 +41,9 @@ export interface ChartOptions {
 /** One live chart per host: a repaint must not leave the last one's observers running. */
 const teardowns = new WeakMap<HTMLElement, () => void>();
 
+/** The served class a log axis cannot place, named once. */
+const REPORTED_ZERO = "reported_zero";
+
 /** SB-05 §5.6: the frame is DOM, only the plot area is canvas, so every label is hoverable. */
 export function renderChart(
   container: HTMLElement,
@@ -57,6 +62,8 @@ export function renderChart(
   const served = options.span === "served";
   const choices = served ? [] : spanChoices(chart.months);
   let span = served ? null : defaultSpan(chart.months);
+  const hidden = new Set<string>();
+  let log = false;
   // The month, not its index: widening the window renumbers every point, and a reader who was
   // reading March must not silently end up reading some month five years earlier.
   let month = chart.months[chart.months.length - 1] ?? null;
@@ -65,7 +72,11 @@ export function renderChart(
     repaint?.abort();
     repaint = new AbortController();
     const signal = repaint.signal;
-    const view = chartWindow(chart, span);
+    const windowed = chartWindow(chart, span);
+    const visible = shown(windowed.chart, hidden);
+    // Two views of the same window: the band and the readout read every month the record has,
+    // and the plot reads the line the axis can actually draw.
+    const view = { window: windowed.window, chart: log ? withoutZeros(visible) : visible };
     const months = view.chart.months;
     if (month === null || !months.includes(month)) month = months[months.length - 1] ?? null;
 
@@ -73,7 +84,11 @@ export function renderChart(
     container.classList.add("gw-chart");
 
     container.append(
-      legend(view.chart, callbacks),
+      legend(windowed.chart, callbacks, hidden, (stream) => {
+        if (hidden.has(stream)) hidden.delete(stream);
+        else hidden.add(stream);
+        draw();
+      }),
       windowBar(view.window, choices, span, served, (next) => {
         span = next;
         draw();
@@ -82,14 +97,25 @@ export function renderChart(
     // A window the record does not reach is served as an empty series. That is a fact about the
     // window, which the bar above has just stated — an empty axis under it would say nothing.
     if (months.length === 0) return;
-    container.appendChild(yAxisLabels(view.chart));
+    const axes = yAxisLabels(view.chart);
+    axes.appendChild(
+      scaleControl(visible, log, (next) => {
+        log = next;
+        draw();
+      }),
+    );
+    container.appendChild(axes);
 
     const plot = document.createElement("div");
     plot.className = "gw-chart-plot";
     container.appendChild(plot);
 
-    const band = stateBand(view.chart);
+    // The band reads the window, never the log view: a month that read zero is a fact about
+    // the month, and the axis it cannot be drawn on is a fact about the drawing.
+    const band = stateBand(visible);
     container.appendChild(band);
+    const zeros = log ? logZeros(visible) : null;
+    if (zeros) container.appendChild(zeros);
 
     const axis = document.createElement("p");
     axis.className = "gw-chart-axis";
@@ -112,7 +138,7 @@ export function renderChart(
       if (next === undefined) return;
       month = next;
       readout.replaceChildren(
-        ...readoutContent(readoutAt(view.chart, index), index, months.length, callbacks, paint),
+        ...readoutContent(readoutAt(visible, index), index, months.length, callbacks, paint),
       );
       for (const cell of band.querySelectorAll(".gw-state-mark")) {
         cell.toggleAttribute("data-selected", Number(cell.getAttribute("data-index")) === index);
@@ -120,7 +146,11 @@ export function renderChart(
     };
 
     const width = measure(plot, container);
-    const instance = new uPlot(chartOptions(view.chart, width), view.chart.data as uPlot.AlignedData, plot);
+    const instance = new uPlot(
+      chartOptions(view.chart, width, log),
+      view.chart.data as uPlot.AlignedData,
+      plot,
+    );
     signal.addEventListener("abort", () => instance.destroy());
     align(band, instance.over, plot);
     track(plot, container, band, instance, signal);
@@ -128,13 +158,62 @@ export function renderChart(
     // The whole plot rectangle and the whole band answer the pointer, because at 131 months a
     // per-point target measured 2 CSS px across and the reader could not land on one.
     for (const surface of [plot, band]) {
-      seek(surface, () => instance.over, view.chart, paint, signal);
+      seek(surface, () => instance.over, visible, paint, signal);
     }
     paint(months.indexOf(month as string));
   };
 
   document.addEventListener(THEME_EVENT, draw, { signal: outer.signal });
   draw();
+}
+
+/**
+ * The series as the reader has it set: hidden streams dropped from the columns, the scales and
+ * the drawn data together, so the plot, the band and the readout cannot disagree about which
+ * streams are on. A stream is never dropped from the legend -- a toggle a reader cannot undo
+ * is a delete.
+ */
+function shown(chart: ChartSeries, hidden: ReadonlySet<string>): ChartSeries {
+  const columns = chart.columns.filter((column) => !hidden.has(column.stream));
+  if (columns.length === chart.columns.length) return chart;
+  const kept = chart.columns.map((column) => !hidden.has(column.stream));
+  return {
+    ...chart,
+    columns,
+    scales: [...new Set(columns.map((column) => column.unit))],
+    data: [chart.data[0] as number[], ...chart.data.slice(1).filter((_, index) => kept[index])],
+    allocated: columns.some((column) => column.allocationClasses.some(Boolean)),
+  };
+}
+
+/**
+ * A log axis cannot place a zero, and `reported_zero` is 15,641,969 of the spine's 47,178,269
+ * production rows -- 33.2 % -- against 1,461 `no_report` rows in the whole system. So on log a
+ * zero leaves the line and stays in the band and the readout, and the chart says so per stream:
+ * a well can be zero on water and not on oil, and one combined count would be wrong for two of
+ * the three.
+ */
+function isZero(column: SeriesColumn, index: number): boolean {
+  return column.nullSemantics[index] === REPORTED_ZERO || column.values[index] === 0;
+}
+
+function withoutZeros(chart: ChartSeries): ChartSeries {
+  return {
+    ...chart,
+    data: [
+      chart.data[0] as number[],
+      ...chart.data.slice(1).map((values, position) => {
+        const column = chart.columns[position];
+        return values.map((value, index) =>
+          column && isZero(column, index) ? null : value,
+        );
+      }),
+    ],
+  };
+}
+
+function zeroMonths(column: SeriesColumn): number {
+  return column.values.filter((_, index) => isZero(column, index)).length;
 }
 
 function measure(plot: HTMLElement, container: HTMLElement): number {
@@ -254,21 +333,42 @@ function windowBar(
   return bar;
 }
 
-function legend(chart: ChartSeries, callbacks: ChartCallbacks): HTMLElement {
+function legend(
+  chart: ChartSeries,
+  callbacks: ChartCallbacks,
+  hidden: ReadonlySet<string>,
+  onToggle: (stream: string) => void,
+): HTMLElement {
   const wrapper = document.createElement("ul");
   wrapper.className = "gw-chart-legend";
+  const showing = chart.columns.filter((column) => !hidden.has(column.stream)).length;
   for (const column of chart.columns) {
     const item = document.createElement("li");
+    const on = !hidden.has(column.stream);
+    // The legend is the control: a swatch that only reports is a second thing to look at, and
+    // the reader's question here is "show me this one alone".
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "gw-stream-toggle";
+    toggle.setAttribute("aria-pressed", String(on));
     const swatch = document.createElement("span");
     swatch.className = "gw-swatch";
     swatch.style.background = streamStroke(column.stream);
-    item.appendChild(swatch);
-    item.appendChild(
+    toggle.appendChild(swatch);
+    toggle.appendChild(
       labelElement(
         `${column.label} (${column.unit})`,
         callbacks.labelTermFor(`/series/${column.key}`),
       ),
     );
+    if (on && showing === 1) {
+      toggle.disabled = true;
+      toggle.title = "The only stream on the plot: an axis with nothing on it says nothing.";
+    } else {
+      toggle.title = on ? `Hide ${column.label}.` : `Show ${column.label}.`;
+      toggle.addEventListener("click", () => onToggle(column.stream));
+    }
+    item.appendChild(toggle);
     if (column.basis) {
       const basis = document.createElement("span");
       basis.className = "gw-chip";
@@ -279,6 +379,48 @@ function legend(chart: ChartSeries, callbacks: ChartCallbacks): HTMLElement {
     wrapper.appendChild(item);
   }
   return wrapper;
+}
+
+/** Linear or log, beside the axes it rescales. Log is off by default, and the 33.2 % is why. */
+function scaleControl(
+  chart: ChartSeries,
+  log: boolean,
+  onScale: (log: boolean) => void,
+): HTMLElement {
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "gw-scale-toggle";
+  toggle.setAttribute("aria-pressed", String(log));
+  toggle.textContent = "Log";
+  const drawable = chart.columns.some((column) =>
+    column.values.some((value) => value !== null && value > 0),
+  );
+  if (!drawable) {
+    toggle.disabled = true;
+    toggle.title = "Every month shown reads zero, and a log axis cannot place a zero.";
+    return toggle;
+  }
+  toggle.title = log ? "Draw the axes linearly." : "Draw the axes logarithmically.";
+  toggle.addEventListener("click", () => onScale(!log));
+  return toggle;
+}
+
+/** What log costs, per stream, in the months on screen. */
+function logZeros(chart: ChartSeries): HTMLElement | null {
+  const counted = chart.columns
+    .map((column) => ({ label: column.label, zeros: zeroMonths(column) }))
+    .filter((row) => row.zeros > 0);
+  if (counted.length === 0) return null;
+  const note = document.createElement("p");
+  note.className = "gw-note gw-log-zeros";
+  note.setAttribute("data-no-glossary", "");
+  note.textContent =
+    counted
+      .map((row) => `${row.label}: ${row.zeros} month${row.zeros === 1 ? "" : "s"} read zero`)
+      .join("; ") +
+    ". A log axis cannot place a zero, so those months are in the band and the readout and not" +
+    " on the line.";
+  return note;
 }
 
 function handleButton(handle: string, label: string, callbacks: ChartCallbacks): HTMLElement {

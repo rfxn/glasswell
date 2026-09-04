@@ -531,3 +531,82 @@ describe("the two bands name two subjects", () => {
     expect(host.querySelectorAll(".gw-state-key .gw-state-mark").length).toBe(4);
   });
 });
+
+describe("the stream toggles", () => {
+  beforeEach(() => renderChart(host, sparse, callbacks));
+
+  it("makes every stream a two-state control that says which state it is in", () => {
+    const toggles = [...host.querySelectorAll<HTMLButtonElement>(".gw-stream-toggle")];
+
+    expect(toggles.map((each) => each.textContent)).toEqual(["Oil (bbl)", "Gas (mcf)"]);
+    expect(toggles.every((each) => each.getAttribute("aria-pressed") === "true")).toBe(true);
+  });
+
+  it("takes a stream off the plot, the band and the readout together", () => {
+    const oil = host.querySelector<HTMLButtonElement>(".gw-stream-toggle");
+    oil?.click();
+
+    expect(host.querySelector(".gw-stream-toggle")?.getAttribute("aria-pressed")).toBe("false");
+    expect(host.querySelectorAll(".gw-state-row").length).toBe(1);
+    expect(host.querySelector(".gw-series-readout")?.textContent).not.toContain("Oil");
+  });
+
+  it("brings it back, because a toggle a reader cannot undo is a delete", () => {
+    host.querySelector<HTMLButtonElement>(".gw-stream-toggle")?.click();
+    host.querySelector<HTMLButtonElement>(".gw-stream-toggle")?.click();
+
+    expect(host.querySelectorAll(".gw-state-row").length).toBe(2);
+    expect(host.querySelector(".gw-stream-toggle")?.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("refuses to hide the last stream on the plot rather than drawing an empty axis", () => {
+    const toggles = [...host.querySelectorAll<HTMLButtonElement>(".gw-stream-toggle")];
+    toggles[0]?.click();
+    const last = host.querySelectorAll<HTMLButtonElement>(".gw-stream-toggle")[1];
+
+    expect(last?.disabled).toBe(true);
+    expect(last?.title).toContain("only stream");
+  });
+});
+
+describe("the log control, and the zero it cannot draw", () => {
+  beforeEach(() => renderChart(host, sparse, callbacks));
+
+  it("is a two-state control that starts linear", () => {
+    const scale = host.querySelector<HTMLButtonElement>(".gw-scale-toggle");
+
+    expect(scale?.getAttribute("aria-pressed")).toBe("false");
+    expect(scale?.textContent).toContain("Log");
+  });
+
+  it("states per stream how many drawn months read zero once log is on", () => {
+    host.querySelector<HTMLButtonElement>(".gw-scale-toggle")?.click();
+    const note = host.querySelector(".gw-log-zeros")?.textContent ?? "";
+
+    // Per stream, because a well can be zero on water and not on oil, and one combined count
+    // would be wrong for two of the three.
+    expect(note).toContain("Oil");
+    expect(note).toContain("1 month");
+    expect(note).toContain("log axis cannot place");
+    expect(note).not.toContain("withheld");
+  });
+
+  it("keeps a zero month in the band and out of the line", () => {
+    host.querySelector<HTMLButtonElement>(".gw-scale-toggle")?.click();
+
+    // The band still carries every month of the window, zero included: the state is a fact
+    // about the month, and the log axis is a fact about the drawing.
+    expect(host.querySelector(".gw-state-row")?.querySelectorAll(".gw-state-mark").length).toBe(6);
+    const marks = [...(host.querySelector(".gw-state-row")?.querySelectorAll(".gw-state-mark") ?? [])];
+    expect(marks[0]?.className).toContain("reported-zero");
+  });
+
+  it("goes back to linear, where the zero is a point again", () => {
+    const scale = () => host.querySelector<HTMLButtonElement>(".gw-scale-toggle");
+    scale()?.click();
+    scale()?.click();
+
+    expect(scale()?.getAttribute("aria-pressed")).toBe("false");
+    expect(host.querySelector(".gw-log-zeros")).toBeNull();
+  });
+});
