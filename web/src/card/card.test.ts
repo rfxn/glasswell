@@ -2,6 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ChartSeries } from "../chart/series.ts";
+import { buildIndex } from "../glossary/index.ts";
+import { publishGlossary } from "../glossary/store.ts";
 import { statusColour } from "../map/status.ts";
 
 const renderChart =
@@ -1481,6 +1483,48 @@ describe("a cumulative total that some months were allocated into", () => {
 
     expect(scope?.dataset["handle"]).toBe("drv_a#api10=x&stream=liquid");
     expect(scope?.getAttribute("title")).toContain("cr_tx_allocation_v0_1");
+  });
+});
+
+describe("a section title that is a glossary term", () => {
+  // `land()` highlighted once at mount and nothing re-ran it for statically built markup, so a
+  // title painted before the glossary arrived lost the race almost every cold load. The
+  // store's `onGlossaryReady` exists for exactly this.
+  const empty = { index_version: "none", entries: [], stopwords: [] };
+
+  afterEach(() => {
+    publishGlossary(buildIndex(empty), new Map());
+  });
+
+  it("is marked when the glossary lands after the card did", async () => {
+    publishGlossary(buildIndex(empty), new Map());
+    vi.stubGlobal("fetch", vi.fn(stubFetch({ [`/v1/wells/${API10}`]: wellEnvelope })));
+
+    await renderWellCard(host, API10, callbacks);
+    expect(host.querySelector("#gw-section-head-lineage gw-term")).toBeNull();
+
+    publishGlossary(
+      buildIndex({
+        index_version: "test",
+        entries: [{ surface: "Lineage", term_id: "gt_lineage", n_words: 1 }],
+        stopwords: [],
+      }),
+      new Map([
+        [
+          "gt_lineage",
+          {
+            term_id: "gt_lineage",
+            term: "Lineage",
+            aliases: [],
+            short_definition: "Where a number came from.",
+            domain_tags: [],
+            highlightable: true,
+          },
+        ],
+      ]),
+    );
+
+    expect(host.querySelector("#gw-section-head-lineage gw-term")).not.toBeNull();
   });
 });
 

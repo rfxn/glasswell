@@ -13,7 +13,7 @@ import { focusPanel } from "../chrome/overlays.ts";
 import { crossingLink, openThisSeries, rowsForThisWell } from "../explore/bridge.ts";
 import { labelElement } from "../glossary/gw-term.ts";
 import { highlight } from "../glossary/index.ts";
-import { termIndex } from "../glossary/store.ts";
+import { onGlossaryReady, termIndex } from "../glossary/store.ts";
 import {
   absentValue,
   formatMonth,
@@ -837,9 +837,16 @@ function setParams(params: Record<string, string | null>): void {
  * section's disclosure rather than the card heading, so a deep-linked reader lands on the
  * thing the link named; `applySection` carries the same quiet-focus rule `focusPanel` does.
  */
+/** The previous card's subscription, released when the next card lands. */
+let releaseHighlight: (() => void) | null = null;
+
 function land(container: HTMLElement, card: HTMLElement, section: string | null): void {
   container.replaceChildren(card);
-  highlight(card, termIndex());
+  // Once now, and again when the glossary lands: the section titles are built statically and
+  // were painted before the vocabulary arrived on almost every cold load, so a title that is
+  // a term (`Peer control`) was marked on one load in ten.
+  releaseHighlight?.();
+  releaseHighlight = onGlossaryReady(() => highlight(card, termIndex()));
   if (section) applySection(section);
   else focusPanel(container);
 }
