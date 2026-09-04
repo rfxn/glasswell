@@ -31,6 +31,7 @@ from glasswell.api.responses import (
     iso,
     month_label,
 )
+from glasswell.api.routers.completions import FRACFOCUS_SOURCE_ID, INTENSITY_FAMILY
 from glasswell.api.routers.wells import (
     API10_PATTERN,
     LENGTH_SCOPE,
@@ -38,7 +39,12 @@ from glasswell.api.routers.wells import (
     pending_allocation,
 )
 from glasswell.lengths import LengthRuleUnregistered, resolve_length_method
-from glasswell.lineage.conformance import allocated_series_rule, lease_reporting_rule
+from glasswell.lineage.conformance import (
+    allocated_series_rule,
+    lease_reporting_rule,
+    load_rules,
+    rule_for_family,
+)
 from glasswell.lineage.envelope import series
 from glasswell.lineage.ids import format_handle
 from glasswell.lineage.jurisdictions import JurisdictionRegistry
@@ -852,7 +858,7 @@ def get_well_production(
                 {row["derivation_id"] for row in observed} | set(divisor.derivations)
             ),
             correlation_id=request.state.request_id,
-            rule_ids=[divisor.rule_id],
+            rule_ids=[divisor.rule_id, divisor.floor_rule_id],
             point_outputs=point_outputs,
         )
         links["length_rule"] = f"/v1/conformance/{divisor.rule_id}"
@@ -870,9 +876,6 @@ def get_well_production(
 
 
 PER_LATERAL_FT = "per_lateral_ft"
-# The floor cr_ff_fluid_intensity_1 registers for the same division, reused rather than
-# re-decided: below it the divisor is not a lateral, it is a stub of one.
-MIN_LATERAL_FT = Decimal("1000")
 
 # The basin the compute CRS is chosen by, from the well's current row.
 _WELL_BASIN = """
@@ -894,6 +897,7 @@ class LateralDivisor(BaseModel):
     feet: Decimal
     derivations: tuple[str, ...]
     rule_id: str
+    floor_rule_id: str
     method: str
     compute_crs: str
 
@@ -901,6 +905,23 @@ class LateralDivisor(BaseModel):
 def _refuse_normalisation(detail: str) -> ProblemError:
     """One refusal shape: the reason and, where one exists, the rule that decided it."""
     return ProblemError("validation_failed", detail=detail)
+
+
+def _lateral_floor(connection: psycopg.Connection) -> tuple[Decimal, str]:
+    """R8: the floor is a row. cr_ff_fluid_intensity registers it for the same division and
+    completions reads it at request time; this reads the same row rather than restating it."""
+    try:
+        rule = rule_for_family(
+            load_rules(connection, source_id=FRACFOCUS_SOURCE_ID, stage="conform"),
+            INTENSITY_FAMILY,
+        )
+    except LookupError:
+        raise _refuse_normalisation(
+            f"no rule in family {INTENSITY_FAMILY} is registered, so the lateral floor this"
+            " division needs is undefined and no normalised figure is served: a registry gap,"
+            " not a fact about the well"
+        ) from None
+    return Decimal(str(rule.spec["min_lateral_ft"])), rule.rule_id
 
 
 def _lateral_divisor(
@@ -946,16 +967,18 @@ def _lateral_divisor(
     feet = metres_to_feet(
         sum((Decimal(str(row["length_m"])) for row in laterals), Decimal(0))
     ).quantize(Decimal("0.01"))
-    if feet < MIN_LATERAL_FT:
+    floor, floor_rule = _lateral_floor(connection)
+    if feet < floor:
         raise _refuse_normalisation(
-            f"the lateral measures {feet} ft, below the {MIN_LATERAL_FT} ft floor"
-            " cr_ff_fluid_intensity_1 registers for this division: below it the divisor is a"
-            " stub rather than a lateral"
+            f"the lateral measures {feet} ft, below the {floor} ft floor {floor_rule}"
+            " registers for this division: below it the divisor is a stub rather than a"
+            " lateral"
         )
     return LateralDivisor(
         feet=feet,
         derivations=tuple(sorted({str(row["derivation_id"]) for row in laterals})),
         rule_id=method.rule_id,
+        floor_rule_id=floor_rule,
         method=method.method,
         compute_crs=method.compute_crs,
     )

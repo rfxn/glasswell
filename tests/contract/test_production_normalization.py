@@ -117,6 +117,39 @@ def test_a_jurisdiction_that_withholds_the_length_is_refused_by_name(
     assert "cr_" in detail or "no lateral geometry" in detail
 
 
+def test_the_lateral_floor_is_the_rule_s_and_moves_when_the_rule_does(
+    client: TestClient, db: psycopg.Connection
+) -> None:
+    """R8: cr_ff_fluid_intensity registers the floor as data and completions reads it at
+    request time; the divisor has to read the same row, or a superseded floor leaves the
+    refusal describing a registry that no longer says that. The registry is append-only, so
+    the floor moves the only way it can: a successor rule."""
+    with db.cursor() as cursor:
+        cursor.execute(
+            "insert into lineage.conformance_rule_publications"
+            " (rule_id, published_vintage, evidence_tag, evidence_commit)"
+            " values ('cr_ff_fluid_intensity_2', current_date, 'contract-fixture', %s)",
+            ("a" * 40,),
+        )
+        cursor.execute(
+            "insert into lineage.conformance_rules (rule_id, rule_family, supersedes_rule_id,"
+            " source_id, stage, applies_to_fields, rule_kind, spec, rule, rationale,"
+            " evidence_url, effective_from, published_vintage)"
+            " select 'cr_ff_fluid_intensity_2', rule_family, rule_id, source_id, stage,"
+            " applies_to_fields, rule_kind, jsonb_set(spec, '{min_lateral_ft}', '20000'),"
+            " rule, rationale, evidence_url, current_date, current_date"
+            " from lineage.conformance_rules where rule_id = 'cr_ff_fluid_intensity_1'"
+        )
+    db.commit()
+
+    response = client.get(PATH, params={"normalization": "per_lateral_ft"})
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert "20000" in detail
+    assert "cr_ff_fluid_intensity_2" in detail
+
+
 def test_an_unknown_normalisation_is_refused_rather_than_ignored(client: TestClient) -> None:
     # A parameter the API has not agreed to answer must not fall through to the plain series.
     assert client.get(PATH, params={"normalization": "per_barrel"}).status_code == 422
