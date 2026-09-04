@@ -123,7 +123,7 @@ explorer route is measured with the card cut, on the same ruling its neighbour a
 branches were already cut under: it only ever renders over the map.
 
 **Re-measured at v0.80's own head** (`feat/tx-lease-production`, the Texas fix round), because
-the figure the raise was argued from was not this tree's. The v0.79 note below cited 71,511 B
+the figure the raise was argued from was not this tree's. The v0.79 note cited 71,511 B
 as the route before the band; the well-card track's P0 measured the same route at **74,838 B**
 at its own base and **76,438 B** uncut, so 71,511 was a stale before-figure and the 4,447 B the
 note attributes to the band is not the band's cost. What the route measures on this branch,
@@ -143,13 +143,17 @@ further, and the number above already fits with headroom in the band the other t
 carry. `BUDGET_BYTES` will conflict with `feat/well-card-2` at the v0.81 train; the arithmetic
 here is what the integrator resolves it against.
 
-The explorer route was re-measured in v0.79 for the allocation band: 71,511 → 75,958 B. The
-chart chunk gained a second state band with its own six-class vocabulary, its own key, and the
-per-month class, divisor and completeness arrays behind them, and it sits on the route rather
-than behind a second dynamic import on purpose — it renders inside the plot, so a chart that
-had to fetch another chunk before it could say whether a point was observed or allocated would
-draw the number first and the label after it. That ordering is the one thing the band exists to
-prevent. The budget is ratcheted to measured + 4.9%, the same headroom the previous two carried.
+**Why the band is on the route at all**, which is the part of the v0.79 note that still
+stands: the chart chunk carries a second state band with its own six-class vocabulary, its own
+key, and the per-month class, divisor and completeness arrays behind them, and it sits on the
+route rather than behind a second dynamic import on purpose — it renders inside the plot, so a
+chart that had to fetch another chunk before it could say whether a point was observed or
+allocated would draw the number first and the label after it. That ordering is the one thing
+the band exists to prevent.
+
+*(The v0.79 note's figures — "71,511 → 75,958 B" and "measured + 4.9%" — are superseded by the
+table above and have been removed rather than left below their own correction: a reader who
+scrolled here first got the number the block above exists to retire.)*
 
 The budget was set from 12,750 B, measured before the review round that followed it. The
 stale-selection guard, the rejection handler and the per-detail warning grouping put the
