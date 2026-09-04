@@ -121,17 +121,15 @@ document.addEventListener("gw-section-set", (event) => {
 });
 
 // card/chart -> here, for the same reason the section event exists: main is the single writer
-// of app state, and a brush has to reach the URL so the link is shareable and the server
-// answers the range on reload. `replace`, never `push`: a drag is not a navigation.
-document.addEventListener("gw-window-set", (event) => {
-  const { from, to } = (event as CustomEvent<{ from: string | null; to: string | null }>).detail;
+// of app state, and a control that changes what a figure IS -- the window a brush leaves, the
+// basis a normalisation applies -- has to reach the URL so the link is shareable and the
+// server answers it on reload. `replace`, never `push`: a drag is not a navigation.
+document.addEventListener("gw-param-set", (event) => {
+  const { params } = (event as CustomEvent<{ params: Record<string, string | null> }>).detail;
   const extra = { ...state.extra };
-  if (from && to) {
-    extra["from"] = [from];
-    extra["to"] = [to];
-  } else {
-    delete extra["from"];
-    delete extra["to"];
+  for (const [key, value] of Object.entries(params)) {
+    if (value === null) delete extra[key];
+    else extra[key] = [value];
   }
   commit({ extra }, "replace");
 });

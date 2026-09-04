@@ -36,6 +36,19 @@ export interface ChartCallbacks {
   onBrush?(from: string | null, to: string | null): void;
 }
 
+/**
+ * The per-lateral-foot control, and what to say where the well cannot carry it. The chart
+ * knows a series; whether a lateral length is served is a fact about the well, so the card
+ * hands both the state and the reason down rather than the chart guessing at either.
+ */
+export interface NormalizationControl {
+  on: boolean;
+  /** False where no divisor is served: no lateral, a rule that withholds it, no compute CRS. */
+  available: boolean;
+  reason?: string;
+  onChange(on: boolean): void;
+}
+
 export interface ChartOptions {
   /**
    * `served` draws exactly the months the response carried and offers no span control: the
@@ -43,6 +56,7 @@ export interface ChartOptions {
    * server. `default` is the card's, where a back-loaded record is windowed client-side.
    */
   span?: "default" | "served";
+  normalization?: NormalizationControl;
 }
 
 /** One live chart per host: a repaint must not leave the last one's observers running. */
@@ -137,6 +151,7 @@ export function renderChart(
         draw();
       }),
     );
+    if (options.normalization) axes.appendChild(normalizationControl(options.normalization));
     container.appendChild(axes);
 
     const plot = document.createElement("div");
@@ -481,6 +496,29 @@ function scaleControl(
   }
   toggle.title = log ? "Draw the axes linearly." : "Draw the axes logarithmically.";
   toggle.addEventListener("click", () => onScale(!log));
+  return toggle;
+}
+
+/**
+ * Two states and an absence, all three served rather than inferred: the division is the
+ * server's arm, so the control's job is to ask for it and to say why it cannot where the
+ * jurisdiction, the geometry or the CRS registry says so.
+ */
+function normalizationControl(control: NormalizationControl): HTMLElement {
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "gw-normalize-toggle";
+  toggle.setAttribute("aria-pressed", String(control.on));
+  toggle.textContent = "Per 1,000 ft";
+  if (!control.available) {
+    toggle.disabled = true;
+    toggle.title = control.reason ?? "No lateral length is served for this well.";
+    return toggle;
+  }
+  toggle.title = control.on
+    ? "Draw the volumes the regulator filed."
+    : "Divide every point by this well's lateral length, served with its own handle.";
+  toggle.addEventListener("click", () => control.onChange(!control.on));
   return toggle;
 }
 

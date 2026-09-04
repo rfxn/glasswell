@@ -707,13 +707,13 @@ describe("a brush reaches the URL, so the link carries the range", () => {
     await bootAt("/?well=3305310451");
 
     document.dispatchEvent(
-      new CustomEvent("gw-window-set", { detail: { from: "2025-11", to: "2026-01" } }),
+      new CustomEvent("gw-param-set", { detail: { params: { from: "2025-11", to: "2026-01" } } }),
     );
     expect(window.location.search).toContain("from=2025-11");
     expect(window.location.search).toContain("to=2026-01");
 
     document.dispatchEvent(
-      new CustomEvent("gw-window-set", { detail: { from: null, to: null } }),
+      new CustomEvent("gw-param-set", { detail: { params: { from: null, to: null } } }),
     );
     expect(window.location.search).not.toContain("from=");
     expect(window.location.search).not.toContain("to=");

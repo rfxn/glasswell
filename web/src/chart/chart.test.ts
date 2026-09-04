@@ -686,3 +686,48 @@ describe("brushing a range, and the total that follows it", () => {
     expect(total).toContain("1 reported zero");
   });
 });
+
+describe("the per-lateral-foot control", () => {
+  const changed = vi.fn();
+  const control = (over: Record<string, unknown> = {}) => ({
+    normalization: { on: false, available: true, onChange: changed, ...over },
+  });
+
+  beforeEach(() => changed.mockClear());
+
+  it("asks the server for the arm rather than dividing here", () => {
+    renderChart(host, sparse, callbacks, control());
+    const toggle = host.querySelector<HTMLButtonElement>(".gw-normalize-toggle");
+
+    expect(toggle?.getAttribute("aria-pressed")).toBe("false");
+    toggle?.click();
+    expect(changed).toHaveBeenCalledWith(true);
+  });
+
+  it("says which state it is in, so a normalised plot is never a surprise", () => {
+    renderChart(host, sparse, callbacks, control({ on: true }));
+
+    expect(host.querySelector(".gw-normalize-toggle")?.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("states the reason where no divisor is served rather than offering a dead control", () => {
+    renderChart(
+      host,
+      sparse,
+      callbacks,
+      control({ available: false, reason: "cr_mt_paths_length_scope_1 withholds it" }),
+    );
+    const toggle = host.querySelector<HTMLButtonElement>(".gw-normalize-toggle");
+
+    expect(toggle?.disabled).toBe(true);
+    expect(toggle?.title).toContain("cr_mt_paths_length_scope_1");
+    toggle?.click();
+    expect(changed).not.toHaveBeenCalled();
+  });
+
+  it("is absent where the card offers no control at all", () => {
+    renderChart(host, sparse, callbacks);
+
+    expect(host.querySelector(".gw-normalize-toggle")).toBeNull();
+  });
+});

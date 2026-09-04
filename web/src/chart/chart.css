@@ -105,3 +105,25 @@
   flex-basis: 100%;
   margin: 0.1rem 0 0;
 }
+
+.gw-normalize-toggle {
+  flex: none;
+  padding: 0 var(--gw-space-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--gw-radius-pill);
+  background: none;
+  color: var(--slate);
+  font: inherit;
+  font-size: var(--gw-fs-micro);
+  cursor: pointer;
+}
+
+.gw-normalize-toggle[aria-pressed="true"] {
+  color: var(--paper);
+  border-color: var(--cyan);
+}
+
+.gw-normalize-toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

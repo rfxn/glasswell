@@ -21347,6 +21347,25 @@
             }
           },
           {
+            "description": "Divide every point by the well's lateral length in thousands of feet and serve the result in `<unit>/kft`. Refused with the rule that decided it where the jurisdiction withholds the length, where no lateral is held, or where no compute CRS is registered for the well's basin: a normalised figure whose divisor nobody can name is a naked number.",
+            "in": "query",
+            "name": "normalization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "per_lateral_ft",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Divide every point by the well's lateral length in thousands of feet and serve the result in `<unit>/kft`. Refused with the rule that decided it where the jurisdiction withholds the length, where no lateral is held, or where no compute CRS is registered for the well's basin: a normalised figure whose divisor nobody can name is a naked number.",
+              "title": "Normalization"
+            }
+          },
+          {
             "description": "Stream to include; repeatable. Defaults to oil, gas and water.",
             "in": "query",
             "name": "stream",
@@ -21628,6 +21647,10 @@
           "from": {
             "so": "Windows on the production month, not on the report vintage, so it changes which months you see and never which restatement of them you get. Pair it with as_of to hold both still.",
             "x-glasswell-glossary": "gt_production_month"
+          },
+          "normalization": {
+            "so": "Divides every point by this well's lateral length in thousands of feet and serves the result in `<unit>/kft`, with the length and the method that measured it on the basis and one handle per column resolving both the production and the geometry. It is a served arm rather than a client division because a number divided in a browser keeps the handle of the number it was divided from, which is a naked figure wearing someone else's papers.",
+            "x-glasswell-glossary": "gt_lateral"
           },
           "stream": {
             "so": "Repeat it to ask for more than one; omit it and you get oil, gas and water. Dropping a stream drops its column, never a month \u2014 the shared axis is the same either way, which is what keeps two streams comparable point for point.",

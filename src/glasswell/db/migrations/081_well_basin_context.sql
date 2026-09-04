@@ -109,6 +109,18 @@ grant insert, delete on marts.well_basin_context to glasswell_pipeline;
 
 -- Without a registered profile every basin handle serves and /v1/explain answers 422, which is
 -- a naked number wearing a ring (070's own comment, for the facet counts).
+-- The normalised production arm mints response-output figures whose chain names two inputs,
+-- the production promotion and the geometry promotion. Without a registered profile they serve
+-- and /v1/explain answers 422, which is a naked number wearing a ring (070's own comment).
+insert into lineage.selector_output_registry
+    (operation, output_dataset, selector_profile, rationale)
+values
+    ('api.respond', 'api.well_production', 'response_output',
+     'The request derivation records every normalised point it returned, so a per-kft figure'
+     ' resolves the production and the length it was divided by rather than the production'
+     ' alone.')
+on conflict do nothing;
+
 insert into lineage.selector_output_registry
     (operation, output_dataset, selector_profile, rationale)
 values

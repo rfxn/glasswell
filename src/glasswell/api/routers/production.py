@@ -31,7 +31,13 @@ from glasswell.api.responses import (
     iso,
     month_label,
 )
-from glasswell.api.routers.wells import API10_PATTERN, RANKED_WELLS, pending_allocation
+from glasswell.api.routers.wells import (
+    API10_PATTERN,
+    LENGTH_SCOPE,
+    RANKED_WELLS,
+    pending_allocation,
+)
+from glasswell.lengths import LengthRuleUnregistered, resolve_length_method
 from glasswell.lineage.conformance import allocated_series_rule, lease_reporting_rule
 from glasswell.lineage.envelope import series
 from glasswell.lineage.ids import format_handle
@@ -40,6 +46,7 @@ from glasswell.lineage.selector_registry import identity_selector_term
 from glasswell.lineage.vintages import select_production
 from glasswell.marts.cumulatives import CUMULATIVES_SCOPE
 from glasswell.status.source_health import source_health_data
+from glasswell.units import metres_to_feet
 
 router = APIRouter(tags=["wells"])
 
@@ -529,6 +536,18 @@ def _state_code(connection, api10: str) -> str | None:
                     ),
                 },
             },
+            normalization={
+                "glossary": "gt_lateral",
+                "so": (
+                    "Divides every point by this well's lateral length in thousands of feet"
+                    " and serves the result in `<unit>/kft`, with the length and the method"
+                    " that measured it on the basis and one handle per column resolving both"
+                    " the production and the geometry. It is a served arm rather than a"
+                    " client division because a number divided in a browser keeps the"
+                    " handle of the number it was divided from, which is a naked figure"
+                    " wearing someone else's papers."
+                ),
+            },
             explain={
                 "glossary": "gt_derivation_handle",
                 "so": (
@@ -559,6 +578,18 @@ def get_well_production(
     api10: Annotated[str, Path(description="Ten-digit API well number.", pattern=API10_PATTERN)],
     explain: ExplainEffect,
     as_of: AsOf = None,
+    normalization: Annotated[
+        Literal["per_lateral_ft"] | None,
+        Query(
+            description=(
+                "Divide every point by the well's lateral length in thousands of feet and"
+                " serve the result in `<unit>/kft`. Refused with the rule that decided it"
+                " where the jurisdiction withholds the length, where no lateral is held, or"
+                " where no compute CRS is registered for the well's basin: a normalised"
+                " figure whose divisor nobody can name is a naked number."
+            )
+        ),
+    ] = None,
     stream: Annotated[
         list[Literal["oil", "gas", "water"]] | None,
         Query(description="Stream to include; repeatable. Defaults to oil, gas and water."),
@@ -590,6 +621,17 @@ def get_well_production(
 
     registry = jurisdictions(connection)
     state_code = _state_code(connection, api10)
+    divisor = None
+    if normalization == PER_LATERAL_FT:
+        basin = rows(connection, _WELL_BASIN, {"api10": api10})
+        divisor = _lateral_divisor(
+            connection,
+            api10,
+            basin=basin[0]["basin"] if basin else None,
+            state_code=state_code,
+            registry=registry,
+            as_of=as_of,
+        )
     # A lease-reporting jurisdiction that serves a well-level figure anyway is serving an
     # allocation, and the series comes from the mart rather than from canonical -- which could
     # not hold it: 020_production_entity_key.sql:43-46 admits no lease_allocated row.
@@ -613,6 +655,15 @@ def get_well_production(
                     " so an older date would be answered with today's allocation. The lease"
                     " series it is computed from is bitemporal and answers as_of."
                 ),
+            )
+        if divisor is not None:
+            # The allocated series is a share of a lease's filing, and dividing a share by this
+            # well's lateral would read as a per-foot rate for a number the well did not
+            # measure. The arm is refused rather than answered wrong.
+            raise _refuse_normalisation(
+                "this jurisdiction serves an allocated series"
+                f" ({allocated_rule['rule_id']}), and an allocated share divided by this"
+                " well's lateral is not a per-foot rate anybody measured"
             )
         return _allocated_response(
             request,
@@ -677,13 +728,22 @@ def get_well_production(
         warnings.extend(_pending_warning(held, column))
         first = next(iter(points.values()))
         spans = len(derivations) > 1
+        drawn = [None if month in held else _volume(points.get(month)) for month in months]
+        if divisor is not None:
+            drawn = [_normalise(value, divisor) for value in drawn]
         payload[column] = series(
-            [None if month in held else _volume(points.get(month)) for month in months],
-            unit=first["unit"],
+            drawn,
+            unit=first["unit"] if divisor is None else f"{first['unit']}/kft",
             derivation=first["derivation_id"],
             selector=f"api10={api10}&col={column}",
             granularity=first["granularity"],
-            basis=stream_basis(name, state_code, registry=registry),
+            basis=(
+                stream_basis(name, state_code, registry=registry)
+                if divisor is None
+                # The divisor is the basis: a per-foot figure whose length method is not on the
+                # wire is a number a reader cannot reproduce.
+                else f"per lateral foot · {divisor.feet} ft · {divisor.method}"
+            ),
             point_handles=(
                 [
                     None
@@ -730,6 +790,30 @@ def get_well_production(
     if aggregated and grain_rule:
         links["pools"] = f"/v1/wells/{api10}/production/pools"
         links["aggregation_rule"] = f"/v1/conformance/{grain_rule}"
+    if divisor is not None:
+        # The handle has to change with the number: a client-side division carrying the served
+        # handle would be a naked number wearing someone else's papers. The response derivation
+        # cites the production promotions AND the geometry promotions, so one chain resolves
+        # both inputs -- which is the only version of this feature that survives "where did
+        # that number come from".
+        data = register_response_figures(
+            connection,
+            data,
+            dataset="api.well_production",
+            operation_id="get_well_production",
+            locator=request.url.path,
+            partition={
+                "api10": api10,
+                "normalization": PER_LATERAL_FT,
+                "as_of": iso(resolved) or "latest",
+            },
+            input_derivations=sorted(
+                {row["derivation_id"] for row in observed} | set(divisor.derivations)
+            ),
+            correlation_id=request.state.request_id,
+            rule_ids=[divisor.rule_id],
+        )
+        links["length_rule"] = f"/v1/conformance/{divisor.rule_id}"
     return enveloped(
         request,
         data,
@@ -741,6 +825,109 @@ def get_well_production(
         links=links,
         explain=inline_for(connection, explain),
     )
+
+
+PER_LATERAL_FT = "per_lateral_ft"
+# The floor cr_ff_fluid_intensity_1 registers for the same division, reused rather than
+# re-decided: below it the divisor is not a lateral, it is a stub of one.
+MIN_LATERAL_FT = Decimal("1000")
+
+# The basin the compute CRS is chosen by, from the well's current row.
+_WELL_BASIN = """
+select basin from canonical.wells_latest where api10 = %(api10)s
+"""
+
+_LATERALS = """
+select s.derivation_id, {length_metres} as length_m
+  from canonical.well_spatial s
+ where s.api10 = %(api10)s and s.geom_type = 'lateral'
+"""
+
+
+class LateralDivisor(BaseModel):
+    """The lateral length a normalised point was divided by, and what produced it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    feet: Decimal
+    derivations: tuple[str, ...]
+    rule_id: str
+    method: str
+    compute_crs: str
+
+
+def _refuse_normalisation(detail: str) -> ProblemError:
+    """One refusal shape: the reason and, where one exists, the rule that decided it."""
+    return ProblemError("validation_failed", detail=detail)
+
+
+def _lateral_divisor(
+    connection: psycopg.Connection,
+    api10: str,
+    *,
+    basin: str | None,
+    state_code: str | None,
+    registry: JurisdictionRegistry,
+    as_of: date | None,
+) -> LateralDivisor:
+    """The well's lateral length, or a refusal naming the rule that withholds it.
+
+    Every arm here is a jurisdiction the card must not offer the control on: New Mexico holds
+    surface points only, Montana registers a length_scope rule, and a basin with no compute
+    CRS has no length to divide by. The client hides the control from the same facts; this is
+    what answers a caller who asks anyway.
+    """
+    withheld = registry.rule_for(state_code, LENGTH_SCOPE)
+    if withheld:
+        raise _refuse_normalisation(
+            f"no lateral length is served for this jurisdiction: {withheld} withholds it, so"
+            " there is no divisor to normalise by"
+        )
+    try:
+        method = resolve_length_method(
+            connection, basin=basin, valid_at=as_of, knowledge_at=as_of
+        )
+    except LengthRuleUnregistered:
+        raise _refuse_normalisation(
+            f"no compute CRS is registered for basin {basin!r}, so this well's lateral length"
+            " is not served and cannot be a divisor"
+        ) from None
+    laterals = rows(
+        connection,
+        _LATERALS.format(length_metres=method.metres_sql("s.geom")),
+        {"api10": api10},
+    )
+    if not laterals:
+        raise _refuse_normalisation(
+            "this well holds no lateral geometry, so there is no length to normalise by"
+        )
+    feet = metres_to_feet(
+        sum((Decimal(str(row["length_m"])) for row in laterals), Decimal(0))
+    ).quantize(Decimal("0.01"))
+    if feet < MIN_LATERAL_FT:
+        raise _refuse_normalisation(
+            f"the lateral measures {feet} ft, below the {MIN_LATERAL_FT} ft floor"
+            " cr_ff_fluid_intensity_1 registers for this division: below it the divisor is a"
+            " stub rather than a lateral"
+        )
+    return LateralDivisor(
+        feet=feet,
+        derivations=tuple(sorted({str(row["derivation_id"]) for row in laterals})),
+        rule_id=method.rule_id,
+        method=method.method,
+        compute_crs=method.compute_crs,
+    )
+
+
+def _normalise(value: str | None, divisor: LateralDivisor) -> str | None:
+    """Per thousand feet, quantised once at the serving edge like every other figure here.
+
+    Values ride as strings for the reason every figure does: a float round-trip is not
+    reproducible, and the division is where that would first bite.
+    """
+    if value is None:
+        return None
+    return str((Decimal(value) / (divisor.feet / Decimal(1000))).quantize(Decimal("0.001")))
 
 
 def _allocated_response(

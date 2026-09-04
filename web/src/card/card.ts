@@ -27,6 +27,7 @@ import { renderBasin } from "./basin.ts";
 import type { WellBasin } from "./basin.ts";
 import { renderIdentity } from "./identity.ts";
 import type { WellIdentity } from "./identity.ts";
+import type { NormalizationControl } from "../chart/chart.ts";
 import {
   SECTION_OPEN_EVENT,
   applySection,
@@ -706,14 +707,18 @@ export async function renderWellCard(
       // arrived, and the entry chunk carries every reader who never opens a card. The budget
       // test in explore/bundle-budget.test.ts is what holds this to it.
       const { renderChart } = await import("../chart/chart.ts");
-      renderChart(chartHost, toChartSeries(data), {
-        onExplain: callbacks.onExplain,
-        labelTermFor: (pointer) => labelFor(production, pointer),
-        // main.ts is the single writer of app state, so a brush is announced rather than
-        // written here; `card/requests.ts` is what carries `from`/`to` into the next request.
-        onBrush: (from, to) =>
-          document.dispatchEvent(new CustomEvent("gw-window-set", { detail: { from, to } })),
-      });
+      renderChart(
+        chartHost,
+        toChartSeries(data),
+        {
+          onExplain: callbacks.onExplain,
+          labelTermFor: (pointer) => labelFor(production, pointer),
+          // main.ts is the single writer of app state, so a brush is announced rather than
+          // written here; `card/requests.ts` carries `from`/`to` into the next request.
+          onBrush: (from, to) => setParams({ from, to }),
+        },
+        { normalization: normalizationControl(detail, well, state) },
+      );
       for (const note of warningNotes(production.meta.warnings)) chartNotes.appendChild(note);
       highlight(chartFrame, termIndex());
       // The chart's own handles arrive here, outside the section queue: the production request
@@ -730,6 +735,33 @@ export async function renderWellCard(
 }
 
 /**
+ * Whether this well can be normalised, and what to say when it cannot. Every fact here is
+ * served: the length figure, the method it was computed by, and the rule link a jurisdiction
+ * that withholds the length carries. Nothing is inferred from a state code.
+ */
+function normalizationControl(
+  detail: WellDetail,
+  well: Envelope<WellDetail>,
+  state: { extra: Record<string, string[]> },
+): NormalizationControl {
+  const withheld = well.links?.["length_rule"];
+  return {
+    on: state.extra["normalization"]?.[0] === PER_LATERAL_FT,
+    available: Boolean(detail.lateral_length_ft) && detail.length_method !== "not_served",
+    reason: withheld
+      ? "This jurisdiction withholds the lateral length by rule, so there is no divisor to" +
+        " normalise by; the rule is linked in the Drilling band."
+      : "No lateral length is served for this well, so there is nothing to divide by.",
+    onChange: (next) => setParams({ normalization: next ? PER_LATERAL_FT : null }),
+  };
+}
+
+/** main.ts is the single writer of app state, so the card announces rather than writes. */
+function setParams(params: Record<string, string | null>): void {
+  document.dispatchEvent(new CustomEvent("gw-param-set", { detail: { params } }));
+}
+
+/**
  * Mount, highlight, and land focus. With `?section=` present the landing target is that
  * section's disclosure rather than the card heading, so a deep-linked reader lands on the
  * thing the link named; `applySection` carries the same quiet-focus rule `focusPanel` does.
@@ -740,6 +772,9 @@ function land(container: HTMLElement, card: HTMLElement, section: string | null)
   if (section) applySection(section);
   else focusPanel(container);
 }
+
+/** The one served normalisation arm, named where the control and the request both read it. */
+const PER_LATERAL_FT = "per_lateral_ft";
 
 const CUMULATIVE_STREAMS: [keyof NonNullable<WellCumulatives["cumulative"]>, string, string][] = [
   ["oil_bbl", "Oil", "/cumulative/oil_bbl"],
