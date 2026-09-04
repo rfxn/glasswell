@@ -4,10 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChartSeries } from "../chart/series.ts";
 import { statusColour } from "../map/status.ts";
 
-const renderChart = vi.fn<(container: HTMLElement, chart: ChartSeries) => void>();
+const renderChart =
+  vi.fn<(container: HTMLElement, chart: ChartSeries, callbacks: unknown, options: unknown) => void>();
 const selectWell = vi.fn<(api10: string | null, source: string) => void>();
 vi.mock("../chart/chart.ts", () => ({
-  renderChart: (container: HTMLElement, chart: ChartSeries) => renderChart(container, chart),
+  // Every argument forwarded: the R-20 case reads what the card hands the chart, not the frame.
+  renderChart: (container: HTMLElement, chart: ChartSeries, callbacks: unknown, options: unknown) =>
+    renderChart(container, chart, callbacks, options),
 }));
 vi.mock("../bus.ts", () => ({
   selectWell: (api10: string | null, source: string) => selectWell(api10, source),
@@ -1478,6 +1481,59 @@ describe("a cumulative total that some months were allocated into", () => {
 
     expect(scope?.dataset["handle"]).toBe("drv_a#api10=x&stream=liquid");
     expect(scope?.getAttribute("title")).toContain("cr_tx_allocation_v0_1");
+  });
+});
+
+describe("a reloaded brushed link", () => {
+  // R-20: the server answered the brushed window, so the client holds only those months. The
+  // card tells the chart so, and the way back drops the two parameters through the same seam
+  // a brush writes them through. The bar itself is chart.test.ts's subject.
+  it("hands the chart a served span and the widening that drops both parameters", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/cumulatives`]: cumulativesEnvelope,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+    window.history.replaceState(null, "", `/?well=${API10}&from=2026-01&to=2026-03`);
+    const announced: unknown[] = [];
+    document.addEventListener("gw-param-set", (event) => {
+      announced.push((event as CustomEvent<{ params: unknown }>).detail.params);
+    });
+
+    await renderWellCard(host, API10, callbacks);
+
+    const options = renderChart.mock.calls[renderChart.mock.calls.length - 1]?.[3] as
+      | { span?: string; onWiden?: () => void }
+      | undefined;
+    expect(options?.span).toBe("served");
+    options?.onWiden?.();
+    expect(announced).toEqual([{ from: null, to: null }]);
+  });
+
+  it("hands the chart no served span where nothing narrowed the request", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubFetch({
+          [`/v1/wells/${API10}/cumulatives`]: cumulativesEnvelope,
+          [`/v1/wells/${API10}/production`]: productionEnvelope,
+          [`/v1/wells/${API10}`]: wellEnvelope,
+        }),
+      ),
+    );
+    window.history.replaceState(null, "", `/?well=${API10}`);
+
+    await renderWellCard(host, API10, callbacks);
+
+    const options = renderChart.mock.calls[renderChart.mock.calls.length - 1]?.[3] as
+      | { span?: string }
+      | undefined;
+    expect(options?.span).toBeUndefined();
   });
 });
 

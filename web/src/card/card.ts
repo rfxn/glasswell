@@ -763,7 +763,15 @@ export async function renderWellCard(
           // forwards, used by a control rather than only by a URL somebody typed.
           onVintage: (asOf) => setParams({ as_of: asOf }),
         },
-        { normalization: normalizationControl(detail, well, state) },
+        {
+          normalization: normalizationControl(detail, well, state),
+          // R-20: a reloaded link carried `from`/`to`, so the server answered the window and
+          // the months on hand are all of it. The bar says so and offers the record back by
+          // dropping both parameters through the same seam a brush writes them through.
+          ...(state.extra["from"]?.[0] || state.extra["to"]?.[0]
+            ? { span: "served" as const, onWiden: () => setParams({ from: null, to: null }) }
+            : {}),
+        },
       );
       for (const note of warningNotes(production.meta.warnings)) chartNotes.appendChild(note);
       highlight(chartFrame, termIndex());

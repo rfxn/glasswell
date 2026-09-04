@@ -23,7 +23,7 @@ import { nearestIndex, readoutAt } from "./cursor.ts";
 import type { Readout, ReadoutRow } from "./cursor.ts";
 import { chartOptions, streamStroke } from "./options.ts";
 import type { ChartSeries, SeriesColumn } from "./series.ts";
-import { chartWindow, defaultSpan, describeWindow, spanChoices } from "./window.ts";
+import { chartWindow, defaultSpan, describeShown, describeWindow, spanChoices } from "./window.ts";
 
 const PLOT_HEIGHT = 260;
 
@@ -65,6 +65,11 @@ export interface ChartOptions {
    */
   span?: "default" | "served";
   normalization?: NormalizationControl;
+  /**
+   * R-20: with `span: "served"` on the card the months on hand are the ones a `from`/`to`
+   * request returned, so the bar says it is showing all of them and offers the record back.
+   */
+  onWiden?: () => void;
 }
 
 /** One live chart per host: a repaint must not leave the last one's observers running. */
@@ -150,6 +155,7 @@ export function renderChart(
           draw();
         },
         brush ? { ...brush, onClear: () => setBrush(null) } : null,
+        served ? (options.onWiden ?? null) : null,
       ),
     );
     // A window the record does not reach is served as an empty series. That is a fact about the
@@ -418,14 +424,24 @@ function windowBar(
   served: boolean,
   onSpan: (span: number | null) => void,
   brush: { from: string; to: string; onClear: () => void } | null = null,
+  onWiden: (() => void) | null = null,
 ): HTMLElement {
   const bar = document.createElement("div");
   bar.className = "gw-window-bar";
   const note = document.createElement("p");
   note.className = "gw-window-note";
   note.setAttribute("data-no-glossary", "");
-  note.textContent = describeWindow(window_, served);
+  note.textContent = onWiden ? describeShown(window_) : describeWindow(window_, served);
   bar.appendChild(note);
+  if (onWiden) {
+    const widen = document.createElement("button");
+    widen.type = "button";
+    widen.className = "gw-window-widen";
+    widen.textContent = "Widen to the whole record";
+    widen.title = "Drop the from and to this link carried and ask for every month on record.";
+    widen.addEventListener("click", onWiden);
+    note.appendChild(widen);
+  }
   if (brush) {
     // A fourth state beside the spans, and the way out of it: a window a reader dragged into
     // and cannot drag out of is a trap, and `All` would otherwise mean two different things.

@@ -827,6 +827,9 @@ describe("the table alternative", () => {
   // Fetched on the press: the chart chunk rides the explorer route, and a table nobody opened
   // is not something every Explore reader should download.
   const press = async (): Promise<void> => {
+    // Warmed first: the press imports the module, and a cold transform under a loaded
+    // machine outlasts the ticks below, which made this a race rather than a test.
+    await import("../card/table.ts");
     const before = host.querySelector(".gw-table-toggle")?.getAttribute("aria-pressed");
     host.querySelector<HTMLButtonElement>(".gw-table-toggle")?.click();
     for (let tick = 0; tick < 20; tick += 1) {
@@ -866,5 +869,28 @@ describe("the table alternative", () => {
     await press();
 
     expect(host.querySelectorAll(".gw-series-table tbody tr").length).toBe(60);
+  });
+});
+
+describe("a reloaded brushed link on the card", () => {
+  // R-20: on reload the server answers the brushed window, so the client holds only those
+  // months and the bar's "All" would describe the window rather than the record. It says
+  // which it is describing and carries the way back to the record.
+  it("says it is showing all of the months it was handed, and offers the whole record", () => {
+    const widened = vi.fn();
+    renderChart(host, sparse, callbacks, { span: "served", onWiden: widened });
+
+    expect(host.querySelector(".gw-window-note")?.textContent).toContain("All of the months shown");
+    expect(host.querySelector(".gw-window-note")?.textContent).not.toContain("on record");
+    const widen = host.querySelector<HTMLButtonElement>(".gw-window-widen");
+    expect(widen?.textContent).toBe("Widen to the whole record");
+    widen?.click();
+    expect(widened).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers no widening where nothing narrowed the request", () => {
+    renderChart(host, sparse, callbacks);
+    expect(host.querySelector(".gw-window-widen")).toBeNull();
+    expect(host.querySelector(".gw-window-note")?.textContent).toContain("on record");
   });
 });
