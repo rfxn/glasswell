@@ -25,7 +25,10 @@ SMOKE = ROOT / "scripts" / "smoke.sh"
 README = INFRA / "README.md"
 # What the collector reads at `status/collector.py:730-738`, and nothing else.
 UNIT_ENVIRONMENT = {"GLASSWELL_STATUS_PGDATA", "GLASSWELL_STATUS_PGDATA_MIN_BYTES"}
-CREDENTIAL_NAME = re.compile(r"KEY|SECRET|TOKEN|PASSWORD|DSN")
+# `DSN` alone misses the two names this codebase actually reads a connection string from:
+# `DATABASE_URL` (`status/collector.py:64`) and a libpq `PGPASSFILE`. The sibling ExecStart
+# test refuses `DATABASE` for the same reason.
+CREDENTIAL_NAME = re.compile(r"KEY|SECRET|TOKEN|PASSWORD|PGPASS|DSN|DATABASE|URL")
 
 
 def active_lines(path: Path) -> list[str]:
