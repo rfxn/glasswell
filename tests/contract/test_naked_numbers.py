@@ -17,6 +17,7 @@ import yaml
 from fastapi.testclient import TestClient
 
 from glasswell.api.examples import DATASET_KEY, REQUEST_EXAMPLE_KEY
+from glasswell.api.routers import validators
 from glasswell.lineage.ids import parse_handle
 from tests.contract.conftest import TX_API10
 
@@ -245,6 +246,19 @@ def test_every_documented_example_is_callable(client: TestClient) -> None:
     }
 
     assert {name: code for name, code in failures.items() if code != 200} == {}
+
+
+def test_the_example_heuristic_cites_the_gate_that_holds_it_to_answering() -> None:
+    """`_example_jurisdiction()` picks the served example by a structural heuristic and cites a
+    gate as its justification, so the citation is load-bearing rather than decorative. It named
+    `test_openapi_examples.py`, whose eight tests all read `/openapi.json` and call no route;
+    the net that would redden on a wrongly-picked jurisdiction is the test above (gate-tx D-2).
+    """
+    source = Path(validators.__file__).read_text(encoding="utf-8")
+    justification = source[: source.index("def _example_jurisdiction")]
+
+    assert Path(__file__).name in justification
+    assert "test_every_documented_example_is_callable" in justification
 
 
 def payload(response: Any) -> Any:

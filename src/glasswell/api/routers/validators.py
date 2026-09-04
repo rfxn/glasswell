@@ -53,8 +53,8 @@ CAUSES = (
 # RV-3). A registration that allocates is one whose cumulative scope is admitted by a rule
 # other than its own grain decision -- North Dakota and Colorado cite one rule for both, and
 # Texas's scope names the allocation. An example this picked wrongly would 404, and
-# `tests/contract/test_openapi_examples.py` exercises every served example against the API,
-# which is what holds this to answering.
+# `test_naked_numbers.py::test_every_documented_example_is_callable` calls every documented
+# example against the API, which is what holds this to answering.
 def _example_jurisdiction() -> str:
     grain = {
         str(row["jurisdiction_code"]): row["rule_id"]
