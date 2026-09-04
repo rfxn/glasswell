@@ -281,8 +281,10 @@ STATUS_HISTORY_SQL = _STATUS_HISTORY.format(
     resolved=resolved_status("w"), resolver=resolver_join("w")
 )
 
-# Ten rows and a count of the rest. A well with 15,590 effective dates is a scroll nobody
-# reads and a payload nobody wants, and the count says what the cap held back.
+# Ten rows and a count of the rest: 248 New Mexico wells carry more than ten headers and the
+# fullest carries 15, so the cap is what keeps a readable answer readable and the count is what
+# stops a short list reading as a short life. (15,590 is the population's distinct filed dates,
+# which is a different number about a different thing.)
 STATUS_HISTORY_CAP = 10
 
 # `tiled` asks the tile pipeline's own question of the deepest published zoom: a geometry that
