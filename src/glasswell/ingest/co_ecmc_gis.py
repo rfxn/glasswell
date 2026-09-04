@@ -31,6 +31,7 @@ from glasswell.lineage.fetch import fetch_raw
 from glasswell.lineage.fetch_attempts import durable_fetch_attempts
 from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.serialization import hash_payload
+from glasswell.seed.conformance_co import CO_GIS_MEMBERS
 
 __rule_version__ = "1"
 
@@ -38,6 +39,11 @@ DOWNLOAD_ROOT = "https://ecmc.state.co.us/documents/data/downloads/gis"
 MEDIA_TYPE = "application/zip"
 DATUM_FAMILY = "cr_co_wells_datum"
 SCOPE_FAMILY = "cr_co_wells_geometry_scope"
+MEMBER_FAMILIES = {
+    "co_ecmc_wells_shp": "cr_co_wells_shp_member",
+    "co_ecmc_directional_bh": "cr_co_directional_bh_member",
+    "co_ecmc_directional_lines": "cr_co_directional_lines_member",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,22 +62,22 @@ class LayerSpec:
 WELLS = LayerSpec(
     name="wells",
     source_id="co_ecmc_wells_shp",
-    source_key="WELLS_SHP.ZIP",
-    layer_suffix="wells",
+    source_key=CO_GIS_MEMBERS["co_ecmc_wells_shp"]["source_key"],
+    layer_suffix=CO_GIS_MEMBERS["co_ecmc_wells_shp"]["member_stem"],
     staging_table="staging.co_ecmc_wells",
 )
 BOTTOMHOLE = LayerSpec(
     name="bottomhole",
     source_id="co_ecmc_directional_bh",
-    source_key="DIRECTIONAL_BOTTOMHOLE_LOCATIONS_SHP.ZIP",
-    layer_suffix="directionalbottomholelocations",
+    source_key=CO_GIS_MEMBERS["co_ecmc_directional_bh"]["source_key"],
+    layer_suffix=CO_GIS_MEMBERS["co_ecmc_directional_bh"]["member_stem"],
     staging_table="staging.co_ecmc_directional_bh",
 )
 LINES = LayerSpec(
     name="lines",
     source_id="co_ecmc_directional_lines",
-    source_key="DIRECTIONAL_LINES_SHP.ZIP",
-    layer_suffix="directionallines",
+    source_key=CO_GIS_MEMBERS["co_ecmc_directional_lines"]["source_key"],
+    layer_suffix=CO_GIS_MEMBERS["co_ecmc_directional_lines"]["member_stem"],
     staging_table="staging.co_ecmc_directional_lines",
 )
 LAYERS: tuple[LayerSpec, ...] = (WELLS, BOTTOMHOLE, LINES)
@@ -174,6 +180,10 @@ def ingest_layer(
     conform = load_rules(connection, source_id=WELLS.source_id, stage="conform", as_of=run.as_of)
     datum = rule_for_family(conform, DATUM_FAMILY)
     scope = rule_for_family(conform, SCOPE_FAMILY)
+    member = rule_for_family(
+        load_rules(connection, source_id=layer.source_id, stage="parse", as_of=run.as_of),
+        MEMBER_FAMILIES[layer.source_id],
+    )
     fetched = fetch_raw(
         connection,
         layer.source_id,
@@ -201,7 +211,7 @@ def ingest_layer(
                 as_of_vintage=manifest.fetch_vintage,
             )
         ],
-        rules=[datum.rule_id, scope.rule_id],
+        rules=[datum.rule_id, scope.rule_id, member.rule_id],
     ) as parsing:
         staged = _already_staged(connection, layer.staging_table, manifest.manifest_id)
         source_epsg = int(datum.spec["measured_source_epsg"])

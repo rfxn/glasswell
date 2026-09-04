@@ -15,3 +15,8 @@
       relative data/raw, which resolved against the caller's working directory
 - [Fix] The two-clock gate for the Texas card reads the grain rule's own published
       vintage instead of a date the v0.80 repoint had already moved
+- [Fix] The Colorado GIS staging reads the member ECMC actually ships:
+      Directional_Bottomhole_Locations and Directional_Lines were selected by a
+      suffix that ignored their separators, so --layer all refused after staging
+      the wells layer; member selection now compares case and separators on
+      neither side, and the three member names are conformance rows

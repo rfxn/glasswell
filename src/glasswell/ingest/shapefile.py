@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
@@ -15,6 +16,20 @@ from shapely.geometry import shape as shapely_shape
 from shapely.geometry.base import BaseGeometry
 
 REQUIRED_MEMBERS = ("shp", "shx", "dbf")
+
+_SEPARATORS = re.compile(r"[^a-z0-9]")
+
+
+def _comparable(name: str) -> str:
+    """A member stem or a layer suffix with case and separators removed.
+
+    ECMC ships `Directional_Bottomhole_Locations.shp` for the layer registered as
+    `directionalbottomholelocations`, and an endswith over the raw stem matched nothing: the
+    regulator's punctuation is not a decision anybody here made, so neither side is compared on
+    it. Measured on VM 111, 2026-09-04 20:06:30Z.
+    """
+    return _SEPARATORS.sub("", name.lower())
+
 
 
 class UnknownProjection(ValueError):
@@ -80,7 +95,9 @@ class ZippedShapefile:
                     continue
                 stem, _, extension = name.rpartition(".")
                 extension = extension.lower()
-                if layer_suffix is not None and not stem.lower().endswith(layer_suffix.lower()):
+                if layer_suffix is not None and not _comparable(stem).endswith(
+                    _comparable(layer_suffix)
+                ):
                     continue
                 if extension in (*REQUIRED_MEMBERS, "prj") and extension not in payloads:
                     payloads[extension] = bundle.read(name)
