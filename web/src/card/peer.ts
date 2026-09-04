@@ -79,6 +79,7 @@ function facts(control: PeerControl, envelope: Envelope<PeerControl>): HTMLEleme
     const term = document.createElement("dt");
     term.appendChild(labelElement(label, pointer ? labelFor(envelope, pointer) : null));
     const cell = document.createElement("dd");
+    if (label === "Relation") cell.className = "gw-peer-relation";
     cell.setAttribute("data-no-glossary", "");
     cell.textContent = value;
     list.append(term, cell);
@@ -221,10 +222,10 @@ export async function renderPeerControl(
     frame.className = "gw-peer";
 
     // No heading of its own: the section's disclosure is already titled "Peer control", and a
-    // panel that repeats its own section header is the defect the well type carried.
-    // Verbatim, and never the word forecast: the wire says what this is, and a client that
-    // paraphrased it would be the one place the claim could drift.
-    frame.appendChild(note(control.relation, "gw-note gw-peer-relation"));
+    // panel that repeats its own section header is the defect the well type carried. The
+    // relation is the first row of the facts and is printed verbatim there rather than twice:
+    // the wire says what this is, and a client that paraphrased it would be the one place the
+    // claim could drift.
     frame.appendChild(facts(control, envelope));
     frame.appendChild(
       note(
