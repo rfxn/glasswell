@@ -65,6 +65,12 @@ FALLBACK_DSN_ENV = "DATABASE_URL"
 CODE_VERSION_ENV = "GLASSWELL_CODE_VERSION"
 EDGE_HOST_ENV = "GLASSWELL_STATUS_EDGE_HOST"
 DEFAULT_EDGE_HOST = "glasswell.lab.rpx.sh"
+PGDATA_ENV = "GLASSWELL_STATUS_PGDATA"
+DEFAULT_PGDATA = Path("/var/lib/postgresql/16/main")
+PGDATA_FLOOR_ENV = "GLASSWELL_STATUS_PGDATA_MIN_BYTES"
+# 60 GiB: the 40 GiB per-year floor the Texas load stops at, plus the 20 GB a monthly restage
+# rewrites. It governs at both filesystem sizes the platform spec plans for, where 10 % does not.
+DEFAULT_PGDATA_FLOOR_BYTES = 64_424_509_440
 MARTIN_HEALTH = "http://127.0.0.1:3000/health"
 QUERY_TIMEOUT_MS = 120_000
 MAX_RESTORE_RESULT_BYTES = 131_072
@@ -677,10 +683,18 @@ def _edge_check(observed_at: datetime, host: str) -> StatusCheck:
     )
 
 
-def _storage_check(check_id: str, label: str, path: Path, observed_at: datetime) -> StatusCheck:
+def _storage_check(
+    check_id: str,
+    label: str,
+    path: Path,
+    observed_at: datetime,
+    *,
+    minimum_available: int | None = None,
+) -> StatusCheck:
     try:
         stats = os.statvfs(path)
         available_ratio = stats.f_bavail / stats.f_blocks if stats.f_blocks else 0.0
+        available = stats.f_bavail * stats.f_frsize
     except OSError:
         return StatusCheck(
             id=check_id,
@@ -691,7 +705,9 @@ def _storage_check(check_id: str, label: str, path: Path, observed_at: datetime)
             tier="host",
             probe=str(path),
         )
-    healthy = available_ratio >= 0.10
+    healthy = available_ratio >= 0.10 and (
+        minimum_available is None or available >= minimum_available
+    )
     return StatusCheck(
         id=check_id,
         label=label,
@@ -704,6 +720,22 @@ def _storage_check(check_id: str, label: str, path: Path, observed_at: datetime)
         ),
         tier="host",
         probe=str(path),
+    )
+
+
+# The root filesystem matters because PGDATA sits on it, so the check follows PGDATA rather
+# than "/" and carries an absolute floor as well as the ratio: on the sizes this host is
+# planned at, 10 % of the disk is well below the room a Texas-scale load or a restage needs.
+def _root_storage_check(observed_at: datetime) -> StatusCheck:
+    floor = os.environ.get(PGDATA_FLOOR_ENV, "")
+    return _storage_check(
+        "root_storage",
+        "System storage",
+        Path(os.environ.get(PGDATA_ENV, DEFAULT_PGDATA)),
+        observed_at,
+        # A malformed value keeps the default: this guard is lowered by setting a byte count,
+        # never by mistyping one.
+        minimum_available=int(floor) if floor.isdecimal() else DEFAULT_PGDATA_FLOOR_BYTES,
     )
 
 
@@ -1504,7 +1536,7 @@ def collect(connection: psycopg.Connection, *, now: datetime | None = None) -> S
         _system_service(
             "tunnel", "Cloudflare tunnel", "cloudflared.service", observed_at, tier="edge"
         ),
-        _storage_check("root_storage", "System storage", Path("/"), observed_at),
+        _root_storage_check(observed_at),
         _storage_check("data_storage", "Data storage", Path("/data"), observed_at),
         *_allocation_checks(connection, observed_at),
     ]

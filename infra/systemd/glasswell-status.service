@@ -13,6 +13,12 @@ EnvironmentFile=/etc/glasswell/db.env
 # Deploy stamps this after installing the units. It is optional only for the first activation
 # on a new host; every normal deploy forces a fresh collection after stamping the file.
 EnvironmentFile=-/etc/glasswell/code-version.env
+# The filesystem the root_storage check follows, and the absolute floor it refuses below.
+# Here rather than in an EnvironmentFile: db.env is host-only and app.env carries keys this
+# process has no need of, while install.sh places this unit and verify.sh compares it to the
+# tree on every deploy, so these two values cannot drift on the host.
+Environment=GLASSWELL_STATUS_PGDATA=/var/lib/postgresql/16/main
+Environment=GLASSWELL_STATUS_PGDATA_MIN_BYTES=64424509440
 ExecStart=/opt/glasswell/venv/bin/python -m glasswell.status.collector
 TimeoutStartSec=120
 UMask=0027
