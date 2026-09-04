@@ -971,7 +971,7 @@ def _seed_tx_allocation(db: psycopg.Connection) -> None:
         ),
         params={"reporting_level": "lease", "granularity": "lease_reported"},
         inputs=[InputRef(kind="manifest", ref_id=pdq_manifest)],
-        rules=["cr_tx_pdq_format_1", "cr_tx_liquids_basis_1"],
+        rules=["cr_tx_pdq_format_2", "cr_tx_liquids_basis_1"],
     ) as lease_context:
         lease_context.set_rows(6)
         lease_context.set_output_hash("e" * 64)
