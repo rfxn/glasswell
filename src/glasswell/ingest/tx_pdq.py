@@ -649,6 +649,51 @@ def record_census(
     return len(measurements)
 
 
+def _record_parse_refusal(
+    connection: psycopg.Connection, manifest_id: str, refusal: ArchiveFormatError, *, rule_id: str
+) -> None:
+    """The refusal, kept where a poll cannot say it: against the manifest, on its own commit.
+
+    The fetch is a fact and is already committed, so the poll finalises `new` -- truthfully, the
+    bytes landed. Nothing then says the parse refused, and `/status` would read a refused stage
+    as a current source with a fresh retrieval vintage. Whatever the refusal staged is rolled
+    back first: a half-written member is not a fact about anything.
+    """
+    connection.rollback()
+    session = current_session()
+    emit(
+        connection,
+        "staging.load_failed",
+        subject_type="manifest",
+        subject_id=manifest_id,
+        payload={
+            "source_id": SOURCE_ID,
+            "reason_code": type(refusal).__name__.lower(),
+            "rule_id": rule_id,
+            "detail": str(refusal),
+        },
+        correlation_id=session.correlation_id,
+        occurred_at=session.clock.now(),
+    )
+    connection.commit()
+
+
+def _record_staging_load(
+    connection: psycopg.Connection, manifest_id: str, derivation_id: str
+) -> None:
+    """Both passes read the artifact through, so the manifest names the derivation that did it.
+
+    `staging_load_ref` (003_manifests.sql:24) has meant this since the schema was written and
+    nothing set it. Its absence on a head manifest is what lets status.source_health tell a
+    fetch that was parsed from one that was only fetched.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "update lineage.manifests set staging_load_ref = %s where manifest_id = %s",
+            (derivation_id, manifest_id),
+        )
+
+
 def load(
     connection: psycopg.Connection,
     *,
@@ -709,15 +754,20 @@ def load(
                     f"delete from staging.{table} where manifest_id = %s", (manifest.manifest_id,)
                 )
 
-    with zipfile.ZipFile(fetched.payload_path) as archive:
-        window = production_window(archive, layout)
-        districts = district_labels(archive, layout)
-        parse_id, completions, regulatory = _stage_members(
-            connection, archive, manifest.manifest_id, layout=layout
-        )
-        lease_parse_id, lease_rows = stage_lease_cycle(
-            connection, archive, manifest.manifest_id, layout=layout
-        )
+    try:
+        with zipfile.ZipFile(fetched.payload_path) as archive:
+            window = production_window(archive, layout)
+            districts = district_labels(archive, layout)
+            parse_id, completions, regulatory = _stage_members(
+                connection, archive, manifest.manifest_id, layout=layout
+            )
+            lease_parse_id, lease_rows = stage_lease_cycle(
+                connection, archive, manifest.manifest_id, layout=layout
+            )
+    except ArchiveFormatError as refusal:
+        _record_parse_refusal(connection, manifest.manifest_id, refusal, rule_id=layout.rule_id)
+        raise
+    _record_staging_load(connection, manifest.manifest_id, lease_parse_id)
 
     vintage = manifest.fetch_vintage
     membership_id, membership_rows, measurements = _promote_membership(

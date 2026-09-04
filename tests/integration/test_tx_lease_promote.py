@@ -28,9 +28,11 @@ from glasswell.ingest.tx_pdq import (
     production_month,
 )
 from glasswell.lineage.capture import lineage_session
+from glasswell.lineage.fetch_attempts import durable_fetch_attempts
 from glasswell.lineage.store import PostgresRecorder
 from glasswell.seed import seed_all
 from glasswell.seed.conformance_tx import PDQ_MEMBER_LAYOUT
+from glasswell.status.source_health import source_health_data
 from tests.support.fakes import FixedClock
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "tx_pdq"
@@ -378,6 +380,96 @@ def test_the_re_run_after_a_refusal_reuses_the_slot_it_already_paid_for(
     assert scalar(
         seeded, "select count(*) from lineage.manifests where source_id = 'tx_pdq_dsv'"
     ) == 1
+
+
+def test_a_refused_stage_is_never_served_as_a_current_source(
+    seeded, raw_root: Path, lineage_env, tmp_path: Path, postgres_password, monkeypatch
+) -> None:
+    """H-1. Committing the manifest at fetch time makes the poll finalise `new`, because the
+    poll did succeed -- so the failure code that used to make /status read `stale` is gone.
+
+    The parse refusal has to be durable somewhere else or a refused stage is served as a
+    current source with a fresh retrieval vintage and no reason anywhere. It is recorded twice:
+    a `staging.load_failed` event against the manifest, and the head manifest's
+    `staging_load_ref` left null, which is what that column has always meant.
+    """
+    monkeypatch.setenv("PGPASSWORD", postgres_password)
+    seeded.commit()
+    drifted = tmp_path / "drifted.zip"
+    with zipfile.ZipFile(SAMPLE) as source, zipfile.ZipFile(drifted, "w") as target:
+        for name in source.namelist():
+            text = source.read(name).decode()
+            if name == LEASE_CYCLE_MEMBER:
+                header, _, body = text.partition("\n")
+                text = header + "}INVENTED_COLUMN\n" + body
+            target.writestr(name, text)
+
+    with durable_fetch_attempts(seeded.info.dsn):
+        with lineage_session(
+            recorder=PostgresRecorder(seeded), environment=lineage_env
+        ), client_for(drifted) as client, pytest.raises(ArchiveFormatError):
+            tx_pdq.load(
+                seeded,
+                url=f"https://example.invalid/{SOURCE_KEY}",
+                raw_root=raw_root,
+                client=client,
+                expect_bytes=drifted.stat().st_size,
+            )
+        seeded.rollback()
+
+    outcome = scalar(
+        seeded,
+        "select outcome from lineage.fetch_attempts where source_id = 'tx_pdq_dsv'",
+    )
+    served, _ = source_health_data(
+        seeded, observed_at=datetime.now(UTC), source_ids=["tx_pdq_dsv"]
+    )
+
+    # The poll is `new` and that is true: the bytes landed and the manifest names them.
+    assert outcome == "new"
+    assert scalar(
+        seeded,
+        "select staging_load_ref from lineage.manifests where source_id = 'tx_pdq_dsv'",
+    ) is None
+    assert scalar(
+        seeded,
+        "select count(*) from lineage.audit_events where event_type = 'staging.load_failed'"
+        " and payload ->> 'source_id' = 'tx_pdq_dsv'",
+    ) == 1
+    assert served[0]["state"] != "current"
+    assert "staging" in served[0]["freshness_reason"]
+
+
+def test_a_re_run_that_parses_is_what_makes_the_source_current_again(
+    seeded, raw_root: Path, lineage_env, postgres_password, monkeypatch
+) -> None:
+    """The other half of H-1: the refusal must not be permanent either. A stage that reads the
+    archive through records its staging load on the manifest, and the source reads current."""
+    monkeypatch.setenv("PGPASSWORD", postgres_password)
+    seeded.commit()
+
+    with durable_fetch_attempts(seeded.info.dsn), lineage_session(
+        recorder=PostgresRecorder(seeded), environment=lineage_env
+    ), client_for(SAMPLE) as client:
+        tx_pdq.load(
+            seeded,
+            url=f"https://example.invalid/{SOURCE_KEY}",
+            raw_root=raw_root,
+            client=client,
+            expect_bytes=SAMPLE.stat().st_size,
+            stage_only=True,
+        )
+        seeded.commit()
+
+    served, _ = source_health_data(
+        seeded, observed_at=datetime.now(UTC), source_ids=["tx_pdq_dsv"]
+    )
+
+    assert scalar(
+        seeded,
+        "select staging_load_ref from lineage.manifests where source_id = 'tx_pdq_dsv'",
+    ) is not None
+    assert served[0]["state"] == "current"
 
 
 def test_the_run_reports_what_it_promoted(promoted) -> None:

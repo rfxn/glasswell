@@ -147,6 +147,27 @@ here leaves a recorded artifact rather than an orphan: the archive stays sealed 
 `lineage.fetch_attempts` records the poll that produced it. Nothing was promoted and staging is
 empty, because the parse rolled back and the fetch did not.
 
+**What `/status` says afterwards, and why it is not "current".** The poll finalises `new`, and
+that is true — the bytes landed. It is *not* the whole answer, so the refusal is recorded as a
+`staging.load_failed` audit event against the manifest and the manifest's `staging_load_ref` is
+left null, and `/v1/status` reads the source as **stale**:
+
+> The poll succeeded but the artifact it registered was never loaded into staging; a fetch is
+> not a parse, and freshness is refused until one reads the artifact through.
+
+Colorado answers the same way for the same class of refusal, by a different route — its
+`MalformedArchive` rolls the manifest back, so its latest key poll is `failed` with
+`malformedarchive`. Two different facts, one served state. Check it after a refusal, and again
+after the re-run:
+
+```bash
+curl -s "$GLASSWELL_BASE_URL/v1/status" -H "X-Glasswell-Key: $KEY" \
+  | jq '.data.sources[] | select(.source_id=="tx_pdq_dsv") | {state, freshness_reason}'
+```
+
+The source returns to `current` when — and only when — a stage reads the archive through and
+stamps `staging_load_ref` on its manifest. A re-run that refuses again leaves it stale.
+
 **The re-run.** There is no resume — the portal ignores `Range` — so re-running Step 1 after
 the rule is restated spends the whole fetch again, 1–5 hours. What it does **not** do is place
 a second 3.65 GB copy: identical bytes resolve to the slot the first fetch already registered

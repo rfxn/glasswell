@@ -21,6 +21,21 @@ _SOURCES = """
 select s.source_id,
        s.name,
        artifact.fetch_vintage as retrieval_vintage,
+       -- The parse's half of freshness. A fetch and a parse are two outcomes: an ingest that
+       -- keeps its manifest when the parse refuses leaves an honestly successful poll behind,
+       -- so the poll alone cannot say whether the artifact was ever read. Two arms, because
+       -- the recorded refusal is precise and the unstamped column is the backstop for a run
+       -- that died before it could record one. staging_load_ref is 003_manifests.sql:24.
+       coalesce(artifact.manifest_id is not null and (
+            exists (select 1 from lineage.audit_events e
+                     where e.event_type = 'staging.load_failed'
+                       and e.subject_type = 'manifest'
+                       and e.subject_id = artifact.manifest_id)
+         or (artifact.staging_load_ref is null
+             and exists (select 1 from lineage.manifests loaded
+                          where loaded.source_id = s.source_id
+                            and loaded.staging_load_ref is not null))
+       ), false) as artifact_unloaded,
        coalesce(artifact_count.manifest_count, 0) as manifest_count,
        artifact.manifest_id as last_manifest_id,
        artifact.fetched_at as last_manifest_fetched_at,
@@ -42,14 +57,15 @@ select s.source_id,
   from lineage.sources s
   left join lineage.source_poll_policies p on p.source_id = s.source_id
   left join lateral (
-       select observed.manifest_id, observed.fetched_at, observed.fetch_vintage
+       select observed.manifest_id, observed.fetched_at, observed.fetch_vintage,
+              observed.staging_load_ref
          from (
-              select m.manifest_id, m.fetched_at, m.fetch_vintage,
+              select m.manifest_id, m.fetched_at, m.fetch_vintage, m.staging_load_ref,
                      m.fetched_at as observed_at, 0 as observation_rank
                 from lineage.manifests m
                where m.source_id = s.source_id
               union all
-              select m.manifest_id, m.fetched_at, m.fetch_vintage,
+              select m.manifest_id, m.fetched_at, m.fetch_vintage, m.staging_load_ref,
                      f.completed_at as observed_at, 1 as observation_rank
                 from lineage.fetch_attempts f
                 join lineage.manifests m on m.manifest_id = f.manifest_id
@@ -139,6 +155,7 @@ def source_health_data(
             oldest_open_attempt_at=row["oldest_open_attempt_at"],
             blocking_failure_code=row["blocking_failure_code"],
             blocking_failure_detail=row["blocking_failure_detail"],
+            artifact_unloaded=row["artifact_unloaded"],
         )
         source = {
             "source_id": row["source_id"],

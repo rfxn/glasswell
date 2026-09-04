@@ -3,9 +3,13 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import psycopg
+from psycopg.types.json import Jsonb
 
 from glasswell.api.routers.health import source_health_data
+from glasswell.lineage.capture import derive, lineage_session
+from glasswell.lineage.models import InputRef, OutputSpec
 from glasswell.lineage.schedules import load_schedules
+from glasswell.lineage.store import PostgresRecorder
 from glasswell.seed import seed_all
 from tests.support.seed import seed_manifest
 
@@ -324,3 +328,119 @@ def test_later_success_for_another_key_does_not_mask_failed_key(db) -> None:
 
     assert recovered["state"] == "current"
     assert recovered["last_outcome"] == "unchanged"
+
+
+def load_ref(db: psycopg.Connection, lineage_env, manifest_id: str) -> None:
+    """Stamp a manifest as loaded, through the machinery a stage uses rather than by hand."""
+    with lineage_session(recorder=PostgresRecorder(db), environment=lineage_env), derive(
+        "stage.parse",
+        output=OutputSpec(
+            store="postgres",
+            dataset="staging.fixture",
+            partition={"manifest_id": manifest_id},
+        ),
+        params={"member": "fixture"},
+        inputs=[InputRef(kind="manifest", ref_id=manifest_id)],
+    ) as context:
+        context.set_rows(1)
+        context.set_output_hash("0" * 64)
+    db.execute(
+        "update lineage.manifests set staging_load_ref = %s where manifest_id = %s",
+        (context.derivation_id, manifest_id),
+    )
+
+
+def test_a_fetched_artifact_whose_parse_refused_is_not_a_current_source(db) -> None:
+    """H-1. A refused parse leaves a manifest whose staging load never happened. The poll is
+    honestly `new` -- the bytes did land -- so nothing in the attempt ledger says the source is
+    behind, and without this the artifact reads current with a fresh retrieval vintage."""
+    manifest_id = seed_manifest(db, sha256="b" * 64, fetched_at=NOW - timedelta(minutes=3))
+    add_attempt(
+        db,
+        attempt_id="fat_00000000000000000000000021",
+        source_id="nd_mpr_xlsx",
+        attempted_at=NOW - timedelta(minutes=3),
+        outcome="new",
+        manifest_id=manifest_id,
+    )
+    db.execute(
+        "insert into lineage.audit_events (event_id, occurred_at, actor, event_type,"
+        " subject_type, subject_id, payload)"
+        " values ('evt_parse_refused_fixture', %s, 'system:pipeline', 'staging.load_failed',"
+        " 'manifest', %s, %s)",
+        (NOW, manifest_id, Jsonb({"source_id": "nd_mpr_xlsx", "reason_code": "format_refused"})),
+    )
+
+    source = by_id(db)["nd_mpr_xlsx"]
+
+    assert source["state"] == "stale"
+    assert source["last_outcome"] == "new"
+    assert "staging" in source["freshness_reason"]
+
+
+def test_the_parse_that_reads_the_archive_through_is_what_clears_it(db, lineage_env) -> None:
+    """The refusal must not be permanent: a manifest that records its staging load is current
+    again, which is what makes the refused-then-re-run path resolve on a successful parse."""
+    manifest_id = seed_manifest(db, sha256="c" * 64, fetched_at=NOW - timedelta(minutes=3))
+    add_attempt(
+        db,
+        attempt_id="fat_00000000000000000000000022",
+        source_id="nd_mpr_xlsx",
+        attempted_at=NOW - timedelta(minutes=3),
+        outcome="new",
+        manifest_id=manifest_id,
+    )
+    load_ref(db, lineage_env, manifest_id)
+
+    source = by_id(db)["nd_mpr_xlsx"]
+
+    assert source["state"] == "current"
+
+
+def test_a_refusal_answers_the_same_whether_the_fetch_was_kept_or_rolled_back(db) -> None:
+    """H-1's parity, as the sentinel measured it on VM 111: `tx_pdq_dsv` records `failed |
+    archiveformaterror` and `co_ecmc_directional_bh` records `failed | malformedarchive`, one
+    class of outcome. Texas commits its fetch and Colorado does not, so the two now leave
+    different ledger rows -- and the served state must not depend on that difference."""
+    seed_all(db)
+    texas = seed_manifest(
+        db,
+        sha256="d" * 64,
+        source_id="tx_pdq_dsv",
+        source_key="PDQ_DSV.zip",
+        fetched_at=NOW - timedelta(minutes=3),
+    )
+    add_attempt(
+        db,
+        attempt_id="fat_00000000000000000000000023",
+        source_id="tx_pdq_dsv",
+        attempted_at=NOW - timedelta(minutes=3),
+        outcome="new",
+        manifest_id=texas,
+    )
+    # What a refused Texas stage records: the poll is `new` because the bytes did land, and the
+    # refusal is a fact about the parse, against the manifest that names them.
+    db.execute(
+        "insert into lineage.audit_events (event_id, occurred_at, actor, event_type,"
+        " subject_type, subject_id, payload)"
+        " values ('evt_tx_parse_refused', %s, 'system:pipeline', 'staging.load_failed',"
+        " 'manifest', %s, %s)",
+        (
+            NOW,
+            texas,
+            Jsonb({"source_id": "tx_pdq_dsv", "reason_code": "archiveformaterror"}),
+        ),
+    )
+    add_attempt(
+        db,
+        attempt_id="fat_00000000000000000000000024",
+        source_id="co_ecmc_directional_bh",
+        attempted_at=NOW - timedelta(minutes=3),
+        outcome="failed",
+        failure_code="malformedarchive",
+        failure_detail="malformedarchive; transport detail withheld from shared status",
+    )
+
+    served = by_id(db)
+
+    assert served["tx_pdq_dsv"]["state"] == served["co_ecmc_directional_bh"]["state"] == "stale"
